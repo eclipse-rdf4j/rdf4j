@@ -82,12 +82,12 @@ public class SPARQLParserTest {
 	private SPARQLParser parser;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		parser = new SPARQLParser();
 	}
 
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		parser = null;
 	}
 
@@ -96,7 +96,7 @@ public class SPARQLParserTest {
 	 * {@link org.eclipse.rdf4j.query.parser.sparql.SPARQLParser#parseQuery(java.lang.String, java.lang.String)} .
 	 */
 	@Test
-	public void testSourceStringAssignment() throws Exception {
+	public void testSourceStringAssignment() {
 		String simpleSparqlQuery = "SELECT * WHERE {?X ?P ?Y }";
 
 		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
@@ -105,7 +105,7 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void testInsertDataLineNumberReporting() throws Exception {
+	public void testInsertDataLineNumberReporting() {
 		String insertDataString = "INSERT DATA {\n incorrect reference }";
 
 		try {
@@ -118,7 +118,7 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void testDeleteDataLineNumberReporting() throws Exception {
+	public void testDeleteDataLineNumberReporting() {
 		String deleteDataString = "DELETE DATA {\n incorrect reference }";
 
 		try {
@@ -130,7 +130,7 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void testSES1922PathSequenceWithValueConstant() throws Exception {
+	public void testSES1922PathSequenceWithValueConstant() {
 
 		StringBuilder qb = new StringBuilder();
 		qb.append("ASK {?A (<foo:bar>)/<foo:foo> <foo:objValue>} ");
@@ -156,7 +156,7 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void testParsedBooleanQueryRootNode() throws Exception {
+	public void testParsedBooleanQueryRootNode() {
 		StringBuilder qb = new StringBuilder();
 		qb.append("ASK {?a <foo:bar> \"test\"}");
 
@@ -175,7 +175,7 @@ public class SPARQLParserTest {
 	 * @see <a href="https://github.com/eclipse/rdf4j/issues/686">#686</a>
 	 */
 	@Test
-	public void testParseWildcardSubselectInUpdate() throws Exception {
+	public void testParseWildcardSubselectInUpdate() {
 		StringBuilder update = new StringBuilder();
 		update.append("INSERT { <urn:a> <urn:b> <urn:c> . } WHERE { SELECT * {?s ?p ?o } }");
 
@@ -197,7 +197,7 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void testParseIntegerObjectValue() throws Exception {
+	public void testParseIntegerObjectValue() {
 		// test that the parser correctly parses the object value as an integer, instead of as a decimal.
 		String query = "select ?Concept where { ?Concept a 1. ?Concept2 a 1. } ";
 		ParsedTupleQuery q = (ParsedTupleQuery) parser.parseQuery(query, null);
@@ -209,7 +209,7 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void testParsedTupleQueryRootNode() throws Exception {
+	public void testParsedTupleQueryRootNode() {
 		StringBuilder qb = new StringBuilder();
 		qb.append("SELECT *  {?a <foo:bar> \"test\"}");
 
@@ -223,7 +223,7 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void testParsedGraphQueryRootNode() throws Exception {
+	public void testParsedGraphQueryRootNode() {
 		StringBuilder qb = new StringBuilder();
 		qb.append("CONSTRUCT WHERE {?a <foo:bar> \"test\"}");
 
@@ -238,7 +238,7 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void testOrderByWithAliases1() throws Exception {
+	public void testOrderByWithAliases1() {
 		String queryString = " SELECT ?x (SUM(?v1)/COUNT(?v1) as ?r) WHERE { ?x <urn:foo> ?v1 } GROUP BY ?x ORDER BY ?r";
 
 		ParsedQuery query = parser.parseQuery(queryString, null);
@@ -259,7 +259,7 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void testOrderByWithAliases2() throws Exception {
+	public void testOrderByWithAliases2() {
 		String queryString = "SELECT (?l AS ?v)\n"
 				+ "WHERE { ?s rdfs:label ?l. }\n"
 				+ "ORDER BY ?v";
@@ -280,7 +280,7 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void testSES1927UnequalLiteralValueConstants1() throws Exception {
+	public void testSES1927UnequalLiteralValueConstants1() {
 
 		StringBuilder qb = new StringBuilder();
 		qb.append("ASK {?a <foo:bar> \"test\". ?a <foo:foo> \"test\"@en .} ");
@@ -306,7 +306,7 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void testSES1927UnequalLiteralValueConstants2() throws Exception {
+	public void testSES1927UnequalLiteralValueConstants2() {
 
 		StringBuilder qb = new StringBuilder();
 		qb.append("ASK {?a <foo:bar> \"test\". ?a <foo:foo> \"test\"^^<foo:bar> .} ");
@@ -332,7 +332,7 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void testLongUnicode() throws Exception {
+	public void testLongUnicode() {
 		ParsedUpdate ru = parser.parseUpdate("insert data {<urn:test:foo> <urn:test:bar> \"\\U0001F61F\" .}",
 				"urn:test");
 		InsertData insertData = (InsertData) ru.getUpdateExprs().get(0);
@@ -341,7 +341,7 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void testAdditionalWhitespace_Not_In() throws Exception {
+	public void testAdditionalWhitespace_Not_In() {
 		String query = "SELECT * WHERE { ?s ?p ?o. FILTER(?o NOT  IN (1, 2, 3)) }";
 
 		ParsedQuery parsedQuery = parser.parseQuery(query, null);
@@ -352,7 +352,7 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void testAdditionalWhitespace_Not_Exists() throws Exception {
+	public void testAdditionalWhitespace_Not_Exists() {
 		String query = "SELECT * WHERE { ?s ?p ?o. FILTER NOT  EXISTS { ?s ?p ?o } }";
 
 		ParsedQuery parsedQuery = parser.parseQuery(query, null);

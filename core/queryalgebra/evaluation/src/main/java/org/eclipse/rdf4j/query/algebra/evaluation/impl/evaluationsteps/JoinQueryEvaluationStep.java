@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 
-	private final java.util.function.Function<BindingSet, CloseableIteration<BindingSet, QueryEvaluationException>> eval;
+	private final java.util.function.Function<BindingSet, CloseableIteration<BindingSet>> eval;
 
 	public JoinQueryEvaluationStep(EvaluationStrategy strategy, Join join, QueryEvaluationContext context) {
 		// efficient computation of a SERVICE join using vectored evaluation
@@ -50,7 +50,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		return eval.apply(bindings);
 	}
 

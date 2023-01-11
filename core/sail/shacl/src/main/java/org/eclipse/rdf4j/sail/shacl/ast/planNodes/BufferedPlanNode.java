@@ -16,7 +16,6 @@ import java.util.Queue;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,7 +36,7 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<ValidationTuple> iterator() {
 		return new CloseableIteration<>() {
 
 			{
@@ -45,13 +44,13 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 			}
 
 			@Override
-			public void close() throws SailException {
+			public void close() {
 				closed = true;
 				parent.close();
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			public boolean hasNext() {
 				calculateNext();
 				return !buffer.isEmpty();
 			}
@@ -70,7 +69,7 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 			}
 
 			@Override
-			public ValidationTuple next() throws SailException {
+			public ValidationTuple next() {
 				calculateNext();
 				ValidationTuple tuple = buffer.remove();
 				if (validationExecutionLogger.isEnabled()) {
@@ -82,7 +81,7 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 			}
 
 			@Override
-			public void remove() throws SailException {
+			public void remove() {
 				throw new UnsupportedOperationException();
 			}
 

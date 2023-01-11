@@ -100,7 +100,7 @@ public abstract class TupleQueryResultTest {
 		return repository;
 	}
 
-	protected abstract Repository newRepository() throws Exception;
+	protected abstract Repository newRepository();
 
 	/*
 	 * build some simple SPARQL queries to use for testing the result set object.

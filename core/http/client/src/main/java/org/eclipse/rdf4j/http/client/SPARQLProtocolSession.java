@@ -1175,7 +1175,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * @param method The method to get the reponse MIME type from.
 	 * @return The response MIME type, or <var>null</var> if not available.
 	 */
-	protected String getResponseMIMEType(HttpResponse method) throws IOException {
+	protected String getResponseMIMEType(HttpResponse method) {
 		Header[] headers = method.getHeaders("Content-Type");
 
 		for (Header header : headers) {

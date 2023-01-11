@@ -34,7 +34,7 @@ public class SolrBulkUpdater implements BulkUpdater {
 	}
 
 	@Override
-	public void add(SearchDocument doc) throws IOException {
+	public void add(SearchDocument doc) {
 		SolrDocument document = ((SolrSearchDocument) doc).getDocument();
 		addOrUpdateList.add(SolrUtil.toSolrInputDocument(document));
 	}
@@ -45,7 +45,7 @@ public class SolrBulkUpdater implements BulkUpdater {
 	}
 
 	@Override
-	public void delete(SearchDocument doc) throws IOException {
+	public void delete(SearchDocument doc) {
 		deleteList.add(doc.getId());
 	}
 

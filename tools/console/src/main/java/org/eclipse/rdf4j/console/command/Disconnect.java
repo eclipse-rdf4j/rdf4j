@@ -72,7 +72,7 @@ public class Disconnect extends ConsoleCommand {
 	}
 
 	@Override
-	public void execute(String... parameters) throws IOException {
+	public void execute(String... parameters) {
 		execute(true);
 	}
 }

@@ -56,7 +56,7 @@ public class ResultCachingGraphQuery extends DelegatingGraphQuery {
 	}
 
 	@Override
-	public GraphQueryResult evaluate() throws QueryEvaluationException {
+	public GraphQueryResult evaluate() {
 		BindingSet currentBindings = getDelegate().getBindings();
 		// TODO: this might be pretty slow due to the toString() call. Is there a better way to get
 		// a hash for a query with minmal risk of collision ?

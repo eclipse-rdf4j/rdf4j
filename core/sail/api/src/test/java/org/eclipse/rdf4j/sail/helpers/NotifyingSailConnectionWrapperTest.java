@@ -33,12 +33,12 @@ import org.mockito.Mockito;
 public class NotifyingSailConnectionWrapperTest {
 
 	@BeforeAll
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
 	@AfterAll
-	public static void afterAll() throws Exception {
+	public static void afterAll() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
@@ -73,13 +73,13 @@ public class NotifyingSailConnectionWrapperTest {
 	TestListener listener = new TestListener();
 
 	@BeforeEach
-	public void setUp() throws SailException {
+	public void setUp() {
 		wrapper = new NotifyingSailConnectionWrapper(delegate);
 		factory = SimpleValueFactory.getInstance();
 	}
 
 	@AfterEach
-	public void tearDown() throws SailException {
+	public void tearDown() {
 		wrapper.close();
 	}
 
@@ -89,7 +89,7 @@ public class NotifyingSailConnectionWrapperTest {
 	 * @throws SailException
 	 */
 	@Test
-	public void testAddThenRemoveListener() throws SailException {
+	public void testAddThenRemoveListener() {
 		wrapper.addConnectionListener(listener);
 		verify(delegate).addConnectionListener(listener);
 		wrapper.removeConnectionListener(listener);

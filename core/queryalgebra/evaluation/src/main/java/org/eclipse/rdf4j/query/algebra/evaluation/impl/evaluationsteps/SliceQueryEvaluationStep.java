@@ -45,7 +45,7 @@ public interface SliceQueryEvaluationStep extends QueryEvaluationStep {
 		}
 
 		@Override
-		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
+		public CloseableIteration<BindingSet> evaluate(BindingSet bs) {
 			return new OffsetIteration<>(argument.evaluate(bs), offset);
 		}
 	}
@@ -63,8 +63,8 @@ public interface SliceQueryEvaluationStep extends QueryEvaluationStep {
 		}
 
 		@Override
-		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = argument.evaluate(bs);
+		public CloseableIteration<BindingSet> evaluate(BindingSet bs) {
+			CloseableIteration<? extends BindingSet> evaluate = argument.evaluate(bs);
 			return new LimitIteration<>(new OffsetIteration<>(evaluate, offset), limit);
 		}
 	}
@@ -80,7 +80,7 @@ public interface SliceQueryEvaluationStep extends QueryEvaluationStep {
 		}
 
 		@Override
-		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
+		public CloseableIteration<BindingSet> evaluate(BindingSet bs) {
 			return new LimitIteration<>(argument.evaluate(bs), limit);
 		}
 	}

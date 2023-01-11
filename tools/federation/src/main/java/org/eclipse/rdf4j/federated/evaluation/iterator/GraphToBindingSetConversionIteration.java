@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  * @author Andreas Schwarte
  */
 public class GraphToBindingSetConversionIteration
-		extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
+		extends AbstractCloseableIteration<BindingSet> {
 
 	protected final GraphQueryResult graph;
 
@@ -35,12 +35,12 @@ public class GraphToBindingSetConversionIteration
 	}
 
 	@Override
-	public boolean hasNext() throws QueryEvaluationException {
+	public boolean hasNext() {
 		return graph.hasNext();
 	}
 
 	@Override
-	public BindingSet next() throws QueryEvaluationException {
+	public BindingSet next() {
 
 		try {
 			return convert(graph.next());
@@ -50,7 +50,7 @@ public class GraphToBindingSetConversionIteration
 	}
 
 	@Override
-	public void remove() throws QueryEvaluationException {
+	public void remove() {
 
 		try {
 			graph.remove();
@@ -72,7 +72,7 @@ public class GraphToBindingSetConversionIteration
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected void handleClose() {
 		graph.close();
 	}
 }

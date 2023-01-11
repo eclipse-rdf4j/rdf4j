@@ -44,7 +44,7 @@ public class QueryLog {
 		initQueryLog();
 	}
 
-	private void initQueryLog() throws IOException {
+	private void initQueryLog() {
 
 		queryLog = LoggerFactory.getLogger("QueryLog");
 

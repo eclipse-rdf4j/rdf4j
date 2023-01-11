@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 @Deprecated(since = "4.1.0")
-public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationException> {
+public class FilterIterator extends FilterIteration<BindingSet> {
 
 	private final QueryValueEvaluationStep condition;
 	private final EvaluationStrategy strategy;
@@ -40,8 +40,8 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 	 * Constructors *
 	 *--------------*/
 
-	public FilterIterator(Filter filter, CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			QueryValueEvaluationStep condition, EvaluationStrategy strategy) throws QueryEvaluationException {
+	public FilterIterator(Filter filter, CloseableIteration<BindingSet> iter,
+			QueryValueEvaluationStep condition, EvaluationStrategy strategy) {
 		super(iter);
 		this.condition = condition;
 		this.strategy = strategy;
@@ -49,7 +49,7 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 	}
 
 	@Override
-	protected boolean accept(BindingSet bindings) throws QueryEvaluationException {
+	protected boolean accept(BindingSet bindings) {
 		try {
 			return strategy.isTrue(condition, bindings);
 		} catch (ValueExprEvaluationException e) {

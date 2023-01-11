@@ -146,7 +146,7 @@ public abstract class AbstractTupleQueryResultWriterTest {
 	}
 
 	@Test
-	public void testGetSupportedSettings() throws Exception {
+	public void testGetSupportedSettings() {
 		TupleQueryResultWriter writer = getWriterFactory().getWriter(System.out);
 
 		Collection<RioSetting<?>> supportedSettings = writer.getSupportedSettings();

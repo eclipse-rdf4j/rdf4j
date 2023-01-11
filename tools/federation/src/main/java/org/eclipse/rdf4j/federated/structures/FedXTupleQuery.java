@@ -44,14 +44,14 @@ public class FedXTupleQuery extends SailTupleQuery {
 	}
 
 	@Override
-	public TupleQueryResult evaluate() throws QueryEvaluationException {
+	public TupleQueryResult evaluate() {
 		FedXUtil.applyQueryBindings(this);
 		return delegate.evaluate();
 	}
 
 	@Override
 	public void evaluate(TupleQueryResultHandler handler)
-			throws QueryEvaluationException, TupleQueryResultHandlerException {
+			throws TupleQueryResultHandlerException {
 
 		// attach the handler to the query to allow pass through of results
 		// for single source queries

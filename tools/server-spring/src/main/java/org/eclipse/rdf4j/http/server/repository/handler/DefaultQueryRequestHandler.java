@@ -165,7 +165,7 @@ public class DefaultQueryRequestHandler extends AbstractQueryRequestHandler {
 
 	@Override
 	protected Query getQuery(HttpServletRequest request,
-			RepositoryConnection repositoryCon, String queryString) throws IOException, HTTPException {
+			RepositoryConnection repositoryCon, String queryString) throws HTTPException {
 
 		QueryLanguage queryLn = getQueryLanguage(request.getParameter(QUERY_LANGUAGE_PARAM_NAME));
 		String baseIRI = request.getParameter(Protocol.BASEURI_PARAM_NAME);

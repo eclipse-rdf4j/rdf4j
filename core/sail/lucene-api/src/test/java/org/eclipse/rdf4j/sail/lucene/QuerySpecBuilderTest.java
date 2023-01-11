@@ -43,7 +43,7 @@ public class QuerySpecBuilderTest {
 	private SPARQLParser parser;
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp() {
 		interpreter = new QuerySpecBuilder(true);
 		parser = new SPARQLParser();
 	}
@@ -351,7 +351,7 @@ public class QuerySpecBuilderTest {
 	 *
 	 * @param queryString
 	 */
-	private void checkQuery(String queryString) throws Exception {
+	private void checkQuery(String queryString) {
 		ParsedQuery query = parser.parseQuery(queryString, null);
 		TupleExpr tupleExpr = query.getTupleExpr();
 		Collection<SearchQueryEvaluator> queries = process(interpreter, tupleExpr);

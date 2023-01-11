@@ -93,7 +93,7 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 	}
 
 	@Override
-	public void flushUpdates() throws SailException {
+	public void flushUpdates() {
 		if (needsFullRecomputation()) {
 			logger.debug("full recomputation needed, starting inferencing from scratch");
 			clearInferred();
@@ -116,12 +116,12 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 	}
 
 	@Override
-	public void begin() throws SailException {
+	public void begin() {
 		this.begin(sail.getDefaultIsolationLevel());
 	}
 
 	@Override
-	public void begin(IsolationLevel level) throws SailException {
+	public void begin(IsolationLevel level) {
 
 		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,
 				sail.getSupportedIsolationLevels());
@@ -133,7 +133,7 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 	}
 
 	@Override
-	public void rollback() throws SailException {
+	public void rollback() {
 		super.rollback();
 
 		statementsRemoved = false;
@@ -145,7 +145,7 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 	 */
 	protected abstract void addAxiomStatements() throws SailException;
 
-	protected void doInferencing() throws SailException {
+	protected void doInferencing() {
 		// initialize some vars
 		totalInferred = 0;
 		int iteration = 0;

@@ -91,7 +91,7 @@ public class AbstractCommandTest {
 	}).collect(Collectors.toMap(m -> (String) m[0], m -> (ConsoleSetting) m[1]));
 
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		if (manager != null) {
 			manager.shutDown();
 		}

@@ -322,12 +322,12 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	}
 
 	@Override
-	public <E extends Exception> void add(CloseableIteration<? extends Statement, E> statementIter,
+	public void add(CloseableIteration<? extends Statement> statementIter,
 			Resource... contexts)
-			throws RepositoryException, E {
+			throws RepositoryException {
 		final IRI insertContext = getInsertContext();
 		if (isNilContext(contexts)) {
-			super.add(new ConvertingIteration<Statement, Statement, E>(statementIter) {
+			super.add(new ConvertingIteration<Statement, Statement>(statementIter) {
 
 				@Override
 				protected Statement convert(Statement st) {
@@ -655,12 +655,12 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	 * @see #getRemoveContexts()
 	 */
 	@Override
-	public <E extends Exception> void remove(CloseableIteration<? extends Statement, E> statementIter,
+	public void remove(CloseableIteration<? extends Statement> statementIter,
 			Resource... contexts)
-			throws RepositoryException, E {
+			throws RepositoryException {
 		final IRI[] removeContexts = getRemoveContexts();
 		if (isAllContext(contexts) && removeContexts.length == 1) {
-			super.remove(new ConvertingIteration<Statement, Statement, E>(statementIter) {
+			super.remove(new ConvertingIteration<Statement, Statement>(statementIter) {
 
 				@Override
 				protected Statement convert(Statement st) {

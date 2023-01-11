@@ -55,7 +55,7 @@ public class ParentReferenceCleanerTest {
 		assertThat(checker.getInconsistentNodes()).isEmpty();
 	}
 
-	private class ParentCheckingVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+	private static class ParentCheckingVisitor extends AbstractQueryModelVisitor<RuntimeException> {
 
 		private final ArrayDeque<QueryModelNode> ancestors = new ArrayDeque<>();
 

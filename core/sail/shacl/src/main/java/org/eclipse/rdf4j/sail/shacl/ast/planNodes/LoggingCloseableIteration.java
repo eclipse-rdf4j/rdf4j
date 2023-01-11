@@ -14,7 +14,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
-public abstract class LoggingCloseableIteration implements CloseableIteration<ValidationTuple, SailException> {
+public abstract class LoggingCloseableIteration implements CloseableIteration<ValidationTuple> {
 
 	private final ValidationExecutionLogger validationExecutionLogger;
 	private final PlanNode planNode;
@@ -27,7 +27,7 @@ public abstract class LoggingCloseableIteration implements CloseableIteration<Va
 	}
 
 	@Override
-	public final ValidationTuple next() throws SailException {
+	public final ValidationTuple next() {
 
 		ValidationTuple tuple = loggingNext();
 
@@ -39,7 +39,7 @@ public abstract class LoggingCloseableIteration implements CloseableIteration<Va
 	}
 
 	@Override
-	public final boolean hasNext() throws SailException {
+	public final boolean hasNext() {
 		if (empty) {
 			return false;
 		}
@@ -56,7 +56,7 @@ public abstract class LoggingCloseableIteration implements CloseableIteration<Va
 	}
 
 	@Override
-	public void close() throws SailException {
+	public void close() {
 		if (!closed) {
 			this.closed = true;
 			localClose();
@@ -75,7 +75,7 @@ public abstract class LoggingCloseableIteration implements CloseableIteration<Va
 	 * @throws SailException
 	 */
 	@Override
-	public void remove() throws SailException {
+	public void remove() {
 		throw new UnsupportedOperationException();
 	}
 }

@@ -41,7 +41,7 @@ public class CachedTupleQueryResult implements TupleQueryResult {
 	}
 
 	@Override
-	public List<String> getBindingNames() throws QueryEvaluationException {
+	public List<String> getBindingNames() {
 		return bindingNames;
 	}
 
@@ -51,22 +51,22 @@ public class CachedTupleQueryResult implements TupleQueryResult {
 	}
 
 	@Override
-	public void close() throws QueryEvaluationException {
+	public void close() {
 		this.replayingIterator = null;
 	}
 
 	@Override
-	public boolean hasNext() throws QueryEvaluationException {
+	public boolean hasNext() {
 		return replayingIterator.hasNext();
 	}
 
 	@Override
-	public BindingSet next() throws QueryEvaluationException {
+	public BindingSet next() {
 		return this.replayingIterator.next();
 	}
 
 	@Override
-	public void remove() throws QueryEvaluationException {
+	public void remove() {
 		throw new UnsupportedOperationException("Remove is not supported");
 	}
 

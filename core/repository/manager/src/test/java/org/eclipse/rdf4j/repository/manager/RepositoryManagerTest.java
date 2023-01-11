@@ -46,7 +46,7 @@ public class RepositoryManagerTest {
 			}
 
 			@Override
-			public URL getLocation() throws MalformedURLException {
+			public URL getLocation() {
 				return null;
 			}
 

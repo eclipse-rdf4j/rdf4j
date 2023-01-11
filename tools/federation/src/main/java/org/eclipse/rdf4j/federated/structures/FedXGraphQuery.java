@@ -42,13 +42,13 @@ public class FedXGraphQuery extends SailGraphQuery {
 	}
 
 	@Override
-	public GraphQueryResult evaluate() throws QueryEvaluationException {
+	public GraphQueryResult evaluate() {
 		FedXUtil.applyQueryBindings(this);
 		return delegate.evaluate();
 	}
 
 	@Override
-	public void evaluate(RDFHandler handler) throws QueryEvaluationException, RDFHandlerException {
+	public void evaluate(RDFHandler handler) throws RDFHandlerException {
 		FedXUtil.applyQueryBindings(this);
 		delegate.evaluate(handler);
 	}

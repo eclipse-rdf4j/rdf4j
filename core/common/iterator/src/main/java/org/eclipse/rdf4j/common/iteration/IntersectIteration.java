@@ -23,13 +23,13 @@ import java.util.function.Supplier;
  * bit more overhead as it adds a second hash table lookup.
  */
 @Deprecated(since = "4.1.0")
-public class IntersectIteration<E, X extends Exception> extends FilterIteration<E, X> {
+public class IntersectIteration<E> extends FilterIteration<E> {
 
 	/*-----------*
 	 * Variables *
 	 *-----------*/
 
-	protected final CloseableIteration<? extends E, ? extends X> arg2;
+	protected final CloseableIteration<? extends E> arg2;
 
 	private final boolean distinct;
 
@@ -50,13 +50,13 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	 * @param arg1 An Iteration containing the first set of elements.
 	 * @param arg2 An Iteration containing the second set of elements.
 	 */
-	public IntersectIteration(CloseableIteration<? extends E, ? extends X> arg1,
-			CloseableIteration<? extends E, ? extends X> arg2) {
+	public IntersectIteration(CloseableIteration<? extends E> arg1,
+			CloseableIteration<? extends E> arg2) {
 		this(arg1, arg2, false);
 	}
 
-	public IntersectIteration(CloseableIteration<? extends E, ? extends X> arg1,
-			CloseableIteration<? extends E, ? extends X> arg2,
+	public IntersectIteration(CloseableIteration<? extends E> arg1,
+			CloseableIteration<? extends E> arg2,
 			Supplier<Set<E>> setMaker) {
 		this(arg1, arg2, false, setMaker);
 	}
@@ -68,8 +68,8 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	 * @param arg2     An Iteration containing the second set of elements.
 	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
 	 */
-	public IntersectIteration(CloseableIteration<? extends E, ? extends X> arg1,
-			CloseableIteration<? extends E, ? extends X> arg2,
+	public IntersectIteration(CloseableIteration<? extends E> arg1,
+			CloseableIteration<? extends E> arg2,
 			boolean distinct) {
 		super(arg1);
 
@@ -88,8 +88,8 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	 * @param arg2     An Iteration containing the second set of elements.
 	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
 	 */
-	public IntersectIteration(CloseableIteration<? extends E, ? extends X> arg1,
-			CloseableIteration<? extends E, ? extends X> arg2,
+	public IntersectIteration(CloseableIteration<? extends E> arg1,
+			CloseableIteration<? extends E> arg2,
 			boolean distinct, Supplier<Set<E>> setMaker) {
 		super(arg1);
 
@@ -109,7 +109,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	 * Returns <var>true</var> if the object is in the set of elements of the second argument.
 	 */
 	@Override
-	protected boolean accept(E object) throws X {
+	protected boolean accept(E object) {
 		if (!initialized) {
 			// Build set of elements-to-include from second argument
 			includeSet = Iterations.asSet(arg2);
@@ -132,7 +132,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	}
 
 	// this method does not seem to "addSecondSet" since the second set seems to be ignored
-	public Set<E> addSecondSet(CloseableIteration<? extends E, ? extends X> arg2, Set<E> set) throws X {
+	public Set<E> addSecondSet(CloseableIteration<? extends E> arg2, Set<E> set) {
 		return Iterations.addAll(arg2, setMaker.get());
 	}
 
@@ -149,7 +149,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	}
 
 	@Override
-	protected void handleClose() throws X {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {

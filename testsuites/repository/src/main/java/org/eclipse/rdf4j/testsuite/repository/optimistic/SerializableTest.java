@@ -47,12 +47,12 @@ import org.junit.Test;
 public class SerializableTest {
 
 	@BeforeClass
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
 	@AfterClass
-	public static void afterClass() throws Exception {
+	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
@@ -123,7 +123,7 @@ public class SerializableTest {
 	}
 
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		try {
 			a.close();
 		} finally {
@@ -700,12 +700,11 @@ public class SerializableTest {
 		assertEquals(13, size(a, null, null, null, false));
 	}
 
-	private int size(RepositoryConnection con, Resource subj, IRI pred, Value obj, boolean inf, Resource... ctx)
-			throws Exception {
+	private int size(RepositoryConnection con, Resource subj, IRI pred, Value obj, boolean inf, Resource... ctx) {
 		return QueryResults.asList(con.getStatements(subj, pred, obj, inf, ctx)).size();
 	}
 
-	private List<Value> eval(String var, RepositoryConnection con, String qry) throws Exception {
+	private List<Value> eval(String var, RepositoryConnection con, String qry) {
 		try (TupleQueryResult result = con.prepareTupleQuery(QueryLanguage.SPARQL, qry, NS).evaluate()) {
 			List<Value> list = new ArrayList<>();
 			while (result.hasNext()) {

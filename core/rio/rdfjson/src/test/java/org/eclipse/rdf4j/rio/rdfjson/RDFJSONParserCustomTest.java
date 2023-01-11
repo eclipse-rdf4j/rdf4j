@@ -123,7 +123,7 @@ public class RDFJSONParserCustomTest {
 			.createLiteral("42\u0009", XSD.STRING);
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp() {
 		parser = Rio.createParser(RDFFormat.RDFJSON);
 		errors = new ParseErrorCollector();
 		model = new LinkedHashModel();
@@ -131,7 +131,7 @@ public class RDFJSONParserCustomTest {
 		parser.setRDFHandler(new ContextStatementCollector(model, SimpleValueFactory.getInstance()));
 	}
 
-	private void verifyParseResults(Resource nextSubject, IRI nextPredicate, Value nextObject) throws Exception {
+	private void verifyParseResults(Resource nextSubject, IRI nextPredicate, Value nextObject) {
 		assertEquals(0, errors.getWarnings().size());
 		assertEquals(0, errors.getErrors().size());
 		assertEquals(0, errors.getFatalErrors().size());
@@ -142,7 +142,7 @@ public class RDFJSONParserCustomTest {
 	}
 
 	@Test
-	public void testSupportedSettings() throws Exception {
+	public void testSupportedSettings() {
 		// 17 supported in RDFJSONParser + 13 from AbstractRDFParser
 		assertEquals(30, parser.getSupportedSettings().size());
 	}

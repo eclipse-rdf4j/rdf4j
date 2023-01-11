@@ -72,17 +72,17 @@ public class ShaclSailFactoryTest {
 
 		AbstractNotifyingSail sailThatDoesntSupportSnapshotIsolation = new AbstractNotifyingSail() {
 			@Override
-			protected void shutDownInternal() throws SailException {
+			protected void shutDownInternal() {
 
 			}
 
 			@Override
-			protected NotifyingSailConnection getConnectionInternal() throws SailException {
+			protected NotifyingSailConnection getConnectionInternal() {
 				return null;
 			}
 
 			@Override
-			public boolean isWritable() throws SailException {
+			public boolean isWritable() {
 				return false;
 			}
 

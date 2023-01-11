@@ -118,7 +118,7 @@ public class QueryBenchmark {
 	}
 
 	@Setup(Level.Trial)
-	public void beforeClass() throws IOException, InterruptedException {
+	public void beforeClass() throws IOException {
 		tempDir.create();
 		File file = tempDir.newFolder();
 

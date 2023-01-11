@@ -22,17 +22,17 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  * @author Andreas Schwarte
  */
 @Deprecated(since = "4.1.0")
-public class InsertBindingsIteration extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
+public class InsertBindingsIteration extends ConvertingIteration<BindingSet, BindingSet> {
 
 	protected final BindingSet bindings;
 
-	public InsertBindingsIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter, BindingSet bindings) {
+	public InsertBindingsIteration(CloseableIteration<BindingSet> iter, BindingSet bindings) {
 		super(iter);
 		this.bindings = bindings;
 	}
 
 	@Override
-	protected BindingSet convert(BindingSet bIn) throws QueryEvaluationException {
+	protected BindingSet convert(BindingSet bIn) {
 		QueryBindingSet res = new QueryBindingSet(bindings.size() + bIn.size());
 		res.addAll(bindings);
 		res.addAll(bIn);

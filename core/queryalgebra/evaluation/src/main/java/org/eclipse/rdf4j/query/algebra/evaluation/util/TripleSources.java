@@ -33,31 +33,28 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 @Deprecated(since = "4.1.0", forRemoval = true)
 public class TripleSources {
 
-	private static final ValueFactory vf = SimpleValueFactory.getInstance();
-
 	TripleSources() {
 	}
 
-	public static CloseableIteration<Resource, QueryEvaluationException> listResources(Resource subj,
-			TripleSource store) throws QueryEvaluationException {
-		return new ConvertingIteration<Value, Resource, QueryEvaluationException>(
+	public static CloseableIteration<Resource> listResources(Resource subj,
+			TripleSource store) {
+		return new ConvertingIteration<Value, Resource>(
 				new FilterIteration<>(list(subj, store)) {
 
 					@Override
-					protected boolean accept(Value v) throws QueryEvaluationException {
+					protected boolean accept(Value v) {
 						return (v instanceof Resource);
 					}
 				}) {
 
 			@Override
-			protected Resource convert(Value v) throws QueryEvaluationException {
+			protected Resource convert(Value v) {
 				return (Resource) v;
 			}
 		};
 	}
 
-	public static CloseableIteration<Value, QueryEvaluationException> list(final Resource subj,
-			final TripleSource store) throws QueryEvaluationException {
+	public static CloseableIteration<Value> list(final Resource subj, final TripleSource store) {
 		if (subj == null) {
 			throw new NullPointerException("RDF list subject cannot be null");
 		}
@@ -66,17 +63,17 @@ public class TripleSources {
 			Resource list = subj;
 
 			@Override
-			public void close() throws QueryEvaluationException {
+			public void close() {
 
 			}
 
 			@Override
-			public boolean hasNext() throws QueryEvaluationException {
+			public boolean hasNext() {
 				return !RDF.NIL.equals(list);
 			}
 
 			@Override
-			public Value next() throws QueryEvaluationException {
+			public Value next() {
 				Value v = singleValue(list, RDF.FIRST, store);
 				if (v == null) {
 					throw new QueryEvaluationException("List missing rdf:first: " + list);
@@ -90,13 +87,13 @@ public class TripleSources {
 			}
 
 			@Override
-			public void remove() throws QueryEvaluationException {
+			public void remove() {
 				throw new UnsupportedOperationException();
 			}
 		};
 	}
 
-	public static boolean booleanValue(Resource subj, IRI pred, TripleSource store) throws QueryEvaluationException {
+	public static boolean booleanValue(Resource subj, IRI pred, TripleSource store) {
 		Value v = TripleSources.singleValue(subj, pred, store);
 		if (v == null) {
 			return false;
@@ -112,7 +109,7 @@ public class TripleSources {
 		}
 	}
 
-	public static Value singleValue(Resource subj, IRI pred, TripleSource store) throws QueryEvaluationException {
+	public static Value singleValue(Resource subj, IRI pred, TripleSource store) {
 		Statement stmt = single(subj, pred, null, store);
 		return (stmt != null) ? stmt.getObject() : null;
 	}
@@ -126,10 +123,9 @@ public class TripleSources {
 	 * @param obj  null for any.
 	 * @throws QueryEvaluationException If there is more than one such statement.
 	 */
-	public static Statement single(Resource subj, IRI pred, Value obj, TripleSource store)
-			throws QueryEvaluationException {
+	public static Statement single(Resource subj, IRI pred, Value obj, TripleSource store) {
 		Statement stmt;
-		try (CloseableIteration<? extends Statement, QueryEvaluationException> stmts = store.getStatements(subj, pred,
+		try (CloseableIteration<? extends Statement> stmts = store.getStatements(subj, pred,
 				obj)) {
 			if (stmts.hasNext()) {
 				stmt = stmts.next();
@@ -147,76 +143,76 @@ public class TripleSources {
 		return stmt;
 	}
 
-	public static CloseableIteration<IRI, QueryEvaluationException> getSubjectURIs(IRI predicate,
-			Value object, TripleSource store) throws QueryEvaluationException {
+	public static CloseableIteration<IRI> getSubjectURIs(IRI predicate,
+			Value object, TripleSource store) {
 		return new ConvertingIteration<>(
-				new FilterIteration<Statement, QueryEvaluationException>(store.getStatements(null, predicate, object)) {
+				new FilterIteration<Statement>(store.getStatements(null, predicate, object)) {
 
 					@Override
-					protected boolean accept(Statement stmt) throws QueryEvaluationException {
+					protected boolean accept(Statement stmt) {
 						return (stmt.getSubject() instanceof IRI);
 					}
 				}) {
 
 			@Override
-			protected IRI convert(Statement stmt) throws QueryEvaluationException {
+			protected IRI convert(Statement stmt) {
 				return (IRI) stmt.getSubject();
 			}
 		};
 	}
 
-	public static CloseableIteration<Resource, QueryEvaluationException> getObjectResources(Resource subject,
-			IRI predicate, TripleSource store) throws QueryEvaluationException {
+	public static CloseableIteration<Resource> getObjectResources(Resource subject,
+			IRI predicate, TripleSource store) {
 		return new ConvertingIteration<>(
-				new FilterIteration<Statement, QueryEvaluationException>(
+				new FilterIteration<Statement>(
 						store.getStatements(subject, predicate, null)) {
 
 					@Override
-					protected boolean accept(Statement stmt) throws QueryEvaluationException {
+					protected boolean accept(Statement stmt) {
 						return (stmt.getObject() instanceof Resource);
 					}
 				}) {
 
 			@Override
-			protected Resource convert(Statement stmt) throws QueryEvaluationException {
+			protected Resource convert(Statement stmt) {
 				return (Resource) stmt.getObject();
 			}
 		};
 	}
 
-	public static CloseableIteration<IRI, QueryEvaluationException> getObjectURIs(Resource subject,
-			IRI predicate, TripleSource store) throws QueryEvaluationException {
+	public static CloseableIteration<IRI> getObjectURIs(Resource subject,
+			IRI predicate, TripleSource store) {
 		return new ConvertingIteration<>(
-				new FilterIteration<Statement, QueryEvaluationException>(
+				new FilterIteration<Statement>(
 						store.getStatements(subject, predicate, null)) {
 
 					@Override
-					protected boolean accept(Statement stmt) throws QueryEvaluationException {
+					protected boolean accept(Statement stmt) {
 						return (stmt.getObject() instanceof IRI);
 					}
 				}) {
 
 			@Override
-			protected IRI convert(Statement stmt) throws QueryEvaluationException {
+			protected IRI convert(Statement stmt) {
 				return (IRI) stmt.getObject();
 			}
 		};
 	}
 
-	public static CloseableIteration<Literal, QueryEvaluationException> getObjectLiterals(Resource subject,
-			IRI predicate, TripleSource store) throws QueryEvaluationException {
+	public static CloseableIteration<Literal> getObjectLiterals(Resource subject,
+			IRI predicate, TripleSource store) {
 		return new ConvertingIteration<>(
-				new FilterIteration<Statement, QueryEvaluationException>(
+				new FilterIteration<Statement>(
 						store.getStatements(subject, predicate, null)) {
 
 					@Override
-					protected boolean accept(Statement stmt) throws QueryEvaluationException {
+					protected boolean accept(Statement stmt) {
 						return (stmt.getObject() instanceof Literal);
 					}
 				}) {
 
 			@Override
-			protected Literal convert(Statement stmt) throws QueryEvaluationException {
+			protected Literal convert(Statement stmt) {
 				return (Literal) stmt.getObject();
 			}
 		};

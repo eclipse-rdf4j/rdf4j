@@ -116,7 +116,7 @@ public final class QueryEvaluator {
 	 */
 	public void evaluateTupleQuery(final TupleResultBuilder builder, String xslPath, WorkbenchRequest req,
 			HttpServletResponse resp, CookieHandler cookies, final TupleQuery query, boolean writeCookie, boolean paged,
-			int offset, int limit) throws QueryEvaluationException, QueryResultHandlerException {
+			int offset, int limit) throws QueryResultHandlerException {
 		final TupleQueryResult result = query.evaluate();
 		final String[] names = result.getBindingNames().toArray(new String[0]);
 		List<BindingSet> bindings = Iterations.asList(result);
@@ -160,7 +160,7 @@ public final class QueryEvaluator {
 	 * @throws QueryResultHandlerException
 	 */
 	public void evaluateTupleQuery(final TupleResultBuilder builder, final TupleQuery query)
-			throws QueryEvaluationException, QueryResultHandlerException {
+			throws QueryResultHandlerException {
 		try (TupleQueryResult result = query.evaluate()) {
 			final String[] names = result.getBindingNames().toArray(new String[0]);
 			builder.variables(names);
@@ -188,7 +188,7 @@ public final class QueryEvaluator {
 	 */
 	private void evaluateGraphQuery(final TupleResultBuilder builder, String xslPath, WorkbenchRequest req,
 			HttpServletResponse resp, CookieHandler cookies, final GraphQuery query, boolean writeCookie, boolean paged,
-			int offset, int limit) throws QueryEvaluationException, QueryResultHandlerException {
+			int offset, int limit) throws QueryResultHandlerException {
 		List<Statement> statements = Iterations.asList(query.evaluate());
 		if (writeCookie) {
 			cookies.addTotalResultCountCookie(req, resp, statements.size());
@@ -213,12 +213,12 @@ public final class QueryEvaluator {
 	}
 
 	private void evaluateGraphQuery(final RDFWriter writer, final GraphQuery query)
-			throws QueryEvaluationException, RDFHandlerException {
+			throws RDFHandlerException {
 		query.evaluate(writer);
 	}
 
 	private void evaluateBooleanQuery(final TupleResultBuilder builder, final BooleanQuery query)
-			throws QueryEvaluationException, QueryResultHandlerException {
+			throws QueryResultHandlerException {
 		final boolean result = query.evaluate();
 		builder.link(List.of(INFO));
 		builder.bool(result);

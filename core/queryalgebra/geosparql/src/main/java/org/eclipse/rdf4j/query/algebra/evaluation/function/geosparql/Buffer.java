@@ -49,11 +49,7 @@ public class Buffer implements Function {
 		Shape buffered = SpatialSupport.getSpatialAlgebra().buffer(geom, radiusDegs);
 
 		String wkt;
-		try {
-			wkt = SpatialSupport.getWktWriter().toWkt(buffered);
-		} catch (IOException ioe) {
-			throw new ValueExprEvaluationException(ioe);
-		}
+		wkt = SpatialSupport.getWktWriter().toWkt(buffered);
 		return valueFactory.createLiteral(wkt, GEO.WKT_LITERAL);
 	}
 }

@@ -12,12 +12,12 @@ package org.eclipse.rdf4j.common.iteration;
 
 public class EmptyIterationTest extends CloseableIterationTest {
 
-	protected static EmptyIteration<String, Exception> createEmptyIteration() {
+	protected static EmptyIteration<String> createEmptyIteration() {
 		return new EmptyIteration<>();
 	}
 
 	@Override
-	protected CloseableIteration<String, Exception> createTestIteration() {
+	protected CloseableIteration<String> createTestIteration() {
 		return createEmptyIteration();
 	}
 

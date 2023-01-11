@@ -162,19 +162,19 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	}
 
 	@Override
-	public CloseableIteration<? extends ExtensibleStatement, SailException> getStatements(Resource subject,
+	public CloseableIteration<? extends ExtensibleStatement> getStatements(Resource subject,
 			IRI predicate,
 			Value object, boolean inferred, Resource... context) {
 
 		QueryBuilder queryBuilder = getQueryBuilder(subject, predicate, object, inferred, context);
 
-		return new LookAheadIteration<ExtensibleStatement, SailException>() {
+		return new LookAheadIteration<ExtensibleStatement>() {
 
-			final CloseableIteration<SearchHit, RuntimeException> iterator = ElasticsearchHelper
+			final CloseableIteration<SearchHit> iterator = ElasticsearchHelper
 					.getScrollingIterator(queryBuilder, clientProvider.getClient(), index, scrollTimeout);
 
 			@Override
-			protected ExtensibleStatement getNextElement() throws SailException {
+			protected ExtensibleStatement getNextElement() {
 
 				ExtensibleStatement next = null;
 
@@ -205,14 +205,14 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 			}
 
 			@Override
-			public void remove() throws SailException {
+			public void remove() {
 
 				throw new IllegalStateException("Does not support removing from iterator");
 
 			}
 
 			@Override
-			protected void handleClose() throws SailException {
+			protected void handleClose() {
 				super.handleClose();
 				iterator.close();
 			}
@@ -584,7 +584,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 		// Elasticsearch delete by query is slow. It's still faster when deleting a lot of data. We assume that
 		// getStatement and bulk delete is faster up to 1000 statements. If there are more, then we instead use
 		// elasticsearch delete by query.
-		try (CloseableIteration<? extends ExtensibleStatement, SailException> statements = getStatements(subj, pred,
+		try (CloseableIteration<? extends ExtensibleStatement> statements = getStatements(subj, pred,
 				obj,
 				inferred, contexts)) {
 			List<ExtensibleStatement> statementsToDelete = new ArrayList<>();

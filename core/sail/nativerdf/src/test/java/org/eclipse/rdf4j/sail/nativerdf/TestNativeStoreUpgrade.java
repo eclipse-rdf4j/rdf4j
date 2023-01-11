@@ -47,7 +47,7 @@ public class TestNativeStoreUpgrade {
 	public final TemporaryFolder tmpDir = new TemporaryFolder();
 
 	@Test
-	public void testDevel() throws IOException, SailException {
+	public void testDevel() throws SailException {
 		File dataDir = tmpDir.getRoot();
 		NativeStore store = new NativeStore(dataDir);
 		try {
@@ -91,13 +91,13 @@ public class TestNativeStoreUpgrade {
 
 	}
 
-	public void assertValue(File dataDir) throws SailException {
+	public void assertValue(File dataDir) {
 		NativeStore store = new NativeStore(dataDir);
 		try {
 			store.init();
 			try (NotifyingSailConnection con = store.getConnection()) {
 				ValueFactory vf = store.getValueFactory();
-				CloseableIteration<? extends Statement, SailException> iter;
+				CloseableIteration<? extends Statement> iter;
 				iter = con.getStatements(RDF.VALUE, RDFS.LABEL, vf.createLiteral("value"), false);
 				try {
 					assertTrue(iter.hasNext());

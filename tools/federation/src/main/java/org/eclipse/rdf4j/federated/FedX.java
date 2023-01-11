@@ -155,7 +155,7 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 	}
 
 	@Override
-	protected SailConnection getConnectionInternal() throws SailException {
+	protected SailConnection getConnectionInternal() {
 		return new FedXConnection(this, federationContext);
 	}
 
@@ -170,14 +170,14 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 	}
 
 	@Override
-	protected void initializeInternal() throws SailException {
+	protected void initializeInternal() {
 		log.debug("Initializing federation....");
 		for (Endpoint member : members) {
 			initializeMember(member);
 		}
 	}
 
-	protected void initializeMember(Endpoint member) throws SailException {
+	protected void initializeMember(Endpoint member) {
 		if (member.isInitialized()) {
 			log.warn("Endpoint " + member.getId() + " was already initialized.");
 			return;
@@ -196,7 +196,7 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 	}
 
 	@Override
-	public boolean isWritable() throws SailException {
+	public boolean isWritable() {
 		// the federation is writable if there is a WriteStrategy defined
 		return !(getWriteStrategy() instanceof ReadOnlyWriteStrategy);
 	}
@@ -212,7 +212,7 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 	 * @throws FedXException if not all members could be shut down
 	 */
 	@Override
-	protected void shutDownInternal() throws SailException {
+	protected void shutDownInternal() {
 
 		List<Exception> errors = new ArrayList<>();
 		for (Endpoint member : members) {

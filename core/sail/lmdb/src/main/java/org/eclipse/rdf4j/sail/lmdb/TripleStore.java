@@ -248,7 +248,7 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private void checkVersion() throws SailException {
+	private void checkVersion() {
 		// Check version number
 		String versionStr = properties.getProperty(VERSION_KEY);
 		if (versionStr == null) {
@@ -265,7 +265,7 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private Set<String> getIndexSpecs() throws SailException {
+	private Set<String> getIndexSpecs() {
 		String indexesStr = properties.getProperty(INDEXES_KEY);
 
 		if (indexesStr == null) {
@@ -292,7 +292,7 @@ class TripleStore implements Closeable {
 	 * @param indexSpecStr A string like "spoc, pocs, cosp".
 	 * @return A Set containing the parsed index specifications.
 	 */
-	private Set<String> parseIndexSpecList(String indexSpecStr) throws SailException {
+	private Set<String> parseIndexSpecList(String indexSpecStr) {
 		Set<String> indexes = new HashSet<>();
 
 		if (indexSpecStr != null) {
@@ -1093,12 +1093,12 @@ class TripleStore implements Closeable {
 			pool.close();
 		}
 
-		void clear(long txn) throws IOException {
+		void clear(long txn) {
 			mdb_drop(txn, dbiExplicit, false);
 			mdb_drop(txn, dbiInferred, false);
 		}
 
-		void destroy(long txn) throws IOException {
+		void destroy(long txn) {
 			mdb_drop(txn, dbiExplicit, true);
 			mdb_drop(txn, dbiInferred, true);
 		}

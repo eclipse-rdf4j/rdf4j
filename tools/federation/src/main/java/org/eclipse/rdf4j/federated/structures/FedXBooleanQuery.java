@@ -39,7 +39,7 @@ public class FedXBooleanQuery extends SailBooleanQuery {
 	}
 
 	@Override
-	public boolean evaluate() throws QueryEvaluationException {
+	public boolean evaluate() {
 		FedXUtil.applyQueryBindings(this);
 		return delegate.evaluate();
 	}

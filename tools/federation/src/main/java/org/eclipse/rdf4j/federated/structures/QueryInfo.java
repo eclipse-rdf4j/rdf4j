@@ -167,7 +167,7 @@ public class QueryInfo {
 	 * @param task
 	 * @throws QueryEvaluationException if the query has been aborted or closed
 	 */
-	public synchronized void registerScheduledTask(ParallelTask<?> task) throws QueryEvaluationException {
+	public synchronized void registerScheduledTask(ParallelTask<?> task) {
 		if (done) {
 			task.cancel();
 			throw new QueryEvaluationException("Query is aborted or closed, cannot accept new tasks");

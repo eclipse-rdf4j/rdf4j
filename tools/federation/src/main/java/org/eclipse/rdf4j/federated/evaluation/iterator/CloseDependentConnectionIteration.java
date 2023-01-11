@@ -22,21 +22,21 @@ import org.slf4j.LoggerFactory;
  *
  * @author Andreas Schwarte
  */
-public class CloseDependentConnectionIteration<T> extends AbstractCloseableIteration<T, QueryEvaluationException> {
+public class CloseDependentConnectionIteration<T> extends AbstractCloseableIteration<T> {
 
 	private static final Logger logger = LoggerFactory.getLogger(CloseDependentConnectionIteration.class);
 
-	protected final CloseableIteration<T, QueryEvaluationException> inner;
+	protected final CloseableIteration<T> inner;
 	protected final RepositoryConnection dependentConn;
 
-	public CloseDependentConnectionIteration(CloseableIteration<T, QueryEvaluationException> inner,
+	public CloseDependentConnectionIteration(CloseableIteration<T> inner,
 			RepositoryConnection dependentConn) {
 		this.inner = inner;
 		this.dependentConn = dependentConn;
 	}
 
 	@Override
-	public boolean hasNext() throws QueryEvaluationException {
+	public boolean hasNext() {
 		try {
 			boolean res = inner.hasNext();
 			if (!res) {
@@ -50,7 +50,7 @@ public class CloseDependentConnectionIteration<T> extends AbstractCloseableItera
 	}
 
 	@Override
-	public T next() throws QueryEvaluationException {
+	public T next() {
 		try {
 			return inner.next();
 		} catch (Throwable t) {
@@ -60,7 +60,7 @@ public class CloseDependentConnectionIteration<T> extends AbstractCloseableItera
 	}
 
 	@Override
-	public void remove() throws QueryEvaluationException {
+	public void remove() {
 		try {
 			inner.remove();
 		} catch (Throwable t) {
@@ -70,7 +70,7 @@ public class CloseDependentConnectionIteration<T> extends AbstractCloseableItera
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected void handleClose() {
 		try {
 			inner.close();
 		} finally {

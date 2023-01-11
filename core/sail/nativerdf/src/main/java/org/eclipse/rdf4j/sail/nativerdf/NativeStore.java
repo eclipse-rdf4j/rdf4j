@@ -294,10 +294,10 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	/**
 	 * Initializes this NativeStore.
 	 *
-	 * @throws SailException If this NativeStore could not be initialized using the parameters that have been set.
+	 * @If this NativeStore could not be initialized using the parameters that have been set.
 	 */
 	@Override
-	protected void initializeInternal() throws SailException {
+	protected void initializeInternal() {
 		logger.debug("Initializing NativeStore...");
 
 		// Check initialization parameters
@@ -373,7 +373,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	}
 
 	@Override
-	protected void shutDownInternal() throws SailException {
+	protected void shutDownInternal() {
 		logger.debug("Shutting down NativeStore...");
 
 		try {
@@ -402,7 +402,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	}
 
 	@Override
-	public void shutDown() throws SailException {
+	public void shutDown() {
 		super.shutDown();
 		// edge case when re-initialize after shutdown
 		if (isTmpDatadir) {
@@ -416,12 +416,8 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	}
 
 	@Override
-	protected NotifyingSailConnection getConnectionInternal() throws SailException {
-		try {
-			return new NativeStoreConnection(this);
-		} catch (IOException e) {
-			throw new SailException(e);
-		}
+	protected NotifyingSailConnection getConnectionInternal() {
+		return new NativeStoreConnection(this);
 	}
 
 	@Override
@@ -440,7 +436,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	 * @return Lock used to prevent Store from switching isolation modes
 	 * @throws SailException
 	 */
-	protected Lock getTransactionLock(IsolationLevel level) throws SailException {
+	protected Lock getTransactionLock(IsolationLevel level) {
 		txnLockManager.lock();
 		try {
 			if (IsolationLevels.NONE.isCompatibleWith(level)) {

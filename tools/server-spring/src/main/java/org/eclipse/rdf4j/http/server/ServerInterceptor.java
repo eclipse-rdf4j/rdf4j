@@ -51,9 +51,8 @@ public abstract class ServerInterceptor extends HandlerInterceptorAdapter {
 	 * Determine the thread name to use. Called before the request is forwarded to a handler.
 	 *
 	 * @return a name that makes sense based on the request
-	 * @throws ServerHTTPException if it was impossible to determine a name due to an internal error
 	 */
-	protected abstract String getThreadName() throws ServerHTTPException;
+	protected abstract String getThreadName();
 
 	/**
 	 * Set attributes for this request. Called before the request is forwarded to a handler. By default, this method
@@ -71,8 +70,7 @@ public abstract class ServerInterceptor extends HandlerInterceptorAdapter {
 	 * Clean up resources used in handling this request. Called after the request is handled and a the view is rendered
 	 * (or an exception has occurred). By default, this method does nothing.
 	 *
-	 * @throws ServerHTTPException if some resources could not be cleaned up because of an internal error
 	 */
-	protected void cleanUpResources() throws ServerHTTPException {
+	protected void cleanUpResources() {
 	}
 }

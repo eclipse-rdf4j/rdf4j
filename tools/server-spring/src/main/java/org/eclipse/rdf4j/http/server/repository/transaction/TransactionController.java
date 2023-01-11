@@ -227,7 +227,7 @@ public class TransactionController extends AbstractController implements Disposa
 	}
 
 	private ModelAndView processModificationOperation(Transaction transaction, Action action,
-			HttpServletRequest request, HttpServletResponse response) throws IOException, HTTPException {
+			HttpServletRequest request, HttpServletResponse response) throws HTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		Map<String, Object> model = new HashMap<>();
@@ -676,8 +676,7 @@ public class TransactionController extends AbstractController implements Disposa
 
 	// Comes from disposableBean interface so to be able to stop the ActiveTransactionRegistry scheduler
 	@Override
-	public void destroy()
-			throws Exception {
+	public void destroy() {
 		ActiveTransactionRegistry.INSTANCE.destroyScheduler();
 	}
 

@@ -77,25 +77,25 @@ public class UnionNode implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<ValidationTuple> iterator() {
 
 		if (nodes.length == 1) {
 			return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-				final CloseableIteration<? extends ValidationTuple, SailException> iterator = nodes[0].iterator();
+				final CloseableIteration<? extends ValidationTuple> iterator = nodes[0].iterator();
 
 				@Override
-				public void localClose() throws SailException {
+				public void localClose() {
 					iterator.close();
 				}
 
 				@Override
-				protected ValidationTuple loggingNext() throws SailException {
+				protected ValidationTuple loggingNext() {
 					return iterator.next();
 				}
 
 				@Override
-				protected boolean localHasNext() throws SailException {
+				protected boolean localHasNext() {
 					return iterator.hasNext();
 				}
 			};
@@ -103,7 +103,7 @@ public class UnionNode implements PlanNode {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseableIteration<? extends ValidationTuple, SailException>[] iterators = Arrays
+			final CloseableIteration<? extends ValidationTuple>[] iterators = Arrays
 					.stream(nodes)
 					.map(PlanNode::iterator)
 					.toArray(CloseableIteration[]::new);
@@ -156,7 +156,7 @@ public class UnionNode implements PlanNode {
 			}
 
 			@Override
-			public void localClose() throws SailException {
+			public void localClose() {
 				Throwable thrown = null;
 				for (int i = 0; i < iterators.length; i++) {
 					try {
@@ -178,13 +178,13 @@ public class UnionNode implements PlanNode {
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				calculateNext();
 				return next != null;
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 				calculateNext();
 
 				assert !(prev != null && next.compareActiveTarget(prev) < 0);

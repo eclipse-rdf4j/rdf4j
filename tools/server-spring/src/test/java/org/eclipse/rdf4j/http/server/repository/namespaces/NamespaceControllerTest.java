@@ -36,7 +36,7 @@ class NamespaceControllerTest {
 	private MockHttpServletResponse response;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		request = new MockHttpServletRequest();
 		request.setAttribute("repositoryID", REPO_ID);
 		request.setAttribute("repository", new SailRepository(new MemoryStore()));

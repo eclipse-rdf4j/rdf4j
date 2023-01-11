@@ -59,10 +59,9 @@ public class TriGParserCustomTest {
 	private StatementCollector statementCollector;
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp() throws Exception {
+	public void setUp() {
 		vf = SimpleValueFactory.getInstance();
 		settingsNoVerifyLangTag = new ParserConfig();
 		settingsNoVerifyLangTag.set(BasicParserSettings.VERIFY_LANGUAGE_TAGS, false);
@@ -197,7 +196,7 @@ public class TriGParserCustomTest {
 	}
 
 	@Test
-	public void testSupportedSettings() throws Exception {
+	public void testSupportedSettings() {
 		assertThat(Rio.createParser(RDFFormat.TRIG).getSupportedSettings()).hasSize(15);
 	}
 

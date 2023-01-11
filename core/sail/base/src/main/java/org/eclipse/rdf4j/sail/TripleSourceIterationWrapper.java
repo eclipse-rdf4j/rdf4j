@@ -19,12 +19,12 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 @InternalUseOnly
-public class TripleSourceIterationWrapper<T> implements CloseableIteration<T, QueryEvaluationException> {
+public class TripleSourceIterationWrapper<T> implements CloseableIteration<T> {
 
-	private final CloseableIteration<? extends T, SailException> delegate;
+	private final CloseableIteration<? extends T> delegate;
 	private boolean closed = false;
 
-	public TripleSourceIterationWrapper(CloseableIteration<? extends T, SailException> delegate) {
+	public TripleSourceIterationWrapper(CloseableIteration<? extends T> delegate) {
 		this.delegate = Objects.requireNonNull(delegate, "The iterator was null");
 	}
 
@@ -35,7 +35,7 @@ public class TripleSourceIterationWrapper<T> implements CloseableIteration<T, Qu
 	 * @throws QueryEvaluationException
 	 */
 	@Override
-	public boolean hasNext() throws QueryEvaluationException {
+	public boolean hasNext() {
 		if (closed) {
 			return false;
 		}
@@ -63,7 +63,7 @@ public class TripleSourceIterationWrapper<T> implements CloseableIteration<T, Qu
 	 * @throws IllegalStateException    If the iteration has been closed.
 	 */
 	@Override
-	public T next() throws QueryEvaluationException {
+	public T next() {
 		if (closed) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
@@ -91,7 +91,7 @@ public class TripleSourceIterationWrapper<T> implements CloseableIteration<T, Qu
 	 *                                       {@link #next}.
 	 */
 	@Override
-	public void remove() throws QueryEvaluationException {
+	public void remove() {
 		if (closed) {
 			throw new IllegalStateException("The iteration has been closed.");
 		}
@@ -108,7 +108,7 @@ public class TripleSourceIterationWrapper<T> implements CloseableIteration<T, Qu
 	}
 
 	@Override
-	public final void close() throws QueryEvaluationException {
+	public final void close() {
 		if (!closed) {
 			closed = true;
 			delegate.close();

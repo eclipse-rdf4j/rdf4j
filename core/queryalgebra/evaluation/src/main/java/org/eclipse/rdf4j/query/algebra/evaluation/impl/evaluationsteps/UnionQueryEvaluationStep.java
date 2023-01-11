@@ -28,9 +28,9 @@ public class UnionQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
-		CloseableIteration<BindingSet, QueryEvaluationException> evaluate = null;
-		CloseableIteration<BindingSet, QueryEvaluationException> evaluate1 = null;
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		CloseableIteration<BindingSet> evaluate = null;
+		CloseableIteration<BindingSet> evaluate1 = null;
 
 		try {
 			evaluate = leftQes.evaluate(bindings);

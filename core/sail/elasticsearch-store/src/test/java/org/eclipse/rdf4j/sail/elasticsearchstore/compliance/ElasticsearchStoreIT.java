@@ -52,7 +52,7 @@ public class ElasticsearchStoreIT extends RDFNotifyingStoreTest {
 	}
 
 	@Override
-	protected NotifyingSail createSail() throws SailException {
+	protected NotifyingSail createSail() {
 		NotifyingSail sail = new ElasticsearchStore(clientPool, "index1");
 		try (NotifyingSailConnection connection = sail.getConnection()) {
 			connection.begin();

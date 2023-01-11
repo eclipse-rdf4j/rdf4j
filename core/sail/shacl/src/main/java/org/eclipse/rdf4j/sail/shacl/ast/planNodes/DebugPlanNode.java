@@ -14,7 +14,6 @@ import java.util.function.Consumer;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * Used for adding a custom log statement to tuples as they pass through. Should only be used for debugging.
@@ -46,7 +45,7 @@ public class DebugPlanNode implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<ValidationTuple> iterator() {
 
 		if (validationExecutionLogger == null && validationExecutionLogger.isEnabled()) {
 			throw new IllegalStateException("Did not receive validationExecutionLogger before .iterator() was called!");
@@ -54,15 +53,15 @@ public class DebugPlanNode implements PlanNode {
 
 		return new CloseableIteration<>() {
 
-			final CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator();
+			final CloseableIteration<? extends ValidationTuple> iterator = parent.iterator();
 
 			@Override
-			public boolean hasNext() throws SailException {
+			public boolean hasNext() {
 				return iterator.hasNext();
 			}
 
 			@Override
-			public ValidationTuple next() throws SailException {
+			public ValidationTuple next() {
 				ValidationTuple next = iterator.next();
 				if (debugPoint != null) {
 					debugPoint.accept(next);
@@ -75,12 +74,12 @@ public class DebugPlanNode implements PlanNode {
 			}
 
 			@Override
-			public void remove() throws SailException {
+			public void remove() {
 				iterator.remove();
 			}
 
 			@Override
-			public void close() throws SailException {
+			public void close() {
 				iterator.close();
 			}
 		};

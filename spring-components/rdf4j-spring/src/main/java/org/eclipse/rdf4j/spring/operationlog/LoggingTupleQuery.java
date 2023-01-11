@@ -33,13 +33,13 @@ public class LoggingTupleQuery extends DelegatingTupleQuery {
 	}
 
 	@Override
-	public TupleQueryResult evaluate() throws QueryEvaluationException {
+	public TupleQueryResult evaluate() {
 		return operationLog.runWithLog(getDelegate(), () -> getDelegate().evaluate());
 	}
 
 	@Override
 	public void evaluate(TupleQueryResultHandler handler)
-			throws QueryEvaluationException, TupleQueryResultHandlerException {
+			throws TupleQueryResultHandlerException {
 		operationLog.runWithLog(getDelegate(), () -> getDelegate().evaluate(handler));
 	}
 }

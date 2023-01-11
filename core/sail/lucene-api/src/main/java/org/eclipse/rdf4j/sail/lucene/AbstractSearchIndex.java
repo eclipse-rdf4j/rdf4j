@@ -508,7 +508,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	}
 
 	@Override
-	public final Collection<BindingSet> evaluate(SearchQueryEvaluator evaluator) throws SailException {
+	public final Collection<BindingSet> evaluate(SearchQueryEvaluator evaluator) {
 		if (evaluator instanceof QuerySpec) {
 			QuerySpec query = (QuerySpec) evaluator;
 			Iterable<? extends DocumentScore> result = evaluateQuery(query);
@@ -561,8 +561,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	 * @return a LinkedHashSet containing generated bindings
 	 * @throws SailException
 	 */
-	private Collection<BindingSet> generateBindingSets(QuerySpec query, Iterable<? extends DocumentScore> hits)
-			throws SailException {
+	private Collection<BindingSet> generateBindingSets(QuerySpec query, Iterable<? extends DocumentScore> hits) {
 		// Since one resource can be returned many times, it can lead now to
 		// multiple occurrences
 		// of the same binding tuple in the BINDINGS clause. This in turn leads to
@@ -734,7 +733,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	}
 
 	private Collection<BindingSet> generateBindingSets(DistanceQuerySpec query,
-			Iterable<? extends DocumentDistance> hits) throws SailException {
+			Iterable<? extends DocumentDistance> hits) {
 		// Since one resource can be returned many times, it can lead now to
 		// multiple occurrences
 		// of the same binding tuple in the BINDINGS clause. This in turn leads to
@@ -834,7 +833,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	}
 
 	private Collection<BindingSet> generateBindingSets(GeoRelationQuerySpec query,
-			Iterable<? extends DocumentResult> hits) throws SailException {
+			Iterable<? extends DocumentResult> hits) {
 		// Since one resource can be returned many times, it can lead now to
 		// multiple occurrences
 		// of the same binding tuple in the BINDINGS clause. This in turn leads to

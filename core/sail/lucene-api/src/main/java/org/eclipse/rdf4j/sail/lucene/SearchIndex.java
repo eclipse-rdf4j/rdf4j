@@ -88,9 +88,8 @@ public interface SearchIndex {
 	/**
 	 * Begins a transaction.
 	 *
-	 * @throws java.io.IOException
 	 */
-	void begin() throws IOException;
+	void begin();
 
 	/**
 	 * Commits any changes done to the LuceneIndex since the last commit.The semantics is synchronous to

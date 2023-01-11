@@ -45,7 +45,7 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 	}
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp() {
 		parser = rdfParserFactory.getParser();
 		vf = SimpleValueFactory.getInstance();
 	}

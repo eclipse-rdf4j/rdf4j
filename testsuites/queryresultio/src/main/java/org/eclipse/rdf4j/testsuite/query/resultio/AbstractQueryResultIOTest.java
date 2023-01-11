@@ -104,7 +104,7 @@ public abstract class AbstractQueryResultIOTest {
 	 * {@link org.eclipse.rdf4j.query.resultio.QueryResultIO#getParserFormatForFileName(java.lang.String)} .
 	 */
 	@Test
-	public final void testGetParserFormatForFileNameString() throws Exception {
+	public final void testGetParserFormatForFileNameString() {
 		String fileName = getFileName();
 
 		Optional<QueryResultFormat> format;
@@ -447,14 +447,14 @@ public abstract class AbstractQueryResultIOTest {
 	}
 
 	protected void assertQueryResultsEqual(TupleQueryResult expected, TupleQueryResult output)
-			throws QueryEvaluationException, TupleQueryResultHandlerException, QueryResultHandlerException,
+			throws TupleQueryResultHandlerException, QueryResultHandlerException,
 			UnsupportedEncodingException {
 		assertTrue(QueryResults.equals(expected, output));
 	}
 
 	protected void doTupleMissingStartQueryResult(TupleQueryResultFormat format, TupleQueryResult input,
 			TupleQueryResult expected, List<String> links, String stylesheetUrl) throws QueryResultHandlerException,
-			QueryEvaluationException, QueryResultParseException, UnsupportedQueryResultFormatException, IOException {
+			QueryEvaluationException, QueryResultParseException, UnsupportedQueryResultFormatException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
 		// Test for handling when startDocument and startHeader are not called
@@ -569,7 +569,7 @@ public abstract class AbstractQueryResultIOTest {
 	}
 
 	protected void doInvalidBooleanAfterStartQueryResult(BooleanQueryResultFormat format, boolean input,
-			List<String> links) throws IOException, QueryResultHandlerException, QueryResultParseException,
+			List<String> links) throws QueryResultHandlerException, QueryResultParseException,
 			UnsupportedQueryResultFormatException, QueryEvaluationException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		BooleanQueryResultWriter writer = QueryResultIO.createBooleanWriter(format, out);

@@ -77,12 +77,11 @@ public class Drop extends ConsoleCommand {
 	 * Try to drop a repository after confirmation from user
 	 *
 	 * @param repoID repository ID
-	 * @throws IOException
 	 * @throws RepositoryException
 	 * @throws RepositoryConfigException
 	 */
 	private void dropRepository(final String repoID)
-			throws IOException, RepositoryException, RepositoryConfigException {
+			throws RepositoryException, RepositoryConfigException {
 		boolean proceed = askProceed("WARNING: you are about to drop repository '" + repoID + "'.", true);
 		if (proceed && !state.getManager().isSafeToRemove(repoID)) {
 			proceed = askProceed("WARNING: dropping this repository may break another that is proxying it.",

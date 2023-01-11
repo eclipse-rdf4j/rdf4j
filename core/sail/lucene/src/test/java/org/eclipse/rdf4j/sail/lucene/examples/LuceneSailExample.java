@@ -116,7 +116,7 @@ public class LuceneSailExample {
 	}
 
 	private static void tupleQuery(String queryString, RepositoryConnection connection)
-			throws QueryEvaluationException, RepositoryException, MalformedQueryException {
+			throws RepositoryException, MalformedQueryException {
 		System.out.println("Running query: \n" + queryString);
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
 		try (TupleQueryResult result = query.evaluate()) {

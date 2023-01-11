@@ -36,7 +36,7 @@ abstract class GeometricBinaryFunction implements Function {
 		try {
 			Shape result = operation(geom1, geom2);
 			wkt = SpatialSupport.getWktWriter().toWkt(result);
-		} catch (IOException | RuntimeException e) {
+		} catch (RuntimeException e) {
 			throw new ValueExprEvaluationException(e);
 		}
 		return valueFactory.createLiteral(wkt, GEO.WKT_LITERAL);

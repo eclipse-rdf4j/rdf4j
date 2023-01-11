@@ -39,7 +39,7 @@ class PooledConnectionObjectFactory extends BasePooledObjectFactory<RepositoryCo
 	}
 
 	@Override
-	public RepositoryConnection create() throws Exception {
+	public RepositoryConnection create() {
 		logger.debug(
 				"Creating pooled connection - obtaining underlying connection from delegate factory");
 		try {
@@ -60,7 +60,7 @@ class PooledConnectionObjectFactory extends BasePooledObjectFactory<RepositoryCo
 	}
 
 	@Override
-	public void destroyObject(PooledObject<RepositoryConnection> pooledObject) throws Exception {
+	public void destroyObject(PooledObject<RepositoryConnection> pooledObject) {
 		logger.debug("destroying pooled connection - closing underlying connection");
 		try {
 			pooledObject.getObject().close();

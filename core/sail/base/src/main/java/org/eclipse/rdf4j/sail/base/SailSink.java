@@ -48,8 +48,8 @@ public interface SailSink extends SailClosable {
 	 * Sets the prefix for a namespace.
 	 *
 	 * @param prefix The new prefix, or an empty string in case of the default namespace.
-	 * @param name   The namespace name that the prefix maps to.
-	 * @throws SailException        If the Sail object encountered an error or unexpected situation internally.
+	 * @param name   The namespace name that the prefix maps to. @ If the Sail object encountered an error or unexpected
+	 *               situation internally.
 	 * @throws NullPointerException In case <var>prefix</var> or <var>name</var> is <var>null</var>.
 	 */
 	void setNamespace(String prefix, String name) throws SailException;
@@ -77,7 +77,7 @@ public interface SailSink extends SailClosable {
 	 * @param contexts The context(s) from which to remove the statements. Note that this parameter is a vararg and as
 	 *                 such is optional. If no contexts are specified the method operates on the entire repository. A
 	 *                 <var>null</var> value can be used to match context-less statements.
-	 * @throws SailException If the statements could not be removed.
+	 * @If the statements could not be removed.
 	 */
 	void clear(Resource... contexts) throws SailException;
 
@@ -91,7 +91,7 @@ public interface SailSink extends SailClosable {
 	 * @param obj      A Value specifying the object, or <var>null</var> for a wildcard.
 	 * @param contexts The context(s) of the observed statements. Note that this parameter is a vararg and as such is
 	 *                 optional. If no contexts are supplied the method operates on all contexts.
-	 * @throws SailException If the triple source failed to observe these statements.
+	 * @If the triple source failed to observe these statements.
 	 */
 	void observe(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException;
 
@@ -104,9 +104,9 @@ public interface SailSink extends SailClosable {
 	 * @param pred    A IRI specifying the predicate, or <var>null</var> for a wildcard.
 	 * @param obj     A Value specifying the object, or <var>null</var> for a wildcard.
 	 * @param context The context of the observed statements.
-	 * @throws SailException If the triple source failed to observe these statements.
+	 * @If the triple source failed to observe these statements.
 	 */
-	default void observe(Resource subj, IRI pred, Value obj, Resource context) throws SailException {
+	default void observe(Resource subj, IRI pred, Value obj, Resource context) {
 		observe(subj, pred, obj, new Resource[] { context });
 	}
 
@@ -117,7 +117,7 @@ public interface SailSink extends SailClosable {
 	 * @param pred The predicate of the statement to add.
 	 * @param obj  The object of the statement to add.
 	 * @param ctx  The context to add the statement to.
-	 * @throws SailException If the statement could not be added, for example because no transaction is active.
+	 * @If the statement could not be added, for example because no transaction is active.
 	 */
 	void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException;
 
@@ -125,9 +125,9 @@ public interface SailSink extends SailClosable {
 	 * Adds a statement to the store.
 	 *
 	 * @param statement The statement to add.
-	 * @throws SailException If the statement could not be added, for example because no transaction is active.
+	 * @If the statement could not be added, for example because no transaction is active.
 	 */
-	default void approve(Statement statement) throws SailException {
+	default void approve(Statement statement) {
 		approve(statement.getSubject(), statement.getPredicate(), statement.getObject(), statement.getContext());
 	}
 
@@ -139,10 +139,10 @@ public interface SailSink extends SailClosable {
 	 * @param pred The predicate of the statement that should be removed
 	 * @param obj  The object of the statement that should be removed
 	 * @param ctx  The context from which to remove the statement
-	 * @throws SailException If the statement could not be removed, for example because no transaction is active.
+	 * @If the statement could not be removed, for example because no transaction is active.
 	 */
 	@Deprecated(since = "3.1.0")
-	default void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
+	default void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) {
 		deprecate(SimpleValueFactory.getInstance().createStatement(subj, pred, obj, ctx));
 	}
 
@@ -150,7 +150,7 @@ public interface SailSink extends SailClosable {
 	 * Removes a statement.
 	 *
 	 * @param statement The statement that should be removed
-	 * @throws SailException If the statement could not be removed, for example because no transaction is active.
+	 * @If the statement could not be removed, for example because no transaction is active.
 	 */
 	void deprecate(Statement statement) throws SailException;
 
@@ -158,7 +158,7 @@ public interface SailSink extends SailClosable {
 	 * Removes all statements with the specified subject, predicate, object, and context. All four parameters may be
 	 * null.
 	 *
-	 * @throws SailException If statements could not be removed, for example because no transaction is active.
+	 * @If statements could not be removed, for example because no transaction is active.
 	 */
 	default boolean deprecateByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts) {
 		throw new UnsupportedOperationException();

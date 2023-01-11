@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
-public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class PathIteration extends LookAheadIteration<BindingSet> {
 
 	/**
 	 *
@@ -37,7 +37,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 	private long currentLength;
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> currentIter;
+	private CloseableIteration<BindingSet> currentIter;
 
 	private final BindingSet bindings;
 

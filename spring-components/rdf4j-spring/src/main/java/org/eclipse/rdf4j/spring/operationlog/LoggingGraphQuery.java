@@ -33,12 +33,12 @@ public class LoggingGraphQuery extends DelegatingGraphQuery {
 	}
 
 	@Override
-	public GraphQueryResult evaluate() throws QueryEvaluationException {
+	public GraphQueryResult evaluate() {
 		return operationLog.runWithLog(getDelegate(), () -> getDelegate().evaluate());
 	}
 
 	@Override
-	public void evaluate(RDFHandler handler) throws QueryEvaluationException, RDFHandlerException {
+	public void evaluate(RDFHandler handler) throws RDFHandlerException {
 		operationLog.runWithLog(getDelegate(), () -> getDelegate().evaluate(handler));
 	}
 }

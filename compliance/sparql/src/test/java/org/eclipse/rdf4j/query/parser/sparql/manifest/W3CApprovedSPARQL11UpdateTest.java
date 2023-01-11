@@ -34,7 +34,7 @@ public class W3CApprovedSPARQL11UpdateTest extends SPARQL11UpdateComplianceTest 
 	}
 
 	@Override
-	protected Repository newRepository() throws Exception {
+	protected Repository newRepository() {
 		SailRepository repo = new SailRepository(new MemoryStore());
 
 		return repo;

@@ -35,19 +35,19 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
  * @deprecated replaced by HashJoinIteration
  */
 @Deprecated
-public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class BottomUpJoinIterator extends LookAheadIteration<BindingSet> {
 
 	/*-----------*
 	 * Variables *
 	 *-----------*/
 
-	private final CloseableIteration<BindingSet, QueryEvaluationException> leftIter;
+	private final CloseableIteration<BindingSet> leftIter;
 
-	private final CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
+	private final CloseableIteration<BindingSet> rightIter;
 
 	private List<BindingSet> scanList;
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> restIter;
+	private CloseableIteration<BindingSet> restIter;
 
 	private Map<BindingSet, List<BindingSet>> hashTable;
 
@@ -61,8 +61,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 	 * Constructors *
 	 *--------------*/
 
-	public BottomUpJoinIterator(EvaluationStrategy strategy, Join join, BindingSet bindings)
-			throws QueryEvaluationException {
+	public BottomUpJoinIterator(EvaluationStrategy strategy, Join join, BindingSet bindings) {
 		leftIter = strategy.evaluate(join.getLeftArg(), bindings);
 		rightIter = strategy.evaluate(join.getRightArg(), bindings);
 
@@ -81,7 +80,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 	 *---------*/
 
 	@Override
-	protected BindingSet getNextElement() throws QueryEvaluationException {
+	protected BindingSet getNextElement() {
 		if (hashTable == null) {
 			setupHashTable();
 		}
@@ -138,7 +137,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {
@@ -146,7 +145,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 				leftIter.close();
 			} finally {
 				try {
-					CloseableIteration<BindingSet, QueryEvaluationException> toCloseRightIter = rightIter;
+					CloseableIteration<BindingSet> toCloseRightIter = rightIter;
 					if (toCloseRightIter != null) {
 						toCloseRightIter.close();
 					}
@@ -179,7 +178,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 		return q;
 	}
 
-	private void setupHashTable() throws QueryEvaluationException {
+	private void setupHashTable() {
 
 		hashTable = makeMap();
 
@@ -219,16 +218,15 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 
 	}
 
-	protected void put(Map<BindingSet, List<BindingSet>> hashTable, BindingSet hashKey, List<BindingSet> hashValue)
-			throws QueryEvaluationException {
+	protected void put(Map<BindingSet, List<BindingSet>> hashTable, BindingSet hashKey, List<BindingSet> hashValue) {
 		hashTable.put(hashKey, hashValue);
 	}
 
-	protected void addAll(List<BindingSet> hashTableValues, List<BindingSet> values) throws QueryEvaluationException {
+	protected void addAll(List<BindingSet> hashTableValues, List<BindingSet> values) {
 		hashTableValues.addAll(values);
 	}
 
-	protected void add(List<BindingSet> leftArgResults, BindingSet b) throws QueryEvaluationException {
+	protected void add(List<BindingSet> leftArgResults, BindingSet b) {
 		leftArgResults.add(b);
 	}
 
@@ -265,7 +263,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 	 * @param list which is worked on.
 	 * @return the removed BindingSet
 	 */
-	protected BindingSet removeFirstElement(List<BindingSet> list) throws QueryEvaluationException {
+	protected BindingSet removeFirstElement(List<BindingSet> list) {
 		return list.remove(0);
 	}
 }

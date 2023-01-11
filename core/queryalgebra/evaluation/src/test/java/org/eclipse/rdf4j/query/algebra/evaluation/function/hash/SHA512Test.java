@@ -18,10 +18,9 @@ import org.junit.Before;
 public class SHA512Test extends HashFunctionTest {
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp() throws Exception {
+	public void setUp() {
 		setHashFunction(new SHA512());
 		setToHash("abc");
 		setExpectedDigest(

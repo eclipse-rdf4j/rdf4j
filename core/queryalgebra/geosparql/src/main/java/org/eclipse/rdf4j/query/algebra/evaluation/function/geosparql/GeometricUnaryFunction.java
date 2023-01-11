@@ -34,7 +34,7 @@ abstract class GeometricUnaryFunction implements Function {
 		String wkt;
 		try {
 			wkt = SpatialSupport.getWktWriter().toWkt(operation(geom));
-		} catch (IOException | RuntimeException e) {
+		} catch (RuntimeException e) {
 			throw new ValueExprEvaluationException(e);
 		}
 

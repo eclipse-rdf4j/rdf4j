@@ -47,15 +47,15 @@ public class HashJoinIterationTest {
 		}
 
 		@Override
-		public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj, IRI pred,
-				Value obj, Resource... contexts) throws QueryEvaluationException {
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
+				Value obj, Resource... contexts) {
 			// TODO Auto-generated method stub
 			return null;
 		}
 	}, null);
 
 	@Test
-	public void testCartesianJoin() throws QueryEvaluationException {
+	public void testCartesianJoin() {
 		BindingSetAssignment left = new BindingSetAssignment();
 		{
 			QueryBindingSet leftb = new QueryBindingSet();
@@ -78,7 +78,7 @@ public class HashJoinIterationTest {
 	}
 
 	@Test
-	public void testInnerJoin() throws QueryEvaluationException {
+	public void testInnerJoin() {
 		BindingSetAssignment left = new BindingSetAssignment();
 		{
 			QueryBindingSet leftb = new QueryBindingSet();
@@ -104,7 +104,7 @@ public class HashJoinIterationTest {
 	}
 
 	@Test
-	public void testLeftJoin() throws QueryEvaluationException {
+	public void testLeftJoin() {
 		BindingSetAssignment left = new BindingSetAssignment();
 		{
 			QueryBindingSet leftb = new QueryBindingSet();

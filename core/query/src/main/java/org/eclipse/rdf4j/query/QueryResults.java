@@ -27,7 +27,6 @@ import java.util.stream.Stream;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
-import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
@@ -73,8 +72,7 @@ public class QueryResults extends Iterations {
 	 * @param iteration the source iteration to get the statements from.
 	 * @return a {@link Model} containing all statements obtained from the specified source iteration.
 	 */
-	public static Model asModel(CloseableIteration<? extends Statement, ? extends RDF4JException> iteration)
-			throws QueryEvaluationException {
+	public static Model asModel(CloseableIteration<? extends Statement> iteration) {
 		return asModel(iteration, new DynamicModelFactory());
 	}
 
@@ -85,9 +83,8 @@ public class QueryResults extends Iterations {
 	 * @param modelFactory the ModelFactory used to instantiate the model that gets returned.
 	 * @return a {@link Model} containing all statements obtained from the specified source iteration.
 	 */
-	public static Model asModel(CloseableIteration<? extends Statement, ? extends RDF4JException> iteration,
-			ModelFactory modelFactory)
-			throws QueryEvaluationException {
+	public static Model asModel(CloseableIteration<? extends Statement> iteration,
+			ModelFactory modelFactory) {
 		Model model = modelFactory.createEmptyModel();
 		addAll(iteration, model);
 		return model;
@@ -99,7 +96,7 @@ public class QueryResults extends Iterations {
 	 * @param queryResult the {@link QueryResult} to get the elements from
 	 * @return a List containing all elements obtained from the specified query result.
 	 */
-	public static <T> List<T> asList(QueryResult<T> queryResult) throws QueryEvaluationException {
+	public static <T> List<T> asList(QueryResult<T> queryResult) {
 		// stream.collect is slightly slower than addAll for lists
 		List<T> list = new ArrayList<>();
 
@@ -113,7 +110,7 @@ public class QueryResults extends Iterations {
 	 * @param queryResult the {@link QueryResult} to get the elements from
 	 * @return a Set containing all elements obtained from the specified query result.
 	 */
-	public static <T> Set<T> asSet(QueryResult<T> queryResult) throws QueryEvaluationException {
+	public static <T> Set<T> asSet(QueryResult<T> queryResult) {
 		try (Stream<T> stream = queryResult.stream()) {
 			return stream.collect(Collectors.toSet());
 		}
@@ -127,7 +124,7 @@ public class QueryResults extends Iterations {
 	 * @return a list of Values of var
 	 * @throws QueryEvaluationException
 	 */
-	public static List<Value> getAllValues(TupleQueryResult result, String var) throws QueryEvaluationException {
+	public static List<Value> getAllValues(TupleQueryResult result, String var) {
 		try (Stream<BindingSet> stream = result.stream()) {
 			return result.getBindingNames().contains(var)
 					? stream.map(bs -> bs.getValue(var)).collect(Collectors.toList())
@@ -142,7 +139,7 @@ public class QueryResults extends Iterations {
 	 * @return a single query result element or null
 	 * @throws QueryEvaluationException
 	 */
-	public static Statement singleResult(GraphQueryResult result) throws QueryEvaluationException {
+	public static Statement singleResult(GraphQueryResult result) {
 		try (Stream<Statement> stream = result.stream()) {
 			return stream.findFirst().orElse(null);
 		}
@@ -155,7 +152,7 @@ public class QueryResults extends Iterations {
 	 * @return a single query result element or null
 	 * @throws QueryEvaluationException
 	 */
-	public static BindingSet singleResult(TupleQueryResult result) throws QueryEvaluationException {
+	public static BindingSet singleResult(TupleQueryResult result) {
 		try (Stream<BindingSet> stream = result.stream()) {
 			return stream.findFirst().orElse(null);
 		}
@@ -193,7 +190,7 @@ public class QueryResults extends Iterations {
 	 *         neither {@code limit} nor {@code offset} are applied, this returns the original {@code queryResult}.
 	 */
 	public static TupleQueryResult limitResults(TupleQueryResult queryResult, long limit, long offset) {
-		CloseableIteration<BindingSet, QueryEvaluationException> iter = queryResult;
+		CloseableIteration<BindingSet> iter = queryResult;
 		if (offset > 0) {
 			iter = new OffsetIteration<>(iter, offset);
 		}
@@ -219,7 +216,7 @@ public class QueryResults extends Iterations {
 	 *         neither {@code limit} nor {@code offset} are applied, this returns the original {@code queryResult}.
 	 */
 	public static GraphQueryResult limitResults(GraphQueryResult queryResult, long limit, long offset) {
-		CloseableIteration<Statement, QueryEvaluationException> iter = queryResult;
+		CloseableIteration<Statement> iter = queryResult;
 		if (offset > 0) {
 			iter = new OffsetIteration<>(iter, offset);
 		}
@@ -346,7 +343,7 @@ public class QueryResults extends Iterations {
 	 * @return true if equal
 	 * @throws QueryEvaluationException
 	 */
-	public static boolean equals(TupleQueryResult tqr1, TupleQueryResult tqr2) throws QueryEvaluationException {
+	public static boolean equals(TupleQueryResult tqr1, TupleQueryResult tqr2) {
 		List<BindingSet> list1 = Iterations.asList(tqr1);
 		List<BindingSet> list2 = Iterations.asList(tqr2);
 
@@ -358,7 +355,7 @@ public class QueryResults extends Iterations {
 		return matchBindingSets(list1, list2);
 	}
 
-	public static boolean isSubset(TupleQueryResult tqr1, TupleQueryResult tqr2) throws QueryEvaluationException {
+	public static boolean isSubset(TupleQueryResult tqr1, TupleQueryResult tqr2) {
 		List<BindingSet> list1 = Iterations.asList(tqr1);
 		List<BindingSet> list2 = Iterations.asList(tqr2);
 
@@ -380,7 +377,7 @@ public class QueryResults extends Iterations {
 	 * @throws QueryEvaluationException
 	 * @see Models#isomorphic(Iterable, Iterable)
 	 */
-	public static boolean equals(GraphQueryResult result1, GraphQueryResult result2) throws QueryEvaluationException {
+	public static boolean equals(GraphQueryResult result1, GraphQueryResult result2) {
 		Set<? extends Statement> graph1 = Iterations.asSet(result1);
 		Set<? extends Statement> graph2 = Iterations.asSet(result2);
 
@@ -565,10 +562,10 @@ public class QueryResults extends Iterations {
 		return true;
 	}
 
-	private static class GraphQueryResultFilter extends AbstractCloseableIteration<Statement, QueryEvaluationException>
+	private static class GraphQueryResultFilter extends AbstractCloseableIteration<Statement>
 			implements GraphQueryResult {
 
-		private final DistinctIteration<Statement, QueryEvaluationException> filter;
+		private final DistinctIteration<Statement> filter;
 
 		private final GraphQueryResult unfiltered;
 
@@ -578,7 +575,7 @@ public class QueryResults extends Iterations {
 		}
 
 		@Override
-		public boolean hasNext() throws QueryEvaluationException {
+		public boolean hasNext() {
 			if (isClosed()) {
 				return false;
 			}
@@ -591,7 +588,7 @@ public class QueryResults extends Iterations {
 		}
 
 		@Override
-		public Statement next() throws QueryEvaluationException {
+		public Statement next() {
 			if (isClosed()) {
 				throw new NoSuchElementException("The iteration has been closed.");
 			}
@@ -605,7 +602,7 @@ public class QueryResults extends Iterations {
 		}
 
 		@Override
-		public void remove() throws QueryEvaluationException {
+		public void remove() {
 			if (isClosed()) {
 				throw new IllegalStateException("The iteration has been closed.");
 			}
@@ -619,7 +616,7 @@ public class QueryResults extends Iterations {
 		}
 
 		@Override
-		public void handleClose() throws QueryEvaluationException {
+		public void handleClose() {
 			try {
 				super.handleClose();
 			} finally {
@@ -628,15 +625,15 @@ public class QueryResults extends Iterations {
 		}
 
 		@Override
-		public Map<String, String> getNamespaces() throws QueryEvaluationException {
+		public Map<String, String> getNamespaces() {
 			return unfiltered.getNamespaces();
 		}
 	}
 
-	private static class TupleQueryResultFilter extends AbstractCloseableIteration<BindingSet, QueryEvaluationException>
+	private static class TupleQueryResultFilter extends AbstractCloseableIteration<BindingSet>
 			implements TupleQueryResult {
 
-		private final DistinctIteration<BindingSet, QueryEvaluationException> filter;
+		private final DistinctIteration<BindingSet> filter;
 
 		private final TupleQueryResult unfiltered;
 
@@ -646,7 +643,7 @@ public class QueryResults extends Iterations {
 		}
 
 		@Override
-		public boolean hasNext() throws QueryEvaluationException {
+		public boolean hasNext() {
 			if (isClosed()) {
 				return false;
 			}
@@ -659,7 +656,7 @@ public class QueryResults extends Iterations {
 		}
 
 		@Override
-		public BindingSet next() throws QueryEvaluationException {
+		public BindingSet next() {
 			if (isClosed()) {
 				throw new NoSuchElementException("The iteration has been closed.");
 			}
@@ -673,7 +670,7 @@ public class QueryResults extends Iterations {
 		}
 
 		@Override
-		public void remove() throws QueryEvaluationException {
+		public void remove() {
 			if (isClosed()) {
 				throw new IllegalStateException("The iteration has been closed.");
 			}
@@ -687,7 +684,7 @@ public class QueryResults extends Iterations {
 		}
 
 		@Override
-		public void handleClose() throws QueryEvaluationException {
+		public void handleClose() {
 			try {
 				super.handleClose();
 			} finally {
@@ -696,7 +693,7 @@ public class QueryResults extends Iterations {
 		}
 
 		@Override
-		public List<String> getBindingNames() throws QueryEvaluationException {
+		public List<String> getBindingNames() {
 			return unfiltered.getBindingNames();
 		}
 
@@ -738,7 +735,7 @@ public class QueryResults extends Iterations {
 		}
 
 		@Override
-		public Map<String, String> getNamespaces() throws QueryEvaluationException {
+		public Map<String, String> getNamespaces() {
 			return delegate.getNamespaces();
 		}
 

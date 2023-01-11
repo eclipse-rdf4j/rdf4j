@@ -70,7 +70,7 @@ public class SailModel extends AbstractModel {
 	public Set<Namespace> getNamespaces() {
 		Set<Namespace> namespaces;
 		try {
-			try (CloseableIteration<? extends Namespace, SailException> iter = conn.getNamespaces()) {
+			try (CloseableIteration<? extends Namespace> iter = conn.getNamespaces()) {
 				namespaces = Iterations.asSet(conn.getNamespaces());
 			}
 		} catch (SailException e) {
@@ -211,10 +211,10 @@ public class SailModel extends AbstractModel {
 
 	private Iterator<Statement> iterator(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		try {
-			CloseableIteration<? extends Statement, ?> iter = conn.getStatements(subj, pred, obj, includeInferred,
+			CloseableIteration<? extends Statement> iter = conn.getStatements(subj, pred, obj, includeInferred,
 					contexts);
 			return new CloseableIterationIterator<>(
-					new ExceptionConvertingIteration<Statement, ModelException>(iter) {
+					new ExceptionConvertingIteration<Statement>(iter) {
 
 						private Statement last;
 

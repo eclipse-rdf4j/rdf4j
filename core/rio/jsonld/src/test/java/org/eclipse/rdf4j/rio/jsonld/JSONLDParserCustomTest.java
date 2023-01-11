@@ -125,7 +125,7 @@ public class JSONLDParserCustomTest {
 	private final Literal testObjectLiteralUnquotedControlChar = F.createLiteral("42\u0009", XSD.STRING);
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp() {
 		parser = Rio.createParser(RDFFormat.JSONLD);
 		errors = new ParseErrorCollector();
 		model = new LinkedHashModel();
@@ -133,7 +133,7 @@ public class JSONLDParserCustomTest {
 		parser.setRDFHandler(new ContextStatementCollector(model, F));
 	}
 
-	private void verifyParseResults(Resource nextSubject, IRI nextPredicate, Value nextObject) throws Exception {
+	private void verifyParseResults(Resource nextSubject, IRI nextPredicate, Value nextObject) {
 		assertEquals(0, errors.getWarnings().size());
 		assertEquals(0, errors.getErrors().size());
 		assertEquals(0, errors.getFatalErrors().size());
@@ -144,7 +144,7 @@ public class JSONLDParserCustomTest {
 	}
 
 	@Test
-	public void testSupportedSettings() throws Exception {
+	public void testSupportedSettings() {
 		// 13 supported in JSONLDParser + 12 from AbstractRDFParser
 		assertEquals(25, parser.getSupportedSettings().size());
 	}

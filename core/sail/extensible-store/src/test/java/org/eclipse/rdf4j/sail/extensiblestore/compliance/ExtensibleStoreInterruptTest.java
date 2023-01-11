@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.testsuite.sail.SailInterruptTest;
 
 public class ExtensibleStoreInterruptTest extends SailInterruptTest {
 	@Override
-	protected NotifyingSail createSail() throws SailException {
+	protected NotifyingSail createSail() {
 		return new ExtensibleStoreImplForTests();
 	}
 }

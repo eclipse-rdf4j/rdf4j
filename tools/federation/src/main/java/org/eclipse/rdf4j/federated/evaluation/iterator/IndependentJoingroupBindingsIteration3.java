@@ -29,24 +29,24 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  *
  * @author Andreas Schwarte
  */
-public class IndependentJoingroupBindingsIteration3 extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class IndependentJoingroupBindingsIteration3 extends LookAheadIteration<BindingSet> {
 
 	// a pattern matcher for the binding resolver, pattern: myVar_%outerID%#bindingId, e.g. name_0#0
 	protected static final Pattern pattern = Pattern.compile("(.*)_(.*)_(.*)");
 
 	protected final List<BindingSet> bindings;
-	protected final CloseableIteration<BindingSet, QueryEvaluationException> iter;
+	protected final CloseableIteration<BindingSet> iter;
 	protected ArrayList<BindingSet> result = null;
 	protected int currentIdx = 0;
 
-	public IndependentJoingroupBindingsIteration3(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public IndependentJoingroupBindingsIteration3(CloseableIteration<BindingSet> iter,
 			List<BindingSet> bindings) {
 		this.bindings = bindings;
 		this.iter = iter;
 	}
 
 	@Override
-	protected BindingSet getNextElement() throws QueryEvaluationException {
+	protected BindingSet getNextElement() {
 
 		if (result == null) {
 			result = computeResult();
@@ -59,7 +59,7 @@ public class IndependentJoingroupBindingsIteration3 extends LookAheadIteration<B
 		return result.get(currentIdx++);
 	}
 
-	protected ArrayList<BindingSet> computeResult() throws QueryEvaluationException {
+	protected ArrayList<BindingSet> computeResult() {
 
 		// underlying arraylist serves as map, index corresponds to bindings index (i.e. at most bindings.size() - 1)
 		// a_res[0] = { v_0#0-1; v_0#0-2; ... }
@@ -134,7 +134,7 @@ public class IndependentJoingroupBindingsIteration3 extends LookAheadIteration<B
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {

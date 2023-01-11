@@ -63,7 +63,7 @@ public class ContextAwareConnectionTest {
 	static class InvocationHandlerStub implements InvocationHandler {
 
 		@Override
-		public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+		public Object invoke(Object proxy, Method method, Object[] args) {
 			return null;
 		}
 	}
@@ -116,7 +116,7 @@ public class ContextAwareConnectionTest {
 	String queryString = "SELECT ?o WHERE { ?s ?p ?o}";
 
 	@Test
-	public void testGraphQuery() throws Exception {
+	public void testGraphQuery() {
 		RepositoryConnection stub = new RepositoryConnectionStub() {
 
 			@Override
@@ -142,7 +142,7 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testQuery() throws Exception {
+	public void testQuery() {
 		RepositoryConnection stub = new RepositoryConnectionStub() {
 
 			@Override
@@ -168,7 +168,7 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testTupleQuery() throws Exception {
+	public void testTupleQuery() {
 		RepositoryConnection stub = new RepositoryConnectionStub() {
 
 			@Override
@@ -194,7 +194,7 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testIncludeInferred() throws Exception {
+	public void testIncludeInferred() {
 		RepositoryConnection stub = new RepositoryConnectionStub();
 		Repository repo = stub.getRepository();
 		ContextAwareConnection a = new ContextAwareConnection(repo, stub);
@@ -205,7 +205,7 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testMaxQueryTime() throws Exception {
+	public void testMaxQueryTime() {
 		RepositoryConnection stub = new RepositoryConnectionStub();
 		Repository repo = stub.getRepository();
 		ContextAwareConnection a = new ContextAwareConnection(repo, stub);
@@ -216,7 +216,7 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testQueryLanguage() throws Exception {
+	public void testQueryLanguage() {
 		RepositoryConnection stub = new RepositoryConnectionStub();
 		Repository repo = stub.getRepository();
 		ContextAwareConnection a = new ContextAwareConnection(repo, stub);
@@ -227,7 +227,7 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testBaseURI() throws Exception {
+	public void testBaseURI() {
 		RepositoryConnection stub = new RepositoryConnectionStub();
 		Repository repo = stub.getRepository();
 		ContextAwareConnection a = new ContextAwareConnection(repo, stub);
@@ -238,7 +238,7 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testReadContexts() throws Exception {
+	public void testReadContexts() {
 		RepositoryConnection stub = new RepositoryConnectionStub();
 		Repository repo = stub.getRepository();
 		ContextAwareConnection a = new ContextAwareConnection(repo, stub);
@@ -249,7 +249,7 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testRemoveContexts() throws Exception {
+	public void testRemoveContexts() {
 		RepositoryConnection stub = new RepositoryConnectionStub();
 		Repository repo = stub.getRepository();
 		ContextAwareConnection a = new ContextAwareConnection(repo, stub);
@@ -260,7 +260,7 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testAddContexts() throws Exception {
+	public void testAddContexts() {
 		RepositoryConnection stub = new RepositoryConnectionStub();
 		Repository repo = stub.getRepository();
 		ContextAwareConnection a = new ContextAwareConnection(repo, stub);
@@ -271,7 +271,7 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testArchiveContexts() throws Exception {
+	public void testArchiveContexts() {
 		RepositoryConnection stub = new RepositoryConnectionStub();
 		Repository repo = stub.getRepository();
 		ContextAwareConnection a = new ContextAwareConnection(repo, stub);
@@ -282,7 +282,7 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testInsertContexts() throws Exception {
+	public void testInsertContexts() {
 		RepositoryConnection stub = new RepositoryConnectionStub();
 		Repository repo = stub.getRepository();
 		ContextAwareConnection a = new ContextAwareConnection(repo, stub);

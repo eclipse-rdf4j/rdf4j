@@ -70,7 +70,7 @@ public class ExtensibleSailStore implements SailStore {
 	}
 
 	@Override
-	synchronized public void close() throws SailException {
+	synchronized public void close() {
 		closed = true;
 		if (evaluationStatisticsMaintainerThread != null) {
 			evaluationStatisticsMaintainerThread.interrupt();
@@ -120,7 +120,7 @@ public class ExtensibleSailStore implements SailStore {
 	}
 
 	private void addToStats(DynamicStatistics instance,
-			CloseableIteration<? extends ExtensibleStatement, SailException> statements) {
+			CloseableIteration<? extends ExtensibleStatement> statements) {
 
 		long estimatedSize = dataStructure.getEstimatedSize();
 

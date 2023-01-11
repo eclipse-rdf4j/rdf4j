@@ -38,7 +38,7 @@ public class LmdbStoreTmpDatadirTest {
 	}
 
 	@Test
-	public void testTmpDatadir() throws IOException {
+	public void testTmpDatadir() {
 		LmdbStore store = new LmdbStore();
 		store.init();
 		File dataDir = store.getDataDir();
@@ -49,7 +49,7 @@ public class LmdbStoreTmpDatadirTest {
 	}
 
 	@Test
-	public void testTmpDatadirReinit() throws IOException {
+	public void testTmpDatadirReinit() {
 		LmdbStore store = new LmdbStore();
 		store.init();
 		File dataDir1 = store.getDataDir();

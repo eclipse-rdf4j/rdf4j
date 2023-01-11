@@ -95,35 +95,35 @@ public class IterationBenchmarks {
 	}
 
 	@Benchmark
-	public List<String> asList() throws Exception {
+	public List<String> asList() {
 
 		return Iterations.asList(getIterator(strings));
 
 	}
 
 	@Benchmark
-	public List<String> asListDuplicate() throws Exception {
+	public List<String> asListDuplicate() {
 
 		return Iterations.asList(getIterator(duplicates));
 
 	}
 
 	@Benchmark
-	public Set<String> asSet() throws Exception {
+	public Set<String> asSet() {
 
 		return Iterations.asSet(getIterator(strings));
 
 	}
 
 	@Benchmark
-	public Set<String> asSetDuplicate() throws Exception {
+	public Set<String> asSetDuplicate() {
 
 		return Iterations.asSet(getIterator(duplicates));
 
 	}
 
 	@Benchmark
-	public Set<String> asSetAddAll() throws Exception {
+	public Set<String> asSetAddAll() {
 
 		HashSet<String> objects = new HashSet<>();
 		Iterations.addAll(getIterator(strings), objects);
@@ -131,7 +131,7 @@ public class IterationBenchmarks {
 	}
 
 	@Benchmark
-	public Set<String> asSetDuplicateAddAll() throws Exception {
+	public Set<String> asSetDuplicateAddAll() {
 
 		HashSet<String> objects = new HashSet<>();
 		Iterations.addAll(getIterator(duplicates), objects);
@@ -140,7 +140,7 @@ public class IterationBenchmarks {
 	}
 
 	@Benchmark
-	public List<String> asListAddAll() throws Exception {
+	public List<String> asListAddAll() {
 
 		List<String> objects = new ArrayList<>();
 		Iterations.addAll(getIterator(strings), objects);
@@ -148,7 +148,7 @@ public class IterationBenchmarks {
 	}
 
 	@Benchmark
-	public List<String> asListDuplicateAddAll() throws Exception {
+	public List<String> asListDuplicateAddAll() {
 
 		List<String> objects = new ArrayList<>();
 		Iterations.addAll(getIterator(duplicates), objects);
@@ -167,7 +167,7 @@ public class IterationBenchmarks {
 				.orElse(0);
 	}
 
-	private CloseableIteration<String, Exception> getIterator(List<String> list) {
+	private CloseableIteration<String> getIterator(List<String> list) {
 		return new CloseableIteration<>() {
 
 			final Iterator<String> iterator = list.iterator();

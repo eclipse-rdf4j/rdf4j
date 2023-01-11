@@ -14,7 +14,6 @@ import java.util.Objects;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
 
 public class EqualsJoinValue implements PlanNode {
 	private final PlanNode left;
@@ -34,11 +33,11 @@ public class EqualsJoinValue implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<ValidationTuple> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseableIteration<? extends ValidationTuple, SailException> leftIterator = left.iterator();
-			final CloseableIteration<? extends ValidationTuple, SailException> rightIterator = right.iterator();
+			final CloseableIteration<? extends ValidationTuple> leftIterator = left.iterator();
+			final CloseableIteration<? extends ValidationTuple> rightIterator = right.iterator();
 
 			ValidationTuple next;
 			ValidationTuple nextLeft;
@@ -103,7 +102,7 @@ public class EqualsJoinValue implements PlanNode {
 			}
 
 			@Override
-			public void localClose() throws SailException {
+			public void localClose() {
 				try {
 					leftIterator.close();
 				} finally {
@@ -112,13 +111,13 @@ public class EqualsJoinValue implements PlanNode {
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				calculateNext();
 				return next != null;
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 				calculateNext();
 				ValidationTuple temp = next;
 				next = null;

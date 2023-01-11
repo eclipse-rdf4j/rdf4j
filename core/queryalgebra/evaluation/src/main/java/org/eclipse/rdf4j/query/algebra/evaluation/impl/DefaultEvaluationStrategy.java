@@ -201,12 +201,12 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	private QueryEvaluationMode queryEvaluationMode;
 
-	static CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleFunction func,
+	static CloseableIteration<BindingSet> evaluate(TupleFunction func,
 			final List<Var> resultVars, final BindingSet bindings, ValueFactory valueFactory, Value... argValues)
 			throws QueryEvaluationException {
-		final CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> iter = func
+		final CloseableIteration<? extends List<? extends Value>> iter = func
 				.evaluate(valueFactory, argValues);
-		return new LookAheadIteration<BindingSet, QueryEvaluationException>() {
+		return new LookAheadIteration<BindingSet>() {
 
 			@Override
 			public BindingSet getNextElement() throws QueryEvaluationException {
@@ -336,10 +336,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	@Deprecated(forRemoval = true)
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
+	public CloseableIteration<BindingSet> evaluate(TupleExpr expr, BindingSet bindings)
 			throws QueryEvaluationException {
 
-		CloseableIteration<BindingSet, QueryEvaluationException> ret;
+		CloseableIteration<BindingSet> ret;
 
 		if (expr instanceof StatementPattern) {
 			ret = evaluate((StatementPattern) expr, bindings);
@@ -454,7 +454,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(ArbitraryLengthPath alp,
+	public CloseableIteration<BindingSet> evaluate(ArbitraryLengthPath alp,
 			final BindingSet bindings) throws QueryEvaluationException {
 		return precompile(alp).evaluate(bindings);
 	}
@@ -470,7 +470,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return new QueryEvaluationStep() {
 
 			@Override
-			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+			public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 				return new PathIteration(DefaultEvaluationStrategy.this, scope, subjectVar, pathExpression, objVar,
 						contextVar, minLength, bindings);
 			}
@@ -478,7 +478,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(ZeroLengthPath zlp,
+	public CloseableIteration<BindingSet> evaluate(ZeroLengthPath zlp,
 			final BindingSet bindings) throws QueryEvaluationException {
 		return precompile(zlp).evaluate(bindings);
 	}
@@ -497,8 +497,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	@Deprecated(forRemoval = true)
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service, String serviceUri,
-			CloseableIteration<BindingSet, QueryEvaluationException> bindings) throws QueryEvaluationException {
+	public CloseableIteration<BindingSet> evaluate(Service service, String serviceUri,
+			CloseableIteration<BindingSet> bindings) throws QueryEvaluationException {
 		try {
 			FederatedService fs = serviceResolver.getService(serviceUri);
 			return fs.evaluate(service, bindings, service.getBaseURI());
@@ -513,7 +513,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service, BindingSet bindings)
+	public CloseableIteration<BindingSet> evaluate(Service service, BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(service).evaluate(bindings);
 	}
@@ -527,7 +527,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(Group node, QueryEvaluationContext context) throws QueryEvaluationException {
 		return new QueryEvaluationStep() {
 			@Override
-			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+			public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 				return new GroupIterator(DefaultEvaluationStrategy.this, node, bindings, iterationCacheSyncThreshold,
 						context);
 			}
@@ -556,7 +556,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return new QueryEvaluationStep() {
 
 			@Override
-			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+			public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 				return new MultiProjectionIterator(node, arg.evaluate(bindings), bindings);
 			}
 		};
@@ -618,7 +618,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 //			ves = new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
 			return new QueryEvaluationStep() {
 				@Override
-				public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
+				public CloseableIteration<BindingSet> evaluate(BindingSet bs) {
 					return new EmptyIteration<>();
 				}
 			};
@@ -626,7 +626,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return new QueryEvaluationStep() {
 
 			@Override
-			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
+			public CloseableIteration<BindingSet> evaluate(BindingSet bs) {
 				return new FilterIterator(node, arg.evaluate(bs), ves, DefaultEvaluationStrategy.this);
 			}
 		};
@@ -655,7 +655,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		}
 
 		@Override
-		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
+		public CloseableIteration<BindingSet> evaluate(BindingSet bs) {
 			// TODO fix the sharing of the now element to be safe
 			DefaultEvaluationStrategy.this.sharedValueOfNow = null;
 			return arg.evaluate(bs);
@@ -668,7 +668,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return new QueryEvaluationStep() {
 
 			@Override
-			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
+			public CloseableIteration<BindingSet> evaluate(BindingSet bs) {
 				return new DescribeIteration(child.evaluate(bs), DefaultEvaluationStrategy.this,
 						node.getBindingNames(),
 						bs);
@@ -682,9 +682,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return new QueryEvaluationStep() {
 
 			@Override
-			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
-				final CloseableIteration<BindingSet, QueryEvaluationException> evaluate = child.evaluate(bindings);
-				return new DistinctIteration<BindingSet, QueryEvaluationException>(evaluate,
+			public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+				final CloseableIteration<BindingSet> evaluate = child.evaluate(bindings);
+				return new DistinctIteration<BindingSet>(evaluate,
 						DefaultEvaluationStrategy.this::makeSet);
 			}
 		};
@@ -697,7 +697,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return new QueryEvaluationStep() {
 
 			@Override
-			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+			public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 				return new ReducedIteration<>(arg.evaluate(bindings));
 			}
 		};
@@ -717,7 +717,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return new QueryEvaluationStep() {
 
 			@Override
-			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+			public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 				Value[] argValues = new Value[args.size()];
 				for (int i = 0; i < args.size(); i++) {
 					argValues[i] = argEpresions[i].evaluate(bindings);
@@ -729,12 +729,12 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		};
 	}
 
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(DescribeOperator operator,
+	public CloseableIteration<BindingSet> evaluate(DescribeOperator operator,
 			final BindingSet bindings) throws QueryEvaluationException {
 		return precompile(operator).evaluate(bindings);
 	}
 
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(StatementPattern statementPattern,
+	public CloseableIteration<BindingSet> evaluate(StatementPattern statementPattern,
 			final BindingSet bindings) throws QueryEvaluationException {
 		return precompile(statementPattern).evaluate(bindings);
 	}
@@ -749,7 +749,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		}
 	}
 
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(UnaryTupleOperator expr,
+	public CloseableIteration<BindingSet> evaluate(UnaryTupleOperator expr,
 			BindingSet bindings) throws QueryEvaluationException {
 		if (expr instanceof Projection) {
 			return evaluate((Projection) expr, bindings);
@@ -822,67 +822,67 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSetAssignment bsa,
+	public CloseableIteration<BindingSet> evaluate(BindingSetAssignment bsa,
 			BindingSet bindings) throws QueryEvaluationException {
 		return precompile(bsa).evaluate(bindings);
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Projection projection, BindingSet bindings)
+	public CloseableIteration<BindingSet> evaluate(Projection projection, BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(projection).evaluate(bindings);
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(MultiProjection multiProjection,
+	public CloseableIteration<BindingSet> evaluate(MultiProjection multiProjection,
 			BindingSet bindings) throws QueryEvaluationException {
 		return precompile(multiProjection).evaluate(bindings);
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Filter filter, BindingSet bindings)
+	public CloseableIteration<BindingSet> evaluate(Filter filter, BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(filter).evaluate(bindings);
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Slice slice, BindingSet bindings)
+	public CloseableIteration<BindingSet> evaluate(Slice slice, BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(slice).evaluate(bindings);
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Extension extension, BindingSet bindings)
+	public CloseableIteration<BindingSet> evaluate(Extension extension, BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(extension).evaluate(bindings);
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Distinct distinct, BindingSet bindings)
+	public CloseableIteration<BindingSet> evaluate(Distinct distinct, BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(distinct).evaluate(bindings);
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Reduced reduced, BindingSet bindings)
+	public CloseableIteration<BindingSet> evaluate(Reduced reduced, BindingSet bindings)
 			throws QueryEvaluationException {
 		return new ReducedIteration<>(evaluate(reduced.getArg(), bindings));
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Group node, BindingSet bindings)
+	public CloseableIteration<BindingSet> evaluate(Group node, BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(node).evaluate(bindings);
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Order node, BindingSet bindings)
+	public CloseableIteration<BindingSet> evaluate(Order node, BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(node).evaluate(bindings);
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BinaryTupleOperator expr,
+	public CloseableIteration<BindingSet> evaluate(BinaryTupleOperator expr,
 			BindingSet bindings) throws QueryEvaluationException {
 		if (expr instanceof Join) {
 			return evaluate((Join) expr, bindings);
@@ -921,37 +921,37 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Join join, BindingSet bindings)
+	public CloseableIteration<BindingSet> evaluate(Join join, BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(join).evaluate(bindings);
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(LeftJoin leftJoin,
+	public CloseableIteration<BindingSet> evaluate(LeftJoin leftJoin,
 			final BindingSet bindings) throws QueryEvaluationException {
 		return precompile(leftJoin).evaluate(bindings);
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Union union,
+	public CloseableIteration<BindingSet> evaluate(final Union union,
 			final BindingSet bindings) throws QueryEvaluationException {
 		return precompile(union).evaluate(bindings);
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Intersection intersection,
+	public CloseableIteration<BindingSet> evaluate(final Intersection intersection,
 			final BindingSet bindings) throws QueryEvaluationException {
 		return precompile(intersection).evaluate(bindings);
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Difference difference,
+	public CloseableIteration<BindingSet> evaluate(final Difference difference,
 			final BindingSet bindings) throws QueryEvaluationException {
 		return precompile(difference).evaluate(bindings);
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(SingletonSet singletonSet,
+	public CloseableIteration<BindingSet> evaluate(SingletonSet singletonSet,
 			BindingSet bindings) throws QueryEvaluationException {
 		return new SingletonIteration<>(bindings);
 	}
@@ -961,7 +961,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return new QueryEvaluationStep() {
 
 			@Override
-			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+			public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 				return new SingletonIteration<>(bindings);
 			}
 		};
@@ -969,7 +969,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(EmptySet emptySet, BindingSet bindings)
+	public CloseableIteration<BindingSet> evaluate(EmptySet emptySet, BindingSet bindings)
 			throws QueryEvaluationException {
 		return new EmptyIteration<>();
 	}
@@ -979,7 +979,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return new QueryEvaluationStep() {
 
 			@Override
-			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+			public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 				return new EmptyIteration<>();
 			}
 		};
@@ -1910,7 +1910,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		// Use first binding name from tuple expr to compare values
 		String bindingName = node.getSubQuery().getBindingNames().iterator().next();
 
-		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(), bindings)) {
+		try (CloseableIteration<BindingSet> iter = evaluate(node.getSubQuery(), bindings)) {
 			while (!result && iter.hasNext()) {
 				BindingSet bindingSet = iter.next();
 
@@ -1968,7 +1968,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		// Use first binding name from tuple expr to compare values
 		String bindingName = node.getSubQuery().getBindingNames().iterator().next();
 
-		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(), bindings)) {
+		try (CloseableIteration<BindingSet> iter = evaluate(node.getSubQuery(), bindings)) {
 			while (!result && iter.hasNext()) {
 				BindingSet bindingSet = iter.next();
 
@@ -1996,7 +1996,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		// Use first binding name from tuple expr to compare values
 		String bindingName = node.getSubQuery().getBindingNames().iterator().next();
 
-		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(), bindings)) {
+		try (CloseableIteration<BindingSet> iter = evaluate(node.getSubQuery(), bindings)) {
 			while (result && iter.hasNext()) {
 				BindingSet bindingSet = iter.next();
 
@@ -2017,7 +2017,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	@Deprecated(forRemoval = true)
 	public Value evaluate(Exists node, BindingSet bindings)
 			throws QueryEvaluationException {
-		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(), bindings)) {
+		try (CloseableIteration<BindingSet> iter = evaluate(node.getSubQuery(), bindings)) {
 			return BooleanLiteral.valueOf(iter.hasNext());
 		}
 	}
@@ -2095,7 +2095,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 * @param bindings with the solutions
 	 * @return iteration over the solutions
 	 */
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TripleRef ref, BindingSet bindings) {
+	public CloseableIteration<BindingSet> evaluate(TripleRef ref, BindingSet bindings) {
 		return precompile(ref).evaluate(bindings);
 	}
 
@@ -2120,12 +2120,12 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 * This class wraps an iterator and increments the "resultSizeActual" of the query model node that the iterator
 	 * represents. This means we can track the number of tuples that have been retrieved from this node.
 	 */
-	private static class ResultSizeCountingIterator extends IterationWrapper<BindingSet, QueryEvaluationException> {
+	private static class ResultSizeCountingIterator extends IterationWrapper<BindingSet> {
 
-		CloseableIteration<BindingSet, QueryEvaluationException> iterator;
+		CloseableIteration<BindingSet> iterator;
 		QueryModelNode queryModelNode;
 
-		public ResultSizeCountingIterator(CloseableIteration<BindingSet, QueryEvaluationException> iterator,
+		public ResultSizeCountingIterator(CloseableIteration<BindingSet> iterator,
 				QueryModelNode queryModelNode) {
 			super(iterator);
 			this.iterator = iterator;
@@ -2148,14 +2148,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	/**
 	 * This class wraps an iterator and tracks the time used to execute next() and hasNext()
 	 */
-	private static class TimedIterator extends IterationWrapper<BindingSet, QueryEvaluationException> {
+	private static class TimedIterator extends IterationWrapper<BindingSet> {
 
-		CloseableIteration<BindingSet, QueryEvaluationException> iterator;
+		CloseableIteration<BindingSet> iterator;
 		QueryModelNode queryModelNode;
 
 		Stopwatch stopwatch = Stopwatch.createUnstarted();
 
-		public TimedIterator(CloseableIteration<BindingSet, QueryEvaluationException> iterator,
+		public TimedIterator(CloseableIteration<BindingSet> iterator,
 				QueryModelNode queryModelNode) {
 			super(iterator);
 			this.iterator = iterator;

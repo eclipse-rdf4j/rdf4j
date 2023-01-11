@@ -30,35 +30,35 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @see ParallelTask#cancel()
  */
 public class StopRemainingExecutionsOnCloseIteration
-		extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
+		extends AbstractCloseableIteration<BindingSet> {
 
-	protected final CloseableIteration<? extends BindingSet, QueryEvaluationException> inner;
+	protected final CloseableIteration<? extends BindingSet> inner;
 	protected final QueryInfo queryInfo;
 
 	public StopRemainingExecutionsOnCloseIteration(
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> inner, QueryInfo queryInfo) {
+			CloseableIteration<? extends BindingSet> inner, QueryInfo queryInfo) {
 		super();
 		this.inner = inner;
 		this.queryInfo = queryInfo;
 	}
 
 	@Override
-	public boolean hasNext() throws QueryEvaluationException {
+	public boolean hasNext() {
 		return inner.hasNext();
 	}
 
 	@Override
-	public BindingSet next() throws QueryEvaluationException {
+	public BindingSet next() {
 		return inner.next();
 	}
 
 	@Override
-	public void remove() throws QueryEvaluationException {
+	public void remove() {
 		inner.remove();
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {

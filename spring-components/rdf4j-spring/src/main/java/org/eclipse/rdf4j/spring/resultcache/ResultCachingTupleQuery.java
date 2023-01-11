@@ -60,7 +60,7 @@ public class ResultCachingTupleQuery extends DelegatingTupleQuery {
 	}
 
 	@Override
-	public TupleQueryResult evaluate() throws QueryEvaluationException {
+	public TupleQueryResult evaluate() {
 		BindingSet currentBindings = getDelegate().getBindings();
 		// TODO: this might be pretty slow due to the toString() call. Is there a better way to get
 		// a hash for a query with minmal risk of collision ?
@@ -113,7 +113,7 @@ public class ResultCachingTupleQuery extends DelegatingTupleQuery {
 
 	@Override
 	public void evaluate(TupleQueryResultHandler handler)
-			throws QueryEvaluationException, TupleQueryResultHandlerException {
+			throws TupleQueryResultHandlerException {
 		TupleQueryResult queryResult = evaluate();
 		QueryResults.report(queryResult, handler);
 	}

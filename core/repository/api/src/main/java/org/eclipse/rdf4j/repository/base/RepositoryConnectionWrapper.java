@@ -165,9 +165,9 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	}
 
 	@Override
-	public <E extends Exception> void add(CloseableIteration<? extends Statement, E> statementIter,
+	public void add(CloseableIteration<? extends Statement> statementIter,
 			Resource... contexts)
-			throws RepositoryException, E {
+			throws RepositoryException {
 		if (isDelegatingAdd()) {
 			getDelegate().add(statementIter, contexts);
 		} else {
@@ -357,9 +357,9 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	}
 
 	@Override
-	public <E extends Exception> void remove(CloseableIteration<? extends Statement, E> statementIter,
+	public void remove(CloseableIteration<? extends Statement> statementIter,
 			Resource... contexts)
-			throws RepositoryException, E {
+			throws RepositoryException {
 		if (isDelegatingRemove()) {
 			getDelegate().remove(statementIter, contexts);
 		} else {

@@ -32,7 +32,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -178,7 +177,7 @@ class ContextStore implements Iterable<Resource> {
 
 	private void initializeContextCache() throws IOException {
 		logger.debug("initializing context cache");
-		try (CloseableIteration<Resource, SailException> contextIter = store.getContexts()) {
+		try (CloseableIteration<Resource> contextIter = store.getContexts()) {
 			while (contextIter.hasNext()) {
 				increment(contextIter.next());
 			}

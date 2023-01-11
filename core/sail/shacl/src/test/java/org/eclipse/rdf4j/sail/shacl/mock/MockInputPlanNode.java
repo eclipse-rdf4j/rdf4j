@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationExecutionLogger;
@@ -64,27 +63,27 @@ public class MockInputPlanNode implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<ValidationTuple, SailException> iterator() {
+	public CloseableIteration<ValidationTuple> iterator() {
 		return new CloseableIteration<>() {
 
 			final Iterator<ValidationTuple> iterator = initialData.iterator();
 
 			@Override
-			public void close() throws SailException {
+			public void close() {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			public boolean hasNext() {
 				return iterator.hasNext();
 			}
 
 			@Override
-			public ValidationTuple next() throws SailException {
+			public ValidationTuple next() {
 				return iterator.next();
 			}
 
 			@Override
-			public void remove() throws SailException {
+			public void remove() {
 
 			}
 		};

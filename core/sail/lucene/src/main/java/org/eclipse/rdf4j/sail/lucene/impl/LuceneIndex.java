@@ -696,7 +696,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
-	public synchronized void begin() throws IOException {
+	public synchronized void begin() {
 		// nothing to do
 	}
 
@@ -1100,7 +1100,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		}
 
 		@Override
-		public Status needsField(FieldInfo fieldInfo) throws IOException {
+		public Status needsField(FieldInfo fieldInfo) {
 			return (fieldsToLoad == null || fieldsToLoad.contains(fieldInfo.name)) ? Status.YES : Status.NO;
 		}
 

@@ -50,7 +50,7 @@ public interface QueryValueEvaluationStep {
 		}
 
 		@Override
-		public Value evaluate(BindingSet bindings) throws QueryEvaluationException {
+		public Value evaluate(BindingSet bindings) {
 			return value;
 		}
 
@@ -73,7 +73,7 @@ public interface QueryValueEvaluationStep {
 		}
 
 		@Override
-		public Value evaluate(BindingSet bindings) throws QueryEvaluationException {
+		public Value evaluate(BindingSet bindings) {
 			return strategy.evaluate(ve, bindings);
 		}
 	}

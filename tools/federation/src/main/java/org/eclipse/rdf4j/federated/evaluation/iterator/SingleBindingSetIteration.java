@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.federated.evaluation.iterator;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * Represents an iteration that contains only a single binding set.
@@ -20,7 +19,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @author Andreas Schwarte
  *
  */
-public class SingleBindingSetIteration extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
+public class SingleBindingSetIteration extends AbstractCloseableIteration<BindingSet> {
 
 	protected final BindingSet res;
 	protected boolean hasNext = true;
@@ -47,7 +46,7 @@ public class SingleBindingSetIteration extends AbstractCloseableIteration<Bindin
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected void handleClose() {
 		hasNext = false;
 	}
 }

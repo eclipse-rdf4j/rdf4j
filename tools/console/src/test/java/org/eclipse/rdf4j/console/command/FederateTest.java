@@ -139,7 +139,7 @@ public class FederateTest extends AbstractCommandTest {
 		assertThat(getSize(FED_ID)).isEqualTo(expectedSize);
 	}
 
-	private long getSize(String memberID) throws Exception {
+	private long getSize(String memberID) {
 		try (RepositoryConnection connection = manager.getRepository(memberID).getConnection()) {
 			return connection.size();
 		}
@@ -183,7 +183,7 @@ public class FederateTest extends AbstractCommandTest {
 		assertThat(members.filter(null, FEDX.REPOSITORY_NAME, null).objects()).hasSameSizeAs(memberTypes);
 	}
 
-	private void verifyFailure(String... error) throws Exception {
+	private void verifyFailure(String... error) {
 		if (error.length > 0) {
 			verify(mockConsoleIO).writeError(error[0]);
 		} else {

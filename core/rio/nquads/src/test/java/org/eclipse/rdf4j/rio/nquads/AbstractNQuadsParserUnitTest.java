@@ -65,14 +65,14 @@ public abstract class AbstractNQuadsParserUnitTest {
 	private TestRDFHandler rdfHandler;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		parser = createRDFParser();
 		rdfHandler = new TestRDFHandler();
 		parser.setRDFHandler(this.rdfHandler);
 	}
 
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		parser = null;
 	}
 
@@ -641,7 +641,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 	}
 
 	@Test
-	public void testSupportedSettings() throws Exception {
+	public void testSupportedSettings() {
 		assertThat(parser.getSupportedSettings()).hasSize(14);
 	}
 

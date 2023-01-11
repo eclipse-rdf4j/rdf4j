@@ -225,11 +225,11 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		try {
 			TupleQuery query = prepareTupleQuery(SPARQL, NAMEDGRAPHS, "");
 			iter = query.evaluate();
-			result = new RepositoryResult<>(new ExceptionConvertingIteration<Resource, RepositoryException>(
-					new ConvertingIteration<BindingSet, Resource, QueryEvaluationException>(iter) {
+			result = new RepositoryResult<>(new ExceptionConvertingIteration<>(
+					new ConvertingIteration<BindingSet, Resource>(iter) {
 
 						@Override
-						protected Resource convert(BindingSet bindings) throws QueryEvaluationException {
+						protected Resource convert(BindingSet bindings) {
 							return (Resource) bindings.getValue("_");
 						}
 					}) {
@@ -354,7 +354,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			boolean includeInferred, Resource... contexts) throws RepositoryException {
 		if (hasStatement(subj, pred, obj, includeInferred, contexts)) {
 			Statement st = getValueFactory().createStatement(subj, pred, obj);
-			CloseableIteration<Statement, RepositoryException> cursor;
+			CloseableIteration<Statement> cursor;
 			cursor = new SingletonIteration<>(st);
 			return new RepositoryResult<>(cursor);
 		} else {
@@ -1075,13 +1075,13 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	 * @return the converted iteration
 	 */
 	@Deprecated(since = "4.1.0", forRemoval = true)
-	protected CloseableIteration<Statement, QueryEvaluationException> toStatementIteration(TupleQueryResult iter,
+	protected CloseableIteration<Statement> toStatementIteration(TupleQueryResult iter,
 			final Resource subj, final IRI pred, final Value obj) {
 
 		return new ConvertingIteration<>(iter) {
 
 			@Override
-			protected Statement convert(BindingSet b) throws QueryEvaluationException {
+			protected Statement convert(BindingSet b) {
 
 				Resource s = subj == null ? (Resource) b.getValue("s") : subj;
 				IRI p = pred == null ? (IRI) b.getValue("p") : pred;

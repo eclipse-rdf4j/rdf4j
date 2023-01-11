@@ -33,7 +33,7 @@ import org.slf4j.LoggerFactory;
  * @see JoinExecutorBase
  * @see UnionExecutorBase
  */
-public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, QueryEvaluationException>
+public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T>
 		implements ParallelExecutor<T> {
 
 	protected static final Logger log = LoggerFactory.getLogger(ParallelExecutorBase.class);
@@ -48,10 +48,10 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 	/* Variables */
 	protected volatile Thread evaluationThread;
 	protected FedXQueueCursor<T> rightQueue = FedXQueueCursor.create(1024);
-	protected volatile CloseableIteration<T, QueryEvaluationException> rightIter;
+	protected volatile CloseableIteration<T> rightIter;
 	protected volatile boolean finished = false;
 
-	public ParallelExecutorBase(QueryInfo queryInfo) throws QueryEvaluationException {
+	public ParallelExecutorBase(QueryInfo queryInfo) {
 		this.strategy = queryInfo.getStrategy();
 		this.executorId = NEXT_EXECUTOR_ID.incrementAndGet();
 		this.queryInfo = queryInfo;
@@ -104,11 +104,11 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 	protected abstract void performExecution() throws Exception;
 
 	@Override
-	public void addResult(CloseableIteration<T, QueryEvaluationException> res) {
+	public void addResult(CloseableIteration<T> res) {
 
 		try {
 			/* optimization: avoid adding empty results */
-			if (res instanceof EmptyIteration<?, ?>) {
+			if (res instanceof EmptyIteration<?>) {
 				return;
 			}
 			if (isClosed() || rightQueue.isClosed()) {
@@ -142,7 +142,7 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 	}
 
 	@Override
-	public T getNextElement() throws QueryEvaluationException {
+	public T getNextElement() {
 		// TODO check if we need to protect rightQueue from synchronized access
 		// wasn't done in the original implementation either
 		// if we see any weird behavior check here !!
@@ -176,7 +176,7 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 	}
 
 	@Override
-	public void handleClose() throws QueryEvaluationException {
+	public void handleClose() {
 		try {
 			try {
 				rightQueue.close();

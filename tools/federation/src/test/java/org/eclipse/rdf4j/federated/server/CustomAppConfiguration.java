@@ -50,22 +50,22 @@ public class CustomAppConfiguration extends AppConfiguration {
 		}
 
 		@Override
-		public void init() throws IOException {
+		public void init() {
 
 		}
 
 		@Override
-		public void load() throws IOException {
+		public void load() {
 
 		}
 
 		@Override
-		public void save() throws IOException {
+		public void save() {
 
 		}
 
 		@Override
-		public void destroy() throws IOException {
+		public void destroy() {
 
 		}
 

@@ -23,7 +23,7 @@ public interface SimpleSAXListener {
 	/**
 	 * Notifies the listener that the parser has started parsing.
 	 */
-	void startDocument() throws SAXException;
+	void startDocument();
 
 	/**
 	 * Notifies the listener that the parser has finished parsing.

@@ -35,8 +35,8 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 		return parsedQuery;
 	}
 
-	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> enforceMaxQueryTime(
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter) {
+	protected CloseableIteration<? extends BindingSet> enforceMaxQueryTime(
+			CloseableIteration<? extends BindingSet> bindingsIter) {
 		if (getMaxExecutionTime() > 0) {
 			bindingsIter = new QueryInterruptIteration(bindingsIter, 1000L * getMaxExecutionTime());
 		}
@@ -66,16 +66,16 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 	}
 
 	@Deprecated(since = "4.1.0")
-	protected class QueryInterruptIteration extends TimeLimitIteration<BindingSet, QueryEvaluationException> {
+	protected class QueryInterruptIteration extends TimeLimitIteration<BindingSet> {
 
 		public QueryInterruptIteration(
-				CloseableIteration<? extends BindingSet, ? extends QueryEvaluationException> iter,
+				CloseableIteration<? extends BindingSet> iter,
 				long timeLimit) {
 			super(iter, timeLimit);
 		}
 
 		@Override
-		protected void throwInterruptedException() throws QueryEvaluationException {
+		protected void throwInterruptedException() {
 			throw new QueryInterruptedException("Query evaluation took too long");
 		}
 	}

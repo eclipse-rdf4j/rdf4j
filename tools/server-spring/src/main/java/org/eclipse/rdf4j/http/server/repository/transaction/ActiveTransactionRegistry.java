@@ -100,7 +100,7 @@ public enum ActiveTransactionRegistry {
 					try {
 						logger.debug("primary cache removal txid {}", transactionId);
 						entry.close();
-					} catch (RepositoryException | InterruptedException | ExecutionException e) {
+					} catch (RepositoryException e) {
 						// fall through
 					}
 				})

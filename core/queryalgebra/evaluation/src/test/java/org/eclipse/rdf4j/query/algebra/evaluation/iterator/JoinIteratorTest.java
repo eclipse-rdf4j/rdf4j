@@ -53,8 +53,8 @@ public class JoinIteratorTest {
 		}
 
 		@Override
-		public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj, IRI pred,
-				Value obj, Resource... contexts) throws QueryEvaluationException {
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
+				Value obj, Resource... contexts) {
 			// TODO Auto-generated method stub
 			return null;
 		}
@@ -66,7 +66,7 @@ public class JoinIteratorTest {
 	 * Tests joins between two different BindingSetAssignments with the same BindingSets but ordered differently.
 	 */
 	@Test
-	public void testBindingSetAssignmentJoin() throws QueryEvaluationException {
+	public void testBindingSetAssignmentJoin() {
 		testBindingSetAssignmentJoin(5, 5, EmptyBindingSet.getInstance());
 
 		{
@@ -82,8 +82,7 @@ public class JoinIteratorTest {
 		}
 	}
 
-	private void testBindingSetAssignmentJoin(int expectedSize, int n, BindingSet bindings)
-			throws QueryEvaluationException {
+	private void testBindingSetAssignmentJoin(int expectedSize, int n, BindingSet bindings) {
 		BindingSetAssignment left = new BindingSetAssignment();
 		{
 			List<BindingSet> leftb = new ArrayList<>();

@@ -16,5 +16,5 @@ import org.locationtech.spatial4j.shape.Shape;
 
 public interface WktWriter {
 
-	String toWkt(Shape shape) throws IOException;
+	String toWkt(Shape shape);
 }

@@ -290,7 +290,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 		return parameters;
 	}
 
-	private Map<String, String> getUrlParameterMap(String url) throws UnsupportedEncodingException {
+	private Map<String, String> getUrlParameterMap(String url) {
 		String qry = url.substring(url.indexOf(';') + 1);
 		Map<String, String> parameters = new HashMap<>();
 		for (String param : qry.split("&")) {

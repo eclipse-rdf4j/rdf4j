@@ -964,8 +964,8 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException If the statements could not be added to the repository, for example because the
 	 *                             repository is not writable.
 	 */
-	<E extends Exception> void add(CloseableIteration<? extends Statement, E> statements, Resource... contexts)
-			throws RepositoryException, E;
+	void add(CloseableIteration<? extends Statement> statements, Resource... contexts)
+			throws RepositoryException;
 
 	/**
 	 * Adds the supplied statements to this repository, optionally to one or more named contexts.
@@ -981,7 +981,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 */
 	default void add(RepositoryResult<Statement> statements, Resource... contexts)
 			throws RepositoryException {
-		add((CloseableIteration<Statement, RepositoryException>) statements, contexts);
+		add((CloseableIteration<Statement>) statements, contexts);
 	}
 
 	/**
@@ -1033,9 +1033,9 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException If the statements could not be removed from the repository, for example because the
 	 *                             repository is not writable.
 	 */
-	<E extends Exception> void remove(CloseableIteration<? extends Statement, E> statements,
+	void remove(CloseableIteration<? extends Statement> statements,
 			Resource... contexts)
-			throws RepositoryException, E;
+			throws RepositoryException;
 
 	/**
 	 * Removes the supplied statements from a specific context in this repository, ignoring any context information
@@ -1051,7 +1051,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 */
 	default void remove(RepositoryResult<Statement> statements, Resource... contexts)
 			throws RepositoryException {
-		remove((CloseableIteration<Statement, RepositoryException>) statements, contexts);
+		remove((CloseableIteration<Statement>) statements, contexts);
 	}
 
 	/**

@@ -38,7 +38,7 @@ public class NativeStoreTmpDatadirTest {
 	}
 
 	@Test
-	public void testTmpDatadir() throws IOException {
+	public void testTmpDatadir() {
 		NativeStore store = new NativeStore();
 		store.init();
 		File dataDir = store.getDataDir();
@@ -49,7 +49,7 @@ public class NativeStoreTmpDatadirTest {
 	}
 
 	@Test
-	public void testTmpDatadirReinit() throws IOException {
+	public void testTmpDatadirReinit() {
 		NativeStore store = new NativeStore();
 		store.init();
 		File dataDir1 = store.getDataDir();

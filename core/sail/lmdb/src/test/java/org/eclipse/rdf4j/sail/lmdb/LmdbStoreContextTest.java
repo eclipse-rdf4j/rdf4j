@@ -36,7 +36,7 @@ public class LmdbStoreContextTest extends RDFNotifyingStoreTest {
 	 *---------*/
 
 	@Override
-	protected NotifyingSail createSail() throws SailException {
+	protected NotifyingSail createSail() {
 		try {
 			NotifyingSail sail = new LmdbStore(tempDir.newFolder(), new LmdbStoreConfig("spoc,posc"));
 			sail.init();

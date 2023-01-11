@@ -104,9 +104,8 @@ public class ConsoleIO {
 	 * Read a command from input
 	 *
 	 * @return one line of input, or null on error
-	 * @throws IOException
 	 */
-	protected String readCommand() throws IOException {
+	protected String readCommand() {
 		try {
 			String line = input.readLine(getPrompt());
 			if (line == null) {
@@ -155,9 +154,8 @@ public class ConsoleIO {
 	 *
 	 * @param prompt
 	 * @return input string
-	 * @throws IOException
 	 */
-	public String readMultiLineInput(String prompt) throws IOException {
+	public String readMultiLineInput(String prompt) {
 		String line = input.readLine(prompt);
 		String result = null;
 
@@ -185,9 +183,8 @@ public class ConsoleIO {
 	 *
 	 * @param message one or multiple messages
 	 * @return input string
-	 * @throws IOException
 	 */
-	public String readln(String... message) throws IOException {
+	public String readln(String... message) {
 		String prompt = !quiet && message.length > 0 && message[0] != null ? message[0] : "";
 		String result = input.readLine(prompt);
 
@@ -202,9 +199,8 @@ public class ConsoleIO {
 	 *
 	 * @param prompt prompt to display
 	 * @return password string
-	 * @throws IOException
 	 */
-	public String readPassword(final String prompt) throws IOException {
+	public String readPassword(final String prompt) {
 		String result = input.readLine(prompt, '*');
 		if (echo && !result.isEmpty()) {
 			writeln("************");

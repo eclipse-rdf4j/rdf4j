@@ -87,7 +87,7 @@ public class LuceneIndexLocationTest {
 	}
 
 	@After
-	public void tearDown() throws IOException, RepositoryException {
+	public void tearDown() throws RepositoryException {
 		try {
 			if (connection != null) {
 				connection.close();
@@ -102,10 +102,9 @@ public class LuceneIndexLocationTest {
 	/**
 	 * Check Lucene index location
 	 *
-	 * @throws Exception
 	 */
 	@Test
-	public void IndexLocationTest() throws Exception {
+	public void IndexLocationTest() {
 		File dataDir = repository.getDataDir();
 		Path lucenePath = repository.getDataDir().toPath().resolve(luceneIndexPath);
 

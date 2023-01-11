@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * @author James Leigh
  */
 @Deprecated(since = "4.1.0")
-public abstract class QueueIteration<E, T extends Exception> extends LookAheadIteration<E, T> {
+public abstract class QueueIteration<E> extends LookAheadIteration<E> {
 
 	private final AtomicBoolean done = new AtomicBoolean(false);
 
@@ -118,7 +118,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	/**
 	 * Converts an exception from the underlying iteration to an exception of type <var>X</var>.
 	 */
-	protected abstract T convert(Exception e);
+	protected abstract RuntimeException convert(Exception e);
 
 	/**
 	 * The next time {@link #next()} is called this exception will be thrown. If it is not a QueryEvaluationException or
@@ -131,7 +131,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	/**
 	 * Adds another item to the queue, blocking while the queue is full.
 	 */
-	public void put(E item) throws InterruptedException, T {
+	public void put(E item) throws InterruptedException {
 		try {
 			while (!isClosed() && !done.get() && !Thread.currentThread().isInterrupted()
 					&& !queue.offer(item, 1, TimeUnit.SECONDS)) {
@@ -165,7 +165,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	 * Returns the next item in the queue, which may be <var>null</var>, or throws an exception.
 	 */
 	@Override
-	public E getNextElement() throws T {
+	public E getNextElement() {
 		if (isClosed()) {
 			return null;
 		}
@@ -202,7 +202,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	}
 
 	@Override
-	public void handleClose() throws T {
+	public void handleClose() {
 		try {
 			super.handleClose();
 		} finally {
@@ -214,7 +214,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 		}
 	}
 
-	public void checkException() throws T {
+	public void checkException() {
 		while (!exceptions.isEmpty()) {
 			try {
 				close();

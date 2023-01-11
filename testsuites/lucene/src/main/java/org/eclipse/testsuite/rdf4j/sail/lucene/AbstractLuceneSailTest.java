@@ -107,7 +107,7 @@ public abstract class AbstractLuceneSailTest {
 		QUERY_STRING = buffer.toString();
 	}
 
-	protected abstract void configure(LuceneSail sail) throws IOException;
+	protected abstract void configure(LuceneSail sail);
 
 	@Before
 	public void setUp() throws Exception {
@@ -150,7 +150,7 @@ public abstract class AbstractLuceneSailTest {
 	}
 
 	@Test
-	public void testTriplesStored() throws Exception {
+	public void testTriplesStored() {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			// are the triples stored in the underlying sail?
 			assertTrue(connection.hasStatement(SUBJECT_1, PREDICATE_1, vf.createLiteral("one"), false));
@@ -755,7 +755,7 @@ public abstract class AbstractLuceneSailTest {
 	}
 
 	@Test
-	public void testGraphQuery() throws QueryEvaluationException, MalformedQueryException, RepositoryException {
+	public void testGraphQuery() throws MalformedQueryException, RepositoryException {
 		IRI score = vf.createIRI(LuceneSailSchema.NAMESPACE + "score");
 		StringBuilder query = new StringBuilder();
 
@@ -880,7 +880,7 @@ public abstract class AbstractLuceneSailTest {
 	}
 
 	@Test
-	public void testConcurrentReadingAndWriting() throws Exception {
+	public void testConcurrentReadingAndWriting() {
 
 		try (RepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
@@ -1007,7 +1007,7 @@ public abstract class AbstractLuceneSailTest {
 	}
 
 	@Test
-	public void testReindexing() throws Exception {
+	public void testReindexing() {
 		sail.reindex();
 		testComplexQueryTwo();
 	}
@@ -1084,7 +1084,7 @@ public abstract class AbstractLuceneSailTest {
 		assertEquals("Exceptions occurred during testMultithreadedAdd, see stacktraces above", 0, exceptions.size());
 	}
 
-	protected void assertQueryResult(String literal, IRI predicate, Resource resultUri) throws Exception {
+	protected void assertQueryResult(String literal, IRI predicate, Resource resultUri) {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			// fire a query for all subjects with a given term
 			String queryString = "SELECT ?Resource WHERE { ?Resource <" + MATCHES + "> [ " + " <" + QUERY + "> \""
@@ -1102,7 +1102,7 @@ public abstract class AbstractLuceneSailTest {
 		}
 	}
 
-	protected void assertNoQueryResult(String literal) throws Exception {
+	protected void assertNoQueryResult(String literal) {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			// fire a query for all subjects with a given term
 			String queryString = "SELECT ?Resource WHERE { ?Resource <" + MATCHES + "> [ " + " <" + QUERY + "> \""

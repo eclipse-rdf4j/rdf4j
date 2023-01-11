@@ -121,14 +121,12 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-			throws X {
+	public void visit(QueryModelVisitor visitor) {
 		stmt.visit(visitor);
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-			throws X {
+	public void visitChildren(QueryModelVisitor visitor) {
 		stmt.visitChildren(visitor);
 	}
 
@@ -178,8 +176,7 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings)
-			throws QueryEvaluationException {
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 
 		StatementPattern st = (StatementPattern) stmt;
 

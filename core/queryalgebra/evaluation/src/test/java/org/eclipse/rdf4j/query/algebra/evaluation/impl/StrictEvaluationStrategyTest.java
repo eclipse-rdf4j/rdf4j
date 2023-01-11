@@ -31,7 +31,6 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -50,7 +49,7 @@ public class StrictEvaluationStrategyTest {
 	private EvaluationStrategy strategy;
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp() {
 		strategy = new StrictEvaluationStrategy(new EmptyTripleSource(), null);
 	}
 
@@ -58,7 +57,7 @@ public class StrictEvaluationStrategyTest {
 	 * Verifies if only those input bindings that actually occur in the query are returned in the result. See SES-2373.
 	 */
 	@Test
-	public void testBindings() throws Exception {
+	public void testBindings() {
 		String query = "SELECT ?a ?b WHERE {}";
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 
@@ -69,7 +68,7 @@ public class StrictEvaluationStrategyTest {
 		constants.addBinding("x", vf.createLiteral("X"));
 		constants.addBinding("y", vf.createLiteral("Y"));
 
-		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(pq.getTupleExpr(),
+		CloseableIteration<BindingSet> result = strategy.evaluate(pq.getTupleExpr(),
 				constants);
 		assertNotNull(result);
 		assertTrue(result.hasNext());
@@ -81,7 +80,7 @@ public class StrictEvaluationStrategyTest {
 	}
 
 	@Test
-	public void testOptimize() throws Exception {
+	public void testOptimize() {
 
 		QueryOptimizer optimizer1 = mock(QueryOptimizer.class);
 		QueryOptimizer optimizer2 = mock(QueryOptimizer.class);
@@ -98,7 +97,7 @@ public class StrictEvaluationStrategyTest {
 	}
 
 	@Test
-	public void testEvaluateRegexFlags() throws Exception {
+	public void testEvaluateRegexFlags() {
 
 		String query = "SELECT ?a WHERE { "
 				+ "VALUES ?a { \"foo.bar\" \"foo bar\" } \n"
@@ -106,7 +105,7 @@ public class StrictEvaluationStrategyTest {
 
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 
-		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(pq.getTupleExpr(),
+		CloseableIteration<BindingSet> result = strategy.evaluate(pq.getTupleExpr(),
 				new EmptyBindingSet());
 
 		List<BindingSet> bindingSets = QueryResults.asList(result);
@@ -169,7 +168,7 @@ public class StrictEvaluationStrategyTest {
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 		QueryEvaluationStep prepared = strategy.precompile(pq.getTupleExpr());
 		assertNotNull(prepared);
-		try (CloseableIteration<BindingSet, QueryEvaluationException> evaluate = prepared
+		try (CloseableIteration<BindingSet> evaluate = prepared
 				.evaluate(EmptyBindingSet.getInstance())) {
 			assertTrue(evaluate.hasNext());
 			BindingSet next = evaluate.next();

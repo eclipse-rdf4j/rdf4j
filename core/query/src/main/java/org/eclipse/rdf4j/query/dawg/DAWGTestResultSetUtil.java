@@ -43,7 +43,7 @@ public class DAWGTestResultSetUtil {
 		}
 	}
 
-	public static Model toGraph(TupleQueryResult tqr) throws QueryEvaluationException {
+	public static Model toGraph(TupleQueryResult tqr) {
 		Model graph = new TreeModel();
 		DAWGTestResultSetWriter writer = new DAWGTestResultSetWriter(new StatementCollector(graph));
 

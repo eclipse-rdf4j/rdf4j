@@ -199,7 +199,7 @@ public class WriteTest extends SPARQLBaseTest {
 	}
 
 	@BeforeEach
-	public void clearWriteOperations() throws Exception {
+	public void clearWriteOperations() {
 		writeOperations.set(0);
 	}
 

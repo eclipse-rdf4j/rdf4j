@@ -192,7 +192,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	 * Tries to obtain an exclusive write lock on this store. This method will block until either the lock is obtained
 	 * or an interrupt signal is received.
 	 *
-	 * @throws SailException if the thread is interrupted while waiting to obtain the lock.
+	 * @if the thread is interrupted while waiting to obtain the lock.
 	 */
 	void acquireExclusiveWriteLock() {
 		if (exclusiveWriteLock.isHeldByCurrentThread()) {
@@ -216,8 +216,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public void init()
-			throws SailException {
+	public void init() {
 		super.init();
 
 		if (sharedSchema) {
@@ -258,8 +257,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public SchemaCachingRDFSInferencerConnection getConnection()
-			throws SailException {
+	public SchemaCachingRDFSInferencerConnection getConnection() {
 		InferencerConnection e = (InferencerConnection) super.getConnection();
 		return new SchemaCachingRDFSInferencerConnection(this, e);
 	}

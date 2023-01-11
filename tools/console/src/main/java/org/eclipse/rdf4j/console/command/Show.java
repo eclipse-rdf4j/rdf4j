@@ -119,7 +119,7 @@ public class Show extends ConsoleCommand {
 		}
 
 		try (RepositoryConnection con = repository.getConnection()) {
-			try (CloseableIteration<? extends Namespace, RepositoryException> namespaces = con.getNamespaces()) {
+			try (CloseableIteration<? extends Namespace> namespaces = con.getNamespaces()) {
 				if (namespaces.hasNext()) {
 					writeln(OUTPUT_SEPARATOR);
 					while (namespaces.hasNext()) {
@@ -147,7 +147,7 @@ public class Show extends ConsoleCommand {
 		}
 
 		try (RepositoryConnection con = repository.getConnection()) {
-			try (CloseableIteration<? extends Resource, RepositoryException> contexts = con.getContextIDs()) {
+			try (CloseableIteration<? extends Resource> contexts = con.getContextIDs()) {
 				if (contexts.hasNext()) {
 					writeln(OUTPUT_SEPARATOR);
 					while (contexts.hasNext()) {

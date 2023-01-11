@@ -121,7 +121,7 @@ public class SPARQLJSONParserCustomTest {
 			.createLiteral("42\u0009", XSD.STRING);
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp() {
 		parser = QueryResultIO.createTupleParser(TupleQueryResultFormat.JSON);
 		errors = new ParseErrorCollector();
 		results = new QueryResultCollector();
@@ -129,7 +129,7 @@ public class SPARQLJSONParserCustomTest {
 		parser.setQueryResultHandler(results);
 	}
 
-	private void verifyParseResults(String bindingName, Value nextObject) throws Exception {
+	private void verifyParseResults(String bindingName, Value nextObject) {
 		assertEquals(0, errors.getWarnings().size());
 		assertEquals(0, errors.getErrors().size());
 		assertEquals(0, errors.getFatalErrors().size());
@@ -145,7 +145,7 @@ public class SPARQLJSONParserCustomTest {
 	}
 
 	@Test
-	public void testSupportedSettings() throws Exception {
+	public void testSupportedSettings() {
 		// 11 supported in AbstractSPARQLJSONParser + 0 from AbstractQueryResultParser
 		assertEquals(11, parser.getSupportedSettings().size());
 	}

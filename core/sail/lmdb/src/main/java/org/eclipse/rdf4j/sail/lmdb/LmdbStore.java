@@ -205,10 +205,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	/**
 	 * Initializes this LmdbStore.
 	 *
-	 * @throws SailException If this LmdbStore could not be initialized using the parameters that have been set.
+	 * @If this LmdbStore could not be initialized using the parameters that have been set.
 	 */
 	@Override
-	protected void initializeInternal() throws SailException {
+	protected void initializeInternal() {
 		logger.debug("Initializing LmdbStore...");
 
 		// Check initialization parameters
@@ -287,7 +287,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	}
 
 	@Override
-	protected void shutDownInternal() throws SailException {
+	protected void shutDownInternal() {
 		logger.debug("Shutting down LmdbStore...");
 
 		try {
@@ -316,7 +316,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	}
 
 	@Override
-	public void shutDown() throws SailException {
+	public void shutDown() {
 		super.shutDown();
 		// edge case when re-initialize after shutdown
 		if (isTmpDatadir) {
@@ -330,12 +330,8 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	}
 
 	@Override
-	protected NotifyingSailConnection getConnectionInternal() throws SailException {
-		try {
-			return new LmdbStoreConnection(this);
-		} catch (IOException e) {
-			throw new SailException(e);
-		}
+	protected NotifyingSailConnection getConnectionInternal() {
+		return new LmdbStoreConnection(this);
 	}
 
 	@Override
@@ -354,7 +350,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 * @return Lock used to prevent Store from switching isolation modes
 	 * @throws SailException
 	 */
-	protected Lock getTransactionLock(IsolationLevel level) throws SailException {
+	protected Lock getTransactionLock(IsolationLevel level) {
 		txnLockManager.lock();
 		try {
 			if (IsolationLevels.NONE.isCompatibleWith(level)) {
@@ -393,7 +389,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return backingStore;
 	}
 
-	private boolean upgradeStore(File dataDir, String version) throws IOException, SailException {
+	private boolean upgradeStore(File dataDir, String version) throws SailException {
 		// nothing to do, just update version number
 		return true;
 	}

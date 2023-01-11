@@ -46,7 +46,7 @@ public class FederatedDescribeIteration extends DescribeIteration {
 	private final List<StatementSource> allSources;
 
 	@Deprecated(since = "4.1.0", forRemoval = true)
-	public FederatedDescribeIteration(CloseableIteration<BindingSet, QueryEvaluationException> sourceIter,
+	public FederatedDescribeIteration(CloseableIteration<BindingSet> sourceIter,
 			FederationEvalStrategy strategy, Set<String> describeExprNames, BindingSet parentBindings,
 			QueryInfo queryInfo) {
 		super(sourceIter, strategy, describeExprNames, parentBindings);
@@ -60,8 +60,7 @@ public class FederatedDescribeIteration extends DescribeIteration {
 	}
 
 	@Override
-	protected CloseableIteration<BindingSet, QueryEvaluationException> createNextIteration(Value subject, Value object)
-			throws QueryEvaluationException {
+	protected CloseableIteration<BindingSet> createNextIteration(Value subject, Value object) {
 		if (subject == null && object == null) {
 			return new EmptyIteration<>();
 		}
@@ -78,7 +77,7 @@ public class FederatedDescribeIteration extends DescribeIteration {
 		StatementSourcePattern stmtSourcePattern = new StatementSourcePattern(pattern, queryInfo);
 		allSources.forEach(stmtSourcePattern::addStatementSource);
 
-		CloseableIteration<BindingSet, QueryEvaluationException> res = stmtSourcePattern.evaluate(parentBindings);
+		CloseableIteration<BindingSet> res = stmtSourcePattern.evaluate(parentBindings);
 
 		// we need to make sure that subject or object are added to the binding set
 		// Note: FedX uses prepared SELECT queries to evaluate a statement pattern and
@@ -86,7 +85,7 @@ public class FederatedDescribeIteration extends DescribeIteration {
 		return new ConvertingIteration<>(res) {
 
 			@Override
-			protected BindingSet convert(BindingSet sourceObject) throws QueryEvaluationException {
+			protected BindingSet convert(BindingSet sourceObject) {
 				QueryBindingSet bs = new QueryBindingSet(sourceObject);
 				if (subject != null && !bs.hasBinding(VARNAME_SUBJECT)) {
 					bs.addBinding(VARNAME_SUBJECT, subject);
@@ -100,7 +99,7 @@ public class FederatedDescribeIteration extends DescribeIteration {
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {

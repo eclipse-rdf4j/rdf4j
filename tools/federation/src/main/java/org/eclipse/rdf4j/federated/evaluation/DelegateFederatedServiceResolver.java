@@ -66,7 +66,7 @@ public class DelegateFederatedServiceResolver extends AbstractFederatedServiceRe
 	}
 
 	@Override
-	public FederatedService getService(String serviceUrl) throws QueryEvaluationException {
+	public FederatedService getService(String serviceUrl) {
 		if (isFedXEndpoint(serviceUrl)) {
 			return super.getService(serviceUrl);
 		} else {
@@ -75,7 +75,7 @@ public class DelegateFederatedServiceResolver extends AbstractFederatedServiceRe
 	}
 
 	@Override
-	protected FederatedService createService(String serviceUrl) throws QueryEvaluationException {
+	protected FederatedService createService(String serviceUrl) {
 		Endpoint ep = getFedXEndpoint(serviceUrl);
 		if (ep != null) {
 			return new RepositoryFederatedService(ep.getRepository(), false);

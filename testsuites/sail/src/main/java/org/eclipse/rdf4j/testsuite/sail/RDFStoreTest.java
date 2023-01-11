@@ -173,7 +173,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		try {
 			if (con.isOpen()) {
 				try {
@@ -191,7 +191,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testEmptyRepository() throws Exception {
+	public void testEmptyRepository() {
 		// repository should be empty
 		Assert.assertEquals("Empty repository should not return any statements", 0, countAllElements());
 
@@ -205,7 +205,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testValueRoundTrip1() throws Exception {
+	public void testValueRoundTrip1() {
 		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);
 		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);
 		IRI obj = vf.createIRI(EXAMPLE_NS + GUERNICA);
@@ -214,7 +214,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testValueRoundTrip2() throws Exception {
+	public void testValueRoundTrip2() {
 		BNode subj = vf.createBNode();
 		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);
 		IRI obj = vf.createIRI(EXAMPLE_NS + GUERNICA);
@@ -223,7 +223,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testValueRoundTrip3() throws Exception {
+	public void testValueRoundTrip3() {
 		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);
 		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);
 		Literal obj = vf.createLiteral("guernica");
@@ -232,7 +232,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testValueRoundTrip4() throws Exception {
+	public void testValueRoundTrip4() {
 		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);
 		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);
 		Literal obj = vf.createLiteral("guernica", "es");
@@ -241,7 +241,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testValueRoundTrip5() throws Exception {
+	public void testValueRoundTrip5() {
 		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);
 		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);
 		Literal obj = vf.createLiteral(3);
@@ -250,7 +250,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testDecimalRoundTrip() throws Exception {
+	public void testDecimalRoundTrip() {
 		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);
 		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);
 		Literal obj = vf.createLiteral("3", XSD.DECIMAL);
@@ -259,7 +259,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testTimeZoneRoundTrip() throws Exception {
+	public void testTimeZoneRoundTrip() {
 		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);
 		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);
 		Literal obj = vf.createLiteral("2006-08-23+00:00", CoreDatatype.XSD.DATE);
@@ -274,7 +274,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testLongURIRoundTrip() throws Exception {
+	public void testLongURIRoundTrip() {
 		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i < 512; i++) {
 			sb.append(Character.toChars('A' + (i % 26)));
@@ -287,7 +287,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testLongLiteralRoundTrip() throws Exception {
+	public void testLongLiteralRoundTrip() {
 		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i < 512; i++) {
 			sb.append(Character.toChars('A' + (i % 26)));
@@ -300,7 +300,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testReallyLongLiteralRoundTrip() throws Exception {
+	public void testReallyLongLiteralRoundTrip() {
 		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i < 1024000; i++) {
 			sb.append(Character.toChars('A' + (i % 26)));
@@ -313,7 +313,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testLongLangRoundTrip() throws Exception {
+	public void testLongLangRoundTrip() {
 		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i < 512; i++) {
 			sb.append(Character.toChars('A' + (i % 26)));
@@ -330,7 +330,7 @@ public abstract class RDFStoreTest {
 		con.addStatement(subj, pred, obj);
 		con.commit();
 
-		try (CloseableIteration<? extends Statement, SailException> stIter = con.getStatements(null, null, null,
+		try (CloseableIteration<? extends Statement> stIter = con.getStatements(null, null, null,
 				false)) {
 			Assert.assertTrue(stIter.hasNext());
 
@@ -344,7 +344,7 @@ public abstract class RDFStoreTest {
 		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
 				"SELECT * WHERE { ?S ?P ?O. FILTER(?P = <" + pred.stringValue() + ">)}", null);
 
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
+		CloseableIteration<? extends BindingSet> iter;
 		iter = con.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false);
 
 		try {
@@ -418,7 +418,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testAddData() throws Exception {
+	public void testAddData() {
 		// Add some data to the repository
 		con.begin();
 		con.addStatement(painter, RDF.TYPE, RDFS.CLASS);
@@ -506,7 +506,7 @@ public abstract class RDFStoreTest {
 		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
 				"SELECT ?C WHERE { [] a ?C }", null);
 
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
+		CloseableIteration<? extends BindingSet> iter;
 		iter = con.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false);
 
 		con.begin();
@@ -541,7 +541,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testRemoveAndClear() throws Exception {
+	public void testRemoveAndClear() {
 		// Add some data to the repository
 		con.begin();
 		con.addStatement(painter, RDF.TYPE, RDFS.CLASS);
@@ -591,7 +591,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testContexts() throws Exception {
+	public void testContexts() {
 		con.begin();
 		// Add schema data to the repository, no context
 		con.addStatement(painter, RDF.TYPE, RDFS.CLASS);
@@ -661,7 +661,7 @@ public abstract class RDFStoreTest {
 		TupleExpr tupleExpr = tupleQuery.getTupleExpr();
 
 		MapBindingSet bindings = new MapBindingSet(2);
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
+		CloseableIteration<? extends BindingSet> iter;
 
 		iter = con.evaluate(tupleExpr, null, bindings, false);
 		int resultCount = verifyQueryResult(iter, 1);
@@ -729,7 +729,7 @@ public abstract class RDFStoreTest {
 		con.setNamespace("rdf", RDF.NAMESPACE);
 		con.commit();
 
-		try (CloseableIteration<? extends Namespace, SailException> namespaces = con.getNamespaces()) {
+		try (CloseableIteration<? extends Namespace> namespaces = con.getNamespaces()) {
 			Assert.assertTrue(namespaces.hasNext());
 			Namespace rdf = namespaces.next();
 			Assert.assertEquals("rdf", rdf.getPrefix());
@@ -757,7 +757,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testRemoveNamespaces() throws Exception {
+	public void testRemoveNamespaces() {
 		con.begin();
 		con.setNamespace("rdf", RDF.NAMESPACE);
 		con.removeNamespace("rdf");
@@ -821,7 +821,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testOldURI() throws Exception {
+	public void testOldURI() {
 		Assert.assertEquals(0, countAllElements());
 		con.begin();
 		con.addStatement(painter, RDF.TYPE, RDFS.CLASS);
@@ -964,7 +964,7 @@ public abstract class RDFStoreTest {
 		con.commit();
 	}
 
-	private <T, X extends Exception> T first(CloseableIteration<T, X> iter) throws X {
+	private <T> T first(CloseableIteration<T> iter) {
 		try (iter) {
 			if (iter.hasNext()) {
 				return iter.next();
@@ -982,7 +982,7 @@ public abstract class RDFStoreTest {
 		return countElements(con.getStatements(null, null, null, false));
 	}
 
-	private <T, X extends Exception> int countElements(CloseableIteration<T, X> iter) throws X {
+	private <T> int countElements(CloseableIteration<T> iter) {
 		int count = 0;
 
 		try (iter) {
@@ -1002,8 +1002,8 @@ public abstract class RDFStoreTest {
 		return countElements(con.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false));
 	}
 
-	private int verifyQueryResult(CloseableIteration<? extends BindingSet, QueryEvaluationException> resultIter,
-			int expectedBindingCount) throws QueryEvaluationException {
+	private int verifyQueryResult(CloseableIteration<? extends BindingSet> resultIter,
+			int expectedBindingCount) {
 		int resultCount = 0;
 
 		while (resultIter.hasNext()) {

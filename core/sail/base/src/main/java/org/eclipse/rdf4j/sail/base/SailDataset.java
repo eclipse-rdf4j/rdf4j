@@ -41,17 +41,16 @@ public interface SailDataset extends SailClosable {
 	 * Gets the namespaces relevant to the data contained in this object.
 	 *
 	 * @return An iterator over the relevant namespaces, should not contain any duplicates.
-	 * @throws SailException If this object encountered an error or unexpected situation internally.
+	 * @If this object encountered an error or unexpected situation internally.
 	 */
-	CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException;
+	CloseableIteration<? extends Namespace> getNamespaces() throws SailException;
 
 	/**
 	 * Gets the namespace that is associated with the specified prefix, if any.
 	 *
 	 * @param prefix A namespace prefix, or an empty string in case of the default namespace.
 	 * @return The namespace name that is associated with the specified prefix, or <var>null</var> if there is no such
-	 *         namespace.
-	 * @throws SailException        If this object encountered an error or unexpected situation internally.
+	 *         namespace. @ If this object encountered an error or unexpected situation internally.
 	 * @throws NullPointerException In case <var>prefix</var> is <var>null</var>.
 	 */
 	String getNamespace(String prefix) throws SailException;
@@ -61,7 +60,7 @@ public interface SailDataset extends SailClosable {
 	 *
 	 * @return An iterator over the context identifiers, should not contain any duplicates.
 	 */
-	CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException;
+	CloseableIteration<? extends Resource> getContextIDs() throws SailException;
 
 	/**
 	 * Gets all statements that have a specific subject, predicate and/or object. All three parameters may be null to
@@ -74,9 +73,9 @@ public interface SailDataset extends SailClosable {
 	 * @param contexts The context(s) to get the statements from. Note that this parameter is a vararg and as such is
 	 *                 optional. If no contexts are supplied the method operates on all contexts.
 	 * @return An iterator over the relevant statements.
-	 * @throws SailException If the triple source failed to get the statements.
+	 * @If the triple source failed to get the statements.
 	 */
-	CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
+	CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws SailException;
 
 	/**
@@ -87,10 +86,9 @@ public interface SailDataset extends SailClosable {
 	 * @param pred A IRI specifying the predicate, or <var>null</var> for a wildcard.
 	 * @param obj  A Value specifying the object, or <var>null</var> for a wildcard.
 	 * @return An iterator over the relevant triples.
-	 * @throws SailException If the triple source failed to get the RDF-star triples.
+	 * @If the triple source failed to get the RDF-star triples.
 	 */
-	default CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
-			throws SailException {
+	default CloseableIteration<? extends Triple> getTriples(Resource subj, IRI pred, Value obj) {
 		throw new SailException("RDF-star triple retrieval not supported by this store");
 	}
 

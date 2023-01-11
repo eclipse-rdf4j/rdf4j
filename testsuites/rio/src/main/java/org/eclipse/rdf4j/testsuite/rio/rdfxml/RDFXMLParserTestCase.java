@@ -261,7 +261,7 @@ public abstract class RDFXMLParserTestCase {
 
 		private final Canonicalizer c14n;
 
-		public CanonXMLValueFactory() throws InvalidCanonicalizerException, ParserConfigurationException {
+		public CanonXMLValueFactory() throws InvalidCanonicalizerException {
 			org.apache.xml.security.Init.init();
 
 			c14n = Canonicalizer.getInstance(Canonicalizer.ALGO_ID_C14N_EXCL_OMIT_COMMENTS);

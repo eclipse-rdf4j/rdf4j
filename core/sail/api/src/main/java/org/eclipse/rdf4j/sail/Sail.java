@@ -45,7 +45,7 @@ public interface Sail {
 	 * Initializes the Sail. Care should be taken that required initialization parameters have been set before this
 	 * method is called. Please consult the specific Sail implementation for information about the relevant parameters.
 	 *
-	 * @throws SailException If the Sail could not be initialized.
+	 * @If the Sail could not be initialized.
 	 * @since 2.5
 	 */
 	void init() throws SailException;
@@ -55,7 +55,7 @@ public interface Sail {
 	 * initialized Sails are being shut down before an application exits to avoid potential loss of data. Once shut
 	 * down, a Sail can no longer be used until it is re-initialized.
 	 *
-	 * @throws SailException If the Sail object encountered an error or unexpected situation internally.
+	 * @If the Sail object encountered an error or unexpected situation internally.
 	 */
 	void shutDown() throws SailException;
 
@@ -68,7 +68,8 @@ public interface Sail {
 	 * Opens a connection on the Sail which can be used to query and update data. Depending on how the implementation
 	 * handles concurrent access, a call to this method might block when there is another open connection on this Sail.
 	 *
-	 * @throws SailException         If no transaction could be started, for example because the Sail is not writable.
+	 * @ If no transaction could be started, for example because the Sail is not writable.
+	 *
 	 * @throws IllegalStateException If the Sail has not been initialized or has been shut down.
 	 */
 	SailConnection getConnection() throws SailException;

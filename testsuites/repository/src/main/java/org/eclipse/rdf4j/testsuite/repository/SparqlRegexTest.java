@@ -68,7 +68,7 @@ public abstract class SparqlRegexTest {
 	private Literal hunt;
 
 	@Test
-	public void testInline() throws Exception {
+	public void testInline() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryInline);
 		TupleQueryResult result = query.evaluate();
 		assertEquals(hunt, result.next().getValue("name"));
@@ -77,7 +77,7 @@ public abstract class SparqlRegexTest {
 	}
 
 	@Test
-	public void testBinding() throws Exception {
+	public void testBinding() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryBinding);
 		query.setBinding("pattern", vf.createLiteral("@work.example"));
 		TupleQueryResult result = query.evaluate();
@@ -87,7 +87,7 @@ public abstract class SparqlRegexTest {
 	}
 
 	@Test
-	public void testBindingFlags() throws Exception {
+	public void testBindingFlags() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryBindingFlags);
 		query.setBinding("pattern", vf.createLiteral("@Work.example"));
 		query.setBinding("flags", vf.createLiteral("i"));
@@ -98,7 +98,7 @@ public abstract class SparqlRegexTest {
 	}
 
 	@Test
-	public void testExpr() throws Exception {
+	public void testExpr() {
 		IRI pattern = vf.createIRI("http://example.org/ns#", "pattern");
 		IRI flags = vf.createIRI("http://example.org/ns#", "flags");
 		BNode bnode = vf.createBNode();
@@ -131,10 +131,10 @@ public abstract class SparqlRegexTest {
 		return repository;
 	}
 
-	protected abstract Repository newRepository() throws Exception;
+	protected abstract Repository newRepository();
 
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		conn.close();
 		conn = null;
 

@@ -123,7 +123,7 @@ public class QueryBenchmark {
 	}
 
 	@TearDown(Level.Trial)
-	public void afterClass() throws IOException {
+	public void afterClass() {
 		tempDir.delete();
 		repository.shutDown();
 	}

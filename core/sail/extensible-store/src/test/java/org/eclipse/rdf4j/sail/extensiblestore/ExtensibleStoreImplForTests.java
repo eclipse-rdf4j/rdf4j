@@ -21,19 +21,19 @@ public class ExtensibleStoreImplForTests
 	}
 
 	@Override
-	protected synchronized void initializeInternal() throws SailException {
+	protected synchronized void initializeInternal() {
 		namespaceStore = new SimpleMemoryNamespaceStore();
 		dataStructure = new NaiveHashSetDataStructure();
 		super.initializeInternal();
 	}
 
 	@Override
-	protected NotifyingSailConnection getConnectionInternal() throws SailException {
+	protected NotifyingSailConnection getConnectionInternal() {
 		return new ExtensibleStoreConnectionImplForTests(this);
 	}
 
 	@Override
-	public boolean isWritable() throws SailException {
+	public boolean isWritable() {
 		return true;
 	}
 

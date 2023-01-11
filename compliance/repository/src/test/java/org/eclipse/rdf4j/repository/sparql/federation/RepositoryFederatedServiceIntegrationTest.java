@@ -65,7 +65,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 		localRepo.setFederatedServiceResolver(new FederatedServiceResolver() {
 
 			@Override
-			public FederatedService getService(String serviceUrl) throws QueryEvaluationException {
+			public FederatedService getService(String serviceUrl) {
 				return federatedService;
 			}
 		});
@@ -81,7 +81,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 	}
 
 	@Test
-	public void test() throws Exception {
+	public void test() {
 
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
 
@@ -91,7 +91,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 	}
 
 	@Test
-	public void test2() throws Exception {
+	public void test2() {
 
 		addData(serviceRepo, Lists.newArrayList(
 				vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
@@ -104,7 +104,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 	}
 
 	@Test
-	public void test3() throws Exception {
+	public void test3() {
 
 		addData(serviceRepo, Lists.newArrayList(
 				vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
@@ -117,7 +117,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 	}
 
 	@Test
-	public void test3a() throws Exception {
+	public void test3a() {
 
 		addData(serviceRepo, Lists.newArrayList(
 				vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
@@ -132,7 +132,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 	}
 
 	@Test
-	public void test4() throws Exception {
+	public void test4() {
 
 		addData(serviceRepo, Lists.newArrayList(
 				vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
@@ -145,7 +145,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 	}
 
 	@Test
-	public void test4a() throws Exception {
+	public void test4a() {
 
 		addData(serviceRepo, Lists.newArrayList(
 				vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
@@ -159,7 +159,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 	}
 
 	@Test
-	public void test4b() throws Exception {
+	public void test4b() {
 
 		addData(serviceRepo, Lists.newArrayList(
 				vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
@@ -172,7 +172,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 	}
 
 	@Test
-	public void test5() throws Exception {
+	public void test5() {
 
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
 
@@ -184,7 +184,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 	}
 
 	@Test
-	public void test5a() throws Exception {
+	public void test5a() {
 
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s2"), RDFS.LABEL, l("val2"))));
@@ -198,7 +198,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 	}
 
 	@Test
-	public void test5b() throws Exception {
+	public void test5b() {
 
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s2"), RDFS.LABEL, l("val2"))));
@@ -211,7 +211,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 	}
 
 	@Test
-	public void test6() throws Exception {
+	public void test6() {
 
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s2"), RDFS.LABEL, l("val2"))));
@@ -227,7 +227,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 	}
 
 	@Test
-	public void test6b() throws Exception {
+	public void test6b() {
 
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s2"), RDFS.LABEL, l("val2"))));
@@ -243,7 +243,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 	}
 
 	@Test
-	public void test7_CrossProduct() throws Exception {
+	public void test7_CrossProduct() {
 
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("serviceVal"))));
 
@@ -255,7 +255,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 	}
 
 	@Test
-	public void test8_subSelectAll() throws Exception {
+	public void test8_subSelectAll() {
 
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
 
@@ -265,7 +265,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 	}
 
 	@Test
-	public void test8a_subSelectAll() throws Exception {
+	public void test8a_subSelectAll() {
 
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
 
@@ -312,7 +312,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 	}
 
 	@Test
-	public void test10_consumePartially() throws Exception {
+	public void test10_consumePartially() {
 
 		/*
 		 * The purpose of this test is validate that connections are closed properly, even if a result is consume only

@@ -66,7 +66,7 @@ public class DatasetRepositoryConnection extends RepositoryConnectionWrapper {
 		return wrap(delegate.prepareTupleQuery(ql, query, baseURI));
 	}
 
-	void loadDataset(Dataset datasets) throws QueryEvaluationException {
+	void loadDataset(Dataset datasets) {
 		try {
 			if (datasets == null) {
 				return;

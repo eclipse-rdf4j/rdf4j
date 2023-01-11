@@ -49,7 +49,7 @@ class UnionSailSource implements SailSource {
 	}
 
 	@Override
-	public void close() throws SailException {
+	public void close() {
 		try {
 			primary.close();
 		} finally {
@@ -63,24 +63,24 @@ class UnionSailSource implements SailSource {
 	}
 
 	@Override
-	public void prepare() throws SailException {
+	public void prepare() {
 		primary.prepare();
 		additional.prepare();
 	}
 
 	@Override
-	public void flush() throws SailException {
+	public void flush() {
 		primary.flush();
 		additional.flush();
 	}
 
 	@Override
-	public SailSink sink(IsolationLevel level) throws SailException {
+	public SailSink sink(IsolationLevel level) {
 		return primary.sink(level);
 	}
 
 	@Override
-	public SailDataset dataset(IsolationLevel level) throws SailException {
+	public SailDataset dataset(IsolationLevel level) {
 		SailDataset primaryDataset = null;
 		SailDataset additionalDataset = null;
 		try {

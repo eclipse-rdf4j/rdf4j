@@ -25,7 +25,7 @@ class ReadPrefReadWriteLockManagerTestIT extends AbstractReadWriteLockManagerTes
 	}
 
 	@Override
-	void writeLockShouldSucceed() throws InterruptedException {
+	void writeLockShouldSucceed() {
 		// this test can take a very long time to succeed
 	}
 }

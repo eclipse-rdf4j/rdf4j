@@ -73,7 +73,7 @@ public class RemoteRepositoryManagerTest extends RepositoryManagerTest {
 	}
 
 	@Test
-	public void testAddRepositoryConfigExisting() throws Exception {
+	public void testAddRepositoryConfigExisting() {
 		wireMockRule.stubFor(get(urlEqualTo("/rdf4j-server/protocol"))
 				.willReturn(aResponse().withStatus(200).withBody(Protocol.VERSION)));
 		wireMockRule
@@ -95,7 +95,7 @@ public class RemoteRepositoryManagerTest extends RepositoryManagerTest {
 	}
 
 	@Test
-	public void testGetRepositoryConfig() throws Exception {
+	public void testGetRepositoryConfig() {
 		wireMockRule.stubFor(get(urlEqualTo("/rdf4j-server/protocol"))
 				.willReturn(aResponse().withStatus(200).withBody(Protocol.VERSION)));
 		wireMockRule

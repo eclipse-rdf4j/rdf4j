@@ -48,28 +48,28 @@ public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest extends R
 	@Override
 	@Test
 	@Ignore
-	public void testQueryDefaultGraph() throws Exception {
+	public void testQueryDefaultGraph() {
 		// ignore
 	}
 
 	@Override
 	@Test
 	@Ignore
-	public void testDeleteDefaultGraph() throws Exception {
+	public void testDeleteDefaultGraph() {
 		// ignore
 	}
 
 	@Override
 	@Test
 	@Ignore
-	public void testContextStatementsNotDuplicated() throws Exception {
+	public void testContextStatementsNotDuplicated() {
 		// ignore
 	}
 
 	@Override
 	@Test
 	@Ignore
-	public void testContextStatementsNotDuplicated2() throws Exception {
+	public void testContextStatementsNotDuplicated2() {
 		// ignore
 	}
 

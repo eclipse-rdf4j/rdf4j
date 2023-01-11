@@ -43,7 +43,7 @@ public final class ZeroLengthPathEvaluationStep implements QueryEvaluationStep {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		Value subj = null;
 		try {
 			subj = subPrep.evaluate(bindings);

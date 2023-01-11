@@ -92,13 +92,13 @@ public abstract class AbstractDatatypeHandlerTest {
 	private ValueFactory vf;
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp() {
 		testHandler = getNewDatatypeHandler();
 		vf = getValueFactory();
 	}
 
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		testHandler = null;
 		vf = null;
 	}
@@ -107,7 +107,7 @@ public abstract class AbstractDatatypeHandlerTest {
 	 * Test method for {@link org.eclipse.rdf4j.rio.DatatypeHandler#isRecognizedDatatype(org.eclipse.rdf4j.model.IRI)} .
 	 */
 	@Test
-	public void testIsRecognizedDatatypeNull() throws Exception {
+	public void testIsRecognizedDatatypeNull() {
 		thrown.expect(NullPointerException.class);
 		testHandler.isRecognizedDatatype(null);
 	}
@@ -116,7 +116,7 @@ public abstract class AbstractDatatypeHandlerTest {
 	 * Test method for {@link org.eclipse.rdf4j.rio.DatatypeHandler#isRecognizedDatatype(org.eclipse.rdf4j.model.IRI)} .
 	 */
 	@Test
-	public void testIsRecognizedDatatypeTrue() throws Exception {
+	public void testIsRecognizedDatatypeTrue() {
 		assertTrue(testHandler.isRecognizedDatatype(getRecognisedDatatypeUri()));
 	}
 
@@ -124,7 +124,7 @@ public abstract class AbstractDatatypeHandlerTest {
 	 * Test method for {@link org.eclipse.rdf4j.rio.DatatypeHandler#isRecognizedDatatype(org.eclipse.rdf4j.model.IRI)} .
 	 */
 	@Test
-	public void testIsRecognizedDatatypeFalse() throws Exception {
+	public void testIsRecognizedDatatypeFalse() {
 		assertFalse(testHandler.isRecognizedDatatype(getUnrecognisedDatatypeUri()));
 	}
 
@@ -133,7 +133,7 @@ public abstract class AbstractDatatypeHandlerTest {
 	 * {@link org.eclipse.rdf4j.rio.DatatypeHandler#verifyDatatype(java.lang.String, org.eclipse.rdf4j.model.IRI)} .
 	 */
 	@Test
-	public void testVerifyDatatypeNullDatatypeUri() throws Exception {
+	public void testVerifyDatatypeNullDatatypeUri() {
 		thrown.expect(NullPointerException.class);
 		testHandler.verifyDatatype(getValueMatchingRecognisedDatatypeUri(), null);
 	}
@@ -143,7 +143,7 @@ public abstract class AbstractDatatypeHandlerTest {
 	 * {@link org.eclipse.rdf4j.rio.DatatypeHandler#verifyDatatype(java.lang.String, org.eclipse.rdf4j.model.IRI)} .
 	 */
 	@Test
-	public void testVerifyDatatypeNullValueRecognised() throws Exception {
+	public void testVerifyDatatypeNullValueRecognised() {
 		thrown.expect(NullPointerException.class);
 		testHandler.verifyDatatype(null, getRecognisedDatatypeUri());
 	}
@@ -153,7 +153,7 @@ public abstract class AbstractDatatypeHandlerTest {
 	 * {@link org.eclipse.rdf4j.rio.DatatypeHandler#verifyDatatype(java.lang.String, org.eclipse.rdf4j.model.IRI)} .
 	 */
 	@Test
-	public void testVerifyDatatypeNullValueUnrecognised() throws Exception {
+	public void testVerifyDatatypeNullValueUnrecognised() {
 		thrown.expect(LiteralUtilException.class);
 		testHandler.verifyDatatype(null, getUnrecognisedDatatypeUri());
 	}
@@ -163,7 +163,7 @@ public abstract class AbstractDatatypeHandlerTest {
 	 * {@link org.eclipse.rdf4j.rio.DatatypeHandler#verifyDatatype(java.lang.String, org.eclipse.rdf4j.model.IRI)} .
 	 */
 	@Test
-	public void testVerifyDatatypeUnrecognisedDatatypeUri() throws Exception {
+	public void testVerifyDatatypeUnrecognisedDatatypeUri() {
 		thrown.expect(LiteralUtilException.class);
 		testHandler.verifyDatatype(getValueMatchingRecognisedDatatypeUri(), getUnrecognisedDatatypeUri());
 	}
@@ -173,7 +173,7 @@ public abstract class AbstractDatatypeHandlerTest {
 	 * {@link org.eclipse.rdf4j.rio.DatatypeHandler#verifyDatatype(java.lang.String, org.eclipse.rdf4j.model.IRI)} .
 	 */
 	@Test
-	public void testVerifyDatatypeInvalidValue() throws Exception {
+	public void testVerifyDatatypeInvalidValue() {
 		assertFalse(testHandler.verifyDatatype(getValueNotMatchingRecognisedDatatypeUri(), getRecognisedDatatypeUri()));
 	}
 
@@ -182,7 +182,7 @@ public abstract class AbstractDatatypeHandlerTest {
 	 * {@link org.eclipse.rdf4j.rio.DatatypeHandler#verifyDatatype(java.lang.String, org.eclipse.rdf4j.model.IRI)} .
 	 */
 	@Test
-	public void testVerifyDatatypeValidValue() throws Exception {
+	public void testVerifyDatatypeValidValue() {
 		assertTrue(testHandler.verifyDatatype(getValueMatchingRecognisedDatatypeUri(), getRecognisedDatatypeUri()));
 	}
 
@@ -192,7 +192,7 @@ public abstract class AbstractDatatypeHandlerTest {
 	 * .
 	 */
 	@Test
-	public void testNormalizeDatatypeNullDatatypeUri() throws Exception {
+	public void testNormalizeDatatypeNullDatatypeUri() {
 		thrown.expect(NullPointerException.class);
 		testHandler.normalizeDatatype(getValueMatchingRecognisedDatatypeUri(), null, vf);
 	}
@@ -203,7 +203,7 @@ public abstract class AbstractDatatypeHandlerTest {
 	 * .
 	 */
 	@Test
-	public void testNormalizeDatatypeNullValue() throws Exception {
+	public void testNormalizeDatatypeNullValue() {
 		thrown.expect(NullPointerException.class);
 		testHandler.normalizeDatatype(null, getRecognisedDatatypeUri(), vf);
 	}
@@ -214,7 +214,7 @@ public abstract class AbstractDatatypeHandlerTest {
 	 * .
 	 */
 	@Test
-	public void testNormalizeDatatypeUnrecognisedDatatypeUri() throws Exception {
+	public void testNormalizeDatatypeUnrecognisedDatatypeUri() {
 		thrown.expect(LiteralUtilException.class);
 		testHandler.normalizeDatatype(getValueMatchingRecognisedDatatypeUri(), getUnrecognisedDatatypeUri(), vf);
 	}
@@ -225,7 +225,7 @@ public abstract class AbstractDatatypeHandlerTest {
 	 * .
 	 */
 	@Test
-	public void testNormalizeDatatypeInvalidValue() throws Exception {
+	public void testNormalizeDatatypeInvalidValue() {
 		thrown.expect(LiteralUtilException.class);
 		testHandler.normalizeDatatype(getValueNotMatchingRecognisedDatatypeUri(), getRecognisedDatatypeUri(), vf);
 	}
@@ -236,7 +236,7 @@ public abstract class AbstractDatatypeHandlerTest {
 	 * .
 	 */
 	@Test
-	public void testNormalizeDatatypeValidValue() throws Exception {
+	public void testNormalizeDatatypeValidValue() {
 		Literal result = testHandler.normalizeDatatype(getValueMatchingRecognisedDatatypeUri(),
 				getRecognisedDatatypeUri(), vf);
 		Literal expectedResult = getNormalisedLiteralForRecognisedDatatypeAndValue();
@@ -254,7 +254,7 @@ public abstract class AbstractDatatypeHandlerTest {
 	 * Test method for {@link org.eclipse.rdf4j.rio.DatatypeHandler#getKey()}.
 	 */
 	@Test
-	public void testGetKey() throws Exception {
+	public void testGetKey() {
 		String result = testHandler.getKey();
 		String expectedResult = getExpectedKey();
 

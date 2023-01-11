@@ -23,9 +23,9 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
  */
 public class CloseableIterationIterator<E> implements Iterator<E>, Closeable {
 
-	private final CloseableIteration<? extends E, ? extends RuntimeException> iteration;
+	private final CloseableIteration<? extends E> iteration;
 
-	public CloseableIterationIterator(CloseableIteration<? extends E, ? extends RuntimeException> iteration) {
+	public CloseableIterationIterator(CloseableIteration<? extends E> iteration) {
 		this.iteration = iteration;
 	}
 
@@ -33,11 +33,8 @@ public class CloseableIterationIterator<E> implements Iterator<E>, Closeable {
 	public boolean hasNext() {
 		boolean hasMore = iteration.hasNext();
 		if (!hasMore) {
-			try {
-				close();
-			} catch (IOException ioe) {
-				// ignore
-			}
+			close();
+
 		}
 		return hasMore;
 	}
@@ -53,7 +50,7 @@ public class CloseableIterationIterator<E> implements Iterator<E>, Closeable {
 	}
 
 	@Override
-	public void close() throws IOException {
+	public void close() {
 		iteration.close();
 	}
 }

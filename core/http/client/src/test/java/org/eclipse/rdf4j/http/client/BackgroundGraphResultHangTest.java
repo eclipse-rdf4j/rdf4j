@@ -41,12 +41,12 @@ public class BackgroundGraphResultHangTest {
 		}
 
 		@Override
-		public void parse(InputStream in, String baseURI) throws IOException, RDFParseException, RDFHandlerException {
+		public void parse(InputStream in, String baseURI) throws RDFParseException, RDFHandlerException {
 			throw new RDFParseException("invalid RDF ");
 		}
 
 		@Override
-		public void parse(Reader reader, String baseURI) throws IOException, RDFParseException, RDFHandlerException {
+		public void parse(Reader reader, String baseURI) throws RDFParseException, RDFHandlerException {
 			throw new RDFParseException("invalid RDF ");
 		}
 

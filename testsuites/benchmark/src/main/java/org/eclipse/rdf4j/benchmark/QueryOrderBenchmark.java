@@ -104,14 +104,14 @@ public class QueryOrderBenchmark {
 
 	@TearDown
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		conn.close();
 		repository.shutDown();
 	}
 
 	@Test
 	@Benchmark
-	public void selectAll() throws Exception {
+	public void selectAll() {
 		StringBuilder rq = new StringBuilder("SELECT * { ?s ?p ?o } ORDER BY ?o");
 		if (limit > 0) {
 			rq = rq.append(" LIMIT ").append(limit);
@@ -137,7 +137,7 @@ public class QueryOrderBenchmark {
 
 	@Test
 	@Benchmark
-	public void selectDistinct() throws Exception {
+	public void selectDistinct() {
 		StringBuilder rq = new StringBuilder("SELECT DISTINCT ?s ?o { ?s ?p ?o } ORDER BY ?o");
 		if (limit > 0) {
 			rq = rq.append(" LIMIT ").append(limit);

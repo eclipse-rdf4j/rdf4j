@@ -67,7 +67,7 @@ public abstract class TripleSourceBase implements TripleSource {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
+	public CloseableIteration<BindingSet> getStatements(
 			String preparedQuery, BindingSet queryBindings, QueryType queryType, QueryInfo queryInfo)
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
@@ -142,7 +142,7 @@ public abstract class TripleSourceBase implements TripleSource {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
+	public CloseableIteration<BindingSet> getStatements(
 			String preparedQuery, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
@@ -155,7 +155,7 @@ public abstract class TripleSourceBase implements TripleSource {
 
 			// evaluate the query
 			monitorRemoteRequest();
-			CloseableIteration<BindingSet, QueryEvaluationException> res = null;
+			CloseableIteration<BindingSet> res = null;
 			try {
 				res = query.evaluate();
 
@@ -218,7 +218,7 @@ public abstract class TripleSourceBase implements TripleSource {
 		monitoringService.monitorRemoteRequest(endpoint);
 	}
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> booleanToBindingSetIteration(boolean hasResult) {
+	private CloseableIteration<BindingSet> booleanToBindingSetIteration(boolean hasResult) {
 		if (hasResult) {
 			return new SingleBindingSetIteration(EmptyBindingSet.getInstance());
 		}
@@ -251,8 +251,8 @@ public abstract class TripleSourceBase implements TripleSource {
 		FedXUtil.applyMaxQueryExecutionTime(operation, federationContext);
 	}
 
-	private <T> CloseableIteration<T, QueryEvaluationException> closeConn(RepositoryConnection dependentConn,
-			CloseableIteration<T, QueryEvaluationException> inner) {
+	private <T> CloseableIteration<T> closeConn(RepositoryConnection dependentConn,
+			CloseableIteration<T> inner) {
 		return new CloseDependentConnectionIteration<>(inner, dependentConn);
 	}
 
@@ -263,11 +263,11 @@ public abstract class TripleSourceBase implements TripleSource {
 	 * @param operation the {@link ConnectionOperation}
 	 * @return the resulting iteration
 	 */
-	protected <T> CloseableIteration<T, QueryEvaluationException> withConnection(ConnectionOperation<T> operation) {
+	protected <T> CloseableIteration<T> withConnection(ConnectionOperation<T> operation) {
 
 		ResultHolder<T> resultHolder = new ResultHolder<>();
 		RepositoryConnection conn = null;
-		CloseableIteration<T, QueryEvaluationException> res = null;
+		CloseableIteration<T> res = null;
 		try {
 			conn = endpoint.getConnection();
 
@@ -329,16 +329,16 @@ public abstract class TripleSourceBase implements TripleSource {
 	 * @param <T>
 	 * @author Andreas Schwarte
 	 */
-	protected static class ResultHolder<T> implements Supplier<CloseableIteration<T, QueryEvaluationException>> {
+	protected static class ResultHolder<T> implements Supplier<CloseableIteration<T>> {
 
-		protected CloseableIteration<T, QueryEvaluationException> result;
+		protected CloseableIteration<T> result;
 
-		public void set(CloseableIteration<T, QueryEvaluationException> result) {
+		public void set(CloseableIteration<T> result) {
 			this.result = result;
 		}
 
 		@Override
-		public CloseableIteration<T, QueryEvaluationException> get() {
+		public CloseableIteration<T> get() {
 			return result;
 		}
 

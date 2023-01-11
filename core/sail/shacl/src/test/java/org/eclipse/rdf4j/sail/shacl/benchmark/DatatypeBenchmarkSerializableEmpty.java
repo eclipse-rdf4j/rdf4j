@@ -55,7 +55,7 @@ public class DatatypeBenchmarkSerializableEmpty {
 	private List<List<Statement>> allStatements;
 
 	@Setup(Level.Trial)
-	public void setUp() throws InterruptedException {
+	public void setUp() {
 		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
 				.setLevel(ch.qos.logback.classic.Level.ERROR);
 

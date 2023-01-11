@@ -50,7 +50,7 @@ class ExtensibleSailSource implements SailSource {
 	}
 
 	@Override
-	public void close() throws SailException {
+	public void close() {
 	}
 
 	@Override
@@ -60,63 +60,63 @@ class ExtensibleSailSource implements SailSource {
 	}
 
 	@Override
-	public SailSink sink(IsolationLevel level) throws SailException {
+	public SailSink sink(IsolationLevel level) {
 		return new SailSink() {
 			@Override
-			public void prepare() throws SailException {
+			public void prepare() {
 
 			}
 
 			@Override
-			public void flush() throws SailException {
+			public void flush() {
 				dataStructure.flushForReading();
 			}
 
 			@Override
-			public synchronized void setNamespace(String prefix, String name) throws SailException {
+			public synchronized void setNamespace(String prefix, String name) {
 				namespaceStore.setNamespace(prefix, name);
 			}
 
 			@Override
-			public synchronized void removeNamespace(String prefix) throws SailException {
+			public synchronized void removeNamespace(String prefix) {
 				namespaceStore.removeNamespace(prefix);
 			}
 
 			@Override
-			public synchronized void clearNamespaces() throws SailException {
+			public synchronized void clearNamespaces() {
 				namespaceStore.clear();
 			}
 
 			@Override
-			public void clear(Resource... contexts) throws SailException {
+			public void clear(Resource... contexts) {
 				dataStructure.clear(inferred, contexts);
 			}
 
 			@Override
-			public void observe(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+			public void observe(Resource subj, IRI pred, Value obj, Resource... contexts) {
 				throw new RuntimeException("Unsupported operation");
 			}
 
 			@Override
-			public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
+			public void approve(Resource subj, IRI pred, Value obj, Resource ctx) {
 				Statement statement = SimpleValueFactory.getInstance().createStatement(subj, pred, obj, ctx);
 
 				dataStructure.addStatement(extensibleStatementHelper.fromStatement(statement, inferred));
 			}
 
 			@Override
-			public void approve(Statement statement) throws SailException {
+			public void approve(Statement statement) {
 
 				dataStructure.addStatement(extensibleStatementHelper.fromStatement(statement, inferred));
 			}
 
 			@Override
-			public void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
+			public void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) {
 				throw new IllegalStateException("Unsupported operation. Use deprecate(Statement statement) instead!");
 			}
 
 			@Override
-			public void deprecate(Statement statement) throws SailException {
+			public void deprecate(Statement statement) {
 				dataStructure.removeStatement(extensibleStatementHelper.fromStatement(statement, inferred));
 			}
 
@@ -126,36 +126,36 @@ class ExtensibleSailSource implements SailSource {
 			}
 
 			@Override
-			public void close() throws SailException {
+			public void close() {
 
 			}
 		};
 	}
 
 	@Override
-	public SailDataset dataset(IsolationLevel level) throws SailException {
+	public SailDataset dataset(IsolationLevel level) {
 		return new SailDataset() {
 			@Override
-			public void close() throws SailException {
+			public void close() {
 
 			}
 
 			@Override
-			public String getNamespace(String prefix) throws SailException {
+			public String getNamespace(String prefix) {
 				return namespaceStore.getNamespace(prefix);
 //				return null;
 			}
 
 			@Override
-			public CloseableIteration<? extends Namespace, SailException> getNamespaces() {
+			public CloseableIteration<? extends Namespace> getNamespaces() {
 				return new CloseableIteratorIteration<>(namespaceStore.iterator());
 //				return new EmptyIteration<>();
 			}
 
 			@Override
-			public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
+			public CloseableIteration<? extends Resource> getContextIDs() {
 				return new CloseableIteration<>() {
-					final CloseableIteration<? extends Statement, SailException> statements = getStatements(null, null,
+					final CloseableIteration<? extends Statement> statements = getStatements(null, null,
 							null);
 
 					final Set<Resource> contexts = new HashSet<>();
@@ -210,8 +210,8 @@ class ExtensibleSailSource implements SailSource {
 			}
 
 			@Override
-			public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
-					Value obj, Resource... contexts) throws SailException {
+			public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
+					Value obj, Resource... contexts) {
 				return dataStructure.getStatements(subj, pred, obj, inferred, contexts);
 			}
 
@@ -219,11 +219,11 @@ class ExtensibleSailSource implements SailSource {
 	}
 
 	@Override
-	public void prepare() throws SailException {
+	public void prepare() {
 	}
 
 	@Override
-	public void flush() throws SailException {
+	public void flush() {
 		dataStructure.flushForCommit();
 	}
 

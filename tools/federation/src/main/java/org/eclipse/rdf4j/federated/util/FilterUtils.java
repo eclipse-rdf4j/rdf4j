@@ -90,11 +90,11 @@ public class FilterUtils {
 		throw new RuntimeException("Unsupported type: " + filterExpr.getClass().getCanonicalName());
 	}
 
-	public static ValueExpr toFilter(FilterExpr filterExpr) throws FilterConversionException {
+	public static ValueExpr toFilter(FilterExpr filterExpr) {
 		return filterExpr.getExpression();
 	}
 
-	public static ValueExpr toFilter(ConjunctiveFilterExpr filterExpr) throws FilterConversionException {
+	public static ValueExpr toFilter(ConjunctiveFilterExpr filterExpr) {
 		List<FilterExpr> expressions = filterExpr.getExpressions();
 
 		if (expressions.size() == 2) {

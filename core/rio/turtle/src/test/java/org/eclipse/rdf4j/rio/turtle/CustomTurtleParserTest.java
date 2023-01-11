@@ -70,10 +70,9 @@ public class CustomTurtleParserTest {
 	private final Logger logger = LoggerFactory.getLogger(getClass());
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp() throws Exception {
+	public void setUp() {
 		vf = SimpleValueFactory.getInstance();
 		settingsNoVerifyLangTag = new ParserConfig();
 		settingsNoVerifyLangTag.set(BasicParserSettings.VERIFY_LANGUAGE_TAGS, false);
@@ -164,7 +163,7 @@ public class CustomTurtleParserTest {
 	}
 
 	@Test
-	public void testLiteralWithNewlines() throws Exception {
+	public void testLiteralWithNewlines() {
 		String namespace = "http://www.foo.com/bar#";
 		String okLiteralString = "Literal \n without \n new line at the beginning. \n ";
 		String errLiteralString = "\n Literal \n with \n new line at the beginning. \n ";
@@ -187,7 +186,7 @@ public class CustomTurtleParserTest {
 	}
 
 	@Test
-	public void testSupportedSettings() throws Exception {
+	public void testSupportedSettings() {
 		assertThat(parser.getSupportedSettings()).hasSize(15);
 	}
 

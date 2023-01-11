@@ -51,7 +51,7 @@ public class ConvertTest extends AbstractCommandTest {
 	}
 
 	@Test
-	public final void testConvert() throws IOException {
+	public final void testConvert() {
 		File json = new File(locationFile, "alien.jsonld");
 		cmd.execute("convert", from.getAbsolutePath(), json.getAbsolutePath());
 
@@ -67,7 +67,7 @@ public class ConvertTest extends AbstractCommandTest {
 	}
 
 	@Test
-	public final void testConvertWorkDir() throws IOException {
+	public final void testConvertWorkDir() {
 		setWorkingDir(cmd);
 
 		File json = new File(locationFile, "alien.jsonld");
@@ -96,7 +96,7 @@ public class ConvertTest extends AbstractCommandTest {
 	}
 
 	@Test
-	public final void testConvertInvalidFormat() throws IOException {
+	public final void testConvertInvalidFormat() {
 		File qyx = new File(locationFile, "alien.qyx");
 		cmd.execute("convert", from.toString(), qyx.toString());
 		verify(mockConsoleIO).writeError("No RDF writer for " + qyx.toString());

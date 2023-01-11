@@ -36,7 +36,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  */
 @Deprecated(since = "4.1.0")
 public class BoundJoinVALUESConversionIteration
-		extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
+		extends ConvertingIteration<BindingSet, BindingSet> {
 
 	/**
 	 * The binding name for the index
@@ -45,14 +45,14 @@ public class BoundJoinVALUESConversionIteration
 
 	protected final List<BindingSet> bindings;
 
-	public BoundJoinVALUESConversionIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public BoundJoinVALUESConversionIteration(CloseableIteration<BindingSet> iter,
 			List<BindingSet> bindings) {
 		super(iter);
 		this.bindings = bindings;
 	}
 
 	@Override
-	protected BindingSet convert(BindingSet bIn) throws QueryEvaluationException {
+	protected BindingSet convert(BindingSet bIn) {
 		QueryBindingSet res = new QueryBindingSet();
 		int bIndex = Integer.parseInt(bIn.getBinding(INDEX_BINDING_NAME).getValue().stringValue());
 		Iterator<Binding> bIter = bIn.iterator();

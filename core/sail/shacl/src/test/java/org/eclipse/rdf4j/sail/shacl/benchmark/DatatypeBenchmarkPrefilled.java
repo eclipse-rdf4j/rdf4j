@@ -98,7 +98,7 @@ public class DatatypeBenchmarkPrefilled {
 	}
 
 	@TearDown(Level.Invocation)
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		if (shaclRepo != null) {
 			shaclRepo.shutDown();
 		}

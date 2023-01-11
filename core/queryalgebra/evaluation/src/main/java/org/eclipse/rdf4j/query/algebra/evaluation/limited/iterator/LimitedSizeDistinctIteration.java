@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @author Jerven Bolleman, SIB Swiss Institute of Bioinformatics
  */
 @Deprecated(since = "4.1.0")
-public class LimitedSizeDistinctIteration extends DistinctIteration<BindingSet, QueryEvaluationException> {
+public class LimitedSizeDistinctIteration extends DistinctIteration<BindingSet> {
 
 	private final AtomicLong used;
 
@@ -31,7 +31,7 @@ public class LimitedSizeDistinctIteration extends DistinctIteration<BindingSet, 
 	 * @param iter
 	 */
 	public LimitedSizeDistinctIteration(
-			CloseableIteration<? extends BindingSet, ? extends QueryEvaluationException> iter,
+			CloseableIteration<? extends BindingSet> iter,
 			AtomicLong used, long maxSize) {
 		super(iter);
 		this.used = used;
@@ -39,7 +39,7 @@ public class LimitedSizeDistinctIteration extends DistinctIteration<BindingSet, 
 	}
 
 	@Override
-	protected boolean add(BindingSet object) throws QueryEvaluationException {
+	protected boolean add(BindingSet object) {
 		boolean add = super.add(object);
 		if (add && used.incrementAndGet() > maxSize) {
 			throw new QueryEvaluationException("Size limited reached inside query operator.");

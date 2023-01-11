@@ -99,7 +99,7 @@ public class QueryBenchmark {
 		}
 	}
 
-	public static void main(String[] args) throws RunnerException, IOException, InterruptedException {
+	public static void main(String[] args) throws IOException, InterruptedException {
 //		Options opt = new OptionsBuilder()
 //				.include("QueryBenchmark") // adapt to run other benchmark tests
 //				// .addProfiler("stack", "lines=20;period=1;top=20")
@@ -126,7 +126,7 @@ public class QueryBenchmark {
 	}
 
 	@Setup(Level.Trial)
-	public void beforeClass() throws IOException, InterruptedException {
+	public void beforeClass() throws IOException {
 		repository = new SailRepository(new MemoryStore());
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {

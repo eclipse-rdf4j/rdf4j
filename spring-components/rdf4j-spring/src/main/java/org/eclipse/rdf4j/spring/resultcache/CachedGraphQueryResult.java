@@ -43,7 +43,7 @@ public class CachedGraphQueryResult implements GraphQueryResult {
 	}
 
 	@Override
-	public Map<String, String> getNamespaces() throws QueryEvaluationException {
+	public Map<String, String> getNamespaces() {
 		return namespaces;
 	}
 
@@ -53,22 +53,22 @@ public class CachedGraphQueryResult implements GraphQueryResult {
 	}
 
 	@Override
-	public void close() throws QueryEvaluationException {
+	public void close() {
 		this.replayingIterator = null;
 	}
 
 	@Override
-	public boolean hasNext() throws QueryEvaluationException {
+	public boolean hasNext() {
 		return replayingIterator.hasNext();
 	}
 
 	@Override
-	public Statement next() throws QueryEvaluationException {
+	public Statement next() {
 		return this.replayingIterator.next();
 	}
 
 	@Override
-	public void remove() throws QueryEvaluationException {
+	public void remove() {
 		throw new UnsupportedOperationException("Remove is not supported");
 	}
 

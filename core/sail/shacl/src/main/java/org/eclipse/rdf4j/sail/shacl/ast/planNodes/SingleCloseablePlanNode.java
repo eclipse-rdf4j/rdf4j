@@ -15,7 +15,6 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * A plan node that can only be closed once
@@ -31,7 +30,7 @@ public class SingleCloseablePlanNode implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<ValidationTuple> iterator() {
 		return new SingleCloseableIteration(parent);
 	}
 
@@ -87,9 +86,9 @@ public class SingleCloseablePlanNode implements PlanNode {
 		return Objects.hash(parent);
 	}
 
-	private static class SingleCloseableIteration implements CloseableIteration<ValidationTuple, SailException> {
+	private static class SingleCloseableIteration implements CloseableIteration<ValidationTuple> {
 
-		final CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
+		final CloseableIteration<? extends ValidationTuple> parentIterator;
 		final AtomicBoolean closed = new AtomicBoolean(false);
 
 		public SingleCloseableIteration(PlanNode parent) {
@@ -97,24 +96,24 @@ public class SingleCloseablePlanNode implements PlanNode {
 		}
 
 		@Override
-		public void close() throws SailException {
+		public void close() {
 			if (closed.compareAndSet(false, true)) {
 				parentIterator.close();
 			}
 		}
 
 		@Override
-		public boolean hasNext() throws SailException {
+		public boolean hasNext() {
 			return parentIterator.hasNext();
 		}
 
 		@Override
-		public ValidationTuple next() throws SailException {
+		public ValidationTuple next() {
 			return parentIterator.next();
 		}
 
 		@Override
-		public void remove() throws SailException {
+		public void remove() {
 			parentIterator.remove();
 		}
 	}

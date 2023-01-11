@@ -68,7 +68,7 @@ public class SingletonClientProvider implements ClientProvider {
 	}
 
 	@Override
-	synchronized public void close() throws Exception {
+	synchronized public void close() {
 		if (!closed) {
 			closed = true;
 			if (client != null) {

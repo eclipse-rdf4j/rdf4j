@@ -43,7 +43,7 @@ public abstract class AbstractNotifyingSail extends AbstractSail implements Noti
 	 *---------*/
 
 	@Override
-	public NotifyingSailConnection getConnection() throws SailException {
+	public NotifyingSailConnection getConnection() {
 		return (NotifyingSailConnection) super.getConnection();
 	}
 

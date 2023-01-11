@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  *
  * @author James Leigh
  */
-public class QueueCursor<E> extends QueueIteration<E, QueryEvaluationException> {
+public class QueueCursor<E> extends QueueIteration<E> {
 
 	/**
 	 * Creates an <var>QueueCursor</var> with the given (fixed) capacity and default access policy.

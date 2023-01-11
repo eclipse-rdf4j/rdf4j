@@ -173,7 +173,7 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 	}
 
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		if (dataRep != null) {
 			dataRep.shutDown();
 			dataRep = null;

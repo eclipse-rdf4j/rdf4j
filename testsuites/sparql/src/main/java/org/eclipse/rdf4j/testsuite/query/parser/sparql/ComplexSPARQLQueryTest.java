@@ -92,7 +92,7 @@ public abstract class ComplexSPARQLQueryTest {
 	}
 
 	@AfterClass
-	public static void afterClass() throws Exception {
+	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
@@ -133,10 +133,9 @@ public abstract class ComplexSPARQLQueryTest {
 	}
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		try {
 			if (conn != null) {
 				conn.close();
@@ -2610,7 +2609,7 @@ public abstract class ComplexSPARQLQueryTest {
 				"\n";
 	}
 
-	protected abstract Repository newRepository() throws Exception;
+	protected abstract Repository newRepository();
 
 	protected void loadTestData(String dataFile, Resource... contexts)
 			throws RDFParseException, RepositoryException, IOException {

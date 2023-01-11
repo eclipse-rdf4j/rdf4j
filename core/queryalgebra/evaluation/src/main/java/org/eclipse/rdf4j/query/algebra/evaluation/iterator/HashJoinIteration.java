@@ -43,18 +43,18 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
  *
  * @author MJAHale
  */
-public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 
 	/*-----------*
 	 * Variables *
 	 *-----------*/
 
 	protected final String[] joinAttributes;
-	private final CloseableIteration<BindingSet, QueryEvaluationException> leftIter;
-	private final CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
+	private final CloseableIteration<BindingSet> leftIter;
+	private final CloseableIteration<BindingSet> rightIter;
 	private final boolean leftJoin;
 	private Iterator<BindingSet> scanList;
-	private CloseableIteration<BindingSet, QueryEvaluationException> restIter;
+	private CloseableIteration<BindingSet> restIter;
 	private Map<BindingSetHashKey, List<BindingSet>> hashTable;
 	private BindingSet currentScanElem;
 	private Iterator<BindingSet> hashTableValues;
@@ -69,29 +69,26 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	 *--------------*/
 
 	@Deprecated(forRemoval = true)
-	public HashJoinIteration(EvaluationStrategy strategy, Join join, BindingSet bindings)
-			throws QueryEvaluationException {
+	public HashJoinIteration(EvaluationStrategy strategy, Join join, BindingSet bindings) {
 		this(strategy, join.getLeftArg(), join.getRightArg(), bindings, false);
 		join.setAlgorithm(this);
 	}
 
 	@Deprecated(forRemoval = true)
-	public HashJoinIteration(EvaluationStrategy strategy, LeftJoin join, BindingSet bindings)
-			throws QueryEvaluationException {
+	public HashJoinIteration(EvaluationStrategy strategy, LeftJoin join, BindingSet bindings) {
 		this(strategy, join.getLeftArg(), join.getRightArg(), bindings, true);
 		join.setAlgorithm(this);
 	}
 
 	public HashJoinIteration(EvaluationStrategy strategy, TupleExpr left, TupleExpr right, BindingSet bindings,
-			boolean leftJoin) throws QueryEvaluationException {
+			boolean leftJoin) {
 		this(strategy.evaluate(left, bindings), left.getBindingNames(), strategy.evaluate(right, bindings),
 				right.getBindingNames(), leftJoin);
 	}
 
 	public HashJoinIteration(QueryEvaluationStep left, QueryEvaluationStep right,
 			BindingSet bindings,
-			boolean leftJoin, String[] joinAttributes, QueryEvaluationContext context)
-			throws QueryEvaluationException {
+			boolean leftJoin, String[] joinAttributes, QueryEvaluationContext context) {
 		this.leftIter = left.evaluate(bindings);
 		this.rightIter = right.evaluate(bindings);
 		this.joinAttributes = joinAttributes;
@@ -102,10 +99,10 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	}
 
 	public HashJoinIteration(
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter, Set<String> leftBindingNames,
-			CloseableIteration<BindingSet, QueryEvaluationException> rightIter, Set<String> rightBindingNames,
+			CloseableIteration<BindingSet> leftIter, Set<String> leftBindingNames,
+			CloseableIteration<BindingSet> rightIter, Set<String> rightBindingNames,
 			boolean leftJoin
-	) throws QueryEvaluationException {
+	) {
 		this.leftIter = leftIter;
 		this.rightIter = rightIter;
 		this.mapMaker = this::makeHashTable;
@@ -119,11 +116,11 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	@Deprecated(forRemoval = true)
 	public HashJoinIteration(
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter, Set<String> leftBindingNames,
-			CloseableIteration<BindingSet, QueryEvaluationException> rightIter, Set<String> rightBindingNames,
+			CloseableIteration<BindingSet> leftIter, Set<String> leftBindingNames,
+			CloseableIteration<BindingSet> rightIter, Set<String> rightBindingNames,
 			boolean leftJoin, IntFunction<Map<BindingSetHashKey, List<BindingSet>>> mapMaker,
 			IntFunction<List<BindingSet>> mapValueMaker
-	) throws QueryEvaluationException {
+	) {
 		this.leftIter = leftIter;
 		this.rightIter = rightIter;
 		this.mapMaker = mapMaker;
@@ -140,7 +137,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	 *---------*/
 
 	@Override
-	protected BindingSet getNextElement() throws QueryEvaluationException {
+	protected BindingSet getNextElement() {
 		Map<BindingSetHashKey, List<BindingSet>> nextHashTable = hashTable;
 		if (nextHashTable == null) {
 			nextHashTable = hashTable = setupHashTable();
@@ -218,7 +215,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {
@@ -258,7 +255,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 		}
 	}
 
-	private Map<BindingSetHashKey, List<BindingSet>> setupHashTable() throws QueryEvaluationException {
+	private Map<BindingSetHashKey, List<BindingSet>> setupHashTable() {
 
 		Collection<BindingSet> leftArgResults;
 		Collection<BindingSet> rightArgResults = makeIterationCache(rightIter);
@@ -316,7 +313,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	}
 
 	protected void putHashTableEntry(Map<BindingSetHashKey, List<BindingSet>> nextHashTable, BindingSetHashKey hashKey,
-			List<BindingSet> hashValue, boolean newEntry) throws QueryEvaluationException {
+			List<BindingSet> hashValue, boolean newEntry) {
 		// by default, we use a standard memory hash map
 		// so we only need to do the put() if the list is new
 		if (newEntry) {
@@ -329,7 +326,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	 *
 	 * @return list
 	 */
-	protected Collection<BindingSet> makeIterationCache(CloseableIteration<BindingSet, QueryEvaluationException> iter) {
+	protected Collection<BindingSet> makeIterationCache(CloseableIteration<BindingSet> iter) {
 		return new ArrayList<>();
 	}
 
@@ -387,11 +384,11 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 		return iter.next();
 	}
 
-	protected <E> void add(Collection<E> col, E value) throws QueryEvaluationException {
+	protected <E> void add(Collection<E> col, E value) {
 		col.add(value);
 	}
 
-	protected <E> void addAll(Collection<E> col, List<E> values) throws QueryEvaluationException {
+	protected <E> void addAll(Collection<E> col, List<E> values) {
 		col.addAll(values);
 	}
 

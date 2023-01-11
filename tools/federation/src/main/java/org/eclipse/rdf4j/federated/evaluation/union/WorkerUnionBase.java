@@ -15,7 +15,6 @@ import java.util.List;
 
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * Base class for worker unions providing convenience functions to add tasks.
@@ -45,7 +44,7 @@ public abstract class WorkerUnionBase<T> extends UnionExecutorBase<T> {
 	}
 
 	@Override
-	public void handleClose() throws QueryEvaluationException {
+	public void handleClose() {
 		try {
 			for (ParallelTask<T> task : tasks) {
 				task.close();

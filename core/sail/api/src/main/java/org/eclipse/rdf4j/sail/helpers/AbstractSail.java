@@ -173,7 +173,7 @@ public abstract class AbstractSail implements Sail {
 	}
 
 	@Override
-	public void init() throws SailException {
+	public void init() {
 		initializationLock.writeLock().lock();
 		try {
 			if (isInitialized()) {
@@ -191,11 +191,11 @@ public abstract class AbstractSail implements Sail {
 	/**
 	 * Do store-specific operations to initialize the store. The default implementation of this method does nothing.
 	 */
-	protected void initializeInternal() throws SailException {
+	protected void initializeInternal() {
 	}
 
 	@Override
-	public void shutDown() throws SailException {
+	public void shutDown() {
 		initializationLock.writeLock().lock();
 		try {
 			if (!isInitialized()) {
@@ -259,7 +259,7 @@ public abstract class AbstractSail implements Sail {
 	protected abstract void shutDownInternal() throws SailException;
 
 	@Override
-	public SailConnection getConnection() throws SailException {
+	public SailConnection getConnection() {
 		if (!isInitialized()) {
 			init();
 		}

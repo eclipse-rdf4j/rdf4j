@@ -176,7 +176,7 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 
 	protected abstract ParsedOperation parseOperation(String operation, String fileURL) throws MalformedQueryException;
 
-	public static Test suite() throws Exception {
+	public static Test suite() {
 		return new TestSuite();
 	}
 

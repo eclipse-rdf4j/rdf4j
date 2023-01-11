@@ -71,7 +71,7 @@ public class HTTPStoreConnectionTest extends RepositoryConnectionTest {
 	}
 
 	@Test
-	public void testUpdateExecution() throws Exception {
+	public void testUpdateExecution() {
 
 		IRI foobar = vf.createIRI("foo:bar");
 
@@ -109,7 +109,7 @@ public class HTTPStoreConnectionTest extends RepositoryConnectionTest {
 	@Test
 	@Override
 	@Ignore("See SES-1833")
-	public void testAddMalformedLiteralsStrictConfig() throws Exception {
+	public void testAddMalformedLiteralsStrictConfig() {
 		System.err.println("SES-1833: temporarily disabled testAddMalformedLiteralsStrictConfig() for HTTPRepository");
 	}
 

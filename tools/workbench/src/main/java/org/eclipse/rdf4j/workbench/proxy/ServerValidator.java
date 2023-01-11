@@ -47,8 +47,6 @@ class ServerValidator {
 			isDir = asLocalFile(url).isDirectory();
 		} catch (MalformedURLException e) {
 			LOGGER.warn(e.toString(), e);
-		} catch (IOException e) {
-			LOGGER.warn(e.toString(), e);
 		}
 		return isDir;
 	}
@@ -115,7 +113,7 @@ class ServerValidator {
 		return success;
 	}
 
-	private File asLocalFile(final URL rdf) throws UnsupportedEncodingException {
+	private File asLocalFile(final URL rdf) {
 		return new File(URLDecoder.decode(rdf.getFile(), StandardCharsets.UTF_8));
 	}
 }

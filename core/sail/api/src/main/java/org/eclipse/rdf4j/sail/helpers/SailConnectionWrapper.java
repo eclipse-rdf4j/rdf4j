@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Query;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
@@ -93,12 +92,12 @@ public class SailConnectionWrapper
 	}
 
 	@Override
-	public boolean isOpen() throws SailException {
+	public boolean isOpen() {
 		return wrappedCon.isOpen();
 	}
 
 	@Override
-	public void close() throws SailException {
+	public void close() {
 		wrappedCon.close();
 	}
 
@@ -108,30 +107,29 @@ public class SailConnectionWrapper
 	}
 
 	@Override
-	public CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
-			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
+	public CloseableIteration<? extends BindingSet> evaluate(TupleExpr tupleExpr,
+			Dataset dataset, BindingSet bindings, boolean includeInferred) {
 		return wrappedCon.evaluate(tupleExpr, dataset, bindings, includeInferred);
 	}
 
 	@Override
-	public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
+	public CloseableIteration<? extends Resource> getContextIDs() {
 		return wrappedCon.getContextIDs();
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
-			boolean includeInferred, Resource... contexts) throws SailException {
+	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+			boolean includeInferred, Resource... contexts) {
 		return wrappedCon.getStatements(subj, pred, obj, includeInferred, contexts);
 	}
 
 	@Override
-	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
-			throws SailException {
+	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts) {
 		return wrappedCon.hasStatement(subj, pred, obj, includeInferred, contexts);
 	}
 
 	@Override
-	public long size(Resource... contexts) throws SailException {
+	public long size(Resource... contexts) {
 		return wrappedCon.size(contexts);
 	}
 
@@ -139,79 +137,77 @@ public class SailConnectionWrapper
 	 * Not in the API, preserving for binary compatibility. Will be removed in future. Should use {@link
 	 * #size(Resource...)} instead, which is called by this method.
 	 */
-	public long size(Resource context) throws SailException {
+	public long size(Resource context) {
 		return wrappedCon.size(context);
 	}
 
 	@Override
-	public void commit() throws SailException {
+	public void commit() {
 		wrappedCon.commit();
 	}
 
 	@Override
-	public void rollback() throws SailException {
+	public void rollback() {
 		wrappedCon.rollback();
 	}
 
 	@Override
-	public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+	public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		wrappedCon.addStatement(subj, pred, obj, contexts);
 	}
 
 	@Override
-	public void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+	public void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		wrappedCon.removeStatements(subj, pred, obj, contexts);
 	}
 
 	@Override
-	public void startUpdate(UpdateContext modify) throws SailException {
+	public void startUpdate(UpdateContext modify) {
 		wrappedCon.startUpdate(modify);
 	}
 
 	@Override
-	public void addStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+	public void addStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts) {
 		wrappedCon.addStatement(modify, subj, pred, obj, contexts);
 	}
 
 	@Override
-	public void removeStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+	public void removeStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts) {
 		wrappedCon.removeStatement(modify, subj, pred, obj, contexts);
 	}
 
 	@Override
-	public void endUpdate(UpdateContext modify) throws SailException {
+	public void endUpdate(UpdateContext modify) {
 		wrappedCon.endUpdate(modify);
 	}
 
 	@Override
-	public void clear(Resource... contexts) throws SailException {
+	public void clear(Resource... contexts) {
 		wrappedCon.clear(contexts);
 	}
 
 	@Override
-	public CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException {
+	public CloseableIteration<? extends Namespace> getNamespaces() {
 		return wrappedCon.getNamespaces();
 	}
 
 	@Override
-	public String getNamespace(String prefix) throws SailException {
+	public String getNamespace(String prefix) {
 		return wrappedCon.getNamespace(prefix);
 	}
 
 	@Override
-	public void setNamespace(String prefix, String name) throws SailException {
+	public void setNamespace(String prefix, String name) {
 		wrappedCon.setNamespace(prefix, name);
 	}
 
 	@Override
-	public void removeNamespace(String prefix) throws SailException {
+	public void removeNamespace(String prefix) {
 		wrappedCon.removeNamespace(prefix);
 	}
 
 	@Override
-	public void clearNamespaces() throws SailException {
+	public void clearNamespaces() {
 		wrappedCon.clearNamespaces();
 	}
 
@@ -227,12 +223,12 @@ public class SailConnectionWrapper
 	}
 
 	@Override
-	public void begin() throws SailException {
+	public void begin() {
 		wrappedCon.begin();
 	}
 
 	@Override
-	public void begin(IsolationLevel level) throws SailException {
+	public void begin(IsolationLevel level) {
 		wrappedCon.begin(level);
 	}
 
@@ -242,12 +238,12 @@ public class SailConnectionWrapper
 	}
 
 	@Override
-	public void flush() throws SailException {
+	public void flush() {
 		wrappedCon.flush();
 	}
 
 	@Override
-	public void prepare() throws SailException {
+	public void prepare() {
 		wrappedCon.prepare();
 	}
 

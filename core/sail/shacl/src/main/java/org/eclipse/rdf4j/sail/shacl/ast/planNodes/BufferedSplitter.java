@@ -19,7 +19,6 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,7 +59,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 	private synchronized void init() {
 		if (tuplesBuffer == null) {
 			tuplesBuffer = new ArrayList<>();
-			try (CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator()) {
+			try (CloseableIteration<? extends ValidationTuple> iterator = parent.iterator()) {
 				while (iterator.hasNext()) {
 					ValidationTuple next = iterator.next();
 					tuplesBuffer.add(next);
@@ -110,7 +109,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 		}
 
 		@Override
-		public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+		public CloseableIteration<ValidationTuple> iterator() {
 
 			return new CloseableIteration<>() {
 
@@ -124,18 +123,18 @@ public class BufferedSplitter implements PlanNodeProvider {
 				}
 
 				@Override
-				public void close() throws SailException {
+				public void close() {
 
 				}
 
 				@Override
-				public boolean hasNext() throws SailException {
+				public boolean hasNext() {
 					init();
 					return iterator.hasNext();
 				}
 
 				@Override
-				public ValidationTuple next() throws SailException {
+				public ValidationTuple next() {
 					init();
 					ValidationTuple tuple = iterator.next();
 					if (validationExecutionLogger.isEnabled()) {
@@ -147,7 +146,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 				}
 
 				@Override
-				public void remove() throws SailException {
+				public void remove() {
 					throw new ShaclUnsupportedException();
 				}
 			};

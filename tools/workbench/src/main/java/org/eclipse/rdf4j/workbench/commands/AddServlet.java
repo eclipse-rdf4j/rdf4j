@@ -41,7 +41,7 @@ public class AddServlet extends TransformationServlet {
 
 	@Override
 	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
-			throws IOException, RepositoryException, FileUploadException, QueryResultHandlerException {
+			throws IOException, RepositoryException, QueryResultHandlerException {
 		try {
 			String baseURI = req.getParameter("baseURI");
 			String contentType = req.getParameter("Content-Type");

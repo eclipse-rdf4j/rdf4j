@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 @Deprecated(since = "4.1.0")
-public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
+public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingSet> {
 
 	/*-----------*
 	 * Constants *
@@ -43,8 +43,8 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	 * Constructors *
 	 *--------------*/
 
-	public ProjectionIterator(Projection projection, CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			BindingSet parentBindings, QueryEvaluationContext context) throws QueryEvaluationException {
+	public ProjectionIterator(Projection projection, CloseableIteration<BindingSet> iter,
+			BindingSet parentBindings, QueryEvaluationContext context) {
 		super(iter);
 		ProjectionElemList projectionElemList = projection.getProjectionElemList();
 		boolean isOuterProjection = determineOuterProjection(projection);
@@ -104,7 +104,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	 *---------*/
 
 	@Override
-	protected BindingSet convert(BindingSet sourceBindings) throws QueryEvaluationException {
+	protected BindingSet convert(BindingSet sourceBindings) {
 		MutableBindingSet qbs = maker.get();
 		projector.accept(qbs, sourceBindings);
 		return qbs;

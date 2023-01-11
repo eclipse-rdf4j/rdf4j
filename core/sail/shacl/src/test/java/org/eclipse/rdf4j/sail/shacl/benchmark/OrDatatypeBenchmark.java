@@ -56,7 +56,7 @@ public class OrDatatypeBenchmark {
 	private List<List<Statement>> allStatements;
 
 	@Setup(Level.Trial)
-	public void setUp() throws InterruptedException {
+	public void setUp() {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.WARN);
 

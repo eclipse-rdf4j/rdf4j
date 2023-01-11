@@ -229,7 +229,7 @@ public class ParsedURITest {
 				"http://example.com/dir2/dir/file?qs#frag");
 	}
 
-	private void assertResolves(String relative, String base, String absolute) throws URISyntaxException {
+	private void assertResolves(String relative, String base, String absolute) {
 		assertEquals(absolute, new ParsedURI(base).resolve(relative).toString());
 	}
 

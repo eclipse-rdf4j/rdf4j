@@ -164,9 +164,8 @@ public class Create extends ConsoleCommand {
 	 * Create a new repository based on a template
 	 *
 	 * @param templateName name of the template
-	 * @throws IOException
 	 */
-	private void createRepository(final String templateName) throws IOException {
+	private void createRepository(final String templateName) {
 		try {
 			// FIXME: remove assumption of .ttl extension
 			final String templateFileName = templateName + FILE_EXT;

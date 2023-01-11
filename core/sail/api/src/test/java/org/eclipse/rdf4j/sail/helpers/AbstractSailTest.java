@@ -38,12 +38,12 @@ public class AbstractSailTest {
 	private final Random random = new Random(43252333);
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 
 		subject = new AbstractSail() {
 
 			@Override
-			public boolean isWritable() throws SailException {
+			public boolean isWritable() {
 				return false;
 			}
 
@@ -53,13 +53,13 @@ public class AbstractSailTest {
 			}
 
 			@Override
-			protected void shutDownInternal() throws SailException {
+			protected void shutDownInternal() {
 				// TODO Auto-generated method stub
 
 			}
 
 			@Override
-			protected SailConnection getConnectionInternal() throws SailException {
+			protected SailConnection getConnectionInternal() {
 				SailConnection connDouble = mock(SailConnection.class);
 				doAnswer(f -> {
 					subject.connectionClosed(connDouble);

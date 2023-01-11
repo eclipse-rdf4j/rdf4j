@@ -135,7 +135,7 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			throws HTTPException;
 
 	abstract protected Query getQuery(HttpServletRequest request, RepositoryConnection repositoryCon,
-			String queryString) throws IOException, HTTPException;
+			String queryString) throws HTTPException;
 
 	protected ModelAndView getModelAndView(HttpServletRequest request, HttpServletResponse response,
 			boolean headersOnly, RepositoryConnection repositoryCon, View view, Object queryResult,

@@ -66,7 +66,7 @@ public abstract class RDFStarSupportTest {
 	private IRI context2;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		testRepository = createRepository();
 
 		testCon = testRepository.getConnection();
@@ -91,7 +91,7 @@ public abstract class RDFStarSupportTest {
 	}
 
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		try {
 			testCon.close();
 		} finally {

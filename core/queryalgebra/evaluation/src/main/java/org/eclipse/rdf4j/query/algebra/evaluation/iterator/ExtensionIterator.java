@@ -29,20 +29,20 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 @Deprecated(since = "4.1.0")
-public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
+public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSet> {
 
 	private final Consumer<MutableBindingSet> setter;
 	private final QueryEvaluationContext context;
 
-	public ExtensionIterator(Extension extension, CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			EvaluationStrategy strategy, QueryEvaluationContext context) throws QueryEvaluationException {
+	public ExtensionIterator(Extension extension, CloseableIteration<BindingSet> iter,
+			EvaluationStrategy strategy, QueryEvaluationContext context) {
 		super(iter);
 		this.context = context;
 		this.setter = buildLambdaToEvaluateTheExpressions(extension, strategy, context);
 	}
 
-	public ExtensionIterator(CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			Consumer<MutableBindingSet> setter, QueryEvaluationContext context) throws QueryEvaluationException {
+	public ExtensionIterator(CloseableIteration<BindingSet> iter,
+			Consumer<MutableBindingSet> setter, QueryEvaluationContext context) {
 		super(iter);
 		this.setter = setter;
 		this.context = context;
@@ -98,7 +98,7 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 	}
 
 	@Override
-	public BindingSet convert(BindingSet sourceBindings) throws QueryEvaluationException {
+	public BindingSet convert(BindingSet sourceBindings) {
 		MutableBindingSet targetBindings = context.createBindingSet(sourceBindings);
 		setter.accept(targetBindings);
 		return targetBindings;

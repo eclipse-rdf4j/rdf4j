@@ -197,7 +197,7 @@ public class WorkbenchServlet extends AbstractServlet {
 		return manager;
 	}
 
-	private File asLocalFile(final URL rdf) throws UnsupportedEncodingException {
+	private File asLocalFile(final URL rdf) {
 		return new File(URLDecoder.decode(rdf.getFile(), StandardCharsets.UTF_8));
 	}
 

@@ -58,7 +58,7 @@ public class CleanerGraphQueryResult implements GraphQueryResult {
 	}
 
 	@Override
-	public Map<String, String> getNamespaces() throws QueryEvaluationException {
+	public Map<String, String> getNamespaces() {
 		return delegate.getNamespaces();
 	}
 

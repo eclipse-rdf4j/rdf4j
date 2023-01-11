@@ -44,7 +44,7 @@ public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 	}
 
 	@Override
-	public TupleQueryResult evaluate() throws QueryEvaluationException {
+	public TupleQueryResult evaluate() {
 		SPARQLProtocolSession client = getHttpClient();
 		try {
 			conn.flushTransactionState(Protocol.Action.QUERY);
@@ -58,7 +58,7 @@ public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 
 	@Override
 	public void evaluate(TupleQueryResultHandler handler)
-			throws QueryEvaluationException, TupleQueryResultHandlerException {
+			throws TupleQueryResultHandlerException {
 		SPARQLProtocolSession client = getHttpClient();
 		try {
 			conn.flushTransactionState(Protocol.Action.QUERY);

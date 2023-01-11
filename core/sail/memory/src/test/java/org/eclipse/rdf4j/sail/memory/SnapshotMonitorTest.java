@@ -14,7 +14,6 @@ package org.eclipse.rdf4j.sail.memory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
@@ -225,7 +224,7 @@ public class SnapshotMonitorTest {
 
 	private void getAndAbandonDataset(SailSource explicitSailSource, MemorySailStore.SnapshotMonitor snapshotMonitor) {
 		SailDataset dataset = explicitSailSource.dataset(IsolationLevels.SNAPSHOT);
-		CloseableIteration<? extends Resource, SailException> contextIDs = dataset.getContextIDs();
+		CloseableIteration<? extends Resource> contextIDs = dataset.getContextIDs();
 		contextIDs.close();
 		Assertions.assertNotEquals(100, snapshotMonitor.getFirstUnusedOrElse(100));
 	}

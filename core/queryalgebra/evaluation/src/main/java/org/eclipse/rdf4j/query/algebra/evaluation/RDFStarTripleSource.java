@@ -28,7 +28,7 @@ public interface RDFStarTripleSource extends TripleSource {
 	 * @return An iterator over the relevant triples.
 	 * @throws QueryEvaluationException If the rdf star triple source failed to get the statements.
 	 */
-	CloseableIteration<? extends Triple, QueryEvaluationException> getRdfStarTriples(Resource subj, IRI pred,
+	CloseableIteration<? extends Triple> getRdfStarTriples(Resource subj, IRI pred,
 			Value obj) throws QueryEvaluationException;
 
 }

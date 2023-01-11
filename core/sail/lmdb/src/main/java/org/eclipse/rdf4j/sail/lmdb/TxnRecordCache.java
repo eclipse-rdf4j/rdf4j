@@ -193,7 +193,7 @@ final class TxnRecordCache {
 			}
 		}
 
-		public Record next() throws IOException {
+		public Record next() {
 			if (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == 0) {
 				Varint.readListUnsigned(keyData.mv_data(), quad);
 				byte op = valueData.mv_data().get(0);

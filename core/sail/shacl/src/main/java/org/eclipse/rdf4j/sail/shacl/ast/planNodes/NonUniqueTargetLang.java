@@ -20,7 +20,6 @@ import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * This PlanNode takes a stream of Tuples like: (ex:companyA, "Company A"@en). It assumes that the stream is sorted on
@@ -42,7 +41,7 @@ public class NonUniqueTargetLang implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<ValidationTuple> iterator() {
 
 		return new OnlyNonUnique(parent, validationExecutionLogger);
 
@@ -116,7 +115,7 @@ class OnlyNonUnique extends LoggingCloseableIteration {
 
 	private Set<String> seenLanguages = new HashSet<>();
 
-	private final CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
+	private final CloseableIteration<? extends ValidationTuple> parentIterator;
 
 	OnlyNonUnique(PlanNode parent, ValidationExecutionLogger validationExecutionLogger) {
 		super(parent, validationExecutionLogger);
@@ -160,18 +159,18 @@ class OnlyNonUnique extends LoggingCloseableIteration {
 	}
 
 	@Override
-	public void localClose() throws SailException {
+	public void localClose() {
 		parentIterator.close();
 	}
 
 	@Override
-	protected boolean localHasNext() throws SailException {
+	protected boolean localHasNext() {
 		calculateNext();
 		return next != null;
 	}
 
 	@Override
-	protected ValidationTuple loggingNext() throws SailException {
+	protected ValidationTuple loggingNext() {
 		calculateNext();
 
 		ValidationTuple temp = next;

@@ -29,13 +29,13 @@ public class DBPediaCelsiusDatatypeHandlerTest extends AbstractDatatypeHandlerTe
 	@Ignore("DBPedia datatypes are not currently verified")
 	@Test
 	@Override
-	public void testVerifyDatatypeInvalidValue() throws Exception {
+	public void testVerifyDatatypeInvalidValue() {
 	}
 
 	@Ignore("DBPedia datatypes are not currently normalised")
 	@Test
 	@Override
-	public void testNormalizeDatatypeInvalidValue() throws Exception {
+	public void testNormalizeDatatypeInvalidValue() {
 	}
 
 	// -------------------------------------

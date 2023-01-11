@@ -28,7 +28,7 @@ public class MinusQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
-		return new SPARQLMinusIteration<>(leftQes.evaluate(bindings), rightQes.apply(bindings));
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		return new SPARQLMinusIteration(leftQes.evaluate(bindings), rightQes.apply(bindings));
 	}
 }

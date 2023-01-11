@@ -18,9 +18,9 @@ import org.eclipse.rdf4j.sail.SailException;
 /**
  * @author Herko ter Horst
  */
-class SailCloseableIteration<E> extends ExceptionConvertingIteration<E, RepositoryException> {
+class SailCloseableIteration<E> extends ExceptionConvertingIteration<E> {
 
-	public SailCloseableIteration(CloseableIteration<? extends E, ? extends SailException> iter) {
+	public SailCloseableIteration(CloseableIteration<? extends E> iter) {
 		super(iter);
 	}
 

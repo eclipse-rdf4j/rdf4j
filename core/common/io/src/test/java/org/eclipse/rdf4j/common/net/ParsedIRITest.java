@@ -470,7 +470,7 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void testIllegalInPath() throws Exception {
+	public void testIllegalInPath() {
 		for (char g : ILLEGAL.toCharArray()) {
 			try {
 				new ParsedIRI(BASE + g);
@@ -498,7 +498,7 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void testIllegalInQuery() throws Exception {
+	public void testIllegalInQuery() {
 		for (char g : ILLEGAL.toCharArray()) {
 			try {
 				new ParsedIRI(QUERY + g);
@@ -526,7 +526,7 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void testIllegalInFragment() throws Exception {
+	public void testIllegalInFragment() {
 		for (char g : ILLEGAL.toCharArray()) {
 			try {
 				new ParsedIRI(FRAGMENT + g);
@@ -537,7 +537,7 @@ public class ParsedIRITest {
 		}
 	}
 
-	private String encode(Character chr) throws UnsupportedEncodingException {
+	private String encode(Character chr) {
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		byte[] source = Character.toString(chr).getBytes(StandardCharsets.UTF_8);
 		for (byte c : source) {

@@ -37,8 +37,8 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 	 * @param strategy
 	 * @throws QueryEvaluationException
 	 */
-	public ServiceJoinIterator(CloseableIteration<BindingSet, QueryEvaluationException> leftIter, Service service,
-			BindingSet bindings, EvaluationStrategy strategy) throws QueryEvaluationException {
+	public ServiceJoinIterator(CloseableIteration<BindingSet> leftIter, Service service,
+			BindingSet bindings, EvaluationStrategy strategy) {
 		super(leftIter, service, bindings);
 		this.service = service;
 		this.strategy = strategy;
@@ -46,7 +46,7 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 	}
 
 	@Override
-	protected void handleBindings() throws Exception {
+	protected void handleBindings() {
 		Var serviceRef = service.getServiceRef();
 
 		String serviceUri;

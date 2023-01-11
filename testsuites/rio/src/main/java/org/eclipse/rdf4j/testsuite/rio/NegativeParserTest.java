@@ -47,7 +47,7 @@ public class NegativeParserTest extends TestCase {
 	 *--------------*/
 
 	public NegativeParserTest(IRI testUri, String caseURI, String inputURL, String baseURL, RDFParser targetParser,
-			FailureMode failureMode) throws MalformedURLException {
+			FailureMode failureMode) {
 		super(caseURI);
 		this.testUri = testUri;
 		this.inputURL = inputURL;

@@ -43,11 +43,11 @@ import org.eclipse.rdf4j.model.Value;
  * @see RepositoryConnection#getNamespaces()
  * @see RepositoryConnection#getContextIDs()
  */
-public class RepositoryResult<T> extends AbstractCloseableIteration<T, RepositoryException> implements Iterable<T> {
+public class RepositoryResult<T> extends AbstractCloseableIteration<T> implements Iterable<T> {
 
-	private CloseableIteration<? extends T, RepositoryException> wrappedIter;
+	private CloseableIteration<? extends T> wrappedIter;
 
-	public RepositoryResult(CloseableIteration<? extends T, RepositoryException> iter) {
+	public RepositoryResult(CloseableIteration<? extends T> iter) {
 		assert iter != null;
 		wrappedIter = iter;
 	}
@@ -68,7 +68,7 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 	}
 
 	@Override
-	protected void handleClose() throws RepositoryException {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {
@@ -90,7 +90,7 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 			return;
 		}
 
-		wrappedIter = new DistinctIteration<T, RepositoryException>(wrappedIter);
+		wrappedIter = new DistinctIteration<T>(wrappedIter);
 	}
 
 	/**

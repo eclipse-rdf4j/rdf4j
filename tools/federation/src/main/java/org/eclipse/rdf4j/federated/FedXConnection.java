@@ -86,7 +86,7 @@ public class FedXConnection extends AbstractSailConnection {
 	 */
 	private WriteStrategy writeStrategy;
 
-	public FedXConnection(FedX federation, FederationContext federationContext) throws SailException {
+	public FedXConnection(FedX federation, FederationContext federationContext) {
 		super(federation);
 		this.federation = federation;
 		this.federationContext = federationContext;
@@ -99,8 +99,8 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(TupleExpr query,
-			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
+	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr query,
+			Dataset dataset, BindingSet bindings, boolean includeInferred) {
 
 		final TupleExpr originalQuery = query;
 
@@ -164,7 +164,7 @@ public class FedXConnection extends AbstractSailConnection {
 				queryBindings = actualQueryBindings;
 			}
 
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> res = null;
+			CloseableIteration<? extends BindingSet> res = null;
 			try {
 				res = strategy.evaluate(query, queryBindings);
 
@@ -189,7 +189,7 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	protected void clearInternal(Resource... contexts) throws SailException {
+	protected void clearInternal(Resource... contexts) {
 		try {
 			getWriteStrategyInternal().clear(contexts);
 		} catch (RepositoryException e) {
@@ -198,7 +198,7 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	protected void clearNamespacesInternal() throws SailException {
+	protected void clearNamespacesInternal() {
 		try {
 			getWriteStrategyInternal().clearNamespaces();
 		} catch (RepositoryException e) {
@@ -207,7 +207,7 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	protected void closeInternal() throws SailException {
+	protected void closeInternal() {
 
 		/*
 		 * think about it: the federation connection should remain open until the federation is shutdown. we use a
@@ -225,7 +225,7 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	protected void commitInternal() throws SailException {
+	protected void commitInternal() {
 		try {
 			getWriteStrategyInternal().commit();
 		} catch (RepositoryException e) {
@@ -234,7 +234,7 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	protected CloseableIteration<? extends Resource, SailException> getContextIDsInternal() throws SailException {
+	protected CloseableIteration<? extends Resource> getContextIDsInternal() {
 
 		FederationEvalStrategy strategy = federationContext.createStrategy(new SimpleDataset());
 		WorkerUnionBase<Resource> union = new SynchronousWorkerUnion<>(new QueryInfo("getContextIDsInternal", null,
@@ -244,7 +244,7 @@ public class FedXConnection extends AbstractSailConnection {
 		for (Endpoint e : federation.getMembers()) {
 			union.addTask(new ParallelTask<>() {
 				@Override
-				public CloseableIteration<Resource, QueryEvaluationException> performTask() throws Exception {
+				public CloseableIteration<Resource> performTask() {
 					try (RepositoryConnection conn = e.getConnection()) {
 						// we need to materialize the contexts as they are only accessible
 						// while the connection is open
@@ -275,22 +275,22 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	protected String getNamespaceInternal(String prefix) throws SailException {
+	protected String getNamespaceInternal(String prefix) {
 		// do not support this feature, but also do not throw an exception
 		// as this method is expected for the RDF4J workbench to work
 		return null;
 	}
 
 	@Override
-	protected CloseableIteration<? extends Namespace, SailException> getNamespacesInternal() throws SailException {
+	protected CloseableIteration<? extends Namespace> getNamespacesInternal() {
 		// do not support this feature, but also do not throw an exception
 		// as this method is expected for the RDF4J workbench to work
 		return new EmptyIteration<>();
 	}
 
 	@Override
-	protected CloseableIteration<? extends Statement, SailException> getStatementsInternal(Resource subj, IRI pred,
-			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+	protected CloseableIteration<? extends Statement> getStatementsInternal(Resource subj, IRI pred,
+			Value obj, boolean includeInferred, Resource... contexts) {
 
 		try {
 			Dataset dataset = new SimpleDataset();
@@ -298,7 +298,7 @@ public class FedXConnection extends AbstractSailConnection {
 			QueryInfo queryInfo = new QueryInfo(subj, pred, obj, 0, includeInferred, federationContext, strategy,
 					dataset);
 			federationContext.getMonitoringService().monitorQuery(queryInfo);
-			CloseableIteration<Statement, QueryEvaluationException> res = null;
+			CloseableIteration<Statement> res = null;
 			try {
 				res = strategy.getStatements(queryInfo, subj, pred, obj, contexts);
 				return new ExceptionConvertingIteration<>(res) {
@@ -325,7 +325,7 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+	protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		try {
 			getWriteStrategyInternal().addStatement(subj, pred, obj, contexts);
 		} catch (RepositoryException e) {
@@ -334,13 +334,12 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	protected void removeNamespaceInternal(String prefix) throws SailException {
+	protected void removeNamespaceInternal(String prefix) {
 		// do not support this feature, but also do not throw an exception
 	}
 
 	@Override
-	protected void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+	protected void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		try {
 			getWriteStrategyInternal().removeStatement(subj, pred, obj, contexts);
 		} catch (RepositoryException e) {
@@ -349,7 +348,7 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	protected void rollbackInternal() throws SailException {
+	protected void rollbackInternal() {
 		try {
 			getWriteStrategyInternal().rollback();
 		} catch (RepositoryException e) {
@@ -358,12 +357,12 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	protected void setNamespaceInternal(String prefix, String name) throws SailException {
+	protected void setNamespaceInternal(String prefix, String name) {
 		// do not support this feature, but also do not throw an exception
 	}
 
 	@Override
-	protected long sizeInternal(Resource... contexts) throws SailException {
+	protected long sizeInternal(Resource... contexts) {
 		if (contexts != null && contexts.length > 0) {
 			throw new UnsupportedOperationException("Context handling for size() not supported");
 		}
@@ -384,7 +383,7 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	protected void startTransactionInternal() throws SailException {
+	protected void startTransactionInternal() {
 		try {
 			getWriteStrategyInternal().begin();
 		} catch (RepositoryException e) {
@@ -399,7 +398,7 @@ public class FedXConnection extends AbstractSailConnection {
 	 *
 	 * @return the {@link WriteStrategy}
 	 */
-	protected synchronized WriteStrategy getWriteStrategyInternal() throws SailException {
+	protected synchronized WriteStrategy getWriteStrategyInternal() {
 
 		if (writeStrategy == null) {
 			writeStrategy = federation.getWriteStrategy();
@@ -464,12 +463,12 @@ public class FedXConnection extends AbstractSailConnection {
 	protected static class SailBaseDefaultImpl extends AbstractSail {
 
 		@Override
-		protected SailConnection getConnectionInternal() throws SailException {
+		protected SailConnection getConnectionInternal() {
 			return null;
 		}
 
 		@Override
-		protected void shutDownInternal() throws SailException {
+		protected void shutDownInternal() {
 		}
 
 		@Override
@@ -478,7 +477,7 @@ public class FedXConnection extends AbstractSailConnection {
 		}
 
 		@Override
-		public boolean isWritable() throws SailException {
+		public boolean isWritable() {
 			return false;
 		}
 

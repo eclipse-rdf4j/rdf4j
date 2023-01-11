@@ -23,7 +23,7 @@ public class NativeCascadeValueExceptionTest extends CascadeValueExceptionTest {
 	public final TemporaryFolder tmpDir = new TemporaryFolder();
 
 	@Override
-	protected Repository newRepository() throws IOException {
+	protected Repository newRepository() {
 		return new SailRepository(new NativeStore(tmpDir.getRoot(), "spoc"));
 	}
 }

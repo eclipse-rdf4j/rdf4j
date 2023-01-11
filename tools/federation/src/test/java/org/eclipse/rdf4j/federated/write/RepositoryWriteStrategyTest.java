@@ -39,13 +39,13 @@ public class RepositoryWriteStrategyTest {
 	}
 
 	@Test
-	public void testBegin() throws Exception {
+	public void testBegin() {
 		strategy.begin();
 		verify(connection).begin();
 	}
 
 	@Test
-	public void testSetTransactionSettings() throws Exception {
+	public void testSetTransactionSettings() {
 		TransactionSetting setting = mock(TransactionSetting.class);
 		strategy.setTransactionSettings(setting);
 

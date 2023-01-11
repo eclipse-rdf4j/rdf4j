@@ -18,6 +18,7 @@ import java.io.Reader;
 import java.lang.invoke.MethodHandles;
 import java.net.URL;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -123,7 +124,7 @@ public class LoggingRepositoryConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, RepositoryException {
+			throws RDFParseException, RepositoryException {
 		operationLog.runWithLog(
 				PseudoOperation.forAdd(file, baseURI, dataFormat, contexts),
 				wrapInRuntimeException(
@@ -132,7 +133,7 @@ public class LoggingRepositoryConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public void add(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, RepositoryException {
+			throws RDFParseException, RepositoryException {
 		operationLog.runWithLog(
 				PseudoOperation.forAdd(in, baseURI, dataFormat, contexts),
 				wrapInRuntimeException(() -> getDelegate().add(in, baseURI, dataFormat, contexts)));
@@ -147,9 +148,9 @@ public class LoggingRepositoryConnection extends RepositoryConnectionWrapper {
 	}
 
 	@Override
-	public <E extends Exception> void add(
-			CloseableIteration<? extends Statement, E> statementIter, Resource... contexts)
-			throws RepositoryException, E {
+	public void add(
+			CloseableIteration<? extends Statement> statementIter, Resource... contexts)
+			throws RepositoryException {
 		operationLog.runWithLog(
 				PseudoOperation.forAdd(statementIter, contexts),
 				wrapInRuntimeException(() -> getDelegate().add(statementIter, contexts)));
@@ -157,7 +158,7 @@ public class LoggingRepositoryConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public void add(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, RepositoryException {
+			throws RDFParseException, RepositoryException {
 		operationLog.runWithLog(
 				PseudoOperation.forAdd(reader, baseURI, dataFormat, contexts),
 				wrapInRuntimeException(
@@ -180,7 +181,7 @@ public class LoggingRepositoryConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public void add(URL url, String baseURI, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, RepositoryException {
+			throws RDFParseException, RepositoryException {
 		operationLog.runWithLog(
 				PseudoOperation.forAdd(url, baseURI, dataFormat, contexts),
 				wrapInRuntimeException(
@@ -204,9 +205,9 @@ public class LoggingRepositoryConnection extends RepositoryConnectionWrapper {
 	}
 
 	@Override
-	public <E extends Exception> void remove(
-			CloseableIteration<? extends Statement, E> statementIter, Resource... contexts)
-			throws RepositoryException, E {
+	public void remove(
+			CloseableIteration<? extends Statement> statementIter, Resource... contexts)
+			throws RepositoryException {
 		operationLog.runWithLog(
 				PseudoOperation.forRemove(statementIter, contexts),
 				wrapInRuntimeException(() -> getDelegate().remove(statementIter, contexts)));

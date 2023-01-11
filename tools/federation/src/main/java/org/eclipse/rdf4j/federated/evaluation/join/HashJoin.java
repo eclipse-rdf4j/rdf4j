@@ -41,17 +41,16 @@ public class HashJoin extends JoinExecutorBase<BindingSet> {
 	private final QueryEvaluationStep rightPrepared;
 
 	public HashJoin(FederationEvalStrategy strategy,
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
+			CloseableIteration<BindingSet> leftIter,
 			TupleExpr rightArg, QueryEvaluationStep rightPrepared, Set<String> joinVars, BindingSet bindings,
-			QueryInfo queryInfo)
-			throws QueryEvaluationException {
+			QueryInfo queryInfo) {
 		super(strategy, leftIter, rightArg, bindings, queryInfo);
 		setJoinVars(joinVars);
 		this.rightPrepared = rightPrepared;
 	}
 
 	@Override
-	protected void handleBindings() throws Exception {
+	protected void handleBindings() {
 
 		// the total number of bindings
 		int totalBindingsLeft = 0;
@@ -128,7 +127,7 @@ public class HashJoin extends JoinExecutorBase<BindingSet> {
 	 * @param freeVariablesRight
 	 * @return the merged binding result
 	 */
-	static CloseableIteration<BindingSet, QueryEvaluationException> join(Collection<BindingSet> leftBlock,
+	static CloseableIteration<BindingSet> join(Collection<BindingSet> leftBlock,
 			Collection<BindingSet> rightBlock, Set<String> joinVariables, Collection<String> freeVariablesRight) {
 		List<BindingSet> res = new LinkedList<>();
 

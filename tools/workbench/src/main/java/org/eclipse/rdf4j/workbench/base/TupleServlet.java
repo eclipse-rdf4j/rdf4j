@@ -55,6 +55,6 @@ public abstract class TupleServlet extends TransformationServlet {
 		service(builder, con);
 	}
 
-	protected void service(TupleResultBuilder builder, RepositoryConnection con) throws Exception {
+	protected void service(TupleResultBuilder builder, RepositoryConnection con) {
 	}
 }

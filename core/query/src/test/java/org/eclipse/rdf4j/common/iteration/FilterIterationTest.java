@@ -15,11 +15,11 @@ import java.util.Collections;
 public class FilterIterationTest extends CloseableIterationTest {
 
 	@Override
-	protected CloseableIteration<String, Exception> createTestIteration() {
-		return new FilterIteration<String, Exception>(createStringList1Iteration()) {
+	protected CloseableIteration<String> createTestIteration() {
+		return new FilterIteration<String>(createStringList1Iteration()) {
 
 			@Override
-			protected boolean accept(String object) throws Exception {
+			protected boolean accept(String object) {
 				return "3".equals(object);
 			}
 

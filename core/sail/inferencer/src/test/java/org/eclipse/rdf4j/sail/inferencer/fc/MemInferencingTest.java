@@ -93,7 +93,7 @@ public class MemInferencingTest extends InferencingTest {
 	}
 
 	@Test
-	public void testRollback() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+	public void testRollback() {
 		Repository sailRepository = new SailRepository(createSail());
 		ValueFactory vf = sailRepository.getValueFactory();
 
@@ -140,7 +140,7 @@ public class MemInferencingTest extends InferencingTest {
 	}
 
 	@Test
-	public void testFastInstantiate() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+	public void testFastInstantiate() {
 		Repository sailRepository = new SailRepository(createSail());
 		ValueFactory vf = sailRepository.getValueFactory();
 

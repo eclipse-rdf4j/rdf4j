@@ -123,7 +123,7 @@ public class TransactionStartController extends AbstractController {
 	}
 
 	private ModelAndView startTransaction(Repository repository, HttpServletRequest request,
-			HttpServletResponse response) throws IOException, ClientHTTPException, ServerHTTPException {
+			HttpServletResponse response) throws ServerHTTPException {
 		ProtocolUtil.logRequestParameters(request);
 		Map<String, Object> model = new HashMap<>();
 
@@ -158,11 +158,7 @@ public class TransactionStartController extends AbstractController {
 			throw new ServerHTTPException("Transaction start error: " + e.getMessage(), e);
 		} finally {
 			if (!allGood) {
-				try {
-					txn.close();
-				} catch (InterruptedException | ExecutionException e) {
-					throw new ServerHTTPException("Transaction start error: " + e.getMessage(), e);
-				}
+				txn.close();
 			}
 		}
 	}

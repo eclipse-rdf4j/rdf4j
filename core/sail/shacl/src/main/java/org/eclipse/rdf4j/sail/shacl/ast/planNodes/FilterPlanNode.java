@@ -15,7 +15,6 @@ import java.util.Objects;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,7 +30,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	private PushablePlanNode trueNode;
 	private PushablePlanNode falseNode;
 
-	private CloseableIteration<ValidationTuple, SailException> iterator;
+	private CloseableIteration<ValidationTuple> iterator;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	abstract boolean checkTuple(ValidationTuple t);
@@ -69,16 +68,16 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<ValidationTuple> iterator() {
 
 		throw new IllegalStateException("Must specify if filter should return false or true nodes!");
 	}
 
-	private CloseableIteration<ValidationTuple, SailException> iteratorInternal() {
+	private CloseableIteration<ValidationTuple> iteratorInternal() {
 
 		return new CloseableIteration<>() {
 
-			CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
+			CloseableIteration<? extends ValidationTuple> parentIterator;
 
 			ValidationTuple next;
 
@@ -125,7 +124,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 			boolean closed = false;
 
 			@Override
-			public void close() throws SailException {
+			public void close() {
 				if (closed) {
 					return;
 				}
@@ -137,20 +136,20 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			public boolean hasNext() {
 				calculateNext();
 				return next != null;
 			}
 
 			@Override
-			public ValidationTuple next() throws SailException {
+			public ValidationTuple next() {
 				ValidationTuple temp = next;
 				next = null;
 				return temp;
 			}
 
 			@Override
-			public void remove() throws SailException {
+			public void remove() {
 				throw new UnsupportedOperationException();
 			}
 

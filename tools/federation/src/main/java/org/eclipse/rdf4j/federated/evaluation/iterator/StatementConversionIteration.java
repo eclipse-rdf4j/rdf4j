@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
  *
  * @author Andreas Schwarte
  */
-public class StatementConversionIteration extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
+public class StatementConversionIteration extends AbstractCloseableIteration<BindingSet> {
 
 	protected final RepositoryResult<Statement> repoResult;
 	protected final BindingSet bindings;
@@ -55,7 +55,7 @@ public class StatementConversionIteration extends AbstractCloseableIteration<Bin
 	}
 
 	@Override
-	public boolean hasNext() throws QueryEvaluationException {
+	public boolean hasNext() {
 		try {
 			return repoResult.hasNext();
 		} catch (RepositoryException e) {
@@ -64,7 +64,7 @@ public class StatementConversionIteration extends AbstractCloseableIteration<Bin
 	}
 
 	@Override
-	public BindingSet next() throws QueryEvaluationException {
+	public BindingSet next() {
 
 		try {
 			return convert(repoResult.next());
@@ -76,7 +76,7 @@ public class StatementConversionIteration extends AbstractCloseableIteration<Bin
 	}
 
 	@Override
-	public void remove() throws QueryEvaluationException {
+	public void remove() {
 
 		try {
 			repoResult.remove();
@@ -89,7 +89,7 @@ public class StatementConversionIteration extends AbstractCloseableIteration<Bin
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {

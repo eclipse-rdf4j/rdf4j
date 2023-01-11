@@ -58,7 +58,7 @@ public class CleanerTupleQueryResult implements TupleQueryResult {
 	}
 
 	@Override
-	public List<String> getBindingNames() throws QueryEvaluationException {
+	public List<String> getBindingNames() {
 		return delegate.getBindingNames();
 	}
 

@@ -22,7 +22,7 @@ public class SimpleSAXAdapter implements SimpleSAXListener {
 
 	// implements SimpleSAXListener.startDocument()
 	@Override
-	public void startDocument() throws SAXException {
+	public void startDocument() {
 	}
 
 	// implements SimpleSAXListener.endDocument()

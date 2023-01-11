@@ -22,18 +22,18 @@ import org.junit.Test;
 public class SilentIterationTest {
 
 	@SuppressWarnings("unchecked")
-	private final CloseableIteration<Object, Exception> delegate = mock(CloseableIteration.class);
+	private final CloseableIteration<Object> delegate = mock(CloseableIteration.class);
 
-	private final SilentIteration<Object, Exception> subject = new SilentIteration<>(delegate);
+	private final SilentIteration<Object> subject = new SilentIteration<>(delegate);
 
 	@Test
-	public void hasNextSwallowsException() throws Exception {
+	public void hasNextSwallowsException() {
 		when(delegate.hasNext()).thenThrow(new RuntimeException());
 		assertThat(subject.hasNext()).isFalse();
 	}
 
 	@Test
-	public void nextConvertsException() throws Exception {
+	public void nextConvertsException() {
 		when(delegate.next()).thenThrow(new RuntimeException());
 		assertThatExceptionOfType(NoSuchElementException.class).isThrownBy(subject::next);
 	}

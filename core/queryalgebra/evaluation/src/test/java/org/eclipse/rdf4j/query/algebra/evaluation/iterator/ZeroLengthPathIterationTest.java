@@ -53,8 +53,8 @@ public class ZeroLengthPathIterationTest {
 		TripleSource ts = new TripleSource() {
 
 			@Override
-			public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj,
-					IRI pred, Value obj, Resource... contexts) throws QueryEvaluationException {
+			public CloseableIteration<? extends Statement> getStatements(Resource subj,
+					IRI pred, Value obj, Resource... contexts) {
 				return new CloseableIteratorIteration<>(m.getStatements(subj, pred, obj, contexts).iterator());
 			}
 

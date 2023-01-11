@@ -19,23 +19,23 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
  *          warning from one release to the next.
  */
 @InternalUseOnly
-public class CloseablePeakableIteration<E, X extends Exception> implements CloseableIteration<E, X> {
+public class CloseablePeakableIteration<E> implements CloseableIteration<E> {
 
-	CloseableIteration<E, X> parent;
+	CloseableIteration<E> parent;
 
 	E peek;
 
-	public CloseablePeakableIteration(CloseableIteration<E, X> parent) {
+	public CloseablePeakableIteration(CloseableIteration<E> parent) {
 		this.parent = parent;
 	}
 
 	@Override
-	public void close() throws X {
+	public void close() {
 		parent.close();
 	}
 
 	@Override
-	public boolean hasNext() throws X {
+	public boolean hasNext() {
 		if (peek != null) {
 			return true;
 		}
@@ -43,7 +43,7 @@ public class CloseablePeakableIteration<E, X extends Exception> implements Close
 	}
 
 	@Override
-	public E next() throws X {
+	public E next() {
 		E next;
 		if (peek != null) {
 			next = peek;
@@ -56,11 +56,11 @@ public class CloseablePeakableIteration<E, X extends Exception> implements Close
 	}
 
 	@Override
-	public void remove() throws X {
+	public void remove() {
 		parent.remove();
 	}
 
-	public E peek() throws X {
+	public E peek() {
 		if (peek == null) {
 			peek = parent.next();
 		}

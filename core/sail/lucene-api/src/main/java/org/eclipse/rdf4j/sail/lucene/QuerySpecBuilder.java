@@ -87,7 +87,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 	 */
 	@SuppressWarnings("unchecked")
 	@Deprecated
-	public Set<QuerySpec> process(TupleExpr tupleExpr, BindingSet bindings) throws SailException {
+	public Set<QuerySpec> process(TupleExpr tupleExpr, BindingSet bindings) {
 		HashSet<QuerySpec> result = new HashSet<>();
 		process(tupleExpr, bindings, (Collection<SearchQueryEvaluator>) (Collection<?>) result);
 		return result;
@@ -98,8 +98,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 	 * TupleExpr.
 	 */
 	@Override
-	public void process(TupleExpr tupleExpr, BindingSet bindings, Collection<SearchQueryEvaluator> result)
-			throws SailException {
+	public void process(TupleExpr tupleExpr, BindingSet bindings, Collection<SearchQueryEvaluator> result) {
 		// find Lucene-related StatementPatterns
 		PatternFilter filter = new PatternFilter();
 		tupleExpr.visit(filter);
@@ -355,7 +354,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 		// fail on superflous typePattern, query, score, or snippet patterns.
 	}
 
-	private void failOrWarn(Exception exception) throws SailException {
+	private void failOrWarn(Exception exception) {
 		if (incompleteQueryFails) {
 			throw exception instanceof SailException ? (SailException) exception : new SailException(exception);
 		} else {
@@ -363,7 +362,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 		}
 	}
 
-	private void failOrWarn(String message) throws SailException {
+	private void failOrWarn(String message) {
 		if (incompleteQueryFails) {
 			throw new SailException("Invalid Text Query: " + message);
 		} else {
@@ -448,7 +447,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 		return List.of();
 	}
 
-	private static class PatternFilter extends AbstractQueryModelVisitor<RuntimeException> {
+	private static class PatternFilter extends AbstractQueryModelVisitor {
 
 		public ArrayList<StatementPattern> typePatterns = new ArrayList<>();
 

@@ -31,16 +31,16 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @author Andreas Schwarte
  *
  */
-public class QueryResultIteration extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
+public class QueryResultIteration extends AbstractCloseableIteration<BindingSet> {
 
 	// TODO apply this class and provide test case
 
-	protected final CloseableIteration<BindingSet, QueryEvaluationException> inner;
+	protected final CloseableIteration<BindingSet> inner;
 	protected final QueryInfo queryInfo;
 	protected final QueryManager qm;
 
 	public QueryResultIteration(
-			CloseableIteration<BindingSet, QueryEvaluationException> inner, QueryInfo queryInfo) {
+			CloseableIteration<BindingSet> inner, QueryInfo queryInfo) {
 		super();
 		this.inner = inner;
 		this.queryInfo = queryInfo;
@@ -48,7 +48,7 @@ public class QueryResultIteration extends AbstractCloseableIteration<BindingSet,
 	}
 
 	@Override
-	public boolean hasNext() throws QueryEvaluationException {
+	public boolean hasNext() {
 		if (inner.hasNext()) {
 			return true;
 		} else {
@@ -59,7 +59,7 @@ public class QueryResultIteration extends AbstractCloseableIteration<BindingSet,
 	}
 
 	@Override
-	public BindingSet next() throws QueryEvaluationException {
+	public BindingSet next() {
 		try {
 			BindingSet next = inner.next();
 			if (next == null) {
@@ -73,12 +73,12 @@ public class QueryResultIteration extends AbstractCloseableIteration<BindingSet,
 	}
 
 	@Override
-	public void remove() throws QueryEvaluationException {
+	public void remove() {
 		inner.remove();
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected void handleClose() {
 		try {
 			inner.close();
 		} finally {

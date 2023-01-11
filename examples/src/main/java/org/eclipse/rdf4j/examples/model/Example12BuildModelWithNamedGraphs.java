@@ -31,8 +31,7 @@ import org.eclipse.rdf4j.rio.Rio;
  */
 public class Example12BuildModelWithNamedGraphs {
 
-	public static void main(String[] args)
-			throws IOException {
+	public static void main(String[] args) {
 		// We'll use a ModelBuilder to create two named graphs, one containing data about
 		// picasso, the other about Van Gogh.
 		ModelBuilder builder = new ModelBuilder();

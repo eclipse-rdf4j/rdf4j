@@ -25,18 +25,18 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  */
 @Deprecated(since = "4.1.0")
 public class GroupedCheckConversionIteration
-		extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
+		extends ConvertingIteration<BindingSet, BindingSet> {
 
 	protected final List<BindingSet> bindings;
 
-	public GroupedCheckConversionIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public GroupedCheckConversionIteration(CloseableIteration<BindingSet> iter,
 			List<BindingSet> bindings) {
 		super(iter);
 		this.bindings = bindings;
 	}
 
 	@Override
-	protected BindingSet convert(BindingSet bindingSet) throws QueryEvaluationException {
+	protected BindingSet convert(BindingSet bindingSet) {
 		int bIndex = -1;
 		for (Binding b : bindingSet) {
 			String name = b.getName();

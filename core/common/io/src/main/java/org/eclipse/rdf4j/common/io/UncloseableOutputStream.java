@@ -32,7 +32,7 @@ public class UncloseableOutputStream extends FilterOutputStream {
 	}
 
 	@Override
-	public void close() throws IOException {
+	public void close() {
 		// do nothing
 	}
 

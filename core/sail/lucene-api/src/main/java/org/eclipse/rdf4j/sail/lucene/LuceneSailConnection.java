@@ -176,13 +176,12 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	}
 
 	@Override
-	public synchronized void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+	public synchronized void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		super.addStatement(subj, pred, obj, contexts);
 	}
 
 	@Override
-	public void close() throws SailException {
+	public void close() {
 		if (closed.compareAndSet(false, true)) {
 			super.close();
 		}
@@ -191,7 +190,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	// //////////////////////////////// Methods related to indexing
 
 	@Override
-	public synchronized void clear(Resource... contexts) throws SailException {
+	public synchronized void clear(Resource... contexts) {
 		// remove the connection listener, this is safe as the changing methods
 		// are synchronized
 		// during the clear(), no other operation can be invoked
@@ -205,18 +204,14 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	}
 
 	@Override
-	public void begin() throws SailException {
+	public void begin() {
 		super.begin();
 		buffer.reset();
-		try {
-			luceneIndex.begin();
-		} catch (IOException e) {
-			throw new SailException(e);
-		}
+		luceneIndex.begin();
 	}
 
 	@Override
-	public void commit() throws SailException {
+	public void commit() {
 		super.commit();
 
 		logger.debug("Committing Lucene transaction with {} operations.", buffer.operations().size());
@@ -271,7 +266,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		}
 	}
 
-	private void completeAddRemoveOperationWithType(AddRemoveOperation op) throws SailException {
+	private void completeAddRemoveOperationWithType(AddRemoveOperation op) {
 		// check if required
 		if (!luceneIndex.isTypeFilteringEnabled()) {
 			return;
@@ -307,7 +302,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 					// not inside the update statement, searching with the connection
 					for (IRI predicate : mapping.keySet()) {
 						Set<IRI> objects = mapping.get(predicate);
-						try (CloseableIteration<? extends Statement, SailException> statements = getStatements(
+						try (CloseableIteration<? extends Statement> statements = getStatements(
 								stmt.getSubject(),
 								predicate,
 								null,
@@ -337,7 +332,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 			for (Map.Entry<Resource, Boolean> e : typeAdd.entrySet()) {
 				if (e.getValue()) {
 					Resource subject = e.getKey();
-					try (CloseableIteration<? extends Statement, SailException> statements = getStatements(
+					try (CloseableIteration<? extends Statement> statements = getStatements(
 							subject, null, null, false
 					)) {
 						while (statements.hasNext()) {
@@ -359,7 +354,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		// backtrace previous insert of property and delete them from the index
 		if (backtraceMode.shouldBackTraceDelete()) {
 			for (Resource subject : typeRemove) {
-				try (CloseableIteration<? extends Statement, SailException> statements = getStatements(
+				try (CloseableIteration<? extends Statement> statements = getStatements(
 						subject, null, null, false
 				)) {
 					while (statements.hasNext()) {
@@ -395,12 +390,12 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	// //////////////////////////////// Methods related to querying
 
 	@Override
-	public synchronized CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
-			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
+	public synchronized CloseableIteration<? extends BindingSet> evaluate(TupleExpr tupleExpr,
+			Dataset dataset, BindingSet bindings, boolean includeInferred) {
 		QueryContext qctx = new QueryContext();
 		SearchIndexQueryContextInitializer.init(qctx, luceneIndex);
 
-		final CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
+		final CloseableIteration<? extends BindingSet> iter;
 		qctx.begin();
 		try {
 			iter = evaluateInternal(tupleExpr, dataset, bindings, includeInferred);
@@ -413,8 +408,8 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		return new QueryContextIteration(iter, qctx);
 	}
 
-	private CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(TupleExpr tupleExpr,
-			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
+	private CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
+			Dataset dataset, BindingSet bindings, boolean includeInferred) {
 		// Don't modify the original tuple expression
 		tupleExpr = tupleExpr.clone();
 
@@ -479,7 +474,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	 * @param queries
 	 * @throws SailException
 	 */
-	private void evaluateLuceneQueries(Collection<SearchQueryEvaluator> queries) throws SailException {
+	private void evaluateLuceneQueries(Collection<SearchQueryEvaluator> queries) {
 		// TODO: optimize lucene queries here
 		// - if they refer to the same subject, merge them into one lucene query
 		// - multiple different property constraints can be put into the lucene
@@ -509,13 +504,12 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	}
 
 	@Override
-	public synchronized void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+	public synchronized void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		super.removeStatements(subj, pred, obj, contexts);
 	}
 
 	@Override
-	public void rollback() throws SailException {
+	public void rollback() {
 		super.rollback();
 		buffer.reset();
 		try {

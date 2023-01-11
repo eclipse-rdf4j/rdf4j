@@ -303,7 +303,7 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 	}
 
 	@Override
-	public void warning(SAXParseException exception) throws SAXException {
+	public void warning(SAXParseException exception) {
 		reportWarning(exception.getMessage());
 	}
 

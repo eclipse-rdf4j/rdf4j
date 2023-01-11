@@ -49,7 +49,7 @@ public class ParallelLeftJoinTask extends ParallelTaskBase<BindingSet> {
 	}
 
 	@Override
-	protected CloseableIteration<BindingSet, QueryEvaluationException> performTaskInternal() throws Exception {
+	protected CloseableIteration<BindingSet> performTaskInternal() {
 
 		return new FedXLeftJoinIteration(strategy, join, leftBindings);
 
@@ -60,7 +60,7 @@ public class ParallelLeftJoinTask extends ParallelTaskBase<BindingSet> {
 		return joinControl;
 	}
 
-	static class FedXLeftJoinIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+	static class FedXLeftJoinIteration extends LookAheadIteration<BindingSet> {
 
 		protected final FederationEvalStrategy strategy;
 
@@ -74,7 +74,7 @@ public class ParallelLeftJoinTask extends ParallelTaskBase<BindingSet> {
 		 */
 		private final Set<String> scopeBindingNames;
 
-		private CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
+		private CloseableIteration<BindingSet> rightIter;
 
 		private final AtomicBoolean exhausted = new AtomicBoolean(false);
 
@@ -88,7 +88,7 @@ public class ParallelLeftJoinTask extends ParallelTaskBase<BindingSet> {
 		}
 
 		@Override
-		protected BindingSet getNextElement() throws QueryEvaluationException {
+		protected BindingSet getNextElement() {
 
 			if (rightIter == null) {
 				// lazy evaluation
@@ -135,7 +135,7 @@ public class ParallelLeftJoinTask extends ParallelTaskBase<BindingSet> {
 		}
 
 		@Override
-		protected void handleClose() throws QueryEvaluationException {
+		protected void handleClose() {
 			try {
 				super.handleClose();
 			} finally {

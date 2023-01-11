@@ -86,13 +86,13 @@ public class ElasticsearchStoreTransactionsIT {
 	}
 
 	@AfterClass
-	public static void afterClass() throws IOException {
+	public static void afterClass() {
 		elasticsearchStore.shutDown();
 		TestHelpers.stopElasticsearch(runner);
 	}
 
 	@Before
-	public void before() throws UnknownHostException {
+	public void before() {
 
 		elasticsearchStore.setElasticsearchScrollTimeout(60000);
 

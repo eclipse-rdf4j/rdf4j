@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
  */
 public class FedXWithRemoteRepositoryManager {
 
-	public static void main(String[] args) throws Exception {
+	public static void main(String[] args) {
 
 		// connection URL of a RDF4J server which manages the repositories
 		String serverUrl = "http://localhost:8080/rdf4j-server";

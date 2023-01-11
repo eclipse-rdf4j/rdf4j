@@ -86,7 +86,7 @@ public class RemoteRepositoryTest {
 		System.out.println("Done.");
 	}
 
-	private static List<IRI> retrieveInstances(RepositoryConnection conn, IRI type) throws Exception {
+	private static List<IRI> retrieveInstances(RepositoryConnection conn, IRI type) {
 		try (RepositoryResult<Statement> qres = conn.getStatements(null, RDF.TYPE, type, false)) {
 			return qres
 					.stream()
@@ -97,7 +97,7 @@ public class RemoteRepositoryTest {
 		}
 	}
 
-	private static long runQuery(RepositoryConnection conn, IRI instance) throws Exception {
+	private static long runQuery(RepositoryConnection conn, IRI instance) {
 
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL,
 				"SELECT * WHERE { <" + instance.stringValue() + "> ?p ?o }");

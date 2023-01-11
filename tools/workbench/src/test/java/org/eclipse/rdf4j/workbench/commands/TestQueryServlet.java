@@ -47,17 +47,17 @@ public class TestQueryServlet {
 	}
 
 	@Test
-	public final void testLongQuery() throws ServletException, IOException {
+	public final void testLongQuery() throws ServletException {
 		assertThat(servlet.shouldWriteQueryCookie(longQuery)).isFalse();
 	}
 
 	@Test
-	public final void testShortQuery() throws ServletException, IOException {
+	public final void testShortQuery() throws ServletException {
 		assertThat(servlet.shouldWriteQueryCookie(SHORT_QUERY)).isTrue();
 	}
 
 	@Test
-	public final void testNoQuery() throws ServletException, IOException {
+	public final void testNoQuery() throws ServletException {
 		assertThat(servlet.shouldWriteQueryCookie(null)).isTrue();
 	}
 

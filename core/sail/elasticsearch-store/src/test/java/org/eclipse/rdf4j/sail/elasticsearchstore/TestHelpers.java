@@ -23,8 +23,7 @@ public class TestHelpers {
 
 	private static final Logger logger = LoggerFactory.getLogger(TestHelpers.class);
 
-	public static ElasticsearchClusterRunner startElasticsearch(File installLocation)
-			throws IOException, InterruptedException {
+	public static ElasticsearchClusterRunner startElasticsearch(File installLocation) {
 
 		ElasticsearchClusterRunner runner = new ElasticsearchClusterRunner();
 		runner.onBuild(new ElasticsearchClusterRunner.Builder() {

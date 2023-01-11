@@ -26,7 +26,7 @@ public class QueryModelNormalizerTest extends QueryOptimizerTest {
 	private QueryModelNormalizerOptimizer subject;
 
 	@BeforeEach
-	public void setup() throws Exception {
+	public void setup() {
 		subject = getOptimizer();
 	}
 

@@ -37,7 +37,7 @@ enum QueryTypes {
 			RDFFormat.RDFXML) {
 		@Override
 		protected void evaluate(EvaluateResult result, Query q, String acceptHeader)
-				throws QueryEvaluationException, RDFHandlerException, UnsupportedRDFormatException, IOException {
+				throws RDFHandlerException, UnsupportedRDFormatException, IOException {
 			GraphQuery gq = (GraphQuery) q;
 			RDFFormat format = (RDFFormat) bestFormat(acceptHeader);
 			result.setContentType(format.getDefaultMIMEType());
@@ -48,7 +48,7 @@ enum QueryTypes {
 			TupleQueryResultFormat.CSV, TupleQueryResultFormat.TSV) {
 		@Override
 		protected void evaluate(EvaluateResult result, Query q, String acceptHeader)
-				throws QueryEvaluationException, RDFHandlerException, UnsupportedRDFormatException, IOException {
+				throws RDFHandlerException, UnsupportedRDFormatException, IOException {
 			TupleQuery tq = (TupleQuery) q;
 			QueryResultFormat format = (QueryResultFormat) bestFormat(acceptHeader);
 			result.setContentType(format.getDefaultMIMEType());
@@ -60,7 +60,7 @@ enum QueryTypes {
 			BooleanQueryResultFormat.SPARQL) {
 		@Override
 		protected void evaluate(EvaluateResult result, Query q, String acceptHeader)
-				throws QueryEvaluationException, RDFHandlerException, UnsupportedRDFormatException, IOException {
+				throws RDFHandlerException, UnsupportedRDFormatException, IOException {
 			BooleanQuery bq = (BooleanQuery) q;
 			QueryResultFormat format = (QueryResultFormat) bestFormat(acceptHeader);
 			result.setContentType(format.getDefaultMIMEType());
@@ -110,7 +110,7 @@ enum QueryTypes {
 	}
 
 	protected abstract void evaluate(EvaluateResult result, Query q, String acceptHeader)
-			throws QueryEvaluationException, RDFHandlerException, UnsupportedRDFormatException, IOException;
+			throws RDFHandlerException, UnsupportedRDFormatException, IOException;
 
 	protected boolean accepts(Query q) {
 		return typeChecker.test(q);

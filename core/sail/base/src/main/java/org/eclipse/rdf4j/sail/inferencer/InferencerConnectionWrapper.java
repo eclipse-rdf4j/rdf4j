@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
@@ -55,29 +54,28 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 	}
 
 	@Override
-	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		return getWrappedConnection().addInferredStatement(subj, pred, obj, contexts);
 	}
 
 	@Override
-	public boolean removeInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+	public boolean removeInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		return getWrappedConnection().removeInferredStatement(subj, pred, obj, contexts);
 	}
 
 	@Override
-	public void clearInferred(Resource... contexts) throws SailException {
+	public void clearInferred(Resource... contexts) {
 		getWrappedConnection().clearInferred(contexts);
 	}
 
 	@Override
-	public void flush() throws SailException {
+	public void flush() {
 		getWrappedConnection().flush();
 		flushUpdates();
 	}
 
 	@Override
-	public void flushUpdates() throws SailException {
+	public void flushUpdates() {
 		getWrappedConnection().flushUpdates();
 	}
 
@@ -85,7 +83,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 	 * Calls {@link #flushUpdates()} before forwarding the call to the wrapped connection.
 	 */
 	@Override
-	public void prepare() throws SailException {
+	public void prepare() {
 		flushUpdates();
 		super.prepare();
 	}
@@ -94,7 +92,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 	 * Calls {@link #flushUpdates()} before forwarding the call to the wrapped connection.
 	 */
 	@Override
-	public void commit() throws SailException {
+	public void commit() {
 		flushUpdates();
 		super.commit();
 	}
@@ -103,8 +101,8 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 	 * Calls {@link #flushUpdates()} before forwarding the call to the wrapped connection.
 	 */
 	@Override
-	public CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
-			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
+	public CloseableIteration<? extends BindingSet> evaluate(TupleExpr tupleExpr,
+			Dataset dataset, BindingSet bindings, boolean includeInferred) {
 		flushUpdates();
 		return super.evaluate(tupleExpr, dataset, bindings, includeInferred);
 	}
@@ -113,14 +111,13 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 	 * Calls {@link #flushUpdates()} before forwarding the call to the wrapped connection.
 	 */
 	@Override
-	public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
+	public CloseableIteration<? extends Resource> getContextIDs() {
 		flushUpdates();
 		return super.getContextIDs();
 	}
 
 	@Override
-	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
-			throws SailException {
+	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts) {
 		flushUpdates();
 		return super.hasStatement(subj, pred, obj, includeInferred, contexts);
 	}
@@ -129,8 +126,8 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 	 * Calls {@link #flushUpdates()} before forwarding the call to the wrapped connection.
 	 */
 	@Override
-	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
-			boolean includeInferred, Resource... contexts) throws SailException {
+	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+			boolean includeInferred, Resource... contexts) {
 		flushUpdates();
 		return super.getStatements(subj, pred, obj, includeInferred, contexts);
 	}
@@ -139,7 +136,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 	 * Calls {@link #flushUpdates()} before forwarding the call to the wrapped connection.
 	 */
 	@Override
-	public long size(Resource... contexts) throws SailException {
+	public long size(Resource... contexts) {
 		flushUpdates();
 		return super.size(contexts);
 	}

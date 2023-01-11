@@ -14,7 +14,6 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * Inserts original bindings into the result, uses ?__rowIdx to resolve original bindings. See
@@ -27,7 +26,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 public class ServiceJoinConversionIteration
 		extends org.eclipse.rdf4j.repository.sparql.federation.ServiceJoinConversionIteration {
 
-	public ServiceJoinConversionIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public ServiceJoinConversionIteration(CloseableIteration<BindingSet> iter,
 			List<BindingSet> bindings) {
 		super(iter, bindings);
 	}

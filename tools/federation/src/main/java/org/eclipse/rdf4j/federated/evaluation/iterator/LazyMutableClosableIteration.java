@@ -27,9 +27,9 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @author Andreas Schwarte
  *
  */
-public class LazyMutableClosableIteration implements CloseableIteration<BindingSet, QueryEvaluationException> {
+public class LazyMutableClosableIteration implements CloseableIteration<BindingSet> {
 
-	protected final CloseableIteration<BindingSet, QueryEvaluationException> inner;
+	protected final CloseableIteration<BindingSet> inner;
 
 	protected List<BindingSet> consumed = new ArrayList<>();
 
@@ -38,13 +38,13 @@ public class LazyMutableClosableIteration implements CloseableIteration<BindingS
 	 */
 	protected volatile int cursorIdx = -1;
 
-	public LazyMutableClosableIteration(CloseableIteration<BindingSet, QueryEvaluationException> inner) {
+	public LazyMutableClosableIteration(CloseableIteration<BindingSet> inner) {
 		super();
 		this.inner = inner;
 	}
 
 	@Override
-	public boolean hasNext() throws QueryEvaluationException {
+	public boolean hasNext() {
 		if (cursorIdx == -1) {
 			return inner.hasNext();
 		}
@@ -55,7 +55,7 @@ public class LazyMutableClosableIteration implements CloseableIteration<BindingS
 	}
 
 	@Override
-	public BindingSet next() throws QueryEvaluationException {
+	public BindingSet next() {
 		if (cursorIdx == -1 || cursorIdx >= consumed.size()) {
 			BindingSet next = inner.next();
 			consumed.add(next);
@@ -65,12 +65,12 @@ public class LazyMutableClosableIteration implements CloseableIteration<BindingS
 	}
 
 	@Override
-	public void remove() throws QueryEvaluationException {
+	public void remove() {
 		throw new UnsupportedOperationException("Removal not supported.");
 	}
 
 	@Override
-	public void close() throws QueryEvaluationException {
+	public void close() {
 		inner.close();
 	}
 

@@ -117,7 +117,7 @@ public class ElasticsearchSailTest extends ESIntegTestCase {
 	}
 
 	@Test
-	public void testGraphQuery() throws QueryEvaluationException, MalformedQueryException, RepositoryException {
+	public void testGraphQuery() throws MalformedQueryException, RepositoryException {
 		delegateTest.testGraphQuery();
 	}
 

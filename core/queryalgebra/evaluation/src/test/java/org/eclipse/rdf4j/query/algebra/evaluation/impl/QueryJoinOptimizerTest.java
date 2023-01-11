@@ -75,17 +75,17 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void testSES2306AggregateOrderBy() throws Exception {
+	public void testSES2306AggregateOrderBy() {
 		String select = "PREFIX ex: <ex:>\n" + "SELECT ((MIN(?x+1) + MAX(?y-1))/2 AS ?r) {\n"
 				+ "	?this ex:name ?n . ?this ex:id ?id . ?this ex:prop1 ?x . ?this ex:prop2 ?y .\n"
 				+ "} GROUP BY concat(?n, ?id) HAVING (SUM(?x) + SUM(?y) < 5) ORDER BY (COUNT(?x) + COUNT(?y))";
 
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery q = parser.parseQuery(select, null);
-		q.getTupleExpr().visit(new AbstractQueryModelVisitor<Exception>() {
+		q.getTupleExpr().visit(new AbstractQueryModelVisitor<>() {
 
 			@Override
-			protected void meetUnaryTupleOperator(UnaryTupleOperator node) throws Exception {
+			protected void meetUnaryTupleOperator(UnaryTupleOperator node) throws RuntimeException {
 				assertNotEquals(node, node.getArg());
 				super.meetUnaryTupleOperator(node);
 			}
@@ -93,7 +93,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void testSES2116JoinBind() throws Exception {
+	public void testSES2116JoinBind() {
 
 		StringBuilder qb = new StringBuilder();
 		qb.append("SELECT ?subject ?name ?row {\n" + "  ?subject <http://localhost/table_1> ?uri .\n"
@@ -112,7 +112,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void bindSubselectJoinOrder() throws Exception {
+	public void bindSubselectJoinOrder() {
 		String query = "SELECT * WHERE {\n" + "    BIND (bnode() as ?ct01) \n" + "    { SELECT ?s WHERE {\n"
 				+ "            ?s ?p ?o .\n" + "      }\n" + "      LIMIT 10\n" + "    }\n" + "}";
 
@@ -223,7 +223,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		assertEquals(expected, actual);
 	}
 
-	class JoinFinder extends AbstractQueryModelVisitor<RuntimeException> {
+	class JoinFinder extends AbstractQueryModelVisitor {
 
 		private Join join;
 
@@ -237,7 +237,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		}
 	}
 
-	class StatementFinder extends AbstractQueryModelVisitor<RuntimeException> {
+	class StatementFinder extends AbstractQueryModelVisitor {
 
 		private final List<StatementPattern> statements = new ArrayList<>();
 

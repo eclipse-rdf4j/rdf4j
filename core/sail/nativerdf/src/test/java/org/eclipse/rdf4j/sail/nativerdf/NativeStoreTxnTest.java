@@ -59,7 +59,7 @@ public class NativeStoreTxnTest {
 	}
 
 	@After
-	public void after() throws Exception {
+	public void after() {
 		repo.shutDown();
 	}
 

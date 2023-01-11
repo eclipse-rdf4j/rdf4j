@@ -87,10 +87,6 @@ public class TestTransactionControllerErrorHandling {
 		try {
 			transactionController.handleRequestInternal(request, response);
 			Assertions.fail("Exception must be thrown.");
-		} catch (ClientHTTPException e) {
-			Assertions.assertNotNull(e);
-			Assertions.assertEquals("MALFORMED QUERY: org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException: " +
-					"QName 'ex:data' uses an undefined prefix", e.getMessage());
 		} finally {
 			txn.close();
 			ActiveTransactionRegistry.INSTANCE.deregister(txn);

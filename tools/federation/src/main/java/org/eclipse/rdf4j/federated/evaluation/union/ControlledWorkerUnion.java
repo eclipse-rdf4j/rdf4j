@@ -15,7 +15,6 @@ import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * Execution of union tasks with {@link ControlledWorkerScheduler}. Tasks can be added using the provided functions.
@@ -63,7 +62,7 @@ public class ControlledWorkerUnion<T> extends WorkerUnionBase<T> {
 	}
 
 	@Override
-	public void handleClose() throws QueryEvaluationException {
+	public void handleClose() {
 		try {
 			super.handleClose();
 		} finally {

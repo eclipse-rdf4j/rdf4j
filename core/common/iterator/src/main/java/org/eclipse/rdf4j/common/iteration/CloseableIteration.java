@@ -11,11 +11,12 @@
 
 package org.eclipse.rdf4j.common.iteration;
 
+import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.stream.Stream;
 
 /**
- * An {@link Iteration} that can be closed to free resources that it is holding. CloseableIterations automatically free
+ * An {@link Iterator} that can be closed to free resources that it is holding. CloseableIterations automatically free
  * their resources when exhausted. If not read until exhaustion or if you want to make sure the iteration is properly
  * closed, any code using the iterator should be placed in a try-with-resources block, closing the iteration
  * automatically, e.g.:
@@ -30,13 +31,9 @@ import java.util.stream.Stream;
  * }
  * </pre>
  *
- * @deprecated In the future this interface will stop extending {@link Iteration} and instead declare the same interface
- *             methods directly. The interface will also stop requiring implementations to automatically close when
- *             exhausted, instead making this an optional feature and requiring the user to always call close. This
- *             interface may also be removed.
  */
 //@Deprecated(since = "4.1.0")
-public interface CloseableIteration<E, X extends Exception> extends AutoCloseable {
+public interface CloseableIteration<E> extends AutoCloseable, Iterator<E> {
 
 	/**
 	 * Convert the results to a Java 8 Stream.
@@ -52,16 +49,15 @@ public interface CloseableIteration<E, X extends Exception> extends AutoCloseabl
 	 * invoking this method has no effect.
 	 */
 	@Override
-	void close() throws X;
+	void close();
 
 	/**
 	 * Returns <var>true</var> if the iteration has more elements. (In other words, returns <var>true</var> if
 	 * {@link #next} would return an element rather than throwing a <var>NoSuchElementException</var>.)
 	 *
 	 * @return <var>true</var> if the iteration has more elements.
-	 * @throws X
 	 */
-	boolean hasNext() throws X;
+	boolean hasNext();
 
 	/**
 	 * Returns the next element in the iteration.
@@ -69,7 +65,7 @@ public interface CloseableIteration<E, X extends Exception> extends AutoCloseabl
 	 * @return the next element in the iteration.
 	 * @throws NoSuchElementException if the iteration has no more elements or if it has been closed.
 	 */
-	E next() throws X;
+	E next();
 
 	/**
 	 * Removes from the underlying collection the last element returned by the iteration (optional operation). This
@@ -80,6 +76,6 @@ public interface CloseableIteration<E, X extends Exception> extends AutoCloseabl
 	 *                                       called, or <var>remove()</var> has already been called after the last call
 	 *                                       to <var>next()</var>.
 	 */
-	void remove() throws X;
+	void remove();
 
 }

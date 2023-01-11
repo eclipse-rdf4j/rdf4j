@@ -54,7 +54,7 @@ public class PooledRepositoryConnectionFactory
 	}
 
 	@Override
-	public void destroy() throws Exception {
+	public void destroy() {
 		logger.info("shutting down RepositoryConnection pool...");
 		pool.close();
 		logger.info("\tdone");

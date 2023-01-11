@@ -17,5 +17,5 @@ public interface GraphQuery extends Query {
 
 	GraphQueryResult evaluate() throws QueryEvaluationException;
 
-	void evaluate(RDFHandler handler) throws QueryEvaluationException, RDFHandlerException;
+	void evaluate(RDFHandler handler) throws RDFHandlerException;
 }

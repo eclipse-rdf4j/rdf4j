@@ -24,7 +24,7 @@ public class LmdbSparqlOrderByTest extends SparqlOrderByTest {
 	public final TemporaryFolder tmpDir = new TemporaryFolder();
 
 	@Override
-	protected Repository newRepository() throws IOException {
+	protected Repository newRepository() {
 		return new SailRepository(new LmdbStore(tmpDir.getRoot(), new LmdbStoreConfig("spoc")));
 	}
 }

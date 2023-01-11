@@ -50,7 +50,7 @@ public class ElasticsearchStoreIsolationLevelIT extends SailIsolationLevelTest {
 	}
 
 	@Override
-	protected Sail createSail() throws SailException {
+	protected Sail createSail() {
 		NotifyingSail sail = new ElasticsearchStore(clientPool, "index1");
 		try (NotifyingSailConnection connection = sail.getConnection()) {
 			connection.begin();

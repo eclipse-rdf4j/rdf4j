@@ -53,8 +53,7 @@ public class CookieHandler {
 		}
 	}
 
-	private void addCookie(final WorkbenchRequest req, final HttpServletResponse resp, final String name)
-			throws UnsupportedEncodingException {
+	private void addCookie(final WorkbenchRequest req, final HttpServletResponse resp, final String name) {
 		final String raw = req.getParameter(name);
 		final String value = URLEncoder.encode(raw, StandardCharsets.UTF_8);
 		LOGGER.info("name: {}\nvalue: {}", name, value);

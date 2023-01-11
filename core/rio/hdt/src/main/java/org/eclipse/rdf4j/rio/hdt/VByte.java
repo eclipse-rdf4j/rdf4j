@@ -82,9 +82,8 @@ public class VByte {
 	 * @param b     byte array
 	 * @param start starting position
 	 * @return decode value
-	 * @throws IOException
 	 */
-	public static long decodeFrom(byte[] b, int start) throws IOException {
+	public static long decodeFrom(byte[] b, int start) {
 		byte[] buffer = new byte[8];
 
 		int i = 0;

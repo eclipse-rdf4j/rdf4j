@@ -27,13 +27,13 @@ class DatasetGraphQuery extends DatasetQuery implements GraphQuery {
 	}
 
 	@Override
-	public GraphQueryResult evaluate() throws QueryEvaluationException {
+	public GraphQueryResult evaluate() {
 		con.loadDataset(sailQuery.getActiveDataset());
 		return ((GraphQuery) sailQuery).evaluate();
 	}
 
 	@Override
-	public void evaluate(RDFHandler handler) throws QueryEvaluationException, RDFHandlerException {
+	public void evaluate(RDFHandler handler) throws RDFHandlerException {
 		con.loadDataset(sailQuery.getActiveDataset());
 		((GraphQuery) sailQuery).evaluate(handler);
 	}

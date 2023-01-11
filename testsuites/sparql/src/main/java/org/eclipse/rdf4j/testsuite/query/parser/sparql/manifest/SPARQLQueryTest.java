@@ -163,10 +163,10 @@ public abstract class SPARQLQueryTest extends TestCase {
 		return repo;
 	}
 
-	protected abstract Repository newRepository() throws Exception;
+	protected abstract Repository newRepository();
 
 	@Override
-	protected void tearDown() throws Exception {
+	protected void tearDown() {
 		if (dataRep != null) {
 			dataRep.shutDown();
 			dataRep = null;
@@ -227,8 +227,7 @@ public abstract class SPARQLQueryTest extends TestCase {
 		}
 	}
 
-	protected final void compareTupleQueryResults(TupleQueryResult queryResult, TupleQueryResult expectedResult)
-			throws Exception {
+	protected final void compareTupleQueryResults(TupleQueryResult queryResult, TupleQueryResult expectedResult) {
 		// Create MutableTupleQueryResult to be able to re-iterate over the
 		// results
 		MutableTupleQueryResult queryResultTable = new MutableTupleQueryResult(queryResult);
@@ -367,7 +366,7 @@ public abstract class SPARQLQueryTest extends TestCase {
 		appendable.append("\n");
 	}
 
-	protected final void compareGraphs(Set<Statement> queryResult, Set<Statement> expectedResult) throws Exception {
+	protected final void compareGraphs(Set<Statement> queryResult, Set<Statement> expectedResult) {
 		if (!Models.isomorphic(expectedResult, queryResult)) {
 			// Don't use RepositoryUtil.difference, it reports incorrect diffs
 			/*
@@ -654,7 +653,7 @@ public abstract class SPARQLQueryTest extends TestCase {
 	}
 
 	protected static String getManifestName(Repository manifestRep, RepositoryConnection con, String manifestFileURL)
-			throws QueryEvaluationException, RepositoryException, MalformedQueryException {
+			throws RepositoryException, MalformedQueryException {
 		// Try to extract suite name from manifest file
 		TupleQuery manifestNameQuery = con
 				.prepareTupleQuery("SELECT ?ManifestName WHERE { ?ManifestURL rdfs:label ?ManifestName .}");

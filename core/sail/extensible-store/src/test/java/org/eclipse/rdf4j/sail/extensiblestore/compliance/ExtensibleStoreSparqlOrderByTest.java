@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.testsuite.repository.SparqlOrderByTest;
 public class ExtensibleStoreSparqlOrderByTest extends SparqlOrderByTest {
 
 	@Override
-	protected Repository newRepository() throws IOException {
+	protected Repository newRepository() {
 		return new SailRepository(new ExtensibleStoreImplForTests());
 	}
 

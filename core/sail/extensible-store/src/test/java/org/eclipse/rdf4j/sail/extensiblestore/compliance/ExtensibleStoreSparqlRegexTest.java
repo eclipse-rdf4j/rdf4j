@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.testsuite.repository.SparqlRegexTest;
 public class ExtensibleStoreSparqlRegexTest extends SparqlRegexTest {
 
 	@Override
-	protected Repository newRepository() throws IOException {
+	protected Repository newRepository() {
 		return new SailRepository(new ExtensibleStoreImplForTests());
 	}
 

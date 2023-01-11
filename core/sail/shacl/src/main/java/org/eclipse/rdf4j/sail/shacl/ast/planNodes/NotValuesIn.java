@@ -18,7 +18,6 @@ import java.util.Set;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.sail.SailException;
 
 public class NotValuesIn implements PlanNode {
 
@@ -33,15 +32,15 @@ public class NotValuesIn implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<ValidationTuple> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
+			final CloseableIteration<? extends ValidationTuple> parentIterator = parent.iterator();
 
 			final Set<Value> notInValueSet = new HashSet<>();
 
 			{
-				try (CloseableIteration<? extends ValidationTuple, SailException> iterator = notIn.iterator()) {
+				try (CloseableIteration<? extends ValidationTuple> iterator = notIn.iterator()) {
 					while (iterator.hasNext()) {
 						notInValueSet.add(iterator.next().getValue());
 					}
@@ -63,7 +62,7 @@ public class NotValuesIn implements PlanNode {
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 				calculateNext();
 				ValidationTuple temp = next;
 				next = null;
@@ -71,14 +70,14 @@ public class NotValuesIn implements PlanNode {
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				calculateNext();
 
 				return next != null;
 			}
 
 			@Override
-			public void localClose() throws SailException {
+			public void localClose() {
 				parentIterator.close();
 			}
 

@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 
 public class Demo3 {
 
-	public static void main(String[] args) throws Exception {
+	public static void main(String[] args) {
 
 		List<Endpoint> endpoints = new ArrayList<>();
 		endpoints.add(EndpointFactory.loadSPARQLEndpoint("http://dbpedia", "http://dbpedia.org/sparql"));

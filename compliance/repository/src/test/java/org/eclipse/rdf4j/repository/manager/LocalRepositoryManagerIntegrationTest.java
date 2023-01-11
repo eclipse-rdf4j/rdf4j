@@ -77,10 +77,9 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 	}
 
 	/**
-	 * @throws IOException if a problem occurs deleting temporary resources
 	 */
 	@After
-	public void tearDown() throws IOException {
+	public void tearDown() {
 		subject.shutDown();
 	}
 
@@ -103,7 +102,7 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 	}
 
 	@Test
-	public void testRestartManagerWithoutTransaction() throws Exception {
+	public void testRestartManagerWithoutTransaction() {
 		Repository rep = subject.getRepository(TEST_REPO);
 		assertNotNull("Expected repository to exist.", rep);
 		assertTrue("Expected repository to be initialized.", rep.isInitialized());
@@ -130,7 +129,7 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 	}
 
 	@Test
-	public void testRestartManagerWithTransaction() throws Exception {
+	public void testRestartManagerWithTransaction() {
 		Repository rep = subject.getRepository(TEST_REPO);
 		assertNotNull("Expected repository to exist.", rep);
 		assertTrue("Expected repository to be initialized.", rep.isInitialized());

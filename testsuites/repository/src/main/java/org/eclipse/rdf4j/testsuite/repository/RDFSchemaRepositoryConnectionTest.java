@@ -58,7 +58,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 	}
 
 	@Test
-	public void testDomainInference() throws Exception {
+	public void testDomainInference() {
 		testCon.begin();
 		testCon.add(name, RDFS.DOMAIN, FOAF.PERSON);
 		testCon.add(bob, name, nameBob);
@@ -68,7 +68,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 	}
 
 	@Test
-	public void testSubClassInference() throws Exception {
+	public void testSubClassInference() {
 		testCon.begin();
 		testCon.add(woman, RDFS.SUBCLASSOF, FOAF.PERSON);
 		testCon.add(man, RDFS.SUBCLASSOF, FOAF.PERSON);
@@ -82,7 +82,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/1685
 	 */
-	public void testSubClassInferenceAfterRemoval() throws Exception {
+	public void testSubClassInferenceAfterRemoval() {
 
 		IRI mother = vf.createIRI("http://example.org/Mother");
 
@@ -105,7 +105,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 	}
 
 	@Test
-	public void testMakeExplicit() throws Exception {
+	public void testMakeExplicit() {
 		testCon.begin();
 		testCon.add(woman, RDFS.SUBCLASSOF, FOAF.PERSON);
 		testCon.add(alice, RDF.TYPE, woman);
@@ -121,7 +121,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 	}
 
 	@Test
-	public void testExplicitFlag() throws Exception {
+	public void testExplicitFlag() {
 		RepositoryResult<Statement> result = testCon.getStatements(RDF.TYPE, RDF.TYPE, null, true);
 		try {
 			assertTrue("result should not be empty", result.hasNext());
@@ -138,7 +138,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 	}
 
 	@Test
-	public void testInferencerUpdates() throws Exception {
+	public void testInferencerUpdates() {
 		testCon.begin(IsolationLevels.READ_COMMITTED);
 
 		testCon.add(bob, name, nameBob);
@@ -150,7 +150,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 	}
 
 	@Test
-	public void testInferencerQueryDuringTransaction() throws Exception {
+	public void testInferencerQueryDuringTransaction() {
 		testCon.begin();
 
 		testCon.add(bob, name, nameBob);
@@ -160,7 +160,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 	}
 
 	@Test
-	public void testInferencerTransactionIsolation() throws Exception {
+	public void testInferencerTransactionIsolation() {
 		if (IsolationLevels.NONE.isCompatibleWith(level)) {
 			return;
 		}
@@ -177,7 +177,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 	}
 
 	@Test
-	public void testContextStatementsNotDuplicated() throws Exception {
+	public void testContextStatementsNotDuplicated() {
 		testCon.add(bob, RDF.TYPE, FOAF.PERSON, RDF.FIRST);
 
 		// TODO this test currently assumes that inferred triples are added to the null context. If we extend
@@ -191,7 +191,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 	}
 
 	@Test
-	public void testContextStatementsNotDuplicated2() throws Exception {
+	public void testContextStatementsNotDuplicated2() {
 		testCon.add(FOAF.PERSON, RDF.TYPE, RDFS.CLASS, RDF.FIRST);
 		testCon.add(FOAF.PERSON, RDFS.SUBCLASSOF, FOAF.AGENT, RDF.FIRST);
 

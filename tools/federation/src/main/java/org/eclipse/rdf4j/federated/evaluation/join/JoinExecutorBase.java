@@ -37,11 +37,11 @@ public abstract class JoinExecutorBase<T> extends ParallelExecutorBase<T> {
 
 	/* Variables */
 	protected Set<String> joinVars; // might be unknown (i.e. null for some implementations)
-	protected CloseableIteration<T, QueryEvaluationException> leftIter;
+	protected CloseableIteration<T> leftIter;
 
-	public JoinExecutorBase(FederationEvalStrategy strategy, CloseableIteration<T, QueryEvaluationException> leftIter,
+	public JoinExecutorBase(FederationEvalStrategy strategy, CloseableIteration<T> leftIter,
 			TupleExpr rightArg,
-			BindingSet bindings, QueryInfo queryInfo) throws QueryEvaluationException {
+			BindingSet bindings, QueryInfo queryInfo) {
 		super(queryInfo);
 		this.leftIter = leftIter;
 		this.rightArg = rightArg;
@@ -73,7 +73,7 @@ public abstract class JoinExecutorBase<T> extends ParallelExecutorBase<T> {
 	protected abstract void handleBindings() throws Exception;
 
 	@Override
-	public void handleClose() throws QueryEvaluationException {
+	public void handleClose() {
 
 		try {
 			super.handleClose();

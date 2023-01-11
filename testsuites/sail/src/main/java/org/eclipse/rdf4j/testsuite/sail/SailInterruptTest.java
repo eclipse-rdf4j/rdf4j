@@ -48,7 +48,7 @@ public abstract class SailInterruptTest {
 	private ValueFactory vf;
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp() {
 		store = createSail();
 		store.init();
 		vf = store.getValueFactory();
@@ -57,7 +57,7 @@ public abstract class SailInterruptTest {
 	protected abstract Sail createSail() throws SailException;
 
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		store.shutDown();
 	}
 
@@ -108,16 +108,16 @@ public abstract class SailInterruptTest {
 		// System.out.println("Done");
 	}
 
-	private void insertTestStatement(SailConnection connection, int seed) throws SailException {
+	private void insertTestStatement(SailConnection connection, int seed) {
 		IRI subj = vf.createIRI("http://test#s" + seed % 293);
 		IRI pred = vf.createIRI("http://test#p" + seed % 29);
 		Literal obj = vf.createLiteral(Integer.toString(seed % 2903));
 		connection.addStatement(subj, pred, obj);
 	}
 
-	private void iterateStatements() throws SailException {
+	private void iterateStatements() {
 		try (SailConnection con = store.getConnection();
-				CloseableIteration<?, SailException> iter = con.getStatements(null, null, null, true)) {
+				CloseableIteration<?> iter = con.getStatements(null, null, null, true)) {
 			while (iter.hasNext()) {
 				iter.next();
 			}

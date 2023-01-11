@@ -48,14 +48,14 @@ public class TestNotifyingSailConnection extends NotifyingSailConnectionWrapper 
 	}
 
 	@Override
-	public void begin() throws SailException {
+	public void begin() {
 		super.begin();
 		added = new HashSet<>();
 		removed = new HashSet<>();
 	}
 
 	@Override
-	public void begin(IsolationLevel level) throws SailException {
+	public void begin(IsolationLevel level) {
 		super.begin(level);
 		added = new HashSet<>();
 		removed = new HashSet<>();

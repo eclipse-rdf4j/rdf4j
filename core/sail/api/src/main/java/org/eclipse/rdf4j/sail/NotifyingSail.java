@@ -22,7 +22,7 @@ public interface NotifyingSail extends Sail {
 	 * Opens a connection on the Sail which can be used to query and update data. Depending on how the implementation
 	 * handles concurrent access, a call to this method might block when there is another open connection on this Sail.
 	 *
-	 * @throws SailException If no transaction could be started, for example because the Sail is not writable.
+	 * @If no transaction could be started, for example because the Sail is not writable.
 	 */
 	@Override
 	NotifyingSailConnection getConnection() throws SailException;

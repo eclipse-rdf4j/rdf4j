@@ -30,8 +30,7 @@ interface RecordIterator extends Closeable {
 	 * Closes the iterator, freeing any resources that it uses. Once closed, the iterator will not return any more
 	 * records.
 	 *
-	 * @throws IOException In case an I/O error occurred.
 	 */
 	@Override
-	void close() throws IOException;
+	void close();
 }

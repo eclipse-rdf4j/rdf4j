@@ -32,7 +32,7 @@ public class MemTripleTest {
 	private IRI s1, p1, o1;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 
 		SimpleValueFactory svf = SimpleValueFactory.getInstance();
 

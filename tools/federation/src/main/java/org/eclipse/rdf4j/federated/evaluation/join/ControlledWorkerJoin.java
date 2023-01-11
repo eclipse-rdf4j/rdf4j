@@ -43,9 +43,8 @@ public class ControlledWorkerJoin extends JoinExecutorBase<BindingSet> {
 	protected final Phaser phaser = new Phaser(1);
 
 	public ControlledWorkerJoin(ControlledWorkerScheduler<BindingSet> scheduler, FederationEvalStrategy strategy,
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
-			TupleExpr rightArg, BindingSet bindings, QueryInfo queryInfo)
-			throws QueryEvaluationException {
+			CloseableIteration<BindingSet> leftIter,
+			TupleExpr rightArg, BindingSet bindings, QueryInfo queryInfo) {
 		super(strategy, leftIter, rightArg, bindings, queryInfo);
 		this.scheduler = scheduler;
 	}
@@ -83,7 +82,7 @@ public class ControlledWorkerJoin extends JoinExecutorBase<BindingSet> {
 	}
 
 	@Override
-	public void handleClose() throws QueryEvaluationException {
+	public void handleClose() {
 		try {
 			super.handleClose();
 		} finally {

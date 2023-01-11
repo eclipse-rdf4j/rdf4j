@@ -65,11 +65,11 @@ public class JSONLDWriterTest extends RDFWriterTest {
 	@Test
 	@Override
 	@Ignore("TODO: Determine why this test is breaking")
-	public void testIllegalPrefix() throws RDFHandlerException, RDFParseException, IOException {
+	public void testIllegalPrefix() throws RDFHandlerException, RDFParseException {
 	}
 
 	@Test
-	public void testEmptyNamespace() throws Exception {
+	public void testEmptyNamespace() {
 		IRI uri1 = vf.createIRI(exNs, "uri1");
 		IRI uri2 = vf.createIRI(exNs, "uri2");
 

@@ -87,8 +87,7 @@ public class RDFSailInserter extends AbstractRDFInserter {
 		}
 	}
 
-	private void addStatement(UpdateContext uc, Resource subj, IRI pred, Value obj, Resource... ctxts)
-			throws SailException {
+	private void addStatement(UpdateContext uc, Resource subj, IRI pred, Value obj, Resource... ctxts) {
 		if (uc != null) {
 			con.addStatement(uc, subj, pred, obj, ctxts);
 		} else {

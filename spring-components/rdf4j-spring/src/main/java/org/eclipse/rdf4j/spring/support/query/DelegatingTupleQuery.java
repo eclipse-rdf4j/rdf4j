@@ -38,13 +38,13 @@ public abstract class DelegatingTupleQuery implements TupleQuery {
 	}
 
 	@Override
-	public TupleQueryResult evaluate() throws QueryEvaluationException {
+	public TupleQueryResult evaluate() {
 		return delegate.evaluate();
 	}
 
 	@Override
 	public void evaluate(TupleQueryResultHandler handler)
-			throws QueryEvaluationException, TupleQueryResultHandlerException {
+			throws TupleQueryResultHandlerException {
 		delegate.evaluate(handler);
 	}
 

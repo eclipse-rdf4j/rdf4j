@@ -19,12 +19,12 @@ import org.junit.Test;
 
 public class OffsetIterationTest extends CloseableIterationTest {
 
-	protected static OffsetIteration<String, Exception> createOffsetIteration(int offset) {
+	protected static OffsetIteration<String> createOffsetIteration(int offset) {
 		return new OffsetIteration<>(createStringList1Iteration(), offset);
 	}
 
 	@Override
-	protected CloseableIteration<String, Exception> createTestIteration() {
+	protected CloseableIteration<String> createTestIteration() {
 		return createOffsetIteration(5);
 	}
 
@@ -34,9 +34,9 @@ public class OffsetIterationTest extends CloseableIterationTest {
 	}
 
 	@Test
-	public void testInRangeOffset() throws Exception {
+	public void testInRangeOffset() {
 		for (int offset = 0; offset < stringList1.size(); offset++) {
-			CloseableIteration<String, Exception> iter = createOffsetIteration(offset);
+			CloseableIteration<String> iter = createOffsetIteration(offset);
 			List<String> resultList = Iterations.asList(iter);
 			List<String> expectedList = stringList1.subList(offset, stringList1.size());
 			assertEquals("test failed for offset: " + offset, expectedList, resultList);
@@ -44,8 +44,8 @@ public class OffsetIterationTest extends CloseableIterationTest {
 	}
 
 	@Test
-	public void testOutOfRangeOffset() throws Exception {
-		CloseableIteration<String, Exception> iter = createOffsetIteration(2 * stringList1.size());
+	public void testOutOfRangeOffset() {
+		CloseableIteration<String> iter = createOffsetIteration(2 * stringList1.size());
 		List<String> resultList = Iterations.asList(iter);
 		assertEquals(Collections.emptyList(), resultList);
 	}

@@ -31,15 +31,15 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
  *
  * @author Jeen Broekstra
  */
-public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class JoinIterator extends LookAheadIteration<BindingSet> {
 
 	/*-----------*
 	 * Variables *
 	 *-----------*/
 
-	private final CloseableIteration<BindingSet, QueryEvaluationException> leftIter;
+	private final CloseableIteration<BindingSet> leftIter;
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
+	private CloseableIteration<BindingSet> rightIter;
 
 	private final QueryEvaluationStep preparedRight;
 
@@ -48,7 +48,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 	 *--------------*/
 
 	public JoinIterator(EvaluationStrategy strategy, QueryEvaluationStep leftPrepared,
-			QueryEvaluationStep rightPrepared, Join join, BindingSet bindings) throws QueryEvaluationException {
+			QueryEvaluationStep rightPrepared, Join join, BindingSet bindings) {
 		leftIter = leftPrepared.evaluate(bindings);
 
 		// Initialize with empty iteration so that var is never null
@@ -56,8 +56,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 		this.preparedRight = rightPrepared;
 	}
 
-	public JoinIterator(EvaluationStrategy strategy, Join join, BindingSet bindings, QueryEvaluationContext context)
-			throws QueryEvaluationException {
+	public JoinIterator(EvaluationStrategy strategy, Join join, BindingSet bindings, QueryEvaluationContext context) {
 		leftIter = strategy.evaluate(join.getLeftArg(), bindings);
 
 		// Initialize with empty iteration so that var is never null
@@ -71,7 +70,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 	 *---------*/
 
 	@Override
-	protected BindingSet getNextElement() throws QueryEvaluationException {
+	protected BindingSet getNextElement() {
 
 		try {
 			while (rightIter.hasNext() || leftIter.hasNext()) {
@@ -95,7 +94,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {

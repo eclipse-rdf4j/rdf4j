@@ -30,7 +30,7 @@ public class BindTests extends SPARQLBaseTest {
 	}
 
 	@Test
-	public void testSimple() throws Exception {
+	public void testSimple() {
 
 		List<BindingSet> res = runQuery(
 				"SELECT * WHERE { BIND(20 AS ?age) . ?person foaf:age ?age }");
@@ -38,7 +38,7 @@ public class BindTests extends SPARQLBaseTest {
 	}
 
 	@Test
-	public void testConcat() throws Exception {
+	public void testConcat() {
 
 		List<BindingSet> res = runQuery(
 				"SELECT * WHERE { <http://namespace1.org/Person_1> foaf:age ?age . BIND(CONCAT('age: ', str(?age)) AS ?outAge) }");
@@ -47,7 +47,7 @@ public class BindTests extends SPARQLBaseTest {
 	}
 
 	@Test
-	public void testRebind() throws Exception {
+	public void testRebind() {
 
 		List<BindingSet> res = runQuery(
 				"SELECT * WHERE { <http://namespace1.org/Person_1> foaf:age ?age . BIND(str(?age) AS ?outAge) }");
@@ -56,7 +56,7 @@ public class BindTests extends SPARQLBaseTest {
 	}
 
 	@Test
-	public void testMultiBind() throws Exception {
+	public void testMultiBind() {
 
 		List<BindingSet> res = runQuery(
 				"SELECT * WHERE { BIND(20 AS ?age) . <http://namespace1.org/Person_1> foaf:age ?age . BIND(str(?age) AS ?outAge) }");

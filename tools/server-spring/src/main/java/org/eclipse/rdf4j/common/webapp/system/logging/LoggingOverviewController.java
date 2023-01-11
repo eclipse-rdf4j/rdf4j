@@ -38,7 +38,7 @@ public class LoggingOverviewController implements Controller {
 			LogLevel.DEBUG.toString() };
 
 	@Override
-	public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response) throws Exception {
+	public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response) {
 		int offset = getOffset(request);
 		int count = getCount(request);
 		Map<String, Object> model = new HashMap<>();

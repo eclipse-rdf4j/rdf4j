@@ -388,7 +388,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public NotifyingSailConnection getConnection() throws SailException {
+	public NotifyingSailConnection getConnection() {
 		if (!closed.get()) {
 			return new LuceneSailConnection(super.getConnection(), luceneIndex, this);
 		} else {
@@ -397,7 +397,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public void shutDown() throws SailException {
+	public void shutDown() {
 		if (closed.compareAndSet(false, true)) {
 			logger.debug("LuceneSail shutdown");
 			try {
@@ -426,7 +426,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public void init() throws SailException {
+	public void init() {
 		super.init();
 		if (parameters.containsKey(INDEXEDFIELDS)) {
 			String indexedfieldsString = parameters.getProperty(INDEXEDFIELDS);
@@ -600,9 +600,9 @@ public class LuceneSail extends NotifyingSailWrapper {
 	 * Starts a reindexation process of the whole sail. Basically, this will delete and add all data again, a
 	 * long-lasting process.
 	 *
-	 * @throws SailException If the Sail could not be reindex
+	 * @If the Sail could not be reindex
 	 */
-	public void reindex() throws SailException {
+	public void reindex() {
 		try {
 			// clear
 			logger.info("Reindexing sail: clearing...");

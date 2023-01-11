@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.testsuite.sail.SailIsolationLevelTest;
 public class ExtensibleStoreIsolationLevelTest extends SailIsolationLevelTest {
 
 	@Override
-	protected NotifyingSail createSail() throws SailException {
+	protected NotifyingSail createSail() {
 		return new ExtensibleStoreImplForTests();
 	}
 

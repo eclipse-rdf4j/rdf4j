@@ -32,7 +32,7 @@ public class RioFileTypeDetector extends FileTypeDetector {
 	}
 
 	@Override
-	public String probeContentType(Path path) throws IOException {
+	public String probeContentType(Path path) {
 		Optional<RDFFormat> result = Rio.getParserFormatForFileName(path.getFileName().toString());
 
 		if (result.isPresent()) {

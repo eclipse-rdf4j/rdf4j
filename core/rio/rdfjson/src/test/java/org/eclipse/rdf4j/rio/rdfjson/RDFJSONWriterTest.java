@@ -34,7 +34,7 @@ public class RDFJSONWriterTest extends RDFWriterTest {
 
 	@Override
 	protected Model parse(InputStream reader, String baseURI)
-			throws RDFParseException, RDFHandlerException, IOException {
+			throws RDFParseException, RDFHandlerException {
 		return QueryResults
 				.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat(),
 						null));

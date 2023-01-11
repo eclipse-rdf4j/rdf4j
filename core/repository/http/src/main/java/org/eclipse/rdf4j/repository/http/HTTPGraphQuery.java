@@ -45,7 +45,7 @@ public class HTTPGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 	}
 
 	@Override
-	public GraphQueryResult evaluate() throws QueryEvaluationException {
+	public GraphQueryResult evaluate() {
 		SPARQLProtocolSession client = getHttpClient();
 		try {
 			conn.flushTransactionState(Protocol.Action.QUERY);
@@ -57,16 +57,15 @@ public class HTTPGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 	}
 
 	/*
-	 * public GraphQueryResult evaluate() throws QueryEvaluationException { HTTPClient client =
-	 * httpCon.getRepository().getHTTPClient(); try { return client.sendGraphQuery(queryLanguage, queryString, baseURI,
-	 * dataset, includeInferred, maxQueryTime, getBindingsArray()); } catch (IOException e) { throw new
-	 * HTTPQueryEvaluationException(e.getMessage(), e); } catch (RepositoryException e) { throw new
-	 * HTTPQueryEvaluationException(e.getMessage(), e); } catch (MalformedQueryException e) { throw new
-	 * HTTPQueryEvaluationException(e.getMessage(), e); } }
+	 * public GraphQueryResult evaluate() { HTTPClient client = httpCon.getRepository().getHTTPClient(); try { return
+	 * client.sendGraphQuery(queryLanguage, queryString, baseURI, dataset, includeInferred, maxQueryTime,
+	 * getBindingsArray()); } catch (IOException e) { throw new HTTPQueryEvaluationException(e.getMessage(), e); } catch
+	 * (RepositoryException e) { throw new HTTPQueryEvaluationException(e.getMessage(), e); } catch
+	 * (MalformedQueryException e) { throw new HTTPQueryEvaluationException(e.getMessage(), e); } }
 	 */
 
 	@Override
-	public void evaluate(RDFHandler handler) throws QueryEvaluationException, RDFHandlerException {
+	public void evaluate(RDFHandler handler) throws RDFHandlerException {
 		SPARQLProtocolSession client = getHttpClient();
 		try {
 			conn.flushTransactionState(Protocol.Action.QUERY);

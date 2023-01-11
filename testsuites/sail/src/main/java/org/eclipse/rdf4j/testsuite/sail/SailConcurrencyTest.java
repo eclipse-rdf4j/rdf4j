@@ -68,7 +68,7 @@ public abstract class SailConcurrencyTest {
 	 *---------*/
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp() {
 		store = createSail();
 		store.init();
 		vf = store.getValueFactory();
@@ -77,7 +77,7 @@ public abstract class SailConcurrencyTest {
 	protected abstract Sail createSail() throws SailException;
 
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		store.shutDown();
 	}
 
@@ -262,7 +262,7 @@ public abstract class SailConcurrencyTest {
 			try {
 				try (SailConnection connection = store.getConnection()) {
 					while (continueRunning) {
-						try (CloseableIteration<? extends Resource, SailException> contextIter = connection
+						try (CloseableIteration<? extends Resource> contextIter = connection
 								.getContextIDs()) {
 							while (contextIter.hasNext()) {
 								Resource context = contextIter.next();
@@ -316,13 +316,13 @@ public abstract class SailConcurrencyTest {
 		return m_failed;
 	}
 
-	protected void insertTestStatement(SailConnection connection, int i) throws SailException {
+	protected void insertTestStatement(SailConnection connection, int i) {
 		// System.out.print("+");
 		connection.addStatement(vf.createIRI("http://test#s" + i), vf.createIRI("http://test#p" + i),
 				vf.createIRI("http://test#o" + i), vf.createIRI("http://test#context_" + i));
 	}
 
-	protected void removeTestStatement(SailConnection connection, int i) throws SailException {
+	protected void removeTestStatement(SailConnection connection, int i) {
 		// System.out.print("-");
 		connection.removeStatements(vf.createIRI("http://test#s" + i), vf.createIRI("http://test#p" + i),
 				vf.createIRI("http://test#o" + i), vf.createIRI("http://test#context_" + i));

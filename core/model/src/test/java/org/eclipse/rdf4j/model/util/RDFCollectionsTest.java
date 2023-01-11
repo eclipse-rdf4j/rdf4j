@@ -47,7 +47,7 @@ public class RDFCollectionsTest {
 	private Literal c;
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp() {
 		a = Literals.createLiteral(vf, "A");
 		b = Literals.createLiteral(vf, "B");
 		c = Literals.createLiteral(vf, "C");

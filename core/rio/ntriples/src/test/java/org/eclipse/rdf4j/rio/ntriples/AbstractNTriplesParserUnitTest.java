@@ -292,7 +292,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 	}
 
 	@Test
-	public void testSupportedSettings() throws Exception {
+	public void testSupportedSettings() {
 		assertEquals(14, createRDFParser().getSupportedSettings().size());
 	}
 
@@ -365,7 +365,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 	}
 
 	@Test
-	public void testBlankNodeIdentifiersWithDotAsFirstCahracter() throws Exception {
+	public void testBlankNodeIdentifiersWithDotAsFirstCahracter() {
 		// The character . may appear anywhere except the first or last character.
 		RDFParser ntriplesParser = new NTriplesParser();
 		Model model = new LinkedHashModel();
@@ -401,7 +401,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 	}
 
 	@Test
-	public void testBlankNodeIdentifiersWithOtherCharacters() throws Exception {
+	public void testBlankNodeIdentifiersWithOtherCharacters() {
 		// The characters -, U+00B7, U+0300 to U+036F and U+203F to U+2040 are permitted anywhere except the first
 		// character.
 		List<Character> charactersList = new ArrayList<>();

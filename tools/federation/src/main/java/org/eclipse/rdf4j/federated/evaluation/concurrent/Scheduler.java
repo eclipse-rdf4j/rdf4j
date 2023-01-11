@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.federated.evaluation.concurrent;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * Interface for any scheduler.
@@ -34,7 +33,7 @@ public interface Scheduler<T> {
 	 *
 	 * @param res
 	 */
-	void handleResult(CloseableIteration<T, QueryEvaluationException> res);
+	void handleResult(CloseableIteration<T> res);
 
 	/**
 	 * Inform the scheduler that a certain task is done.

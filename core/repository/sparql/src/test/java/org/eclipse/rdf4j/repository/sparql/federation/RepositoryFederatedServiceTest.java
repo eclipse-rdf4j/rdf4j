@@ -16,7 +16,7 @@ import org.junit.Test;
 public class RepositoryFederatedServiceTest {
 
 	@Test
-	public void testInsertValuesClause() throws Exception {
+	public void testInsertValuesClause() {
 
 		// dummy instance for test
 		RepositoryFederatedService inst = new RepositoryFederatedService(null);

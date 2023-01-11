@@ -71,7 +71,7 @@ public class BinaryRDFParser extends AbstractRDFParser {
 	}
 
 	@Override
-	public void parse(Reader reader, String baseURI) throws IOException, RDFParseException, RDFHandlerException {
+	public void parse(Reader reader, String baseURI) throws RDFParseException, RDFHandlerException {
 		throw new UnsupportedOperationException();
 	}
 

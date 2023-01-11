@@ -72,8 +72,7 @@ public class CustomAggregateFunctionEvaluationTest {
 			public AggregateFunction<SumCollector, Value> buildFunction(Function<BindingSet, Value> evaluationStep) {
 				return new AggregateFunction<>(evaluationStep) {
 
-					public void processAggregate(BindingSet s, Predicate<Value> distinctValue, SumCollector sum)
-							throws QueryEvaluationException {
+					public void processAggregate(BindingSet s, Predicate<Value> distinctValue, SumCollector sum) {
 						if (sum.typeError != null) {
 							// halt further processing if a type error has been raised
 							return;

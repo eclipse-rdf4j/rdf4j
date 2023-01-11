@@ -93,7 +93,7 @@ public class ReusableGraphQueryResult implements GraphQueryResult, ThrowableReco
 	}
 
 	@Override
-	public Map<String, String> getNamespaces() throws QueryEvaluationException {
+	public Map<String, String> getNamespaces() {
 		if (recording.get()) {
 			return this.originalResult.getNamespaces();
 		}
@@ -119,7 +119,7 @@ public class ReusableGraphQueryResult implements GraphQueryResult, ThrowableReco
 	}
 
 	@Override
-	public void close() throws QueryEvaluationException {
+	public void close() {
 		if (recording.get()) {
 			recordingThrowable(
 					() -> {
@@ -142,7 +142,7 @@ public class ReusableGraphQueryResult implements GraphQueryResult, ThrowableReco
 	}
 
 	@Override
-	public boolean hasNext() throws QueryEvaluationException {
+	public boolean hasNext() {
 		if (recording.get()) {
 			return recordingThrowable(() -> originalResult.hasNext(), this);
 		} else {
@@ -151,7 +151,7 @@ public class ReusableGraphQueryResult implements GraphQueryResult, ThrowableReco
 	}
 
 	@Override
-	public Statement next() throws QueryEvaluationException {
+	public Statement next() {
 		if (recording.get()) {
 			Statement n = recordingThrowable(() -> originalResult.next(), this);
 			statements.add(n);
@@ -162,7 +162,7 @@ public class ReusableGraphQueryResult implements GraphQueryResult, ThrowableReco
 	}
 
 	@Override
-	public void remove() throws QueryEvaluationException {
+	public void remove() {
 		throw new UnsupportedOperationException("Remove is not supported");
 	}
 

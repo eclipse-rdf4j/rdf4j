@@ -20,7 +20,6 @@ import java.util.Objects;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
 
 public class Sort implements PlanNode {
 
@@ -33,7 +32,7 @@ public class Sort implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<ValidationTuple> iterator() {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
@@ -44,7 +43,7 @@ public class Sort implements PlanNode {
 			boolean closed = false;
 
 			@Override
-			public void localClose() throws SailException {
+			public void localClose() {
 				if (closed) {
 					throw new IllegalStateException("Already closed");
 				}
@@ -55,7 +54,7 @@ public class Sort implements PlanNode {
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				sortTuples();
 				return sortedTuplesIterator.hasNext();
 			}
@@ -67,7 +66,7 @@ public class Sort implements PlanNode {
 
 				if (sortedTuples == null) {
 					boolean alreadySorted;
-					try (CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator()) {
+					try (CloseableIteration<? extends ValidationTuple> iterator = parent.iterator()) {
 						sortedTuples = new ArrayList<>(1);
 						alreadySorted = true;
 						ValidationTuple prev = null;
@@ -107,7 +106,7 @@ public class Sort implements PlanNode {
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 				sortTuples();
 
 				return sortedTuplesIterator.next();

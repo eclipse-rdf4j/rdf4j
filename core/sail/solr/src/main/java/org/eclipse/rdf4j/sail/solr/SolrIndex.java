@@ -256,7 +256,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	}
 
 	@Override
-	public void begin() throws IOException {
+	public void begin() {
 	}
 
 	@Override

@@ -116,7 +116,7 @@ public abstract class TransformationServlet extends AbstractRepositoryServlet {
 		service(getTupleResultBuilder(req, resp, resp.getOutputStream()), xslPath);
 	}
 
-	protected void service(final TupleResultBuilder writer, final String xslPath) throws Exception {
+	protected void service(final TupleResultBuilder writer, final String xslPath) {
 		LOGGER.info("Call made to empty superclass implementation of service(PrintWriter,String) for path: {}",
 				xslPath);
 	}

@@ -44,7 +44,7 @@ class TransactionStartControllerTest {
 	private MockHttpServletResponse response;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		request = new MockHttpServletRequest();
 		request.setRequestURI("/repositories/" + REPO_ID + "/transactions");
 		request.setAttribute("repositoryID", REPO_ID);

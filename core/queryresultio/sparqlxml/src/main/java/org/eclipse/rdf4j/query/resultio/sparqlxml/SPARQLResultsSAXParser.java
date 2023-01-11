@@ -99,7 +99,7 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 	 *---------*/
 
 	@Override
-	public void startDocument() throws SAXException {
+	public void startDocument() {
 		bindingNames = new ArrayList<>();
 		currentValue = null;
 	}

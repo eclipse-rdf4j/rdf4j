@@ -52,7 +52,7 @@ public class ProxySettings implements Configuration {
 
 	private File propsFile;
 
-	public ProxySettings(File applicationDataDir) throws IOException {
+	public ProxySettings(File applicationDataDir) {
 		confDir = new File(applicationDataDir, DIR);
 	}
 
@@ -259,7 +259,7 @@ public class ProxySettings implements Configuration {
 	}
 
 	@Override
-	public void destroy() throws IOException {
+	public void destroy() {
 		// no-op
 	}
 

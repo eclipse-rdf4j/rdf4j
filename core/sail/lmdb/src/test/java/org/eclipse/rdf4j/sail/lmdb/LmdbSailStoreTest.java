@@ -199,7 +199,7 @@ public class LmdbSailStoreTest {
 	}
 
 	@After
-	public void after() throws Exception {
+	public void after() {
 		repo.shutDown();
 	}
 }

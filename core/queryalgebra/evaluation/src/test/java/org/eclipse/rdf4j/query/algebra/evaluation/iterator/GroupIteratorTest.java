@@ -94,8 +94,7 @@ public class GroupIteratorTest {
 					private ValueExprEvaluationException typeError = null;
 
 					@Override
-					public void processAggregate(BindingSet s, Predicate<Value> distinctValue, SumCollector sum)
-							throws QueryEvaluationException {
+					public void processAggregate(BindingSet s, Predicate<Value> distinctValue, SumCollector sum) {
 						if (typeError != null) {
 							// halt further processing if a type error has been raised
 							return;
@@ -132,7 +131,7 @@ public class GroupIteratorTest {
 	}
 
 	@Test
-	public void testAvgEmptySet() throws QueryEvaluationException {
+	public void testAvgEmptySet() {
 		Group group = new Group(EMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("avg", new Avg(new Var("a"))));
 		try (GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance(), context)) {
@@ -144,7 +143,7 @@ public class GroupIteratorTest {
 	}
 
 	@Test
-	public void testMaxEmptySet_DefaultGroup() throws QueryEvaluationException {
+	public void testMaxEmptySet_DefaultGroup() {
 		Group group = new Group(EMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("max", new Max(new Var("a"))));
 		try (GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance(), context)) {
@@ -155,7 +154,7 @@ public class GroupIteratorTest {
 	}
 
 	@Test
-	public void testMaxEmptySet_Grouped() throws QueryEvaluationException {
+	public void testMaxEmptySet_Grouped() {
 		Group group = new Group(EMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("max", new Max(new Var("a"))));
 		group.addGroupBindingName("x"); // we are grouping by variable x
@@ -167,7 +166,7 @@ public class GroupIteratorTest {
 	}
 
 	@Test
-	public void testMinEmptySet() throws QueryEvaluationException {
+	public void testMinEmptySet() {
 		Group group = new Group(EMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("min", new Min(new Var("a"))));
 		try (GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance(), context)) {
@@ -178,7 +177,7 @@ public class GroupIteratorTest {
 	}
 
 	@Test
-	public void testSampleEmptySet() throws QueryEvaluationException {
+	public void testSampleEmptySet() {
 		Group group = new Group(EMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("sample", new Sample(new Var("a"))));
 		try (GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance(), context)) {
@@ -189,7 +188,7 @@ public class GroupIteratorTest {
 	}
 
 	@Test
-	public void testGroupConcatEmptySet() throws QueryEvaluationException {
+	public void testGroupConcatEmptySet() {
 		Group group = new Group(EMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("groupconcat", new GroupConcat(new Var("a"))));
 		try (GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance(), context)) {
@@ -201,7 +200,7 @@ public class GroupIteratorTest {
 	}
 
 	@Test
-	public void testAvgNotZero() throws QueryEvaluationException {
+	public void testAvgNotZero() {
 		Group group = new Group(NONEMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("avg", new Avg(new Var("a"))));
 		try (GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance(), context)) {
@@ -211,7 +210,7 @@ public class GroupIteratorTest {
 	}
 
 	@Test
-	public void testCountNotZero() throws QueryEvaluationException {
+	public void testCountNotZero() {
 		Group group = new Group(NONEMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("count", new Count(new Var("a"))));
 		try (GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance(), context)) {
@@ -221,7 +220,7 @@ public class GroupIteratorTest {
 	}
 
 	@Test
-	public void testSumNotZero() throws QueryEvaluationException {
+	public void testSumNotZero() {
 		Group group = new Group(NONEMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("sum", new Sum(new Var("a"))));
 		try (GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance(), context)) {
@@ -231,7 +230,7 @@ public class GroupIteratorTest {
 	}
 
 	@Test
-	public void testCustomAggregateFunction_Nonempty() throws QueryEvaluationException {
+	public void testCustomAggregateFunction_Nonempty() {
 		Group group = new Group(NONEMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("customSum",
 				new AggregateFunctionCall(new Var("a"), aggregateFunctionFactory.getIri(), false)));
@@ -241,7 +240,7 @@ public class GroupIteratorTest {
 	}
 
 	@Test
-	public void testCustomAggregateFunction_Empty() throws QueryEvaluationException {
+	public void testCustomAggregateFunction_Empty() {
 		Group group = new Group(EMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("customSum",
 				new AggregateFunctionCall(new Var("a"), aggregateFunctionFactory.getIri(), false)));
@@ -251,7 +250,7 @@ public class GroupIteratorTest {
 	}
 
 	@Test
-	public void testCustomAggregateFunction_WrongIri() throws QueryEvaluationException {
+	public void testCustomAggregateFunction_WrongIri() {
 		Group group = new Group(EMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("customSum", new AggregateFunctionCall(new Var("a"), "urn:i", false)));
 		try (GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance(), context)) {

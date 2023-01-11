@@ -22,7 +22,6 @@ import java.util.concurrent.CountDownLatch;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.GraphQueryResult;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParser;
@@ -33,7 +32,7 @@ import org.eclipse.rdf4j.rio.RDFParser;
  * @author James Leigh
  */
 @Deprecated(since = "4.1.0")
-public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEvaluationException>
+public class BackgroundGraphResult extends IterationWrapper<Statement>
 		implements GraphQueryResult, Runnable, RDFHandler {
 
 	private final RDFParser parser;
@@ -68,7 +67,7 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {

@@ -21,20 +21,20 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryContext;
 /**
  * Makes a {@link QueryContext} available during iteration.
  */
-public class QueryContextIteration extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
+public class QueryContextIteration extends AbstractCloseableIteration<BindingSet> {
 
-	private final CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
+	private final CloseableIteration<? extends BindingSet> iter;
 
 	private final QueryContext queryContext;
 
-	public QueryContextIteration(CloseableIteration<? extends BindingSet, QueryEvaluationException> iter,
+	public QueryContextIteration(CloseableIteration<? extends BindingSet> iter,
 			QueryContext queryContext) {
 		this.iter = iter;
 		this.queryContext = queryContext;
 	}
 
 	@Override
-	public boolean hasNext() throws QueryEvaluationException {
+	public boolean hasNext() {
 		if (isClosed()) {
 			return false;
 		}
@@ -47,7 +47,7 @@ public class QueryContextIteration extends AbstractCloseableIteration<BindingSet
 	}
 
 	@Override
-	public BindingSet next() throws QueryEvaluationException {
+	public BindingSet next() {
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
@@ -60,7 +60,7 @@ public class QueryContextIteration extends AbstractCloseableIteration<BindingSet
 	}
 
 	@Override
-	public void remove() throws QueryEvaluationException {
+	public void remove() {
 		if (isClosed()) {
 			throw new IllegalStateException("The iteration has been closed.");
 		}
@@ -73,7 +73,7 @@ public class QueryContextIteration extends AbstractCloseableIteration<BindingSet
 	}
 
 	@Override
-	public void handleClose() throws QueryEvaluationException {
+	public void handleClose() {
 		try {
 			super.handleClose();
 		} finally {

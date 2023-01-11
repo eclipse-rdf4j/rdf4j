@@ -105,7 +105,7 @@ public class MemStatementIteratorCache {
 		return new CachedIteration(cached.iterator());
 	}
 
-	private static class CachedIteration implements CloseableIteration<MemStatement, SailException> {
+	private static class CachedIteration implements CloseableIteration<MemStatement> {
 
 		private Iterator<MemStatement> iter;
 
@@ -114,7 +114,7 @@ public class MemStatementIteratorCache {
 		}
 
 		@Override
-		public boolean hasNext() throws SailException {
+		public boolean hasNext() {
 			if (iter == null) {
 				return false;
 			}
@@ -127,7 +127,7 @@ public class MemStatementIteratorCache {
 		}
 
 		@Override
-		public MemStatement next() throws SailException {
+		public MemStatement next() {
 			if (iter == null) {
 				throw new NoSuchElementException("Iteration has been closed");
 			}
@@ -136,7 +136,7 @@ public class MemStatementIteratorCache {
 		}
 
 		@Override
-		public void remove() throws SailException {
+		public void remove() {
 			if (iter == null) {
 				throw new IllegalStateException("Iteration has been closed");
 			}
@@ -145,7 +145,7 @@ public class MemStatementIteratorCache {
 		}
 
 		@Override
-		public final void close() throws SailException {
+		public final void close() {
 			iter = null;
 		}
 

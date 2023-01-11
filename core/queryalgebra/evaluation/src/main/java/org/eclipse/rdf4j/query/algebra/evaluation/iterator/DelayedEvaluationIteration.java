@@ -23,11 +23,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
  * Utility class that removes code duplication and makes a precompiled QueryEvaluationStep available as an iteration
  * that may be created and used later.
  */
-public class DelayedEvaluationIteration extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
+public class DelayedEvaluationIteration extends AbstractCloseableIteration<BindingSet> {
 
 	private final QueryEvaluationStep arg;
 	private final BindingSet bs;
-	private CloseableIteration<BindingSet, QueryEvaluationException> iter;
+	private CloseableIteration<BindingSet> iter;
 
 	public DelayedEvaluationIteration(QueryEvaluationStep arg, BindingSet bs) {
 		super();
@@ -35,8 +35,7 @@ public class DelayedEvaluationIteration extends AbstractCloseableIteration<Bindi
 		this.bs = bs;
 	}
 
-	protected CloseableIteration<BindingSet, QueryEvaluationException> createIteration()
-			throws QueryEvaluationException {
+	protected CloseableIteration<BindingSet> createIteration() {
 		return arg.evaluate(bs);
 	}
 
@@ -44,7 +43,7 @@ public class DelayedEvaluationIteration extends AbstractCloseableIteration<Bindi
 	 * Calls the <var>hasNext</var> method of the underlying iteration.
 	 */
 	@Override
-	public boolean hasNext() throws QueryEvaluationException {
+	public boolean hasNext() {
 		if (isClosed()) {
 			return false;
 		}
@@ -58,7 +57,7 @@ public class DelayedEvaluationIteration extends AbstractCloseableIteration<Bindi
 	 * Calls the <var>next</var> method of the underlying iteration.
 	 */
 	@Override
-	public BindingSet next() throws QueryEvaluationException {
+	public BindingSet next() {
 		if (isClosed()) {
 			throw new NoSuchElementException("Iteration has been closed");
 		}
@@ -67,7 +66,7 @@ public class DelayedEvaluationIteration extends AbstractCloseableIteration<Bindi
 		return iter.next();
 	}
 
-	private void initialise() throws QueryEvaluationException {
+	private void initialise() {
 		if (iter == null) {
 			// Underlying iterator has not yet been initialized
 			iter = createIteration();
@@ -78,7 +77,7 @@ public class DelayedEvaluationIteration extends AbstractCloseableIteration<Bindi
 	 * Calls the <var>remove</var> method of the underlying iteration.
 	 */
 	@Override
-	public void remove() throws QueryEvaluationException {
+	public void remove() {
 		if (isClosed()) {
 			throw new IllegalStateException("The iteration has been closed.");
 		}
@@ -94,7 +93,7 @@ public class DelayedEvaluationIteration extends AbstractCloseableIteration<Bindi
 	 * {@link CloseableIteration}.
 	 */
 	@Override
-	protected final void handleClose() throws QueryEvaluationException {
+	protected final void handleClose() {
 		if (iter != null) {
 			iter.close();
 		}

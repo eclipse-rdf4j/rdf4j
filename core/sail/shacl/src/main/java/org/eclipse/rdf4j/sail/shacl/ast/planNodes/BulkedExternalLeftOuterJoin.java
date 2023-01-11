@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 
@@ -56,14 +55,14 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<ValidationTuple> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			final ArrayDeque<ValidationTuple> left = new ArrayDeque<>(BULK_SIZE);
 
 			final ArrayDeque<ValidationTuple> right = new ArrayDeque<>(BULK_SIZE);
 
-			final CloseableIteration<? extends ValidationTuple, SailException> leftNodeIterator = leftNode.iterator();
+			final CloseableIteration<? extends ValidationTuple> leftNodeIterator = leftNode.iterator();
 
 			private void calculateNext() {
 
@@ -88,18 +87,18 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 			}
 
 			@Override
-			public void localClose() throws SailException {
+			public void localClose() {
 				leftNodeIterator.close();
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				calculateNext();
 				return !left.isEmpty();
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 				calculateNext();
 
 				if (!left.isEmpty()) {

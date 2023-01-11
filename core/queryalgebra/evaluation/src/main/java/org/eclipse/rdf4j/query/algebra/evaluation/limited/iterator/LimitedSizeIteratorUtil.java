@@ -33,8 +33,8 @@ public class LimitedSizeIteratorUtil {
 	 * @throws QueryEvaluationException trigerred when maxSize is smaller than the used value
 	 */
 	public static Set<BindingSet> addAll(
-			CloseableIteration<? extends BindingSet, ? extends QueryEvaluationException> arg2,
-			Set<BindingSet> includeSet, AtomicLong used, long maxSize) throws QueryEvaluationException {
+			CloseableIteration<? extends BindingSet> arg2,
+			Set<BindingSet> includeSet, AtomicLong used, long maxSize) {
 		while (arg2.hasNext()) {
 			if (includeSet.add(arg2.next()) && used.incrementAndGet() > maxSize) {
 				throw new QueryEvaluationException("Size limited reached inside intersect operator");
@@ -51,8 +51,7 @@ public class LimitedSizeIteratorUtil {
 	 * @throws QueryEvaluationException when the object is added to the set and the total elements in all limited size
 	 *                                  collections exceed the allowed maxSize.
 	 */
-	public static <V> boolean add(V object, Collection<V> excludeSet, AtomicLong used, long maxSize)
-			throws QueryEvaluationException {
+	public static <V> boolean add(V object, Collection<V> excludeSet, AtomicLong used, long maxSize) {
 		boolean add = excludeSet.add(object);
 		if (add && used.incrementAndGet() > maxSize) {
 			throw new QueryEvaluationException("Size limited reached inside query operator.");

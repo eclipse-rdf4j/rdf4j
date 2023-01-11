@@ -122,7 +122,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	private boolean closed;
 
 	@Override
-	public void close() throws SailException {
+	public void close() {
 		closed = true;
 		refbacks = null;
 		prepend = null;
@@ -136,7 +136,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	@Override
-	public void prepare() throws SailException {
+	public void prepare() {
 		assert !closed;
 		if (prepend != null && observed != null) {
 			for (SimpleStatementPattern p : observed) {
@@ -430,7 +430,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	@Override
-	public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
+	public void approve(Resource subj, IRI pred, Value obj, Resource ctx) {
 		approve(Statements.statement(subj, pred, obj, ctx));
 	}
 
@@ -528,7 +528,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 		Changeset changeset = new Changeset() {
 			@Override
-			public void flush() throws SailException {
+			public void flush() {
 				throw new UnsupportedOperationException();
 			}
 

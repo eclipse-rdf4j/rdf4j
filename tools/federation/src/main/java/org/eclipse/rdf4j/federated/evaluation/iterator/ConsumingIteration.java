@@ -30,11 +30,11 @@ import com.google.common.collect.Lists;
  * @author Andreas Schwarte
  *
  */
-public class ConsumingIteration implements CloseableIteration<BindingSet, QueryEvaluationException> {
+public class ConsumingIteration implements CloseableIteration<BindingSet> {
 
 	private final List<BindingSet> consumed = Lists.newArrayList();
 
-	private final CloseableIteration<BindingSet, QueryEvaluationException> innerIter;
+	private final CloseableIteration<BindingSet> innerIter;
 
 	/**
 	 * The index of the next element that will be returned by a call to {@link #next()}.
@@ -46,8 +46,7 @@ public class ConsumingIteration implements CloseableIteration<BindingSet, QueryE
 	 * @param max  the number of results to be consumed.
 	 * @throws QueryEvaluationException
 	 */
-	public ConsumingIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter, int max)
-			throws QueryEvaluationException {
+	public ConsumingIteration(CloseableIteration<BindingSet> iter, int max) {
 
 		innerIter = iter;
 
@@ -69,12 +68,12 @@ public class ConsumingIteration implements CloseableIteration<BindingSet, QueryE
 	}
 
 	@Override
-	public boolean hasNext() throws QueryEvaluationException {
+	public boolean hasNext() {
 		return currentIndex < consumed.size() || innerIter.hasNext();
 	}
 
 	@Override
-	public BindingSet next() throws QueryEvaluationException {
+	public BindingSet next() {
 		if (hasNext()) {
 			// try to read from the consumed items
 			if (currentIndex < consumed.size()) {
@@ -89,13 +88,13 @@ public class ConsumingIteration implements CloseableIteration<BindingSet, QueryE
 	}
 
 	@Override
-	public void remove() throws QueryEvaluationException {
+	public void remove() {
 		throw new UnsupportedOperationException("not supported");
 
 	}
 
 	@Override
-	public void close() throws QueryEvaluationException {
+	public void close() {
 		innerIter.close();
 	}
 

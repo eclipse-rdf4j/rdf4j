@@ -48,10 +48,9 @@ public abstract class ModelNamespacesTest {
 	protected abstract Model getModelImplementation();
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		testModel = getModelImplementation();
 	}
 

@@ -28,7 +28,7 @@ public class PersistentMemoryStoreTest extends RDFNotifyingStoreTest {
 	public TemporaryFolder tempDir = new TemporaryFolder();
 
 	@Override
-	protected NotifyingSail createSail() throws SailException {
+	protected NotifyingSail createSail() {
 		try {
 			NotifyingSail sail = new MemoryStore(tempDir.newFolder(PersistentMemoryStoreTest.class.getSimpleName()));
 			sail.init();

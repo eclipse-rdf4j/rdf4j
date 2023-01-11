@@ -112,7 +112,7 @@ class NativeSailStore implements SailStore {
 	}
 
 	@Override
-	public void close() throws SailException {
+	public void close() {
 		try {
 			try {
 				if (namespaceStore != null) {
@@ -180,9 +180,9 @@ class NativeSailStore implements SailStore {
 		return contextIDs;
 	}
 
-	CloseableIteration<Resource, SailException> getContexts() throws IOException {
+	CloseableIteration<Resource> getContexts() throws IOException {
 		RecordIterator btreeIter = tripleStore.getAllTriplesSortedByContext(false);
-		CloseableIteration<? extends Statement, SailException> stIter1;
+		CloseableIteration<? extends Statement> stIter1;
 		if (btreeIter == null) {
 			// Iterator over all statements
 			stIter1 = createStatementIterator(null, null, null, true);
@@ -190,7 +190,7 @@ class NativeSailStore implements SailStore {
 			stIter1 = new NativeStatementIterator(btreeIter, valueStore);
 		}
 
-		FilterIteration<Statement, SailException> stIter2 = new FilterIteration<Statement, SailException>(
+		FilterIteration<Statement> stIter2 = new FilterIteration<Statement>(
 				stIter1) {
 			@Override
 			protected boolean accept(Statement st) {
@@ -198,9 +198,9 @@ class NativeSailStore implements SailStore {
 			}
 		};
 
-		return new ConvertingIteration<Statement, Resource, SailException>(stIter2) {
+		return new ConvertingIteration<Statement, Resource>(stIter2) {
 			@Override
-			protected Resource convert(Statement sourceObject) throws SailException {
+			protected Resource convert(Statement sourceObject) {
 				return sourceObject.getContext();
 			}
 		};
@@ -216,7 +216,7 @@ class NativeSailStore implements SailStore {
 	 *                 no contexts are supplied the method operates on the entire repository.
 	 * @return A StatementIterator that can be used to iterate over the statements that match the specified pattern.
 	 */
-	CloseableIteration<? extends Statement, SailException> createStatementIterator(Resource subj, IRI pred, Value obj,
+	CloseableIteration<? extends Statement> createStatementIterator(Resource subj, IRI pred, Value obj,
 			boolean explicit, Resource... contexts) throws IOException {
 		int subjID = NativeValue.UNKNOWN_ID;
 		if (subj != null) {
@@ -325,12 +325,12 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public SailSink sink(IsolationLevel level) throws SailException {
+		public SailSink sink(IsolationLevel level) {
 			return new NativeSailSink(explicit);
 		}
 
 		@Override
-		public NativeSailDataset dataset(IsolationLevel level) throws SailException {
+		public NativeSailDataset dataset(IsolationLevel level) {
 			return new NativeSailDataset(explicit);
 		}
 
@@ -340,7 +340,7 @@ class NativeSailStore implements SailStore {
 
 		private final boolean explicit;
 
-		public NativeSailSink(boolean explicit) throws SailException {
+		public NativeSailSink(boolean explicit) {
 			this.explicit = explicit;
 		}
 
@@ -350,12 +350,12 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public void prepare() throws SailException {
+		public void prepare() {
 			// serializable is not supported at this level
 		}
 
 		@Override
-		public synchronized void flush() throws SailException {
+		public synchronized void flush() {
 			sinkStoreAccessLock.lock();
 			try {
 				try {
@@ -387,7 +387,7 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public void setNamespace(String prefix, String name) throws SailException {
+		public void setNamespace(String prefix, String name) {
 			sinkStoreAccessLock.lock();
 			try {
 				startTriplestoreTransaction();
@@ -398,7 +398,7 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public void removeNamespace(String prefix) throws SailException {
+		public void removeNamespace(String prefix) {
 			sinkStoreAccessLock.lock();
 			try {
 				startTriplestoreTransaction();
@@ -409,7 +409,7 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public void clearNamespaces() throws SailException {
+		public void clearNamespaces() {
 			sinkStoreAccessLock.lock();
 			try {
 				startTriplestoreTransaction();
@@ -420,7 +420,7 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public void observe(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		public void observe(Resource subj, IRI pred, Value obj, Resource... contexts) {
 			// serializable is not supported at this level
 		}
 
@@ -430,17 +430,17 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public void clear(Resource... contexts) throws SailException {
+		public void clear(Resource... contexts) {
 			removeStatements(null, null, null, explicit, contexts);
 		}
 
 		@Override
-		public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
+		public void approve(Resource subj, IRI pred, Value obj, Resource ctx) {
 			addStatement(subj, pred, obj, explicit, ctx);
 		}
 
 		@Override
-		public void deprecate(Statement statement) throws SailException {
+		public void deprecate(Statement statement) {
 			removeStatements(statement.getSubject(), statement.getPredicate(), statement.getObject(), explicit,
 					statement.getContext());
 		}
@@ -448,9 +448,9 @@ class NativeSailStore implements SailStore {
 		/**
 		 * Starts a transaction on the triplestore, if necessary.
 		 *
-		 * @throws SailException if a transaction could not be started.
+		 * @if a transaction could not be started.
 		 */
-		private synchronized void startTriplestoreTransaction() throws SailException {
+		private synchronized void startTriplestoreTransaction() {
 
 			if (storeTxnStarted.compareAndSet(false, true)) {
 				try {
@@ -462,8 +462,7 @@ class NativeSailStore implements SailStore {
 			}
 		}
 
-		private boolean addStatement(Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)
-				throws SailException {
+		private boolean addStatement(Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) {
 			Objects.requireNonNull(contexts,
 					"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 			boolean result = false;
@@ -502,8 +501,7 @@ class NativeSailStore implements SailStore {
 			return result;
 		}
 
-		private long removeStatements(Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)
-				throws SailException {
+		private long removeStatements(Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) {
 			Objects.requireNonNull(contexts,
 					"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 
@@ -591,7 +589,7 @@ class NativeSailStore implements SailStore {
 
 		private final boolean explicit;
 
-		public NativeSailDataset(boolean explicit) throws SailException {
+		public NativeSailDataset(boolean explicit) {
 			this.explicit = explicit;
 		}
 
@@ -601,23 +599,23 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public String getNamespace(String prefix) throws SailException {
+		public String getNamespace(String prefix) {
 			return namespaceStore.getNamespace(prefix);
 		}
 
 		@Override
-		public CloseableIteration<? extends Namespace, SailException> getNamespaces() {
-			return new CloseableIteratorIteration<Namespace, SailException>(namespaceStore.iterator());
+		public CloseableIteration<? extends Namespace> getNamespaces() {
+			return new CloseableIteratorIteration<Namespace>(namespaceStore.iterator());
 		}
 
 		@Override
-		public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
+		public CloseableIteration<? extends Resource> getContextIDs() {
 			return new CloseableIteratorIteration<>(contextStore.iterator());
 		}
 
 		@Override
-		public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
-				Resource... contexts) throws SailException {
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) {
 			try {
 				return createStatementIterator(subj, pred, obj, explicit, contexts);
 			} catch (IOException e) {

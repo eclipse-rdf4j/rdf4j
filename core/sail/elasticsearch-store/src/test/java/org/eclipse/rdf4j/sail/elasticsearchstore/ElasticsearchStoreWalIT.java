@@ -55,19 +55,19 @@ public class ElasticsearchStoreWalIT {
 	}
 
 	@AfterClass
-	public static void afterClass() throws IOException {
+	public static void afterClass() {
 		TestHelpers.stopElasticsearch(runner);
 	}
 
 	@After
-	public void after() throws UnknownHostException {
+	public void after() {
 		runner.admin().indices().refresh(Requests.refreshRequest("*")).actionGet();
 		deleteAllIndexes();
 
 	}
 
 	@Before
-	public void before() throws UnknownHostException {
+	public void before() {
 //		embeddedElastic.refreshIndices();
 //
 //		embeddedElastic.deleteIndices();

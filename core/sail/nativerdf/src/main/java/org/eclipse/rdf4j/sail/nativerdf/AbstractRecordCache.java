@@ -129,7 +129,7 @@ abstract class AbstractRecordCache implements RecordCache {
 		throw new IllegalStateException();
 	}
 
-	protected abstract RecordIterator getRecordsInternal() throws IOException;
+	protected abstract RecordIterator getRecordsInternal();
 
 	/**
 	 * Checks whether the cache is still valid. Caches are valid if the number of stored records is smaller than or

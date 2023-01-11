@@ -32,12 +32,12 @@ import org.junit.Test;
 public abstract class SparqlSetBindingTest {
 
 	@BeforeClass
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
 	@AfterClass
-	public static void afterClass() throws Exception {
+	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
@@ -59,7 +59,7 @@ public abstract class SparqlSetBindingTest {
 	private IRI ringoRes;
 
 	@Test
-	public void testBinding() throws Exception {
+	public void testBinding() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryBinding);
 		query.setBinding("name", ringo);
 		TupleQueryResult result = query.evaluate();
@@ -69,7 +69,7 @@ public abstract class SparqlSetBindingTest {
 	}
 
 	@Test
-	public void testBindingSubselect() throws Exception {
+	public void testBindingSubselect() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryBindingSubselect);
 		query.setBinding("x", ringoRes);
 		TupleQueryResult result = query.evaluate();
@@ -100,10 +100,10 @@ public abstract class SparqlSetBindingTest {
 		return repository;
 	}
 
-	protected abstract Repository newRepository() throws Exception;
+	protected abstract Repository newRepository();
 
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		conn.close();
 		conn = null;
 

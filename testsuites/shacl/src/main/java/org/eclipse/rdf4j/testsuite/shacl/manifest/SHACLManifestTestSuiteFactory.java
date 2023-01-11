@@ -275,7 +275,7 @@ public class SHACLManifestTestSuiteFactory {
 	}
 
 	private String getManifestName(Model model, IRI manifest)
-			throws QueryEvaluationException, RepositoryException, MalformedQueryException {
+			throws RepositoryException, MalformedQueryException {
 		// Try to extract suite name from manifest file
 		String label = Models.objectString(model.getStatements(manifest, RDFS.LABEL, null)).orElse(null);
 		if (label != null) {

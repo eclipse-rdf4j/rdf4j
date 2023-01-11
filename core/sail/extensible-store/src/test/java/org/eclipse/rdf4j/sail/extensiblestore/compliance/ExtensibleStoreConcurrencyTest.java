@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.testsuite.sail.SailConcurrencyTest;
 public class ExtensibleStoreConcurrencyTest extends SailConcurrencyTest {
 
 	@Override
-	protected NotifyingSail createSail() throws SailException {
+	protected NotifyingSail createSail() {
 		return new ExtensibleStoreImplForTests();
 	}
 }

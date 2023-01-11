@@ -24,7 +24,7 @@ public class NativeTupleQueryResultTest extends TupleQueryResultTest {
 	File tempDir;
 
 	@Override
-	protected Repository newRepository() throws IOException {
+	protected Repository newRepository() {
 		return new SailRepository(new NativeStore(tempDir, "spoc"));
 	}
 }

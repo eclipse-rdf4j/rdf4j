@@ -118,8 +118,7 @@ public class RDFXMLPrettyWriterTest extends AbstractRDFXMLWriterTest {
 	}
 
 	@Test
-	public void compactXMLPrintTest() throws RDFHandlerException, IOException, ClassNotFoundException,
-			NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
+	public void compactXMLPrintTest() throws RDFHandlerException {
 		OutputStream outputStream = new ByteArrayOutputStream();
 		PrintStream printStream = new PrintStream(outputStream);
 		System.setOut(printStream);

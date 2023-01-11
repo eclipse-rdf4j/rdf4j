@@ -26,13 +26,13 @@ public class SchemaCachingRDFSInferencerIsolationLevelTest extends SailIsolation
 	 *---------*/
 
 	@Override
-	protected Sail createSail() throws SailException {
+	protected Sail createSail() {
 		// TODO we are testing the inferencer, not the store. We should use a mock here instead of a real memory store.
 		return new SchemaCachingRDFSInferencer(new MemoryStore());
 	}
 
 	@Override
-	public void testLargeTransaction(IsolationLevel isolationLevel, int count) throws InterruptedException {
+	public void testLargeTransaction(IsolationLevel isolationLevel, int count) {
 		// See: https://github.com/eclipse/rdf4j/issues/1795
 	}
 }

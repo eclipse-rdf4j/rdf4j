@@ -25,21 +25,21 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  *
  * @author Andreas Schwarte
  */
-public class IndependentJoingroupBindingsIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class IndependentJoingroupBindingsIteration extends LookAheadIteration<BindingSet> {
 
 	protected final BindingSet bindings;
-	protected final CloseableIteration<BindingSet, QueryEvaluationException> iter;
+	protected final CloseableIteration<BindingSet> iter;
 	protected ArrayList<BindingSet> result = null;
 	protected int currentIdx = 0;
 
-	public IndependentJoingroupBindingsIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public IndependentJoingroupBindingsIteration(CloseableIteration<BindingSet> iter,
 			BindingSet bindings) {
 		this.bindings = bindings;
 		this.iter = iter;
 	}
 
 	@Override
-	protected BindingSet getNextElement() throws QueryEvaluationException {
+	protected BindingSet getNextElement() {
 
 		if (result == null) {
 			result = computeResult();
@@ -52,7 +52,7 @@ public class IndependentJoingroupBindingsIteration extends LookAheadIteration<Bi
 		return result.get(currentIdx++);
 	}
 
-	protected ArrayList<BindingSet> computeResult() throws QueryEvaluationException {
+	protected ArrayList<BindingSet> computeResult() {
 
 		List<Binding> a_res = new ArrayList<>();
 		List<Binding> b_res = new ArrayList<>();
@@ -97,7 +97,7 @@ public class IndependentJoingroupBindingsIteration extends LookAheadIteration<Bi
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {

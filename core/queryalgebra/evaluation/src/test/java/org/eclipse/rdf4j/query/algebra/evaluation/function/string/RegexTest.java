@@ -51,7 +51,7 @@ public class RegexTest {
 	}
 
 	@Test
-	public void testEvaluate1() throws QueryEvaluationException {
+	public void testEvaluate1() {
 
 		Literal expr = vf.createLiteral("foobar");
 		Literal pattern = vf.createLiteral("foobar");
@@ -66,7 +66,7 @@ public class RegexTest {
 	}
 
 	@Test
-	public void testEvaluate2() throws QueryEvaluationException {
+	public void testEvaluate2() {
 
 		Literal expr = vf.createLiteral("foobar");
 		Literal pattern = vf.createLiteral("FooBar");
@@ -82,7 +82,7 @@ public class RegexTest {
 	}
 
 	@Test
-	public void testEvaluate3() throws QueryEvaluationException {
+	public void testEvaluate3() {
 
 		Literal pattern = vf.createLiteral("FooBar");
 		Literal startIndex = vf.createLiteral(4);
@@ -96,7 +96,7 @@ public class RegexTest {
 	}
 
 	@Test
-	public void testEvaluate4() throws QueryEvaluationException {
+	public void testEvaluate4() {
 
 		Literal expr = vf.createLiteral("foobar", "en");
 		Literal pattern = vf.createLiteral("FooBar");
@@ -112,7 +112,7 @@ public class RegexTest {
 	}
 
 	@Test
-	public void testEvaluate5() throws QueryEvaluationException {
+	public void testEvaluate5() {
 
 		Literal expr = vf.createLiteral("foobar", XSD.STRING);
 		Literal pattern = vf.createLiteral("FooBar");
@@ -128,7 +128,7 @@ public class RegexTest {
 	}
 
 	@Test
-	public void testEvaluate6() throws QueryEvaluationException {
+	public void testEvaluate6() {
 
 		Literal expr = vf.createLiteral("foobar", XSD.TOKEN);
 		Literal pattern = vf.createLiteral("FooBar");

@@ -26,8 +26,8 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  */
 public interface TripleSource {
 
-	EmptyIteration<? extends Statement, QueryEvaluationException> EMPTY_ITERATION = new EmptyIteration<>();
-	EmptyIteration<? extends Triple, QueryEvaluationException> EMPTY_TRIPLE_ITERATION = new EmptyIteration<>();
+	EmptyIteration<? extends Statement> EMPTY_ITERATION = new EmptyIteration<>();
+	EmptyIteration<? extends Triple> EMPTY_TRIPLE_ITERATION = new EmptyIteration<>();
 
 	/**
 	 * Gets all statements that have a specific subject, predicate and/or object. All three parameters may be null to
@@ -42,7 +42,7 @@ public interface TripleSource {
 	 * @return An iterator over the relevant statements.
 	 * @throws QueryEvaluationException If the triple source failed to get the statements.
 	 */
-	CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj, IRI pred,
+	CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws QueryEvaluationException;
 
 	/**

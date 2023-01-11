@@ -56,7 +56,7 @@ public class NotifyingSailWrapper extends SailWrapper implements NotifyingSail {
 	}
 
 	@Override
-	public NotifyingSailConnection getConnection() throws SailException {
+	public NotifyingSailConnection getConnection() {
 		return (NotifyingSailConnection) super.getConnection();
 	}
 

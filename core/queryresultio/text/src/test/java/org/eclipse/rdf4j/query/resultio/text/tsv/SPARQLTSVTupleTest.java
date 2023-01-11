@@ -88,7 +88,7 @@ public class SPARQLTSVTupleTest extends AbstractQueryResultIOTupleTest {
 	}
 
 	private String toString(TupleQueryResult results) throws QueryResultHandlerException,
-			TupleQueryResultHandlerException, QueryEvaluationException, UnsupportedEncodingException {
+			TupleQueryResultHandlerException, QueryEvaluationException {
 		TupleQueryResultFormat format = getTupleFormat();
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
@@ -108,7 +108,7 @@ public class SPARQLTSVTupleTest extends AbstractQueryResultIOTupleTest {
 
 	@Override
 	protected void assertQueryResultsEqual(TupleQueryResult expected, TupleQueryResult output)
-			throws QueryEvaluationException, TupleQueryResultHandlerException, QueryResultHandlerException,
+			throws TupleQueryResultHandlerException, QueryResultHandlerException,
 			UnsupportedEncodingException {
 		MutableTupleQueryResult r1 = new MutableTupleQueryResult(expected);
 		MutableTupleQueryResult r2 = new MutableTupleQueryResult(output);

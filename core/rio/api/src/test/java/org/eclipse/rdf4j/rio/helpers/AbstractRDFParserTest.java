@@ -37,12 +37,12 @@ public class AbstractRDFParserTest {
 		}
 
 		@Override
-		public void parse(InputStream in, String baseURI) throws IOException, RDFParseException, RDFHandlerException {
+		public void parse(InputStream in, String baseURI) throws RDFParseException, RDFHandlerException {
 			throw new UnsupportedOperationException("Not supported yet.");
 		}
 
 		@Override
-		public void parse(Reader reader, String baseURI) throws IOException, RDFParseException, RDFHandlerException {
+		public void parse(Reader reader, String baseURI) throws RDFParseException, RDFHandlerException {
 			throw new UnsupportedOperationException("Not supported yet.");
 		}
 
@@ -56,12 +56,12 @@ public class AbstractRDFParserTest {
 	}
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp() {
 		parser = new MyRDFParser();
 	}
 
 	@Test
-	public void testSkolemOrigin() throws Exception {
+	public void testSkolemOrigin() {
 		parser.getParserConfig().set(BasicParserSettings.SKOLEMIZE_ORIGIN, "http://www.example.com");
 
 		assertTrue(parser.getBNode().toString().startsWith("http://www.example.com"));
@@ -69,7 +69,7 @@ public class AbstractRDFParserTest {
 	}
 
 	@Test
-	public void testSkolemOriginReset() throws Exception {
+	public void testSkolemOriginReset() {
 		parser.getParserConfig().set(BasicParserSettings.SKOLEMIZE_ORIGIN, "http://www.example.com");
 		parser.getParserConfig().set(BasicParserSettings.SKOLEMIZE_ORIGIN, "");
 

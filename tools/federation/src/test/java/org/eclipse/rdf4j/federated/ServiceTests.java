@@ -196,7 +196,7 @@ public class ServiceTests extends SPARQLBaseTest {
 
 		FederatedServiceResolver serviceResolver = new SPARQLServiceResolver() {
 			@Override
-			protected FederatedService createService(String serviceUrl) throws QueryEvaluationException {
+			protected FederatedService createService(String serviceUrl) {
 				return new TestSparqlFederatedService(serviceUrl, getHttpClientSessionManager());
 			}
 		};
@@ -230,7 +230,7 @@ public class ServiceTests extends SPARQLBaseTest {
 
 		FederatedServiceResolver serviceResolver = new SPARQLServiceResolver() {
 			@Override
-			protected FederatedService createService(String serviceUrl) throws QueryEvaluationException {
+			protected FederatedService createService(String serviceUrl) {
 				return new TestSparqlFederatedService(serviceUrl, getHttpClientSessionManager());
 			}
 		};
@@ -288,7 +288,7 @@ public class ServiceTests extends SPARQLBaseTest {
 
 		FederatedServiceResolver serviceResolver = new SPARQLServiceResolver() {
 			@Override
-			protected FederatedService createService(String serviceUrl) throws QueryEvaluationException {
+			protected FederatedService createService(String serviceUrl) {
 				return new TestSparqlFederatedService(serviceUrl, getHttpClientSessionManager());
 			}
 		};
@@ -345,7 +345,7 @@ public class ServiceTests extends SPARQLBaseTest {
 
 		SPARQLServiceResolver serviceResolver = new SPARQLServiceResolver() {
 			@Override
-			protected FederatedService createService(String serviceUrl) throws QueryEvaluationException {
+			protected FederatedService createService(String serviceUrl) {
 				if (serviceUrl.equals("urn:memStore")) {
 					return new RepositoryFederatedService(localStore, true);
 				}
@@ -424,16 +424,15 @@ public class ServiceTests extends SPARQLBaseTest {
 		}
 
 		@Override
-		public CloseableIteration<BindingSet, QueryEvaluationException> select(Service service,
-				Set<String> projectionVars, BindingSet bindings, String baseUri) throws QueryEvaluationException {
+		public CloseableIteration<BindingSet> select(Service service,
+				Set<String> projectionVars, BindingSet bindings, String baseUri) {
 			serviceRequestCount.incrementAndGet();
 			return super.select(service, projectionVars, bindings, baseUri);
 		}
 
 		@Override
-		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service,
-				CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
-				throws QueryEvaluationException {
+		public CloseableIteration<BindingSet> evaluate(Service service,
+				CloseableIteration<BindingSet> bindings, String baseUri) {
 			boundJoinRequestCount.incrementAndGet();
 			return super.evaluate(service, bindings, baseUri);
 		}

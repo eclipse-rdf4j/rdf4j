@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
-public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 
 	private static final Literal OBJECT = SimpleValueFactory.getInstance().createLiteral("object");
 
@@ -53,7 +53,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 
 	private final BindingSet bindings;
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> iter;
+	private CloseableIteration<BindingSet> iter;
 
 	private Set<Value> reportedValues;
 
@@ -103,7 +103,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 	}
 
 	@Override
-	protected BindingSet getNextElement() throws QueryEvaluationException {
+	protected BindingSet getNextElement() {
 		if (subj == null && obj == null) {
 			if (this.reportedValues == null) {
 				reportedValues = evaluationStrategy.makeSet();
@@ -164,8 +164,8 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 		}
 	}
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> createIteration() throws QueryEvaluationException {
-		CloseableIteration<BindingSet, QueryEvaluationException> iter = precompile.evaluate(bindings);
+	private CloseableIteration<BindingSet> createIteration() {
+		CloseableIteration<BindingSet> iter = precompile.evaluate(bindings);
 		return iter;
 	}
 

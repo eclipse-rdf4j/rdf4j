@@ -176,7 +176,7 @@ public abstract class AbstractServlet implements Servlet {
 	}
 
 	protected QueryResultWriter getResultWriter(final HttpServletRequest req, final ServletResponse resp,
-			final OutputStream outputStream) throws UnsupportedQueryResultFormatException, IOException {
+			final OutputStream outputStream) throws UnsupportedQueryResultFormatException {
 		QueryResultFormat resultFormat = getTupleResultFormat(req, resp);
 
 		if (resultFormat == null) {

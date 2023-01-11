@@ -132,14 +132,10 @@ public class Connect extends ConsoleCommand {
 				writeError("Authentication for user '" + user + "' failed");
 			} else {
 				// Ask user for credentials
-				try {
-					writeln("Authentication required");
-					final String username = consoleIO.readln("Username: ");
-					final String password = consoleIO.readPassword("Password: ");
-					connectRemote(url, username, password);
-				} catch (IOException ioe) {
-					writeError("Failed to read user credentials", ioe);
-				}
+				writeln("Authentication required");
+				final String username = consoleIO.readln("Username: ");
+				final String password = consoleIO.readPassword("Password: ");
+				connectRemote(url, username, password);
 			}
 		} catch (IOException | RepositoryException e) {
 			writeError("Failed to access the server", e);

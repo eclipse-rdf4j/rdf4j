@@ -55,8 +55,7 @@ public class StatementSourcePattern extends FedXStatementPattern {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings)
-			throws QueryEvaluationException {
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 
 		WorkerUnionBase<BindingSet> union = null;
 		try {
@@ -88,7 +87,7 @@ public class StatementSourcePattern extends FedXStatementPattern {
 									queryInfo.getDataset());
 						} catch (IllegalQueryException e1) {
 							/* all vars are bound, this must be handled as a check query, can occur in joins */
-							CloseableIteration<BindingSet, QueryEvaluationException> res = handleStatementSourcePatternCheck(
+							CloseableIteration<BindingSet> res = handleStatementSourcePatternCheck(
 									bindings);
 							if (boundFilters != null && !(res instanceof EmptyIteration)) {
 								res = new InsertBindingsIteration(res, boundFilters);
@@ -129,7 +128,7 @@ public class StatementSourcePattern extends FedXStatementPattern {
 		}
 	}
 
-	protected CloseableIteration<BindingSet, QueryEvaluationException> handleStatementSourcePatternCheck(
+	protected CloseableIteration<BindingSet> handleStatementSourcePatternCheck(
 			BindingSet bindings) throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 
 		// if at least one source has statements, we can return this binding set as result

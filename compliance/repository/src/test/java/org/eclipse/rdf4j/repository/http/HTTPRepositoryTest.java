@@ -57,7 +57,7 @@ public class HTTPRepositoryTest extends RepositoryTest {
 	}
 
 	@Test(timeout = 10_000)
-	public void testSubqueryDeadlock() throws Exception {
+	public void testSubqueryDeadlock() {
 		String mainQueryStr = "SELECT ?property WHERE { ?property a rdf:Property . }";
 		String subQueryStr = "SELECT ?range WHERE { ?property rdfs:range ?range . }";
 

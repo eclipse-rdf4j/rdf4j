@@ -19,7 +19,7 @@ import java.io.IOException;
  */
 class HDTTriplesSectionFactory {
 
-	protected static HDTTriplesSection parse(String str) throws IOException {
+	protected static HDTTriplesSection parse(String str) {
 		if (!str.equals(new String(HDTTriples.FORMAT_BITMAP))) {
 			throw new UnsupportedOperationException(
 					"Triples section: " + str + ", but only bitmap encoding is supported");

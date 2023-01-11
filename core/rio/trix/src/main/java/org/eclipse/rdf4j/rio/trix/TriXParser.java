@@ -374,7 +374,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 	 * Implementation of SAX ErrorHandler.warning
 	 */
 	@Override
-	public void warning(SAXParseException exception) throws SAXException {
+	public void warning(SAXParseException exception) {
 		this.reportWarning(exception.getMessage());
 	}
 

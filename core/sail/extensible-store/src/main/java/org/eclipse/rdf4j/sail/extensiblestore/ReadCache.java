@@ -62,12 +62,12 @@ public class ReadCache implements DataStructureInterface {
 	}
 
 	@Override
-	public CloseableIteration<? extends ExtensibleStatement, SailException> getStatements(Resource subject,
+	public CloseableIteration<? extends ExtensibleStatement> getStatements(Resource subject,
 			IRI predicate,
 			Value object, boolean inferred, Resource... context) {
 
 		PartialStatement partialStatement = new PartialStatement(subject, predicate, object, inferred, context);
-		CloseableIteration<? extends ExtensibleStatement, SailException> cached = getCached(partialStatement);
+		CloseableIteration<? extends ExtensibleStatement> cached = getCached(partialStatement);
 		if (cached != null) {
 			logger.trace("cache hit");
 			return cached;
@@ -77,18 +77,18 @@ public class ReadCache implements DataStructureInterface {
 
 		return new CloseableIteration<>() {
 
-			final CloseableIteration<? extends ExtensibleStatement, SailException> statements = delegate.getStatements(
+			final CloseableIteration<? extends ExtensibleStatement> statements = delegate.getStatements(
 					subject,
 					predicate, object, inferred, context);
 			List<ExtensibleStatement> cache = new ArrayList<>();
 
 			@Override
-			public boolean hasNext() throws SailException {
+			public boolean hasNext() {
 				return statements.hasNext();
 			}
 
 			@Override
-			public ExtensibleStatement next() throws SailException {
+			public ExtensibleStatement next() {
 
 				ExtensibleStatement next = statements.next();
 
@@ -104,12 +104,12 @@ public class ReadCache implements DataStructureInterface {
 			}
 
 			@Override
-			public void remove() throws SailException {
+			public void remove() {
 
 			}
 
 			@Override
-			public void close() throws SailException {
+			public void close() {
 				if (!statements.hasNext()) {
 					submitToCache(localCacheTicket, partialStatement, cache);
 				} else {
@@ -122,17 +122,17 @@ public class ReadCache implements DataStructureInterface {
 
 	}
 
-	synchronized private CloseableIteration<? extends ExtensibleStatement, SailException> getCached(
+	synchronized private CloseableIteration<? extends ExtensibleStatement> getCached(
 			PartialStatement partialStatement) {
 		List<ExtensibleStatement> statements = cache.getIfPresent(partialStatement);
 
 		if (statements != null) {
 
-			return new LookAheadIteration<ExtensibleStatement, SailException>() {
+			return new LookAheadIteration<ExtensibleStatement>() {
 				final Iterator<ExtensibleStatement> iterator = statements.iterator();
 
 				@Override
-				protected ExtensibleStatement getNextElement() throws SailException {
+				protected ExtensibleStatement getNextElement() {
 					if (iterator.hasNext()) {
 						return iterator.next();
 					}

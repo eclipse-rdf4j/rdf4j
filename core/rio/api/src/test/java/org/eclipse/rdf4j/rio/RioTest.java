@@ -97,12 +97,12 @@ public class RioTest {
 	}
 
 	@Test
-	public void createParser_existing() throws Exception {
+	public void createParser_existing() {
 		RDFParser parser = Rio.createParser(TEST_FORMAT);
 		assertThat(parser).isEqualTo(mockParser);
 	}
 
-	public void createParser_unknown() throws Exception {
+	public void createParser_unknown() {
 		RDFFormat unknownFormat = new RDFFormat("unknown", "test/unknown", StandardCharsets.UTF_8, "unknown", false,
 				false,
 				false);

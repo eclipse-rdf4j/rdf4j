@@ -51,7 +51,7 @@ public class PositiveParserTest extends TestCase {
 	 *--------------*/
 
 	public PositiveParserTest(IRI testUri, String testName, String inputURL, String outputURL, String baseURL,
-			RDFParser targetParser, RDFParser ntriplesParser) throws MalformedURLException {
+			RDFParser targetParser, RDFParser ntriplesParser) {
 		super(testName);
 		this.testUri = testUri;
 		this.inputURL = inputURL;

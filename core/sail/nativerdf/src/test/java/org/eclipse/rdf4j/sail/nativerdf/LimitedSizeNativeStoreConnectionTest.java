@@ -47,7 +47,7 @@ public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTe
 	}
 
 	@Test
-	public void testSES715() throws Exception {
+	public void testSES715() {
 		// load 1000 triples in two different contexts
 		testCon.begin();
 		ValueFactory vf = testCon.getValueFactory();
@@ -81,7 +81,7 @@ public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTe
 	}
 
 	@Test
-	public void testLimit() throws Exception {
+	public void testLimit() {
 		((LimitedSizeNativeStoreConnection) ((SailRepositoryConnection) testCon).getSailConnection())
 				.setMaxCollectionsSize(2);
 		testCon.begin();

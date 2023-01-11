@@ -71,7 +71,7 @@ public class RDFJSONParser extends AbstractRDFParser {
 
 	@Override
 	public void parse(final InputStream inputStream, final String baseUri)
-			throws IOException, RDFParseException, RDFHandlerException {
+			throws RDFParseException, RDFHandlerException {
 		JsonParser jp = null;
 
 		clear();
@@ -141,7 +141,7 @@ public class RDFJSONParser extends AbstractRDFParser {
 
 	@Override
 	public void parse(final Reader reader, final String baseUri)
-			throws IOException, RDFParseException, RDFHandlerException {
+			throws RDFParseException, RDFHandlerException {
 		JsonParser jp = null;
 
 		clear();

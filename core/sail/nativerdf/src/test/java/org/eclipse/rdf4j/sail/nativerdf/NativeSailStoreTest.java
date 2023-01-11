@@ -127,7 +127,7 @@ public class NativeSailStoreTest {
 	}
 
 	@After
-	public void after() throws Exception {
+	public void after() {
 		repo.shutDown();
 	}
 }

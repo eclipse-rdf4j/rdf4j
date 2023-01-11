@@ -21,7 +21,6 @@ import java.util.Set;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.CloseablePeakableIteration;
 import org.slf4j.Logger;
@@ -65,11 +64,11 @@ public class Unique implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<ValidationTuple> iterator() {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseablePeakableIteration<? extends ValidationTuple, SailException> parentIterator;
+			final CloseablePeakableIteration<ValidationTuple> parentIterator;
 
 			{
 				if (compress) {
@@ -166,7 +165,7 @@ public class Unique implements PlanNode {
 			}
 
 			@Override
-			public void localClose() throws SailException {
+			public void localClose() {
 				parentIterator.close();
 				targetAndValueDedupeSet = null;
 				next = null;
@@ -174,13 +173,13 @@ public class Unique implements PlanNode {
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				calculateNext();
 				return next != null;
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 				calculateNext();
 				assert !(previous != null && next.compareActiveTarget(previous) < 0);
 
@@ -292,12 +291,12 @@ public class Unique implements PlanNode {
 		}
 	}
 
-	static class TargetAndValueSortIterator implements CloseableIteration<ValidationTuple, SailException> {
+	static class TargetAndValueSortIterator implements CloseableIteration<ValidationTuple> {
 
-		private final CloseablePeakableIteration<? extends ValidationTuple, SailException> iterator;
+		private final CloseablePeakableIteration<ValidationTuple> iterator;
 
 		public TargetAndValueSortIterator(
-				CloseablePeakableIteration<? extends ValidationTuple, SailException> iterator) {
+				CloseablePeakableIteration<ValidationTuple> iterator) {
 			this.iterator = iterator;
 		}
 
@@ -336,24 +335,24 @@ public class Unique implements PlanNode {
 		}
 
 		@Override
-		public void close() throws SailException {
+		public void close() {
 			iterator.close();
 		}
 
 		@Override
-		public boolean hasNext() throws SailException {
+		public boolean hasNext() {
 			calculateNext();
 			return next.hasNext();
 		}
 
 		@Override
-		public ValidationTuple next() throws SailException {
+		public ValidationTuple next() {
 			calculateNext();
 			return next.next();
 		}
 
 		@Override
-		public void remove() throws SailException {
+		public void remove() {
 			throw new UnsupportedOperationException();
 		}
 

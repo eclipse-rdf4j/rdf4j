@@ -70,7 +70,7 @@ public abstract class AbstractComplianceTest {
 	}
 
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		try {
 			conn.close();
 		} finally {
@@ -411,16 +411,8 @@ public abstract class AbstractComplianceTest {
 		}
 
 		@Override
-		@Deprecated(since = "4.1.0", forRemoval = true)
-		public <E extends Exception> void add(CloseableIteration<? extends Statement, E> statements,
-				Resource... contexts)
-				throws RepositoryException, E {
-			delegate.add(statements, contexts);
-		}
-
-		@Override
-		public <E extends Exception> void add(CloseableIteration<? extends Statement, E> statements,
-				Resource... contexts) throws RepositoryException, E {
+		public void add(CloseableIteration<? extends Statement> statements,
+				Resource... contexts) throws RepositoryException {
 			delegate.add(statements, contexts);
 		}
 
@@ -446,16 +438,8 @@ public abstract class AbstractComplianceTest {
 		}
 
 		@Override
-		@Deprecated(since = "4.1.0", forRemoval = true)
-		public <E extends Exception> void remove(CloseableIteration<? extends Statement, E> statements,
-				Resource... contexts)
-				throws RepositoryException, E {
-			delegate.remove(statements, contexts);
-		}
-
-		@Override
-		public <E extends Exception> void remove(CloseableIteration<? extends Statement, E> statements,
-				Resource... contexts) throws RepositoryException, E {
+		public void remove(CloseableIteration<? extends Statement> statements,
+				Resource... contexts) throws RepositoryException {
 			delegate.remove(statements, contexts);
 		}
 

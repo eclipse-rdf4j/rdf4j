@@ -57,7 +57,7 @@ public class InstanceofBenchmark {
 	List<Value> subjects;
 
 	@Setup(Level.Iteration)
-	public void setUp() throws InterruptedException, IOException {
+	public void setUp() {
 
 		subjects = new ArrayList<>();
 		Random random = new Random(89439204);

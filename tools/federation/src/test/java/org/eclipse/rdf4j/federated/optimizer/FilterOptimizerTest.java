@@ -301,7 +301,7 @@ public class FilterOptimizerTest {
 	public TemporaryFolder tmpFolder = new TemporaryFolder();
 
 	@Before
-	public void setup() throws IOException {
+	public void setup() {
 		RepositoryManager manager = new LocalRepositoryManager(new File(tmpFolder.getRoot().getAbsolutePath()));
 		federatedRepository = createFedXRepo(manager);
 		addRepoConfig(manager, "standard");

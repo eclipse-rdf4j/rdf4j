@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.evaluation.iterator;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
@@ -23,10 +24,9 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
  */
 @Deprecated(since = "4.1.0", forRemoval = true)
 public class RepositoryExceptionConvertingIteration<T>
-		extends ExceptionConvertingIteration<T, QueryEvaluationException> {
+		extends ExceptionConvertingIteration<T> {
 
-	public RepositoryExceptionConvertingIteration(
-			CloseableIteration<? extends T, ? extends Exception> iter) {
+	public RepositoryExceptionConvertingIteration(CloseableIteration<? extends T> iter) {
 		super(iter);
 	}
 

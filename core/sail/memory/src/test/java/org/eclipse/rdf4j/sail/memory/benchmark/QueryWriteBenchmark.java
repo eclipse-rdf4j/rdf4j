@@ -94,7 +94,7 @@ public class QueryWriteBenchmark {
 	}
 
 	@Setup(Level.Invocation)
-	public void beforeClass() throws IOException, InterruptedException {
+	public void beforeClass() {
 		repository = new SailRepository(new MemoryStore());
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {

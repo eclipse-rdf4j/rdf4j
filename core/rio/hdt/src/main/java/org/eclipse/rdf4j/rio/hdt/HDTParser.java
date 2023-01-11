@@ -190,7 +190,7 @@ public class HDTParser extends AbstractRDFParser {
 	 */
 	@Override
 	public synchronized void parse(Reader reader, String baseURI)
-			throws IOException, RDFParseException, RDFHandlerException {
+			throws RDFParseException, RDFHandlerException {
 		throw new UnsupportedOperationException("HDT is binary, text readers not supported.");
 	}
 

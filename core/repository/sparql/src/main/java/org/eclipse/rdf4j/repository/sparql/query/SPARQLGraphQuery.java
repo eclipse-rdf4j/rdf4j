@@ -38,7 +38,7 @@ public class SPARQLGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 	}
 
 	@Override
-	public GraphQueryResult evaluate() throws QueryEvaluationException {
+	public GraphQueryResult evaluate() {
 		SPARQLProtocolSession client = getHttpClient();
 		try {
 			// TODO getQueryString() already inserts bindings, use emptybindingset
@@ -51,7 +51,7 @@ public class SPARQLGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 	}
 
 	@Override
-	public void evaluate(RDFHandler handler) throws QueryEvaluationException, RDFHandlerException {
+	public void evaluate(RDFHandler handler) throws RDFHandlerException {
 
 		SPARQLProtocolSession client = getHttpClient();
 		try {

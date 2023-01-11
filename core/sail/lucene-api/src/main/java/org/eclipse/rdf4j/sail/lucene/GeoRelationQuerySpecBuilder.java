@@ -41,15 +41,14 @@ public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
 	}
 
 	@Override
-	public void process(TupleExpr tupleExpr, BindingSet bindings, final Collection<SearchQueryEvaluator> results)
-			throws SailException {
+	public void process(TupleExpr tupleExpr, BindingSet bindings, final Collection<SearchQueryEvaluator> results) {
 
-		tupleExpr.visit(new AbstractQueryModelVisitor<SailException>() {
+		tupleExpr.visit(new AbstractQueryModelVisitor() {
 
 			final Map<String, GeoRelationQuerySpec> specs = new HashMap<>();
 
 			@Override
-			public void meet(FunctionCall f) throws SailException {
+			public void meet(FunctionCall f) {
 				if (f.getURI().startsWith(GEOF.NAMESPACE)) {
 					List<ValueExpr> args = f.getArgs();
 					if (args.size() != 2) {

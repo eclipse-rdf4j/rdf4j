@@ -166,12 +166,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	@Override
-	public void begin() throws SailException {
+	public void begin() {
 		begin(sail.getDefaultIsolationLevel());
 	}
 
 	@Override
-	public void begin(IsolationLevel level) throws SailException {
+	public void begin(IsolationLevel level) {
 		if (closed) {
 			throw new SailException("Connection is closed");
 		}
@@ -264,7 +264,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	@Override
-	public void commit() throws SailException {
+	public void commit() {
 		if (closed) {
 			throw new SailException("Connection is closed");
 		}
@@ -290,8 +290,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	@Override
-	public void addStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+	public void addStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts) {
 		if (useDefaultShapesGraph && contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			shapesRepoConnection.add(subj, pred, obj, contexts);
 			shapeRefreshNeeded = true;
@@ -301,8 +300,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	@Override
-	public void removeStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+	public void removeStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts) {
 		if (useDefaultShapesGraph && contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			shapesRepoConnection.remove(subj, pred, obj, contexts);
 			shapeRefreshNeeded = true;
@@ -312,7 +310,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	@Override
-	public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+	public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		if (useDefaultShapesGraph && contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			shapesRepoConnection.add(subj, pred, obj, contexts);
 			shapeRefreshNeeded = true;
@@ -322,7 +320,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	@Override
-	public void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+	public void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		if (useDefaultShapesGraph && contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			shapesRepoConnection.remove(subj, pred, obj, contexts);
 			shapeRefreshNeeded = true;
@@ -332,7 +330,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	@Override
-	public void clear(Resource... contexts) throws SailException {
+	public void clear(Resource... contexts) {
 		if (Arrays.asList(contexts).contains(RDF4J.SHACL_SHAPE_GRAPH)) {
 			shapesRepoConnection.clear();
 			shapeRefreshNeeded = true;
@@ -341,7 +339,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	@Override
-	public void rollback() throws SailException {
+	public void rollback() {
 		if (closed) {
 			throw new SailException("Connection is closed");
 		}
@@ -733,7 +731,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	@Override
-	synchronized public void close() throws SailException {
+	synchronized public void close() {
 		if (closed) {
 			return;
 		}
@@ -784,7 +782,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	@Override
-	public void prepare() throws SailException {
+	public void prepare() {
 		if (closed) {
 			throw new SailException("Connection is closed");
 		}
@@ -1034,8 +1032,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
-			boolean includeInferred, Resource... contexts) throws SailException {
+	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+			boolean includeInferred, Resource... contexts) {
 		if (useDefaultShapesGraph && contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			return ConnectionHelper
 					.getCloseableIteration(shapesRepoConnection.getStatements(subj, pred, obj, includeInferred));
@@ -1046,8 +1044,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	@Override
-	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
-			throws SailException {
+	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts) {
 
 		if (useDefaultShapesGraph && contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			return shapesRepoConnection.hasStatement(subj, pred, obj, includeInferred);
@@ -1117,7 +1114,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			ValidationResultIterator validationResults = null;
 
-			try (CloseableIteration<? extends ValidationTuple, SailException> iterator = planNode.iterator()) {
+			try (CloseableIteration<? extends ValidationTuple> iterator = planNode.iterator()) {
 				validationResults = new ValidationResultIterator(iterator,
 						sail.getEffectiveValidationResultsLimitPerConstraint());
 				return validationResults;

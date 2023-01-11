@@ -25,12 +25,12 @@ public class ShaclIsolationLevelTest extends SailIsolationLevelTest {
 	 *---------*/
 
 	@Override
-	protected Sail createSail() throws SailException {
+	protected Sail createSail() {
 		return new ShaclSail(new MemoryStore());
 	}
 
 	@Override
-	public void testLargeTransaction(IsolationLevel isolationLevel, int count) throws InterruptedException {
+	public void testLargeTransaction(IsolationLevel isolationLevel, int count) {
 		// see: https://github.com/eclipse/rdf4j/issues/1795
 	}
 }

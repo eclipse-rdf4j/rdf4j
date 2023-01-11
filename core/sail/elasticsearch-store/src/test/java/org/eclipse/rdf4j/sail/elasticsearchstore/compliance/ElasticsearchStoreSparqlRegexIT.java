@@ -43,9 +43,7 @@ public class ElasticsearchStoreSparqlRegexIT extends SparqlRegexTest {
 	}
 
 	@Override
-	protected Repository newRepository() throws IOException {
-		SailRepository sailRepository = new SailRepository(
-				new ElasticsearchStore(clientPool, "index1"));
-		return sailRepository;
+	protected Repository newRepository() {
+		return new SailRepository(new ElasticsearchStore(clientPool, "index1"));
 	}
 }

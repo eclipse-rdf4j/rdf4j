@@ -33,7 +33,7 @@ public class SPARQLBooleanQuery extends AbstractHTTPQuery implements BooleanQuer
 	}
 
 	@Override
-	public boolean evaluate() throws QueryEvaluationException {
+	public boolean evaluate() {
 
 		SPARQLProtocolSession client = getHttpClient();
 

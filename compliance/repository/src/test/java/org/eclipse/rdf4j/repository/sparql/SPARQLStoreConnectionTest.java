@@ -88,7 +88,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 
 	@Override
 	@Ignore
-	public void testDuplicateFilter() throws Exception {
+	public void testDuplicateFilter() {
 		System.err.println("temporarily disabled testDuplicateFilter() for SPARQLRepository");
 	}
 
@@ -106,43 +106,43 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 
 	@Override
 	@Ignore("relies on pending updates being visible in own connection")
-	public void testSizeRollback() throws Exception {
+	public void testSizeRollback() {
 		System.err.println("temporarily disabled testSizeRollback() for SPARQLRepository");
 	}
 
 	@Override
 	@Ignore("relies on pending updates being visible in own connection")
-	public void testAutoCommit() throws Exception {
+	public void testAutoCommit() {
 		System.err.println("temporarily disabled testAutoCommit() for SPARQLRepository");
 	}
 
 	@Override
 	@Ignore("relies on pending updates being visible in own connection")
-	public void testRollback() throws Exception {
+	public void testRollback() {
 		System.err.println("temporarily disabled testRollback() for SPARQLRepository");
 	}
 
 	@Override
 	@Ignore("relies on pending updates being visible in own connection")
-	public void testEmptyRollback() throws Exception {
+	public void testEmptyRollback() {
 		System.err.println("temporarily disabled testEmptyRollback() for SPARQLRepository");
 	}
 
 	@Override
 	@Ignore("relies on pending updates being visible in own connection")
-	public void testEmptyCommit() throws Exception {
+	public void testEmptyCommit() {
 		System.err.println("temporarily disabled testEmptyCommit() for SPARQLRepository");
 	}
 
 	@Override
 	@Ignore
-	public void testSizeCommit() throws Exception {
+	public void testSizeCommit() {
 		System.err.println("temporarily disabled testSizeCommit() for SPARQLRepository");
 	}
 
 	@Override
 	@Ignore
-	public void testGetStatementsInMultipleContexts() throws Exception {
+	public void testGetStatementsInMultipleContexts() {
 		System.err.println(
 				"temporarily disabled testGetStatementsInMultipleContexts() for SPARQLRepository: implementation of statement context using SPARQL not yet complete");
 		// TODO see SES-1776
@@ -193,7 +193,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 
 	@Override
 	@Ignore
-	public void testGetStatementsInSingleContext() throws Exception {
+	public void testGetStatementsInSingleContext() {
 		System.err.println(
 				"temporarily disabled testGetStatementsInSingleContext() for SPARQLRepository: implementation of statement context using SPARQL not yet complete");
 		// TODO see SES-1776
@@ -202,12 +202,12 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	@Test
 	@Override
 	@Ignore("can not execute test because required data add results in illegal SPARQL syntax")
-	public void testGetStatementsMalformedLanguageLiteral() throws Exception {
+	public void testGetStatementsMalformedLanguageLiteral() {
 		System.err.println("temporarily disabled testGetStatementsMalformedLanguageLiteral() for SPARQLRepository");
 	}
 
 	@Override
-	public void testPreparedTupleQuery() throws Exception {
+	public void testPreparedTupleQuery() {
 		testCon.add(alice, name, nameAlice, context2);
 		testCon.add(alice, mbox, mboxAlice, context2);
 		testCon.add(context2, publisher, nameAlice);
@@ -245,31 +245,31 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 
 	@Override
 	@Ignore
-	public void testGetNamespaces() throws Exception {
+	public void testGetNamespaces() {
 		System.err.println("disabled testGetNamespaces() as namespace retrieval is not supported by SPARQL");
 	}
 
 	@Override
 	@Ignore
-	public void testGetNamespace() throws Exception {
+	public void testGetNamespace() {
 		System.err.println("disabled testGetNamespace() as namespace retrieval is not supported by SPARQL");
 	}
 
 	@Override
 	@Ignore
-	public void testImportNamespacesFromIterable() throws Exception {
+	public void testImportNamespacesFromIterable() {
 		System.err
 				.println("disabled testImportNamespacesFromIterable() as namespace setting is not supported by SPARQL");
 	}
 
 	@Override
 	@Ignore
-	public void testTransactionIsolation() throws Exception {
+	public void testTransactionIsolation() {
 		System.err.println("temporarily disabled testTransactionIsolation() for SPARQLRepository");
 	}
 
 	@Override
-	public void testPreparedTupleQueryUnicode() throws Exception {
+	public void testPreparedTupleQueryUnicode() {
 		testCon.add(alexander, name, Александър);
 
 		StringBuilder queryBuilder = new StringBuilder();
@@ -293,7 +293,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	}
 
 	@Override
-	public void testSimpleGraphQuery() throws Exception {
+	public void testSimpleGraphQuery() {
 		testCon.add(alice, name, nameAlice, context2);
 		testCon.add(alice, mbox, mboxAlice, context2);
 		testCon.add(context2, publisher, nameAlice);
@@ -326,7 +326,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	}
 
 	@Override
-	public void testPreparedGraphQuery() throws Exception {
+	public void testPreparedGraphQuery() {
 		testCon.add(alice, name, nameAlice, context2);
 		testCon.add(alice, mbox, mboxAlice, context2);
 		testCon.add(context2, publisher, nameAlice);
@@ -364,7 +364,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	}
 
 	@Override
-	public void testSimpleTupleQuery() throws Exception {
+	public void testSimpleTupleQuery() {
 		testCon.add(alice, name, nameAlice, context2);
 		testCon.add(alice, mbox, mboxAlice, context2);
 		testCon.add(context2, publisher, nameAlice);
@@ -399,7 +399,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	}
 
 	@Override
-	public void testSimpleTupleQueryUnicode() throws Exception {
+	public void testSimpleTupleQueryUnicode() {
 		testCon.add(alexander, name, Александър);
 
 		StringBuilder queryBuilder = new StringBuilder();
@@ -422,12 +422,12 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 
 	@Override
 	@Ignore
-	public void testBNodeSerialization() throws Exception {
+	public void testBNodeSerialization() {
 		System.err.println("temporarily disabled testBNodeSerialization() for SPARQLRepository");
 	}
 
 	@Test
-	public void testUpdateExecution() throws Exception {
+	public void testUpdateExecution() {
 
 		IRI foobar = vf.createIRI("foo:bar");
 

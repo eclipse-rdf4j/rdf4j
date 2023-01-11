@@ -79,7 +79,7 @@ public class ProxySettingsController {
 		PROXY_SETTINGS.save();
 	}
 
-	private boolean checkPort(String proxyPort) throws IOException {
+	private boolean checkPort(String proxyPort) {
 		boolean result = false;
 
 		int port;

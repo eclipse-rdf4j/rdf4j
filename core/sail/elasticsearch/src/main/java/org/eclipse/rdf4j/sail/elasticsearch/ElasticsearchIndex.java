@@ -290,7 +290,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		return Functions.constant(geoContext);
 	}
 
-	public Map<String, Object> getMappings() throws IOException {
+	public Map<String, Object> getMappings() {
 		ImmutableOpenMap<String, ImmutableOpenMap<String, MappingMetadata>> indexMappings = client.admin()
 				.indices()
 				.prepareGetMappings(indexName)
@@ -373,7 +373,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	}
 
 	@Override
-	public void shutDown() throws IOException {
+	public void shutDown() {
 		Client toCloseClient = client;
 		client = null;
 		if (toCloseClient != null) {
@@ -388,7 +388,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	 * such Document exists yet.
 	 */
 	@Override
-	protected SearchDocument getDocument(String id) throws IOException {
+	protected SearchDocument getDocument(String id) {
 		GetResponse response = client.prepareGet(indexName, documentType, id).execute().actionGet();
 		if (response.isExists()) {
 			return new ElasticsearchDocument(response.getId(), response.getType(), response.getIndex(),
@@ -442,7 +442,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	}
 
 	@Override
-	protected void deleteDocument(SearchDocument doc) throws IOException {
+	protected void deleteDocument(SearchDocument doc) {
 		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
 		client.prepareDelete(esDoc.getIndex(), esDoc.getType(), esDoc.getId())
 				.setIfSeqNo(esDoc.getSeqNo())
@@ -461,7 +461,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	 * document represent a set of statements with the specified Resource as a subject, which are stored in a specific
 	 * context
 	 */
-	private SearchHits getDocuments(QueryBuilder query) throws IOException {
+	private SearchHits getDocuments(QueryBuilder query) {
 		return search(client.prepareSearch(), query);
 	}
 
@@ -512,16 +512,16 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	}
 
 	@Override
-	public void begin() throws IOException {
+	public void begin() {
 	}
 
 	@Override
-	public void commit() throws IOException {
+	public void commit() {
 		client.admin().indices().prepareRefresh(indexName).execute().actionGet();
 	}
 
 	@Override
-	public void rollback() throws IOException {
+	public void rollback() {
 	}
 
 	// //////////////////////////////// Methods for querying the index
@@ -533,12 +533,11 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	 * @param spec    query to process
 	 * @return the parsed query
 	 * @throws MalformedQueryException
-	 * @throws IOException
 	 * @throws IllegalArgumentException if the spec contains a multi-param query
 	 */
 	@Override
 	protected Iterable<? extends DocumentScore> query(Resource subject, QuerySpec spec)
-			throws MalformedQueryException, IOException {
+			throws MalformedQueryException {
 		if (spec.getQueryPatterns().size() != 1) {
 			throw new IllegalArgumentException("Multi-param query not implemented!");
 		}
@@ -602,7 +601,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	@Override
 	protected Iterable<? extends DocumentDistance> geoQuery(final IRI geoProperty, Point p, final IRI units,
-			double distance, String distanceVar, Var contextVar) throws MalformedQueryException, IOException {
+			double distance, String distanceVar, Var contextVar) throws MalformedQueryException {
 		double unitDist;
 		final DistanceUnit unit;
 		if (GEOF.UOM_METRE.equals(units)) {
@@ -747,10 +746,9 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	/**
 	 * @param contexts
-	 * @throws IOException
 	 */
 	@Override
-	public synchronized void clearContexts(Resource... contexts) throws IOException {
+	public synchronized void clearContexts(Resource... contexts) {
 		logger.debug("deleting contexts: {}", Arrays.toString(contexts));
 		// these resources have to be read from the underlying rdf store
 		// and their triples have to be added to the luceneindex after deletion of

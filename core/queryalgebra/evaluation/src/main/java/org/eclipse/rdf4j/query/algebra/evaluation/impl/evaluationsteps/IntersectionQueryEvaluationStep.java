@@ -37,7 +37,7 @@ public class IntersectionQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
+	public CloseableIteration<BindingSet> evaluate(BindingSet bs) {
 		return new IntersectIteration<>(leftArg.evaluate(bs), rightArgDelayed.apply(bs), setMaker);
 	}
 }

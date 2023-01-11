@@ -74,19 +74,19 @@ public class TestLmdbStoreMemoryOverflow {
 		testCon2.setIsolationLevel(level);
 	}
 
-	private Repository createRepository() throws IOException {
+	private Repository createRepository() {
 		return new SailRepository(new LmdbStore(tmpDir.getRoot(), new LmdbStoreConfig("spoc")));
 	}
 
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		testCon2.close();
 		testCon.close();
 		testRepository.shutDown();
 	}
 
 	@Test
-	public void test() throws Exception {
+	public void test() {
 		int size = 10000; // this should really be bigger
 		// load a lot of triples in two different contexts
 		testCon.begin();
@@ -109,7 +109,7 @@ public class TestLmdbStoreMemoryOverflow {
 		testCon.close();
 	}
 
-	private static final class DynamicIteration implements CloseableIteration<Statement, RuntimeException> {
+	private static final class DynamicIteration implements CloseableIteration<Statement> {
 
 		private final int size;
 

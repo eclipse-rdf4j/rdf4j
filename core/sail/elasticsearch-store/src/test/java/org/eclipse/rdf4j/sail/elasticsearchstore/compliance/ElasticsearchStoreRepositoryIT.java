@@ -52,7 +52,7 @@ public class ElasticsearchStoreRepositoryIT extends RepositoryTest {
 
 	@Ignore
 	@Override
-	public void testShutdownFollowedByInit() throws Exception {
+	public void testShutdownFollowedByInit() {
 		// ignore test
 	}
 }

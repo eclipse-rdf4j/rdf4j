@@ -43,7 +43,7 @@ public class ElasticsearchStoreSparqlOrderByIT extends SparqlOrderByTest {
 	}
 
 	@Override
-	protected Repository newRepository() throws IOException {
+	protected Repository newRepository() {
 		SailRepository sailRepository = new SailRepository(
 				new ElasticsearchStore(clientPool, "index1"));
 		return sailRepository;

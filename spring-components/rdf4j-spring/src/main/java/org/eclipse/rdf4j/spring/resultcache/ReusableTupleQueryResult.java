@@ -91,7 +91,7 @@ public class ReusableTupleQueryResult implements TupleQueryResult, ThrowableReco
 	}
 
 	@Override
-	public List<String> getBindingNames() throws QueryEvaluationException {
+	public List<String> getBindingNames() {
 		if (recording.get()) {
 			return recordingThrowable(
 					originalResult::getBindingNames,
@@ -120,7 +120,7 @@ public class ReusableTupleQueryResult implements TupleQueryResult, ThrowableReco
 	}
 
 	@Override
-	public void close() throws QueryEvaluationException {
+	public void close() {
 		if (recording.get()) {
 			recordingThrowable(
 					() -> {
@@ -143,7 +143,7 @@ public class ReusableTupleQueryResult implements TupleQueryResult, ThrowableReco
 	}
 
 	@Override
-	public boolean hasNext() throws QueryEvaluationException {
+	public boolean hasNext() {
 		if (recording.get()) {
 			return recordingThrowable(() -> originalResult.hasNext(), this);
 		} else {
@@ -152,7 +152,7 @@ public class ReusableTupleQueryResult implements TupleQueryResult, ThrowableReco
 	}
 
 	@Override
-	public BindingSet next() throws QueryEvaluationException {
+	public BindingSet next() {
 		if (recording.get()) {
 			BindingSet n = recordingThrowable(() -> originalResult.next(), this);
 			bindingSets.add(n);
@@ -163,7 +163,7 @@ public class ReusableTupleQueryResult implements TupleQueryResult, ThrowableReco
 	}
 
 	@Override
-	public void remove() throws QueryEvaluationException {
+	public void remove() {
 		throw new UnsupportedOperationException("Remove is not supported");
 	}
 

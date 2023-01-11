@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.testsuite.sail.RDFNotifyingStoreTest;
 public class ExtensibleStoreContextTest extends RDFNotifyingStoreTest {
 
 	@Override
-	protected NotifyingSail createSail() throws SailException {
+	protected NotifyingSail createSail() {
 		return new ExtensibleStoreImplForTests();
 	}
 }

@@ -74,8 +74,8 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 	 * @param queryText   a query that returns an RDF graph of inferred statements to be added to the underlying Sail
 	 * @param matcherText a query that returns an RDF graph of existing inferred statements already added previously
 	 * @throws MalformedQueryException           if there is a problem parsing either of the given queries
-	 * @throws UnsupportedQueryLanguageException if an unsupported query language is specified
-	 * @throws SailException                     if a problem occurs interpreting the rule pattern
+	 * @throws UnsupportedQueryLanguageException if an unsupported query language is specified @ if a problem occurs
+	 *                                           interpreting the rule pattern
 	 */
 	public CustomGraphQueryInferencer(QueryLanguage language, String queryText, String matcherText)
 			throws MalformedQueryException, UnsupportedQueryLanguageException, SailException {
@@ -91,8 +91,7 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 	 * @param queryText   a query that returns an RDF graph of inferred statements to be added to the underlying Sail
 	 * @param matcherText a query that returns an RDF graph of existing inferred statements already added previously
 	 * @throws MalformedQueryException           if there is a problem parsing either of the given queries
-	 * @throws UnsupportedQueryLanguageException
-	 * @throws SailException                     if a problem occurs interpreting the rule pattern
+	 * @throws UnsupportedQueryLanguageException @ if a problem occurs interpreting the rule pattern
 	 */
 	public CustomGraphQueryInferencer(NotifyingSail baseSail, QueryLanguage language, String queryText,
 			String matcherText) throws MalformedQueryException, UnsupportedQueryLanguageException, SailException {
@@ -106,8 +105,8 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 	 * @param language    language that <var>queryText</var> and <var>matcherText</var> are expressed in
 	 * @param queryText   a query that returns an RDF graph of inferred statements to be added to the underlying Sail
 	 * @param matcherText a query that returns an RDF graph of existing inferred statements already added previously
-	 * @throws MalformedQueryException if there is a problem parsing either of the given queries
-	 * @throws SailException           if a problem occurs interpreting the rule pattern
+	 * @throws MalformedQueryException if there is a problem parsing either of the given queries @ if a problem occurs
+	 *                                 interpreting the rule pattern
 	 */
 	public final void setFields(QueryLanguage language, String queryText, String matcherText)
 			throws MalformedQueryException, SailException {
@@ -117,10 +116,10 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 			matcherQuery = CustomGraphQueryInferencerConfig.buildMatcherQueryFromRuleQuery(language, queryText);
 		}
 		customMatcher = QueryParserUtil.parseGraphQuery(language, matcherQuery, null);
-		customQuery.getTupleExpr().visit(new AbstractQueryModelVisitor<SailException>() {
+		customQuery.getTupleExpr().visit(new AbstractQueryModelVisitor() {
 
 			@Override
-			public void meet(StatementPattern statement) throws SailException {
+			public void meet(StatementPattern statement) {
 				Var var = statement.getSubjectVar();
 				if (var.hasValue()) {
 					watchSubjects.add(var.getValue());
@@ -139,7 +138,7 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public InferencerConnection getConnection() throws SailException {
+	public InferencerConnection getConnection() {
 		try {
 			InferencerConnection con = (InferencerConnection) super.getConnection();
 			return new Connection(con);
@@ -149,7 +148,7 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public void init() throws SailException {
+	public void init() {
 		super.init();
 		try (InferencerConnection con = getConnection()) {
 			con.begin();
@@ -217,13 +216,13 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 		}
 
 		@Override
-		public void rollback() throws SailException {
+		public void rollback() {
 			super.rollback();
 			updateNeeded = false;
 		}
 
 		@Override
-		public void flushUpdates() throws SailException {
+		public void flushUpdates() {
 			super.flushUpdates();
 			Collection<Statement> forRemoval = new HashSet<>(256);
 			Collection<Statement> forAddition = new HashSet<>(256);
@@ -272,7 +271,7 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 
 		private void evaluateIntoStatements(ParsedGraphQuery query, Collection<Statement> statements)
 				throws SailException, RDFHandlerException, QueryEvaluationException {
-			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = getWrappedConnection()
+			try (CloseableIteration<? extends BindingSet> bindingsIter = getWrappedConnection()
 					.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true)) {
 				ValueFactory factory = getValueFactory();
 				while (bindingsIter.hasNext()) {

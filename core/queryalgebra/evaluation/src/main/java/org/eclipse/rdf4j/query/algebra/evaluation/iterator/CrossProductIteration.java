@@ -26,17 +26,17 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  *
  * @author Andreas Schwarte
  */
-public class CrossProductIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class CrossProductIteration extends LookAheadIteration<BindingSet> {
 
 	protected final List<BindingSet> inputBindings;
 
-	protected final CloseableIteration<BindingSet, QueryEvaluationException> resultIteration;
+	protected final CloseableIteration<BindingSet> resultIteration;
 
 	protected Iterator<BindingSet> inputBindingsIterator = null;
 
 	protected BindingSet currentInputBinding = null;
 
-	public CrossProductIteration(CloseableIteration<BindingSet, QueryEvaluationException> resultIteration,
+	public CrossProductIteration(CloseableIteration<BindingSet> resultIteration,
 			List<BindingSet> inputBindings) {
 		super();
 		this.resultIteration = resultIteration;
@@ -44,7 +44,7 @@ public class CrossProductIteration extends LookAheadIteration<BindingSet, QueryE
 	}
 
 	@Override
-	protected BindingSet getNextElement() throws QueryEvaluationException {
+	protected BindingSet getNextElement() {
 
 		if (currentInputBinding == null) {
 			inputBindingsIterator = inputBindings.iterator();
@@ -70,7 +70,7 @@ public class CrossProductIteration extends LookAheadIteration<BindingSet, QueryE
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {

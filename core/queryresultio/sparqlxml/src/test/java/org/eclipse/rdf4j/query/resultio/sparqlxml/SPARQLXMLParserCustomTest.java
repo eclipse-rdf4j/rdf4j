@@ -179,7 +179,7 @@ public class SPARQLXMLParserCustomTest {
 	}
 
 	@Test
-	public void testSupportedSettings() throws Exception {
+	public void testSupportedSettings() {
 		assertTrue(QueryResultIO.createTupleParser(TupleQueryResultFormat.SPARQL).getSupportedSettings().size() > 0);
 	}
 }

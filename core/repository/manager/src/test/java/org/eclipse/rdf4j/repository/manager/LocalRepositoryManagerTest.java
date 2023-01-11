@@ -52,10 +52,9 @@ public class LocalRepositoryManagerTest extends RepositoryManagerTest {
 	}
 
 	/**
-	 * @throws IOException if a problem occurs deleting temporary resources
 	 */
 	@After
-	public void tearDown() throws IOException {
+	public void tearDown() {
 		subject.shutDown();
 	}
 

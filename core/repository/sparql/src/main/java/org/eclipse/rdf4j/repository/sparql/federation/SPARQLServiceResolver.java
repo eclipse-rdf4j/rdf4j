@@ -95,7 +95,7 @@ public class SPARQLServiceResolver extends AbstractFederatedServiceResolver
 	}
 
 	@Override
-	protected FederatedService createService(String serviceUrl) throws QueryEvaluationException {
+	protected FederatedService createService(String serviceUrl) {
 		return new SPARQLFederatedService(serviceUrl, getHttpClientSessionManager());
 	}
 

@@ -36,7 +36,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
  * @see <a href="http://www.w3.org/Submission/CBD/#alternatives">Concise Bounded Description - alternatives</a>
  */
 @Deprecated(since = "4.1.0")
-public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class DescribeIteration extends LookAheadIteration<BindingSet> {
 
 	protected final static String VARNAME_SUBJECT = "subject";
 
@@ -54,7 +54,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	private final Set<BNode> processedNodes = new HashSet<>();
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> currentDescribeExprIter;
+	private CloseableIteration<BindingSet> currentDescribeExprIter;
 
 	private enum Mode {
 		OUTGOING_LINKS,
@@ -63,9 +63,9 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	private Mode currentMode = Mode.OUTGOING_LINKS;
 
-	private final CloseableIteration<BindingSet, QueryEvaluationException> sourceIter;
+	private final CloseableIteration<BindingSet> sourceIter;
 
-	public DescribeIteration(CloseableIteration<BindingSet, QueryEvaluationException> sourceIter,
+	public DescribeIteration(CloseableIteration<BindingSet> sourceIter,
 			EvaluationStrategy strategy,
 			Set<String> describeExprNames, BindingSet parentBindings) {
 		this.strategy = strategy;
@@ -80,7 +80,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	protected BindingSet parentBindings;
 
-	private void resetCurrentDescribeExprIter() throws QueryEvaluationException {
+	private void resetCurrentDescribeExprIter() {
 		while (currentDescribeExprIter == null) {
 			if (currentBindings == null && startValue == null) {
 				if (sourceIter.hasNext()) {
@@ -130,7 +130,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	}
 
 	@Override
-	protected BindingSet getNextElement() throws QueryEvaluationException {
+	protected BindingSet getNextElement() {
 		resetCurrentDescribeExprIter();
 		if (currentDescribeExprIter == null) {
 			return null;
@@ -206,8 +206,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 		return null;
 	}
 
-	protected CloseableIteration<BindingSet, QueryEvaluationException> createNextIteration(Value subject, Value object)
-			throws QueryEvaluationException {
+	protected CloseableIteration<BindingSet> createNextIteration(Value subject, Value object) {
 		if (subject == null && object == null) {
 			return new EmptyIteration<>();
 		}

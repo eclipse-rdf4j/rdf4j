@@ -45,12 +45,12 @@ import org.junit.runners.Parameterized.Parameters;
 public abstract class EquivalentTest {
 
 	@BeforeClass
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
 	@AfterClass
-	public static void afterClass() throws Exception {
+	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
@@ -205,7 +205,7 @@ public abstract class EquivalentTest {
 	}
 
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		repository.shutDown();
 		repository = null;
 	}
@@ -226,7 +226,7 @@ public abstract class EquivalentTest {
 		return repository;
 	}
 
-	protected abstract Repository newRepository() throws Exception;
+	protected abstract Repository newRepository();
 
 	private static Value getTerm(String label) {
 		if (label.contains("xyz")) {
@@ -278,7 +278,7 @@ public abstract class EquivalentTest {
 		throw new AssertionError(label);
 	}
 
-	private String compare(Value term1, Value term2) throws Exception {
+	private String compare(Value term1, Value term2) {
 		boolean eq = evaluate(EQ);
 		boolean neq = evaluate(NEQ);
 		assertTrue(!eq || !neq);

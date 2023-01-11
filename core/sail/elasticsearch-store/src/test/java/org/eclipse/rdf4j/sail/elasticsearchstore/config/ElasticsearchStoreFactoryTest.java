@@ -22,7 +22,7 @@ public class ElasticsearchStoreFactoryTest {
 	private ElasticsearchStoreFactory subject;
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp() {
 		subject = new ElasticsearchStoreFactory();
 	}
 

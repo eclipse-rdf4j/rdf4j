@@ -49,7 +49,7 @@ public class ShaclSailSupportedPredicatesDocumentationIT extends AbstractShaclTe
 
 	@ParameterizedTest
 	@MethodSource("testCases")
-	public void testShaclSailSupportedPredicatesDocumentation(TestCase testCase) throws IOException {
+	public void testShaclSailSupportedPredicatesDocumentation(TestCase testCase) {
 
 		HashSet<IRI> shaclPredicates = new HashSet<>(ShaclSail.getSupportedShaclPredicates());
 

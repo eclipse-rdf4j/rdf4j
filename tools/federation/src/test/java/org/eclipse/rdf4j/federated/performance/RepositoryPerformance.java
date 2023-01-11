@@ -122,7 +122,7 @@ public class RepositoryPerformance {
 			System.out.println("Done. Overall duration: " + (System.currentTimeMillis() - testStart) + "ms");
 		}
 
-		private List<IRI> retrieveInstances(RepositoryConnection conn) throws Exception {
+		private List<IRI> retrieveInstances(RepositoryConnection conn) {
 			try (RepositoryResult<Statement> qres = conn.getStatements(null, RDF.TYPE, type, false)) {
 				return qres.stream()
 						.limit(MAX_INSTANCES)
@@ -132,7 +132,7 @@ public class RepositoryPerformance {
 			}
 		}
 
-		private int runQuery(RepositoryConnection conn, IRI instance) throws Exception {
+		private int runQuery(RepositoryConnection conn, IRI instance) {
 
 			long start = System.currentTimeMillis();
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL,
@@ -150,9 +150,9 @@ public class RepositoryPerformance {
 			}
 		}
 
-		abstract RepositoryConnection getConnection() throws Exception;
+		abstract RepositoryConnection getConnection();
 
-		abstract void shutdown() throws Exception;
+		abstract void shutdown();
 	}
 
 	static class SparqlRepositoryPerformanceTest extends PerformanceBase {
@@ -167,14 +167,14 @@ public class RepositoryPerformance {
 		Repository repo = null;
 
 		@Override
-		RepositoryConnection getConnection() throws Exception {
+		RepositoryConnection getConnection() {
 			repo = new SPARQLRepository(sparqlEndpoint);
 			repo.init();
 			return repo.getConnection();
 		}
 
 		@Override
-		void shutdown() throws Exception {
+		void shutdown() {
 			repo.shutDown();
 		}
 
@@ -194,14 +194,14 @@ public class RepositoryPerformance {
 		Repository repo = null;
 
 		@Override
-		RepositoryConnection getConnection() throws Exception {
+		RepositoryConnection getConnection() {
 			repo = new HTTPRepository(repositoryServer, repositoryName);
 			repo.init();
 			return repo.getConnection();
 		}
 
 		@Override
-		void shutdown() throws Exception {
+		void shutdown() {
 			repo.shutDown();
 		}
 

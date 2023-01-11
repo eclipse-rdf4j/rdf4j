@@ -176,8 +176,7 @@ public abstract class RDFJSONParserTestCase {
 		 * Constructors *
 		 *--------------*/
 
-		public PositiveParserTest(String testName, String inputURL, String outputURL, String baseURL)
-				throws MalformedURLException {
+		public PositiveParserTest(String testName, String inputURL, String outputURL, String baseURL) {
 			super(testName);
 			this.inputURL = inputURL;
 			if (outputURL != null) {
@@ -256,7 +255,7 @@ public abstract class RDFJSONParserTestCase {
 		 * Constructors *
 		 *--------------*/
 
-		public NegativeParserTest(String caseURI, String inputURL, String baseURL) throws MalformedURLException {
+		public NegativeParserTest(String caseURI, String inputURL, String baseURL) {
 			super(caseURI);
 			this.inputURL = inputURL;
 			this.baseURL = baseURL;

@@ -119,9 +119,8 @@ public class QueryStorage {
 	 *
 	 * @param appConfig the application configuration, for obtaining the data directory
 	 * @throws RepositoryException if there is an issue creating the object to access the repository
-	 * @throws IOException
 	 */
-	private QueryStorage(final AppConfiguration appConfig) throws RepositoryException, IOException {
+	private QueryStorage(final AppConfiguration appConfig) throws RepositoryException {
 		queries = new SailRepository(new NativeStore(new File(appConfig.getDataDir(), "queries")));
 		queries.init();
 	}
@@ -225,7 +224,7 @@ public class QueryStorage {
 	}
 
 	public boolean askExists(final HTTPRepository repository, final String queryName, final String userName)
-			throws QueryEvaluationException, RepositoryException, MalformedQueryException {
+			throws RepositoryException, MalformedQueryException {
 		final QueryStringBuilder ask = new QueryStringBuilder(ASK_EXISTS);
 		ask.replaceURI(REPOSITORY, repository.getRepositoryURL());
 		ask.replaceQuote(QUERY_NAME, queryName);

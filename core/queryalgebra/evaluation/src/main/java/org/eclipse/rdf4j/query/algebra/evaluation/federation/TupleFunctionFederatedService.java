@@ -71,8 +71,8 @@ public class TupleFunctionFederatedService implements FederatedService {
 	}
 
 	@Override
-	public boolean ask(Service service, BindingSet bindings, String baseUri) throws QueryEvaluationException {
-		try (final CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(service,
+	public boolean ask(Service service, BindingSet bindings, String baseUri) {
+		try (final CloseableIteration<BindingSet> iter = evaluate(service,
 				new SingletonIteration<>(bindings), baseUri)) {
 			if (iter.hasNext()) {
 				BindingSet bs = iter.next();
@@ -84,9 +84,9 @@ public class TupleFunctionFederatedService implements FederatedService {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> select(Service service,
-			final Set<String> projectionVars, BindingSet bindings, String baseUri) throws QueryEvaluationException {
-		final CloseableIteration<BindingSet, QueryEvaluationException> iter, eval;
+	public CloseableIteration<BindingSet> select(Service service,
+			final Set<String> projectionVars, BindingSet bindings, String baseUri) {
+		final CloseableIteration<BindingSet> iter, eval;
 		eval = evaluate(service, new SingletonIteration<>(bindings), baseUri);
 		iter = service.isSilent() ? new SilentIteration<>(eval) : eval;
 		if (service.getBindingNames().equals(projectionVars)) {
@@ -96,7 +96,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 		return new AbstractCloseableIteration<>() {
 
 			@Override
-			public boolean hasNext() throws QueryEvaluationException {
+			public boolean hasNext() {
 				if (isClosed()) {
 					return false;
 				}
@@ -108,7 +108,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 			}
 
 			@Override
-			public BindingSet next() throws QueryEvaluationException {
+			public BindingSet next() {
 				if (isClosed()) {
 					throw new NoSuchElementException("The iteration has been closed.");
 				}
@@ -127,7 +127,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 			}
 
 			@Override
-			public void remove() throws QueryEvaluationException {
+			public void remove() {
 				if (isClosed()) {
 					throw new IllegalStateException("The iteration has been closed.");
 				}
@@ -140,16 +140,15 @@ public class TupleFunctionFederatedService implements FederatedService {
 			}
 
 			@Override
-			protected void handleClose() throws QueryEvaluationException {
+			protected void handleClose() {
 				iter.close();
 			}
 		};
 	}
 
 	@Override
-	public final CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service,
-			CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
-			throws QueryEvaluationException {
+	public final CloseableIteration<BindingSet> evaluate(Service service,
+			CloseableIteration<BindingSet> bindings, String baseUri) {
 		if (!bindings.hasNext()) {
 			return QueryEvaluationStep.EMPTY_ITERATION;
 		}
@@ -165,7 +164,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 
 		List<ValueExpr> argExprs = funcCall.getArgs();
 
-		List<CloseableIteration<BindingSet, QueryEvaluationException>> resultIters = new ArrayList<>();
+		List<CloseableIteration<BindingSet>> resultIters = new ArrayList<>();
 		while (bindings.hasNext()) {
 			BindingSet bs = bindings.next();
 			Value[] argValues = new Value[argExprs.size()];

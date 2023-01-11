@@ -44,7 +44,7 @@ public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements Sail
 	 * Gets an instance of the Sail that should be tested. The returned repository should already have been initialized.
 	 *
 	 * @return an initialized Sail.
-	 * @throws SailException If the initialization of the repository failed.
+	 * @If the initialization of the repository failed.
 	 */
 	@Override
 	protected abstract NotifyingSail createSail() throws SailException;
@@ -59,7 +59,7 @@ public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements Sail
 	}
 
 	@Test
-	public void testNotifyingRemoveAndClear() throws Exception {
+	public void testNotifyingRemoveAndClear() {
 		// Add some data to the repository
 		con.begin();
 		con.addStatement(painter, RDF.TYPE, RDFS.CLASS);

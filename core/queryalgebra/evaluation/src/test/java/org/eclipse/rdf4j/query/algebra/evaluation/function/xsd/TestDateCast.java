@@ -30,7 +30,7 @@ public class TestDateCast {
 	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp() {
 		dateCast = new DateCast();
 	}
 

@@ -104,7 +104,7 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 	}
 
 	@Override
-	protected void initializeInternal() throws SailException {
+	protected void initializeInternal() {
 		if (shutdown.get()) {
 			throw new SailException("Can not be initialized after calling shutdown!");
 		}
@@ -114,7 +114,7 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 	}
 
 	@Override
-	protected void shutDownInternal() throws SailException {
+	protected void shutDownInternal() {
 		if (shutdown.compareAndSet(false, true)) {
 			super.shutDownInternal();
 			try {
@@ -232,12 +232,12 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 	}
 
 	@Override
-	protected NotifyingSailConnection getConnectionInternal() throws SailException {
+	protected NotifyingSailConnection getConnectionInternal() {
 		return new ElasticsearchStoreConnection(this);
 	}
 
 	@Override
-	public boolean isWritable() throws SailException {
+	public boolean isWritable() {
 		return true;
 	}
 

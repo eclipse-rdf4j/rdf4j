@@ -27,14 +27,14 @@ class DatasetTupleQuery extends DatasetQuery implements TupleQuery {
 	}
 
 	@Override
-	public TupleQueryResult evaluate() throws QueryEvaluationException {
+	public TupleQueryResult evaluate() {
 		con.loadDataset(sailQuery.getActiveDataset());
 		return ((TupleQuery) sailQuery).evaluate();
 	}
 
 	@Override
 	public void evaluate(TupleQueryResultHandler handler)
-			throws QueryEvaluationException, TupleQueryResultHandlerException {
+			throws TupleQueryResultHandlerException {
 		con.loadDataset(sailQuery.getActiveDataset());
 		((TupleQuery) sailQuery).evaluate(handler);
 	}

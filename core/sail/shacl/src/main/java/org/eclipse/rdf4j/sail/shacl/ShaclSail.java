@@ -323,7 +323,7 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 	}
 
 	@Override
-	public void init() throws SailException {
+	public void init() {
 		if (!initialized.compareAndSet(false, true)) {
 			// already initialized
 			return;
@@ -386,7 +386,7 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 
 	@InternalUseOnly
 	public List<ContextWithShapes> getShapes(RepositoryConnection shapesRepoConnection, SailConnection sailConnection,
-			IRI[] shapesGraphs) throws SailException {
+			IRI[] shapesGraphs) {
 
 		try (ShapeSource shapeSource = new CombinedShapeSource(shapesRepoConnection, sailConnection)
 				.withContext(shapesGraphs)) {
@@ -396,8 +396,7 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 	}
 
 	@InternalUseOnly
-	public List<ContextWithShapes> getShapes(RepositoryConnection shapesRepoConnection, IRI[] shapesGraphs)
-			throws SailException {
+	public List<ContextWithShapes> getShapes(RepositoryConnection shapesRepoConnection, IRI[] shapesGraphs) {
 
 		try (ShapeSource shapeSource = new ForwardChainingShapeSource(shapesRepoConnection).withContext(shapesGraphs)) {
 			return Shape.Factory.getShapes(shapeSource, this);
@@ -406,7 +405,7 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 	}
 
 	@Override
-	public synchronized void shutDown() throws SailException {
+	public synchronized void shutDown() {
 		if (shapesRepo != null) {
 			shapesRepo.shutDown();
 			shapesRepo = null;
@@ -449,7 +448,7 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 	}
 
 	@Override
-	public NotifyingSailConnection getConnection() throws SailException {
+	public NotifyingSailConnection getConnection() {
 		init();
 
 		synchronized (singleConnectionMonitor) {

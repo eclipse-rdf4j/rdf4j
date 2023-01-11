@@ -46,52 +46,52 @@ public class SnapshotSailStoreTest {
 	static class TestSailSink implements SailSink {
 
 		@Override
-		public void close() throws SailException {
+		public void close() {
 
 		}
 
 		@Override
-		public void prepare() throws SailException {
+		public void prepare() {
 
 		}
 
 		@Override
-		public void flush() throws SailException {
+		public void flush() {
 
 		}
 
 		@Override
-		public void setNamespace(String prefix, String name) throws SailException {
+		public void setNamespace(String prefix, String name) {
 
 		}
 
 		@Override
-		public void removeNamespace(String prefix) throws SailException {
+		public void removeNamespace(String prefix) {
 
 		}
 
 		@Override
-		public void clearNamespaces() throws SailException {
+		public void clearNamespaces() {
 
 		}
 
 		@Override
-		public void clear(Resource... contexts) throws SailException {
+		public void clear(Resource... contexts) {
 
 		}
 
 		@Override
-		public void observe(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		public void observe(Resource subj, IRI pred, Value obj, Resource... contexts) {
 
 		}
 
 		@Override
-		public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
+		public void approve(Resource subj, IRI pred, Value obj, Resource ctx) {
 
 		}
 
 		@Override
-		public void deprecate(Statement statement) throws SailException {
+		public void deprecate(Statement statement) {
 
 		}
 	}
@@ -100,7 +100,7 @@ public class SnapshotSailStoreTest {
 	public void testRollbackExceptionDuringCommit() {
 		SnapshotSailStore sailStore = createSnapshotSailStore(level -> new TestSailSink() {
 			@Override
-			public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
+			public void approve(Resource subj, IRI pred, Value obj, Resource ctx) {
 				throw new SailException("error during approve");
 			}
 		});
@@ -124,28 +124,26 @@ public class SnapshotSailStoreTest {
 	private Sail createSail(SailStore sailStore) {
 		return new AbstractNotifyingSail() {
 			@Override
-			protected void shutDownInternal() throws SailException {
+			protected void shutDownInternal() {
 				// closing the SailStore tries to flush existing changes again
 				sailStore.close();
 			}
 
 			@Override
-			protected NotifyingSailConnection getConnectionInternal() throws SailException {
+			protected NotifyingSailConnection getConnectionInternal() {
 				return new SailSourceConnection(this, sailStore, (FederatedServiceResolver) null) {
 					@Override
-					protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
-							throws SailException {
+					protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) {
 					}
 
 					@Override
-					protected void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
-							throws SailException {
+					protected void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts) {
 					}
 				};
 			}
 
 			@Override
-			public boolean isWritable() throws SailException {
+			public boolean isWritable() {
 				return true;
 			}
 
@@ -159,36 +157,36 @@ public class SnapshotSailStoreTest {
 	private SnapshotSailStore createSnapshotSailStore(Function<IsolationLevel, SailSink> sinkFactory) {
 		BackingSailSource dummySource = new BackingSailSource() {
 			@Override
-			public SailSink sink(IsolationLevel level) throws SailException {
+			public SailSink sink(IsolationLevel level) {
 				return sinkFactory.apply(level);
 			}
 
 			@Override
-			public SailDataset dataset(IsolationLevel level) throws SailException {
+			public SailDataset dataset(IsolationLevel level) {
 				return new SailDataset() {
 					@Override
-					public void close() throws SailException {
+					public void close() {
 					}
 
 					@Override
-					public CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException {
+					public CloseableIteration<? extends Namespace> getNamespaces() {
 						return new EmptyIteration<>();
 					}
 
 					@Override
-					public String getNamespace(String prefix) throws SailException {
+					public String getNamespace(String prefix) {
 						return null;
 					}
 
 					@Override
-					public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
+					public CloseableIteration<? extends Resource> getContextIDs() {
 						return new EmptyIteration<>();
 					}
 
 					@Override
-					public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
+					public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
 							Value obj,
-							Resource... contexts) throws SailException {
+							Resource... contexts) {
 						return new EmptyIteration<>();
 					}
 				};
@@ -216,7 +214,7 @@ public class SnapshotSailStoreTest {
 			}
 
 			@Override
-			public void close() throws SailException {
+			public void close() {
 			}
 		}, LinkedHashModel::new);
 	}

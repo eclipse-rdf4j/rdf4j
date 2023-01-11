@@ -178,10 +178,10 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 		return repo;
 	}
 
-	protected abstract Repository newRepository() throws Exception;
+	protected abstract Repository newRepository();
 
 	@Override
-	protected void tearDown() throws Exception {
+	protected void tearDown() {
 		if (dataRep != null) {
 			dataRep.shutDown();
 			dataRep = null;
@@ -225,8 +225,7 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 		}
 	}
 
-	private void compareGraphs(Iterable<? extends Statement> actual, Iterable<? extends Statement> expected)
-			throws Exception {
+	private void compareGraphs(Iterable<? extends Statement> actual, Iterable<? extends Statement> expected) {
 		if (!Models.isomorphic(expected, actual)) {
 			StringBuilder message = new StringBuilder(128);
 			message.append("\n============ ");
@@ -382,7 +381,7 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 	}
 
 	protected static String getManifestName(Repository manifestRep, RepositoryConnection con, String manifestFileURL)
-			throws QueryEvaluationException, RepositoryException, MalformedQueryException {
+			throws RepositoryException, MalformedQueryException {
 		// Try to extract suite name from manifest file
 		TupleQuery manifestNameQuery = con.prepareTupleQuery(
 				"SELECT ?ManifestName WHERE { ?ManifestURL rdfs:label ?ManifestName .}");

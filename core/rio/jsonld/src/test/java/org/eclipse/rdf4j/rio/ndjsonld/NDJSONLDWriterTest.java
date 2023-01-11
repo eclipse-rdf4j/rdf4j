@@ -34,7 +34,7 @@ public class NDJSONLDWriterTest extends RDFWriterTest {
 	@Test
 	@Override
 	@Ignore("TODO: See case for JSONLDWriterTest")
-	public void testIllegalPrefix() throws RDFHandlerException, RDFParseException, IOException {
+	public void testIllegalPrefix() throws RDFHandlerException, RDFParseException {
 	}
 
 	@Override

@@ -97,7 +97,7 @@ public class SPARQLProtocolSessionTest {
 	}
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		sparqlSession = createProtocolSession();
 	}
 

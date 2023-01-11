@@ -18,7 +18,6 @@ import java.util.stream.Stream;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,7 +35,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 
 	private final PlanNode left;
 	private final PlanNode right;
-	private CloseableIteration<ValidationTuple, SailException> iterator;
+	private CloseableIteration<ValidationTuple> iterator;
 	private NotifyingPushablePlanNode joined;
 	private NotifyingPushablePlanNode discardedLeft;
 	private NotifyingPushablePlanNode discardedRight;
@@ -91,16 +90,16 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<ValidationTuple> iterator() {
 		throw new IllegalStateException();
 	}
 
-	public CloseableIteration<ValidationTuple, SailException> internalIterator() {
+	public CloseableIteration<ValidationTuple> internalIterator() {
 
-		return new CloseableIteration<ValidationTuple, SailException>() {
+		return new CloseableIteration<ValidationTuple>() {
 
-			final CloseableIteration<? extends ValidationTuple, SailException> leftIterator = left.iterator();
-			final CloseableIteration<? extends ValidationTuple, SailException> rightIterator = right.iterator();
+			final CloseableIteration<? extends ValidationTuple> leftIterator = left.iterator();
+			final CloseableIteration<? extends ValidationTuple> rightIterator = right.iterator();
 
 			ValidationTuple next;
 			ValidationTuple nextLeft;
@@ -228,7 +227,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 			}
 
 			@Override
-			public void close() throws SailException {
+			public void close() {
 				try {
 					leftIterator.close();
 				} finally {
@@ -237,13 +236,13 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			public boolean hasNext() {
 				calculateNext();
 				return next != null;
 			}
 
 			@Override
-			public ValidationTuple next() throws SailException {
+			public ValidationTuple next() {
 				calculateNext();
 				ValidationTuple temp = next;
 				next = null;
@@ -251,7 +250,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 			}
 
 			@Override
-			public void remove() throws SailException {
+			public void remove() {
 				throw new UnsupportedOperationException();
 			}
 
@@ -388,7 +387,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 		}
 
 		@Override
-		public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+		public CloseableIteration<ValidationTuple> iterator() {
 			return delegate.iterator();
 		}
 

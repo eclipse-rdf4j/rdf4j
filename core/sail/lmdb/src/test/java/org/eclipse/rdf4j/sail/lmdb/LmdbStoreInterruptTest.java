@@ -37,7 +37,7 @@ public class LmdbStoreInterruptTest extends SailInterruptTest {
 	 *---------*/
 
 	@Override
-	protected NotifyingSail createSail() throws SailException {
+	protected NotifyingSail createSail() {
 		try {
 			return new LmdbStore(tempDir.newFolder(), new LmdbStoreConfig("spoc,posc"));
 		} catch (IOException e) {

@@ -39,7 +39,7 @@ public class NativeStoreConnectionTest extends RepositoryConnectionTest {
 	}
 
 	@Test
-	public void testSES715() throws Exception {
+	public void testSES715() {
 		// load 1000 triples in two different contexts
 		testCon.begin();
 		ValueFactory vf = testCon.getValueFactory();

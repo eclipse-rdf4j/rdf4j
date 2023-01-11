@@ -56,7 +56,7 @@ public class LogbackConfiguration extends AbstractLogConfiguration {
 	}
 
 	@Override
-	public void load() throws IOException {
+	public void load() {
 		try {
 			if (System.getProperty(LOGGING_DIR_PROPERTY) == null) {
 				System.setProperty(LOGGING_DIR_PROPERTY, getLoggingDir().getAbsolutePath());
@@ -79,7 +79,7 @@ public class LogbackConfiguration extends AbstractLogConfiguration {
 	}
 
 	@Override
-	public void save() throws IOException {
+	public void save() {
 		// nop
 	}
 

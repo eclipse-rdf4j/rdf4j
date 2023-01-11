@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.sail.SailException;
  * A statement iterator that wraps a RecordIterator containing statement records and translates these records to
  * {@link Statement} objects.
  */
-class LmdbStatementIterator extends LookAheadIteration<Statement, SailException> {
+class LmdbStatementIterator extends LookAheadIteration<Statement> {
 
 	/*-----------*
 	 * Variables *
@@ -40,7 +40,7 @@ class LmdbStatementIterator extends LookAheadIteration<Statement, SailException>
 	/**
 	 * Creates a new LmdbStatementIterator.
 	 */
-	public LmdbStatementIterator(RecordIterator recordIt, ValueStore valueStore) throws IOException {
+	public LmdbStatementIterator(RecordIterator recordIt, ValueStore valueStore) {
 		this.recordIt = recordIt;
 		this.valueStore = valueStore;
 	}
@@ -50,7 +50,7 @@ class LmdbStatementIterator extends LookAheadIteration<Statement, SailException>
 	 *---------*/
 
 	@Override
-	public Statement getNextElement() throws SailException {
+	public Statement getNextElement() {
 		try {
 			long[] quad = recordIt.next();
 			if (quad == null) {
@@ -79,15 +79,11 @@ class LmdbStatementIterator extends LookAheadIteration<Statement, SailException>
 	}
 
 	@Override
-	protected void handleClose() throws SailException {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {
-			try {
-				recordIt.close();
-			} catch (IOException e) {
-				throw causeIOException(e);
-			}
+			recordIt.close();
 		}
 	}
 

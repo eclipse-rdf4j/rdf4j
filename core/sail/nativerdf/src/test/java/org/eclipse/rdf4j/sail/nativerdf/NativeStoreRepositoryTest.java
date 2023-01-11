@@ -23,7 +23,7 @@ public class NativeStoreRepositoryTest extends RepositoryTest {
 	public final TemporaryFolder tmpDir = new TemporaryFolder();
 
 	@Override
-	protected Repository createRepository() throws IOException {
+	protected Repository createRepository() {
 		return new SailRepository(new NativeStore(tmpDir.getRoot(), "spoc"));
 	}
 }

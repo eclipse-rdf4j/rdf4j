@@ -24,7 +24,7 @@ import org.elasticsearch.search.sort.SortOrder;
 
 class ElasticsearchHelper {
 
-	static CloseableIteration<SearchHit, RuntimeException> getScrollingIterator(QueryBuilder queryBuilder,
+	static CloseableIteration<SearchHit> getScrollingIterator(QueryBuilder queryBuilder,
 			Client client, String index, int scrollTimeout) {
 
 		return new CloseableIteration<>() {

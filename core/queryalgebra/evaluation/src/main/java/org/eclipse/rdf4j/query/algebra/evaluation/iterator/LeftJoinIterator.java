@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 
-public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class LeftJoinIterator extends LookAheadIteration<BindingSet> {
 
 	/*-----------*
 	 * Variables *
@@ -42,9 +42,9 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	 */
 	private final Set<String> scopeBindingNames;
 
-	private final CloseableIteration<BindingSet, QueryEvaluationException> leftIter;
+	private final CloseableIteration<BindingSet> leftIter;
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
+	private CloseableIteration<BindingSet> rightIter;
 
 	private final QueryEvaluationStep prepareRightArg;
 
@@ -55,8 +55,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	 *--------------*/
 
 	public LeftJoinIterator(EvaluationStrategy strategy, LeftJoin join, BindingSet bindings,
-			QueryEvaluationContext context)
-			throws QueryEvaluationException {
+			QueryEvaluationContext context) {
 		this.scopeBindingNames = join.getBindingNames();
 
 		leftIter = strategy.evaluate(join.getLeftArg(), bindings);
@@ -75,8 +74,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	}
 
 	public LeftJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right, QueryValueEvaluationStep joinCondition,
-			BindingSet bindings, Set<String> scopeBindingNamse)
-			throws QueryEvaluationException {
+			BindingSet bindings, Set<String> scopeBindingNamse) {
 		this.scopeBindingNames = scopeBindingNamse;
 
 		leftIter = left.evaluate(bindings);
@@ -94,9 +92,9 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	 *---------*/
 
 	@Override
-	protected BindingSet getNextElement() throws QueryEvaluationException {
+	protected BindingSet getNextElement() {
 		try {
-			CloseableIteration<BindingSet, QueryEvaluationException> nextRightIter = rightIter;
+			CloseableIteration<BindingSet> nextRightIter = rightIter;
 			while (nextRightIter.hasNext() || leftIter.hasNext()) {
 				BindingSet leftBindings = null;
 
@@ -154,7 +152,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {

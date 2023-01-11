@@ -80,7 +80,7 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 	}
 
 	@Override
-	synchronized protected void initializeInternal() throws SailException {
+	synchronized protected void initializeInternal() {
 		if (sailStore != null) {
 			sailStore.close();
 		}
@@ -142,7 +142,7 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 	}
 
 	@Override
-	synchronized protected void shutDownInternal() throws SailException {
+	synchronized protected void shutDownInternal() {
 		sailStore.close();
 		sailStore = null;
 		dataStructure = null;

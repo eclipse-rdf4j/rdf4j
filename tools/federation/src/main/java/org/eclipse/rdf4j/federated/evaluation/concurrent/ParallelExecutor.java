@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.evaluation.join.JoinExecutorBase;
 import org.eclipse.rdf4j.federated.evaluation.union.UnionExecutorBase;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * Interface for any parallel cursor, i.e. result iterations. Implementations can act as control for scheduler
@@ -34,7 +33,7 @@ public interface ParallelExecutor<T> extends Runnable {
 	 *
 	 * @param res
 	 */
-	void addResult(CloseableIteration<T, QueryEvaluationException> res);
+	void addResult(CloseableIteration<T> res);
 
 	/**
 	 * Toss some exception to the controlling instance

@@ -138,7 +138,7 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 	 *---------*/
 
 	@Override
-	public InferencerConnection getConnection() throws SailException {
+	public InferencerConnection getConnection() {
 		try {
 			InferencerConnection con = (InferencerConnection) super.getConnection();
 			return new DirectTypeHierarchyInferencerConnection(con);
@@ -148,7 +148,7 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public void init() throws SailException {
+	public void init() {
 		super.init();
 
 		try (InferencerConnection con = getConnection()) {
@@ -196,13 +196,13 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 		}
 
 		@Override
-		public void rollback() throws SailException {
+		public void rollback() {
 			super.rollback();
 			updateNeeded = false;
 		}
 
 		@Override
-		public void flushUpdates() throws SailException {
+		public void flushUpdates() {
 			super.flushUpdates();
 
 			while (updateNeeded) {
@@ -261,7 +261,7 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 
 		private void evaluateIntoStatements(ParsedGraphQuery query, Collection<Statement> statements)
 				throws SailException, RDFHandlerException, QueryEvaluationException {
-			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = getWrappedConnection()
+			try (CloseableIteration<? extends BindingSet> bindingsIter = getWrappedConnection()
 					.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true)) {
 				ValueFactory vf = getValueFactory();
 

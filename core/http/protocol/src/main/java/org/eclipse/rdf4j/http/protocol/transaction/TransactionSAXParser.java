@@ -74,7 +74,7 @@ class TransactionSAXParser extends SimpleSAXAdapter {
 	}
 
 	@Override
-	public void startDocument() throws SAXException {
+	public void startDocument() {
 		txn = new ArrayList<>();
 	}
 

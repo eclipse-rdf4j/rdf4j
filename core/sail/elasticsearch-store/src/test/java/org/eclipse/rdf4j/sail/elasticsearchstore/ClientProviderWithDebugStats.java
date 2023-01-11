@@ -60,7 +60,7 @@ public class ClientProviderWithDebugStats implements ClientProvider {
 	}
 
 	@Override
-	synchronized public void close() throws Exception {
+	synchronized public void close() {
 		if (!closed) {
 			closed = true;
 			if (client != null) {

@@ -28,14 +28,13 @@ public class FilteringInsertBindingsIteration extends FilteringIteration {
 	protected final BindingSet bindings;
 
 	public FilteringInsertBindingsIteration(FilterValueExpr filterExpr, BindingSet bindings,
-			CloseableIteration<BindingSet, QueryEvaluationException> iter, FederationEvalStrategy strategy)
-			throws QueryEvaluationException {
+			CloseableIteration<BindingSet> iter, FederationEvalStrategy strategy) {
 		super(filterExpr, iter, strategy);
 		this.bindings = bindings;
 	}
 
 	@Override
-	public BindingSet next() throws QueryEvaluationException {
+	public BindingSet next() {
 		BindingSet next = super.next();
 		if (next == null) {
 			return null;

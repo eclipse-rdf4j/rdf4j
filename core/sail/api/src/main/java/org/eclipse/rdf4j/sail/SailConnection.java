@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Query;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
@@ -84,11 +83,10 @@ public interface SailConnection extends AutoCloseable {
 	 *                        should be bound to the value they map to.
 	 * @param includeInferred Indicates whether inferred triples are to be considered in the query result. If false, no
 	 *                        inferred statements are returned; if true, inferred statements are returned if available
-	 * @return The TupleQueryResult.
-	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
+	 * @return The TupleQueryResult. @ If the Sail object encountered an error or unexpected situation internally.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
+	CloseableIteration<? extends BindingSet> evaluate(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException;
 
 	/**
@@ -97,7 +95,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @return An iterator over the context identifiers, should not contain any duplicates.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException;
+	CloseableIteration<? extends Resource> getContextIDs() throws SailException;
 
 	/**
 	 * Gets all statements from the specified contexts that have a specific subject, predicate and/or object. All three
@@ -112,11 +110,11 @@ public interface SailConnection extends AutoCloseable {
 	 * @param contexts        The context(s) to get the data from. Note that this parameter is a vararg and as such is
 	 *                        optional. If no contexts are specified the method operates on the entire repository. A
 	 *                        <var>null</var> value can be used to match context-less statements.
-	 * @return The statements matching the specified pattern.
-	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
+	 * @return The statements matching the specified pattern. @ If the Sail object encountered an error or unexpected
+	 *         situation internally.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
+	CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts) throws SailException;
 
 	/**
@@ -134,14 +132,13 @@ public interface SailConnection extends AutoCloseable {
 	 *                        optional. If no contexts are specified the method operates on the entire repository. A
 	 *                        <var>null</var> value can be used to match context-less statements.
 	 * @return <code>true</code> iff the store contains any statements matching the supplied criteria,
-	 *         <code>false</code> otherwise.
-	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
+	 *         <code>false</code> otherwise. @ If the Sail object encountered an error or unexpected situation
+	 *         internally.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	default boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
-			throws SailException {
+	default boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts) {
 
-		try (CloseableIteration<? extends Statement, SailException> stIter = getStatements(subj, pred, obj,
+		try (CloseableIteration<? extends Statement> stIter = getStatements(subj, pred, obj,
 				includeInferred, contexts)) {
 			return stIter.hasNext();
 		}
@@ -164,8 +161,7 @@ public interface SailConnection extends AutoCloseable {
 	 * The transaction will use the default {@link IsolationLevel} level for the SAIL, as returned by
 	 * {@link Sail#getDefaultIsolationLevel()}.
 	 *
-	 * @throws SailException If the connection could not start a transaction or if a transaction is already active on
-	 *                       this connection.
+	 * @If the connection could not start a transaction or if a transaction is already active on this connection.
 	 */
 	void begin() throws SailException;
 
@@ -174,8 +170,8 @@ public interface SailConnection extends AutoCloseable {
 	 * {@link #rollback()} to be called to close the transaction.
 	 *
 	 * @param level the transaction isolation level on which this transaction operates.
-	 * @throws UnknownSailTransactionStateException If the IsolationLevel is not supported by this implementation
-	 * @throws SailException                        If the connection could not start a transaction, if the supplied
+	 * @throws UnknownSailTransactionStateException If the IsolationLevel is not supported by this implementation @ If
+	 *                                              the connection could not start a transaction, if the supplied
 	 *                                              transaction isolation level is not supported, or if a transaction is
 	 *                                              already active on this connection.
 	 */
@@ -203,8 +199,8 @@ public interface SailConnection extends AutoCloseable {
 	 * caller more control over the efficiency when calling {@link #prepare()}. This method may be called multiple times
 	 * within the same transaction.
 	 *
-	 * @throws SailException         If the updates could not be processed, for example because no transaction is
-	 *                               active.
+	 * @ If the updates could not be processed, for example because no transaction is active.
+	 *
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
 	void flush() throws SailException;
@@ -221,8 +217,8 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws UnknownSailTransactionStateException If the transaction state can not be determined (this can happen for
 	 *                                              instance when communication between client and server fails or
 	 *                                              times-out). It does not indicate a problem with the integrity of the
-	 *                                              store.
-	 * @throws SailException                        If there is an active transaction and it cannot be committed.
+	 *                                              store. @ If there is an active transaction and it cannot be
+	 *                                              committed.
 	 * @throws IllegalStateException                If the connection has been closed or prepare was already called by
 	 *                                              another thread.
 	 */
@@ -235,8 +231,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws UnknownSailTransactionStateException If the transaction state can not be determined (this can happen for
 	 *                                              instance when communication between client and server fails or
 	 *                                              times-out). It does not indicate a problem with the integrity of the
-	 *                                              store.
-	 * @throws SailException                        If the SailConnection could not be committed.
+	 *                                              store. @ If the SailConnection could not be committed.
 	 * @throws IllegalStateException                If the connection has been closed.
 	 */
 	void commit() throws SailException;
@@ -247,8 +242,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws UnknownSailTransactionStateException If the transaction state can not be determined (this can happen for
 	 *                                              instance when communication between client and server fails or
 	 *                                              times-out). It does not indicate a problem with the integrity of the
-	 *                                              store.
-	 * @throws SailException                        If the SailConnection could not be rolled back.
+	 *                                              store. @ If the SailConnection could not be rolled back.
 	 * @throws IllegalStateException                If the connection has been closed.
 	 */
 	void rollback() throws SailException;
@@ -271,8 +265,8 @@ public interface SailConnection extends AutoCloseable {
 	 * @param pred     The predicate of the statement to add.
 	 * @param obj      The object of the statement to add.
 	 * @param contexts The context(s) to add the statement to. Note that this parameter is a vararg and as such is
-	 *                 optional. If no contexts are specified, a context-less statement will be added.
-	 * @throws SailException         If the statement could not be added, for example because no transaction is active.
+	 *                 optional. If no contexts are specified, a context-less statement will be added. @ If the
+	 *                 statement could not be added, for example because no transaction is active.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
 	void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException;
@@ -286,9 +280,8 @@ public interface SailConnection extends AutoCloseable {
 	 * @param obj      The object of the statement that should be removed , or <var>null</var> to indicate a wildcard. *
 	 * @param contexts The context(s) from which to remove the statement. Note that this parameter is a vararg and as
 	 *                 such is optional. If no contexts are specified the method operates on the entire repository. A
-	 *                 <var>null</var> value can be used to match context-less statements.
-	 * @throws SailException         If the statement could not be removed, for example because no transaction is
-	 *                               active.
+	 *                 <var>null</var> value can be used to match context-less statements. @ If the statement could not
+	 *                 be removed, for example because no transaction is active.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
 	void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException;
@@ -311,8 +304,8 @@ public interface SailConnection extends AutoCloseable {
 	 * @param pred     The predicate of the statement to add.
 	 * @param obj      The object of the statement to add.
 	 * @param contexts The context(s) to add the statement to. Note that this parameter is a vararg and as such is
-	 *                 optional. If no contexts are specified, a context-less statement will be added.
-	 * @throws SailException         If the statement could not be added, for example because no transaction is active.
+	 *                 optional. If no contexts are specified, a context-less statement will be added. @ If the
+	 *                 statement could not be added, for example because no transaction is active.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
 	void addStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
@@ -329,9 +322,8 @@ public interface SailConnection extends AutoCloseable {
 	 * @param obj      The object of the statement that should be removed.
 	 * @param contexts The context(s) from which to remove the statement. Note that this parameter is a vararg and as
 	 *                 such is optional. If no contexts are specified the method operates on the entire repository. A
-	 *                 <var>null</var> value can be used to match context-less statements.
-	 * @throws SailException         If the statement could not be removed, for example because no transaction is
-	 *                               active.
+	 *                 <var>null</var> value can be used to match context-less statements. @ If the statement could not
+	 *                 be removed, for example because no transaction is active.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
 	void removeStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
@@ -352,8 +344,8 @@ public interface SailConnection extends AutoCloseable {
 	 *
 	 * @param contexts The context(s) from which to remove the statements. Note that this parameter is a vararg and as
 	 *                 such is optional. If no contexts are specified the method operates on the entire repository. A
-	 *                 <var>null</var> value can be used to match context-less statements.
-	 * @throws SailException         If the statements could not be removed.
+	 *                 <var>null</var> value can be used to match context-less statements. @ If the statements could not
+	 *                 be removed.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
 	void clear(Resource... contexts) throws SailException;
@@ -361,19 +353,18 @@ public interface SailConnection extends AutoCloseable {
 	/**
 	 * Gets the namespaces relevant to the data contained in this Sail object.
 	 *
-	 * @return An iterator over the relevant namespaces, should not contain any duplicates.
-	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
+	 * @return An iterator over the relevant namespaces, should not contain any duplicates. @ If the Sail object
+	 *         encountered an error or unexpected situation internally.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException;
+	CloseableIteration<? extends Namespace> getNamespaces() throws SailException;
 
 	/**
 	 * Gets the namespace that is associated with the specified prefix, if any.
 	 *
 	 * @param prefix A namespace prefix, or an empty string in case of the default namespace.
 	 * @return The namespace name that is associated with the specified prefix, or <var>null</var> if there is no such
-	 *         namespace.
-	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
+	 *         namespace. @ If the Sail object encountered an error or unexpected situation internally.
 	 * @throws NullPointerException  In case <var>prefix</var> is <var>null</var>.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
@@ -383,8 +374,8 @@ public interface SailConnection extends AutoCloseable {
 	 * Sets the prefix for a namespace.
 	 *
 	 * @param prefix The new prefix, or an empty string in case of the default namespace.
-	 * @param name   The namespace name that the prefix maps to.
-	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
+	 * @param name   The namespace name that the prefix maps to. @ If the Sail object encountered an error or unexpected
+	 *               situation internally.
 	 * @throws NullPointerException  In case <var>prefix</var> or <var>name</var> is <var>null</var>.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
@@ -393,8 +384,8 @@ public interface SailConnection extends AutoCloseable {
 	/**
 	 * Removes a namespace declaration by removing the association between a prefix and a namespace name.
 	 *
-	 * @param prefix The namespace prefix, or an empty string in case of the default namespace.
-	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
+	 * @param prefix The namespace prefix, or an empty string in case of the default namespace. @ If the Sail object
+	 *               encountered an error or unexpected situation internally.
 	 * @throws NullPointerException  In case <var>prefix</var> is <var>null</var>.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
@@ -403,7 +394,8 @@ public interface SailConnection extends AutoCloseable {
 	/**
 	 * Removes all namespace declarations from the repository.
 	 *
-	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
+	 * @ If the Sail object encountered an error or unexpected situation internally.
+	 *
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
 	void clearNamespaces() throws SailException;

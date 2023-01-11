@@ -251,10 +251,10 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	/**
 	 * Initializes this repository. If a persistence file is defined for the store, the contents will be restored.
 	 *
-	 * @throws SailException when initialization of the store failed.
+	 * @when initialization of the store failed.
 	 */
 	@Override
-	protected void initializeInternal() throws SailException {
+	protected void initializeInternal() {
 		logger.debug("Initializing MemoryStore...");
 
 		this.store = new MemorySailStore(debugEnabled());
@@ -333,7 +333,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	}
 
 	@Override
-	protected void shutDownInternal() throws SailException {
+	protected void shutDownInternal() {
 		try {
 			cancelSyncTimer();
 			sync();
@@ -361,7 +361,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	}
 
 	@Override
-	protected NotifyingSailConnection getConnectionInternal() throws SailException {
+	protected NotifyingSailConnection getConnectionInternal() {
 		return new MemoryStoreConnection(this);
 	}
 
@@ -382,7 +382,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 		}
 	}
 
-	protected void scheduleSyncTask() throws SailException {
+	protected void scheduleSyncTask() {
 		if (!persist) {
 			return;
 		}
@@ -443,7 +443,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	 * Synchronizes the contents of this repository with the data that is stored on disk. Data will only be written when
 	 * the contents of the repository and data in the file are out of sync.
 	 */
-	public void sync() throws SailException {
+	public void sync() {
 		// syncSemaphore prevents concurrent file synchronizations
 		synchronized (syncSemaphore) {
 			if (persist && contentsChanged) {

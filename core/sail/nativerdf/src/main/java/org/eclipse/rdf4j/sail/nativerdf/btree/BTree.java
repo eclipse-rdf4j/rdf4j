@@ -1018,7 +1018,7 @@ public class BTree implements Closeable {
 		return null;
 	}
 
-	Node readNode(int id) throws IOException {
+	Node readNode(int id) {
 		if (id <= 0) {
 			throw new IllegalArgumentException("id must be larger than 0, is: " + id + " in " + getFile());
 		}

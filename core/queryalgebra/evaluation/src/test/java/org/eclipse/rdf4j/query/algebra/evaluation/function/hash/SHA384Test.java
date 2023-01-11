@@ -18,10 +18,9 @@ import org.junit.Before;
 public class SHA384Test extends HashFunctionTest {
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp() throws Exception {
+	public void setUp() {
 		setHashFunction(new SHA384());
 		setToHash("abc");
 		setExpectedDigest(

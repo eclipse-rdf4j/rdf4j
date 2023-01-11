@@ -113,7 +113,7 @@ public class RepositoryConfigRepository extends AbstractRepository {
 				manager.getRepositoryIDs().forEach(id -> {
 					contextIDs.add(getContext(id));
 				});
-				CloseableIteration<Resource, RepositoryException> iter;
+				CloseableIteration<Resource> iter;
 				iter = new CloseableIteratorIteration<>(contextIDs.iterator());
 				return new RepositoryResult<>(iter);
 			}
@@ -121,7 +121,7 @@ public class RepositoryConfigRepository extends AbstractRepository {
 			@Override
 			public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj,
 					boolean includeInferred, Resource... contexts) throws RepositoryException {
-				CloseableIteration<Statement, RepositoryException> iter = new CloseableIteratorIteration<>(
+				CloseableIteration<Statement> iter = new CloseableIteratorIteration<>(
 						committed.getStatements(subj, pred, obj, contexts).iterator());
 				return new RepositoryResult<>(iter);
 			}
@@ -205,7 +205,7 @@ public class RepositoryConfigRepository extends AbstractRepository {
 
 			@Override
 			public RepositoryResult<Namespace> getNamespaces() throws RepositoryException {
-				CloseableIteration<Namespace, RepositoryException> iter;
+				CloseableIteration<Namespace> iter;
 				iter = new CloseableIteratorIteration<>(committed.getNamespaces().iterator());
 				return new RepositoryResult<>(iter);
 			}

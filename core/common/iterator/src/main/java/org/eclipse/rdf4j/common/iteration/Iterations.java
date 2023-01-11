@@ -15,7 +15,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
-import java.util.Spliterator;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -34,7 +33,7 @@ public class Iterations {
 	 * @param iter the {@link CloseableIteration} to get the elements from
 	 * @return a List containing all elements obtained from the specified iteration.
 	 */
-	public static <E, X extends Exception> List<E> asList(CloseableIteration<? extends E, X> iter) throws X {
+	public static <E> List<E> asList(CloseableIteration<? extends E> iter) {
 		// stream.collect is slightly slower than addAll for lists
 		List<E> list = new ArrayList<>();
 
@@ -48,7 +47,7 @@ public class Iterations {
 	 * @param iter the {@link CloseableIteration} to get the elements from
 	 * @return a Set containing all elements obtained from the specified iteration.
 	 */
-	public static <E, X extends Exception> Set<E> asSet(CloseableIteration<? extends E, X> iter) throws X {
+	public static <E> Set<E> asSet(CloseableIteration<? extends E> iter) {
 		try (Stream<? extends E> stream = iter.stream()) {
 			return stream.collect(Collectors.toSet());
 		}
@@ -62,8 +61,8 @@ public class Iterations {
 	 * @param collection The collection to add the elements to.
 	 * @return The <var>collection</var> object that was supplied to this method.
 	 */
-	public static <E, X extends Exception, C extends Collection<E>> C addAll(CloseableIteration<? extends E, X> iter,
-			C collection) throws X {
+	public static <E, C extends Collection<E>> C addAll(CloseableIteration<? extends E> iter,
+			C collection) {
 		try (iter) {
 			while (iter.hasNext()) {
 				collection.add(iter.next());
@@ -81,7 +80,7 @@ public class Iterations {
 	 * @param iteration a source {@link CloseableIteration} for the stream.
 	 * @return a sequential {@link Stream} object which can be used to process the data from the source iteration.
 	 */
-	public static <T> Stream<T> stream(CloseableIteration<T, ? extends Exception> iteration) {
+	public static <T> Stream<T> stream(CloseableIteration<T> iteration) {
 		return StreamSupport
 				.stream(new CloseableIterationSpliterator<>(iteration), false)
 				.onClose(() -> {
@@ -107,7 +106,7 @@ public class Iterations {
 	 * @param separator The separator to insert between the object strings.
 	 * @return A String representation of the objects provided by the supplied iteration.
 	 */
-	public static <X extends Exception> String toString(CloseableIteration<?, X> iteration, String separator) throws X {
+	public static String toString(CloseableIteration<?> iteration, String separator) {
 		StringBuilder sb = new StringBuilder();
 		toString(iteration, separator, sb);
 		return sb.toString();
@@ -122,9 +121,8 @@ public class Iterations {
 	 * @param separator The separator to insert between the object strings.
 	 * @param sb        A StringBuilder to append the iteration string to.
 	 */
-	public static <X extends Exception> void toString(CloseableIteration<?, X> iteration, String separator,
-			StringBuilder sb)
-			throws X {
+	public static void toString(CloseableIteration<?> iteration, String separator,
+			StringBuilder sb) {
 		while (iteration.hasNext()) {
 			sb.append(iteration.next());
 
@@ -142,8 +140,8 @@ public class Iterations {
 	 * @param setMaker  the Supplier that constructs a new set
 	 * @return a Set containing all elements obtained from the specified iteration.
 	 */
-	public static <E, X extends Exception> Set<E> asSet(CloseableIteration<? extends E, ? extends X> iteration,
-			Supplier<Set<E>> setMaker) throws X {
+	public static <E> Set<E> asSet(CloseableIteration<? extends E> iteration,
+			Supplier<Set<E>> setMaker) {
 		Set<E> set = setMaker.get();
 		while (iteration.hasNext()) {
 			set.add(iteration.next());

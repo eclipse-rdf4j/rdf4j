@@ -58,14 +58,14 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 	private TestLocalRepositoryManager repoManager;
 
 	@BeforeEach
-	public void before() throws Exception {
+	public void before() {
 		File baseDir = new File(tempDir.toFile(), "data");
 		repoManager = new TestLocalRepositoryManager(baseDir);
 		repoManager.init();
 	}
 
 	@AfterEach
-	public void after() throws Exception {
+	public void after() {
 		repoManager.shutDown();
 	}
 
@@ -138,7 +138,7 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 		// register custom federated service resolver
 		AbstractFederatedServiceResolver serviceResolver = new SPARQLServiceResolver() {
 			@Override
-			protected FederatedService createService(String serviceUrl) throws QueryEvaluationException {
+			protected FederatedService createService(String serviceUrl) {
 				if (serviceUrl.equals("http://serviceRepo")) {
 					Repository serviceRepo = repoManager.getRepository("serviceRepo");
 					return new RepositoryFederatedService(serviceRepo, false);
@@ -236,7 +236,7 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 		}
 	}
 
-	protected void addMemoryStore(String repoId) throws Exception {
+	protected void addMemoryStore(String repoId) {
 
 		RepositoryImplConfig implConfig = new SailRepositoryConfig(new MemoryStoreConfig());
 		RepositoryConfig config = new RepositoryConfig(repoId, implConfig);

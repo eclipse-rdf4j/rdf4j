@@ -131,14 +131,14 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	private boolean inferredCleared = false;
 
 	@Override
-	public void clearInferred(Resource... contexts) throws SailException {
+	public void clearInferred(Resource... contexts) {
 		logger.debug("Clearing all inferred statements");
 		super.clearInferred(contexts);
 		inferredCleared = true;
 	}
 
 	@Override
-	public void commit() throws SailException {
+	public void commit() {
 		super.commit();
 
 		statementsRemoved = false;
@@ -148,7 +148,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		sail.releaseExclusiveWriteLock();
 	}
 
-	void doInferencing() throws SailException {
+	void doInferencing() {
 		logger.debug("Do inferencing");
 		if (!sail.usesPredefinedSchema() && schemaChange) {
 			regenerateCacheAndInferenceMaps(true);
@@ -162,7 +162,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		logger.debug("Forward chain all explicit statements");
 		long count = 0;
 
-		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null, null,
+		try (CloseableIteration<? extends Statement> statements = connection.getStatements(null, null,
 				null, false)) {
 			while (statements.hasNext()) {
 				Statement next = statements.next();
@@ -187,7 +187,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 			addAxiomStatements();
 		}
 
-		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null, null,
+		try (CloseableIteration<? extends Statement> statements = connection.getStatements(null, null,
 				null, sail.useInferredToCreateSchema)) {
 			while (statements.hasNext()) {
 				Statement next = statements.next();
@@ -198,8 +198,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		sail.calculateInferenceMaps(this, addInferredStatements);
 	}
 
-	boolean addInferredStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+	boolean addInferredStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		if (logger.isTraceEnabled()) {
 			logger.trace("Adding inferred statement: <{}> <{}> <{}> <{}>", subj, pred, obj, Arrays.toString(contexts));
 		}
@@ -212,20 +211,19 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	}
 
 	@Override
-	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		sail.useInferredToCreateSchema = true;
 		addStatement(false, subj, pred, obj, contexts);
 		return super.addInferredStatement(subj, pred, obj, contexts);
 	}
 
 	@Override
-	public void addStatement(Resource subject, IRI predicate, Value object, Resource... contexts) throws SailException {
+	public void addStatement(Resource subject, IRI predicate, Value object, Resource... contexts) {
 		addStatement(true, subject, predicate, object, contexts);
 	}
 
 	// actuallyAdd
-	private void addStatement(boolean actuallyAdd, Resource subject, IRI predicate, Value object, Resource... context)
-			throws SailException {
+	private void addStatement(boolean actuallyAdd, Resource subject, IRI predicate, Value object, Resource... context) {
 
 		if (logger.isTraceEnabled()) {
 			logger.trace("Adding statement: <{}> <{}> <{}> <{}>", subject, predicate, object, Arrays.toString(context));
@@ -909,7 +907,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	}
 
 	@Override
-	public void rollback() throws SailException {
+	public void rollback() {
 
 		super.rollback();
 
@@ -926,12 +924,12 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	}
 
 	@Override
-	public void begin() throws SailException {
+	public void begin() {
 		this.begin(sail.getDefaultIsolationLevel());
 	}
 
 	@Override
-	public void begin(IsolationLevel level) throws SailException {
+	public void begin(IsolationLevel level) {
 		addedInferredStatementsCount = 0;
 		if (level == null) {
 			level = sail.getDefaultIsolationLevel();
@@ -949,7 +947,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	}
 
 	@Override
-	public void flushUpdates() throws SailException {
+	public void flushUpdates() {
 		logger.debug("Flush updates");
 		if (statementsRemoved) {
 			logger.debug("full recomputation needed, starting inferencing from scratch");
@@ -992,8 +990,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	}
 
 	@Override
-	public void addStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+	public void addStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts) {
 
 		addStatement(false, subj, pred, obj, contexts);
 		super.addStatement(modify, subj, pred, obj, contexts);

@@ -99,7 +99,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptim
 		}
 
 		@Override
-		public FederatedService getService(String serviceUrl) throws QueryEvaluationException {
+		public FederatedService getService(String serviceUrl) {
 			return delegate.getService(serviceUrl);
 		}
 
@@ -118,14 +118,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptim
 		}
 
 		@Override
-		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service expr, String serviceUri,
-				CloseableIteration<BindingSet, QueryEvaluationException> bindings) throws QueryEvaluationException {
+		public CloseableIteration<BindingSet> evaluate(Service expr, String serviceUri,
+				CloseableIteration<BindingSet> bindings) {
 			return delegate.evaluate(expr, serviceUri, bindings);
 		}
 
 		@Override
-		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
-				throws QueryEvaluationException {
+		public CloseableIteration<BindingSet> evaluate(TupleExpr expr, BindingSet bindings) {
 			return delegate.evaluate(expr, bindings);
 		}
 

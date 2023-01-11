@@ -42,7 +42,7 @@ public class EndpointFactoryTest extends SPARQLBaseTest {
 
 	@Test
 	@Disabled // needs to be fixed, connection timeout needs to be set
-	public void testNotReachableEndpoint() throws Exception {
+	public void testNotReachableEndpoint() {
 
 		try {
 			EndpointFactory.loadSPARQLEndpoint("http://invalid.org/not_sparql");

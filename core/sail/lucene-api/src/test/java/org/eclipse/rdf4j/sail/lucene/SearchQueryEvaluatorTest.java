@@ -45,16 +45,16 @@ abstract class SearchQueryEvaluatorTest {
 		protected Set<String> wktFields = Collections.singleton(SearchFields.getPropertyField(GEO.AS_WKT));
 
 		@Override
-		public void initialize(Properties parameters) throws Exception {
+		public void initialize(Properties parameters) {
 		}
 
 		@Override
-		public Collection<BindingSet> evaluate(SearchQueryEvaluator query) throws SailException {
+		public Collection<BindingSet> evaluate(SearchQueryEvaluator query) {
 			return null;
 		}
 
 		@Override
-		public void shutDown() throws IOException {
+		public void shutDown() {
 		}
 
 		@Override
@@ -88,39 +88,39 @@ abstract class SearchQueryEvaluatorTest {
 		}
 
 		@Override
-		public void begin() throws IOException {
+		public void begin() {
 		}
 
 		@Override
-		public void commit() throws IOException {
+		public void commit() {
 		}
 
 		@Override
-		public void rollback() throws IOException {
+		public void rollback() {
 		}
 
 		@Override
-		public void addStatement(Statement statement) throws IOException {
+		public void addStatement(Statement statement) {
 		}
 
 		@Override
-		public void removeStatement(Statement statement) throws IOException {
+		public void removeStatement(Statement statement) {
 		}
 
 		@Override
-		public void addRemoveStatements(Collection<Statement> added, Collection<Statement> removed) throws IOException {
+		public void addRemoveStatements(Collection<Statement> added, Collection<Statement> removed) {
 		}
 
 		@Override
-		public void clearContexts(Resource... contexts) throws IOException {
+		public void clearContexts(Resource... contexts) {
 		}
 
 		@Override
-		public void addDocuments(Resource subject, List<Statement> statements) throws IOException {
+		public void addDocuments(Resource subject, List<Statement> statements) {
 		}
 
 		@Override
-		public void clear() throws IOException {
+		public void clear() {
 		}
 	}
 }

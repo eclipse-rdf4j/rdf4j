@@ -34,8 +34,7 @@ public class StatisticalAggregateFunction extends AggregateFunction<StatisticCol
 	}
 
 	@Override
-	public void processAggregate(BindingSet bindingSet, Predicate<Value> distinctValue, StatisticCollector collector)
-			throws QueryEvaluationException {
+	public void processAggregate(BindingSet bindingSet, Predicate<Value> distinctValue, StatisticCollector collector) {
 		if (collector.hasError()) {
 			// Prevent calculating the aggregate further if a type error has occurred.
 			return;

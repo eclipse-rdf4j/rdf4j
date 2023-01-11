@@ -221,7 +221,7 @@ class TestNotifyingSail extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public NotifyingSailConnection getConnection() throws SailException {
+	public NotifyingSailConnection getConnection() {
 		return new TestNotifyingSailConnection(super.getConnection());
 	}
 }

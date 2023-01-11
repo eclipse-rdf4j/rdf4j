@@ -31,7 +31,7 @@ public class PersistentMemoryStoreIsolationLevelTest extends MemoryStoreIsolatio
 	 *---------*/
 
 	@Override
-	protected Sail createSail() throws SailException {
+	protected Sail createSail() {
 		MemoryStore sail;
 		try {
 			sail = new MemoryStore(tempDir.newFolder("memory-store"));

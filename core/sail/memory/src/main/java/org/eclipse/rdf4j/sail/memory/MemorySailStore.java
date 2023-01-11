@@ -87,8 +87,8 @@ class MemorySailStore implements SailStore {
 	// we prioritise cleanup if there is less than 128 MB of free memory.
 	private static final double CLEANUP_MINIMUM_FREE_MEMORY_RATIO = 1.0 / 8;
 
-	public static final EmptyIteration<MemStatement, SailException> EMPTY_ITERATION = new EmptyIteration<>();
-	public static final EmptyIteration<MemTriple, SailException> EMPTY_TRIPLE_ITERATION = new EmptyIteration<>();
+	public static final EmptyIteration<MemStatement> EMPTY_ITERATION = new EmptyIteration<>();
+	public static final EmptyIteration<MemTriple> EMPTY_TRIPLE_ITERATION = new EmptyIteration<>();
 	public static final MemResource[] EMPTY_CONTEXT = {};
 	public static final MemResource[] NULL_CONTEXT = { null };
 
@@ -195,7 +195,7 @@ class MemorySailStore implements SailStore {
 	 * Statements from the null context are excluded when <var>namedContextsOnly</var> is set to <var>true</var>. The
 	 * returned StatementIterator will assume the specified read mode.
 	 */
-	private CloseableIteration<MemStatement, SailException> createStatementIterator(Resource subj, IRI pred, Value obj,
+	private CloseableIteration<MemStatement> createStatementIterator(Resource subj, IRI pred, Value obj,
 			Boolean explicit, int snapshot, Resource... contexts) throws InterruptedException {
 		// Perform look-ups for value-equivalents of the specified values
 
@@ -269,7 +269,7 @@ class MemorySailStore implements SailStore {
 		return getMemStatementIterator(memSubj, memPred, memObj, explicit, snapshot, memContexts, smallestList);
 	}
 
-	private CloseableIteration<MemStatement, SailException> getMemStatementIterator(MemResource subj, MemIRI pred,
+	private CloseableIteration<MemStatement> getMemStatementIterator(MemResource subj, MemIRI pred,
 			MemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts, MemStatementList statementList)
 			throws InterruptedException {
 
@@ -334,7 +334,7 @@ class MemorySailStore implements SailStore {
 	 * Creates a TripleIterator that contains the triples matching the specified pattern of subject, predicate, object,
 	 * context.
 	 */
-	private CloseableIteration<MemTriple, SailException> createTripleIterator(Resource subj, IRI pred, Value obj,
+	private CloseableIteration<MemTriple> createTripleIterator(Resource subj, IRI pred, Value obj,
 			int snapshot) throws InterruptedException {
 		// Perform look-ups for value-equivalents of the specified values
 
@@ -358,7 +358,7 @@ class MemorySailStore implements SailStore {
 		}
 
 		// TODO there is no separate index for Triples, so for now we iterate over all statements to find matches.
-		return new MemTripleIterator<>(statements, memSubj, memPred, memObj, snapshot);
+		return new MemTripleIterator(statements, memSubj, memPred, memObj, snapshot);
 	}
 
 	/**
@@ -542,12 +542,12 @@ class MemorySailStore implements SailStore {
 		}
 
 		@Override
-		public SailSink sink(IsolationLevel level) throws SailException {
+		public SailSink sink(IsolationLevel level) {
 			return new MemorySailSink(explicit, level.isCompatibleWith(IsolationLevels.SERIALIZABLE));
 		}
 
 		@Override
-		public MemorySailDataset dataset(IsolationLevel level) throws SailException {
+		public MemorySailDataset dataset(IsolationLevel level) {
 			if (level.isCompatibleWith(IsolationLevels.SNAPSHOT_READ)) {
 				return new MemorySailDataset(explicit, currentSnapshot);
 			} else {
@@ -573,7 +573,7 @@ class MemorySailStore implements SailStore {
 
 		private boolean requireCleanup;
 
-		public MemorySailSink(boolean explicit, boolean serializable) throws SailException {
+		public MemorySailSink(boolean explicit, boolean serializable) {
 			this.explicit = explicit;
 			if (serializable) {
 				this.serializable = currentSnapshot;
@@ -601,7 +601,7 @@ class MemorySailStore implements SailStore {
 		}
 
 		@Override
-		public synchronized void prepare() throws SailException {
+		public synchronized void prepare() {
 			acquireExclusiveTransactionLock();
 			if (observations != null) {
 				for (StatementPattern p : observations) {
@@ -615,7 +615,7 @@ class MemorySailStore implements SailStore {
 					} else {
 						contexts = new Resource[] { (Resource) ctxVar.getValue() };
 					}
-					try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(subj, pred, obj,
+					try (CloseableIteration<MemStatement> iter = createStatementIterator(subj, pred, obj,
 							null, -1, contexts)) {
 						while (iter.hasNext()) {
 							MemStatement st = iter.next();
@@ -634,7 +634,7 @@ class MemorySailStore implements SailStore {
 		}
 
 		@Override
-		public synchronized void flush() throws SailException {
+		public synchronized void flush() {
 			if (txnLock) {
 				invalidateCache();
 				currentSnapshot = Math.max(currentSnapshot, nextSnapshot);
@@ -683,8 +683,7 @@ class MemorySailStore implements SailStore {
 		}
 
 		@Override
-		public synchronized void observe(Resource subj, IRI pred, Value obj, Resource... contexts)
-				throws SailException {
+		public synchronized void observe(Resource subj, IRI pred, Value obj, Resource... contexts) {
 			if (observations == null) {
 				observations = new HashSet<>();
 			}
@@ -706,7 +705,7 @@ class MemorySailStore implements SailStore {
 			acquireExclusiveTransactionLock();
 			invalidateCache();
 			requireCleanup = true;
-			try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(null, null, null,
+			try (CloseableIteration<MemStatement> iter = createStatementIterator(null, null, null,
 					explicit, nextSnapshot, contexts)) {
 				while (iter.hasNext()) {
 					MemStatement st = iter.next();
@@ -754,7 +753,7 @@ class MemorySailStore implements SailStore {
 		}
 
 		@Override
-		public synchronized void deprecate(Statement statement) throws SailException {
+		public synchronized void deprecate(Statement statement) {
 			acquireExclusiveTransactionLock();
 			invalidateCache();
 			requireCleanup = true;
@@ -778,7 +777,7 @@ class MemorySailStore implements SailStore {
 					toDeprecate.setTillSnapshot(nextSnapshot);
 				}
 			} else {
-				try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(
+				try (CloseableIteration<MemStatement> iter = createStatementIterator(
 						statement.getSubject(), statement.getPredicate(), statement.getObject(), explicit, nextSnapshot,
 						statement.getContext())) {
 					while (iter.hasNext()) {
@@ -791,7 +790,7 @@ class MemorySailStore implements SailStore {
 			}
 		}
 
-		private void acquireExclusiveTransactionLock() throws SailException {
+		private void acquireExclusiveTransactionLock() {
 			if (!txnLock) {
 				synchronized (this) {
 					if (!txnLock) {
@@ -889,7 +888,7 @@ class MemorySailStore implements SailStore {
 			requireCleanup = true;
 			invalidateCache();
 
-			try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(subj, pred, obj,
+			try (CloseableIteration<MemStatement> iter = createStatementIterator(subj, pred, obj,
 					explicit, nextSnapshot, contexts)) {
 				while (iter.hasNext()) {
 					deprecated = true;
@@ -917,13 +916,13 @@ class MemorySailStore implements SailStore {
 		private final SnapshotMonitor.ReservedSnapshot reservedSnapshot;
 		private volatile boolean closed;
 
-		public MemorySailDataset(boolean explicit) throws SailException {
+		public MemorySailDataset(boolean explicit) {
 			this.explicit = explicit;
 			this.snapshot = -1;
 			this.reservedSnapshot = null;
 		}
 
-		public MemorySailDataset(boolean explicit, int snapshot) throws SailException {
+		public MemorySailDataset(boolean explicit, int snapshot) {
 			this.explicit = explicit;
 			this.snapshot = snapshot;
 			this.reservedSnapshot = snapshotMonitor.reserve(snapshot, this);
@@ -957,17 +956,17 @@ class MemorySailStore implements SailStore {
 		}
 
 		@Override
-		public String getNamespace(String prefix) throws SailException {
+		public String getNamespace(String prefix) {
 			return namespaceStore.getNamespace(prefix);
 		}
 
 		@Override
-		public CloseableIteration<? extends Namespace, SailException> getNamespaces() {
+		public CloseableIteration<? extends Namespace> getNamespaces() {
 			return new CloseableIteratorIteration<>(namespaceStore.iterator());
 		}
 
 		@Override
-		public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
+		public CloseableIteration<? extends Resource> getContextIDs() {
 			// Note: we can't do this in a streaming fashion due to concurrency
 			// issues; iterating over the set of IRIs or bnodes while another
 			// thread
@@ -1007,8 +1006,8 @@ class MemorySailStore implements SailStore {
 		}
 
 		@Override
-		public CloseableIteration<MemStatement, SailException> getStatements(Resource subj, IRI pred, Value obj,
-				Resource... contexts) throws SailException {
+		public CloseableIteration<MemStatement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) {
 			try {
 				return createStatementIterator(subj, pred, obj, explicit, getCurrentSnapshot(), contexts);
 			} catch (InterruptedException e) {
@@ -1017,8 +1016,7 @@ class MemorySailStore implements SailStore {
 		}
 
 		@Override
-		public CloseableIteration<MemTriple, SailException> getTriples(Resource subj, IRI pred, Value obj)
-				throws SailException {
+		public CloseableIteration<MemTriple> getTriples(Resource subj, IRI pred, Value obj) {
 			try {
 				return createTripleIterator(subj, pred, obj, getCurrentSnapshot());
 			} catch (InterruptedException e) {

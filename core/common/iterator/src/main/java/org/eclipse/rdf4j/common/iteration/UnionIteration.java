@@ -22,15 +22,15 @@ import java.util.List;
  * UnionIteration does not filter duplicate objects.
  */
 @Deprecated(since = "4.1.0")
-public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E, X> {
+public class UnionIteration<E> extends LookAheadIteration<E> {
 
 	/*-----------*
 	 * Variables *
 	 *-----------*/
 
-	private final Iterator<? extends CloseableIteration<? extends E, X>> argIter;
+	private final Iterator<? extends CloseableIteration<? extends E>> argIter;
 
-	private CloseableIteration<? extends E, X> currentIter;
+	private CloseableIteration<? extends E> currentIter;
 
 	/*--------------*
 	 * Constructors *
@@ -42,7 +42,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	 * @param args The Iterations containing the elements to iterate over.
 	 */
 	@SafeVarargs
-	public UnionIteration(CloseableIteration<? extends E, X>... args) {
+	public UnionIteration(CloseableIteration<? extends E>... args) {
 		this(Arrays.asList(args));
 	}
 
@@ -51,7 +51,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	 *
 	 * @param args The Iterations containing the elements to iterate over.
 	 */
-	public UnionIteration(Iterable<? extends CloseableIteration<? extends E, X>> args) {
+	public UnionIteration(Iterable<? extends CloseableIteration<? extends E>> args) {
 		argIter = args.iterator();
 
 		// Initialize with empty iteration
@@ -63,14 +63,14 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	 *--------------*/
 
 	@Override
-	protected E getNextElement() throws X {
+	protected E getNextElement() {
 		if (isClosed()) {
 			return null;
 		}
 
 		while (true) {
 
-			CloseableIteration<? extends E, X> nextCurrentIter = currentIter;
+			CloseableIteration<? extends E> nextCurrentIter = currentIter;
 			if (nextCurrentIter != null && nextCurrentIter.hasNext()) {
 				return nextCurrentIter.next();
 			}
@@ -90,7 +90,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	}
 
 	@Override
-	protected void handleClose() throws X {
+	protected void handleClose() {
 		try {
 			// Close this iteration, this will prevent lookAhead() from calling
 			// getNextElement() again

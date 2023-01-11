@@ -450,7 +450,7 @@ class SAXFilter implements ContentHandler {
 	}
 
 	private void checkAndCopyAttributes(Attributes attributes, ElementInfo elInfo)
-			throws SAXException, RDFParseException {
+			throws RDFParseException {
 		Atts atts = new Atts(attributes.getLength());
 
 		int attCount = attributes.getLength();

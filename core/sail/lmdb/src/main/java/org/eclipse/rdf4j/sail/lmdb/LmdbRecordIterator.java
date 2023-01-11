@@ -185,7 +185,7 @@ class LmdbRecordIterator implements RecordIterator {
 	}
 
 	@Override
-	public void close() throws IOException {
+	public void close() {
 		if (!closed) {
 			try {
 				mdb_cursor_close(cursor);

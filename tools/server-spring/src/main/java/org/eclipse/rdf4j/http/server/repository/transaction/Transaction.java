@@ -382,11 +382,9 @@ class Transaction implements AutoCloseable {
 	/**
 	 * Close this transaction.
 	 *
-	 * @throws InterruptedException
-	 * @throws ExecutionException
 	 */
 	@Override
-	public void close() throws InterruptedException, ExecutionException {
+	public void close() {
 		if (isClosed.compareAndSet(false, true)) {
 			try {
 				txnConnection.close();

@@ -73,7 +73,7 @@ public class WriterBenchmark {
 	private Model model;
 
 	@Setup(Level.Trial)
-	public void setup() throws IOException {
+	public void setup() {
 		writerFormat = Rio.getWriterFormatForFileName("dummy." + format).orElseThrow();
 
 		model = new LinkedHashModel();

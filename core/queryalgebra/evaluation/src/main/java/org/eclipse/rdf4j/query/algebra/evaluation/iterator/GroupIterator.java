@@ -74,7 +74,7 @@ import org.mapdb.DBMaker;
  * @author Jerven Bolleman
  * @author Tomas Kovachev
  */
-public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryEvaluationException> {
+public class GroupIterator extends CloseableIteratorIteration<BindingSet> {
 
 	/*-----------*
 	 * Constants *
@@ -102,12 +102,12 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	 *--------------*/
 
 	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
-			QueryEvaluationContext context) throws QueryEvaluationException {
+			QueryEvaluationContext context) {
 		this(strategy, group, parentBindings, 0, context);
 	}
 
 	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
-			long iterationCacheSyncThreshold, QueryEvaluationContext context) throws QueryEvaluationException {
+			long iterationCacheSyncThreshold, QueryEvaluationContext context) {
 		this.strategy = strategy;
 		this.group = group;
 		this.parentBindings = parentBindings;
@@ -133,7 +133,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	 *---------*/
 
 	@Override
-	public boolean hasNext() throws QueryEvaluationException {
+	public boolean hasNext() {
 		if (!super.hasIterator()) {
 			super.setIterator(createIterator());
 		}
@@ -141,7 +141,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	}
 
 	@Override
-	public BindingSet next() throws QueryEvaluationException {
+	public BindingSet next() {
 		if (!super.hasIterator()) {
 			super.setIterator(createIterator());
 		}
@@ -149,7 +149,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {
@@ -257,7 +257,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	}
 
-	private Iterator<BindingSet> createIterator() throws QueryEvaluationException {
+	private Iterator<BindingSet> createIterator() {
 		List<AggregatePredicateCollectorSupplier<?, ?>> aggregates = makeAggregates();
 		Collection<Entry> entries = buildEntries(aggregates);
 		Set<BindingSet> bindingSets = createSet("bindingsets");
@@ -349,8 +349,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		return aggregates;
 	}
 
-	private Collection<Entry> buildEntries(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates)
-			throws QueryEvaluationException {
+	private Collection<Entry> buildEntries(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates) {
 
 		try (var iter = strategy.precompile(group.getArg(), context).evaluate(parentBindings)) {
 
@@ -514,8 +513,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		private final List<AggregateCollector> collectors;
 		private final List<Predicate<?>> predicates;
 
-		public Entry(BindingSet prototype, List<AggregateCollector> collectors, List<Predicate<?>> predicates)
-				throws QueryEvaluationException {
+		public Entry(BindingSet prototype, List<AggregateCollector> collectors, List<Predicate<?>> predicates) {
 			this.prototype = prototype;
 			this.collectors = collectors;
 			this.predicates = predicates;
@@ -563,7 +561,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	private static final Predicate<Value> ALWAYS_TRUE_VALUE = (t) -> true;
 	private static final LongFunction<Predicate<Value>> ALWAYS_TRUE_VALUE_SUPPLIER = (l) -> ALWAYS_TRUE_VALUE;
 
-	private AggregatePredicateCollectorSupplier<?, ?> create(GroupElem ge) throws QueryEvaluationException {
+	private AggregatePredicateCollectorSupplier<?, ?> create(GroupElem ge) {
 		AggregateOperator operator = ge.getOperator();
 
 		if (operator instanceof Count) {
@@ -740,8 +738,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		@Override
-		public void processAggregate(BindingSet s, Predicate<Value> distinctValue, CountCollector agv)
-				throws QueryEvaluationException {
+		public void processAggregate(BindingSet s, Predicate<Value> distinctValue, CountCollector agv) {
 			Value value = evaluate(s);
 			if (value != null && distinctValue.test(value)) {
 				agv.value++;
@@ -756,8 +753,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		@Override
-		public void processAggregate(BindingSet s, Predicate<BindingSet> distinctValue, CountCollector agv)
-				throws QueryEvaluationException {
+		public void processAggregate(BindingSet s, Predicate<BindingSet> distinctValue, CountCollector agv) {
 			// wildcard count
 			if (!s.isEmpty() && distinctValue.test(s)) {
 				agv.value++;
@@ -777,8 +773,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		@Override
-		public void processAggregate(BindingSet s, Predicate<Value> distinctValue, ValueCollector min)
-				throws QueryEvaluationException {
+		public void processAggregate(BindingSet s, Predicate<Value> distinctValue, ValueCollector min) {
 			Value v = evaluate(s);
 
 			if (v != null && distinctValue.test(v)) {
@@ -803,8 +798,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		@Override
-		public void processAggregate(BindingSet s, Predicate<Value> distinctValue, ValueCollector max)
-				throws QueryEvaluationException {
+		public void processAggregate(BindingSet s, Predicate<Value> distinctValue, ValueCollector max) {
 			Value v = evaluate(s);
 			if (v != null && distinctValue.test(v)) {
 				if (max.value == null) {
@@ -822,8 +816,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		@Override
-		public void processAggregate(BindingSet s, Predicate<Value> distinctValue, IntegerCollector sum)
-				throws QueryEvaluationException {
+		public void processAggregate(BindingSet s, Predicate<Value> distinctValue, IntegerCollector sum) {
 			if (sum.hasError()) {
 				// halt further processing if a type error has been raised
 				return;
@@ -855,8 +848,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		@Override
-		public void processAggregate(BindingSet s, Predicate<Value> distinctValue, AvgCollector avg)
-				throws QueryEvaluationException {
+		public void processAggregate(BindingSet s, Predicate<Value> distinctValue, AvgCollector avg) {
 			if (avg.hasError()) {
 				// Prevent calculating the aggregate further if a type error has
 				// occurred.
@@ -907,8 +899,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		@Override
-		public void processAggregate(BindingSet s, Predicate<Value> distinct, SampleCollector sample)
-				throws QueryEvaluationException {
+		public void processAggregate(BindingSet s, Predicate<Value> distinct, SampleCollector sample) {
 			// we flip a coin to determine if we keep the current value or set a
 			// new value to report.
 			if (sample.sample == null || random.nextFloat() < 0.5f) {
@@ -936,7 +927,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		private String separator = " ";
 
-		public ConcatAggregate(GroupConcat groupConcatOp) throws QueryEvaluationException {
+		public ConcatAggregate(GroupConcat groupConcatOp) {
 			super(new QueryStepEvaluator(strategy.precompile(groupConcatOp.getArg(), context)));
 			ValueExpr separatorExpr = groupConcatOp.getSeparator();
 			if (separatorExpr != null) {
@@ -946,8 +937,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		@Override
-		public void processAggregate(BindingSet s, Predicate<Value> distinctValue, StringBuilderCollector collector)
-				throws QueryEvaluationException {
+		public void processAggregate(BindingSet s, Predicate<Value> distinctValue, StringBuilderCollector collector) {
 			Value v = evaluate(s);
 			if (v != null && distinctValue.test(v)) {
 				if (collector.concatenated == null) {

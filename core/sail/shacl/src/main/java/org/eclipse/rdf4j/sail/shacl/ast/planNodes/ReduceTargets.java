@@ -17,7 +17,6 @@ import java.util.Set;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * Takes a parentToReduce and filters away any tuples that have an active target that exists in reductionSource
@@ -36,16 +35,16 @@ public class ReduceTargets implements PlanNode {
 
 	@Override
 
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<ValidationTuple> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parentToReduce
+			final CloseableIteration<? extends ValidationTuple> parentIterator = parentToReduce
 					.iterator();
 
 			final Set<Value> reductionSourceSet = new HashSet<>();
 
 			{
-				try (CloseableIteration<? extends ValidationTuple, SailException> iterator = reductionSource
+				try (CloseableIteration<? extends ValidationTuple> iterator = reductionSource
 						.iterator()) {
 					while (iterator.hasNext()) {
 						reductionSourceSet.add(iterator.next().getActiveTarget());
@@ -68,7 +67,7 @@ public class ReduceTargets implements PlanNode {
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 				calculateNext();
 				ValidationTuple temp = next;
 				next = null;
@@ -76,14 +75,14 @@ public class ReduceTargets implements PlanNode {
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				calculateNext();
 
 				return next != null;
 			}
 
 			@Override
-			public void localClose() throws SailException {
+			public void localClose() {
 				parentIterator.close();
 			}
 

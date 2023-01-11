@@ -35,7 +35,7 @@ public class SailBooleanQuery extends SailQuery implements BooleanQuery {
 	}
 
 	@Override
-	public boolean evaluate() throws QueryEvaluationException {
+	public boolean evaluate() {
 		ParsedBooleanQuery parsedBooleanQuery = getParsedQuery();
 		TupleExpr tupleExpr = parsedBooleanQuery.getTupleExpr();
 		Dataset dataset = getDataset();
@@ -44,8 +44,8 @@ public class SailBooleanQuery extends SailQuery implements BooleanQuery {
 			dataset = parsedBooleanQuery.getDataset();
 		}
 
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter1 = null;
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter2 = null;
+		CloseableIteration<? extends BindingSet> bindingsIter1 = null;
+		CloseableIteration<? extends BindingSet> bindingsIter2 = null;
 
 		try {
 			SailConnection sailCon = getConnection().getSailConnection();
