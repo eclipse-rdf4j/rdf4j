@@ -18,7 +18,6 @@ import java.util.List;
 
 import javax.servlet.http.HttpServletResponse;
 
-import org.apache.commons.fileupload.FileUploadException;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -41,7 +40,7 @@ public class AddServlet extends TransformationServlet {
 
 	@Override
 	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
-			throws IOException, RepositoryException, FileUploadException, QueryResultHandlerException {
+			throws IOException, RepositoryException, QueryResultHandlerException {
 		try {
 			String baseURI = req.getParameter("baseURI");
 			String contentType = req.getParameter("Content-Type");

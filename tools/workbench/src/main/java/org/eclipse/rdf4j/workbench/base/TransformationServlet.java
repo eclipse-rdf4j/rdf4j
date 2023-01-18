@@ -19,6 +19,7 @@ import java.util.Map;
 
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
+import javax.servlet.annotation.MultipartConfig;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
@@ -31,6 +32,7 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+@MultipartConfig
 public abstract class TransformationServlet extends AbstractRepositoryServlet {
 
 	protected static final ParserConfig NON_VERIFYING_PARSER_CONFIG;
