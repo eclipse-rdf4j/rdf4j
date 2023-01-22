@@ -1,0 +1,8 @@
+<!-- avoiding usage of inline javascript; we currently use the third option so only making that one external for now -->
+{{ if isset .Params "table_classes" }}
+<script>var tableClasses = {{ .Params.table_classes }};</script>
+{{ else if isset .Site.Params "table_classes" }}
+<script>var tableClasses = {{ .Site.Params.table_classes }};</script>
+{{ else }}
+<script src="js/hugo-solstice-headvars.js"></script>
+{{ end }}
