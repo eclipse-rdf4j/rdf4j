@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
+import java.io.File;
 import java.util.Random;
 import java.util.stream.IntStream;
 
@@ -22,21 +23,20 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.junit.Ignore;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 public class LongMultithreadedTransactions {
-	@Rule
-	public final TemporaryFolder tmpDir = new TemporaryFolder();
+	@TempDir
+	File tmpDir;
 
 	NotifyingSail getBaseSail() {
-		return new LmdbStore(tmpDir.getRoot());
+		return new LmdbStore(tmpDir);
 	}
 
 	@Test
-	@Ignore
+	@Disabled
 	public void test() {
 
 		ValueFactory vf = SimpleValueFactory.getInstance();
@@ -67,7 +67,7 @@ public class LongMultithreadedTransactions {
 	}
 
 	@Test
-	@Ignore
+	@Disabled
 	public void test1() {
 
 		ValueFactory vf = SimpleValueFactory.getInstance();

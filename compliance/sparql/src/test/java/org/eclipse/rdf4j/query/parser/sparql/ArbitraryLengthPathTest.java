@@ -19,9 +19,9 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import junit.framework.TestCase;
 
@@ -34,14 +34,14 @@ public class ArbitraryLengthPathTest extends TestCase {
 
 	private RepositoryConnection con;
 
-	@Before
+	@BeforeEach
 	@Override
 	public void setUp() throws Exception {
 		repo = new SailRepository(new MemoryStore());
 		con = repo.getConnection();
 	}
 
-	@After
+	@AfterEach
 	@Override
 	public void tearDown() throws Exception {
 		con.close();

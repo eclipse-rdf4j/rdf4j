@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+import static org.hamcrest.MatcherAssert.assertThat;
 
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
@@ -20,8 +21,7 @@ import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.SubSelect;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class Section12Test extends BaseExamples {
 	@Test
@@ -38,7 +38,7 @@ public class Section12Test extends BaseExamples {
 		query.prefix(base, base) // SparqlBuilder even fixes typos for you ;)
 				.select(y, minName)
 				.where(base.iri("alice").has(base.iri("knows"), y), sub);
-		Assert.assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX : <http://people.example/>\n"
 						+ "SELECT ?y ?minName\n"
 						+ "WHERE {\n"

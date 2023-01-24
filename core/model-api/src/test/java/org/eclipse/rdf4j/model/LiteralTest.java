@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
@@ -48,7 +49,7 @@ import javax.xml.datatype.DatatypeFactory;
 import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.model.base.CoreDatatype;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * Abstract {@link Literal} test suite.
@@ -894,9 +895,9 @@ public abstract class LiteralTest {
 
 	}
 
-	@Test(expected = NullPointerException.class)
+	@Test
 	public final void testCoreDatatypeTypedConstructorNullDatatype() {
-		literal("label", ((CoreDatatype) null));
+		assertThrows(NullPointerException.class, () -> literal("label", ((CoreDatatype) null)));
 	}
 
 	//// String Value //////////////////////////////////////////////////////////////////////////////////////////////////

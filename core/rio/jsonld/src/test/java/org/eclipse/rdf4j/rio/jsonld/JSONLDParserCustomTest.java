@@ -10,11 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.jsonld;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.Reader;
 import java.io.StringReader;
@@ -35,11 +36,9 @@ import org.eclipse.rdf4j.rio.helpers.ContextStatementCollector;
 import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 import org.eclipse.rdf4j.rio.helpers.JSONSettings;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.github.jsonldjava.core.DocumentLoader;
@@ -50,6 +49,7 @@ import com.github.jsonldjava.core.DocumentLoader;
  * @author Peter Ansell
  */
 public class JSONLDParserCustomTest {
+
 	/**
 	 * Backslash escaped "h" in "http"
 	 */
@@ -108,9 +108,6 @@ public class JSONLDParserCustomTest {
 
 	private RDFParser parser;
 
-	@Rule
-	public ExpectedException thrown = ExpectedException.none();
-
 	private ParseErrorCollector errors;
 
 	private Model model;
@@ -125,7 +122,7 @@ public class JSONLDParserCustomTest {
 	private final Literal testObjectLiteralNumber = F.createLiteral("42", XSD.INTEGER);
 	private final Literal testObjectLiteralUnquotedControlChar = F.createLiteral("42\u0009", XSD.STRING);
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		parser = Rio.createParser(RDFFormat.JSONLD);
 		errors = new ParseErrorCollector();
@@ -140,8 +137,8 @@ public class JSONLDParserCustomTest {
 		assertEquals(0, errors.getFatalErrors().size());
 
 		assertEquals(1, model.size());
-		assertTrue("model was not as expected: " + model.toString(),
-				model.contains(nextSubject, nextPredicate, nextObject));
+		assertTrue(model.contains(nextSubject, nextPredicate, nextObject),
+				"model was not as expected: " + model.toString());
 	}
 
 	@Test
@@ -152,9 +149,9 @@ public class JSONLDParserCustomTest {
 
 	@Test
 	public void testAllowBackslashEscapingAnyCharacterDefault() throws Exception {
-		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Could not parse JSONLD");
-		parser.parse(new StringReader(BACKSLASH_ESCAPED_TEST_STRING), "");
+		assertThatThrownBy(() -> parser.parse(new StringReader(BACKSLASH_ESCAPED_TEST_STRING), ""))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageContaining("Could not parse JSONLD");
 	}
 
 	@Test
@@ -166,17 +163,18 @@ public class JSONLDParserCustomTest {
 
 	@Test
 	public void testAllowBackslashEscapingAnyCharacterDisabled() throws Exception {
-		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER, false);
-		parser.parse(new StringReader(BACKSLASH_ESCAPED_TEST_STRING), "");
+		assertThatThrownBy(() -> parser.parse(new StringReader(BACKSLASH_ESCAPED_TEST_STRING), ""))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageContaining("Could not parse JSONLD");
+
 	}
 
 	@Test
 	public void testAllowCommentsDefault() throws Exception {
-		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Could not parse JSONLD");
-		parser.parse(new StringReader(COMMENTS_TEST_STRING), "");
+		assertThatThrownBy(() -> parser.parse(new StringReader(COMMENTS_TEST_STRING), ""))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageContaining("Could not parse JSONLD");
 	}
 
 	@Test
@@ -188,21 +186,21 @@ public class JSONLDParserCustomTest {
 
 	@Test
 	public void testAllowCommentsDisabled() throws Exception {
-		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_COMMENTS, false);
-		parser.parse(new StringReader(COMMENTS_TEST_STRING), "");
+		assertThatThrownBy(() -> parser.parse(new StringReader(COMMENTS_TEST_STRING), ""))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageContaining("Could not parse JSONLD");
 	}
 
 	@Test
 	public void testAllowNonNumericNumbersDefault() throws Exception {
-		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Could not parse JSONLD");
-		parser.parse(new StringReader(NON_NUMERIC_NUMBERS_TEST_STRING), "");
+		assertThatThrownBy(() -> parser.parse(new StringReader(NON_NUMERIC_NUMBERS_TEST_STRING), ""))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageContaining("Could not parse JSONLD");
 	}
 
 	@Test
-	@Ignore("temporarily disabled due to breaking on command line but not in Eclipse")
+	@Disabled("temporarily disabled due to breaking on command line but not in Eclipse")
 	public void testAllowNonNumericNumbersEnabled() throws Exception {
 		parser.set(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS, true);
 		parser.parse(new StringReader(NON_NUMERIC_NUMBERS_TEST_STRING), "");
@@ -213,17 +211,17 @@ public class JSONLDParserCustomTest {
 
 	@Test
 	public void testAllowNonNumericNumbersDisabled() throws Exception {
-		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS, false);
-		parser.parse(new StringReader(NON_NUMERIC_NUMBERS_TEST_STRING), "");
+		assertThatThrownBy(() -> parser.parse(new StringReader(NON_NUMERIC_NUMBERS_TEST_STRING), ""))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageContaining("Could not parse JSONLD");
 	}
 
 	@Test
 	public void testAllowNumericLeadingZeroesDefault() throws Exception {
-		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Could not parse JSONLD");
-		parser.parse(new StringReader(NUMERIC_LEADING_ZEROES_TEST_STRING), "");
+		assertThatThrownBy(() -> parser.parse(new StringReader(NUMERIC_LEADING_ZEROES_TEST_STRING), ""))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageContaining("Could not parse JSONLD");
 	}
 
 	@Test
@@ -235,17 +233,17 @@ public class JSONLDParserCustomTest {
 
 	@Test
 	public void testAllowNumericLeadingZeroesDisabled() throws Exception {
-		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS, false);
-		parser.parse(new StringReader(NUMERIC_LEADING_ZEROES_TEST_STRING), "");
+		assertThatThrownBy(() -> parser.parse(new StringReader(NUMERIC_LEADING_ZEROES_TEST_STRING), ""))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageContaining("Could not parse JSONLD");
 	}
 
 	@Test
 	public void testAllowSingleQuotesDefault() throws Exception {
-		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Could not parse JSONLD");
-		parser.parse(new StringReader(SINGLE_QUOTES_TEST_STRING), "");
+		assertThatThrownBy(() -> parser.parse(new StringReader(SINGLE_QUOTES_TEST_STRING), ""))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageContaining("Could not parse JSONLD");
 	}
 
 	@Test
@@ -257,17 +255,17 @@ public class JSONLDParserCustomTest {
 
 	@Test
 	public void testAllowSingleQuotesDisabled() throws Exception {
-		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_SINGLE_QUOTES, false);
-		parser.parse(new StringReader(SINGLE_QUOTES_TEST_STRING), "");
+		assertThatThrownBy(() -> parser.parse(new StringReader(SINGLE_QUOTES_TEST_STRING), ""))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageContaining("Could not parse JSONLD");
 	}
 
 	@Test
 	public void testAllowUnquotedControlCharactersDefault() throws Exception {
-		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Could not parse JSONLD");
-		parser.parse(new StringReader(UNQUOTED_CONTROL_CHARS_TEST_STRING), "");
+		assertThatThrownBy(() -> parser.parse(new StringReader(UNQUOTED_CONTROL_CHARS_TEST_STRING), ""))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageContaining("Could not parse JSONLD");
 	}
 
 	@Test
@@ -279,17 +277,17 @@ public class JSONLDParserCustomTest {
 
 	@Test
 	public void testAllowUnquotedControlCharactersDisabled() throws Exception {
-		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS, false);
-		parser.parse(new StringReader(UNQUOTED_CONTROL_CHARS_TEST_STRING), "");
+		assertThatThrownBy(() -> parser.parse(new StringReader(UNQUOTED_CONTROL_CHARS_TEST_STRING), ""))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageContaining("Could not parse JSONLD");
 	}
 
 	@Test
 	public void testAllowUnquotedFieldNamesDefault() throws Exception {
-		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Could not parse JSONLD");
-		parser.parse(new StringReader(UNQUOTED_FIELD_NAMES_TEST_STRING), "");
+		assertThatThrownBy(() -> parser.parse(new StringReader(UNQUOTED_FIELD_NAMES_TEST_STRING), ""))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageContaining("Could not parse JSONLD");
 	}
 
 	@Test
@@ -301,17 +299,17 @@ public class JSONLDParserCustomTest {
 
 	@Test
 	public void testAllowUnquotedFieldNamesDisabled() throws Exception {
-		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES, false);
-		parser.parse(new StringReader(UNQUOTED_FIELD_NAMES_TEST_STRING), "");
+		assertThatThrownBy(() -> parser.parse(new StringReader(UNQUOTED_FIELD_NAMES_TEST_STRING), ""))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageContaining("Could not parse JSONLD");
 	}
 
 	@Test
 	public void testAllowYamlCommentsDefault() throws Exception {
-		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Could not parse JSONLD");
-		parser.parse(new StringReader(YAML_COMMENTS_TEST_STRING), "");
+		assertThatThrownBy(() -> parser.parse(new StringReader(YAML_COMMENTS_TEST_STRING), ""))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageContaining("Could not parse JSONLD");
 	}
 
 	@Test
@@ -323,17 +321,17 @@ public class JSONLDParserCustomTest {
 
 	@Test
 	public void testAllowYamlCommentsDisabled() throws Exception {
-		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_YAML_COMMENTS, false);
-		parser.parse(new StringReader(YAML_COMMENTS_TEST_STRING), "");
+		assertThatThrownBy(() -> parser.parse(new StringReader(YAML_COMMENTS_TEST_STRING), ""))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageContaining("Could not parse JSONLD");
 	}
 
 	@Test
 	public void testAllowTrailingCommaDefault() throws Exception {
-		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Could not parse JSONLD");
-		parser.parse(new StringReader(TRAILING_COMMA_TEST_STRING), "");
+		assertThatThrownBy(() -> parser.parse(new StringReader(TRAILING_COMMA_TEST_STRING), ""))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageContaining("Could not parse JSONLD");
 	}
 
 	@Test
@@ -345,10 +343,10 @@ public class JSONLDParserCustomTest {
 
 	@Test
 	public void testAllowTrailingCommaDisabled() throws Exception {
-		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_TRAILING_COMMA, false);
-		parser.parse(new StringReader(TRAILING_COMMA_TEST_STRING), "");
+		assertThatThrownBy(() -> parser.parse(new StringReader(TRAILING_COMMA_TEST_STRING), ""))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageContaining("Could not parse JSONLD");
 	}
 
 	@Test
@@ -411,10 +409,10 @@ public class JSONLDParserCustomTest {
 
 	@Test
 	public void testStrictDuplicateDetectionEnabled() throws Exception {
-		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.STRICT_DUPLICATE_DETECTION, true);
-		parser.parse(new StringReader(STRICT_DUPLICATE_DETECTION_TEST_STRING), "");
+		assertThatThrownBy(() -> parser.parse(new StringReader(STRICT_DUPLICATE_DETECTION_TEST_STRING), ""))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageContaining("Could not parse JSONLD");
 	}
 
 	@Test

@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.math.BigInteger;
 
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfLiteral.StringLiteral;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class RdfLiteralTest {
 

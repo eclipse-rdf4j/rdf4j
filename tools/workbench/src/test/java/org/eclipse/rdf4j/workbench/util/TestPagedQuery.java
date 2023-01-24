@@ -16,7 +16,7 @@ import java.io.IOException;
 
 import org.eclipse.rdf4j.common.io.ResourceUtil;
 import org.eclipse.rdf4j.query.QueryLanguage;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * Regression test suite for {@link org.eclipse.rdf4j.workbench.util.PagedQuery PagedQuery}.

@@ -10,8 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.sail;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -37,12 +37,12 @@ import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,12 +53,12 @@ import org.slf4j.LoggerFactory;
  */
 public abstract class SailIsolationLevelTest {
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
@@ -81,7 +81,7 @@ public abstract class SailIsolationLevelTest {
 	 * Methods *
 	 *---------*/
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		store = createSail();
 		store.init();
@@ -89,7 +89,7 @@ public abstract class SailIsolationLevelTest {
 		failed = null;
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		store.shutDown();
 	}
@@ -287,7 +287,7 @@ public abstract class SailIsolationLevelTest {
 		try (SailConnection con = store.getConnection()) {
 			con.begin(level);
 			con.addStatement(RDF.NIL, RDF.TYPE, RDF.LIST);
-			Assert.assertEquals(1, count(con, RDF.NIL, RDF.TYPE, RDF.LIST, false));
+			assertEquals(1, count(con, RDF.NIL, RDF.TYPE, RDF.LIST, false));
 			con.removeStatements(RDF.NIL, RDF.TYPE, RDF.LIST);
 			con.commit();
 		}
@@ -305,7 +305,7 @@ public abstract class SailIsolationLevelTest {
 					null, true)) {
 				con.begin(level);
 				con.addStatement(RDF.NIL, RDF.TYPE, RDF.LIST);
-				Assert.assertEquals(1, count(con, RDF.NIL, RDF.TYPE, RDF.LIST, false));
+				assertEquals(1, count(con, RDF.NIL, RDF.TYPE, RDF.LIST, false));
 				con.removeStatements(RDF.NIL, RDF.TYPE, RDF.LIST);
 				con.commit();
 			}
@@ -322,7 +322,7 @@ public abstract class SailIsolationLevelTest {
 			con.begin(level);
 			con.addStatement(RDF.NIL, RDF.TYPE, RDF.LIST);
 			con.rollback();
-			Assert.assertEquals(0, count(con, RDF.NIL, RDF.TYPE, RDF.LIST, false));
+			assertEquals(0, count(con, RDF.NIL, RDF.TYPE, RDF.LIST, false));
 		}
 	}
 
@@ -365,7 +365,7 @@ public abstract class SailIsolationLevelTest {
 					return;
 				}
 				// not read if transaction is consistent
-				Assert.assertEquals(0, counted);
+				assertEquals(0, counted);
 			} catch (Throwable e) {
 				fail("Reader failed", e);
 			}
@@ -412,7 +412,7 @@ public abstract class SailIsolationLevelTest {
 				begin.await();
 				read.begin(level);
 				long first = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
-				Assert.assertEquals(1, first);
+				assertEquals(1, first);
 				observed.countDown();
 				changed.await(1, TimeUnit.SECONDS);
 				// observed statements must continue to exist
@@ -426,7 +426,7 @@ public abstract class SailIsolationLevelTest {
 					return;
 				}
 				// statement must continue to exist if transaction consistent
-				Assert.assertEquals(first, second);
+				assertEquals(first, second);
 			} catch (Throwable e) {
 				fail("Reader failed", e);
 			}
@@ -470,7 +470,7 @@ public abstract class SailIsolationLevelTest {
 				e.printStackTrace();
 				return;
 			}
-			Assert.assertEquals(size, counter);
+			assertEquals(size, counter);
 		}
 	}
 
@@ -522,7 +522,7 @@ public abstract class SailIsolationLevelTest {
 					return;
 				}
 				// store must not change if transaction consistent
-				Assert.assertEquals(first, second);
+				assertEquals(first, second);
 			} catch (Throwable e) {
 				fail("Reader failed", e);
 			}
@@ -562,7 +562,7 @@ public abstract class SailIsolationLevelTest {
 			int val = lit.intValue();
 			// val could be 4 or 6 if one transaction was aborted
 			if (val != 4 && val != 6) {
-				Assert.assertEquals(9, val);
+				assertEquals(9, val);
 			}
 			check.commit();
 		}
@@ -622,7 +622,7 @@ public abstract class SailIsolationLevelTest {
 			}
 			Value obj = stmts.next().getObject();
 			if (stmts.hasNext()) {
-				Assert.fail("multiple literals: " + obj + " and " + stmts.next());
+				Assertions.fail("multiple literals: " + obj + " and " + stmts.next());
 			}
 			return (Literal) obj;
 		}

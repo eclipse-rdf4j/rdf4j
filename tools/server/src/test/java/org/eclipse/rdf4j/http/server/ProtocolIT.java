@@ -10,16 +10,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.assertj.core.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.lang.ref.WeakReference;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
@@ -57,9 +56,9 @@ import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
@@ -71,7 +70,7 @@ public class ProtocolIT {
 
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
-	@BeforeClass
+	@BeforeAll
 	public static void startServer() throws Exception {
 		server = new TestServer();
 		try {
@@ -82,7 +81,7 @@ public class ProtocolIT {
 		}
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void stopServer() throws Exception {
 		server.stop();
 	}
@@ -422,7 +421,7 @@ public class ProtocolIT {
 		Set<Namespace> namespaceDeletions = Sets.difference(namespacesBefore, namespacesAfter);
 		Set<Namespace> namespaceAdditions = Sets.difference(namespacesAfter, namespacesBefore);
 
-		assertTrue("Some namespaces have been deleted", namespaceDeletions.isEmpty());
+		assertTrue(namespaceDeletions.isEmpty(), "Some namespaces have been deleted");
 		assertEquals(Sets.newHashSet(new SimpleNamespace("", "http://example.org/")), namespaceAdditions);
 	}
 

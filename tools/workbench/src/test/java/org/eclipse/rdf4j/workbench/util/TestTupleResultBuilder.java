@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench.util;
 
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.ByteArrayOutputStream;
 import java.net.URL;
@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLResultsJSONWriter;
 import org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLBooleanXMLWriter;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Dale Visser

@@ -28,9 +28,9 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.commands.ExploreServlet.ResultCursor;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Dale Visser
@@ -54,7 +54,7 @@ public class TestExploreServlet {
 	 * @throws MalformedQueryException  if an issue occurs inserting data
 	 * @throws UpdateExecutionException if an issue occurs inserting data
 	 */
-	@Before
+	@BeforeEach
 	public void setUp() throws RepositoryException, MalformedQueryException, UpdateExecutionException {
 		Repository repo = new SailRepository(new MemoryStore());
 		connection = repo.getConnection();
@@ -70,7 +70,7 @@ public class TestExploreServlet {
 		builder = mock(TupleResultBuilder.class);
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() throws RepositoryException {
 		connection.close();
 		servlet.destroy();

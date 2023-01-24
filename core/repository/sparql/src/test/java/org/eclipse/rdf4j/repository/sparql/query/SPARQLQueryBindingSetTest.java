@@ -10,11 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sparql.query;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author jeen

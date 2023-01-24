@@ -19,11 +19,11 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL11ManifestTest;
 import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQLQueryTest;
-import org.junit.Ignore;
+import org.junit.jupiter.api.Disabled;
 
 import junit.framework.Test;
 
-@Ignore("replaced by org.eclipse.rdf4j.sail.memory.MemorySPARQL11QueryComplianceTest")
+@Disabled("replaced by org.eclipse.rdf4j.sail.memory.MemorySPARQL11QueryComplianceTest")
 @Deprecated
 public class W3CApprovedSPARQL11QueryTest extends SPARQLQueryTest {
 

@@ -10,7 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.sail;
 
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
@@ -25,11 +26,11 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -67,7 +68,7 @@ public abstract class SailConcurrencyTest {
 	 * Methods *
 	 *---------*/
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		store = createSail();
 		store.init();
@@ -76,7 +77,7 @@ public abstract class SailConcurrencyTest {
 
 	protected abstract Sail createSail() throws SailException;
 
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		store.shutDown();
 	}
@@ -178,8 +179,8 @@ public abstract class SailConcurrencyTest {
 			long size1 = conn.size(context1);
 			long size2 = conn.size(context2);
 			logger.debug("size 1 = {}, size 2 = {}", size1, size2);
-			Assert.assertEquals("upload into context 1 should have been fully committed", runner1.getSize(), size1);
-			Assert.assertEquals("upload into context 2 should have been fully committed", runner2.getSize(), size2);
+			assertEquals(runner1.getSize(), size1, "upload into context 1 should have been fully committed");
+			assertEquals(runner2.getSize(), size2, "upload into context 2 should have been fully committed");
 		}
 
 	}
@@ -223,14 +224,14 @@ public abstract class SailConcurrencyTest {
 			long size1 = conn.size(context1);
 			long size2 = conn.size(context2);
 			logger.debug("size 1 = {}, size 2 = {}", size1, size2);
-			Assert.assertEquals("upload into context 1 should have been fully committed", runner1.getSize(), size1);
-			Assert.assertEquals("upload into context 2 should have been rolled back", 0, size2);
+			assertEquals(runner1.getSize(), size1, "upload into context 1 should have been fully committed");
+			assertEquals(0, size2, "upload into context 2 should have been rolled back");
 		}
 
 	}
 
 	@Test
-	@Ignore("This test takes a long time and accomplishes little extra")
+	@Disabled("This test takes a long time and accomplishes little extra")
 	public void testGetContextIDs() throws Exception {
 		// Create one thread which writes statements to the repository, on a
 		// number of named graphs.
@@ -300,7 +301,7 @@ public abstract class SailConcurrencyTest {
 		writerThread2.join(1000);
 
 		if (hasFailed()) {
-			Assert.fail("Test Failed");
+			Assertions.fail("Test Failed");
 		} else {
 			logger.info("Test succeeded");
 		}

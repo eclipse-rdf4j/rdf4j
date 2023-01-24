@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.repository.sail.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertThrows;
 import static org.mockito.Mockito.mock;
 
 import java.io.IOException;
@@ -26,7 +27,7 @@ import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
 import org.eclipse.rdf4j.repository.sail.ProxyRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class TestProxyRepositoryFactory {
 
@@ -37,11 +38,11 @@ public class TestProxyRepositoryFactory {
 		assertThat(factory.getRepositoryType()).isEqualTo("openrdf:ProxyRepository");
 	}
 
-	@Test(expected = RepositoryConfigException.class)
+	@Test
 	public final void testGetConfig() throws RepositoryConfigException {
 		RepositoryImplConfig factoryConfig = factory.getConfig();
 		assertThat(factoryConfig).isInstanceOf(ProxyRepositoryConfig.class);
-		factoryConfig.validate();
+		assertThrows(RepositoryConfigException.class, () -> factoryConfig.validate());
 	}
 
 	@Test

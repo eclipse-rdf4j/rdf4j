@@ -14,7 +14,7 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 import java.util.UUID;
 
 import org.eclipse.rdf4j.repository.Repository;
-import org.junit.Before;
+import org.junit.jupiter.api.BeforeEach;
 import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,7 +34,7 @@ public class TestActiveTransactionRegistry {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		System.setProperty(ActiveTransactionRegistry.CACHE_TIMEOUT_PROPERTY, "1");
 		registry = ActiveTransactionRegistry.INSTANCE;

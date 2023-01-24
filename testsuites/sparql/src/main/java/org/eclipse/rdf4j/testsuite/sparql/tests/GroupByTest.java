@@ -16,7 +16,7 @@ import static org.junit.Assert.assertNotNull;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests on SPARQL GROUP BY

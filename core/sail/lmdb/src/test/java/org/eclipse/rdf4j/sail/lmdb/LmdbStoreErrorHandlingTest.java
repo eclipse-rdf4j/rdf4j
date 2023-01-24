@@ -20,22 +20,16 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Tests for the correct handling of internal LMDB store errors.
  */
 public class LmdbStoreErrorHandlingTest {
 
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
-
 	@Test
-	public void testMapFullError() throws Exception {
-		File dataDir = tempDir.newFolder();
-
+	public void testMapFullError(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,psoc");
 		// set small db size
 		config.setValueDBSize(50000);

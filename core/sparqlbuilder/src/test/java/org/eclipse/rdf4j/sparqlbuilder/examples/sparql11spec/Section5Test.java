@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 import static org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder.var;
 import static org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns.and;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+import static org.hamcrest.MatcherAssert.assertThat;
 
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
@@ -21,8 +22,7 @@ import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class Section5Test extends BaseExamples {
 	@Test
@@ -31,7 +31,7 @@ public class Section5Test extends BaseExamples {
 		Variable name = var("name"), mbox = var("mbox");
 		Variable x = var("x");
 		query.prefix(foaf).select(name, mbox).where(x.has(foaf.iri("name"), name), x.has(foaf.iri("mbox"), mbox));
-		Assert.assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX foaf:    <http://xmlns.com/foaf/0.1/>\n"
 						+ "SELECT ?name ?mbox\n"
 						+ "WHERE  {\n"
@@ -43,7 +43,7 @@ public class Section5Test extends BaseExamples {
 		GraphPattern mboxPattern = and(x.has(foaf.iri("mbox"), mbox));
 		QueryPattern where = SparqlBuilder.where(and(namePattern, mboxPattern));
 		query.where(where);
-		Assert.assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX foaf:    <http://xmlns.com/foaf/0.1/>\n"
 						+ "SELECT ?name ?mbox\n"
 						+ "WHERE  { { ?x foaf:name ?name . }\n"
@@ -56,7 +56,7 @@ public class Section5Test extends BaseExamples {
 	public void example_5_2_1() {
 		Variable x = var("x");
 		query.select(x);
-		Assert.assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
 				"SELECT ?x\n"
 						+ "WHERE {}"));
 	}
@@ -65,7 +65,7 @@ public class Section5Test extends BaseExamples {
 	public void example_5_2_3() {
 		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
 		Variable x = var("x"), name = var("name"), mbox = var("mbox");
-		Assert.assertThat(
+		assertThat(
 				x.has(foaf.iri("name"), name)
 						.and(x.has(foaf.iri("mbox"), mbox))
 						.and()

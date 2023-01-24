@@ -13,10 +13,10 @@ package org.eclipse.rdf4j.query.algebra.evaluation.util;
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.EQ;
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.LT;
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.NE;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -32,8 +32,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Jeen Broekstra
@@ -83,7 +83,7 @@ public class QueryEvaluationUtilityTest {
 
 	private Literal arg2unknown;
 
-	@Before
+	@BeforeEach
 	public void setUp() {
 		arg1simple = f.createLiteral("abc");
 		arg2simple = f.createLiteral("b");
@@ -440,8 +440,8 @@ public class QueryEvaluationUtilityTest {
 	 * @param op   The operator for the comparison
 	 */
 	private void assertCompareFalse(Literal lit1, Literal lit2, CompareOp op, boolean strict) {
-		assertFalse("Compare did not return false for " + lit1.toString() + op.getSymbol() + lit2.toString(),
-				QueryEvaluationUtility.compareLiterals(lit1, lit2, op, strict).orElse(false));
+		assertFalse(QueryEvaluationUtility.compareLiterals(lit1, lit2, op, strict).orElse(false),
+				"Compare did not return false for " + lit1.toString() + op.getSymbol() + lit2.toString());
 	}
 
 	private void assertCompareTrue(Literal lit1, Literal lit2, CompareOp op) {
@@ -458,8 +458,8 @@ public class QueryEvaluationUtilityTest {
 	 * @param strict boolean switch between strict and extended comparison
 	 */
 	private void assertCompareTrue(Literal lit1, Literal lit2, CompareOp op, boolean strict) {
-		assertTrue("Compare did not return true for " + lit1.toString() + op.getSymbol() + lit2.toString(),
-				QueryEvaluationUtility.compareLiterals(lit1, lit2, op, strict).orElse(false));
+		assertTrue(QueryEvaluationUtility.compareLiterals(lit1, lit2, op, strict).orElse(false),
+				"Compare did not return true for " + lit1.toString() + op.getSymbol() + lit2.toString());
 	}
 
 	/**

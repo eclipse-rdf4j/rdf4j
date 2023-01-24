@@ -12,7 +12,7 @@ package org.eclipse.rdf4j.model.impl;
 
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.ValueFactoryTest;
-import org.junit.Before;
+import org.junit.jupiter.api.BeforeEach;
 
 /**
  * @author jeen
@@ -29,7 +29,7 @@ public class SimpleValueFactoryTest extends ValueFactoryTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		f = SimpleValueFactory.getInstance();
 	}

@@ -11,7 +11,7 @@
 package org.eclipse.rdf4j.rio.nquads;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -609,8 +609,8 @@ public abstract class AbstractNQuadsParserUnitTest {
 	private class TestParseLocationListener extends SimpleParseLocationListener {
 
 		private void assertListener(int row, int col) {
-			assertEquals("Unexpected last row", row, this.getLineNo());
-			assertEquals("Unexpected last col", col, this.getColumnNo());
+			assertEquals(row, this.getLineNo(), "Unexpected last row");
+			assertEquals(col, this.getColumnNo(), "Unexpected last col");
 		}
 
 	}
@@ -636,7 +636,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 		public void assertHandler(int expected) {
 			assertTrue(started, "Never started.");
 			assertTrue(ended, "Never ended.");
-			assertEquals("Unexpected number of statements.", expected, getStatements().size());
+			assertEquals(expected, getStatements().size(), "Unexpected number of statements.");
 		}
 	}
 

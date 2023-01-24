@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class TupleExprsTest {
 

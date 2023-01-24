@@ -10,11 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -27,8 +27,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public class QueryBindingSetTest {
 
@@ -37,7 +37,7 @@ public class QueryBindingSetTest {
 
 	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
-	@Before
+	@BeforeEach
 	public void setup() {
 		qbs.addBinding("foo", vf.createIRI("urn:foo"));
 		mbs.addBinding("foo", vf.createIRI("urn:foo"));
@@ -194,8 +194,8 @@ public class QueryBindingSetTest {
 	public void testHashcodeMapBindingSet() {
 		assertTrue(qbs.equals(mbs));
 		assertTrue(mbs.equals(qbs));
-		assertEquals("objects that return true on their equals() method must have identical hash codes", qbs.hashCode(),
-				mbs.hashCode());
+		assertEquals(qbs.hashCode(), mbs.hashCode(),
+				"objects that return true on their equals() method must have identical hash codes");
 	}
 
 	/**

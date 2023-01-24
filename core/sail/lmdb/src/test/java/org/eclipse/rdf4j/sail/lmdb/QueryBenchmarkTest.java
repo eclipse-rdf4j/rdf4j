@@ -27,9 +27,9 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 import org.junit.rules.TemporaryFolder;
 
 /**
@@ -61,7 +61,7 @@ public class QueryBenchmarkTest {
 		}
 	}
 
-	@BeforeClass
+	@BeforeAll
 	public static void beforeClass() throws IOException {
 		tempDir.create();
 		File file = tempDir.newFolder();
@@ -84,7 +84,7 @@ public class QueryBenchmarkTest {
 		return QueryBenchmarkTest.class.getClassLoader().getResourceAsStream(name);
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() throws IOException {
 		tempDir.delete();
 		repository.shutDown();

@@ -30,9 +30,8 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.repository.util.RDFLoader;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,20 +47,15 @@ public class NativeStoreConsistencyIT {
 	 * Variables *
 	 *-----------*/
 
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
-
 	/*---------*
 	 * Methods *
 	 *---------*/
 
 	@Test
-	public void testSES1867IndexCorruption() throws Exception {
+	public void testSES1867IndexCorruption(@TempDir File dataDir) throws Exception {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		IRI oldContext = vf.createIRI("http://example.org/oldContext");
 		IRI newContext = vf.createIRI("http://example.org/newContext");
-
-		File dataDir = tempDir.newFolder();
 
 		Repository repo = new SailRepository(new NativeStore(dataDir, "spoc,psoc"));
 

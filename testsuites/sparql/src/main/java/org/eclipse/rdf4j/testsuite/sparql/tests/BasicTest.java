@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
 import org.eclipse.rdf4j.testsuite.sparql.vocabulary.EX;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * Basic SPARQL functionality tests

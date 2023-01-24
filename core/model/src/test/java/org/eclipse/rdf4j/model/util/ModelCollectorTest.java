@@ -20,8 +20,8 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Bart.Hanssens
@@ -31,7 +31,7 @@ public class ModelCollectorTest {
 	private final Set<Statement> stmts = new HashSet<>();
 	private final ValueFactory F = SimpleValueFactory.getInstance();
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		for (int i = 0; i < nrStmts; i++) {
 			stmts.add(F.createStatement(F.createIRI("http://www.example.com/" + i), RDFS.LABEL, F.createLiteral(i)));

@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.sail;
 
+import static org.junit.jupiter.api.Assertions.fail;
+
 import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -28,10 +30,9 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.junit.AfterClass;
-import org.junit.Assert;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,12 +40,12 @@ public abstract class InferencingTest {
 
 	private static final Logger logger = LoggerFactory.getLogger(InferencingTest.class);
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
@@ -114,10 +115,10 @@ public abstract class InferencingTest {
 			}
 
 			File dumpFile = dumpStatements(name, diff);
-			Assert.fail("Incomplete entailment, diff dumped to file " + dumpFile);
+			fail("Incomplete entailment, diff dumped to file " + dumpFile);
 		} else if (!isPositiveTest && outputEntailed) {
 			File dumpFile = dumpStatements(name, expectedStatements);
-			Assert.fail("Erroneous entailment, unexpected statements dumped to file " + dumpFile);
+			fail("Erroneous entailment, unexpected statements dumped to file " + dumpFile);
 		}
 	}
 

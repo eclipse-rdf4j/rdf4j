@@ -10,14 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
-import java.io.IOException;
+import java.io.File;
 
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.testsuite.sail.SailIsolationLevelTest;
-import org.junit.Rule;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * An extension of {@link SailIsolationLevelTest} for testing the class {@link LmdbStore}.
@@ -28,8 +27,8 @@ public class LmdbStoreIsolationLevelTest extends SailIsolationLevelTest {
 	 * Variables *
 	 *-----------*/
 
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
+	@TempDir
+	File tempDir;
 
 	/*---------*
 	 * Methods *
@@ -37,10 +36,6 @@ public class LmdbStoreIsolationLevelTest extends SailIsolationLevelTest {
 
 	@Override
 	protected NotifyingSail createSail() throws SailException {
-		try {
-			return new LmdbStore(tempDir.newFolder(), new LmdbStoreConfig("spoc,posc"));
-		} catch (IOException e) {
-			throw new AssertionError(e);
-		}
+		return new LmdbStore(tempDir, new LmdbStoreConfig("spoc,posc"));
 	}
 }

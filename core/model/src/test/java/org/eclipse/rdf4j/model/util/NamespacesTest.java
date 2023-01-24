@@ -32,8 +32,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.SKOS;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Peter Ansell
@@ -48,7 +48,7 @@ public class NamespacesTest {
 
 	private String testName2;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		testPrefix1 = "ns1";
 		testPrefix2 = "ns2";

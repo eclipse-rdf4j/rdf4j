@@ -10,11 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.hdt;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.nio.charset.StandardCharsets;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Bart.Hanssens
@@ -24,7 +24,7 @@ public class CRC8Test {
 	public void testHello() {
 		CRC8 crc = new CRC8();
 		crc.update("Hello world".getBytes(StandardCharsets.US_ASCII), 0, "Hello world".length());
-		assertEquals("CRC hello world not correct", 0x41, crc.getValue());
+		assertEquals(0x41, crc.getValue(), "CRC hello world not correct");
 	}
 
 	@Test
@@ -33,6 +33,6 @@ public class CRC8Test {
 		for (byte b : "Hello world".getBytes(StandardCharsets.US_ASCII)) {
 			crc.update(b);
 		}
-		assertEquals("CRC hello world not correct", 0x41, crc.getValue());
+		assertEquals(0x41, crc.getValue(), "CRC hello world not correct");
 	}
 }

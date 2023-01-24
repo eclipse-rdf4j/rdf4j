@@ -20,9 +20,7 @@ import org.eclipse.rdf4j.sparqlbuilder.core.query.SelectQuery;
 import org.hamcrest.BaseMatcher;
 import org.hamcrest.Description;
 import org.hamcrest.Matcher;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.rules.TestName;
+import org.junit.jupiter.api.BeforeEach;
 
 /**
  * The classes inheriting from this pose as examples on how to use SparqlBuilder. They follow the SPARQL 1.1 Spec and
@@ -51,10 +49,7 @@ public class BaseExamples {
 
 	protected SelectQuery query;
 
-	@Rule
-	public TestName testName = new TestName();
-
-	@Before
+	@BeforeEach
 	public void before() {
 		resetQuery();
 	}

@@ -10,10 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.triple;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Triple;
@@ -21,9 +21,9 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Test rdf:subject(a) function
@@ -39,7 +39,7 @@ public class TripleObjectFunctionTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		function = new TripleObjectFunction();
 	}
@@ -47,7 +47,7 @@ public class TripleObjectFunctionTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 	}
 
@@ -60,26 +60,24 @@ public class TripleObjectFunctionTest {
 
 		Value value = function.evaluate(f, testValue);
 		assertNotNull(value);
-		assertTrue("expect IRI", value instanceof IRI);
-		assertEquals("expect same value", obj, value);
+		assertTrue(value instanceof IRI, "expect IRI");
+		assertEquals(obj, value, "expect same value");
 	}
 
-	@Test(expected = ValueExprEvaluationException.class)
+	@Test
 	public void testNegativeWrongArguments() {
 		IRI subj = f.createIRI("urn:a");
 		IRI pred = f.createIRI("urn:b");
 		IRI obj = f.createIRI("urn:c");
 		Triple testValue = f.createTriple(subj, pred, obj);
 
-		function.evaluate(f, testValue, subj);
-		fail("expect ValueExprEvaluationException");
+		assertThrows(ValueExprEvaluationException.class, () -> function.evaluate(f, testValue, subj));
 	}
 
-	@Test(expected = ValueExprEvaluationException.class)
+	@Test
 	public void testWrongArguments() {
 		IRI subj = f.createIRI("urn:a");
 
-		function.evaluate(f, subj);
-		fail("expect ValueExprEvaluationException");
+		assertThrows(ValueExprEvaluationException.class, () -> function.evaluate(f, subj));
 	}
 }

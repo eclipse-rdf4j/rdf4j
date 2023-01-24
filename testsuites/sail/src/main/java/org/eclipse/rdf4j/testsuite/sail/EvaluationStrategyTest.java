@@ -10,8 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.sail;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.io.File;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -34,12 +35,11 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.manager.RepositoryProvider;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Test cases for behavior of {@link StrictEvaluationStrategy} and {@link ExtendedEvaluationStrategy} on base Sail
@@ -49,18 +49,18 @@ import org.junit.rules.TemporaryFolder;
  */
 public abstract class EvaluationStrategyTest {
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
+	@TempDir
+	public File tempDir;
 
 	private Repository strictRepo;
 
@@ -71,9 +71,9 @@ public abstract class EvaluationStrategyTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
-		manager = RepositoryProvider.getRepositoryManager(tempDir.newFolder());
+		manager = RepositoryProvider.getRepositoryManager(tempDir);
 
 		BaseSailConfig strictStoreConfig = getBaseSailConfig();
 		strictStoreConfig.setEvaluationStrategyFactoryClassName(StrictEvaluationStrategyFactory.class.getName());
