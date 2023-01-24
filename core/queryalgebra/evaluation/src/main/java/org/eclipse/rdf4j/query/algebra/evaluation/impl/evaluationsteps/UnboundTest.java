@@ -20,275 +20,110 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 class UnboundTest {
+
+	private static final Predicate<BindingSet> IS_NOT_EMPTY = Predicate.not(BindingSet::isEmpty);
+
 	public static Predicate<BindingSet> s(QueryEvaluationContext context, Var s) {
-
-		Predicate<BindingSet> sHasBinding = context.hasBinding(s.getName());
-		Function<BindingSet, Value> sGetValue = context.getValue(s.getName());
-
-		return bindings -> {
-			if (!bindings.isEmpty()) {
-				return sHasBinding.test(bindings) && sGetValue.apply(bindings) == null;
-			}
-			return false;
-		};
+		return IS_NOT_EMPTY.and(hasTest(context, s.getName()));
 	}
 
 	public static Predicate<BindingSet> p(QueryEvaluationContext context, Var p) {
-		Predicate<BindingSet> pHasBinding = context.hasBinding(p.getName());
-		Function<BindingSet, Value> pGetValue = context.getValue(p.getName());
-
-		return bindings -> {
-			if (!bindings.isEmpty()) {
-				return pHasBinding.test(bindings) && pGetValue.apply(bindings) == null;
-			}
-			return false;
-		};
+		return IS_NOT_EMPTY.and(hasTest(context, p.getName()));
 	}
 
 	public static Predicate<BindingSet> o(QueryEvaluationContext context, Var o) {
-		Predicate<BindingSet> oHasBinding = context.hasBinding(o.getName());
-		Function<BindingSet, Value> oGetValue = context.getValue(o.getName());
-
-		return bindings -> {
-			if (!bindings.isEmpty()) {
-				return oHasBinding.test(bindings) && oGetValue.apply(bindings) == null;
-			}
-			return false;
-		};
+		return IS_NOT_EMPTY.and(hasTest(context, o.getName()));
 	}
 
 	public static Predicate<BindingSet> c(QueryEvaluationContext context, Var c) {
-		Predicate<BindingSet> cHasBinding = context.hasBinding(c.getName());
-		Function<BindingSet, Value> cGetValue = context.getValue(c.getName());
-
-		return bindings -> {
-			if (!bindings.isEmpty()) {
-				return cHasBinding.test(bindings) && cGetValue.apply(bindings) == null;
-			}
-			return false;
-		};
+		return IS_NOT_EMPTY.and(hasTest(context, c.getName()));
 	}
 
 	public static Predicate<BindingSet> sp(QueryEvaluationContext context, Var s, Var p) {
-
-		Predicate<BindingSet> sHasBinding = context.hasBinding(s.getName());
-		Function<BindingSet, Value> sGetValue = context.getValue(s.getName());
-
-		Predicate<BindingSet> pHasBinding = context.hasBinding(p.getName());
-		Function<BindingSet, Value> pGetValue = context.getValue(p.getName());
-
-		return bindings -> {
-			if (!bindings.isEmpty()) {
-				return sHasBinding.test(bindings) && sGetValue.apply(bindings) == null &&
-						pHasBinding.test(bindings) && pGetValue.apply(bindings) == null;
-			}
-			return false;
-		};
-
+		return IS_NOT_EMPTY.and(hasTest(context, s.getName())).and(hasTest(context, p.getName()));
 	}
 
 	public static Predicate<BindingSet> so(QueryEvaluationContext context, Var s, Var o) {
-
-		Predicate<BindingSet> sHasBinding = context.hasBinding(s.getName());
-		Function<BindingSet, Value> sGetValue = context.getValue(s.getName());
-
-		Predicate<BindingSet> oHasBinding = context.hasBinding(o.getName());
-		Function<BindingSet, Value> oGetValue = context.getValue(o.getName());
-
-		return bindings -> {
-			if (!bindings.isEmpty()) {
-				return sHasBinding.test(bindings) && sGetValue.apply(bindings) == null
-						|| oHasBinding.test(bindings) && oGetValue.apply(bindings) == null;
-			}
-			return false;
-		};
-
+		return IS_NOT_EMPTY.and(hasTest(context, s.getName())).and(hasTest(context, o.getName()));
 	}
 
 	public static Predicate<BindingSet> sc(QueryEvaluationContext context, Var s, Var c) {
+		Predicate<BindingSet> sTest = hasTest(context, s.getName());
+		Predicate<BindingSet> cTest = hasTest(context, c.getName());
 
-		Predicate<BindingSet> sHasBinding = context.hasBinding(s.getName());
-		Function<BindingSet, Value> sGetValue = context.getValue(s.getName());
-
-		Predicate<BindingSet> cHasBinding = context.hasBinding(c.getName());
-		Function<BindingSet, Value> cGetValue = context.getValue(c.getName());
-
-		return bindings -> {
-			if (!bindings.isEmpty()) {
-				return sHasBinding.test(bindings) && sGetValue.apply(bindings) == null
-						|| cHasBinding.test(bindings) && cGetValue.apply(bindings) == null;
-			}
-			return false;
-		};
-
+		return IS_NOT_EMPTY.and(sTest.or(cTest));
 	}
 
 	public static Predicate<BindingSet> po(QueryEvaluationContext context, Var p, Var o) {
+		Predicate<BindingSet> pTest = hasTest(context, p.getName());
+		Predicate<BindingSet> oTest = hasTest(context, o.getName());
 
-		Predicate<BindingSet> pHasBinding = context.hasBinding(p.getName());
-		Function<BindingSet, Value> pGetValue = context.getValue(p.getName());
-
-		Predicate<BindingSet> oHasBinding = context.hasBinding(o.getName());
-		Function<BindingSet, Value> oGetValue = context.getValue(o.getName());
-
-		return bindings -> {
-			if (!bindings.isEmpty()) {
-				return pHasBinding.test(bindings) && pGetValue.apply(bindings) == null
-						|| oHasBinding.test(bindings) && oGetValue.apply(bindings) == null;
-			}
-			return false;
-		};
-
+		return IS_NOT_EMPTY.and(pTest.or(oTest));
 	}
 
 	public static Predicate<BindingSet> pc(QueryEvaluationContext context, Var p, Var c) {
+		Predicate<BindingSet> pTest = hasTest(context, p.getName());
+		Predicate<BindingSet> cTest = hasTest(context, c.getName());
 
-		Predicate<BindingSet> pHasBinding = context.hasBinding(p.getName());
-		Function<BindingSet, Value> pGetValue = context.getValue(p.getName());
-
-		Predicate<BindingSet> cHasBinding = context.hasBinding(c.getName());
-		Function<BindingSet, Value> cGetValue = context.getValue(c.getName());
-
-		return bindings -> {
-			if (!bindings.isEmpty()) {
-				return pHasBinding.test(bindings) && pGetValue.apply(bindings) == null
-						|| cHasBinding.test(bindings) && cGetValue.apply(bindings) == null;
-			}
-			return false;
-		};
-
+		return IS_NOT_EMPTY.and(pTest.or(cTest));
 	}
 
 	public static Predicate<BindingSet> oc(QueryEvaluationContext context, Var o, Var c) {
+		Predicate<BindingSet> oTest = hasTest(context, o.getName());
+		Predicate<BindingSet> cTest = hasTest(context, c.getName());
 
-		Predicate<BindingSet> oHasBinding = context.hasBinding(o.getName());
-		Function<BindingSet, Value> oGetValue = context.getValue(o.getName());
-
-		Predicate<BindingSet> cHasBinding = context.hasBinding(c.getName());
-		Function<BindingSet, Value> cGetValue = context.getValue(c.getName());
-
-		return bindings -> {
-			if (!bindings.isEmpty()) {
-				return oHasBinding.test(bindings) && oGetValue.apply(bindings) == null
-						|| cHasBinding.test(bindings) && cGetValue.apply(bindings) == null;
-			}
-			return false;
-		};
-
+		return IS_NOT_EMPTY.and(oTest.or(cTest));
 	}
 
 	public static Predicate<BindingSet> spo(QueryEvaluationContext context, Var s, Var p, Var o) {
-		Predicate<BindingSet> sHasBinding = context.hasBinding(s.getName());
-		Function<BindingSet, Value> sGetValue = context.getValue(s.getName());
+		Predicate<BindingSet> sTest = hasTest(context, s.getName());
+		Predicate<BindingSet> pTest = hasTest(context, p.getName());
+		Predicate<BindingSet> oTest = hasTest(context, o.getName());
 
-		Predicate<BindingSet> pHasBinding = context.hasBinding(p.getName());
-		Function<BindingSet, Value> pGetValue = context.getValue(p.getName());
-
-		Predicate<BindingSet> oHasBinding = context.hasBinding(o.getName());
-		Function<BindingSet, Value> oGetValue = context.getValue(o.getName());
-
-		return bindings -> {
-			if (!bindings.isEmpty()) {
-				return sHasBinding.test(bindings) && sGetValue.apply(bindings) == null
-						|| pHasBinding.test(bindings) && pGetValue.apply(bindings) == null
-						|| oHasBinding.test(bindings) && oGetValue.apply(bindings) == null;
-			}
-			return false;
-		};
-
+		return IS_NOT_EMPTY.and(sTest.or(pTest).or(oTest));
 	}
 
 	public static Predicate<BindingSet> spc(QueryEvaluationContext context, Var s, Var p, Var c) {
 
-		Predicate<BindingSet> sHasBinding = context.hasBinding(s.getName());
-		Function<BindingSet, Value> sGetValue = context.getValue(s.getName());
+		Predicate<BindingSet> sTest = hasTest(context, s.getName());
+		Predicate<BindingSet> pTest = hasTest(context, p.getName());
+		Predicate<BindingSet> cTest = hasTest(context, c.getName());
 
-		Predicate<BindingSet> pHasBinding = context.hasBinding(p.getName());
-		Function<BindingSet, Value> pGetValue = context.getValue(p.getName());
-
-		Predicate<BindingSet> cHasBinding = context.hasBinding(c.getName());
-		Function<BindingSet, Value> cGetValue = context.getValue(c.getName());
-
-		return bindings -> {
-			if (!bindings.isEmpty()) {
-				return sHasBinding.test(bindings) && sGetValue.apply(bindings) == null
-						|| pHasBinding.test(bindings) && pGetValue.apply(bindings) == null
-						|| cHasBinding.test(bindings) && cGetValue.apply(bindings) == null;
-			}
-			return false;
-		};
-
+		return IS_NOT_EMPTY.and(sTest.or(pTest).or(cTest));
 	}
 
 	public static Predicate<BindingSet> soc(QueryEvaluationContext context, Var s, Var o, Var c) {
 
-		Predicate<BindingSet> sHasBinding = context.hasBinding(s.getName());
-		Function<BindingSet, Value> sGetValue = context.getValue(s.getName());
+		Predicate<BindingSet> sTest = hasTest(context, s.getName());
+		Predicate<BindingSet> oTest = hasTest(context, o.getName());
+		Predicate<BindingSet> cTest = hasTest(context, c.getName());
 
-		Predicate<BindingSet> oHasBinding = context.hasBinding(o.getName());
-		Function<BindingSet, Value> oGetValue = context.getValue(o.getName());
-
-		Predicate<BindingSet> cHasBinding = context.hasBinding(c.getName());
-		Function<BindingSet, Value> cGetValue = context.getValue(c.getName());
-
-		return bindings -> {
-			if (!bindings.isEmpty()) {
-				return sHasBinding.test(bindings) && sGetValue.apply(bindings) == null
-						|| oHasBinding.test(bindings) && oGetValue.apply(bindings) == null
-						|| cHasBinding.test(bindings) && cGetValue.apply(bindings) == null;
-			}
-			return false;
-		};
-
+		return IS_NOT_EMPTY.and(sTest.or(oTest).or(cTest));
 	}
 
 	public static Predicate<BindingSet> poc(QueryEvaluationContext context, Var p, Var o, Var c) {
+		Predicate<BindingSet> pTest = hasTest(context, p.getName());
+		Predicate<BindingSet> oTest = hasTest(context, o.getName());
+		Predicate<BindingSet> cTest = hasTest(context, c.getName());
 
-		Predicate<BindingSet> pHasBinding = context.hasBinding(p.getName());
-		Function<BindingSet, Value> pGetValue = context.getValue(p.getName());
-
-		Predicate<BindingSet> oHasBinding = context.hasBinding(o.getName());
-		Function<BindingSet, Value> oGetValue = context.getValue(o.getName());
-
-		Predicate<BindingSet> cHasBinding = context.hasBinding(c.getName());
-		Function<BindingSet, Value> cGetValue = context.getValue(c.getName());
-
-		return bindings -> {
-			if (!bindings.isEmpty()) {
-				return pHasBinding.test(bindings) && pGetValue.apply(bindings) == null
-						|| oHasBinding.test(bindings) && oGetValue.apply(bindings) == null
-						|| cHasBinding.test(bindings) && cGetValue.apply(bindings) == null;
-			}
-			return false;
-		};
-
+		return IS_NOT_EMPTY.and(pTest.or(oTest).or(cTest));
 	}
 
 	public static Predicate<BindingSet> spoc(QueryEvaluationContext context, Var s, Var p, Var o,
 			Var c) {
 
-		Predicate<BindingSet> sHasBinding = context.hasBinding(s.getName());
-		Function<BindingSet, Value> sGetValue = context.getValue(s.getName());
+		Predicate<BindingSet> pTest = hasTest(context, p.getName());
+		Predicate<BindingSet> sTest = hasTest(context, s.getName());
+		Predicate<BindingSet> oTest = hasTest(context, o.getName());
+		Predicate<BindingSet> cTest = hasTest(context, c.getName());
 
-		Predicate<BindingSet> pHasBinding = context.hasBinding(p.getName());
-		Function<BindingSet, Value> pGetValue = context.getValue(p.getName());
-
-		Predicate<BindingSet> oHasBinding = context.hasBinding(o.getName());
-		Function<BindingSet, Value> oGetValue = context.getValue(o.getName());
-
-		Predicate<BindingSet> cHasBinding = context.hasBinding(c.getName());
-		Function<BindingSet, Value> cGetValue = context.getValue(c.getName());
-
-		return bindings -> {
-			if (!bindings.isEmpty()) {
-				return sHasBinding.test(bindings) && sGetValue.apply(bindings) == null
-						|| pHasBinding.test(bindings) && pGetValue.apply(bindings) == null
-						|| oHasBinding.test(bindings) && oGetValue.apply(bindings) == null
-						|| cHasBinding.test(bindings) && cGetValue.apply(bindings) == null;
-			}
-			return false;
-		};
-
+		return IS_NOT_EMPTY.and(sTest.or(pTest).or(oTest).or(cTest));
 	}
 
+	private static Predicate<BindingSet> hasTest(QueryEvaluationContext context, String name) {
+		Predicate<BindingSet> oHasBinding = context.hasBinding(name);
+		Function<BindingSet, Value> oGetValue = context.getValue(name);
+
+		return bindings -> oHasBinding.test(bindings) && oGetValue.apply(bindings) == null;
+	}
 }
