@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
  */
 public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
+	private static final FilterPushdownMarkerForOptimization FILTER_PUSHDOWN_MARKER_FOR_OPTIMIZATION = new FilterPushdownMarkerForOptimization();
 	private static boolean assertsEnabled = false;
 
 	static {
@@ -84,7 +85,8 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()),
 				ITERATIVE_EVALUATION_OPTIMIZER,
 				FILTER_OPTIMIZER,
-				ORDER_LIMIT_OPTIMIZER);
+				ORDER_LIMIT_OPTIMIZER,
+				FILTER_PUSHDOWN_MARKER_FOR_OPTIMIZATION);
 
 		if (assertsEnabled) {
 			List<QueryOptimizer> optimizersWithReferenceCleaner = new ArrayList<>();

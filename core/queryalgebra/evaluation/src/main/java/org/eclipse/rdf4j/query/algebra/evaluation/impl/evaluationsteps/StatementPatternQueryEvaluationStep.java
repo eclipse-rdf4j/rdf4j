@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterPushdownMarkerForOptimization.MarkedUpStatementPattern;
 
 /**
  * Evaluate the StatementPattern - taking care of graph/datasets - avoiding redoing work every call of evaluate if
@@ -58,6 +59,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private final Function<BindingSet, Value> getSubjectVar;
 	private final Function<BindingSet, Value> getPredicateVar;
 	private final Function<BindingSet, Value> getObjectVar;
+	private final Predicate<Statement> extraFilter;
 
 	// We try to do as much work as possible in the constructor.
 	// With the aim of making the evaluate method as cheap as possible.
@@ -68,8 +70,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		this.context = context;
 		this.tripleSource = tripleSource;
 		Set<IRI> graphs = null;
-		//If the graph part is empty we do not need to check this 
-		//in the conversion etc.
+		// If the graph part is empty we do not need to check this
+		// in the conversion etc.
 		Dataset dataset = context.getDataset();
 		if (dataset != null) {
 			if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS) {
@@ -130,6 +132,31 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		getPredicateVar = makeGetVarValue(predVar, context);
 		getObjectVar = makeGetVarValue(objVar, context);
 
+		if (statementPattern instanceof MarkedUpStatementPattern) {
+			extraFilter = makeStatementPatternFilter((MarkedUpStatementPattern) statementPattern);
+		} else {
+			extraFilter = null;
+		}
+	}
+
+	private Predicate<Statement> makeStatementPatternFilter(MarkedUpStatementPattern mup) {
+		Predicate<Statement> test = null;
+		if (mup.isContextIsIri()) {
+			test = andThen(test, (s) -> s.getContext() instanceof IRI);
+		}
+		if (mup.isSubjectIsIri()) {
+			test = andThen(test, (s) -> s.getSubject() instanceof IRI);
+		}
+		if (mup.isSubjectIsResource()) {
+			test = andThen(test, (s) -> s.getSubject() instanceof Resource);
+		}
+		if (mup.isObjectIsIri()) {
+			test = andThen(test, (s) -> s.getObject() instanceof IRI);
+		}
+		if (mup.isObjectIsResource()) {
+			test = andThen(test, (s) -> s.getObject() instanceof Resource);
+		}
+		return test;
 	}
 
 	// test if the variable must remain unbound for this solution see
@@ -310,19 +337,24 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		Predicate<Statement> filter = filterContextOrEqualVariables(statementPattern, subject, predicate, object,
 				contexts);
-
+		filter = andThen(filter, extraFilter);
 		if (filter != null) {
 			// Only if there is filter code to execute do we make this filter iteration.
-			return new FilterIteration<Statement, QueryEvaluationException>(iteration) {
-
-				@Override
-				protected boolean accept(Statement object) throws QueryEvaluationException {
-					return filter.test(object);
-				}
-			};
+			return createFilterIteration(iteration, filter);
 		} else {
 			return iteration;
 		}
+	}
+
+	private CloseableIteration<? extends Statement, QueryEvaluationException> createFilterIteration(
+			CloseableIteration<? extends Statement, QueryEvaluationException> iteration, Predicate<Statement> filter) {
+		return new FilterIteration<Statement, QueryEvaluationException>(iteration) {
+
+			@Override
+			protected boolean accept(Statement object) throws QueryEvaluationException {
+				return filter.test(object);
+			}
+		};
 	}
 
 	/**
@@ -583,7 +615,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	/**
 	 * We need to test every binding with hasBinding etc. as these are not guaranteed to be equivalent between calls of
 	 * evaluate(bs).
-	 * 
+	 *
 	 * Each conversion kind is special cased in with a specific method.
 	 *
 	 * @return a converter from statement into MutableBindingSet
@@ -642,11 +674,11 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 	}
 
-	private static Predicate<Statement> andThen(Predicate<Statement> pred, Predicate<Statement> and) {
-		if (pred == null) {
-			return and;
+	private static Predicate<Statement> andThen(Predicate<Statement> prevTest, Predicate<Statement> newTest) {
+		if (prevTest == null) {
+			return newTest;
 		}
-		return pred.and(and);
+		return prevTest.and(newTest);
 	}
 
 }
