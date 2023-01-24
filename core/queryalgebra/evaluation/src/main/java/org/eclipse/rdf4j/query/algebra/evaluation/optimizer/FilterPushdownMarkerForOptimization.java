@@ -16,10 +16,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
-import java.util.function.IntPredicate;
 
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
@@ -68,6 +69,27 @@ public class FilterPushdownMarkerForOptimization implements QueryOptimizer {
 		@Override
 		public void meet(Service node) throws RuntimeException {
 			// We do not decent into Service node at all
+		}
+		
+		@Override
+		public void meet(BindingSetAssignment node) throws RuntimeException {
+			// We do not decent into Service node at all
+			for (String bindingName : node.getBindingNames()) {
+				boolean allIri = true;
+				boolean allResource = true;
+				for (BindingSet bs: node.getBindingSets()) {
+					Value val = bs.getValue(bindingName);
+					if (! val.isResource()) {
+						allResource = false;
+					}
+					if (! val.isIRI()) {
+						allIri = false;
+					}
+				}
+				InferedConstantKnowledge ick = getState(bindingName);
+				ick.isIri = allIri;
+				ick.isResource = allResource;
+			}
 		}
 
 		@Override
