@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class DynamicModelTest {
 
