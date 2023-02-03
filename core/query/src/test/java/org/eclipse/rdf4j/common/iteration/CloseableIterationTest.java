@@ -10,12 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.iteration;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.NoSuchElementException;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  *
@@ -37,7 +37,7 @@ public abstract class CloseableIterationTest extends IterationTest {
 
 			iter.close();
 
-			assertFalse("closed iteration should not contain any more elements", iter.hasNext());
+			assertFalse(iter.hasNext(), "closed iteration should not contain any more elements");
 
 			try {
 				iter.next();

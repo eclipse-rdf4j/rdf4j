@@ -10,8 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser;
 
-import org.junit.Assert;
-import org.junit.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Andreas Schwarte
@@ -25,6 +26,6 @@ public class QueryParserUtilTest {
 				+ "# one more comment\r\n" + "SELECT * WHERE { ?s ?p ?o }";
 
 		String restQuery = QueryParserUtil.removeSPARQLQueryProlog(queryString);
-		Assert.assertEquals("SELECT * WHERE { ?s ?p ?o }", restQuery);
+		assertEquals("SELECT * WHERE { ?s ?p ?o }", restQuery);
 	}
 }

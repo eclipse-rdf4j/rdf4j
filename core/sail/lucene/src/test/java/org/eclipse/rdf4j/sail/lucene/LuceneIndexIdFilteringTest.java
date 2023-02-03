@@ -10,6 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lucene;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.fail;
+
+import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,17 +32,16 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.evaluation.TupleFunctionEvaluationMode;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.Lists;
 
 public class LuceneIndexIdFilteringTest {
+
 	private static final Logger LOG = LoggerFactory.getLogger(LuceneIndexIdFilteringTest.class);
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final String NAMESPACE = "http://example.org/";
@@ -54,14 +58,11 @@ public class LuceneIndexIdFilteringTest {
 		return String.join(" \n", lines);
 	}
 
-	@Rule
-	public TemporaryFolder tmpFolder = new TemporaryFolder();
-
 	LuceneSail sailType1, sailType2, sailType3;
 	SailRepository repository;
 
-	@Before
-	public void setup() throws IOException {
+	@BeforeEach
+	public void setup(@TempDir File dataDir) throws IOException {
 		// sails schema
 		// sailType1(LuceneSail) -> sailType2(LuceneSail) -> sailType3(LuceneSail) -> memoryStore(MemoryStore)
 
@@ -90,7 +91,7 @@ public class LuceneIndexIdFilteringTest {
 		sailType1.setParameter(LuceneSail.INDEX_CLASS_KEY, LuceneSail.DEFAULT_INDEX_CLASS);
 		sailType1.setEvaluationMode(TupleFunctionEvaluationMode.NATIVE);
 		sailType1.setBaseSail(sailType2);
-		sailType1.setDataDir(tmpFolder.newFolder());
+		sailType1.setDataDir(dataDir);
 	}
 
 	private void initSails() {
@@ -132,13 +133,13 @@ public class LuceneIndexIdFilteringTest {
 							set = result.next();
 							LOG.error("- {}", set.getValue("result").stringValue().substring(NAMESPACE.length()));
 						}
-						Assert.fail("The element '" + element + "' was in the index, but wasn't excepted");
+						fail("The element '" + element + "' was in the index, but wasn't excepted");
 					}
 				}
 			}
 
 			if (!exceptedDocSet.isEmpty()) {
-				Assert.fail("Unexpected docs: " + exceptedDocSet);
+				fail("Unexpected docs: " + exceptedDocSet);
 			}
 		}
 	}
@@ -252,7 +253,7 @@ public class LuceneIndexIdFilteringTest {
 					for (QueryElement el : exceptedElements) {
 						// union lines shouldn't be containing multiple results
 						if (union && elementValue != null) {
-							Assert.assertNull("union test returns multiple results", set.getValue(el.resultName));
+							assertNull(set.getValue(el.resultName), "union test returns multiple results");
 							continue;
 						}
 						elementValue = set.getValue(el.resultName);
@@ -268,11 +269,11 @@ public class LuceneIndexIdFilteringTest {
 								set = result.next();
 								LOG.error("- {}", set);
 							}
-							Assert.fail("The element '" + element + "' was in the index "
+							fail("The element '" + element + "' was in the index "
 									+ el.resultName + ", but wasn't excepted");
 						}
 					}
-					Assert.assertNotNull("No element for the set: " + set, elementValue);
+					assertNotNull(elementValue, "No element for the set: " + set);
 				}
 			}
 
@@ -286,7 +287,7 @@ public class LuceneIndexIdFilteringTest {
 			}
 
 			if (!missing.isEmpty()) {
-				Assert.fail("Unexpected docs: " + missing);
+				fail("Unexpected docs: " + missing);
 			}
 		}
 	}
@@ -414,6 +415,7 @@ public class LuceneIndexIdFilteringTest {
 	}
 
 	static class QueryElement {
+
 		List<String> elements;
 		String resultName;
 

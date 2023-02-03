@@ -11,17 +11,18 @@
 package org.eclipse.rdf4j.sail.elasticsearchstore.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public class ElasticsearchStoreFactoryTest {
 
 	private ElasticsearchStoreFactory subject;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		subject = new ElasticsearchStoreFactory();
 	}
@@ -34,10 +35,10 @@ public class ElasticsearchStoreFactoryTest {
 	/**
 	 * Verify that the created sail is configured according to the supplied default configuration.
 	 */
-	@Test(expected = SailConfigException.class)
+	@Test
 	public void getSailWithDefaultConfigFails() {
 		ElasticsearchStoreConfig config = new ElasticsearchStoreConfig();
-		ElasticsearchStore sail = (ElasticsearchStore) subject.getSail(config);
+		assertThrows(SailConfigException.class, () -> subject.getSail(config));
 	}
 
 	/**

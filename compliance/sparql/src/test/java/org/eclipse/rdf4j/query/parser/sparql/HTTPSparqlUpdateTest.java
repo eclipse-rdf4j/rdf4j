@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.query.parser.sparql;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import java.util.List;
@@ -22,10 +23,10 @@ import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.testsuite.query.parser.sparql.SPARQLUpdateTest;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author jeen
@@ -36,7 +37,7 @@ public class HTTPSparqlUpdateTest extends SPARQLUpdateTest {
 
 	private static final String repositoryId = "test-sparql";
 
-	@BeforeClass
+	@BeforeAll
 	public static void startServer() throws Exception {
 		server = new SPARQLEmbeddedServer(List.of(repositoryId));
 		try {
@@ -47,7 +48,7 @@ public class HTTPSparqlUpdateTest extends SPARQLUpdateTest {
 		}
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void stopServer() throws Exception {
 		server.stop();
 	}
@@ -57,7 +58,7 @@ public class HTTPSparqlUpdateTest extends SPARQLUpdateTest {
 		return new HTTPRepository(server.getRepositoryUrl(repositoryId));
 	}
 
-	@Ignore
+	@Disabled
 	@Test
 	@Override
 	public void testAutoCommitHandling() {
@@ -98,7 +99,7 @@ public class HTTPSparqlUpdateTest extends SPARQLUpdateTest {
 		}
 	}
 
-	@Ignore
+	@Disabled
 	@Test
 	@Override
 	public void testConsecutiveUpdatesInSameTransaction() {
@@ -108,18 +109,24 @@ public class HTTPSparqlUpdateTest extends SPARQLUpdateTest {
 				"temporarily disabled testConsecutiveUpdatesInSameTransaction() for HTTPRepository. See SES-1652");
 	}
 
-	@Ignore
-	@Test(expected = MalformedQueryException.class)
+	@Disabled
+	@Test
 	@Override
 	public void testInvalidInsertUpdate() {
+		// FIXME: Where is the test?
+		assertThrows(MalformedQueryException.class, () -> {
+		});
 		// disabling test
 		System.err.println("temporarily disabled testInvalidInsertUpdate for HTTPRepository. See Issue #420");
 	}
 
-	@Ignore
-	@Test(expected = MalformedQueryException.class)
+	@Disabled
+	@Test
 	@Override
 	public void testInvalidDeleteUpdate() {
+		// FIXME: Where is the test?
+		assertThrows(MalformedQueryException.class, () -> {
+		});
 		// disabling test
 		System.err.println("temporarily disabled testInvalidDeleteUpdate for HTTPRepository. See Issue #420");
 	}

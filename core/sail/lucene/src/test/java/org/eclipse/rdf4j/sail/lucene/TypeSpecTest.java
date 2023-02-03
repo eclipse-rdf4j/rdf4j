@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lucene;
 
+import static org.junit.jupiter.api.Assertions.fail;
+
 import java.io.File;
 import java.io.IOException;
 import java.util.Set;
@@ -25,17 +27,16 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.Sets;
 
 public class TypeSpecTest {
+
 	private static final Logger LOG = LoggerFactory.getLogger(TypeSpecTest.class);
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final String EX_NS = "http://example.org/";
@@ -66,23 +67,19 @@ public class TypeSpecTest {
 		);
 	}
 
-	@Rule
-	public TemporaryFolder tmpFolder = new TemporaryFolder();
-
 	LuceneSail sail;
 	MemoryStore memoryStore;
 	SailRepository repository;
+	@TempDir
 	File dataDir;
 
-	@Before
+	@BeforeEach
 	public void setup() throws IOException {
-		dataDir = tmpFolder.newFolder();
 		memoryStore = new MemoryStore();
 		// enable lock tracking
 		sail = new LuceneSail();
 		sail.setParameter(LuceneSail.LUCENE_DIR_KEY, "lucene-index");
 		sail.setParameter(LuceneSail.INDEX_CLASS_KEY, LuceneSail.DEFAULT_INDEX_CLASS);
-
 	}
 
 	private void initSail() {
@@ -154,13 +151,13 @@ public class TypeSpecTest {
 							set = result.next();
 							LOG.error("- {}", set.getValue("result").stringValue().substring(EX_NS.length()));
 						}
-						Assert.fail("The element '" + element + "' was in the index, but wasn't excepted");
+						fail("The element '" + element + "' was in the index, but wasn't excepted");
 					}
 				}
 			}
 
 			if (!exceptedDocSet.isEmpty()) {
-				Assert.fail("Unexpected docs: " + exceptedDocSet);
+				fail("Unexpected docs: " + exceptedDocSet);
 			}
 		}
 	}
@@ -244,7 +241,6 @@ public class TypeSpecTest {
 		assertQuery(
 				"bbb", "ccc", "ddd", "eee", "fff"
 		);
-
 	}
 
 	@Test
@@ -493,5 +489,4 @@ public class TypeSpecTest {
 				"ddd", "eee"
 		);
 	}
-
 }

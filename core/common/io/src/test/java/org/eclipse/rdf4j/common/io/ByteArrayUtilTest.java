@@ -10,21 +10,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.io;
 
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.BitSet;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
+import org.junit.jupiter.api.Test;
 
 public class ByteArrayUtilTest {
-
-	@Rule
-	public ExpectedException thrown = ExpectedException.none();
 
 	@Test
 	public void testMatchesPattern() {
@@ -78,8 +74,7 @@ public class ByteArrayUtilTest {
 		assertEquals((1 << 24) + (2 << 16) + (3 << 8) + 4, ByteArrayUtil.getInt(new byte[] { 1, 2, 3, 4 }, 0));
 		assertEquals((1 << 24) + (2 << 16) + (3 << 8) + 4, ByteArrayUtil.getInt(new byte[] { 10, 1, 2, 3, 4, 10 }, 1));
 
-		thrown.expect(ArrayIndexOutOfBoundsException.class);
-		ByteArrayUtil.getInt(new byte[] { 1 }, 0);
+		assertThrows(ArrayIndexOutOfBoundsException.class, () -> ByteArrayUtil.getInt(new byte[] { 1 }, 0));
 	}
 
 	@Test
@@ -89,8 +84,7 @@ public class ByteArrayUtilTest {
 		assertEquals(1L << 56, ByteArrayUtil.getLong(new byte[] { 1, 0, 0, 0, 0, 0, 0, 0 }, 0));
 		assertEquals(0L, ByteArrayUtil.getLong(new byte[] { 127, 0, 0, 0, 0, 0, 0, 0, 0, 127 }, 1));
 
-		thrown.expect(ArrayIndexOutOfBoundsException.class);
-		ByteArrayUtil.getLong(new byte[] { 1 }, 0);
+		assertThrows(ArrayIndexOutOfBoundsException.class, () -> ByteArrayUtil.getLong(new byte[] { 1 }, 0));
 	}
 
 	@Test

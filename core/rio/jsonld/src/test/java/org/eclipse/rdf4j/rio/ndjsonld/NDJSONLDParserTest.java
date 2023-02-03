@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.ndjsonld;
 
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class NDJSONLDParserTest {
 

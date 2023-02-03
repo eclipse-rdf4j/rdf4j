@@ -67,11 +67,11 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL11ManifestTest;
 import org.eclipse.rdf4j.testsuite.sparql.RepositorySPARQLComplianceTestSuite;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -86,12 +86,12 @@ import org.slf4j.LoggerFactory;
 @Deprecated(since = "4.0.2", forRemoval = true)
 public abstract class ComplexSPARQLQueryTest {
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
@@ -115,7 +115,7 @@ public abstract class ComplexSPARQLQueryTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		logger.debug("setting up test");
 		this.rep = newRepository();
@@ -135,7 +135,7 @@ public abstract class ComplexSPARQLQueryTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		try {
 			if (conn != null) {

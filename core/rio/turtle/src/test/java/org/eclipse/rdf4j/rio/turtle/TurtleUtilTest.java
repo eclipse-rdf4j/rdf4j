@@ -10,13 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 /**
  * Test for the utility methods in {@link TurtleUtil}.
@@ -28,21 +28,21 @@ public class TurtleUtilTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 	}
 
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 	}
 
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.turtle.TurtleUtil#findURISplitIndex(java.lang.String)} .
 	 */
-	@Ignore("TODO: Implement me")
+	@Disabled("TODO: Implement me")
 	@Test
 	public final void testFindURISplitIndex() {
 
@@ -59,7 +59,7 @@ public class TurtleUtilTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.turtle.TurtleUtil#isPN_CHARS_BASE(int)}.
 	 */
-	@Ignore("TODO: Implement me")
+	@Disabled("TODO: Implement me")
 	@Test
 	public final void testIsPN_CHARS_BASE() {
 
@@ -68,7 +68,7 @@ public class TurtleUtilTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.turtle.TurtleUtil#isPN_CHARS_U(int)}.
 	 */
-	@Ignore("TODO: Implement me")
+	@Disabled("TODO: Implement me")
 	@Test
 	public final void testIsPN_CHARS_U() {
 
@@ -77,7 +77,7 @@ public class TurtleUtilTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.turtle.TurtleUtil#isPN_CHARS(int)}.
 	 */
-	@Ignore("TODO: Implement me")
+	@Disabled("TODO: Implement me")
 	@Test
 	public final void testIsPN_CHARS() {
 
@@ -86,7 +86,7 @@ public class TurtleUtilTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.turtle.TurtleUtil#isPrefixStartChar(int)}.
 	 */
-	@Ignore("TODO: Implement me")
+	@Disabled("TODO: Implement me")
 	@Test
 	public final void testIsPrefixStartChar() {
 
@@ -95,7 +95,7 @@ public class TurtleUtilTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.turtle.TurtleUtil#isNameStartChar(int)}.
 	 */
-	@Ignore("TODO: Implement me")
+	@Disabled("TODO: Implement me")
 	@Test
 	public final void testIsNameStartChar() {
 
@@ -112,7 +112,7 @@ public class TurtleUtilTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.turtle.TurtleUtil#isNameEndChar(int)}.
 	 */
-	@Ignore("TODO: Implement me")
+	@Disabled("TODO: Implement me")
 	@Test
 	public final void testIsNameEndChar() {
 
@@ -121,7 +121,7 @@ public class TurtleUtilTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.turtle.TurtleUtil#isLocalEscapedChar(int)}.
 	 */
-	@Ignore("TODO: Implement me")
+	@Disabled("TODO: Implement me")
 	@Test
 	public final void testIsLocalEscapedChar() {
 
@@ -130,7 +130,7 @@ public class TurtleUtilTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.turtle.TurtleUtil#isPrefixChar(int)}.
 	 */
-	@Ignore("TODO: Implement me")
+	@Disabled("TODO: Implement me")
 	@Test
 	public final void testIsPrefixChar() {
 
@@ -139,7 +139,7 @@ public class TurtleUtilTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.turtle.TurtleUtil#isLanguageStartChar(int)}.
 	 */
-	@Ignore("TODO: Implement me")
+	@Disabled("TODO: Implement me")
 	@Test
 	public final void testIsLanguageStartChar() {
 
@@ -148,7 +148,7 @@ public class TurtleUtilTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.turtle.TurtleUtil#isLanguageChar(int)}.
 	 */
-	@Ignore("TODO: Implement me")
+	@Disabled("TODO: Implement me")
 	@Test
 	public final void testIsLanguageChar() {
 
@@ -157,7 +157,7 @@ public class TurtleUtilTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.turtle.TurtleUtil#isPN_PREFIX(java.lang.String)}.
 	 */
-	@Ignore("TODO: Implement me")
+	@Disabled("TODO: Implement me")
 	@Test
 	public final void testIsPN_PREFIX() {
 
@@ -166,7 +166,7 @@ public class TurtleUtilTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.turtle.TurtleUtil#isPLX_START(java.lang.String)}.
 	 */
-	@Ignore("TODO: Implement me")
+	@Disabled("TODO: Implement me")
 	@Test
 	public final void testIsPLX_START() {
 
@@ -175,7 +175,7 @@ public class TurtleUtilTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.turtle.TurtleUtil#isPERCENT(java.lang.String)}.
 	 */
-	@Ignore("TODO: Implement me")
+	@Disabled("TODO: Implement me")
 	@Test
 	public final void testIsPERCENT() {
 
@@ -184,7 +184,7 @@ public class TurtleUtilTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.turtle.TurtleUtil#isPLX_INTERNAL(java.lang.String)} .
 	 */
-	@Ignore("TODO: Implement me")
+	@Disabled("TODO: Implement me")
 	@Test
 	public final void testIsPLX_INTERNAL() {
 
@@ -193,7 +193,7 @@ public class TurtleUtilTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.turtle.TurtleUtil#isPN_LOCAL_ESC(java.lang.String)} .
 	 */
-	@Ignore("TODO: Implement me")
+	@Disabled("TODO: Implement me")
 	@Test
 	public final void testIsPN_LOCAL_ESC() {
 
@@ -236,7 +236,7 @@ public class TurtleUtilTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.turtle.TurtleUtil#encodeString(java.lang.String)}.
 	 */
-	@Ignore("TODO: Implement me")
+	@Disabled("TODO: Implement me")
 	@Test
 	public final void testEncodeString() {
 
@@ -245,7 +245,7 @@ public class TurtleUtilTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.turtle.TurtleUtil#encodeLongString(java.lang.String)} .
 	 */
-	@Ignore("TODO: Implement me")
+	@Disabled("TODO: Implement me")
 	@Test
 	public final void testEncodeLongString() {
 
@@ -254,7 +254,7 @@ public class TurtleUtilTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.turtle.TurtleUtil#encodeURIString(java.lang.String)} .
 	 */
-	@Ignore("TODO: Implement me")
+	@Disabled("TODO: Implement me")
 	@Test
 	public final void testEncodeURIString() {
 
@@ -263,7 +263,7 @@ public class TurtleUtilTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.turtle.TurtleUtil#decodeString(java.lang.String)}.
 	 */
-	@Ignore("TODO: Implement me")
+	@Disabled("TODO: Implement me")
 	@Test
 	public final void testDecodeString() {
 

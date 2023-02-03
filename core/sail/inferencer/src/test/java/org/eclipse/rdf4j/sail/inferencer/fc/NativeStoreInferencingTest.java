@@ -10,28 +10,23 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.inferencer.fc;
 
-import java.io.IOException;
+import java.io.File;
 
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.testsuite.sail.InferencingTest;
-import org.junit.Rule;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.io.TempDir;
 
 public class NativeStoreInferencingTest extends InferencingTest {
 
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
+	@TempDir
+	File dataDir;
 
 	@Override
 	protected Sail createSail() {
-		try {
-			NotifyingSail sailStack = new NativeStore(tempDir.newFolder(), "spoc,posc");
-			sailStack = new SchemaCachingRDFSInferencer(sailStack);
-			return sailStack;
-		} catch (IOException e) {
-			throw new AssertionError(e);
-		}
+		NotifyingSail sailStack = new NativeStore(dataDir, "spoc,posc");
+		sailStack = new SchemaCachingRDFSInferencer(sailStack);
+		return sailStack;
 	}
 }

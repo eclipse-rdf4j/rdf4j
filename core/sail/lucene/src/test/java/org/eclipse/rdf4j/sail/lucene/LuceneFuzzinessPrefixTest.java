@@ -29,10 +29,9 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 public class LuceneFuzzinessPrefixTest {
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
@@ -50,17 +49,14 @@ public class LuceneFuzzinessPrefixTest {
 		return String.join(" \n", lines);
 	}
 
-	@Rule
-	public TemporaryFolder tmpFolder = new TemporaryFolder();
-
 	private LuceneSail sail;
 	private MemoryStore memoryStore;
 	private SailRepository repository;
+	@TempDir
 	private File dataDir;
 
-	@Before
+	@BeforeEach
 	public void setup() throws IOException {
-		dataDir = tmpFolder.newFolder();
 		memoryStore = new MemoryStore();
 		sail = new LuceneSail();
 		sail.setParameter(LuceneSail.LUCENE_DIR_KEY, "lucene-index");

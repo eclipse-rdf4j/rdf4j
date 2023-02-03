@@ -10,8 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.string;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.fail;
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -20,8 +20,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public class ConcatTest {
 
@@ -39,7 +39,7 @@ public class ConcatTest {
 
 	private static final Literal foo_nl = vf.createLiteral("foo", "nl");
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		concatFunc = new Concat();
 	}

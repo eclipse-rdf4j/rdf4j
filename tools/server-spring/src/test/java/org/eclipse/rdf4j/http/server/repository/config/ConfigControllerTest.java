@@ -25,8 +25,8 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpMethod;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -42,7 +42,7 @@ public class ConfigControllerTest {
 	private MockHttpServletResponse response;
 	private RepositoryManager manager;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		request = new MockHttpServletRequest();
 		request.setAttribute("repositoryID", repositoryId);

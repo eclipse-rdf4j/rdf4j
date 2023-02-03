@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtlestar;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.IOException;
 import java.io.StringWriter;
@@ -18,7 +18,7 @@ import java.io.Writer;
 
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Pavel Mihaylov

@@ -14,20 +14,17 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
-import java.io.IOException;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 public class NativeStoreTmpDatadirTest {
 
-	@Rule
-	public TemporaryFolder tempFolder = new TemporaryFolder();
+	@TempDir
+	File dataDir;
 
 	@Test
-	public void testNoTmpDatadir() throws IOException {
-		File dataDir = tempFolder.newFolder();
+	public void testNoTmpDatadir() {
 		NativeStore store = new NativeStore(dataDir);
 
 		store.init();
@@ -38,7 +35,7 @@ public class NativeStoreTmpDatadirTest {
 	}
 
 	@Test
-	public void testTmpDatadir() throws IOException {
+	public void testTmpDatadir() {
 		NativeStore store = new NativeStore();
 		store.init();
 		File dataDir = store.getDataDir();
@@ -49,7 +46,7 @@ public class NativeStoreTmpDatadirTest {
 	}
 
 	@Test
-	public void testTmpDatadirReinit() throws IOException {
+	public void testTmpDatadirReinit() {
 		NativeStore store = new NativeStore();
 		store.init();
 		File dataDir1 = store.getDataDir();
@@ -62,8 +59,7 @@ public class NativeStoreTmpDatadirTest {
 	}
 
 	@Test
-	public void testDatadirMix() throws IOException {
-		File dataDir = tempFolder.newFolder();
+	public void testDatadirMix() {
 		NativeStore store = new NativeStore(dataDir);
 
 		store.init();

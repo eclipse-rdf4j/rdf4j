@@ -10,23 +10,23 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.webapp.navigation;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public class NavigationTest {
 
 	private NavigationModel model = null;
 
-	@Before
+	@BeforeEach
 	public void setUp() {
 		model = new NavigationModel();
 		List<String> navigationModelLocations = new ArrayList<>();
@@ -36,28 +36,28 @@ public class NavigationTest {
 
 	@Test
 	public void testParse() {
-		assertNotNull("Parsed model is null", model);
-		assertEquals("Model should have one group", 1, model.getGroups().size());
+		assertNotNull(model, "Parsed model is null");
+		assertEquals(1, model.getGroups().size(), "Model should have one group");
 		Group systemGroup = model.getGroups().get(0);
-		assertEquals("system group should have 1 subgroup", 1, systemGroup.getGroups().size());
-		assertEquals("system group should have 2 views", 2, systemGroup.getViews().size());
+		assertEquals(1, systemGroup.getGroups().size(), "system group should have 1 subgroup");
+		assertEquals(2, systemGroup.getViews().size(), "system group should have 2 views");
 		View loggingView = systemGroup.getViews().get(1);
-		assertFalse("logging view should not be hidden", loggingView.isHidden());
-		assertTrue("logging view should be enabled", loggingView.isEnabled());
-		assertEquals("Path for logging is not correct", "/system/logging.view", loggingView.getPath());
-		assertEquals("Icon for logging is not correct", "/images/icons/system_logging.png", loggingView.getIcon());
-		assertEquals("I18N for logging is not correct", "system.logging.title", loggingView.getI18n());
+		assertFalse(loggingView.isHidden(), "logging view should not be hidden");
+		assertTrue(loggingView.isEnabled(), "logging view should be enabled");
+		assertEquals("/system/logging.view", loggingView.getPath(), "Path for logging is not correct");
+		assertEquals("/images/icons/system_logging.png", loggingView.getIcon(), "Icon for logging is not correct");
+		assertEquals("system.logging.title", loggingView.getI18n(), "I18N for logging is not correct");
 		Group loggingGroup = systemGroup.getGroups().get(0);
-		assertEquals("logging subgroup should have 1 views", 1, loggingGroup.getViews().size());
-		assertTrue("logging subgroup should be hidden", loggingGroup.isHidden());
-		assertTrue("logging subgroup should be enabled", loggingGroup.isEnabled());
+		assertEquals(1, loggingGroup.getViews().size(), "logging subgroup should have 1 views");
+		assertTrue(loggingGroup.isHidden(), "logging subgroup should be hidden");
+		assertTrue(loggingGroup.isEnabled(), "logging subgroup should be enabled");
 		View loggingOverview = loggingGroup.getViews().get(0);
-		assertFalse("logging overview should be disabled", loggingOverview.isEnabled());
+		assertFalse(loggingOverview.isEnabled(), "logging overview should be disabled");
 	}
 
 	@Test
 	public void testFind() {
-		assertNotNull("Find should have succeeded", model.findView("/system/logging/overview.view"));
-		assertNull("Find should not have succeeded", model.findView("/system/logging/bogus.view"));
+		assertNotNull(model.findView("/system/logging/overview.view"), "Find should have succeeded");
+		assertNull(model.findView("/system/logging/bogus.view"), "Find should not have succeeded");
 	}
 }

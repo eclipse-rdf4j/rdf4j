@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.repository.manager;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -35,11 +36,10 @@ import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Integration tests for {@link LocalRepositoryManager}
@@ -48,10 +48,8 @@ import org.junit.rules.TemporaryFolder;
  */
 public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerIntegrationTest {
 
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
-
-	private File datadir;
+	@TempDir
+	File datadir;
 
 	private static final String TEST_REPO = "test";
 
@@ -60,10 +58,9 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@Before
+	@BeforeEach
 	@Override
 	public void setUp() throws Exception {
-		datadir = tempDir.newFolder("local-repositorysubject-test");
 		subject = new LocalRepositoryManager(datadir);
 		subject.init();
 
@@ -79,14 +76,13 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 	/**
 	 * @throws IOException if a problem occurs deleting temporary resources
 	 */
-	@After
+	@AfterEach
 	public void tearDown() throws IOException {
 		subject.shutDown();
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.repository.subject.LocalRepositoryManager#getRepository(java.lang.String)} .
+	 * Test method for {@link LocalRepositoryManager#getRepository(java.lang.String)} .
 	 *
 	 * @throws RepositoryException       if a problem occurs accessing the repository
 	 * @throws RepositoryConfigException if a problem occurs accessing the repository
@@ -159,7 +155,7 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 	}
 
 	/**
-	 * Test method for {@link RepositoryManager.isSafeToRemove(String)}.
+	 * Test method for {@link RepositoryManager#isSafeToRemove(String)}.
 	 *
 	 * @throws RepositoryException       if a problem occurs during execution
 	 * @throws RepositoryConfigException if a problem occurs during execution
@@ -189,13 +185,12 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 		}
 	}
 
-	@Test(expected = RepositoryConfigException.class)
+	@Test
 	public void testAddConfig_validation() throws Exception {
 		InputStream in = getClass().getResourceAsStream("/fixtures/memory-invalid.ttl");
 		Model model = Rio.parse(in, RDFFormat.TURTLE);
-		RepositoryConfig config = RepositoryConfigUtil.getRepositoryConfig(model, "Test");
 
-		subject.addRepositoryConfig(config);
+		assertThrows(RepositoryConfigException.class, () -> RepositoryConfigUtil.getRepositoryConfig(model, "Test"));
 	}
 
 }

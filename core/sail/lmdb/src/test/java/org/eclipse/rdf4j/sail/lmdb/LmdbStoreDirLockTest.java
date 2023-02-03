@@ -17,18 +17,13 @@ import java.io.File;
 
 import org.eclipse.rdf4j.sail.SailLockedException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 public class LmdbStoreDirLockTest {
 
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
-
 	@Test
-	public void testLocking() throws Exception {
-		File dataDir = tempDir.newFolder();
+	public void testLocking(@TempDir File dataDir) throws Exception {
 		LmdbStore sail = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 		sail.init();
 

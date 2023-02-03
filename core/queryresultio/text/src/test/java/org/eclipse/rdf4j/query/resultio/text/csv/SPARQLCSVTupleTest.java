@@ -10,9 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.text.csv;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
@@ -35,7 +35,7 @@ import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 import org.eclipse.rdf4j.testsuite.query.resultio.AbstractQueryResultIOTupleTest;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Peter Ansell

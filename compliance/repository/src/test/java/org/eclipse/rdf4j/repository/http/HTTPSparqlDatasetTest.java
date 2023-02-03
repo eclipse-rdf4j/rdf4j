@@ -12,14 +12,14 @@ package org.eclipse.rdf4j.repository.http;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.testsuite.repository.SparqlDatasetTest;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 
 public class HTTPSparqlDatasetTest extends SparqlDatasetTest {
 
 	private static HTTPMemServer server;
 
-	@BeforeClass
+	@BeforeAll
 	public static void startServer() throws Exception {
 		server = new HTTPMemServer();
 		try {
@@ -30,7 +30,7 @@ public class HTTPSparqlDatasetTest extends SparqlDatasetTest {
 		}
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void stopServer() throws Exception {
 		server.stop();
 	}

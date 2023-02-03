@@ -11,8 +11,8 @@
 package org.eclipse.rdf4j.repository.event;
 
 import static org.eclipse.rdf4j.query.QueryLanguage.SPARQL;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
@@ -35,7 +35,7 @@ import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
 import org.eclipse.rdf4j.repository.base.RepositoryWrapper;
 import org.eclipse.rdf4j.repository.event.base.InterceptingRepositoryConnectionWrapper;
 import org.eclipse.rdf4j.repository.event.base.RepositoryConnectionInterceptorAdapter;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author James Leigh

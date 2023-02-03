@@ -16,18 +16,16 @@ import static org.junit.Assert.fail;
 import java.io.File;
 
 import org.eclipse.rdf4j.sail.SailLockedException;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 public class NativeStoreDirLockTest {
 
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
+	@TempDir
+	File dataDir;
 
 	@Test
 	public void testLocking() throws Exception {
-		File dataDir = tempDir.newFolder();
 		NativeStore sail = new NativeStore(dataDir, "spoc,posc");
 		sail.init();
 

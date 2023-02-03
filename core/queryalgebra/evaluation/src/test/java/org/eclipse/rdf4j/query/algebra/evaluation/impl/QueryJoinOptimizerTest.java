@@ -11,8 +11,10 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,8 +37,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests to monitor QueryJoinOptimizer behaviour.
@@ -59,7 +60,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		testOptimizer(expectedQuery, query);
 	}
 
-	@Test(expected = AssertionError.class)
+	@Test
 	public void testContextOptimization() throws RDF4JException {
 		String query = "prefix ex: <ex:>" + "select ?x ?y ?z ?g ?p ?o where {" + " graph ?g {" + "  ex:s ?sp ?so. "
 				+ "  ?ps ex:p ?po. " + "  ?os ?op 'ex:o'. " + " }" + " ?x ?y ?z. " + "}";
@@ -71,7 +72,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		String expectedQuery = "prefix ex: <ex:>" + "select ?x ?y ?z ?g ?p ?o where {" + " graph ?g {"
 				+ "  ex:s ?sp ?so. " + "  ?ps ex:p ?po. " + "  ?os ?op 'ex:o'. " + " }" + " ?x ?y ?z. " + "}";
 
-		testOptimizer(expectedQuery, query);
+		assertThrows(AssertionError.class, () -> testOptimizer(expectedQuery, query));
 	}
 
 	@Test
@@ -107,8 +108,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		QueryRoot optRoot = new QueryRoot(q.getTupleExpr());
 		opt.optimize(optRoot, null, null);
 		TupleExpr leaf = findLeaf(optRoot);
-		Assert.assertTrue("Extension must be evaluated before StatementPattern",
-				leaf.getParentNode() instanceof Extension);
+		assertTrue(leaf.getParentNode() instanceof Extension, "Extension must be evaluated before StatementPattern");
 	}
 
 	@Test

@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.hash;
 
-import org.junit.Before;
+import org.junit.jupiter.api.BeforeEach;
 
 /**
  * @author jeen
@@ -20,7 +20,7 @@ public class MD5Test extends HashFunctionTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		setHashFunction(new MD5());
 		setToHash("abc");

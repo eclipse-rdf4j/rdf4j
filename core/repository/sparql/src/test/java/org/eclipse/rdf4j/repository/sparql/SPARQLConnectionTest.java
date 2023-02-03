@@ -28,8 +28,8 @@ import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.rio.ParserConfig;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 public class SPARQLConnectionTest {
@@ -38,7 +38,7 @@ public class SPARQLConnectionTest {
 	private SPARQLProtocolSession client;
 	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		client = mock(SPARQLProtocolSession.class);
 		subject = new SPARQLConnection(null, client);

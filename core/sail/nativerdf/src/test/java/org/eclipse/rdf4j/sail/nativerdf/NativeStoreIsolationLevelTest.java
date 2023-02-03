@@ -10,13 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import java.io.IOException;
+import java.io.File;
 
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.testsuite.sail.SailIsolationLevelTest;
-import org.junit.Rule;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * An extension of {@link SailIsolationLevelTest} for testing the class {@link NativeStore}.
@@ -27,8 +26,8 @@ public class NativeStoreIsolationLevelTest extends SailIsolationLevelTest {
 	 * Variables *
 	 *-----------*/
 
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
+	@TempDir
+	public File tempDir;
 
 	/*---------*
 	 * Methods *
@@ -36,10 +35,6 @@ public class NativeStoreIsolationLevelTest extends SailIsolationLevelTest {
 
 	@Override
 	protected NotifyingSail createSail() throws SailException {
-		try {
-			return new NativeStore(tempDir.newFolder(), "spoc,posc");
-		} catch (IOException e) {
-			throw new AssertionError(e);
-		}
+		return new NativeStore(tempDir, "spoc,posc");
 	}
 }

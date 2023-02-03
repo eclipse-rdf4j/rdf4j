@@ -120,5 +120,11 @@
 			<groupId>org.slf4j</groupId>
 			<artifactId>slf4j-api</artifactId>
 		</dependency>
+		<!-- This module uses parameterized tests and legacy test/suite setup, and cannot be fully migrated to JUnit 5 now -->
+		<dependency>
+			<groupId>org.junit.vintage</groupId>
+			<artifactId>junit-vintage-engine</artifactId>
+			<scope>compile</scope>
+		</dependency>
 	</dependencies>
 </project>

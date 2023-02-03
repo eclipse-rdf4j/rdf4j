@@ -18,17 +18,15 @@ import java.io.InputStream;
 import java.util.Properties;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 public class DefaultIndexTest {
-	@Rule
-	public final TemporaryFolder tmpDir = new TemporaryFolder();
+	@TempDir
+	File dir;
 
 	@Test
 	public void testDefaultIndex() throws Exception {
-		File dir = tmpDir.newFolder();
 		TripleStore store = new TripleStore(dir, null);
 		store.close();
 		// check that the triple store used the default index
@@ -38,7 +36,6 @@ public class DefaultIndexTest {
 
 	@Test
 	public void testExistingIndex() throws Exception {
-		File dir = tmpDir.newFolder();
 		// set a non-default index
 		TripleStore store = new TripleStore(dir, "spoc,opsc");
 		store.close();

@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.elasticsearchstore.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Model;
@@ -19,8 +20,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public class ElasticsearchStoreConfigTest {
 
@@ -30,7 +31,7 @@ public class ElasticsearchStoreConfigTest {
 
 	private ModelBuilder mb;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		subject = new ElasticsearchStoreConfig();
 		implNode = SimpleValueFactory.getInstance().createBNode();
@@ -79,13 +80,13 @@ public class ElasticsearchStoreConfigTest {
 		assertThat(subject.getPort()).isEqualTo(9300);
 	}
 
-	@Test(expected = SailConfigException.class)
+	@Test
 	public void parseInvalidModelGivesCorrectException() {
 
 		mb
 				.add(ElasticsearchStoreSchema.port, "port1");
 
-		subject.parse(mb.build(), implNode);
+		assertThrows(SailConfigException.class, () -> subject.parse(mb.build(), implNode));
 
 	}
 

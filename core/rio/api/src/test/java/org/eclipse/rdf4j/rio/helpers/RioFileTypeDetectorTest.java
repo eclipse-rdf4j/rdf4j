@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.spi.FileTypeDetector;
 import java.util.ServiceLoader;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class RioFileTypeDetectorTest {
 	@Test

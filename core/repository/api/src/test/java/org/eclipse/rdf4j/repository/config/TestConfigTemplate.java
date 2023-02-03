@@ -10,12 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.config;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Dale Visser
@@ -48,9 +49,9 @@ public class TestConfigTemplate {
 		assertEquals(ConfigTemplate.escapeMultilineQuotes("\"\"\"", value), "\" \"\" \\\"\\\"\\\" \\\"\\\"\\\"\"");
 	}
 
-	@Test(expected = IllegalArgumentException.class)
+	@Test
 	public final void testInvalidDelimiterThrowsException() {
-		ConfigTemplate.escapeMultilineQuotes("'", "any value");
+		assertThrows(IllegalArgumentException.class, () -> ConfigTemplate.escapeMultilineQuotes("'", "any value"));
 	}
 
 	@Test

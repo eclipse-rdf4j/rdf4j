@@ -13,14 +13,14 @@ package org.eclipse.rdf4j.rio.helpers;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.eclipse.rdf4j.rio.RioSetting;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 public class BooleanRioSettingTest extends RioSettingTest<Boolean> {
 
 	@Test
 	@Override
-	@Ignore
+	@Disabled
 	public void testConvertIllegal() throws Exception {
 	}
 

@@ -71,6 +71,12 @@
 			<artifactId>jcl-over-slf4j</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- This module uses WireMock in tests and cannot be fully migrated to JUnit 5 now -->
+		<dependency>
+			<groupId>org.junit.vintage</groupId>
+			<artifactId>junit-vintage-engine</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 	<build>
 		<plugins>

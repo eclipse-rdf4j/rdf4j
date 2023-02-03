@@ -14,8 +14,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.eclipse.rdf4j.rio.RioSetting;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public abstract class RioSettingTest<T> {
 
@@ -28,7 +28,7 @@ public abstract class RioSettingTest<T> {
 	 */
 	protected RioSetting<T> subject;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		subject = createRioSetting(TEST_KEY, TEST_DESCRIPTION, getDefaultValue());
 	}

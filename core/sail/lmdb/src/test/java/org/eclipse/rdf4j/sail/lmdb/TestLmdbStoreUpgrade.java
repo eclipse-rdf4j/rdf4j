@@ -22,21 +22,16 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  *
  */
 public class TestLmdbStoreUpgrade {
 
-	@Rule
-	public final TemporaryFolder tmpDir = new TemporaryFolder();
-
 	@Test
-	public void testDevel() throws IOException, SailException {
-		File dataDir = tmpDir.getRoot();
+	public void testDevel(@TempDir File dataDir) throws IOException, SailException {
 		LmdbStore store = new LmdbStore(dataDir);
 		try {
 			store.init();

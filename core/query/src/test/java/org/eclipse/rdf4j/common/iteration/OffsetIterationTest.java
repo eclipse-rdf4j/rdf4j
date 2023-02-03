@@ -10,12 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.iteration;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.Collections;
 import java.util.List;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class OffsetIterationTest extends CloseableIterationTest {
 
@@ -39,7 +39,7 @@ public class OffsetIterationTest extends CloseableIterationTest {
 			Iteration<String, Exception> iter = createOffsetIteration(offset);
 			List<String> resultList = Iterations.asList(iter);
 			List<String> expectedList = stringList1.subList(offset, stringList1.size());
-			assertEquals("test failed for offset: " + offset, expectedList, resultList);
+			assertEquals(expectedList, resultList, "test failed for offset: " + offset);
 		}
 	}
 

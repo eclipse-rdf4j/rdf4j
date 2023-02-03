@@ -10,9 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.iteration;
 
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class UnionIterationTest extends CloseableIterationTest {
 
@@ -35,8 +35,8 @@ public class UnionIterationTest extends CloseableIterationTest {
 			unionIter.next();
 		}
 
-		assertTrue("iter1 should have been closed", iter1.isClosed());
-		assertTrue("iter2 should have been closed", iter2.isClosed());
-		assertTrue("iter3 should have been closed", iter3.isClosed());
+		assertTrue(iter1.isClosed(), "iter1 should have been closed");
+		assertTrue(iter2.isClosed(), "iter2 should have been closed");
+		assertTrue(iter3.isClosed(), "iter3 should have been closed");
 	}
 }

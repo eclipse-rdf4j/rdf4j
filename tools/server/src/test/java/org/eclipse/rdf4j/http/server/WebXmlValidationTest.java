@@ -18,8 +18,8 @@ import javax.xml.XMLConstants;
 import javax.xml.validation.SchemaFactory;
 
 import org.eclipse.rdf4j.common.xml.DocumentUtil;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 import org.xml.sax.SAXException;
 
 /**
@@ -28,7 +28,7 @@ import org.xml.sax.SAXException;
 public class WebXmlValidationTest {
 
 	@Test
-	@Ignore("temporarily disabled to avoid problems with downloading of XML Schema on Hudson instance")
+	@Disabled("temporarily disabled to avoid problems with downloading of XML Schema on Hudson instance")
 	public void testValidXml() throws MalformedURLException, IOException, SAXException {
 		File webXml = new File("src/main/webapp/WEB-INF/web.xml");
 

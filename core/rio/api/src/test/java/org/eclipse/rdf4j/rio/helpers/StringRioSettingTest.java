@@ -11,14 +11,14 @@
 package org.eclipse.rdf4j.rio.helpers;
 
 import org.eclipse.rdf4j.rio.RioSetting;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 public class StringRioSettingTest extends RioSettingTest<String> {
 
 	@Test
 	@Override
-	@Ignore
+	@Disabled
 	public void testConvertIllegal() throws Exception {
 	}
 
