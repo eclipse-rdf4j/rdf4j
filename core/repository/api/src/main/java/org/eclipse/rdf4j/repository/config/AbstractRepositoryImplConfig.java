@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.config;
 
+import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.NAMESPACE_OBSOLETE;
 import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORYTYPE;
 
 import org.eclipse.rdf4j.model.BNode;
@@ -18,7 +19,6 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelException;
-import org.eclipse.rdf4j.model.util.Models;
 
 /**
  * @author Herko ter Horst
@@ -72,7 +72,8 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 
 	@Override
 	public void parse(Model model, Resource resource) throws RepositoryConfigException {
-		Models.objectLiteral(model.getStatements(resource, REPOSITORYTYPE, null))
+		RepositoryConfigUtil
+				.getPropertyAsLiteral(model, resource, REPOSITORYTYPE, NAMESPACE_OBSOLETE)
 				.ifPresent(typeLit -> setType(typeLit.getLabel()));
 	}
 
@@ -88,10 +89,8 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 	 */
 	public static RepositoryImplConfig create(Model model, Resource resource) throws RepositoryConfigException {
 		try {
-			// Literal typeLit = GraphUtil.getOptionalObjectLiteral(graph,
-			// implNode, REPOSITORYTYPE);
-
-			final Literal typeLit = Models.objectLiteral(model.getStatements(resource, REPOSITORYTYPE, null))
+			final Literal typeLit = RepositoryConfigUtil
+					.getPropertyAsLiteral(model, resource, REPOSITORYTYPE, NAMESPACE_OBSOLETE)
 					.orElse(null);
 			if (typeLit != null) {
 				RepositoryFactory factory = RepositoryRegistry.getInstance()
@@ -109,4 +108,5 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 			throw new RepositoryConfigException(e.getMessage(), e);
 		}
 	}
+
 }

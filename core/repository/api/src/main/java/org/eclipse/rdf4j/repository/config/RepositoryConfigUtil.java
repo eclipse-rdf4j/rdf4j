@@ -17,8 +17,10 @@ import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSIT
 
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -27,6 +29,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.Repository;
@@ -66,6 +69,39 @@ public class RepositoryConfigUtil {
 			}
 		});
 		return idSet;
+	}
+	
+	@InternalUseOnly
+	public static Optional<Resource> getPropertyAsResource(Model model, Resource subject, IRI property,
+			String fallbackNamespace) {
+		return Optional
+				.ofNullable(Models.objectResource(model.getStatements(subject, property, null)))
+				.orElseGet(() -> {
+					IRI fallback = iri(fallbackNamespace, property.getLocalName());
+					return Models.objectResource(model.getStatements(subject, fallback, null));
+				});
+	}
+
+	@InternalUseOnly
+	public static Optional<Literal> getPropertyAsLiteral(Model model, Resource subject, IRI property,
+			String fallbackNamespace) {
+		return Optional
+				.ofNullable(Models.objectLiteral(model.getStatements(subject, property, null)))
+				.orElseGet(() -> {
+					IRI fallback = iri(fallbackNamespace, property.getLocalName());
+					return Models.objectLiteral(model.getStatements(subject, fallback, null));
+				});
+	}
+
+	@InternalUseOnly
+	public static Optional<IRI> getPropertyAsIRI(Model model, Resource subject, IRI property,
+			String fallbackNamespace) {
+		return Optional
+				.ofNullable(Models.objectIRI(model.getStatements(subject, property, null)))
+				.orElseGet(() -> {
+					IRI fallback = iri(fallbackNamespace, property.getLocalName());
+					return Models.objectIRI(model.getStatements(subject, fallback, null));
+				});
 	}
 
 	private static Statement getIDStatement(Model model, String repositoryID) {

@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.repository.config;
 
 import static org.eclipse.rdf4j.model.util.Values.bnode;
-import static org.eclipse.rdf4j.model.util.Values.iri;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.NAMESPACE;
 import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.NAMESPACE_OBSOLETE;
@@ -19,10 +18,6 @@ import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSIT
 import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORYID;
 import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORYIMPL;
 
-import java.util.Optional;
-
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.ModelException;
@@ -155,34 +150,21 @@ public class RepositoryConfig {
 
 	public void parse(Model model, Resource repositoryNode) throws RepositoryConfigException {
 		try {
-			getLiteral(model, repositoryNode, REPOSITORYID)
+			RepositoryConfigUtil
+					.getPropertyAsLiteral(model, repositoryNode, REPOSITORYID, NAMESPACE_OBSOLETE)
 					.ifPresent(lit -> setID(lit.getLabel()));
+
 			Models.objectLiteral(model.getStatements(repositoryNode, RDFS.LABEL, null))
 					.ifPresent(lit -> setTitle(lit.getLabel()));
-			getResource(model, repositoryNode, REPOSITORYIMPL)
+
+			RepositoryConfigUtil
+					.getPropertyAsResource(model, repositoryNode, REPOSITORYIMPL, NAMESPACE_OBSOLETE)
 					.ifPresent(res -> setRepositoryImplConfig(AbstractRepositoryImplConfig.create(model, res)));
 		} catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);
 		}
 	}
 
-	private Optional<Resource> getResource(Model model, Resource subject, IRI property) {
-		return Optional
-				.ofNullable(Models.objectResource(model.getStatements(subject, property, null)))
-				.orElseGet(() -> {
-					IRI fallback = iri(NAMESPACE_OBSOLETE, property.getLocalName());
-					return Models.objectResource(model.getStatements(subject, fallback, null));
-				});
-	}
-
-	private Optional<Literal> getLiteral(Model model, Resource subject, IRI property) {
-		return Optional
-				.ofNullable(Models.objectLiteral(model.getStatements(subject, property, null)))
-				.orElseGet(() -> {
-					IRI fallback = iri(NAMESPACE_OBSOLETE, property.getLocalName());
-					return Models.objectLiteral(model.getStatements(subject, fallback, null));
-				});
-	}
 
 	/**
 	 * Creates a new {@link RepositoryConfig} object and initializes it by supplying the {@code model} and

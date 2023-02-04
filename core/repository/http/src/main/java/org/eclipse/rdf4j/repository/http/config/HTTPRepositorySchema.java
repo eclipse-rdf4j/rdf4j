@@ -24,22 +24,25 @@ import org.eclipse.rdf4j.repository.http.HTTPRepository;
 public class HTTPRepositorySchema {
 
 	/**
-	 * The HTTPRepository schema namespace (<var>http://www.openrdf.org/config/repository/http#</var>).
+	 * The HTTPRepository schema namespace (<var>tag:rdf4j.org:2023:config/http-repository#</var>).
 	 */
-	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/http#";
+	public static final String NAMESPACE = "tag:rdf4j.org:2023:config/http-repository#";
+
+	@Deprecated(since = "4.3.0", forRemoval = true)
+	public static final String NAMESPACE_OBSOLETE = "http://www.openrdf.org/config/repository/http#";
 
 	/**
-	 * <var>http://www.openrdf.org/config/repository/http#repositoryURL</var>
+	 * <var>tag:rdf4j.org:2023:config/http-repository#repositoryURL</var>
 	 */
 	public final static IRI REPOSITORYURL;
 
 	/**
-	 * <var>http://www.openrdf.org/config/repository/http#username</var>
+	 * <var>tag:rdf4j.org:2023:config/http-repository#username</var>
 	 */
 	public final static IRI USERNAME;
 
 	/**
-	 * <var>http://www.openrdf.org/config/repository/http#password</var>
+	 * <var>tag:rdf4j.org:2023:config/http-repository#password</var>
 	 */
 	public final static IRI PASSWORD;
 
