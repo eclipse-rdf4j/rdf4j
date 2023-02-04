@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.config;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORYID;
 import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORY_CONTEXT;
 
@@ -18,13 +20,13 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.Repository;
@@ -67,8 +69,13 @@ public class RepositoryConfigUtil {
 	}
 
 	private static Statement getIDStatement(Model model, String repositoryID) {
-		Literal idLiteral = SimpleValueFactory.getInstance().createLiteral(repositoryID);
+		Literal idLiteral = literal(repositoryID);
 		Model idStatementList = model.filter(null, REPOSITORYID, idLiteral);
+
+		if (idStatementList.isEmpty()) {
+			IRI fallback = iri(RepositoryConfigSchema.NAMESPACE_OBSOLETE, REPOSITORYID.getLocalName());
+			idStatementList = model.filter(null, fallback, idLiteral);
+		}
 
 		if (idStatementList.size() == 1) {
 			return idStatementList.iterator().next();

@@ -2,7 +2,7 @@
 # RDF4J configuration template for a Repository proxy for a SPARQL endpoint
 #
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix rep: <http://www.openrdf.org/config/repository#>.
+@prefix rep: <http://rdf4j.org/schema/repository#>.
 @prefix sparql: <http://www.openrdf.org/config/repository/sparql#>.
 
 [] a rep:Repository ;
