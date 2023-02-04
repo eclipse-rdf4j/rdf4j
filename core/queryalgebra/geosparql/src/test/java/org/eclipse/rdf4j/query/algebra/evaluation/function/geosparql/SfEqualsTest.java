@@ -11,7 +11,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.GEO;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class SfEqualsTest extends GeometricRelationFunctionTest {
 

@@ -11,7 +11,7 @@
 package org.eclipse.rdf4j.workbench.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -25,10 +25,8 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author dale
@@ -39,13 +37,10 @@ public class TestValueDecoder {
 
 	private ValueFactory factory;
 
-	@Rule
-	public ExpectedException thrown = ExpectedException.none();
-
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		factory = SimpleValueFactory.getInstance();
 

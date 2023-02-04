@@ -10,8 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.text.tsv;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -34,7 +34,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.UnsupportedQueryResultFormatException;
 import org.eclipse.rdf4j.testsuite.query.resultio.AbstractQueryResultIOTupleTest;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Peter Ansell

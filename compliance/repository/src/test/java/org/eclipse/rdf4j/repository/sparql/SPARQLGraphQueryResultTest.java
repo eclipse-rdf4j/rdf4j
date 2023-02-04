@@ -14,8 +14,8 @@ import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.http.HTTPMemServer;
 import org.eclipse.rdf4j.testsuite.repository.GraphQueryResultTest;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 
 /**
  * @author Jeen Broekstra
@@ -24,7 +24,7 @@ public class SPARQLGraphQueryResultTest extends GraphQueryResultTest {
 
 	private static HTTPMemServer server;
 
-	@BeforeClass
+	@BeforeAll
 	public static void startServer() throws Exception {
 		server = new HTTPMemServer();
 		try {
@@ -35,7 +35,7 @@ public class SPARQLGraphQueryResultTest extends GraphQueryResultTest {
 		}
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void stopServer() throws Exception {
 		server.stop();
 		server = null;

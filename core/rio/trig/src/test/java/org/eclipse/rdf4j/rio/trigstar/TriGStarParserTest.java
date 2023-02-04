@@ -10,9 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.trigstar;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -33,8 +33,9 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.SimpleParseLocationListener;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Pavel Mihaylov
@@ -52,7 +53,7 @@ public class TriGStarParserTest {
 
 	private final SimpleParseLocationListener locationListener = new SimpleParseLocationListener();
 
-	@Before
+	@BeforeEach
 	public void setUp() {
 		parser = new TriGStarParser();
 		parser.setParseErrorListener(errorCollector);

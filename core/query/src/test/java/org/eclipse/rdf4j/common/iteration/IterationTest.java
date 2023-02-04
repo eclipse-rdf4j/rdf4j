@@ -10,12 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.iteration;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.Arrays;
 import java.util.List;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public abstract class IterationTest {
 
@@ -45,6 +45,6 @@ public abstract class IterationTest {
 			count++;
 		}
 
-		assertEquals("test iteration contains incorrect number of elements", getTestIterationSize(), count);
+		assertEquals(getTestIterationSize(), count, "test iteration contains incorrect number of elements");
 	}
 }

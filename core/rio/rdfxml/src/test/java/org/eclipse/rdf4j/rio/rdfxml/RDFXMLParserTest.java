@@ -11,10 +11,10 @@
 package org.eclipse.rdf4j.rio.rdfxml;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -37,9 +37,9 @@ import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.rio.helpers.XMLParserSettings;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public class RDFXMLParserTest {
 
@@ -53,7 +53,7 @@ public class RDFXMLParserTest {
 
 	private Locale platformLocale;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		platformLocale = Locale.getDefault();
 
@@ -67,7 +67,7 @@ public class RDFXMLParserTest {
 
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		Locale.setDefault(platformLocale);
 	}
@@ -76,7 +76,7 @@ public class RDFXMLParserTest {
 	public void rdfXmlLoadedFromInsideAJarResolvesRelativeUris() throws Exception {
 		URL zipfileUrl = this.getClass().getResource("/org/eclipse/rdf4j/rio/rdfxml/sample-with-rdfxml-data.zip");
 
-		assertNotNull("The sample-data.zip file must be present for this test", zipfileUrl);
+		assertNotNull(zipfileUrl, "The sample-data.zip file must be present for this test");
 
 		String url = "jar:" + zipfileUrl + "!/index.rdf";
 
@@ -107,7 +107,7 @@ public class RDFXMLParserTest {
 		assertEquals("jar", javaUrl.getProtocol());
 
 		try (InputStream uc = javaUrl.openStream()) {
-			assertEquals("The resource stream should be empty", -1, uc.read());
+			assertEquals(-1, uc.read(), "The resource stream should be empty");
 		}
 
 		assertEquals(res, stmt2.getSubject());

@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.File;
 import java.io.IOException;
@@ -21,7 +22,6 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.lang3.time.StopWatch;
-import org.assertj.core.util.Files;
 import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -44,11 +44,12 @@ import org.elasticsearch.common.transport.TransportAddress;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.transport.client.PreBuiltTransportClient;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,19 +59,20 @@ public class ElasticsearchStoreIT {
 	private static final SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 	private static ElasticsearchClusterRunner runner;
-	private static final File installLocation = Files.newTemporaryFolder();
+	@TempDir
+	static File installLocation;
 
-	@BeforeClass
+	@BeforeAll
 	public static void beforeClass() throws IOException, InterruptedException {
 		runner = TestHelpers.startElasticsearch(installLocation);
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() throws IOException {
 		TestHelpers.stopElasticsearch(runner);
 	}
 
-	@After
+	@AfterEach
 	public void after() throws UnknownHostException {
 		runner.admin().indices().refresh(Requests.refreshRequest("*")).actionGet();
 		printAllDocs();
@@ -79,7 +81,7 @@ public class ElasticsearchStoreIT {
 
 	}
 
-	@Before
+	@BeforeEach
 	public void before() throws UnknownHostException {
 //		embeddedElastic.refreshIndices();
 //
@@ -178,7 +180,7 @@ public class ElasticsearchStoreIT {
 
 	}
 
-	@Test(expected = SailException.class)
+	@Test
 	public void testShutdownAndReinit() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost",
 				TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex");
@@ -189,13 +191,7 @@ public class ElasticsearchStoreIT {
 		}
 		elasticsearchStore.shutDown();
 
-		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
-			connection.commit();
-		}
-		elasticsearchStore.shutDown();
-
+		assertThrows(SailException.class, () -> elasticsearchStore.getConnection());
 	}
 
 	@Test

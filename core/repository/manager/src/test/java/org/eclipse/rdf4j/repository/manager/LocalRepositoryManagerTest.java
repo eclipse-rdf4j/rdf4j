@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.manager;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 
@@ -59,11 +60,11 @@ public class LocalRepositoryManagerTest extends RepositoryManagerTest {
 		subject.shutDown();
 	}
 
-	@Test(expected = RepositoryConfigException.class)
+	@Test
 	public void testAddRepositoryConfig_validation() {
 		RepositoryConfig config = mock(RepositoryConfig.class);
 		doThrow(RepositoryConfigException.class).when(config).validate();
 
-		subject.addRepositoryConfig(config);
+		assertThrows(RepositoryConfigException.class, () -> subject.addRepositoryConfig(config));
 	}
 }

@@ -14,8 +14,8 @@ import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
 import org.eclipse.rdf4j.repository.http.config.HTTPRepositoryConfig;
 import org.eclipse.rdf4j.repository.http.config.HTTPRepositoryFactory;
 import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 
 /**
  * @author jeen
@@ -24,7 +24,7 @@ public class HTTPRepositoryOptimisticIsolationTest extends OptimisticIsolationTe
 
 	private static HTTPMemServer server;
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 
@@ -46,7 +46,7 @@ public class HTTPRepositoryOptimisticIsolationTest extends OptimisticIsolationTe
 		});
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void tearDown() throws Exception {
 		setRepositoryFactory(null);
 		server.stop();

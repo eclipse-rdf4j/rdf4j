@@ -11,11 +11,12 @@
 package org.eclipse.rdf4j.rio;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.InputStream;
 
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * Test cases for handling of base URIs by {@link RDFParser} implementations.
@@ -33,12 +34,12 @@ public abstract class BaseURIHandlingTest {
 		assertThat(collector.getStatements()).isNotEmpty();
 	}
 
-	@Test(expected = RDFParseException.class)
+	@Test
 	public void testParseWithoutBaseUri_Relative() throws Exception {
 		StatementCollector collector = new StatementCollector();
 		RDFParser parser = getParserFactory().getParser();
 		parser.setRDFHandler(collector);
-		parser.parse(getDataWithRelativeIris());
+		assertThrows(RDFParseException.class, () -> parser.parse(getDataWithRelativeIris()));
 	}
 
 	@Test

@@ -20,10 +20,9 @@ import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Unit tests for {@link ContextStore}
@@ -39,16 +38,14 @@ public class ContextStoreTest {
 	private final Resource g1 = vf.createIRI("http://example.org/g1");
 	private final Resource g2 = vf.createBNode();
 
-	@Rule
-	public final TemporaryFolder tmpDir = new TemporaryFolder();
-	private File dataDir;
+	@TempDir
+	File dataDir;
 
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
-		dataDir = tmpDir.newFolder();
 		NativeSailStore sailStore = mock(NativeSailStore.class);
 
 		when(sailStore.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
@@ -136,5 +133,4 @@ public class ContextStoreTest {
 		}
 		return count;
 	}
-
 }

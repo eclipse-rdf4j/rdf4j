@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.repository.manager;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -85,8 +86,8 @@ public class RepositoryManagerTest {
 		assertThat(subject.getModelFactory()).isEqualTo(f);
 	}
 
-	@Test(expected = NullPointerException.class)
+	@Test
 	public void testSetModelFactoryWithNull() {
-		subject.setModelFactory(null);
+		assertThrows(NullPointerException.class, () -> subject.setModelFactory(null));
 	}
 }

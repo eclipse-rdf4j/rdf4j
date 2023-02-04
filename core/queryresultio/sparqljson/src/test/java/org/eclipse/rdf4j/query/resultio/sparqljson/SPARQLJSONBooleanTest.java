@@ -10,15 +10,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqljson;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
 import org.eclipse.rdf4j.testsuite.query.resultio.AbstractQueryResultIOBooleanTest;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Peter Ansell

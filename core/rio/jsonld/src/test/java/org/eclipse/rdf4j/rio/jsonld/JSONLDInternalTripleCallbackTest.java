@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.jsonld;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.IOException;
 import java.util.Iterator;
@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import com.github.jsonldjava.core.JsonLdError;
 import com.github.jsonldjava.core.JsonLdProcessor;
@@ -59,7 +59,7 @@ public class JSONLDInternalTripleCallbackTest {
 			final Statement stmt = statements.next();
 
 			System.out.println(stmt.toString());
-			assertEquals("Output was not as expected", expectedString, stmt.toString());
+			assertEquals(expectedString, stmt.toString(), "Output was not as expected");
 		}
 
 		assertEquals(0, parseErrorListener.getFatalErrors().size());

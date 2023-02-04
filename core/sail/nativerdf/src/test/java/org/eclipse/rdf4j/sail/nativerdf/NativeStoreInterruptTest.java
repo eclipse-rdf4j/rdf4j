@@ -10,14 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import java.io.IOException;
+import java.io.File;
 
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.testsuite.sail.SailConcurrencyTest;
 import org.eclipse.rdf4j.testsuite.sail.SailInterruptTest;
-import org.junit.Rule;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * An extension of {@link SailConcurrencyTest} for testing the class {@link NativeStore}.
@@ -28,8 +27,8 @@ public class NativeStoreInterruptTest extends SailInterruptTest {
 	 * Variables *
 	 *-----------*/
 
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
+	@TempDir
+	File dataDir;
 
 	/*---------*
 	 * Methods *
@@ -37,11 +36,6 @@ public class NativeStoreInterruptTest extends SailInterruptTest {
 
 	@Override
 	protected NotifyingSail createSail() throws SailException {
-		try {
-			return new NativeStore(tempDir.newFolder(), "spoc,posc");
-		} catch (IOException e) {
-			throw new AssertionError(e);
-		}
+		return new NativeStore(dataDir, "spoc,posc");
 	}
-
 }

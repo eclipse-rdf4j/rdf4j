@@ -11,7 +11,7 @@
 package org.eclipse.rdf4j.rio.n3;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.StringReader;
@@ -22,8 +22,8 @@ import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.SimpleParseLocationListener;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author tanisha
@@ -44,7 +44,7 @@ public class N3ParserTest {
 
 	private final SimpleParseLocationListener locationListener = new SimpleParseLocationListener();
 
-	@Before
+	@BeforeEach
 	public void setUp() {
 		parser = new N3Parser();
 		parser.setParseErrorListener(errorCollector);

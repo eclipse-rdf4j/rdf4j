@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.testsuite.query.parser.sparql;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -46,9 +47,9 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -80,7 +81,7 @@ public abstract class SPARQLUpdateTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		logger.debug("setting up test");
 
@@ -102,7 +103,7 @@ public abstract class SPARQLUpdateTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		logger.debug("tearing down...");
 		con.close();
@@ -1682,16 +1683,18 @@ public abstract class SPARQLUpdateTest {
 		assertFalse(msg, con.hasStatement(alice, FOAF.MBOX, f.createLiteral("alice@example.org"), true, graph2));
 	}
 
-	@Test(expected = MalformedQueryException.class)
+	@Test
 	public void testInvalidInsertUpdate() {
 		RepositoryConnection connection = rep.getConnection();
-		Update update = connection.prepareUpdate(QueryLanguage.SPARQL, "insert data { ?s ?p ?o }");
+		assertThrows(MalformedQueryException.class,
+				() -> connection.prepareUpdate(QueryLanguage.SPARQL, "insert data { ?s ?p ?o }"));
 	}
 
-	@Test(expected = MalformedQueryException.class)
+	@Test
 	public void testInvalidDeleteUpdate() {
 		RepositoryConnection connection = rep.getConnection();
-		Update delete = connection.prepareUpdate(QueryLanguage.SPARQL, "delete data { ?s ?p ?o }");
+		assertThrows(MalformedQueryException.class,
+				() -> connection.prepareUpdate(QueryLanguage.SPARQL, "delete data { ?s ?p ?o }"));
 	}
 
 	/*

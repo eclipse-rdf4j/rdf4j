@@ -19,9 +19,9 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public class ContextStatementTest {
 
@@ -39,11 +39,11 @@ public class ContextStatementTest {
 
 	private static final IRI g2 = vf.createIRI("urn:g2");
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 	}
 

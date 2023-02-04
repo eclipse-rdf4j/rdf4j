@@ -14,9 +14,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.eclipse.rdf4j.rio.helpers.AbstractRioSetting;
 import org.eclipse.rdf4j.rio.helpers.BooleanRioSetting;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public class RioConfigTest {
 
@@ -26,12 +26,12 @@ public class RioConfigTest {
 
 	private final BooleanRioSetting testSetting = new BooleanRioSetting(key, "test setting", true);
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		config = new RioConfig();
 	}
 
-	@After
+	@AfterEach
 	public void cleanup() {
 		System.clearProperty(key);
 	}

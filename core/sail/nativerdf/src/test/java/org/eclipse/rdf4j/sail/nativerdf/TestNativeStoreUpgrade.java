@@ -30,9 +30,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * @author James Leigh
@@ -43,12 +42,11 @@ public class TestNativeStoreUpgrade {
 
 	private static final String ZIP_2_7_15_INCONSISTENT = "/nativerdf-inconsistent-2.7.15.zip";
 
-	@Rule
-	public final TemporaryFolder tmpDir = new TemporaryFolder();
+	@TempDir
+	File dataDir;
 
 	@Test
-	public void testDevel() throws IOException, SailException {
-		File dataDir = tmpDir.getRoot();
+	public void testDevel() throws SailException {
 		NativeStore store = new NativeStore(dataDir);
 		try {
 			store.init();
@@ -68,7 +66,6 @@ public class TestNativeStoreUpgrade {
 
 	@Test
 	public void test2715() throws IOException, SailException {
-		File dataDir = tmpDir.getRoot();
 		extractZipResource(ZIP_2_7_15, dataDir);
 		assertFalse(new File(dataDir, "nativerdf.ver").exists());
 		assertValue(dataDir);
@@ -77,7 +74,6 @@ public class TestNativeStoreUpgrade {
 
 	@Test
 	public void test2715Inconsistent() throws IOException, SailException {
-		File dataDir = tmpDir.getRoot();
 		extractZipResource(ZIP_2_7_15_INCONSISTENT, dataDir);
 		assertFalse(new File(dataDir, "nativerdf.ver").exists());
 		NativeStore store = new NativeStore(dataDir);
@@ -88,7 +84,6 @@ public class TestNativeStoreUpgrade {
 		} finally {
 			store.shutDown();
 		}
-
 	}
 
 	public void assertValue(File dataDir) throws SailException {
@@ -123,5 +118,4 @@ public class TestNativeStoreUpgrade {
 			}
 		}
 	}
-
 }

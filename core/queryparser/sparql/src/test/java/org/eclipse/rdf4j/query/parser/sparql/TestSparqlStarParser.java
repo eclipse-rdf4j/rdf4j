@@ -10,9 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -45,20 +46,21 @@ import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author damyan.ognyanov
  */
 public class TestSparqlStarParser {
+
 	private SPARQLParser parser;
 
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		parser = new SPARQLParser();
 	}
@@ -66,7 +68,7 @@ public class TestSparqlStarParser {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		parser = null;
 	}
@@ -97,30 +99,30 @@ public class TestSparqlStarParser {
 		TupleExpr tupleExpr = q.getTupleExpr();
 		assertTrue(tupleExpr instanceof QueryRoot);
 		tupleExpr = ((QueryRoot) tupleExpr).getArg();
-		assertTrue("expect projection", tupleExpr instanceof Projection);
+		assertTrue(tupleExpr instanceof Projection, "expect projection");
 		Projection proj = (Projection) tupleExpr;
 
-		assertTrue("expect extension", proj.getArg() instanceof Extension);
+		assertTrue(proj.getArg() instanceof Extension, "expect extension");
 		Extension ext = (Extension) proj.getArg();
 
-		assertTrue("single extention elemrnt", ext.getElements().size() == 1);
+		assertTrue(ext.getElements().size() == 1, "single extention elemrnt");
 		ExtensionElem elem = ext.getElements().get(0);
 
-		assertEquals("name should match", elem.getName(), "ref");
-		assertTrue("expect ValueExprTripleRef", elem.getExpr() instanceof ValueExprTripleRef);
+		assertEquals("ref", elem.getName(), "name should match");
+		assertTrue(elem.getExpr() instanceof ValueExprTripleRef, "expect ValueExprTripleRef");
 		ValueExprTripleRef ref = (ValueExprTripleRef) elem.getExpr();
 
-		assertTrue("expect not null subject", ref.getSubjectVar().getValue() != null);
-		assertTrue("expect IRI subject", ref.getSubjectVar().getValue() instanceof IRI);
-		assertEquals("subject should match", ref.getSubjectVar().getValue().toString(), "urn:A");
+		assertTrue(ref.getSubjectVar().getValue() != null, "expect not null subject");
+		assertTrue(ref.getSubjectVar().getValue() instanceof IRI, "expect IRI subject");
+		assertEquals("urn:A", ref.getSubjectVar().getValue().toString(), "subject should match");
 
-		assertTrue("expect not null predicate", ref.getPredicateVar().getValue() != null);
-		assertTrue("expect IRI predicate", ref.getPredicateVar().getValue() instanceof IRI);
-		assertEquals("predicate should match", ref.getPredicateVar().getValue().toString(), "urn:B");
+		assertTrue(ref.getPredicateVar().getValue() != null, "expect not null predicate");
+		assertTrue(ref.getPredicateVar().getValue() instanceof IRI, "expect IRI predicate");
+		assertEquals("urn:B", ref.getPredicateVar().getValue().toString(), "predicate should match");
 
-		assertTrue("expect not null object", ref.getObjectVar().getValue() != null);
-		assertTrue("expect Literal object", ref.getObjectVar().getValue() instanceof Literal);
-		assertEquals("object should match", ((Literal) ref.getObjectVar().getValue()).intValue(), 1);
+		assertTrue(ref.getObjectVar().getValue() != null, "expect not null object");
+		assertTrue(ref.getObjectVar().getValue() instanceof Literal, "expect Literal object");
+		assertEquals(1, ((Literal) ref.getObjectVar().getValue()).intValue(), "object should match");
 	}
 
 	/*-
@@ -141,30 +143,30 @@ public class TestSparqlStarParser {
 		TupleExpr tupleExpr = q.getTupleExpr();
 		assertTrue(tupleExpr instanceof QueryRoot);
 		tupleExpr = ((QueryRoot) tupleExpr).getArg();
-		assertTrue("expect projection", tupleExpr instanceof Projection);
+		assertTrue(tupleExpr instanceof Projection, "expect projection");
 		Projection proj = (Projection) tupleExpr;
 
-		assertTrue("expect BindingSetAssignment as arg", proj.getArg() instanceof BindingSetAssignment);
+		assertTrue(proj.getArg() instanceof BindingSetAssignment, "expect BindingSetAssignment as arg");
 		BindingSetAssignment values = (BindingSetAssignment) proj.getArg();
 		boolean[] oneValue = new boolean[] { false };
 		values.getBindingSets().forEach(bs -> {
 			Value v = bs.getValue("ref");
-			assertTrue("expect binding for ref", v != null);
-			assertTrue("expect Triple ", v instanceof Triple);
+			assertTrue(v != null, "expect binding for ref");
+			assertTrue(v instanceof Triple, "expect Triple ");
 			Triple triple = (Triple) v;
-			assertTrue("subject should be IRI", triple.getSubject() instanceof IRI);
-			assertEquals("subject should match", "urn:A", triple.getSubject().toString());
+			assertTrue(triple.getSubject() instanceof IRI, "subject should be IRI");
+			assertEquals("urn:A", triple.getSubject().toString(), "subject should match");
 
-			assertTrue("predicate should be IRI", triple.getPredicate() instanceof IRI);
-			assertEquals("predicate should match", "urn:B", triple.getPredicate().toString());
+			assertTrue(triple.getPredicate() instanceof IRI, "predicate should be IRI");
+			assertEquals("urn:B", triple.getPredicate().toString(), "predicate should match");
 
-			assertTrue("object should be Literal", triple.getObject() instanceof Literal);
-			assertEquals("object should match", 1, ((Literal) triple.getObject()).intValue());
+			assertTrue(triple.getObject() instanceof Literal, "object should be Literal");
+			assertEquals(1, ((Literal) triple.getObject()).intValue(), "object should match");
 
-			assertTrue("expect one value", oneValue[0] == false);
+			assertTrue(oneValue[0] == false, "expect one value");
 			oneValue[0] = true;
 		});
-		assertTrue("expect one value", oneValue[0]);
+		assertTrue(oneValue[0], "expect one value");
 	}
 
 	/*-
@@ -192,26 +194,26 @@ public class TestSparqlStarParser {
 		TupleExpr tupleExpr = q.getTupleExpr();
 		assertTrue(tupleExpr instanceof QueryRoot);
 		tupleExpr = ((QueryRoot) tupleExpr).getArg();
-		assertTrue("expect projection", tupleExpr instanceof Projection);
+		assertTrue(tupleExpr instanceof Projection, "expect projection");
 		Projection proj = (Projection) tupleExpr;
 
-		assertTrue("expect extension", proj.getArg() instanceof Extension);
+		assertTrue(proj.getArg() instanceof Extension, "expect extension");
 		Extension ext = (Extension) proj.getArg();
-		assertTrue("single extension element", ext.getElements().size() == 1);
+		assertTrue(ext.getElements().size() == 1, "single extension element");
 		ExtensionElem elem = ext.getElements().get(0);
 
-		assertEquals("name should match", elem.getName(), "ref");
-		assertTrue("expect Var in extension element", elem.getExpr() instanceof Var);
+		assertEquals("ref", elem.getName(), "name should match");
+		assertTrue(elem.getExpr() instanceof Var, "expect Var in extension element");
 		String anonVar = ((Var) elem.getExpr()).getName();
 
-		assertTrue("expect TripleRef", ext.getArg() instanceof TripleRef);
+		assertTrue(ext.getArg() instanceof TripleRef, "expect TripleRef");
 		TripleRef triple = (TripleRef) ext.getArg();
 
-		assertEquals("ext var should match", anonVar, triple.getExprVar().getName());
-		assertEquals("subj var should match", "urn:A", triple.getSubjectVar().getValue().toString());
-		assertEquals("pred var should match", "urn:B", triple.getPredicateVar().getValue().toString());
-		assertTrue("obj var value should be Literal", triple.getObjectVar().getValue() instanceof Literal);
-		assertEquals("obj var should match", 1, ((Literal) triple.getObjectVar().getValue()).intValue());
+		assertEquals(anonVar, triple.getExprVar().getName(), "ext var should match");
+		assertEquals("urn:A", triple.getSubjectVar().getValue().toString(), "subj var should match");
+		assertEquals("urn:B", triple.getPredicateVar().getValue().toString(), "pred var should match");
+		assertTrue(triple.getObjectVar().getValue() instanceof Literal, "obj var value should be Literal");
+		assertEquals(1, ((Literal) triple.getObjectVar().getValue()).intValue(), "obj var should match");
 	}
 
 	/*-
@@ -243,37 +245,36 @@ public class TestSparqlStarParser {
 		TupleExpr tupleExpr = q.getTupleExpr();
 		assertTrue(tupleExpr instanceof QueryRoot);
 		tupleExpr = ((QueryRoot) tupleExpr).getArg();
-		assertTrue("expect projection", tupleExpr instanceof Projection);
+		assertTrue(tupleExpr instanceof Projection, "expect projection");
 		Projection proj = (Projection) tupleExpr;
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
 		final ArrayList<String> listNames = new ArrayList<>();
 		list.forEach(el -> {
 			listNames.add(el.getName());
 		});
-		assertEquals("expect all bindings", 4, list.size());
-		assertTrue("expect s", listNames.contains("s"));
-		assertTrue("expect p", listNames.contains("p"));
-		assertTrue("expect o", listNames.contains("o"));
-		assertTrue("expect ref", listNames.contains("ref"));
+		assertThat(list)
+				.hasSize(4);
+		assertThat(listNames)
+				.containsExactlyInAnyOrder("s", "p", "o", "ref");
 
-		assertTrue("expect extension", proj.getArg() instanceof Extension);
+		assertTrue(proj.getArg() instanceof Extension, "expect extension");
 		Extension ext = (Extension) proj.getArg();
-		assertTrue("single extention elemrnt", ext.getElements().size() == 1);
+		assertTrue(ext.getElements().size() == 1, "single extention elemrnt");
 		ExtensionElem elem = ext.getElements().get(0);
 
-		assertEquals("name should match", elem.getName(), "ref");
-		assertTrue("expect Var in extention element", elem.getExpr() instanceof Var);
+		assertEquals("ref", elem.getName(), "name should match");
+		assertTrue(elem.getExpr() instanceof Var, "expect Var in extention element");
 
 		String anonVar = ((Var) elem.getExpr()).getName();
 
-		assertTrue("expect TripleRef", ext.getArg() instanceof TripleRef);
+		assertTrue(ext.getArg() instanceof TripleRef, "expect TripleRef");
 		TripleRef triple = (TripleRef) ext.getArg();
 
-		assertEquals("ext var should match", anonVar, triple.getExprVar().getName());
+		assertEquals(anonVar, triple.getExprVar().getName(), "ext var should match");
 
-		assertEquals("subj var name should match", "s", triple.getSubjectVar().getName());
-		assertEquals("pred var name should match", "p", triple.getPredicateVar().getName());
-		assertEquals("obj var name should match", "o", triple.getObjectVar().getName());
+		assertEquals("s", triple.getSubjectVar().getName(), "subj var name should match");
+		assertEquals("p", triple.getPredicateVar().getName(), "pred var name should match");
+		assertEquals("o", triple.getObjectVar().getName(), "obj var name should match");
 	}
 
 	/*-
@@ -306,36 +307,35 @@ public class TestSparqlStarParser {
 		TupleExpr tupleExpr = q.getTupleExpr();
 		assertTrue(tupleExpr instanceof QueryRoot);
 		tupleExpr = ((QueryRoot) tupleExpr).getArg();
-		assertTrue("expect projection", tupleExpr instanceof Projection);
+		assertTrue(tupleExpr instanceof Projection, "expect projection");
 		Projection proj = (Projection) tupleExpr;
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
 		final ArrayList<String> listNames = new ArrayList<>();
 		list.forEach(el -> {
 			listNames.add(el.getName());
 		});
-		assertEquals("expect all bindings", 4, list.size());
-		assertTrue("expect s", listNames.contains("s"));
-		assertTrue("expect p", listNames.contains("p"));
-		assertTrue("expect o", listNames.contains("o"));
-		assertTrue("expect val", listNames.contains("val"));
+		assertThat(list)
+				.hasSize(4);
+		assertThat(listNames)
+				.containsExactlyInAnyOrder("s", "p", "o", "val");
 
-		assertTrue("expect Join", proj.getArg() instanceof Join);
+		assertTrue(proj.getArg() instanceof Join, "expect Join");
 		Join join = (Join) proj.getArg();
 
-		assertTrue("expect right arg of Join be StatementPattern", join.getRightArg() instanceof StatementPattern);
+		assertTrue(join.getRightArg() instanceof StatementPattern, "expect right arg of Join be StatementPattern");
 		StatementPattern pattern = (StatementPattern) join.getRightArg();
 		String anonVar = pattern.getSubjectVar().getName();
-		assertEquals("statement pattern predVar value", "urn:pred", pattern.getPredicateVar().getValue().toString());
-		assertEquals("statement pattern obj var name", "val", pattern.getObjectVar().getName());
+		assertEquals("urn:pred", pattern.getPredicateVar().getValue().toString(), "statement pattern predVar value");
+		assertEquals("val", pattern.getObjectVar().getName(), "statement pattern obj var name");
 
-		assertTrue("expect left arg of Join be TripleRef", join.getLeftArg() instanceof TripleRef);
+		assertTrue(join.getLeftArg() instanceof TripleRef, "expect left arg of Join be TripleRef");
 		TripleRef triple = (TripleRef) join.getLeftArg();
 
-		assertEquals("ext var should match", anonVar, triple.getExprVar().getName());
+		assertEquals(anonVar, triple.getExprVar().getName(), "ext var should match");
 
-		assertEquals("subj var name should match", "s", triple.getSubjectVar().getName());
-		assertEquals("pred var name should match", "p", triple.getPredicateVar().getName());
-		assertEquals("obj var name should match", "o", triple.getObjectVar().getName());
+		assertEquals("s", triple.getSubjectVar().getName(), "subj var name should match");
+		assertEquals("p", triple.getPredicateVar().getName(), "pred var name should match");
+		assertEquals("o", triple.getObjectVar().getName(), "obj var name should match");
 	}
 
 	/*-
@@ -376,48 +376,46 @@ public class TestSparqlStarParser {
 		TupleExpr tupleExpr = q.getTupleExpr();
 		assertTrue(tupleExpr instanceof QueryRoot);
 		tupleExpr = ((QueryRoot) tupleExpr).getArg();
-		assertTrue("expect projection", tupleExpr instanceof Projection);
+		assertTrue(tupleExpr instanceof Projection, "expect projection");
 		Projection proj = (Projection) tupleExpr;
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
 		final ArrayList<String> listNames = new ArrayList<>();
 		list.forEach(el -> {
 			listNames.add(el.getName());
 		});
-		assertEquals("expect all bindings", 6, list.size());
-		assertTrue("expect s", listNames.contains("s"));
-		assertTrue("expect p", listNames.contains("p"));
-		assertTrue("expect o", listNames.contains("o"));
-		assertTrue("expect q", listNames.contains("q"));
-		assertTrue("expect r", listNames.contains("r"));
-		assertTrue("expect val", listNames.contains("val"));
+		assertThat(list)
+				.hasSize(6)
+				.withFailMessage("expect all bindings");
+		assertThat(listNames)
+				.containsExactlyInAnyOrder("s", "p", "o", "q", "r", "val");
 
-		assertTrue("expect Join", proj.getArg() instanceof Join);
+		assertTrue(proj.getArg() instanceof Join, "expect Join");
 		Join join = (Join) proj.getArg();
 
-		assertTrue("expect right arg of Join be StatementPattern", join.getRightArg() instanceof StatementPattern);
+		assertTrue(join.getRightArg() instanceof StatementPattern, "expect right arg of Join be StatementPattern");
 		StatementPattern pattern = (StatementPattern) join.getRightArg();
 		String anonVar = pattern.getSubjectVar().getName();
-		assertEquals("statement pattern predVar value", "urn:pred", pattern.getPredicateVar().getValue().toString());
-		assertEquals("statement pattern obj var name", "val", pattern.getObjectVar().getName());
+		assertEquals("urn:pred", pattern.getPredicateVar().getValue().toString(), "statement pattern predVar value");
+		assertEquals("val", pattern.getObjectVar().getName(), "statement pattern obj var name");
 
-		assertTrue("expect left arg of first Join be Join", join.getLeftArg() instanceof Join);
+		assertTrue(join.getLeftArg() instanceof Join, "expect left arg of first Join be Join");
 		Join join2 = (Join) join.getLeftArg();
 
-		assertTrue("expect left arg of second Join be TripleRef", join2.getLeftArg() instanceof TripleRef);
+		assertTrue(join2.getLeftArg() instanceof TripleRef, "expect left arg of second Join be TripleRef");
 		TripleRef tripleLeft = (TripleRef) join2.getLeftArg();
-		assertEquals("subj var name should match", "s", tripleLeft.getSubjectVar().getName());
-		assertEquals("pred var name should match", "p", tripleLeft.getPredicateVar().getName());
-		assertEquals("obj var name should match", "o", tripleLeft.getObjectVar().getName());
+		assertEquals("s", tripleLeft.getSubjectVar().getName(), "subj var name should match");
+		assertEquals("p", tripleLeft.getPredicateVar().getName(), "pred var name should match");
+		assertEquals("o", tripleLeft.getObjectVar().getName(), "obj var name should match");
 		String anonVarLeftTripleRef = tripleLeft.getExprVar().getName();
 
-		assertTrue("expect right arg of second Join be TripleRef", join2.getRightArg() instanceof TripleRef);
+		assertTrue(join2.getRightArg() instanceof TripleRef, "expect right arg of second Join be TripleRef");
 		TripleRef triple = (TripleRef) join2.getRightArg();
 
-		assertEquals("subj var name should match anon", anonVarLeftTripleRef, triple.getSubjectVar().getName());
-		assertEquals("pred var name should match", "q", triple.getPredicateVar().getName());
-		assertEquals("obj var name should match", "r", triple.getObjectVar().getName());
+		assertEquals(anonVarLeftTripleRef, triple.getSubjectVar().getName(), "subj var name should match anon");
+		assertEquals("q", triple.getPredicateVar().getName(), "pred var name should match");
+		assertEquals("r", triple.getObjectVar().getName(), "obj var name should match");
 
-		assertEquals("ext var should match", anonVar, triple.getExprVar().getName());
+		assertEquals(anonVar, triple.getExprVar().getName(), "ext var should match");
 	}
 
 	/*-
@@ -454,8 +452,8 @@ public class TestSparqlStarParser {
 		TupleExpr tupleExpr = q.getTupleExpr();
 		assertTrue(tupleExpr instanceof QueryRoot);
 		tupleExpr = ((QueryRoot) tupleExpr).getArg();
-		assertTrue("expect Reduced", tupleExpr instanceof Reduced);
-		assertTrue("expect projection", ((Reduced) tupleExpr).getArg() instanceof Projection);
+		assertTrue(tupleExpr instanceof Reduced, "expect Reduced");
+		assertTrue(((Reduced) tupleExpr).getArg() instanceof Projection, "expect projection");
 		Projection proj = (Projection) ((Reduced) tupleExpr).getArg();
 
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
@@ -463,43 +461,43 @@ public class TestSparqlStarParser {
 		list.forEach(el -> {
 			listTargetNames.add(el.getProjectionAlias().orElse(null));
 		});
-		assertEquals("expect all bindings", 3, list.size());
-		assertTrue("expect target subject", listTargetNames.contains("subject"));
-		assertTrue("expect target predicate", listTargetNames.contains("predicate"));
-		assertTrue("expect target oobject", listTargetNames.contains("object"));
+		assertThat(list)
+				.hasSize(3);
+		assertThat(listTargetNames)
+				.containsExactlyInAnyOrder("subject", "predicate", "object");
 
 		final ArrayList<String> listSourceNames = new ArrayList<>();
 		list.forEach(el -> {
 			listSourceNames.add(el.getName());
 		});
 
-		assertTrue("expect extension", proj.getArg() instanceof Extension);
+		assertTrue(proj.getArg() instanceof Extension, "expect extension");
 		Extension ext = (Extension) proj.getArg();
-		assertTrue("three extention elements", ext.getElements().size() == 3);
+		assertTrue(ext.getElements().size() == 3, "three extention elements");
 		ExtensionElem elem = ext.getElements().get(0);
 
-		assertEquals("anon name should match first", elem.getName(), listSourceNames.get(0));
+		assertEquals(elem.getName(), listSourceNames.get(0), "anon name should match first");
 
-		assertTrue("expect ValueExprTripleRef in extention element", elem.getExpr() instanceof ValueExprTripleRef);
+		assertTrue(elem.getExpr() instanceof ValueExprTripleRef, "expect ValueExprTripleRef in extention element");
 		ValueExprTripleRef ref = (ValueExprTripleRef) elem.getExpr();
-		assertEquals("subject var name", "s", ref.getSubjectVar().getName());
-		assertEquals("predicate var name", "p", ref.getPredicateVar().getName());
-		assertEquals("object var name", "o", ref.getObjectVar().getName());
+		assertEquals("s", ref.getSubjectVar().getName(), "subject var name");
+		assertEquals("p", ref.getPredicateVar().getName(), "predicate var name");
+		assertEquals("o", ref.getObjectVar().getName(), "object var name");
 
 		elem = ext.getElements().get(1);
-		assertEquals("names should match", elem.getName(), listSourceNames.get(1));
-		assertEquals("value should match", "urn:pred", ((ValueConstant) elem.getExpr()).getValue().toString());
+		assertEquals(elem.getName(), listSourceNames.get(1), "names should match");
+		assertEquals("urn:pred", ((ValueConstant) elem.getExpr()).getValue().toString(), "value should match");
 
 		elem = ext.getElements().get(2);
-		assertEquals("names should match", elem.getName(), listSourceNames.get(2));
-		assertEquals("value should match", "urn:value", ((ValueConstant) elem.getExpr()).getValue().toString());
+		assertEquals(elem.getName(), listSourceNames.get(2), "names should match");
+		assertEquals("urn:value", ((ValueConstant) elem.getExpr()).getValue().toString(), "value should match");
 
-		assertTrue("expect StatementPattern", ext.getArg() instanceof StatementPattern);
+		assertTrue(ext.getArg() instanceof StatementPattern, "expect StatementPattern");
 		StatementPattern pattern = (StatementPattern) ext.getArg();
 
-		assertEquals("subj var name should match", "s", pattern.getSubjectVar().getName());
-		assertEquals("pred var name should match", "p", pattern.getPredicateVar().getName());
-		assertEquals("obj var name should match", "o", pattern.getObjectVar().getName());
+		assertEquals("s", pattern.getSubjectVar().getName(), "subj var name should match");
+		assertEquals("p", pattern.getPredicateVar().getName(), "pred var name should match");
+		assertEquals("o", pattern.getObjectVar().getName(), "obj var name should match");
 	}
 
 	/*-
@@ -534,43 +532,42 @@ public class TestSparqlStarParser {
 		ParsedUpdate q = parser.parseUpdate(simpleSparqlQuery, null);
 
 		assertNotNull(q);
-		assertTrue("expect single UpdateExpr", q.getUpdateExprs().size() == 1);
+		assertTrue(q.getUpdateExprs().size() == 1, "expect single UpdateExpr");
 		UpdateExpr updateExpr = q.getUpdateExprs().get(0);
-		assertTrue("expect Modify UpdateExpr", updateExpr instanceof Modify);
+		assertTrue(updateExpr instanceof Modify, "expect Modify UpdateExpr");
 		Modify modify = (Modify) updateExpr;
-		assertTrue("expect no DELETE", modify.getDeleteExpr() == null);
+		assertTrue(modify.getDeleteExpr() == null, "expect no DELETE");
 
-		assertTrue("expect INSERT", modify.getInsertExpr() != null);
-		assertTrue("expect INSERT as statamentPattern", modify.getInsertExpr() instanceof StatementPattern);
+		assertTrue(modify.getInsertExpr() != null, "expect INSERT");
+		assertTrue(modify.getInsertExpr() instanceof StatementPattern, "expect INSERT as statamentPattern");
 		StatementPattern insert = (StatementPattern) modify.getInsertExpr();
 		String anonVar = insert.getSubjectVar().getName();
-		assertEquals("expect predicate", "urn:pred", insert.getPredicateVar().getValue().toString());
-		assertEquals("expect object", "urn:value", insert.getObjectVar().getValue().toString());
+		assertEquals("urn:pred", insert.getPredicateVar().getValue().toString(), "expect predicate");
+		assertEquals("urn:value", insert.getObjectVar().getValue().toString(), "expect object");
 
-		assertTrue("expect WHERE", modify.getWhereExpr() != null);
-		assertTrue("expect WHERE as extension", modify.getWhereExpr() instanceof Extension);
+		assertTrue(modify.getWhereExpr() != null, "expect WHERE");
+		assertTrue(modify.getWhereExpr() instanceof Extension, "expect WHERE as extension");
 
 		Extension where = (Extension) modify.getWhereExpr();
 
 		Extension ext = (Extension) where;
-		assertTrue("one extention element", ext.getElements().size() == 1);
+		assertTrue(ext.getElements().size() == 1, "one extention element");
 		ExtensionElem elem = ext.getElements().get(0);
 
-		assertEquals("anon name should match first", elem.getName(), anonVar);
+		assertEquals(elem.getName(), anonVar, "anon name should match first");
 
-		assertTrue("expect ValueExprTripleRef in extention element", elem.getExpr() instanceof ValueExprTripleRef);
+		assertTrue(elem.getExpr() instanceof ValueExprTripleRef, "expect ValueExprTripleRef in extention element");
 		ValueExprTripleRef ref = (ValueExprTripleRef) elem.getExpr();
-		assertEquals("subject var name", "s", ref.getSubjectVar().getName());
-		assertEquals("predicate var name", "p", ref.getPredicateVar().getName());
-		assertEquals("object var name", "o", ref.getObjectVar().getName());
+		assertEquals("s", ref.getSubjectVar().getName(), "subject var name");
+		assertEquals("p", ref.getPredicateVar().getName(), "predicate var name");
+		assertEquals("o", ref.getObjectVar().getName(), "object var name");
 
-		assertTrue("expect StatementPattern as extension argument", ext.getArg() instanceof StatementPattern);
+		assertTrue(ext.getArg() instanceof StatementPattern, "expect StatementPattern as extension argument");
 		StatementPattern pattern = (StatementPattern) ext.getArg();
-		assertEquals("subject var name should match", pattern.getSubjectVar().getName(), ref.getSubjectVar().getName());
-		assertEquals("predicate var name should match", pattern.getPredicateVar().getName(),
-				ref.getPredicateVar().getName());
-		assertEquals("object var name should match", pattern.getObjectVar().getName(), ref.getObjectVar().getName());
-
+		assertEquals(pattern.getSubjectVar().getName(), ref.getSubjectVar().getName(), "subject var name should match");
+		assertEquals(pattern.getPredicateVar().getName(), ref.getPredicateVar().getName(),
+				"predicate var name should match");
+		assertEquals(pattern.getObjectVar().getName(), ref.getObjectVar().getName(), "object var name should match");
 	}
 
 	/*-
@@ -605,43 +602,42 @@ public class TestSparqlStarParser {
 		ParsedUpdate q = parser.parseUpdate(simpleSparqlQuery, null);
 
 		assertNotNull(q);
-		assertTrue("expect single UpdateExpr", q.getUpdateExprs().size() == 1);
+		assertTrue(q.getUpdateExprs().size() == 1, "expect single UpdateExpr");
 		UpdateExpr updateExpr = q.getUpdateExprs().get(0);
-		assertTrue("expect Modify UpdateExpr", updateExpr instanceof Modify);
+		assertTrue(updateExpr instanceof Modify, "expect Modify UpdateExpr");
 		Modify modify = (Modify) updateExpr;
-		assertTrue("expect no INSERT", modify.getInsertExpr() == null);
+		assertTrue(modify.getInsertExpr() == null, "expect no INSERT");
 
-		assertTrue("expect DELETE", modify.getDeleteExpr() != null);
-		assertTrue("expect DETELE as statamentPattern", modify.getDeleteExpr() instanceof StatementPattern);
+		assertTrue(modify.getDeleteExpr() != null, "expect DELETE");
+		assertTrue(modify.getDeleteExpr() instanceof StatementPattern, "expect DETELE as statamentPattern");
 		StatementPattern insert = (StatementPattern) modify.getDeleteExpr();
 		String anonVar = insert.getSubjectVar().getName();
-		assertEquals("expect predicate", "urn:pred", insert.getPredicateVar().getValue().toString());
-		assertEquals("expect object", "urn:value", insert.getObjectVar().getValue().toString());
+		assertEquals("urn:pred", insert.getPredicateVar().getValue().toString(), "expect predicate");
+		assertEquals("urn:value", insert.getObjectVar().getValue().toString(), "expect object");
 
-		assertTrue("expect WHERE", modify.getWhereExpr() != null);
-		assertTrue("expect WHERE as extension", modify.getWhereExpr() instanceof Extension);
+		assertTrue(modify.getWhereExpr() != null, "expect WHERE");
+		assertTrue(modify.getWhereExpr() instanceof Extension, "expect WHERE as extension");
 
 		Extension where = (Extension) modify.getWhereExpr();
 
 		Extension ext = (Extension) where;
-		assertTrue("one extention element", ext.getElements().size() == 1);
+		assertTrue(ext.getElements().size() == 1, "one extention element");
 		ExtensionElem elem = ext.getElements().get(0);
 
-		assertEquals("anon name should match first", elem.getName(), anonVar);
+		assertEquals(elem.getName(), anonVar, "anon name should match first");
 
-		assertTrue("expect ValueExprTripleRef in extention element", elem.getExpr() instanceof ValueExprTripleRef);
+		assertTrue(elem.getExpr() instanceof ValueExprTripleRef, "expect ValueExprTripleRef in extention element");
 		ValueExprTripleRef ref = (ValueExprTripleRef) elem.getExpr();
-		assertEquals("subject var name", "s", ref.getSubjectVar().getName());
-		assertEquals("predicate var name", "p", ref.getPredicateVar().getName());
-		assertEquals("object var name", "o", ref.getObjectVar().getName());
+		assertEquals("s", ref.getSubjectVar().getName(), "subject var name");
+		assertEquals("p", ref.getPredicateVar().getName(), "predicate var name");
+		assertEquals("o", ref.getObjectVar().getName(), "object var name");
 
-		assertTrue("expect StatementPattern as extension argument", ext.getArg() instanceof StatementPattern);
+		assertTrue(ext.getArg() instanceof StatementPattern, "expect StatementPattern as extension argument");
 		StatementPattern pattern = (StatementPattern) ext.getArg();
-		assertEquals("subject var name should match", pattern.getSubjectVar().getName(), ref.getSubjectVar().getName());
-		assertEquals("predicate var name should match", pattern.getPredicateVar().getName(),
-				ref.getPredicateVar().getName());
-		assertEquals("object var name should match", pattern.getObjectVar().getName(), ref.getObjectVar().getName());
-
+		assertEquals(pattern.getSubjectVar().getName(), ref.getSubjectVar().getName(), "subject var name should match");
+		assertEquals(pattern.getPredicateVar().getName(), ref.getPredicateVar().getName(),
+				"predicate var name should match");
+		assertEquals(pattern.getObjectVar().getName(), ref.getObjectVar().getName(), "object var name should match");
 	}
 
 	/*-
@@ -679,52 +675,53 @@ public class TestSparqlStarParser {
 		TupleExpr tupleExpr = q.getTupleExpr();
 		assertTrue(tupleExpr instanceof QueryRoot);
 		tupleExpr = ((QueryRoot) tupleExpr).getArg();
-		assertTrue("expect projection", tupleExpr instanceof Projection);
+		assertTrue(tupleExpr instanceof Projection, "expect projection");
 		Projection proj = (Projection) tupleExpr;
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
 		final ArrayList<String> listNames = new ArrayList<>();
 		list.forEach(el -> {
 			listNames.add(el.getName());
 		});
-		assertEquals("expect all bindings", 2, list.size());
-		assertTrue("expect ref", listNames.contains("ref"));
-		assertTrue("expect count", listNames.contains("count"));
+		assertThat(list)
+				.hasSize(2);
+		assertThat(listNames)
+				.containsExactlyInAnyOrder("ref", "count");
 
-		assertTrue("expect extension", proj.getArg() instanceof Extension);
+		assertTrue(proj.getArg() instanceof Extension, "expect extension");
 		Extension ext = (Extension) proj.getArg();
-		assertTrue("one extension element", ext.getElements().size() == 1);
+		assertTrue(ext.getElements().size() == 1, "one extension element");
 		ExtensionElem elem = ext.getElements().get(0);
 
-		assertEquals("name should match", elem.getName(), "count");
-		assertTrue("expect Count in extention element", elem.getExpr() instanceof Count);
+		assertEquals("count", elem.getName(), "name should match");
+		assertTrue(elem.getExpr() instanceof Count, "expect Count in extention element");
 		Count count = (Count) elem.getExpr();
-		assertTrue("expect count distinct", count.isDistinct());
-		assertTrue("expect count over var", count.getArg() instanceof Var);
-		assertEquals("expect count var p", "p", ((Var) count.getArg()).getName());
+		assertTrue(count.isDistinct(), "expect count distinct");
+		assertTrue(count.getArg() instanceof Var, "expect count over var");
+		assertEquals("p", ((Var) count.getArg()).getName(), "expect count var p");
 
-		assertTrue("expect Group", ext.getArg() instanceof Group);
+		assertTrue(ext.getArg() instanceof Group, "expect Group");
 		Group group = (Group) ext.getArg();
-		assertTrue("expect group bindings", group.getGroupBindingNames().size() == 1);
-		assertTrue("expect group over ref", group.getGroupBindingNames().contains("ref"));
+		assertThat(group.getGroupBindingNames())
+				.containsExactly("ref");
 
-		assertTrue("expect Extension", group.getArg() instanceof Extension);
+		assertTrue(group.getArg() instanceof Extension, "expect Extension");
 		ext = (Extension) group.getArg();
 
-		assertTrue("single extention elemrnt", ext.getElements().size() == 1);
+		assertTrue(ext.getElements().size() == 1, "single extention elemrnt");
 		elem = ext.getElements().get(0);
 
-		assertEquals("name should match", elem.getName(), "ref");
-		assertTrue("expect Var in extention element", elem.getExpr() instanceof Var);
+		assertEquals("ref", elem.getName(), "name should match");
+		assertTrue(elem.getExpr() instanceof Var, "expect Var in extention element");
 		String anonVar = ((Var) elem.getExpr()).getName();
 
-		assertTrue("expect TripleRef", ext.getArg() instanceof TripleRef);
+		assertTrue(ext.getArg() instanceof TripleRef, "expect TripleRef");
 		TripleRef triple = (TripleRef) ext.getArg();
 
-		assertEquals("ext var should match", anonVar, triple.getExprVar().getName());
+		assertEquals(anonVar, triple.getExprVar().getName(), "ext var should match");
 
-		assertEquals("subj var name should match", "s", triple.getSubjectVar().getName());
-		assertEquals("pred var name should match", "p", triple.getPredicateVar().getName());
-		assertEquals("obj var name should match", "o", triple.getObjectVar().getName());
+		assertEquals("s", triple.getSubjectVar().getName(), "subj var name should match");
+		assertEquals("p", triple.getPredicateVar().getName(), "pred var name should match");
+		assertEquals("o", triple.getObjectVar().getName(), "obj var name should match");
 	}
 
 	/*-
@@ -762,45 +759,45 @@ public class TestSparqlStarParser {
 		TupleExpr tupleExpr = q.getTupleExpr();
 		assertTrue(tupleExpr instanceof QueryRoot);
 		tupleExpr = ((QueryRoot) tupleExpr).getArg();
-		assertTrue("expect projection", tupleExpr instanceof Projection);
+		assertTrue(tupleExpr instanceof Projection, "expect projection");
 		Projection proj = (Projection) tupleExpr;
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
 		final ArrayList<String> listNames = new ArrayList<>();
 		list.forEach(el -> {
 			listNames.add(el.getName());
 		});
-		assertEquals("expect all bindings", 3, list.size());
-		assertTrue("expect s", listNames.contains("s"));
-		assertTrue("expect p", listNames.contains("p"));
-		assertTrue("expect o", listNames.contains("o"));
+		assertThat(list)
+				.hasSize(3);
+		assertThat(listNames)
+				.containsExactlyInAnyOrder("s", "p", "o");
 
-		assertTrue("expect Filter", proj.getArg() instanceof Filter);
+		assertTrue(proj.getArg() instanceof Filter, "expect Filter");
 		Filter filter = (Filter) proj.getArg();
 
-		assertTrue("expect Exists", filter.getCondition() instanceof Exists);
+		assertTrue(filter.getCondition() instanceof Exists, "expect Exists");
 		Exists exists = (Exists) filter.getCondition();
 
-		assertTrue("expect join", exists.getSubQuery() instanceof Join);
+		assertTrue(exists.getSubQuery() instanceof Join, "expect join");
 		Join join = (Join) exists.getSubQuery();
 
-		assertTrue("expect join left arg as TripleRef", join.getLeftArg() instanceof TripleRef);
+		assertTrue(join.getLeftArg() instanceof TripleRef, "expect join left arg as TripleRef");
 		TripleRef ref = (TripleRef) join.getLeftArg();
-		assertEquals("expect subj var", "s", ref.getSubjectVar().getName());
-		assertEquals("expect pred var", "p", ref.getPredicateVar().getName());
-		assertEquals("expect obj value", "urn:value", ref.getObjectVar().getValue().toString());
+		assertEquals("s", ref.getSubjectVar().getName(), "expect subj var");
+		assertEquals("p", ref.getPredicateVar().getName(), "expect pred var");
+		assertEquals("urn:value", ref.getObjectVar().getValue().toString(), "expect obj value");
 
-		assertTrue("expect join right arg as StatementPattern", join.getRightArg() instanceof StatementPattern);
+		assertTrue(join.getRightArg() instanceof StatementPattern, "expect join right arg as StatementPattern");
 		StatementPattern pattern = (StatementPattern) join.getRightArg();
-		assertEquals("expect same var names", ref.getExprVar().getName(), pattern.getSubjectVar().getName());
-		assertEquals("expect pred var value", "urn:pred", pattern.getPredicateVar().getValue().toString());
-		assertEquals("expect obj var name", "q", pattern.getObjectVar().getName());
+		assertEquals(ref.getExprVar().getName(), pattern.getSubjectVar().getName(), "expect same var names");
+		assertEquals("urn:pred", pattern.getPredicateVar().getValue().toString(), "expect pred var value");
+		assertEquals("q", pattern.getObjectVar().getName(), "expect obj var name");
 
-		assertTrue("expect fiter argument as statement pattern", filter.getArg() instanceof StatementPattern);
+		assertTrue(filter.getArg() instanceof StatementPattern, "expect fiter argument as statement pattern");
 		pattern = (StatementPattern) filter.getArg();
 
-		assertEquals("subj var name should match", "s", pattern.getSubjectVar().getName());
-		assertEquals("pred var name should match", "p", pattern.getPredicateVar().getName());
-		assertEquals("obj var name should match", "o", pattern.getObjectVar().getName());
+		assertEquals("s", pattern.getSubjectVar().getName(), "subj var name should match");
+		assertEquals("p", pattern.getPredicateVar().getName(), "pred var name should match");
+		assertEquals("o", pattern.getObjectVar().getName(), "obj var name should match");
 	}
 
 	/*-
@@ -828,31 +825,33 @@ public class TestSparqlStarParser {
 		TupleExpr tupleExpr = q.getTupleExpr();
 		assertTrue(tupleExpr instanceof QueryRoot);
 		tupleExpr = ((QueryRoot) tupleExpr).getArg();
-		assertTrue("expect projection", tupleExpr instanceof Projection);
+		assertTrue(tupleExpr instanceof Projection, "expect projection");
 		Projection proj = (Projection) tupleExpr;
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
 		final ArrayList<String> listNames = new ArrayList<>();
 		list.forEach(el -> {
 			listNames.add(el.getName());
 		});
-		assertEquals("expect one binding", 1, list.size());
-		assertTrue("expect str", listNames.contains("str"));
+		assertThat(list)
+				.hasSize(1);
+		assertThat(listNames)
+				.containsExactly("str");
 
-		assertTrue("expect Extension", proj.getArg() instanceof Extension);
+		assertTrue(proj.getArg() instanceof Extension, "expect Extension");
 		Extension ext = (Extension) proj.getArg();
 
-		assertTrue("one extention element", ext.getElements().size() == 1);
+		assertTrue(ext.getElements().size() == 1, "one extention element");
 		ExtensionElem elem = ext.getElements().get(0);
 
-		assertEquals("name should match", "str", elem.getName());
-		assertTrue("expect Str in extention element", elem.getExpr() instanceof Str);
+		assertEquals("str", elem.getName(), "name should match");
+		assertTrue(elem.getExpr() instanceof Str, "expect Str in extention element");
 
-		assertTrue("expect ValueExprTripleRef in extention element",
-				((Str) elem.getExpr()).getArg() instanceof ValueExprTripleRef);
+		assertTrue(((Str) elem.getExpr()).getArg() instanceof ValueExprTripleRef,
+				"expect ValueExprTripleRef in extention element");
 		ValueExprTripleRef ref = (ValueExprTripleRef) ((Str) elem.getExpr()).getArg();
-		assertEquals("subject var value", "urn:a", ref.getSubjectVar().getValue().toString());
-		assertEquals("predicate var name", "urn:b", ref.getPredicateVar().getValue().toString());
-		assertEquals("object var name", "urn:c", ref.getObjectVar().getValue().toString());
+		assertEquals("urn:a", ref.getSubjectVar().getValue().toString(), "subject var value");
+		assertEquals("urn:b", ref.getPredicateVar().getValue().toString(), "predicate var name");
+		assertEquals("urn:c", ref.getObjectVar().getValue().toString(), "object var name");
 	}
 
 	/*-
@@ -880,47 +879,47 @@ public class TestSparqlStarParser {
 		assertNotNull(q);
 		List<UpdateExpr> list = q.getUpdateExprs();
 		assertNotNull(list);
-		assertEquals("expect single update expr", 1, list.size());
-		assertTrue("expect modify op", list.get(0) instanceof Modify);
+		assertEquals(list.size(), 1, "expect single update expr");
+		assertTrue(list.get(0) instanceof Modify, "expect modify op");
 		Modify op = (Modify) list.get(0);
-		assertTrue("do not expect delete", null == op.getDeleteExpr());
+		assertTrue(null == op.getDeleteExpr(), "do not expect delete");
 		assertNotNull(op.getInsertExpr());
-		assertTrue("expect singleton", op.getInsertExpr() instanceof SingletonSet);
+		assertTrue(op.getInsertExpr() instanceof SingletonSet, "expect singleton");
 
 		assertNotNull(op.getWhereExpr());
-		assertTrue("expect join in where", op.getWhereExpr() instanceof Join);
+		assertTrue(op.getWhereExpr() instanceof Join, "expect join in where");
 		Join join = (Join) op.getWhereExpr();
-		assertTrue("expect left is TripleRef", join.getLeftArg() instanceof TripleRef);
+		assertTrue(join.getLeftArg() instanceof TripleRef, "expect left is TripleRef");
 		TripleRef ref = (TripleRef) join.getLeftArg();
-		assertTrue("expect right is StatementPattern", join.getRightArg() instanceof StatementPattern);
+		assertTrue(join.getRightArg() instanceof StatementPattern, "expect right is StatementPattern");
 		StatementPattern st = (StatementPattern) join.getRightArg();
-		assertEquals("expect same Var", ref.getExprVar().getName(), st.getSubjectVar().getName());
+		assertEquals(ref.getExprVar().getName(), st.getSubjectVar().getName(), "expect same Var");
 	}
 
 	/*-
 	 * Expected UpdateExpr:
-		Modify
-		   StatementPattern
-		      Var (name=_anon_24e6f014_3e16_49f9_ad0f_ef6d8045bbe9, anonymous)
-		      Var (name=_const_6a634a7_uri, value=urn:p, anonymous)
-		      Var (name=_const_31_lit_5fc8fb17_0, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
+	    Modify
+	       StatementPattern
+	          Var (name=_anon_24e6f014_3e16_49f9_ad0f_ef6d8045bbe9, anonymous)
+	          Var (name=_const_6a634a7_uri, value=urn:p, anonymous)
+	          Var (name=_const_31_lit_5fc8fb17_0, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
 
-		   Extension
-		      ExtensionElem (_anon_24e6f014_3e16_49f9_ad0f_ef6d8045bbe9)
-		         ValueExprTripleRef
-		            Var (name=_const_6a63498_uri, value=urn:a, anonymous)
-		            Var (name=_const_6a63499_uri, value=urn:b, anonymous)
-		            Var (name=_const_6a6349a_uri, value=urn:c, anonymous)
-		      Join
-		         TripleRef
-		            Var (name=_const_6a63498_uri, value=urn:a, anonymous)
-		            Var (name=_const_6a63499_uri, value=urn:b, anonymous)
-		            Var (name=_const_6a6349a_uri, value=urn:c, anonymous)
-		            Var (name=_anon_9e07cd00_0c02_4754_89ad_0ce4a5264d6e, anonymous)
-		         StatementPattern
-		            Var (name=_anon_9e07cd00_0c02_4754_89ad_0ce4a5264d6e, anonymous)
-		            Var (name=_const_6a634a7_uri, value=urn:p, anonymous)
-		            Var (name=_const_31_lit_5fc8fb17_0, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
+	       Extension
+	          ExtensionElem (_anon_24e6f014_3e16_49f9_ad0f_ef6d8045bbe9)
+	             ValueExprTripleRef
+	                Var (name=_const_6a63498_uri, value=urn:a, anonymous)
+	                Var (name=_const_6a63499_uri, value=urn:b, anonymous)
+	                Var (name=_const_6a6349a_uri, value=urn:c, anonymous)
+	          Join
+	             TripleRef
+	                Var (name=_const_6a63498_uri, value=urn:a, anonymous)
+	                Var (name=_const_6a63499_uri, value=urn:b, anonymous)
+	                Var (name=_const_6a6349a_uri, value=urn:c, anonymous)
+	                Var (name=_anon_9e07cd00_0c02_4754_89ad_0ce4a5264d6e, anonymous)
+	             StatementPattern
+	                Var (name=_anon_9e07cd00_0c02_4754_89ad_0ce4a5264d6e, anonymous)
+	                Var (name=_const_6a634a7_uri, value=urn:p, anonymous)
+	                Var (name=_const_31_lit_5fc8fb17_0, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
 	 * @throws Exception
 	 */
 	@Test
@@ -931,33 +930,32 @@ public class TestSparqlStarParser {
 		assertNotNull(q);
 		List<UpdateExpr> list = q.getUpdateExprs();
 		assertNotNull(list);
-		assertEquals("expect single update expr", 1, list.size());
-		assertTrue("expect modify op", list.get(0) instanceof Modify);
+		assertEquals(list.size(), 1, "expect single update expr");
+		assertTrue(list.get(0) instanceof Modify, "expect modify op");
 		Modify op = (Modify) list.get(0);
-		assertTrue("do not expect delete", null == op.getDeleteExpr());
+		assertTrue(null == op.getDeleteExpr(), "do not expect delete");
 		assertNotNull(op.getInsertExpr());
-		assertTrue("expect statement pattern", op.getInsertExpr() instanceof StatementPattern);
+		assertTrue(op.getInsertExpr() instanceof StatementPattern, "expect statement pattern");
 		StatementPattern insetPattern = (StatementPattern) op.getInsertExpr();
 
 		assertNotNull(op.getWhereExpr());
-		assertTrue("expect extension in where", op.getWhereExpr() instanceof Extension);
+		assertTrue(op.getWhereExpr() instanceof Extension, "expect extension in where");
 		Extension ext = (Extension) op.getWhereExpr();
 		ExtensionElem el = ext.getElements().get(0);
-		assertTrue("expect valueExprTripleRef", el.getExpr() instanceof ValueExprTripleRef);
-		assertEquals("expect same var", el.getName(), insetPattern.getSubjectVar().getName());
-		assertTrue("expect Join", ext.getArg() instanceof Join);
+		assertTrue(el.getExpr() instanceof ValueExprTripleRef, "expect valueExprTripleRef");
+		assertEquals(el.getName(), insetPattern.getSubjectVar().getName(), "expect same var");
+		assertTrue(ext.getArg() instanceof Join, "expect Join");
 		Join join = (Join) ext.getArg();
-		assertTrue("expect left is TripleRef", join.getLeftArg() instanceof TripleRef);
+		assertTrue(join.getLeftArg() instanceof TripleRef, "expect left is TripleRef");
 		TripleRef ref = (TripleRef) join.getLeftArg();
-		assertTrue("expect right is StatementPattern", join.getRightArg() instanceof StatementPattern);
+		assertTrue(join.getRightArg() instanceof StatementPattern, "expect right is StatementPattern");
 		StatementPattern st = (StatementPattern) join.getRightArg();
-		assertEquals("expect same Var", ref.getExprVar().getName(), st.getSubjectVar().getName());
-
+		assertEquals(ref.getExprVar().getName(), st.getSubjectVar().getName(), "expect same Var");
 	}
 
 	/*-
 	 * Expected UpdateExpr:
-		Modify
+	    Modify
 	 * @throws Exception
 	 */
 	@Test
@@ -968,21 +966,21 @@ public class TestSparqlStarParser {
 		assertNotNull(q);
 		List<UpdateExpr> list = q.getUpdateExprs();
 		assertNotNull(list);
-		assertEquals("expect single update expr", 1, list.size());
-		assertTrue("expect modify op", list.get(0) instanceof Modify);
+		assertEquals(list.size(), 1, "expect single update expr");
+		assertTrue(list.get(0) instanceof Modify, "expect modify op");
 		Modify op = (Modify) list.get(0);
-		assertTrue("do not expect delete", null == op.getDeleteExpr());
+		assertTrue(null == op.getDeleteExpr(), "do not expect delete");
 		assertNotNull(op.getInsertExpr());
-		assertTrue("expect statement pattern", op.getInsertExpr() instanceof StatementPattern);
+		assertTrue(op.getInsertExpr() instanceof StatementPattern, "expect statement pattern");
 		assertNotNull(op.getWhereExpr());
 
-		assertTrue("expect join in where", op.getWhereExpr() instanceof Join);
+		assertTrue(op.getWhereExpr() instanceof Join, "expect join in where");
 		Join join = (Join) op.getWhereExpr();
-		assertTrue("expect left is TripleRef", join.getLeftArg() instanceof TripleRef);
+		assertTrue(join.getLeftArg() instanceof TripleRef, "expect left is TripleRef");
 		TripleRef ref = (TripleRef) join.getLeftArg();
-		assertTrue("expect right is StatementPattern", join.getRightArg() instanceof StatementPattern);
+		assertTrue(join.getRightArg() instanceof StatementPattern, "expect right is StatementPattern");
 		StatementPattern st = (StatementPattern) join.getRightArg();
-		assertEquals("expect same Var", ref.getExprVar().getName(), st.getSubjectVar().getName());
+		assertEquals(ref.getExprVar().getName(), st.getSubjectVar().getName(), "expect same Var");
 	}
 
 	/*-

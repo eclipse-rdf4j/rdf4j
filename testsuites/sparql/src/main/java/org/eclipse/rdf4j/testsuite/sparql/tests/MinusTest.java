@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * Test for queries using MINUS

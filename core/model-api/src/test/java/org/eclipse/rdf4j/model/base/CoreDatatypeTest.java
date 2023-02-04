@@ -20,8 +20,7 @@ import java.util.List;
 import java.util.Random;
 import java.util.stream.Collectors;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class CoreDatatypeTest {
 
@@ -41,7 +40,7 @@ public class CoreDatatypeTest {
 				.map(CoreDatatype::getIri)
 				.map(Object::toString)
 				.collect(Collectors.toList());
-		Assert.assertEquals(datatypeIRIs, datatypeIRIsSortedByEnum);
+		assertEquals(datatypeIRIs, datatypeIRIsSortedByEnum);
 
 	}
 
@@ -61,7 +60,7 @@ public class CoreDatatypeTest {
 				.map(CoreDatatype::getIri)
 				.map(Object::toString)
 				.collect(Collectors.toList());
-		Assert.assertEquals(datatypeIRIs, datatypeIRIsSortedByEnum);
+		assertEquals(datatypeIRIs, datatypeIRIsSortedByEnum);
 
 	}
 

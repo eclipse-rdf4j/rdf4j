@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sparqlbuilder.core;
 
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+import static org.hamcrest.MatcherAssert.assertThat;
 
 import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
@@ -21,9 +22,8 @@ import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatternNotTriples;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 import org.hamcrest.CoreMatchers;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for precedence order of all operators in SPARQL builder Queries.
@@ -34,7 +34,7 @@ public class SparqlBuilderTest {
 	protected static final String EXAMPLE_ORG_NS = "https://example.org/ns#";
 	protected static final String DC_NS = DC.NAMESPACE;
 
-	@Before
+	@BeforeEach
 	public void before() {
 		query = Queries.SELECT();
 	}
@@ -50,7 +50,7 @@ public class SparqlBuilderTest {
 								Expressions.gt(price, Rdf.literalOf(30)))))
 				.optional();
 		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
-		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( ?price < 50 && ?price > 30 )"));
+		assertThat(query.getQueryString(), CoreMatchers.containsString("( ?price < 50 && ?price > 30 )"));
 	}
 
 	@Test
@@ -66,7 +66,7 @@ public class SparqlBuilderTest {
 				.optional();
 
 		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
-		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( ?price < 20 || ( ?price > 50 &&" +
+		assertThat(query.getQueryString(), CoreMatchers.containsString("( ?price < 20 || ( ?price > 50 &&" +
 				" ( ?price > 60 || ?price < 70 ) ) )"));
 	}
 
@@ -82,7 +82,7 @@ public class SparqlBuilderTest {
 				.optional();
 
 		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
-		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( 20 - ( 2 * 5 ) )"));
+		assertThat(query.getQueryString(), CoreMatchers.containsString("( 20 - ( 2 * 5 ) )"));
 	}
 
 	@Test
@@ -97,7 +97,7 @@ public class SparqlBuilderTest {
 				.optional();
 
 		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
-		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( 20 + ( 10 / 5 ) )"));
+		assertThat(query.getQueryString(), CoreMatchers.containsString("( 20 + ( 10 / 5 ) )"));
 	}
 
 	@Test
@@ -111,7 +111,7 @@ public class SparqlBuilderTest {
 				.optional();
 
 		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
-		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( ( 20 - 2 ) * 5 ) )"));
+		assertThat(query.getQueryString(), CoreMatchers.containsString("( ( 20 - 2 ) * 5 ) )"));
 	}
 
 	@Test
@@ -126,7 +126,7 @@ public class SparqlBuilderTest {
 				.optional();
 
 		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
-		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( 20 + ( 10 / 5 ) ) || 30 < 50 )"));
+		assertThat(query.getQueryString(), CoreMatchers.containsString("( 20 + ( 10 / 5 ) ) || 30 < 50 )"));
 	}
 
 	@Test
@@ -142,8 +142,8 @@ public class SparqlBuilderTest {
 				.select(title, price)
 				.where(x.has(dc.iri("title"), title),
 						pricePattern);
-		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("FILTER ( ?price < 50 )"));
-		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("FILTER ( ?price > 30 )"));
+		assertThat(query.getQueryString(), CoreMatchers.containsString("FILTER ( ?price < 50 )"));
+		assertThat(query.getQueryString(), CoreMatchers.containsString("FILTER ( ?price > 30 )"));
 	}
 
 }

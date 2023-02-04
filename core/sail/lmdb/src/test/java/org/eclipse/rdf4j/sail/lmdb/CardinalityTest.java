@@ -17,11 +17,10 @@ import java.util.Random;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,14 +30,15 @@ import org.slf4j.LoggerFactory;
 public class CardinalityTest {
 	final static Logger logger = LoggerFactory.getLogger(CardinalityTest.class);
 
-	@Rule
-	public TemporaryFolder tempFolder = new TemporaryFolder();
+	@TempDir
+	File tempFolder;
 
 	protected TripleStore tripleStore;
 
-	@Before
+	@BeforeEach
 	public void before() throws Exception {
-		File dataDir = tempFolder.newFolder("triplestore");
+		File dataDir = new File(tempFolder, "triplestore");
+		dataDir.mkdir();
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 	}
 
@@ -82,7 +82,7 @@ public class CardinalityTest {
 		}
 	}
 
-	@After
+	@AfterEach
 	public void after() throws Exception {
 		tripleStore.close();
 	}

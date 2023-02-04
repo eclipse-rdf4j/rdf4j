@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.elasticsearchstore.compliance;
 import java.io.File;
 import java.io.IOException;
 
-import org.assertj.core.util.Files;
 import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -21,22 +20,24 @@ import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.SingletonClientProvider;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.eclipse.rdf4j.testsuite.repository.SparqlOrderByTest;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.io.TempDir;
 
 public class ElasticsearchStoreSparqlOrderByIT extends SparqlOrderByTest {
 
-	private static final File installLocation = Files.newTemporaryFolder();
+	@TempDir
+	static File installLocation;
 	private static ElasticsearchClusterRunner runner;
 	private static SingletonClientProvider clientPool;
 
-	@BeforeClass
+	@BeforeAll
 	public static void beforeClass() throws IOException, InterruptedException {
 		runner = TestHelpers.startElasticsearch(installLocation);
 		clientPool = new SingletonClientProvider("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER);
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() throws Exception {
 		clientPool.close();
 		TestHelpers.stopElasticsearch(runner);

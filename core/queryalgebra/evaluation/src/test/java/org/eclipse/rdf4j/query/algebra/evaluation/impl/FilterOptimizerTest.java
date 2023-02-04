@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -33,7 +33,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class FilterOptimizerTest extends QueryOptimizerTest {
 

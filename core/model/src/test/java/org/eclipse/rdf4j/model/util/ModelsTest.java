@@ -15,6 +15,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.Optional;
 import java.util.Set;
@@ -33,9 +34,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests on {@link Models} utility methods.
@@ -56,7 +56,7 @@ public class ModelsTest {
 
 	private BNode baz;
 
-	@Before
+	@BeforeEach
 	public void setUp() {
 		model1 = new LinkedHashModel();
 		model2 = new LinkedHashModel();
@@ -357,14 +357,14 @@ public class ModelsTest {
 
 		try {
 			Models.getProperty(model1, foo, null).orElse(null);
-			Assert.fail("should have resulted in exception");
+			fail("should have resulted in exception");
 		} catch (NullPointerException e) {
 			// expected
 		}
 
 		try {
 			Models.getProperty(model1, null, bar).orElse(null);
-			Assert.fail("should have resulted in exception");
+			fail("should have resulted in exception");
 		} catch (NullPointerException e) {
 			// expected
 		}

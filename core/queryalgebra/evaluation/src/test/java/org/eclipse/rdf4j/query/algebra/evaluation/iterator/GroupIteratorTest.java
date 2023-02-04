@@ -53,9 +53,9 @@ import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunction;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunctionFactory;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateFunctionRegistry;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Bart Hanssens
@@ -69,7 +69,7 @@ public class GroupIteratorTest {
 	private static BindingSetAssignment NONEMPTY_ASSIGNMENT;
 	private static AggregateFunctionFactory aggregateFunctionFactory;
 
-	@BeforeClass
+	@BeforeAll
 	public static void init() {
 		EMPTY_ASSIGNMENT = new BindingSetAssignment();
 		EMPTY_ASSIGNMENT.setBindingSets(Collections.emptyList());
@@ -126,7 +126,7 @@ public class GroupIteratorTest {
 		CustomAggregateFunctionRegistry.getInstance().add(aggregateFunctionFactory);
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void cleanUp() {
 		CustomAggregateFunctionRegistry.getInstance().remove(aggregateFunctionFactory);
 	}

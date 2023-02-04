@@ -20,7 +20,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.eclipse.rdf4j.model.vocabulary.HYDRA;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Bart Hanssens

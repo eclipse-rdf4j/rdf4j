@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.text.tsv;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -26,8 +26,8 @@ import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 /**
  * Custom tests for the SPARQL TSV writer.
@@ -44,7 +44,7 @@ public class SPARQLTSVCustomTest {
 	 *
 	 * @throws Exception
 	 */
-	@Ignore("This test does not work with RDF-1.1")
+	@Disabled("This test does not work with RDF-1.1")
 	@Test
 	public void testSES2126QuotedLiteralIntegerAsStringExplicitType() throws Exception {
 		List<String> bindingNames = List.of("test");

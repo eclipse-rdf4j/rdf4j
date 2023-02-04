@@ -24,8 +24,9 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 public class IsomorphicTest {
 
@@ -58,7 +59,7 @@ public class IsomorphicTest {
 	static private Model manyProperties_2;
 	static private Model manyProperties2_2;
 
-	@BeforeClass
+	@BeforeAll
 	public static void beforeClass() {
 		empty = getModel("empty.ttl");
 		blankNodes = getModel("blankNodes.ttl");
@@ -188,7 +189,8 @@ public class IsomorphicTest {
 		assertThat(Models.isomorphic(m1, m2));
 	}
 
-	@Test(timeout = 2000)
+	@Test
+	@Timeout(2)
 	public void testValidationReport_LexicalOrdering() throws IOException {
 		Model m1 = getModel("shaclValidationReport.ttl");
 		Model m2 = getModel("shaclValidationReport.ttl");

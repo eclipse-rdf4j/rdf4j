@@ -15,5 +15,11 @@
 			<artifactId>rdf4j-shacl</artifactId>
 			<version>${project.version}</version>
 		</dependency>
+		<!-- This module uses legacy test/suite setup, and cannot be fully migrated to JUnit 5 now -->
+		<dependency>
+			<groupId>org.junit.vintage</groupId>
+			<artifactId>junit-vintage-engine</artifactId>
+			<scope>compile</scope>
+		</dependency>
 	</dependencies>
 </project>

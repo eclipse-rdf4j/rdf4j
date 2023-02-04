@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -36,7 +36,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author MJAHale

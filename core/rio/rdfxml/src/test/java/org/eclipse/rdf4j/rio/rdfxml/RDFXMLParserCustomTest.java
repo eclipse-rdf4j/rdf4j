@@ -10,8 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.rdfxml;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -32,8 +32,9 @@ import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.rio.helpers.XMLParserSettings;
 import org.eclipse.rdf4j.rio.rdfxml.util.RDFXMLPrettyWriter;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 /**
  * Custom tests for RDFXML Parser.
@@ -144,8 +145,9 @@ public class RDFXMLParserCustomTest {
 	 *
 	 * @throws Exception
 	 */
-	@Ignore
-	@Test(timeout = 10000)
+	@Disabled
+	@Test
+	@Timeout(10)
 	public void testEntityExpansionNoSecureProcessing() throws Exception {
 		final Model aGraph = new LinkedHashModel();
 		ParseErrorCollector errorCollector = new ParseErrorCollector();

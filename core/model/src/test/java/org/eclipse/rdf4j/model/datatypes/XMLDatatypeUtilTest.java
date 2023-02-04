@@ -17,7 +17,7 @@ import static org.junit.Assert.fail;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests on {@link org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil}

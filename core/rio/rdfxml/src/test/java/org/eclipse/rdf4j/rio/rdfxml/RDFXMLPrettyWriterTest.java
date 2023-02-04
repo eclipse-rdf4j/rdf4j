@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.rdfxml;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -41,7 +41,7 @@ import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.rdfxml.util.RDFXMLPrettyWriter;
 import org.eclipse.rdf4j.rio.rdfxml.util.RDFXMLPrettyWriterFactory;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class RDFXMLPrettyWriterTest extends AbstractRDFXMLWriterTest {
 

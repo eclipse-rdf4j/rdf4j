@@ -10,21 +10,21 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
+import java.io.File;
 import java.io.IOException;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.testsuite.repository.GraphQueryResultTest;
-import org.junit.Rule;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.io.TempDir;
 
 public class LmdbGraphQueryResultTest extends GraphQueryResultTest {
-	@Rule
-	public final TemporaryFolder tmpDir = new TemporaryFolder();
+	@TempDir
+	File dataDir;
 
 	@Override
 	protected Repository newRepository() throws IOException {
-		return new SailRepository(new LmdbStore(tmpDir.getRoot(), new LmdbStoreConfig("spoc")));
+		return new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc")));
 	}
 }

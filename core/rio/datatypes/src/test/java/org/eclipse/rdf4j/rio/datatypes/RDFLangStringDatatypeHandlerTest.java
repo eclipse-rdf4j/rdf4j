@@ -17,8 +17,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.DatatypeHandler;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 /**
  * Test for {@link RDFDatatypeHandler} with {@link RDF#LANGSTRING}.
@@ -27,19 +27,19 @@ import org.junit.Test;
  */
 public class RDFLangStringDatatypeHandlerTest extends AbstractDatatypeHandlerTest {
 
-	@Ignore("There are no invalid values for RDF LangString other than null, which is tested seperately")
+	@Disabled("There are no invalid values for RDF LangString other than null, which is tested seperately")
 	@Test
 	@Override
 	public void testVerifyDatatypeInvalidValue() throws Exception {
 	}
 
-	@Ignore("There are no invalid values for RDF LangString other than null, which is tested seperately")
+	@Disabled("There are no invalid values for RDF LangString other than null, which is tested seperately")
 	@Test
 	@Override
 	public void testNormalizeDatatypeInvalidValue() throws Exception {
 	}
 
-	@Ignore("This test relies on a null language, which is not allowed for RDF.LANGSTRING")
+	@Disabled("This test relies on a null language, which is not allowed for RDF.LANGSTRING")
 	@Test
 	@Override
 	public void testNormalizeDatatypeValidValue() throws Exception {

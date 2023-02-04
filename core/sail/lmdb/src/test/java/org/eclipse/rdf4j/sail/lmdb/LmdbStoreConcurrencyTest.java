@@ -10,14 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
-import java.io.IOException;
+import java.io.File;
 
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.testsuite.sail.SailConcurrencyTest;
-import org.junit.Rule;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * An extension of {@link SailConcurrencyTest} for testing the class {@link LmdbStore}.
@@ -28,8 +27,8 @@ public class LmdbStoreConcurrencyTest extends SailConcurrencyTest {
 	 * Variables *
 	 *-----------*/
 
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
+	@TempDir
+	File dataDir;
 
 	/*---------*
 	 * Methods *
@@ -37,13 +36,9 @@ public class LmdbStoreConcurrencyTest extends SailConcurrencyTest {
 
 	@Override
 	protected NotifyingSail createSail() throws SailException {
-		try {
-			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
-			config.setValueDBSize(52428800); // 50 MiB
-			config.setTripleDBSize(config.getValueDBSize());
-			return new LmdbStore(tempDir.newFolder(), config);
-		} catch (IOException e) {
-			throw new AssertionError(e);
-		}
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		config.setValueDBSize(52428800); // 50 MiB
+		config.setTripleDBSize(config.getValueDBSize());
+		return new LmdbStore(dataDir, config);
 	}
 }

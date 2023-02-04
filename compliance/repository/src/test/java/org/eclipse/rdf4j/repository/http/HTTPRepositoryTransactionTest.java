@@ -11,7 +11,7 @@
 package org.eclipse.rdf4j.repository.http;
 
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class HTTPRepositoryTransactionTest {
 

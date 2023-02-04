@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class StatementsTest {
 

@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sparql.federation;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -34,10 +36,9 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import com.google.common.collect.Lists;
 
@@ -54,7 +55,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 	private SailRepository localRepo;
 	private RepositoryFederatedService federatedService;
 
-	@Before
+	@BeforeEach
 	public void before() {
 		serviceRepo = new SailRepository(new MemoryStore());
 		serviceRepo.init();
@@ -72,7 +73,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 		localRepo.init();
 	}
 
-	@After
+	@AfterEach
 	public void after() {
 		federatedService.shutdown();
 		localRepo.shutDown();
@@ -220,10 +221,10 @@ public class RepositoryFederatedServiceIntegrationTest {
 		String query = "SELECT ?var ?cnt WHERE { SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 2 }  . SERVICE <urn:dummy> { SELECT ?var ?cnt ?__rowIdx WHERE { SELECT (COUNT(?s2) AS ?cnt) WHERE { ?s2 ?p2 ?var  } } } }";
 
 		List<BindingSet> res = evaluateQuery(query);
-		Assert.assertEquals(2, res.size());
+		assertEquals(2, res.size());
 		BindingSet b1 = res.get(0);
-		Assert.assertEquals(l("val1"), b1.getValue("var"));
-		Assert.assertEquals(1, ((Literal) b1.getValue("cnt")).intValue());
+		assertEquals(l("val1"), b1.getValue("var"));
+		assertEquals(1, ((Literal) b1.getValue("cnt")).intValue());
 	}
 
 	@Test
@@ -236,10 +237,10 @@ public class RepositoryFederatedServiceIntegrationTest {
 		String query = "SELECT ?var ?cnt WHERE { SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 1 }  . SERVICE <urn:dummy> { SELECT ?var ?cnt ?__rowIdx WHERE { SELECT (COUNT(?s2) AS ?cnt) WHERE { ?s2 ?p2 ?var  } } } }";
 
 		List<BindingSet> res = evaluateQuery(query);
-		Assert.assertEquals(1, res.size());
+		assertEquals(1, res.size());
 		BindingSet b1 = res.get(0);
-		Assert.assertEquals(l("val1"), b1.getValue("var"));
-		Assert.assertEquals(1, ((Literal) b1.getValue("cnt")).intValue());
+		assertEquals(l("val1"), b1.getValue("var"));
+		assertEquals(1, ((Literal) b1.getValue("cnt")).intValue());
 	}
 
 	@Test
@@ -362,6 +363,6 @@ public class RepositoryFederatedServiceIntegrationTest {
 	}
 
 	private void assertResultEquals(List<BindingSet> res, String bindingName, List<Value> expected) {
-		Assert.assertEquals(expected, res.stream().map(b -> b.getValue(bindingName)).collect(Collectors.toList()));
+		assertEquals(expected, res.stream().map(b -> b.getValue(bindingName)).collect(Collectors.toList()));
 	}
 }
