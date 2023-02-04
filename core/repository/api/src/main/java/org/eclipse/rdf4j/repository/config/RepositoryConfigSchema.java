@@ -23,37 +23,40 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 public class RepositoryConfigSchema {
 
 	/**
-	 * The HTTPRepository schema namespace (<var>http://www.openrdf.org/config/repository#</var>).
+	 * The Repository config schema namespace (<var>http://rdf4j.org/vocabulary/repository#</var>).
 	 */
-	public static final String NAMESPACE = "http://www.openrdf.org/config/repository#";
+	public static final String NAMESPACE = "http://rdf4j.org/schema/repository#";
+
+	@Deprecated(forRemoval = true)
+	public static final String NAMESPACE_OBSOLETE = "http://www.openrdf.org/config/repository#";
 
 	/**
-	 * <var>http://www.openrdf.org/config/repository#RepositoryContext</var>
+	 * <var>"http://rdf4j.org/schema/repository#RepositoryContext</var>
 	 */
 	public final static IRI REPOSITORY_CONTEXT;
 
 	/**
-	 * <var>http://www.openrdf.org/config/repository#Repository</var>
+	 * <var>http://rdf4j.org/schema/repository#Repository</var>
 	 */
 	public final static IRI REPOSITORY;
 
 	/**
-	 * <var>http://www.openrdf.org/config/repository#repositoryID</var>
+	 * <var>http://rdf4j.org/schema/repository#repositoryID</var>
 	 */
 	public final static IRI REPOSITORYID;
 
 	/**
-	 * <var>http://www.openrdf.org/config/repository#repositoryImpl</var>
+	 * <var>http://rdf4j.org/schema/repository#repositoryImpl</var>
 	 */
 	public final static IRI REPOSITORYIMPL;
 
 	/**
-	 * <var>http://www.openrdf.org/config/repository#repositoryType</var>
+	 * <var>http://rdf4j.org/schema/repository#repositoryType</var>
 	 */
 	public final static IRI REPOSITORYTYPE;
 
 	/**
-	 * <var>http://www.openrdf.org/config/repository#delegate</var>
+	 * <var>http://rdf4j.org/schema/repository#delegate</var>
 	 */
 	public final static IRI DELEGATE;
 
