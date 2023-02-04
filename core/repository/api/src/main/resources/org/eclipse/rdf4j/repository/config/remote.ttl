@@ -2,7 +2,7 @@
 # RDF4J configuration template for a (proxy for a) remote repository
 #
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix rep: <http://rdf4j.org/schema/repository#>.
+@prefix rep: <tag:rdf4j.org:2023:config/repository#>.
 @prefix hr: <http://www.openrdf.org/config/repository/http#>.
 
 [] a rep:Repository ;

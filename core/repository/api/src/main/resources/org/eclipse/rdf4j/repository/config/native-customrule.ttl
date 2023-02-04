@@ -3,7 +3,7 @@
 # a custom graph query inference rule.
 #
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix rep: <http://rdf4j.org/schema/repository#>.
+@prefix rep: <tag:rdf4j.org:2023:config/repository#>.
 @prefix sr: <http://www.openrdf.org/config/repository/sail#>.
 @prefix sail: <http://www.openrdf.org/config/sail#>.
 @prefix ns: <http://www.openrdf.org/config/sail/native#>.

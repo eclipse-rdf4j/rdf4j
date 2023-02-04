@@ -19,44 +19,47 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
  * {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}s.
  *
  * @author Arjohn Kampman
+ * @author Jeen Broekstra
  */
 public class RepositoryConfigSchema {
 
 	/**
-	 * The Repository config schema namespace (<var>http://rdf4j.org/vocabulary/repository#</var>).
+	 * The Repository config schema namespace (<var>tag:rdf4j.org:2023:config/repository#</var>).
+	 * 
+	 * @see tools.ietf.org/html/rfc4151
 	 */
-	public static final String NAMESPACE = "http://rdf4j.org/schema/repository#";
+	public static final String NAMESPACE = "tag:rdf4j.org:2023:config/repository#";
 
-	@Deprecated(forRemoval = true)
+	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final String NAMESPACE_OBSOLETE = "http://www.openrdf.org/config/repository#";
 
 	/**
-	 * <var>"http://rdf4j.org/schema/repository#RepositoryContext</var>
+	 * <var>"tag:rdf4j.org:2023:config/repository#RepositoryContext</var>
 	 */
 	public final static IRI REPOSITORY_CONTEXT;
 
 	/**
-	 * <var>http://rdf4j.org/schema/repository#Repository</var>
+	 * <var>tag:rdf4j.org:2023:config/repository#Repository</var>
 	 */
 	public final static IRI REPOSITORY;
 
 	/**
-	 * <var>http://rdf4j.org/schema/repository#repositoryID</var>
+	 * <var>tag:rdf4j.org:2023:config/repository#repositoryID</var>
 	 */
 	public final static IRI REPOSITORYID;
 
 	/**
-	 * <var>http://rdf4j.org/schema/repository#repositoryImpl</var>
+	 * <var>tag:rdf4j.org:2023:config/repository#repositoryImpl</var>
 	 */
 	public final static IRI REPOSITORYIMPL;
 
 	/**
-	 * <var>http://rdf4j.org/schema/repository#repositoryType</var>
+	 * <var>tag:rdf4j.org:2023:config/repository#repositoryType</var>
 	 */
 	public final static IRI REPOSITORYTYPE;
 
 	/**
-	 * <var>http://rdf4j.org/schema/repository#delegate</var>
+	 * <var>tag:rdf4j.org:2023:config/repository#delegate</var>
 	 */
 	public final static IRI DELEGATE;
 

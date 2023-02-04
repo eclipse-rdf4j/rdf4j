@@ -10,7 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.config;
 
+import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.model.util.Values.iri;
+import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.NAMESPACE;
 import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.NAMESPACE_OBSOLETE;
 import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORY;
@@ -23,8 +25,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -125,8 +125,7 @@ public class RepositoryConfig {
 	 */
 	@Deprecated
 	public void export(Model model) {
-		ValueFactory vf = SimpleValueFactory.getInstance();
-		export(model, vf.createBNode());
+		export(model, bnode());
 	}
 
 	/**
@@ -137,17 +136,16 @@ public class RepositoryConfig {
 	 * @since 2.3
 	 */
 	public void export(Model model, Resource repositoryNode) {
-		ValueFactory vf = SimpleValueFactory.getInstance();
 		model.setNamespace(RDFS.NS);
 		model.setNamespace(XSD.NS);
 		model.setNamespace("rep", NAMESPACE);
 		model.add(repositoryNode, RDF.TYPE, REPOSITORY);
 
 		if (id != null) {
-			model.add(repositoryNode, REPOSITORYID, vf.createLiteral(id));
+			model.add(repositoryNode, REPOSITORYID, literal(id));
 		}
 		if (title != null) {
-			model.add(repositoryNode, RDFS.LABEL, vf.createLiteral(title));
+			model.add(repositoryNode, RDFS.LABEL, literal(title));
 		}
 		if (implConfig != null) {
 			Resource implNode = implConfig.export(model);
@@ -169,7 +167,6 @@ public class RepositoryConfig {
 	}
 
 	private Optional<Resource> getResource(Model model, Resource subject, IRI property) {
-
 		return Optional
 				.ofNullable(Models.objectResource(model.getStatements(subject, property, null)))
 				.orElseGet(() -> {
