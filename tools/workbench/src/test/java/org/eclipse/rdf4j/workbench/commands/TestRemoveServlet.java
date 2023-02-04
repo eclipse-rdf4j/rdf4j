@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit and regression tests for {@link RemoteServlet}.

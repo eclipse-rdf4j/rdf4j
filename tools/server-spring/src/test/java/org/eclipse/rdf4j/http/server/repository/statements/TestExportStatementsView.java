@@ -12,14 +12,17 @@ package org.eclipse.rdf4j.http.server.repository.statements;
 
 import static javax.servlet.http.HttpServletResponse.SC_OK;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.util.Map;
 
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.rio.turtle.TurtleWriterFactory;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.http.HttpMethod;
 import org.springframework.ui.ModelMap;
@@ -29,7 +32,7 @@ public class TestExportStatementsView extends TestStatementsCommon {
 	private final ExportStatementsView exportStatementsView = ExportStatementsView.getInstance();
 	private final Map<String, Object> model = new ModelMap();
 
-	@Before
+	@BeforeEach
 	public void initMocks() {
 		request.setMethod(HttpMethod.GET.name());
 		model.put(ExportStatementsView.FACTORY_KEY, new TurtleWriterFactory());
@@ -44,7 +47,7 @@ public class TestExportStatementsView extends TestStatementsCommon {
 		// act
 		exportStatementsView.render(model, request, response);
 
-		Assert.assertEquals(SC_OK, response.getStatus());
+		assertEquals(SC_OK, response.getStatus());
 	}
 
 	@Test
@@ -62,7 +65,7 @@ public class TestExportStatementsView extends TestStatementsCommon {
 			exception = ex;
 		}
 
-		Assert.assertNotNull(exception);
-		Assert.assertTrue(exception.getMessage().contains(REPOSITORY_ERROR_MSG));
+		assertNotNull(exception);
+		assertTrue(exception.getMessage().contains(REPOSITORY_ERROR_MSG));
 	}
 }

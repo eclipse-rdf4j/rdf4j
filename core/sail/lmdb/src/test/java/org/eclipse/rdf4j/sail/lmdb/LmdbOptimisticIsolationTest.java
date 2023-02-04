@@ -15,12 +15,12 @@ import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryFactory;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreFactory;
 import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 
 public class LmdbOptimisticIsolationTest extends OptimisticIsolationTest {
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() throws Exception {
 		setRepositoryFactory(new SailRepositoryFactory() {
 			@Override
@@ -30,7 +30,7 @@ public class LmdbOptimisticIsolationTest extends OptimisticIsolationTest {
 		});
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void tearDown() throws Exception {
 		setRepositoryFactory(null);
 	}

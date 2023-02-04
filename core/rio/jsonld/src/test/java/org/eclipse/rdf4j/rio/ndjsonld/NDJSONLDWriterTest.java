@@ -22,8 +22,8 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.jsonld.JSONLDMode;
 import org.eclipse.rdf4j.rio.jsonld.JSONLDSettings;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 public class NDJSONLDWriterTest extends RDFWriterTest {
 
@@ -33,7 +33,7 @@ public class NDJSONLDWriterTest extends RDFWriterTest {
 
 	@Test
 	@Override
-	@Ignore("TODO: See case for JSONLDWriterTest")
+	@Disabled("TODO: See case for JSONLDWriterTest")
 	public void testIllegalPrefix() throws RDFHandlerException, RDFParseException, IOException {
 	}
 

@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.testsuite.sail.InferencingTest;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class MemInferencingTest extends InferencingTest {
 

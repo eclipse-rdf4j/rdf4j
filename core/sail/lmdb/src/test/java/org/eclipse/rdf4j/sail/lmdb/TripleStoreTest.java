@@ -17,25 +17,19 @@ import java.io.IOException;
 
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Low-level tests for {@link TripleStore}.
  */
 public class TripleStoreTest {
-
-	@Rule
-	public TemporaryFolder tempFolder = new TemporaryFolder();
-
 	protected TripleStore tripleStore;
 
-	@Before
-	public void before() throws Exception {
-		File dataDir = tempFolder.newFolder("triplestore");
+	@BeforeEach
+	public void before(@TempDir File dataDir) throws Exception {
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 	}
 
@@ -72,7 +66,7 @@ public class TripleStoreTest {
 		}
 	}
 
-	@After
+	@AfterEach
 	public void after() throws Exception {
 		tripleStore.close();
 	}

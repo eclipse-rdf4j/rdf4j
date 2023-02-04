@@ -10,26 +10,30 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
-
-import junit.framework.TestCase;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author James Leigh
  */
-public class TurtleMimeTypeTest extends TestCase {
+public class TurtleMimeTypeTest {
 
+	@Test
 	public void testTextTurtle() {
 		assertEquals(RDFFormat.TURTLE,
 				Rio.getParserFormatForMIMEType("text/turtle").orElseThrow(Rio.unsupportedFormat(RDFFormat.TURTLE)));
 	}
 
+	@Test
 	public void testTextTurtleUtf8() {
 		assertEquals(RDFFormat.TURTLE, Rio.getParserFormatForMIMEType("text/turtle;charset=UTF-8")
 				.orElseThrow(Rio.unsupportedFormat(RDFFormat.TURTLE)));
 	}
 
+	@Test
 	public void testApplicationXTurtle() {
 		assertEquals(RDFFormat.TURTLE, Rio.getParserFormatForMIMEType("application/x-turtle")
 				.orElseThrow(Rio.unsupportedFormat(RDFFormat.TURTLE)));

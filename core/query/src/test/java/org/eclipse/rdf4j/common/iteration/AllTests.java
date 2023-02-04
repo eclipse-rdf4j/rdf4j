@@ -10,15 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.iteration;
 
-import org.junit.runner.RunWith;
-import org.junit.runners.Suite;
-import org.junit.runners.Suite.SuiteClasses;
+import org.junit.platform.suite.api.SelectClasses;
+import org.junit.platform.suite.api.Suite;
 
 /**
  * @author akam
  */
-@RunWith(Suite.class)
-@SuiteClasses({ LimitIterationTest.class, EmptyIterationTest.class, OffsetIterationTest.class,
+@Suite
+@SelectClasses({ LimitIterationTest.class, EmptyIterationTest.class, OffsetIterationTest.class,
 		ConvertingIterationTest.class, CloseableIteratorIterationTest.class, DelayedIterationTest.class,
 		DistinctIterationTest.class, ExceptionConvertingIterationTest.class, FilterIterationTest.class,
 		IntersectionIterationTest.class, DistinctIntersectionIterationTest.class, IteratorIterationTest.class,

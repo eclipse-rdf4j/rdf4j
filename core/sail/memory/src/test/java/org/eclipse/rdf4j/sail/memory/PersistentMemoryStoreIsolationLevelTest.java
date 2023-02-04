@@ -10,12 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
-import java.io.IOException;
+import java.io.File;
 
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
-import org.junit.Rule;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * An extension of {@link MemoryStoreIsolationLevelTest} for testing the class {@link MemoryStore} using on-disk
@@ -23,8 +22,8 @@ import org.junit.rules.TemporaryFolder;
  */
 public class PersistentMemoryStoreIsolationLevelTest extends MemoryStoreIsolationLevelTest {
 
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
+	@TempDir
+	public File tempDir;
 
 	/*---------*
 	 * Methods *
@@ -32,12 +31,9 @@ public class PersistentMemoryStoreIsolationLevelTest extends MemoryStoreIsolatio
 
 	@Override
 	protected Sail createSail() throws SailException {
-		MemoryStore sail;
-		try {
-			sail = new MemoryStore(tempDir.newFolder("memory-store"));
-		} catch (IOException e) {
-			throw new AssertionError(e);
-		}
+		File dataDir = new File(tempDir, "memory-store");
+		dataDir.mkdir();
+		MemoryStore sail = new MemoryStore(dataDir);
 		sail.setSyncDelay(100);
 		return sail;
 	}

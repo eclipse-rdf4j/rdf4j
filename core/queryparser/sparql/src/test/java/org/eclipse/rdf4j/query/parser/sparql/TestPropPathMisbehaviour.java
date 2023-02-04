@@ -10,8 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql;
 
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Distinct;
@@ -23,9 +23,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public class TestPropPathMisbehaviour {
 	private SPARQLParser parser;
@@ -33,7 +33,7 @@ public class TestPropPathMisbehaviour {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		parser = new SPARQLParser();
 	}
@@ -41,7 +41,7 @@ public class TestPropPathMisbehaviour {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		parser = null;
 	}
@@ -59,23 +59,23 @@ public class TestPropPathMisbehaviour {
 
 		assertNotNull(q);
 		TupleExpr tupleExpr = q.getTupleExpr();
-		assertTrue("expect queryroot", tupleExpr instanceof QueryRoot);
+		assertTrue(tupleExpr instanceof QueryRoot, "expect queryroot");
 		tupleExpr = ((QueryRoot) tupleExpr).getArg();
-		assertTrue("expect projection", tupleExpr instanceof Projection);
+		assertTrue(tupleExpr instanceof Projection, "expect projection");
 		Projection proj = (Projection) tupleExpr;
 
-		assertTrue("expect join", proj.getArg() instanceof Join);
-		assertTrue("expect left arg to be ALP", ((Join) proj.getArg()).getLeftArg() instanceof ArbitraryLengthPath);
+		assertTrue(proj.getArg() instanceof Join, "expect join");
+		assertTrue(((Join) proj.getArg()).getLeftArg() instanceof ArbitraryLengthPath, "expect left arg to be ALP");
 		ArbitraryLengthPath alp = (ArbitraryLengthPath) ((Join) proj.getArg()).getLeftArg();
 
-		assertTrue("expect single statement pattern in alp PE", alp.getPathExpression() instanceof StatementPattern);
+		assertTrue(alp.getPathExpression() instanceof StatementPattern, "expect single statement pattern in alp PE");
 		StatementPattern sp = (StatementPattern) alp.getPathExpression();
 		assertNotNull(sp.getSubjectVar());
 
-		assertTrue("expect subj var to be iri", "iri".equals(sp.getSubjectVar().getName()));
+		assertTrue("iri".equals(sp.getSubjectVar().getName()), "expect subj var to be iri");
 
-		assertTrue("expect obj var of the pattern to be same as the objVar of ALP",
-				alp.getObjectVar().equals(sp.getObjectVar()));
+		assertTrue(alp.getObjectVar().equals(sp.getObjectVar()),
+				"expect obj var of the pattern to be same as the objVar of ALP");
 	}
 
 	@Test
@@ -87,28 +87,28 @@ public class TestPropPathMisbehaviour {
 
 		assertNotNull(q);
 		TupleExpr tupleExpr = q.getTupleExpr();
-		assertTrue("expect queryroot", tupleExpr instanceof QueryRoot);
+		assertTrue(tupleExpr instanceof QueryRoot, "expect queryroot");
 		tupleExpr = ((QueryRoot) tupleExpr).getArg();
-		assertTrue("expect projection", tupleExpr instanceof Projection);
+		assertTrue(tupleExpr instanceof Projection, "expect projection");
 		Projection proj = (Projection) tupleExpr;
 
-		assertTrue("expect join", proj.getArg() instanceof Join);
-		assertTrue("expect left arg to be ALP", ((Join) proj.getArg()).getLeftArg() instanceof ArbitraryLengthPath);
+		assertTrue(proj.getArg() instanceof Join, "expect join");
+		assertTrue(((Join) proj.getArg()).getLeftArg() instanceof ArbitraryLengthPath, "expect left arg to be ALP");
 		ArbitraryLengthPath alp = (ArbitraryLengthPath) ((Join) proj.getArg()).getLeftArg();
 
-		assertTrue("expect single statement pattern in alp PE", alp.getPathExpression() instanceof StatementPattern);
+		assertTrue(alp.getPathExpression() instanceof StatementPattern, "expect single statement pattern in alp PE");
 		StatementPattern sp = (StatementPattern) alp.getPathExpression();
 		assertNotNull(sp.getSubjectVar());
 
-		assertTrue("expect right arg to be Distinct", ((Join) proj.getArg()).getRightArg() instanceof Distinct);
+		assertTrue(((Join) proj.getArg()).getRightArg() instanceof Distinct, "expect right arg to be Distinct");
 		Distinct dist = (Distinct) ((Join) proj.getArg()).getRightArg();
-		assertTrue("expect projection", dist.getArg() instanceof Projection);
+		assertTrue(dist.getArg() instanceof Projection, "expect projection");
 		Projection proj2 = (Projection) dist.getArg();
-		assertTrue("expect Union as projection arg", proj2.getArg() instanceof Union);
-		assertTrue("expect Union Left arg to be ZeroPath",
-				((Union) proj2.getArg()).getLeftArg() instanceof ZeroLengthPath);
-		assertTrue("expect Union Right arg to be StatementPattern",
-				((Union) proj2.getArg()).getRightArg() instanceof StatementPattern);
-		assertTrue("expect projection to do NOT be a subQuery", !proj2.isSubquery());
+		assertTrue(proj2.getArg() instanceof Union, "expect Union as projection arg");
+		assertTrue(((Union) proj2.getArg()).getLeftArg() instanceof ZeroLengthPath,
+				"expect Union Left arg to be ZeroPath");
+		assertTrue(((Union) proj2.getArg()).getRightArg() instanceof StatementPattern,
+				"expect Union Right arg to be StatementPattern");
+		assertTrue(!proj2.isSubquery(), "expect projection to do NOT be a subQuery");
 	}
 }

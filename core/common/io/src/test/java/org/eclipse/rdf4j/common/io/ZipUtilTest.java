@@ -10,8 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.io;
 
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -20,17 +20,18 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 public class ZipUtilTest {
-	@Rule
-	public TemporaryFolder dir = new TemporaryFolder();
+
+	@TempDir
+	public File dir;
 
 	@Test
 	public void testWriteEntryNormal() throws IOException {
-		File f = dir.newFile("testok.zip");
+		File f = new File(dir, "testok.zip");
+		f.createNewFile();
 
 		try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(f))) {
 			ZipEntry e = new ZipEntry("helloworld.txt");
@@ -40,15 +41,17 @@ public class ZipUtilTest {
 		}
 
 		ZipFile zf = new ZipFile(f);
-		File subdir = dir.newFolder("extract");
+		File subdir = new File(dir, "extract");
+		subdir.mkdir();
 		ZipUtil.extract(zf, subdir);
 
-		assertTrue("File not extracted", new File(subdir, "helloworld.txt").exists());
+		assertTrue(new File(subdir, "helloworld.txt").exists(), () -> "File not extracted");
 	}
 
 	@Test
 	public void testWriteEntryPathTraversing() throws IOException {
-		File f = dir.newFile("testnotok.zip");
+		File f = new File(dir, "testnotok.zip");
+		f.createNewFile();
 
 		try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(f))) {
 			ZipEntry e = new ZipEntry("hello/../../world.txt");
@@ -58,7 +61,8 @@ public class ZipUtilTest {
 		}
 
 		ZipFile zf = new ZipFile(f);
-		File subdir = dir.newFolder("extract");
+		File subdir = new File(dir, "extract");
+		subdir.mkdir();
 		try {
 			ZipUtil.extract(zf, subdir);
 			fail("No exception thrown");

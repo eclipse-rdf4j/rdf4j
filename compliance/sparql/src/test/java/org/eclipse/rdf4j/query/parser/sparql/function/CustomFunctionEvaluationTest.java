@@ -20,8 +20,8 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Integration tests for evaluation of custom functions in SPARQL
@@ -32,7 +32,7 @@ public class CustomFunctionEvaluationTest {
 
 	private SailRepository rep;
 
-	@Before
+	@BeforeEach
 	public void setUp() {
 		rep = new SailRepository(new MemoryStore());
 	}

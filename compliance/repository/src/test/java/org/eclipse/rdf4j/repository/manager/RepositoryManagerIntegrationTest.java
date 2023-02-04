@@ -19,13 +19,13 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
-import org.junit.Before;
+import org.junit.jupiter.api.BeforeEach;
 
 public class RepositoryManagerIntegrationTest {
 
 	protected RepositoryManager subject;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		subject = new RepositoryManager() {
 

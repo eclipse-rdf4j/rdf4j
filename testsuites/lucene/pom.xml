@@ -30,5 +30,10 @@
 			<artifactId>rdf4j-spin</artifactId>
 			<version>${project.version}</version>
 		</dependency>
+		<dependency>
+			<groupId>org.junit.vintage</groupId>
+			<artifactId>junit-vintage-engine</artifactId>
+			<scope>compile</scope>
+		</dependency>
 	</dependencies>
 </project>

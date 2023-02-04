@@ -10,14 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqljson;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.assertj.core.api.Assertions.fail;
+import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
+import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.InputStream;
 
@@ -34,7 +34,7 @@ import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
 import org.eclipse.rdf4j.testsuite.query.resultio.AbstractQueryResultIOTupleTest;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Peter Ansell
@@ -64,7 +64,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 		parser.setQueryResultHandler(handler);
 
 		InputStream stream = this.getClass().getResourceAsStream("/sparqljson/bindings1.srj");
-		assertNotNull("Could not find test resource", stream);
+		assertNotNull(stream, "Could not find test resource");
 		parser.parseQueryResult(stream);
 
 		// there must be two variables
@@ -115,7 +115,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 		parser.setQueryResultHandler(handler);
 
 		InputStream stream = this.getClass().getResourceAsStream("/sparqljson/bindings2.srj");
-		assertNotNull("Could not find test resource", stream);
+		assertNotNull(stream, "Could not find test resource");
 		parser.parseQueryResult(stream);
 
 		// there must be 7 variables
@@ -205,7 +205,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 		parser.setQueryResultHandler(handler);
 
 		InputStream stream = this.getClass().getResourceAsStream("/sparqljson/non-standard-distinct.srj");
-		assertNotNull("Could not find test resource", stream);
+		assertNotNull(stream, "Could not find test resource");
 		parser.parseQueryResult(stream);
 
 		// there must be 1 variable
@@ -225,7 +225,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 		parser.setQueryResultHandler(handler);
 
 		InputStream stream = this.getClass().getResourceAsStream("/sparqljson/non-standard-ordered.srj");
-		assertNotNull("Could not find test resource", stream);
+		assertNotNull(stream, "Could not find test resource");
 		parser.parseQueryResult(stream);
 
 		// there must be 1 variable
@@ -245,7 +245,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 		parser.setQueryResultHandler(handler);
 
 		InputStream stream = this.getClass().getResourceAsStream("/sparqljson/non-standard-distinct-ordered.srj");
-		assertNotNull("Could not find test resource", stream);
+		assertNotNull(stream, "Could not find test resource");
 		parser.parseQueryResult(stream);
 
 		// there must be 1 variable
@@ -265,7 +265,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 		parser.setQueryResultHandler(handler);
 
 		InputStream stream = this.getClass().getResourceAsStream("/sparqljson/other-keys.srj");
-		assertNotNull("Could not find test resource", stream);
+		assertNotNull(stream, "Could not find test resource");
 		parser.parseQueryResult(stream);
 
 		// there must be two variables
@@ -297,7 +297,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 		parser.setQueryResultHandler(handler);
 
 		InputStream stream = this.getClass().getResourceAsStream("/sparqljson/rdfstar-extendedformat-rdf4j.srj");
-		assertNotNull("Could not find test resource", stream);
+		assertNotNull(stream, "Could not find test resource");
 		parser.parseQueryResult(stream);
 
 		assertThat(handler.getBindingNames().size()).isEqualTo(3);
@@ -316,7 +316,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 
 		InputStream stream = this.getClass()
 				.getResourceAsStream("/sparqljson/rdfstar-extendedformat-rdf4j-incompletetriple.srj");
-		assertNotNull("Could not find test resource", stream);
+		assertNotNull(stream, "Could not find test resource");
 		assertThatThrownBy(() -> parser.parseQueryResult(stream)).isInstanceOf(QueryResultParseException.class)
 				.hasMessageContaining("Incomplete or invalid triple value");
 	}
@@ -329,7 +329,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 
 		InputStream stream = this.getClass()
 				.getResourceAsStream("/sparqljson/rdfstar-extendedformat-rdf4j-doublesubject.srj");
-		assertNotNull("Could not find test resource", stream);
+		assertNotNull(stream, "Could not find test resource");
 		assertThatThrownBy(() -> parser.parseQueryResult(stream)).isInstanceOf(QueryResultParseException.class)
 				.hasMessageContaining("s field encountered twice in triple value:");
 	}
@@ -341,7 +341,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 		parser.setQueryResultHandler(handler);
 
 		InputStream stream = this.getClass().getResourceAsStream("/sparqljson/rdfstar-extendedformat-stardog.srj");
-		assertNotNull("Could not find test resource", stream);
+		assertNotNull(stream, "Could not find test resource");
 		parser.parseQueryResult(stream);
 
 		assertThat(handler.getBindingNames().size()).isEqualTo(3);
@@ -360,7 +360,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 
 		InputStream stream = this.getClass()
 				.getResourceAsStream("/sparqljson/rdfstar-extendedformat-stardog-namedgraph.srj");
-		assertNotNull("Could not find test resource", stream);
+		assertNotNull(stream, "Could not find test resource");
 		parser.parseQueryResult(stream);
 
 		assertThat(handler.getBindingNames().size()).isEqualTo(3);
@@ -378,7 +378,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 		parser.setQueryResultHandler(handler);
 
 		InputStream stream = this.getClass().getResourceAsStream("/sparqljson/rdfstar-extendedformat-jena.srj");
-		assertNotNull("Could not find test resource", stream);
+		assertNotNull(stream, "Could not find test resource");
 		parser.parseQueryResult(stream);
 
 		assertThat(handler.getBindingNames().size()).isEqualTo(3);

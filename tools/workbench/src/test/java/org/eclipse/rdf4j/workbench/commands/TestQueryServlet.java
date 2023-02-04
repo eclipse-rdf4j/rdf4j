@@ -27,8 +27,8 @@ import org.eclipse.rdf4j.common.io.ResourceUtil;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Dale Visser
@@ -41,7 +41,7 @@ public class TestQueryServlet {
 
 	private String longQuery;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws IOException {
 		longQuery = ResourceUtil.getString("long.rq");
 	}

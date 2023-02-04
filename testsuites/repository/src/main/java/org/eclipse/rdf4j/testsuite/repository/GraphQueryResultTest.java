@@ -10,9 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.repository;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -29,20 +29,20 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public abstract class GraphQueryResultTest {
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
@@ -63,7 +63,7 @@ public abstract class GraphQueryResultTest {
 
 	private String multipleConstructQuery;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		rep = createRepository();
 		con = rep.getConnection();
@@ -73,7 +73,7 @@ public abstract class GraphQueryResultTest {
 
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		try {
 			con.close();
@@ -125,58 +125,58 @@ public abstract class GraphQueryResultTest {
 	@Test
 	public void testDescribeEmpty() throws Exception {
 		GraphQueryResult result = con.prepareGraphQuery(QueryLanguage.SPARQL, emptyDescribeQuery).evaluate();
-		assertFalse("Query result should be empty", result.hasNext());
+		assertFalse(result.hasNext(), "Query result should be empty");
 
 		Model model = QueryResults.asModel(result);
-		assertTrue("Query result should be empty", model.isEmpty());
+		assertTrue(model.isEmpty(), "Query result should be empty");
 	}
 
 	@Test
 	public void testDescribeSingle() throws Exception {
 		GraphQueryResult result = con.prepareGraphQuery(QueryLanguage.SPARQL, singleDescribeQuery).evaluate();
-		assertTrue("Query result should not be empty", result.hasNext());
+		assertTrue(result.hasNext(), "Query result should not be empty");
 
 		Model model = QueryResults.asModel(result);
-		assertFalse("Query result should not be empty", model.isEmpty());
+		assertFalse(model.isEmpty(), "Query result should not be empty");
 		assertEquals(1, model.size());
 	}
 
 	@Test
 	public void testDescribeMultiple() throws Exception {
 		GraphQueryResult result = con.prepareGraphQuery(QueryLanguage.SPARQL, multipleDescribeQuery).evaluate();
-		assertTrue("Query result should not be empty", result.hasNext());
+		assertTrue(result.hasNext(), "Query result should not be empty");
 
 		Model model = QueryResults.asModel(result);
-		assertFalse("Query result should not be empty", model.isEmpty());
+		assertFalse(model.isEmpty(), "Query result should not be empty");
 		assertEquals(4, model.size());
 	}
 
 	@Test
 	public void testConstructEmpty() throws Exception {
 		GraphQueryResult result = con.prepareGraphQuery(QueryLanguage.SPARQL, emptyConstructQuery).evaluate();
-		assertFalse("Query result should be empty", result.hasNext());
+		assertFalse(result.hasNext(), "Query result should be empty");
 
 		Model model = QueryResults.asModel(result);
-		assertTrue("Query result should be empty", model.isEmpty());
+		assertTrue(model.isEmpty(), "Query result should be empty");
 	}
 
 	@Test
 	public void testConstructSingle() throws Exception {
 		GraphQueryResult result = con.prepareGraphQuery(QueryLanguage.SPARQL, singleConstructQuery).evaluate();
-		assertTrue("Query result should not be empty", result.hasNext());
+		assertTrue(result.hasNext(), "Query result should not be empty");
 
 		Model model = QueryResults.asModel(result);
-		assertFalse("Query result should not be empty", model.isEmpty());
+		assertFalse(model.isEmpty(), "Query result should not be empty");
 		assertEquals(1, model.size());
 	}
 
 	@Test
 	public void testConstructMultiple() throws Exception {
 		GraphQueryResult result = con.prepareGraphQuery(QueryLanguage.SPARQL, multipleConstructQuery).evaluate();
-		assertTrue("Query result should not be empty", result.hasNext());
+		assertTrue(result.hasNext(), "Query result should not be empty");
 
 		Model model = QueryResults.asModel(result);
-		assertFalse("Query result should not be empty", model.isEmpty());
+		assertFalse(model.isEmpty(), "Query result should not be empty");
 		assertEquals(4, model.size());
 	}
 

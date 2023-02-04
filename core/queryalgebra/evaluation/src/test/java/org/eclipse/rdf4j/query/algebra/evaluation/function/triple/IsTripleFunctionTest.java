@@ -10,9 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.triple;
 
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -21,9 +21,9 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Test rdf:isTriple(a) function
@@ -39,7 +39,7 @@ public class IsTripleFunctionTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		function = new IsTripleFunction();
 	}
@@ -47,7 +47,7 @@ public class IsTripleFunctionTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 	}
 
@@ -60,28 +60,26 @@ public class IsTripleFunctionTest {
 
 		Value value = function.evaluate(f, testValue);
 		assertNotNull(value);
-		assertTrue("expect Literal", value instanceof Literal);
-		assertTrue("expect positive result", ((Literal) value).booleanValue());
+		assertTrue(value instanceof Literal, "expect Literal");
+		assertTrue(((Literal) value).booleanValue(), "expect positive result");
 		value = function.evaluate(f, subj);
 		assertNotNull(value);
-		assertTrue("expect Literal", value instanceof Literal);
-		assertTrue("expect negative result", !((Literal) value).booleanValue());
+		assertTrue(value instanceof Literal, "expect Literal");
+		assertTrue(!((Literal) value).booleanValue(), "expect negative result");
 	}
 
-	@Test(expected = ValueExprEvaluationException.class)
+	@Test
 	public void testNegativeWrongArguments() {
 		IRI subj = f.createIRI("urn:a");
 		IRI pred = f.createIRI("urn:b");
 		IRI obj = f.createIRI("urn:c");
 		Triple testValue = f.createTriple(subj, pred, obj);
 
-		function.evaluate(f, testValue, subj);
-		fail("expect ValueExprEvaluationException");
+		assertThrows(ValueExprEvaluationException.class, () -> function.evaluate(f, testValue, subj));
 	}
 
-	@Test(expected = ValueExprEvaluationException.class)
+	@Test
 	public void testNegativeNoArguments() {
-		function.evaluate(f);
-		fail("expect ValueExprEvaluationException");
+		assertThrows(ValueExprEvaluationException.class, () -> function.evaluate(f));
 	}
 }

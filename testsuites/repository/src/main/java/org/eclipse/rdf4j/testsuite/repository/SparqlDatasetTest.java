@@ -10,10 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.repository;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -28,20 +28,20 @@ import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public abstract class SparqlDatasetTest {
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
@@ -133,7 +133,7 @@ public abstract class SparqlDatasetTest {
 		result.close();
 	}
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		repository = createRepository();
 		vf = repository.getValueFactory();
@@ -159,7 +159,7 @@ public abstract class SparqlDatasetTest {
 
 	protected abstract Repository newRepository() throws Exception;
 
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		conn.close();
 		conn = null;
@@ -188,7 +188,7 @@ public abstract class SparqlDatasetTest {
 			TupleQuery tupleQuery = con.prepareTupleQuery(QueryLanguage.SPARQL, "SELECT ?s ?p ?o WHERE {?s ?p ?o}");
 			TupleQueryResult res = tupleQuery.evaluate();
 
-			assertTrue("expect a result", res.hasNext());
+			assertTrue(res.hasNext(), "expect a result");
 			long count = 0;
 			while (res.hasNext()) {
 				BindingSet bs = res.next();
@@ -198,7 +198,7 @@ public abstract class SparqlDatasetTest {
 				assertTrue(bs.hasBinding("o"));
 				count++;
 			}
-			assertEquals("expect same number of solutions", count, con.size());
+			assertEquals(count, con.size(), "expect same number of solutions");
 		}
 	}
 }

@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
 
 import java.io.File;
 import java.io.IOException;
@@ -26,7 +27,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
 import org.apache.commons.lang3.time.StopWatch;
-import org.assertj.core.util.Files;
 import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -57,11 +57,12 @@ import org.elasticsearch.common.transport.TransportAddress;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.transport.client.PreBuiltTransportClient;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -70,12 +71,13 @@ public class ElasticsearchStoreTransactionsIT {
 	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchStoreTransactionsIT.class);
 	private static final SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
-	private static final File installLocation = Files.newTemporaryFolder();
+	@TempDir
+	static File installLocation;
 	private static ElasticsearchClusterRunner runner;
 
 	private static ElasticsearchStore elasticsearchStore;
 
-	@BeforeClass
+	@BeforeAll
 	public static void beforeClass() throws IOException, InterruptedException {
 
 		runner = TestHelpers.startElasticsearch(installLocation);
@@ -85,13 +87,13 @@ public class ElasticsearchStoreTransactionsIT {
 
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() throws IOException {
 		elasticsearchStore.shutDown();
 		TestHelpers.stopElasticsearch(runner);
 	}
 
-	@Before
+	@BeforeEach
 	public void before() throws UnknownHostException {
 
 		elasticsearchStore.setElasticsearchScrollTimeout(60000);
@@ -661,33 +663,34 @@ public class ElasticsearchStoreTransactionsIT {
 
 	// TODO: this throws a SearchPhaseExecutionException, even thought it should have gotten wrapped at some point in a
 	// RepositoryException or something like that
-	@Ignore("slow test")
-	@Test(expected = RepositoryException.class)
+	@Disabled("slow test")
+	@Test
 	public void testScrollTimeout() throws InterruptedException {
-		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
-		this.elasticsearchStore.setElasticsearchScrollTimeout(1);
+		assertThrows(RepositoryException.class, () -> {
+			SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
+			this.elasticsearchStore.setElasticsearchScrollTimeout(1);
 
-		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+			try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 
-			connection.begin(IsolationLevels.NONE);
-			for (int i = 0; i < 2000; i++) {
-				connection.add(RDF.TYPE, RDF.TYPE, vf.createLiteral(i));
+				connection.begin(IsolationLevels.NONE);
+				for (int i = 0; i < 2000; i++) {
+					connection.add(RDF.TYPE, RDF.TYPE, vf.createLiteral(i));
 
-			}
-			connection.commit();
-
-			try (RepositoryResult<Statement> statements = connection.getStatements(null, null, null, false)) {
-				int count = 0;
-				while (statements.hasNext()) {
-					if (count++ % 1000 == 999) {
-						Thread.sleep(60000);
-					}
-					statements.next();
 				}
+				connection.commit();
+
+				try (RepositoryResult<Statement> statements = connection.getStatements(null, null, null, false)) {
+					int count = 0;
+					while (statements.hasNext()) {
+						if (count++ % 1000 == 999) {
+							Thread.sleep(60000);
+						}
+						statements.next();
+					}
+				}
+
 			}
-
-		}
-
+		});
 	}
 
 	@Test

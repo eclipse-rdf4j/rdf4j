@@ -26,8 +26,8 @@ import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for {@link SailRepositoryConnection}
@@ -40,7 +40,7 @@ public class SailRepositoryConnectionTest {
 	private SailConnection sailConnection;
 	private SailRepository sailRepository;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		sailConnection = mock(SailConnection.class);
 		sailRepository = mock(SailRepository.class);

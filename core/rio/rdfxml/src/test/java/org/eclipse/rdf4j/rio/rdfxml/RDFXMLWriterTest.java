@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.rdfxml;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.io.StringWriter;
 
 import org.eclipse.rdf4j.model.Statement;
@@ -18,8 +20,7 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class RDFXMLWriterTest extends AbstractRDFXMLWriterTest {
 
@@ -35,21 +36,21 @@ public class RDFXMLWriterTest extends AbstractRDFXMLWriterTest {
 	@Test
 	public void singleQuotesAttributes() {
 		String str = writeQuotable(true, false);
-		Assert.assertTrue("No single quotes around attributes",
-				str.startsWith("<?xml version='1.0' encoding='UTF-8'?>"));
+		assertTrue(str.startsWith("<?xml version='1.0' encoding='UTF-8'?>"),
+				"No single quotes around attributes");
 	}
 
 	@Test
 	public void singleQuotesAttributesText() {
 		String str = writeQuotable(true, true);
-		Assert.assertTrue("Quotes not replaced by entities", str.contains("&apos;"));
+		assertTrue(str.contains("&apos;"), "Quotes not replaced by entities");
 	}
 
 	@Test
 	public void doubleQuotesAttributes() {
 		String str = writeQuotable(false, false);
-		Assert.assertTrue("Not double quotes around attributes",
-				str.startsWith("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"));
+		assertTrue(str.startsWith("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"),
+				"Not double quotes around attributes");
 	}
 
 	@Test
@@ -57,7 +58,7 @@ public class RDFXMLWriterTest extends AbstractRDFXMLWriterTest {
 		String str = writeQuotable(false, true);
 		System.err.println(str);
 
-		Assert.assertTrue("Quotes not replaced by entities", str.contains("&quot;"));
+		assertTrue(str.contains("&quot;"), "Quotes not replaced by entities");
 	}
 
 	/**

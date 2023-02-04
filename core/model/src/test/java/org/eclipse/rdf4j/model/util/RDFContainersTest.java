@@ -32,8 +32,8 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public class RDFContainersTest {
 
@@ -53,7 +53,7 @@ public class RDFContainersTest {
 
 	private IRI RDF_3;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		a = Literals.createLiteral(vf, "A");
 		b = Literals.createLiteral(vf, "B");

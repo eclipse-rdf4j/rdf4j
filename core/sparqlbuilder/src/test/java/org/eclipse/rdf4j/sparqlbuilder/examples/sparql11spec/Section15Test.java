@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 
 import static org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder.var;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+import static org.hamcrest.MatcherAssert.assertThat;
 
 import org.eclipse.rdf4j.sparqlbuilder.core.OrderBy;
 import org.eclipse.rdf4j.sparqlbuilder.core.OrderCondition;
@@ -22,8 +23,7 @@ import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class Section15Test extends BaseExamples {
 	@Test
@@ -33,7 +33,7 @@ public class Section15Test extends BaseExamples {
 
 		TriplePattern employeePattern = x.has(foaf.iri("name"), name);
 		query.prefix(foaf).select(name).where(employeePattern).orderBy(name);
-		Assert.assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX foaf:    <http://xmlns.com/foaf/0.1/>\n"
 						+ "\n"
 						+ "SELECT ?name\n"
@@ -59,7 +59,7 @@ public class Section15Test extends BaseExamples {
 		// than Orderable instances) replaces (rather than augments)
 		// the query's order conditions
 		query.orderBy(SparqlBuilder.orderBy(empDesc));
-		Assert.assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX     :    <http://example.org/ns#>\n"
 						+ "PREFIX foaf:    <http://xmlns.com/foaf/0.1/>\n"
 						+ "\n"
@@ -70,7 +70,7 @@ public class Section15Test extends BaseExamples {
 
 		OrderBy order = SparqlBuilder.orderBy(name, empDesc);
 		query.orderBy(order);
-		Assert.assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX     :    <http://example.org/ns#>\n"
 						+ "PREFIX foaf:    <http://xmlns.com/foaf/0.1/>\n"
 						+ "\n"
@@ -86,7 +86,7 @@ public class Section15Test extends BaseExamples {
 		Variable name = var("name"), x = var("x");
 
 		query.prefix(foaf).select(name).distinct().where(x.has(foaf.iri("name"), name));
-		Assert.assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX foaf:    <http://xmlns.com/foaf/0.1/>\n"
 						+ "SELECT DISTINCT ?name WHERE { ?x foaf:name ?name .}"
 		));
@@ -103,7 +103,7 @@ public class Section15Test extends BaseExamples {
 		Variable name = var("name"), x = var("x");
 
 		query.prefix(foaf).select(name).where(x.has(foaf.iri("name"), name)).orderBy(name).limit(5).offset(10);
-		Assert.assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX foaf:    <http://xmlns.com/foaf/0.1/>\n"
 						+ "\n"
 						+ "SELECT  ?name\n"
@@ -120,7 +120,7 @@ public class Section15Test extends BaseExamples {
 		Variable name = var("name"), x = var("x");
 
 		query.prefix(foaf).select(name).where(x.has(foaf.iri("name"), name)).limit(20);
-		Assert.assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX foaf:    <http://xmlns.com/foaf/0.1/>\n"
 						+ "\n"
 						+ "SELECT ?name\n"

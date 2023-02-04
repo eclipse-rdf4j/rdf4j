@@ -11,7 +11,7 @@
 package org.eclipse.rdf4j.query.parser.sparql;
 
 import org.eclipse.rdf4j.query.algebra.Service;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class TestServiceUpdateExprBuilder {
 

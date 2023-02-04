@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.StringReader;
 import java.io.StringWriter;
@@ -22,8 +22,8 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Arjohn Kampman
@@ -192,7 +192,7 @@ public class TurtleWriterTest extends AbstractTurtleWriterTest {
 	}
 
 	@Test
-	@Ignore
+	@Disabled
 	public void anotherBnodeTest() throws Exception {
 		String data = "@prefix ex:    <http://example.com/ns#> .\n" +
 				"@prefix sh:    <http://www.w3.org/ns/shacl#> .\n" +

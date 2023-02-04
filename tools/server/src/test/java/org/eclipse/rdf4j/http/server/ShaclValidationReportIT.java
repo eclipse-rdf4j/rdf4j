@@ -10,8 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server;
 
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.IOException;
 import java.io.StringReader;
@@ -28,9 +28,10 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 public class ShaclValidationReportIT {
 
@@ -38,7 +39,7 @@ public class ShaclValidationReportIT {
 
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
-	@BeforeClass
+	@BeforeAll
 	public static void startServer() throws Exception {
 		server = new TestServer();
 		try {
@@ -49,7 +50,7 @@ public class ShaclValidationReportIT {
 		}
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void stopServer() throws Exception {
 		server.stop();
 	}

@@ -10,16 +10,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.GEO;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mockito;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
 public abstract class GeometricBinaryFunctionTest {
 
 	Literal amsterdam = SimpleValueFactory.getInstance().createLiteral("POINT(4.9 52.37)", GEO.WKT_LITERAL);
@@ -28,11 +30,12 @@ public abstract class GeometricBinaryFunctionTest {
 
 	protected abstract GeometricBinaryFunction testedFunction();
 
-	@Test(expected = ValueExprEvaluationException.class)
+	@Test
 	public void testRelationExceptionHandling() {
 		GeometricBinaryFunction testedFunction = Mockito.spy(testedFunction());
 		Mockito.doThrow(new RuntimeException("forsooth!")).when(testedFunction).operation(Mockito.any(), Mockito.any());
-		testedFunction.evaluate(SimpleValueFactory.getInstance(), amsterdam, brussels);
+		assertThrows(ValueExprEvaluationException.class,
+				() -> testedFunction.evaluate(SimpleValueFactory.getInstance(), amsterdam, brussels));
 	}
 
 }

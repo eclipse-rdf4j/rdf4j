@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import java.util.Objects;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * Abstract {@link Statement} test suite.

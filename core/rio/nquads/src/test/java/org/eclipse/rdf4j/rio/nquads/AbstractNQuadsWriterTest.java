@@ -10,6 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.nquads;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 
@@ -25,12 +28,11 @@ import org.eclipse.rdf4j.rio.RDFWriterFactory;
 import org.eclipse.rdf4j.rio.RDFWriterTest;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.rio.helpers.NTriplesWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.eclipse.rdf4j.rio.ntriples.NTriplesWriterSettings;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 
@@ -44,13 +46,13 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 		super(writerF, parserF);
 	}
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		parser = rdfParserFactory.getParser();
 		vf = SimpleValueFactory.getInstance();
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() {
 		parser = null;
 		writer = null;
@@ -62,7 +64,7 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 		parser.setRDFHandler(statementCollector);
 		parser.parse(this.getClass().getResourceAsStream("/testcases/nquads/test2.nq"), "http://test.base.uri");
 
-		Assert.assertEquals(400, statementCollector.getStatements().size());
+		assertEquals(400, statementCollector.getStatements().size());
 
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		writer = rdfWriterFactory.getWriter(baos);
@@ -72,7 +74,7 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 		}
 		writer.endRDF();
 
-		Assert.assertEquals("Unexpected number of lines.", 400, baos.toString().split("\n").length);
+		assertEquals(400, baos.toString().split("\n").length, "Unexpected number of lines.");
 	}
 
 	@Test
@@ -88,8 +90,8 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 
 		String content = baos.toString();
 		String[] lines = content.split("\n");
-		Assert.assertEquals("Unexpected number of lines.", 1, lines.length);
-		Assert.assertEquals(
+		assertEquals(1, lines.length, "Unexpected number of lines.");
+		assertEquals(
 				"<http://test.example.org/test/subject/1> <http://other.example.com/test/predicate/1> \"test literal\" .",
 				lines[0]);
 	}
@@ -108,8 +110,8 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 
 		String content = baos.toString();
 		String[] lines = content.split("\n");
-		Assert.assertEquals("Unexpected number of lines.", 1, lines.length);
-		Assert.assertEquals(
+		assertEquals(1, lines.length, "Unexpected number of lines.");
+		assertEquals(
 				"<http://test.example.org/test/subject/1> <http://other.example.com/test/predicate/1> \"test literal\"^^<http://www.w3.org/2001/XMLSchema#string> .",
 				lines[0]);
 	}
@@ -128,8 +130,8 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 
 		String content = baos.toString();
 		String[] lines = content.split("\n");
-		Assert.assertEquals("Unexpected number of lines.", 1, lines.length);
-		Assert.assertTrue(lines[0].startsWith(
+		assertEquals(1, lines.length, "Unexpected number of lines.");
+		assertTrue(lines[0].startsWith(
 				"<http://test.example.org/test/subject/1> <http://other.example.com/test/predicate/1> \"test literal\" _:"));
 	}
 
@@ -148,8 +150,8 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 
 		String content = baos.toString();
 		String[] lines = content.split("\n");
-		Assert.assertEquals("Unexpected number of lines.", 1, lines.length);
-		Assert.assertTrue(lines[0].startsWith(
+		assertEquals(1, lines.length, "Unexpected number of lines.");
+		assertTrue(lines[0].startsWith(
 				"<http://test.example.org/test/subject/1> <http://other.example.com/test/predicate/1> \"test literal\"^^<http://www.w3.org/2001/XMLSchema#string> _:"));
 	}
 

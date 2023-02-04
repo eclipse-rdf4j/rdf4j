@@ -11,18 +11,19 @@
 package org.eclipse.rdf4j.common.net;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.ByteArrayOutputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Joseph Walton
@@ -58,9 +59,9 @@ public class ParsedIRITest {
 		}
 	}
 
-	@Test(expected = URISyntaxException.class)
+	@Test
 	public void testIncorrectIPv4() throws URISyntaxException {
-		ParsedIRI iri = new ParsedIRI("http://127.0.0.256/");
+		assertThrows(URISyntaxException.class, () -> new ParsedIRI("http://127.0.0.256/"));
 	}
 
 	@Test
@@ -72,9 +73,9 @@ public class ParsedIRITest {
 		assertThat(uri.getHost()).isEqualTo("385.fwk19480900");
 	}
 
-	@Test(expected = URISyntaxException.class)
+	@Test
 	public void testHttpSchemeHostProcessing() throws URISyntaxException {
-		ParsedIRI uri = new ParsedIRI("http://385.fwk19480900/test.ttl");
+		assertThrows(URISyntaxException.class, () -> new ParsedIRI("http://385.fwk19480900/test.ttl"));
 	}
 
 	@Test
