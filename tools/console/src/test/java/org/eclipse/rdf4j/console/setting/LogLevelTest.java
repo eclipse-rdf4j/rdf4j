@@ -41,6 +41,7 @@ public class LogLevelTest extends AbstractSettingTest {
 	@AfterEach
 	public void tearDown() throws Exception {
 		((Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).setLevel(originalLevel);
+		super.tearDown();
 	}
 
 	@Test

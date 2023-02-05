@@ -16,6 +16,7 @@ import java.util.Map;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.command.SetParameters;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
@@ -26,6 +27,8 @@ import org.mockito.MockitoAnnotations;
  * @author Bart Hanssens
  */
 public abstract class AbstractSettingTest {
+	private AutoCloseable closeable;
+
 	@Mock
 	protected ConsoleIO mockConsoleIO;
 
@@ -37,7 +40,12 @@ public abstract class AbstractSettingTest {
 
 	@BeforeEach
 	public void setUp() {
-		MockitoAnnotations.initMocks(this);
+		closeable = MockitoAnnotations.openMocks(this);
 		setParameters = new SetParameters(mockConsoleIO, mockConsoleState, settings);
+	}
+
+	@AfterEach
+	void tearDown() throws Exception {
+		closeable.close();
 	}
 }

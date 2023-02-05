@@ -37,7 +37,7 @@ public class SearchIndexUtils {
 	 */
 	public static SearchIndex createSearchIndex(Properties parameters) throws Exception {
 		String indexClassName = parameters.getProperty(INDEX_CLASS_KEY, DEFAULT_INDEX_CLASS);
-		SearchIndex index = (SearchIndex) Class.forName(indexClassName).newInstance();
+		SearchIndex index = (SearchIndex) Class.forName(indexClassName).getConstructor().newInstance();
 		index.initialize(parameters);
 		return index;
 	}

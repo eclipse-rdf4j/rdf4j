@@ -29,7 +29,7 @@ abstract class ElasticsearchSpatialSupport {
 		try {
 			Class<?> cls = Class.forName("org.eclipse.rdf4j.sail.elasticsearch.ElasticsearchSpatialSupportInitializer",
 					true, Thread.currentThread().getContextClassLoader());
-			spatialSupport = (ElasticsearchSpatialSupport) cls.newInstance();
+			spatialSupport = (ElasticsearchSpatialSupport) cls.getConstructor().newInstance();
 		} catch (Exception e) {
 			spatialSupport = new DefaultElasticsearchSpatialSupport();
 		}

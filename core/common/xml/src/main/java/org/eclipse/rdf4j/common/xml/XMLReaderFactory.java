@@ -11,6 +11,8 @@
 
 package org.eclipse.rdf4j.common.xml;
 
+import java.lang.reflect.InvocationTargetException;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xml.sax.SAXException;
@@ -117,7 +119,8 @@ public class XMLReaderFactory {
 	}
 
 	protected static XMLReader _createXMLReader(String name)
-			throws ClassNotFoundException, ClassCastException, InstantiationException, IllegalAccessException {
-		return (XMLReader) Class.forName(name).newInstance();
+			throws ClassNotFoundException, ClassCastException, InstantiationException, IllegalAccessException,
+			NoSuchMethodException, InvocationTargetException {
+		return (XMLReader) Class.forName(name).getConstructor().newInstance();
 	}
 }

@@ -205,6 +205,7 @@ public class JSONLDParser extends AbstractRDFParser {
 			builder.configure(StreamReadFeature.STRICT_DUPLICATE_DETECTION,
 					parserConfig.get(JSONSettings.STRICT_DUPLICATE_DETECTION));
 		}
-		return builder.build().setCodec(JSON_MAPPER);
+		return builder.build()
+				.setCodec(JSON_MAPPER);
 	}
 }

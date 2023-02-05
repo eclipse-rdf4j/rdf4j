@@ -88,7 +88,7 @@ public class SolrIndex extends AbstractSearchIndex {
 		}
 		String scheme = server.substring(0, pos);
 		Class<?> clientFactoryCls = Class.forName("org.eclipse.rdf4j.sail.solr.client." + scheme + ".Factory");
-		SolrClientFactory clientFactory = (SolrClientFactory) clientFactoryCls.newInstance();
+		SolrClientFactory clientFactory = (SolrClientFactory) clientFactoryCls.getConstructor().newInstance();
 		client = clientFactory.create(server);
 	}
 

@@ -47,8 +47,9 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 			return (EvaluationStrategyFactory) Thread.currentThread()
 					.getContextClassLoader()
 					.loadClass(evalStratFactoryClassName)
+					.getConstructor()
 					.newInstance();
-		} catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
+		} catch (ReflectiveOperationException e) {
 			throw new SailConfigException(e);
 		}
 	}

@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.common.app;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Paths;
 import java.util.Properties;
 
@@ -158,7 +159,7 @@ public class AppConfiguration implements Configuration {
 				loggingConfiguration.setBaseDir(getDataDir());
 				loggingConfiguration.setAppConfiguration(this);
 				loggingConfiguration.init();
-			} catch (ClassNotFoundException | InstantiationException | IllegalAccessException e) {
+			} catch (ReflectiveOperationException e) {
 				e.printStackTrace();
 			}
 		}
@@ -341,13 +342,13 @@ public class AppConfiguration implements Configuration {
 	 * @throws InstantiationException
 	 */
 	private LogConfiguration loadLogConfiguration()
-			throws ClassNotFoundException, InstantiationException, IllegalAccessException {
+			throws ReflectiveOperationException {
 		String classname = this.properties.getProperty("feature.logging.impl");
 		if (classname == null) {
 			classname = DEFAULT_LOGGING;
 		}
 		final Class<?> logImplClass = Class.forName(classname);
-		final Object logImpl = logImplClass.newInstance();
+		final Object logImpl = logImplClass.getConstructor().newInstance();
 		if (logImpl instanceof LogConfiguration) {
 			return (LogConfiguration) logImpl;
 		}

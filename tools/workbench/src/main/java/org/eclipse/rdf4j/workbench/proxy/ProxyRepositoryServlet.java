@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.workbench.proxy;
 
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
@@ -53,7 +54,7 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 			if (path.startsWith("/")) {
 				try {
 					servlets.put(path, createServlet(path));
-				} catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
+				} catch (ReflectiveOperationException e) {
 					throw new ServletException(e);
 				}
 			}
@@ -118,9 +119,9 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 	}
 
 	private RepositoryServlet createServlet(String path)
-			throws ClassNotFoundException, InstantiationException, IllegalAccessException, ServletException {
+			throws ReflectiveOperationException, ServletException {
 		Class<?> klass = Class.forName(config.getInitParameter(path));
-		RepositoryServlet servlet = (RepositoryServlet) klass.newInstance();
+		RepositoryServlet servlet = (RepositoryServlet) klass.getConstructor().newInstance();
 		servlet.setRepositoryManager(manager);
 		servlet.setRepositoryInfo(info);
 		servlet.setRepository(repository);

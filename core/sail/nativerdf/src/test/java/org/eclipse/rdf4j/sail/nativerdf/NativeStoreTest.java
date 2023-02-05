@@ -17,6 +17,7 @@ import static org.junit.Assert.assertTrue;
 import java.io.File;
 import java.io.IOException;
 
+import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -81,7 +82,7 @@ public class NativeStoreTest extends RDFNotifyingStoreTest {
 		sail.shutDown();
 
 		File contextFile = new File(dataDir, "/contexts.dat");
-		Files.delete(contextFile);
+		FileUtils.forceDelete(contextFile);
 
 		sail.init();
 		con = sail.getConnection();

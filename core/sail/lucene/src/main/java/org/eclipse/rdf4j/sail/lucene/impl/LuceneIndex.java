@@ -225,7 +225,9 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	protected Analyzer createAnalyzer(Properties parameters) throws Exception {
 		Analyzer a;
 		if (parameters.containsKey(LuceneSail.ANALYZER_CLASS_KEY)) {
-			a = (Analyzer) Class.forName(parameters.getProperty(LuceneSail.ANALYZER_CLASS_KEY)).newInstance();
+			a = (Analyzer) Class.forName(parameters.getProperty(LuceneSail.ANALYZER_CLASS_KEY))
+					.getConstructor()
+					.newInstance();
 		} else {
 			a = new StandardAnalyzer();
 		}
@@ -235,7 +237,9 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	protected Similarity createSimilarity(Properties parameters) throws Exception {
 		Similarity s;
 		if (parameters.containsKey(LuceneSail.SIMILARITY_CLASS_KEY)) {
-			s = (Similarity) Class.forName(parameters.getProperty(LuceneSail.SIMILARITY_CLASS_KEY)).newInstance();
+			s = (Similarity) Class.forName(parameters.getProperty(LuceneSail.SIMILARITY_CLASS_KEY))
+					.getConstructor()
+					.newInstance();
 		} else {
 			s = new ClassicSimilarity();
 		}
