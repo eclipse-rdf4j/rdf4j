@@ -19,9 +19,10 @@ import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.put;
 import static com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
-import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
+import static com.github.tomakehurst.wiremock.client.WireMock.verify;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.eclipse.rdf4j.http.protocol.Protocol;
@@ -30,36 +31,31 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigSchema;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.junit.Before;
-import org.junit.ClassRule;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-import com.github.tomakehurst.wiremock.junit.WireMockRule;
+import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
+import com.github.tomakehurst.wiremock.junit5.WireMockTest;
 
 /**
  * Unit tests for {@link RemoteRepositoryManager}
  *
  * @author Jeen Broekstra
  */
+@WireMockTest
 public class RemoteRepositoryManagerTest extends RepositoryManagerTest {
 
-	@ClassRule
-	public static WireMockRule wireMockRule = new WireMockRule(wireMockConfig().dynamicPort());
-
-	@Override
-	@Before
-	public void setUp() {
-		subject = new RemoteRepositoryManager("http://localhost:" + wireMockRule.port() + "/rdf4j-server");
-		wireMockRule.resetAll();
+	@BeforeEach
+	public void setUp(WireMockRuntimeInfo wmRuntimeInfo) {
+		subject = new RemoteRepositoryManager("http://localhost:" + wmRuntimeInfo.getHttpPort() + "/rdf4j-server");
 	}
 
 	@Test
 	public void testAddRepositoryConfig() {
-		wireMockRule.stubFor(get(urlEqualTo("/rdf4j-server/protocol"))
+		stubFor(get(urlEqualTo("/rdf4j-server/protocol"))
 				.willReturn(aResponse().withStatus(200).withBody(Protocol.VERSION)));
-		wireMockRule
-				.stubFor(put(urlEqualTo("/rdf4j-server/repositories/test")).willReturn(aResponse().withStatus(204)));
-		wireMockRule.stubFor(get(urlEqualTo("/rdf4j-server/repositories"))
+		stubFor(put(urlEqualTo("/rdf4j-server/repositories/test")).willReturn(aResponse().withStatus(204)));
+		stubFor(get(urlEqualTo("/rdf4j-server/repositories"))
 				.willReturn(aResponse().withHeader("Content-type", TupleQueryResultFormat.SPARQL.getDefaultMIMEType())
 						.withBodyFile("repository-list-response.srx")
 						.withStatus(200)));
@@ -68,19 +64,18 @@ public class RemoteRepositoryManagerTest extends RepositoryManagerTest {
 
 		subject.addRepositoryConfig(config);
 
-		wireMockRule.verify(
+		verify(
 				putRequestedFor(urlEqualTo("/rdf4j-server/repositories/test")).withRequestBody(matching("^BRDF.*"))
 						.withHeader("Content-Type", equalTo("application/x-binary-rdf")));
 	}
 
 	@Test
 	public void testAddRepositoryConfigExisting() throws Exception {
-		wireMockRule.stubFor(get(urlEqualTo("/rdf4j-server/protocol"))
+		stubFor(get(urlEqualTo("/rdf4j-server/protocol"))
 				.willReturn(aResponse().withStatus(200).withBody(Protocol.VERSION)));
-		wireMockRule
-				.stubFor(post(urlEqualTo("/rdf4j-server/repositories/mem-rdf/config"))
-						.willReturn(aResponse().withStatus(204)));
-		wireMockRule.stubFor(get(urlEqualTo("/rdf4j-server/repositories"))
+		stubFor(post(urlEqualTo("/rdf4j-server/repositories/mem-rdf/config"))
+				.willReturn(aResponse().withStatus(204)));
+		stubFor(get(urlEqualTo("/rdf4j-server/repositories"))
 				.willReturn(aResponse().withHeader("Content-type", TupleQueryResultFormat.SPARQL.getDefaultMIMEType())
 						.withBodyFile("repository-list-response.srx")
 						.withStatus(200)));
@@ -89,7 +84,7 @@ public class RemoteRepositoryManagerTest extends RepositoryManagerTest {
 
 		subject.addRepositoryConfig(config);
 
-		wireMockRule.verify(
+		verify(
 				postRequestedFor(urlEqualTo("/rdf4j-server/repositories/mem-rdf/config"))
 						.withRequestBody(matching("^BRDF.*"))
 						.withHeader("Content-Type", equalTo("application/x-binary-rdf")));
@@ -97,26 +92,25 @@ public class RemoteRepositoryManagerTest extends RepositoryManagerTest {
 
 	@Test
 	public void testGetRepositoryConfig() throws Exception {
-		wireMockRule.stubFor(get(urlEqualTo("/rdf4j-server/protocol"))
+		stubFor(get(urlEqualTo("/rdf4j-server/protocol"))
 				.willReturn(aResponse().withStatus(200).withBody(Protocol.VERSION)));
-		wireMockRule
-				.stubFor(get(urlEqualTo("/rdf4j-server/repositories/test/config"))
-						.willReturn(aResponse().withStatus(200)
-								.withHeader("Content-type", RDFFormat.NTRIPLES.getDefaultMIMEType())
-								.withBody("_:node1 <" + RepositoryConfigSchema.REPOSITORYID + "> \"test\" . ")));
+		stubFor(get(urlEqualTo("/rdf4j-server/repositories/test/config"))
+				.willReturn(aResponse().withStatus(200)
+						.withHeader("Content-type", RDFFormat.NTRIPLES.getDefaultMIMEType())
+						.withBody("_:node1 <" + RepositoryConfigSchema.REPOSITORYID + "> \"test\" . ")));
 
 		subject.getRepositoryConfig("test");
 
-		wireMockRule.verify(getRequestedFor(urlEqualTo("/rdf4j-server/repositories/test/config")));
+		verify(getRequestedFor(urlEqualTo("/rdf4j-server/repositories/test/config")));
 	}
 
 	@Test
 	public void testAddRepositoryConfigLegacy() {
-		wireMockRule.stubFor(
+		stubFor(
 				get(urlEqualTo("/rdf4j-server/protocol")).willReturn(aResponse().withStatus(200).withBody("8")));
-		wireMockRule.stubFor(post(urlPathEqualTo("/rdf4j-server/repositories/SYSTEM/statements"))
+		stubFor(post(urlPathEqualTo("/rdf4j-server/repositories/SYSTEM/statements"))
 				.willReturn(aResponse().withStatus(204)));
-		wireMockRule.stubFor(get(urlEqualTo("/rdf4j-server/repositories"))
+		stubFor(get(urlEqualTo("/rdf4j-server/repositories"))
 				.willReturn(aResponse().withHeader("Content-type", TupleQueryResultFormat.SPARQL.getDefaultMIMEType())
 						.withBodyFile("repository-list-response.srx")
 						.withStatus(200)));

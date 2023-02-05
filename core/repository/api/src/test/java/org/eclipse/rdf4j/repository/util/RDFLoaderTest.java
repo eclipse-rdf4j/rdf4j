@@ -14,7 +14,6 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.permanentRedirect;
 import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
-import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.eclipse.rdf4j.model.util.Statements.statement;
 import static org.eclipse.rdf4j.model.util.Values.getValueFactory;
 import static org.eclipse.rdf4j.model.util.Values.iri;
@@ -46,21 +45,18 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandler;
-import org.junit.ClassRule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import com.github.tomakehurst.wiremock.junit.WireMockRule;
+import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
+import com.github.tomakehurst.wiremock.junit5.WireMockTest;
 
 /**
  * Unit tests for {@link RDFLoader}.
  *
  * @author Manuel Fiorelli
  */
+@WireMockTest
 public class RDFLoaderTest {
-
-	@ClassRule
-	public static WireMockRule wireMockRule = new WireMockRule(wireMockConfig().dynamicPort());
-
 	@Test
 	public void testTurtleJavaResource() throws Exception {
 		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
@@ -78,7 +74,7 @@ public class RDFLoaderTest {
 	}
 
 	@Test
-	public void testTurtleDocument() throws Exception {
+	public void testTurtleDocument(WireMockRuntimeInfo wmRuntimeInfo) throws Exception {
 		stubFor(get("/Socrates.ttl")
 				.willReturn(aResponse()
 						.withStatus(200)
@@ -89,7 +85,8 @@ public class RDFLoaderTest {
 
 		RDFHandler rdfHandler = mock(RDFHandler.class);
 
-		rdfLoader.load(new URL("http://localhost:" + wireMockRule.port() + "/Socrates.ttl"), null, null, rdfHandler);
+		rdfLoader.load(new URL("http://localhost:" + wmRuntimeInfo.getHttpPort() + "/Socrates.ttl"), null, null,
+				rdfHandler);
 
 		verify(rdfHandler).startRDF();
 		verify(rdfHandler)
@@ -100,7 +97,7 @@ public class RDFLoaderTest {
 	}
 
 	@Test
-	public void testMultipleRedirects() throws Exception {
+	public void testMultipleRedirects(WireMockRuntimeInfo wmRuntimeInfo) throws Exception {
 		stubFor(get("/Socrates")
 				.willReturn(permanentRedirect("/Socrates2")));
 		stubFor(get("/Socrates2")
@@ -117,7 +114,8 @@ public class RDFLoaderTest {
 
 		RDFHandler rdfHandler = mock(RDFHandler.class);
 
-		rdfLoader.load(new URL("http://localhost:" + wireMockRule.port() + "/Socrates"), null, null, rdfHandler);
+		rdfLoader.load(new URL("http://localhost:" + wmRuntimeInfo.getHttpPort() + "/Socrates"), null, null,
+				rdfHandler);
 
 		verify(rdfHandler).startRDF();
 		verify(rdfHandler)
@@ -128,7 +126,7 @@ public class RDFLoaderTest {
 	}
 
 	@Test
-	public void testAbortOverMaxRedirects() throws Exception {
+	public void testAbortOverMaxRedirects(WireMockRuntimeInfo wmRuntimeInfo) throws Exception {
 		stubFor(get("/Socrates1")
 				.willReturn(permanentRedirect("/Socrates2")));
 		stubFor(get("/Socrates2")
@@ -150,7 +148,7 @@ public class RDFLoaderTest {
 
 			RDFHandler rdfHandler = mock(RDFHandler.class);
 			try {
-				rdfLoader.load(new URL("http://localhost:" + wireMockRule.port() + "/Socrates1"), null, null,
+				rdfLoader.load(new URL("http://localhost:" + wmRuntimeInfo.getHttpPort() + "/Socrates1"), null, null,
 						rdfHandler);
 			} catch (ProtocolException e) {
 				actualException = e;
@@ -168,14 +166,15 @@ public class RDFLoaderTest {
 	}
 
 	@Test
-	public void testNonInformationResource() throws Exception {
+	public void testNonInformationResource(WireMockRuntimeInfo wmRuntimeInfo) throws Exception {
 		final SSLSocketFactory toRestoreSocketFactory = disableSSLCertificatCheck();
 		try {
 			final HostnameVerifier toRestoreHostnameVerifier = disableHostnameVerifier();
 			try {
 				stubFor(get("/Socrates")
 						.willReturn(
-								permanentRedirect("http://localhost:" + wireMockRule.port() + "/Socrates.ttl")));
+								permanentRedirect(
+										"http://localhost:" + wmRuntimeInfo.getHttpPort() + "/Socrates.ttl")));
 
 				stubFor(get("/Socrates.ttl")
 						.willReturn(aResponse()
@@ -187,7 +186,7 @@ public class RDFLoaderTest {
 
 				RDFHandler rdfHandler = mock(RDFHandler.class);
 
-				rdfLoader.load(new URL("http://localhost:" + wireMockRule.port() + "/Socrates"), null, null,
+				rdfLoader.load(new URL("http://localhost:" + wmRuntimeInfo.getHttpPort() + "/Socrates"), null, null,
 						rdfHandler);
 
 				verify(rdfHandler).startRDF();
