@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.repository.Repository;
 /**
  * A {@link RepositoryImplConfig} represents configuration details specific to a particular implementation of the
  * {@link Repository} interface.
- * 
+ *
  * @author Arjohn Kampman
  */
 public interface RepositoryImplConfig {

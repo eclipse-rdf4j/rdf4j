@@ -165,7 +165,6 @@ public class RepositoryConfig {
 		}
 	}
 
-
 	/**
 	 * Creates a new {@link RepositoryConfig} object and initializes it by supplying the {@code model} and
 	 * {@code repositoryNode} to its {@link #parse(Model, Resource) parse} method.

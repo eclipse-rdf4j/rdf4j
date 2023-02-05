@@ -93,7 +93,7 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 		super.parse(model, implNode);
 
 		try {
-			
+
 			RepositoryConfigUtil
 					.getPropertyAsIRI(model, implNode, REPOSITORYURL, NAMESPACE_OBSOLETE)
 					.ifPresent(iri -> setURL(iri.stringValue()));

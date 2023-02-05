@@ -23,17 +23,17 @@ public class RepositoryConfigTest {
 
 	@Test
 	public void testParse_newVocabulary() {
-		
+
 		var repoNode = iri("urn:repo1");
 		Model m = new ModelBuilder()
 				.subject(repoNode)
 				.add(RepositoryConfigSchema.REPOSITORYID, ID)
 				.build();
-		
+
 		RepositoryConfig config = new RepositoryConfig(ID);
 
 		config.parse(m, repoNode);
-		
+
 		assertThat(config.getID()).isEqualTo(ID);
 	}
 

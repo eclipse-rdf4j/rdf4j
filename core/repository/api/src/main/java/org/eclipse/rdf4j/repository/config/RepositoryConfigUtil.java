@@ -70,7 +70,21 @@ public class RepositoryConfigUtil {
 		});
 		return idSet;
 	}
-	
+
+	/**
+	 * Retrieve a property value for the supplied subject as a {@link Resource} if present, falling back to a property
+	 * with the same local name in the supplied fallbackNamespace.
+	 *
+	 * This method allows use to query repository config models with a mix of old and new namespaces.
+	 *
+	 * @param model             the model to retrieve property values from.
+	 * @param subject           the subject of the property.
+	 * @param property          the property to retrieve the value of.
+	 * @param fallbackNamespace namespace to use in combination with the local name of the supplied property if the
+	 *                          supplied property has no value in the model.
+	 * @return the resource value for supplied subject and property (or the property with the supplied
+	 *         fallbackNamespace), if present.
+	 */
 	@InternalUseOnly
 	public static Optional<Resource> getPropertyAsResource(Model model, Resource subject, IRI property,
 			String fallbackNamespace) {
@@ -82,6 +96,20 @@ public class RepositoryConfigUtil {
 				});
 	}
 
+	/**
+	 * Retrieve a property value for the supplied subject as a {@link Literal} if present, falling back to a property
+	 * with the same local name in the supplied fallbackNamespace.
+	 *
+	 * This method allows use to query repository config models with a mix of old and new namespaces.
+	 *
+	 * @param model             the model to retrieve property values from.
+	 * @param subject           the subject of the property.
+	 * @param property          the property to retrieve the value of.
+	 * @param fallbackNamespace namespace to use in combination with the local name of the supplied property if the
+	 *                          supplied property has no value in the model.
+	 * @return the literal value for supplied subject and property (or the property with the supplied
+	 *         fallbackNamespace), if present.
+	 */
 	@InternalUseOnly
 	public static Optional<Literal> getPropertyAsLiteral(Model model, Resource subject, IRI property,
 			String fallbackNamespace) {
@@ -93,6 +121,20 @@ public class RepositoryConfigUtil {
 				});
 	}
 
+	/**
+	 * Retrieve a property value for the supplied subject as an {@link IRI} if present, falling back to a property with
+	 * the same local name in the supplied fallbackNamespace.
+	 *
+	 * This method allows use to query repository config models with a mix of old and new namespaces.
+	 *
+	 * @param model             the model to retrieve property values from.
+	 * @param subject           the subject of the property.
+	 * @param property          the property to retrieve the value of.
+	 * @param fallbackNamespace namespace to use in combination with the local name of the supplied property if the
+	 *                          supplied property has no value in the model.
+	 * @return the IRI value for supplied subject and property (or the property with the supplied fallbackNamespace), if
+	 *         present.
+	 */
 	@InternalUseOnly
 	public static Optional<IRI> getPropertyAsIRI(Model model, Resource subject, IRI property,
 			String fallbackNamespace) {

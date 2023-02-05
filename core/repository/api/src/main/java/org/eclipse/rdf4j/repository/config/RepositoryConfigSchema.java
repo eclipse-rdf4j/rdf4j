@@ -25,7 +25,7 @@ public class RepositoryConfigSchema {
 
 	/**
 	 * The Repository config schema namespace (<var>tag:rdf4j.org:2023:config/repository#</var>).
-	 * 
+	 *
 	 * @see tools.ietf.org/html/rfc4151
 	 */
 	public static final String NAMESPACE = "tag:rdf4j.org:2023:config/repository#";
