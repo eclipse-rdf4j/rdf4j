@@ -36,9 +36,9 @@ cd "$CURRENT"
 
 # build
 echo "Building docker image"
-docker-compose build --pull --no-cache
+docker compose build --pull --no-cache
 
-docker tag docker_rdf4j:latest eclipse/rdf4j-workbench:${MVN_VERSION}
+docker tag docker-rdf4j:latest eclipse/rdf4j-workbench:${MVN_VERSION}
 
 echo "
 Docker image tagged as:
@@ -46,7 +46,7 @@ Docker image tagged as:
   eclipse/rdf4j-workbench:${MVN_VERSION}
 
 To start the workbench and server:
-    docker-compose up -d
+    docker compose up -d
 
 Workbench will be available at http://localhost:8080/rdf4j-workbench
 "
