@@ -12,16 +12,12 @@ package org.eclipse.rdf4j.repository.config;
 
 import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.model.util.Values.literal;
-import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.NAMESPACE;
-import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.NAMESPACE_OBSOLETE;
-import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORY;
-import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORYID;
-import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORYIMPL;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -133,32 +129,34 @@ public class RepositoryConfig {
 	public void export(Model model, Resource repositoryNode) {
 		model.setNamespace(RDFS.NS);
 		model.setNamespace(XSD.NS);
-		model.setNamespace("rep", NAMESPACE);
-		model.add(repositoryNode, RDF.TYPE, REPOSITORY);
+		model.setNamespace("rep", CONFIG.NAMESPACE);
+		model.add(repositoryNode, RDF.TYPE, CONFIG.REPOSITORY);
 
 		if (id != null) {
-			model.add(repositoryNode, REPOSITORYID, literal(id));
+			model.add(repositoryNode, CONFIG.REPOSITORY_ID, literal(id));
 		}
 		if (title != null) {
 			model.add(repositoryNode, RDFS.LABEL, literal(title));
 		}
 		if (implConfig != null) {
 			Resource implNode = implConfig.export(model);
-			model.add(repositoryNode, REPOSITORYIMPL, implNode);
+			model.add(repositoryNode, CONFIG.REPOSITORY_IMPL, implNode);
 		}
 	}
 
 	public void parse(Model model, Resource repositoryNode) throws RepositoryConfigException {
 		try {
 			RepositoryConfigUtil
-					.getPropertyAsLiteral(model, repositoryNode, REPOSITORYID, NAMESPACE_OBSOLETE)
+					.getPropertyAsLiteral(model, repositoryNode, CONFIG.REPOSITORY_ID,
+							RepositoryConfigSchema.NAMESPACE_OBSOLETE)
 					.ifPresent(lit -> setID(lit.getLabel()));
 
 			Models.objectLiteral(model.getStatements(repositoryNode, RDFS.LABEL, null))
 					.ifPresent(lit -> setTitle(lit.getLabel()));
 
 			RepositoryConfigUtil
-					.getPropertyAsResource(model, repositoryNode, REPOSITORYIMPL, NAMESPACE_OBSOLETE)
+					.getPropertyAsResource(model, repositoryNode, CONFIG.REPOSITORY_IMPL,
+							RepositoryConfigSchema.NAMESPACE_OBSOLETE)
 					.ifPresent(res -> setRepositoryImplConfig(AbstractRepositoryImplConfig.create(model, res)));
 		} catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);

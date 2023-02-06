@@ -10,29 +10,22 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.contextaware.config;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.repository.contextaware.config.ContextAwareSchema.ADD_CONTEXT;
 import static org.eclipse.rdf4j.repository.contextaware.config.ContextAwareSchema.ARCHIVE_CONTEXT;
-import static org.eclipse.rdf4j.repository.contextaware.config.ContextAwareSchema.BASE_URI;
-import static org.eclipse.rdf4j.repository.contextaware.config.ContextAwareSchema.INCLUDE_INFERRED;
-import static org.eclipse.rdf4j.repository.contextaware.config.ContextAwareSchema.INSERT_CONTEXT;
-import static org.eclipse.rdf4j.repository.contextaware.config.ContextAwareSchema.MAX_QUERY_TIME;
-import static org.eclipse.rdf4j.repository.contextaware.config.ContextAwareSchema.QUERY_LANGUAGE;
-import static org.eclipse.rdf4j.repository.contextaware.config.ContextAwareSchema.READ_CONTEXT;
-import static org.eclipse.rdf4j.repository.contextaware.config.ContextAwareSchema.REMOVE_CONTEXT;
 
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.repository.config.AbstractDelegatingRepositoryImplConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.contextaware.ContextAwareConnection;
 
 /**
@@ -192,35 +185,32 @@ public class ContextAwareConfig extends AbstractDelegatingRepositoryImplConfig {
 	public Resource export(Model model) {
 		Resource repImplNode = super.export(model);
 
-		ValueFactory vf = SimpleValueFactory.getInstance();
-
 		if (includeInferred != null) {
-			Literal bool = vf.createLiteral(includeInferred);
-			model.add(repImplNode, INCLUDE_INFERRED, bool);
+			model.add(repImplNode, CONFIG.INCLUDE_INFERRED, literal(includeInferred));
 		}
 		if (maxQueryTime > 0) {
-			model.add(repImplNode, MAX_QUERY_TIME, vf.createLiteral(maxQueryTime));
+			model.add(repImplNode, CONFIG.MAX_QUERY_TIME, literal(maxQueryTime));
 		}
 		if (queryLanguage != null) {
-			model.add(repImplNode, QUERY_LANGUAGE, vf.createLiteral(queryLanguage.getName()));
+			model.add(repImplNode, CONFIG.QUERY_LANGUAGE, literal(queryLanguage.getName()));
 		}
 		if (baseURI != null) {
-			model.add(repImplNode, BASE_URI, vf.createIRI(baseURI));
+			model.add(repImplNode, CONFIG.BASE_URI, iri(baseURI));
 		}
 		for (IRI uri : readContexts) {
-			model.add(repImplNode, READ_CONTEXT, uri);
+			model.add(repImplNode, CONFIG.READ_CONTEXT, uri);
 		}
 		for (IRI resource : addContexts) {
 			model.add(repImplNode, ADD_CONTEXT, resource);
 		}
 		for (IRI resource : removeContexts) {
-			model.add(repImplNode, REMOVE_CONTEXT, resource);
+			model.add(repImplNode, CONFIG.REMOVE_CONTEXT, resource);
 		}
 		for (IRI resource : archiveContexts) {
 			model.add(repImplNode, ARCHIVE_CONTEXT, resource);
 		}
 		if (insertContext != null) {
-			model.add(repImplNode, INSERT_CONTEXT, insertContext);
+			model.add(repImplNode, CONFIG.INSERT_CONTEXT, insertContext);
 		}
 
 		return repImplNode;
@@ -231,31 +221,43 @@ public class ContextAwareConfig extends AbstractDelegatingRepositoryImplConfig {
 		super.parse(model, resource);
 
 		try {
-			Models.objectLiteral(model.getStatements(resource, INCLUDE_INFERRED, null))
+			RepositoryConfigUtil
+					.getPropertyAsLiteral(model, resource, CONFIG.INCLUDE_INFERRED,
+							ContextAwareSchema.NAMESPACE_OBSOLETE)
 					.ifPresent(lit -> setIncludeInferred(lit.booleanValue()));
 
-			Models.objectLiteral(model.getStatements(resource, MAX_QUERY_TIME, null))
+			RepositoryConfigUtil
+					.getPropertyAsLiteral(model, resource, CONFIG.MAX_QUERY_TIME,
+							ContextAwareSchema.NAMESPACE_OBSOLETE)
 					.ifPresent(lit -> setMaxQueryTime(lit.intValue()));
 
-			Models.objectLiteral(model.getStatements(resource, QUERY_LANGUAGE, null))
+			RepositoryConfigUtil
+					.getPropertyAsLiteral(model, resource, CONFIG.QUERY_LANGUAGE,
+							ContextAwareSchema.NAMESPACE_OBSOLETE)
 					.ifPresent(lit -> setQueryLanguage(QueryLanguage.valueOf(lit.getLabel())));
 
-			Models.objectIRI(model.getStatements(resource, QUERY_LANGUAGE, null))
+			RepositoryConfigUtil
+					.getPropertyAsIRI(model, resource, CONFIG.BASE_URI,
+							ContextAwareSchema.NAMESPACE_OBSOLETE)
 					.ifPresent(iri -> setBaseURI(iri.stringValue()));
 
-			Set<Value> objects = model.filter(resource, READ_CONTEXT, null).objects();
+			Set<Value> objects = RepositoryConfigUtil.getPropertyValues(model, resource, CONFIG.READ_CONTEXT,
+					ContextAwareSchema.NAMESPACE_OBSOLETE);
 			setReadContexts(objects.toArray(new IRI[objects.size()]));
 
 			objects = model.filter(resource, ADD_CONTEXT, null).objects();
 			setAddContexts(objects.toArray(new IRI[objects.size()]));
 
-			objects = model.filter(resource, REMOVE_CONTEXT, null).objects();
+			objects = RepositoryConfigUtil.getPropertyValues(model, resource, CONFIG.REMOVE_CONTEXT,
+					ContextAwareSchema.NAMESPACE_OBSOLETE);
 			setRemoveContexts(objects.toArray(new IRI[objects.size()]));
 
 			objects = model.filter(resource, ARCHIVE_CONTEXT, null).objects();
 			setArchiveContexts(objects.toArray(new IRI[objects.size()]));
 
-			Models.objectIRI(model.getStatements(resource, INSERT_CONTEXT, null))
+			RepositoryConfigUtil
+					.getPropertyAsIRI(model, resource, CONFIG.INSERT_CONTEXT,
+							ContextAwareSchema.NAMESPACE_OBSOLETE)
 					.ifPresent(iri -> setInsertContext(iri));
 		} catch (ArrayStoreException e) {
 			throw new RepositoryConfigException(e);

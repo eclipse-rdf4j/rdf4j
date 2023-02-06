@@ -10,9 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.config;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 
 /**
  * Defines constants for the repository configuration schema that is used by
@@ -20,56 +21,29 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
  *
  * @author Arjohn Kampman
  * @author Jeen Broekstra
+ * 
+ * @deprecated use {@link CONFIG} instead.
  */
+@Deprecated(since = "4.3.0", forRemoval = true)
 public class RepositoryConfigSchema {
 
-	/**
-	 * The Repository config schema namespace (<var>tag:rdf4j.org:2023:config/repository#</var>).
-	 *
-	 * @see tools.ietf.org/html/rfc4151
-	 */
-	public static final String NAMESPACE = "tag:rdf4j.org:2023:config/repository#";
+	public static final String NAMESPACE = CONFIG.NAMESPACE;
 
-	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final String NAMESPACE_OBSOLETE = "http://www.openrdf.org/config/repository#";
 
 	/**
-	 * <var>"tag:rdf4j.org:2023:config/repository#RepositoryContext</var>
+	 * This IRI is not in the CONFIG vocabulary because it is no longer necessary - it was only used in the old-style
+	 * SYSTEM-repo configurations.
 	 */
-	public final static IRI REPOSITORY_CONTEXT;
+	public final static IRI REPOSITORY_CONTEXT = iri(NAMESPACE, "RepositoryContext");
 
-	/**
-	 * <var>tag:rdf4j.org:2023:config/repository#Repository</var>
-	 */
-	public final static IRI REPOSITORY;
+	public final static IRI REPOSITORY = CONFIG.REPOSITORY;
 
-	/**
-	 * <var>tag:rdf4j.org:2023:config/repository#repositoryID</var>
-	 */
-	public final static IRI REPOSITORYID;
+	public final static IRI REPOSITORYID = CONFIG.REPOSITORY_ID;
 
-	/**
-	 * <var>tag:rdf4j.org:2023:config/repository#repositoryImpl</var>
-	 */
-	public final static IRI REPOSITORYIMPL;
+	public final static IRI REPOSITORYIMPL = CONFIG.REPOSITORY_IMPL;
 
-	/**
-	 * <var>tag:rdf4j.org:2023:config/repository#repositoryType</var>
-	 */
-	public final static IRI REPOSITORYTYPE;
+	public final static IRI REPOSITORYTYPE = CONFIG.REPOSITORY_TYPE;
 
-	/**
-	 * <var>tag:rdf4j.org:2023:config/repository#delegate</var>
-	 */
-	public final static IRI DELEGATE;
-
-	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
-		REPOSITORY_CONTEXT = factory.createIRI(NAMESPACE, "RepositoryContext");
-		REPOSITORY = factory.createIRI(NAMESPACE, "Repository");
-		REPOSITORYID = factory.createIRI(NAMESPACE, "repositoryID");
-		REPOSITORYIMPL = factory.createIRI(NAMESPACE, "repositoryImpl");
-		REPOSITORYTYPE = factory.createIRI(NAMESPACE, "repositoryType");
-		DELEGATE = factory.createIRI(NAMESPACE, "delegate");
-	}
+	public final static IRI DELEGATE = CONFIG.DELEGATE;
 }

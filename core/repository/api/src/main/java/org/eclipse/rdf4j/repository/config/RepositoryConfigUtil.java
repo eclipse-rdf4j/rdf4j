@@ -12,9 +12,8 @@ package org.eclipse.rdf4j.repository.config;
 
 import static org.eclipse.rdf4j.model.util.Values.iri;
 import static org.eclipse.rdf4j.model.util.Values.literal;
-import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORYID;
-import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORY_CONTEXT;
 
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -27,9 +26,11 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.Repository;
@@ -62,7 +63,7 @@ public class RepositoryConfigUtil {
 
 	public static Set<String> getRepositoryIDs(Model model) throws RepositoryException {
 		Set<String> idSet = new LinkedHashSet<>();
-		model.filter(null, REPOSITORYID, null).forEach(idStatement -> {
+		model.filter(null, CONFIG.REPOSITORY_ID, null).forEach(idStatement -> {
 			if (idStatement.getObject() instanceof Literal) {
 				Literal idLiteral = (Literal) idStatement.getObject();
 				idSet.add(idLiteral.getLabel());
@@ -122,6 +123,28 @@ public class RepositoryConfigUtil {
 	}
 
 	/**
+	 * Retrieve all property values for the supplied subject as a Set of values and include all values for any property
+	 * with the same local name in the supplied fallbackNamespace.
+	 *
+	 * This method allows use to query repository config models with a mix of old and new namespaces.
+	 *
+	 * @param model             the model to retrieve property values from.
+	 * @param subject           the subject of the property.
+	 * @param property          the property to retrieve the values of.
+	 * @param fallbackNamespace namespace to use in combination with the local name of the supplied property.
+	 * @return the set of values for supplied subject and property (and/or the property with the supplied
+	 *         fallbackNamespace).
+	 */
+	@InternalUseOnly
+	public static Set<Value> getPropertyValues(Model model, Resource subject, IRI property,
+			String fallbackNamespace) {
+		final Set<Value> results = new HashSet<>();
+		results.addAll(model.filter(subject, property, null).objects());
+		results.addAll(model.filter(subject, iri(fallbackNamespace, property.getLocalName()), null).objects());
+		return results;
+	}
+
+	/**
 	 * Retrieve a property value for the supplied subject as an {@link IRI} if present, falling back to a property with
 	 * the same local name in the supplied fallbackNamespace.
 	 *
@@ -148,10 +171,10 @@ public class RepositoryConfigUtil {
 
 	private static Statement getIDStatement(Model model, String repositoryID) {
 		Literal idLiteral = literal(repositoryID);
-		Model idStatementList = model.filter(null, REPOSITORYID, idLiteral);
+		Model idStatementList = model.filter(null, CONFIG.REPOSITORY_ID, idLiteral);
 
 		if (idStatementList.isEmpty()) {
-			IRI fallback = iri(RepositoryConfigSchema.NAMESPACE_OBSOLETE, REPOSITORYID.getLocalName());
+			IRI fallback = iri(RepositoryConfigSchema.NAMESPACE_OBSOLETE, CONFIG.REPOSITORY_ID.getLocalName());
 			idStatementList = model.filter(null, fallback, idLiteral);
 		}
 
@@ -169,7 +192,8 @@ public class RepositoryConfigUtil {
 		try (RepositoryConnection con = repository.getConnection()) {
 			Set<String> idSet = new LinkedHashSet<>();
 
-			try (RepositoryResult<Statement> idStatementIter = con.getStatements(null, REPOSITORYID, null, true)) {
+			try (RepositoryResult<Statement> idStatementIter = con.getStatements(null, CONFIG.REPOSITORY_ID, null,
+					true)) {
 				while (idStatementIter.hasNext()) {
 					Statement idStatement = idStatementIter.next();
 
@@ -273,7 +297,7 @@ public class RepositoryConfigUtil {
 				context = vf.createBNode();
 			}
 
-			con.add(context, RDF.TYPE, REPOSITORY_CONTEXT);
+			con.add(context, RDF.TYPE, RepositoryConfigSchema.REPOSITORY_CONTEXT);
 
 			Model graph = new LinkedHashModel();
 			config.export(graph);
@@ -305,7 +329,7 @@ public class RepositoryConfigUtil {
 				Resource context = getContext(con, id);
 				if (context != null) {
 					con.clear(context);
-					con.remove(context, RDF.TYPE, REPOSITORY_CONTEXT);
+					con.remove(context, RDF.TYPE, RepositoryConfigSchema.REPOSITORY_CONTEXT);
 					changed = true;
 				}
 			}
@@ -332,7 +356,8 @@ public class RepositoryConfigUtil {
 	private static Statement getIDStatement(RepositoryConnection con, String repositoryID)
 			throws RepositoryException, RepositoryConfigException {
 		Literal idLiteral = con.getRepository().getValueFactory().createLiteral(repositoryID);
-		List<Statement> idStatementList = Iterations.asList(con.getStatements(null, REPOSITORYID, idLiteral, true));
+		List<Statement> idStatementList = Iterations
+				.asList(con.getStatements(null, CONFIG.REPOSITORY_ID, idLiteral, true));
 
 		if (idStatementList.size() == 1) {
 			return idStatementList.get(0);

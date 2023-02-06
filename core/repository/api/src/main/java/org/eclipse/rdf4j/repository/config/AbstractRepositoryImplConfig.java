@@ -10,8 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.config;
 
+import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.NAMESPACE_OBSOLETE;
-import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORYTYPE;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelException;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 
 /**
  * @author Herko ter Horst
@@ -64,7 +65,7 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 		BNode implNode = SimpleValueFactory.getInstance().createBNode();
 
 		if (type != null) {
-			model.add(implNode, REPOSITORYTYPE, SimpleValueFactory.getInstance().createLiteral(type));
+			model.add(implNode, CONFIG.REPOSITORY_TYPE, literal(type));
 		}
 
 		return implNode;
@@ -73,7 +74,7 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 	@Override
 	public void parse(Model model, Resource resource) throws RepositoryConfigException {
 		RepositoryConfigUtil
-				.getPropertyAsLiteral(model, resource, REPOSITORYTYPE, NAMESPACE_OBSOLETE)
+				.getPropertyAsLiteral(model, resource, CONFIG.REPOSITORY_TYPE, NAMESPACE_OBSOLETE)
 				.ifPresent(typeLit -> setType(typeLit.getLabel()));
 	}
 
@@ -90,7 +91,7 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 	public static RepositoryImplConfig create(Model model, Resource resource) throws RepositoryConfigException {
 		try {
 			final Literal typeLit = RepositoryConfigUtil
-					.getPropertyAsLiteral(model, resource, REPOSITORYTYPE, NAMESPACE_OBSOLETE)
+					.getPropertyAsLiteral(model, resource, CONFIG.REPOSITORY_TYPE, NAMESPACE_OBSOLETE)
 					.orElse(null);
 			if (typeLit != null) {
 				RepositoryFactory factory = RepositoryRegistry.getInstance()

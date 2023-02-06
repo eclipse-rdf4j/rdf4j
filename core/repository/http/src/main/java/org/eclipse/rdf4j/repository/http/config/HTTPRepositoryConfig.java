@@ -10,16 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.http.config;
 
-import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.NAMESPACE;
 import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.NAMESPACE_OBSOLETE;
-import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.PASSWORD;
-import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.REPOSITORYURL;
-import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.USERNAME;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelException;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.repository.config.AbstractRepositoryImplConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
@@ -81,8 +78,8 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 		Resource implNode = super.export(graph);
 
 		if (url != null) {
-			graph.setNamespace("http", NAMESPACE);
-			graph.add(implNode, REPOSITORYURL, SimpleValueFactory.getInstance().createIRI(url));
+			graph.setNamespace(CONFIG.PREFIX, CONFIG.NAMESPACE);
+			graph.add(implNode, CONFIG.REPOSITORY_URL, SimpleValueFactory.getInstance().createIRI(url));
 		}
 
 		return implNode;
@@ -95,15 +92,15 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 		try {
 
 			RepositoryConfigUtil
-					.getPropertyAsIRI(model, implNode, REPOSITORYURL, NAMESPACE_OBSOLETE)
+					.getPropertyAsIRI(model, implNode, CONFIG.REPOSITORY_URL, NAMESPACE_OBSOLETE)
 					.ifPresent(iri -> setURL(iri.stringValue()));
 
 			RepositoryConfigUtil
-					.getPropertyAsLiteral(model, implNode, USERNAME, NAMESPACE_OBSOLETE)
+					.getPropertyAsLiteral(model, implNode, CONFIG.USERNAME, NAMESPACE_OBSOLETE)
 					.ifPresent(username -> setUsername(username.getLabel()));
 
 			RepositoryConfigUtil
-					.getPropertyAsLiteral(model, implNode, PASSWORD, NAMESPACE_OBSOLETE)
+					.getPropertyAsLiteral(model, implNode, CONFIG.PASSWORD, NAMESPACE_OBSOLETE)
 					.ifPresent(password -> setPassword(password.getLabel()));
 
 		} catch (ModelException e) {
