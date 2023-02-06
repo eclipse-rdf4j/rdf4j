@@ -10,6 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -19,22 +22,30 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterPushdownMarkerForOptimization.InferedConstantKnowledge;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterPushdownMarkerForOptimization.MarkedUpStatementPattern;
+import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
 /**
  * Evaluate the StatementPattern - taking care of graph/datasets - avoiding redoing work every call of evaluate if
@@ -60,15 +71,17 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private final Function<BindingSet, Value> getPredicateVar;
 	private final Function<BindingSet, Value> getObjectVar;
 	private final Predicate<Statement> extraFilter;
+	private final EvaluationStrategy strategy;
 
 	// We try to do as much work as possible in the constructor.
 	// With the aim of making the evaluate method as cheap as possible.
 	public StatementPatternQueryEvaluationStep(StatementPattern statementPattern, QueryEvaluationContext context,
-			TripleSource tripleSource) {
+			TripleSource tripleSource, EvaluationStrategy strategy) {
 		super();
 		this.statementPattern = statementPattern;
 		this.context = context;
 		this.tripleSource = tripleSource;
+		this.strategy = strategy;
 		Set<IRI> graphs = null;
 		// If the graph part is empty we do not need to check this
 		// in the conversion etc.
@@ -141,22 +154,48 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 	private Predicate<Statement> makeStatementPatternFilter(MarkedUpStatementPattern mup) {
 		Predicate<Statement> test = null;
-		if (mup.isContextIsIri()) {
-			test = andThen(test, (s) -> s.getContext() instanceof IRI);
+		test = extracted(test, mup.getSubjectIck(), mup.getSubjectVar(),
+				Statement::getSubject);
+		test = extracted(test, mup.getPredicateIck(), mup.getPredicateVar(),
+				Statement::getPredicate);
+		test = extracted(test, mup.getObjectIck(), mup.getObjectVar(),
+				Statement::getObject);
+		test = extracted(test, mup.getContextIck(), mup.getContextVar(),
+				Statement::getContext);
+		return test;
+	}
+
+	private Predicate<Statement> extracted(Predicate<Statement> test, InferedConstantKnowledge ick, Var v,
+			Function<Statement, Value> gv) {
+		if (ick.isIri()) {
+			test = andThen(test, (s) -> gv.apply(s) instanceof IRI);
 		}
-		if (mup.isSubjectIsIri()) {
-			test = andThen(test, (s) -> s.getSubject() instanceof IRI);
+		if (ick.isResource()) {
+			test = andThen(test, (s) -> gv.apply(s) instanceof Resource);
 		}
-		if (mup.isSubjectIsResource()) {
-			test = andThen(test, (s) -> s.getSubject() instanceof Resource);
-		}
-		if (mup.isObjectIsIri()) {
-			test = andThen(test, (s) -> s.getObject() instanceof IRI);
-		}
-		if (mup.isObjectIsResource()) {
-			test = andThen(test, (s) -> s.getObject() instanceof Resource);
+		if (!ick.filters().isEmpty() && v != null) {
+			String vn = v.getName();
+			for (ValueExpr fil : ick.filters()) {
+				Predicate<Statement> aFilter = filterToPredicate(v, vn, gv, fil);
+				test = andThen(test, aFilter);
+			}
 		}
 		return test;
+	}
+
+	private Predicate<Statement> filterToPredicate(Var v, String vn, Function<Statement, Value> gv, ValueExpr fil) {
+		QueryValueEvaluationStep precompile = strategy.precompile(fil,
+				new SingleVariableQueryEvaluationContextImplementation(v));
+		Predicate<Statement> aFilter = (s) -> {
+			try {
+				SingleValueBindingSet bindings = new SingleValueBindingSet(vn, gv.apply(s));
+				return strategy.isTrue(precompile, bindings);
+			} catch (QueryEvaluationException e) {
+				// If the query is not good then the comparison always returns false.
+				return false;
+			}
+		};
+		return aFilter;
 	}
 
 	// test if the variable must remain unbound for this solution see
@@ -241,20 +280,16 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			// https://www.w3.org/TR/sparql11-query/#assignment
 			return EMPTY_ITERATION;
 		} else {
-			JoinStatementWithBindingSetIterator iteration = getIteration(bindings);
-			if (iteration == null) {
-				return EMPTY_ITERATION;
-			}
-			return iteration;
+			return getIteration(bindings);
 		}
 	}
 
-	private JoinStatementWithBindingSetIterator getIteration(BindingSet bindings) {
+	private CloseableIteration<BindingSet, QueryEvaluationException> getIteration(BindingSet bindings) {
 		final Value contextValue = getContextVar != null ? getContextVar.apply(bindings) : null;
 
 		Resource[] contexts = contextSup.apply(contextValue);
 		if (contexts == null) {
-			return null;
+			return EMPTY_ITERATION;
 		}
 
 		// Check that the subject is a Resource and the predicate can be an IRI
@@ -262,12 +297,12 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		Value subject = getSubjectVar != null ? getSubjectVar.apply(bindings) : null;
 		if (subject != null && !subject.isResource()) {
-			return null;
+			return EMPTY_ITERATION;
 		}
 
 		Value predicate = getPredicateVar != null ? getPredicateVar.apply(bindings) : null;
 		if (predicate != null && !predicate.isIRI()) {
-			return null;
+			return EMPTY_ITERATION;
 		}
 
 		Value object = getObjectVar != null ? getObjectVar.apply(bindings) : null;
@@ -276,12 +311,13 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		try {
 			iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
 			if (iteration instanceof EmptyIteration) {
-				return null;
-			}
-			iteration = handleFilter(contexts, (Resource) subject, (IRI) predicate, object, iteration);
+				return EMPTY_ITERATION;
+			} else {
+				iteration = handleFilter(contexts, (Resource) subject, (IRI) predicate, object, iteration);
 
-			// Return an iterator that converts the statements to var bindings
-			return new JoinStatementWithBindingSetIterator(iteration, converter, bindings, context);
+				// Return an iterator that converts the statements to var bindings
+				return new JoinStatementWithBindingSetIterator(iteration, converter, bindings, context);
+			}
 		} catch (Throwable t) {
 			if (iteration != null) {
 				iteration.close();
@@ -337,7 +373,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		Predicate<Statement> filter = filterContextOrEqualVariables(statementPattern, subject, predicate, object,
 				contexts);
-		filter = andThen(filter, extraFilter);
+		if (extraFilter != null) {
+			filter = andThen(filter, extraFilter);
+		}
 		if (filter != null) {
 			// Only if there is filter code to execute do we make this filter iteration.
 			return createFilterIteration(iteration, filter);
@@ -507,6 +545,108 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		return contexts;
 	}
 
+	private final class SingleVariableQueryEvaluationContextImplementation implements QueryEvaluationContext {
+		private final Var var;
+
+		public SingleVariableQueryEvaluationContextImplementation(Var var) {
+			super();
+			this.var = var;
+		}
+
+		@Override
+		public Literal getNow() {
+			return context.getNow();
+		}
+
+		@Override
+		public Dataset getDataset() {
+			return context.getDataset();
+		}
+
+		@Override
+		public Predicate<BindingSet> hasBinding(String variableName) {
+			if (variableName.equals(var.getName())) {
+				return (bs) -> true;
+			} else {
+				return (bs) -> false;
+			}
+		}
+
+		@Override
+		public Function<BindingSet, Binding> getBinding(String variableName) {
+			if (variableName.equals(var.getName())) {
+				return (bs) -> new SimpleBinding(variableName, ((SingleValueBindingSet) bs).value);
+			} else {
+				return (bs) -> null;
+			}
+		}
+
+		@Override
+		public Function<BindingSet, Value> getValue(String variableName) {
+			if (variableName.equals(var.getName())) {
+				return (bs) -> ((SingleValueBindingSet) bs).value;
+			} else {
+				return (bs) -> null;
+			}
+		}
+	}
+
+	private class SingleValueBindingSet implements BindingSet {
+		private final String name;
+		private final Value value;
+
+		public SingleValueBindingSet(String name, Value value) {
+			super();
+			this.name = name;
+			this.value = value;
+		}
+
+		@Override
+		public Iterator<Binding> iterator() {
+			if (value != null) {
+				return List.of(getBinding(name)).iterator();
+			} else {
+				return Collections.emptyIterator();
+			}
+		}
+
+		@Override
+		public Set<String> getBindingNames() {
+			return Set.of(name);
+		}
+
+		@Override
+		public Binding getBinding(String bindingName) {
+			if (name.equals(bindingName)) {
+				return new SimpleBinding(name, value);
+			} else {
+				return null;
+			}
+		}
+
+		@Override
+		public boolean hasBinding(String bindingName) {
+			if (name.equals(bindingName)) {
+				return value != null;
+			}
+			return false;
+		}
+
+		@Override
+		public Value getValue(String bindingName) {
+			if (name.equals(bindingName)) {
+				return value;
+			}
+			return null;
+		}
+
+		@Override
+		public int size() {
+			return 1;
+		}
+
+	}
+
 	/**
 	 * Converts statements into the required bindingsets. A lot of work is done in the constructor and then uses
 	 * invokedynamic code with lambdas for the actual conversion.
@@ -674,7 +814,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 	}
 
-	private static Predicate<Statement> andThen(Predicate<Statement> prevTest, Predicate<Statement> newTest) {
+	private static <S> Predicate<S> andThen(Predicate<S> prevTest, Predicate<S> newTest) {
 		if (prevTest == null) {
 			return newTest;
 		}

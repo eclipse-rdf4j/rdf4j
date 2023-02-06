@@ -39,9 +39,9 @@ public class ValueExprEvaluationException extends QueryEvaluationException {
 		super(t);
 	}
 
-	@Override
-	public Throwable fillInStackTrace() {
-		// Exception used for excessive flow control. Collecting the stack trace is a slow operation, so skip it.
-		return this;
-	}
+//	@Override
+//	public Throwable fillInStackTrace() {
+//		// Exception used for excessive flow control. Collecting the stack trace is a slow operation, so skip it.
+//		return this;
+//	}
 }

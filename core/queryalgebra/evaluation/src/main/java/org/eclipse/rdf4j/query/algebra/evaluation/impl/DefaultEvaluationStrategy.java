@@ -577,7 +577,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(StatementPattern node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		return new StatementPatternQueryEvaluationStep(node, context, tripleSource);
+		return new StatementPatternQueryEvaluationStep(node, context, tripleSource, this);
 	}
 
 	protected QueryEvaluationStep prepare(Union node, QueryEvaluationContext context) throws QueryEvaluationException {
