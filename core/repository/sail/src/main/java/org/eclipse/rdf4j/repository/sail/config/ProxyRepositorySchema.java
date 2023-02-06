@@ -23,6 +23,8 @@ import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class ProxyRepositorySchema {
 
+	public static final String NAMESPACE = CONFIG.NAMESPACE;
+
 	/**
 	 * The obsolete {@link org.eclipse.rdf4j.repository.sail.ProxyRepository} schema namespace (
 	 * <var>http://www.openrdf.org/config/repository/proxy#</var>).

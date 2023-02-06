@@ -24,6 +24,8 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class SailRepositorySchema {
 
+	public static final String NAMESPACE = CONFIG.NAMESPACE;
+
 	/**
 	 * The SailRepository schema namespace (<var>http://www.openrdf.org/config/repository/sail#</var>).
 	 */
