@@ -10,8 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.io.File;
 import java.io.IOException;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -24,45 +25,28 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameters;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /**
  * @author James Leigh
  */
-@RunWith(Parameterized.class)
 public class TestNativeStoreMemoryOverflow {
-
-	@Parameters(name = "{0}")
-	public static final IsolationLevel[] parameters() {
-		return IsolationLevels.values();
-	}
-
-	@Rule
-	public final TemporaryFolder tmpDir = new TemporaryFolder();
-
 	private Repository testRepository;
 
 	private RepositoryConnection testCon;
 
 	private RepositoryConnection testCon2;
 
-	private final IsolationLevel level;
-
-	public TestNativeStoreMemoryOverflow(IsolationLevel level) {
-		this.level = level;
+	@BeforeEach
+	public void setUp(@TempDir File dataDir) throws Exception {
+		testRepository = createRepository(dataDir);
 	}
 
-	@Before
-	public void setUp() throws Exception {
-		testRepository = createRepository();
-
+	private void setupConnections(IsolationLevel level) {
 		testCon = testRepository.getConnection();
 		testCon.setIsolationLevel(level);
 		testCon.clear();
@@ -72,19 +56,22 @@ public class TestNativeStoreMemoryOverflow {
 		testCon2.setIsolationLevel(level);
 	}
 
-	private Repository createRepository() throws IOException {
-		return new SailRepository(new NativeStore(tmpDir.getRoot(), "spoc"));
+	private Repository createRepository(File dataDir) throws IOException {
+		return new SailRepository(new NativeStore(dataDir, "spoc"));
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		testCon2.close();
 		testCon.close();
 		testRepository.shutDown();
 	}
 
-	@Test
-	public void test() throws Exception {
+	@ParameterizedTest
+	@EnumSource(IsolationLevels.class)
+	public void test(IsolationLevel level) throws Exception {
+		setupConnections(level);
+
 		int size = 10000; // this should really be bigger
 		// load a lot of triples in two different contexts
 		testCon.begin();

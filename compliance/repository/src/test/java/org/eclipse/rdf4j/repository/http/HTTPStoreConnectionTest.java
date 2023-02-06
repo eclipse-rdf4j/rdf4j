@@ -10,10 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.http;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
+import java.io.File;
 import java.io.StringReader;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
@@ -24,20 +25,17 @@ import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.testsuite.repository.RepositoryConnectionTest;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 public class HTTPStoreConnectionTest extends RepositoryConnectionTest {
 
 	private static HTTPMemServer server;
 
-	public HTTPStoreConnectionTest(IsolationLevel level) {
-		super(level);
-	}
-
-	@BeforeClass
+	@BeforeAll
 	public static void startServer() throws Exception {
 		server = new HTTPMemServer();
 		try {
@@ -48,18 +46,21 @@ public class HTTPStoreConnectionTest extends RepositoryConnectionTest {
 		}
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void stopServer() throws Exception {
 		server.stop();
 	}
 
 	@Override
-	protected Repository createRepository() {
+	protected Repository createRepository(File dataDir) {
 		return new HTTPRepository(HTTPMemServer.REPOSITORY_URL);
 	}
 
-	@Test
-	public void testContextInTransactionAdd() throws Exception {
+	@ParameterizedTest
+	@MethodSource("parameters")
+	public void testContextInTransactionAdd(IsolationLevel level) throws Exception {
+		setupTest(level);
+
 		StringReader stringReader = new StringReader("<urn:1> <urn:1> <urn:1>.");
 		testCon.begin();
 		IRI CONTEXT = testCon.getValueFactory().createIRI("urn:context");
@@ -70,8 +71,10 @@ public class HTTPStoreConnectionTest extends RepositoryConnectionTest {
 		assertTrue(testCon.hasStatement(iri, iri, iri, false, CONTEXT));
 	}
 
-	@Test
-	public void testUpdateExecution() throws Exception {
+	@ParameterizedTest
+	@MethodSource("parameters")
+	public void testUpdateExecution(IsolationLevel level) throws Exception {
+		setupTest(level);
 
 		IRI foobar = vf.createIRI("foo:bar");
 
@@ -95,9 +98,12 @@ public class HTTPStoreConnectionTest extends RepositoryConnectionTest {
 
 	}
 
-	@Test
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	public void testAddMalformedLiteralsDefaultConfig() throws Exception {
+	public void testAddMalformedLiteralsDefaultConfig(IsolationLevel level) throws Exception {
+		setupTest(level);
+
 		try {
 			testCon.add(RepositoryConnectionTest.class.getResourceAsStream(TEST_DIR_PREFIX + "malformed-literals.ttl"),
 					"", RDFFormat.TURTLE);
@@ -106,10 +112,11 @@ public class HTTPStoreConnectionTest extends RepositoryConnectionTest {
 		}
 	}
 
-	@Test
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	@Ignore("See SES-1833")
-	public void testAddMalformedLiteralsStrictConfig() throws Exception {
+	@Disabled("See SES-1833")
+	public void testAddMalformedLiteralsStrictConfig(IsolationLevel level) throws Exception {
 		System.err.println("SES-1833: temporarily disabled testAddMalformedLiteralsStrictConfig() for HTTPRepository");
 	}
 

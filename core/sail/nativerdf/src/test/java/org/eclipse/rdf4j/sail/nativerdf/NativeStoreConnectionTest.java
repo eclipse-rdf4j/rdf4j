@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.nativerdf;
 
 import static org.junit.Assert.assertEquals;
 
+import java.io.File;
 import java.io.IOException;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -21,25 +22,20 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.testsuite.repository.RepositoryConnectionTest;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 public class NativeStoreConnectionTest extends RepositoryConnectionTest {
-	@Rule
-	public final TemporaryFolder tmpDir = new TemporaryFolder();
-
-	public NativeStoreConnectionTest(IsolationLevel level) {
-		super(level);
-	}
-
 	@Override
-	protected Repository createRepository() throws IOException {
-		return new SailRepository(new NativeStore(tmpDir.newFolder(), "spoc"));
+	protected Repository createRepository(File dataDir) throws IOException {
+		return new SailRepository(new NativeStore(dataDir, "spoc"));
 	}
 
-	@Test
-	public void testSES715() throws Exception {
+	@ParameterizedTest
+	@MethodSource("parameters")
+	public void testSES715(IsolationLevel level) throws Exception {
+		setupTest(level);
+
 		// load 1000 triples in two different contexts
 		testCon.begin();
 		ValueFactory vf = testCon.getValueFactory();

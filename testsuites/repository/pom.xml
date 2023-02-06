@@ -30,10 +30,15 @@
 			<artifactId>junit-platform-suite-engine</artifactId>
 			<scope>compile</scope>
 		</dependency>
-		<!-- This module uses parameterized tests and complex suite setup, and cannot be fully migrated to JUnit 5 now -->
+		<!-- This module uses complex suite setup and cannot be fully migrated to JUnit 5 now -->
 		<dependency>
 			<groupId>org.junit.vintage</groupId>
 			<artifactId>junit-vintage-engine</artifactId>
+			<scope>compile</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-params</artifactId>
 			<scope>compile</scope>
 		</dependency>
 	</dependencies>
