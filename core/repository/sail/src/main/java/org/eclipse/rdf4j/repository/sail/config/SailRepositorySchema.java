@@ -11,8 +11,7 @@
 package org.eclipse.rdf4j.repository.sail.config;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 
 /**
@@ -20,21 +19,15 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
  * {@link SailRepository}s.
  *
  * @author Arjohn Kampman
+ * @deprecated use {@link CONFIG} instead.
  */
+@Deprecated(since = "4.3.0", forRemoval = true)
 public class SailRepositorySchema {
 
 	/**
 	 * The SailRepository schema namespace (<var>http://www.openrdf.org/config/repository/sail#</var>).
 	 */
-	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/sail#";
+	public static final String NAMESPACE_OBSOLETE = "http://www.openrdf.org/config/repository/sail#";
 
-	/**
-	 * <var>http://www.openrdf.org/config/repository/sail#sailImpl</var>
-	 */
-	public final static IRI SAILIMPL;
-
-	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
-		SAILIMPL = factory.createIRI(NAMESPACE, "sailImpl");
-	}
+	public final static IRI SAILIMPL = CONFIG.SAIL_IMPL;
 }

@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.repository.http.HTTPRepository;
  * {@link HTTPRepository}s.
  *
  * @author Arjohn Kampman
- * 
+ *
  * @deprecated since 4.3.0. Use {@link CONFIG} instead.
  *
  */

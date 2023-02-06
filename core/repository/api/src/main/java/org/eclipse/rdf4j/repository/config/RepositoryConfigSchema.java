@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.model.vocabulary.CONFIG;
  *
  * @author Arjohn Kampman
  * @author Jeen Broekstra
- * 
+ *
  * @deprecated use {@link CONFIG} instead.
  */
 @Deprecated(since = "4.3.0", forRemoval = true)

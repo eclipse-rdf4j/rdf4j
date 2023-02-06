@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail.config;
 
-import static org.eclipse.rdf4j.repository.sail.config.SailRepositorySchema.NAMESPACE;
-import static org.eclipse.rdf4j.repository.sail.config.SailRepositorySchema.SAILIMPL;
 import static org.eclipse.rdf4j.sail.config.SailConfigSchema.SAILTYPE;
 
 import java.util.Optional;
@@ -20,8 +18,10 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.repository.config.AbstractRepositoryImplConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.config.SailFactory;
 import org.eclipse.rdf4j.sail.config.SailImplConfig;
@@ -70,9 +70,9 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 		Resource repImplNode = super.export(model);
 
 		if (sailImplConfig != null) {
-			model.setNamespace("sr", NAMESPACE);
+			model.setNamespace(CONFIG.PREFIX, CONFIG.NAMESPACE);
 			Resource sailImplNode = sailImplConfig.export(model);
-			model.add(repImplNode, SAILIMPL, sailImplNode);
+			model.add(repImplNode, CONFIG.SAIL_IMPL, sailImplNode);
 		}
 
 		return repImplNode;
@@ -81,7 +81,8 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 	@Override
 	public void parse(Model model, Resource repImplNode) throws RepositoryConfigException {
 		try {
-			Optional<Resource> sailImplNode = Models.objectResource(model.getStatements(repImplNode, SAILIMPL, null));
+			Optional<Resource> sailImplNode = RepositoryConfigUtil.getPropertyAsResource(model, repImplNode,
+					CONFIG.SAIL_IMPL, SailRepositorySchema.NAMESPACE_OBSOLETE);
 			if (sailImplNode.isPresent()) {
 				Models.objectLiteral(model.getStatements(sailImplNode.get(), SAILTYPE, null)).ifPresent(typeLit -> {
 					SailFactory factory = SailRegistry.getInstance()

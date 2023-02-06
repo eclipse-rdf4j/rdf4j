@@ -4,7 +4,7 @@
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/org/documents/edl-v10.php 
+ * http://www.eclipse.org/org/documents/edl-v10.php
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
@@ -14,9 +14,9 @@ import org.eclipse.rdf4j.model.IRI;
 
 /**
  * Shared vocabulary for configuration of RDF4J components: Repositories, SAILs, and so on.
- * 
+ *
  * @author Jeen Broekstra
- * 
+ *
  * @since 4.3.0
  */
 public class CONFIG {
@@ -107,5 +107,14 @@ public class CONFIG {
 	 * <var>tag:rdf4j.org:2023:config/insertContext</var>
 	 */
 	public final static IRI INSERT_CONTEXT = Vocabularies.createIRI(NAMESPACE, "insertContext");
-}
 
+	/**
+	 * <var>tag:rdf4j.org:2023:config/proxiedID</var>
+	 */
+	public final static IRI PROXIED_ID = Vocabularies.createIRI(NAMESPACE, "proxiedID");
+
+	/**
+	 * <var>tag:rdf4j.org:2023:config/sailImpl</var>
+	 */
+	public final static IRI SAIL_IMPL = Vocabularies.createIRI(NAMESPACE, "sailImpl");
+}
