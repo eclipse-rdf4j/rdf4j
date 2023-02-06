@@ -17,7 +17,6 @@ import java.io.Reader;
 import java.net.URL;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
@@ -31,12 +30,10 @@ import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.Query;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.Update;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.util.Repositories;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -419,46 +416,6 @@ public interface RepositoryConnection extends AutoCloseable {
 	 */
 	RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
 			Resource... contexts) throws RepositoryException;
-
-	default RepositoryResult<Statement> getStatementsForVariables(Var subj, Var pred, Var obj, boolean includeInferred,
-			Var... contexts) throws RepositoryException {
-		Resource subjR = null;
-		IRI predI = null;
-		Value objV = null;
-		Resource[] contextsRA = null;
-		if (subj != null && subj.isConstant()) {
-			if (subj.getValue().isResource()) {
-				subjR = (Resource) subj.getValue();
-			} else {
-				return new RepositoryResult<>(new EmptyIteration<>());
-			}
-		}
-		if (pred != null && pred.isConstant()) {
-			if (pred.getValue().isIRI()) {
-				predI = (IRI) subj.getValue();
-			} else {
-				return new RepositoryResult<>(new EmptyIteration<>());
-			}
-		}
-		if (obj != null && obj.isConstant()) {
-			objV = obj.getValue();
-		}
-		if (contexts != null) {
-			contextsRA = new Resource[contexts.length];
-			for (int i = 0; i < contexts.length; i++) {
-				Var context = contexts[i];
-				if (context == null) {
-					contextsRA[i] = null;
-				} else if (context.getValue().isResource()) {
-					contextsRA[i] = (Resource) context.getValue();
-				} else {
-					throw new QueryEvaluationException(
-							"A Context that is constant must be an instance of Resource: " + context);
-				}
-			}
-		}
-		return getStatements(subjR, predI, objV, includeInferred, contextsRA);
-	}
 
 	/**
 	 * Checks whether the repository contains statements with a specific subject, predicate and/or object, optionally in
