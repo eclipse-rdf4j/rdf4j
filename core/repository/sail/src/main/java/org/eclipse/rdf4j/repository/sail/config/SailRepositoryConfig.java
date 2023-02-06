@@ -72,7 +72,7 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 		if (sailImplConfig != null) {
 			model.setNamespace(CONFIG.PREFIX, CONFIG.NAMESPACE);
 			Resource sailImplNode = sailImplConfig.export(model);
-			model.add(repImplNode, CONFIG.SAIL_IMPL, sailImplNode);
+			model.add(repImplNode, CONFIG.sailImpl, sailImplNode);
 		}
 
 		return repImplNode;
@@ -82,7 +82,7 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 	public void parse(Model model, Resource repImplNode) throws RepositoryConfigException {
 		try {
 			Optional<Resource> sailImplNode = RepositoryConfigUtil.getPropertyAsResource(model, repImplNode,
-					CONFIG.SAIL_IMPL, SailRepositorySchema.NAMESPACE_OBSOLETE);
+					CONFIG.sailImpl, SailRepositorySchema.NAMESPACE_OBSOLETE);
 			if (sailImplNode.isPresent()) {
 				Models.objectLiteral(model.getStatements(sailImplNode.get(), SAILTYPE, null)).ifPresent(typeLit -> {
 					SailFactory factory = SailRegistry.getInstance()

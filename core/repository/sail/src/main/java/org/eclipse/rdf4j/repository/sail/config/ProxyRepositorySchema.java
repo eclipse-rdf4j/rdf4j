@@ -29,6 +29,6 @@ public class ProxyRepositorySchema {
 	 */
 	public static final String NAMESPACE_OBSOLETE = "http://www.openrdf.org/config/repository/proxy#";
 
-	public final static IRI PROXIED_ID = CONFIG.PROXIED_ID;
+	public final static IRI PROXIED_ID = CONFIG.proxiedID;
 
 }

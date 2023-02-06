@@ -29,23 +29,23 @@ public class ContextAwareSchema {
 	 */
 	public static final String NAMESPACE_OBSOLETE = "http://www.openrdf.org/config/repository/contextaware#";
 
-	public final static IRI INCLUDE_INFERRED = CONFIG.INCLUDE_INFERRED;
+	public final static IRI INCLUDE_INFERRED = CONFIG.includeInferred;
 
-	public final static IRI MAX_QUERY_TIME = CONFIG.MAX_QUERY_TIME;
+	public final static IRI MAX_QUERY_TIME = CONFIG.maxQueryTime;
 
-	public final static IRI QUERY_LANGUAGE = CONFIG.QUERY_LANGUAGE;
+	public final static IRI QUERY_LANGUAGE = CONFIG.queryLanguage;
 
-	public final static IRI BASE_URI = CONFIG.BASE_URI;
+	public final static IRI BASE_URI = CONFIG.base;
 
-	public final static IRI READ_CONTEXT = CONFIG.READ_CONTEXT;
+	public final static IRI READ_CONTEXT = CONFIG.readContext;
 
 	@Deprecated
 	public final static IRI ADD_CONTEXT = iri(NAMESPACE_OBSOLETE, "addContext");
 
-	public final static IRI REMOVE_CONTEXT = CONFIG.REMOVE_CONTEXT;
+	public final static IRI REMOVE_CONTEXT = CONFIG.removeContext;
 
 	@Deprecated
 	public final static IRI ARCHIVE_CONTEXT = iri(NAMESPACE_OBSOLETE, "archiveContext");
 
-	public final static IRI INSERT_CONTEXT = CONFIG.INSERT_CONTEXT;
+	public final static IRI INSERT_CONTEXT = CONFIG.insertContext;
 }

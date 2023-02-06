@@ -63,7 +63,7 @@ public class RepositoryConfigUtil {
 
 	public static Set<String> getRepositoryIDs(Model model) throws RepositoryException {
 		Set<String> idSet = new LinkedHashSet<>();
-		model.filter(null, CONFIG.REPOSITORY_ID, null).forEach(idStatement -> {
+		model.filter(null, CONFIG.repositoryID, null).forEach(idStatement -> {
 			if (idStatement.getObject() instanceof Literal) {
 				Literal idLiteral = (Literal) idStatement.getObject();
 				idSet.add(idLiteral.getLabel());
@@ -171,10 +171,10 @@ public class RepositoryConfigUtil {
 
 	private static Statement getIDStatement(Model model, String repositoryID) {
 		Literal idLiteral = literal(repositoryID);
-		Model idStatementList = model.filter(null, CONFIG.REPOSITORY_ID, idLiteral);
+		Model idStatementList = model.filter(null, CONFIG.repositoryID, idLiteral);
 
 		if (idStatementList.isEmpty()) {
-			IRI fallback = iri(RepositoryConfigSchema.NAMESPACE_OBSOLETE, CONFIG.REPOSITORY_ID.getLocalName());
+			IRI fallback = iri(RepositoryConfigSchema.NAMESPACE_OBSOLETE, CONFIG.repositoryID.getLocalName());
 			idStatementList = model.filter(null, fallback, idLiteral);
 		}
 
@@ -192,7 +192,7 @@ public class RepositoryConfigUtil {
 		try (RepositoryConnection con = repository.getConnection()) {
 			Set<String> idSet = new LinkedHashSet<>();
 
-			try (RepositoryResult<Statement> idStatementIter = con.getStatements(null, CONFIG.REPOSITORY_ID, null,
+			try (RepositoryResult<Statement> idStatementIter = con.getStatements(null, CONFIG.repositoryID, null,
 					true)) {
 				while (idStatementIter.hasNext()) {
 					Statement idStatement = idStatementIter.next();
@@ -357,7 +357,7 @@ public class RepositoryConfigUtil {
 			throws RepositoryException, RepositoryConfigException {
 		Literal idLiteral = con.getRepository().getValueFactory().createLiteral(repositoryID);
 		List<Statement> idStatementList = Iterations
-				.asList(con.getStatements(null, CONFIG.REPOSITORY_ID, idLiteral, true));
+				.asList(con.getStatements(null, CONFIG.repositoryID, idLiteral, true));
 
 		if (idStatementList.size() == 1) {
 			return idStatementList.get(0);

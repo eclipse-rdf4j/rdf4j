@@ -30,9 +30,9 @@ public class HTTPRepositorySchema {
 
 	public static final String NAMESPACE_OBSOLETE = "http://www.openrdf.org/config/repository/http#";
 
-	public final static IRI REPOSITORYURL = CONFIG.REPOSITORY_URL;
+	public final static IRI REPOSITORYURL = CONFIG.repositoryURL;
 
-	public final static IRI USERNAME = CONFIG.USERNAME;
+	public final static IRI USERNAME = CONFIG.username;
 
-	public final static IRI PASSWORD = CONFIG.PASSWORD;
+	public final static IRI PASSWORD = CONFIG.password;
 }

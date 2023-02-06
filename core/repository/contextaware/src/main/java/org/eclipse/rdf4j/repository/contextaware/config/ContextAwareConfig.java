@@ -186,31 +186,31 @@ public class ContextAwareConfig extends AbstractDelegatingRepositoryImplConfig {
 		Resource repImplNode = super.export(model);
 
 		if (includeInferred != null) {
-			model.add(repImplNode, CONFIG.INCLUDE_INFERRED, literal(includeInferred));
+			model.add(repImplNode, CONFIG.includeInferred, literal(includeInferred));
 		}
 		if (maxQueryTime > 0) {
-			model.add(repImplNode, CONFIG.MAX_QUERY_TIME, literal(maxQueryTime));
+			model.add(repImplNode, CONFIG.maxQueryTime, literal(maxQueryTime));
 		}
 		if (queryLanguage != null) {
-			model.add(repImplNode, CONFIG.QUERY_LANGUAGE, literal(queryLanguage.getName()));
+			model.add(repImplNode, CONFIG.queryLanguage, literal(queryLanguage.getName()));
 		}
 		if (baseURI != null) {
-			model.add(repImplNode, CONFIG.BASE_URI, iri(baseURI));
+			model.add(repImplNode, CONFIG.base, iri(baseURI));
 		}
 		for (IRI uri : readContexts) {
-			model.add(repImplNode, CONFIG.READ_CONTEXT, uri);
+			model.add(repImplNode, CONFIG.readContext, uri);
 		}
 		for (IRI resource : addContexts) {
 			model.add(repImplNode, ADD_CONTEXT, resource);
 		}
 		for (IRI resource : removeContexts) {
-			model.add(repImplNode, CONFIG.REMOVE_CONTEXT, resource);
+			model.add(repImplNode, CONFIG.removeContext, resource);
 		}
 		for (IRI resource : archiveContexts) {
 			model.add(repImplNode, ARCHIVE_CONTEXT, resource);
 		}
 		if (insertContext != null) {
-			model.add(repImplNode, CONFIG.INSERT_CONTEXT, insertContext);
+			model.add(repImplNode, CONFIG.insertContext, insertContext);
 		}
 
 		return repImplNode;
@@ -222,33 +222,33 @@ public class ContextAwareConfig extends AbstractDelegatingRepositoryImplConfig {
 
 		try {
 			RepositoryConfigUtil
-					.getPropertyAsLiteral(model, resource, CONFIG.INCLUDE_INFERRED,
+					.getPropertyAsLiteral(model, resource, CONFIG.includeInferred,
 							ContextAwareSchema.NAMESPACE_OBSOLETE)
 					.ifPresent(lit -> setIncludeInferred(lit.booleanValue()));
 
 			RepositoryConfigUtil
-					.getPropertyAsLiteral(model, resource, CONFIG.MAX_QUERY_TIME,
+					.getPropertyAsLiteral(model, resource, CONFIG.maxQueryTime,
 							ContextAwareSchema.NAMESPACE_OBSOLETE)
 					.ifPresent(lit -> setMaxQueryTime(lit.intValue()));
 
 			RepositoryConfigUtil
-					.getPropertyAsLiteral(model, resource, CONFIG.QUERY_LANGUAGE,
+					.getPropertyAsLiteral(model, resource, CONFIG.queryLanguage,
 							ContextAwareSchema.NAMESPACE_OBSOLETE)
 					.ifPresent(lit -> setQueryLanguage(QueryLanguage.valueOf(lit.getLabel())));
 
 			RepositoryConfigUtil
-					.getPropertyAsIRI(model, resource, CONFIG.BASE_URI,
+					.getPropertyAsIRI(model, resource, CONFIG.base,
 							ContextAwareSchema.NAMESPACE_OBSOLETE)
 					.ifPresent(iri -> setBaseURI(iri.stringValue()));
 
-			Set<Value> objects = RepositoryConfigUtil.getPropertyValues(model, resource, CONFIG.READ_CONTEXT,
+			Set<Value> objects = RepositoryConfigUtil.getPropertyValues(model, resource, CONFIG.readContext,
 					ContextAwareSchema.NAMESPACE_OBSOLETE);
 			setReadContexts(objects.toArray(new IRI[objects.size()]));
 
 			objects = model.filter(resource, ADD_CONTEXT, null).objects();
 			setAddContexts(objects.toArray(new IRI[objects.size()]));
 
-			objects = RepositoryConfigUtil.getPropertyValues(model, resource, CONFIG.REMOVE_CONTEXT,
+			objects = RepositoryConfigUtil.getPropertyValues(model, resource, CONFIG.removeContext,
 					ContextAwareSchema.NAMESPACE_OBSOLETE);
 			setRemoveContexts(objects.toArray(new IRI[objects.size()]));
 
@@ -256,7 +256,7 @@ public class ContextAwareConfig extends AbstractDelegatingRepositoryImplConfig {
 			setArchiveContexts(objects.toArray(new IRI[objects.size()]));
 
 			RepositoryConfigUtil
-					.getPropertyAsIRI(model, resource, CONFIG.INSERT_CONTEXT,
+					.getPropertyAsIRI(model, resource, CONFIG.insertContext,
 							ContextAwareSchema.NAMESPACE_OBSOLETE)
 					.ifPresent(iri -> setInsertContext(iri));
 		} catch (ArrayStoreException e) {

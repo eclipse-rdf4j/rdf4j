@@ -79,7 +79,7 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 
 		if (url != null) {
 			graph.setNamespace(CONFIG.PREFIX, CONFIG.NAMESPACE);
-			graph.add(implNode, CONFIG.REPOSITORY_URL, SimpleValueFactory.getInstance().createIRI(url));
+			graph.add(implNode, CONFIG.repositoryURL, SimpleValueFactory.getInstance().createIRI(url));
 		}
 
 		return implNode;
@@ -92,15 +92,15 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 		try {
 
 			RepositoryConfigUtil
-					.getPropertyAsIRI(model, implNode, CONFIG.REPOSITORY_URL, NAMESPACE_OBSOLETE)
+					.getPropertyAsIRI(model, implNode, CONFIG.repositoryURL, NAMESPACE_OBSOLETE)
 					.ifPresent(iri -> setURL(iri.stringValue()));
 
 			RepositoryConfigUtil
-					.getPropertyAsLiteral(model, implNode, CONFIG.USERNAME, NAMESPACE_OBSOLETE)
+					.getPropertyAsLiteral(model, implNode, CONFIG.username, NAMESPACE_OBSOLETE)
 					.ifPresent(username -> setUsername(username.getLabel()));
 
 			RepositoryConfigUtil
-					.getPropertyAsLiteral(model, implNode, CONFIG.PASSWORD, NAMESPACE_OBSOLETE)
+					.getPropertyAsLiteral(model, implNode, CONFIG.password, NAMESPACE_OBSOLETE)
 					.ifPresent(password -> setPassword(password.getLabel()));
 
 		} catch (ModelException e) {

@@ -10,15 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.config;
 
-import static org.eclipse.rdf4j.sail.config.SailConfigSchema.SAILTYPE;
+import static org.eclipse.rdf4j.model.util.Values.bnode;
+import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelException;
-import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 
 /**
  * Base implementation of {@link SailImplConfig}
@@ -64,21 +63,18 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 
 	@Override
 	public Resource export(Model m) {
-		ValueFactory vf = SimpleValueFactory.getInstance();
-		BNode implNode = vf.createBNode();
+		BNode implNode = bnode();
 
-		m.setNamespace("sail", SailConfigSchema.NAMESPACE);
 		if (type != null) {
-			m.add(implNode, SAILTYPE, vf.createLiteral(type));
+			m.add(implNode, CONFIG.sailType, literal(type));
 		}
 
 		if (iterationCacheSyncThreshold > 0) {
-			m.add(implNode, SailConfigSchema.ITERATION_CACHE_SYNC_THRESHOLD,
-					vf.createLiteral(iterationCacheSyncThreshold));
+			m.add(implNode, CONFIG.iterationCacheSyncThreshold, literal(iterationCacheSyncThreshold));
 		}
 
 		if (connectionTimeOut > 0) {
-			m.add(implNode, SailConfigSchema.CONNECTION_TIME_OUT, vf.createLiteral(connectionTimeOut));
+			m.add(implNode, CONFIG.connectionTimeOut, literal(connectionTimeOut));
 		}
 		return implNode;
 	}
@@ -86,10 +82,14 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 	@Override
 	public void parse(Model m, Resource implNode) throws SailConfigException {
 		try {
-			Models.objectLiteral(m.getStatements(implNode, SAILTYPE, null)).ifPresent(lit -> setType(lit.getLabel()));
-			Models.objectLiteral(m.getStatements(implNode, SailConfigSchema.ITERATION_CACHE_SYNC_THRESHOLD, null))
+			SailConfigUtil.getPropertyAsLiteral(m, implNode, CONFIG.sailType, SailConfigSchema.NAMESPACE_OBSOLETE)
+					.ifPresent(lit -> setType(lit.getLabel()));
+			SailConfigUtil
+					.getPropertyAsLiteral(m, implNode, CONFIG.iterationCacheSyncThreshold,
+							SailConfigSchema.NAMESPACE_OBSOLETE)
 					.ifPresent(lit -> setIterationCacheSyncThreshold(lit.longValue()));
-			Models.objectLiteral(m.getStatements(implNode, SailConfigSchema.CONNECTION_TIME_OUT, null))
+			SailConfigUtil
+					.getPropertyAsLiteral(m, implNode, CONFIG.connectionTimeOut, SailConfigSchema.NAMESPACE_OBSOLETE)
 					.ifPresent(lit -> setConnectionTimeOut(lit.longValue()));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);

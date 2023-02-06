@@ -11,8 +11,6 @@
 package org.eclipse.rdf4j.sail.base.config;
 
 import static org.eclipse.rdf4j.model.util.Values.literal;
-import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.EVALUATION_STRATEGY_FACTORY;
-import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.NAMESPACE;
 
 import java.util.Optional;
 
@@ -20,10 +18,11 @@ import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.ModelException;
-import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.sail.config.AbstractSailImplConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
+import org.eclipse.rdf4j.sail.config.SailConfigUtil;
 
 public abstract class BaseSailConfig extends AbstractSailImplConfig {
 
@@ -64,13 +63,11 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		Resource implNode = super.export(graph);
 
 		if (evalStratFactoryClassName != null) {
-			graph.setNamespace("sb", NAMESPACE);
-			graph.add(implNode, EVALUATION_STRATEGY_FACTORY,
+			graph.add(implNode, CONFIG.evaluationStrategyFactory,
 					literal(evalStratFactoryClassName));
 		}
 		getDefaultQueryEvaluationMode().ifPresent(mode -> {
-			graph.setNamespace("sb", NAMESPACE);
-			graph.add(implNode, BaseSailSchema.DEFAULT_QUERY_EVALUATION_MODE,
+			graph.add(implNode, CONFIG.defaultQueryEvaluationMode,
 					literal(mode.getValue()));
 		});
 
@@ -82,11 +79,15 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		super.parse(graph, implNode);
 
 		try {
-			Models.objectLiteral(graph.getStatements(implNode, BaseSailSchema.DEFAULT_QUERY_EVALUATION_MODE, null))
+			SailConfigUtil
+					.getPropertyAsLiteral(graph, implNode, CONFIG.defaultQueryEvaluationMode,
+							BaseSailSchema.NAMESPACE_OBSOLETE)
 					.ifPresent(qem -> setDefaultQueryEvaluationMode(
 							QueryEvaluationMode.valueOf(qem.stringValue())));
 
-			Models.objectLiteral(graph.getStatements(implNode, EVALUATION_STRATEGY_FACTORY, null))
+			SailConfigUtil
+					.getPropertyAsLiteral(graph, implNode, CONFIG.evaluationStrategyFactory,
+							BaseSailSchema.NAMESPACE_OBSOLETE)
 					.ifPresent(factoryClassName -> {
 						setEvaluationStrategyFactoryClassName(factoryClassName.stringValue());
 					});

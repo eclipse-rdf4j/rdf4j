@@ -130,24 +130,24 @@ public class RepositoryConfig {
 		model.setNamespace(RDFS.NS);
 		model.setNamespace(XSD.NS);
 		model.setNamespace("rep", CONFIG.NAMESPACE);
-		model.add(repositoryNode, RDF.TYPE, CONFIG.REPOSITORY);
+		model.add(repositoryNode, RDF.TYPE, CONFIG.Repository);
 
 		if (id != null) {
-			model.add(repositoryNode, CONFIG.REPOSITORY_ID, literal(id));
+			model.add(repositoryNode, CONFIG.repositoryID, literal(id));
 		}
 		if (title != null) {
 			model.add(repositoryNode, RDFS.LABEL, literal(title));
 		}
 		if (implConfig != null) {
 			Resource implNode = implConfig.export(model);
-			model.add(repositoryNode, CONFIG.REPOSITORY_IMPL, implNode);
+			model.add(repositoryNode, CONFIG.repositoryImpl, implNode);
 		}
 	}
 
 	public void parse(Model model, Resource repositoryNode) throws RepositoryConfigException {
 		try {
 			RepositoryConfigUtil
-					.getPropertyAsLiteral(model, repositoryNode, CONFIG.REPOSITORY_ID,
+					.getPropertyAsLiteral(model, repositoryNode, CONFIG.repositoryID,
 							RepositoryConfigSchema.NAMESPACE_OBSOLETE)
 					.ifPresent(lit -> setID(lit.getLabel()));
 
@@ -155,7 +155,7 @@ public class RepositoryConfig {
 					.ifPresent(lit -> setTitle(lit.getLabel()));
 
 			RepositoryConfigUtil
-					.getPropertyAsResource(model, repositoryNode, CONFIG.REPOSITORY_IMPL,
+					.getPropertyAsResource(model, repositoryNode, CONFIG.repositoryImpl,
 							RepositoryConfigSchema.NAMESPACE_OBSOLETE)
 					.ifPresent(res -> setRepositoryImplConfig(AbstractRepositoryImplConfig.create(model, res)));
 		} catch (ModelException e) {

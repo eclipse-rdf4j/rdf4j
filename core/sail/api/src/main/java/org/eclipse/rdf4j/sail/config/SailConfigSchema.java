@@ -11,46 +11,30 @@
 package org.eclipse.rdf4j.sail.config;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 
 /**
  * Defines constants for the Sail repository schema which are used to initialize repositories.
  *
  * @author Arjohn Kampman
+ * @deprecated use {@link CONFIG} instead.
  */
+@Deprecated(since = "4.3.0", forRemoval = true)
 public class SailConfigSchema {
 
-	/**
-	 * The Sail API schema namespace ( <var>http://www.openrdf.org/config/sail#</var>).
-	 */
-	public static final String NAMESPACE = "http://www.openrdf.org/config/sail#";
+	public static final String NAMESPACE = CONFIG.NAMESPACE;
 
 	/**
-	 * <var>http://www.openrdf.org/config/sail#sailType</var>
+	 * The (Obsolete) Sail API schema namespace ( <var>http://www.openrdf.org/config/sail#</var>).
 	 */
-	public final static IRI SAILTYPE;
+	public static final String NAMESPACE_OBSOLETE = "http://www.openrdf.org/config/sail#";
 
-	/**
-	 * <var>http://www.openrdf.org/config/sail#delegate</var>
-	 */
-	public final static IRI DELEGATE;
+	public final static IRI SAILTYPE = CONFIG.sailType;
 
-	/**
-	 * <var>http://www.openrdf.org/config/sail#iterationCacheSyncTreshold</var>
-	 */
-	public final static IRI ITERATION_CACHE_SYNC_THRESHOLD;
+	public final static IRI DELEGATE = CONFIG.delegate;
 
-	/**
-	 * <var>http://www.openrdf.org/config/sail#connectionTimeOut</var>
-	 */
-	public final static IRI CONNECTION_TIME_OUT;
+	public final static IRI ITERATION_CACHE_SYNC_THRESHOLD = CONFIG.iterationCacheSyncThreshold;
 
-	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
-		SAILTYPE = factory.createIRI(NAMESPACE, "sailType");
-		DELEGATE = factory.createIRI(NAMESPACE, "delegate");
-		ITERATION_CACHE_SYNC_THRESHOLD = factory.createIRI(NAMESPACE, "iterationCacheSyncTreshold");
-		CONNECTION_TIME_OUT = factory.createIRI(NAMESPACE, "connectionTimeOut");
-	}
+	public final static IRI CONNECTION_TIME_OUT = CONFIG.connectionTimeOut;
+
 }

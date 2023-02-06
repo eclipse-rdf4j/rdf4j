@@ -65,7 +65,7 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 		BNode implNode = bnode();
 
 		if (type != null) {
-			model.add(implNode, CONFIG.REPOSITORY_TYPE, literal(type));
+			model.add(implNode, CONFIG.repositoryType, literal(type));
 		}
 
 		return implNode;
@@ -74,7 +74,7 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 	@Override
 	public void parse(Model model, Resource resource) throws RepositoryConfigException {
 		RepositoryConfigUtil
-				.getPropertyAsLiteral(model, resource, CONFIG.REPOSITORY_TYPE, NAMESPACE_OBSOLETE)
+				.getPropertyAsLiteral(model, resource, CONFIG.repositoryType, NAMESPACE_OBSOLETE)
 				.ifPresent(typeLit -> setType(typeLit.getLabel()));
 	}
 
@@ -91,7 +91,7 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 	public static RepositoryImplConfig create(Model model, Resource resource) throws RepositoryConfigException {
 		try {
 			final Literal typeLit = RepositoryConfigUtil
-					.getPropertyAsLiteral(model, resource, CONFIG.REPOSITORY_TYPE, NAMESPACE_OBSOLETE)
+					.getPropertyAsLiteral(model, resource, CONFIG.repositoryType, NAMESPACE_OBSOLETE)
 					.orElse(null);
 			if (typeLit != null) {
 				RepositoryFactory factory = RepositoryRegistry.getInstance()

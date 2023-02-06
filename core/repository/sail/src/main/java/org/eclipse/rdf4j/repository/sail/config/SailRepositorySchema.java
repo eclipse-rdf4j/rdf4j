@@ -29,5 +29,5 @@ public class SailRepositorySchema {
 	 */
 	public static final String NAMESPACE_OBSOLETE = "http://www.openrdf.org/config/repository/sail#";
 
-	public final static IRI SAILIMPL = CONFIG.SAIL_IMPL;
+	public final static IRI SAILIMPL = CONFIG.sailImpl;
 }

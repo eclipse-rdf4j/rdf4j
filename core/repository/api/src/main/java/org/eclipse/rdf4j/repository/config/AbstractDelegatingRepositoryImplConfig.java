@@ -68,7 +68,7 @@ public abstract class AbstractDelegatingRepositoryImplConfig extends AbstractRep
 
 		if (delegate != null) {
 			Resource delegateNode = delegate.export(model);
-			model.add(resource, CONFIG.DELEGATE, delegateNode);
+			model.add(resource, CONFIG.delegate, delegateNode);
 		}
 
 		return resource;
@@ -79,7 +79,7 @@ public abstract class AbstractDelegatingRepositoryImplConfig extends AbstractRep
 		super.parse(model, resource);
 
 		RepositoryConfigUtil
-				.getPropertyAsResource(model, resource, CONFIG.DELEGATE, RepositoryConfigSchema.NAMESPACE_OBSOLETE)
+				.getPropertyAsResource(model, resource, CONFIG.delegate, RepositoryConfigSchema.NAMESPACE_OBSOLETE)
 				.ifPresent(delegate -> setDelegate(create(model, delegate)));
 	}
 }

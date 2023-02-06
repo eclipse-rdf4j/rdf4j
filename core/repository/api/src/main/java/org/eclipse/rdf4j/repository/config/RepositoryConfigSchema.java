@@ -37,13 +37,13 @@ public class RepositoryConfigSchema {
 	 */
 	public final static IRI REPOSITORY_CONTEXT = iri(NAMESPACE, "RepositoryContext");
 
-	public final static IRI REPOSITORY = CONFIG.REPOSITORY;
+	public final static IRI REPOSITORY = CONFIG.Repository;
 
-	public final static IRI REPOSITORYID = CONFIG.REPOSITORY_ID;
+	public final static IRI REPOSITORYID = CONFIG.repositoryID;
 
-	public final static IRI REPOSITORYIMPL = CONFIG.REPOSITORY_IMPL;
+	public final static IRI REPOSITORYIMPL = CONFIG.repositoryImpl;
 
-	public final static IRI REPOSITORYTYPE = CONFIG.REPOSITORY_TYPE;
+	public final static IRI REPOSITORYTYPE = CONFIG.repositoryType;
 
-	public final static IRI DELEGATE = CONFIG.DELEGATE;
+	public final static IRI DELEGATE = CONFIG.delegate;
 }
