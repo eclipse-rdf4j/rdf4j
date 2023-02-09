@@ -20,5 +20,5 @@
           sh:datatype xsd:integer;
           sh:path ex:age
         ];
-      sh:value "123"
+      sh:value "234"
     ] .

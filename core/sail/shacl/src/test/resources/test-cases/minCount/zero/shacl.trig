@@ -10,7 +10,7 @@ rdf4j:SHACLShapeGraph {
   ex:PersonShape a sh:NodeShape;
     sh:targetClass ex:Person;
     sh:property [
-        sh:path ex:ssn;
+        sh:path [ sh:alternativePath (ex:ssn ex:socialSecurityNumber) ];
         sh:minCount 0
       ] .
 }

@@ -1,0 +1,27 @@
+PREFIX ex: <http://example.com/ns#>
+PREFIX owl: <http://www.w3.org/2002/07/owl#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+INSERT DATA {
+ex:validPerson1 a ex:Person ;
+    ex:altPath0 _:1 .
+_:1 ex:altPath4 _:2  .
+_:2 ex:altPath7 _:3  .
+_:3 ex:age 1   .
+
+
+ex:validPerson2 a ex:Person ;
+    ex:altPath0 _:1_2 .
+_:1_2 ex:altPath3 _:2  .
+_:1_2 ex:altPath2 _:2_2  .
+_:2 ex:altPath7 _:3  .
+_:2_2 ex:altPath6 _:3_2  .
+_:3_2 ex:age 2   .
+
+
+
+
+}

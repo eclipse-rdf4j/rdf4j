@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.AbstractConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
@@ -59,7 +60,7 @@ public class BindSelect implements PlanNode {
 	private final Function<BindingSet, ValidationTuple> mapper;
 
 	private final String query;
-	private final List<StatementMatcher.Variable> vars;
+	private final List<Variable<Value>> vars;
 	private final int bulkSize;
 	private final PlanNode source;
 	private final EffectiveTarget.Extend direction;
@@ -71,7 +72,7 @@ public class BindSelect implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public BindSelect(SailConnection connection, Resource[] dataGraph, String query,
-			List<StatementMatcher.Variable> vars, PlanNode source,
+			List<Variable<Value>> vars, PlanNode source,
 			List<String> varNames, ConstraintComponent.Scope scope, int bulkSize, EffectiveTarget.Extend direction,
 			boolean includePropertyShapeValues) {
 		this.connection = connection;
@@ -269,11 +270,11 @@ public class BindSelect implements PlanNode {
 		if (direction == EffectiveTarget.Extend.right) {
 
 			for (int i = 0; i < targetChainSize; i++) {
-				values.append("?").append(vars.get(i).getName()).append(" ");
+				values.append(vars.get(i).asSparqlVariable()).append(" ");
 			}
 		} else if (direction == EffectiveTarget.Extend.left) {
 			for (int i = vars.size() - targetChainSize; i < vars.size(); i++) {
-				values.append("?").append(vars.get(i).getName()).append(" ");
+				values.append(vars.get(i).asSparqlVariable()).append(" ");
 			}
 
 		} else {

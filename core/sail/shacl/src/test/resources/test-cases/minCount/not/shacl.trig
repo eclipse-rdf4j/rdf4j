@@ -10,7 +10,7 @@
   ex:PersonShape a sh:NodeShape;
     sh:targetClass ex:Person;
     sh:not [
-        sh:path ex:ssn;
+        sh:path [ sh:alternativePath (ex:ssn ex:socialSecurityNumber) ];
         sh:minCount 2
       ] .
 

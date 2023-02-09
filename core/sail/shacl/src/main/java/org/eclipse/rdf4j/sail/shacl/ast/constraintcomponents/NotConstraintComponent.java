@@ -11,9 +11,11 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
+import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
@@ -200,4 +202,10 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		return not.requiresEvaluation(connectionsGroup, scope, dataGraph, stableRandomVariableProvider);
 	}
+
+	@Override
+	public List<Literal> getDefaultMessage() {
+		return List.of();
+	}
+
 }

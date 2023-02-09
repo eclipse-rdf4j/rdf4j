@@ -15,9 +15,11 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.exception.ValidationException;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.junit.jupiter.api.AfterEach;
@@ -96,15 +98,19 @@ public class UnknownShapesTest {
 			connection.begin();
 			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
+		} catch (RepositoryException e) {
+			if (!(e.getCause() instanceof ValidationException)) {
+				throw e;
+			}
 		}
 
 		Set<String> relevantLog = getRelevantLog(4);
 
 		Set<String> expected = Set.of(
-				"Unsupported SHACL feature detected: InversePath{ ZeroOrMorePath{ SimplePath{ <http://example.com/ns#inverseThis> } } }. Shape ignored! <http://example.com/ns#inverseOfWithComplex> a sh:PropertyShape;   sh:path [       sh:inversePath [           sh:zeroOrMorePath <http://example.com/ns#inverseThis>         ]     ];   sh:minCount 1 .",
 				"Unsupported SHACL feature detected: InversePath{ ZeroOrMorePath{ SimplePath{ <http://example.com/ns#inverseThis> } } }. Shape ignored! <http://example.com/ns#inverseOfWithComplex> a sh:PropertyShape;   sh:path [       sh:inversePath [           sh:zeroOrMorePath <http://example.com/ns#inverseThis>         ]     ];   sh:datatype xsd:int .",
-				"Unsupported SHACL feature detected: AlternativePath{ SimplePath{ <http://example.com/ns#father> } }. Shape ignored! <http://example.com/ns#alternativePath> a sh:PropertyShape;   sh:path [       sh:alternativePath <http://example.com/ns#father>     ];   sh:minCount 1 .",
-				"Unsupported SHACL feature detected: SequencePath{ [SimplePath{ <http://example.com/ns#parent> }, SimplePath{ <http://example.com/ns#firstName> }] }. Shape ignored! <http://example.com/ns#pathSequence> a sh:PropertyShape;   sh:path (<http://example.com/ns#parent> <http://example.com/ns#firstName>);   sh:minCount 1 ."
+				"Unsupported SHACL feature detected: AlternativePath{ [SimplePath{ <http://example.com/ns#father> }, ZeroOrOnePath{ SimplePath{ <http://example.com/ns#parent> } }, SimplePath{ <http://example.com/ns#mother> }] }. Shape ignored! <http://example.com/ns#alternativePathOneOrMore> a sh:PropertyShape;   sh:path [       sh:alternativePath (<http://example.com/ns#father> [             sh:oneOrMorePath <http://example.com/ns#parent>           ] <http://example.com/ns#mother>)     ];   sh:nodeKind sh:BlankNodeOrIRI .",
+				"Unsupported SHACL feature detected: AlternativePath{ [SimplePath{ <http://example.com/ns#father> }, ZeroOrOnePath{ SimplePath{ <http://example.com/ns#parent> } }, SimplePath{ <http://example.com/ns#mother> }] }. Shape ignored! <http://example.com/ns#alternativePathZeroOrOne> a sh:PropertyShape;   sh:path [       sh:alternativePath (<http://example.com/ns#father> [             sh:zeroOrOnePath <http://example.com/ns#parent>           ] <http://example.com/ns#mother>)     ];   sh:nodeKind sh:BlankNodeOrIRI .",
+				"Unsupported SHACL feature detected: InversePath{ ZeroOrMorePath{ SimplePath{ <http://example.com/ns#inverseThis> } } }. Shape ignored! <http://example.com/ns#inverseOfWithComplex> a sh:PropertyShape;   sh:path [       sh:inversePath [           sh:zeroOrMorePath <http://example.com/ns#inverseThis>         ]     ];   sh:minCount 1 ."
 		);
 
 		Assertions.assertEquals(expected, relevantLog);
@@ -121,6 +127,14 @@ public class UnknownShapesTest {
 			connection.begin();
 			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
+		} catch (RepositoryException e) {
+			if (!(e.getCause() instanceof ValidationException)) {
+				throw e;
+			}
+		}
+
+		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
+			connection.add(Values.bnode(), RDF.TYPE, RDFS.CLASS);
 		}
 
 		// trigger transactional validation
@@ -128,6 +142,10 @@ public class UnknownShapesTest {
 			connection.begin();
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
+		} catch (RepositoryException e) {
+			if (!(e.getCause() instanceof ValidationException)) {
+				throw e;
+			}
 		}
 
 		// trigger requiresEvaluation(...) check

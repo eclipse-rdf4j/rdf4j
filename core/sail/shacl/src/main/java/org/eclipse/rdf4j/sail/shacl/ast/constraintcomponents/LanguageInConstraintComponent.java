@@ -21,6 +21,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -28,6 +29,7 @@ import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclAstLists;
+import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LanguageInFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -74,13 +76,13 @@ public class LanguageInConstraintComponent extends SimpleAbstractConstraintCompo
 	}
 
 	@Override
-	String getSparqlFilterExpression(String varName, boolean negated) {
+	String getSparqlFilterExpression(Variable<Value> variable, boolean negated) {
 		if (languageRanges.isEmpty()) {
 			return "true";
 		}
 
 		String filter = languageRanges.stream()
-				.map(lang -> "langMatches(lang(?" + varName + "), \"" + lang + "\")")
+				.map(lang -> "langMatches(lang(" + variable.asSparqlVariable() + "), \"" + lang + "\")")
 				.reduce((a, b) -> a + " || " + b)
 				.orElseThrow(IllegalStateException::new);
 
@@ -135,4 +137,8 @@ public class LanguageInConstraintComponent extends SimpleAbstractConstraintCompo
 				'}';
 	}
 
+	@Override
+	public List<Literal> getDefaultMessage() {
+		return List.of();
+	}
 }

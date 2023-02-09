@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -80,8 +81,38 @@ public class SailConnectionShapeSource implements ShapeSource {
 	}
 
 	public boolean isType(Resource subject, IRI type) {
-		assert context != null;
-		return connection.hasStatement(subject, RDF.TYPE, type, true, context);
+		if (DASH_CONSTANTS.contains(subject, RDF.TYPE, type)
+				|| connection.hasStatement(subject, RDF.TYPE, type, true, context)) {
+			return true;
+		}
+		if (!(type == SHACL.NODE_SHAPE || type == SHACL.PROPERTY_SHAPE)) {
+			if (type.equals(SHACL.NODE_SHAPE)) {
+				type = SHACL.NODE_SHAPE;
+			} else if (type.equals(SHACL.PROPERTY_SHAPE)) {
+				type = SHACL.PROPERTY_SHAPE;
+			}
+		}
+
+		if (type == SHACL.PROPERTY_SHAPE) {
+			return connection.hasStatement(subject, SHACL.PATH, null, true, context);
+		} else if (type == SHACL.NODE_SHAPE) {
+			if (connection.hasStatement(subject, SHACL.PATH, null, true, context)) {
+				return false;
+			}
+			if (connection.hasStatement(null, SHACL.NODE, subject, true, context)) {
+				return true;
+			}
+			try (Stream<? extends Statement> stream = connection.getStatements(subject, null, null, true, context)
+					.stream()) {
+				return stream
+						.map(Statement::getPredicate)
+						.map(Value::stringValue)
+						.anyMatch(predicate -> predicate.startsWith(SHACL.NAMESPACE)
+								|| predicate.startsWith(DASH.NAMESPACE));
+			}
+		} else {
+			return false;
+		}
 	}
 
 	public Stream<Resource> getSubjects(Predicates predicate) {

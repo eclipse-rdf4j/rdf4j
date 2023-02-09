@@ -15,7 +15,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -81,7 +80,7 @@ public class RSXTargetShape extends Target {
 
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
-		StatementMatcher.Variable object = stableRandomVariableProvider.next();
+		var object = stableRandomVariableProvider.next();
 
 		SparqlFragment sparqlFragment = this.targetShape.buildSparqlValidNodes_rsx_targetShape(null, object,
 				connectionsGroup.getRdfsSubClassOfReasoner(), null, stableRandomVariableProvider);
@@ -90,25 +89,17 @@ public class RSXTargetShape extends Target {
 
 		String query = sparqlFragment.getFragment();
 
-		List<StatementMatcher.Variable> vars = Collections.singletonList(object);
+		var vars = Collections.singletonList(object);
 
 		return Unique.getInstance(new TargetChainRetriever(
 				connectionsGroup,
-				dataGraph, statementMatchers,
+				dataGraph,
 				statementMatchers,
-				query,
+				statementMatchers,
+				null, query,
 				vars,
-				scope
-		), false);
-
-	}
-
-	@Override
-	public String getQueryFragment(String subjectVariable, String objectVariable,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
-
-		throw new UnsupportedOperationException(this.getClass().getSimpleName());
+				scope,
+				false), false);
 
 	}
 
@@ -119,7 +110,7 @@ public class RSXTargetShape extends Target {
 		StatementMatcher.Variable variable = stableRandomVariableProvider.next();
 
 		String query = getTargetQueryFragment(null, variable, connectionsGroup.getRdfsSubClassOfReasoner(),
-				stableRandomVariableProvider);
+				stableRandomVariableProvider, Set.of()).getFragment();
 
 		// TODO: this is a slow way to solve this problem! We should use bulk operations.
 		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), dataGraph, parent, query, variable,
@@ -127,28 +118,14 @@ public class RSXTargetShape extends Target {
 	}
 
 	@Override
-	public Stream<StatementMatcher> getStatementMatcher(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		assert (subject == null);
-
-		return this.targetShape
-				.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, null,
-						stableRandomVariableProvider)
-				.getStatementMatchers()
-				.stream();
-	}
-
-	@Override
-	public String getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
+	public SparqlFragment getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider, Set<String> inheritedVarNames) {
 		assert (subject == null);
 
 		return this.targetShape
 				.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, null,
-						stableRandomVariableProvider)
-				.getFragment();
-
+						stableRandomVariableProvider);
 	}
 
 	@Override

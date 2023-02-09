@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
@@ -47,6 +48,7 @@ public class SimpleBindingSet implements BindingSet {
 	public SimpleBindingSet(Set<String> bindingNamesSet, Binding[] bindings) {
 		this.bindingNamesSet = bindingNamesSet;
 		this.bindings = bindings;
+		assert Arrays.stream(bindings).noneMatch(Objects::isNull);
 	}
 
 	@Override
