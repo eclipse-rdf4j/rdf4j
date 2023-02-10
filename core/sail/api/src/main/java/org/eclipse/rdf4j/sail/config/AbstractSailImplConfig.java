@@ -82,14 +82,14 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 	@Override
 	public void parse(Model m, Resource implNode) throws SailConfigException {
 		try {
-			SailConfigUtil.getPropertyAsLiteral(m, implNode, CONFIG.sailType, SailConfigSchema.NAMESPACE_OBSOLETE)
+			SailConfigUtil.getPropertyAsLiteral(m, implNode, CONFIG.sailType, SailConfigSchema.SAILTYPE)
 					.ifPresent(lit -> setType(lit.getLabel()));
 			SailConfigUtil
 					.getPropertyAsLiteral(m, implNode, CONFIG.iterationCacheSyncThreshold,
-							SailConfigSchema.NAMESPACE_OBSOLETE)
+							SailConfigSchema.ITERATION_CACHE_SYNC_THRESHOLD)
 					.ifPresent(lit -> setIterationCacheSyncThreshold(lit.longValue()));
 			SailConfigUtil
-					.getPropertyAsLiteral(m, implNode, CONFIG.connectionTimeOut, SailConfigSchema.NAMESPACE_OBSOLETE)
+					.getPropertyAsLiteral(m, implNode, CONFIG.connectionTimeOut, SailConfigSchema.CONNECTION_TIME_OUT)
 					.ifPresent(lit -> setConnectionTimeOut(lit.longValue()));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);

@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail.config;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 
@@ -23,14 +25,15 @@ import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class ProxyRepositorySchema {
 
-	public static final String NAMESPACE = CONFIG.NAMESPACE;
-
 	/**
 	 * The obsolete {@link org.eclipse.rdf4j.repository.sail.ProxyRepository} schema namespace (
 	 * <var>http://www.openrdf.org/config/repository/proxy#</var>).
 	 */
-	public static final String NAMESPACE_OBSOLETE = "http://www.openrdf.org/config/repository/proxy#";
+	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/proxy#";
 
-	public final static IRI PROXIED_ID = CONFIG.proxiedID;
+	/**
+	 * @deprecated use {@link CONFIG#proxiedID} instead.
+	 */
+	public final static IRI PROXIED_ID = iri(NAMESPACE, "proxiedID");
 
 }

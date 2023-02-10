@@ -64,7 +64,7 @@ public class ProxyRepositoryConfig extends AbstractRepositoryImplConfig {
 
 		try {
 			RepositoryConfigUtil
-					.getPropertyAsLiteral(model, implNode, CONFIG.proxiedID, ProxyRepositorySchema.NAMESPACE_OBSOLETE)
+					.getPropertyAsLiteral(model, implNode, CONFIG.proxiedID, ProxyRepositorySchema.PROXIED_ID)
 					.ifPresent(lit -> setProxiedRepositoryID(lit.getLabel()));
 		} catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);

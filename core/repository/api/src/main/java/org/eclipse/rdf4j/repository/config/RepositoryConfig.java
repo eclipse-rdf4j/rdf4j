@@ -148,7 +148,7 @@ public class RepositoryConfig {
 		try {
 			RepositoryConfigUtil
 					.getPropertyAsLiteral(model, repositoryNode, CONFIG.repositoryID,
-							RepositoryConfigSchema.NAMESPACE_OBSOLETE)
+							RepositoryConfigSchema.REPOSITORYID)
 					.ifPresent(lit -> setID(lit.getLabel()));
 
 			Models.objectLiteral(model.getStatements(repositoryNode, RDFS.LABEL, null))
@@ -156,7 +156,7 @@ public class RepositoryConfig {
 
 			RepositoryConfigUtil
 					.getPropertyAsResource(model, repositoryNode, CONFIG.repositoryImpl,
-							RepositoryConfigSchema.NAMESPACE_OBSOLETE)
+							RepositoryConfigSchema.REPOSITORYIMPL)
 					.ifPresent(res -> setRepositoryImplConfig(AbstractRepositoryImplConfig.create(model, res)));
 		} catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);

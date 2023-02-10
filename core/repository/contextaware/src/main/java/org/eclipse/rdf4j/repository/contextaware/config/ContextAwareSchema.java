@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 /**
  * @author James Leigh
  *
- * @deprecated use {@link CONFIG} instead.
+ * @deprecated use {@link CONFIG} vocabulary instead.
  */
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class ContextAwareSchema {
@@ -27,25 +27,46 @@ public class ContextAwareSchema {
 	 * The obsolete ContextAwareRepository schema namespace (
 	 * <var>http://www.openrdf.org/config/repository/contextaware#</var>).
 	 */
-	public static final String NAMESPACE_OBSOLETE = "http://www.openrdf.org/config/repository/contextaware#";
+	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/contextaware#";
 
-	public final static IRI INCLUDE_INFERRED = CONFIG.includeInferred;
+	/**
+	 * @deprecated use {@link CONFIG#includeInferred} instead.
+	 */
+	public final static IRI INCLUDE_INFERRED = iri(NAMESPACE, "includeInferrred");
 
-	public final static IRI MAX_QUERY_TIME = CONFIG.maxQueryTime;
+	/**
+	 * @deprecated use {@link CONFIG#maxQueryTime} instead
+	 */
+	public final static IRI MAX_QUERY_TIME = iri(NAMESPACE, "maxQueryTime");
 
-	public final static IRI QUERY_LANGUAGE = CONFIG.queryLanguage;
+	/**
+	 * @deprecated use {@link CONFIG#queryLanguage} instead.
+	 */
+	public final static IRI QUERY_LANGUAGE = iri(NAMESPACE, "queryLanguage");
 
-	public final static IRI BASE_URI = CONFIG.base;
+	/**
+	 * @deprecated use {@link CONFIG#base} instead
+	 */
+	public final static IRI BASE_URI = iri(NAMESPACE, "base");
 
-	public final static IRI READ_CONTEXT = CONFIG.readContext;
+	/**
+	 * @deprecated use {@link CONFIG#readContext} instead
+	 */
+	public final static IRI READ_CONTEXT = iri(NAMESPACE, "readContext");
 
 	@Deprecated
-	public final static IRI ADD_CONTEXT = iri(NAMESPACE_OBSOLETE, "addContext");
+	public final static IRI ADD_CONTEXT = iri(NAMESPACE, "addContext");
 
-	public final static IRI REMOVE_CONTEXT = CONFIG.removeContext;
+	/**
+	 * @deprecated use {@link CONFIG#removeContext} instead.
+	 */
+	public final static IRI REMOVE_CONTEXT = iri(NAMESPACE, "removeContext");
 
 	@Deprecated
-	public final static IRI ARCHIVE_CONTEXT = iri(NAMESPACE_OBSOLETE, "archiveContext");
+	public final static IRI ARCHIVE_CONTEXT = iri(NAMESPACE, "archiveContext");
 
-	public final static IRI INSERT_CONTEXT = CONFIG.insertContext;
+	/**
+	 * @deprecated use {@link CONFIG#insertContext} instead.
+	 */
+	public final static IRI INSERT_CONTEXT = iri(NAMESPACE, "insertContext");
 }

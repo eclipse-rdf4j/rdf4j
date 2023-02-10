@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base.config;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 
@@ -21,14 +23,19 @@ import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class BaseSailSchema {
 
-	public static final String NAMESPACE = CONFIG.NAMESPACE;
-
 	/**
 	 * The (obsolete)BaseSail schema namespace (<var>http://www.openrdf.org/config/sail/base#</var>).
 	 */
-	public static final String NAMESPACE_OBSOLETE = "http://www.openrdf.org/config/sail/base#";
+	public static final String NAMESPACE = "http://www.openrdf.org/config/sail/base#";
 
-	public final static IRI EVALUATION_STRATEGY_FACTORY = CONFIG.evaluationStrategyFactory;
-	public final static IRI DEFAULT_QUERY_EVALUATION_MODE = CONFIG.defaultQueryEvaluationMode;
+	/**
+	 * @deprecated use {@link CONFIG#evaluationStrategyFactory} instead.
+	 */
+	public final static IRI EVALUATION_STRATEGY_FACTORY = iri(NAMESPACE, "evaluationStrategyFactory");
+
+	/**
+	 * @deprecated use {@link CONFIG#defaultQueryEvaluationMode} instead.
+	 */
+	public final static IRI DEFAULT_QUERY_EVALUATION_MODE = iri(NAMESPACE, "defaultQueryEvaluationMode");
 
 }

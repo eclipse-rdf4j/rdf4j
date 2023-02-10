@@ -22,14 +22,12 @@ import org.eclipse.rdf4j.model.vocabulary.CONFIG;
  * @author Arjohn Kampman
  * @author Jeen Broekstra
  *
- * @deprecated use {@link CONFIG} instead.
+ * @deprecated use {@link CONFIG} vocabulary instead.
  */
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class RepositoryConfigSchema {
 
-	public static final String NAMESPACE = CONFIG.NAMESPACE;
-
-	public static final String NAMESPACE_OBSOLETE = "http://www.openrdf.org/config/repository#";
+	public static final String NAMESPACE = "http://www.openrdf.org/config/repository#";
 
 	/**
 	 * This IRI is not in the CONFIG vocabulary because it is no longer necessary - it was only used in the old-style
@@ -37,13 +35,28 @@ public class RepositoryConfigSchema {
 	 */
 	public final static IRI REPOSITORY_CONTEXT = iri(NAMESPACE, "RepositoryContext");
 
-	public final static IRI REPOSITORY = CONFIG.Repository;
+	/**
+	 * @deprecated use {@link CONFIG#Repository} instead.
+	 */
+	public final static IRI REPOSITORY = iri(NAMESPACE, "Repository");
 
-	public final static IRI REPOSITORYID = CONFIG.repositoryID;
+	/**
+	 * @deprecated use {@link CONFIG#repositoryID} instead.
+	 */
+	public final static IRI REPOSITORYID = iri(NAMESPACE, "repositoryID");
 
-	public final static IRI REPOSITORYIMPL = CONFIG.repositoryImpl;
+	/**
+	 * @deprecated use {@link CONFIG#repositoryImpl} instead.
+	 */
+	public final static IRI REPOSITORYIMPL = iri(NAMESPACE, "repositoryImpl");
 
-	public final static IRI REPOSITORYTYPE = CONFIG.repositoryType;
+	/**
+	 * @deprecated use {@link CONFIG#repositoryType} instead.
+	 */
+	public final static IRI REPOSITORYTYPE = iri(NAMESPACE, "repositoryType");
 
-	public final static IRI DELEGATE = CONFIG.delegate;
+	/**
+	 * @deprecated use {@link CONFIG#delegate} instead.
+	 */
+	public final static IRI DELEGATE = iri(NAMESPACE, "delegate");
 }

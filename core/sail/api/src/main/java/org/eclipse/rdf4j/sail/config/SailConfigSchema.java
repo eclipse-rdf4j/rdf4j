@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.config;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 
@@ -22,19 +24,29 @@ import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class SailConfigSchema {
 
-	public static final String NAMESPACE = CONFIG.NAMESPACE;
-
 	/**
 	 * The (Obsolete) Sail API schema namespace ( <var>http://www.openrdf.org/config/sail#</var>).
 	 */
-	public static final String NAMESPACE_OBSOLETE = "http://www.openrdf.org/config/sail#";
+	public static final String NAMESPACE = "http://www.openrdf.org/config/sail#";
 
-	public final static IRI SAILTYPE = CONFIG.sailType;
+	/**
+	 * @deprecated use {@link CONFIG#sailType} instead.
+	 */
+	public final static IRI SAILTYPE = iri(NAMESPACE, "sailType");
 
-	public final static IRI DELEGATE = CONFIG.delegate;
+	/**
+	 * @deprecated use {@link CONFIG#delegate} instead.
+	 */
+	public final static IRI DELEGATE = iri(NAMESPACE, "delegate");
 
-	public final static IRI ITERATION_CACHE_SYNC_THRESHOLD = CONFIG.iterationCacheSyncThreshold;
+	/**
+	 * @deprecated use {@link CONFIG#iterationCacheSyncThreshold} instead.
+	 */
+	public final static IRI ITERATION_CACHE_SYNC_THRESHOLD = iri(NAMESPACE, "iterationCacheSyncThreshold");
 
-	public final static IRI CONNECTION_TIME_OUT = CONFIG.connectionTimeOut;
+	/**
+	 * @deprecated use {@link CONFIG#connectionTimeOut} instead.
+	 */
+	public final static IRI CONNECTION_TIME_OUT = iri(NAMESPACE, "connectionTimeOut");
 
 }

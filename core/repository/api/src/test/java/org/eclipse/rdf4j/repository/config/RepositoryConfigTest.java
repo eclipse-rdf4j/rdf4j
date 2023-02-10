@@ -15,6 +15,7 @@ import static org.eclipse.rdf4j.model.util.Values.iri;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.junit.jupiter.api.Test;
 
 public class RepositoryConfigTest {
@@ -27,7 +28,7 @@ public class RepositoryConfigTest {
 		var repoNode = iri("urn:repo1");
 		Model m = new ModelBuilder()
 				.subject(repoNode)
-				.add(RepositoryConfigSchema.REPOSITORYID, ID)
+				.add(CONFIG.repositoryID, ID)
 				.build();
 
 		RepositoryConfig config = new RepositoryConfig(ID);
@@ -39,12 +40,10 @@ public class RepositoryConfigTest {
 
 	@Test
 	public void testParse_oldVocabulary() {
-
 		var repoNode = iri("urn:repo1");
 		Model m = new ModelBuilder()
 				.subject(repoNode)
-				.add(iri(RepositoryConfigSchema.NAMESPACE_OBSOLETE, RepositoryConfigSchema.REPOSITORYID.getLocalName()),
-						ID)
+				.add(RepositoryConfigSchema.REPOSITORYID, ID)
 				.build();
 
 		RepositoryConfig config = new RepositoryConfig(ID);

@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.http.config;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
@@ -26,13 +28,20 @@ import org.eclipse.rdf4j.repository.http.HTTPRepository;
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class HTTPRepositorySchema {
 
-	public static final String NAMESPACE = CONFIG.NAMESPACE;
+	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/http#";
 
-	public static final String NAMESPACE_OBSOLETE = "http://www.openrdf.org/config/repository/http#";
+	/**
+	 * @deprecated use {@link CONFIG#repositoryURL} instead.
+	 */
+	public final static IRI REPOSITORYURL = iri(NAMESPACE, "repositoryURL");
 
-	public final static IRI REPOSITORYURL = CONFIG.repositoryURL;
+	/**
+	 * @deprecated use {@link CONFIG#username} instead.
+	 */
+	public final static IRI USERNAME = iri(NAMESPACE, "username");
 
-	public final static IRI USERNAME = CONFIG.username;
-
-	public final static IRI PASSWORD = CONFIG.password;
+	/**
+	 * @deprecated use {@link CONFIG#password} instead.
+	 */
+	public final static IRI PASSWORD = iri(NAMESPACE, "password");
 }

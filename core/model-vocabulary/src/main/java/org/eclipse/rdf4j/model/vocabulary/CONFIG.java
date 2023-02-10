@@ -114,6 +114,30 @@ public class CONFIG {
 	public final static IRI proxiedID = Vocabularies.createIRI(NAMESPACE, "proxiedID");
 
 	/**
+	 * Configuration setting for the SPARQL query endpoint.
+	 *
+	 * <var>tag:rdf4j.org:2023:config/queryEndpoint</var>
+	 */
+	public static final IRI queryEndpoint = Vocabularies.createIRI(NAMESPACE, "queryEndpoint");
+
+	/**
+	 * Configuration setting for the SPARQL update endpoint.
+	 *
+	 * <var>tag:rdf4j.org:2023:config/updateEndpoint</var>
+	 */
+	public static final IRI updateEndpoint = Vocabularies
+			.createIRI(NAMESPACE, "updateEndpoint");
+
+	/**
+	 * Configuration setting for enabling/disabling direct result pass-through.
+	 *
+	 * <var>tag:rdf4j.org:2023:config/passThroughEnabled</var>
+	 *
+	 * @see SPARQLProtocolSession#isPassThroughEnabled()
+	 */
+	public static final IRI passThroughEnabled = Vocabularies.createIRI(NAMESPACE, "passThroughEnabled");
+
+	/**
 	 * <var>tag:rdf4j.org:2023:config/sailImpl</var>
 	 */
 	public final static IRI sailImpl = Vocabularies.createIRI(NAMESPACE, "sailImpl");

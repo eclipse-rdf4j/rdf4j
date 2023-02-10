@@ -79,7 +79,7 @@ public abstract class AbstractDelegatingRepositoryImplConfig extends AbstractRep
 		super.parse(model, resource);
 
 		RepositoryConfigUtil
-				.getPropertyAsResource(model, resource, CONFIG.delegate, RepositoryConfigSchema.NAMESPACE_OBSOLETE)
+				.getPropertyAsResource(model, resource, CONFIG.delegate, RepositoryConfigSchema.DELEGATE)
 				.ifPresent(delegate -> setDelegate(create(model, delegate)));
 	}
 }

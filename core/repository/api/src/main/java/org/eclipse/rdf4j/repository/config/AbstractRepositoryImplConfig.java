@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.repository.config;
 
 import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.model.util.Values.literal;
-import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.NAMESPACE_OBSOLETE;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
@@ -74,7 +73,7 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 	@Override
 	public void parse(Model model, Resource resource) throws RepositoryConfigException {
 		RepositoryConfigUtil
-				.getPropertyAsLiteral(model, resource, CONFIG.repositoryType, NAMESPACE_OBSOLETE)
+				.getPropertyAsLiteral(model, resource, CONFIG.repositoryType, RepositoryConfigSchema.REPOSITORYTYPE)
 				.ifPresent(typeLit -> setType(typeLit.getLabel()));
 	}
 
@@ -91,7 +90,7 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 	public static RepositoryImplConfig create(Model model, Resource resource) throws RepositoryConfigException {
 		try {
 			final Literal typeLit = RepositoryConfigUtil
-					.getPropertyAsLiteral(model, resource, CONFIG.repositoryType, NAMESPACE_OBSOLETE)
+					.getPropertyAsLiteral(model, resource, CONFIG.repositoryType, RepositoryConfigSchema.REPOSITORYTYPE)
 					.orElse(null);
 			if (typeLit != null) {
 				RepositoryFactory factory = RepositoryRegistry.getInstance()

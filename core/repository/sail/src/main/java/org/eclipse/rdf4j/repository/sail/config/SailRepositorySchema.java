@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail.config;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -24,12 +26,13 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class SailRepositorySchema {
 
-	public static final String NAMESPACE = CONFIG.NAMESPACE;
-
 	/**
 	 * The SailRepository schema namespace (<var>http://www.openrdf.org/config/repository/sail#</var>).
 	 */
-	public static final String NAMESPACE_OBSOLETE = "http://www.openrdf.org/config/repository/sail#";
+	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/sail#";
 
-	public final static IRI SAILIMPL = CONFIG.sailImpl;
+	/**
+	 * @deprecated use {@link CONFIG#sailImpl} instead.
+	 */
+	public final static IRI SAILIMPL = iri(NAMESPACE, "sailImpl");
 }

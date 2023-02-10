@@ -223,33 +223,33 @@ public class ContextAwareConfig extends AbstractDelegatingRepositoryImplConfig {
 		try {
 			RepositoryConfigUtil
 					.getPropertyAsLiteral(model, resource, CONFIG.includeInferred,
-							ContextAwareSchema.NAMESPACE_OBSOLETE)
+							ContextAwareSchema.INCLUDE_INFERRED)
 					.ifPresent(lit -> setIncludeInferred(lit.booleanValue()));
 
 			RepositoryConfigUtil
 					.getPropertyAsLiteral(model, resource, CONFIG.maxQueryTime,
-							ContextAwareSchema.NAMESPACE_OBSOLETE)
+							ContextAwareSchema.MAX_QUERY_TIME)
 					.ifPresent(lit -> setMaxQueryTime(lit.intValue()));
 
 			RepositoryConfigUtil
 					.getPropertyAsLiteral(model, resource, CONFIG.queryLanguage,
-							ContextAwareSchema.NAMESPACE_OBSOLETE)
+							ContextAwareSchema.QUERY_LANGUAGE)
 					.ifPresent(lit -> setQueryLanguage(QueryLanguage.valueOf(lit.getLabel())));
 
 			RepositoryConfigUtil
 					.getPropertyAsIRI(model, resource, CONFIG.base,
-							ContextAwareSchema.NAMESPACE_OBSOLETE)
+							ContextAwareSchema.BASE_URI)
 					.ifPresent(iri -> setBaseURI(iri.stringValue()));
 
 			Set<Value> objects = RepositoryConfigUtil.getPropertyValues(model, resource, CONFIG.readContext,
-					ContextAwareSchema.NAMESPACE_OBSOLETE);
+					ContextAwareSchema.READ_CONTEXT);
 			setReadContexts(objects.toArray(new IRI[objects.size()]));
 
 			objects = model.filter(resource, ADD_CONTEXT, null).objects();
 			setAddContexts(objects.toArray(new IRI[objects.size()]));
 
 			objects = RepositoryConfigUtil.getPropertyValues(model, resource, CONFIG.removeContext,
-					ContextAwareSchema.NAMESPACE_OBSOLETE);
+					ContextAwareSchema.REMOVE_CONTEXT);
 			setRemoveContexts(objects.toArray(new IRI[objects.size()]));
 
 			objects = model.filter(resource, ARCHIVE_CONTEXT, null).objects();
@@ -257,7 +257,7 @@ public class ContextAwareConfig extends AbstractDelegatingRepositoryImplConfig {
 
 			RepositoryConfigUtil
 					.getPropertyAsIRI(model, resource, CONFIG.insertContext,
-							ContextAwareSchema.NAMESPACE_OBSOLETE)
+							ContextAwareSchema.INSERT_CONTEXT)
 					.ifPresent(iri -> setInsertContext(iri));
 		} catch (ArrayStoreException e) {
 			throw new RepositoryConfigException(e);

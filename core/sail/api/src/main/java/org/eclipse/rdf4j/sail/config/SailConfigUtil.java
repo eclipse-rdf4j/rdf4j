@@ -32,7 +32,7 @@ public class SailConfigUtil {
 		try {
 
 			Optional<Literal> typeLit = getPropertyAsLiteral(m, implNode, CONFIG.sailType,
-					SailConfigSchema.NAMESPACE_OBSOLETE);
+					SailConfigSchema.SAILTYPE);
 
 			if (typeLit.isPresent()) {
 				Optional<SailFactory> factory = SailRegistry.getInstance().get(typeLit.get().getLabel());
@@ -78,74 +78,89 @@ public class SailConfigUtil {
 	}
 
 	/**
-	 * Retrieve a property value for the supplied subject as a {@link Literal} if present, falling back to a property
-	 * with the same local name in the supplied fallbackNamespace.
+	 * Retrieve a property value for the supplied subject as a {@link Resource} if present, falling back to a supplied
+	 * legacy property .
 	 *
-	 * This method allows use to query sail config models with a mix of old and new namespaces.
+	 * This method allows use to query repository config models with a mix of old and new namespaces.
 	 *
-	 * @param model             the model to retrieve property values from.
-	 * @param subject           the subject of the property.
-	 * @param property          the property to retrieve the value of.
-	 * @param fallbackNamespace namespace to use in combination with the local name of the supplied property if the
-	 *                          supplied property has no value in the model.
-	 * @return the literal value for supplied subject and property (or the property with the supplied
-	 *         fallbackNamespace), if present.
+	 * @param model          the model to retrieve property values from.
+	 * @param subject        the subject of the property.
+	 * @param property       the property to retrieve the value of.
+	 * @param legacyProperty legacy property to use if the supplied property has no value in the model.
+	 * @return the resource value for supplied subject and property (or the legacy property ), if present.
 	 */
 	@InternalUseOnly
-	public static Optional<Literal> getPropertyAsLiteral(Model model, Resource subject, IRI property,
-			String fallbackNamespace) {
+	public static Optional<Resource> getPropertyAsResource(Model model, Resource subject, IRI property,
+			IRI legacyProperty) {
 		return Optional
-				.ofNullable(Models.objectLiteral(model.getStatements(subject, property, null)))
+				.ofNullable(Models.objectResource(model.getStatements(subject, property, null)))
 				.orElseGet(() -> {
-					IRI fallback = iri(fallbackNamespace, property.getLocalName());
-					return Models.objectLiteral(model.getStatements(subject, fallback, null));
+					return Models.objectResource(model.getStatements(subject, legacyProperty, null));
 				});
 	}
 
 	/**
-	 * Retrieve all property values for the supplied subject as a Set of values and include all values for any property
-	 * with the same local name in the supplied fallbackNamespace.
+	 * Retrieve a property value for the supplied subject as a {@link Literal} if present, falling back to a supplied
+	 * legacy property .
 	 *
 	 * This method allows use to query sail config models with a mix of old and new namespaces.
 	 *
-	 * @param model             the model to retrieve property values from.
-	 * @param subject           the subject of the property.
-	 * @param property          the property to retrieve the values of.
-	 * @param fallbackNamespace namespace to use in combination with the local name of the supplied property.
-	 * @return the set of values for supplied subject and property (and/or the property with the supplied
-	 *         fallbackNamespace).
+	 * @param model          the model to retrieve property values from.
+	 * @param subject        the subject of the property.
+	 * @param property       the property to retrieve the value of.
+	 * @param legacyProperty legacy property to use if the supplied property has no value in the model.
+	 * @return the literal value for supplied subject and property (or the legacy property ), if present.
+	 */
+	@InternalUseOnly
+	public static Optional<Literal> getPropertyAsLiteral(Model model, Resource subject, IRI property,
+			IRI legacyProperty) {
+		return Optional
+				.ofNullable(Models.objectLiteral(model.getStatements(subject, property, null)))
+				.orElseGet(() -> {
+					return Models.objectLiteral(model.getStatements(subject, legacyProperty, null));
+				});
+	}
+
+	/**
+	 * Retrieve all property values for the supplied subject as a Set of values and include all values for any legacy
+	 * property.
+	 *
+	 * This method allows use to query sail config models with a mix of old and new namespaces.
+	 *
+	 * @param model          the model to retrieve property values from.
+	 * @param subject        the subject of the property.
+	 * @param property       the property to retrieve the values of.
+	 * @param legacyProperty legacy property to retrieve values of.
+	 * @return the set of values for supplied subject and property (and/or legacy property).
 	 */
 	@InternalUseOnly
 	public static Set<Value> getPropertyValues(Model model, Resource subject, IRI property,
-			String fallbackNamespace) {
+			IRI legacyProperty) {
 		final Set<Value> results = new HashSet<>();
 		results.addAll(model.filter(subject, property, null).objects());
-		results.addAll(model.filter(subject, iri(fallbackNamespace, property.getLocalName()), null).objects());
+		results.addAll(model.filter(subject, legacyProperty, null).objects());
 		return results;
 	}
 
 	/**
-	 * Retrieve a property value for the supplied subject as an {@link IRI} if present, falling back to a property with
-	 * the same local name in the supplied fallbackNamespace.
+	 * Retrieve a property value for the supplied subject as a {@link IRI} if present, falling back to a supplied legacy
+	 * property .
 	 *
 	 * This method allows use to query sail config models with a mix of old and new namespaces.
 	 *
-	 * @param model             the model to retrieve property values from.
-	 * @param subject           the subject of the property.
-	 * @param property          the property to retrieve the value of.
-	 * @param fallbackNamespace namespace to use in combination with the local name of the supplied property if the
-	 *                          supplied property has no value in the model.
-	 * @return the IRI value for supplied subject and property (or the property with the supplied fallbackNamespace), if
-	 *         present.
+	 * @param model          the model to retrieve property values from.
+	 * @param subject        the subject of the property.
+	 * @param property       the property to retrieve the value of.
+	 * @param legacyProperty legacy property to use if the supplied property has no value in the model.
+	 * @return the IRI value for supplied subject and property (or the legacy property ), if present.
 	 */
 	@InternalUseOnly
 	public static Optional<IRI> getPropertyAsIRI(Model model, Resource subject, IRI property,
-			String fallbackNamespace) {
+			IRI legacyProperty) {
 		return Optional
 				.ofNullable(Models.objectIRI(model.getStatements(subject, property, null)))
 				.orElseGet(() -> {
-					IRI fallback = iri(fallbackNamespace, property.getLocalName());
-					return Models.objectIRI(model.getStatements(subject, fallback, null));
+					return Models.objectIRI(model.getStatements(subject, legacyProperty, null));
 				});
 	}
 }

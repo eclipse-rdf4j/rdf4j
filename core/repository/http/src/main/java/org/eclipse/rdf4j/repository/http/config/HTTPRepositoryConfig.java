@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.http.config;
 
-import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.NAMESPACE_OBSOLETE;
-
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -92,15 +90,15 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 		try {
 
 			RepositoryConfigUtil
-					.getPropertyAsIRI(model, implNode, CONFIG.repositoryURL, NAMESPACE_OBSOLETE)
+					.getPropertyAsIRI(model, implNode, CONFIG.repositoryURL, HTTPRepositorySchema.REPOSITORYURL)
 					.ifPresent(iri -> setURL(iri.stringValue()));
 
 			RepositoryConfigUtil
-					.getPropertyAsLiteral(model, implNode, CONFIG.username, NAMESPACE_OBSOLETE)
+					.getPropertyAsLiteral(model, implNode, CONFIG.username, HTTPRepositorySchema.USERNAME)
 					.ifPresent(username -> setUsername(username.getLabel()));
 
 			RepositoryConfigUtil
-					.getPropertyAsLiteral(model, implNode, CONFIG.password, NAMESPACE_OBSOLETE)
+					.getPropertyAsLiteral(model, implNode, CONFIG.password, HTTPRepositorySchema.PASSWORD)
 					.ifPresent(password -> setPassword(password.getLabel()));
 
 		} catch (ModelException e) {

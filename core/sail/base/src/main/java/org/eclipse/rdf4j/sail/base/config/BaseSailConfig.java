@@ -81,13 +81,13 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		try {
 			SailConfigUtil
 					.getPropertyAsLiteral(graph, implNode, CONFIG.defaultQueryEvaluationMode,
-							BaseSailSchema.NAMESPACE_OBSOLETE)
+							BaseSailSchema.DEFAULT_QUERY_EVALUATION_MODE)
 					.ifPresent(qem -> setDefaultQueryEvaluationMode(
 							QueryEvaluationMode.valueOf(qem.stringValue())));
 
 			SailConfigUtil
 					.getPropertyAsLiteral(graph, implNode, CONFIG.evaluationStrategyFactory,
-							BaseSailSchema.NAMESPACE_OBSOLETE)
+							BaseSailSchema.EVALUATION_STRATEGY_FACTORY)
 					.ifPresent(factoryClassName -> {
 						setEvaluationStrategyFactoryClassName(factoryClassName.stringValue());
 					});

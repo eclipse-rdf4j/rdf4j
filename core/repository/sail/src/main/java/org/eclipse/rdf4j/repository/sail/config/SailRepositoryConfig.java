@@ -82,7 +82,7 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 	public void parse(Model model, Resource repImplNode) throws RepositoryConfigException {
 		try {
 			Optional<Resource> sailImplNode = RepositoryConfigUtil.getPropertyAsResource(model, repImplNode,
-					CONFIG.sailImpl, SailRepositorySchema.NAMESPACE_OBSOLETE);
+					CONFIG.sailImpl, SailRepositorySchema.SAILIMPL);
 			if (sailImplNode.isPresent()) {
 				Models.objectLiteral(model.getStatements(sailImplNode.get(), SAILTYPE, null)).ifPresent(typeLit -> {
 					SailFactory factory = SailRegistry.getInstance()
