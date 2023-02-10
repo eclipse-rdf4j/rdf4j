@@ -38,7 +38,9 @@ import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
 import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonFactoryBuilder;
 import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.StreamWriteFeature;
 import com.fasterxml.jackson.core.util.DefaultIndenter;
 import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Indenter;
@@ -50,18 +52,16 @@ import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Indenter;
  */
 abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implements CharSink {
 
-	private static final JsonFactory JSON_FACTORY = new JsonFactory();
-
-	static {
-		// Disable features that may work for most JSON where the field names are
-		// in limited supply,
-		// but does not work for RDF/JSON where a wide range of URIs are used for
-		// subjects and
-		// predicates
-		JSON_FACTORY.disable(JsonFactory.Feature.INTERN_FIELD_NAMES);
-		JSON_FACTORY.disable(JsonFactory.Feature.CANONICALIZE_FIELD_NAMES);
-		JSON_FACTORY.disable(JsonGenerator.Feature.AUTO_CLOSE_TARGET);
-	}
+	private static final JsonFactory JSON_FACTORY = new JsonFactoryBuilder()
+			// Disable features that may work for most JSON where the field names are
+			// in limited supply,
+			// but does not work for RDF/JSON where a wide range of URIs are used for
+			// subjects and
+			// predicates
+			.disable(JsonFactory.Feature.INTERN_FIELD_NAMES)
+			.disable(JsonFactory.Feature.CANONICALIZE_FIELD_NAMES)
+			.disable(StreamWriteFeature.AUTO_CLOSE_TARGET)
+			.build();
 
 	protected boolean firstTupleWritten = false;
 

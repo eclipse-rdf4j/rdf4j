@@ -42,10 +42,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonFactoryBuilder;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.core.StreamReadFeature;
+import com.fasterxml.jackson.core.StreamWriteFeature;
+import com.fasterxml.jackson.core.json.JsonReadFeature;
 
 /**
  * Abstract base class for SPARQL Results JSON Parsers. Provides a common implementation of both boolean and tuple
@@ -516,59 +519,59 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 	 * @return A newly configured JsonFactory based on the currently enabled settings
 	 */
 	private JsonFactory configureNewJsonFactory() {
-		final JsonFactory nextJsonFactory = new JsonFactory();
+		final JsonFactoryBuilder builder = new JsonFactoryBuilder();
 		// Disable features that may work for most JSON where the field names are
 		// in limited supply,
 		// but does not work for SPARQL/JSON where a wide range of URIs are used for
 		// subjects and predicates
-		nextJsonFactory.disable(JsonFactory.Feature.INTERN_FIELD_NAMES);
-		nextJsonFactory.disable(JsonFactory.Feature.CANONICALIZE_FIELD_NAMES);
-		nextJsonFactory.disable(JsonGenerator.Feature.AUTO_CLOSE_TARGET);
+		builder.disable(JsonFactory.Feature.INTERN_FIELD_NAMES);
+		builder.disable(JsonFactory.Feature.CANONICALIZE_FIELD_NAMES);
+		builder.disable(StreamWriteFeature.AUTO_CLOSE_TARGET);
 
 		if (getParserConfig().isSet(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER)) {
-			nextJsonFactory.configure(JsonParser.Feature.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER,
+			builder.configure(JsonReadFeature.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER,
 					getParserConfig().get(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_COMMENTS)) {
-			nextJsonFactory.configure(JsonParser.Feature.ALLOW_COMMENTS,
+			builder.configure(JsonReadFeature.ALLOW_JAVA_COMMENTS,
 					getParserConfig().get(JSONSettings.ALLOW_COMMENTS));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS)) {
-			nextJsonFactory.configure(JsonParser.Feature.ALLOW_NON_NUMERIC_NUMBERS,
+			builder.configure(JsonReadFeature.ALLOW_NON_NUMERIC_NUMBERS,
 					getParserConfig().get(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS)) {
-			nextJsonFactory.configure(JsonParser.Feature.ALLOW_NUMERIC_LEADING_ZEROS,
+			builder.configure(JsonReadFeature.ALLOW_LEADING_ZEROS_FOR_NUMBERS,
 					getParserConfig().get(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_SINGLE_QUOTES)) {
-			nextJsonFactory.configure(JsonParser.Feature.ALLOW_SINGLE_QUOTES,
+			builder.configure(JsonReadFeature.ALLOW_SINGLE_QUOTES,
 					getParserConfig().get(JSONSettings.ALLOW_SINGLE_QUOTES));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS)) {
-			nextJsonFactory.configure(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS,
+			builder.configure(JsonReadFeature.ALLOW_UNESCAPED_CONTROL_CHARS,
 					getParserConfig().get(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES)) {
-			nextJsonFactory.configure(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES,
+			builder.configure(JsonReadFeature.ALLOW_UNQUOTED_FIELD_NAMES,
 					getParserConfig().get(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_YAML_COMMENTS)) {
-			nextJsonFactory.configure(JsonParser.Feature.ALLOW_YAML_COMMENTS,
+			builder.configure(JsonReadFeature.ALLOW_YAML_COMMENTS,
 					getParserConfig().get(JSONSettings.ALLOW_YAML_COMMENTS));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_TRAILING_COMMA)) {
-			nextJsonFactory.configure(JsonParser.Feature.ALLOW_TRAILING_COMMA,
+			builder.configure(JsonReadFeature.ALLOW_TRAILING_COMMA,
 					getParserConfig().get(JSONSettings.ALLOW_TRAILING_COMMA));
 		}
 		if (getParserConfig().isSet(JSONSettings.INCLUDE_SOURCE_IN_LOCATION)) {
-			nextJsonFactory.configure(JsonParser.Feature.INCLUDE_SOURCE_IN_LOCATION,
+			builder.configure(StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION,
 					getParserConfig().get(JSONSettings.INCLUDE_SOURCE_IN_LOCATION));
 		}
 		if (getParserConfig().isSet(JSONSettings.STRICT_DUPLICATE_DETECTION)) {
-			nextJsonFactory.configure(JsonParser.Feature.STRICT_DUPLICATE_DETECTION,
+			builder.configure(StreamReadFeature.STRICT_DUPLICATE_DETECTION,
 					getParserConfig().get(JSONSettings.STRICT_DUPLICATE_DETECTION));
 		}
-		return nextJsonFactory;
+		return builder.build();
 	}
 }
