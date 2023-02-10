@@ -71,38 +71,58 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 	@Override
 	public Optional<Namespace> getNamespace(String prefix) {
-		for (Namespace nextNamespace : namespaces) {
-			if (prefix.equals(nextNamespace.getPrefix())) {
-				return Optional.of(nextNamespace);
+		if (model == null) {
+			for (Namespace nextNamespace : namespaces) {
+				if (prefix.equals(nextNamespace.getPrefix())) {
+					return Optional.of(nextNamespace);
+				}
 			}
+		} else {
+			return model.getNamespace(prefix);
 		}
 		return Optional.empty();
 	}
 
 	@Override
 	public Set<Namespace> getNamespaces() {
-		return namespaces;
+		if (model == null) {
+			return namespaces;
+		} else {
+			return model.getNamespaces();
+		}
 	}
 
 	@Override
 	public Namespace setNamespace(String prefix, String name) {
-		removeNamespace(prefix);
-		Namespace result = new SimpleNamespace(prefix, name);
-		namespaces.add(result);
-		return result;
+		if (model == null) {
+			removeNamespace(prefix);
+			Namespace result = new SimpleNamespace(prefix, name);
+			namespaces.add(result);
+			return result;
+		} else {
+			return model.setNamespace(prefix, name);
+		}
 	}
 
 	@Override
 	public void setNamespace(Namespace namespace) {
-		removeNamespace(namespace.getPrefix());
-		namespaces.add(namespace);
+		if (model == null) {
+			removeNamespace(namespace.getPrefix());
+			namespaces.add(namespace);
+		} else {
+			model.setNamespace(namespace);
+		}
 	}
 
 	@Override
 	public Optional<Namespace> removeNamespace(String prefix) {
-		Optional<Namespace> result = getNamespace(prefix);
-		result.ifPresent(namespaces::remove);
-		return result;
+		if (model == null) {
+			Optional<Namespace> result = getNamespace(prefix);
+			result.ifPresent(namespaces::remove);
+			return result;
+		} else {
+			return model.removeNamespace(prefix);
+		}
 	}
 
 	@Override
@@ -339,6 +359,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			statements = Collections.unmodifiableMap(statements);
 			Model tempModel = modelFactory.createEmptyModel();
 			tempModel.addAll(statements.values());
+			namespaces.forEach(tempModel::setNamespace);
 			model = tempModel;
 		}
 	}
