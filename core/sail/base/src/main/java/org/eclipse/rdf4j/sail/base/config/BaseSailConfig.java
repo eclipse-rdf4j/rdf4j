@@ -17,12 +17,12 @@ import java.util.Optional;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.sail.config.AbstractSailImplConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
-import org.eclipse.rdf4j.sail.config.SailConfigUtil;
 
 public abstract class BaseSailConfig extends AbstractSailImplConfig {
 
@@ -79,15 +79,13 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		super.parse(graph, implNode);
 
 		try {
-			SailConfigUtil
-					.getPropertyAsLiteral(graph, implNode, CONFIG.defaultQueryEvaluationMode,
-							BaseSailSchema.DEFAULT_QUERY_EVALUATION_MODE)
+			Configurations.getLiteralValue(graph, implNode, CONFIG.defaultQueryEvaluationMode,
+					BaseSailSchema.DEFAULT_QUERY_EVALUATION_MODE)
 					.ifPresent(qem -> setDefaultQueryEvaluationMode(
 							QueryEvaluationMode.valueOf(qem.stringValue())));
 
-			SailConfigUtil
-					.getPropertyAsLiteral(graph, implNode, CONFIG.evaluationStrategyFactory,
-							BaseSailSchema.EVALUATION_STRATEGY_FACTORY)
+			Configurations.getLiteralValue(graph, implNode, CONFIG.evaluationStrategyFactory,
+					BaseSailSchema.EVALUATION_STRATEGY_FACTORY)
 					.ifPresent(factoryClassName -> {
 						setEvaluationStrategyFactoryClassName(factoryClassName.stringValue());
 					});

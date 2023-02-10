@@ -16,6 +16,7 @@ import static org.eclipse.rdf4j.model.util.Values.literal;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 
@@ -82,14 +83,14 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 	@Override
 	public void parse(Model m, Resource implNode) throws SailConfigException {
 		try {
-			SailConfigUtil.getPropertyAsLiteral(m, implNode, CONFIG.sailType, SailConfigSchema.SAILTYPE)
+			Configurations.getLiteralValue(m, implNode, CONFIG.sailType, SailConfigSchema.SAILTYPE)
 					.ifPresent(lit -> setType(lit.getLabel()));
-			SailConfigUtil
-					.getPropertyAsLiteral(m, implNode, CONFIG.iterationCacheSyncThreshold,
+			Configurations
+					.getLiteralValue(m, implNode, CONFIG.iterationCacheSyncThreshold,
 							SailConfigSchema.ITERATION_CACHE_SYNC_THRESHOLD)
 					.ifPresent(lit -> setIterationCacheSyncThreshold(lit.longValue()));
-			SailConfigUtil
-					.getPropertyAsLiteral(m, implNode, CONFIG.connectionTimeOut, SailConfigSchema.CONNECTION_TIME_OUT)
+			Configurations
+					.getLiteralValue(m, implNode, CONFIG.connectionTimeOut, SailConfigSchema.CONNECTION_TIME_OUT)
 					.ifPresent(lit -> setConnectionTimeOut(lit.longValue()));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);

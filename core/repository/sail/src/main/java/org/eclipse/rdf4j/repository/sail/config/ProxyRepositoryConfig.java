@@ -14,11 +14,11 @@ import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.repository.config.AbstractRepositoryImplConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
-import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 
 public class ProxyRepositoryConfig extends AbstractRepositoryImplConfig {
 
@@ -63,8 +63,8 @@ public class ProxyRepositoryConfig extends AbstractRepositoryImplConfig {
 		super.parse(model, implNode);
 
 		try {
-			RepositoryConfigUtil
-					.getPropertyAsLiteral(model, implNode, CONFIG.proxiedID, ProxyRepositorySchema.PROXIED_ID)
+			Configurations
+					.getLiteralValue(model, implNode, CONFIG.proxiedID, ProxyRepositorySchema.PROXIED_ID)
 					.ifPresent(lit -> setProxiedRepositoryID(lit.getLabel()));
 		} catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);

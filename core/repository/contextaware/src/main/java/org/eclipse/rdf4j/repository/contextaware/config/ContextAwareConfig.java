@@ -21,11 +21,11 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.repository.config.AbstractDelegatingRepositoryImplConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
-import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.contextaware.ContextAwareConnection;
 
 /**
@@ -221,42 +221,42 @@ public class ContextAwareConfig extends AbstractDelegatingRepositoryImplConfig {
 		super.parse(model, resource);
 
 		try {
-			RepositoryConfigUtil
-					.getPropertyAsLiteral(model, resource, CONFIG.includeInferred,
+			Configurations
+					.getLiteralValue(model, resource, CONFIG.includeInferred,
 							ContextAwareSchema.INCLUDE_INFERRED)
 					.ifPresent(lit -> setIncludeInferred(lit.booleanValue()));
 
-			RepositoryConfigUtil
-					.getPropertyAsLiteral(model, resource, CONFIG.maxQueryTime,
+			Configurations
+					.getLiteralValue(model, resource, CONFIG.maxQueryTime,
 							ContextAwareSchema.MAX_QUERY_TIME)
 					.ifPresent(lit -> setMaxQueryTime(lit.intValue()));
 
-			RepositoryConfigUtil
-					.getPropertyAsLiteral(model, resource, CONFIG.queryLanguage,
+			Configurations
+					.getLiteralValue(model, resource, CONFIG.queryLanguage,
 							ContextAwareSchema.QUERY_LANGUAGE)
 					.ifPresent(lit -> setQueryLanguage(QueryLanguage.valueOf(lit.getLabel())));
 
-			RepositoryConfigUtil
-					.getPropertyAsIRI(model, resource, CONFIG.base,
+			Configurations
+					.getIRIValue(model, resource, CONFIG.base,
 							ContextAwareSchema.BASE_URI)
 					.ifPresent(iri -> setBaseURI(iri.stringValue()));
 
-			Set<Value> objects = RepositoryConfigUtil.getPropertyValues(model, resource, CONFIG.readContext,
+			Set<Value> objects = Configurations.getPropertyValues(model, resource, CONFIG.readContext,
 					ContextAwareSchema.READ_CONTEXT);
 			setReadContexts(objects.toArray(new IRI[objects.size()]));
 
 			objects = model.filter(resource, ADD_CONTEXT, null).objects();
 			setAddContexts(objects.toArray(new IRI[objects.size()]));
 
-			objects = RepositoryConfigUtil.getPropertyValues(model, resource, CONFIG.removeContext,
+			objects = Configurations.getPropertyValues(model, resource, CONFIG.removeContext,
 					ContextAwareSchema.REMOVE_CONTEXT);
 			setRemoveContexts(objects.toArray(new IRI[objects.size()]));
 
 			objects = model.filter(resource, ARCHIVE_CONTEXT, null).objects();
 			setArchiveContexts(objects.toArray(new IRI[objects.size()]));
 
-			RepositoryConfigUtil
-					.getPropertyAsIRI(model, resource, CONFIG.insertContext,
+			Configurations
+					.getIRIValue(model, resource, CONFIG.insertContext,
 							ContextAwareSchema.INSERT_CONTEXT)
 					.ifPresent(iri -> setInsertContext(iri));
 		} catch (ArrayStoreException e) {

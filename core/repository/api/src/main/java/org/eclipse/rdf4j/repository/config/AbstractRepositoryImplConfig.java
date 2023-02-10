@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 
@@ -72,8 +73,8 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 
 	@Override
 	public void parse(Model model, Resource resource) throws RepositoryConfigException {
-		RepositoryConfigUtil
-				.getPropertyAsLiteral(model, resource, CONFIG.repositoryType, RepositoryConfigSchema.REPOSITORYTYPE)
+		Configurations
+				.getLiteralValue(model, resource, CONFIG.repositoryType, RepositoryConfigSchema.REPOSITORYTYPE)
 				.ifPresent(typeLit -> setType(typeLit.getLabel()));
 	}
 
@@ -89,8 +90,8 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 	 */
 	public static RepositoryImplConfig create(Model model, Resource resource) throws RepositoryConfigException {
 		try {
-			final Literal typeLit = RepositoryConfigUtil
-					.getPropertyAsLiteral(model, resource, CONFIG.repositoryType, RepositoryConfigSchema.REPOSITORYTYPE)
+			final Literal typeLit = Configurations
+					.getLiteralValue(model, resource, CONFIG.repositoryType, RepositoryConfigSchema.REPOSITORYTYPE)
 					.orElse(null);
 			if (typeLit != null) {
 				RepositoryFactory factory = RepositoryRegistry.getInstance()

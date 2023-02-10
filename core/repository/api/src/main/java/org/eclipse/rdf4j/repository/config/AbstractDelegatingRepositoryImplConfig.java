@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.repository.config;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 
 /**
@@ -78,8 +79,8 @@ public abstract class AbstractDelegatingRepositoryImplConfig extends AbstractRep
 	public void parse(Model model, Resource resource) throws RepositoryConfigException {
 		super.parse(model, resource);
 
-		RepositoryConfigUtil
-				.getPropertyAsResource(model, resource, CONFIG.delegate, RepositoryConfigSchema.DELEGATE)
+		Configurations
+				.getResourceValue(model, resource, CONFIG.delegate, RepositoryConfigSchema.DELEGATE)
 				.ifPresent(delegate -> setDelegate(create(model, delegate)));
 	}
 }

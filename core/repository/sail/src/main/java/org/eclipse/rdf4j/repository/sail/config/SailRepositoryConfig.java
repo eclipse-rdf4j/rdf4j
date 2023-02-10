@@ -16,12 +16,12 @@ import java.util.Optional;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.repository.config.AbstractRepositoryImplConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
-import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.config.SailFactory;
 import org.eclipse.rdf4j.sail.config.SailImplConfig;
@@ -81,7 +81,7 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 	@Override
 	public void parse(Model model, Resource repImplNode) throws RepositoryConfigException {
 		try {
-			Optional<Resource> sailImplNode = RepositoryConfigUtil.getPropertyAsResource(model, repImplNode,
+			Optional<Resource> sailImplNode = Configurations.getResourceValue(model, repImplNode,
 					CONFIG.sailImpl, SailRepositorySchema.SAILIMPL);
 			if (sailImplNode.isPresent()) {
 				Models.objectLiteral(model.getStatements(sailImplNode.get(), SAILTYPE, null)).ifPresent(typeLit -> {

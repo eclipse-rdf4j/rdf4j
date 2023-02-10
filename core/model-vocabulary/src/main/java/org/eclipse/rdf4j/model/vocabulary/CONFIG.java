@@ -34,66 +34,91 @@ public class CONFIG {
 	public static final String PREFIX = "config";
 
 	/**
+	 * Type value for a RepositoryConfig.
+	 *
 	 * <var>tag:rdf4j.org:2023:config/Repository</var>
 	 */
 	public final static IRI Repository = Vocabularies.createIRI(NAMESPACE, "Repository");
 
 	/**
+	 * Setting for the repository ID.
+	 *
 	 * <var>tag:rdf4j.org:2023:config/repositoryID</var>
 	 */
 	public final static IRI repositoryID = Vocabularies.createIRI(NAMESPACE, "repositoryID");
 
 	/**
+	 * Setting for the repository implementation-specific configuration.
+	 *
 	 * <var>tag:rdf4j.org:2023:config/repositoryImpl</var>
 	 */
 	public final static IRI repositoryImpl = Vocabularies.createIRI(NAMESPACE, "repositoryImpl");
 
 	/**
+	 * Setting for the repository type.
+	 *
 	 * <var>tag:rdf4j.org:2023:config/repositoryType</var>
 	 */
 	public final static IRI repositoryType = Vocabularies.createIRI(NAMESPACE, "repositoryType");
 
 	/**
+	 * Setting for linking a delegate config to a wrapper in a SAIL or Repository config stack.
+	 *
 	 * <var>tag:rdf4j.org:2023:config/delegate</var>
 	 */
 	public final static IRI delegate = Vocabularies.createIRI(NAMESPACE, "delegate");
 
 	/**
+	 * Setting for a (remote) RDF4J Repository URL.
+	 *
 	 * <var>tag:rdf4j.org:2023:config/repositoryURL</var>
 	 */
 	public static final IRI repositoryURL = Vocabularies.createIRI(NAMESPACE, "repositoryURL");
 
 	/**
+	 * Setting for a username to use for authentication.
+	 *
 	 * <var>tag:rdf4j.org:2023:config/username</var>
 	 */
 	public final static IRI username = Vocabularies.createIRI(NAMESPACE, "username");
 
 	/**
+	 * Setting for a password to use for authentication.
+	 *
 	 * <var>tag:rdf4j.org:2023:config/password</var>
 	 */
 	public final static IRI password = Vocabularies.createIRI(NAMESPACE, "password");
 
 	/**
+	 * Setting for including inferred statements by default.
+	 *
 	 * <var>tag:rdf4j.org:2023:config/includeInferred</var>
 	 */
 	public final static IRI includeInferred = Vocabularies.createIRI(NAMESPACE, "includeInferred");
 
 	/**
+	 * Setting for the max query time.
+	 *
 	 * <var>tag:rdf4j.org:2023:config/maxQueryTime</var>
 	 */
 	public final static IRI maxQueryTime = Vocabularies.createIRI(NAMESPACE, "maxQueryTime");
 
 	/**
+	 * Setting for the query language to be used.
+	 *
 	 * <var>tag:rdf4j.org:2023:config/queryLanguage</var>
 	 */
 	public final static IRI queryLanguage = Vocabularies.createIRI(NAMESPACE, "queryLanguage");
 
 	/**
+	 * Setting for a base URI.
+	 *
 	 * <var>tag:rdf4j.org:2023:config/base</var>
 	 */
 	public final static IRI base = Vocabularies.createIRI(NAMESPACE, "base");
 
 	/**
+	 *
 	 * <var>tag:rdf4j.org:2023:config/readContext</var>
 	 */
 	public final static IRI readContext = Vocabularies.createIRI(NAMESPACE, "readContext");

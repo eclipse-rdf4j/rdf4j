@@ -17,11 +17,11 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.repository.config.AbstractRepositoryImplConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
-import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 
 /**
  * Configuration for a SPARQL endpoint.
@@ -127,11 +127,11 @@ public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
 		super.parse(m, implNode);
 
 		try {
-			RepositoryConfigUtil.getPropertyAsIRI(m, implNode, CONFIG.queryEndpoint, QUERY_ENDPOINT)
+			Configurations.getIRIValue(m, implNode, CONFIG.queryEndpoint, QUERY_ENDPOINT)
 					.ifPresent(iri -> setQueryEndpointUrl(iri.stringValue()));
-			RepositoryConfigUtil.getPropertyAsIRI(m, implNode, CONFIG.updateEndpoint, UPDATE_ENDPOINT)
+			Configurations.getIRIValue(m, implNode, CONFIG.updateEndpoint, UPDATE_ENDPOINT)
 					.ifPresent(iri -> setUpdateEndpointUrl(iri.stringValue()));
-			RepositoryConfigUtil.getPropertyAsLiteral(m, implNode, CONFIG.passThroughEnabled, PASS_THROUGH_ENABLED)
+			Configurations.getLiteralValue(m, implNode, CONFIG.passThroughEnabled, PASS_THROUGH_ENABLED)
 					.ifPresent(lit -> setPassThroughEnabled(lit.booleanValue()));
 		} catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);

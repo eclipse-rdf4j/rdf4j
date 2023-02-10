@@ -10,14 +10,16 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.http.config;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.repository.config.AbstractRepositoryImplConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
-import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 
 /**
  * @author Arjohn Kampman
@@ -89,16 +91,16 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 
 		try {
 
-			RepositoryConfigUtil
-					.getPropertyAsIRI(model, implNode, CONFIG.repositoryURL, HTTPRepositorySchema.REPOSITORYURL)
+			Configurations
+					.getIRIValue(model, implNode, CONFIG.repositoryURL, HTTPRepositorySchema.REPOSITORYURL)
 					.ifPresent(iri -> setURL(iri.stringValue()));
 
-			RepositoryConfigUtil
-					.getPropertyAsLiteral(model, implNode, CONFIG.username, HTTPRepositorySchema.USERNAME)
+			Configurations
+					.getLiteralValue(model, implNode, CONFIG.username, HTTPRepositorySchema.USERNAME)
 					.ifPresent(username -> setUsername(username.getLabel()));
 
-			RepositoryConfigUtil
-					.getPropertyAsLiteral(model, implNode, CONFIG.password, HTTPRepositorySchema.PASSWORD)
+			Configurations
+					.getLiteralValue(model, implNode, CONFIG.password, HTTPRepositorySchema.PASSWORD)
 					.ifPresent(password -> setPassword(password.getLabel()));
 
 		} catch (ModelException e) {

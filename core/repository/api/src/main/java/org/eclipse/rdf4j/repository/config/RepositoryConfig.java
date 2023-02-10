@@ -15,6 +15,7 @@ import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
@@ -146,16 +147,16 @@ public class RepositoryConfig {
 
 	public void parse(Model model, Resource repositoryNode) throws RepositoryConfigException {
 		try {
-			RepositoryConfigUtil
-					.getPropertyAsLiteral(model, repositoryNode, CONFIG.repositoryID,
+			Configurations
+					.getLiteralValue(model, repositoryNode, CONFIG.repositoryID,
 							RepositoryConfigSchema.REPOSITORYID)
 					.ifPresent(lit -> setID(lit.getLabel()));
 
 			Models.objectLiteral(model.getStatements(repositoryNode, RDFS.LABEL, null))
 					.ifPresent(lit -> setTitle(lit.getLabel()));
 
-			RepositoryConfigUtil
-					.getPropertyAsResource(model, repositoryNode, CONFIG.repositoryImpl,
+			Configurations
+					.getResourceValue(model, repositoryNode, CONFIG.repositoryImpl,
 							RepositoryConfigSchema.REPOSITORYIMPL)
 					.ifPresent(res -> setRepositoryImplConfig(AbstractRepositoryImplConfig.create(model, res)));
 		} catch (ModelException e) {
