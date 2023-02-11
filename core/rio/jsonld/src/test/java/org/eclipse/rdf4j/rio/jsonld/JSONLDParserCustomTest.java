@@ -12,8 +12,8 @@ package org.eclipse.rdf4j.rio.jsonld;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -40,6 +40,7 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.io.ContentReference;
 import com.github.jsonldjava.core.DocumentLoader;
 
 /**
@@ -360,8 +361,8 @@ public class JSONLDParserCustomTest {
 			JsonProcessingException cause = (JsonProcessingException) e.getCause();
 			assertEquals(2, cause.getLocation().getLineNr());
 			assertEquals(3, cause.getLocation().getColumnNr());
-			assertNotNull(cause.getLocation().getSourceRef());
-			assertEquals(source, cause.getLocation().getSourceRef());
+			assertNotEquals(ContentReference.unknown(), cause.getLocation().contentReference());
+			assertEquals(source, cause.getLocation().contentReference().getRawContent());
 		}
 	}
 
@@ -378,8 +379,8 @@ public class JSONLDParserCustomTest {
 			JsonProcessingException cause = (JsonProcessingException) e.getCause();
 			assertEquals(2, cause.getLocation().getLineNr());
 			assertEquals(3, cause.getLocation().getColumnNr());
-			assertNotNull(cause.getLocation().getSourceRef());
-			assertEquals(source, cause.getLocation().getSourceRef());
+			assertNotEquals(ContentReference.unknown(), cause.getLocation().contentReference());
+			assertEquals(source, cause.getLocation().contentReference().getRawContent());
 		}
 	}
 
@@ -395,7 +396,7 @@ public class JSONLDParserCustomTest {
 			JsonProcessingException cause = (JsonProcessingException) e.getCause();
 			assertEquals(2, cause.getLocation().getLineNr());
 			assertEquals(3, cause.getLocation().getColumnNr());
-			assertNull(cause.getLocation().getSourceRef());
+			assertEquals(ContentReference.unknown(), cause.getLocation().contentReference());
 		}
 	}
 

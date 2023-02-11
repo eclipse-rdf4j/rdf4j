@@ -10,15 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.optimizer;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.FedXFactory;
@@ -32,12 +31,11 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Filter optimizer test for queries involving {@link org.eclipse.rdf4j.query.algebra.Union} &
@@ -46,7 +44,6 @@ import org.junit.runners.Parameterized;
  *
  * @author Tomas Kovachev t.kovachev1996@gmail.com
  */
-@RunWith(Parameterized.class)
 public class FilterOptimizerTest {
 
 	private Repository standardRepository;
@@ -69,240 +66,229 @@ public class FilterOptimizerTest {
 			+ "<urn:tes644> <urn:what> 9000 . "
 			+ "<urn:tes4> <urn:what2> 3000 . }";
 
-	private final String query;
-
-	public FilterOptimizerTest(String query) {
-		this.query = query;
+	public static Stream<Arguments> data() {
+		return Stream.of(
+				"SELECT * WHERE {\n"
+						+ "        ?s <urn:what1> ?value .\n"
+						+ "        ?x <urn:what> ?value .\n"
+						+ "        filter (?value > 4000) \n"
+						+ "}",
+				"SELECT * WHERE {\n"
+						+ "        ?s <urn:what1> ?value .\n"
+						+ "        OPTIONAL { ?x <urn:what2> ?valu1 } .\n"
+						+ "        filter (?value > 4000) \n"
+						+ "        filter (?valu1 > 4000) \n"
+						+ "}",
+				"SELECT * WHERE {\n"
+						+ "    {\n"
+						+ "        ?s <urn:what1> ?value .\n"
+						+ "    } UNION {\n"
+						+ "        ?s <urn:what> ?value .\n"
+						+ "    } \n"
+						+ "        filter (?value > 4000) \n"
+						+ "}",
+				"SELECT * WHERE {\n"
+						+ "    bind (<urn:test1> as ?s ) {\n"
+						+ "        ?s <urn:what1> ?value .\n"
+						+ "    } UNION {\n"
+						+ "        ?s <urn:what> ?value .\n"
+						+ "    } \n"
+						+ "        filter (isIRI(?s)) \n"
+						+ "}",
+				"SELECT * WHERE {\n"
+						+ "    values ?s {<urn:test1>} {\n"
+						+ "        ?s <urn:what1> ?value .\n"
+						+ "    } UNION {\n"
+						+ "        ?s <urn:what> ?value .\n"
+						+ "    } \n"
+						+ "        filter (isIRI(?s)) \n"
+						+ "}",
+				"SELECT * WHERE {\n"
+						+ "    bind (<urn:test1> as ?s ) {\n"
+						+ "        ?s <urn:what1> ?value .\n"
+						+ "    } UNION {\n"
+						+ "        ?s <urn:what> ?value .\n"
+						+ "    } \n"
+						+ "        filter (isblank(?s)) \n"
+						+ "        filter (?value > 4000) \n"
+						+ "}",
+				"SELECT * WHERE {\n"
+						+ "    {\n"
+						+ "        ?s <urn:what1> ?value .\n"
+						+ "        {\n    "
+						+ "            ?y <urn:what2> ?value1 .\n"
+						+ "        } UNION {\n"
+						+ "            ?x <urn:what3> ?value1 .\n"
+						+ "        } \n"
+						+ "    } UNION {\n"
+						+ "        ?s <urn:what> ?value .\n"
+						+ "    } \n"
+						+ "        filter (?value > 4000) \n"
+						+ "        filter (?value1 > 4000) \n"
+						+ "}",
+				"SELECT * WHERE {\n"
+						+ "    {\n"
+						+ "        ?s <urn:what1> ?value .\n"
+						+ "        {\n    "
+						+ "            ?y <urn:what2> ?value1 .\n"
+						+ "        } MINUS {\n"
+						+ "            ?x <urn:what3> ?value1 .\n"
+						+ "        } \n"
+						+ "    } UNION {\n"
+						+ "        ?s <urn:what> ?value .\n"
+						+ "    } \n"
+						+ "        filter (?value > 4000) \n"
+						+ "        filter (?value1 > 4000) \n"
+						+ "}",
+				"SELECT * WHERE {\n"
+						+ "    {\n"
+						+ "        ?s <urn:what1> ?value .\n"
+						+ "    } UNION {\n"
+						+ "        ?s <urn:what> ?value .\n"
+						+ "    } \n"
+						+ "    {\n    "
+						+ "        ?y <urn:what2> ?value1 .\n"
+						+ "    } UNION {\n"
+						+ "        ?x <urn:what3> ?value1 .\n"
+						+ "    } \n"
+						+ "        filter (?value > 4000) \n"
+						+ "        filter (?value1 > 4000) \n"
+						+ "}",
+				"SELECT * WHERE {\n"
+						+ "    {\n"
+						+ "        ?s <urn:what1> ?value .\n"
+						+ "    } UNION {\n"
+						+ "        ?s <urn:what> ?value .\n"
+						+ "    } \n"
+						+ "        filter (?value > 4000) \n"
+						+ "        filter (?value < 7000) \n"
+						+ "}",
+				"SELECT * WHERE {\n"
+						+ "    {\n"
+						+ "         {?s <urn:what1> ?value .}\n"
+						+ "       UNION \n"
+						+ "         { ?s <urn:what2> ?value . } \n"
+						+ "    } UNION {\n"
+						+ "        ?s <urn:what> ?value .\n"
+						+ "    } \n"
+						+ "        filter (?value > 4000) \n"
+						+ "}",
+				"SELECT * WHERE {\n"
+						+ "    {\n"
+						+ "        ?s <urn:what> ?value .\n"
+						+ "    } UNION {\n"
+						+ "         ?x <urn:what1> ?value .\n"
+						+ "         ?x <urn:what3> ?value .  \n"
+						+ "    } \n"
+						+ "        filter (?value > 4000) \n"
+						+ "}",
+				"SELECT * WHERE {\n"
+						+ "    {\n"
+						+ "        ?s <urn:what> ?value .\n"
+						+ "        OPTIONAL {\n"
+						+ "           ?x <urn:what3> ?value1 .\n"
+						+ "        } \n"
+						+ "    } UNION {\n"
+						+ "         ?x <urn:what1> ?value .\n"
+						+ "    } \n"
+						+ "        filter (?value > 4000) \n"
+						+ "        filter (?value1 > 4000) \n"
+						+ "}",
+				"SELECT * WHERE {\n"
+						+ "    {\n"
+						+ "        ?s <urn:what> ?value .\n"
+						+ "        ?s <urn:what2> ?value2 .\n"
+						+ "        OPTIONAL {\n"
+						+ "           ?x <urn:what3> ?value1 .\n"
+						+ "        } \n"
+						+ "    } UNION {\n"
+						+ "         ?x <urn:what1> ?value .\n"
+						+ "    } \n"
+						+ "        filter (?value > 4000) \n"
+						+ "        filter (?value1 > 4000) \n"
+						+ "}",
+				"SELECT * WHERE {\n"
+						+ "    {\n"
+						+ "        OPTIONAL {\n"
+						+ "           ?x <urn:what3> ?value1 .\n"
+						+ "        } \n"
+						+ "    } UNION {\n"
+						+ "         ?x <urn:what1> ?value .\n"
+						+ "    } \n"
+						+ "        filter (?value > 4000) \n"
+						+ "        filter (?value1 > 4000) \n"
+						+ "}",
+				"SELECT * WHERE {\n"
+						+ "    {\n"
+						+ "        OPTIONAL {\n"
+						+ "           ?x <urn:what3> ?value1 .\n"
+						+ "        } \n"
+						+ "    } UNION {\n"
+						+ "        OPTIONAL {\n"
+						+ "           ?x <urn:what1> ?value .\n"
+						+ "        } \n"
+						+ "    } \n"
+						+ "        filter (?value > 4000) \n"
+						+ "        filter (?value1 > 4000) \n"
+						+ "}",
+				"SELECT * WHERE {\n"
+						+ "    {\n"
+						+ "        ?s <urn:what> ?value .\n"
+						+ "    } UNION {\n"
+						+ "         ?x <urn:what1> ?value .\n"
+						+ "        OPTIONAL {\n"
+						+ "           ?s <urn:what2> ?value1 .\n"
+						+ "        } \n"
+						+ "    } \n"
+						+ "        filter (?value > 4000) \n"
+						+ "        filter (?value1 > 4000) \n"
+						+ "}",
+				"SELECT * WHERE {\n"
+						+ "    {\n"
+						+ "        ?s <urn:what> ?value .\n"
+						+ "        OPTIONAL {\n"
+						+ "           ?x <urn:what3> ?value1 .\n"
+						+ "        } \n"
+						+ "    } UNION {\n"
+						+ "         ?x <urn:what1> ?value .\n"
+						+ "    } \n"
+						+ "        filter (?value > 4000) \n"
+						+ "        filter (?value1 > 4000) \n"
+						+ "}",
+				"SELECT * WHERE {\n"
+						+ "    {\n"
+						+ "        ?s <urn:what> ?value .\n"
+						+ "        filter (?value > 3000) \n"
+						+ "    } UNION {\n"
+						+ "         ?x <urn:what1> ?value .\n"
+						+ "    } \n"
+						+ "        filter (?value > 4000) \n"
+						+ "}",
+				"SELECT * WHERE {\n"
+						+ "    {\n"
+						+ "        ?s <urn:what1> ?value .\n"
+						+ "    } UNION {\n"
+						+ "         ?x <urn:what> ?value .\n"
+						+ "        filter (?value > 3000) \n"
+						+ "    } \n"
+						+ "        filter (?value > 4000) \n"
+						+ "}",
+				"SELECT * WHERE {\n"
+						+ "    {\n"
+						+ "        ?s <urn:what> ?value .\n"
+						+ "        filter (?value > 3000) \n"
+						+ "    } UNION {\n"
+						+ "         ?x <urn:what1> ?value .\n"
+						+ "        filter (?value > 3000) \n"
+						+ "    } \n"
+						+ "        filter (?value > 4000) \n"
+						+ "}"
+		).map(Arguments::of);
 	}
 
-	@Parameterized.Parameters(name = "{0}")
-	public static Collection<Object> data() {
-		return Arrays.asList(
-				new Object[] {
-						"SELECT * WHERE {\n"
-								+ "        ?s <urn:what1> ?value .\n"
-								+ "        ?x <urn:what> ?value .\n"
-								+ "        filter (?value > 4000) \n"
-								+ "}",
-						"SELECT * WHERE {\n"
-								+ "        ?s <urn:what1> ?value .\n"
-								+ "        OPTIONAL { ?x <urn:what2> ?valu1 } .\n"
-								+ "        filter (?value > 4000) \n"
-								+ "        filter (?valu1 > 4000) \n"
-								+ "}",
-						"SELECT * WHERE {\n"
-								+ "    {\n"
-								+ "        ?s <urn:what1> ?value .\n"
-								+ "    } UNION {\n"
-								+ "        ?s <urn:what> ?value .\n"
-								+ "    } \n"
-								+ "        filter (?value > 4000) \n"
-								+ "}",
-						"SELECT * WHERE {\n"
-								+ "    bind (<urn:test1> as ?s ) {\n"
-								+ "        ?s <urn:what1> ?value .\n"
-								+ "    } UNION {\n"
-								+ "        ?s <urn:what> ?value .\n"
-								+ "    } \n"
-								+ "        filter (isIRI(?s)) \n"
-								+ "}",
-						"SELECT * WHERE {\n"
-								+ "    values ?s {<urn:test1>} {\n"
-								+ "        ?s <urn:what1> ?value .\n"
-								+ "    } UNION {\n"
-								+ "        ?s <urn:what> ?value .\n"
-								+ "    } \n"
-								+ "        filter (isIRI(?s)) \n"
-								+ "}",
-						"SELECT * WHERE {\n"
-								+ "    bind (<urn:test1> as ?s ) {\n"
-								+ "        ?s <urn:what1> ?value .\n"
-								+ "    } UNION {\n"
-								+ "        ?s <urn:what> ?value .\n"
-								+ "    } \n"
-								+ "        filter (isblank(?s)) \n"
-								+ "        filter (?value > 4000) \n"
-								+ "}",
-						"SELECT * WHERE {\n"
-								+ "    {\n"
-								+ "        ?s <urn:what1> ?value .\n"
-								+ "        {\n    "
-								+ "            ?y <urn:what2> ?value1 .\n"
-								+ "        } UNION {\n"
-								+ "            ?x <urn:what3> ?value1 .\n"
-								+ "        } \n"
-								+ "    } UNION {\n"
-								+ "        ?s <urn:what> ?value .\n"
-								+ "    } \n"
-								+ "        filter (?value > 4000) \n"
-								+ "        filter (?value1 > 4000) \n"
-								+ "}",
-						"SELECT * WHERE {\n"
-								+ "    {\n"
-								+ "        ?s <urn:what1> ?value .\n"
-								+ "        {\n    "
-								+ "            ?y <urn:what2> ?value1 .\n"
-								+ "        } MINUS {\n"
-								+ "            ?x <urn:what3> ?value1 .\n"
-								+ "        } \n"
-								+ "    } UNION {\n"
-								+ "        ?s <urn:what> ?value .\n"
-								+ "    } \n"
-								+ "        filter (?value > 4000) \n"
-								+ "        filter (?value1 > 4000) \n"
-								+ "}",
-						"SELECT * WHERE {\n"
-								+ "    {\n"
-								+ "        ?s <urn:what1> ?value .\n"
-								+ "    } UNION {\n"
-								+ "        ?s <urn:what> ?value .\n"
-								+ "    } \n"
-								+ "    {\n    "
-								+ "        ?y <urn:what2> ?value1 .\n"
-								+ "    } UNION {\n"
-								+ "        ?x <urn:what3> ?value1 .\n"
-								+ "    } \n"
-								+ "        filter (?value > 4000) \n"
-								+ "        filter (?value1 > 4000) \n"
-								+ "}",
-						"SELECT * WHERE {\n"
-								+ "    {\n"
-								+ "        ?s <urn:what1> ?value .\n"
-								+ "    } UNION {\n"
-								+ "        ?s <urn:what> ?value .\n"
-								+ "    } \n"
-								+ "        filter (?value > 4000) \n"
-								+ "        filter (?value < 7000) \n"
-								+ "}",
-						"SELECT * WHERE {\n"
-								+ "    {\n"
-								+ "         {?s <urn:what1> ?value .}\n"
-								+ "       UNION \n"
-								+ "         { ?s <urn:what2> ?value . } \n"
-								+ "    } UNION {\n"
-								+ "        ?s <urn:what> ?value .\n"
-								+ "    } \n"
-								+ "        filter (?value > 4000) \n"
-								+ "}",
-						"SELECT * WHERE {\n"
-								+ "    {\n"
-								+ "        ?s <urn:what> ?value .\n"
-								+ "    } UNION {\n"
-								+ "         ?x <urn:what1> ?value .\n"
-								+ "         ?x <urn:what3> ?value .  \n"
-								+ "    } \n"
-								+ "        filter (?value > 4000) \n"
-								+ "}",
-						"SELECT * WHERE {\n"
-								+ "    {\n"
-								+ "        ?s <urn:what> ?value .\n"
-								+ "        OPTIONAL {\n"
-								+ "           ?x <urn:what3> ?value1 .\n"
-								+ "        } \n"
-								+ "    } UNION {\n"
-								+ "         ?x <urn:what1> ?value .\n"
-								+ "    } \n"
-								+ "        filter (?value > 4000) \n"
-								+ "        filter (?value1 > 4000) \n"
-								+ "}",
-						"SELECT * WHERE {\n"
-								+ "    {\n"
-								+ "        ?s <urn:what> ?value .\n"
-								+ "        ?s <urn:what2> ?value2 .\n"
-								+ "        OPTIONAL {\n"
-								+ "           ?x <urn:what3> ?value1 .\n"
-								+ "        } \n"
-								+ "    } UNION {\n"
-								+ "         ?x <urn:what1> ?value .\n"
-								+ "    } \n"
-								+ "        filter (?value > 4000) \n"
-								+ "        filter (?value1 > 4000) \n"
-								+ "}",
-						"SELECT * WHERE {\n"
-								+ "    {\n"
-								+ "        OPTIONAL {\n"
-								+ "           ?x <urn:what3> ?value1 .\n"
-								+ "        } \n"
-								+ "    } UNION {\n"
-								+ "         ?x <urn:what1> ?value .\n"
-								+ "    } \n"
-								+ "        filter (?value > 4000) \n"
-								+ "        filter (?value1 > 4000) \n"
-								+ "}",
-						"SELECT * WHERE {\n"
-								+ "    {\n"
-								+ "        OPTIONAL {\n"
-								+ "           ?x <urn:what3> ?value1 .\n"
-								+ "        } \n"
-								+ "    } UNION {\n"
-								+ "        OPTIONAL {\n"
-								+ "           ?x <urn:what1> ?value .\n"
-								+ "        } \n"
-								+ "    } \n"
-								+ "        filter (?value > 4000) \n"
-								+ "        filter (?value1 > 4000) \n"
-								+ "}",
-						"SELECT * WHERE {\n"
-								+ "    {\n"
-								+ "        ?s <urn:what> ?value .\n"
-								+ "    } UNION {\n"
-								+ "         ?x <urn:what1> ?value .\n"
-								+ "        OPTIONAL {\n"
-								+ "           ?s <urn:what2> ?value1 .\n"
-								+ "        } \n"
-								+ "    } \n"
-								+ "        filter (?value > 4000) \n"
-								+ "        filter (?value1 > 4000) \n"
-								+ "}",
-						"SELECT * WHERE {\n"
-								+ "    {\n"
-								+ "        ?s <urn:what> ?value .\n"
-								+ "        OPTIONAL {\n"
-								+ "           ?x <urn:what3> ?value1 .\n"
-								+ "        } \n"
-								+ "    } UNION {\n"
-								+ "         ?x <urn:what1> ?value .\n"
-								+ "    } \n"
-								+ "        filter (?value > 4000) \n"
-								+ "        filter (?value1 > 4000) \n"
-								+ "}",
-						"SELECT * WHERE {\n"
-								+ "    {\n"
-								+ "        ?s <urn:what> ?value .\n"
-								+ "        filter (?value > 3000) \n"
-								+ "    } UNION {\n"
-								+ "         ?x <urn:what1> ?value .\n"
-								+ "    } \n"
-								+ "        filter (?value > 4000) \n"
-								+ "}",
-						"SELECT * WHERE {\n"
-								+ "    {\n"
-								+ "        ?s <urn:what1> ?value .\n"
-								+ "    } UNION {\n"
-								+ "         ?x <urn:what> ?value .\n"
-								+ "        filter (?value > 3000) \n"
-								+ "    } \n"
-								+ "        filter (?value > 4000) \n"
-								+ "}",
-						"SELECT * WHERE {\n"
-								+ "    {\n"
-								+ "        ?s <urn:what> ?value .\n"
-								+ "        filter (?value > 3000) \n"
-								+ "    } UNION {\n"
-								+ "         ?x <urn:what1> ?value .\n"
-								+ "        filter (?value > 3000) \n"
-								+ "    } \n"
-								+ "        filter (?value > 4000) \n"
-								+ "}"
-				});
-	}
-
-	@Rule
-	public TemporaryFolder tmpFolder = new TemporaryFolder();
-
-	@Before
-	public void setup() throws IOException {
-		RepositoryManager manager = new LocalRepositoryManager(new File(tmpFolder.getRoot().getAbsolutePath()));
+	@BeforeEach
+	public void setup(@TempDir File baseDir) throws IOException {
+		RepositoryManager manager = new LocalRepositoryManager(baseDir);
 		federatedRepository = createFedXRepo(manager);
 		addRepoConfig(manager, "standard");
 		createStandardRepository();
@@ -348,8 +334,9 @@ public class FilterOptimizerTest {
 		}
 	}
 
-	@Test
-	public void testFedXQuery() {
+	@ParameterizedTest
+	@MethodSource("data")
+	public void testFedXQuery(String query) {
 		List<BindingSet> actual;
 		List<BindingSet> expected;
 		try (RepositoryConnection connection = federatedRepository.getConnection();

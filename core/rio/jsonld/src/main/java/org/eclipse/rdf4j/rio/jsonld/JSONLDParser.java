@@ -27,8 +27,11 @@ import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
 import org.eclipse.rdf4j.rio.helpers.JSONSettings;
 
 import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonFactoryBuilder;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.StreamReadFeature;
+import com.fasterxml.jackson.core.json.JsonReadFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.jsonldjava.core.DocumentLoader;
 import com.github.jsonldjava.core.JsonLdError;
@@ -154,53 +157,53 @@ public class JSONLDParser extends AbstractRDFParser {
 	 * @return A newly configured JsonFactory based on the currently enabled settings
 	 */
 	private JsonFactory configureNewJsonFactory() {
-		final JsonFactory nextJsonFactory = new JsonFactory(JSON_MAPPER);
+		JsonFactoryBuilder builder = new JsonFactoryBuilder();
 		ParserConfig parserConfig = getParserConfig();
 
 		if (parserConfig.isSet(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER)) {
-			nextJsonFactory.configure(JsonParser.Feature.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER,
+			builder.configure(JsonReadFeature.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER,
 					parserConfig.get(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER));
 		}
 		if (parserConfig.isSet(JSONSettings.ALLOW_COMMENTS)) {
-			nextJsonFactory.configure(JsonParser.Feature.ALLOW_COMMENTS,
+			builder.configure(JsonReadFeature.ALLOW_JAVA_COMMENTS,
 					parserConfig.get(JSONSettings.ALLOW_COMMENTS));
 		}
 		if (parserConfig.isSet(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS)) {
-			nextJsonFactory.configure(JsonParser.Feature.ALLOW_NON_NUMERIC_NUMBERS,
+			builder.configure(JsonReadFeature.ALLOW_NON_NUMERIC_NUMBERS,
 					parserConfig.get(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS));
 		}
 		if (parserConfig.isSet(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS)) {
-			nextJsonFactory.configure(JsonParser.Feature.ALLOW_NUMERIC_LEADING_ZEROS,
+			builder.configure(JsonReadFeature.ALLOW_LEADING_ZEROS_FOR_NUMBERS,
 					parserConfig.get(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS));
 		}
 		if (parserConfig.isSet(JSONSettings.ALLOW_SINGLE_QUOTES)) {
-			nextJsonFactory.configure(JsonParser.Feature.ALLOW_SINGLE_QUOTES,
+			builder.configure(JsonReadFeature.ALLOW_SINGLE_QUOTES,
 					parserConfig.get(JSONSettings.ALLOW_SINGLE_QUOTES));
 		}
 		if (parserConfig.isSet(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS)) {
-			nextJsonFactory.configure(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS,
+			builder.configure(JsonReadFeature.ALLOW_UNESCAPED_CONTROL_CHARS,
 					parserConfig.get(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS));
 		}
 		if (parserConfig.isSet(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES)) {
-			nextJsonFactory.configure(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES,
+			builder.configure(JsonReadFeature.ALLOW_UNQUOTED_FIELD_NAMES,
 					parserConfig.get(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES));
 		}
 		if (parserConfig.isSet(JSONSettings.ALLOW_YAML_COMMENTS)) {
-			nextJsonFactory.configure(JsonParser.Feature.ALLOW_YAML_COMMENTS,
+			builder.configure(JsonReadFeature.ALLOW_YAML_COMMENTS,
 					parserConfig.get(JSONSettings.ALLOW_YAML_COMMENTS));
 		}
 		if (parserConfig.isSet(JSONSettings.ALLOW_TRAILING_COMMA)) {
-			nextJsonFactory.configure(JsonParser.Feature.ALLOW_TRAILING_COMMA,
+			builder.configure(JsonReadFeature.ALLOW_TRAILING_COMMA,
 					parserConfig.get(JSONSettings.ALLOW_TRAILING_COMMA));
 		}
 		if (parserConfig.isSet(JSONSettings.INCLUDE_SOURCE_IN_LOCATION)) {
-			nextJsonFactory.configure(JsonParser.Feature.INCLUDE_SOURCE_IN_LOCATION,
+			builder.configure(StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION,
 					parserConfig.get(JSONSettings.INCLUDE_SOURCE_IN_LOCATION));
 		}
 		if (parserConfig.isSet(JSONSettings.STRICT_DUPLICATE_DETECTION)) {
-			nextJsonFactory.configure(JsonParser.Feature.STRICT_DUPLICATE_DETECTION,
+			builder.configure(StreamReadFeature.STRICT_DUPLICATE_DETECTION,
 					parserConfig.get(JSONSettings.STRICT_DUPLICATE_DETECTION));
 		}
-		return nextJsonFactory;
+		return builder.build().setCodec(JSON_MAPPER);
 	}
 }

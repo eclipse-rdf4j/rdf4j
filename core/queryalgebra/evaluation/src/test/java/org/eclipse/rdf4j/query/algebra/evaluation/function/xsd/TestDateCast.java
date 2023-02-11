@@ -14,25 +14,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil.parseCalendar;
 import static org.eclipse.rdf4j.model.vocabulary.XSD.DATE;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 public class TestDateCast {
 
-	private DateCast dateCast;
+	private static final DateCast dateCast = new DateCast();
 	private final ValueFactory vf = SimpleValueFactory.getInstance();
-
-	@Before
-	public void setUp() throws Exception {
-		dateCast = new DateCast();
-	}
 
 	@Test
 	public void testCastPlainLiteral_date() {

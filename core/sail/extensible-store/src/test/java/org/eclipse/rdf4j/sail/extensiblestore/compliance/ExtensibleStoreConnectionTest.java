@@ -10,21 +10,16 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore.compliance;
 
+import java.io.File;
+
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStoreImplForTests;
 import org.eclipse.rdf4j.testsuite.repository.RepositoryConnectionTest;
-import org.junit.runners.Parameterized;
 
 public class ExtensibleStoreConnectionTest extends RepositoryConnectionTest {
-
-	public ExtensibleStoreConnectionTest(IsolationLevel level) {
-		super(level);
-	}
-
-	@Parameterized.Parameters(name = "{0}")
 	public static IsolationLevel[] parameters() {
 		return new IsolationLevel[] {
 				IsolationLevels.NONE,
@@ -34,8 +29,7 @@ public class ExtensibleStoreConnectionTest extends RepositoryConnectionTest {
 	}
 
 	@Override
-	protected Repository createRepository() {
+	protected Repository createRepository(File dataDir) {
 		return new SailRepository(new ExtensibleStoreImplForTests());
 	}
-
 }

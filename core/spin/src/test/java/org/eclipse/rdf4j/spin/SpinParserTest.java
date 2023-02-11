@@ -11,15 +11,15 @@
 package org.eclipse.rdf4j.spin;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Resource;
@@ -36,17 +36,14 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameters;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
-@RunWith(Parameterized.class)
 public class SpinParserTest {
 
-	@Parameters(name = "{0}")
-	public static Collection<Object[]> testData() {
-		List<Object[]> params = new ArrayList<>();
+	public static Stream<Arguments> testData() {
+		List<Arguments> params = new ArrayList<>();
 		for (int i = 0;; i++) {
 
 			String suffix = String.valueOf(i + 1);
@@ -59,23 +56,18 @@ public class SpinParserTest {
 			if (rdfURL == null) {
 				break;
 			}
-			params.add(new Object[] { testFile, rdfURL });
+			params.add(Arguments.of(testFile, rdfURL));
 		}
-		return params;
+		return params.stream();
 	}
-
-	private final URL testURL;
 
 	private final SpinParser textParser = new SpinParser(SpinParser.Input.TEXT_ONLY);
 
 	private final SpinParser rdfParser = new SpinParser(SpinParser.Input.RDF_ONLY);
 
-	public SpinParserTest(String testName, URL testURL) {
-		this.testURL = testURL;
-	}
-
-	@Test
-	public void testSpinParser() throws IOException, RDF4JException {
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("testData")
+	public void testSpinParser(String testName, URL testURL) throws IOException, RDF4JException {
 		StatementCollector expected = new StatementCollector();
 		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
 		parser.setRDFHandler(expected);

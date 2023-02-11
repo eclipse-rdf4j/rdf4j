@@ -24,8 +24,8 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for {@link RepositoryManager}. May be extended by specific {@link RepositoryManager} implementations.
@@ -36,7 +36,7 @@ public class RepositoryManagerTest {
 
 	protected RepositoryManager subject;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		subject = new RepositoryManager() {
 
