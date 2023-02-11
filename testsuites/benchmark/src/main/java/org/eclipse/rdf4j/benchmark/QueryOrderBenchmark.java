@@ -14,6 +14,8 @@ import java.io.File;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.commons.io.FileUtils;
+import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -23,11 +25,6 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -47,8 +44,8 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 /**
  * Designed to test the performance of ORDER BY queries.
  *
- * @see <a href="https://github.com/eclipse/rdf4j/issues/971">https://github.com/eclipse/rdf4j/issues/971</a>
  * @author James Leigh
+ * @see <a href="https://github.com/eclipse/rdf4j/issues/971">https://github.com/eclipse/rdf4j/issues/971</a>
  */
 @Fork(1)
 @State(Scope.Thread)
@@ -57,8 +54,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class QueryOrderBenchmark {
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
+
 	private File dataDir;
 
 	private final Random random = new Random(43252333);
@@ -77,9 +73,8 @@ public class QueryOrderBenchmark {
 	public int syncThreshold = 10;
 
 	@Setup
-	@Before
 	public void setup() throws Exception {
-		dataDir = tempDir.newFolder();
+		dataDir = Files.newTemporaryFolder();
 		NativeStore sail = new NativeStore(dataDir, "spoc,posc");
 		sail.setIterationCacheSyncThreshold(syncThreshold);
 		repository = new SailRepository(sail);
@@ -103,13 +98,12 @@ public class QueryOrderBenchmark {
 	}
 
 	@TearDown
-	@After
 	public void tearDown() throws Exception {
 		conn.close();
 		repository.shutDown();
+		FileUtils.deleteDirectory(dataDir);
 	}
 
-	@Test
 	@Benchmark
 	public void selectAll() throws Exception {
 		StringBuilder rq = new StringBuilder("SELECT * { ?s ?p ?o } ORDER BY ?o");
@@ -135,7 +129,6 @@ public class QueryOrderBenchmark {
 		}
 	}
 
-	@Test
 	@Benchmark
 	public void selectDistinct() throws Exception {
 		StringBuilder rq = new StringBuilder("SELECT DISTINCT ?s ?o { ?s ?p ?o } ORDER BY ?o");

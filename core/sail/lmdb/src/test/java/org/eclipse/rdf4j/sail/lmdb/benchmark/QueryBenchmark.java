@@ -18,7 +18,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
+import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Resource;
@@ -28,8 +30,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
-import org.junit.Rule;
-import org.junit.rules.TemporaryFolder;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -61,9 +61,6 @@ public class QueryBenchmark {
 
 	private SailRepository repository;
 
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
-
 	private static final String query1;
 	private static final String query2;
 	private static final String query3;
@@ -86,6 +83,7 @@ public class QueryBenchmark {
 	}
 
 	List<Statement> statementList;
+	private File file;
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
@@ -98,8 +96,8 @@ public class QueryBenchmark {
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException {
-		tempDir.create();
-		File file = tempDir.newFolder();
+
+		file = Files.newTemporaryFolder();
 
 		repository = new SailRepository(new LmdbStore(file, ConfigUtil.createConfig()));
 
@@ -124,8 +122,8 @@ public class QueryBenchmark {
 
 	@TearDown(Level.Trial)
 	public void afterClass() throws IOException {
-		tempDir.delete();
 		repository.shutDown();
+		FileUtils.deleteDirectory(file);
 	}
 
 	@Benchmark
