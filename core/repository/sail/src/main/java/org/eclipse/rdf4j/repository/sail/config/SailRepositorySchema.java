@@ -32,7 +32,7 @@ public class SailRepositorySchema {
 	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/sail#";
 
 	/**
-	 * @deprecated use {@link CONFIG#sailImpl} instead.
+	 * @deprecated use {@link CONFIG#impl} instead.
 	 */
 	public final static IRI SAILIMPL = iri(NAMESPACE, "sailImpl");
 }

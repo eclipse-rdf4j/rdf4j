@@ -28,7 +28,7 @@ public class RepositoryConfigTest {
 		var repoNode = iri("urn:repo1");
 		Model m = new ModelBuilder()
 				.subject(repoNode)
-				.add(CONFIG.repositoryID, ID)
+				.add(CONFIG.Rep.repositoryID, ID)
 				.build();
 
 		RepositoryConfig config = new RepositoryConfig(ID);

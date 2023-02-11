@@ -67,15 +67,15 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 		BNode implNode = bnode();
 
 		if (type != null) {
-			m.add(implNode, CONFIG.sailType, literal(type));
+			m.add(implNode, CONFIG.Sail.type, literal(type));
 		}
 
 		if (iterationCacheSyncThreshold > 0) {
-			m.add(implNode, CONFIG.iterationCacheSyncThreshold, literal(iterationCacheSyncThreshold));
+			m.add(implNode, CONFIG.Sail.iterationCacheSyncThreshold, literal(iterationCacheSyncThreshold));
 		}
 
 		if (connectionTimeOut > 0) {
-			m.add(implNode, CONFIG.connectionTimeOut, literal(connectionTimeOut));
+			m.add(implNode, CONFIG.Sail.connectionTimeOut, literal(connectionTimeOut));
 		}
 		return implNode;
 	}
@@ -83,14 +83,14 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 	@Override
 	public void parse(Model m, Resource implNode) throws SailConfigException {
 		try {
-			Configurations.getLiteralValue(m, implNode, CONFIG.sailType, SailConfigSchema.SAILTYPE)
+			Configurations.getLiteralValue(m, implNode, CONFIG.Sail.type, SailConfigSchema.SAILTYPE)
 					.ifPresent(lit -> setType(lit.getLabel()));
 			Configurations
-					.getLiteralValue(m, implNode, CONFIG.iterationCacheSyncThreshold,
+					.getLiteralValue(m, implNode, CONFIG.Sail.iterationCacheSyncThreshold,
 							SailConfigSchema.ITERATION_CACHE_SYNC_THRESHOLD)
 					.ifPresent(lit -> setIterationCacheSyncThreshold(lit.longValue()));
 			Configurations
-					.getLiteralValue(m, implNode, CONFIG.connectionTimeOut, SailConfigSchema.CONNECTION_TIME_OUT)
+					.getLiteralValue(m, implNode, CONFIG.Sail.connectionTimeOut, SailConfigSchema.CONNECTION_TIME_OUT)
 					.ifPresent(lit -> setConnectionTimeOut(lit.longValue()));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);

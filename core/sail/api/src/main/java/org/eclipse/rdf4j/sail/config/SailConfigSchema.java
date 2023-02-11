@@ -30,7 +30,7 @@ public class SailConfigSchema {
 	public static final String NAMESPACE = "http://www.openrdf.org/config/sail#";
 
 	/**
-	 * @deprecated use {@link CONFIG#sailType} instead.
+	 * @deprecated use {@link CONFIG#type} instead.
 	 */
 	public final static IRI SAILTYPE = iri(NAMESPACE, "sailType");
 

@@ -24,7 +24,7 @@ public class SailConfigUtil {
 	public static SailImplConfig parseRepositoryImpl(Model m, Resource implNode) throws SailConfigException {
 		try {
 
-			Optional<Literal> typeLit = Configurations.getLiteralValue(m, implNode, CONFIG.sailType,
+			Optional<Literal> typeLit = Configurations.getLiteralValue(m, implNode, CONFIG.Sail.type,
 					SailConfigSchema.SAILTYPE);
 
 			if (typeLit.isPresent()) {

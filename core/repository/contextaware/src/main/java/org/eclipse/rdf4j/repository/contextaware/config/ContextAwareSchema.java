@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 /**
  * @author James Leigh
  *
- * @deprecated use {@link CONFIG} vocabulary instead.
+ * @deprecated use {@link CONFIG.ContextAware} vocabulary instead.
  */
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class ContextAwareSchema {
@@ -30,27 +30,27 @@ public class ContextAwareSchema {
 	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/contextaware#";
 
 	/**
-	 * @deprecated use {@link CONFIG#includeInferred} instead.
+	 * @deprecated use {@link CONFIG.ContextAware#includeInferred} instead.
 	 */
 	public final static IRI INCLUDE_INFERRED = iri(NAMESPACE, "includeInferrred");
 
 	/**
-	 * @deprecated use {@link CONFIG#maxQueryTime} instead
+	 * @deprecated use {@link CONFIG.ContextAware#maxQueryTime} instead
 	 */
 	public final static IRI MAX_QUERY_TIME = iri(NAMESPACE, "maxQueryTime");
 
 	/**
-	 * @deprecated use {@link CONFIG#queryLanguage} instead.
+	 * @deprecated use {@link CONFIG.ContextAware#queryLanguage} instead.
 	 */
 	public final static IRI QUERY_LANGUAGE = iri(NAMESPACE, "queryLanguage");
 
 	/**
-	 * @deprecated use {@link CONFIG#base} instead
+	 * @deprecated use {@link CONFIG.ContextAware#base} instead
 	 */
 	public final static IRI BASE_URI = iri(NAMESPACE, "base");
 
 	/**
-	 * @deprecated use {@link CONFIG#readContext} instead
+	 * @deprecated use {@link CONFIG.ContextAware#readContext} instead
 	 */
 	public final static IRI READ_CONTEXT = iri(NAMESPACE, "readContext");
 
@@ -58,7 +58,7 @@ public class ContextAwareSchema {
 	public final static IRI ADD_CONTEXT = iri(NAMESPACE, "addContext");
 
 	/**
-	 * @deprecated use {@link CONFIG#removeContext} instead.
+	 * @deprecated use {@link CONFIG.ContextAware#removeContext} instead.
 	 */
 	public final static IRI REMOVE_CONTEXT = iri(NAMESPACE, "removeContext");
 
@@ -66,7 +66,7 @@ public class ContextAwareSchema {
 	public final static IRI ARCHIVE_CONTEXT = iri(NAMESPACE, "archiveContext");
 
 	/**
-	 * @deprecated use {@link CONFIG#insertContext} instead.
+	 * @deprecated use {@link CONFIG.ContextAware#insertContext} instead.
 	 */
 	public final static IRI INSERT_CONTEXT = iri(NAMESPACE, "insertContext");
 }

@@ -53,7 +53,7 @@ public class ProxyRepositoryConfig extends AbstractRepositoryImplConfig {
 	public Resource export(Model model) {
 		Resource implNode = super.export(model);
 		if (null != this.proxiedID) {
-			model.add(implNode, CONFIG.proxiedID, literal(this.proxiedID));
+			model.add(implNode, CONFIG.Proxy.proxiedID, literal(this.proxiedID));
 		}
 		return implNode;
 	}
@@ -64,7 +64,7 @@ public class ProxyRepositoryConfig extends AbstractRepositoryImplConfig {
 
 		try {
 			Configurations
-					.getLiteralValue(model, implNode, CONFIG.proxiedID, ProxyRepositorySchema.PROXIED_ID)
+					.getLiteralValue(model, implNode, CONFIG.Proxy.proxiedID, ProxyRepositorySchema.PROXIED_ID)
 					.ifPresent(lit -> setProxiedRepositoryID(lit.getLabel()));
 		} catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);
