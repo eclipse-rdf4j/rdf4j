@@ -10,11 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sparql;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.File;
 import java.lang.reflect.Field;
 import java.util.List;
 
@@ -35,22 +37,17 @@ import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.http.HTTPMemServer;
 import org.eclipse.rdf4j.testsuite.repository.RepositoryConnectionTest;
-import org.junit.AfterClass;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 
 	private static HTTPMemServer server;
 
-	public SPARQLStoreConnectionTest(IsolationLevel level) {
-		super(level);
-	}
-
-	@BeforeClass
+	@BeforeAll
 	public static void startServer() throws Exception {
 		server = new HTTPMemServer();
 		try {
@@ -63,16 +60,15 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void stopServer() throws Exception {
 		server.stop();
 		server = null;
 	}
 
-	@Before
 	@Override
-	public void setUp() throws Exception {
-		super.setUp();
+	protected void setupTest(IsolationLevel level) {
+		super.setupTest(level);
 		// overwrite bnode test values as SPARQL endpoints do not generally work
 		// well with bnodes
 		bob = testRepository.getValueFactory().createIRI("urn:x-local:bob");
@@ -81,75 +77,98 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	}
 
 	@Override
-	protected Repository createRepository() {
+	protected Repository createRepository(File dataDir) {
 		return new SPARQLRepository(HTTPMemServer.REPOSITORY_URL,
 				Protocol.getStatementsLocation(HTTPMemServer.REPOSITORY_URL));
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	@Ignore
-	public void testDuplicateFilter() throws Exception {
+	@Disabled
+	public void testDuplicateFilter(IsolationLevel level) throws Exception {
 		System.err.println("temporarily disabled testDuplicateFilter() for SPARQLRepository");
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	@Ignore("relies on SPARQL update operation handled as part of txn")
-	public void testAddDelete() throws RDF4JException {
+	@Disabled("relies on SPARQL update operation handled as part of txn")
+	public void testAddDelete(IsolationLevel level) throws RDF4JException {
 		System.err.println("temporarily disabled testAddDelete() for SPARQLRepository");
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	@Ignore("relies on SPARQL update operation handled as part of txn")
-	public void testAddRemoveInsert() throws RDF4JException {
+	@Disabled("relies on SPARQL update operation handled as part of txn")
+	public void testAddRemoveInsert(IsolationLevel level) throws RDF4JException {
 		System.err.println("temporarily disabled testAddRemoveInsert() for SPARQLRepository");
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	@Ignore("relies on pending updates being visible in own connection")
-	public void testSizeRollback() throws Exception {
+	@Disabled("relies on pending updates being visible in own connection")
+	public void testSizeRollback(IsolationLevel level) throws Exception {
 		System.err.println("temporarily disabled testSizeRollback() for SPARQLRepository");
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	@Ignore("relies on pending updates being visible in own connection")
-	public void testAutoCommit() throws Exception {
+	@Disabled("relies on pending updates being visible in own connection")
+	public void testAutoCommit(IsolationLevel level) throws Exception {
 		System.err.println("temporarily disabled testAutoCommit() for SPARQLRepository");
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	@Ignore("relies on pending updates being visible in own connection")
-	public void testRollback() throws Exception {
+	@Disabled("relies on pending updates being visible in own connection")
+	public void testRollback(IsolationLevel level) throws Exception {
 		System.err.println("temporarily disabled testRollback() for SPARQLRepository");
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	@Ignore("relies on pending updates being visible in own connection")
-	public void testEmptyRollback() throws Exception {
+	@Disabled("relies on pending updates being visible in own connection")
+	public void testEmptyRollback(IsolationLevel level) throws Exception {
 		System.err.println("temporarily disabled testEmptyRollback() for SPARQLRepository");
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	@Ignore("relies on pending updates being visible in own connection")
-	public void testEmptyCommit() throws Exception {
+	@Disabled("relies on pending updates being visible in own connection")
+	public void testEmptyCommit(IsolationLevel level) throws Exception {
 		System.err.println("temporarily disabled testEmptyCommit() for SPARQLRepository");
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	@Ignore
-	public void testSizeCommit() throws Exception {
+	@Disabled
+	public void testSizeCommit(IsolationLevel level) throws Exception {
 		System.err.println("temporarily disabled testSizeCommit() for SPARQLRepository");
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	@Ignore
-	public void testGetStatementsInMultipleContexts() throws Exception {
+	@Disabled
+	public void testGetStatementsInMultipleContexts(IsolationLevel level) throws Exception {
 		System.err.println(
 				"temporarily disabled testGetStatementsInMultipleContexts() for SPARQLRepository: implementation of statement context using SPARQL not yet complete");
 		// TODO see SES-1776
 	}
 
-	@Test
-	public void testGetStatementsContextHandling() throws Exception {
+	@ParameterizedTest
+	@MethodSource("parameters")
+	public void testGetStatementsContextHandling(IsolationLevel level) throws Exception {
+		setupTest(level);
+
 		// enable quad mode
 		enableQuadModeOnConnection((SPARQLConnection) testCon);
 
@@ -164,18 +183,18 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 
 		// test 1: alice statement should have context 1
 		res = Iterations.asList(testCon.getStatements(alice, null, null, false));
-		Assert.assertEquals(1, res.size());
-		Assert.assertEquals(context1, res.iterator().next().getContext());
+		assertEquals(1, res.size());
+		assertEquals(context1, res.iterator().next().getContext());
 
 		// test 2: bob statement should have default named graph
 		res = Iterations.asList(testCon.getStatements(bob, null, null, false));
-		Assert.assertEquals(1, res.size());
-		Assert.assertEquals(null, res.iterator().next().getContext());
+		assertEquals(1, res.size());
+		assertNull(res.iterator().next().getContext());
 
 		// test 3: bound statement should fetch context
 		res = Iterations.asList(testCon.getStatements(alice, name, nameAlice, false));
-		Assert.assertEquals(1, res.size());
-		Assert.assertEquals(context1, res.iterator().next().getContext());
+		assertEquals(1, res.size());
+		assertEquals(context1, res.iterator().next().getContext());
 
 	}
 
@@ -191,23 +210,30 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		quadModeField.set(con, true);
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	@Ignore
-	public void testGetStatementsInSingleContext() throws Exception {
+	@Disabled
+	public void testGetStatementsInSingleContext(IsolationLevel level) throws Exception {
 		System.err.println(
 				"temporarily disabled testGetStatementsInSingleContext() for SPARQLRepository: implementation of statement context using SPARQL not yet complete");
 		// TODO see SES-1776
 	}
 
-	@Test
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	@Ignore("can not execute test because required data add results in illegal SPARQL syntax")
-	public void testGetStatementsMalformedLanguageLiteral() throws Exception {
+	@Disabled("can not execute test because required data add results in illegal SPARQL syntax")
+	public void testGetStatementsMalformedLanguageLiteral(IsolationLevel level) throws Exception {
 		System.err.println("temporarily disabled testGetStatementsMalformedLanguageLiteral() for SPARQLRepository");
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	public void testPreparedTupleQuery() throws Exception {
+	public void testPreparedTupleQuery(IsolationLevel level) throws Exception {
+		setupTest(level);
+
 		testCon.add(alice, name, nameAlice, context2);
 		testCon.add(alice, mbox, mboxAlice, context2);
 		testCon.add(context2, publisher, nameAlice);
@@ -237,39 +263,51 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 				Value nameResult = solution.getValue("name");
 				Value mboxResult = solution.getValue("mbox");
 
-				assertEquals("unexpected value for name: " + nameResult, nameBob, nameResult);
-				assertEquals("unexpected value for mbox: " + mboxResult, mboxBob, mboxResult);
+				assertEquals(nameBob, nameResult, "unexpected value for name: " + nameResult);
+				assertEquals(mboxBob, mboxResult, "unexpected value for mbox: " + mboxResult);
 			}
 		}
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	@Ignore
-	public void testGetNamespaces() throws Exception {
+	@Disabled
+	public void testGetNamespaces(IsolationLevel level) throws Exception {
 		System.err.println("disabled testGetNamespaces() as namespace retrieval is not supported by SPARQL");
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	@Ignore
-	public void testGetNamespace() throws Exception {
+	@Disabled
+	public void testGetNamespace(IsolationLevel level) throws Exception {
 		System.err.println("disabled testGetNamespace() as namespace retrieval is not supported by SPARQL");
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	@Ignore
-	public void testImportNamespacesFromIterable() throws Exception {
+	@Disabled
+	public void testImportNamespacesFromIterable(IsolationLevel level) throws Exception {
 		System.err
 				.println("disabled testImportNamespacesFromIterable() as namespace setting is not supported by SPARQL");
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	@Ignore
-	public void testTransactionIsolation() throws Exception {
+	@Disabled
+	public void testTransactionIsolation(IsolationLevel level) throws Exception {
 		System.err.println("temporarily disabled testTransactionIsolation() for SPARQLRepository");
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	public void testPreparedTupleQueryUnicode() throws Exception {
+	public void testPreparedTupleQueryUnicode(IsolationLevel level) throws Exception {
+		setupTest(level);
+
 		testCon.add(alexander, name, Александър);
 
 		StringBuilder queryBuilder = new StringBuilder();
@@ -292,8 +330,12 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		}
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	public void testSimpleGraphQuery() throws Exception {
+	public void testSimpleGraphQuery(IsolationLevel level) throws Exception {
+		setupTest(level);
+
 		testCon.add(alice, name, nameAlice, context2);
 		testCon.add(alice, mbox, mboxAlice, context2);
 		testCon.add(context2, publisher, nameAlice);
@@ -325,8 +367,12 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		}
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	public void testPreparedGraphQuery() throws Exception {
+	public void testPreparedGraphQuery(IsolationLevel level) throws Exception {
+		setupTest(level);
+
 		testCon.add(alice, name, nameAlice, context2);
 		testCon.add(alice, mbox, mboxAlice, context2);
 		testCon.add(context2, publisher, nameAlice);
@@ -353,18 +399,22 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 				Statement st = result.next();
 				assertTrue(name.equals(st.getPredicate()) || mbox.equals(st.getPredicate()));
 				if (name.equals(st.getPredicate())) {
-					assertTrue("unexpected value for name: " + st.getObject(), nameBob.equals(st.getObject()));
+					assertTrue(nameBob.equals(st.getObject()), "unexpected value for name: " + st.getObject());
 				} else {
 					assertTrue(mbox.equals(st.getPredicate()));
-					assertTrue("unexpected value for mbox: " + st.getObject(), mboxBob.equals(st.getObject()));
+					assertTrue(mboxBob.equals(st.getObject()), "unexpected value for mbox: " + st.getObject());
 				}
 
 			}
 		}
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	public void testSimpleTupleQuery() throws Exception {
+	public void testSimpleTupleQuery(IsolationLevel level) throws Exception {
+		setupTest(level);
+
 		testCon.add(alice, name, nameAlice, context2);
 		testCon.add(alice, mbox, mboxAlice, context2);
 		testCon.add(context2, publisher, nameAlice);
@@ -398,8 +448,12 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		}
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	public void testSimpleTupleQueryUnicode() throws Exception {
+	public void testSimpleTupleQueryUnicode(IsolationLevel level) throws Exception {
+		setupTest(level);
+
 		testCon.add(alexander, name, Александър);
 
 		StringBuilder queryBuilder = new StringBuilder();
@@ -420,14 +474,18 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		}
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
 	@Override
-	@Ignore
-	public void testBNodeSerialization() throws Exception {
+	@Disabled
+	public void testBNodeSerialization(IsolationLevel level) throws Exception {
 		System.err.println("temporarily disabled testBNodeSerialization() for SPARQLRepository");
 	}
 
-	@Test
-	public void testUpdateExecution() throws Exception {
+	@ParameterizedTest
+	@MethodSource("parameters")
+	public void testUpdateExecution(IsolationLevel level) throws Exception {
+		setupTest(level);
 
 		IRI foobar = vf.createIRI("foo:bar");
 
@@ -451,17 +509,19 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 
 	}
 
-	@Test
-	@Ignore("relies on pending updates being visible in own connection")
+	@ParameterizedTest
+	@MethodSource("parameters")
+	@Disabled("relies on pending updates being visible in own connection")
 	@Override
-	public void testRemoveStatementsFromContextSingleTransaction() throws Exception {
-		super.testRemoveStatementsFromContextSingleTransaction();
+	public void testRemoveStatementsFromContextSingleTransaction(IsolationLevel level) throws Exception {
+		super.testRemoveStatementsFromContextSingleTransaction(level);
 	}
 
-	@Test
-	@Ignore("relies on pending updates being visible in own connection")
+	@ParameterizedTest
+	@MethodSource("parameters")
+	@Disabled("relies on pending updates being visible in own connection")
 	@Override
-	public void testClearStatementsFromContextSingleTransaction() throws Exception {
-		super.testClearStatementsFromContextSingleTransaction();
+	public void testClearStatementsFromContextSingleTransaction(IsolationLevel level) throws Exception {
+		super.testClearStatementsFromContextSingleTransaction(level);
 	}
 }

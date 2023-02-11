@@ -10,16 +10,16 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.spin;
 
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import org.apache.commons.io.output.StringBuilderWriter;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
@@ -39,17 +39,14 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameters;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
-@RunWith(Parameterized.class)
 public class SpinRendererTest {
 
-	@Parameters(name = "{0}")
-	public static Collection<Object[]> testData() {
-		List<Object[]> params = new ArrayList<>();
+	public static Stream<Arguments> testData() {
+		List<Arguments> params = new ArrayList<>();
 		for (int i = 0;; i++) {
 			String suffix = String.valueOf(i + 1);
 			if (suffix.equals("8")) {
@@ -60,21 +57,16 @@ public class SpinRendererTest {
 			if (rdfURL == null) {
 				break;
 			}
-			params.add(new Object[] { testFile, rdfURL });
+			params.add(Arguments.of(testFile, rdfURL));
 		}
-		return params;
+		return params.stream();
 	}
-
-	private final URL testURL;
 
 	private final SpinRenderer renderer = new SpinRenderer();
 
-	public SpinRendererTest(String testName, URL testURL) {
-		this.testURL = testURL;
-	}
-
-	@Test
-	public void testSpinRenderer() throws IOException, RDF4JException {
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("testData")
+	public void testSpinRenderer(String testName, URL testURL) throws IOException, RDF4JException {
 		StatementCollector expected = new StatementCollector();
 		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
 		parser.setRDFHandler(expected);
@@ -99,8 +91,8 @@ public class SpinRendererTest {
 
 		Object operation = (parsedOp instanceof ParsedQuery) ? ((ParsedQuery) parsedOp).getTupleExpr()
 				: ((ParsedUpdate) parsedOp).getUpdateExprs();
-		assertTrue("Operation was\n" + operation + "\nExpected\n" + toRDF(expected) + "\nbut was\n" + toRDF(actual),
-				Models.isomorphic(actual.getStatements(), expected.getStatements()));
+		assertTrue(Models.isomorphic(actual.getStatements(), expected.getStatements()),
+				"Operation was\n" + operation + "\nExpected\n" + toRDF(expected) + "\nbut was\n" + toRDF(actual));
 	}
 
 	private static String toRDF(StatementCollector stmts) throws RDFHandlerException {

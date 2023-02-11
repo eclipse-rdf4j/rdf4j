@@ -39,10 +39,9 @@
 			<artifactId>rdf4j-rio-turtle</artifactId>
 			<version>${project.version}</version>
 		</dependency>
-		<!-- This module uses parameterized tests and cannot be fully migrated to JUnit 5 now -->
 		<dependency>
-			<groupId>org.junit.vintage</groupId>
-			<artifactId>junit-vintage-engine</artifactId>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-params</artifactId>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>

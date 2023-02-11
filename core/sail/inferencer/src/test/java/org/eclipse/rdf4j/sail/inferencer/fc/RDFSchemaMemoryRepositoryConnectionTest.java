@@ -10,7 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.inferencer.fc;
 
-import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import java.io.File;
+
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -18,12 +19,8 @@ import org.eclipse.rdf4j.testsuite.repository.RDFSchemaRepositoryConnectionTest;
 
 public class RDFSchemaMemoryRepositoryConnectionTest extends RDFSchemaRepositoryConnectionTest {
 
-	public RDFSchemaMemoryRepositoryConnectionTest(IsolationLevel level) {
-		super(level);
-	}
-
 	@Override
-	protected Repository createRepository() {
+	protected Repository createRepository(File dataDir) {
 		return new SailRepository(new ForwardChainingRDFSInferencer(new MemoryStore()));
 	}
 }
