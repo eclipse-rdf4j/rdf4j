@@ -17,14 +17,14 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
+import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
-import org.junit.Rule;
-import org.junit.rules.TemporaryFolder;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -53,9 +53,6 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class QueryBenchmark {
-
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
 
 	private SailRepository repository;
 
@@ -108,6 +105,8 @@ public class QueryBenchmark {
 		}
 	}
 
+	private File file;
+
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
 				.include("QueryBenchmark") // adapt to run other benchmark tests
@@ -119,8 +118,7 @@ public class QueryBenchmark {
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException, InterruptedException {
-		tempDir.create();
-		File file = tempDir.newFolder();
+		file = Files.newTemporaryFolder();
 
 		repository = new SailRepository(new NativeStore(file, "spoc,ospc,psoc"));
 
@@ -134,9 +132,9 @@ public class QueryBenchmark {
 	}
 
 	@TearDown(Level.Trial)
-	public void afterClass() {
+	public void afterClass() throws IOException {
 		repository.shutDown();
-		tempDir.delete();
+		FileUtils.deleteDirectory(file);
 	}
 
 	@Benchmark

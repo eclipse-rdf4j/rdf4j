@@ -23,7 +23,6 @@ import java.util.Vector;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.eclipse.rdf4j.common.logging.LogReader;
 import org.eclipse.rdf4j.common.logging.LogRecord;
 import org.eclipse.rdf4j.common.logging.base.AbstractLogReader;
 
