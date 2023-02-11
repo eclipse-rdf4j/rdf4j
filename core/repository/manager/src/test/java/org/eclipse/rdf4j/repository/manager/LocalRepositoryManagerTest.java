@@ -19,11 +19,10 @@ import java.io.IOException;
 
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Unit tests for {@link LocalRepositoryManager}.
@@ -36,18 +35,11 @@ import org.junit.rules.TemporaryFolder;
  */
 public class LocalRepositoryManagerTest extends RepositoryManagerTest {
 
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
-
-	private File datadir;
-
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@Before
-	@Override
-	public void setUp() throws Exception {
-		datadir = tempDir.newFolder("local-repositorysubject-test");
+	@BeforeEach
+	public void setUp(@TempDir File datadir) throws Exception {
 		subject = new LocalRepositoryManager(datadir);
 		subject.init();
 	}
@@ -55,7 +47,7 @@ public class LocalRepositoryManagerTest extends RepositoryManagerTest {
 	/**
 	 * @throws IOException if a problem occurs deleting temporary resources
 	 */
-	@After
+	@AfterEach
 	public void tearDown() throws IOException {
 		subject.shutDown();
 	}

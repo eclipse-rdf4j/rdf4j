@@ -11,14 +11,12 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashSet;
@@ -44,36 +42,29 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShapes;
-import org.junit.Ignore;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
-@RunWith(Parameterized.class)
 public class W3cComplianceTest {
 
-	private final URL testCasePath;
-
-	public W3cComplianceTest(URL testCasePath) {
-		this.testCasePath = testCasePath;
+	public static Stream<Arguments> data() {
+		return getTestFiles().stream()
+				.sorted(Comparator.comparing(URL::toString))
+				.map(Arguments::of);
 	}
 
-	@Parameterized.Parameters(name = "{0}")
-	public static Collection<URL> data() {
-
-		ArrayList<URL> urls = new ArrayList<>(getTestFiles());
-		urls.sort(Comparator.comparing(URL::toString));
-		return urls;
-	}
-
-	@Ignore
-	@Test
-	public void test() throws IOException, InterruptedException {
+	@Disabled
+	@ParameterizedTest
+	@MethodSource("data")
+	public void test(URL testCasePath) throws IOException, InterruptedException {
 		runTest(testCasePath);
 	}
 
-	@Test
-	public void parsingTest() throws IOException, InterruptedException {
+	@ParameterizedTest
+	@MethodSource("data")
+	public void parsingTest(URL testCasePath) throws IOException, InterruptedException {
 		runParsingTest(testCasePath);
 	}
 
@@ -92,7 +83,7 @@ public class W3cComplianceTest {
 				.subjects()
 				.forEach(s -> {
 					int size = statements.filter(s, RDF.REST, null).objects().size();
-					assertEquals(s + " has more than one rdf:rest", size, 1);
+					assertEquals(size, 1, s + " has more than one rdf:rest");
 				});
 
 //		System.out.println(AbstractShaclTest.modelToString(statements));

@@ -10,11 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.File;
 import java.io.IOException;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -29,25 +30,20 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.testsuite.repository.RepositoryConnectionTest;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTest {
-	@Rule
-	public final TemporaryFolder tmpDir = new TemporaryFolder();
-
-	public LimitedSizeNativeStoreConnectionTest(IsolationLevel level) {
-		super(level);
-	}
-
 	@Override
-	protected Repository createRepository() throws IOException {
-		return new SailRepository(new LimitedSizeNativeStore(tmpDir.newFolder(), "spoc"));
+	protected Repository createRepository(File dataDir) throws IOException {
+		return new SailRepository(new LimitedSizeNativeStore(dataDir, "spoc"));
 	}
 
-	@Test
-	public void testSES715() throws Exception {
+	@ParameterizedTest
+	@MethodSource("parameters")
+	public void testSES715(IsolationLevel level) throws Exception {
+		setupTest(level);
+
 		// load 1000 triples in two different contexts
 		testCon.begin();
 		ValueFactory vf = testCon.getValueFactory();
@@ -80,8 +76,11 @@ public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTe
 		testCon2.close();
 	}
 
-	@Test
-	public void testLimit() throws Exception {
+	@ParameterizedTest
+	@MethodSource("parameters")
+	public void testLimit(IsolationLevel level) throws Exception {
+		setupTest(level);
+
 		((LimitedSizeNativeStoreConnection) ((SailRepositoryConnection) testCon).getSailConnection())
 				.setMaxCollectionsSize(2);
 		testCon.begin();
