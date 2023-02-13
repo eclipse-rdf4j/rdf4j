@@ -42,7 +42,7 @@ docker tag docker-rdf4j:latest eclipse/rdf4j-workbench:${MVN_VERSION}
 
 echo "
 Docker image tagged as:
-  docker_rdf4j:latest
+  docker-rdf4j:latest
   eclipse/rdf4j-workbench:${MVN_VERSION}
 
 To start the workbench and server:
