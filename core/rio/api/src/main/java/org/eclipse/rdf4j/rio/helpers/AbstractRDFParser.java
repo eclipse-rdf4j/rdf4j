@@ -21,8 +21,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
-import javax.xml.bind.annotation.adapters.HexBinaryAdapter;
-
+import org.apache.commons.codec.binary.Hex;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -410,7 +409,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 				// we use an MD5 hash rather than the node ID itself to get a
 				// fixed-length generated id, rather than
 				// an ever-growing one (see SES-2171)
-				toAppend = (new HexBinaryAdapter()).marshal(md5.digest(chars));
+				toAppend = Hex.encodeHexString(md5.digest(chars), false);
 			}
 
 			ParsedIRI skolem = getCachedSkolemOrigin();
@@ -461,7 +460,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 				// we use an MD5 hash rather than the node ID itself to get a
 				// fixed-length generated id, rather than
 				// an ever-growing one (see SES-2171)
-				toAppend = (new HexBinaryAdapter()).marshal(md5.digest(chars));
+				toAppend = Hex.encodeHexString(md5.digest(chars), false);
 			}
 
 			return valueFactory.createBNode("genid-" + nextBNodePrefix + toAppend);

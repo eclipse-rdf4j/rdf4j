@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -76,5 +77,17 @@ public class AbstractRDFParserTest {
 		assertFalse(parser.getBNode().toString().startsWith("http://www.example.com"));
 		assertTrue(parser.getBNode().toString().startsWith("_"));
 		assertTrue(parser.getBNode("12").toString().endsWith("12"));
+	}
+
+	@Test
+	public void testNodeIdHashing() throws Exception {
+		// node ids look like "genid_.*-suffix
+		assertThat(parser.createNode("someid").stringValue())
+				.endsWith("-someid");
+
+		// some long id (length > 32) => suffix is hashed
+		String longNodeId = "someverylongnodeidwithmorethan32characters";
+		assertThat(parser.createNode(longNodeId).stringValue())
+				.endsWith("2A372A91878F0980C8F53341D2D8A944");
 	}
 }
