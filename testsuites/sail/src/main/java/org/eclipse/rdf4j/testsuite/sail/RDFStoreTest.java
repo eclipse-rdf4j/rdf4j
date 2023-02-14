@@ -12,13 +12,18 @@ package org.eclipse.rdf4j.testsuite.sail;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.Iterator;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -48,37 +53,30 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.Timeout;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 /**
  * A JUnit test for testing Sail implementations that store RDF data. This is purely a test for data storage and
  * retrieval which assumes that no inferencing or whatsoever is performed. This is an abstract class that should be
  * extended for specific Sail implementations.
  */
+@Timeout(value = 60)
 public abstract class RDFStoreTest {
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
-
-	/**
-	 * Timeout all individual tests after 1 minute.
-	 */
-	@Rule
-	public Timeout to = new Timeout(60, TimeUnit.SECONDS);
 
 	/*-----------*
 	 * Constants *
@@ -150,7 +148,7 @@ public abstract class RDFStoreTest {
 	 */
 	protected abstract Sail createSail();
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		sail = createSail();
 
@@ -172,7 +170,7 @@ public abstract class RDFStoreTest {
 
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		try {
 			if (con.isOpen()) {
@@ -193,15 +191,15 @@ public abstract class RDFStoreTest {
 	@Test
 	public void testEmptyRepository() throws Exception {
 		// repository should be empty
-		Assert.assertEquals("Empty repository should not return any statements", 0, countAllElements());
+		assertEquals(0, countAllElements(), "Empty repository should not return any statements");
 
-		Assert.assertEquals("Named context should be empty", 0, countContext1Elements());
+		assertEquals(0, countContext1Elements(), "Named context should be empty");
 
-		Assert.assertEquals("Empty repository should not return any context identifiers", 0,
-				countElements(con.getContextIDs()));
+		assertEquals(0, countElements(con.getContextIDs()),
+				"Empty repository should not return any context identifiers");
 
-		Assert.assertEquals("Empty repository should not return any query results", 0,
-				countQueryResults("select * where { ?s ?p ?o}"));
+		assertEquals(0, countQueryResults("select * where { ?s ?p ?o}"),
+				"Empty repository should not return any query results");
 	}
 
 	@Test
@@ -332,13 +330,13 @@ public abstract class RDFStoreTest {
 
 		try (CloseableIteration<? extends Statement, SailException> stIter = con.getStatements(null, null, null,
 				false)) {
-			Assert.assertTrue(stIter.hasNext());
+			assertTrue(stIter.hasNext());
 
 			Statement st = stIter.next();
-			Assert.assertEquals(subj, st.getSubject());
-			Assert.assertEquals(pred, st.getPredicate());
-			Assert.assertEquals(obj, st.getObject());
-			Assert.assertFalse(stIter.hasNext());
+			assertEquals(subj, st.getSubject());
+			assertEquals(pred, st.getPredicate());
+			assertEquals(obj, st.getObject());
+			assertFalse(stIter.hasNext());
 		}
 
 		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
@@ -348,13 +346,13 @@ public abstract class RDFStoreTest {
 		iter = con.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false);
 
 		try {
-			Assert.assertTrue(iter.hasNext());
+			assertTrue(iter.hasNext());
 
 			BindingSet bindings = iter.next();
-			Assert.assertEquals(subj, bindings.getValue("S"));
-			Assert.assertEquals(pred, bindings.getValue("P"));
-			Assert.assertEquals(obj, bindings.getValue("O"));
-			Assert.assertTrue(!iter.hasNext());
+			assertEquals(subj, bindings.getValue("S"));
+			assertEquals(pred, bindings.getValue("P"));
+			assertEquals(obj, bindings.getValue("O"));
+			assertTrue(!iter.hasNext());
 		} finally {
 			iter.close();
 		}
@@ -369,7 +367,7 @@ public abstract class RDFStoreTest {
 		con.addStatement(picasso2, paints, guernica);
 		con.commit();
 
-		Assert.assertEquals("createURI(Sring) and createURI(String, String) should create equal URIs", 1, con.size());
+		assertEquals(1, con.size(), "createURI(Sring) and createURI(String, String) should create equal URIs");
 	}
 
 	@Test
@@ -381,7 +379,7 @@ public abstract class RDFStoreTest {
 		con.addStatement(picasso2, paints, guernica);
 		con.commit();
 
-		Assert.assertEquals("createURI(Sring) and createURI(String, String) should create equal URIs", 1, con.size());
+		assertEquals(1, con.size(), "createURI(Sring) and createURI(String, String) should create equal URIs");
 	}
 
 	@Test
@@ -389,12 +387,12 @@ public abstract class RDFStoreTest {
 		// SES-711
 		Literal date1 = vf.createLiteral("2004-12-20", XSD.DATETIME);
 		Literal date2 = vf.createLiteral("2004-12-20", CoreDatatype.XSD.DATETIME);
-		Assert.assertEquals(date1, date2);
+		assertEquals(date1, date2);
 	}
 
 	@Test
 	public void testSize() {
-		Assert.assertEquals("Size of empty repository should be 0", 0, con.size());
+		assertEquals(0, con.size(), "Size of empty repository should be 0");
 
 		// Add some data to the repository
 		con.begin();
@@ -405,16 +403,16 @@ public abstract class RDFStoreTest {
 		con.addStatement(picasso, paints, guernica, context1);
 		con.commit();
 
-		Assert.assertEquals("Size of repository should be 5", 5, con.size());
-		Assert.assertEquals("Size of named context should be 3", 3, con.size(context1));
+		assertEquals(5, con.size(), "Size of repository should be 5");
+		assertEquals(3, con.size(context1), "Size of named context should be 3");
 
 		IRI unknownContext = vf.createIRI(EXAMPLE_NS + "unknown");
 
-		Assert.assertEquals("Size of unknown context should be 0", 0, con.size(unknownContext));
+		assertEquals(0, con.size(unknownContext), "Size of unknown context should be 0");
 
 		IRI uriImplContext1 = vf.createIRI(context1.toString());
 
-		Assert.assertEquals("Size of named context (defined as URIImpl) should be 3", 3, con.size(uriImplContext1));
+		assertEquals(3, con.size(uriImplContext1), "Size of named context (defined as URIImpl) should be 3");
 	}
 
 	@Test
@@ -428,14 +426,14 @@ public abstract class RDFStoreTest {
 		con.addStatement(picasso, paints, guernica, context1);
 		con.commit();
 
-		Assert.assertEquals("Repository should contain 5 statements in total", 5, countAllElements());
+		assertEquals(5, countAllElements(), "Repository should contain 5 statements in total");
 
-		Assert.assertEquals("Named context should contain 3 statements", 3, countContext1Elements());
+		assertEquals(3, countContext1Elements(), "Named context should contain 3 statements");
 
-		Assert.assertEquals("Repository should have 1 context identifier", 1, countElements(con.getContextIDs()));
+		assertEquals(1, countElements(con.getContextIDs()), "Repository should have 1 context identifier");
 
-		Assert.assertEquals("Repository should contain 5 statements in total", 5,
-				countQueryResults("select * where {?s ?p ?o}"));
+		assertEquals(5, countQueryResults("select * where {?s ?p ?o}"),
+				"Repository should contain 5 statements in total");
 
 		// Check for presence of the added statements
 
@@ -449,20 +447,20 @@ public abstract class RDFStoreTest {
 		assertThat(con.hasStatement(painter, paints, painting, true)).isFalse();
 
 		// Various other checks
-		Assert.assertEquals("Repository should contain 2 statements matching (picasso, _, _)", 2,
-				countQueryResults("select * where { ex:picasso ?P ?O}"));
+		assertEquals(2, countQueryResults("select * where { ex:picasso ?P ?O}"),
+				"Repository should contain 2 statements matching (picasso, _, _)");
 
-		Assert.assertEquals("Repository should contain 1 statement matching (picasso, paints, _)", 1,
-				countQueryResults("select * where {ex:picasso ex:paints ?O}"));
+		assertEquals(1, countQueryResults("select * where {ex:picasso ex:paints ?O}"),
+				"Repository should contain 1 statement matching (picasso, paints, _)");
 
-		Assert.assertEquals("Repository should contain 4 statements matching (_, type, _)", 4,
-				countQueryResults("select * where {?S rdf:type ?O}"));
+		assertEquals(4, countQueryResults("select * where {?S rdf:type ?O}"),
+				"Repository should contain 4 statements matching (_, type, _)");
 
-		Assert.assertEquals("Repository should contain 2 statements matching (_, _, Class)", 2,
-				countQueryResults("select * where { ?S ?P rdfs:Class }"));
+		assertEquals(2, countQueryResults("select * where { ?S ?P rdfs:Class }"),
+				"Repository should contain 2 statements matching (_, _, Class)");
 
-		Assert.assertEquals("Repository should contain 0 statements matching (_, _, type)", 0,
-				countQueryResults("select * where {?S ?P rdf:type}"));
+		assertEquals(0, countQueryResults("select * where {?S ?P rdf:type}"),
+				"Repository should contain 0 statements matching (_, _, type)");
 	}
 
 	/**
@@ -521,7 +519,7 @@ public abstract class RDFStoreTest {
 
 		con.commit();
 
-		Assert.assertEquals(3, countElements(con.getStatements(null, RDF.TYPE, RDFS.CLASS, false)));
+		assertEquals(3, countElements(con.getStatements(null, RDF.TYPE, RDFS.CLASS, false)));
 
 		// simulate auto-commit
 		tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, "SELECT ?P WHERE { [] ?P [] .}", null);
@@ -537,7 +535,7 @@ public abstract class RDFStoreTest {
 			}
 		}
 
-		Assert.assertEquals(2, countElements(con.getStatements(null, RDF.TYPE, RDF.PROPERTY, false)));
+		assertEquals(2, countElements(con.getStatements(null, RDF.TYPE, RDF.PROPERTY, false)));
 	}
 
 	@Test
@@ -556,9 +554,9 @@ public abstract class RDFStoreTest {
 		con.removeStatements(painting, RDF.TYPE, RDFS.CLASS);
 		con.commit();
 
-		Assert.assertEquals("Repository should contain 4 statements in total", 4, countAllElements());
+		assertEquals(4, countAllElements(), "Repository should contain 4 statements in total");
 
-		Assert.assertEquals("Named context should contain 3 statements", 3, countContext1Elements());
+		assertEquals(3, countContext1Elements(), "Named context should contain 3 statements");
 
 		assertThat(con.hasStatement(painting, RDF.TYPE, RDFS.CLASS, true)).isFalse();
 
@@ -566,15 +564,15 @@ public abstract class RDFStoreTest {
 		con.removeStatements(null, null, null, context1);
 		con.commit();
 
-		Assert.assertEquals("Repository should contain 1 statement in total", 1, countAllElements());
+		assertEquals(1, countAllElements(), "Repository should contain 1 statement in total");
 
-		Assert.assertEquals("Named context should be empty", 0, countContext1Elements());
+		assertEquals(0, countContext1Elements(), "Named context should be empty");
 
 		con.begin();
 		con.clear();
 		con.commit();
 
-		Assert.assertEquals("Repository should no longer contain any statements", 0, countAllElements());
+		assertEquals(0, countAllElements(), "Repository should no longer contain any statements");
 	}
 
 	@Test
@@ -582,11 +580,11 @@ public abstract class RDFStoreTest {
 		try {
 			con.close();
 			con.addStatement(painter, RDF.TYPE, RDFS.CLASS);
-			Assert.fail("Operation on connection after close should result in IllegalStateException");
+			fail("Operation on connection after close should result in IllegalStateException");
 		} catch (IllegalStateException e) {
 			// do nothing, this is expected
 		} catch (SailException e) {
-			Assert.fail(e.getMessage());
+			fail(e.getMessage());
 		}
 	}
 
@@ -609,39 +607,39 @@ public abstract class RDFStoreTest {
 
 		con.commit();
 
-		Assert.assertEquals("context1 should contain 3 statements", 3, countContext1Elements());
-		Assert.assertEquals("context2 should contain 3 statements", 3,
-				countElements(con.getStatements(null, null, null, false, context2)));
-		Assert.assertEquals("Repository should contain 8 statements", 8, countAllElements());
-		Assert.assertEquals("statements without context should equal 2", 2,
-				countElements(con.getStatements(null, null, null, false, (Resource) null)));
+		assertEquals(3, countContext1Elements(), "context1 should contain 3 statements");
+		assertEquals(3, countElements(con.getStatements(null, null, null, false, context2)),
+				"context2 should contain 3 statements");
+		assertEquals(8, countAllElements(), "Repository should contain 8 statements");
+		assertEquals(2, countElements(con.getStatements(null, null, null, false, (Resource) null)),
+				"statements without context should equal 2");
 
-		Assert.assertEquals("Statements without context and statements in context 1 together should total 5", 5,
-				countElements(con.getStatements(null, null, null, false, null, context1)));
+		assertEquals(5, countElements(con.getStatements(null, null, null, false, null, context1)),
+				"Statements without context and statements in context 1 together should total 5");
 
-		Assert.assertEquals("Statements without context and statements in context 2 together should total 5", 5,
-				countElements(con.getStatements(null, null, null, false, null, context2)));
+		assertEquals(5, countElements(con.getStatements(null, null, null, false, null, context2)),
+				"Statements without context and statements in context 2 together should total 5");
 
-		Assert.assertEquals("Statements in context 1 and in context 2 together should total 6", 6,
-				countElements(con.getStatements(null, null, null, false, context1, context2)));
+		assertEquals(6, countElements(con.getStatements(null, null, null, false, context1, context2)),
+				"Statements in context 1 and in context 2 together should total 6");
 
 		// remove two statements from context1.
 		con.begin();
 		con.removeStatements(picasso, null, null, context1);
 		con.commit();
 
-		Assert.assertEquals("context1 should contain 1 statements", 1, countContext1Elements());
+		assertEquals(1, countContext1Elements(), "context1 should contain 1 statements");
 
-		Assert.assertEquals("Repository should contain 6 statements", 6, countAllElements());
+		assertEquals(6, countAllElements(), "Repository should contain 6 statements");
 
-		Assert.assertEquals("Statements without context and statements in context 1 together should total 3", 3,
-				countElements(con.getStatements(null, null, null, false, null, context1)));
+		assertEquals(3, countElements(con.getStatements(null, null, null, false, null, context1)),
+				"Statements without context and statements in context 1 together should total 3");
 
-		Assert.assertEquals("Statements without context and statements in context 2 together should total 5", 5,
-				countElements(con.getStatements(null, null, null, false, context2, null)));
+		assertEquals(5, countElements(con.getStatements(null, null, null, false, context2, null)),
+				"Statements without context and statements in context 2 together should total 5");
 
-		Assert.assertEquals("Statements in context 1 and in context 2 together should total 4", 4,
-				countElements(con.getStatements(null, null, null, false, context1, context2)));
+		assertEquals(4, countElements(con.getStatements(null, null, null, false, context1, context2)),
+				"Statements in context 1 and in context 2 together should total 4");
 	}
 
 	@Test
@@ -665,22 +663,22 @@ public abstract class RDFStoreTest {
 
 		iter = con.evaluate(tupleExpr, null, bindings, false);
 		int resultCount = verifyQueryResult(iter, 1);
-		Assert.assertEquals("Wrong number of query results", 2, resultCount);
+		assertEquals(2, resultCount, "Wrong number of query results");
 
 		bindings.addBinding("Y", painter);
 		iter = con.evaluate(tupleExpr, null, bindings, false);
 		resultCount = verifyQueryResult(iter, 1);
-		Assert.assertEquals("Wrong number of query results", 1, resultCount);
+		assertEquals(1, resultCount, "Wrong number of query results");
 
 		bindings.addBinding("Z", painting);
 		iter = con.evaluate(tupleExpr, null, bindings, false);
 		resultCount = verifyQueryResult(iter, 1);
-		Assert.assertEquals("Wrong number of query results", 1, resultCount);
+		assertEquals(1, resultCount, "Wrong number of query results");
 
 		bindings.removeBinding("Y");
 		iter = con.evaluate(tupleExpr, null, bindings, false);
 		resultCount = verifyQueryResult(iter, 1);
-		Assert.assertEquals("Wrong number of query results", 2, resultCount);
+		assertEquals(2, resultCount, "Wrong number of query results");
 
 		// Query 2
 		tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
@@ -690,20 +688,20 @@ public abstract class RDFStoreTest {
 
 		iter = con.evaluate(tupleExpr, null, bindings, false);
 		resultCount = verifyQueryResult(iter, 1);
-		Assert.assertEquals("Wrong number of query results", 0, resultCount);
+		assertEquals(0, resultCount, "Wrong number of query results");
 
 		bindings.addBinding("Z", painter);
 		iter = con.evaluate(tupleExpr, null, bindings, false);
 		resultCount = verifyQueryResult(iter, 1);
-		Assert.assertEquals("Wrong number of query results", 1, resultCount);
+		assertEquals(1, resultCount, "Wrong number of query results");
 	}
 
 	@Test
 	public void testStatementEquals() {
 		Statement st = vf.createStatement(picasso, RDF.TYPE, painter);
-		Assert.assertEquals(st, vf.createStatement(picasso, RDF.TYPE, painter));
-		Assert.assertNotEquals(st, vf.createStatement(picasso, RDF.TYPE, painter, context1));
-		Assert.assertNotEquals(st, vf.createStatement(picasso, RDF.TYPE, painter, context2));
+		assertEquals(st, vf.createStatement(picasso, RDF.TYPE, painter));
+		assertNotEquals(st, vf.createStatement(picasso, RDF.TYPE, painter, context1));
+		assertNotEquals(st, vf.createStatement(picasso, RDF.TYPE, painter, context2));
 	}
 
 	@Test
@@ -720,7 +718,7 @@ public abstract class RDFStoreTest {
 		Statement deserializedStatement = (Statement) in.readObject();
 		in.close();
 
-		Assert.assertTrue(st.equals(deserializedStatement));
+		assertTrue(st.equals(deserializedStatement));
 	}
 
 	@Test
@@ -730,11 +728,11 @@ public abstract class RDFStoreTest {
 		con.commit();
 
 		try (CloseableIteration<? extends Namespace, SailException> namespaces = con.getNamespaces()) {
-			Assert.assertTrue(namespaces.hasNext());
+			assertTrue(namespaces.hasNext());
 			Namespace rdf = namespaces.next();
-			Assert.assertEquals("rdf", rdf.getPrefix());
-			Assert.assertEquals(RDF.NAMESPACE, rdf.getName());
-			Assert.assertFalse(namespaces.hasNext());
+			assertEquals("rdf", rdf.getPrefix());
+			assertEquals(RDF.NAMESPACE, rdf.getName());
+			assertFalse(namespaces.hasNext());
 		}
 	}
 
@@ -743,7 +741,7 @@ public abstract class RDFStoreTest {
 		con.begin();
 		con.setNamespace("rdf", RDF.NAMESPACE);
 		con.commit();
-		Assert.assertEquals(RDF.NAMESPACE, con.getNamespace("rdf"));
+		assertEquals(RDF.NAMESPACE, con.getNamespace("rdf"));
 	}
 
 	@Test
@@ -753,7 +751,7 @@ public abstract class RDFStoreTest {
 		con.setNamespace("rdfs", RDFS.NAMESPACE);
 		con.clearNamespaces();
 		con.commit();
-		Assert.assertTrue(!con.getNamespaces().hasNext());
+		assertTrue(!con.getNamespaces().hasNext());
 	}
 
 	@Test
@@ -762,14 +760,14 @@ public abstract class RDFStoreTest {
 		con.setNamespace("rdf", RDF.NAMESPACE);
 		con.removeNamespace("rdf");
 		con.commit();
-		Assert.assertNull(con.getNamespace("rdf"));
+		assertNull(con.getNamespace("rdf"));
 	}
 
 	@Test
 	public void testNullNamespaceDisallowed() {
 		try {
 			con.setNamespace("foo", null);
-			Assert.fail("Expected NullPointerException");
+			fail("Expected NullPointerException");
 		} catch (NullPointerException e) {
 			// expected
 		}
@@ -779,19 +777,19 @@ public abstract class RDFStoreTest {
 	public void testNullPrefixDisallowed() {
 		try {
 			con.setNamespace(null, "foo");
-			Assert.fail("Expected NullPointerException");
+			fail("Expected NullPointerException");
 		} catch (NullPointerException e) {
 			// expected
 		}
 		try {
 			con.getNamespace(null);
-			Assert.fail("Expected NullPointerException");
+			fail("Expected NullPointerException");
 		} catch (NullPointerException e) {
 			// expected
 		}
 		try {
 			con.removeNamespace(null);
-			Assert.fail("Expected NullPointerException");
+			fail("Expected NullPointerException");
 		} catch (NullPointerException e) {
 			// expected
 		}
@@ -799,37 +797,37 @@ public abstract class RDFStoreTest {
 
 	@Test
 	public void testGetContextIDs() {
-		Assert.assertEquals(0, countElements(con.getContextIDs()));
+		assertEquals(0, countElements(con.getContextIDs()));
 
 		// load data
 		con.begin();
 		con.addStatement(picasso, paints, guernica, context1);
-		Assert.assertEquals(1, countElements(con.getContextIDs()));
-		Assert.assertEquals(context1, first(con.getContextIDs()));
+		assertEquals(1, countElements(con.getContextIDs()));
+		assertEquals(context1, first(con.getContextIDs()));
 
 		con.removeStatements(picasso, paints, guernica, context1);
-		Assert.assertEquals(0, countElements(con.getContextIDs()));
+		assertEquals(0, countElements(con.getContextIDs()));
 		con.commit();
 
-		Assert.assertEquals(0, countElements(con.getContextIDs()));
+		assertEquals(0, countElements(con.getContextIDs()));
 
 		con.begin();
 		con.addStatement(picasso, paints, guernica, context2);
-		Assert.assertEquals(1, countElements(con.getContextIDs()));
-		Assert.assertEquals(context2, first(con.getContextIDs()));
+		assertEquals(1, countElements(con.getContextIDs()));
+		assertEquals(context2, first(con.getContextIDs()));
 		con.commit();
 	}
 
 	@Test
 	public void testOldURI() throws Exception {
-		Assert.assertEquals(0, countAllElements());
+		assertEquals(0, countAllElements());
 		con.begin();
 		con.addStatement(painter, RDF.TYPE, RDFS.CLASS);
 		con.addStatement(painting, RDF.TYPE, RDFS.CLASS);
 		con.addStatement(picasso, RDF.TYPE, painter, context1);
 		con.addStatement(guernica, RDF.TYPE, painting, context1);
 		con.addStatement(picasso, paints, guernica, context1);
-		Assert.assertEquals(5, countAllElements());
+		assertEquals(5, countAllElements());
 		con.commit();
 
 		con.begin();
@@ -839,25 +837,25 @@ public abstract class RDFStoreTest {
 		con.begin();
 		con.addStatement(picasso, paints, guernica, context1);
 		con.commit();
-		Assert.assertEquals(1, countAllElements());
+		assertEquals(1, countAllElements());
 	}
 
 	@Test
 	public void testDualConnections() throws Exception {
 		try (SailConnection con2 = sail.getConnection()) {
-			Assert.assertEquals(0, countAllElements());
+			assertEquals(0, countAllElements());
 			con.begin();
 			con.addStatement(painter, RDF.TYPE, RDFS.CLASS);
 			con.addStatement(painting, RDF.TYPE, RDFS.CLASS);
 			con.addStatement(picasso, RDF.TYPE, painter, context1);
 			con.addStatement(guernica, RDF.TYPE, painting, context1);
 			con.commit();
-			Assert.assertEquals(4, countAllElements());
+			assertEquals(4, countAllElements());
 			con2.begin();
 			con2.addStatement(RDF.NIL, RDF.TYPE, RDF.LIST);
 			String query = "SELECT * WHERE { ?S ?P ?O }";
 			ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
-			Assert.assertEquals(5, countElements(
+			assertEquals(5, countElements(
 					con2.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false)));
 			Runnable clearer = () -> {
 				try {
@@ -881,15 +879,15 @@ public abstract class RDFStoreTest {
 	public void testBNodeReuse() {
 		con.begin();
 		con.addStatement(RDF.VALUE, RDF.VALUE, RDF.VALUE);
-		Assert.assertEquals(1, con.size());
+		assertEquals(1, con.size());
 		BNode b1 = vf.createBNode();
 		con.addStatement(b1, RDF.VALUE, b1);
 		con.removeStatements(b1, RDF.VALUE, b1);
-		Assert.assertEquals(1, con.size());
+		assertEquals(1, con.size());
 		BNode b2 = vf.createBNode();
 		con.addStatement(b2, RDF.VALUE, b2);
 		con.addStatement(b1, RDF.VALUE, b1);
-		Assert.assertEquals(3, con.size());
+		assertEquals(3, con.size());
 		con.commit();
 	}
 
@@ -901,7 +899,7 @@ public abstract class RDFStoreTest {
 		con.commit();
 		con.begin();
 		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
-		Assert.assertEquals("Statement should appear once", 1, con.size());
+		assertEquals(1, con.size(), "Statement should appear once");
 		con.commit();
 
 	}
@@ -916,7 +914,7 @@ public abstract class RDFStoreTest {
 		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
 		try (Stream<? extends Statement> stream = con.getStatements(null, null, null, false).stream()) {
 			long count = stream.count();
-			Assert.assertEquals("Statement should appear once", 1, count);
+			assertEquals(1, count, "Statement should appear once");
 		}
 		con.commit();
 	}
@@ -932,7 +930,7 @@ public abstract class RDFStoreTest {
 		con.commit();
 		try (Stream<? extends Statement> stream = con.getStatements(null, null, null, false).stream()) {
 			long count = stream.count();
-			Assert.assertEquals("Statement should appear once", 1, count);
+			assertEquals(1, count, "Statement should appear once");
 
 		}
 	}
@@ -947,7 +945,7 @@ public abstract class RDFStoreTest {
 		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
 		con.commit();
 
-		Assert.assertEquals("Statement should appear once", 1, con.size());
+		assertEquals(1, con.size(), "Statement should appear once");
 	}
 
 	@Test
@@ -958,9 +956,9 @@ public abstract class RDFStoreTest {
 		con.commit();
 		con.begin();
 		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
-		Assert.assertEquals("Statement should appear once", 1, con.size());
-		Assert.assertEquals("Statement should appear once", 1, con.size());
-		Assert.assertEquals("Statement should appear once", 1, con.size());
+		assertEquals(1, con.size(), "Statement should appear once");
+		assertEquals(1, con.size(), "Statement should appear once");
+		assertEquals(1, con.size(), "Statement should appear once");
 		con.commit();
 	}
 
@@ -1010,8 +1008,8 @@ public abstract class RDFStoreTest {
 			BindingSet resultBindings = resultIter.next();
 			resultCount++;
 
-			Assert.assertEquals("Wrong number of binding names for binding set", expectedBindingCount,
-					resultBindings.getBindingNames().size());
+			assertEquals(expectedBindingCount, resultBindings.getBindingNames().size(),
+					"Wrong number of binding names for binding set");
 
 			int bindingCount = 0;
 			Iterator<Binding> bindingIter = resultBindings.iterator();
@@ -1020,7 +1018,7 @@ public abstract class RDFStoreTest {
 				bindingCount++;
 			}
 
-			Assert.assertEquals("Wrong number of bindings in binding set", expectedBindingCount, bindingCount);
+			assertEquals(expectedBindingCount, bindingCount, "Wrong number of bindings in binding set");
 		}
 
 		return resultCount;

@@ -27,15 +27,16 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.repository.RepositoryTest;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 public class HTTPRepositoryTest extends RepositoryTest {
 
 	private static HTTPMemServer server;
 
-	@BeforeClass
+	@BeforeAll
 	public static void startServer() throws Exception {
 		server = new HTTPMemServer();
 		try {
@@ -46,7 +47,7 @@ public class HTTPRepositoryTest extends RepositoryTest {
 		}
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void stopServer() throws Exception {
 		server.stop();
 	}
@@ -56,7 +57,8 @@ public class HTTPRepositoryTest extends RepositoryTest {
 		return new HTTPRepository(HTTPMemServer.REPOSITORY_URL);
 	}
 
-	@Test(timeout = 10_000)
+	@Test
+	@Timeout(value = 10)
 	public void testSubqueryDeadlock() throws Exception {
 		String mainQueryStr = "SELECT ?property WHERE { ?property a rdf:Property . }";
 		String subQueryStr = "SELECT ?range WHERE { ?property rdfs:range ?range . }";

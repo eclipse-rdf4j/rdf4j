@@ -11,10 +11,10 @@
 package org.eclipse.rdf4j.rio.trig;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.StringReader;
 import java.util.concurrent.TimeUnit;
@@ -33,21 +33,17 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.Timeout;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 /**
  * Custom (non-manifest) tests for TriG parser.
  *
  * @author Peter Ansell
  */
+@Timeout(value = 10, unit = TimeUnit.MINUTES)
 public class TriGParserCustomTest {
-
-	@Rule
-	public Timeout timeout = new Timeout(10, TimeUnit.MINUTES);
-
 	private ValueFactory vf;
 
 	private ParserConfig settingsNoVerifyLangTag;
@@ -61,7 +57,7 @@ public class TriGParserCustomTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		vf = SimpleValueFactory.getInstance();
 		settingsNoVerifyLangTag = new ParserConfig();

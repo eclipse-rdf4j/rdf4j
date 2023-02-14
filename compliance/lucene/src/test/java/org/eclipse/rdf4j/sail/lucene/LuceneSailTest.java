@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lucene;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
@@ -20,8 +22,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.util.Repositories;
 import org.eclipse.rdf4j.sail.lucene.impl.LuceneIndex;
 import org.eclipse.testsuite.rdf4j.sail.lucene.AbstractLuceneSailTest;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author jeen
@@ -56,7 +57,7 @@ public class LuceneSailTest extends AbstractLuceneSailTest {
 
 		// expected empty result => no data in the index
 		res = Repositories.tupleQuery(repository, query, t -> Iterations.asList(t));
-		Assert.assertEquals(Collections.emptyList(), res);
+		assertEquals(Collections.emptyList(), res);
 
 		try (RepositoryConnection connection = repository.getConnection()) {
 			connection.add(SUBJECT_1, PREDICATE_1, vf.createLiteral("one"));
@@ -64,14 +65,14 @@ public class LuceneSailTest extends AbstractLuceneSailTest {
 
 		// expected single result
 		res = Repositories.tupleQuery(repository, query, t -> Iterations.asList(t));
-		Assert.assertEquals(1, res.size());
+		assertEquals(1, res.size());
 
 		// re-index
 		this.sail.reindex();
 
 		// expected single result
 		res = Repositories.tupleQuery(repository, query, t -> Iterations.asList(t));
-		Assert.assertEquals(1, res.size());
+		assertEquals(1, res.size());
 	}
 
 }
