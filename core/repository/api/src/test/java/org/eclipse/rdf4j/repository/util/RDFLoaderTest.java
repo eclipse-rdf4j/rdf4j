@@ -10,10 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.util;
 
-import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
-import static com.github.tomakehurst.wiremock.client.WireMock.get;
-import static com.github.tomakehurst.wiremock.client.WireMock.permanentRedirect;
-import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
 import static org.eclipse.rdf4j.model.util.Statements.statement;
 import static org.eclipse.rdf4j.model.util.Values.getValueFactory;
 import static org.eclipse.rdf4j.model.util.Values.iri;
@@ -24,6 +20,8 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasProperty;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockserver.model.HttpRequest.request;
+import static org.mockserver.model.HttpResponse.response;
 
 import java.net.ProtocolException;
 import java.net.URL;
@@ -46,16 +44,17 @@ import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.junit.jupiter.api.Test;
-
-import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
-import com.github.tomakehurst.wiremock.junit5.WireMockTest;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockserver.client.MockServerClient;
+import org.mockserver.junit.jupiter.MockServerExtension;
+import org.mockserver.model.MediaType;
 
 /**
  * Unit tests for {@link RDFLoader}.
  *
  * @author Manuel Fiorelli
  */
-@WireMockTest
+@ExtendWith(MockServerExtension.class)
 public class RDFLoaderTest {
 	@Test
 	public void testTurtleJavaResource() throws Exception {
@@ -74,18 +73,25 @@ public class RDFLoaderTest {
 	}
 
 	@Test
-	public void testTurtleDocument(WireMockRuntimeInfo wmRuntimeInfo) throws Exception {
-		stubFor(get("/Socrates.ttl")
-				.willReturn(aResponse()
-						.withStatus(200)
-						.withHeader("Content-Type", RDFFormat.TURTLE.getDefaultMIMEType())
-						.withBody("<http://example.org/Socrates> a <http://xmlns.com/foaf/0.1/Person> .")));
+	public void testTurtleDocument(MockServerClient client) throws Exception {
+		client.when(
+				request()
+						.withMethod("GET")
+						.withPath("/Socrates.ttl")
+		)
+				.respond(
+						response()
+								.withStatusCode(200)
+								.withContentType(MediaType.parse(RDFFormat.TURTLE.getDefaultMIMEType()))
+								.withBody("<http://example.org/Socrates> a <http://xmlns.com/foaf/0.1/Person> .")
+
+				);
 
 		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
 
 		RDFHandler rdfHandler = mock(RDFHandler.class);
 
-		rdfLoader.load(new URL("http://localhost:" + wmRuntimeInfo.getHttpPort() + "/Socrates.ttl"), null, null,
+		rdfLoader.load(new URL("http://localhost:" + client.getPort() + "/Socrates.ttl"), null, null,
 				rdfHandler);
 
 		verify(rdfHandler).startRDF();
@@ -97,24 +103,58 @@ public class RDFLoaderTest {
 	}
 
 	@Test
-	public void testMultipleRedirects(WireMockRuntimeInfo wmRuntimeInfo) throws Exception {
-		stubFor(get("/Socrates")
-				.willReturn(permanentRedirect("/Socrates2")));
-		stubFor(get("/Socrates2")
-				.willReturn(permanentRedirect("/Socrates3")));
-		stubFor(get("/Socrates3")
-				.willReturn(permanentRedirect("/Socrates.ttl")));
-		stubFor(get("/Socrates.ttl")
-				.willReturn(aResponse()
-						.withStatus(200)
-						.withHeader("Content-Type", RDFFormat.TURTLE.getDefaultMIMEType())
-						.withBody("<http://example.org/Socrates> a <http://xmlns.com/foaf/0.1/Person> .")));
+	public void testMultipleRedirects(MockServerClient client) throws Exception {
+		client.when(
+				request()
+						.withMethod("GET")
+						.withPath("/Socrates")
+		)
+				.respond(
+						response()
+								.withStatusCode(301)
+								.withHeader("Location", "/Socrates2")
+
+				);
+		client.when(
+				request()
+						.withMethod("GET")
+						.withPath("/Socrates2")
+		)
+				.respond(
+						response()
+								.withStatusCode(301)
+								.withHeader("Location", "/Socrates3")
+
+				);
+		client.when(
+				request()
+						.withMethod("GET")
+						.withPath("/Socrates3")
+		)
+				.respond(
+						response()
+								.withStatusCode(301)
+								.withHeader("Location", "/Socrates.ttl")
+
+				);
+		client.when(
+				request()
+						.withMethod("GET")
+						.withPath("/Socrates.ttl")
+		)
+				.respond(
+						response()
+								.withStatusCode(200)
+								.withContentType(MediaType.parse(RDFFormat.TURTLE.getDefaultMIMEType()))
+								.withBody("<http://example.org/Socrates> a <http://xmlns.com/foaf/0.1/Person> .")
+
+				);
 
 		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
 
 		RDFHandler rdfHandler = mock(RDFHandler.class);
 
-		rdfLoader.load(new URL("http://localhost:" + wmRuntimeInfo.getHttpPort() + "/Socrates"), null, null,
+		rdfLoader.load(new URL("http://localhost:" + client.getPort() + "/Socrates"), null, null,
 				rdfHandler);
 
 		verify(rdfHandler).startRDF();
@@ -126,16 +166,41 @@ public class RDFLoaderTest {
 	}
 
 	@Test
-	public void testAbortOverMaxRedirects(WireMockRuntimeInfo wmRuntimeInfo) throws Exception {
-		stubFor(get("/Socrates1")
-				.willReturn(permanentRedirect("/Socrates2")));
-		stubFor(get("/Socrates2")
-				.willReturn(permanentRedirect("/Socrates3")));
-		stubFor(get("/Socrates3")
-				.willReturn(aResponse()
-						.withStatus(200)
-						.withHeader("Content-Type", RDFFormat.TURTLE.getDefaultMIMEType())
-						.withBody("<http://example.org/Socrates> a <http://xmlns.com/foaf/0.1/Person> .")));
+	public void testAbortOverMaxRedirects(MockServerClient client) throws Exception {
+		client.when(
+				request()
+						.withMethod("GET")
+						.withPath("/Socrates1")
+		)
+				.respond(
+						response()
+								.withStatusCode(301)
+								.withHeader("Location", "/Socrates2")
+
+				);
+		client.when(
+				request()
+						.withMethod("GET")
+						.withPath("/Socrates2")
+		)
+				.respond(
+						response()
+								.withStatusCode(301)
+								.withHeader("Location", "/Socrates3")
+
+				);
+		client.when(
+				request()
+						.withMethod("GET")
+						.withPath("/Socrates3")
+		)
+				.respond(
+						response()
+								.withStatusCode(200)
+								.withContentType(MediaType.parse(RDFFormat.TURTLE.getDefaultMIMEType()))
+								.withBody("<http://example.org/Socrates> a <http://xmlns.com/foaf/0.1/Person> .")
+
+				);
 
 		/* nullable */
 		String oldMaxRedirects = System.getProperty("http.maxRedirects");
@@ -148,7 +213,7 @@ public class RDFLoaderTest {
 
 			RDFHandler rdfHandler = mock(RDFHandler.class);
 			try {
-				rdfLoader.load(new URL("http://localhost:" + wmRuntimeInfo.getHttpPort() + "/Socrates1"), null, null,
+				rdfLoader.load(new URL("http://localhost:" + client.getPort() + "/Socrates1"), null, null,
 						rdfHandler);
 			} catch (ProtocolException e) {
 				actualException = e;
@@ -166,27 +231,42 @@ public class RDFLoaderTest {
 	}
 
 	@Test
-	public void testNonInformationResource(WireMockRuntimeInfo wmRuntimeInfo) throws Exception {
+	public void testNonInformationResource(MockServerClient client) throws Exception {
 		final SSLSocketFactory toRestoreSocketFactory = disableSSLCertificatCheck();
 		try {
 			final HostnameVerifier toRestoreHostnameVerifier = disableHostnameVerifier();
 			try {
-				stubFor(get("/Socrates")
-						.willReturn(
-								permanentRedirect(
-										"http://localhost:" + wmRuntimeInfo.getHttpPort() + "/Socrates.ttl")));
+				client.when(
+						request()
+								.withMethod("GET")
+								.withPath("/Socrates")
+				)
+						.respond(
+								response()
+										.withStatusCode(301)
+										.withHeader("Location",
+												"http://localhost:" + client.getPort() + "/Socrates.ttl")
 
-				stubFor(get("/Socrates.ttl")
-						.willReturn(aResponse()
-								.withStatus(200)
-								.withHeader("Content-Type", RDFFormat.TURTLE.getDefaultMIMEType())
-								.withBody("<http://example.org/Socrates> a <http://xmlns.com/foaf/0.1/Person> .")));
+						);
+				client.when(
+						request()
+								.withMethod("GET")
+								.withPath("/Socrates.ttl")
+				)
+						.respond(
+								response()
+										.withStatusCode(200)
+										.withContentType(MediaType.parse(RDFFormat.TURTLE.getDefaultMIMEType()))
+										.withBody(
+												"<http://example.org/Socrates> a <http://xmlns.com/foaf/0.1/Person> .")
+
+						);
 
 				RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
 
 				RDFHandler rdfHandler = mock(RDFHandler.class);
 
-				rdfLoader.load(new URL("http://localhost:" + wmRuntimeInfo.getHttpPort() + "/Socrates"), null, null,
+				rdfLoader.load(new URL("http://localhost:" + client.getPort() + "/Socrates"), null, null,
 						rdfHandler);
 
 				verify(rdfHandler).startRDF();
