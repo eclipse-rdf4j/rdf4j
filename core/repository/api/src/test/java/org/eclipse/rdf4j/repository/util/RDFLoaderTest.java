@@ -43,6 +43,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandler;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockserver.client.MockServerClient;
@@ -56,24 +57,8 @@ import org.mockserver.model.MediaType;
  */
 @ExtendWith(MockServerExtension.class)
 public class RDFLoaderTest {
-	@Test
-	public void testTurtleJavaResource() throws Exception {
-		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
-
-		RDFHandler rdfHandler = mock(RDFHandler.class);
-
-		rdfLoader.load(this.getClass().getResource("Socrates.ttl"), null, RDFFormat.TURTLE, rdfHandler);
-
-		verify(rdfHandler).startRDF();
-		verify(rdfHandler)
-				.handleStatement(statement(iri("http://example.org/Socrates"),
-						RDF.TYPE,
-						FOAF.PERSON, null));
-		verify(rdfHandler).endRDF();
-	}
-
-	@Test
-	public void testTurtleDocument(MockServerClient client) throws Exception {
+	@BeforeAll
+	static void defineMockServerBehavior(MockServerClient client) {
 		client.when(
 				request()
 						.withMethod("GET")
@@ -81,29 +66,10 @@ public class RDFLoaderTest {
 		)
 				.respond(
 						response()
-								.withStatusCode(200)
 								.withContentType(MediaType.parse(RDFFormat.TURTLE.getDefaultMIMEType()))
 								.withBody("<http://example.org/Socrates> a <http://xmlns.com/foaf/0.1/Person> .")
 
 				);
-
-		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
-
-		RDFHandler rdfHandler = mock(RDFHandler.class);
-
-		rdfLoader.load(new URL("http://localhost:" + client.getPort() + "/Socrates.ttl"), null, null,
-				rdfHandler);
-
-		verify(rdfHandler).startRDF();
-		verify(rdfHandler)
-				.handleStatement(statement(iri("http://example.org/Socrates"),
-						RDF.TYPE,
-						FOAF.PERSON, null));
-		verify(rdfHandler).endRDF();
-	}
-
-	@Test
-	public void testMultipleRedirects(MockServerClient client) throws Exception {
 		client.when(
 				request()
 						.withMethod("GET")
@@ -112,61 +78,9 @@ public class RDFLoaderTest {
 				.respond(
 						response()
 								.withStatusCode(301)
-								.withHeader("Location", "/Socrates2")
-
-				);
-		client.when(
-				request()
-						.withMethod("GET")
-						.withPath("/Socrates2")
-		)
-				.respond(
-						response()
-								.withStatusCode(301)
-								.withHeader("Location", "/Socrates3")
-
-				);
-		client.when(
-				request()
-						.withMethod("GET")
-						.withPath("/Socrates3")
-		)
-				.respond(
-						response()
-								.withStatusCode(301)
 								.withHeader("Location", "/Socrates.ttl")
 
 				);
-		client.when(
-				request()
-						.withMethod("GET")
-						.withPath("/Socrates.ttl")
-		)
-				.respond(
-						response()
-								.withStatusCode(200)
-								.withContentType(MediaType.parse(RDFFormat.TURTLE.getDefaultMIMEType()))
-								.withBody("<http://example.org/Socrates> a <http://xmlns.com/foaf/0.1/Person> .")
-
-				);
-
-		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
-
-		RDFHandler rdfHandler = mock(RDFHandler.class);
-
-		rdfLoader.load(new URL("http://localhost:" + client.getPort() + "/Socrates"), null, null,
-				rdfHandler);
-
-		verify(rdfHandler).startRDF();
-		verify(rdfHandler)
-				.handleStatement(statement(iri("http://example.org/Socrates"),
-						RDF.TYPE,
-						FOAF.PERSON, null));
-		verify(rdfHandler).endRDF();
-	}
-
-	@Test
-	public void testAbortOverMaxRedirects(MockServerClient client) throws Exception {
 		client.when(
 				request()
 						.withMethod("GET")
@@ -186,22 +100,63 @@ public class RDFLoaderTest {
 				.respond(
 						response()
 								.withStatusCode(301)
-								.withHeader("Location", "/Socrates3")
+								.withHeader("Location", "/Socrates.ttl")
 
 				);
-		client.when(
-				request()
-						.withMethod("GET")
-						.withPath("/Socrates3")
-		)
-				.respond(
-						response()
-								.withStatusCode(200)
-								.withContentType(MediaType.parse(RDFFormat.TURTLE.getDefaultMIMEType()))
-								.withBody("<http://example.org/Socrates> a <http://xmlns.com/foaf/0.1/Person> .")
+	}
 
-				);
+	@Test
+	public void testTurtleJavaResource() throws Exception {
+		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
 
+		RDFHandler rdfHandler = mock(RDFHandler.class);
+
+		rdfLoader.load(this.getClass().getResource("Socrates.ttl"), null, RDFFormat.TURTLE, rdfHandler);
+
+		verify(rdfHandler).startRDF();
+		verify(rdfHandler)
+				.handleStatement(statement(iri("http://example.org/Socrates"),
+						RDF.TYPE,
+						FOAF.PERSON, null));
+		verify(rdfHandler).endRDF();
+	}
+
+	@Test
+	public void testTurtleDocument(MockServerClient client) throws Exception {
+		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
+
+		RDFHandler rdfHandler = mock(RDFHandler.class);
+
+		rdfLoader.load(new URL("http://localhost:" + client.getPort() + "/Socrates.ttl"), null, null,
+				rdfHandler);
+
+		verify(rdfHandler).startRDF();
+		verify(rdfHandler)
+				.handleStatement(statement(iri("http://example.org/Socrates"),
+						RDF.TYPE,
+						FOAF.PERSON, null));
+		verify(rdfHandler).endRDF();
+	}
+
+	@Test
+	public void testMultipleRedirects(MockServerClient client) throws Exception {
+		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
+
+		RDFHandler rdfHandler = mock(RDFHandler.class);
+
+		rdfLoader.load(new URL("http://localhost:" + client.getPort() + "/Socrates1"), null, null,
+				rdfHandler);
+
+		verify(rdfHandler).startRDF();
+		verify(rdfHandler)
+				.handleStatement(statement(iri("http://example.org/Socrates"),
+						RDF.TYPE,
+						FOAF.PERSON, null));
+		verify(rdfHandler).endRDF();
+	}
+
+	@Test
+	public void testAbortOverMaxRedirects(MockServerClient client) throws Exception {
 		/* nullable */
 		String oldMaxRedirects = System.getProperty("http.maxRedirects");
 		try {
@@ -236,32 +191,6 @@ public class RDFLoaderTest {
 		try {
 			final HostnameVerifier toRestoreHostnameVerifier = disableHostnameVerifier();
 			try {
-				client.when(
-						request()
-								.withMethod("GET")
-								.withPath("/Socrates")
-				)
-						.respond(
-								response()
-										.withStatusCode(301)
-										.withHeader("Location",
-												"http://localhost:" + client.getPort() + "/Socrates.ttl")
-
-						);
-				client.when(
-						request()
-								.withMethod("GET")
-								.withPath("/Socrates.ttl")
-				)
-						.respond(
-								response()
-										.withStatusCode(200)
-										.withContentType(MediaType.parse(RDFFormat.TURTLE.getDefaultMIMEType()))
-										.withBody(
-												"<http://example.org/Socrates> a <http://xmlns.com/foaf/0.1/Person> .")
-
-						);
-
 				RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
 
 				RDFHandler rdfHandler = mock(RDFHandler.class);
