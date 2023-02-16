@@ -56,6 +56,8 @@ import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.resultio.AbstractTupleQueryResultParser;
 import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Reader for the binary tuple result format. The format is explained in {@link BinaryQueryResultConstants}.
@@ -72,7 +74,11 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 
 	private final CharsetDecoder charsetDecoder = StandardCharsets.UTF_8.newDecoder();
 
+	private static final Logger logger = LoggerFactory.getLogger(BinaryQueryResultParser.class);
+
 	private String[] namespaceArray = new String[32];
+
+	private static final int INVALID_CONTENT_LIMIT = 8 * 1024;
 
 	/*--------------*
 	 * Constructors *
@@ -188,7 +194,8 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 					value = readTriple();
 					break;
 				default:
-					throw new IOException("Unkown record type: " + recordTypeMarker);
+					logger.error(extractInvalidContentAsString(recordTypeMarker));
+					throw new IOException("Could not parse the query result.");
 				}
 
 				currentTuple.add(value);
@@ -294,6 +301,28 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 		} else {
 			return readStringV2();
 		}
+	}
+
+	/**
+	 * Used when trying to parse some invalid content. Reads the remaining bytes as string in order to provide more user-friendly error message.
+	 * Sets the max limit of the returned string, if its length > INVALID_CONTENT_LIMIT, the returned string is trimmed and
+	 * "..." is appended in order to prevent displaying too long result.
+	 */
+	private String extractInvalidContentAsString(int recordTypeMarker) throws IOException {
+		byte[] remainingBytes = new byte[INVALID_CONTENT_LIMIT];
+		IOUtil.readBytes(in, remainingBytes);
+
+		ByteBuffer byteBuf = ByteBuffer.wrap(remainingBytes);
+		CharBuffer charBuf = charsetDecoder.decode(byteBuf);
+
+		String remainingSymbols = charBuf.toString();
+
+		String result = remainingSymbols;
+		if (remainingSymbols.contains("Exception")) {
+			result = remainingSymbols.substring(0, remainingSymbols.lastIndexOf(')') + 1);
+		}
+
+		return Character.toString(recordTypeMarker) + result + "...";
 	}
 
 	/**
