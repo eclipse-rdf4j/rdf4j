@@ -195,7 +195,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 					break;
 				default:
 					logger.error(extractInvalidContentAsString(recordTypeMarker));
-					throw new IOException("Could not parse the query result.");
+					throw new QueryResultParseException("Could not parse the query result.");
 				}
 
 				currentTuple.add(value);
