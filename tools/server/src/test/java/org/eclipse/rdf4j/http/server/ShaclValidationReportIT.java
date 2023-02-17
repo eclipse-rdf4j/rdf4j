@@ -26,33 +26,35 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
+import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
+import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.junit.jupiter.api.AfterAll;
+import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
+import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
+import com.github.mjeanroy.junit.servers.annotations.TestServerConfiguration;
+import com.github.mjeanroy.junit.servers.jetty.EmbeddedJettyConfiguration;
+import com.github.mjeanroy.junit.servers.jetty9.EmbeddedJetty;
+import com.github.mjeanroy.junit.servers.jupiter.JunitServerExtension;
+
+@ExtendWith(JunitServerExtension.class)
 public class ShaclValidationReportIT {
-
-	private static TestServer server;
-
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
-	@BeforeAll
-	public static void startServer() throws Exception {
-		server = new TestServer();
-		try {
-			server.start();
-		} catch (Exception e) {
-			server.stop();
-			throw e;
-		}
-	}
+	private static final String TEST_SHACL_REPO_ID = "Test-SHACL";
 
-	@AfterAll
-	public static void stopServer() throws Exception {
-		server.stop();
-	}
+	@TestServerConfiguration
+	static EmbeddedJettyConfiguration configuration = EmbeddedJettyConfiguration.builder()
+			.withPath("/rdf4j")
+			.withWebapp("./target/rdf4j-server")
+			.build();
+
+	private static Repository systemRepo;
 
 	String shacl = "@base <http://example.com/ns> .\n" +
 			"@prefix ex: <http://example.com/ns#> .\n" +
@@ -72,11 +74,20 @@ public class ShaclValidationReportIT {
 			"        sh:path rdfs:label ;\n" +
 			"        sh:minCount 1 .";
 
+	@BeforeAll
+	static void beforeAll(EmbeddedJetty server) {
+		RemoteRepositoryManager manager = RemoteRepositoryManager.getInstance(server.getUrl());
+
+		ShaclSailConfig shaclConfig = new ShaclSailConfig(new MemoryStoreConfig());
+		SailRepositoryConfig sailRepConfig = new SailRepositoryConfig(shaclConfig);
+		RepositoryConfig repConfig = new RepositoryConfig(TEST_SHACL_REPO_ID, sailRepConfig);
+		manager.addRepositoryConfig(repConfig);
+
+		systemRepo = new HTTPRepository(Protocol.getRepositoryLocation(server.getUrl(), TEST_SHACL_REPO_ID));
+	}
+
 	@Test
 	public void testSparqlUpdate() throws IOException {
-
-		Repository systemRepo = new HTTPRepository(
-				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_SHACL_REPO_ID));
 		try (RepositoryConnection connection = systemRepo.getConnection()) {
 			connection.begin();
 			connection.add(new StringReader(shacl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
@@ -108,9 +119,6 @@ public class ShaclValidationReportIT {
 
 	@Test
 	public void testAddingData() throws IOException {
-
-		Repository systemRepo = new HTTPRepository(
-				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_SHACL_REPO_ID));
 		try (RepositoryConnection connection = systemRepo.getConnection()) {
 			connection.begin();
 			connection.add(new StringReader(shacl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
