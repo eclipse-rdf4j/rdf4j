@@ -10,45 +10,55 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.spring.repository.remote;
 
-import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
-import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
-import static com.github.tomakehurst.wiremock.client.WireMock.exactly;
-import static com.github.tomakehurst.wiremock.client.WireMock.get;
-import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
-import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
-import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.mockserver.model.HttpRequest.request;
+import static org.mockserver.model.HttpResponse.response;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Objects;
+
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.spring.support.ConfigurationException;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockserver.client.MockServerClient;
+import org.mockserver.junit.jupiter.MockServerExtension;
+import org.mockserver.matchers.Times;
+import org.mockserver.model.MediaType;
+import org.mockserver.model.NottableString;
+import org.mockserver.verify.VerificationTimes;
 
-import com.github.tomakehurst.wiremock.WireMockServer;
-
+@ExtendWith(MockServerExtension.class)
 class RemoteRepositoryConfigTest {
 
 	private final RemoteRepositoryConfig remoteRepositoryConfig = new RemoteRepositoryConfig();
-	private static final WireMockServer wireMockServer = new WireMockServer(options()
-			.dynamicPort()
-			.usingFilesUnderClasspath("src/test/resources/"));
 
-	@BeforeAll
-	static void setUp() {
-		wireMockServer.start();
-		wireMockServer.stubFor(get(urlEqualTo("/repositories"))
-				.willReturn(aResponse().withStatus(200)
-						.withHeader("Content-Type", "application/sparql-results+json;charset=UTF-8")
-						.withBodyFile("repositories.srj")));
+	@BeforeEach
+	void setUp(MockServerClient client) throws Exception {
+		client.when(
+				request()
+						.withMethod("GET")
+						.withPath("/repositories"),
+				Times.once()
+		)
+				.respond(
+						response()
+								.withContentType(MediaType.parse("application/sparql-results+json;charset=UTF-8"))
+								.withBody(readFileToString("repositories.srj"))
+				);
 	}
 
 	@Test
-	void getRemoteRepository() {
+	void getRemoteRepository(MockServerClient client) {
 		// Arrange
 		RemoteRepositoryProperties properties = new RemoteRepositoryProperties();
-		properties.setManagerUrl(wireMockServer.baseUrl());
+		properties.setManagerUrl("http://localhost:" + client.getPort());
 		properties.setName("test-repo");
 
 		// Act
@@ -56,15 +66,20 @@ class RemoteRepositoryConfigTest {
 
 		// Assert
 		assertThat(repository).isNotNull();
-		wireMockServer.verify(exactly(1), getRequestedFor(urlEqualTo("/repositories"))
-				.withoutHeader("Authorization"));
+		client.verify(
+				request()
+						.withMethod("GET")
+						.withPath("/repositories")
+						.withHeader(NottableString.not("Authorization")),
+				VerificationTimes.once()
+		);
 	}
 
 	@Test
-	void getRemoteRepositoryWithUsernameAndPassword() {
+	void getRemoteRepositoryWithUsernameAndPassword(MockServerClient client) {
 		// Arrange
 		RemoteRepositoryProperties properties = new RemoteRepositoryProperties();
-		properties.setManagerUrl(wireMockServer.baseUrl());
+		properties.setManagerUrl("http://localhost:" + client.getPort());
 		properties.setName("test-repo");
 		properties.setUsername("admin");
 		properties.setPassword("1234");
@@ -74,8 +89,13 @@ class RemoteRepositoryConfigTest {
 
 		// Assert
 		assertThat(repository).isNotNull();
-		wireMockServer.verify(exactly(1), getRequestedFor(urlEqualTo("/repositories"))
-				.withHeader("Authorization", equalTo("Basic YWRtaW46MTIzNA==")));
+		client.verify(
+				request()
+						.withMethod("GET")
+						.withPath("/repositories")
+						.withHeader("Authorization", "Basic YWRtaW46MTIzNA=="),
+				VerificationTimes.once()
+		);
 	}
 
 	@Test
@@ -90,8 +110,7 @@ class RemoteRepositoryConfigTest {
 				.isThrownBy(() -> remoteRepositoryConfig.getRemoteRepository(properties));
 	}
 
-	@AfterAll
-	static void tearDown() {
-		wireMockServer.stop();
+	private String readFileToString(String fileName) throws IOException {
+		return IOUtils.resourceToString("__files/" + fileName, StandardCharsets.UTF_8, getClass().getClassLoader());
 	}
 }

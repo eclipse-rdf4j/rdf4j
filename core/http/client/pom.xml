@@ -71,8 +71,8 @@
 			<scope>runtime</scope>
 		</dependency>
 		<dependency>
-			<groupId>com.github.tomakehurst</groupId>
-			<artifactId>wiremock-jre8</artifactId>
+			<groupId>org.mock-server</groupId>
+			<artifactId>mockserver-junit-jupiter-no-dependencies</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
