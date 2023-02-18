@@ -40,7 +40,7 @@ public class MemoryStoreSchema {
 
 	/**
 	 * <var>http://www.openrdf.org/config/sail/memory#syncDelay</var>
-	 * 
+	 *
 	 * @deprecated use {@link CONFIG.Mem#syncDelay} instead.
 	 */
 	public final static IRI SYNC_DELAY;

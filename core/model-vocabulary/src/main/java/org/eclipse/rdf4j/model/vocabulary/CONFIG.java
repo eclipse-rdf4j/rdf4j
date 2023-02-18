@@ -40,7 +40,6 @@ public class CONFIG {
 	 */
 	public final static IRI delegate = Vocabularies.createIRI(NAMESPACE, "delegate");
 
-
 	/**
 	 * Repository config
 	 */
@@ -190,7 +189,6 @@ public class CONFIG {
 		public static final IRI passThroughEnabled = Vocabularies.createIRI(NAMESPACE, "sparql.passThroughEnabled");
 	}
 
-
 	/**
 	 * Sail config
 	 */
@@ -234,5 +232,40 @@ public class CONFIG {
 
 		/** <var>tag:rdf4j.org,2023:config/mem.syncDelay</var> */
 		public final static IRI syncDelay = Vocabularies.createIRI(NAMESPACE, "mem.syncDelay");
+	}
+
+	/**
+	 * Native Store config
+	 */
+	public static final class Native {
+		/**
+		 * <var>tag:rdf4j.org,2023:config/native.tripleIndexes</var>
+		 */
+		public final static IRI tripleIndexes = Vocabularies.createIRI(NAMESPACE, "native.tripleIndexes");
+
+		/**
+		 * <var>tag:rdf4j.org,2023:config/native.forceSync</var>
+		 */
+		public final static IRI forceSync = Vocabularies.createIRI(NAMESPACE, "native.forceSync");
+
+		/**
+		 * <var>tag:rdf4j.org,2023:config/native.valueCacheSize</var>
+		 */
+		public final static IRI valueCacheSize = Vocabularies.createIRI(NAMESPACE, "native.valueCacheSize");
+
+		/**
+		 * <var>tag:rdf4j.org,2023:config/native.valueIDCacheSize</var>
+		 */
+		public final static IRI valueIDCacheSize = Vocabularies.createIRI(NAMESPACE, "native.valueIDCacheSize");
+
+		/**
+		 * <var>tag:rdf4j.org,2023:config/native.namespaceCacheSize</var>
+		 */
+		public final static IRI namespaceCacheSize = Vocabularies.createIRI(NAMESPACE, "native.namespaceCacheSize");
+
+		/**
+		 * <var>tag:rdf4j.org,2023:config/native.namespaceIDCacheSize</var>
+		 */
+		public final static IRI namespaceIDCacheSize = Vocabularies.createIRI(NAMESPACE, "native.namespaceIDCacheSize");
 	}
 }

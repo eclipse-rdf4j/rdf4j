@@ -94,14 +94,14 @@ public class MemoryStoreConfig extends BaseSailConfig {
 
 			Configurations.getLiteralValue(graph, implNode, CONFIG.Mem.syncDelay, SYNC_DELAY)
 					.ifPresent(syncDelayValue -> {
-				try {
-					setSyncDelay((syncDelayValue).longValue());
-				} catch (NumberFormatException e) {
-					throw new SailConfigException(
+						try {
+							setSyncDelay((syncDelayValue).longValue());
+						} catch (NumberFormatException e) {
+							throw new SailConfigException(
 									"Long integer value required for " + CONFIG.Mem.syncDelay + " property, found "
-									+ syncDelayValue);
-				}
-			});
+											+ syncDelayValue);
+						}
+					});
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
