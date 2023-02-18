@@ -15,15 +15,15 @@ import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryFactory;
 import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreFactory;
 import org.eclipse.rdf4j.testsuite.sparql.RepositorySPARQLComplianceTestSuite;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 
 /**
  * @author jeen
  */
 public class NativeSPARQLComplianceTest extends RepositorySPARQLComplianceTestSuite {
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpFactory() throws Exception {
 		setRepositoryFactory(new SailRepositoryFactory() {
 			@Override
@@ -34,7 +34,7 @@ public class NativeSPARQLComplianceTest extends RepositorySPARQLComplianceTestSu
 		});
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void tearDownFactory() throws Exception {
 		setRepositoryFactory(null);
 	}
