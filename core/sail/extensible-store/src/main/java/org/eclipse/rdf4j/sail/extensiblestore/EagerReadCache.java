@@ -31,8 +31,15 @@ import org.slf4j.LoggerFactory;
 public class EagerReadCache implements DataStructureInterface {
 
 	private static final Logger logger = LoggerFactory.getLogger(EagerReadCache.class);
+	private static final Runtime RUNTIME = Runtime.getRuntime();
 
-	DataStructureInterface delegate;
+	// We will not cache anything if there is less than 32 MB of "free" memory
+	private static final long MIN_AVAILABLE_MEM = 32 * 1024 * 1024;
+
+	// We will always cache up to 100 000 statements
+	private static final int MIN_CACHE_SIZE = 100_000;
+
+	private final DataStructureInterface delegate;
 
 	private volatile LinkedHashModel cache = null;
 
@@ -68,6 +75,11 @@ public class EagerReadCache implements DataStructureInterface {
 			cache = fillCache();
 		}
 
+		if (cache == null) {
+			// if memory is low then fillCache() can return null
+			return delegate.getStatements(subject, predicate, object, inferred, context);
+		}
+
 		Iterable<Statement> statements = cache.getStatements(subject, predicate, object, context);
 		return new FilteringIteration<>(new LookAheadIteration<>() {
 
@@ -84,6 +96,8 @@ public class EagerReadCache implements DataStructureInterface {
 		}, subject, predicate, object, inferred, context);
 	}
 
+	private int lowMemCounter = 0;
+
 	private synchronized Model fillCache() {
 		LinkedHashModel cache = this.cache;
 		if (cache != null) {
@@ -92,16 +106,38 @@ public class EagerReadCache implements DataStructureInterface {
 
 		logger.debug("Filling cache");
 
+		if (lowMemCounter > 100) {
+			// Since we seem to be chronically low on memory we can skip checking how much memory is free for a while
+			if (lowMemCounter++ % 100 == 0 && !isLowOnMemory()) {
+				lowMemCounter = 0;
+			} else {
+				logger.debug("Canceled filling cache due to low memory");
+				return null;
+			}
+		}
+
 		cache = new LinkedHashModel();
+
+		int i = 0;
 
 		try (var statements = delegate.getStatements(null, null, null, true)) {
 			while (statements.hasNext()) {
+				if (i++ > MIN_CACHE_SIZE && i % 1000 == 0 && isLowOnMemory()) {
+					logger.debug("Canceled filling cache due to low memory");
+					lowMemCounter++;
+					return null;
+				}
 				cache.add(statements.next());
 			}
 		}
 
 		try (var statements = delegate.getStatements(null, null, null, false)) {
 			while (statements.hasNext()) {
+				if (i++ > MIN_CACHE_SIZE && i % 1000 == 0 && isLowOnMemory()) {
+					logger.debug("Canceled filling cache due to low memory");
+					lowMemCounter++;
+					return null;
+				}
 				cache.add(statements.next());
 			}
 		}
@@ -111,6 +147,54 @@ public class EagerReadCache implements DataStructureInterface {
 		logger.debug("Cache filled");
 
 		return cache;
+	}
+
+	private boolean isLowOnMemory() {
+		if (getFreeToAllocateMemory() < MIN_AVAILABLE_MEM) {
+
+			// Attempt to force the JVM to free up memory
+			System.gc();
+
+			try {
+				Thread.sleep(1);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new SailException(e);
+			}
+
+			System.gc();
+
+			try {
+				Thread.sleep(1);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new SailException(e);
+			}
+
+			return getFreeToAllocateMemory() < MIN_AVAILABLE_MEM;
+		}
+
+		return false;
+
+	}
+
+	private static long getFreeToAllocateMemory() {
+		// maximum heap size the JVM can allocate
+		long maxMemory = RUNTIME.maxMemory();
+
+		// total currently allocated JVM memory
+		long totalMemory = RUNTIME.totalMemory();
+
+		// amount of memory free in the currently allocated JVM memory
+		long freeMemory = RUNTIME.freeMemory();
+
+		// estimated memory used
+		long used = totalMemory - freeMemory;
+
+		// amount of memory the JVM can still allocate from the OS (upper boundary is the max heap)
+		long freeToAllocateMemory = maxMemory - used;
+
+		return freeToAllocateMemory;
 	}
 
 	@Override
