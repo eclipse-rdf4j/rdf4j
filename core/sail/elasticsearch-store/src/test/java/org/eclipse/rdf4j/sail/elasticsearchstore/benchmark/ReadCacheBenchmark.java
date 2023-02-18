@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
+import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStore;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -84,13 +85,11 @@ public class ReadCacheBenchmark {
 		// PATH
 		runner = TestHelpers.startElasticsearch(installLocation);
 
-		repoWithoutCache = new SailRepository(
-				new ElasticsearchStore("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex1",
-						false));
+		repoWithoutCache = new SailRepository(new ElasticsearchStore("localhost", TestHelpers.getPort(runner),
+				TestHelpers.CLUSTER, "testindex1", ExtensibleStore.Cache.none));
 
 		repoWithCache = new SailRepository(
-				new ElasticsearchStore("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex2",
-						true));
+				new ElasticsearchStore("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex2"));
 
 		try (SailRepositoryConnection connection = repoWithCache.getConnection()) {
 			connection.begin(IsolationLevels.NONE);

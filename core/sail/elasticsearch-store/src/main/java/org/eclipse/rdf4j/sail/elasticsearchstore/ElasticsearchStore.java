@@ -61,11 +61,11 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 	private String index;
 
 	public ElasticsearchStore(String hostname, int port, String clusterName, String index) {
-		this(hostname, port, clusterName, index, true);
+		this(hostname, port, clusterName, index, Cache.full);
 	}
 
-	public ElasticsearchStore(String hostname, int port, String clusterName, String index, boolean cacheEnabled) {
-		super(cacheEnabled);
+	public ElasticsearchStore(String hostname, int port, String clusterName, String index, Cache cache) {
+		super(cache);
 		this.hostname = hostname;
 		this.port = port;
 		this.clusterName = clusterName;
@@ -83,11 +83,11 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 	}
 
 	public ElasticsearchStore(ClientProvider clientPool, String index) {
-		this(clientPool, index, true);
+		this(clientPool, index, Cache.full);
 	}
 
-	public ElasticsearchStore(ClientProvider clientPool, String index, boolean cacheEnabled) {
-		super(cacheEnabled);
+	public ElasticsearchStore(ClientProvider clientPool, String index, Cache cache) {
+		super(cache);
 		this.clientProvider = new UnclosableClientProvider(clientPool);
 
 		dataStructure = new ElasticsearchDataStructure(this.clientProvider, index);
@@ -96,11 +96,11 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 	}
 
 	public ElasticsearchStore(Client client, String index) {
-		this(client, index, true);
+		this(client, index, Cache.full);
 	}
 
-	public ElasticsearchStore(Client client, String index, boolean cacheEnabled) {
-		this(new UnclosableClientProvider(new UserProvidedClientProvider(client)), index, cacheEnabled);
+	public ElasticsearchStore(Client client, String index, Cache cache) {
+		this(new UnclosableClientProvider(new UserProvidedClientProvider(client)), index, cache);
 	}
 
 	@Override
