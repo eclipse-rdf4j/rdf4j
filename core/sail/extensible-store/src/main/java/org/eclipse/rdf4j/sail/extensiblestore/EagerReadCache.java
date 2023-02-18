@@ -7,7 +7,7 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
- *******************************************************************************/
+ ******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore;
 
 import java.util.Iterator;

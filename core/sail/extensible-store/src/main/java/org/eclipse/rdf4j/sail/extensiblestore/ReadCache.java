@@ -128,7 +128,7 @@ public class ReadCache implements DataStructureInterface {
 
 		if (statements != null) {
 
-			return new LookAheadIteration<ExtensibleStatement, SailException>() {
+			return new LookAheadIteration<>() {
 				final Iterator<ExtensibleStatement> iterator = statements.iterator();
 
 				@Override
