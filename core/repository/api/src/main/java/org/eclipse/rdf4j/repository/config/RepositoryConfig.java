@@ -134,21 +134,21 @@ public class RepositoryConfig {
 		model.add(repositoryNode, RDF.TYPE, CONFIG.Rep.Repository);
 
 		if (id != null) {
-			model.add(repositoryNode, CONFIG.Rep.repositoryID, literal(id));
+			model.add(repositoryNode, CONFIG.Rep.id, literal(id));
 		}
 		if (title != null) {
 			model.add(repositoryNode, RDFS.LABEL, literal(title));
 		}
 		if (implConfig != null) {
 			Resource implNode = implConfig.export(model);
-			model.add(repositoryNode, CONFIG.Rep.repositoryImpl, implNode);
+			model.add(repositoryNode, CONFIG.Rep.impl, implNode);
 		}
 	}
 
 	public void parse(Model model, Resource repositoryNode) throws RepositoryConfigException {
 		try {
 			Configurations
-					.getLiteralValue(model, repositoryNode, CONFIG.Rep.repositoryID,
+					.getLiteralValue(model, repositoryNode, CONFIG.Rep.id,
 							RepositoryConfigSchema.REPOSITORYID)
 					.ifPresent(lit -> setID(lit.getLabel()));
 
@@ -156,7 +156,7 @@ public class RepositoryConfig {
 					.ifPresent(lit -> setTitle(lit.getLabel()));
 
 			Configurations
-					.getResourceValue(model, repositoryNode, CONFIG.Rep.repositoryImpl,
+					.getResourceValue(model, repositoryNode, CONFIG.Rep.impl,
 							RepositoryConfigSchema.REPOSITORYIMPL)
 					.ifPresent(res -> setRepositoryImplConfig(AbstractRepositoryImplConfig.create(model, res)));
 		} catch (ModelException e) {

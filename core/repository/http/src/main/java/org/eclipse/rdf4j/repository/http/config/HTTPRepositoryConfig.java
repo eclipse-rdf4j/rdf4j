@@ -77,7 +77,7 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 
 		if (url != null) {
 			graph.setNamespace(CONFIG.PREFIX, CONFIG.NAMESPACE);
-			graph.add(implNode, CONFIG.Http.repositoryURL, SimpleValueFactory.getInstance().createIRI(url));
+			graph.add(implNode, CONFIG.Http.url, SimpleValueFactory.getInstance().createIRI(url));
 		}
 
 		return implNode;
@@ -90,7 +90,7 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 		try {
 
 			Configurations
-					.getIRIValue(model, implNode, CONFIG.Http.repositoryURL, HTTPRepositorySchema.REPOSITORYURL)
+					.getIRIValue(model, implNode, CONFIG.Http.url, HTTPRepositorySchema.REPOSITORYURL)
 					.ifPresent(iri -> setURL(iri.stringValue()));
 
 			Configurations

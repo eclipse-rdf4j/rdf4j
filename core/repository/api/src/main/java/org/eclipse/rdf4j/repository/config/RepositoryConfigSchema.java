@@ -41,17 +41,17 @@ public class RepositoryConfigSchema {
 	public final static IRI REPOSITORY = iri(NAMESPACE, "Repository");
 
 	/**
-	 * @deprecated use {@link CONFIG#repositoryID} instead.
+	 * @deprecated use {@link CONFIG#id} instead.
 	 */
 	public final static IRI REPOSITORYID = iri(NAMESPACE, "repositoryID");
 
 	/**
-	 * @deprecated use {@link CONFIG#repositoryImpl} instead.
+	 * @deprecated use {@link CONFIG#impl} instead.
 	 */
 	public final static IRI REPOSITORYIMPL = iri(NAMESPACE, "repositoryImpl");
 
 	/**
-	 * @deprecated use {@link CONFIG#repositoryType} instead.
+	 * @deprecated use {@link CONFIG#type} instead.
 	 */
 	public final static IRI REPOSITORYTYPE = iri(NAMESPACE, "repositoryType");
 

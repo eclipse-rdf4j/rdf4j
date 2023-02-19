@@ -54,23 +54,23 @@ public class CONFIG {
 		/**
 		 * Setting for the repository ID.
 		 *
-		 * <var>tag:rdf4j.org,2023:config/repositoryID</var>
+		 * <var>tag:rdf4j.org,2023:config/rep.id</var>
 		 */
-		public final static IRI repositoryID = Vocabularies.createIRI(NAMESPACE, "repositoryID");
+		public final static IRI id = Vocabularies.createIRI(NAMESPACE, "rep.id");
 
 		/**
 		 * Setting for the repository implementation-specific configuration.
 		 *
-		 * <var>tag:rdf4j.org,2023:config/repositoryImpl</var>
+		 * <var>tag:rdf4j.org,2023:config/rep.impl</var>
 		 */
-		public final static IRI repositoryImpl = Vocabularies.createIRI(NAMESPACE, "repositoryImpl");
+		public final static IRI impl = Vocabularies.createIRI(NAMESPACE, "rep.impl");
 
 		/**
 		 * Setting for the repository type.
 		 *
-		 * <var>tag:rdf4j.org,2023:config/repositoryType</var>
+		 * <var>tag:rdf4j.org,2023:config/rep.type</var>
 		 */
-		public final static IRI repositoryType = Vocabularies.createIRI(NAMESPACE, "repositoryType");
+		public final static IRI type = Vocabularies.createIRI(NAMESPACE, "rep.type");
 	}
 
 	/**
@@ -78,25 +78,25 @@ public class CONFIG {
 	 */
 	public static final class Http {
 		/**
-		 * Setting for a (remote) RDF4J Repository URL.
+		 * Setting for a RDF4J HTTP Repository URL.
 		 *
-		 * <var>tag:rdf4j.org,2023:config/repositoryURL</var>
+		 * <var>tag:rdf4j.org,2023:config/http.url</var>
 		 */
-		public static final IRI repositoryURL = Vocabularies.createIRI(NAMESPACE, "repositoryURL");
+		public static final IRI url = Vocabularies.createIRI(NAMESPACE, "http.url");
 
 		/**
 		 * Setting for a username to use for authentication.
 		 *
-		 * <var>tag:rdf4j.org,2023:config/username</var>
+		 * <var>tag:rdf4j.org,2023:config/http.username</var>
 		 */
-		public final static IRI username = Vocabularies.createIRI(NAMESPACE, "username");
+		public final static IRI username = Vocabularies.createIRI(NAMESPACE, "http.username");
 
 		/**
 		 * Setting for a password to use for authentication.
 		 *
-		 * <var>tag:rdf4j.org,2023:config/password</var>
+		 * <var>tag:rdf4j.org,2023:config/http.password</var>
 		 */
-		public final static IRI password = Vocabularies.createIRI(NAMESPACE, "password");
+		public final static IRI password = Vocabularies.createIRI(NAMESPACE, "http.password");
 	}
 
 	/**
@@ -267,5 +267,71 @@ public class CONFIG {
 		 * <var>tag:rdf4j.org,2023:config/native.namespaceIDCacheSize</var>
 		 */
 		public final static IRI namespaceIDCacheSize = Vocabularies.createIRI(NAMESPACE, "native.namespaceIDCacheSize");
+	}
+
+	/**
+	 * SHACL Sail config
+	 */
+	public static final class Shacl {
+		/**
+		 * <code>tag:rdf4j.org,2023:config/shacl.parallelValidation</code>
+		 */
+		public final static IRI parallelValidation = Vocabularies.createIRI(NAMESPACE, "parallelValidation");
+
+		/**
+		 * <code>tag:rdf4j.org,2023:config/shacl.logValidationPlans</code>
+		 */
+		public final static IRI logValidationPlans = Vocabularies.createIRI(NAMESPACE, "logValidationPlans");
+
+		/**
+		 * <code>tag:rdf4j.org,2023:config/shacl.logValidationViolations</code>
+		 */
+		public final static IRI logValidationViolations = Vocabularies.createIRI(NAMESPACE,
+				"logValidationViolations");
+
+		/**
+		 * <code>tag:rdf4j.org,2023:config/shacl.validationEnabled</code>
+		 */
+		public final static IRI validationEnabled = Vocabularies.createIRI(NAMESPACE, "validationEnabled");
+
+		/**
+		 * <code>tag:rdf4j.org,2023:config/shacl.cacheSelectNodes</code>
+		 */
+		public final static IRI cacheSelectNodes = Vocabularies.createIRI(NAMESPACE, "cacheSelectNodes");
+
+		/**
+		 * <code>tag:rdf4j.org,2023:config/shacl.globalLogValidationExecution</code>
+		 */
+		public final static IRI globalLogValidationExecution = Vocabularies.createIRI(NAMESPACE,
+				"globalLogValidationExecution");
+
+		/**
+		 * <code>tag:rdf4j.org,2023:config/shacl.rdfsSubClassReasoning</code>
+		 */
+		public final static IRI rdfsSubClassReasoning = Vocabularies.createIRI(NAMESPACE, "rdfsSubClassReasoning");
+
+		/**
+		 * <code>tag:rdf4j.org,2023:config/shacl.performanceLogging</code>
+		 */
+		public final static IRI performanceLogging = Vocabularies.createIRI(NAMESPACE, "performanceLogging");
+
+		/**
+		 * <code>tag:rdf4j.org,2023:config/shacl.serializableValidation</code>
+		 */
+		public final static IRI serializableValidation = Vocabularies.createIRI(NAMESPACE, "serializableValidation");
+
+		public final static IRI eclipseRdf4jShaclExtensions = Vocabularies.createIRI(NAMESPACE,
+				"eclipseRdf4jShaclExtensions");
+
+		public final static IRI dashDataShapes = Vocabularies.createIRI(NAMESPACE, "dashDataShapes");
+
+		public final static IRI validationResultsLimitTotal = Vocabularies.createIRI(NAMESPACE,
+				"validationResultsLimitTotal");
+		public final static IRI validationResultsLimitPerConstraint = Vocabularies.createIRI(NAMESPACE,
+				"validationResultsLimitPerConstraint");
+		public final static IRI transactionalValidationLimit = Vocabularies.createIRI(NAMESPACE,
+				"transactionalValidationLimit");
+
+		public final static IRI shapesGraph = Vocabularies.createIRI(NAMESPACE, "shapesGraph");
 	}
 }

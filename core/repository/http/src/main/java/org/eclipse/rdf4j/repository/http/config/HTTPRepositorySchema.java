@@ -31,7 +31,7 @@ public class HTTPRepositorySchema {
 	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/http#";
 
 	/**
-	 * @deprecated use {@link CONFIG#repositoryURL} instead.
+	 * @deprecated use {@link CONFIG#url} instead.
 	 */
 	public final static IRI REPOSITORYURL = iri(NAMESPACE, "repositoryURL");
 
