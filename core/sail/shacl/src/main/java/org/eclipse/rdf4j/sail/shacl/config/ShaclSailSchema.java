@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail;
  * {@link ShaclSail}s.
  *
  * @author Jeen Broekstra
- * 
+ *
  * @deprecated since 4.3.0. Use {@link CONFIG.Shacl} instead.
  */
 @Deprecated(since = "4.3.0", forRemoval = true)
@@ -34,63 +34,63 @@ public class ShaclSailSchema {
 
 	/**
 	 * <code>http://rdf4j.org/config/sail/shacl#parallelValidation</code>
-	 * 
+	 *
 	 * @deprecated use {@link CONFIG.Shacl#parallelValidation} instead.
 	 */
 	public final static IRI PARALLEL_VALIDATION = create("parallelValidation");
 
 	/**
 	 * <code>http://rdf4j.org/config/sail/shacl#logValidationPlans</code>
-	 * 
+	 *
 	 * @deprecated use {@link CONFIG.Shacl#logValidationPlans} instead.
 	 */
 	public final static IRI LOG_VALIDATION_PLANS = create("logValidationPlans");
 
 	/**
 	 * <code>http://rdf4j.org/config/sail/shacl#logValidationViolations</code>
-	 * 
+	 *
 	 * @deprecated use {@link CONFIG.Shacl#logValidationViolations} instead.
 	 */
 	public final static IRI LOG_VALIDATION_VIOLATIONS = create("logValidationViolations");
 
 	/**
 	 * <code>http://rdf4j.org/config/sail/shacl#validationEnabled</code>
-	 * 
+	 *
 	 * @deprecated use {@link CONFIG.Shacl#validationEnabled} instead.
 	 */
 	public final static IRI VALIDATION_ENABLED = create("validationEnabled");
 
 	/**
 	 * <code>http://rdf4j.org/config/sail/shacl#cacheSelectNodes</code>
-	 * 
+	 *
 	 * @deprecated use {@link CONFIG.Shacl#cacheSelectNodes} instead.
 	 */
 	public final static IRI CACHE_SELECT_NODES = create("cacheSelectNodes");
 
 	/**
 	 * <code>http://rdf4j.org/config/sail/shacl#globalLogValidationExecution</code>
-	 * 
+	 *
 	 * @deprecated use {@link CONFIG.Shacl#globalLogValidationExecution} instead.
 	 */
 	public final static IRI GLOBAL_LOG_VALIDATION_EXECUTION = create("globalLogValidationExecution");
 
 	/**
 	 * <code>http://rdf4j.org/config/sail/shacl#rdfsSubClassReasoning</code>
-	 * 
+	 *
 	 * @deprecated use {@link CONFIG.Shacl#rdfsSubClassReasoning} instead.
 	 */
 	public final static IRI RDFS_SUB_CLASS_REASONING = create("rdfsSubClassReasoning");
 
 	/**
 	 * <code>http://rdf4j.org/config/sail/shacl#performanceLogging</code>
-	 * 
+	 *
 	 * @deprecated use {@link CONFIG.Shacl#performanceLogging} instead.
 	 */
 	public final static IRI PERFORMANCE_LOGGING = create("performanceLogging");
 
 	/**
 	 * <code>http://rdf4j.org/config/sail/shacl#serializableValidation</code>
-	 * 
+	 *
 	 * @deprecated use {@link CONFIG.Shacl#serializableValidation} instead.
 	 */
 	public final static IRI SERIALIZABLE_VALIDATION = create("serializableValidation");

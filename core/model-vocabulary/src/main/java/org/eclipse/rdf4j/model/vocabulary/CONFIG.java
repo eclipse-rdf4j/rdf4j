@@ -276,62 +276,83 @@ public class CONFIG {
 		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.parallelValidation</code>
 		 */
-		public final static IRI parallelValidation = Vocabularies.createIRI(NAMESPACE, "parallelValidation");
+		public final static IRI parallelValidation = Vocabularies.createIRI(NAMESPACE, "shacl.parallelValidation");
 
 		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.logValidationPlans</code>
 		 */
-		public final static IRI logValidationPlans = Vocabularies.createIRI(NAMESPACE, "logValidationPlans");
+		public final static IRI logValidationPlans = Vocabularies.createIRI(NAMESPACE, "shacl.logValidationPlans");
 
 		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.logValidationViolations</code>
 		 */
 		public final static IRI logValidationViolations = Vocabularies.createIRI(NAMESPACE,
-				"logValidationViolations");
+				"shacl.logValidationViolations");
 
 		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.validationEnabled</code>
 		 */
-		public final static IRI validationEnabled = Vocabularies.createIRI(NAMESPACE, "validationEnabled");
+		public final static IRI validationEnabled = Vocabularies.createIRI(NAMESPACE, "shacl.validationEnabled");
 
 		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.cacheSelectNodes</code>
 		 */
-		public final static IRI cacheSelectNodes = Vocabularies.createIRI(NAMESPACE, "cacheSelectNodes");
+		public final static IRI cacheSelectNodes = Vocabularies.createIRI(NAMESPACE, "shacl.cacheSelectNodes");
 
 		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.globalLogValidationExecution</code>
 		 */
 		public final static IRI globalLogValidationExecution = Vocabularies.createIRI(NAMESPACE,
-				"globalLogValidationExecution");
+				"shacl.globalLogValidationExecution");
 
 		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.rdfsSubClassReasoning</code>
 		 */
-		public final static IRI rdfsSubClassReasoning = Vocabularies.createIRI(NAMESPACE, "rdfsSubClassReasoning");
+		public final static IRI rdfsSubClassReasoning = Vocabularies.createIRI(NAMESPACE,
+				"shacl.rdfsSubClassReasoning");
 
 		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.performanceLogging</code>
 		 */
-		public final static IRI performanceLogging = Vocabularies.createIRI(NAMESPACE, "performanceLogging");
+		public final static IRI performanceLogging = Vocabularies.createIRI(NAMESPACE, "shacl.performanceLogging");
 
 		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.serializableValidation</code>
 		 */
-		public final static IRI serializableValidation = Vocabularies.createIRI(NAMESPACE, "serializableValidation");
+		public final static IRI serializableValidation = Vocabularies.createIRI(NAMESPACE,
+				"shacl.serializableValidation");
 
 		public final static IRI eclipseRdf4jShaclExtensions = Vocabularies.createIRI(NAMESPACE,
-				"eclipseRdf4jShaclExtensions");
+				"shacl.eclipseRdf4jShaclExtensions");
 
-		public final static IRI dashDataShapes = Vocabularies.createIRI(NAMESPACE, "dashDataShapes");
+		public final static IRI dashDataShapes = Vocabularies.createIRI(NAMESPACE, "shacl.dashDataShapes");
 
 		public final static IRI validationResultsLimitTotal = Vocabularies.createIRI(NAMESPACE,
-				"validationResultsLimitTotal");
+				"shacl.validationResultsLimitTotal");
 		public final static IRI validationResultsLimitPerConstraint = Vocabularies.createIRI(NAMESPACE,
-				"validationResultsLimitPerConstraint");
+				"shacl.validationResultsLimitPerConstraint");
 		public final static IRI transactionalValidationLimit = Vocabularies.createIRI(NAMESPACE,
-				"transactionalValidationLimit");
+				"shacl.transactionalValidationLimit");
 
-		public final static IRI shapesGraph = Vocabularies.createIRI(NAMESPACE, "shapesGraph");
+		public final static IRI shapesGraph = Vocabularies.createIRI(NAMESPACE, "shacl.shapesGraph");
+	}
+
+	/**
+	 * Lucene Sail config
+	 *
+	 */
+	public static final class Lucene {
+		public final static IRI indexDir = Vocabularies.createIRI(NAMESPACE, "lucene.indexDir");
+	}
+
+	/**
+	 * Elasticsearch Store config
+	 */
+	public static final class Ess {
+
+		public final static IRI hostname = Vocabularies.createIRI(NAMESPACE, "ess.hostname");
+		public final static IRI port = Vocabularies.createIRI(NAMESPACE, "ess.port");
+		public final static IRI index = Vocabularies.createIRI(NAMESPACE, "ess.index");
+		public final static IRI clusterName = Vocabularies.createIRI(NAMESPACE, "ess.clusterName");
 	}
 }

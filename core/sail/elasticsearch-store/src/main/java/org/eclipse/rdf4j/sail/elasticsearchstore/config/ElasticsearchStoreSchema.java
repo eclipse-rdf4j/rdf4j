@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.elasticsearchstore.config;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 
 /**
@@ -20,7 +21,9 @@ import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
  * {@link ElasticsearchStore}s.
  *
  * @author Håvard Mikkelsen Ottestad
+ * @deprecated since 4.3.0. Use {@link CONFIG.Ess} instead.
  */
+@Deprecated(since = "4.3.0", forRemoval = true)
 public class ElasticsearchStoreSchema {
 
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
@@ -31,9 +34,24 @@ public class ElasticsearchStoreSchema {
 	public static final String NAMESPACE = "http://rdf4j.org/config/sail/elasticsearchstore#";
 	public static final String PREFIX = "ess";
 
+	/**
+	 * @deprecated use {@link CONFIG.Ess#hostname} instead.
+	 */
 	public final static IRI hostname = vf.createIRI(NAMESPACE, "hostname");
+
+	/**
+	 * @deprecated use {@link CONFIG.Ess#port} instead.
+	 */
 	public final static IRI port = vf.createIRI(NAMESPACE, "port");
+
+	/**
+	 * @deprecated use {@link CONFIG.Ess#index} instead.
+	 */
 	public final static IRI index = vf.createIRI(NAMESPACE, "index");
+
+	/**
+	 * @deprecated use {@link CONFIG.Ess#clusterName} instead.
+	 */
 	public final static IRI clusterName = vf.createIRI(NAMESPACE, "clusterName");
 
 }
