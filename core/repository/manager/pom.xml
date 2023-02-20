@@ -56,14 +56,8 @@
 		</dependency>
 		<!-- testing dependencies -->
 		<dependency>
-			<groupId>com.github.tomakehurst</groupId>
-			<artifactId>wiremock-jre8</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>javax.servlet</groupId>
-			<artifactId>javax.servlet-api</artifactId>
-			<version>${servlet.version}</version>
+			<groupId>org.mock-server</groupId>
+			<artifactId>mockserver-junit-jupiter-no-dependencies</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>

@@ -10,27 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.client;
 
-import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
-import static com.github.tomakehurst.wiremock.client.WireMock.anyRequestedFor;
-import static com.github.tomakehurst.wiremock.client.WireMock.containing;
-import static com.github.tomakehurst.wiremock.client.WireMock.get;
-import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
-import static com.github.tomakehurst.wiremock.client.WireMock.lessThanOrExactly;
-import static com.github.tomakehurst.wiremock.client.WireMock.moreThanOrExactly;
-import static com.github.tomakehurst.wiremock.client.WireMock.post;
-import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
-import static com.github.tomakehurst.wiremock.client.WireMock.put;
-import static com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor;
-import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
-import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
-import static com.github.tomakehurst.wiremock.client.WireMock.verify;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockserver.model.HttpRequest.request;
+import static org.mockserver.model.HttpResponse.response;
 
 import java.util.HashMap;
 
-import org.apache.http.Header;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.message.BasicHeader;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
@@ -38,25 +23,30 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockserver.client.MockServerClient;
+import org.mockserver.junit.jupiter.MockServerExtension;
+import org.mockserver.matchers.Times;
+import org.mockserver.model.HttpRequest;
+import org.mockserver.model.MediaType;
+import org.mockserver.verify.VerificationTimes;
 
 /**
  * Unit tests for {@link RDF4JProtocolSession}
  *
  * @author Jeen Broekstra
  */
+@ExtendWith(MockServerExtension.class)
 public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 
 	private final String testHeader = "X-testing-header";
 	private final String testValue = "foobar";
 
-	private final String serverURL = "http://localhost:" + wireMockServer.port() + "/rdf4j-server";
-	private final String repositoryID = "test";
-
 	RDF4JProtocolSession getRDF4JSession() {
 		return (RDF4JProtocolSession) sparqlSession;
 	}
 
+	@Override
 	RDF4JProtocolSession createProtocolSession() {
 		RDF4JProtocolSession session = new SharedHttpClientSessionManager().createRDF4JProtocolSession(serverURL);
 		session.setRepository(Protocol.getRepositoryLocation(serverURL, repositoryID));
@@ -67,65 +57,124 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 	}
 
 	@Test
-	public void testCreateRepositoryExecutesPut() throws Exception {
-		stubFor(put(urlEqualTo("/rdf4j-server/repositories/test")).willReturn(aResponse().withStatus(200)));
+	public void testCreateRepositoryExecutesPut(MockServerClient client) throws Exception {
+		client.when(
+				request()
+						.withMethod("PUT")
+						.withPath("/rdf4j-server/repositories/test"),
+				Times.once()
+		)
+				.respond(
+						response()
+				);
 		RepositoryConfig config = new RepositoryConfig("test");
 		getRDF4JSession().createRepository(config);
-		verify(putRequestedFor(urlEqualTo("/rdf4j-server/repositories/test")));
-		verifyHeader("/rdf4j-server/repositories/test");
+		client.verify(
+				request()
+						.withMethod("PUT")
+						.withPath("/rdf4j-server/repositories/test")
+						.withHeader(testHeader, testValue)
+		);
 	}
 
 	@Test
-	public void testUpdateRepositoryExecutesPost() throws Exception {
+	public void testUpdateRepositoryExecutesPost(MockServerClient client) throws Exception {
 		RepositoryConfig config = new RepositoryConfig("test");
 
-		stubFor(post(urlEqualTo("/rdf4j-server/repositories/test/config")).willReturn(aResponse().withStatus(200)));
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test/config"),
+				Times.once()
+		)
+				.respond(
+						response()
+				);
 
 		getRDF4JSession().updateRepository(config);
 
-		verify(postRequestedFor(urlEqualTo("/rdf4j-server/repositories/test/config")));
-		verifyHeader("/rdf4j-server/repositories/test/config");
+		client.verify(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test/config")
+						.withHeader(testHeader, testValue)
+		);
 	}
 
 	@Test
-	public void testSize() throws Exception {
-		stubFor(get(urlEqualTo("/rdf4j-server/repositories/test/size"))
-				.willReturn(aResponse().withStatus(200).withBody("8")));
+	public void testSize(MockServerClient client) throws Exception {
+		client.when(
+				request()
+						.withMethod("GET")
+						.withPath("/rdf4j-server/repositories/test/size"),
+				Times.once()
+		)
+				.respond(
+						response()
+								.withBody("8")
+				);
 
 		assertThat(getRDF4JSession().size()).isEqualTo(8);
-		verifyHeader("/rdf4j-server/repositories/test/size");
+		client.verify(
+				request()
+						.withMethod("GET")
+						.withPath("/rdf4j-server/repositories/test/size")
+						.withHeader(testHeader, testValue)
+		);
 	}
 
 	@Test
-	public void testGetRepositoryConfig() throws Exception {
-		ArgumentCaptor<HttpGet> method = ArgumentCaptor.forClass(HttpGet.class);
+	public void testGetRepositoryConfig(MockServerClient client) throws Exception {
+		client.when(
+				request()
+						.withMethod("GET")
+						.withPath("/rdf4j-server/repositories/test/config"),
+				Times.once()
+		)
+				.respond(
+						response()
+								.withBody(readFileToString("repository-config.nt"))
+								.withContentType(MediaType.parse(RDFFormat.NTRIPLES.getDefaultMIMEType()))
+				);
 
-		Header h = new BasicHeader("Content-Type", RDFFormat.NTRIPLES.getDefaultMIMEType());
-		stubFor(get(urlEqualTo("/rdf4j-server/repositories/test/config"))
-				.willReturn(aResponse().withStatus(200)
-						.withHeader("Content-Type", RDFFormat.NTRIPLES.getDefaultMIMEType())
-						.withBodyFile("repository-config.nt")));
+		StatementCollector collector = new StatementCollector();
+		getRDF4JSession().getRepositoryConfig(collector);
+		assertThat(collector.getStatements())
+				.isNotEmpty();
 
-		getRDF4JSession().getRepositoryConfig(new StatementCollector());
-
-		verify(getRequestedFor(urlEqualTo("/rdf4j-server/repositories/test/config")));
-
-		verifyHeader("/rdf4j-server/repositories/test/config");
+		client.verify(
+				request()
+						.withMethod("GET")
+						.withPath("/rdf4j-server/repositories/test/config")
+						.withHeader(testHeader, testValue)
+		);
 	}
 
 	@Test
-	public void testRepositoryList() throws Exception {
-		stubFor(get(urlEqualTo("/rdf4j-server/repositories"))
-				.willReturn(aResponse().withStatus(200)
-						.withHeader("Content-Type", TupleQueryResultFormat.SPARQL.getDefaultMIMEType())
-						.withBodyFile("repository-list.xml")));
+	public void testRepositoryList(MockServerClient client) throws Exception {
+		client.when(
+				request()
+						.withMethod("GET")
+						.withPath("/rdf4j-server/repositories"),
+				Times.once()
+		)
+				.respond(
+						response()
+								.withBody(readFileToString("repository-list.xml"))
+								.withContentType(MediaType.parse(TupleQueryResultFormat.SPARQL.getDefaultMIMEType()))
+				);
 
 		assertThat(getRDF4JSession().getRepositoryList().getBindingNames()).contains("id");
-		verifyHeader("/rdf4j-server/repositories");
+		client.verify(
+				request()
+						.withMethod("GET")
+						.withPath("/rdf4j-server/repositories")
+						.withHeader(testHeader, testValue)
+		);
 	}
 
 	@Test
-	public void testClose() throws Exception {
+	public void testClose(MockServerClient client) throws Exception {
 		// re-init protocol session with cache-timeout set
 		sparqlSession.close();
 		System.setProperty(Protocol.CACHE_TIMEOUT_PROPERTY, "1");
@@ -133,26 +182,40 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 
 		String transactionStartUrl = Protocol.getTransactionsLocation(getRDF4JSession().getRepositoryURL());
 
-		stubFor(post(urlEqualTo("/rdf4j-server/repositories/test/transactions"))
-				.willReturn(aResponse().withStatus(201).withHeader("Location", transactionStartUrl + "/1")));
-		stubFor(post("/rdf4j-server/repositories/test/transactions/1?action=PING")
-				.willReturn(aResponse().withStatus(200).withBody("2000")));
+		HttpRequest transactionCreateRequest = request()
+				.withMethod("POST")
+				.withPath("/rdf4j-server/repositories/test/transactions");
+		HttpRequest transactionPingRequest = request()
+				.withMethod("POST")
+				.withPath("/rdf4j-server/repositories/test/transactions/1")
+				.withQueryStringParameter("action", "PING");
+		client.when(transactionCreateRequest, Times.once())
+				.respond(
+						response()
+								.withStatusCode(201)
+								.withHeader("Location", transactionStartUrl + "/1")
+				);
+		client.when(transactionPingRequest)
+				.respond(
+						response()
+								.withBody("2000")
+				);
 
 		getRDF4JSession().beginTransaction(IsolationLevels.SERIALIZABLE);
 		Thread.sleep(2000);
 
-		verify(moreThanOrExactly(2),
-				postRequestedFor(urlEqualTo("/rdf4j-server/repositories/test/transactions/1?action=PING")));
+		client.verify(
+				transactionPingRequest,
+				VerificationTimes.exactly(2)
+		);
 
 		getRDF4JSession().close();
 		Thread.sleep(1000);
 
 		// we should not have received any further pings after the session was closed.
-		verify(lessThanOrExactly(3),
-				postRequestedFor(urlEqualTo("/rdf4j-server/repositories/test/transactions/1?action=PING")));
-	}
-
-	private void verifyHeader(String path) {
-		verify(anyRequestedFor(urlEqualTo(path)).withHeader(testHeader, containing(testValue)));
+		client.verify(
+				transactionPingRequest,
+				VerificationTimes.exactly(2)
+		);
 	}
 }
