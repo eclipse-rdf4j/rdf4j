@@ -32,6 +32,6 @@ public class ExtensibleStoreConnectionNoCacheTest extends RepositoryConnectionTe
 
 	@Override
 	protected Repository createRepository(File dataDir) {
-		return new SailRepository(new ExtensibleStoreImplForTests(ExtensibleStore.Cache.none));
+		return new SailRepository(new ExtensibleStoreImplForTests(ExtensibleStore.Cache.NONE));
 	}
 }

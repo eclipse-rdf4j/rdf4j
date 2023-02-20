@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStore;
 import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStoreImplForTests;
 import org.eclipse.rdf4j.testsuite.repository.RepositoryConnectionTest;
 
-public class ExtensibleStoreConnectionDynamicCacheTest extends RepositoryConnectionTest {
+public class ExtensibleStoreConnectionLazyCacheTest extends RepositoryConnectionTest {
 	public static IsolationLevel[] parameters() {
 		return new IsolationLevel[] {
 				IsolationLevels.NONE,
@@ -32,6 +32,6 @@ public class ExtensibleStoreConnectionDynamicCacheTest extends RepositoryConnect
 
 	@Override
 	protected Repository createRepository(File dataDir) {
-		return new SailRepository(new ExtensibleStoreImplForTests(ExtensibleStore.Cache.dynamic));
+		return new SailRepository(new ExtensibleStoreImplForTests(ExtensibleStore.Cache.LAZY));
 	}
 }

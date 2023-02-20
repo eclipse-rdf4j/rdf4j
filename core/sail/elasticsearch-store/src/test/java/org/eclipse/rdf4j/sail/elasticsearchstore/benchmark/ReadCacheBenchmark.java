@@ -86,7 +86,7 @@ public class ReadCacheBenchmark {
 		runner = TestHelpers.startElasticsearch(installLocation);
 
 		repoWithoutCache = new SailRepository(new ElasticsearchStore("localhost", TestHelpers.getPort(runner),
-				TestHelpers.CLUSTER, "testindex1", ExtensibleStore.Cache.none));
+				TestHelpers.CLUSTER, "testindex1", ExtensibleStore.Cache.NONE));
 
 		repoWithCache = new SailRepository(
 				new ElasticsearchStore("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex2"));

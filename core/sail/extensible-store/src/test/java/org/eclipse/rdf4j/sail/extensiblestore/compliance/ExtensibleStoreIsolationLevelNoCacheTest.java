@@ -21,7 +21,7 @@ public class ExtensibleStoreIsolationLevelNoCacheTest extends SailIsolationLevel
 
 	@Override
 	protected NotifyingSail createSail() throws SailException {
-		return new ExtensibleStoreImplForTests(ExtensibleStore.Cache.none);
+		return new ExtensibleStoreImplForTests(ExtensibleStore.Cache.NONE);
 	}
 
 }

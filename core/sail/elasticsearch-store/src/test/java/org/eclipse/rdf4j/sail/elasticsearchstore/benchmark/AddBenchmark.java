@@ -63,7 +63,7 @@ public class AddBenchmark {
 
 		elasticsearchStore = new SailRepository(
 				new ElasticsearchStore("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex",
-						ExtensibleStore.Cache.none));
+						ExtensibleStore.Cache.NONE));
 
 		System.gc();
 

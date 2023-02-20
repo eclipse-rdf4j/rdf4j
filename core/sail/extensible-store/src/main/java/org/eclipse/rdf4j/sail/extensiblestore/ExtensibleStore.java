@@ -68,12 +68,7 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 	private FederatedServiceResolver serviceResolver;
 
 	public ExtensibleStore() {
-		this(Cache.full);
-	}
-
-	@Deprecated(since = "4.3.0", forRemoval = true)
-	public ExtensibleStore(boolean dynamicCache) {
-		cache = dynamicCache ? Cache.dynamic : Cache.none;
+		this(Cache.EAGER);
 	}
 
 	public ExtensibleStore(Cache cache) {
@@ -93,13 +88,13 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 		DataStructureInterface dataStructure = Objects.requireNonNull(this.dataStructure);
 
 		switch (cache) {
-		case full:
+		case EAGER:
 			dataStructure = new EagerReadCache(dataStructure);
 			break;
-		case dynamic:
-			dataStructure = new ReadCache(dataStructure);
+		case LAZY:
+			dataStructure = new LazyReadCache(dataStructure);
 			break;
-		case none:
+		case NONE:
 			break;
 		default:
 			throw new IllegalStateException();
@@ -173,9 +168,9 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 	}
 
 	public enum Cache {
-		none,
-		dynamic,
-		full
+		NONE,
+		LAZY,
+		EAGER
 	}
 
 }

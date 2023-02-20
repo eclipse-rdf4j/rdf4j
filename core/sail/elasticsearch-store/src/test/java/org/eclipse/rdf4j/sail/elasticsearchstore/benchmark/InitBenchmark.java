@@ -75,7 +75,7 @@ public class InitBenchmark {
 
 		SailRepository elasticsearchStore = new SailRepository(
 				new ElasticsearchStore("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex",
-						ExtensibleStore.Cache.none));
+						ExtensibleStore.Cache.NONE));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -91,7 +91,7 @@ public class InitBenchmark {
 	public void initWithoutElasticsearchClientCreation() {
 
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore(clientPool, "testindex", ExtensibleStore.Cache.none));
+				new ElasticsearchStore(clientPool, "testindex", ExtensibleStore.Cache.NONE));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);

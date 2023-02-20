@@ -17,11 +17,11 @@ import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStore;
 import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStoreImplForTests;
 import org.eclipse.rdf4j.testsuite.sail.SailIsolationLevelTest;
 
-public class ExtensibleStoreIsolationLevelDynamicCacheTest extends SailIsolationLevelTest {
+public class ExtensibleStoreIsolationLevelLazyCacheTest extends SailIsolationLevelTest {
 
 	@Override
 	protected NotifyingSail createSail() throws SailException {
-		return new ExtensibleStoreImplForTests(ExtensibleStore.Cache.dynamic);
+		return new ExtensibleStoreImplForTests(ExtensibleStore.Cache.LAZY);
 	}
 
 }

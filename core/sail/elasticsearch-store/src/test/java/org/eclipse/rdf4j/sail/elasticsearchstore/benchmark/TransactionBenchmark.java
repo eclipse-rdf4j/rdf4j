@@ -68,7 +68,7 @@ public class TransactionBenchmark {
 
 		repository = new SailRepository(
 				new ElasticsearchStore("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex",
-						ExtensibleStore.Cache.none));
+						ExtensibleStore.Cache.NONE));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl"), "", RDFFormat.TURTLE);
