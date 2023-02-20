@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.http.protocol.transaction;
 
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -93,7 +94,7 @@ class TransactionSAXParser extends SimpleSAXAdapter {
 			String encoding = atts.get(TransactionXMLConstants.ENCODING_ATT);
 
 			if (encoding != null && "base64".equalsIgnoreCase(encoding)) {
-				text = new String(javax.xml.bind.DatatypeConverter.parseBase64Binary(text));
+				text = new String(Base64.getDecoder().decode(text));
 			}
 			Literal lit;
 			if (lang != null) {
