@@ -23,6 +23,6 @@ public class Factory implements SolrClientFactory {
 	@Override
 	public SolrClient create(String spec) {
 		List<String> zkHosts = Lists.newArrayList(spec.substring("cloud:".length()));
-		return new CloudSolrClient.Builder().withZkHost(zkHosts).build();
+		return new CloudSolrClient.Builder(zkHosts).build();
 	}
 }

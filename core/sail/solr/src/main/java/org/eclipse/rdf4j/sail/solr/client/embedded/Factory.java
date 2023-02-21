@@ -23,6 +23,8 @@ public class Factory implements SolrClientFactory {
 
 	@Override
 	public SolrClient create(String spec) {
+		// FIXME: We need a new way of obtaining Solr home directory.
+		// The following method is deprecated in version 8 and removed in version 9.
 		Path solrHome = SolrResourceLoader.locateSolrHome();
 		Path configFile = solrHome.resolve(SolrXmlConfig.SOLR_XML_FILE);
 		return new EmbeddedSolrServer(CoreContainer.createAndLoad(solrHome, configFile), "embedded");

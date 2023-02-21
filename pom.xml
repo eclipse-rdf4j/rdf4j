@@ -346,7 +346,7 @@
 		<jaxb.version>2.3.3</jaxb.version>
 		<lucene.version>8.5.1</lucene.version>
 		<lwjgl.version>3.3.1</lwjgl.version>
-		<solr.version>8.4.1</solr.version>
+		<solr.version>8.11.2</solr.version>
 		<elasticsearch.version>7.8.1</elasticsearch.version>
 		<spring.version>5.3.24</spring.version>
 		<guava.version>30.1.1-jre</guava.version>
