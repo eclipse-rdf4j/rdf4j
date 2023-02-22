@@ -226,7 +226,9 @@ echo "Build javadocs"
 read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 git checkout "${MVN_VERSION_RELEASE}"
+mvn clean -Dmaven.clean.failOnError=false
 mvn clean
+mvn compile -Pquick -Dmaven.compiler.failOnError=false
 mvn package -Passembly -DskipTests
 
 git checkout main
