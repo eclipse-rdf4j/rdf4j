@@ -17,14 +17,16 @@ import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.command.SetParameters;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
  * Abstract class for settings
  *
  * @author Bart Hanssens
  */
+@ExtendWith(MockitoExtension.class)
 public abstract class AbstractSettingTest {
 	@Mock
 	protected ConsoleIO mockConsoleIO;
@@ -37,7 +39,6 @@ public abstract class AbstractSettingTest {
 
 	@BeforeEach
 	public void setUp() {
-		MockitoAnnotations.initMocks(this);
 		setParameters = new SetParameters(mockConsoleIO, mockConsoleState, settings);
 	}
 }

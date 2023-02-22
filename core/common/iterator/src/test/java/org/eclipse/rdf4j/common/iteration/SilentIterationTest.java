@@ -12,19 +12,24 @@ package org.eclipse.rdf4j.common.iteration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.util.NoSuchElementException;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
+@ExtendWith(MockitoExtension.class)
 public class SilentIterationTest {
 
-	@SuppressWarnings("unchecked")
-	private final CloseableIteration<Object, Exception> delegate = mock(CloseableIteration.class);
+	@Mock
+	private CloseableIteration<Object, Exception> delegate;
 
-	private final SilentIteration<Object, Exception> subject = new SilentIteration<>(delegate);
+	@InjectMocks
+	private SilentIteration<Object, Exception> subject;
 
 	@Test
 	public void hasNextSwallowsException() throws Exception {
