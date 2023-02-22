@@ -27,9 +27,9 @@ import org.slf4j.LoggerFactory;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 
-public class ReadCache implements DataStructureInterface {
+public class LazyReadCache implements DataStructureInterface {
 
-	private static final Logger logger = LoggerFactory.getLogger(ReadCache.class);
+	private static final Logger logger = LoggerFactory.getLogger(LazyReadCache.class);
 
 	DataStructureInterface delegate;
 
@@ -45,7 +45,7 @@ public class ReadCache implements DataStructureInterface {
 	// iteration are stale and can not be cached.
 	private volatile long cacheTicket = Long.MIN_VALUE;
 
-	public ReadCache(DataStructureInterface delegate) {
+	public LazyReadCache(DataStructureInterface delegate) {
 		this.delegate = delegate;
 	}
 
@@ -128,7 +128,7 @@ public class ReadCache implements DataStructureInterface {
 
 		if (statements != null) {
 
-			return new LookAheadIteration<ExtensibleStatement, SailException>() {
+			return new LookAheadIteration<>() {
 				final Iterator<ExtensibleStatement> iterator = statements.iterator();
 
 				@Override

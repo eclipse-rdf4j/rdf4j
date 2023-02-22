@@ -168,7 +168,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 		QueryBuilder queryBuilder = getQueryBuilder(subject, predicate, object, inferred, context);
 
-		return new LookAheadIteration<ExtensibleStatement, SailException>() {
+		return new LookAheadIteration<>() {
 
 			final CloseableIteration<SearchHit, RuntimeException> iterator = ElasticsearchHelper
 					.getScrollingIterator(queryBuilder, clientProvider.getClient(), index, scrollTimeout);

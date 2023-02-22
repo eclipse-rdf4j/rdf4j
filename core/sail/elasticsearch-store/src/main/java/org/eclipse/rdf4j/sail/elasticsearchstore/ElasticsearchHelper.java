@@ -91,7 +91,7 @@ class ElasticsearchHelper {
 			private void scrollIsEmpty() {
 				ClearScrollRequest clearScrollRequest = new ClearScrollRequest();
 				clearScrollRequest.addScrollId(scrollId);
-				client.clearScroll(clearScrollRequest).actionGet();
+				client.clearScroll(clearScrollRequest);
 				scrollId = null;
 				empty = true;
 			}

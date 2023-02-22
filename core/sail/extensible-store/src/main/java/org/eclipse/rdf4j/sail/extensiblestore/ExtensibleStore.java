@@ -61,18 +61,18 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 
 	protected T dataStructure;
 
-	final boolean cacheEnabled;
+	private final Cache cache;
 
 	private EvaluationStrategyFactory evalStratFactory;
 	private SPARQLServiceResolver dependentServiceResolver;
 	private FederatedServiceResolver serviceResolver;
 
 	public ExtensibleStore() {
-		this(true);
+		this(Cache.EAGER);
 	}
 
-	public ExtensibleStore(boolean cacheEnabled) {
-		this.cacheEnabled = cacheEnabled;
+	public ExtensibleStore(Cache cache) {
+		this.cache = cache;
 	}
 
 	ExtensibleSailStore getSailStore() {
@@ -87,12 +87,21 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 
 		DataStructureInterface dataStructure = Objects.requireNonNull(this.dataStructure);
 
-		if (cacheEnabled) {
-			dataStructure = new ReadCache(dataStructure);
+		switch (cache) {
+		case EAGER:
+			dataStructure = new EagerReadCache(dataStructure);
+			break;
+		case LAZY:
+			dataStructure = new LazyReadCache(dataStructure);
+			break;
+		case NONE:
+			break;
+		default:
+			throw new IllegalStateException();
 		}
 
-		sailStore = new ExtensibleSailStore(dataStructure,
-				Objects.requireNonNull(namespaceStore), getEvaluationStatisticsType(), getExtensibleStatementHelper());
+		sailStore = new ExtensibleSailStore(dataStructure, Objects.requireNonNull(namespaceStore),
+				getEvaluationStatisticsType(), getExtensibleStatementHelper());
 
 		sailStore.init();
 		namespaceStore.init();
@@ -157,4 +166,11 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 	public ExtensibleStatementHelper getExtensibleStatementHelper() {
 		return ExtensibleStatementHelper.getDefaultImpl();
 	}
+
+	public enum Cache {
+		NONE,
+		LAZY,
+		EAGER
+	}
+
 }
