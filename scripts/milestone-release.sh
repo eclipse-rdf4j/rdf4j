@@ -112,8 +112,9 @@ if ! git push --dry-run > /dev/null 2>&1; then
 fi
 
 
-echo "Running mvn clean";
+echo "Running maven clean and install -DskipTests";
 mvn clean;
+mvn install -DskipTests;
 
 MVN_CURRENT_SNAPSHOT_VERSION=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" pom.xml)
 
