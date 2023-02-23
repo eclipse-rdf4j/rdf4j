@@ -14,9 +14,9 @@ import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.http.HTTPMemServer;
 import org.eclipse.rdf4j.testsuite.repository.RepositoryTest;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 
 /**
  * @author Jeen Broekstra
@@ -25,7 +25,7 @@ public class SPARQLRepositoryTest extends RepositoryTest {
 
 	private static HTTPMemServer server;
 
-	@BeforeClass
+	@BeforeAll
 	public static void startServer() throws Exception {
 		server = new HTTPMemServer();
 		try {
@@ -37,7 +37,7 @@ public class SPARQLRepositoryTest extends RepositoryTest {
 
 	}
 
-	@Before
+	@BeforeEach
 	@Override
 	public void setUp() throws Exception {
 		super.setUp();
@@ -49,7 +49,7 @@ public class SPARQLRepositoryTest extends RepositoryTest {
 
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void stopServer() throws Exception {
 		server.stop();
 		server = null;

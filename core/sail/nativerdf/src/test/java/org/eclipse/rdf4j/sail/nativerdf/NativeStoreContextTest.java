@@ -10,13 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import java.io.IOException;
+import java.io.File;
 
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.testsuite.sail.RDFNotifyingStoreTest;
-import org.junit.Rule;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * An extension of RDFStoreTest for testing the class {@link NativeStore}.
@@ -27,8 +26,8 @@ public class NativeStoreContextTest extends RDFNotifyingStoreTest {
 	 * Variables *
 	 *-----------*/
 
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
+	@TempDir
+	public File dataDir;
 
 	/*---------*
 	 * Methods *
@@ -36,12 +35,8 @@ public class NativeStoreContextTest extends RDFNotifyingStoreTest {
 
 	@Override
 	protected NotifyingSail createSail() throws SailException {
-		try {
-			NotifyingSail sail = new NativeStore(tempDir.newFolder(), "spoc,posc");
-			sail.init();
-			return sail;
-		} catch (IOException e) {
-			throw new AssertionError(e);
-		}
+		NotifyingSail sail = new NativeStore(dataDir, "spoc,posc");
+		sail.init();
+		return sail;
 	}
 }

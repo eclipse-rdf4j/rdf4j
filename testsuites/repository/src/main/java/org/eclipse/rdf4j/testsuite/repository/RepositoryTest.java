@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.repository;
 
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.concurrent.TimeUnit;
 
@@ -21,36 +21,30 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.Timeout;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 /**
  * Integration test suite for implementations of Repository.
  *
  * @author Jeen Broekstra
  */
+@Timeout(value = 1, unit = TimeUnit.MINUTES)
 public abstract class RepositoryTest {
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
-
-	/**
-	 * Timeout all individual tests after 1 minute.
-	 */
-	@Rule
-	public Timeout to = new Timeout(1, TimeUnit.MINUTES);
 
 	private static final String MBOX = "mbox";
 
@@ -92,7 +86,7 @@ public abstract class RepositoryTest {
 
 	protected Literal Александър;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		testRepository = createRepository();
 
@@ -113,7 +107,7 @@ public abstract class RepositoryTest {
 
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		testRepository.shutDown();
 	}

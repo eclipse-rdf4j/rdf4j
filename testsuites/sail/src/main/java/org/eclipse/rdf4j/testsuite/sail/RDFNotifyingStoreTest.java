@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.testsuite.sail;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -18,8 +19,8 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailChangedEvent;
 import org.eclipse.rdf4j.sail.SailChangedListener;
 import org.eclipse.rdf4j.sail.SailException;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * A JUnit test for testing Sail implementations that store RDF data. This is purely a test for data storage and
@@ -49,10 +50,8 @@ public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements Sail
 	@Override
 	protected abstract NotifyingSail createSail() throws SailException;
 
-	@Override
-	public void setUp() throws Exception {
-		super.setUp();
-
+	@BeforeEach
+	public void addSailChangedListener() throws Exception {
 		// set self as listener
 		((NotifyingSail) sail).addSailChangedListener(this);
 
@@ -74,9 +73,9 @@ public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements Sail
 		con.removeStatements(painting, RDF.TYPE, RDFS.CLASS);
 		con.commit();
 
-		Assert.assertEquals("Repository should contain 4 statements in total", 4, countAllElements());
+		assertEquals(4, countAllElements(), "Repository should contain 4 statements in total");
 
-		Assert.assertEquals("Named context should contain 3 statements", 3, countContext1Elements());
+		assertEquals(3, countContext1Elements(), "Named context should contain 3 statements");
 
 		assertThat(con.hasStatement(painting, RDF.TYPE, RDFS.CLASS, true)).isFalse();
 
@@ -84,20 +83,20 @@ public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements Sail
 		con.removeStatements(null, null, null, context1);
 		con.commit();
 
-		Assert.assertEquals("Repository should contain 1 statement in total", 1, countAllElements());
+		assertEquals(1, countAllElements(), "Repository should contain 1 statement in total");
 
-		Assert.assertEquals("Named context should be empty", 0, countContext1Elements());
+		assertEquals(0, countContext1Elements(), "Named context should be empty");
 
 		con.begin();
 		con.clear();
 		con.commit();
 
-		Assert.assertEquals("Repository should no longer contain any statements", 0, countAllElements());
+		assertEquals(0, countAllElements(), "Repository should no longer contain any statements");
 
 		// test if event listener works properly.
-		Assert.assertEquals("There should have been 1 event in which statements were added", 1, addEventCount);
+		assertEquals(1, addEventCount, "There should have been 1 event in which statements were added");
 
-		Assert.assertEquals("There should have been 3 events in which statements were removed", 3, removeEventCount);
+		assertEquals(3, removeEventCount, "There should have been 3 events in which statements were removed");
 	}
 
 	@Override

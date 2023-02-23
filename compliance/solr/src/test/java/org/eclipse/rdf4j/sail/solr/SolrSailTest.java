@@ -18,8 +18,9 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.solr.SolrIndexTest.PropertiesReader;
 import org.eclipse.testsuite.rdf4j.sail.lucene.AbstractLuceneSailTest;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 
 public class SolrSailTest extends AbstractLuceneSailTest {
 
@@ -27,7 +28,7 @@ public class SolrSailTest extends AbstractLuceneSailTest {
 
 	private static String toRestoreSolrHome = null;
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() throws Exception {
 		toRestoreSolrHome = System.getProperty("solr.solr.home");
 		PropertiesReader reader = new PropertiesReader("maven-config.properties");
@@ -35,7 +36,7 @@ public class SolrSailTest extends AbstractLuceneSailTest {
 		System.setProperty("solr.solr.home", testSolrHome);
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void tearDownClass() throws Exception {
 		System.setProperty("solr.solr.home", toRestoreSolrHome == null ? "" : toRestoreSolrHome);
 		toRestoreSolrHome = null;
@@ -47,9 +48,8 @@ public class SolrSailTest extends AbstractLuceneSailTest {
 		sail.setParameter(SolrIndex.SERVER_KEY, "embedded:");
 	}
 
-	@Override
-	public void tearDown() throws IOException, RepositoryException {
-		super.tearDown();
+	@AfterEach
+	public void deleteDataDir() throws IOException, RepositoryException {
 		FileUtils.deleteDirectory(new File(DATA_DIR));
 	}
 }

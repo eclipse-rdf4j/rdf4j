@@ -10,20 +10,22 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
+import java.io.File;
 import java.io.IOException;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.testsuite.repository.RepositoryTest;
 import org.junit.Rule;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.rules.TemporaryFolder;
 
 public class NativeStoreRepositoryTest extends RepositoryTest {
-	@Rule
-	public final TemporaryFolder tmpDir = new TemporaryFolder();
+	@TempDir
+	public File dataDir;
 
 	@Override
 	protected Repository createRepository() throws IOException {
-		return new SailRepository(new NativeStore(tmpDir.getRoot(), "spoc"));
+		return new SailRepository(new NativeStore(dataDir, "spoc"));
 	}
 }

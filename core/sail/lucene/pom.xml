@@ -73,11 +73,5 @@
 			<groupId>org.locationtech.jts</groupId>
 			<artifactId>jts-core</artifactId>
 		</dependency>
-		<!-- This module uses timeout rule, and cannot be fully migrated to JUnit 5 now -->
-		<dependency>
-			<groupId>org.junit.vintage</groupId>
-			<artifactId>junit-vintage-engine</artifactId>
-			<scope>test</scope>
-		</dependency>
 	</dependencies>
 </project>

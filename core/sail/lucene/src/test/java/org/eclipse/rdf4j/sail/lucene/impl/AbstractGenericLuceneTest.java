@@ -14,11 +14,11 @@ import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.PROPERTY;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.QUERY;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SCORE;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SNIPPET;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.IOException;
 import java.io.StringReader;
@@ -61,19 +61,15 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailSchema;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.Timeout;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+@Timeout(value = 10, unit = TimeUnit.MINUTES)
 public abstract class AbstractGenericLuceneTest {
-
-	@Rule
-	public Timeout timeout = new Timeout(10, TimeUnit.MINUTES);
-
 	protected static final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	public static final String QUERY_STRING;
@@ -121,7 +117,7 @@ public abstract class AbstractGenericLuceneTest {
 
 	protected abstract void configure(LuceneSail sail) throws IOException;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		// set logging, uncomment this to get better logging for debugging
 		// org.apache.log4j.BasicConfigurator.configure();
@@ -152,7 +148,7 @@ public abstract class AbstractGenericLuceneTest {
 		connection.commit();
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() throws IOException, RepositoryException {
 		try {
 			if (connection != null) {
@@ -267,10 +263,10 @@ public abstract class AbstractGenericLuceneTest {
 
 			// the number of matched expected results must be equal to the number
 			// of actual results
-			assertEquals("How many expected results were retrieved for query #" + queryID + "?",
-					expectedResultSet.size(), matched.size());
-			assertEquals("How many actual results were retrieved for query #" + queryID + "?", expectedResultSet.size(),
-					actualResults);
+			assertEquals(expectedResultSet.size(), matched.size(),
+					"How many expected results were retrieved for query #" + queryID + "?");
+			assertEquals(expectedResultSet.size(), actualResults,
+					"How many actual results were retrieved for query #" + queryID + "?");
 		}
 	}
 
@@ -454,9 +450,9 @@ public abstract class AbstractGenericLuceneTest {
 			}
 
 			// we found all
-			assertTrue("These were expected but not found: " + expectedSnippetPart, expectedSnippetPart.isEmpty());
+			assertTrue(expectedSnippetPart.isEmpty(), "These were expected but not found: " + expectedSnippetPart);
 
-			assertEquals("there should have been 2 results", 2, results);
+			assertEquals(2, results, "there should have been 2 results");
 		}
 	}
 
@@ -523,9 +519,9 @@ public abstract class AbstractGenericLuceneTest {
 			}
 
 			// we found all
-			assertTrue("These were expected but not found: " + expectedSnippetPart, expectedSnippetPart.isEmpty());
+			assertTrue(expectedSnippetPart.isEmpty(), "These were expected but not found: " + expectedSnippetPart);
 
-			assertEquals("there should have been 3 results", 3, results);
+			assertEquals(3, results, "there should have been 3 results");
 		}
 	}
 
@@ -763,7 +759,7 @@ public abstract class AbstractGenericLuceneTest {
 				// remove it from the set
 				Value subject = bindings.getValue("Resource");
 				IRI expectedProperty = expectedSubject.remove(subject);
-				assertEquals("For subject " + subject, expectedProperty, bindings.getValue("Property"));
+				assertEquals(expectedProperty, bindings.getValue("Property"), "For subject " + subject);
 			}
 
 			// there should have been 3 results
@@ -803,7 +799,7 @@ public abstract class AbstractGenericLuceneTest {
 		for (Throwable e : exceptions) {
 			e.printStackTrace(System.err);
 		}
-		assertEquals("Exceptions occurred during testMultithreadedAdd, see stacktraces above", 0, exceptions.size());
+		assertEquals(0, exceptions.size(), "Exceptions occurred during testMultithreadedAdd, see stacktraces above");
 	}
 
 	@Test
@@ -830,11 +826,11 @@ public abstract class AbstractGenericLuceneTest {
 		TupleQuery query = connection.prepareTupleQuery(queryString);
 		try (TupleQueryResult result = query.evaluate()) {
 			// check the result
-			assertTrue("query for literal '" + literal + " did not return any results, expected was " + resultUri,
-					result.hasNext());
+			assertTrue(result.hasNext(),
+					"query for literal '" + literal + " did not return any results, expected was " + resultUri);
 			BindingSet bindings = result.next();
-			assertEquals("query for literal '" + literal + " did not return the expected resource", resultUri,
-					bindings.getValue("Resource"));
+			assertEquals(resultUri, bindings.getValue("Resource"),
+					"query for literal '" + literal + " did not return the expected resource");
 			assertFalse(result.hasNext());
 		}
 	}
@@ -846,8 +842,8 @@ public abstract class AbstractGenericLuceneTest {
 		TupleQuery query = connection.prepareTupleQuery(queryString);
 		try (TupleQueryResult result = query.evaluate()) {
 			// check the result
-			assertFalse("query for literal '" + literal + " did return results, which was not expected.",
-					result.hasNext());
+			assertFalse(result.hasNext(),
+					"query for literal '" + literal + " did return results, which was not expected.");
 		}
 	}
 

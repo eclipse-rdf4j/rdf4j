@@ -26,7 +26,6 @@ import java.nio.file.Files;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.console.ConsoleIO;
-import org.eclipse.rdf4j.console.ConsoleState;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -43,10 +42,9 @@ public class VerifyTest extends AbstractCommandTest {
 	public void setUp() throws IOException, RDF4JException {
 		InputStream input = mock(InputStream.class);
 		OutputStream out = mock(OutputStream.class);
-		ConsoleState info = mock(ConsoleState.class);
-		when(info.getDataDirectory()).thenReturn(locationFile);
+		when(mockConsoleState.getDataDirectory()).thenReturn(locationFile);
 
-		io = new ConsoleIO(input, out, info);
+		io = new ConsoleIO(input, out, mockConsoleState);
 
 		cmd = new Verify(io, defaultSettings);
 	}
