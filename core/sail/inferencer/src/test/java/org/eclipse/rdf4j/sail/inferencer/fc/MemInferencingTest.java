@@ -10,8 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.inferencer.fc;
 
-import static junit.framework.TestCase.assertFalse;
-import static junit.framework.TestCase.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.lang.reflect.InvocationTargetException;
@@ -86,8 +86,8 @@ public class MemInferencingTest extends InferencingTest {
 		try (RepositoryConnection connection = sailRepository.getConnection()) {
 			boolean correctInference = connection.hasStatement(vf.createIRI("http://d"), RDF.TYPE,
 					vf.createIRI("http://c"), true);
-			assertTrue("d should be type c, because 3 and 1 entail 'd _:bNode e' with 2 entail 'd type c'",
-					correctInference);
+			assertTrue(correctInference,
+					"d should be type c, because 3 and 1 entail 'd _:bNode e' with 2 entail 'd type c'");
 		}
 
 	}
@@ -131,11 +131,11 @@ public class MemInferencingTest extends InferencingTest {
 		try (RepositoryConnection connection = sailRepository.getConnection()) {
 
 			boolean incorrectInference = connection.hasStatement(aInstance, RDF.TYPE, B, true);
-			assertFalse("Previous rollback() should have have cleared the cache for A subClassOf B. ",
-					incorrectInference);
+			assertFalse(incorrectInference,
+					"Previous rollback() should have have cleared the cache for A subClassOf B. ");
 
 			boolean correctInference = connection.hasStatement(aInstance, RDF.TYPE, C, true);
-			assertTrue("aInstance should be instance of C because A subClassOfC was added earlier.", correctInference);
+			assertTrue(correctInference, "aInstance should be instance of C because A subClassOfC was added earlier.");
 		}
 	}
 
@@ -164,8 +164,8 @@ public class MemInferencingTest extends InferencingTest {
 		try (RepositoryConnection connection = sailRepository1.getConnection()) {
 			boolean correctInference = connection.hasStatement(aInstance, RDF.TYPE, C, true);
 			assertTrue(
-					"aInstance should be instance of C because A subClassOfC was added to the sail used by fastInstantiateFrom.",
-					correctInference);
+					correctInference,
+					"aInstance should be instance of C because A subClassOfC was added to the sail used by fastInstantiateFrom.");
 		}
 	}
 }
