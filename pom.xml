@@ -362,14 +362,15 @@
 		<maven.compiler.source>${java.version}</maven.compiler.source>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+		<enforce-javaee-provided.fail>true</enforce-javaee-provided.fail>
 		<slf4j.version>1.7.36</slf4j.version>
 		<logback.version>1.2.11</logback.version>
+		<log4j.version>2.17.2</log4j.version>
 		<httpclient.version>4.5.14</httpclient.version>
 		<jackson.version>2.13.4</jackson.version>
 		<httpcore.version>4.4.16</httpcore.version>
 		<jsonldjava.version>0.13.4</jsonldjava.version>
 		<last.japicmp.compare.version>4.0.0</last.japicmp.compare.version>
-		<jaxb.version>2.3.3</jaxb.version>
 		<lucene.version>8.5.1</lucene.version>
 		<lwjgl.version>3.3.1</lwjgl.version>
 		<solr.version>8.4.1</solr.version>
@@ -410,6 +411,12 @@
 				<groupId>com.opencsv</groupId>
 				<artifactId>opencsv</artifactId>
 				<version>5.3</version>
+				<exclusions>
+					<exclusion>
+						<groupId>commons-logging</groupId>
+						<artifactId>commons-logging</artifactId>
+					</exclusion>
+				</exclusions>
 			</dependency>
 			<!-- Apache Commons -->
 			<dependency>
@@ -446,11 +453,6 @@
 						<groupId>commons-logging</groupId>
 						<artifactId>commons-logging</artifactId>
 					</exclusion>
-					<exclusion>
-						<!-- httpclient includes older codec -->
-						<groupId>commons-codec</groupId>
-						<artifactId>commons-codec</artifactId>
-					</exclusion>
 				</exclusions>
 			</dependency>
 			<dependency>
@@ -462,60 +464,22 @@
 						<groupId>commons-logging</groupId>
 						<artifactId>commons-logging</artifactId>
 					</exclusion>
-					<exclusion>
-						<!-- httpclient includes older codec -->
-						<groupId>commons-codec</groupId>
-						<artifactId>commons-codec</artifactId>
-					</exclusion>
 				</exclusions>
 			</dependency>
 			<dependency>
 				<groupId>org.apache.httpcomponents</groupId>
 				<artifactId>httpmime</artifactId>
 				<version>${httpclient.version}</version>
-				<exclusions>
-					<exclusion>
-						<groupId>commons-logging</groupId>
-						<artifactId>commons-logging</artifactId>
-					</exclusion>
-					<exclusion>
-						<!-- httpclient includes older codec -->
-						<groupId>commons-codec</groupId>
-						<artifactId>commons-codec</artifactId>
-					</exclusion>
-				</exclusions>
 			</dependency>
 			<dependency>
 				<groupId>org.apache.httpcomponents</groupId>
 				<artifactId>fluent-hc</artifactId>
 				<version>${httpclient.version}</version>
-				<exclusions>
-					<exclusion>
-						<groupId>commons-logging</groupId>
-						<artifactId>commons-logging</artifactId>
-					</exclusion>
-					<exclusion>
-						<!-- httpclient includes older codec -->
-						<groupId>commons-codec</groupId>
-						<artifactId>commons-codec</artifactId>
-					</exclusion>
-				</exclusions>
 			</dependency>
 			<dependency>
 				<groupId>org.apache.httpcomponents</groupId>
 				<artifactId>httpcore-nio</artifactId>
 				<version>${httpcore.version}</version>
-				<exclusions>
-					<exclusion>
-						<groupId>commons-logging</groupId>
-						<artifactId>commons-logging</artifactId>
-					</exclusion>
-					<exclusion>
-						<!-- httpclient includes older codec -->
-						<groupId>commons-codec</groupId>
-						<artifactId>commons-codec</artifactId>
-					</exclusion>
-				</exclusions>
 			</dependency>
 			<dependency>
 				<groupId>org.locationtech.spatial4j</groupId>
@@ -567,19 +531,29 @@
 			</dependency>
 			<dependency>
 				<groupId>org.slf4j</groupId>
-				<artifactId>slf4j-jdk14</artifactId>
-				<version>${slf4j.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.slf4j</groupId>
 				<artifactId>jcl-over-slf4j</artifactId>
 				<version>${slf4j.version}</version>
-				<scope>runtime</scope>
 			</dependency>
 			<dependency>
 				<groupId>org.slf4j</groupId>
 				<artifactId>log4j-over-slf4j</artifactId>
 				<version>${slf4j.version}</version>
+			</dependency>
+			<!-- bridging component for log4j2 to slf4j -->
+			<dependency>
+				<groupId>org.apache.logging.log4j</groupId>
+				<artifactId>log4j-to-slf4j</artifactId>
+				<version>${log4j.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.logging.log4j</groupId>
+				<artifactId>log4j-api</artifactId>
+				<version>${log4j.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.logging.log4j</groupId>
+				<artifactId>log4j-core</artifactId>
+				<version>${log4j.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>ch.qos.logback</groupId>
@@ -608,7 +582,6 @@
 				<groupId>org.mockito</groupId>
 				<artifactId>mockito-junit-jupiter</artifactId>
 				<version>3.8.0</version>
-				<scope>test</scope>
 			</dependency>
 			<dependency>
 				<groupId>org.mock-server</groupId>
@@ -625,7 +598,6 @@
 				<artifactId>jsonld-java</artifactId>
 				<version>${jsonldjava.version}</version>
 				<type>jar</type>
-				<scope>compile</scope>
 				<exclusions>
 					<exclusion>
 						<groupId>org.apache.httpcomponents</groupId>
@@ -976,7 +948,84 @@
 								<fail>true</fail>
 							</configuration>
 						</execution>
+						<execution>
+							<id>enforce-logging-dependencies</id>
+							<goals>
+								<goal>enforce</goal>
+							</goals>
+							<configuration>
+								<rules>
+									<bannedDependencies>
+										<excludes>
+											<exclude>commons-logging</exclude>
+											<exclude>log4j</exclude>
+											<exclude>org.apache.logging.log4j</exclude>
+											<exclude>org.springframework:spring-jcl</exclude>
+										</excludes>
+										<includes>
+											<include>org.apache.logging.log4j:log4j-to-slf4j</include>
+											<include>org.apache.logging.log4j:log4j-api</include>
+											<!-- elasticsearch-cluster-runner needs log4j-core -->
+											<include>org.apache.logging.log4j:log4j-core:*:*:test</include>
+											<!-- Solr embedded server apparently needs log4j-web -->
+											<include>org.apache.logging.log4j:log4j-web</include>
+										</includes>
+									</bannedDependencies>
+								</rules>
+								<fail>true</fail>
+							</configuration>
+						</execution>
+						<execution>
+							<id>enforce-javaee-provided</id>
+							<goals>
+								<goal>enforce</goal>
+							</goals>
+							<configuration>
+								<rules>
+									<bannedDependencies>
+										<excludes>
+											<exclude>javax*</exclude>
+										</excludes>
+										<includes>
+											<include>javax.servlet:javax.servlet-api:*:*:provided</include>
+											<include>javax.servlet.jsp:jsp-api:*:*:provided</include>
+											<include>javax.servlet:jstl:*:*:provided</include>
+											<!-- Allow test server dependencies -->
+											<include>javax.servlet:javax.servlet-api:*:*:test</include>
+										</includes>
+									</bannedDependencies>
+								</rules>
+								<fail>${enforce-javaee-provided.fail}</fail>
+							</configuration>
+						</execution>
+						<execution>
+							<id>enforce-ban-duplicate-classes</id>
+							<goals>
+								<goal>enforce</goal>
+							</goals>
+							<configuration>
+								<rules>
+									<banDuplicateClasses>
+										<ignoreClasses>
+											<!-- mockserver-junit-jupiter-no-dependencies contains these classes -->
+											<ignoreClass>org.junit.*</ignoreClass>
+											<!-- mockserver-junit-jupiter-no-dependencies contains these classes -->
+											<ignoreClass>org.slf4j.*</ignoreClass>
+										</ignoreClasses>
+										<ignoreWhenIdentical>true</ignoreWhenIdentical>
+									</banDuplicateClasses>
+								</rules>
+								<fail>true</fail>
+							</configuration>
+						</execution>
 					</executions>
+					<dependencies>
+						<dependency>
+							<groupId>org.codehaus.mojo</groupId>
+							<artifactId>extra-enforcer-rules</artifactId>
+							<version>1.6.1</version>
+						</dependency>
+					</dependencies>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>

@@ -97,11 +97,6 @@
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
-			<groupId>jakarta.xml.bind</groupId>
-			<artifactId>jakarta.xml.bind-api</artifactId>
-			<version>${jaxb.version}</version>
-		</dependency>
-		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-repository-sail</artifactId>
 			<version>${project.version}</version>

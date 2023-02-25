@@ -17,14 +17,16 @@
 			<optional>true</optional>
 			<exclusions>
 				<exclusion>
-					<groupId>log4j</groupId>
-					<artifactId>log4j</artifactId>
-				</exclusion>
-				<exclusion>
 					<groupId>commons-logging</groupId>
 					<artifactId>commons-logging</artifactId>
 				</exclusion>
 			</exclusions>
+		</dependency>
+		<!-- org.elasticsearch.client:transport pulls in JCL -->
+		<dependency>
+			<groupId>org.slf4j</groupId>
+			<artifactId>jcl-over-slf4j</artifactId>
+			<scope>runtime</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>
@@ -47,6 +49,12 @@
 			<artifactId>elasticsearch-cluster-runner</artifactId>
 			<version>${elasticsearch.version}.0</version>
 			<scope>test</scope>
+			<exclusions>
+				<exclusion>
+					<groupId>commons-logging</groupId>
+					<artifactId>commons-logging</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.commons</groupId>

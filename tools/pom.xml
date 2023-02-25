@@ -76,20 +76,8 @@
 				<version>4.0.4</version>
 				<exclusions>
 					<exclusion>
-						<groupId>javax.servlet</groupId>
-						<artifactId>servlet-api</artifactId>
-					</exclusion>
-					<exclusion>
 						<groupId>ant</groupId>
 						<artifactId>ant</artifactId>
-					</exclusion>
-					<exclusion>
-						<groupId>commons-logging</groupId>
-						<artifactId>commons-logging</artifactId>
-					</exclusion>
-					<exclusion>
-						<groupId>log4j</groupId>
-						<artifactId>log4j</artifactId>
 					</exclusion>
 					<exclusion>
 						<groupId>junit</groupId>
@@ -127,37 +115,30 @@
 			<!-- Spring framework -->
 			<dependency>
 				<groupId>org.springframework</groupId>
-				<artifactId>spring-aop</artifactId>
+				<artifactId>spring-core</artifactId>
 				<version>${spring.version}</version>
 				<exclusions>
 					<exclusion>
-						<groupId>commons-logging</groupId>
-						<artifactId>commons-logging</artifactId>
+						<groupId>org.springframework</groupId>
+						<artifactId>spring-jcl</artifactId>
 					</exclusion>
 				</exclusions>
 			</dependency>
 			<dependency>
 				<groupId>org.springframework</groupId>
+				<artifactId>spring-aop</artifactId>
+				<version>${spring.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.springframework</groupId>
 				<artifactId>spring-webmvc</artifactId>
 				<version>${spring.version}</version>
-				<exclusions>
-					<exclusion>
-						<groupId>commons-logging</groupId>
-						<artifactId>commons-logging</artifactId>
-					</exclusion>
-				</exclusions>
 			</dependency>
 			<dependency>
 				<groupId>org.springframework</groupId>
 				<artifactId>spring-test</artifactId>
 				<version>${spring.version}</version>
 				<scope>test</scope>
-				<exclusions>
-					<exclusion>
-						<groupId>commons-logging</groupId>
-						<artifactId>commons-logging</artifactId>
-					</exclusion>
-				</exclusions>
 			</dependency>
 		</dependencies>
 	</dependencyManagement>
