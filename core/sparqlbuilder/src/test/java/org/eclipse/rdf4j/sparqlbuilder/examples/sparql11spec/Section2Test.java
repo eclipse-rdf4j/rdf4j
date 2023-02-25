@@ -11,8 +11,8 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder.var;
-import static org.hamcrest.MatcherAssert.assertThat;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -42,7 +42,7 @@ public class Section2Test extends BaseExamples {
 				title);
 
 		query.select(title).where(book1_has_title);
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"SELECT ?title\n"
 						+ "WHERE\n"
 						+ "{\n"
@@ -61,7 +61,7 @@ public class Section2Test extends BaseExamples {
 
 		query.select(title).where(book1_has_title);
 
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"SELECT ?title\n"
 						+ "WHERE\n"
 						+ "{\n"
@@ -84,7 +84,7 @@ public class Section2Test extends BaseExamples {
 
 		query.prefix(foaf).select(name, mbox).where(x_hasFoafName_name, x_hasFoafMbox_mbox);
 
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX foaf:   <http://xmlns.com/foaf/0.1/>\n"
 						+ "SELECT ?name ?mbox\n"
 						+ "WHERE\n"
@@ -107,7 +107,7 @@ public class Section2Test extends BaseExamples {
 
 		query.prefix(foaf).select(name, mbox).where(x_hasFoafName_name, x_hasFoafMbox_mbox);
 
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX foaf:   <http://xmlns.com/foaf/0.1/>\n"
 						+ "SELECT ?name ?mbox\n"
 						+ "WHERE\n"
@@ -123,13 +123,13 @@ public class Section2Test extends BaseExamples {
 		TriplePattern v_hasP_cat = GraphPatterns.tp(v, p, Rdf.literalOf("cat"));
 
 		query.select(v).where(v_hasP_cat);
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"SELECT ?v WHERE { ?v ?p \"cat\" .}"
 		));
 
 		TriplePattern v_hasP_cat_en = GraphPatterns.tp(v, p, Rdf.literalOfLanguage("cat", "en"));
 		SelectQuery queryWithLangTag = Queries.SELECT(v).where(v_hasP_cat_en);
-		assertThat(queryWithLangTag.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(queryWithLangTag.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"SELECT ?v WHERE { ?v ?p \"cat\"@en . }"
 		));
 	}
@@ -141,7 +141,7 @@ public class Section2Test extends BaseExamples {
 		TriplePattern v_hasP_42 = GraphPatterns.tp(v, p, Rdf.literalOf(42));
 
 		query.select(v).where(v_hasP_42);
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"SELECT ?v WHERE { ?v ?p 42 . }"
 		));
 	}
@@ -154,7 +154,7 @@ public class Section2Test extends BaseExamples {
 				Rdf.literalOfType("abc", Rdf.iri(EXAMPLE_DATATYPE_NS, datatype)));
 
 		query.select(v).where(v_hasP_abc_dt);
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"SELECT ?v WHERE { ?v ?p \"abc\"^^<http://example.org/datatype#specialDatatype> .}"
 		));
 	}
@@ -169,7 +169,7 @@ public class Section2Test extends BaseExamples {
 		TriplePattern v_hasP_abc_dt = GraphPatterns.tp(v, p, lit);
 
 		query.select(v).where(v_hasP_abc_dt);
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"SELECT ?v WHERE { ?v ?p \"abc\"^^<http://example.org/datatype#specialDatatype> .}"
 		));
 
@@ -181,7 +181,7 @@ public class Section2Test extends BaseExamples {
 
 		Variable x = var("x"), name = var("name");
 		query.prefix(foaf).select(x, name).where(x.has(foaf.iri("name"), name));
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX foaf:   <http://xmlns.com/foaf/0.1/>\n"
 						+ "SELECT ?x ?name\n"
 						+ "WHERE  { ?x foaf:name ?name . }"
@@ -199,7 +199,7 @@ public class Section2Test extends BaseExamples {
 		query.prefix(foaf)
 				.select(concatAsName)
 				.where(GraphPatterns.tp(P, foaf.iri("givenName"), G).andHas(foaf.iri("surname"), S));
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX foaf:   <http://xmlns.com/foaf/0.1/>\n"
 						+ "SELECT ( CONCAT(?G, \" \", ?S) AS ?name )\n"
 						+ "WHERE  { ?P foaf:givenName ?G ; foaf:surname ?S .}"
@@ -213,7 +213,7 @@ public class Section2Test extends BaseExamples {
 								.andHas(foaf.iri("surname"), S),
 						Expressions.bind(Expressions.concat(G, Rdf.literalOf(" "), S), name));
 
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX foaf:   <http://xmlns.com/foaf/0.1/>\n"
 						+ "SELECT ?name\n"
 						+ "WHERE  { \n"
@@ -237,7 +237,7 @@ public class Section2Test extends BaseExamples {
 		TriplePattern orgName = GraphPatterns.tp(x, org.iri("employeeName"), name);
 
 		graphQuery.prefix(prefixes).construct(foafName).where(orgName);
-		assertThat(graphQuery.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(graphQuery.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX foaf:   <http://xmlns.com/foaf/0.1/>\n"
 						+ "PREFIX org:    <https://example.com/ns#>\n"
 						+ "\n"
