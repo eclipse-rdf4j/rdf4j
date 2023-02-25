@@ -11,9 +11,9 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.util.Values;
@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,11 +35,17 @@ public class UnknownShapesTest {
 	private TestAppender appender;
 
 	@BeforeEach
-	public void beforeEach() {
+	void addAppender() {
 		appender = new TestAppender();
 
 		Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
 		root.addAppender(appender);
+	}
+
+	@AfterEach
+	void detachAppender() {
+		Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+		root.detachAppender(appender);
 	}
 
 	@Test
@@ -130,7 +137,7 @@ public class UnknownShapesTest {
 
 	private static class TestAppender extends AppenderBase<ILoggingEvent> {
 
-		private final List<String> logged = new ArrayList<>();
+		private final List<String> logged = new CopyOnWriteArrayList<>();
 
 		@Override
 		public synchronized void doAppend(ILoggingEvent eventObject) {
@@ -139,7 +146,6 @@ public class UnknownShapesTest {
 
 		@Override
 		protected void append(ILoggingEvent iLoggingEvent) {
-
 		}
 	}
 }
