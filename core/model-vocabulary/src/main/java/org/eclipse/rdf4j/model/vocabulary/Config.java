@@ -355,4 +355,15 @@ public class Config {
 		public final static IRI index = Vocabularies.createIRI(NAMESPACE, "ess.index");
 		public final static IRI clusterName = Vocabularies.createIRI(NAMESPACE, "ess.clusterName");
 	}
+
+	/**
+	 * Custom Graph Query Inferencer config
+	 */
+	public static final class Cgqi {
+		public final static IRI queryLanguage = Vocabularies.createIRI(NAMESPACE, "cgqi.queryLanguage");
+
+		public final static IRI ruleQuery = Vocabularies.createIRI(NAMESPACE, "cgqi.ruleQuery");
+
+		public final static IRI matcherQuery = Vocabularies.createIRI(NAMESPACE, "cgqi.matcherQuery");
+	}
 }
