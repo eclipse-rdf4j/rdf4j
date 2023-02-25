@@ -28,7 +28,7 @@
 			<artifactId>rdf4j-config</artifactId>
 			<version>${project.version}</version>
 		</dependency>
-		<!-- TODO rather include into rdf4j-storage, however, 
+		<!-- TODO rather include into rdf4j-storage, however,
 		requires resolving cyclic dependency on test scope -->
 		<dependency>
 			<groupId>org.eclipse.rdf4j</groupId>
@@ -38,6 +38,7 @@
 		<dependency>
 			<groupId>javax.servlet</groupId>
 			<artifactId>javax.servlet-api</artifactId>
+			<scope>provided</scope>
 		</dependency>
 		<!-- Required for CommonsMultipartResolver from the Spring Framework -->
 		<dependency>
@@ -76,12 +77,18 @@
 				</configuration>
 			</plugin>
 			<plugin>
-				<groupId>org.apache.tomcat.maven</groupId>
-				<artifactId>tomcat7-maven-plugin</artifactId>
+				<groupId>org.eclipse.jetty</groupId>
+				<artifactId>jetty-maven-plugin</artifactId>
 				<configuration>
-					<warFile>${project.build.directory}/rdf4j-workbench.war</warFile>
-					<path>/rdf4j-workbench</path>
-					<server>tomcat</server>
+					<webApp>
+						<contextPath>/rdf4j-workbench</contextPath>
+					</webApp>
+					<contextHandlers>
+						<contextHandler implementation="org.eclipse.jetty.maven.plugin.JettyWebAppContext">
+							<war>${project.basedir}/../server/target/rdf4j-server.war</war>
+							<contextPath>/rdf4j-server</contextPath>
+						</contextHandler>
+					</contextHandlers>
 				</configuration>
 			</plugin>
 		</plugins>

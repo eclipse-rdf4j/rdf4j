@@ -353,6 +353,7 @@
 		<jmhVersion>1.35</jmhVersion>
 		<servlet.version>3.1.0</servlet.version>
 		<junit.version>5.8.2</junit.version>
+		<jetty.version>9.4.50.v20221201</jetty.version>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
@@ -368,7 +369,7 @@
 			<dependency>
 				<groupId>org.eclipse.jetty</groupId>
 				<artifactId>jetty-bom</artifactId>
-				<version>9.4.50.v20221201</version>
+				<version>${jetty.version}</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
@@ -871,9 +872,9 @@
 					</configuration>
 				</plugin>
 				<plugin>
-					<groupId>org.apache.tomcat.maven</groupId>
-					<artifactId>tomcat7-maven-plugin</artifactId>
-					<version>2.2</version>
+					<groupId>org.eclipse.jetty</groupId>
+					<artifactId>jetty-maven-plugin</artifactId>
+					<version>${jetty.version}</version>
 				</plugin>
 				<plugin>
 					<groupId>com.github.siom79.japicmp</groupId>

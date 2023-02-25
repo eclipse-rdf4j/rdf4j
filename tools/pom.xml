@@ -66,16 +66,6 @@
 				<version>1.2</version>
 			</dependency>
 			<dependency>
-				<groupId>taglibs</groupId>
-				<artifactId>standard</artifactId>
-				<version>1.1.2</version>
-			</dependency>
-			<dependency>
-				<groupId>javax.activation</groupId>
-				<artifactId>activation</artifactId>
-				<version>1.1</version>
-			</dependency>
-			<dependency>
 				<groupId>org.ebaysf.web</groupId>
 				<artifactId>cors-filter</artifactId>
 				<version>1.0.1</version>
