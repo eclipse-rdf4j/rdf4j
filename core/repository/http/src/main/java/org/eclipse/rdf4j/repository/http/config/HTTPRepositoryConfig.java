@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
-import org.eclipse.rdf4j.model.vocabulary.Config;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.repository.config.AbstractRepositoryImplConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 
@@ -76,8 +76,8 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 		Resource implNode = super.export(graph);
 
 		if (url != null) {
-			graph.setNamespace(Config.PREFIX, Config.NAMESPACE);
-			graph.add(implNode, Config.Http.url, SimpleValueFactory.getInstance().createIRI(url));
+			graph.setNamespace(CONFIG.PREFIX, CONFIG.NAMESPACE);
+			graph.add(implNode, CONFIG.Http.url, SimpleValueFactory.getInstance().createIRI(url));
 		}
 
 		return implNode;
@@ -90,15 +90,15 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 		try {
 
 			Configurations
-					.getIRIValue(model, implNode, Config.Http.url, HTTPRepositorySchema.REPOSITORYURL)
+					.getIRIValue(model, implNode, CONFIG.Http.url, HTTPRepositorySchema.REPOSITORYURL)
 					.ifPresent(iri -> setURL(iri.stringValue()));
 
 			Configurations
-					.getLiteralValue(model, implNode, Config.Http.username, HTTPRepositorySchema.USERNAME)
+					.getLiteralValue(model, implNode, CONFIG.Http.username, HTTPRepositorySchema.USERNAME)
 					.ifPresent(username -> setUsername(username.getLabel()));
 
 			Configurations
-					.getLiteralValue(model, implNode, Config.Http.password, HTTPRepositorySchema.PASSWORD)
+					.getLiteralValue(model, implNode, CONFIG.Http.password, HTTPRepositorySchema.PASSWORD)
 					.ifPresent(password -> setPassword(password.getLabel()));
 
 		} catch (ModelException e) {

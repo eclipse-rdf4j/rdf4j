@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
-import org.eclipse.rdf4j.model.vocabulary.Config;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.sail.config.AbstractSailImplConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
@@ -63,11 +63,11 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		Resource implNode = super.export(graph);
 
 		if (evalStratFactoryClassName != null) {
-			graph.add(implNode, Config.Sail.evaluationStrategyFactory,
+			graph.add(implNode, CONFIG.Sail.evaluationStrategyFactory,
 					literal(evalStratFactoryClassName));
 		}
 		getDefaultQueryEvaluationMode().ifPresent(mode -> {
-			graph.add(implNode, Config.Sail.defaultQueryEvaluationMode,
+			graph.add(implNode, CONFIG.Sail.defaultQueryEvaluationMode,
 					literal(mode.getValue()));
 		});
 
@@ -79,12 +79,12 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		super.parse(graph, implNode);
 
 		try {
-			Configurations.getLiteralValue(graph, implNode, Config.Sail.defaultQueryEvaluationMode,
+			Configurations.getLiteralValue(graph, implNode, CONFIG.Sail.defaultQueryEvaluationMode,
 					BaseSailSchema.DEFAULT_QUERY_EVALUATION_MODE)
 					.ifPresent(qem -> setDefaultQueryEvaluationMode(
 							QueryEvaluationMode.valueOf(qem.stringValue())));
 
-			Configurations.getLiteralValue(graph, implNode, Config.Sail.evaluationStrategyFactory,
+			Configurations.getLiteralValue(graph, implNode, CONFIG.Sail.evaluationStrategyFactory,
 					BaseSailSchema.EVALUATION_STRATEGY_FACTORY)
 					.ifPresent(factoryClassName -> {
 						setEvaluationStrategyFactoryClassName(factoryClassName.stringValue());

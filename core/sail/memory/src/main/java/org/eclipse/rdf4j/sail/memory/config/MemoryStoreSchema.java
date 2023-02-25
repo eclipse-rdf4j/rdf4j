@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.sail.memory.config;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.Config;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 /**
@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
  * {@link MemoryStore}s.
  *
  * @author Arjohn Kampman
- * @deprecated use {@link Config.Mem} instead.
+ * @deprecated use {@link CONFIG.Mem} instead.
  */
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class MemoryStoreSchema {
@@ -34,14 +34,14 @@ public class MemoryStoreSchema {
 	/**
 	 * <var>http://www.openrdf.org/config/sail/memory#persist</var>
 	 *
-	 * @deprecated use {@link Config.Mem#persist} instead.
+	 * @deprecated use {@link CONFIG.Mem#persist} instead.
 	 */
 	public final static IRI PERSIST;
 
 	/**
 	 * <var>http://www.openrdf.org/config/sail/memory#syncDelay</var>
 	 *
-	 * @deprecated use {@link Config.Mem#syncDelay} instead.
+	 * @deprecated use {@link CONFIG.Mem#syncDelay} instead.
 	 */
 	public final static IRI SYNC_DELAY;
 

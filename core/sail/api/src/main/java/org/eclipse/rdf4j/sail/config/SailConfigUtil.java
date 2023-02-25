@@ -17,14 +17,14 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
-import org.eclipse.rdf4j.model.vocabulary.Config;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 
 public class SailConfigUtil {
 
 	public static SailImplConfig parseRepositoryImpl(Model m, Resource implNode) throws SailConfigException {
 		try {
 
-			Optional<Literal> typeLit = Configurations.getLiteralValue(m, implNode, Config.Sail.type,
+			Optional<Literal> typeLit = Configurations.getLiteralValue(m, implNode, CONFIG.Sail.type,
 					SailConfigSchema.SAILTYPE);
 
 			if (typeLit.isPresent()) {

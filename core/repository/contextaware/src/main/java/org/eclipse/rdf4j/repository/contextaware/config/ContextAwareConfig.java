@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Configurations;
-import org.eclipse.rdf4j.model.vocabulary.Config.ContextAware;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG.ContextAware;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.repository.config.AbstractDelegatingRepositoryImplConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;

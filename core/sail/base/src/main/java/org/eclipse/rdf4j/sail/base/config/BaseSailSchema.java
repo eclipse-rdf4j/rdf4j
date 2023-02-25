@@ -13,12 +13,12 @@ package org.eclipse.rdf4j.sail.base.config;
 import static org.eclipse.rdf4j.model.util.Values.iri;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.vocabulary.Config;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 
 /**
  * Defines constants for the BaseSail schema.
  *
- * @deprecated use {@link Config} instead.
+ * @deprecated use {@link CONFIG} instead.
  */
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class BaseSailSchema {
@@ -29,12 +29,12 @@ public class BaseSailSchema {
 	public static final String NAMESPACE = "http://www.openrdf.org/config/sail/base#";
 
 	/**
-	 * @deprecated use {@link Config#evaluationStrategyFactory} instead.
+	 * @deprecated use {@link CONFIG#evaluationStrategyFactory} instead.
 	 */
 	public final static IRI EVALUATION_STRATEGY_FACTORY = iri(NAMESPACE, "evaluationStrategyFactory");
 
 	/**
-	 * @deprecated use {@link Config#defaultQueryEvaluationMode} instead.
+	 * @deprecated use {@link CONFIG#defaultQueryEvaluationMode} instead.
 	 */
 	public final static IRI DEFAULT_QUERY_EVALUATION_MODE = iri(NAMESPACE, "defaultQueryEvaluationMode");
 

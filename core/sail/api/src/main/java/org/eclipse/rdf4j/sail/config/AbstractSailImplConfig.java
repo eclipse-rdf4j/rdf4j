@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
-import org.eclipse.rdf4j.model.vocabulary.Config;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 
 /**
  * Base implementation of {@link SailImplConfig}
@@ -67,15 +67,15 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 		BNode implNode = bnode();
 
 		if (type != null) {
-			m.add(implNode, Config.Sail.type, literal(type));
+			m.add(implNode, CONFIG.Sail.type, literal(type));
 		}
 
 		if (iterationCacheSyncThreshold > 0) {
-			m.add(implNode, Config.Sail.iterationCacheSyncThreshold, literal(iterationCacheSyncThreshold));
+			m.add(implNode, CONFIG.Sail.iterationCacheSyncThreshold, literal(iterationCacheSyncThreshold));
 		}
 
 		if (connectionTimeOut > 0) {
-			m.add(implNode, Config.Sail.connectionTimeOut, literal(connectionTimeOut));
+			m.add(implNode, CONFIG.Sail.connectionTimeOut, literal(connectionTimeOut));
 		}
 		return implNode;
 	}
@@ -83,14 +83,14 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 	@Override
 	public void parse(Model m, Resource implNode) throws SailConfigException {
 		try {
-			Configurations.getLiteralValue(m, implNode, Config.Sail.type, SailConfigSchema.SAILTYPE)
+			Configurations.getLiteralValue(m, implNode, CONFIG.Sail.type, SailConfigSchema.SAILTYPE)
 					.ifPresent(lit -> setType(lit.getLabel()));
 			Configurations
-					.getLiteralValue(m, implNode, Config.Sail.iterationCacheSyncThreshold,
+					.getLiteralValue(m, implNode, CONFIG.Sail.iterationCacheSyncThreshold,
 							SailConfigSchema.ITERATION_CACHE_SYNC_THRESHOLD)
 					.ifPresent(lit -> setIterationCacheSyncThreshold(lit.longValue()));
 			Configurations
-					.getLiteralValue(m, implNode, Config.Sail.connectionTimeOut, SailConfigSchema.CONNECTION_TIME_OUT)
+					.getLiteralValue(m, implNode, CONFIG.Sail.connectionTimeOut, SailConfigSchema.CONNECTION_TIME_OUT)
 					.ifPresent(lit -> setConnectionTimeOut(lit.longValue()));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);

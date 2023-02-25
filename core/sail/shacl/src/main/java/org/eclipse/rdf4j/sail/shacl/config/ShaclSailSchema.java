@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.sail.shacl.config;
 import static org.eclipse.rdf4j.model.util.Values.iri;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.vocabulary.Config;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 
 /**
@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail;
  *
  * @author Jeen Broekstra
  *
- * @deprecated since 4.3.0. Use {@link Config.Shacl} instead.
+ * @deprecated since 4.3.0. Use {@link CONFIG.Shacl} instead.
  */
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class ShaclSailSchema {
@@ -35,93 +35,93 @@ public class ShaclSailSchema {
 	/**
 	 * <code>http://rdf4j.org/config/sail/shacl#parallelValidation</code>
 	 *
-	 * @deprecated use {@link Config.Shacl#parallelValidation} instead.
+	 * @deprecated use {@link CONFIG.Shacl#parallelValidation} instead.
 	 */
 	public final static IRI PARALLEL_VALIDATION = create("parallelValidation");
 
 	/**
 	 * <code>http://rdf4j.org/config/sail/shacl#logValidationPlans</code>
 	 *
-	 * @deprecated use {@link Config.Shacl#logValidationPlans} instead.
+	 * @deprecated use {@link CONFIG.Shacl#logValidationPlans} instead.
 	 */
 	public final static IRI LOG_VALIDATION_PLANS = create("logValidationPlans");
 
 	/**
 	 * <code>http://rdf4j.org/config/sail/shacl#logValidationViolations</code>
 	 *
-	 * @deprecated use {@link Config.Shacl#logValidationViolations} instead.
+	 * @deprecated use {@link CONFIG.Shacl#logValidationViolations} instead.
 	 */
 	public final static IRI LOG_VALIDATION_VIOLATIONS = create("logValidationViolations");
 
 	/**
 	 * <code>http://rdf4j.org/config/sail/shacl#validationEnabled</code>
 	 *
-	 * @deprecated use {@link Config.Shacl#validationEnabled} instead.
+	 * @deprecated use {@link CONFIG.Shacl#validationEnabled} instead.
 	 */
 	public final static IRI VALIDATION_ENABLED = create("validationEnabled");
 
 	/**
 	 * <code>http://rdf4j.org/config/sail/shacl#cacheSelectNodes</code>
 	 *
-	 * @deprecated use {@link Config.Shacl#cacheSelectNodes} instead.
+	 * @deprecated use {@link CONFIG.Shacl#cacheSelectNodes} instead.
 	 */
 	public final static IRI CACHE_SELECT_NODES = create("cacheSelectNodes");
 
 	/**
 	 * <code>http://rdf4j.org/config/sail/shacl#globalLogValidationExecution</code>
 	 *
-	 * @deprecated use {@link Config.Shacl#globalLogValidationExecution} instead.
+	 * @deprecated use {@link CONFIG.Shacl#globalLogValidationExecution} instead.
 	 */
 	public final static IRI GLOBAL_LOG_VALIDATION_EXECUTION = create("globalLogValidationExecution");
 
 	/**
 	 * <code>http://rdf4j.org/config/sail/shacl#rdfsSubClassReasoning</code>
 	 *
-	 * @deprecated use {@link Config.Shacl#rdfsSubClassReasoning} instead.
+	 * @deprecated use {@link CONFIG.Shacl#rdfsSubClassReasoning} instead.
 	 */
 	public final static IRI RDFS_SUB_CLASS_REASONING = create("rdfsSubClassReasoning");
 
 	/**
 	 * <code>http://rdf4j.org/config/sail/shacl#performanceLogging</code>
 	 *
-	 * @deprecated use {@link Config.Shacl#performanceLogging} instead.
+	 * @deprecated use {@link CONFIG.Shacl#performanceLogging} instead.
 	 */
 	public final static IRI PERFORMANCE_LOGGING = create("performanceLogging");
 
 	/**
 	 * <code>http://rdf4j.org/config/sail/shacl#serializableValidation</code>
 	 *
-	 * @deprecated use {@link Config.Shacl#serializableValidation} instead.
+	 * @deprecated use {@link CONFIG.Shacl#serializableValidation} instead.
 	 */
 	public final static IRI SERIALIZABLE_VALIDATION = create("serializableValidation");
 
 	/**
-	 * @deprecated use {@link Config.Shacl#eclipseRdf4jShaclExtensions} instead.
+	 * @deprecated use {@link CONFIG.Shacl#eclipseRdf4jShaclExtensions} instead.
 	 */
 	public final static IRI ECLIPSE_RDF4J_SHACL_EXTENSIONS = create("eclipseRdf4jShaclExtensions");
 
 	/**
-	 * @deprecated use {@link Config.Shacl#dashDataShapes} instead.
+	 * @deprecated use {@link CONFIG.Shacl#dashDataShapes} instead.
 	 */
 	public final static IRI DASH_DATA_SHAPES = create("dashDataShapes");
 
 	/**
-	 * @deprecated use {@link Config.Shacl#validationResultsLimitTotal} instead.
+	 * @deprecated use {@link CONFIG.Shacl#validationResultsLimitTotal} instead.
 	 */
 	public final static IRI VALIDATION_RESULTS_LIMIT_TOTAL = create("validationResultsLimitTotal");
 
 	/**
-	 * @deprecated use {@link Config.Shacl#validationResultsLimitPerConstraint} instead.
+	 * @deprecated use {@link CONFIG.Shacl#validationResultsLimitPerConstraint} instead.
 	 */
 	public final static IRI VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT = create("validationResultsLimitPerConstraint");
 
 	/**
-	 * @deprecated use {@link Config.Shacl#transactionalValidationLimit} instead.
+	 * @deprecated use {@link CONFIG.Shacl#transactionalValidationLimit} instead.
 	 */
 	public final static IRI TRANSACTIONAL_VALIDATION_LIMIT = create("transactionalValidationLimit");
 
 	/**
-	 * @deprecated use {@link Config.Shacl#shapesGraph} instead.
+	 * @deprecated use {@link CONFIG.Shacl#shapesGraph} instead.
 	 */
 	public final static IRI SHAPES_GRAPH = create("shapesGraph");
 

@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.IRI;
  *
  * @since 4.3.0
  */
-public class Config {
+public class CONFIG {
 
 	/**
 	 * The RDF4J config namespace (<var>tag:rdf4j.org,2023:config/</var>).
