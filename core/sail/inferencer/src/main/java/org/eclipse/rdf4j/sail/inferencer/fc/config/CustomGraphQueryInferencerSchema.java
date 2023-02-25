@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.sail.inferencer.fc.CustomGraphQueryInferencer;
  * Configuration schema URI's for {@link CustomGraphQueryInferencer}.
  *
  * @author Dale Visser
- * 
+ *
  * @deprecated since 4.3.0. Use {@link CONFIG.Cgqi} instead.
  */
 public class CustomGraphQueryInferencerSchema {
@@ -33,21 +33,21 @@ public class CustomGraphQueryInferencerSchema {
 
 	/**
 	 * <var>http://www.openrdf.org/config/sail/customGraphQueryInferencer#queryLanguage</var>
-	 * 
+	 *
 	 * @deprecated use {@link CONFIG.Cgqi#queryLanguage} instead.
 	 */
 	public final static IRI QUERY_LANGUAGE;
 
 	/**
 	 * <var>http://www.openrdf.org/config/sail/customGraphQueryInferencer#ruleQuery</var>
-	 * 
+	 *
 	 * @deprecated use {@link CONFIG.Cgqi#ruleQuery} instead.
 	 */
 	public final static IRI RULE_QUERY;
 
 	/**
 	 * <var>http://www.openrdf.org/config/sail/customGraphQueryInferencer#matcherQuery</var>
-	 * 
+	 *
 	 * @deprecated use {@link CONFIG.Cgqi#matcherQuery} instead.
 	 */
 	public final static IRI MATCHER_QUERY;
