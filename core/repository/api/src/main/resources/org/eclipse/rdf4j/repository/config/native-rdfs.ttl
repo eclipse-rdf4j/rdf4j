@@ -3,22 +3,20 @@
 # RDF Schema inferencing
 #
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix config: <tag:rdf4j.org:2023:config/>.
-@prefix ns: <http://www.openrdf.org/config/sail/native#>.
-
+@prefix config: <tag:rdf4j.org,2023:config/>.
 
 [] a config:Repository ;
-    config:repositoryID "{%Repository ID|native-rdfs%}" ;
+    config:rep.id "{%Repository ID|native-rdfs%}" ;
     rdfs:label "{%Repository title|Native store with RDF Schema inferencing%}" ;
-    config:repositoryImpl [
-        config:repositoryType "openrdf:SailRepository" ;
-        config:sailImpl [
-            config:sailType "rdf4j:SchemaCachingRDFSInferencer" ;
+    config:rep.impl [
+        config:rep.type "openrdf:SailRepository" ;
+        config:sail.impl [
+            config:sail.type "rdf4j:SchemaCachingRDFSInferencer" ;
             config:delegate [
-                config:sailType "openrdf:NativeStore" ;
-                config:iterationCacheSyncThreshold "{%Query Iteration Cache size|10000%}";
-                ns:tripleIndexes "{%Triple indexes|spoc,posc%}";
-                config:defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"
+                config:sail.type "openrdf:NativeStore" ;
+                config:sail.iterationCacheSyncThreshold "{%Query Iteration Cache size|10000%}";
+                config:native.tripleIndexes "{%Triple indexes|spoc,posc%}";
+                config:sail.defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"
             ]
         ]
     ].

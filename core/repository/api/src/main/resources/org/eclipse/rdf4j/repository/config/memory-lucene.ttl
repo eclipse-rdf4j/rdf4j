@@ -1,24 +1,20 @@
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix config: <tag:rdf4j.org:2023:config/>.
-@prefix sail-luc: <http://www.openrdf.org/config/sail/lucene#>.
-@prefix ms: <http://www.openrdf.org/config/sail/memory#>.
-@prefix sp: <http://spinrdf.org/sp#>.
-
+@prefix config: <tag:rdf4j.org,2023:config/>.
 
 [] a config:Repository ;
-    config:repositoryID "{%Repository ID|memory-lucene%}" ;
+    config:rep.id "{%Repository ID|memory-lucene%}" ;
     rdfs:label "{%Repository title|Native store with Lucene Support%}" ;
-    config:repositoryImpl [
-        config:repositoryType "openrdf:SailRepository" ;
-        config:sailImpl [
-            config:sailType "openrdf:LuceneSail";
-            sail-luc:indexDir "index/" ;
+    config:rep.impl [
+        config:rep.type "openrdf:SailRepository" ;
+        config:sail.impl [
+            config:sail.type "openrdf:LuceneSail";
+            config:lucene.indexDir "index/" ;
             config:delegate [
-                config:sailType "openrdf:MemoryStore" ;
-                config:iterationCacheSyncThreshold "{%Query Iteration Cache sync threshold|10000%}";
-                ms:persist {%Persist|true|false%} ;
-                ms:syncDelay {%Sync delay|0%};
-                config:defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"
+                config:sail.type "openrdf:MemoryStore" ;
+                config:sail.iterationCacheSyncThreshold "{%Query Iteration Cache sync threshold|10000%}";
+                config:mem.persist {%Persist|true|false%} ;
+                config:mem.syncDelay {%Sync delay|0%};
+                config:sail.defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"
             ]
         ]
     ].
