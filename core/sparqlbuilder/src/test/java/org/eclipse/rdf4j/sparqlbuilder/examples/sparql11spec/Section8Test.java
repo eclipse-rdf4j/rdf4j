@@ -11,9 +11,9 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder.var;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
-import static org.hamcrest.MatcherAssert.assertThat;
 
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
@@ -40,7 +40,7 @@ public class Section8Test extends BaseExamples {
 		GraphPattern personWithName = person.has(foaf.iri("name"), var("name"));
 		GraphPatternNotTriples personOfTypePerson = GraphPatterns.and(person.has(rdf.iri("type"), foaf.iri("Person")));
 		query.prefix(rdf, foaf).select(person).where(personOfTypePerson.filterNotExists(personWithName));
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX  rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> \n"
 						+ "PREFIX  foaf:   <http://xmlns.com/foaf/0.1/> \n"
 						+ "\n"
@@ -63,7 +63,7 @@ public class Section8Test extends BaseExamples {
 		GraphPattern personWithName = person.has(foaf.iri("name"), var("name"));
 		GraphPatternNotTriples personOfTypePerson = GraphPatterns.and(person.has(rdf.iri("type"), foaf.iri("Person")));
 		query.prefix(rdf, foaf).select(person).where(personOfTypePerson.filterExists(personWithName));
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX  rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> \n"
 						+ "PREFIX  foaf:   <http://xmlns.com/foaf/0.1/> \n"
 						+ "\n"
@@ -87,7 +87,7 @@ public class Section8Test extends BaseExamples {
 		GraphPattern allNotNamedBob = GraphPatterns.and(s.has(p, o))
 				.minus(s.has(foaf.iri("givenName"), Rdf.literalOf("Bob")));
 		query.prefix(base, foaf).select(s).distinct().where(allNotNamedBob);
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX :       <http://example/>\n"
 						+ "PREFIX foaf:   <http://xmlns.com/foaf/0.1/>\n"
 						+ "\n"
@@ -108,7 +108,7 @@ public class Section8Test extends BaseExamples {
 		Iri a = base.iri("a"), b = base.iri("b"), c = base.iri("c");
 
 		query.prefix(base).all().where(GraphPatterns.and(s.has(p, o)).filterNotExists(GraphPatterns.tp(a, b, c)));
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX : <http://example/>\n"
 						+ "SELECT * WHERE \n"
 						+ "{ \n"
@@ -123,7 +123,7 @@ public class Section8Test extends BaseExamples {
 		// pattern(s)) replaces (rather than augments) the query's
 		// query pattern. This allows reuse of the other elements of the query.
 		query.where(where);
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX : <http://example/>\n"
 						+ "SELECT * WHERE \n"
 						+ "{ \n"
@@ -143,7 +143,7 @@ public class Section8Test extends BaseExamples {
 				.filterNotExists(GraphPatterns.and(x.has(base.iri("q"), m)).filter(filter));
 
 		query.prefix(base).select().all().where(notExistsFilter);
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX : <http://example.com/>\n"
 						+ "SELECT * WHERE {\n"
 						+ "        ?x :p ?n . \n"
@@ -157,7 +157,7 @@ public class Section8Test extends BaseExamples {
 		QueryPattern where = SparqlBuilder.where(GraphPatterns.and(x.has(base.iri("p"), n))
 				.minus(GraphPatterns.and(x.has(base.iri("q"), m)).filter(filter)));
 		query.where(where);
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX : <http://example.com/>\n"
 						+ "SELECT * WHERE {\n"
 						+ "        ?x :p ?n . \n"

@@ -11,6 +11,8 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.examples;
 
+import org.assertj.core.api.Condition;
+import org.assertj.core.api.HamcrestCondition;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.DC;
@@ -19,7 +21,6 @@ import org.eclipse.rdf4j.sparqlbuilder.core.query.Queries;
 import org.eclipse.rdf4j.sparqlbuilder.core.query.SelectQuery;
 import org.hamcrest.BaseMatcher;
 import org.hamcrest.Description;
-import org.hamcrest.Matcher;
 import org.junit.jupiter.api.BeforeEach;
 
 /**
@@ -65,9 +66,9 @@ public class BaseExamples {
 		return s.toLowerCase().replaceAll("[\n\\s]", "");
 	}
 
-	protected Matcher<? super String> stringEqualsIgnoreCaseAndWhitespace(String expected) {
+	protected Condition<String> stringEqualsIgnoreCaseAndWhitespace(String expected) {
 		final String expectedConverted = toLowerRemoveWhitespace(expected);
-		return new BaseMatcher<>() {
+		return new HamcrestCondition<>(new BaseMatcher<>() {
 			private String aroundString = null;
 
 			@Override
@@ -94,7 +95,7 @@ public class BaseExamples {
 				description.appendText(
 						"Expected: was \"" + expected.replaceAll("\n", "\\\\n").replaceAll("\\s+", " ") + "\"");
 			}
-		};
+		});
 	}
 
 	private String getFirstDifference(String expected, String actual, int length) {
