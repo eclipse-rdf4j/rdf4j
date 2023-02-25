@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
-import org.eclipse.rdf4j.model.vocabulary.CONFIG;
+import org.eclipse.rdf4j.model.vocabulary.Config;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -130,25 +130,25 @@ public class RepositoryConfig {
 	public void export(Model model, Resource repositoryNode) {
 		model.setNamespace(RDFS.NS);
 		model.setNamespace(XSD.NS);
-		model.setNamespace("rep", CONFIG.NAMESPACE);
-		model.add(repositoryNode, RDF.TYPE, CONFIG.Rep.Repository);
+		model.setNamespace("rep", Config.NAMESPACE);
+		model.add(repositoryNode, RDF.TYPE, Config.Rep.Repository);
 
 		if (id != null) {
-			model.add(repositoryNode, CONFIG.Rep.id, literal(id));
+			model.add(repositoryNode, Config.Rep.id, literal(id));
 		}
 		if (title != null) {
 			model.add(repositoryNode, RDFS.LABEL, literal(title));
 		}
 		if (implConfig != null) {
 			Resource implNode = implConfig.export(model);
-			model.add(repositoryNode, CONFIG.Rep.impl, implNode);
+			model.add(repositoryNode, Config.Rep.impl, implNode);
 		}
 	}
 
 	public void parse(Model model, Resource repositoryNode) throws RepositoryConfigException {
 		try {
 			Configurations
-					.getLiteralValue(model, repositoryNode, CONFIG.Rep.id,
+					.getLiteralValue(model, repositoryNode, Config.Rep.id,
 							RepositoryConfigSchema.REPOSITORYID)
 					.ifPresent(lit -> setID(lit.getLabel()));
 
@@ -156,7 +156,7 @@ public class RepositoryConfig {
 					.ifPresent(lit -> setTitle(lit.getLabel()));
 
 			Configurations
-					.getResourceValue(model, repositoryNode, CONFIG.Rep.impl,
+					.getResourceValue(model, repositoryNode, Config.Rep.impl,
 							RepositoryConfigSchema.REPOSITORYIMPL)
 					.ifPresent(res -> setRepositoryImplConfig(AbstractRepositoryImplConfig.create(model, res)));
 		} catch (ModelException e) {

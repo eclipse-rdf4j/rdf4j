@@ -15,7 +15,7 @@ import static org.eclipse.rdf4j.model.util.Values.iri;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
-import org.eclipse.rdf4j.model.vocabulary.CONFIG;
+import org.eclipse.rdf4j.model.vocabulary.Config;
 import org.junit.jupiter.api.Test;
 
 public class RepositoryConfigTest {
@@ -28,7 +28,7 @@ public class RepositoryConfigTest {
 		var repoNode = iri("urn:repo1");
 		Model m = new ModelBuilder()
 				.subject(repoNode)
-				.add(CONFIG.Rep.id, ID)
+				.add(Config.Rep.id, ID)
 				.build();
 
 		RepositoryConfig config = new RepositoryConfig(ID);

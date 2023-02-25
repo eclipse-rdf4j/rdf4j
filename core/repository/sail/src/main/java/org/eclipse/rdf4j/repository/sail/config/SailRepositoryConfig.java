@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
-import org.eclipse.rdf4j.model.vocabulary.CONFIG;
+import org.eclipse.rdf4j.model.vocabulary.Config;
 import org.eclipse.rdf4j.repository.config.AbstractRepositoryImplConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
@@ -69,9 +69,9 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 		Resource repImplNode = super.export(model);
 
 		if (sailImplConfig != null) {
-			model.setNamespace(CONFIG.PREFIX, CONFIG.NAMESPACE);
+			model.setNamespace(Config.PREFIX, Config.NAMESPACE);
 			Resource sailImplNode = sailImplConfig.export(model);
-			model.add(repImplNode, CONFIG.Sail.impl, sailImplNode);
+			model.add(repImplNode, Config.Sail.impl, sailImplNode);
 		}
 
 		return repImplNode;
@@ -81,9 +81,9 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 	public void parse(Model model, Resource repImplNode) throws RepositoryConfigException {
 		try {
 			Optional<Resource> sailImplNode = Configurations.getResourceValue(model, repImplNode,
-					CONFIG.Sail.impl, SailRepositorySchema.SAILIMPL);
+					Config.Sail.impl, SailRepositorySchema.SAILIMPL);
 			if (sailImplNode.isPresent()) {
-				Configurations.getLiteralValue(model, sailImplNode.get(), CONFIG.Sail.type, SAILTYPE)
+				Configurations.getLiteralValue(model, sailImplNode.get(), Config.Sail.type, SAILTYPE)
 						.ifPresent(typeLit -> {
 							SailFactory factory = SailRegistry.getInstance()
 									.get(typeLit.getLabel())

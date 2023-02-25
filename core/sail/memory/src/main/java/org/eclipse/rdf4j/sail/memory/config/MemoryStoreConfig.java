@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
-import org.eclipse.rdf4j.model.vocabulary.CONFIG;
+import org.eclipse.rdf4j.model.vocabulary.Config;
 import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 
@@ -67,11 +67,11 @@ public class MemoryStoreConfig extends BaseSailConfig {
 		Resource implNode = super.export(graph);
 
 		if (persist) {
-			graph.add(implNode, CONFIG.Mem.persist, BooleanLiteral.TRUE);
+			graph.add(implNode, Config.Mem.persist, BooleanLiteral.TRUE);
 		}
 
 		if (syncDelay != 0) {
-			graph.add(implNode, CONFIG.Mem.syncDelay, literal(syncDelay));
+			graph.add(implNode, Config.Mem.syncDelay, literal(syncDelay));
 		}
 
 		return implNode;
@@ -83,22 +83,22 @@ public class MemoryStoreConfig extends BaseSailConfig {
 
 		try {
 
-			Configurations.getLiteralValue(graph, implNode, CONFIG.Mem.persist, PERSIST).ifPresent(persistValue -> {
+			Configurations.getLiteralValue(graph, implNode, Config.Mem.persist, PERSIST).ifPresent(persistValue -> {
 				try {
 					setPersist((persistValue).booleanValue());
 				} catch (IllegalArgumentException e) {
 					throw new SailConfigException(
-							"Boolean value required for " + CONFIG.Mem.persist + " property, found " + persistValue);
+							"Boolean value required for " + Config.Mem.persist + " property, found " + persistValue);
 				}
 			});
 
-			Configurations.getLiteralValue(graph, implNode, CONFIG.Mem.syncDelay, SYNC_DELAY)
+			Configurations.getLiteralValue(graph, implNode, Config.Mem.syncDelay, SYNC_DELAY)
 					.ifPresent(syncDelayValue -> {
 						try {
 							setSyncDelay((syncDelayValue).longValue());
 						} catch (NumberFormatException e) {
 							throw new SailConfigException(
-									"Long integer value required for " + CONFIG.Mem.syncDelay + " property, found "
+									"Long integer value required for " + Config.Mem.syncDelay + " property, found "
 											+ syncDelayValue);
 						}
 					});

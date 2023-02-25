@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.repository.http.config;
 import static org.eclipse.rdf4j.model.util.Values.iri;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.vocabulary.CONFIG;
+import org.eclipse.rdf4j.model.vocabulary.Config;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 
 /**
@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.repository.http.HTTPRepository;
  *
  * @author Arjohn Kampman
  *
- * @deprecated since 4.3.0. Use {@link CONFIG} instead.
+ * @deprecated since 4.3.0. Use {@link Config} instead.
  *
  */
 @Deprecated(since = "4.3.0", forRemoval = true)
@@ -31,17 +31,17 @@ public class HTTPRepositorySchema {
 	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/http#";
 
 	/**
-	 * @deprecated use {@link CONFIG#url} instead.
+	 * @deprecated use {@link Config#url} instead.
 	 */
 	public final static IRI REPOSITORYURL = iri(NAMESPACE, "repositoryURL");
 
 	/**
-	 * @deprecated use {@link CONFIG#username} instead.
+	 * @deprecated use {@link Config#username} instead.
 	 */
 	public final static IRI USERNAME = iri(NAMESPACE, "username");
 
 	/**
-	 * @deprecated use {@link CONFIG#password} instead.
+	 * @deprecated use {@link Config#password} instead.
 	 */
 	public final static IRI PASSWORD = iri(NAMESPACE, "password");
 }

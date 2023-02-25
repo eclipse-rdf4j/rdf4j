@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.IRI;
  *
  * @since 4.3.0
  */
-public class CONFIG {
+public class Config {
 
 	/**
 	 * The RDF4J config namespace (<var>tag:rdf4j.org,2023:config/</var>).
@@ -169,7 +169,7 @@ public class CONFIG {
 		 *
 		 * <var>tag:rdf4j.org,2023:config/sparql.queryEndpoint</var>
 		 */
-		public static final IRI queryEndpoint = Vocabularies.createIRI(NAMESPACE, "sparq.queryEndpoint");
+		public static final IRI queryEndpoint = Vocabularies.createIRI(NAMESPACE, "sparql.queryEndpoint");
 
 		/**
 		 * Configuration setting for the SPARQL update endpoint.

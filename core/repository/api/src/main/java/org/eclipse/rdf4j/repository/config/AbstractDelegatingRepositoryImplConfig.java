@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.repository.config;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.Configurations;
-import org.eclipse.rdf4j.model.vocabulary.CONFIG;
+import org.eclipse.rdf4j.model.vocabulary.Config;
 
 /**
  * @author Herko ter Horst
@@ -69,7 +69,7 @@ public abstract class AbstractDelegatingRepositoryImplConfig extends AbstractRep
 
 		if (delegate != null) {
 			Resource delegateNode = delegate.export(model);
-			model.add(resource, CONFIG.delegate, delegateNode);
+			model.add(resource, Config.delegate, delegateNode);
 		}
 
 		return resource;
@@ -80,7 +80,7 @@ public abstract class AbstractDelegatingRepositoryImplConfig extends AbstractRep
 		super.parse(model, resource);
 
 		Configurations
-				.getResourceValue(model, resource, CONFIG.delegate, RepositoryConfigSchema.DELEGATE)
+				.getResourceValue(model, resource, Config.delegate, RepositoryConfigSchema.DELEGATE)
 				.ifPresent(delegate -> setDelegate(create(model, delegate)));
 	}
 }
