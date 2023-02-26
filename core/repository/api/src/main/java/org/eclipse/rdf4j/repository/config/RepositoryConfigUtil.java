@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -56,17 +57,19 @@ public class RepositoryConfigUtil {
 
 	public static Set<String> getRepositoryIDs(Model model) throws RepositoryException {
 		Set<String> idSet = new LinkedHashSet<>();
-		model.filter(null, CONFIG.Rep.id, null).forEach(idStatement -> {
-			if (idStatement.getObject() instanceof Literal) {
-				Literal idLiteral = (Literal) idStatement.getObject();
-				idSet.add(idLiteral.getLabel());
-			}
-		});
+
+		Configurations.getPropertyValues(model, null, CONFIG.Rep.id, RepositoryConfigSchema.REPOSITORYID)
+				.forEach(value -> {
+					if (value.isLiteral()) {
+						idSet.add(((Literal) value).getLabel());
+					}
+				});
 		return idSet;
 	}
 
 	private static Statement getIDStatement(Model model, String repositoryID) {
 		Literal idLiteral = literal(repositoryID);
+
 		Model idStatementList = model.filter(null, CONFIG.Rep.id, idLiteral);
 
 		if (idStatementList.isEmpty()) {
