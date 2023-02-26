@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
 
 /**
  * Tests on SPRQL UNION clauses.

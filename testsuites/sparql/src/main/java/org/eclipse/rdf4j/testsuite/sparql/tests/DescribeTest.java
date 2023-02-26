@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
 
 /**
  * Tests on SPARQL DESCRIBE queries
