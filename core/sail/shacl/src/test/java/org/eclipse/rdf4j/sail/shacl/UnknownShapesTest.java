@@ -11,9 +11,8 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.util.Values;
@@ -21,28 +20,40 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.AppenderBase;
 
+@Isolated
 public class UnknownShapesTest {
+
 	private TestAppender appender;
 
 	@BeforeEach
-	public void beforeEach() {
+	void addAppender() {
 		appender = new TestAppender();
 
 		Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
 		root.addAppender(appender);
 	}
 
+	@AfterEach
+	void detachAppender() {
+		Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+		root.detachAppender(appender);
+	}
+
 	@Test
-	public void testPropertyShapes() throws IOException, InterruptedException {
+	@Timeout(5)
+	public void testPropertyShapes() throws IOException {
 		SailRepository shaclRepository = Utils.getInitializedShaclRepository("unknownProperties.trig");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
@@ -51,15 +62,9 @@ public class UnknownShapesTest {
 			connection.commit();
 		}
 
-		Thread.sleep(100);
+		Set<String> relevantLog = getRelevantLog(2);
 
-		List<String> relevantLog = appender.logged.stream()
-				.filter(m -> m.startsWith("Unsupported SHACL feature"))
-				.distinct()
-				.sorted(String::compareTo)
-				.collect(Collectors.toList());
-
-		List<String> expected = List.of(
+		Set<String> expected = Set.of(
 				"Unsupported SHACL feature detected sh:unknownShaclProperty in statement (http://example.com/ns#PersonPropertyShape, http://www.w3.org/ns/shacl#unknownShaclProperty, \"1\"^^<http://www.w3.org/2001/XMLSchema#integer>) [http://rdf4j.org/schema/rdf4j#SHACLShapeGraph]",
 				"Unsupported SHACL feature detected sh:unknownTarget in statement (http://example.com/ns#PersonShape, http://www.w3.org/ns/shacl#unknownTarget, http://www.w3.org/2000/01/rdf-schema#Class) [http://rdf4j.org/schema/rdf4j#SHACLShapeGraph]"
 		);
@@ -70,8 +75,21 @@ public class UnknownShapesTest {
 
 	}
 
+	private Set<String> getRelevantLog(int expectedNumberOfItems) {
+		Set<String> relevantLog;
+		do {
+			relevantLog = appender.logged.stream()
+					.filter(m -> m.startsWith("Unsupported SHACL feature"))
+					.map(s -> s.replaceAll("\r\n|\r|\n", " "))
+					.map(String::trim)
+					.collect(Collectors.toSet());
+		} while (relevantLog.size() < expectedNumberOfItems);
+		return relevantLog;
+	}
+
 	@Test
-	public void testComplexPath() throws IOException, InterruptedException {
+	@Timeout(5)
+	public void testComplexPath() throws IOException {
 		SailRepository shaclRepository = Utils.getInitializedShaclRepository("complexPath.trig");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
@@ -80,13 +98,7 @@ public class UnknownShapesTest {
 			connection.commit();
 		}
 
-		Thread.sleep(100);
-
-		Set<String> relevantLog = appender.logged.stream()
-				.filter(m -> m.startsWith("Unsupported SHACL feature"))
-				.map(s -> s.replaceAll("\r\n|\r|\n", " "))
-				.map(String::trim)
-				.collect(Collectors.toSet());
+		Set<String> relevantLog = getRelevantLog(4);
 
 		Set<String> expected = Set.of(
 				"Unsupported SHACL feature detected: InversePath{ ZeroOrMorePath{ SimplePath{ <http://example.com/ns#inverseThis> } } }. Shape ignored! <http://example.com/ns#inverseOfWithComplex> a sh:PropertyShape;   sh:path [       sh:inversePath [           sh:zeroOrMorePath <http://example.com/ns#inverseThis>         ]     ];   sh:minCount 1 .",
@@ -130,10 +142,10 @@ public class UnknownShapesTest {
 
 	private static class TestAppender extends AppenderBase<ILoggingEvent> {
 
-		private final List<String> logged = new ArrayList<>();
+		private final Set<String> logged = ConcurrentHashMap.newKeySet();
 
 		@Override
-		public synchronized void doAppend(ILoggingEvent eventObject) {
+		public void doAppend(ILoggingEvent eventObject) {
 			logged.add(eventObject.getFormattedMessage());
 		}
 
