@@ -47,8 +47,8 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.testsuite.sparql.vocabulary.EX;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.After;
+import org.junit.Before;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -64,13 +64,13 @@ public abstract class AbstractComplianceTest {
 	protected Repository repo;
 	protected RepositoryConnection conn;
 
-	@BeforeEach
+	@Before
 	public void setUp() throws Exception {
 		repo = RepositorySPARQLComplianceTestSuite.getEmptyInitializedRepository(this.getClass());
 		conn = new RepositoryConnectionWrapper(repo.getConnection());
 	}
 
-	@AfterEach
+	@After
 	public void tearDown() throws Exception {
 		try {
 			conn.close();
