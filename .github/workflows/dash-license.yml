@@ -1,0 +1,30 @@
+name: dash license
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  license-check:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '19'
+      - name: Cache local Maven repository
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-jdk19-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-jdk19-maven-
+      - name: Run license-check
+        run: mvn -B -Plicence-check org.eclipse.dash:license-tool-plugin:license-check -Ddash.summary=DEPENDENCIES
+      - name: Print Dash Summary
+        if: always()
+        run: cat DEPENDENCIES

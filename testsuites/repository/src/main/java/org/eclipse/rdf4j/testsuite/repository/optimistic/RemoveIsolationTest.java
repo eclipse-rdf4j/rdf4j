@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.repository.optimistic;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.Assert.assertEquals;
 
 import java.util.Collections;
 
@@ -23,11 +23,11 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Test;
 
 /**
  * Test isolation behavior on removal operations
@@ -37,12 +37,12 @@ import org.junit.jupiter.api.Test;
  */
 public class RemoveIsolationTest {
 
-	@BeforeAll
+	@BeforeClass
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	@AfterAll
+	@AfterClass
 	public static void afterClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
@@ -55,14 +55,14 @@ public class RemoveIsolationTest {
 
 	private final IsolationLevel level = IsolationLevels.SNAPSHOT_READ;
 
-	@BeforeEach
+	@Before
 	public void setUp() throws Exception {
 		repo = OptimisticIsolationTest.getEmptyInitializedRepository(RemoveIsolationTest.class);
 		con = repo.getConnection();
 		f = con.getValueFactory();
 	}
 
-	@AfterEach
+	@After
 	public void tearDown() throws Exception {
 		try {
 			con.close();
