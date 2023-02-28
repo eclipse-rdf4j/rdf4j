@@ -22,15 +22,15 @@
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-sparql-testsuite</artifactId>
+			<artifactId>rdf4j-http-server</artifactId>
 			<version>${project.version}</version>
+			<classifier>classes</classifier>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-http-server</artifactId>
+			<artifactId>rdf4j-sparql-testsuite</artifactId>
 			<version>${project.version}</version>
-			<classifier>classes</classifier>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
