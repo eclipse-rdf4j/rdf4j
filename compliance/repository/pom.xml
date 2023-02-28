@@ -54,8 +54,6 @@
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-war-plugin</artifactId>
 				<configuration>
-					<warName>rdf4j-server</warName>
-					<archiveClasses>true</archiveClasses>
 					<webappDirectory>${testserver.webapp.dir}</webappDirectory>
 				</configuration>
 			</plugin>
