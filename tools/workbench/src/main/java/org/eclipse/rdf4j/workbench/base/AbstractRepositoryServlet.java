@@ -15,8 +15,9 @@ import java.net.URL;
 
 import javax.naming.InitialContext;
 import javax.naming.NamingException;
-import javax.servlet.ServletConfig;
-import javax.servlet.ServletException;
+
+import jakarta.servlet.ServletConfig;
+import jakarta.servlet.ServletException;
 
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;

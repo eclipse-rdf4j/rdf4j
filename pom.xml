@@ -355,7 +355,7 @@
 		</profile>
 	</profiles>
 	<properties>
-		<java.version>11</java.version>
+		<java.version>17</java.version>
 		<maven.compiler.release>${java.version}</maven.compiler.release>
 		<maven.compiler.source>${java.version}</maven.compiler.source>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -374,10 +374,10 @@
 		<lucene.version>8.9.0</lucene.version>
 		<solr.version>8.9.0</solr.version>
 		<elasticsearch.version>7.15.2</elasticsearch.version>
-		<spring.version>5.3.23</spring.version>
+		<spring.version>6.0.4</spring.version>
 		<guava.version>30.1.1-jre</guava.version>
 		<jmhVersion>1.35</jmhVersion>
-		<servlet.version>3.1.0</servlet.version>
+		<servlet.version>5.0.0</servlet.version>
 		<junit.version>5.8.2</junit.version>
 		<jetty.version>9.4.50.v20221201</jetty.version>
 	</properties>
@@ -859,7 +859,7 @@
 					<artifactId>impsort-maven-plugin</artifactId>
 					<version>1.8.0</version>
 					<configuration>
-						<groups>java.,javax.,org.,com.</groups>
+						<groups>java.,javax.,jakarta.,org.,com.</groups>
 						<staticGroups>java,*</staticGroups>
 					</configuration>
 				</plugin>

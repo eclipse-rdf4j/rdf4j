@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        jdk: [11, 19]
+        jdk: [17, 19]
     steps:
     - uses: actions/checkout@v2
     - name: Set up JDK
@@ -46,14 +46,14 @@ jobs:
     - name: Set up JDK
       uses: actions/setup-java@v1
       with:
-        java-version: 11
+        java-version: 17
     - name: Cache local Maven repository
       uses: actions/cache@v2
       with:
         path: ~/.m2/repository
-        key: ${{ runner.os }}-jdk11-maven-${{ hashFiles('**/pom.xml') }}
+        key: ${{ runner.os }}-jdk17-maven-${{ hashFiles('**/pom.xml') }}
         restore-keys: |
-          ${{ runner.os }}-jdk11-maven-
+          ${{ runner.os }}-jdk17-maven-
     - name: Check formatting
       run: mvn -B formatter:validate impsort:check xml-format:xml-check
     - name: Build
@@ -79,14 +79,14 @@ jobs:
     - name: Set up JDK
       uses: actions/setup-java@v1
       with:
-        java-version: 11
+        java-version: 17
     - name: Cache local Maven repository
       uses: actions/cache@v2
       with:
         path: ~/.m2/repository
-        key: ${{ runner.os }}-jdk11-maven-${{ hashFiles('**/pom.xml') }}
+        key: ${{ runner.os }}-jdk17-maven-${{ hashFiles('**/pom.xml') }}
         restore-keys: |
-          ${{ runner.os }}-jdk11-maven-
+          ${{ runner.os }}-jdk17-maven-
     - name: Check formatting
       run: mvn -B formatter:validate impsort:check xml-format:xml-check
     - name: Build

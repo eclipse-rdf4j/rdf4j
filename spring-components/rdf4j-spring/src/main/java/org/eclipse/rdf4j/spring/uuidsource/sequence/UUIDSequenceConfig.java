@@ -11,7 +11,7 @@
 
 package org.eclipse.rdf4j.spring.uuidsource.sequence;
 
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;

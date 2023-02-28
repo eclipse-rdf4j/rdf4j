@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.workbench.commands;
 import java.io.IOException;
 import java.util.Arrays;
 
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;

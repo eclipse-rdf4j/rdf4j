@@ -11,7 +11,7 @@
 
 package org.eclipse.rdf4j.spring.demo.support;
 
-import javax.annotation.PostConstruct;
+import jakarta.annotation.PostConstruct;
 
 import org.eclipse.rdf4j.spring.support.DataInserter;
 import org.springframework.core.io.Resource;
