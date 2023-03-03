@@ -1102,10 +1102,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			return shape;
 		}
 
-		public PlanNode getPlanNode() {
-			return planNode;
-		}
-
 		public boolean hasPlanNode() {
 			return !(planNode instanceof EmptyNode);
 		}

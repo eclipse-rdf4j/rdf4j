@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import java.io.IOException;
-import java.io.StringReader;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
@@ -24,8 +23,6 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.Rio;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -68,12 +65,6 @@ public class ShaclSailSupportedPredicatesDocumentationIT extends AbstractShaclTe
 			STATIC_SHACL_PREDICATES.remove(predicate);
 		}
 
-	}
-
-	private Model getShacl(String shacl) throws IOException {
-		return Rio.parse(
-				new StringReader(shacl), "",
-				RDFFormat.TRIG);
 	}
 
 }

@@ -117,17 +117,6 @@ public class Utils {
 		return sail;
 	}
 
-	public static SailRepository getInitializedShaclRepository(URL resourceName) {
-		assert resourceName.toString().endsWith(".trig") : "Not a RDF Trig file: " + resourceName;
-		SailRepository repo = new SailRepository(new ShaclSail(new MemoryStore()));
-		try {
-			Utils.loadShapeData(repo, resourceName);
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		}
-		return repo;
-	}
-
 	public static SailRepository getSailRepository(URL resourceName, RDFFormat format) {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {

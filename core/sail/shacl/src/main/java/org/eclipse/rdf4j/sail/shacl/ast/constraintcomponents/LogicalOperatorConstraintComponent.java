@@ -123,8 +123,13 @@ public abstract class LogicalOperatorConstraintComponent extends AbstractConstra
 				statementMatchers.add(new StatementMatcher(subject, null, null, null, Set.of()));
 				statementMatchers.add(new StatementMatcher(null, null, subject, null, Set.of()));
 
-				SparqlFragment sparqlFragment = SparqlFragment.unionQueryStrings(unionCondition1, unionCondition2,
-						unionCondition3);
+				boolean supportsIncrementalValidation = sparqlFragments.stream()
+						.allMatch(SparqlFragment::supportsIncrementalEvaluation);
+
+				SparqlFragment sparqlFragment = SparqlFragment.unionQueryStrings(targetChain.getNamespaces(),
+						unionCondition1,
+						unionCondition2,
+						unionCondition3, supportsIncrementalValidation);
 				sparqlFragment.addStatementMatchers(statementMatchers);
 
 				return sparqlFragment;

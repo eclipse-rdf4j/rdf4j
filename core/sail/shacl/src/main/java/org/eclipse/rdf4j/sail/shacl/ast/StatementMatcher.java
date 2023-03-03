@@ -540,6 +540,7 @@ public class StatementMatcher {
 
 	public static class Variable<T extends Value> {
 		public static final Variable<Value> VALUE = new Variable<>("value");
+		public static final Variable<Value> THIS = new Variable<>("this");
 
 		String name;
 		T value;

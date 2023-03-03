@@ -90,6 +90,8 @@ import org.topbraid.shacl.util.ModelPrinter;
 import org.topbraid.shacl.validation.ValidationUtil;
 import org.topbraid.shacl.vocabulary.SH;
 
+import com.google.common.collect.Lists;
+
 import ch.qos.logback.classic.Level;
 
 /**
@@ -104,12 +106,6 @@ abstract public class AbstractShaclTest {
 			Values.iri("http://example.com/ns#shapesGraph1"));
 
 	private static final Set<String> ignoredTestCases = Set.of(
-			"test-cases/class/sparqlTarget",
-			"test-cases/class/sparqlTargetNot",
-			"test-cases/complex/sparqlTarget",
-			"test-cases/datatype/sparqlTarget",
-			"test-cases/maxCount/sparqlTarget",
-			"test-cases/or/implicitAndSparqlTarget",
 			"test-cases/path/oneOrMorePath",
 			"test-cases/path/zeroOrMorePath",
 			"test-cases/path/zeroOrOnePath"
@@ -563,8 +559,18 @@ abstract public class AbstractShaclTest {
 						validationReport.remove(null, RSX.dataGraph, null);
 						validationReport.remove(null, RSX.shapesGraph, null);
 						validationReport.remove(null, RDF4J.TRUNCATED, null);
-						// we don't have any default values for sh:resultMessage
+
+						// We don't have any default values for sh:resultMessage
 						validationReport.remove(null, SHACL.RESULT_MESSAGE, null);
+
+						// Remove the contents fo the SPARQL constraint since the reference implementation only seems to
+						// add the Resource of the SPARQL constraint.
+						ArrayList<Statement> sparqlConstraints = Lists
+								.newArrayList(validationReport.getStatements(null, RDF.TYPE, SHACL.SPARQL_CONSTRAINT));
+						for (Statement sparqlConstraint : sparqlConstraints) {
+							validationReport.remove(sparqlConstraint.getSubject(), null, null);
+						}
+
 					}
 
 					validationReportActual = new ValidationReportBnodeDuplicator(validationReportActual).getModel();
@@ -1095,7 +1101,7 @@ abstract public class AbstractShaclTest {
 			System.out.println("##############################################\n");
 
 			r.run();
-			throw new IllegalStateException("There should have been an assertion error before this exception!");
+			throw t;
 		} finally {
 			fullLogging = false;
 			shaclSailConnectionLogger.setLevel(shaclSailConnectionLoggerLevel);

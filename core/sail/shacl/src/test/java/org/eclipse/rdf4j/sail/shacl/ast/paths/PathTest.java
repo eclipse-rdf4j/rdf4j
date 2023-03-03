@@ -179,9 +179,7 @@ public class PathTest {
 					.map(s -> {
 						try (RepositoryConnectionShapeSource shapeSource = new RepositoryConnectionShapeSource(
 								connection).withContext(defaultContext)) {
-							Path path = Path.buildPath(
-									new RepositoryConnectionShapeSource(connection).withContext(defaultContext),
-									(Resource) s.getObject());
+							Path path = Path.buildPath(shapeSource, (Resource) s.getObject());
 
 							DynamicModel model = new DynamicModelFactory().createEmptyModel();
 							path.toModel((Resource) s.getObject(), null, model, new HashSet<>());

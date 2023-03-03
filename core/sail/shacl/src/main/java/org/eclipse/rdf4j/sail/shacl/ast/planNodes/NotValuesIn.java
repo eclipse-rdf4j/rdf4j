@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
@@ -34,24 +35,37 @@ public class NotValuesIn implements PlanNode {
 
 	@Override
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
-
-			final Set<Value> notInValueSet = new HashSet<>();
-
-			{
-				try (CloseableIteration<? extends ValidationTuple, SailException> iterator = notIn.iterator()) {
-					while (iterator.hasNext()) {
-						notInValueSet.add(iterator.next().getValue());
-					}
-				}
-			}
-
+			private CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
+			Set<Value> notInValueSet;
 			ValidationTuple next;
 
-			void calculateNext() {
+			@Override
+			protected void init() {
+				assert notInValueSet == null;
 
+				parentIterator = parent.iterator();
+
+				if (!parentIterator.hasNext()) {
+					notInValueSet = Set.of();
+				} else {
+					notInValueSet = new HashSet<>();
+
+					try (CloseableIteration<? extends ValidationTuple, SailException> iterator = notIn.iterator()) {
+						while (iterator.hasNext()) {
+							notInValueSet.add(iterator.next().getValue());
+						}
+					}
+					if (notInValueSet.isEmpty()) {
+						notInValueSet = Collections.emptySet();
+					}
+				}
+
+			}
+
+			void calculateNext() {
 				while (next == null && parentIterator.hasNext()) {
 					ValidationTuple temp = parentIterator.next();
 					if (!notInValueSet.contains(temp.getValue())) {
@@ -63,7 +77,7 @@ public class NotValuesIn implements PlanNode {
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 				calculateNext();
 				ValidationTuple temp = next;
 				next = null;
@@ -71,15 +85,17 @@ public class NotValuesIn implements PlanNode {
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				calculateNext();
 
 				return next != null;
 			}
 
 			@Override
-			public void localClose() throws SailException {
-				parentIterator.close();
+			public void localClose() {
+				if (parentIterator != null) {
+					parentIterator.close();
+				}
 			}
 
 		};

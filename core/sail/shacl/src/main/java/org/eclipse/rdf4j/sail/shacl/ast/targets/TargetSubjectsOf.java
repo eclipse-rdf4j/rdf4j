@@ -18,6 +18,7 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -103,7 +104,7 @@ public class TargetSubjectsOf extends Target {
 					.reduce((a, b) -> a + "\n" + b)
 					.orElse("");
 
-			return SparqlFragment.bgp(queryFragment, statementMatchers);
+			return SparqlFragment.bgp(List.of(), queryFragment, statementMatchers);
 
 		} else {
 
@@ -118,10 +119,15 @@ public class TargetSubjectsOf extends Target {
 					+ tempVar.asSparqlVariable() + " .\n" +
 					"FILTER(" + tempVarForIn.asSparqlVariable() + " in (" + in + "))";
 
-			return SparqlFragment.bgp(queryFragment, statementMatchers);
+			return SparqlFragment.bgp(List.of(), queryFragment, statementMatchers);
 
 		}
 
+	}
+
+	@Override
+	public Set<Namespace> getNamespaces() {
+		return Set.of();
 	}
 
 	@Override

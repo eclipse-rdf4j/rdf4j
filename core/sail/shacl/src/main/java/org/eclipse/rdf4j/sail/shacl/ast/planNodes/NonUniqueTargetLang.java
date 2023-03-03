@@ -111,15 +111,20 @@ public class NonUniqueTargetLang implements PlanNode {
 
 class OnlyNonUnique extends LoggingCloseableIteration {
 
+	private final PlanNode parent;
 	private ValidationTuple next;
 	private ValidationTuple previous;
 
 	private Set<String> seenLanguages = new HashSet<>();
 
-	private final CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
+	private CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
 
 	OnlyNonUnique(PlanNode parent, ValidationExecutionLogger validationExecutionLogger) {
 		super(parent, validationExecutionLogger);
+		this.parent = parent;
+	}
+
+	protected void init() {
 		parentIterator = parent.iterator();
 	}
 
@@ -160,18 +165,19 @@ class OnlyNonUnique extends LoggingCloseableIteration {
 	}
 
 	@Override
-	public void localClose() throws SailException {
-		parentIterator.close();
+	public void localClose() {
+		if (parentIterator != null)
+			parentIterator.close();
 	}
 
 	@Override
-	protected boolean localHasNext() throws SailException {
+	protected boolean localHasNext() {
 		calculateNext();
 		return next != null;
 	}
 
 	@Override
-	protected ValidationTuple loggingNext() throws SailException {
+	protected ValidationTuple loggingNext() {
 		calculateNext();
 
 		ValidationTuple temp = next;

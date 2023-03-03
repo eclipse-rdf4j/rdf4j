@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.sail.SailException;
 /**
  * Used for adding a custom log statement to tuples as they pass through. Should only be used for debugging.
  */
+@SuppressWarnings("unused")
 public class DebugPlanNode implements PlanNode {
 
 	private StackTraceElement[] stackTrace;

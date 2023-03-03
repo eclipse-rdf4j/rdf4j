@@ -47,7 +47,6 @@ public class ShapesGraphTest {
 	static final private IRI laura = Values.iri(EX, "laura");
 	static final private IRI steve = Values.iri(EX, "steve");
 	static final private IRI olivia = Values.iri(EX, "olivia");
-	static final private IRI charlie = Values.iri(EX, "charlie");
 
 	@Test
 	public void testValidSplitAcrossGraphs() throws Throwable {

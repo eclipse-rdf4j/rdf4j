@@ -11,7 +11,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -76,10 +75,6 @@ public class XoneConstraintComponent extends AbstractConstraintComponent {
 		for (Shape shape : xone) {
 			shape.setTargetChain(targetChain.setOptimizable(false));
 		}
-	}
-
-	public List<Shape> getXone() {
-		return Collections.unmodifiableList(xone);
 	}
 
 	@Override

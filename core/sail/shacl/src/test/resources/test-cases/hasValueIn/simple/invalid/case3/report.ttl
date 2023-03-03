@@ -15,7 +15,7 @@
       sh:focusNode ex:validPerson1;
       sh:resultPath ex:knows;
       sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:HasValueConstraintComponent;
+      sh:sourceConstraintComponent <http://datashapes.org/dash#HasValueInConstraintComponent>;
       sh:sourceShape [ a sh:PropertyShape;
           <http://datashapes.org/dash#hasValueIn> (ex:peter ex:mary ex:kate);
           sh:path ex:knows

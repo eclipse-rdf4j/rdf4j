@@ -104,8 +104,7 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 			PlanNode joined = new BulkedExternalLeftOuterJoin(addedTargets, connectionsGroup.getBaseConnection(),
 					validationSettings.getDataGraph(),
 					path.getTargetQueryFragment(new Variable<>("a"), new Variable<>("c"),
-							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of())
-							.getFragment(),
+							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()),
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 							validationSettings.getDataGraph()));
 
@@ -167,7 +166,7 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 			SparqlFragment targetQueryFragment = path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner,
 					stableRandomVariableProvider, Set.of());
 			if (hasValue.isIRI()) {
-				return SparqlFragment.bgp(
+				return SparqlFragment.bgp(List.of(),
 						"BIND(<" + hasValue + "> as " + object.asSparqlVariable() + ")\n"
 								+ targetQueryFragment.getFragment(),
 						StatementMatcher.swap(targetQueryFragment.getStatementMatchers(), object,
@@ -175,7 +174,7 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 						null);
 			}
 			if (hasValue.isLiteral()) {
-				return SparqlFragment.bgp(
+				return SparqlFragment.bgp(List.of(),
 						"BIND(" + hasValue.toString() + " as " + object.asSparqlVariable() + ")\n"
 								+ targetQueryFragment.getFragment(),
 						StatementMatcher.swap(targetQueryFragment.getStatementMatchers(), object,
@@ -188,9 +187,11 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 
 		} else {
 			if (hasValue.isIRI()) {
-				return SparqlFragment.filterCondition(object.asSparqlVariable() + " = <" + hasValue + ">", List.of());
+				return SparqlFragment.filterCondition(List.of(), object.asSparqlVariable() + " = <" + hasValue + ">",
+						List.of());
 			} else if (hasValue.isLiteral()) {
-				return SparqlFragment.filterCondition(object.asSparqlVariable() + " = " + hasValue, List.of());
+				return SparqlFragment.filterCondition(List.of(), object.asSparqlVariable() + " = " + hasValue,
+						List.of());
 			}
 			throw new UnsupportedOperationException(
 					"value was unsupported type: " + hasValue.getClass().getSimpleName());
@@ -229,7 +230,8 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 
 		var allTargetVariables = effectiveTarget.getAllTargetVariables();
 
-		return new ValidationQuery(query, allTargetVariables, null, scope, getConstraintComponent(), null, null);
+		return new ValidationQuery(getTargetChain().getNamespaces(), query, allTargetVariables, null, scope, this, null,
+				null);
 
 	}
 

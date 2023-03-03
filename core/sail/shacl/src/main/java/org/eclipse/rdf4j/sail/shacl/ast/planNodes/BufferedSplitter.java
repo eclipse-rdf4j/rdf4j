@@ -45,12 +45,8 @@ public class BufferedSplitter implements PlanNodeProvider {
 	public BufferedSplitter(PlanNode parent, boolean cached) {
 		this.parent = parent;
 		this.cached = cached;
-	}
-
-	public BufferedSplitter(PlanNode parent, boolean cached, boolean createId) {
-		this.parent = parent;
-		this.cached = cached;
 		id = idCounter.incrementAndGet();
+
 	}
 
 	public BufferedSplitter(PlanNode parent) {

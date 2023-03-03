@@ -60,15 +60,6 @@ public class RepositoryConnectionShapeSource implements ShapeSource {
 
 	}
 
-	private Stream<Resource> getContext(Predicates predicate) {
-		assert context == null;
-
-		return connection.getStatements(null, predicate.getIRI(), null, true)
-				.stream()
-				.map(Statement::getContext)
-				.distinct();
-	}
-
 	public Stream<Resource> getTargetableShape() {
 		assert context != null;
 		return Stream
