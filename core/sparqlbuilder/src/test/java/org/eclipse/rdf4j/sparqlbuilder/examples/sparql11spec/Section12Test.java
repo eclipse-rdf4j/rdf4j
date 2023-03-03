@@ -11,8 +11,8 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
-import static org.hamcrest.MatcherAssert.assertThat;
 
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
@@ -38,7 +38,7 @@ public class Section12Test extends BaseExamples {
 		query.prefix(base, base) // SparqlBuilder even fixes typos for you ;)
 				.select(y, minName)
 				.where(base.iri("alice").has(base.iri("knows"), y), sub);
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX : <http://people.example/>\n"
 						+ "SELECT ?y ?minName\n"
 						+ "WHERE {\n"

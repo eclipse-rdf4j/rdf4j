@@ -11,9 +11,9 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder.var;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
-import static org.hamcrest.MatcherAssert.assertThat;
 
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
@@ -40,7 +40,7 @@ public class Section3Test extends BaseExamples {
 		GraphPattern where = xTitle.filter(regex);
 
 		query.prefix(dc).select(title).where(where);
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX  dc:  <http://purl.org/dc/elements/1.1/>\n"
 						+ "SELECT  ?title\n"
 						+ "WHERE   { ?x dc:title ?title .\n"
@@ -49,7 +49,7 @@ public class Section3Test extends BaseExamples {
 		));
 		query = Queries.SELECT();
 		query.prefix(dc).select(title).where(xTitle.filter(Expressions.regex(title, "web", "i")));
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX  dc:  <http://purl.org/dc/elements/1.1/>\n"
 						+ "SELECT  ?title\n"
 						+ "WHERE   { ?x dc:title ?title .\n"
@@ -71,7 +71,7 @@ public class Section3Test extends BaseExamples {
 		query.prefix(dc, ns).select(title, price).where(where);
 		// NOTE: had to move FILTER to the end of the group graph pattern (in the original, it's between the two triple
 		// patterns).
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX  dc:  <http://purl.org/dc/elements/1.1/>\n"
 						+ "PREFIX  ns:  <https://example.com/ns#>\n"
 						+ "SELECT  ?title ?price\n"

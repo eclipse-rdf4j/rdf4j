@@ -10,14 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.util;
 
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.eclipse.rdf4j.model.util.Statements.statement;
 import static org.eclipse.rdf4j.model.util.Values.getValueFactory;
 import static org.eclipse.rdf4j.model.util.Values.iri;
-import static org.hamcrest.CoreMatchers.both;
-import static org.hamcrest.CoreMatchers.notNullValue;
-import static org.hamcrest.CoreMatchers.startsWith;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.hasProperty;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockserver.model.HttpRequest.request;
@@ -174,8 +170,8 @@ public class RDFLoaderTest {
 				actualException = e;
 			}
 
-			assertThat(actualException, both(notNullValue())
-					.and(hasProperty("message", startsWith("Server redirected too many times"))));
+			assertThat(actualException)
+					.hasMessageStartingWith("Server redirected too many times");
 		} finally {
 			if (oldMaxRedirects != null) {
 				System.setProperty("http.maxRedirects", oldMaxRedirects);

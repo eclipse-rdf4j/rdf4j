@@ -11,9 +11,9 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder.var;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
-import static org.hamcrest.MatcherAssert.assertThat;
 
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
 import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
@@ -37,7 +37,7 @@ public class Section7Test extends BaseExamples {
 		GraphPattern titlePattern = GraphPatterns.union(book.has(dc10TitleIri, title), book.has(dc11TitleIri, title));
 
 		query.prefix(dc10).prefix(dc11).select(title).where(titlePattern);
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX dc10:  <http://purl.org/dc/elements/1.0/>\n"
 						+ "PREFIX dc11:  <http://purl.org/dc/elements/1.1/>\n"
 						+ "\n"
@@ -49,7 +49,7 @@ public class Section7Test extends BaseExamples {
 		Variable x = var("x"), y = var("y"), author = var("author");
 		GraphPattern dc10Title = book.has(dc10TitleIri, x), dc11Title = book.has(dc11TitleIri, y);
 		query.prefix(dc10, dc11).select(x, y).where(GraphPatterns.union(dc10Title, dc11Title));
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX dc10:  <http://purl.org/dc/elements/1.0/>\n"
 						+ "PREFIX dc11:  <http://purl.org/dc/elements/1.1/>\n"
 						+ "\n"
@@ -65,7 +65,7 @@ public class Section7Test extends BaseExamples {
 		query.prefix(dc10, dc11)
 				.select(title, author)
 				.where(GraphPatterns.and(dc10Title, dc10Author).union(GraphPatterns.and(dc11Title, dc11Author)));
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX dc10:  <http://purl.org/dc/elements/1.0/>\n"
 						+ "PREFIX dc11:  <http://purl.org/dc/elements/1.1/>\n"
 						+ "\n"
