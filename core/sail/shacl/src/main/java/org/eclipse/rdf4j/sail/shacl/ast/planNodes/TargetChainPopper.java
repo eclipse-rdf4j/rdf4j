@@ -45,9 +45,13 @@ public class TargetChainPopper implements PlanNode {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final private CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent
-					.iterator();
+			private CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
 			Iterator<ValidationTuple> iterator = Collections.emptyIterator();
+
+			@Override
+			protected void init() {
+				parentIterator = parent.iterator();
+			}
 
 			public void calculateNext() {
 				if (!iterator.hasNext()) {
@@ -60,19 +64,21 @@ public class TargetChainPopper implements PlanNode {
 			}
 
 			@Override
-			public void localClose() throws SailException {
-				parentIterator.close();
+			public void localClose() {
+				if (parentIterator != null) {
+					parentIterator.close();
+				}
 				iterator = Collections.emptyIterator();
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				calculateNext();
 				return iterator.hasNext();
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 				calculateNext();
 
 				return iterator.next();

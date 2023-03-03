@@ -59,11 +59,17 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final ArrayDeque<ValidationTuple> left = new ArrayDeque<>(BULK_SIZE);
+			ArrayDeque<ValidationTuple> left;
+			ArrayDeque<ValidationTuple> right;
 
-			final ArrayDeque<ValidationTuple> right = new ArrayDeque<>(BULK_SIZE);
+			private CloseableIteration<? extends ValidationTuple, SailException> leftNodeIterator;
 
-			final CloseableIteration<? extends ValidationTuple, SailException> leftNodeIterator = leftNode.iterator();
+			@Override
+			protected void init() {
+				left = new ArrayDeque<>(BULK_SIZE);
+				right = new ArrayDeque<>(BULK_SIZE);
+				leftNodeIterator = leftNode.iterator();
+			}
 
 			private void calculateNext() {
 
@@ -88,18 +94,20 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 			}
 
 			@Override
-			public void localClose() throws SailException {
-				leftNodeIterator.close();
+			public void localClose() {
+				if (leftNodeIterator != null) {
+					leftNodeIterator.close();
+				}
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				calculateNext();
 				return !left.isEmpty();
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 				calculateNext();
 
 				if (!left.isEmpty()) {

@@ -127,10 +127,17 @@ public class BindSelect implements PlanNode {
 
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet;
 
-			final CloseableIteration<? extends ValidationTuple, SailException> iterator = source.iterator();
-			List<ValidationTuple> bulk = new ArrayList<>(bulkSize);
+			private CloseableIteration<? extends ValidationTuple, SailException> iterator;
+			List<ValidationTuple> bulk;
 
 			TupleExpr parsedQuery = null;
+
+			@Override
+			protected void init() {
+				iterator = source.iterator();
+				bulk = new ArrayList<>(bulkSize);
+
+			}
 
 			public void calculateNext() {
 
@@ -236,12 +243,14 @@ public class BindSelect implements PlanNode {
 			}
 
 			@Override
-			public void localClose() throws SailException {
+			public void localClose() {
 				try {
 					bulk = null;
 					parsedQuery = null;
-					assert !iterator.hasNext();
-					iterator.close();
+					if (iterator != null) {
+						assert !iterator.hasNext();
+						iterator.close();
+					}
 				} finally {
 					if (bindingSet != null) {
 						bindingSet.close();
@@ -250,13 +259,13 @@ public class BindSelect implements PlanNode {
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				calculateNext();
 				return bindingSet != null && bindingSet.hasNext();
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 				calculateNext();
 				return mapper.apply(bindingSet.next());
 			}

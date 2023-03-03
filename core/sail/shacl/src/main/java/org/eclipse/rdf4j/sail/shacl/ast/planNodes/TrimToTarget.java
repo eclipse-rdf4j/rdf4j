@@ -35,20 +35,27 @@ public class TrimToTarget implements PlanNode {
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
+			private CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
 
 			@Override
-			public void localClose() throws SailException {
-				parentIterator.close();
+			protected void init() {
+				parentIterator = parent.iterator();
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			public void localClose() {
+				if (parentIterator != null) {
+					parentIterator.close();
+				}
+			}
+
+			@Override
+			protected boolean localHasNext() {
 				return parentIterator.hasNext();
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 
 				return parentIterator.next().trimToTarget();
 

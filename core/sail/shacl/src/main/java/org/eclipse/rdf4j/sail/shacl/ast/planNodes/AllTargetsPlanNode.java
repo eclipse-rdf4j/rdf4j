@@ -62,20 +62,26 @@ public class AllTargetsPlanNode implements PlanNode {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseableIteration<? extends ValidationTuple, SailException> iterator = select.iterator();
+			private CloseableIteration<? extends ValidationTuple, SailException> iterator;
 
 			@Override
-			public void localClose() throws SailException {
-				iterator.close();
+			protected void init() {
+				iterator = select.iterator();
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			public void localClose() {
+				if (iterator != null)
+					iterator.close();
+			}
+
+			@Override
+			protected ValidationTuple loggingNext() {
 				return iterator.next();
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				return iterator.hasNext();
 			}
 		};

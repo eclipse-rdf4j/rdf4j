@@ -92,9 +92,9 @@ public class Select implements PlanNode {
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet = null;
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet;
 
-			private void init() {
+			protected void init() {
 				if (bindingSet != null) {
 					return;
 				}
@@ -114,21 +114,19 @@ public class Select implements PlanNode {
 			}
 
 			@Override
-			public void localClose() throws SailException {
+			public void localClose() {
 				if (bindingSet != null) {
 					bindingSet.close();
 				}
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
-				init();
+			protected boolean localHasNext() {
 				return bindingSet.hasNext();
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
-				init();
+			protected ValidationTuple loggingNext() {
 				return mapper.apply(bindingSet.next());
 			}
 

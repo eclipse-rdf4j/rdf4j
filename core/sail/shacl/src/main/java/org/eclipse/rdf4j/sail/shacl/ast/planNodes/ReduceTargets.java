@@ -37,42 +37,47 @@ public class ReduceTargets implements PlanNode {
 	@Override
 
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
-		CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parentToReduce
-				.iterator();
-
-		if (!parentIterator.hasNext()) {
-			return parentIterator;
-		}
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final Set<Value> reductionSourceSet = new HashSet<>();
-
-			{
-				try (CloseableIteration<? extends ValidationTuple, SailException> iterator = reductionSource
-						.iterator()) {
-					while (iterator.hasNext()) {
-						reductionSourceSet.add(iterator.next().getActiveTarget());
-					}
-				}
-			}
-
+			private CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
+			Set<Value> reductionSourceSet;
 			ValidationTuple next;
 
-			void calculateNext() {
+			@Override
+			protected void init() {
+				assert reductionSourceSet == null;
 
-				while (next == null && parentIterator.hasNext()) {
-					ValidationTuple temp = parentIterator.next();
-					if (!reductionSourceSet.contains(temp.getActiveTarget())) {
-						next = temp;
+				parentIterator = parentToReduce.iterator();
+
+				if (!parentIterator.hasNext()) {
+					parentIterator.close();
+					reductionSourceSet = null;
+				} else {
+
+					reductionSourceSet = new HashSet<>();
+
+					try (CloseableIteration<? extends ValidationTuple, SailException> iterator = reductionSource
+							.iterator()) {
+						while (iterator.hasNext()) {
+							reductionSourceSet.add(iterator.next().getActiveTarget());
+						}
 					}
-
 				}
 
+			}
+
+			void calculateNext() {
+				while (next == null && parentIterator.hasNext()) {
+					ValidationTuple temp = parentIterator.next();
+					if (reductionSourceSet == null || !reductionSourceSet.contains(temp.getActiveTarget())) {
+						next = temp;
+					}
+				}
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 				calculateNext();
 				ValidationTuple temp = next;
 				next = null;
@@ -80,15 +85,16 @@ public class ReduceTargets implements PlanNode {
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				calculateNext();
-
 				return next != null;
 			}
 
 			@Override
-			public void localClose() throws SailException {
-				parentIterator.close();
+			public void localClose() {
+				if (parentIterator != null) {
+					parentIterator.close();
+				}
 			}
 
 		};

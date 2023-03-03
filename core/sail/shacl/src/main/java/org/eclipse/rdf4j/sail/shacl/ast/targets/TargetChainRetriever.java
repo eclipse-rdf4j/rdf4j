@@ -33,8 +33,9 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.ArrayBindingBasedQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
@@ -92,7 +93,7 @@ public class TargetChainRetriever implements PlanNode {
 		this.connectionsGroup = connectionsGroup;
 		this.dataGraph = dataGraph;
 		this.varNames = vars.stream().map(StatementMatcher.Variable::getName).collect(Collectors.toSet());
-
+		assert !this.varNames.isEmpty();
 		this.dataset = PlanNodeHelper.asDefaultGraphDataset(this.dataGraph);
 		this.statementMatchers = StatementMatcher.reduce(statementMatchers);
 
@@ -111,9 +112,12 @@ public class TargetChainRetriever implements PlanNode {
 				.get(QueryLanguage.SPARQL)
 				.get();
 
-		this.varNamesInQueryFragment = VarNameCollector.process(queryParserFactory.getParser()
-				.parseQuery("select * where {\n" + this.queryFragment + "\n}", null)
-				.getTupleExpr());
+		this.varNamesInQueryFragment = Set.of(ArrayBindingBasedQueryEvaluationContext
+				.findAllVariablesUsedInQuery(((QueryRoot) queryParserFactory.getParser()
+						.parseQuery("select * where {\n" + this.queryFragment + "\n}", null)
+						.getTupleExpr())));
+
+		assert !varNamesInQueryFragment.isEmpty();
 
 		this.removedStatementMatchers = removedStatementMatchers != null
 				? StatementMatcher.reduce(removedStatementMatchers)
@@ -148,6 +152,11 @@ public class TargetChainRetriever implements PlanNode {
 			private boolean removedStatement = false;
 
 			private final List<BindingSet> bulk = new ArrayList<>(BULK_SIZE);
+
+			@Override
+			protected void init() {
+				// no-op
+			}
 
 			public void calculateNextStatementMatcher() {
 				if (statements != null && statements.hasNext()) {
@@ -192,6 +201,8 @@ public class TargetChainRetriever implements PlanNode {
 							varNamesInQueryFragment);
 					this.currentVarNames = currentStatementMatcher.getVarNames(varNames, removedStatement,
 							varNamesInQueryFragment);
+
+					assert !currentVarNames.isEmpty();
 
 					statements = connection.getStatements(
 							currentStatementMatcher.getSubjectValue(),
@@ -355,7 +366,7 @@ public class TargetChainRetriever implements PlanNode {
 			}
 
 			@Override
-			public void localClose() throws SailException {
+			public void localClose() {
 
 				try {
 					if (statements != null) {
@@ -370,7 +381,7 @@ public class TargetChainRetriever implements PlanNode {
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 				calculateNextResult();
 
 				ValidationTuple temp = next;
@@ -380,7 +391,7 @@ public class TargetChainRetriever implements PlanNode {
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				calculateNextResult();
 
 				return next != null;
