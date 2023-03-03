@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
+import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -18,9 +19,11 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LiteralComparatorFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -39,11 +42,11 @@ public class MinExclusiveConstraintComponent extends SimpleAbstractConstraintCom
 	}
 
 	@Override
-	String getSparqlFilterExpression(String varName, boolean negated) {
+	String getSparqlFilterExpression(Variable<Value> variable, boolean negated) {
 		if (negated) {
-			return literalToString(minExclusive) + " < ?" + varName;
+			return literalToString(minExclusive) + " < " + variable.asSparqlVariable();
 		} else {
-			return literalToString(minExclusive) + " >= ?" + varName;
+			return literalToString(minExclusive) + " >= " + variable.asSparqlVariable();
 		}
 	}
 
@@ -61,4 +64,10 @@ public class MinExclusiveConstraintComponent extends SimpleAbstractConstraintCom
 	Function<PlanNode, FilterPlanNode> getFilterAttacher() {
 		return (parent) -> new LiteralComparatorFilter(parent, minExclusive, Compare.CompareOp.LT);
 	}
+
+	@Override
+	public List<Literal> getDefaultMessage() {
+		return List.of();
+	}
+
 }

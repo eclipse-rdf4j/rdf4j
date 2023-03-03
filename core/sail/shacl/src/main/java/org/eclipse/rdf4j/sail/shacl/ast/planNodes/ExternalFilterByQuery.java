@@ -50,7 +50,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 		this.queryVariable = queryVariable;
 		this.filterOn = filterOn;
 
-		queryFragment = "SELECT ?" + queryVariable.getName() + " WHERE {\n" + queryFragment + "\n}";
+		queryFragment = "SELECT " + queryVariable.asSparqlVariable() + " WHERE {\n" + queryFragment + "\n}";
 		this.queryString = StatementMatcher.StableRandomVariableProvider.normalize(queryFragment);
 		try {
 			this.query = SparqlQueryParserCache.get(queryFragment);

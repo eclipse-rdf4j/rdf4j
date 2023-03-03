@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
@@ -40,7 +42,7 @@ public class PlanNodeHelper {
 
 	public static Dataset asDefaultGraphDataset(Resource[] dataGraph) {
 		if (dataGraph.length == 0) {
-			return null;
+			return AllDataset.instance;
 		} else if (dataGraph.length == 1 && dataGraph[0] == null) {
 			return rdf4jNilDataset;
 		}
@@ -56,6 +58,32 @@ public class PlanNodeHelper {
 			}
 		}
 		return dataGraphDataset;
+	}
+
+	static final class AllDataset implements Dataset {
+
+		static final AllDataset instance = new AllDataset();
+		private static final Set<IRI> empty = Set.of();
+
+		@Override
+		public Set<IRI> getDefaultRemoveGraphs() {
+			return empty;
+		}
+
+		@Override
+		public IRI getDefaultInsertGraph() {
+			return null;
+		}
+
+		@Override
+		public Set<IRI> getDefaultGraphs() {
+			return empty;
+		}
+
+		@Override
+		public Set<IRI> getNamedGraphs() {
+			return empty;
+		}
 	}
 
 }

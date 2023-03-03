@@ -12,12 +12,12 @@
 package org.eclipse.rdf4j.sail.shacl.ast.paths;
 
 import java.util.Set;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -50,10 +50,10 @@ public class InversePath extends Path {
 	}
 
 	@Override
-	public PlanNode getAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+	public PlanNode getAllAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			PlanNodeWrapper planNodeWrapper) {
 
-		PlanNode added = inversePath.getAdded(connectionsGroup, dataGraph, null);
+		PlanNode added = inversePath.getAllAdded(connectionsGroup, dataGraph, null);
 		added = new TupleMapper(added, t -> new ValidationTuple(t.getValue(), t.getActiveTarget(),
 				ConstraintComponent.Scope.propertyShape, true, dataGraph));
 
@@ -65,24 +65,24 @@ public class InversePath extends Path {
 	}
 
 	@Override
+	public PlanNode getAnyAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+			PlanNodeWrapper planNodeWrapper) {
+		return getAllAdded(connectionsGroup, dataGraph, planNodeWrapper);
+	}
+
+	@Override
 	public boolean isSupported() {
 		return inversePath.isSupported();
 	}
 
 	@Override
-	public Stream<StatementMatcher> getStatementMatcher(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		return Stream.of(new StatementMatcher(object, new StatementMatcher.Variable(inversePath.getId()), subject));
-	}
-
-	@Override
-	public String getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
+	public SparqlFragment getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider, Set<String> inheritedVarNames) {
 
 		return inversePath.getTargetQueryFragment(object, subject, rdfsSubClassOfReasoner,
-				stableRandomVariableProvider);
+				stableRandomVariableProvider, Set.of());
 
 	}
+
 }

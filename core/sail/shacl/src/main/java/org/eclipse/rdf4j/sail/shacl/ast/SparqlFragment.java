@@ -13,51 +13,78 @@ package org.eclipse.rdf4j.sail.shacl.ast;
 import static org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.AbstractConstraintComponent.VALUES_INJECTION_POINT;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 public class SparqlFragment {
 
-	final static Pattern REGEX_INDENT = Pattern.compile("(?m)^");
+	// This is currently experimental!
+	private static final boolean USE_UNION_PRESERVING_JOIN = false;
 
 	private final String fragment;
 	private final List<String> unionFragments = new ArrayList<>();
+	private final List<StatementMatcher> statementMatchers = new ArrayList<>();
+	private final TraceBack traceBackFunction;
 
 	private boolean filterCondition;
 	private boolean bgp;
 	private boolean union;
 
-	// This is currently experimental!
-	private static final boolean USE_UNION_PRESERVING_JOIN = false;
-
-	private final List<StatementMatcher> statementMatchers = new ArrayList<>();
-
-	private SparqlFragment(List<String> unionFragments, List<StatementMatcher> statementMatchers) {
-		this.fragment = null;
-		this.unionFragments.addAll(unionFragments);
-		this.union = true;
-		this.statementMatchers.addAll(statementMatchers);
-	}
-
 	private SparqlFragment(String fragment, boolean filterCondition, boolean bgp,
-			List<StatementMatcher> statementMatchers) {
+			List<StatementMatcher> statementMatchers, TraceBack traceBackFunction) {
 		this.fragment = fragment;
 		this.filterCondition = filterCondition;
 		this.bgp = bgp;
 		this.statementMatchers.addAll(statementMatchers);
+		this.traceBackFunction = traceBackFunction;
 
 		assert filterCondition != bgp;
 	}
 
+	private SparqlFragment(List<String> unionFragments, List<StatementMatcher> statementMatchers,
+			TraceBack traceBackFunction) {
+		this.fragment = null;
+		this.unionFragments.addAll(unionFragments);
+		this.union = true;
+		this.statementMatchers.addAll(statementMatchers);
+		this.traceBackFunction = traceBackFunction;
+	}
+
 	public static SparqlFragment filterCondition(String fragment, List<StatementMatcher> statementMatchers) {
-		return new SparqlFragment(fragment, true, false, statementMatchers);
+		return new SparqlFragment(fragment, true, false, statementMatchers, null);
 	}
 
 	public static SparqlFragment bgp(String fragment, List<StatementMatcher> statementMatchers) {
-		return new SparqlFragment(fragment, false, true, statementMatchers);
+		return new SparqlFragment(fragment, false, true, statementMatchers, null);
+	}
+
+	public static SparqlFragment bgp(String fragment, List<StatementMatcher> statementMatchers,
+			TraceBack traceBackFunction) {
+		return new SparqlFragment(fragment, false, true, statementMatchers, traceBackFunction);
+	}
+
+	public static SparqlFragment bgp(String fragment, StatementMatcher statementMatcher) {
+		return new SparqlFragment(fragment, false, true, List.of(statementMatcher), null);
+	}
+
+	public static SparqlFragment bgp(String fragment, StatementMatcher statementMatcher, TraceBack traceBackFunction) {
+		return new SparqlFragment(fragment, false, true, List.of(statementMatcher), traceBackFunction);
+	}
+
+	public static SparqlFragment bgp(String fragment) {
+		return new SparqlFragment(fragment, false, true, List.of(), null);
+	}
+
+	public static SparqlFragment bgp(String fragment, TraceBack traceBackFunction) {
+		return new SparqlFragment(fragment, false, true, List.of(), traceBackFunction);
 	}
 
 	public static SparqlFragment and(List<SparqlFragment> sparqlFragments) {
@@ -87,9 +114,13 @@ public class SparqlFragment {
 	}
 
 	public static SparqlFragment join(List<SparqlFragment> sparqlFragments) {
+		return join(sparqlFragments, null);
+	}
+
+	public static SparqlFragment join(List<SparqlFragment> sparqlFragments, TraceBack traceBackFunction) {
 
 		if (USE_UNION_PRESERVING_JOIN && sparqlFragments.stream().anyMatch(s1 -> s1.union)) {
-			return unionPreservingJoin(sparqlFragments);
+			return unionPreservingJoin(sparqlFragments, traceBackFunction);
 
 		} else {
 			String collect = sparqlFragments.stream()
@@ -100,11 +131,12 @@ public class SparqlFragment {
 					.reduce((a, b) -> a + "\n" + b)
 					.orElse("");
 
-			return bgp(collect, getStatementMatchers(sparqlFragments));
+			return bgp(collect, getStatementMatchers(sparqlFragments), traceBackFunction);
 		}
 	}
 
-	private static SparqlFragment unionPreservingJoin(List<SparqlFragment> sparqlFragments) {
+	private static SparqlFragment unionPreservingJoin(List<SparqlFragment> sparqlFragments,
+			TraceBack traceBackFunction) {
 		List<String> workingSet = new ArrayList<>();
 		SparqlFragment firstSparqlFragment = sparqlFragments.get(0);
 		if (firstSparqlFragment.union) {
@@ -138,28 +170,18 @@ public class SparqlFragment {
 			}
 		}
 
-		SparqlFragment union = union(workingSet.toArray(new String[0]));
+		SparqlFragment union = unionQueryStrings(workingSet, traceBackFunction);
 		union.addStatementMatchers(getStatementMatchers(sparqlFragments));
 		return union;
 	}
 
 	public static boolean isFilterCondition(List<SparqlFragment> sparqlFragments) {
-		boolean isFilterCondtion = sparqlFragments
-				.stream()
-				.anyMatch(SparqlFragment::isFilterCondition);
-
-		assert !isFilterCondtion || sparqlFragments.stream().allMatch(SparqlFragment::isFilterCondition);
-
-		return isFilterCondtion;
-	}
-
-	public static SparqlFragment union(List<SparqlFragment> sparqlFragments) {
-		List<String> sparqlFragmentString = sparqlFragments
-				.stream()
-				.map(SparqlFragment::getFragment)
-				.collect(Collectors.toList());
-
-		return new SparqlFragment(sparqlFragmentString, getStatementMatchers(sparqlFragments));
+		for (SparqlFragment sparqlFragment : sparqlFragments) {
+			if (sparqlFragment.isFilterCondition()) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	public static List<StatementMatcher> getStatementMatchers(List<SparqlFragment> sparqlFragments) {
@@ -169,8 +191,34 @@ public class SparqlFragment {
 				.collect(Collectors.toList());
 	}
 
-	public static SparqlFragment union(String... query) {
-		return new SparqlFragment(Arrays.asList(query), Collections.emptyList());
+	public static SparqlFragment unionQueryStrings(List<String> query, TraceBack traceBackFunction) {
+		return new SparqlFragment(query, Collections.emptyList(), traceBackFunction);
+	}
+
+	public static SparqlFragment unionQueryStrings(List<String> query) {
+		return new SparqlFragment(query, Collections.emptyList(), null);
+	}
+
+	public static SparqlFragment union(List<SparqlFragment> sparqlFragments) {
+		List<String> sparqlFragmentString = sparqlFragments
+				.stream()
+				.map(SparqlFragment::getFragment)
+				.collect(Collectors.toList());
+
+		return new SparqlFragment(sparqlFragmentString, getStatementMatchers(sparqlFragments), null);
+	}
+
+	public static SparqlFragment union(List<SparqlFragment> sparqlFragments, TraceBack traceBackFunction) {
+		List<String> sparqlFragmentString = sparqlFragments
+				.stream()
+				.map(SparqlFragment::getFragment)
+				.collect(Collectors.toList());
+
+		return new SparqlFragment(sparqlFragmentString, getStatementMatchers(sparqlFragments), traceBackFunction);
+	}
+
+	public static SparqlFragment unionQueryStrings(String query1, String query2, String query3) {
+		return new SparqlFragment(List.of(query1, query2, query3), Collections.emptyList(), null);
 	}
 
 	public String getFragment() {
@@ -198,4 +246,26 @@ public class SparqlFragment {
 		this.statementMatchers.addAll(statementMatchers);
 	}
 
+	@Override
+	public String toString() {
+		return "SparqlFragment{" +
+				"fragment='" + fragment + '\'' +
+				", unionFragments=" + unionFragments +
+				", statementMatchers=" + statementMatchers +
+				", filterCondition=" + filterCondition +
+				", bgp=" + bgp +
+				", union=" + union +
+				'}';
+	}
+
+	public Stream<EffectiveTarget.StatementsAndMatcher> getRoot(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+			Path path, StatementMatcher currentStatementMatcher, List<Statement> currentStatements) {
+		assert traceBackFunction != null;
+		return traceBackFunction.getRoot(connectionsGroup, dataGraph, path, currentStatementMatcher, currentStatements);
+	}
+
+	public interface TraceBack {
+		Stream<EffectiveTarget.StatementsAndMatcher> getRoot(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+				Path path, StatementMatcher currentStatementMatcher, List<Statement> currentStatements);
+	}
 }

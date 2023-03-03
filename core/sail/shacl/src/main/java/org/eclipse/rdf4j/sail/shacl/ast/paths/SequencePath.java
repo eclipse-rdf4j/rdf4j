@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.paths;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
@@ -20,14 +21,23 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclAstLists;
-import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
+import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.AllTargetsPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeWrapper;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Select;
+import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
+import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetChainRetriever;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
+
+import com.google.common.collect.Sets;
 
 public class SequencePath extends Path {
 
@@ -52,7 +62,7 @@ public class SequencePath extends Path {
 
 		List<Resource> values = sequence.stream().map(Path::getId).collect(Collectors.toList());
 
-		if (!model.contains(getId(), null, null)) {
+		if (!model.contains(id, null, null)) {
 			ShaclAstLists.listToRdf(values, id, model);
 		}
 
@@ -61,28 +71,119 @@ public class SequencePath extends Path {
 	}
 
 	@Override
-	public PlanNode getAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+	public PlanNode getAllAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			PlanNodeWrapper planNodeWrapper) {
-		throw new ShaclUnsupportedException();
+
+		var variables = List.of(new Variable<>("subject"),
+				new Variable<>("value"));
+
+		SparqlFragment targetQueryFragment = getTargetQueryFragment(variables.get(0), variables.get(1),
+				connectionsGroup.getRdfsSubClassOfReasoner(), new StatementMatcher.StableRandomVariableProvider(),
+				Set.of());
+
+		PlanNode targetChainRetriever = new TargetChainRetriever(connectionsGroup, dataGraph,
+				targetQueryFragment.getStatementMatchers(), List.of(), null, targetQueryFragment.getFragment(),
+				variables,
+				ConstraintComponent.Scope.propertyShape, true);
+
+		targetChainRetriever = connectionsGroup.getCachedNodeFor(targetChainRetriever);
+
+		if (planNodeWrapper != null) {
+			targetChainRetriever = planNodeWrapper.apply(targetChainRetriever);
+		}
+
+		return connectionsGroup.getCachedNodeFor(targetChainRetriever);
+	}
+
+	@Override
+	public PlanNode getAnyAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+			PlanNodeWrapper planNodeWrapper) {
+		List<StatementMatcher.Variable> variables = List.of(new StatementMatcher.Variable("subject"),
+				new StatementMatcher.Variable("value"));
+
+		SparqlFragment targetQueryFragment = getTargetQueryFragment(variables.get(0), variables.get(1),
+				connectionsGroup.getRdfsSubClassOfReasoner(), new StatementMatcher.StableRandomVariableProvider(),
+				Set.of());
+
+		PlanNode unorderedSelect = new Select(connectionsGroup.getAddedStatements(), targetQueryFragment.getFragment(),
+				null, new AllTargetsPlanNode.AllTargetsBindingSetMapper(List.of("subject", "value"),
+						ConstraintComponent.Scope.propertyShape, true, dataGraph),
+				dataGraph);
+
+		if (planNodeWrapper != null) {
+			unorderedSelect = planNodeWrapper.apply(unorderedSelect);
+		}
+
+		return connectionsGroup.getCachedNodeFor(unorderedSelect);
+	}
+
+	@Override
+	public SparqlFragment getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider, Set<String> inheritedVarNames) {
+
+		if (inheritedVarNames.isEmpty()) {
+			inheritedVarNames = Set.of(subject.getName());
+		} else {
+			inheritedVarNames = Sets.union(inheritedVarNames, Set.of(subject.getName()));
+		}
+
+		String variablePrefix = getVariablePrefix(subject, object);
+
+		List<SparqlFragment> sparqlFragments = new ArrayList<>(sequence.size());
+
+		StatementMatcher.Variable head = subject;
+		StatementMatcher.Variable tail = null;
+
+		for (int i = 0; i < sequence.size(); i++) {
+			if (tail != null) {
+				head = tail;
+			}
+			if (i + 1 == sequence.size()) {
+				// last element
+				tail = object;
+			} else {
+				tail = new StatementMatcher.Variable(subject, variablePrefix + i);
+			}
+
+			Path path = sequence.get(i);
+			SparqlFragment targetQueryFragment = path.getTargetQueryFragment(head, tail, rdfsSubClassOfReasoner,
+					stableRandomVariableProvider, inheritedVarNames);
+			sparqlFragments.add(targetQueryFragment);
+		}
+
+		return SparqlFragment.join(sparqlFragments,
+				(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Path path,
+						StatementMatcher currentStatementMatcher, List<Statement> currentStatements) -> {
+					Stream<EffectiveTarget.StatementsAndMatcher> currentRoot = null;
+
+					for (int i = sparqlFragments.size() - 1; i >= 0; i--) {
+						SparqlFragment sparqlFragment = sparqlFragments.get(i);
+						if (currentRoot != null) {
+							currentRoot = currentRoot
+									.flatMap(root -> sparqlFragment.getRoot(connectionsGroup, dataGraph, path,
+											root.getStatementMatcher(),
+											root.getStatements()))
+									.filter(EffectiveTarget.StatementsAndMatcher::hasStatements);
+						} else {
+							currentRoot = sparqlFragment.getRoot(connectionsGroup, dataGraph, path,
+									currentStatementMatcher,
+									currentStatements);
+						}
+					}
+
+					return currentRoot;
+				});
 	}
 
 	@Override
 	public boolean isSupported() {
-		return false;
-	}
-
-	@Override
-	public Stream<StatementMatcher> getStatementMatcher(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		throw new ShaclUnsupportedException();
-	}
-
-	@Override
-	public String getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
-		throw new ShaclUnsupportedException();
+		for (Path path : sequence) {
+			if (!path.isSupported()) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 }

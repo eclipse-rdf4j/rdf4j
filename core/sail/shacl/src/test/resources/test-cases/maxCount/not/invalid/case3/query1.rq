@@ -7,7 +7,7 @@ PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
 INSERT DATA {
 ex:validPerson1 a ex:Person ;
-	ex:ssn "123", "456".
+	ex:ssn "123", "456", "789", "012".
 
 ex:validPerson2 ex:ssn "123".
 

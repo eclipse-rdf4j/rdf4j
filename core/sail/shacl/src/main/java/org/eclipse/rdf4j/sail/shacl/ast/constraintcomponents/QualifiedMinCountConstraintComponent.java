@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -182,7 +183,9 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 							.get()
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 									new StatementMatcher.Variable("c"),
-									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
+									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider,
+									Set.of())
+							.getFragment(),
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 							validationSettings.getDataGraph())
 			);
@@ -230,7 +233,9 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 							.get()
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 									new StatementMatcher.Variable("c"),
-									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
+									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider,
+									Set.of())
+							.getFragment(),
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 							validationSettings.getDataGraph())
 			);
@@ -268,6 +273,11 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		return true;
+	}
+
+	@Override
+	public List<Literal> getDefaultMessage() {
+		return List.of();
 	}
 
 }

@@ -138,15 +138,10 @@ public class ValidationResult {
 
 		model.add(getId(), SHACL.SOURCE_CONSTRAINT_COMPONENT, getSourceConstraintComponent().getIri());
 		model.add(getId(), SHACL.RESULT_SEVERITY, severity.getIri());
+
 		for (Literal message : shape.getMessage()) {
 			model.add(getId(), SHACL.RESULT_MESSAGE, message);
 		}
-
-		// TODO: Figure out how sh:detail should work!
-//		if (detail != null) {
-//			model.add(getId(), SHACL.DETAIL, detail.getId());
-//			detail.asModel(model);
-//		}
 
 		shape.toModel(getId(), SHACL.SOURCE_SHAPE, model, new HashSet<>());
 

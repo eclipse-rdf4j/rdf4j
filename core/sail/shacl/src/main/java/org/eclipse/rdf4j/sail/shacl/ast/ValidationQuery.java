@@ -16,8 +16,10 @@ import java.util.Collections;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -32,7 +34,7 @@ public class ValidationQuery {
 	private ConstraintComponent.Scope scope;
 	private ConstraintComponent.Scope scope_validationReport;
 
-	private final List<StatementMatcher.Variable> variables;
+	private final List<Variable<Value>> variables;
 
 	private int targetIndex;
 	private int valueIndex;
@@ -49,12 +51,12 @@ public class ValidationQuery {
 	private Severity severity;
 	private Shape shape;
 
-	public ValidationQuery(String query, List<StatementMatcher.Variable> targets, StatementMatcher.Variable value,
+	public ValidationQuery(String query, List<Variable<Value>> targets, Variable<Value> value,
 			ConstraintComponent.Scope scope, SourceConstraintComponent constraintComponent, Severity severity,
 			Shape shape) {
 		this.query = query;
 
-		List<StatementMatcher.Variable> variables = new ArrayList<>(targets);
+		var variables = new ArrayList<>(targets);
 		if (value != null) {
 			variables.add(value);
 		}
@@ -81,7 +83,7 @@ public class ValidationQuery {
 		this.shape = shape;
 	}
 
-	public ValidationQuery(String query, ConstraintComponent.Scope scope, List<StatementMatcher.Variable> variables,
+	public ValidationQuery(String query, ConstraintComponent.Scope scope, List<Variable<Value>> variables,
 			int targetIndex, int valueIndex) {
 		this.query = query;
 		this.scope = scope;
@@ -120,7 +122,7 @@ public class ValidationQuery {
 
 		String unionQuery = "{\n" + a.getQuery() + "\n} UNION {\n" + b.query + "\n}";
 
-		List<StatementMatcher.Variable> variables = a.variables.size() >= b.variables.size() ? a.variables
+		var variables = a.variables.size() >= b.variables.size() ? a.variables
 				: b.variables;
 
 		if (a.propertyShapeWithValue || a.scope == ConstraintComponent.Scope.nodeShape) {
@@ -150,18 +152,9 @@ public class ValidationQuery {
 		assert shape != null;
 		assert scope_validationReport != null;
 
-		StringBuilder fullQuery = new StringBuilder();
+		String fullQueryString = getFullQueryString();
 
-		fullQuery.append("select distinct ");
-
-		fullQuery.append("?").append(getTargetVariable(true)).append(" ");
-		if (scope_validationReport == ConstraintComponent.Scope.propertyShape
-				&& propertyShapeWithValue_validationReport) {
-			fullQuery.append("?").append(getValueVariable(true)).append(" ");
-		}
-		fullQuery.append("{\n").append(query).append("\n}");
-
-		Select select = new Select(baseConnection, fullQuery.toString(), bindings -> {
+		Select select = new Select(baseConnection, fullQueryString, bindings -> {
 
 			if (scope_validationReport == ConstraintComponent.Scope.propertyShape) {
 				if (propertyShapeWithValue_validationReport) {
@@ -185,6 +178,21 @@ public class ValidationQuery {
 					constraintComponent_validationReport, severity, t.getScope(), t.getContexts(), shapesGraphs);
 		});
 
+	}
+
+	private String getFullQueryString() {
+		if (scope_validationReport == ConstraintComponent.Scope.propertyShape
+				&& propertyShapeWithValue_validationReport) {
+			return "select distinct " +
+					"?" + getTargetVariable(true) + " " +
+					"?" + getValueVariable(true) + " " +
+					"{\n" + query + "\n}";
+
+		} else {
+			return "select distinct " +
+					"?" + getTargetVariable(true) + " " +
+					"{\n" + query + "\n}";
+		}
 	}
 
 	private String getValueVariable(boolean forValidationReport) {

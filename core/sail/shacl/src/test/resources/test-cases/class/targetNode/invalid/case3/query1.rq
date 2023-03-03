@@ -6,9 +6,8 @@ PREFIX sh: <http://www.w3.org/ns/shacl#>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
 INSERT DATA {
-ex:validPerson1 a ex:Person ;
-	ex:knows ex:peter.
+ex:validPerson1 ex:knows ex:peter .
 
-ex:peter a ex:Person.
+ex:peter a ex:Person .
 
 }

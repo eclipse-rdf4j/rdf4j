@@ -19,6 +19,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
@@ -69,5 +70,10 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public ConstraintComponent deepClone() {
 		return new ClosedConstraintComponent(this);
+	}
+
+	@Override
+	public List<Literal> getDefaultMessage() {
+		return List.of();
 	}
 }

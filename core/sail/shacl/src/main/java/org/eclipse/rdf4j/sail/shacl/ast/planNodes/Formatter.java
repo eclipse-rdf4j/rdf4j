@@ -58,14 +58,16 @@ public class Formatter {
 		int indent = 0;
 		for (String s : split) {
 			s = s.trim();
-			if (s.startsWith("}"))
+			if (s.startsWith("}")) {
 				indent--;
+			}
 			for (int i = 0; i < indent; i++) {
 				stringBuilder.append("\t");
 			}
 			stringBuilder.append(s).append("\n");
-			if (s.endsWith("{"))
+			if (s.endsWith("{")) {
 				indent++;
+			}
 		}
 		return stringBuilder.toString().trim();
 	}

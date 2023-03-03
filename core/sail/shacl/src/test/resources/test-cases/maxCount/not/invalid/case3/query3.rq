@@ -7,6 +7,7 @@ PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
 DELETE {
 ex:validPerson2 a ex:Person.
+ex:validPerson1 ex:ssn "123".
 }
 INSERT{
 ex:validPerson2 ex:ssn  "123456789".

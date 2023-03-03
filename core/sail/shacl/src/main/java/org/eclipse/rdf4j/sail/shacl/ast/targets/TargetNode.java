@@ -14,7 +14,6 @@ package org.eclipse.rdf4j.sail.shacl.ast.targets;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -22,6 +21,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -53,39 +53,6 @@ public class TargetNode extends Target {
 	}
 
 	@Override
-	public String getQueryFragment(String subjectVariable, String objectVariable,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
-		StringBuilder sb = new StringBuilder();
-		sb.append("VALUES ( ").append(subjectVariable).append(" ) {\n");
-
-		targetNodes.stream()
-				.map(targetNode -> {
-					if (targetNode.isResource()) {
-						return "<" + targetNode + ">";
-					}
-					if (targetNode.isLiteral()) {
-						IRI datatype = ((Literal) targetNode).getDatatype();
-						if (datatype == null) {
-							return "\"" + targetNode.stringValue() + "\"";
-						}
-						if (((Literal) targetNode).getLanguage().isPresent()) {
-							return "\"" + targetNode.stringValue() + "\"@" + ((Literal) targetNode).getLanguage().get();
-						}
-						return "\"" + targetNode.stringValue() + "\"^^<" + datatype.stringValue() + ">";
-					}
-
-					throw new IllegalStateException(targetNode.getClass().getSimpleName());
-
-				})
-				.forEach(targetNode -> sb.append("( ").append(targetNode).append(" )\n"));
-
-		sb.append("}");
-
-		return sb.toString();
-	}
-
-	@Override
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			PlanNode parent) {
 		return new SetFilterNode(targetNodes, parent, 0, true);
@@ -99,22 +66,13 @@ public class TargetNode extends Target {
 	}
 
 	@Override
-	public Stream<StatementMatcher> getStatementMatcher(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		assert (subject == null);
-		return Stream.empty();
-//		throw new ShaclUnsupportedException();
-	}
-
-	@Override
-	public String getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
+	public SparqlFragment getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider, Set<String> inheritedVarNames) {
 		assert subject == null;
 
 		StringBuilder sb = new StringBuilder();
-		sb.append("VALUES ( ?").append(object.getName()).append(" ) {\n");
+		sb.append("VALUES ( ").append(object.asSparqlVariable()).append(" ) {\n");
 
 		targetNodes.stream()
 				.map(targetNode -> {
@@ -139,7 +97,7 @@ public class TargetNode extends Target {
 
 		sb.append("}");
 
-		return sb.toString();
+		return SparqlFragment.bgp(sb.toString());
 	}
 
 	@Override

@@ -11,16 +11,20 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
+import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.DatatypeFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -56,14 +60,17 @@ public class DatatypeConstraintComponent extends SimpleAbstractConstraintCompone
 	}
 
 	@Override
-	String getSparqlFilterExpression(String varName, boolean negated) {
-		String checkDatatypeConformance = "<" + RSX.valueConformsToXsdDatatypeFunction + ">(?" + varName + ", <"
+	String getSparqlFilterExpression(Variable<Value> variable, boolean negated) {
+		String checkDatatypeConformance = "<" + RSX.valueConformsToXsdDatatypeFunction + ">("
+				+ variable.asSparqlVariable() + ", <"
 				+ datatype + ">)";
 		if (negated) {
-			return "isLiteral(?" + varName + ") && datatype(?" + varName + ") = <" + datatype + ">"
+			return "isLiteral(" + variable.asSparqlVariable() + ") && datatype(" + variable.asSparqlVariable() + ") = <"
+					+ datatype + ">"
 					+ (coreDatatype.isXSDDatatype() ? " && " + checkDatatypeConformance : "");
 		} else {
-			return "!isLiteral(?" + varName + ") || datatype(?" + varName + ") != <" + datatype + ">"
+			return "!isLiteral(" + variable.asSparqlVariable() + ") || datatype(" + variable.asSparqlVariable()
+					+ ") != <" + datatype + ">"
 					+ (coreDatatype.isXSDDatatype() ? " || !" + checkDatatypeConformance : "");
 		}
 	}
@@ -79,4 +86,8 @@ public class DatatypeConstraintComponent extends SimpleAbstractConstraintCompone
 	*/
 	// @formatter:on
 
+	@Override
+	public List<Literal> getDefaultMessage() {
+		return List.of();
+	}
 }
