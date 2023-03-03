@@ -37,10 +37,14 @@ public class ReduceTargets implements PlanNode {
 	@Override
 
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
-		return new LoggingCloseableIteration(this, validationExecutionLogger) {
+		CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parentToReduce
+				.iterator();
 
-			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parentToReduce
-					.iterator();
+		if (!parentIterator.hasNext()) {
+			return parentIterator;
+		}
+
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			final Set<Value> reductionSourceSet = new HashSet<>();
 
