@@ -21,16 +21,15 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
+import javax.servlet.ServletException;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletRequestWrapper;
+import javax.servlet.http.Part;
 
-import org.apache.commons.fileupload.FileItemIterator;
-import org.apache.commons.fileupload.FileItemStream;
-import org.apache.commons.fileupload.FileUploadException;
-import org.apache.commons.fileupload.servlet.ServletFileUpload;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -40,7 +39,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 
 /**
- * Request wrapper used by {@link org.eclipse.rdf4j.workbench.base TransformationServlet}.
+ * Request wrapper used by {@link org.eclipse.rdf4j.workbench.base.TransformationServlet}.
  */
 public class WorkbenchRequest extends HttpServletRequestWrapper {
 
@@ -62,20 +61,34 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	 * @param defaults   application default parameter values
 	 * @throws RepositoryException if there is an issue retrieving the parameter map
 	 * @throws IOException         if there is an issue retrieving the parameter map
-	 * @throws FileUploadException if there is an issue retrieving the parameter map
+	 * @throws ServletException    if there is an issue retrieving the parameter map
 	 */
 	public WorkbenchRequest(Repository repository, HttpServletRequest request, Map<String, String> defaults)
-			throws RepositoryException, IOException, FileUploadException {
+			throws RepositoryException, IOException, ServletException {
 		super(request);
 		this.defaults = defaults;
 		this.decoder = new ValueDecoder(repository,
 				(repository == null) ? SimpleValueFactory.getInstance() : repository.getValueFactory());
 		String url = request.getRequestURL().toString();
-		if (ServletFileUpload.isMultipartContent(this)) {
+		if (isMultipartContent(this)) {
 			parameters = getMultipartParameterMap();
 		} else if (request.getQueryString() == null && url.contains(";")) {
 			parameters = getUrlParameterMap(url);
 		}
+	}
+
+	private static boolean isMultipartContent(HttpServletRequest request) {
+		if (!"POST".equalsIgnoreCase(request.getMethod())) {
+			return false;
+		}
+		String contentType = request.getContentType();
+		if (contentType == null) {
+			return false;
+		}
+		if (contentType.toLowerCase(Locale.ENGLISH).startsWith("multipart/")) {
+			return true;
+		}
+		return false;
 	}
 
 	/**
@@ -265,26 +278,21 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 		return decoder.decodeValue(getParameter(name));
 	}
 
-	private String firstLine(FileItemStream item) throws IOException {
-		try (BufferedReader reader = new BufferedReader(new InputStreamReader(item.openStream()))) {
-			return reader.readLine();
-		}
-	}
-
 	private Map<String, String> getMultipartParameterMap()
-			throws RepositoryException, IOException, FileUploadException {
+			throws RepositoryException, IOException, ServletException {
 		Map<String, String> parameters = new HashMap<>();
-		ServletFileUpload upload = new ServletFileUpload();
-		FileItemIterator iter = upload.getItemIterator(this);
-		while (iter.hasNext()) {
-			FileItemStream item = iter.next();
-			String name = item.getFieldName();
+		for (Part part : getParts()) {
+			String name = part.getName();
 			if ("content".equals(name)) {
-				content = item.openStream();
-				contentFileName = item.getName();
+				content = part.getInputStream();
+				contentFileName = part.getSubmittedFileName();
 				break;
 			} else {
-				parameters.put(name, firstLine(item));
+				String firstLine;
+				try (BufferedReader reader = new BufferedReader(new InputStreamReader(part.getInputStream()))) {
+					firstLine = reader.readLine();
+				}
+				parameters.put(name, firstLine);
 			}
 		}
 		return parameters;
