@@ -26,6 +26,8 @@ import junit.framework.TestSuite;
  *
  * @author Jeen Broekstra
  */
+// FIXME: This class is stuck on JUnit 3/4 for now, as there is no JUnit 5 alternative to guava-testlib
+// See https://github.com/junit-pioneer/junit-pioneer/issues/413 for an initiative
 public class ModelCollectionTest {
 	public static Test suite() {
 		return new ModelCollectionTest().allTests();
