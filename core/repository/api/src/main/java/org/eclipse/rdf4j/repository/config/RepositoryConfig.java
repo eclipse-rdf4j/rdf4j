@@ -130,7 +130,7 @@ public class RepositoryConfig {
 	public void export(Model model, Resource repositoryNode) {
 		model.setNamespace(RDFS.NS);
 		model.setNamespace(XSD.NS);
-		model.setNamespace("rep", CONFIG.NAMESPACE);
+		model.setNamespace("config", CONFIG.NAMESPACE);
 		model.add(repositoryNode, RDF.TYPE, CONFIG.Rep.Repository);
 
 		if (id != null) {
