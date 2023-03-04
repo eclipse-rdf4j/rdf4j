@@ -227,20 +227,17 @@ An example payload, containing a repository configuration for an in-memory store
 
 ```turtle
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix rep: <http://www.openrdf.org/config/repository#>.
-@prefix sr: <http://www.openrdf.org/config/repository/sail#>.
-@prefix sail: <http://www.openrdf.org/config/sail#>.
-@prefix ms: <http://www.openrdf.org/config/sail/memory#>.
+@prefix config: <tag:rdf4j.org,2023:config/>.
 
-[] a rep:Repository ;
-   rep:repositoryID "test" ;
+[] a config:Repository ;
+   config:repositoryID "test" ;
    rdfs:label "test memory store" ;
-   rep:repositoryImpl [
-      rep:repositoryType "openrdf:SailRepository" ;
-      sr:sailImpl [
-	 sail:sailType "openrdf:MemoryStore" ;
-	 ms:persist true ;
-	 ms:syncDelay 120
+   config:rep.impl [
+      config:rep.type "openrdf:SailRepository" ;
+      config:sail.impl [
+	      config:sail.type "openrdf:MemoryStore" ;
+	      config:mem.persist true ;
+	      config:mem.syncDelay 120
       ]
    ].
 ```
@@ -285,20 +282,17 @@ An example payload, containing a repository configuration for an in-memory store
 
 ```turtle
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix rep: <http://www.openrdf.org/config/repository#>.
-@prefix sr: <http://www.openrdf.org/config/repository/sail#>.
-@prefix sail: <http://www.openrdf.org/config/sail#>.
-@prefix ms: <http://www.openrdf.org/config/sail/memory#>.
+@prefix config: <tag:rdf4j.org,2023:config/>.
 
-[] a rep:Repository ;
-   rep:repositoryID "test" ;
+[] a config:Repository ;
+   config:rep.id "test" ;
    rdfs:label "test memory store" ;
-   rep:repositoryImpl [
-      rep:repositoryType "openrdf:SailRepository" ;
-      sr:sailImpl [
-	 sail:sailType "openrdf:MemoryStore" ;
-	 ms:persist true ;
-	 ms:syncDelay 120
+   config:rep.impl [
+      config:rep.type "openrdf:SailRepository" ;
+      config:sail.impl [
+	      config:sail.type "openrdf:MemoryStore" ;
+	        config:mem.persist true ;
+	        config:mem.syncDelay 120
       ]
    ].
 ```
