@@ -51,9 +51,15 @@
 			<type>test-jar</type>
 			<scope>test</scope>
 		</dependency>
+		<!-- FIXME: guava-testlib pulls in JUnit 4 (vintage) dependency-->
 		<dependency>
 			<groupId>com.google.guava</groupId>
 			<artifactId>guava-testlib</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-params</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>

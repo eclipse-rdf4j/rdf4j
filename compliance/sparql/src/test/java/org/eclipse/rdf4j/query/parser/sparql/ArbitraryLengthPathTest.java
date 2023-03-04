@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -23,26 +25,22 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import junit.framework.TestCase;
-
 /**
  * @author james
  */
-public class ArbitraryLengthPathTest extends TestCase {
+public class ArbitraryLengthPathTest {
 
 	private Repository repo;
 
 	private RepositoryConnection con;
 
 	@BeforeEach
-	@Override
 	public void setUp() throws Exception {
 		repo = new SailRepository(new MemoryStore());
 		con = repo.getConnection();
 	}
 
 	@AfterEach
-	@Override
 	public void tearDown() throws Exception {
 		con.close();
 		repo.shutDown();
