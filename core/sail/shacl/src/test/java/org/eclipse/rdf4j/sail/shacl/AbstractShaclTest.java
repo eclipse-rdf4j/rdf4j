@@ -1095,7 +1095,7 @@ abstract public class AbstractShaclTest {
 			System.out.println("##############################################\n");
 
 			r.run();
-			throw new IllegalStateException("There should have been an assertion error before this exception!");
+			throw t;
 		} finally {
 			fullLogging = false;
 			shaclSailConnectionLogger.setLevel(shaclSailConnectionLoggerLevel);

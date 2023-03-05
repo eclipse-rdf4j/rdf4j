@@ -482,4 +482,9 @@ public class ValidationTuple {
 	public Resource[] getContexts() {
 		return contexts;
 	}
+
+	public ValidationTuple unsafeSetScope(ConstraintComponent.Scope scope) {
+		return new ValidationTuple(validationResults, chain, scope, propertyShapeScopeWithValue, compressedTuples,
+				contexts);
+	}
 }

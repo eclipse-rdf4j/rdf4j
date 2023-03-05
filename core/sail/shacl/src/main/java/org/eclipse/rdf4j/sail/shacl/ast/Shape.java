@@ -69,6 +69,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.OrConstraintCompone
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.PatternConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.QualifiedMaxCountConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.QualifiedMinCountConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.SparqlConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.UniqueLangConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.XoneConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
@@ -216,14 +217,14 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		List<ConstraintComponent> constraintComponent = new ArrayList<>();
 
 		for (Resource resource : properties.getProperty()) {
-			ShaclProperties shaclProperties = new ShaclProperties(resource, shapeSource);
-			PropertyShape instance = PropertyShape.getInstance(shaclProperties, shapeSource, cache, shaclSail);
+			var shaclProperties = new ShaclProperties(resource, shapeSource);
+			var instance = PropertyShape.getInstance(shaclProperties, shapeSource, cache, shaclSail);
 			constraintComponent.add(instance);
 		}
 
 		for (Resource r : properties.getNode()) {
-			ShaclProperties p = new ShaclProperties(r, shapeSource);
-			NodeShape instance = NodeShape.getInstance(p, shapeSource, cache, shaclSail);
+			var shaclProperties = new ShaclProperties(r, shapeSource);
+			var instance = NodeShape.getInstance(shaclProperties, shapeSource, cache, shaclSail);
 			constraintComponent.add(instance);
 		}
 
@@ -268,7 +269,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		}
 
 		for (String pattern : properties.getPattern()) {
-			PatternConstraintComponent patternConstraintComponent = new PatternConstraintComponent(pattern,
+			var patternConstraintComponent = new PatternConstraintComponent(pattern,
 					properties.getFlags());
 			constraintComponent.add(patternConstraintComponent);
 		}
@@ -291,32 +292,32 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		}
 
 		for (IRI iri : properties.getClazz()) {
-			ClassConstraintComponent classConstraintComponent = new ClassConstraintComponent(iri);
+			var classConstraintComponent = new ClassConstraintComponent(iri);
 			constraintComponent.add(classConstraintComponent);
 		}
 
 		for (Value value : properties.getHasValue()) {
-			HasValueConstraintComponent hasValueConstraintComponent = new HasValueConstraintComponent(value);
+			var hasValueConstraintComponent = new HasValueConstraintComponent(value);
 			constraintComponent.add(hasValueConstraintComponent);
 		}
 
 		for (IRI iri : properties.getEquals()) {
-			EqualsConstraintComponent equalsConstraintComponent = new EqualsConstraintComponent(iri);
+			var equalsConstraintComponent = new EqualsConstraintComponent(iri);
 			constraintComponent.add(equalsConstraintComponent);
 		}
 
 		for (IRI iri : properties.getDisjoint()) {
-			DisjointConstraintComponent disjointConstraintComponent = new DisjointConstraintComponent(iri);
+			var disjointConstraintComponent = new DisjointConstraintComponent(iri);
 			constraintComponent.add(disjointConstraintComponent);
 		}
 
 		for (IRI iri : properties.getLessThan()) {
-			LessThanConstraintComponent lessThanConstraintComponent = new LessThanConstraintComponent(iri);
+			var lessThanConstraintComponent = new LessThanConstraintComponent(iri);
 			constraintComponent.add(lessThanConstraintComponent);
 		}
 
 		for (IRI iri : properties.getLessThanOrEquals()) {
-			LessThanOrEqualsConstraintComponent lessThanOrEqualsConstraintComponent = new LessThanOrEqualsConstraintComponent(
+			var lessThanOrEqualsConstraintComponent = new LessThanOrEqualsConstraintComponent(
 					iri);
 			constraintComponent.add(lessThanOrEqualsConstraintComponent);
 		}
@@ -324,14 +325,14 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		if (properties.getQualifiedValueShape() != null) {
 
 			if (properties.getQualifiedMaxCount() != null) {
-				QualifiedMaxCountConstraintComponent qualifiedMaxCountConstraintComponent = new QualifiedMaxCountConstraintComponent(
+				var qualifiedMaxCountConstraintComponent = new QualifiedMaxCountConstraintComponent(
 						properties.getQualifiedValueShape(), shapeSource, cache, shaclSail,
 						properties.getQualifiedValueShapesDisjoint(), properties.getQualifiedMaxCount());
 				constraintComponent.add(qualifiedMaxCountConstraintComponent);
 			}
 
 			if (properties.getQualifiedMinCount() != null) {
-				QualifiedMinCountConstraintComponent qualifiedMinCountConstraintComponent = new QualifiedMinCountConstraintComponent(
+				var qualifiedMinCountConstraintComponent = new QualifiedMinCountConstraintComponent(
 						properties.getQualifiedValueShape(), shapeSource, cache, shaclSail,
 						properties.getQualifiedValueShapesDisjoint(), properties.getQualifiedMinCount());
 				constraintComponent.add(qualifiedMinCountConstraintComponent);
@@ -340,34 +341,39 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 
 		if (shaclSail.isDashDataShapes()) {
 			for (Resource hasValueIn : properties.getHasValueIn()) {
-				DashHasValueInConstraintComponent dashHasValueInConstraintComponent = new DashHasValueInConstraintComponent(
+				var dashHasValueInConstraintComponent = new DashHasValueInConstraintComponent(
 						shapeSource, hasValueIn);
 				constraintComponent.add(dashHasValueInConstraintComponent);
 			}
 		}
 
 		for (Resource resource : properties.getOr()) {
-			OrConstraintComponent orConstraintComponent = new OrConstraintComponent(resource, shapeSource, cache,
+			var orConstraintComponent = new OrConstraintComponent(resource, shapeSource, cache,
 					shaclSail);
 			constraintComponent.add(orConstraintComponent);
 		}
 
 		for (Resource xone : properties.getXone()) {
-			XoneConstraintComponent xoneConstraintComponent = new XoneConstraintComponent(xone, shapeSource, cache,
+			var xoneConstraintComponent = new XoneConstraintComponent(xone, shapeSource, cache,
 					shaclSail);
 			constraintComponent.add(xoneConstraintComponent);
 		}
 
 		for (Resource and : properties.getAnd()) {
-			AndConstraintComponent andConstraintComponent = new AndConstraintComponent(and, shapeSource, cache,
+			var andConstraintComponent = new AndConstraintComponent(and, shapeSource, cache,
 					shaclSail);
 			constraintComponent.add(andConstraintComponent);
 		}
 
 		for (Resource or : properties.getNot()) {
-			NotConstraintComponent notConstraintComponent = new NotConstraintComponent(or, shapeSource, cache,
+			var notConstraintComponent = new NotConstraintComponent(or, shapeSource, cache,
 					shaclSail);
 			constraintComponent.add(notConstraintComponent);
+		}
+
+		for (Resource resource : properties.getSparql()) {
+			var component = new SparqlConstraintComponent(resource, shapeSource, cache, shaclSail, this);
+			constraintComponent.add(component);
 		}
 
 		return constraintComponent;
@@ -545,7 +551,11 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 					propertyShape.produceValidationReports = true;
 
 				} else if (shape instanceof NodeShape) {
-					shape.produceValidationReports = true;
+					if (shape.constraintComponents.get(0) instanceof SparqlConstraintComponent) {
+						((SparqlConstraintComponent) shape.constraintComponents.get(0)).produceValidationReports = true;
+					} else {
+						shape.produceValidationReports = true;
+					}
 				}
 			}
 		}

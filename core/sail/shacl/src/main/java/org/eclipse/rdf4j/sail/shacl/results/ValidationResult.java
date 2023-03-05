@@ -58,6 +58,7 @@ public class ValidationResult {
 	private final Resource[] shapesGraphs;
 	private Path path;
 	private ValidationResult detail;
+	private Value pathIri;
 
 	public ValidationResult(Value focusNode, Value value, Shape shape,
 			SourceConstraintComponent sourceConstraintComponent, Severity severity, ConstraintComponent.Scope scope,
@@ -134,6 +135,8 @@ public class ValidationResult {
 		if (this.path != null) {
 			path.toModel(path.getId(), null, model, new HashSet<>());
 			model.add(getId(), SHACL.RESULT_PATH, path.getId());
+		} else if (pathIri != null) {
+			model.add(getId(), SHACL.RESULT_PATH, pathIri);
 		}
 
 		model.add(getId(), SHACL.SOURCE_CONSTRAINT_COMPONENT, getSourceConstraintComponent().getIri());
@@ -217,5 +220,9 @@ public class ValidationResult {
 	@Override
 	public int hashCode() {
 		return Objects.hash(value, shape, sourceConstraintComponent, severity, focusNode, path, detail);
+	}
+
+	public void setPathIri(Value path) {
+		this.pathIri = path;
 	}
 }
