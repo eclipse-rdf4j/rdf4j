@@ -328,7 +328,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 
 		var allTargetVariables = effectiveTarget.getAllTargetVariables();
 
-		return new ValidationQuery(query, allTargetVariables, value, scope, getConstraintComponent(), null, null);
+		return new ValidationQuery(query, allTargetVariables, value, scope, this, null, null);
 
 	}
 

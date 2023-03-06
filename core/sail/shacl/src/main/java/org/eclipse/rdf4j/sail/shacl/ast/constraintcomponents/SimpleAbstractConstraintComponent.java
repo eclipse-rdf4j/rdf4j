@@ -244,7 +244,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 		var allTargetVariables = effectiveTarget.getAllTargetVariables();
 
-		return new ValidationQuery(query, allTargetVariables, value, scope, getConstraintComponent(), null, null);
+		return new ValidationQuery(query, allTargetVariables, value, scope, this, null, null);
 
 	}
 

@@ -16,7 +16,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
 
-import org.apache.commons.lang3.NotImplementedException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -219,7 +218,9 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
-		throw new NotImplementedException();
+		return getTargetChain()
+				.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)
+				.getAllTargets(connectionsGroup, dataGraph, scope);
 	}
 
 	@Override

@@ -15,25 +15,27 @@
       sh:focusNode ex:InvalidCountry;
       sh:resultPath ex:germanLabel;
       sh:resultSeverity sh:Violation;
+      sh:sourceConstraint _:dca125c42e1249ed9291d2e2c428d6e911313;
       sh:sourceConstraintComponent sh:SPARQLConstraintComponent;
       sh:sourceShape ex:LanguageExampleShape;
       sh:value "Spain"@en
     ] .
 
 ex:LanguageExampleShape a sh:NodeShape;
-  sh:sparql [ a sh:SPARQLConstraint;
-      sh:deactivated false;
-      sh:message "Values are literals with German language tag.";
-      sh:prefixes <http://example.com/ns#>;
-      sh:select """
+  sh:sparql _:dca125c42e1249ed9291d2e2c428d6e911313;
+  sh:targetClass ex:Country .
+
+_:dca125c42e1249ed9291d2e2c428d6e911313 a sh:SPARQLConstraint;
+  sh:deactivated false;
+  sh:message "Values are literals with German language tag.";
+  sh:prefixes <http://example.com/ns#>;
+  sh:select """
   			SELECT $this (ex:germanLabel AS ?path) ?value
   			WHERE {
   				$this ex:germanLabel ?value .
   				FILTER (isLiteral(?value) && !langMatches(lang(?value), \"de\"))
   			}
-  			"""
-    ];
-  sh:targetClass ex:Country .
+  			""" .
 
 <http://example.com/ns#> sh:declare [
       sh:namespace "http://example.com/ns#"^^xsd:anyURI;

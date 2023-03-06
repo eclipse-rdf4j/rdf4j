@@ -45,14 +45,14 @@ public class ValidationQuery {
 	private int targetIndex_validationReport;
 	private int valueIndex_validationReport;
 
-	private SourceConstraintComponent constraintComponent;
-	private SourceConstraintComponent constraintComponent_validationReport;
+	private ConstraintComponent constraintComponent;
+	private ConstraintComponent constraintComponent_validationReport;
 
 	private Severity severity;
 	private Shape shape;
 
 	public ValidationQuery(String query, List<Variable<Value>> targets, Variable<Value> value,
-			ConstraintComponent.Scope scope, SourceConstraintComponent constraintComponent, Severity severity,
+			ConstraintComponent.Scope scope, ConstraintComponent constraintComponent, Severity severity,
 			Shape shape) {
 		this.query = query;
 
@@ -66,11 +66,13 @@ public class ValidationQuery {
 			if (value != null) {
 				propertyShapeWithValue = true;
 				valueIndex = variables.size() - 1;
-				assert constraintComponent == null || constraintComponent.producesValidationResultValue();
+				assert constraintComponent == null
+						|| constraintComponent.getConstraintComponent().producesValidationResultValue();
 			} else {
 				propertyShapeWithValue = false;
 				valueIndex = variables.size();
-				assert constraintComponent == null || !constraintComponent.producesValidationResultValue();
+				assert constraintComponent == null
+						|| !constraintComponent.getConstraintComponent().producesValidationResultValue();
 			}
 		} else {
 			targetIndex = variables.size() - 1;
@@ -241,7 +243,7 @@ public class ValidationQuery {
 		targetIndex--;
 	}
 
-	public ValidationQuery withConstraintComponent(SourceConstraintComponent constraintComponent) {
+	public ValidationQuery withConstraintComponent(ConstraintComponent constraintComponent) {
 		this.constraintComponent = constraintComponent;
 		return this;
 	}
@@ -304,7 +306,7 @@ public class ValidationQuery {
 		}
 
 		@Override
-		public ValidationQuery withConstraintComponent(SourceConstraintComponent constraintComponent) {
+		public ValidationQuery withConstraintComponent(ConstraintComponent constraintComponent) {
 			return this;
 		}
 

@@ -197,7 +197,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
 		var allTargetVariables = effectiveTarget.getAllTargetVariables();
 
-		return new ValidationQuery(query, allTargetVariables, null, scope, getConstraintComponent(), null, null);
+		return new ValidationQuery(query, allTargetVariables, null, scope, this, null, null);
 
 	}
 

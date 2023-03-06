@@ -120,7 +120,7 @@ public class SparqlConstraintSelect implements PlanNode {
 							next = nextTarget.addValidationResult(t -> {
 								ValidationResult validationResult = new ValidationResult(t.getActiveTarget(), value,
 										shape,
-										constraintComponent.getConstraintComponent(), shape.getSeverity(),
+										constraintComponent, shape.getSeverity(),
 										ConstraintComponent.Scope.nodeShape, t.getContexts(),
 										shape.getContexts());
 								validationResult.setPathIri(path);

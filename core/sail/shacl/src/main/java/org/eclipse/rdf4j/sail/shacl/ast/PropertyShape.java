@@ -149,7 +149,7 @@ public class PropertyShape extends Shape {
 							validationSettings, negatePlan,
 							negateChildren, Scope.propertyShape);
 					if (!(c instanceof PropertyShape)) {
-						return validationQuery1.withConstraintComponent(c.getConstraintComponent());
+						return validationQuery1.withConstraintComponent(c);
 					}
 					return validationQuery1;
 				})
@@ -200,7 +200,7 @@ public class PropertyShape extends Shape {
 			if (!(constraintComponent instanceof PropertyShape)) {
 				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
 					return new ValidationResult(t.getActiveTarget(), t.getValue(), this,
-							constraintComponent.getConstraintComponent(), getSeverity(), t.getScope(), t.getContexts(),
+							constraintComponent, getSeverity(), t.getScope(), t.getContexts(),
 							getContexts());
 				});
 			}

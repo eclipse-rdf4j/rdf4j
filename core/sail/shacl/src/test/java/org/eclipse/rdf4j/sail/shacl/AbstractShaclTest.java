@@ -90,6 +90,8 @@ import org.topbraid.shacl.util.ModelPrinter;
 import org.topbraid.shacl.validation.ValidationUtil;
 import org.topbraid.shacl.vocabulary.SH;
 
+import com.google.common.collect.Lists;
+
 import ch.qos.logback.classic.Level;
 
 /**
@@ -563,8 +565,18 @@ abstract public class AbstractShaclTest {
 						validationReport.remove(null, RSX.dataGraph, null);
 						validationReport.remove(null, RSX.shapesGraph, null);
 						validationReport.remove(null, RDF4J.TRUNCATED, null);
-						// we don't have any default values for sh:resultMessage
+
+						// We don't have any default values for sh:resultMessage
 						validationReport.remove(null, SHACL.RESULT_MESSAGE, null);
+
+						// Remove the contents fo the SPARQL constraint since the reference implementation only seems to
+						// add the Resource of the SPARQL constraint.
+						ArrayList<Statement> sparqlConstraints = Lists
+								.newArrayList(validationReport.getStatements(null, RDF.TYPE, SHACL.SPARQL_CONSTRAINT));
+						for (Statement sparqlConstraint : sparqlConstraints) {
+							validationReport.remove(sparqlConstraint.getSubject(), null, null);
+						}
+
 					}
 
 					validationReportActual = new ValidationReportBnodeDuplicator(validationReportActual).getModel();
