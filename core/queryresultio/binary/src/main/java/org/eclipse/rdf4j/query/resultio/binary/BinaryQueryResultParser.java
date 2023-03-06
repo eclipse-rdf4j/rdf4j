@@ -304,9 +304,9 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 	}
 
 	/**
-	 * Used when trying to parse some invalid content. Reads the remaining bytes as string in order to provide more user-friendly error message.
-	 * Sets the max limit of the returned string, if its length > INVALID_CONTENT_LIMIT, the returned string is trimmed and
-	 * "..." is appended in order to prevent displaying too long result.
+	 * Used when trying to parse some invalid content. Reads the remaining bytes as string in order to provide more
+	 * user-friendly error message. Sets the max limit of the returned string, if its length > INVALID_CONTENT_LIMIT,
+	 * the returned string is trimmed and "..." is appended in order to prevent displaying too long result.
 	 */
 	private String extractInvalidContentAsString(int recordTypeMarker) throws IOException {
 		byte[] remainingBytes = new byte[INVALID_CONTENT_LIMIT];
