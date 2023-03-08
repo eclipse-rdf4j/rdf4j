@@ -41,32 +41,37 @@ import com.google.common.collect.Sets;
 
 public class SequencePath extends Path {
 
-	private final List<Path> sequence;
+	private final List<Path> paths;
 
 	public SequencePath(Resource id, ShapeSource shapeSource) {
 		super(id);
-		sequence = ShaclAstLists.toList(shapeSource, id, Resource.class)
+		paths = ShaclAstLists.toList(shapeSource, id, Resource.class)
 				.stream()
 				.map(p -> Path.buildPath(shapeSource, p))
 				.collect(Collectors.toList());
 
 	}
 
+	public SequencePath(Resource id, List<Path> paths) {
+		super(id);
+		this.paths = paths;
+	}
+
 	@Override
 	public String toString() {
-		return "SequencePath{ " + Arrays.toString(sequence.toArray()) + " }";
+		return "SequencePath{ " + Arrays.toString(paths.toArray()) + " }";
 	}
 
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
 
-		List<Resource> values = sequence.stream().map(Path::getId).collect(Collectors.toList());
+		List<Resource> values = paths.stream().map(Path::getId).collect(Collectors.toList());
 
 		if (!model.contains(id, null, null)) {
 			ShaclAstLists.listToRdf(values, id, model);
 		}
 
-		sequence.forEach(p -> p.toModel(p.getId(), null, model, cycleDetection));
+		paths.forEach(p -> p.toModel(p.getId(), null, model, cycleDetection));
 
 	}
 
@@ -130,23 +135,23 @@ public class SequencePath extends Path {
 
 		String variablePrefix = getVariablePrefix(subject, object);
 
-		List<SparqlFragment> sparqlFragments = new ArrayList<>(sequence.size());
+		List<SparqlFragment> sparqlFragments = new ArrayList<>(paths.size());
 
 		StatementMatcher.Variable head = subject;
 		StatementMatcher.Variable tail = null;
 
-		for (int i = 0; i < sequence.size(); i++) {
+		for (int i = 0; i < paths.size(); i++) {
 			if (tail != null) {
 				head = tail;
 			}
-			if (i + 1 == sequence.size()) {
+			if (i + 1 == paths.size()) {
 				// last element
 				tail = object;
 			} else {
 				tail = new StatementMatcher.Variable(subject, variablePrefix + i);
 			}
 
-			Path path = sequence.get(i);
+			Path path = paths.get(i);
 			SparqlFragment targetQueryFragment = path.getTargetQueryFragment(head, tail, rdfsSubClassOfReasoner,
 					stableRandomVariableProvider, inheritedVarNames);
 			sparqlFragments.add(targetQueryFragment);
@@ -178,7 +183,7 @@ public class SequencePath extends Path {
 
 	@Override
 	public boolean isSupported() {
-		for (Path path : sequence) {
+		for (Path path : paths) {
 			if (!path.isSupported()) {
 				return false;
 			}
@@ -188,8 +193,7 @@ public class SequencePath extends Path {
 
 	@Override
 	public String toSparqlPathString() {
-		return "( " + sequence.stream().map(Path::toSparqlPathString).collect(Collectors.joining(" / ")) + " )";
-
+		return "(" + paths.stream().map(Path::toSparqlPathString).collect(Collectors.joining(" / ")) + ")";
 	}
 
 }

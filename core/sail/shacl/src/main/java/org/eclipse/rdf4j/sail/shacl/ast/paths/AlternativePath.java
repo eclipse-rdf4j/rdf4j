@@ -38,41 +38,47 @@ import com.google.common.collect.Sets;
 public class AlternativePath extends Path {
 
 	private final Resource alternativePathId;
-	private final List<Path> alternativePath;
+	private final List<Path> paths;
 
-	public AlternativePath(Resource id, Resource alternativePath, ShapeSource shapeSource) {
+	public AlternativePath(Resource id, Resource paths, ShapeSource shapeSource) {
 		super(id);
 
-		this.alternativePathId = alternativePath;
-		this.alternativePath = ShaclAstLists.toList(shapeSource, alternativePath, Resource.class)
+		this.alternativePathId = paths;
+		this.paths = ShaclAstLists.toList(shapeSource, paths, Resource.class)
 				.stream()
 				.map(p -> Path.buildPath(shapeSource, p))
 				.collect(Collectors.toList());
 
 	}
 
+	public AlternativePath(Resource id, Resource alternativePathId, List<Path> paths) {
+		super(id);
+		this.alternativePathId = alternativePathId;
+		this.paths = paths;
+	}
+
 	@Override
 	public String toString() {
-		return "AlternativePath{ " + alternativePath + " }";
+		return "AlternativePath{ " + paths + " }";
 	}
 
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
 		model.add(subject, SHACL.ALTERNATIVE_PATH, alternativePathId);
 
-		List<Resource> values = alternativePath.stream().map(Path::getId).collect(Collectors.toList());
+		List<Resource> values = paths.stream().map(Path::getId).collect(Collectors.toList());
 
 		if (!model.contains(alternativePathId, null, null)) {
 			ShaclAstLists.listToRdf(values, alternativePathId, model);
 		}
 
-		alternativePath.forEach(p -> p.toModel(p.getId(), null, model, cycleDetection));
+		paths.forEach(p -> p.toModel(p.getId(), null, model, cycleDetection));
 	}
 
 	@Override
 	public PlanNode getAllAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			PlanNodeWrapper planNodeWrapper) {
-		return alternativePath
+		return paths
 				.stream()
 				.map(p -> p.getAllAdded(connectionsGroup, dataGraph, planNodeWrapper))
 				.reduce(UnionNode::getInstance)
@@ -87,7 +93,7 @@ public class AlternativePath extends Path {
 
 	@Override
 	public boolean isSupported() {
-		for (Path path : alternativePath) {
+		for (Path path : paths) {
 			if (!path.isSupported()) {
 				return false;
 			}
@@ -97,7 +103,7 @@ public class AlternativePath extends Path {
 
 	@Override
 	public String toSparqlPathString() {
-		return "( " + alternativePath.stream().map(Path::toSparqlPathString).collect(Collectors.joining(" | ")) + " )";
+		return "(" + paths.stream().map(Path::toSparqlPathString).collect(Collectors.joining(" | ")) + ")";
 	}
 
 	@Override
@@ -111,9 +117,9 @@ public class AlternativePath extends Path {
 			inheritedVarNames = Sets.union(inheritedVarNames, Set.of(subject.getName()));
 		}
 
-		List<SparqlFragment> sparqlFragments = new ArrayList<>(alternativePath.size());
+		List<SparqlFragment> sparqlFragments = new ArrayList<>(paths.size());
 
-		for (Path path : alternativePath) {
+		for (Path path : paths) {
 			SparqlFragment targetQueryFragment = path
 					.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner, stableRandomVariableProvider,
 							inheritedVarNames);

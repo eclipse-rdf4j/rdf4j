@@ -100,4 +100,5 @@ public abstract class Path implements Identifiable, Exportable, Targetable {
 	abstract public boolean isSupported();
 
 	public abstract String toSparqlPathString();
+
 }

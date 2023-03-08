@@ -30,30 +30,34 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
 public class InversePath extends Path {
 
-	private final Path inversePath;
+	private final Path path;
 
-	public InversePath(Resource id, Resource inversePath, ShapeSource shapeSource) {
+	public InversePath(Resource id, Resource path, ShapeSource shapeSource) {
 		super(id);
-		this.inversePath = Path.buildPath(shapeSource, inversePath);
+		this.path = Path.buildPath(shapeSource, path);
+	}
 
+	public InversePath(Resource id, Path path) {
+		super(id);
+		this.path = path;
 	}
 
 	@Override
 	public String toString() {
-		return "InversePath{ " + inversePath + " }";
+		return "InversePath{ " + path + " }";
 	}
 
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
-		model.add(subject, SHACL.INVERSE_PATH, inversePath.getId());
-		inversePath.toModel(inversePath.getId(), null, model, cycleDetection);
+		model.add(subject, SHACL.INVERSE_PATH, path.getId());
+		path.toModel(path.getId(), null, model, cycleDetection);
 	}
 
 	@Override
 	public PlanNode getAllAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			PlanNodeWrapper planNodeWrapper) {
 
-		PlanNode added = inversePath.getAllAdded(connectionsGroup, dataGraph, null);
+		PlanNode added = path.getAllAdded(connectionsGroup, dataGraph, null);
 		added = new TupleMapper(added, t -> new ValidationTuple(t.getValue(), t.getActiveTarget(),
 				ConstraintComponent.Scope.propertyShape, true, dataGraph));
 
@@ -72,13 +76,16 @@ public class InversePath extends Path {
 
 	@Override
 	public boolean isSupported() {
-		return inversePath.isSupported();
+		return path.isSupported();
 	}
 
 	@Override
 	public String toSparqlPathString() {
-		assert inversePath.toSparqlPathString().equals(inversePath.toSparqlPathString().trim());
-		return "^(" + inversePath.toSparqlPathString() + ")";
+		assert path.toSparqlPathString().equals(path.toSparqlPathString().trim());
+		if (path instanceof SimplePath || path instanceof AlternativePath || path instanceof SequencePath) {
+			return "^" + path.toSparqlPathString();
+		}
+		return "^(" + path.toSparqlPathString() + ")";
 	}
 
 	@Override
@@ -86,7 +93,7 @@ public class InversePath extends Path {
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider, Set<String> inheritedVarNames) {
 
-		return inversePath.getTargetQueryFragment(object, subject, rdfsSubClassOfReasoner,
+		return path.getTargetQueryFragment(object, subject, rdfsSubClassOfReasoner,
 				stableRandomVariableProvider, Set.of());
 
 	}
