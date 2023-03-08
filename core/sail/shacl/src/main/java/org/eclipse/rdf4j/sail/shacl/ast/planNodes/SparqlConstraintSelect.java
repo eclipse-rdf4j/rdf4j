@@ -67,8 +67,8 @@ public class SparqlConstraintSelect implements PlanNode {
 		this.produceValidationReports = produceValidationReports;
 		this.constraintComponent = constraintComponent;
 		this.shape = shape;
-		assert query.contains("?this") : "Query should contain ?this: " + query;
-		this.variables = new String[] { "?this" };
+		assert query.contains("$this") : "Query should contain $this: " + query;
+		this.variables = new String[] { "$this" };
 		this.scope = scope;
 		this.dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
 

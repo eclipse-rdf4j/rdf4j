@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
+import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.SparqlConstraintSelect;
@@ -166,11 +167,18 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent {
 				.append(namespace.getName())
 				.append(">\n"));
 
-		select = sb + "\n" + select.replace("$this", "?this");
+		select = sb + "\n" + select;
 	}
 
-	public SparqlConstraintComponent(Resource id) {
+	public SparqlConstraintComponent(Resource id, Shape shape, boolean produceValidationReports, String select,
+			String originalSelect, String message, Boolean deactivated) {
 		super(id);
+		this.shape = shape;
+		this.produceValidationReports = produceValidationReports;
+		this.select = select;
+		this.originalSelect = originalSelect;
+		this.message = message;
+		this.deactivated = deactivated;
 	}
 
 	@Override
@@ -206,12 +214,17 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent {
 		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(scope,
 				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);
 
+		String select = this.select;
+		if (scope == Scope.propertyShape) {
+			Path path = getTargetChain().getPath().get();
+			String s = path.toSparqlPathString();
+			select = select.replace(" $PATH ", " " + s + " ");
+		}
+
 		PlanNode allTargets = effectiveTarget.getAllTargets(connectionsGroup, validationSettings.getDataGraph(), scope);
 
-		SparqlConstraintSelect sparqlConstraintSelect = new SparqlConstraintSelect(connectionsGroup.getBaseConnection(),
+		return new SparqlConstraintSelect(connectionsGroup.getBaseConnection(),
 				allTargets, select, scope, validationSettings.getDataGraph(), produceValidationReports, this, shape);
-
-		return sparqlConstraintSelect;
 
 	}
 
@@ -225,7 +238,8 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public ConstraintComponent deepClone() {
-		return new SparqlConstraintComponent(getId());
+		return new SparqlConstraintComponent(getId(), shape, produceValidationReports, select, originalSelect, message,
+				deactivated);
 	}
 
 	@Override

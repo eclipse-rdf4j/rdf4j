@@ -186,4 +186,10 @@ public class SequencePath extends Path {
 		return true;
 	}
 
+	@Override
+	public String toSparqlPathString() {
+		return "( " + sequence.stream().map(Path::toSparqlPathString).collect(Collectors.joining(" / ")) + " )";
+
+	}
+
 }

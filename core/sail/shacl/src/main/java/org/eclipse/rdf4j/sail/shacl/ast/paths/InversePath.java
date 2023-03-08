@@ -76,6 +76,12 @@ public class InversePath extends Path {
 	}
 
 	@Override
+	public String toSparqlPathString() {
+		assert inversePath.toSparqlPathString().equals(inversePath.toSparqlPathString().trim());
+		return "^(" + inversePath.toSparqlPathString() + ")";
+	}
+
+	@Override
 	public SparqlFragment getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider, Set<String> inheritedVarNames) {

@@ -96,6 +96,11 @@ public class AlternativePath extends Path {
 	}
 
 	@Override
+	public String toSparqlPathString() {
+		return "( " + alternativePath.stream().map(Path::toSparqlPathString).collect(Collectors.joining(" | ")) + " )";
+	}
+
+	@Override
 	public SparqlFragment getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider, Set<String> inheritedVarNames) {

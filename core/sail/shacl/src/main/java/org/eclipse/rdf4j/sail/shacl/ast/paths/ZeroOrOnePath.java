@@ -65,6 +65,12 @@ public class ZeroOrOnePath extends Path {
 	}
 
 	@Override
+	public String toSparqlPathString() {
+		assert zeroOrOnePath.toSparqlPathString().equals(zeroOrOnePath.toSparqlPathString().trim());
+		return "(" + zeroOrOnePath.toSparqlPathString() + ")?";
+	}
+
+	@Override
 	public SparqlFragment getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider, Set<String> inheritedVarNames) {

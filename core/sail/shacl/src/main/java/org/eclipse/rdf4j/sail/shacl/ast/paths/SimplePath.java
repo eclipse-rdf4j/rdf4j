@@ -128,4 +128,9 @@ public class SimplePath extends Path {
 		return true;
 	}
 
+	@Override
+	public String toSparqlPathString() {
+		return "<" + predicate + ">";
+	}
+
 }
