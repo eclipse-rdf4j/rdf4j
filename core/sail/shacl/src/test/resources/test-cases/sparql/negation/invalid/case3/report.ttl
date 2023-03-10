@@ -13,30 +13,28 @@
   sh:result [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:InvalidCountry;
-      sh:resultMessage "Values are literals with German language tag.";
-      sh:resultPath ex:germanLabel;
       sh:resultSeverity sh:Violation;
-      sh:sourceConstraint _:91b2e40ac2c64832aec972d52e78054613392;
-      sh:sourceConstraintComponent sh:SPARQLConstraintComponent;
-      sh:sourceShape ex:LanguageExamplePropertyShape;
-      sh:value "Spain"@en
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:sourceShape ex:LanguageExampleShape;
+      sh:value ex:InvalidCountry
     ] .
 
-ex:LanguageExamplePropertyShape a sh:PropertyShape;
-  sh:path ex:germanLabel;
-  sh:sparql _:91b2e40ac2c64832aec972d52e78054613392;
+ex:LanguageExampleShape a sh:NodeShape;
+  sh:not [ a sh:PropertyShape;
+      sh:path ex:germanLabel;
+      sh:sparql [ a sh:SPARQLConstraint;
+          sh:message "Values are literals with German language tag.";
+          sh:prefixes <http://example.com/ns#>;
+          sh:select """
+  	        		SELECT $this ?value
+  	        		WHERE {
+  	        			$this $PATH ?value .
+  	        			FILTER (isLiteral(?value) && !langMatches(lang(?value), \"de\"))
+  	        		}
+  	        		"""
+        ]
+    ];
   sh:targetClass ex:Country .
-
-_:91b2e40ac2c64832aec972d52e78054613392 a sh:SPARQLConstraint;
-  sh:message "Values are literals with German language tag.";
-  sh:prefixes <http://example.com/ns#>;
-  sh:select """
-  			SELECT $this ?value
-  			WHERE {
-  				$this $PATH ?value .
-  				FILTER (isLiteral(?value) && !langMatches(lang(?value), \"de\"))
-  			}
-  			""" .
 
 <http://example.com/ns#> sh:declare [
       sh:namespace "http://example.com/ns#"^^xsd:anyURI;

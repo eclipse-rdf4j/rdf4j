@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -37,20 +38,24 @@ import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.AllTargetsPlanNode;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ShiftToPropertyShape;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.SparqlConstraintSelect;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
 public class SparqlConstraintComponent extends AbstractConstraintComponent {
 
-	private Shape shape;
+	private final Shape shape;
 	public boolean produceValidationReports;
 	private String select;
 	private String originalSelect;
-	private String message;
+	private List<Literal> message = new ArrayList<>();
 	private Boolean deactivated;
 	private final List<Namespace> namespaces = new ArrayList<>();
 
@@ -79,13 +84,10 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent {
 
 		try (Stream<Value> objects = shapeSource.getObjects(id, ShapeSource.Predicates.MESSAGE)) {
 			objects.forEach(literal -> {
-				if (message != null) {
-					throw new IllegalStateException("Multiple sh:message values found for constraint component " + id);
-				}
 				if (!(literal.isLiteral())) {
 					throw new IllegalStateException("sh:message must be a literal for constraint component " + id);
 				}
-				message = literal.stringValue();
+				message.add((Literal) literal);
 			});
 		}
 
@@ -171,7 +173,7 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	public SparqlConstraintComponent(Resource id, Shape shape, boolean produceValidationReports, String select,
-			String originalSelect, String message, Boolean deactivated) {
+			String originalSelect, List<Literal> message, Boolean deactivated) {
 		super(id);
 		this.shape = shape;
 		this.produceValidationReports = produceValidationReports;
@@ -187,8 +189,8 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent {
 		model.add(getId(), SHACL.SELECT, Values.literal(originalSelect));
 		model.add(getId(), RDF.TYPE, SHACL.SPARQL_CONSTRAINT);
 
-		if (message != null) {
-			model.add(getId(), SHACL.MESSAGE, Values.literal(message));
+		for (Literal literal : message) {
+			model.add(getId(), SHACL.MESSAGE, literal);
 		}
 
 		if (deactivated != null) {
@@ -221,11 +223,80 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent {
 			select = select.replace(" $PATH ", " " + s + " ");
 		}
 
-		PlanNode allTargets = effectiveTarget.getAllTargets(connectionsGroup, validationSettings.getDataGraph(), scope);
+		PlanNode allTargets;
+		if (overrideTargetNode != null) {
+			allTargets = getPlanNodeForOverrideTargetNode(connectionsGroup, validationSettings, overrideTargetNode,
+					scope,
+					stableRandomVariableProvider, effectiveTarget, getTargetChain().getPath());
+		} else {
+			allTargets = effectiveTarget.getAllTargets(connectionsGroup, validationSettings.getDataGraph(), scope);
+		}
 
 		return new SparqlConstraintSelect(connectionsGroup.getBaseConnection(),
 				allTargets, select, scope, validationSettings.getDataGraph(), produceValidationReports, this, shape);
 
+	}
+
+	private PlanNode getPlanNodeForOverrideTargetNode(ConnectionsGroup connectionsGroup,
+			ValidationSettings validationSettings, PlanNodeProvider overrideTargetNode, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider, EffectiveTarget effectiveTarget,
+			Optional<Path> path) {
+		PlanNode planNode;
+
+		if (scope == Scope.nodeShape) {
+			PlanNode overrideTargetPlanNode = overrideTargetNode.getPlanNode();
+
+			if (overrideTargetPlanNode instanceof AllTargetsPlanNode) {
+				PlanNode allTargets = effectiveTarget.getAllTargets(connectionsGroup,
+						validationSettings.getDataGraph(), scope);
+
+				return Unique.getInstance(allTargets, true);
+			} else {
+				return effectiveTarget.extend(overrideTargetPlanNode, connectionsGroup,
+						validationSettings.getDataGraph(), scope,
+						EffectiveTarget.Extend.right,
+						false,
+						null
+				);
+
+			}
+
+		} else {
+			PlanNode overrideTargetPlanNode = overrideTargetNode.getPlanNode();
+
+			if (overrideTargetPlanNode instanceof AllTargetsPlanNode) {
+				// We are cheating a bit here by retrieving all the targets and values at the same time by
+				// pretending to be in node shape scope and then shifting the results back to property shape scope
+				PlanNode allTargets = getTargetChain()
+						.getEffectiveTarget(Scope.nodeShape,
+								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)
+						.getAllTargets(connectionsGroup, validationSettings.getDataGraph(), Scope.nodeShape);
+				allTargets = new ShiftToPropertyShape(allTargets);
+
+				return Unique.getInstance(allTargets, true);
+
+			} else {
+
+				overrideTargetPlanNode = effectiveTarget.extend(overrideTargetPlanNode, connectionsGroup,
+						validationSettings.getDataGraph(), scope,
+						EffectiveTarget.Extend.right, false, null);
+
+				planNode = new BulkedExternalInnerJoin(overrideTargetPlanNode,
+						connectionsGroup.getBaseConnection(),
+						validationSettings.getDataGraph(), path.get()
+								.getTargetQueryFragment(new StatementMatcher.Variable("a"),
+										new StatementMatcher.Variable("c"),
+										connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider,
+										Set.of())
+								.getFragment(),
+						false, null,
+						BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph())
+				);
+				planNode = connectionsGroup.getCachedNodeFor(planNode);
+			}
+		}
+
+		return planNode;
 	}
 
 	@Override
@@ -256,7 +327,7 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public List<Literal> getDefaultMessage() {
-		return List.of();
+		return message;
 	}
 
 }

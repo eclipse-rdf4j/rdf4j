@@ -319,6 +319,12 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 				SHACL.QUALIFIED_VALUE_SHAPE,
 				SHACL.SHAPES_GRAPH,
 				SHACL.MESSAGE,
+				SHACL.DECLARE,
+				SHACL.SPARQL,
+				SHACL.SELECT,
+				SHACL.PREFIXES,
+				SHACL.PREFIX_PROP,
+				SHACL.NAMESPACE_PROP,
 				DASH.hasValueIn,
 				RSX.targetShape
 		);

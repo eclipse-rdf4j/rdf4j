@@ -32,7 +32,7 @@ public class ShiftToNodeShape implements PlanNode {
 
 	public ShiftToNodeShape(PlanNode parent) {
 		this.parent = PlanNodeHelper.handleSorting(this, parent);
-		// this.stackTrace = Thread.currentThread().getStackTrace();
+//		this.stackTrace = Thread.currentThread().getStackTrace();
 	}
 
 	@Override
@@ -50,8 +50,13 @@ public class ShiftToNodeShape implements PlanNode {
 			public void calculateNext() {
 				if (!iterator.hasNext()) {
 					if (parentIterator.hasNext()) {
-						List<ValidationTuple> validationTuples = parentIterator.next().shiftToNodeShape();
-						iterator = validationTuples.iterator();
+						try {
+							List<ValidationTuple> validationTuples = parentIterator.next().shiftToNodeShape();
+							iterator = validationTuples.iterator();
+						} catch (AssertionError e) {
+							throw e;
+						}
+
 					}
 					assert iterator.hasNext() || !parentIterator.hasNext();
 				}

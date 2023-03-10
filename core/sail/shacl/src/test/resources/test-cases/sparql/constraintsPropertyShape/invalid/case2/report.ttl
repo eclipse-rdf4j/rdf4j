@@ -13,9 +13,10 @@
   sh:result [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:InvalidCountry;
+      sh:resultMessage "Values are literals with German language tag.";
       sh:resultPath ex:germanLabel;
       sh:resultSeverity sh:Violation;
-      sh:sourceConstraint _:3025dddfea7b4f169fff40826541e6f812209;
+      sh:sourceConstraint _:91b2e40ac2c64832aec972d52e78054613140;
       sh:sourceConstraintComponent sh:SPARQLConstraintComponent;
       sh:sourceShape ex:LanguageExamplePropertyShape;
       sh:value "Spain"@en
@@ -23,10 +24,10 @@
 
 ex:LanguageExamplePropertyShape a sh:PropertyShape;
   sh:path ex:germanLabel;
-  sh:sparql _:3025dddfea7b4f169fff40826541e6f812209;
+  sh:sparql _:91b2e40ac2c64832aec972d52e78054613140;
   sh:targetClass ex:Country .
 
-_:3025dddfea7b4f169fff40826541e6f812209 a sh:SPARQLConstraint;
+_:91b2e40ac2c64832aec972d52e78054613140 a sh:SPARQLConstraint;
   sh:message "Values are literals with German language tag.";
   sh:prefixes <http://example.com/ns#>;
   sh:select """
