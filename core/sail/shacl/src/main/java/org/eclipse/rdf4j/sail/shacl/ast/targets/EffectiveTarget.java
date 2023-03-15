@@ -170,6 +170,9 @@ public class EffectiveTarget {
 			if (e.target instanceof TargetNode) {
 				return true;
 			}
+			if (!e.getQueryFragment().supportsIncrementalEvaluation()) {
+				return true;
+			}
 		}
 
 		SailConnection addedStatements = connectionsGroup.getAddedStatements();

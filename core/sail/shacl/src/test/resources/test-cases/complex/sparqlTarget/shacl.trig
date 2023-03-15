@@ -63,7 +63,6 @@ ex:
           			        # we want to validate that all Datasets with >=3 Distributions has a dc:title
           				?this a dcat:Dataset .
           				?this dcat:distribution ?distribution.
-          				FILTER(! EXISTS {?this dc:language "no"})
           			}
           			GROUP BY ?this
                                   HAVING(COUNT(?distribution) >= 3)

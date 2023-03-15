@@ -16,22 +16,13 @@
       sh:resultPath ex:knows;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:AndConstraintComponent;
-      sh:sourceShape _:efa8a5e894734db6a71ab3bcc9426da54063;
-      sh:value ex:peter
-    ], [ a sh:ValidationResult;
-      rsx:shapesGraph rdf4j:SHACLShapeGraph;
-      sh:focusNode ex:validPerson1;
-      sh:resultPath ex:knows;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:AndConstraintComponent;
-      sh:sourceShape _:efa8a5e894734db6a71ab3bcc9426da54063;
+      sh:sourceShape [ a sh:PropertyShape;
+          sh:and ([ a sh:NodeShape;
+                sh:class ex:Person
+              ] [ a sh:NodeShape;
+                sh:class ex:Human
+              ]);
+          sh:path ex:knows
+        ];
       sh:value ex:steve
     ] .
-
-_:efa8a5e894734db6a71ab3bcc9426da54063 a sh:PropertyShape;
-  sh:and ([ a sh:NodeShape;
-        sh:class ex:Person
-      ] [ a sh:NodeShape;
-        sh:class ex:Human
-      ]);
-  sh:path ex:knows .
