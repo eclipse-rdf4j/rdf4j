@@ -77,6 +77,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.DashAllObjects;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.DashAllSubjects;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.RSXTargetShape;
+import org.eclipse.rdf4j.sail.shacl.ast.targets.SparqlTarget;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.Target;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetChain;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetClass;
@@ -152,10 +153,9 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		if (!properties.getTarget().isEmpty()) {
 			properties.getTarget()
 					.forEach(target -> {
-//									if (shapeSource.hasStatement(sparqlTarget, RDF.TYPE, SHACL.SPARQL_TARGET, true)) {
-//										propertyShapes.add(new SparqlTarget(shapeId, shaclSail, shapeSource,
-//												shaclProperties.isDeactivated(), target));
-//									}
+						if (shapeSource.isType(target, SHACL.SPARQL_TARGET)) {
+							this.target.add(new SparqlTarget(target, shapeSource));
+						}
 						if (shaclSail.isDashDataShapes() && shapeSource.isType(target,
 								DASH.AllObjectsTarget)) {
 							this.target.add(new DashAllObjects(target));

@@ -106,12 +106,6 @@ abstract public class AbstractShaclTest {
 			Values.iri("http://example.com/ns#shapesGraph1"));
 
 	private static final Set<String> ignoredTestCases = Set.of(
-			"test-cases/class/sparqlTarget",
-			"test-cases/class/sparqlTargetNot",
-			"test-cases/complex/sparqlTarget",
-			"test-cases/datatype/sparqlTarget",
-			"test-cases/maxCount/sparqlTarget",
-			"test-cases/or/implicitAndSparqlTarget",
 			"test-cases/path/oneOrMorePath",
 			"test-cases/path/zeroOrMorePath",
 			"test-cases/path/zeroOrOnePath"

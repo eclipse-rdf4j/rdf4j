@@ -13,11 +13,16 @@ package org.eclipse.rdf4j.sail.shacl.ast;
 import static org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.AbstractConstraintComponent.VALUES_INJECTION_POINT;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
@@ -29,6 +34,8 @@ public class SparqlFragment {
 	// This is currently experimental!
 	private static final boolean USE_UNION_PRESERVING_JOIN = false;
 
+	private final Set<Namespace> namespaces = new HashSet<>();
+
 	private final String fragment;
 	private final List<String> unionFragments = new ArrayList<>();
 	private final List<StatementMatcher> statementMatchers = new ArrayList<>();
@@ -37,54 +44,84 @@ public class SparqlFragment {
 	private boolean filterCondition;
 	private boolean bgp;
 	private boolean union;
+	private final boolean supportsIncrementalEvaluation;
 
-	private SparqlFragment(String fragment, boolean filterCondition, boolean bgp,
-			List<StatementMatcher> statementMatchers, TraceBack traceBackFunction) {
+	private SparqlFragment(Collection<Namespace> namespaces, String fragment, boolean filterCondition, boolean bgp,
+			List<StatementMatcher> statementMatchers, TraceBack traceBackFunction,
+			boolean supportsIncrementalEvaluation) {
+		this.namespaces.addAll(namespaces);
 		this.fragment = fragment;
 		this.filterCondition = filterCondition;
 		this.bgp = bgp;
 		this.statementMatchers.addAll(statementMatchers);
 		this.traceBackFunction = traceBackFunction;
-
+		this.supportsIncrementalEvaluation = supportsIncrementalEvaluation;
 		assert filterCondition != bgp;
 	}
 
-	private SparqlFragment(List<String> unionFragments, List<StatementMatcher> statementMatchers,
-			TraceBack traceBackFunction) {
+	private SparqlFragment(Collection<Namespace> namespaces, List<String> unionFragments,
+			List<StatementMatcher> statementMatchers,
+			TraceBack traceBackFunction, boolean supportsIncrementalEvaluation) {
 		this.fragment = null;
 		this.unionFragments.addAll(unionFragments);
 		this.union = true;
 		this.statementMatchers.addAll(statementMatchers);
 		this.traceBackFunction = traceBackFunction;
+		this.supportsIncrementalEvaluation = supportsIncrementalEvaluation;
 	}
 
-	public static SparqlFragment filterCondition(String fragment, List<StatementMatcher> statementMatchers) {
-		return new SparqlFragment(fragment, true, false, statementMatchers, null);
+	public static SparqlFragment filterCondition(Collection<Namespace> namespaces, String fragment,
+			List<StatementMatcher> statementMatchers) {
+		return new SparqlFragment(namespaces, fragment, true, false, statementMatchers, null, true);
 	}
 
-	public static SparqlFragment bgp(String fragment, List<StatementMatcher> statementMatchers) {
-		return new SparqlFragment(fragment, false, true, statementMatchers, null);
+	public static SparqlFragment filterCondition(Collection<Namespace> namespaces, String fragment,
+			List<StatementMatcher> statementMatchers,
+			boolean supportsIncrementalEvaluation) {
+		return new SparqlFragment(namespaces, fragment, true, false, statementMatchers, null,
+				supportsIncrementalEvaluation);
 	}
 
-	public static SparqlFragment bgp(String fragment, List<StatementMatcher> statementMatchers,
+	public static SparqlFragment bgp(Collection<Namespace> namespaces, String query,
+			boolean supportsIncrementalEvaluation) {
+		return new SparqlFragment(namespaces, query, false, true, List.of(), null, supportsIncrementalEvaluation);
+	}
+
+	public static SparqlFragment bgp(Collection<Namespace> namespaces, String fragment,
+			List<StatementMatcher> statementMatchers) {
+		return new SparqlFragment(namespaces, fragment, false, true, statementMatchers, null, true);
+	}
+
+	public static SparqlFragment bgp(Collection<Namespace> namespaces, String fragment,
+			List<StatementMatcher> statementMatchers,
 			TraceBack traceBackFunction) {
-		return new SparqlFragment(fragment, false, true, statementMatchers, traceBackFunction);
+		return new SparqlFragment(namespaces, fragment, false, true, statementMatchers, traceBackFunction, true);
 	}
 
-	public static SparqlFragment bgp(String fragment, StatementMatcher statementMatcher) {
-		return new SparqlFragment(fragment, false, true, List.of(statementMatcher), null);
+	public static SparqlFragment bgp(Collection<Namespace> namespaces, String fragment,
+			List<StatementMatcher> statementMatchers,
+			TraceBack traceBackFunction, boolean supportsIncrementalEvaluation) {
+		return new SparqlFragment(namespaces, fragment, false, true, statementMatchers, traceBackFunction,
+				supportsIncrementalEvaluation);
 	}
 
-	public static SparqlFragment bgp(String fragment, StatementMatcher statementMatcher, TraceBack traceBackFunction) {
-		return new SparqlFragment(fragment, false, true, List.of(statementMatcher), traceBackFunction);
+	public static SparqlFragment bgp(Collection<Namespace> namespaces, String fragment,
+			StatementMatcher statementMatcher) {
+		return new SparqlFragment(namespaces, fragment, false, true, List.of(statementMatcher), null, true);
 	}
 
-	public static SparqlFragment bgp(String fragment) {
-		return new SparqlFragment(fragment, false, true, List.of(), null);
+	public static SparqlFragment bgp(Collection<Namespace> namespaces, String fragment,
+			StatementMatcher statementMatcher, TraceBack traceBackFunction) {
+		return new SparqlFragment(namespaces, fragment, false, true, List.of(statementMatcher), traceBackFunction,
+				true);
 	}
 
-	public static SparqlFragment bgp(String fragment, TraceBack traceBackFunction) {
-		return new SparqlFragment(fragment, false, true, List.of(), traceBackFunction);
+	public static SparqlFragment bgp(Collection<Namespace> namespaces, String fragment) {
+		return new SparqlFragment(namespaces, fragment, false, true, List.of(), null, true);
+	}
+
+	public static SparqlFragment bgp(Collection<Namespace> namespaces, String fragment, TraceBack traceBackFunction) {
+		return new SparqlFragment(namespaces, fragment, false, true, List.of(), traceBackFunction, true);
 	}
 
 	public static SparqlFragment and(List<SparqlFragment> sparqlFragments) {
@@ -96,8 +133,15 @@ public class SparqlFragment {
 				.collect(Collectors.joining(" ) && ( ", "( ",
 						" )"));
 
-		return filterCondition(collect,
-				getStatementMatchers(sparqlFragments));
+		boolean supportsIncrementalEvaluation = sparqlFragments.stream()
+				.allMatch(SparqlFragment::supportsIncrementalEvaluation);
+
+		Set<Namespace> namespaces = sparqlFragments.stream()
+				.flatMap(s -> s.namespaces.stream())
+				.collect(Collectors.toSet());
+
+		return filterCondition(namespaces, collect,
+				getStatementMatchers(sparqlFragments), supportsIncrementalEvaluation);
 	}
 
 	public static SparqlFragment or(List<SparqlFragment> sparqlFragments) {
@@ -109,8 +153,15 @@ public class SparqlFragment {
 				.collect(Collectors.joining(" ) || ( ", "( ",
 						" )"));
 
-		return filterCondition(collect,
-				getStatementMatchers(sparqlFragments));
+		boolean supportsIncrementalEvaluation = sparqlFragments.stream()
+				.allMatch(SparqlFragment::supportsIncrementalEvaluation);
+
+		Set<Namespace> namespaces = sparqlFragments.stream()
+				.flatMap(s -> s.namespaces.stream())
+				.collect(Collectors.toSet());
+
+		return filterCondition(namespaces, collect,
+				getStatementMatchers(sparqlFragments), supportsIncrementalEvaluation);
 	}
 
 	public static SparqlFragment join(List<SparqlFragment> sparqlFragments) {
@@ -123,7 +174,7 @@ public class SparqlFragment {
 			return unionPreservingJoin(sparqlFragments, traceBackFunction);
 
 		} else {
-			String collect = sparqlFragments.stream()
+			String queryFragment = sparqlFragments.stream()
 					.peek(s -> {
 						assert !s.filterCondition;
 					})
@@ -131,7 +182,15 @@ public class SparqlFragment {
 					.reduce((a, b) -> a + "\n" + b)
 					.orElse("");
 
-			return bgp(collect, getStatementMatchers(sparqlFragments), traceBackFunction);
+			boolean supportsIncrementalEvaluation = sparqlFragments.stream()
+					.allMatch(SparqlFragment::supportsIncrementalEvaluation);
+
+			Set<Namespace> namespaces = sparqlFragments.stream()
+					.flatMap(s -> s.namespaces.stream())
+					.collect(Collectors.toSet());
+
+			return bgp(namespaces, queryFragment, getStatementMatchers(sparqlFragments), traceBackFunction,
+					supportsIncrementalEvaluation);
 		}
 	}
 
@@ -170,7 +229,15 @@ public class SparqlFragment {
 			}
 		}
 
-		SparqlFragment union = unionQueryStrings(workingSet, traceBackFunction);
+		boolean supportsIncrementalEvaluation = sparqlFragments.stream()
+				.allMatch(SparqlFragment::supportsIncrementalEvaluation);
+
+		Set<Namespace> namespaces = sparqlFragments.stream()
+				.flatMap(s -> s.namespaces.stream())
+				.collect(Collectors.toSet());
+
+		SparqlFragment union = unionQueryStrings(namespaces, workingSet, traceBackFunction,
+				supportsIncrementalEvaluation);
 		union.addStatementMatchers(getStatementMatchers(sparqlFragments));
 		return union;
 	}
@@ -191,12 +258,16 @@ public class SparqlFragment {
 				.collect(Collectors.toList());
 	}
 
-	public static SparqlFragment unionQueryStrings(List<String> query, TraceBack traceBackFunction) {
-		return new SparqlFragment(query, Collections.emptyList(), traceBackFunction);
+	public static SparqlFragment unionQueryStrings(Set<Namespace> namespaces, List<String> query,
+			TraceBack traceBackFunction,
+			boolean supportsIncrementalEvaluation) {
+		return new SparqlFragment(namespaces, query, Collections.emptyList(), traceBackFunction,
+				supportsIncrementalEvaluation);
 	}
 
-	public static SparqlFragment unionQueryStrings(List<String> query) {
-		return new SparqlFragment(query, Collections.emptyList(), null);
+	public static SparqlFragment unionQueryStrings(Set<Namespace> namespaces, List<String> query,
+			boolean supportsIncrementalEvaluation) {
+		return new SparqlFragment(namespaces, query, Collections.emptyList(), null, supportsIncrementalEvaluation);
 	}
 
 	public static SparqlFragment union(List<SparqlFragment> sparqlFragments) {
@@ -205,7 +276,15 @@ public class SparqlFragment {
 				.map(SparqlFragment::getFragment)
 				.collect(Collectors.toList());
 
-		return new SparqlFragment(sparqlFragmentString, getStatementMatchers(sparqlFragments), null);
+		boolean supportsIncrementalEvaluation = sparqlFragments.stream()
+				.allMatch(SparqlFragment::supportsIncrementalEvaluation);
+
+		Set<Namespace> namespaces = sparqlFragments.stream()
+				.flatMap(s -> s.namespaces.stream())
+				.collect(Collectors.toSet());
+
+		return new SparqlFragment(namespaces, sparqlFragmentString, getStatementMatchers(sparqlFragments), null,
+				supportsIncrementalEvaluation);
 	}
 
 	public static SparqlFragment union(List<SparqlFragment> sparqlFragments, TraceBack traceBackFunction) {
@@ -214,11 +293,23 @@ public class SparqlFragment {
 				.map(SparqlFragment::getFragment)
 				.collect(Collectors.toList());
 
-		return new SparqlFragment(sparqlFragmentString, getStatementMatchers(sparqlFragments), traceBackFunction);
+		boolean supportsIncrementalEvaluation = sparqlFragments.stream()
+				.allMatch(SparqlFragment::supportsIncrementalEvaluation);
+
+		Set<Namespace> namespaces = sparqlFragments.stream()
+				.flatMap(s -> s.namespaces.stream())
+				.collect(Collectors.toSet());
+
+		return new SparqlFragment(namespaces, sparqlFragmentString, getStatementMatchers(sparqlFragments),
+				traceBackFunction,
+				supportsIncrementalEvaluation);
 	}
 
-	public static SparqlFragment unionQueryStrings(String query1, String query2, String query3) {
-		return new SparqlFragment(List.of(query1, query2, query3), Collections.emptyList(), null);
+	public static SparqlFragment unionQueryStrings(Set<Namespace> namespaces, String query1, String query2,
+			String query3,
+			boolean supportsIncrementalEvaluation) {
+		return new SparqlFragment(namespaces, List.of(query1, query2, query3), Collections.emptyList(), null,
+				supportsIncrementalEvaluation);
 	}
 
 	public String getFragment() {
@@ -246,16 +337,16 @@ public class SparqlFragment {
 		this.statementMatchers.addAll(statementMatchers);
 	}
 
-	@Override
-	public String toString() {
-		return "SparqlFragment{" +
-				"fragment='" + fragment + '\'' +
-				", unionFragments=" + unionFragments +
-				", statementMatchers=" + statementMatchers +
-				", filterCondition=" + filterCondition +
-				", bgp=" + bgp +
-				", union=" + union +
-				'}';
+	public boolean supportsIncrementalEvaluation() {
+		return supportsIncrementalEvaluation;
+	}
+
+	public Set<Namespace> getNamespaces() {
+		return namespaces;
+	}
+
+	public String getNamespacesForSparql() {
+		return ShaclPrefixParser.toSparqlPrefixes(namespaces);
 	}
 
 	public Stream<EffectiveTarget.StatementsAndMatcher> getRoot(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
@@ -264,8 +355,80 @@ public class SparqlFragment {
 		return traceBackFunction.getRoot(connectionsGroup, dataGraph, path, currentStatementMatcher, currentStatements);
 	}
 
-	public interface TraceBack {
-		Stream<EffectiveTarget.StatementsAndMatcher> getRoot(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
-				Path path, StatementMatcher currentStatementMatcher, List<Statement> currentStatements);
+	@Override
+	public String toString() {
+		return "SparqlFragment{" +
+				"fragment='" + fragment + '\'' +
+				", unionFragments=" + unionFragments +
+				", statementMatchers=" + statementMatchers +
+				", traceBackFunction=" + traceBackFunction +
+				", filterCondition=" + filterCondition +
+				", bgp=" + bgp +
+				", union=" + union +
+				", supportsIncrementalEvaluation=" + supportsIncrementalEvaluation +
+				'}';
 	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		SparqlFragment that = (SparqlFragment) o;
+
+		if (filterCondition != that.filterCondition) {
+			return false;
+		}
+		if (bgp != that.bgp) {
+			return false;
+		}
+		if (union != that.union) {
+			return false;
+		}
+		if (supportsIncrementalEvaluation != that.supportsIncrementalEvaluation) {
+			return false;
+		}
+		if (!namespaces.equals(that.namespaces)) {
+			return false;
+		}
+		if (!Objects.equals(fragment, that.fragment)) {
+			return false;
+		}
+		if (!unionFragments.equals(that.unionFragments)) {
+			return false;
+		}
+		if (!statementMatchers.equals(that.statementMatchers)) {
+			return false;
+		}
+		return Objects.equals(traceBackFunction, that.traceBackFunction);
+	}
+
+	@Override
+	public int hashCode() {
+		int result = namespaces.hashCode();
+		result = 31 * result + (fragment != null ? fragment.hashCode() : 0);
+		result = 31 * result + unionFragments.hashCode();
+		result = 31 * result + statementMatchers.hashCode();
+		result = 31 * result + (traceBackFunction != null ? traceBackFunction.hashCode() : 0);
+		result = 31 * result + (filterCondition ? 1 : 0);
+		result = 31 * result + (bgp ? 1 : 0);
+		result = 31 * result + (union ? 1 : 0);
+		result = 31 * result + (supportsIncrementalEvaluation ? 1 : 0);
+		return result;
+	}
+
+	public interface TraceBack {
+
+		Stream<EffectiveTarget.StatementsAndMatcher> getRoot(
+				ConnectionsGroup connectionsGroup,
+				Resource[] dataGraph,
+				Path path,
+				StatementMatcher currentStatementMatcher,
+				List<Statement> currentStatements);
+	}
+
 }

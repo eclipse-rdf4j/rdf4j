@@ -17,12 +17,14 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
@@ -134,8 +136,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 					connectionsGroup.getBaseConnection(),
 					validationSettings.getDataGraph(),
 					path.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
-							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of())
-							.getFragment(),
+							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()),
 					false,
 					null,
 					BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph())
@@ -316,11 +317,12 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 		} else {
 			value = new Variable<>("value");
 
-			String pathQuery = getTargetChain().getPath()
+			SparqlFragment sparqlFragment = getTargetChain().getPath()
 					.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
 							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()))
-					.orElseThrow(IllegalStateException::new)
-					.getFragment();
+					.orElseThrow(IllegalStateException::new);
+
+			String pathQuery = sparqlFragment.getFragment();
 
 			query += "\n" + pathQuery;
 			query += "\n" + getFilter(connectionsGroup, value);
@@ -328,7 +330,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 
 		var allTargetVariables = effectiveTarget.getAllTargetVariables();
 
-		return new ValidationQuery(query, allTargetVariables, value, scope, this, null, null);
+		return new ValidationQuery(getTargetChain().getNamespaces(), query, allTargetVariables, value, scope, this,
+				null, null);
 
 	}
 

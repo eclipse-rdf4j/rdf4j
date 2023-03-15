@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
@@ -88,7 +89,7 @@ public class TargetChainRetriever implements PlanNode {
 	public TargetChainRetriever(ConnectionsGroup connectionsGroup,
 			Resource[] dataGraph, List<StatementMatcher> statementMatchers,
 			List<StatementMatcher> removedStatementMatchers,
-			EffectiveTarget.EffectiveTargetFragment removedStatementTarget, String queryFragment,
+			EffectiveTarget.EffectiveTargetFragment removedStatementTarget, SparqlFragment queryFragment,
 			List<Variable<Value>> vars, ConstraintComponent.Scope scope, boolean hasValue) {
 		this.connectionsGroup = connectionsGroup;
 		this.dataGraph = dataGraph;
@@ -104,7 +105,8 @@ public class TargetChainRetriever implements PlanNode {
 				.reduce((a, b) -> a + " " + b)
 				.orElseThrow(IllegalStateException::new);
 
-		this.queryFragment = StatementMatcher.StableRandomVariableProvider.normalize(queryFragment);
+		this.queryFragment = queryFragment.getNamespacesForSparql()
+				+ StatementMatcher.StableRandomVariableProvider.normalize(queryFragment.getFragment());
 
 //		this.stackTrace = Thread.currentThread().getStackTrace();
 

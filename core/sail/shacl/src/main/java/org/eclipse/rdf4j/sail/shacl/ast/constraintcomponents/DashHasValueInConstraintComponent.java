@@ -121,8 +121,7 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 					connectionsGroup.getBaseConnection(),
 					validationSettings.getDataGraph(),
 					path.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
-							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of())
-							.getFragment(),
+							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()),
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 							validationSettings.getDataGraph())
 			);
@@ -212,7 +211,7 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 							Collectors.joining("} UNION {\n" + VALUES_INJECTION_POINT + "\n",
 									"{\n" + VALUES_INJECTION_POINT + "\n",
 									"}"));
-			return SparqlFragment.bgp(sparql, statementMatchers, null);
+			return SparqlFragment.bgp(List.of(), sparql, statementMatchers, null);
 
 		} else {
 
@@ -229,7 +228,7 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 					})
 					.reduce((a, b) -> a + " || " + b)
 					.orElseThrow(() -> new IllegalStateException("hasValueIn was empty"));
-			return SparqlFragment.filterCondition(sparql, List.of());
+			return SparqlFragment.filterCondition(List.of(), sparql, List.of());
 
 		}
 	}

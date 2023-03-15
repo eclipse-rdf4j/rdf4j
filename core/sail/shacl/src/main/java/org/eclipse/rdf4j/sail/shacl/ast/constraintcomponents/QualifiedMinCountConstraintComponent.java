@@ -184,8 +184,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 									new StatementMatcher.Variable("c"),
 									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider,
-									Set.of())
-							.getFragment(),
+									Set.of()),
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 							validationSettings.getDataGraph())
 			);
@@ -234,8 +233,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 									new StatementMatcher.Variable("c"),
 									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider,
-									Set.of())
-							.getFragment(),
+									Set.of()),
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 							validationSettings.getDataGraph())
 			);

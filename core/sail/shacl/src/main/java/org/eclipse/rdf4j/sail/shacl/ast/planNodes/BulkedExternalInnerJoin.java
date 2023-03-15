@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 
@@ -54,14 +55,16 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	private final String query;
 	private boolean printed = false;
 
-	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, Resource[] dataGraph, String query,
+	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, Resource[] dataGraph,
+			SparqlFragment query,
 			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
 			Function<BindingSet, ValidationTuple> mapper) {
 
 		assert !skipBasedOnPreviousConnection || previousStateConnection != null;
 
 		this.leftNode = PlanNodeHelper.handleSorting(this, leftNode);
-		this.query = StatementMatcher.StableRandomVariableProvider.normalize(query);
+		this.query = query.getNamespacesForSparql() + StatementMatcher.StableRandomVariableProvider
+				.normalize(query.getFragment());
 		this.connection = connection;
 		assert this.connection != null;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;

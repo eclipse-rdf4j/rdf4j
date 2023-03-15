@@ -18,6 +18,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
@@ -87,8 +88,6 @@ public class RSXTargetShape extends Target {
 
 		List<StatementMatcher> statementMatchers = sparqlFragment.getStatementMatchers();
 
-		String query = sparqlFragment.getFragment();
-
 		var vars = Collections.singletonList(object);
 
 		return Unique.getInstance(new TargetChainRetriever(
@@ -96,7 +95,7 @@ public class RSXTargetShape extends Target {
 				dataGraph,
 				statementMatchers,
 				statementMatchers,
-				null, query,
+				null, sparqlFragment,
 				vars,
 				scope,
 				false), false);
@@ -109,11 +108,13 @@ public class RSXTargetShape extends Target {
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 		StatementMatcher.Variable variable = stableRandomVariableProvider.next();
 
-		String query = getTargetQueryFragment(null, variable, connectionsGroup.getRdfsSubClassOfReasoner(),
-				stableRandomVariableProvider, Set.of()).getFragment();
+		SparqlFragment sparqlFragment = getTargetQueryFragment(null, variable,
+				connectionsGroup.getRdfsSubClassOfReasoner(),
+				stableRandomVariableProvider, Set.of());
 
 		// TODO: this is a slow way to solve this problem! We should use bulk operations.
-		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), dataGraph, parent, query, variable,
+		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), dataGraph, parent, sparqlFragment,
+				variable,
 				ValidationTuple::getActiveTarget).getTrueNode(UnBufferedPlanNode.class);
 	}
 
@@ -126,6 +127,11 @@ public class RSXTargetShape extends Target {
 		return this.targetShape
 				.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, null,
 						stableRandomVariableProvider);
+	}
+
+	@Override
+	public Set<Namespace> getNamespaces() {
+		return Set.of();
 	}
 
 	@Override
@@ -144,4 +150,5 @@ public class RSXTargetShape extends Target {
 	public int hashCode() {
 		return Objects.hash(targetShape);
 	}
+
 }

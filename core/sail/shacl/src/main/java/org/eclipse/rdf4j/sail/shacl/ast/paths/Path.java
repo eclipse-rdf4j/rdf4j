@@ -12,9 +12,11 @@
 package org.eclipse.rdf4j.sail.shacl.ast.paths;
 
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.sail.shacl.ast.Exportable;
@@ -100,5 +102,10 @@ public abstract class Path implements Identifiable, Exportable, Targetable {
 	abstract public boolean isSupported();
 
 	public abstract String toSparqlPathString();
+
+	@Override
+	public final Set<Namespace> getNamespaces() {
+		return Set.of();
+	}
 
 }

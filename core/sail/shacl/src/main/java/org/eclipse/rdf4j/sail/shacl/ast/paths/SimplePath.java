@@ -81,7 +81,7 @@ public class SimplePath extends Path {
 
 		StatementMatcher statementMatcher = new StatementMatcher(subject, new StatementMatcher.Variable(predicate),
 				object, this, inheritedVarNames);
-		return SparqlFragment.bgp(
+		return SparqlFragment.bgp(List.of(),
 				subject.asSparqlVariable() + " <" + predicate + "> " + object.asSparqlVariable() + " .",
 				statementMatcher, (connectionsGroup, dataGraph, path, currentStatementMatcher, currentStatements) -> {
 					if (currentStatementMatcher.getOrigin() == this) {

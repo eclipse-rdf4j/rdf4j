@@ -15,7 +15,10 @@ import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.Targetable;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
@@ -88,4 +91,7 @@ public class TargetChain {
 		return new EffectiveTarget(newChain, targetable, rdfsSubClassOfReasoner, stableRandomVariableProvider);
 	}
 
+	public Set<Namespace> getNamespaces() {
+		return chain.stream().flatMap(targetable -> targetable.getNamespaces().stream()).collect(Collectors.toSet());
+	}
 }

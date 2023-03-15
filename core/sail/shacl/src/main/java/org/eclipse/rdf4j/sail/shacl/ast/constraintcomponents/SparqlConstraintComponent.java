@@ -23,9 +23,6 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.DynamicModel;
-import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
-import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
@@ -33,6 +30,7 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
 import org.eclipse.rdf4j.sail.shacl.ast.Cache;
+import org.eclipse.rdf4j.sail.shacl.ast.ShaclPrefixParser;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
@@ -57,9 +55,8 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent {
 	private String originalSelect;
 	private List<Literal> message = new ArrayList<>();
 	private Boolean deactivated;
-	private final List<Namespace> namespaces = new ArrayList<>();
-
-	private final Model prefixes = new DynamicModel(new LinkedHashModelFactory());
+	private final Set<Namespace> namespaces;
+	private final Model prefixes;
 
 	public SparqlConstraintComponent(Resource id, ShapeSource shapeSource, Cache cache, ShaclSail shaclSail,
 			Shape shape) {
@@ -103,77 +100,16 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent {
 			});
 		}
 
-		try (Stream<Value> objects = shapeSource.getObjects(id, ShapeSource.Predicates.PREFIXES)) {
-			objects.forEach(prefix -> {
-				if (!(prefix instanceof Resource)) {
-					throw new IllegalStateException("sh:prefixes must be an Resource for constraint component " + id);
-				}
-				prefixes.add(id, SHACL.PREFIXES, prefix);
+		var shaclNamespaces = ShaclPrefixParser.extractNamespaces(id, shapeSource);
+		prefixes = shaclNamespaces.getModel();
+		namespaces = shaclNamespaces.getNamespaces();
 
-				try (Stream<Value> declareObjects = shapeSource.getObjects(((Resource) prefix),
-						ShapeSource.Predicates.DECLARE)) {
-					declareObjects.forEach(declaration -> {
-						if (!(declaration instanceof Resource)) {
-							throw new IllegalStateException("sh:declare must be a Resource for " + prefix);
-						}
-
-						prefixes.add((Resource) prefix, SHACL.DECLARE, declaration);
-
-						String namespacePrefix = null;
-						String namespaceName = null;
-
-						try (Stream<Value> prefixPropObjects = shapeSource.getObjects(((Resource) declaration),
-								ShapeSource.Predicates.PREFIX_PROP)) {
-							namespacePrefix = prefixPropObjects
-									.map(literal -> {
-										if (!(literal instanceof Literal)) {
-											throw new IllegalStateException(
-													"sh:prefix must be a Literal for " + declaration);
-										}
-										prefixes.add((Resource) declaration, SHACL.PREFIX_PROP, literal);
-										return literal.stringValue();
-									})
-									.findFirst()
-									.orElseThrow(() -> new IllegalStateException(
-											"sh:prefix must have a value for " + declaration));
-						}
-
-						try (Stream<Value> namespacePropObjects = shapeSource.getObjects(((Resource) declaration),
-								ShapeSource.Predicates.NAMESPACE_PROP)) {
-							namespaceName = namespacePropObjects
-									.map(literal -> {
-										if (!(literal instanceof Literal)) {
-											throw new IllegalStateException(
-													"sh:namespace must be a Literal for " + declaration);
-										}
-										prefixes.add((Resource) declaration, SHACL.NAMESPACE_PROP, literal);
-										return literal.stringValue();
-									})
-									.findFirst()
-									.orElseThrow(() -> new IllegalStateException(
-											"sh:namespace must have a value for " + declaration));
-						}
-
-						namespaces.add(new SimpleNamespace(namespacePrefix, namespaceName));
-
-					});
-				}
-
-			});
-		}
-
-		StringBuilder sb = new StringBuilder();
-		namespaces.forEach(namespace -> sb.append("PREFIX ")
-				.append(namespace.getPrefix())
-				.append(": <")
-				.append(namespace.getName())
-				.append(">\n"));
-
-		select = sb + "\n" + select;
+		select = ShaclPrefixParser.toSparqlPrefixes(namespaces) + "\n" + select;
 	}
 
 	public SparqlConstraintComponent(Resource id, Shape shape, boolean produceValidationReports, String select,
-			String originalSelect, List<Literal> message, Boolean deactivated) {
+			String originalSelect, List<Literal> message, Boolean deactivated, Set<Namespace> namespaces,
+			Model prefixes) {
 		super(id);
 		this.shape = shape;
 		this.produceValidationReports = produceValidationReports;
@@ -181,6 +117,8 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent {
 		this.originalSelect = originalSelect;
 		this.message = message;
 		this.deactivated = deactivated;
+		this.prefixes = prefixes;
+		this.namespaces = namespaces;
 	}
 
 	@Override
@@ -287,8 +225,7 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent {
 								.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 										new StatementMatcher.Variable("c"),
 										connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider,
-										Set.of())
-								.getFragment(),
+										Set.of()),
 						false, null,
 						BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph())
 				);
@@ -310,7 +247,7 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public ConstraintComponent deepClone() {
 		return new SparqlConstraintComponent(getId(), shape, produceValidationReports, select, originalSelect, message,
-				deactivated);
+				deactivated, namespaces, prefixes);
 	}
 
 	@Override

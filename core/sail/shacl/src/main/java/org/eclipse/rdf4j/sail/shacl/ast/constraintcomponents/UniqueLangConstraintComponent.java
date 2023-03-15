@@ -98,7 +98,8 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		var allTargetVariables = effectiveTarget.getAllTargetVariables();
 
-		return new ValidationQuery(query, allTargetVariables, null, scope, this, null, null);
+		return new ValidationQuery(getTargetChain().getNamespaces(), query, allTargetVariables, null, scope, this, null,
+				null);
 
 	}
 
@@ -136,8 +137,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 									new StatementMatcher.Variable("c"),
 									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider,
-									Set.of())
-							.getFragment(),
+									Set.of()),
 					false,
 					null,
 					BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph())
@@ -183,8 +183,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 				connectionsGroup.getBaseConnection(),
 				validationSettings.getDataGraph(), path.get()
 						.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
-								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of())
-						.getFragment(),
+								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()),
 				false,
 				null,
 				BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph())

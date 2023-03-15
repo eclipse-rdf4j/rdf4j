@@ -107,8 +107,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 				validationSettings.getDataGraph(), getTargetChain().getPath()
 						.get()
 						.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
-								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of())
-						.getFragment(),
+								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()),
 				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 						validationSettings.getDataGraph())
 		);
@@ -197,7 +196,8 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
 		var allTargetVariables = effectiveTarget.getAllTargetVariables();
 
-		return new ValidationQuery(query, allTargetVariables, null, scope, this, null, null);
+		return new ValidationQuery(getTargetChain().getNamespaces(), query, allTargetVariables, null, scope, this, null,
+				null);
 
 	}
 

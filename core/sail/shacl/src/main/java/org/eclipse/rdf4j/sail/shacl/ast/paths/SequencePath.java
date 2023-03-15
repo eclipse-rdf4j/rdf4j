@@ -87,7 +87,7 @@ public class SequencePath extends Path {
 				Set.of());
 
 		PlanNode targetChainRetriever = new TargetChainRetriever(connectionsGroup, dataGraph,
-				targetQueryFragment.getStatementMatchers(), List.of(), null, targetQueryFragment.getFragment(),
+				targetQueryFragment.getStatementMatchers(), List.of(), null, targetQueryFragment,
 				variables,
 				ConstraintComponent.Scope.propertyShape, true);
 
@@ -110,7 +110,7 @@ public class SequencePath extends Path {
 				connectionsGroup.getRdfsSubClassOfReasoner(), new StatementMatcher.StableRandomVariableProvider(),
 				Set.of());
 
-		PlanNode unorderedSelect = new Select(connectionsGroup.getAddedStatements(), targetQueryFragment.getFragment(),
+		PlanNode unorderedSelect = new Select(connectionsGroup.getAddedStatements(), targetQueryFragment,
 				null, new AllTargetsPlanNode.AllTargetsBindingSetMapper(List.of("subject", "value"),
 						ConstraintComponent.Scope.propertyShape, true, dataGraph),
 				dataGraph);

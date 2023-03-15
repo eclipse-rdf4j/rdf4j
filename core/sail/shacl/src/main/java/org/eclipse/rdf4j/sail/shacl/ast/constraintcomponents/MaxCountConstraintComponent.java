@@ -23,10 +23,12 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
@@ -115,8 +117,7 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 									new StatementMatcher.Variable("c"),
 									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider,
-									Set.of())
-							.getFragment(),
+									Set.of()),
 					false,
 					null,
 					BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph())
@@ -130,8 +131,7 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 									new StatementMatcher.Variable("c"),
 									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider,
-									Set.of())
-							.getFragment(),
+									Set.of()),
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 							validationSettings.getDataGraph())
 			);
@@ -177,9 +177,11 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 		if (maxCount == 0) {
 			StatementMatcher.Variable value = StatementMatcher.Variable.VALUE;
 
-			String pathQuery = getTargetChain().getPath()
+			Optional<SparqlFragment> sparqlFragment = getTargetChain().getPath()
 					.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
-							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()))
+							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()));
+
+			String pathQuery = sparqlFragment
 					.orElseThrow(IllegalStateException::new)
 					.getFragment();
 
@@ -226,7 +228,8 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 
 		var allTargetVariables = effectiveTarget.getAllTargetVariables();
 
-		return new ValidationQuery(query, allTargetVariables, null, scope, this, null, null);
+		return new ValidationQuery(getTargetChain().getNamespaces(), query, allTargetVariables, null, scope, this, null,
+				null);
 
 	}
 

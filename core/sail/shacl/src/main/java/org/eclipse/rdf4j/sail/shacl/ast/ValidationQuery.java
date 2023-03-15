@@ -12,9 +12,13 @@
 package org.eclipse.rdf4j.sail.shacl.ast;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -29,6 +33,7 @@ import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
 public class ValidationQuery {
 
+	private final Set<Namespace> namespaces = new HashSet<>();
 	private String query;
 	private ConstraintComponent.Scope scope;
 	private ConstraintComponent.Scope scope_validationReport;
@@ -50,9 +55,12 @@ public class ValidationQuery {
 	private Severity severity;
 	private Shape shape;
 
-	public ValidationQuery(String query, List<Variable<Value>> targets, Variable<Value> value,
+	public ValidationQuery(Collection<Namespace> namespaces, String query, List<Variable<Value>> targets,
+			Variable<Value> value,
 			ConstraintComponent.Scope scope, ConstraintComponent constraintComponent, Severity severity,
 			Shape shape) {
+
+		this.namespaces.addAll(namespaces);
 		this.query = query;
 
 		var variables = new ArrayList<>(targets);
@@ -84,8 +92,10 @@ public class ValidationQuery {
 		this.shape = shape;
 	}
 
-	public ValidationQuery(String query, ConstraintComponent.Scope scope, List<Variable<Value>> variables,
+	public ValidationQuery(Set<Namespace> namespaces, String query, ConstraintComponent.Scope scope,
+			List<Variable<Value>> variables,
 			int targetIndex, int valueIndex) {
+		this.namespaces.addAll(namespaces);
 		this.query = query;
 		this.scope = scope;
 		this.variables = Collections.unmodifiableList(variables);
@@ -126,13 +136,19 @@ public class ValidationQuery {
 		var variables = a.variables.size() >= b.variables.size() ? a.variables
 				: b.variables;
 
+		Set<Namespace> namespaces = new HashSet<>();
+		namespaces.addAll(a.namespaces);
+		namespaces.addAll(b.namespaces);
+
 		if (a.propertyShapeWithValue || a.scope == ConstraintComponent.Scope.nodeShape) {
 			assert a.variables.size() > a.valueIndex;
-			return new ValidationQuery(unionQuery, a.scope, variables.subList(0, a.valueIndex + 1), a.targetIndex,
+			return new ValidationQuery(namespaces, unionQuery, a.scope, variables.subList(0, a.valueIndex + 1),
+					a.targetIndex,
 					a.valueIndex);
 		} else {
 			assert a.variables.size() >= a.valueIndex;
-			return new ValidationQuery(unionQuery, a.scope, a.variables.subList(0, a.valueIndex), a.targetIndex,
+			return new ValidationQuery(namespaces, unionQuery, a.scope, a.variables.subList(0, a.valueIndex),
+					a.targetIndex,
 					a.valueIndex);
 		}
 
@@ -184,15 +200,15 @@ public class ValidationQuery {
 	private String getFullQueryString() {
 		if (scope_validationReport == ConstraintComponent.Scope.propertyShape
 				&& propertyShapeWithValue_validationReport) {
-			return "select distinct " +
+			return ShaclPrefixParser.toSparqlPrefixes(namespaces) + "\nSELECT DISTINCT " +
 					"?" + getTargetVariable(true) + " " +
 					"?" + getValueVariable(true) + " " +
-					"{\n" + query + "\n}";
+					"WHERE {\n" + query + "\n}";
 
 		} else {
-			return "select distinct " +
+			return ShaclPrefixParser.toSparqlPrefixes(namespaces) + "\nSELECT DISTINCT " +
 					"?" + getTargetVariable(true) + " " +
-					"{\n" + query + "\n}";
+					"WHERE {\n" + query + "\n}";
 		}
 	}
 
@@ -261,7 +277,7 @@ public class ValidationQuery {
 		private static final Deactivated instance = new Deactivated();
 
 		private Deactivated() {
-			super("", Collections.emptyList(), null, null, null, null, null);
+			super(List.of(), "", Collections.emptyList(), null, null, null, null, null);
 		}
 
 		public static Deactivated getInstance() {

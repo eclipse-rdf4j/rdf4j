@@ -11,10 +11,12 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.targets;
 
+import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -84,7 +86,25 @@ public class DashAllObjects extends Target {
 
 		String queryFragment = tempVar1 + " " + tempVar2 + " " + object.asSparqlVariable() + " .";
 
-		return SparqlFragment.bgp(queryFragment, new StatementMatcher(null, null, object, this, Set.of()));
+		return SparqlFragment.bgp(List.of(), queryFragment, new StatementMatcher(null, null, object, this, Set.of()));
+	}
+
+	@Override
+	public Set<Namespace> getNamespaces() {
+		return Set.of();
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		return o != null && getClass() == o.getClass();
+	}
+
+	@Override
+	public int hashCode() {
+		return 57821738;
 	}
 
 }
