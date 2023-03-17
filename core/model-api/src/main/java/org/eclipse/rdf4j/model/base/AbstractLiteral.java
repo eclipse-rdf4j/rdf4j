@@ -188,14 +188,8 @@ public abstract class AbstractLiteral implements Literal {
 
 				.map(language -> label + '@' + language)
 
-				.orElseGet(() -> {
-
-					final IRI datatype = getDatatype();
-
-					return datatype.equals(CoreDatatype.XSD.STRING) ? label
-							: label + "^^<" + datatype.stringValue() + ">";
-
-				});
+				.orElseGet(() -> CoreDatatype.XSD.STRING == getCoreDatatype() ? label
+						: label + "^^<" + getDatatype().stringValue() + ">");
 	}
 
 	private boolean equals(Optional<String> x, Optional<String> y) {
