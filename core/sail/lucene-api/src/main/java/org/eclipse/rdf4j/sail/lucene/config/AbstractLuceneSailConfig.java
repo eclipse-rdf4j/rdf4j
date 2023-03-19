@@ -88,6 +88,7 @@ public abstract class AbstractLuceneSailConfig extends AbstractDelegatingSailImp
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
 
+		m.setNamespace(CONFIG.NS);
 		if (indexDir != null) {
 			m.add(implNode, CONFIG.Lucene.indexDir, literal(indexDir));
 		}

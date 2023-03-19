@@ -211,6 +211,7 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
+		m.setNamespace(CONFIG.NS);
 
 		m.add(implNode, CONFIG.Shacl.parallelValidation, BooleanLiteral.valueOf(isParallelValidation()));
 		m.add(implNode, CONFIG.Shacl.logValidationPlans, BooleanLiteral.valueOf(isLogValidationPlans()));

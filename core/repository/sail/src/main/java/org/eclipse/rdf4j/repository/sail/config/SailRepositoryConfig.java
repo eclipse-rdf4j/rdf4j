@@ -69,7 +69,7 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 		Resource repImplNode = super.export(model);
 
 		if (sailImplConfig != null) {
-			model.setNamespace(CONFIG.PREFIX, CONFIG.NAMESPACE);
+			model.setNamespace(CONFIG.NS);
 			Resource sailImplNode = sailImplConfig.export(model);
 			model.add(repImplNode, CONFIG.Sail.impl, sailImplNode);
 		}

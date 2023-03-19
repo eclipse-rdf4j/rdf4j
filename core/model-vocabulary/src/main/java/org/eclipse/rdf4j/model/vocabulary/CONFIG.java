@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
 
 /**
  * Shared vocabulary for configuration of RDF4J components: Repositories, SAILs, and so on.
@@ -32,6 +33,13 @@ public class CONFIG {
 	 * The recommended prefix for the RDF4J config namespace: "config"
 	 */
 	public static final String PREFIX = "config";
+
+	/**
+	 * The RDF4J config namespace (<var>tag:rdf4j.org,2023:config/</var>) as a {@link Namespace} object.
+	 *
+	 * @see <a href="https://tools.ietf.org/html/rfc4151">the 'tag' URI Scheme (RFC 4151)</a>
+	 */
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/**
 	 * Setting for linking a delegate config to a wrapper in a SAIL or Repository config stack.

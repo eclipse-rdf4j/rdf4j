@@ -36,7 +36,7 @@ public class Configurations {
 	 * Retrieve a property value for the supplied subject as a {@link Resource} if present, falling back to a supplied
 	 * legacy property .
 	 *
-	 * This method allows use to query repository config models with a mix of old and new namespaces.
+	 * This method allows querying repository config models with a mix of old and new namespaces.
 	 *
 	 * @param model          the model to retrieve property values from.
 	 * @param subject        the subject of the property.
@@ -58,7 +58,7 @@ public class Configurations {
 	 * Retrieve a property value for the supplied subject as a {@link Literal} if present, falling back to a supplied
 	 * legacy property .
 	 *
-	 * This method allows use to query repository config models with a mix of old and new namespaces.
+	 * This method allows querying repository config models with a mix of old and new namespaces.
 	 *
 	 * @param model          the model to retrieve property values from.
 	 * @param subject        the subject of the property.
@@ -81,7 +81,7 @@ public class Configurations {
 	 * Retrieve all property values for the supplied subject as a Set of values and include all values for any legacy
 	 * property.
 	 *
-	 * This method allows use to query repository config models with a mix of old and new namespaces.
+	 * This method allows querying repository config models with a mix of old and new namespaces.
 	 *
 	 * @param model          the model to retrieve property values from.
 	 * @param subject        the subject of the property.
@@ -102,7 +102,7 @@ public class Configurations {
 	 * Retrieve a property value for the supplied subject as a {@link IRI} if present, falling back to a supplied legacy
 	 * property .
 	 *
-	 * This method allows use to query repository config models with a mix of old and new namespaces.
+	 * This method allows querying repository config models with a mix of old and new namespaces.
 	 *
 	 * @param model          the model to retrieve property values from.
 	 * @param subject        the subject of the property.

@@ -120,6 +120,7 @@ public class NativeStoreConfig extends BaseSailConfig {
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
+		m.setNamespace(CONFIG.NS);
 
 		if (tripleIndexes != null) {
 			m.add(implNode, CONFIG.Native.tripleIndexes, literal(tripleIndexes));

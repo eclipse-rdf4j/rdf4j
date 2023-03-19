@@ -65,6 +65,7 @@ public class MemoryStoreConfig extends BaseSailConfig {
 	@Override
 	public Resource export(Model graph) {
 		Resource implNode = super.export(graph);
+		graph.setNamespace(CONFIG.NS);
 
 		if (persist) {
 			graph.add(implNode, CONFIG.Mem.persist, BooleanLiteral.TRUE);
