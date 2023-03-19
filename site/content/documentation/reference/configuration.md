@@ -9,6 +9,10 @@ RDF4J repositories and SAIL configuration can be set up and changed by means of 
 
 <!--more-->
 
+{{< info >}}
+Since RDF4J 4.3.0, the configuration vocabulary for repositories and Sail implementations has been unified into a single namespace: <code>tag:rdf4j.org,2023:config/</code>. While currently RDF4J can still read configurations using the legacy vocabulary (using various namespaces starting with <code>http://www.openrdf.org/config/</code>), we strongly urge you to update existing configuration files to use the new vocabulary. See the section on <a href="#migrating-old-configurations">Migrating old configurations</a> for some pointers.
+{{< / info >}}
+
 ## Repository configuration
 
 A Repository configuration consists of a single RDF subject of type `config:Repository`. Typically this subject is a blank node (`[]` in Turtle syntax), and is assigned its configuration parameters through use of RDF properties.
@@ -417,4 +421,65 @@ Specifies if an undefined target in a shape leads to validating all subjects (op
       ]
    ].
 ```
+
+## Migrating old configurations
+
+Since RDF4J 4.3.0, the configuration vocabulary has been updated and simplified:
+
+ - we have removed all references to the (now defunct) openrdf.org domain, replacing it with rdf4j.org
+ - we have unified the vocabularies for the various modules and components into a single namespace.
+
+To illustrate what changes are required, we first show a legacy configuration for a repository using a native store backend:
+
+```turtle
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix rep: <http://www.openrdf.org/config/repository#>.
+@prefix sr: <http://www.openrdf.org/config/repository/sail#>.
+@prefix sail: <http://www.openrdf.org/config/sail#>.
+@prefix ns: <http://www.openrdf.org/config/sail/native#>.
+@prefix sb: <http://www.openrdf.org/config/sail/base#>.
+
+[] a rep:Repository ;
+    rep:repositoryID "mystore" ;
+    rdfs:label "my native store" ;
+    rep:repositoryImpl [
+        rep:repositoryType "openrdf:SailRepository" ;
+        sr:sailImpl [
+            sail:sailType "openrdf:NativeStore" ;
+            sail:iterationCacheSyncThreshold "10000";
+            ns:tripleIndexes "spoc,posc" ;
+            sb:defaultQueryEvaluationMode "STANDARD"
+        ]
+    ].
+```
+
+To migrate this config to the new vocabulary, we first replace all custom namespace prefixes with a single new one:
+
+```turtle
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix config: <tag:rdf4j.org,2023:config/>.
+```
+Each attribute and vocabulary value in the actual data needs to be rewritten. The old `rep`, `sr`, `sail`, `ns` and `sb` namespace prefixes all need to be replaced with the `config` prefix. Additionally, the local names of each attribute need to be prepended with the shortname of the component to which they belong - and we have taken the opportunity to shorten/clean up the actual local names as well. For example, `rep:repositoryImpl` has become `config:rep.impl`, and `ns:tripleIndexes` now is `config:native.tripleIndexes`. 
+
+The fully rewritten configuration looks like this:
+
+```turtle
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix config: <tag:rdf4j.org,2023:config/>.
+
+[] a config:Repository ;
+    config:rep.id "mystore" ;
+    rdfs:label "my native store" ;
+    config:rep.impl [
+        config:rep.type "openrdf:SailRepository" ;
+        config:sail.impl [
+            config:sail.type "openrdf:NativeStore" ;
+            config:sail.iterationCacheSyncThreshold "10000";
+            config:native.tripleIndexes "spoc,posc" ;
+            config:sail.defaultQueryEvaluationMode "STANDARD"
+        ]
+    ].
+```
+
+Note that we have not (yet) renamed the type identifier literals `openrdf:SailRepository` and `openrdf:NativeStore`. For more details we refer you to the {{< javadoc "CONFIG javadoc" "model/vocabulary/CONFIG.html" >}}.
 
