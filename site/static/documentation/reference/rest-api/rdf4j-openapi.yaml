@@ -3,9 +3,9 @@ info:
   title: RDF4J REST API
   version: "10"
   description: |
-    The RDF4J REST API is a HTTP protocol that covers a fully compliant implementation of the [SPARQL 1.1 Protocol W3C Recommendation](https://www.w3.org/TR/sparql11-protocol/). This ensures that RDF4J Server functions as a fully standard-compliant [SPARQL](https://www.w3.org/TR/sparql11-query/) endpoint.
+    The RDF4J REST API is an HTTP protocol that covers a fully compliant implementation of the [SPARQL 1.1 Protocol W3C Recommendation](https://www.w3.org/TR/sparql11-protocol/). This ensures that RDF4J Server functions as a fully standard-compliant [SPARQL](https://www.w3.org/TR/sparql11-query/) endpoint.
 
-    The current version of the REST API additionally supports the [SPARQL 1.1 Graph Store HTTP Protocol W3C Recommendation](https://www.w3.org/TR/sparql11-http-rdf-update/). The RDF4J REST API extends the W3C standards in several aspects, the most important of which is database transaction management.
+    The RDF4J REST API additionally supports the [SPARQL 1.1 Graph Store HTTP Protocol W3C Recommendation](https://www.w3.org/TR/sparql11-http-rdf-update/). The RDF4J REST API extends the W3C standards in several aspects, the most important of which is database transaction management.
 
 externalDocs:
   url: https://rdf4j.org/documentation/reference/rest-api/
@@ -23,11 +23,14 @@ tags:
     description: Namespaces management
   - name: Graph Store
     description: |
-      The [SPARQL 1.1 Graph Store HTTP Protocol](https://www.w3.org/TR/sparql11-http-rdf-update/) is supported on a per-repository basis. The functionality is accessible at the `/repositories/<ID>/rdf-graphs/service` endpoint (for indirectly referenced named graphs), and at `/repositories/<ID>/rdf-graphs/<NAME>` for directly referenced named graphs. A request on a directly referenced named graph entails that the request URL itself is used as the named graph identifier in the repository.
+      The [SPARQL 1.1 Graph Store HTTP Protocol](https://www.w3.org/TR/sparql11-http-rdf-update/) is supported on a per-repository basis. The functionality is accessible at the /repositories/<ID>/rdf-graphs/service endpoint (for indirectly referenced named graphs), and at /repositories/<ID>/rdf-graphs/<NAME> for directly referenced named graphs. A request on a directly referenced named graph entails that the request URL itself is used as the named graph identifier in the repository.
     externalDocs:
       url: https://www.w3.org/TR/sparql11-http-rdf-update/
   - name: Transactions
-    description: Transaction management
+    description: |
+      RDF4J supports a REST-styleimplementation of a transactional protocol, by means of treating the transaction itself as a new resource that can be updated with consecutive operations. A transaction is started by a POST request to the transactions endpoint, which will return a new unique endpoint location for the new transaction. Operations (such as adding data, querying, committing/rolling back the transaction) are executed by means of PUT requests of consecutive operations against that unique transaction endpoint.
+    externalDocs:
+      url: https://rdf4j.org/documentation/programming/repository/#transactions
   - name: Protocol
     description: Protocol verification
 
@@ -39,7 +42,7 @@ components:
         application/rdf+xml:
           schema:
             type: object
-            xml: 
+            xml:
               name: RDF
               namespace: http://www.w3.org/1999/02/22-rdf-syntax-ns#
         text/plain:
@@ -65,7 +68,7 @@ components:
         application/trix:
           schema:
             type: object
-            xml: 
+            xml:
               name: TriX
         application/x-trig:
           schema:
@@ -119,7 +122,7 @@ components:
         application/rdf+xml:
           schema:
             type: object
-            xml: 
+            xml:
               name: RDF
               namespace: http://www.w3.org/1999/02/22-rdf-syntax-ns#
         text/plain:
@@ -145,7 +148,7 @@ components:
         application/trix:
           schema:
             type: object
-            xml: 
+            xml:
               name: TriX
         application/x-trig:
           schema:
@@ -160,7 +163,7 @@ components:
         application/rdf+xml:
           schema:
             type: object
-            xml: 
+            xml:
               name: RDF
               namespace: http://www.w3.org/1999/02/22-rdf-syntax-ns#
         text/plain:
@@ -186,7 +189,7 @@ components:
         application/trix:
           schema:
             type: object
-            xml: 
+            xml:
               name: TriX
         application/x-trig:
           schema:
@@ -228,21 +231,21 @@ components:
     SparqlJsonBindings:
       head:
         vars: [ "s", "p", "o" ]
-        results: 
-          bindings: 
-            - s: 
+        results:
+          bindings:
+            - s:
                 type: "uri"
                 value: "http://example.org/s1"
-            - p: 
+            - p:
                 type: "uri"
                 value: "http://example.org/p1"
-            - o: 
+            - o:
                 type: "literal"
                 value: "foo"
     SparqlJsonBoolean:
       head: {}
       boolean: true
-      
+
 paths:
   /protocol:
     get:
@@ -254,12 +257,12 @@ paths:
         '200':
           description: The protocol version
           content:
-            text/plain:          
+            text/plain:
               schema:
                 type: integer
                 format: int32
               example: 10
-  
+
   /repositories:
     get:
       tags:
@@ -408,7 +411,7 @@ paths:
           application/sparql-query:
             schema:
               type: string
-            example: 
+            example:
               "SELECT * WHERE {?S ?P ?O } LIMIT 10"
           application/x-www-form-urlencoded:
             schema:
@@ -438,14 +441,14 @@ paths:
         - Repositories
       summary: Repository creation
       description: |
-        A new repository with can be created on the server by sending a PUT request to this endpoint. 
+        A new repository with can be created on the server by sending a PUT request to this endpoint.
 
         The payload supplied with this request is an RDF document, containing an RDF-serialized form of a repository configuration. If the repository with the specified id previously existed, the Server will refuse the request. If it does not exist, a new, empty, repository will be created.
       requestBody:
         description: configuration of the repository to be created
         required: true
         $ref: "#/components/requestBodies/RdfData"
-          
+
   /repositories/{repositoryID}/statements:
     get:
       tags:
@@ -523,7 +526,7 @@ paths:
       responses:
         '204':
           description: The statements were successfully deleted
-   
+
     put:
       tags:
         - Repositories
@@ -553,13 +556,13 @@ paths:
       responses:
         204:
           description: The data was successfully updated
- 
+
     post:
       tags:
         - SPARQL
-      summary: Perform updates on the data in the repository 
+      summary: Execute SPARQL update or upload data.
       description: |
-        Update the data in the repository. The data supplied with this request is expected to contain either an RDF document, a [SPARQL 1.1 Update](https://www.w3.org/TR/sparql11-update/) string, or a special purpose transaction document. If an RDF document is supplied, the statements found in the RDF document will be added to the repository. If a SPARQL 1.1 Update string is supplied, the update operation will be parsed and executed. If a transaction document is supplied, the updates specified in the transaction document will be executed. 
+        Update the data in the repository. The data supplied with this request is expected to contain either a [SPARQL 1.1 Update](https://www.w3.org/TR/sparql11-update/) string, an RDF document, or a special purpose transaction document. If a SPARQL 1.1 Update string is supplied, the update operation will be parsed and executed. If an RDF document is supplied, the statements found in the RDF document will be added to the repository. If a transaction document is supplied, the updates specified in the transaction document will be executed.
       parameters:
         - name: repositoryID
           in: path
@@ -569,15 +572,29 @@ paths:
             type: string
         - name: baseURI
           in: query
-          description: Specifies the base URI to resolve any relative URIs found in uploaded data against. This parameter only applies to the PUT and POST method.
+          description: Specifies the base URI to resolve any relative URIs found in uploaded data against.
           schema:
             type: string
       requestBody:
         content:
+          application/x-www-form-urlencoded:
+            description: SPARQL 1.1 update encoded as a form parameter
+            schema:
+              type: object
+              properties:
+                update:
+                  type: string
+            example:
+              update: INSERT {?s ?p ?o} WHERE {?s ?p ?o}
+          application/sparql-update:
+            description: SPARQL 1.1 update in plain text
+            schema:
+              type: string
+            example: INSERT {?s ?p ?o} WHERE {?s ?p ?o}
           application/rdf+xml:
             schema:
               type: object
-              xml: 
+              xml:
                 name: RDF
                 namespace: http://www.w3.org/1999/02/22-rdf-syntax-ns#
           text/plain:
@@ -603,7 +620,7 @@ paths:
           application/trix:
             schema:
               type: object
-              xml: 
+              xml:
                 name: TriX
           application/x-trig:
             schema:
@@ -612,33 +629,19 @@ paths:
             schema:
               type: string
               format: binary
-          application/x-www-form-urlencoded:
-            description: SPARQL 1.1 update encoded as a form parameter
-            schema:
-              type: object
-              properties:
-                update:
-                  type: string
-            example:
-              update: INSERT {?s ?p ?o} WHERE {?s ?p ?o}
-          application/sparql-update:
-            description: SPARQL 1.1 update in plain text
-            schema:
-              type: string
-            example: INSERT {?s ?p ?o} WHERE {?s ?p ?o}
           application/x-rdftransaction:
             schema:
               type: string
       responses:
         204:
           description: The data was seccussfully updated
-          
+
   /repositories/{repositoryID}/size:
     get:
       tags:
         - Repositories
-      summary: Repository size 
-      description: The endpoint will give you the number of statements in the repository or in the given context
+      summary: Repository size
+      description: The endpoint will give you the number of statements in the repository or in the specified context
       parameters:
         - name: repositoryID
           in: path
@@ -653,14 +656,14 @@ paths:
           description: If specified, restricts the operation to one or more specific contexts in the repository. The value of this parameter is either an N-Triples encoded URI or bnode ID, or the special value 'null' which represents all context-less statements. If multiple 'context' parameters are specified, the request will operate on the union of all specified contexts. The operation is executed on all statements that are in the repository if no context is specified.
       responses:
         200:
-          description: Get the size of (the contexts in) the specified repository. 
+          description: Get the size of (the contexts in) the specified repository.
           content:
             text/plain:
               schema:
                 type: string
                 format: number
               example: 42
-              
+
   /repositories/{repositoryID}/contexts:
     get:
       tags:
@@ -771,12 +774,12 @@ paths:
       responses:
         204:
           description: All namespaces were removed
-          
+
   /repositories/{repositoryID}/namespaces/{namespacesPrefix}:
     get:
       tags:
         - Namespaces
-      summary: Get namespace by prefix 
+      summary: Get namespace by prefix
       description: Gets the namespace that has been defined for a particular prefix.
       parameters:
         - name: repositoryID
@@ -874,7 +877,7 @@ paths:
     post:
       tags:
         - Graph Store
-      summary: Add statements 
+      summary: Add statements
       description: Add statements to a directly referenced named graph.
       parameters:
         - name: repositoryID
@@ -894,7 +897,7 @@ paths:
       responses:
         204:
           description: The data was successfully updated
-          
+
     delete:
       tags:
         - Graph Store
@@ -952,7 +955,8 @@ paths:
       tags:
         - Transactions
       summary: Start a new transaction
-      description: Start a new transaction.
+      description: |
+        RDF4J supports a RESTful implementation of a transactional protocol, by means of treating the transaction itself as a new resource that can be updated with consecutive operations. A transaction is started by a POST request to the transactions endpoint, which will return a new unique endpoint location for the new transaction. Operations (such as adding data, querying, committing/rolling back the transaction) are executed by means of PUT requests of consecutive operations against that unique transaction endpoint.
       parameters:
         - name: repositoryID
           in: path
@@ -976,7 +980,8 @@ paths:
       tags:
         - Transactions
       summary: Execute a transaction action
-      description: Execute a transaction action
+      description: |
+        Transaction operations are carried on this endpoint. The full URI is the exact value of the Location header as returned by the request to start a transaction.
       parameters:
         - name: repositoryID
           in: path
@@ -996,92 +1001,135 @@ paths:
           schema:
             type: string
             enum:
-              [ ADD, DELETE, GET, UPDATE, SIZE, COMMIT, PING ]
-          description: Type of possible actions in a transaction
+              [ ADD, DELETE, GET, QUERY, UPDATE, SIZE, COMMIT, PING ]
+          description: |
+            Specifies the type of operation being carried on the transaction.
         - name: subj
           in: query
           required: false
-          description: Restricts the operation to statements with the specified N-Triples encoded resource as subject.
+          description: GET actions only. Restricts the operation to statements with the specified N-Triples encoded resource as subject.
           schema:
             type: string
         - name: pred
           in: query
           required: false
-          description: Restricts the operation to statements with the specified N-Triples encoded resource as predicate.
+          description: GET actions only. Restricts the operation to statements with the specified N-Triples encoded resource as predicate.
           schema:
             type: string
         - name: obj
           in: query
           required: false
-          description: Restricts the operation to statements with the specified N-Triples encoded resource as object.
+          description: GET actions only. Restricts the operation to statements with the specified N-Triples encoded resource as object.
           schema:
             type: string
         - name: query
           in: query
           required: false
-          description: The query to evaluate.
+          description: QUERY actions only. Specifies the SPARQL query to evaluate.
           schema:
             type: string
         - name: queryLn
           in: query
           required: false
-          description: Specifies the query language that is used for the query. Acceptable values are strings denoting the query languages supported by the server, i.e. 'serql' for SeRQL queries and 'sparql' for SPARQL queries. If not specified, the server assumes the query is a SPARQL query.
+          description: QUERY actions only. Specifies the query language that is used for the query. Acceptable values are strings denoting the query languages supported by the server, i.e 'sparql' for SPARQL queries. If not specified, the server assumes the query is a SPARQL query.
           schema:
             type: string
         - name: infer
           in: query
           required: false
-          description: Specifies whether inferred statements should be included in the query evaluation. Inferred statements are included by default. Specifying any value other than 'true' (ignoring case) restricts the query evluation to explicit statements only.
+          description: GET and QUERY actions only. Specifies whether inferred statements should be included in the result. Inferred statements are included by default (if available in the repository). Specifying any value other than 'true' (ignoring case) restricts the result to explicit statements only.
           schema:
             type: boolean
         - name: update
           in: query
           required: false
-          description: Specifies the Update operation to be executed. The value is expected to be a syntactically valid SPARQL 1.1 Update string.
+          description: UPDATE actions only. Specifies the SPARQL 1.1 Update operation to be executed. The value is expected to be a syntactically valid SPARQL 1.1 Update string.
           schema:
             type: string
         - name: baseURI
           in: query
           required: false
-          description: Specifies a base URI to be used when parsing the SPARQL update operation.
+          description: UPDATE, DELETE, and ADD actions only. Specifies a base URI to be used for executing the operation.
           schema:
             type: string
         - name: using-graph-uri
           in: query
           required: false
-          description: One or more named graph URIs to be used as the default graph(s) for retrieving statements.
+          description: UPDATE actions only. One or more named graph URIs to be used as the default graph(s) for retrieving statements.
           schema:
             type: boolean
         - name: using-named-graph-uri
           in: query
           required: false
-          description: One or more named graph URIs to be used as named graphs for retrieving statements.
+          description: UPDATE actions only. One or more named graph URIs to be used as named graphs for retrieving statements.
           schema:
             type: boolean
         - name: remove-graph-uri
           in: query
           required: false
-          description: One or more named graph URIs to be used as the default graph(s) for removing statements.
+          description: UPDATE actions only. One or more named graph URIs to be used as the default graph(s) for removing statements.
           schema:
             type: boolean
         - name: insert-graph-uri
           in: query
           required: false
-          description: One or more named graph URIs to be used as the default graph(s) for inserting statements.
+          description: UPDATE actions only. One or more named graph URIs to be used as the default graph(s) for inserting statements.
           schema:
             type: boolean
-
+      requestBody:
+        description: |
+          RDF Data payload. Only relevant for ADD actions.
+        content:
+          application/rdf+xml:
+            schema:
+              type: object
+              xml:
+                name: RDF
+                namespace: http://www.w3.org/1999/02/22-rdf-syntax-ns#
+          text/plain:
+            schema:
+              type: string
+          text/turtle:
+            schema:
+              type: string
+          text/rdf+n3:
+            schema:
+              type: string
+          text/x-nquads:
+            schema:
+              type: string
+          application/ld+json:
+            schema:
+              type: object
+              format: json
+          application/rdf+json:
+            schema:
+              type: object
+              format: json
+          application/trix:
+            schema:
+              type: object
+              xml:
+                name: TriX
+          application/x-trig:
+            schema:
+              type: string
+          application/x-binary-rdf:
+            schema:
+              type: string
+              format: binary
       responses:
         200:
           description: OK
         204:
-          description: OK
+          description: No content
 
     delete:
         tags:
           - Transactions
         summary: Abort a transaction
-        description: An active transaction can be aborted by means of a HTTP DELETE request on the transaction resource. This will execute a transaction rollback on the repository and will close the transaction. After executing a DELETE, further operations on the same transaction will result in an error.
+        description: |
+          An active transaction can be aborted by means of a HTTP DELETE request on the transaction resource. This will execute a transaction rollback on the repository and will close the transaction. After executing a DELETE, further operations on the same transaction will result in an error.
         parameters:
           - name: repositoryID
             in: path
