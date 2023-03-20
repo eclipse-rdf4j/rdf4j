@@ -12,8 +12,12 @@ package org.eclipse.rdf4j.repository.config;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.repository.Repository;
 
 /**
+ * A {@link RepositoryImplConfig} represents configuration details specific to a particular implementation of the
+ * {@link Repository} interface.
+ *
  * @author Arjohn Kampman
  */
 public interface RepositoryImplConfig {

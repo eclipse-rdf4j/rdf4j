@@ -15,15 +15,17 @@ import java.util.Optional;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
-import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 
 public class SailConfigUtil {
 
 	public static SailImplConfig parseRepositoryImpl(Model m, Resource implNode) throws SailConfigException {
 		try {
-			Optional<Literal> typeLit = Models
-					.objectLiteral(m.getStatements(implNode, SailConfigSchema.SAILTYPE, null));
+
+			Optional<Literal> typeLit = Configurations.getLiteralValue(m, implNode, CONFIG.Sail.type,
+					SailConfigSchema.SAILTYPE);
 
 			if (typeLit.isPresent()) {
 				Optional<SailFactory> factory = SailRegistry.getInstance().get(typeLit.get().getLabel());
@@ -42,4 +44,5 @@ public class SailConfigUtil {
 			throw new SailConfigException(e.getMessage(), e);
 		}
 	}
+
 }

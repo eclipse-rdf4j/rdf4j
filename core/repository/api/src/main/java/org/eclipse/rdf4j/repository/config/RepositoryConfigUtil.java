@@ -10,8 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.config;
 
-import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORYID;
-import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORY_CONTEXT;
+import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -24,7 +23,8 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Configurations;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.Repository;
@@ -57,18 +57,24 @@ public class RepositoryConfigUtil {
 
 	public static Set<String> getRepositoryIDs(Model model) throws RepositoryException {
 		Set<String> idSet = new LinkedHashSet<>();
-		model.filter(null, REPOSITORYID, null).forEach(idStatement -> {
-			if (idStatement.getObject() instanceof Literal) {
-				Literal idLiteral = (Literal) idStatement.getObject();
-				idSet.add(idLiteral.getLabel());
-			}
-		});
+
+		Configurations.getPropertyValues(model, null, CONFIG.Rep.id, RepositoryConfigSchema.REPOSITORYID)
+				.forEach(value -> {
+					if (value.isLiteral()) {
+						idSet.add(((Literal) value).getLabel());
+					}
+				});
 		return idSet;
 	}
 
 	private static Statement getIDStatement(Model model, String repositoryID) {
-		Literal idLiteral = SimpleValueFactory.getInstance().createLiteral(repositoryID);
-		Model idStatementList = model.filter(null, REPOSITORYID, idLiteral);
+		Literal idLiteral = literal(repositoryID);
+
+		Model idStatementList = model.filter(null, CONFIG.Rep.id, idLiteral);
+
+		if (idStatementList.isEmpty()) {
+			idStatementList = model.filter(null, RepositoryConfigSchema.REPOSITORYID, idLiteral);
+		}
 
 		if (idStatementList.size() == 1) {
 			return idStatementList.iterator().next();
@@ -84,7 +90,8 @@ public class RepositoryConfigUtil {
 		try (RepositoryConnection con = repository.getConnection()) {
 			Set<String> idSet = new LinkedHashSet<>();
 
-			try (RepositoryResult<Statement> idStatementIter = con.getStatements(null, REPOSITORYID, null, true)) {
+			try (RepositoryResult<Statement> idStatementIter = con.getStatements(null, CONFIG.Rep.id, null,
+					true)) {
 				while (idStatementIter.hasNext()) {
 					Statement idStatement = idStatementIter.next();
 
@@ -188,7 +195,7 @@ public class RepositoryConfigUtil {
 				context = vf.createBNode();
 			}
 
-			con.add(context, RDF.TYPE, REPOSITORY_CONTEXT);
+			con.add(context, RDF.TYPE, RepositoryConfigSchema.REPOSITORY_CONTEXT);
 
 			Model graph = new LinkedHashModel();
 			config.export(graph);
@@ -220,7 +227,7 @@ public class RepositoryConfigUtil {
 				Resource context = getContext(con, id);
 				if (context != null) {
 					con.clear(context);
-					con.remove(context, RDF.TYPE, REPOSITORY_CONTEXT);
+					con.remove(context, RDF.TYPE, RepositoryConfigSchema.REPOSITORY_CONTEXT);
 					changed = true;
 				}
 			}
@@ -247,7 +254,8 @@ public class RepositoryConfigUtil {
 	private static Statement getIDStatement(RepositoryConnection con, String repositoryID)
 			throws RepositoryException, RepositoryConfigException {
 		Literal idLiteral = con.getRepository().getValueFactory().createLiteral(repositoryID);
-		List<Statement> idStatementList = Iterations.asList(con.getStatements(null, REPOSITORYID, idLiteral, true));
+		List<Statement> idStatementList = Iterations
+				.asList(con.getStatements(null, CONFIG.Rep.id, idLiteral, true));
 
 		if (idStatementList.size() == 1) {
 			return idStatementList.get(0);

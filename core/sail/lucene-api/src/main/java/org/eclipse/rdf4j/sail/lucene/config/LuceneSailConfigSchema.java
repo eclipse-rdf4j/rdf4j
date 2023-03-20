@@ -13,12 +13,16 @@ package org.eclipse.rdf4j.sail.lucene.config;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 
 /**
  * Defines constants for the LuceneSail schema which is used by
  * {@link org.eclipse.rdf4j.sail.lucene.config.LuceneSailFactory}s to initialize {@link LuceneSail}s.
+ *
+ * @deprecated use {@link CONFIG.Lucene} instead.
  */
+@Deprecated(since = "4.3.0", forRemoval = true)
 public class LuceneSailConfigSchema {
 
 	/**
@@ -26,6 +30,9 @@ public class LuceneSailConfigSchema {
 	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/sail/lucene#";
 
+	/**
+	 * @deprecated use {@link CONFIG.Lucene#indexDir} instead.
+	 */
 	public static final IRI INDEX_DIR;
 
 	static {

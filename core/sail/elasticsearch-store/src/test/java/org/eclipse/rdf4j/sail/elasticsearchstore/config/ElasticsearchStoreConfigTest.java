@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -53,10 +54,10 @@ public class ElasticsearchStoreConfigTest {
 		// FIXME we need to set formatting guidelines for this kind of thing
 		// @formatter:off
 		mb
-			.add(ElasticsearchStoreSchema.hostname, "host1")
-			.add(ElasticsearchStoreSchema.clusterName, "cluster1")
-			.add(ElasticsearchStoreSchema.index, "index1")
-			.add(ElasticsearchStoreSchema.port, 9300);
+			.add(CONFIG.Ess.hostname, "host1")
+			.add(CONFIG.Ess.clusterName, "cluster1")
+			.add(CONFIG.Ess.index, "index1")
+			.add(CONFIG.Ess.port, 9300);
 		// @formatter:on
 
 		subject.parse(mb.build(), implNode);
@@ -71,8 +72,8 @@ public class ElasticsearchStoreConfigTest {
 	@Test
 	public void parseFromPartialModelSetValuesCorrectly() {
 		mb
-				.add(ElasticsearchStoreSchema.hostname, "host1")
-				.add(ElasticsearchStoreSchema.port, 9300);
+				.add(CONFIG.Ess.hostname, "host1")
+				.add(CONFIG.Ess.port, 9300);
 
 		subject.parse(mb.build(), implNode);
 
@@ -84,7 +85,7 @@ public class ElasticsearchStoreConfigTest {
 	public void parseInvalidModelGivesCorrectException() {
 
 		mb
-				.add(ElasticsearchStoreSchema.port, "port1");
+				.add(CONFIG.Ess.port, "port1");
 
 		assertThrows(SailConfigException.class, () -> subject.parse(mb.build(), implNode));
 
@@ -94,10 +95,10 @@ public class ElasticsearchStoreConfigTest {
 	public void exportAddsAllConfigData() {
 
 		mb
-				.add(ElasticsearchStoreSchema.hostname, "host1")
-				.add(ElasticsearchStoreSchema.clusterName, "cluster1")
-				.add(ElasticsearchStoreSchema.index, "index1")
-				.add(ElasticsearchStoreSchema.port, 9300);
+				.add(CONFIG.Ess.hostname, "host1")
+				.add(CONFIG.Ess.clusterName, "cluster1")
+				.add(CONFIG.Ess.index, "index1")
+				.add(CONFIG.Ess.port, 9300);
 		// @formatter:on
 
 		subject.parse(mb.build(), implNode);
@@ -105,10 +106,10 @@ public class ElasticsearchStoreConfigTest {
 		Model m = new TreeModel();
 		Resource node = subject.export(m);
 
-		assertThat(m.contains(node, ElasticsearchStoreSchema.hostname, null)).isTrue();
-		assertThat(m.contains(node, ElasticsearchStoreSchema.clusterName, null)).isTrue();
-		assertThat(m.contains(node, ElasticsearchStoreSchema.index, null)).isTrue();
-		assertThat(m.contains(node, ElasticsearchStoreSchema.port, null)).isTrue();
+		assertThat(m.contains(node, CONFIG.Ess.hostname, null)).isTrue();
+		assertThat(m.contains(node, CONFIG.Ess.clusterName, null)).isTrue();
+		assertThat(m.contains(node, CONFIG.Ess.index, null)).isTrue();
+		assertThat(m.contains(node, CONFIG.Ess.port, null)).isTrue();
 
 	}
 

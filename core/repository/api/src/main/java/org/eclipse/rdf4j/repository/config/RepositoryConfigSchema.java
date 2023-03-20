@@ -10,60 +10,53 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.config;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 
 /**
  * Defines constants for the repository configuration schema that is used by
  * {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}s.
  *
  * @author Arjohn Kampman
+ * @author Jeen Broekstra
+ *
+ * @deprecated use {@link CONFIG} vocabulary instead.
  */
+@Deprecated(since = "4.3.0", forRemoval = true)
 public class RepositoryConfigSchema {
 
-	/**
-	 * The HTTPRepository schema namespace (<var>http://www.openrdf.org/config/repository#</var>).
-	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/repository#";
 
 	/**
-	 * <var>http://www.openrdf.org/config/repository#RepositoryContext</var>
+	 * This IRI is not in the CONFIG vocabulary because it is no longer necessary - it was only used in the old-style
+	 * SYSTEM-repo configurations.
 	 */
-	public final static IRI REPOSITORY_CONTEXT;
+	public final static IRI REPOSITORY_CONTEXT = iri(NAMESPACE, "RepositoryContext");
 
 	/**
-	 * <var>http://www.openrdf.org/config/repository#Repository</var>
+	 * @deprecated use {@link CONFIG#Repository} instead.
 	 */
-	public final static IRI REPOSITORY;
+	public final static IRI REPOSITORY = iri(NAMESPACE, "Repository");
 
 	/**
-	 * <var>http://www.openrdf.org/config/repository#repositoryID</var>
+	 * @deprecated use {@link CONFIG.Rep#id} instead.
 	 */
-	public final static IRI REPOSITORYID;
+	public final static IRI REPOSITORYID = iri(NAMESPACE, "repositoryID");
 
 	/**
-	 * <var>http://www.openrdf.org/config/repository#repositoryImpl</var>
+	 * @deprecated use {@link CONFIG.Rep#impl} instead.
 	 */
-	public final static IRI REPOSITORYIMPL;
+	public final static IRI REPOSITORYIMPL = iri(NAMESPACE, "repositoryImpl");
 
 	/**
-	 * <var>http://www.openrdf.org/config/repository#repositoryType</var>
+	 * @deprecated use {@link CONFIG.Rep#type} instead.
 	 */
-	public final static IRI REPOSITORYTYPE;
+	public final static IRI REPOSITORYTYPE = iri(NAMESPACE, "repositoryType");
 
 	/**
-	 * <var>http://www.openrdf.org/config/repository#delegate</var>
+	 * @deprecated use {@link CONFIG#delegate} instead.
 	 */
-	public final static IRI DELEGATE;
-
-	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
-		REPOSITORY_CONTEXT = factory.createIRI(NAMESPACE, "RepositoryContext");
-		REPOSITORY = factory.createIRI(NAMESPACE, "Repository");
-		REPOSITORYID = factory.createIRI(NAMESPACE, "repositoryID");
-		REPOSITORYIMPL = factory.createIRI(NAMESPACE, "repositoryImpl");
-		REPOSITORYTYPE = factory.createIRI(NAMESPACE, "repositoryType");
-		DELEGATE = factory.createIRI(NAMESPACE, "delegate");
-	}
+	public final static IRI DELEGATE = iri(NAMESPACE, "delegate");
 }

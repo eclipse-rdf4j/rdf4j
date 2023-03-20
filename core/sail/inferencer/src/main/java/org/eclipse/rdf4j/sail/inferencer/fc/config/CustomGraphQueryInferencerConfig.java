@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.inferencer.fc.config;
 
+import static org.eclipse.rdf4j.model.util.Values.bnode;
+import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.sail.inferencer.fc.config.CustomGraphQueryInferencerSchema.MATCHER_QUERY;
 import static org.eclipse.rdf4j.sail.inferencer.fc.config.CustomGraphQueryInferencerSchema.QUERY_LANGUAGE;
 import static org.eclipse.rdf4j.sail.inferencer.fc.config.CustomGraphQueryInferencerSchema.RULE_QUERY;
@@ -24,10 +26,10 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SP;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -98,25 +100,29 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 
 		try {
 
-			Optional<Literal> language = Models.objectLiteral(m.getStatements(implNode, QUERY_LANGUAGE, null));
+			Optional<Literal> language = Configurations.getLiteralValue(m, implNode, CONFIG.Cgqi.queryLanguage,
+					QUERY_LANGUAGE);
 
 			if (language.isPresent()) {
 				setQueryLanguage(QueryLanguage.valueOf(language.get().stringValue()));
 				if (null == getQueryLanguage()) {
 					throw new SailConfigException(
-							"Valid value required for " + QUERY_LANGUAGE + " property, found " + language.get());
+							"Valid value required for " + CONFIG.Cgqi.queryLanguage + " property, found "
+									+ language.get());
 				}
 			} else {
 				setQueryLanguage(QueryLanguage.SPARQL);
 			}
 
-			Optional<Resource> object = Models.objectResource(m.getStatements(implNode, RULE_QUERY, null));
+			Optional<Resource> object = Configurations.getResourceValue(m, implNode, CONFIG.Cgqi.ruleQuery,
+					RULE_QUERY);
 			if (object.isPresent()) {
 				Models.objectLiteral(m.getStatements(object.get(), SP.TEXT_PROPERTY, null))
 						.ifPresent(lit -> setRuleQuery(lit.stringValue()));
 			}
 
-			object = Models.objectResource(m.getStatements(implNode, MATCHER_QUERY, null));
+			object = Configurations.getResourceValue(m, implNode, CONFIG.Cgqi.matcherQuery,
+					MATCHER_QUERY);
 			if (object.isPresent()) {
 				Models.objectLiteral(m.getStatements(object.get(), SP.TEXT_PROPERTY, null))
 						.ifPresent(lit -> setMatcherQuery(lit.stringValue()));
@@ -154,12 +160,11 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
-		m.setNamespace("cgqi", CustomGraphQueryInferencerSchema.NAMESPACE);
 		if (null != language) {
-			m.add(implNode, QUERY_LANGUAGE, SimpleValueFactory.getInstance().createLiteral(language.getName()));
+			m.add(implNode, CONFIG.Cgqi.queryLanguage, literal(language.getName()));
 		}
-		addQueryNode(m, implNode, RULE_QUERY, ruleQuery);
-		addQueryNode(m, implNode, MATCHER_QUERY, matcherQuery);
+		addQueryNode(m, implNode, CONFIG.Cgqi.ruleQuery, ruleQuery);
+		addQueryNode(m, implNode, CONFIG.Cgqi.matcherQuery, matcherQuery);
 		return implNode;
 	}
 
@@ -179,11 +184,10 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 
 	private void addQueryNode(Model m, Resource implNode, IRI predicate, String queryText) {
 		if (null != queryText) {
-			ValueFactory factory = SimpleValueFactory.getInstance();
-			BNode queryNode = factory.createBNode();
+			BNode queryNode = bnode();
 			m.add(implNode, predicate, queryNode);
 			m.add(queryNode, RDF.TYPE, SP.CONSTRUCT_CLASS);
-			m.add(queryNode, SP.TEXT_PROPERTY, factory.createLiteral(queryText));
+			m.add(queryNode, SP.TEXT_PROPERTY, literal(queryText));
 		}
 	}
 }

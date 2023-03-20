@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.nativerdf.config;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 
 /**
@@ -20,7 +21,9 @@ import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
  * {@link NativeStore}s.
  *
  * @author Arjohn Kampman
+ * @deprecated use {@link CONFIG.Native} instead.
  */
+@Deprecated(since = "4.3.0", forRemoval = true)
 public class NativeStoreSchema {
 
 	/**
@@ -30,31 +33,43 @@ public class NativeStoreSchema {
 
 	/**
 	 * <var>http://www.openrdf.org/config/sail/native#tripleIndexes</var>
+	 *
+	 * @deprecated use {@link CONFIG.Native#tripleIndexes} instead.
 	 */
 	public final static IRI TRIPLE_INDEXES;
 
 	/**
 	 * <var>http://www.openrdf.org/config/sail/native#forceSync</var>
+	 *
+	 * @deprecated use {@link CONFIG.Native#forceSync} instead.
 	 */
 	public final static IRI FORCE_SYNC;
 
 	/**
 	 * <var>http://www.openrdf.org/config/sail/native#valueCacheSize</var>
+	 *
+	 * @deprecated use {@link CONFIG.Native#valueCacheSize} instead.
 	 */
 	public final static IRI VALUE_CACHE_SIZE;
 
 	/**
 	 * <var>http://www.openrdf.org/config/sail/native#valueIDCacheSize</var>
+	 *
+	 * @deprecated use {@link CONFIG.Native#valueIDCacheSize} instead.
 	 */
 	public final static IRI VALUE_ID_CACHE_SIZE;
 
 	/**
 	 * <var>http://www.openrdf.org/config/sail/native#namespaceCacheSize</var>
+	 *
+	 * @deprecated use {@link CONFIG.Native#namespaceCacheSize} instead.
 	 */
 	public final static IRI NAMESPACE_CACHE_SIZE;
 
 	/**
 	 * <var>http://www.openrdf.org/config/sail/native#namespaceIDCacheSize</var>
+	 *
+	 * @deprecated use {@link CONFIG.Native#namespaceIDCacheSize} instead.
 	 */
 	public final static IRI NAMESPACE_ID_CACHE_SIZE;
 

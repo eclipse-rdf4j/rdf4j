@@ -10,16 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.http.config;
 
-import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.NAMESPACE;
-import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.PASSWORD;
-import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.REPOSITORYURL;
-import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.USERNAME;
-
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
-import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.repository.config.AbstractRepositoryImplConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 
@@ -80,17 +76,9 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 		Resource implNode = super.export(graph);
 
 		if (url != null) {
-			graph.setNamespace("http", NAMESPACE);
-			graph.add(implNode, REPOSITORYURL, SimpleValueFactory.getInstance().createIRI(url));
+			graph.setNamespace(CONFIG.PREFIX, CONFIG.NAMESPACE);
+			graph.add(implNode, CONFIG.Http.url, SimpleValueFactory.getInstance().createIRI(url));
 		}
-		// if (username != null) {
-		// graph.add(implNode, USERNAME,
-		// graph.getValueFactory().createLiteral(username));
-		// }
-		// if (password != null) {
-		// graph.add(implNode, PASSWORD,
-		// graph.getValueFactory().createLiteral(password));
-		// }
 
 		return implNode;
 	}
@@ -100,13 +88,17 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 		super.parse(model, implNode);
 
 		try {
-			Models.objectIRI(model.getStatements(implNode, REPOSITORYURL, null))
+
+			Configurations
+					.getIRIValue(model, implNode, CONFIG.Http.url, HTTPRepositorySchema.REPOSITORYURL)
 					.ifPresent(iri -> setURL(iri.stringValue()));
 
-			Models.objectLiteral(model.getStatements(implNode, USERNAME, null))
+			Configurations
+					.getLiteralValue(model, implNode, CONFIG.Http.username, HTTPRepositorySchema.USERNAME)
 					.ifPresent(username -> setUsername(username.getLabel()));
 
-			Models.objectLiteral(model.getStatements(implNode, PASSWORD, null))
+			Configurations
+					.getLiteralValue(model, implNode, CONFIG.Http.password, HTTPRepositorySchema.PASSWORD)
 					.ifPresent(password -> setPassword(password.getLabel()));
 
 		} catch (ModelException e) {
