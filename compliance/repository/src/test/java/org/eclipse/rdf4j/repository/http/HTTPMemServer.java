@@ -66,6 +66,7 @@ public class HTTPMemServer {
 		WebAppContext webapp = new WebAppContext();
 		webapp.setContextPath(RDF4J_CONTEXT);
 		webapp.setWar(webappDir);
+		webapp.getServerClasspathPattern().add("org.slf4j.", "ch.qos.logback.");
 		jetty.setHandler(webapp);
 
 		manager = RemoteRepositoryManager.getInstance(SERVER_URL);
