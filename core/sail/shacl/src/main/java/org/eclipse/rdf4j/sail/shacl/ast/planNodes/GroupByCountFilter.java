@@ -37,10 +37,15 @@ public class GroupByCountFilter implements PlanNode {
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
+			private CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
 
 			ValidationTuple next;
 			ValidationTuple tempNext;
+
+			@Override
+			protected void init() {
+				parentIterator = parent.iterator();
+			}
 
 			private void calculateNext() {
 				if (next != null) {
@@ -77,19 +82,21 @@ public class GroupByCountFilter implements PlanNode {
 			}
 
 			@Override
-			public void localClose() throws SailException {
-				parentIterator.close();
+			public void localClose() {
+				if (parentIterator != null) {
+					parentIterator.close();
+				}
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				calculateNext();
 
 				return next != null;
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 
 				calculateNext();
 

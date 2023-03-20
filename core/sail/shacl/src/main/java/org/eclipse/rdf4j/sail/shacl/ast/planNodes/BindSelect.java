@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
@@ -67,11 +68,12 @@ public class BindSelect implements PlanNode {
 	private final boolean includePropertyShapeValues;
 	private final List<String> varNames;
 	private final ConstraintComponent.Scope scope;
+	private final String prefixes;
 	private StackTraceElement[] stackTrace;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public BindSelect(SailConnection connection, Resource[] dataGraph, String query,
+	public BindSelect(SailConnection connection, Resource[] dataGraph, SparqlFragment query,
 			List<Variable<Value>> vars, PlanNode source,
 			List<String> varNames, ConstraintComponent.Scope scope, int bulkSize, EffectiveTarget.Extend direction,
 			boolean includePropertyShapeValues) {
@@ -85,11 +87,12 @@ public class BindSelect implements PlanNode {
 		this.bulkSize = bulkSize;
 		this.source = PlanNodeHelper.handleSorting(this, source);
 
-		if (query.trim().equals("")) {
+		if (query.getFragment().trim().equals("")) {
 			throw new IllegalStateException();
 		}
 
-		this.query = StatementMatcher.StableRandomVariableProvider.normalize(query);
+		this.query = StatementMatcher.StableRandomVariableProvider.normalize(query.getFragment());
+		this.prefixes = query.getNamespacesForSparql();
 		this.direction = direction;
 		this.includePropertyShapeValues = includePropertyShapeValues;
 
@@ -127,10 +130,17 @@ public class BindSelect implements PlanNode {
 
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet;
 
-			final CloseableIteration<? extends ValidationTuple, SailException> iterator = source.iterator();
-			List<ValidationTuple> bulk = new ArrayList<>(bulkSize);
+			private CloseableIteration<? extends ValidationTuple, SailException> iterator;
+			List<ValidationTuple> bulk;
 
 			TupleExpr parsedQuery = null;
+
+			@Override
+			protected void init() {
+				iterator = source.iterator();
+				bulk = new ArrayList<>(bulkSize);
+
+			}
 
 			public void calculateNext() {
 
@@ -236,12 +246,14 @@ public class BindSelect implements PlanNode {
 			}
 
 			@Override
-			public void localClose() throws SailException {
+			public void localClose() {
 				try {
 					bulk = null;
 					parsedQuery = null;
-					assert !iterator.hasNext();
-					iterator.close();
+					if (iterator != null) {
+						assert !iterator.hasNext();
+						iterator.close();
+					}
 				} finally {
 					if (bindingSet != null) {
 						bindingSet.close();
@@ -250,13 +262,13 @@ public class BindSelect implements PlanNode {
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				calculateNext();
 				return bindingSet != null && bindingSet.hasNext();
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 				calculateNext();
 				return mapper.apply(bindingSet.next());
 			}
@@ -286,7 +298,7 @@ public class BindSelect implements PlanNode {
 		String query = BindSelect.this.query;
 
 		query = query.replace(AbstractConstraintComponent.VALUES_INJECTION_POINT, values.toString());
-		query = "select * where { " + values + query + "\n}";
+		query = prefixes + "select * where { " + values + query + "\n}";
 
 		try {
 			return SparqlQueryParserCache.get(query);

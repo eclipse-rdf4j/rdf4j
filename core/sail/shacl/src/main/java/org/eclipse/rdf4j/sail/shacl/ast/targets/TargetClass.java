@@ -19,6 +19,7 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
@@ -67,7 +68,8 @@ public class TargetClass extends Target {
 					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope));
 		} else {
 			planNode = new Select(connection,
-					getQueryFragment("?a", "?c", null, new StatementMatcher.StableRandomVariableProvider()),
+					SparqlFragment.bgp(Set.of(),
+							getQueryFragment("?a", "?c", null, new StatementMatcher.StableRandomVariableProvider())),
 					"?a", b -> new ValidationTuple(b.getValue("a"), scope, false, dataGraph), dataGraph);
 		}
 
@@ -170,7 +172,7 @@ public class TargetClass extends Target {
 					.map(r -> object.asSparqlVariable() + " a <" + r + "> .")
 					.orElseThrow(IllegalStateException::new);
 
-			return SparqlFragment.bgp(queryFragment, statementMatchers);
+			return SparqlFragment.bgp(List.of(), queryFragment, statementMatchers);
 
 		} else {
 
@@ -185,9 +187,14 @@ public class TargetClass extends Target {
 			String queryFragment = object.asSparqlVariable() + " a " + randomSparqlVariable + ".\n" +
 					"FILTER(" + randomSparqlVariable + " in ( " + in + " ))";
 
-			return SparqlFragment.bgp(queryFragment, statementMatchers);
+			return SparqlFragment.bgp(List.of(), queryFragment, statementMatchers);
 		}
 
+	}
+
+	@Override
+	public Set<Namespace> getNamespaces() {
+		return Set.of();
 	}
 
 	@Override
@@ -206,4 +213,5 @@ public class TargetClass extends Target {
 	public int hashCode() {
 		return Objects.hash(targetClass);
 	}
+
 }

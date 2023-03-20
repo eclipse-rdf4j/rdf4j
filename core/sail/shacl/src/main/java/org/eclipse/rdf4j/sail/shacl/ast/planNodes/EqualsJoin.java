@@ -34,12 +34,18 @@ public class EqualsJoin implements PlanNode {
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseableIteration<? extends ValidationTuple, SailException> leftIterator = left.iterator();
-			final CloseableIteration<? extends ValidationTuple, SailException> rightIterator = right.iterator();
+			private CloseableIteration<? extends ValidationTuple, SailException> leftIterator;
+			private CloseableIteration<? extends ValidationTuple, SailException> rightIterator;
 
 			ValidationTuple next;
 			ValidationTuple nextLeft;
 			ValidationTuple nextRight;
+
+			@Override
+			protected void init() {
+				leftIterator = left.iterator();
+				rightIterator = right.iterator();
+			}
 
 			void calculateNext() {
 				if (next != null) {
@@ -97,22 +103,26 @@ public class EqualsJoin implements PlanNode {
 			}
 
 			@Override
-			public void localClose() throws SailException {
+			public void localClose() {
 				try {
-					leftIterator.close();
+					if (leftIterator != null) {
+						leftIterator.close();
+					}
 				} finally {
-					rightIterator.close();
+					if (rightIterator != null) {
+						rightIterator.close();
+					}
 				}
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				calculateNext();
 				return next != null;
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 				calculateNext();
 				ValidationTuple temp = next;
 				next = null;

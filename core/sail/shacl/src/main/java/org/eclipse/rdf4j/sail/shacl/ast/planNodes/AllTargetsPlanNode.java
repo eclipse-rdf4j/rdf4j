@@ -22,13 +22,13 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
-import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 /**
  * Used to signal bulk validation. This plan node should only be used from EffectiveTarget#getAllTargets
@@ -40,19 +40,20 @@ public class AllTargetsPlanNode implements PlanNode {
 	private boolean printed;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public AllTargetsPlanNode(ConnectionsGroup connectionsGroup,
+	public AllTargetsPlanNode(SailConnection sailConnection,
 			Resource[] dataGraph, ArrayDeque<EffectiveTarget.EffectiveTargetFragment> chain,
 			List<Variable<Value>> vars,
 			ConstraintComponent.Scope scope) {
-		String query = chain.stream()
+
+		List<SparqlFragment> sparqlFragments = chain.stream()
 				.map(EffectiveTarget.EffectiveTargetFragment::getQueryFragment)
-				.map(SparqlFragment::getFragment)
-				.reduce((a, b) -> a + "\n" + b)
-				.orElse("");
+				.collect(Collectors.toList());
+
+		SparqlFragment sparqlFragment = SparqlFragment.join(sparqlFragments);
 
 		List<String> varNames = vars.stream().map(StatementMatcher.Variable::getName).collect(Collectors.toList());
 
-		this.select = new Select(connectionsGroup.getBaseConnection(), query, null,
+		this.select = new Select(sailConnection, sparqlFragment, null,
 				new AllTargetsBindingSetMapper(varNames, scope, false, dataGraph), dataGraph);
 
 	}
@@ -62,20 +63,26 @@ public class AllTargetsPlanNode implements PlanNode {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseableIteration<? extends ValidationTuple, SailException> iterator = select.iterator();
+			private CloseableIteration<? extends ValidationTuple, SailException> iterator;
 
 			@Override
-			public void localClose() throws SailException {
-				iterator.close();
+			protected void init() {
+				iterator = select.iterator();
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			public void localClose() {
+				if (iterator != null)
+					iterator.close();
+			}
+
+			@Override
+			protected ValidationTuple loggingNext() {
 				return iterator.next();
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				return iterator.hasNext();
 			}
 		};

@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 
@@ -54,14 +55,16 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	private final String query;
 	private boolean printed = false;
 
-	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, Resource[] dataGraph, String query,
+	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, Resource[] dataGraph,
+			SparqlFragment query,
 			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
 			Function<BindingSet, ValidationTuple> mapper) {
 
 		assert !skipBasedOnPreviousConnection || previousStateConnection != null;
 
 		this.leftNode = PlanNodeHelper.handleSorting(this, leftNode);
-		this.query = StatementMatcher.StableRandomVariableProvider.normalize(query);
+		this.query = query.getNamespacesForSparql() + StatementMatcher.StableRandomVariableProvider
+				.normalize(query.getFragment());
 		this.connection = connection;
 		assert this.connection != null;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
@@ -88,13 +91,18 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final ArrayDeque<ValidationTuple> left = new ArrayDeque<>(BULK_SIZE);
+			ArrayDeque<ValidationTuple> left;
+			ArrayDeque<ValidationTuple> right;
+			ArrayDeque<ValidationTuple> joined;
+			private CloseableIteration<? extends ValidationTuple, SailException> leftNodeIterator;
 
-			final ArrayDeque<ValidationTuple> right = new ArrayDeque<>(BULK_SIZE);
-
-			final ArrayDeque<ValidationTuple> joined = new ArrayDeque<>(BULK_SIZE);
-
-			final CloseableIteration<? extends ValidationTuple, SailException> leftNodeIterator = leftNode.iterator();
+			@Override
+			protected void init() {
+				left = new ArrayDeque<>(BULK_SIZE);
+				right = new ArrayDeque<>(BULK_SIZE);
+				joined = new ArrayDeque<>(BULK_SIZE);
+				leftNodeIterator = leftNode.iterator();
+			}
 
 			private void calculateNext() {
 
@@ -166,18 +174,20 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 			}
 
 			@Override
-			public void localClose() throws SailException {
-				leftNodeIterator.close();
+			public void localClose() {
+				if (leftNodeIterator != null) {
+					leftNodeIterator.close();
+				}
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				calculateNext();
 				return !joined.isEmpty();
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 				calculateNext();
 				return joined.removeFirst();
 

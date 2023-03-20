@@ -131,8 +131,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 								.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 										new StatementMatcher.Variable("c"),
 										connectionsGroup.getRdfsSubClassOfReasoner(),
-										stableRandomVariableProvider, Set.of())
-								.getFragment(),
+										stableRandomVariableProvider, Set.of()),
 						connectionsGroup.hasPreviousStateConnection(),
 						connectionsGroup.getPreviousStateConnection(),
 						b -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
@@ -199,8 +198,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 								.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 										new StatementMatcher.Variable("c"),
 										connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider,
-										Set.of())
-								.getFragment(),
+										Set.of()),
 						false, null,
 						BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph())
 				);
@@ -232,11 +230,11 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 		} else {
 			value = StatementMatcher.Variable.VALUE;
 
-			String pathQuery = targetChain.getPath()
+			Optional<SparqlFragment> sparqlFragment = targetChain.getPath()
 					.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
-							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()))
-					.map(SparqlFragment::getFragment)
-					.orElseThrow(IllegalStateException::new);
+							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()));
+
+			String pathQuery = sparqlFragment.map(SparqlFragment::getFragment).orElseThrow(IllegalStateException::new);
 
 			query += "\n" + pathQuery;
 			query += "\n" + getSparqlFilter(negatePlan, value, stableRandomVariableProvider);
@@ -244,7 +242,8 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 		var allTargetVariables = effectiveTarget.getAllTargetVariables();
 
-		return new ValidationQuery(query, allTargetVariables, value, scope, getConstraintComponent(), null, null);
+		return new ValidationQuery(getTargetChain().getNamespaces(), query, allTargetVariables, value, scope, this,
+				null, null);
 
 	}
 

@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.targets;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
@@ -18,6 +19,7 @@ import java.util.TreeSet;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
@@ -97,7 +99,12 @@ public class TargetNode extends Target {
 
 		sb.append("}");
 
-		return SparqlFragment.bgp(sb.toString());
+		return SparqlFragment.bgp(List.of(), sb.toString());
+	}
+
+	@Override
+	public Set<Namespace> getNamespaces() {
+		return Set.of();
 	}
 
 	@Override
@@ -116,4 +123,5 @@ public class TargetNode extends Target {
 	public int hashCode() {
 		return Objects.hash(targetNodes);
 	}
+
 }

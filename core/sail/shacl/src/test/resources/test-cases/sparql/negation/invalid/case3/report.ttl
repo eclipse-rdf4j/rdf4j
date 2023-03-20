@@ -1,0 +1,45 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+
+[] a sh:ValidationReport;
+  rdf4j:truncated false;
+  sh:conforms false;
+  sh:result [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:InvalidCountry;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:sourceShape ex:LanguageExampleShape;
+      sh:value ex:InvalidCountry
+    ] .
+
+ex:LanguageExampleShape a sh:NodeShape;
+  sh:not [ a sh:PropertyShape;
+      sh:path ex:germanLabel;
+      sh:sparql [ a sh:SPARQLConstraint;
+          sh:message "Values are literals with German language tag.";
+          sh:prefixes <http://example.com/ns#>;
+          sh:select """
+  	        		SELECT $this ?value
+  	        		WHERE {
+  	        			$this $PATH ?value .
+  	        			FILTER (isLiteral(?value) && !langMatches(lang(?value), \"de\"))
+  	        		}
+  	        		"""
+        ]
+    ];
+  sh:targetClass ex:Country .
+
+<http://example.com/ns#> sh:declare [
+      sh:namespace "http://example.com/ns#"^^xsd:anyURI;
+      sh:prefix "ex"
+    ], [
+      sh:namespace "http://schema.org/"^^xsd:anyURI;
+      sh:prefix "schema"
+    ] .

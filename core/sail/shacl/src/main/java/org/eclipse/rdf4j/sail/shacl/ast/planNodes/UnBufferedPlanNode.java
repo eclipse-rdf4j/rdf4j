@@ -55,11 +55,15 @@ public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implem
 
 			@Override
 			public boolean hasNext() throws SailException {
+				if (closed) {
+					return false;
+				}
 				calculateNext();
 				return next != null;
 			}
 
 			private void calculateNext() {
+				assert !closed;
 				while (next == null) {
 					boolean success = parent.incrementIterator();
 					if (!success) {

@@ -41,76 +41,63 @@ public class Sort implements PlanNode {
 
 			Iterator<ValidationTuple> sortedTuplesIterator;
 
-			boolean closed = false;
+			protected void init() {
+				assert sortedTuples == null;
 
-			@Override
-			public void localClose() throws SailException {
-				if (closed) {
-					throw new IllegalStateException("Already closed");
+				boolean alreadySorted;
+
+				try (CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator()) {
+					sortedTuples = new ArrayList<>(1);
+					alreadySorted = true;
+					ValidationTuple prev = null;
+					while (iterator.hasNext()) {
+						ValidationTuple next = iterator.next();
+						sortedTuples.add(next);
+
+						// quick break out if sortedTuples is guaranteed to be of size 1 since we don't need to sort
+						// it then
+						if (sortedTuples.size() == 1 && !iterator.hasNext()) {
+							sortedTuplesIterator = sortedTuples.iterator();
+							return;
+						}
+
+						if (prev != null && prev.compareActiveTarget(next) > 0) {
+							alreadySorted = false;
+						}
+						prev = next;
+					}
+
+					assert !iterator.hasNext() : "Iterator: " + iterator;
 				}
-				closed = true;
 
-				sortedTuplesIterator = Collections.emptyIterator();
-				sortedTuples = null;
+				if (!alreadySorted && sortedTuples.size() > 1) {
+					if (sortedTuples.size() > 8192) { // MIN_ARRAY_SORT_GRAN in Arrays.parallelSort(...)
+						ValidationTuple[] objects = sortedTuples.toArray(new ValidationTuple[0]);
+						Arrays.parallelSort(objects, ValidationTuple::compareActiveTarget);
+						sortedTuples = Arrays.asList(objects);
+					} else {
+						sortedTuples.sort(ValidationTuple::compareActiveTarget);
+					}
+				}
+
+				sortedTuplesIterator = sortedTuples.iterator();
+
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
-				sortTuples();
+			protected boolean localHasNext() {
 				return sortedTuplesIterator.hasNext();
 			}
 
-			private void sortTuples() {
-				if (closed) {
-					throw new IllegalStateException("Tried to iterate on a closed iterator");
-				}
-
-				if (sortedTuples == null) {
-					boolean alreadySorted;
-					try (CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator()) {
-						sortedTuples = new ArrayList<>(1);
-						alreadySorted = true;
-						ValidationTuple prev = null;
-						while (iterator.hasNext()) {
-							ValidationTuple next = iterator.next();
-							sortedTuples.add(next);
-
-							// quick break out if sortedTuples is guaranteed to be of size 1 since we don't need to sort
-							// it then
-							if (sortedTuples.size() == 1 && !iterator.hasNext()) {
-								sortedTuplesIterator = sortedTuples.iterator();
-								return;
-							}
-
-							if (prev != null && prev.compareActiveTarget(next) > 0) {
-								alreadySorted = false;
-							}
-							prev = next;
-						}
-
-						assert !iterator.hasNext() : "Iterator: " + iterator;
-					}
-
-					if (!alreadySorted && sortedTuples.size() > 1) {
-						if (sortedTuples.size() > 8192) { // MIN_ARRAY_SORT_GRAN in Arrays.parallelSort(...)
-							ValidationTuple[] objects = sortedTuples.toArray(new ValidationTuple[0]);
-							Arrays.parallelSort(objects, ValidationTuple::compareActiveTarget);
-							sortedTuples = Arrays.asList(objects);
-						} else {
-							sortedTuples.sort(ValidationTuple::compareActiveTarget);
-						}
-					}
-					sortedTuplesIterator = sortedTuples.iterator();
-
-				}
-
+			@Override
+			protected ValidationTuple loggingNext() {
+				return sortedTuplesIterator.next();
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
-				sortTuples();
-
-				return sortedTuplesIterator.next();
+			public void localClose() {
+				sortedTuplesIterator = Collections.emptyIterator();
+				sortedTuples = null;
 			}
 
 		};

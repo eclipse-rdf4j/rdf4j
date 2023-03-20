@@ -32,6 +32,7 @@ public class ShaclProperties {
 
 	private static final Logger logger = LoggerFactory.getLogger(ShaclProperties.class);
 
+	private Resource id;
 	private IRI type;
 
 	private final List<IRI> clazz = new ArrayList<>();
@@ -91,9 +92,9 @@ public class ShaclProperties {
 	boolean closed = false;
 	private Resource ignoredProperties;
 
-	private Resource id;
-
 	private final List<Literal> message = new ArrayList<>();
+
+	private final List<Resource> sparql = new ArrayList<>();
 
 	public ShaclProperties() {
 	}
@@ -315,6 +316,12 @@ public class ShaclProperties {
 				case "http://rdf4j.org/shacl-extensions#targetShape":
 					targetShape.add((Resource) object);
 					break;
+				case "http://www.w3.org/ns/shacl#sparql":
+					if (!object.isResource()) {
+						throw new IllegalStateException("Object is not a resource: " + statement);
+					}
+					sparql.add((Resource) object);
+					break;
 
 				default:
 					if (predicate.startsWith(SHACL.NAMESPACE)) {
@@ -512,5 +519,9 @@ public class ShaclProperties {
 
 	public Boolean getQualifiedValueShapesDisjoint() {
 		return qualifiedValueShapesDisjoint;
+	}
+
+	public List<Resource> getSparql() {
+		return sparql;
 	}
 }

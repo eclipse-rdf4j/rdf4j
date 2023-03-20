@@ -42,7 +42,6 @@ public class ForwardChainingShapeSource implements ShapeSource {
 	// SHACL Vocabulary from W3C - https://www.w3.org/ns/shacl.ttl
 	private final static IRI shaclVocabularyGraph = iri(RDF4J.NAMESPACE, "shaclVocabularyGraph");
 	private final static SchemaCachingRDFSInferencer shaclVocabulary = createShaclVocabulary();
-	private static final Resource[] defaultContext = { RDF4J.SHACL_SHAPE_GRAPH };
 
 	private final RepositoryConnection connection;
 	private final Resource[] context;
@@ -172,15 +171,6 @@ public class ForwardChainingShapeSource implements ShapeSource {
 		}
 		return Stream.empty();
 
-	}
-
-	private Stream<Resource> getContext(Predicates predicate) {
-		assert context == null;
-
-		return connection.getStatements(null, predicate.getIRI(), null, true)
-				.stream()
-				.map(Statement::getContext)
-				.distinct();
 	}
 
 	public Stream<Resource> getTargetableShape() {

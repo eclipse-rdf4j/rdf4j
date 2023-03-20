@@ -134,7 +134,7 @@ public class EffectiveTarget {
 			return connectionsGroup
 					.getCachedNodeFor(getTargetFilter(connectionsGroup, dataGraph, Unique.getInstance(parent, false)));
 		} else {
-			String query = getQuery(includePropertyShapeValues);
+			SparqlFragment query = getQueryFragment(includePropertyShapeValues);
 
 			PlanNode parent = new BindSelect(connectionsGroup.getBaseConnection(), dataGraph, query, vars, source,
 					varNames, scope,
@@ -168,6 +168,9 @@ public class EffectiveTarget {
 
 		for (EffectiveTargetFragment e : chain) {
 			if (e.target instanceof TargetNode) {
+				return true;
+			}
+			if (!e.getQueryFragment().supportsIncrementalEvaluation()) {
 				return true;
 			}
 		}
@@ -218,7 +221,7 @@ public class EffectiveTarget {
 
 	public PlanNode getAllTargets(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			ConstraintComponent.Scope scope) {
-		return new AllTargetsPlanNode(connectionsGroup, dataGraph, chain, getVars(), scope);
+		return new AllTargetsPlanNode(connectionsGroup.getBaseConnection(), dataGraph, chain, getVars(), scope);
 	}
 
 	public PlanNode getPlanNode(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
@@ -257,53 +260,59 @@ public class EffectiveTarget {
 					.map(EffectiveTargetFragment::getQueryFragment)
 					.collect(Collectors.toList());
 
-			List<StatementMatcher> statementMatchers = sparqlFragments.stream()
-					.flatMap(sparqlFragment -> sparqlFragment.getStatementMatchers().stream())
-					.collect(Collectors.toList());
+			SparqlFragment fragment = SparqlFragment.join(sparqlFragments);
 
-			String query = sparqlFragments.stream()
-					.map(SparqlFragment::getFragment)
-					.reduce((a, b) -> a + "\n" + b)
-					.orElse("");
+			PlanNode targetsPlanNode;
 
-			List<StatementMatcher> statementMatchersRemoval = optional != null
-					? optional.getQueryFragment().getStatementMatchers()
-					: new ArrayList<>();
+			if (fragment.supportsIncrementalEvaluation()) {
 
-			if (chain.getFirst().target instanceof RSXTargetShape) {
-				statementMatchersRemoval.addAll(sparqlFragments.get(0).getStatementMatchers());
-				includeTargetsAffectedByRemoval = true;
-			}
+				List<StatementMatcher> statementMatchers = sparqlFragments.stream()
+						.flatMap(sparqlFragment -> sparqlFragment.getStatementMatchers().stream())
+						.collect(Collectors.toList());
 
-			TargetChainRetriever targetChainRetriever;
-			if (includeTargetsAffectedByRemoval) {
-				targetChainRetriever = new TargetChainRetriever(
-						connectionsGroup,
-						dataGraph,
-						statementMatchers,
-						statementMatchersRemoval,
-						optional,
-						query,
-						getVars(),
-						scope,
-						false);
+				List<StatementMatcher> statementMatchersRemoval = optional != null
+						? optional.getQueryFragment().getStatementMatchers()
+						: new ArrayList<>();
+
+				if (chain.getFirst().target instanceof RSXTargetShape) {
+					statementMatchersRemoval.addAll(sparqlFragments.get(0).getStatementMatchers());
+					includeTargetsAffectedByRemoval = true;
+				}
+
+				if (includeTargetsAffectedByRemoval) {
+					targetsPlanNode = new TargetChainRetriever(
+							connectionsGroup,
+							dataGraph,
+							statementMatchers,
+							statementMatchersRemoval,
+							optional,
+							fragment,
+							getVars(),
+							scope,
+							false);
+				} else {
+					targetsPlanNode = new TargetChainRetriever(
+							connectionsGroup,
+							dataGraph,
+							statementMatchers,
+							null,
+							null,
+							fragment,
+							getVars(),
+							scope,
+							false);
+				}
 			} else {
-				targetChainRetriever = new TargetChainRetriever(
-						connectionsGroup,
-						dataGraph,
-						statementMatchers,
-						null,
-						null,
-						query,
-						getVars(),
-						scope,
-						false);
+
+				targetsPlanNode = new AllTargetsPlanNode(connectionsGroup.getBaseConnection(), dataGraph, chain,
+						getVars(), scope);
+
 			}
 
 			if (filter != null) {
-				return connectionsGroup.getCachedNodeFor(Unique.getInstance(filter.apply(targetChainRetriever), true));
+				return connectionsGroup.getCachedNodeFor(Unique.getInstance(filter.apply(targetsPlanNode), true));
 			} else {
-				return connectionsGroup.getCachedNodeFor(Unique.getInstance(targetChainRetriever, true));
+				return connectionsGroup.getCachedNodeFor(Unique.getInstance(targetsPlanNode, true));
 			}
 
 		}
@@ -326,14 +335,15 @@ public class EffectiveTarget {
 			}
 		}
 
-		String query = chain.stream()
+		List<SparqlFragment> collect = chain.stream()
 				.map(EffectiveTargetFragment::getQueryFragment)
-				.map(SparqlFragment::getFragment)
-				.reduce((a, b) -> a + "\n" + b)
-				.orElse("");
+				.collect(Collectors.toList());
+
+		SparqlFragment sparqlFragment = SparqlFragment.join(collect);
 
 		// TODO: this is a slow way to solve this problem! We should use bulk operations.
-		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), dataGraph, parent, query, last.var,
+		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), dataGraph, parent, sparqlFragment,
+				last.var,
 				ValidationTuple::getActiveTarget)
 				.getTrueNode(UnBufferedPlanNode.class);
 	}
@@ -354,6 +364,29 @@ public class EffectiveTarget {
 				.map(SparqlFragment::getFragment)
 				.reduce((a, b) -> a + "\n" + b)
 				.orElse("");
+
+	}
+
+	public SparqlFragment getQueryFragment(boolean includeOptional) {
+
+		ArrayDeque<EffectiveTargetFragment> chain;
+
+		if (includeOptional) {
+			chain = new ArrayDeque<>(this.chain);
+			chain.addLast(optional);
+		} else {
+			chain = this.chain;
+		}
+
+		if (chain.size() == 1) {
+			return chain.getFirst().getQueryFragment();
+		}
+
+		List<SparqlFragment> collect = chain.stream()
+				.map(EffectiveTargetFragment::getQueryFragment)
+				.collect(Collectors.toList());
+
+		return SparqlFragment.join(collect);
 
 	}
 

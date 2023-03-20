@@ -28,23 +28,27 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
 public class ZeroOrMorePath extends Path {
 
-	private final Path zeroOrMorePath;
+	private final Path path;
 
-	public ZeroOrMorePath(Resource id, Resource zeroOrMorePath, ShapeSource shapeSource) {
+	public ZeroOrMorePath(Resource id, Resource path, ShapeSource shapeSource) {
 		super(id);
-		this.zeroOrMorePath = Path.buildPath(shapeSource, zeroOrMorePath);
+		this.path = Path.buildPath(shapeSource, path);
+	}
 
+	public ZeroOrMorePath(Resource id, Path path) {
+		super(id);
+		this.path = path;
 	}
 
 	@Override
 	public String toString() {
-		return "ZeroOrMorePath{ " + zeroOrMorePath + " }";
+		return "ZeroOrMorePath{ " + path + " }";
 	}
 
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
-		model.add(subject, SHACL.ZERO_OR_MORE_PATH, zeroOrMorePath.getId());
-		zeroOrMorePath.toModel(zeroOrMorePath.getId(), null, model, cycleDetection);
+		model.add(subject, SHACL.ZERO_OR_MORE_PATH, path.getId());
+		path.toModel(path.getId(), null, model, cycleDetection);
 	}
 
 	@Override
@@ -62,6 +66,15 @@ public class ZeroOrMorePath extends Path {
 	@Override
 	public boolean isSupported() {
 		return false;
+	}
+
+	@Override
+	public String toSparqlPathString() {
+		assert path.toSparqlPathString().equals(path.toSparqlPathString().trim());
+		if (path instanceof SimplePath || path instanceof AlternativePath || path instanceof SequencePath) {
+			return path.toSparqlPathString() + "*";
+		}
+		return "(" + path.toSparqlPathString() + ")*";
 	}
 
 	@Override

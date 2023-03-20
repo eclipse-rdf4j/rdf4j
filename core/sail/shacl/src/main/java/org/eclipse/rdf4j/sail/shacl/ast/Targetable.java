@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.shacl.ast;
 
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 
 public interface Targetable {
@@ -19,5 +20,7 @@ public interface Targetable {
 	SparqlFragment getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider, Set<String> inheritedVarNames);
+
+	Set<Namespace> getNamespaces();
 
 }
