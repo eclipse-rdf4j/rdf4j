@@ -14,24 +14,24 @@
       rsx:dataGraph rdf4j:nil;
       rsx:shapesGraph rdf4j:nil;
       sh:focusNode ex:validPerson1;
-      sh:resultPath _:8ae5a7bf85784cc9a613380eedb6118c10782;
+      sh:resultPath _:5089a376325a403b926b5c31d5e95e7215316;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:ClassConstraintComponent;
-      sh:sourceShape _:8ae5a7bf85784cc9a613380eedb6118c10781;
+      sh:sourceShape _:5089a376325a403b926b5c31d5e95e7215315;
       sh:value ex:peter
     ], [ a sh:ValidationResult;
       rsx:dataGraph rdf4j:nil;
       rsx:shapesGraph rdf4j:nil;
       sh:focusNode ex:validPerson1;
-      sh:resultPath _:8ae5a7bf85784cc9a613380eedb6118c10782;
+      sh:resultPath _:5089a376325a403b926b5c31d5e95e7215316;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:ClassConstraintComponent;
-      sh:sourceShape _:8ae5a7bf85784cc9a613380eedb6118c10781;
+      sh:sourceShape _:5089a376325a403b926b5c31d5e95e7215315;
       sh:value ex:jane
     ] .
 
-_:8ae5a7bf85784cc9a613380eedb6118c10781 a sh:PropertyShape;
+_:5089a376325a403b926b5c31d5e95e7215315 a sh:PropertyShape;
   sh:class ex:Person;
-  sh:path _:8ae5a7bf85784cc9a613380eedb6118c10782 .
+  sh:path _:5089a376325a403b926b5c31d5e95e7215316 .
 
-_:8ae5a7bf85784cc9a613380eedb6118c10782 sh:alternativePath (ex:knows ex:knows2) .
+_:5089a376325a403b926b5c31d5e95e7215316 sh:alternativePath (ex:knows ex:knows2) .

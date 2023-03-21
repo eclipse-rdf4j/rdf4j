@@ -16,7 +16,7 @@
       sh:resultMessage "Values are literals with German language tag.";
       sh:resultPath ex:germanLabel;
       sh:resultSeverity sh:Violation;
-      sh:sourceConstraint _:91b2e40ac2c64832aec972d52e78054613140;
+      sh:sourceConstraint _:5089a376325a403b926b5c31d5e95e7218429;
       sh:sourceConstraintComponent sh:SPARQLConstraintComponent;
       sh:sourceShape ex:LanguageExamplePropertyShape;
       sh:value "Spain"@en
@@ -24,10 +24,10 @@
 
 ex:LanguageExamplePropertyShape a sh:PropertyShape;
   sh:path ex:germanLabel;
-  sh:sparql _:91b2e40ac2c64832aec972d52e78054613140;
+  sh:sparql _:5089a376325a403b926b5c31d5e95e7218429;
   sh:targetClass ex:Country .
 
-_:91b2e40ac2c64832aec972d52e78054613140 a sh:SPARQLConstraint;
+_:5089a376325a403b926b5c31d5e95e7218429 a sh:SPARQLConstraint;
   sh:message "Values are literals with German language tag.";
   sh:prefixes <http://example.com/ns#>;
   sh:select """

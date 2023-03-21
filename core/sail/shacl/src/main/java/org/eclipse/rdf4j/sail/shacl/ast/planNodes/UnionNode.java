@@ -39,7 +39,7 @@ public class UnionNode implements PlanNode {
 	}
 
 	public static PlanNode getInstance(PlanNode... nodes) {
-		PlanNode[] planNodes = Arrays.stream(nodes).filter(n -> !(n instanceof EmptyNode)).flatMap(n -> {
+		PlanNode[] planNodes = Arrays.stream(nodes).filter(n -> !(n.isGuaranteedEmpty())).flatMap(n -> {
 			if (n instanceof UnionNode) {
 				return Arrays.stream(((UnionNode) n).nodes);
 			}
@@ -58,7 +58,7 @@ public class UnionNode implements PlanNode {
 	}
 
 	public static PlanNode getInstanceDedupe(PlanNode... nodes) {
-		PlanNode[] planNodes = Arrays.stream(nodes).filter(n -> !(n instanceof EmptyNode)).distinct().flatMap(n -> {
+		PlanNode[] planNodes = Arrays.stream(nodes).filter(n -> !(n.isGuaranteedEmpty())).distinct().flatMap(n -> {
 			if (n instanceof UnionNode) {
 				return Arrays.stream(((UnionNode) n).nodes);
 			}

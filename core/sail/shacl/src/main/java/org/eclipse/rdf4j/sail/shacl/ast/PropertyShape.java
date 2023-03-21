@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
@@ -64,13 +63,15 @@ public class PropertyShape extends Shape {
 		this.path = propertyShape.path;
 	}
 
-	public static PropertyShape getInstance(ShaclProperties properties, ShapeSource shapeSource, Cache cache,
-			ShaclSail shaclSail) {
+	public static PropertyShape getInstance(ShaclProperties properties, ShapeSource shapeSource,
+			ParseSettings parseSettings, Cache cache) {
+
 		Shape shape = cache.get(properties.getId());
+
 		if (shape == null) {
 			shape = new PropertyShape();
 			cache.put(properties.getId(), shape);
-			shape.populate(properties, shapeSource, cache, shaclSail);
+			shape.populate(properties, shapeSource, parseSettings, cache);
 		}
 
 		if (shape.constraintComponents.isEmpty()) {
@@ -81,9 +82,9 @@ public class PropertyShape extends Shape {
 	}
 
 	@Override
-	public void populate(ShaclProperties properties, ShapeSource connection,
-			Cache cache, ShaclSail shaclSail) {
-		super.populate(properties, connection, cache, shaclSail);
+	public void populate(ShaclProperties properties, ShapeSource connection, ParseSettings parseSettings, Cache cache) {
+
+		super.populate(properties, connection, parseSettings, cache);
 
 		this.path = Path.buildPath(connection, properties.getPath());
 
@@ -91,8 +92,7 @@ public class PropertyShape extends Shape {
 			throw new IllegalStateException(properties.getId() + " is a sh:PropertyShape without a sh:path!");
 		}
 
-		constraintComponents = getConstraintComponents(properties, connection, cache, shaclSail
-		);
+		constraintComponents = getConstraintComponents(properties, connection, parseSettings, cache);
 	}
 
 	@Override

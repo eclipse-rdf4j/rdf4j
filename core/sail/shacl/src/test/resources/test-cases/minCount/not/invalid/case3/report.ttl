@@ -13,11 +13,11 @@
   sh:result [ a sh:ValidationResult;
       rsx:dataGraph rdf4j:nil;
       rsx:shapesGraph rdf4j:nil;
-      sh:focusNode _:24b910351cf2aae6;
+      sh:focusNode _:29bf0cfaf52d3f0e;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:sourceShape ex:PersonShape;
-      sh:value _:24b910351cf2aae6
+      sh:value _:29bf0cfaf52d3f0e
     ] .
 
 ex:PersonShape a sh:NodeShape;

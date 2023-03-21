@@ -17,7 +17,7 @@
       sh:resultPath ex:knows2;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:NodeConstraintComponent;
-      sh:sourceShape _:node1fts8k5lqx4390;
+      sh:sourceShape _:5089a376325a403b926b5c31d5e95e721475;
       sh:value ex:p2
     ], [ a sh:ValidationResult;
       rsx:dataGraph rdf4j:nil;
@@ -26,11 +26,11 @@
       sh:resultPath ex:knows2;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:NodeConstraintComponent;
-      sh:sourceShape _:node1fts8k5lqx4390;
+      sh:sourceShape _:5089a376325a403b926b5c31d5e95e721475;
       sh:value ex:p2
     ] .
 
-_:node1fts8k5lqx4390 a sh:PropertyShape;
+_:5089a376325a403b926b5c31d5e95e721475 a sh:PropertyShape;
   sh:node [ a sh:NodeShape;
       sh:property [ a sh:PropertyShape;
           sh:path ex:knows3;

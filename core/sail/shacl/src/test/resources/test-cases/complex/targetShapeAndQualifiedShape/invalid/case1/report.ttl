@@ -13,19 +13,11 @@
   sh:result [ a sh:ValidationResult;
       rsx:dataGraph rdf4j:nil;
       rsx:shapesGraph rdf4j:nil;
-      sh:focusNode <http://example-langstr.com/3>;
-      sh:resultPath <http://example.com/ontology#uniqStrOrLangstrEnDeAllDialects>;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:QualifiedMaxCountConstraintComponent;
-      sh:sourceShape _:node1fts8k5lqx46765
-    ], [ a sh:ValidationResult;
-      rsx:dataGraph rdf4j:nil;
-      rsx:shapesGraph rdf4j:nil;
       sh:focusNode <http://example-langstr.com/1>;
       sh:resultPath <http://example.com/ontology#uniqStrOrLangstrEnDeAllDialects>;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:QualifiedMaxCountConstraintComponent;
-      sh:sourceShape _:node1fts8k5lqx46765
+      sh:sourceShape _:5089a376325a403b926b5c31d5e95e724768
     ], [ a sh:ValidationResult;
       rsx:dataGraph rdf4j:nil;
       rsx:shapesGraph rdf4j:nil;
@@ -33,10 +25,18 @@
       sh:resultPath <http://example.com/ontology#uniqStrOrLangstrEnDeAllDialects>;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:QualifiedMaxCountConstraintComponent;
-      sh:sourceShape _:node1fts8k5lqx46765
+      sh:sourceShape _:5089a376325a403b926b5c31d5e95e724768
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode <http://example-langstr.com/3>;
+      sh:resultPath <http://example.com/ontology#uniqStrOrLangstrEnDeAllDialects>;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:QualifiedMaxCountConstraintComponent;
+      sh:sourceShape _:5089a376325a403b926b5c31d5e95e724768
     ] .
 
-_:node1fts8k5lqx46765 a sh:PropertyShape;
+_:5089a376325a403b926b5c31d5e95e724768 a sh:PropertyShape;
   sh:path <http://example.com/ontology#uniqStrOrLangstrEnDeAllDialects>;
   sh:qualifiedMaxCount 1;
   sh:qualifiedValueShape [ a sh:NodeShape;

@@ -45,6 +45,15 @@ public class ShaclTestWithoutRdfsReasonerTest extends AbstractShaclTest {
 		runWithAutomaticLogging(() -> runTestCaseRevalidate(testCase, isolationLevel));
 	}
 
+	@ParameterizedTest
+	@MethodSource("testCases")
+	public void testShaclValidator(TestCase testCase) {
+		if (ignoredTest(testCase)) {
+			return;
+		}
+		runWithAutomaticLogging(() -> runWithShaclValidator(testCase));
+	}
+
 	// Since we have disabled the RDFS reasoner we can't run the tests that require reasoning
 	private static boolean ignoredTest(TestCase testCase) {
 		return testCase.getTestCasePath().contains("/subclass");

@@ -16,23 +16,23 @@
       sh:resultPath ex:info2;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:MinCountConstraintComponent;
-      sh:sourceShape _:node1ftskin5gx42352
+      sh:sourceShape _:5089a376325a403b926b5c31d5e95e729724
     ], [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:Person;
       sh:resultPath ex:info2;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:MinCountConstraintComponent;
-      sh:sourceShape _:node1ftskin5gx42352
+      sh:sourceShape _:5089a376325a403b926b5c31d5e95e729724
     ], [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode "blue";
       sh:resultPath ex:info2;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:MinCountConstraintComponent;
-      sh:sourceShape _:node1ftskin5gx42352
+      sh:sourceShape _:5089a376325a403b926b5c31d5e95e729724
     ] .
 
-_:node1ftskin5gx42352 a sh:PropertyShape;
+_:5089a376325a403b926b5c31d5e95e729724 a sh:PropertyShape;
   sh:minCount 1;
   sh:path ex:info2 .

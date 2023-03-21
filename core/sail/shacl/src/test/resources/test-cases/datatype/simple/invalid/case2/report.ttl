@@ -12,7 +12,7 @@
   sh:conforms false;
   sh:result [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
-      sh:focusNode ex:validPerson2;
+      sh:focusNode ex:validPerson1;
       sh:resultPath ex:age;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
@@ -20,7 +20,7 @@
       sh:value "123"
     ], [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
-      sh:focusNode ex:validPerson1;
+      sh:focusNode ex:validPerson2;
       sh:resultPath ex:age;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:DatatypeConstraintComponent;

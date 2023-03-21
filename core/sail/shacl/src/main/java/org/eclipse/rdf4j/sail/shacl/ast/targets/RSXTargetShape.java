@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ast.Cache;
 import org.eclipse.rdf4j.sail.shacl.ast.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.ast.PropertyShape;
@@ -44,13 +43,13 @@ public class RSXTargetShape extends Target {
 
 	private final Shape targetShape;
 
-	public RSXTargetShape(Resource targetShape, ShapeSource shapeSource, ShaclSail shaclSail) {
+	public RSXTargetShape(Resource targetShape, ShapeSource shapeSource, Shape.ParseSettings parseSettings) {
 		ShaclProperties p = new ShaclProperties(targetShape, shapeSource);
 
 		if (p.getType() == SHACL.NODE_SHAPE) {
-			this.targetShape = NodeShape.getInstance(p, shapeSource, new Cache(), shaclSail);
+			this.targetShape = NodeShape.getInstance(p, shapeSource, parseSettings, new Cache());
 		} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-			this.targetShape = PropertyShape.getInstance(p, shapeSource, new Cache(), shaclSail);
+			this.targetShape = PropertyShape.getInstance(p, shapeSource, parseSettings, new Cache());
 		} else {
 			throw new IllegalStateException("Unknown shape type for " + p.getId());
 		}

@@ -93,6 +93,7 @@ public class ShaclProperties {
 	private Resource ignoredProperties;
 
 	private final List<Literal> message = new ArrayList<>();
+	private IRI severity;
 
 	private final List<Resource> sparql = new ArrayList<>();
 
@@ -144,6 +145,12 @@ public class ShaclProperties {
 					break;
 				case "http://www.w3.org/ns/shacl#message":
 					message.add((Literal) object);
+					break;
+				case "http://www.w3.org/ns/shacl#severity":
+					if (severity != null) {
+						throw new IllegalStateException(predicate + " already populated");
+					}
+					severity = (IRI) object;
 					break;
 				case "http://www.w3.org/ns/shacl#languageIn":
 					if (languageIn != null) {
@@ -451,6 +458,10 @@ public class ShaclProperties {
 
 	public List<Literal> getMessage() {
 		return message;
+	}
+
+	public IRI getSeverity() {
+		return severity;
 	}
 
 	public List<Resource> getProperty() {

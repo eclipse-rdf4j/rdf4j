@@ -13,21 +13,21 @@
   sh:result [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:validPerson1;
-      sh:resultPath _:bc1e3daa14e346808ddabb4154a9d09542;
+      sh:resultPath _:5089a376325a403b926b5c31d5e95e7213047;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:MinCountConstraintComponent;
-      sh:sourceShape _:bc1e3daa14e346808ddabb4154a9d09541
+      sh:sourceShape _:5089a376325a403b926b5c31d5e95e7213046
     ], [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:validPerson2;
-      sh:resultPath _:bc1e3daa14e346808ddabb4154a9d09542;
+      sh:resultPath _:5089a376325a403b926b5c31d5e95e7213047;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:MinCountConstraintComponent;
-      sh:sourceShape _:bc1e3daa14e346808ddabb4154a9d09541
+      sh:sourceShape _:5089a376325a403b926b5c31d5e95e7213046
     ] .
 
-_:bc1e3daa14e346808ddabb4154a9d09541 a sh:PropertyShape;
+_:5089a376325a403b926b5c31d5e95e7213046 a sh:PropertyShape;
   sh:minCount 2;
-  sh:path _:bc1e3daa14e346808ddabb4154a9d09542 .
+  sh:path _:5089a376325a403b926b5c31d5e95e7213047 .
 
-_:bc1e3daa14e346808ddabb4154a9d09542 sh:alternativePath (ex:ssn ex:socialSecurityNumber) .
+_:5089a376325a403b926b5c31d5e95e7213047 sh:alternativePath (ex:ssn ex:socialSecurityNumber) .

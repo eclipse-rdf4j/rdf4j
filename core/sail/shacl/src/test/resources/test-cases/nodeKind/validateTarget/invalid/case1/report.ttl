@@ -12,11 +12,11 @@
   sh:conforms false;
   sh:result [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
-      sh:focusNode _:622595bbfa4b52f6;
+      sh:focusNode _:54ef52ee27754ed1;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:NodeKindConstraintComponent;
       sh:sourceShape ex:PersonShape;
-      sh:value _:622595bbfa4b52f6
+      sh:value _:54ef52ee27754ed1
     ] .
 
 ex:PersonShape a sh:NodeShape;

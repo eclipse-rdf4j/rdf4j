@@ -54,7 +54,7 @@ public class NoChangeTest {
 			ShaclSailConnection connectionSpy = Mockito.spy((ShaclSailConnection) connection);
 			connectionSpy.begin();
 			connectionSpy.commit();
-			verify(connectionSpy, never()).prepareValidation();
+			verify(connectionSpy, never()).prepareValidation(new ValidationSettings());
 		}
 
 		shaclSail.shutDown();

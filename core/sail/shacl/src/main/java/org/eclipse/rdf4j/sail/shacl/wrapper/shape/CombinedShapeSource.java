@@ -27,12 +27,25 @@ public class CombinedShapeSource implements ShapeSource {
 	private final BackwardChainingShapeSource baseSail;
 	private final Resource[] context;
 
+	public CombinedShapeSource(SailConnection shapesForForwardChainingConnection,
+			SailConnection sailConnection) {
+		this(shapesForForwardChainingConnection, sailConnection, null);
+	}
+
 	public CombinedShapeSource(RepositoryConnection shapesForForwardChainingConnection,
 			SailConnection sailConnection) {
 		this(shapesForForwardChainingConnection, sailConnection, null);
 	}
 
 	private CombinedShapeSource(RepositoryConnection shapesForForwardChainingConnection,
+			SailConnection sailConnection,
+			Resource[] context) {
+		this.rdf4jShapesGraph = new ForwardChainingShapeSource(shapesForForwardChainingConnection);
+		this.baseSail = new BackwardChainingShapeSource(sailConnection);
+		this.context = context;
+	}
+
+	private CombinedShapeSource(SailConnection shapesForForwardChainingConnection,
 			SailConnection sailConnection,
 			Resource[] context) {
 		this.rdf4jShapesGraph = new ForwardChainingShapeSource(shapesForForwardChainingConnection);

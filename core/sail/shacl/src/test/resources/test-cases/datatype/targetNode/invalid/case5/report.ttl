@@ -16,7 +16,7 @@
       sh:resultPath ex:age;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
-      sh:sourceShape _:ebc83c7c91ca49f6a54b8e3d6925d2f63896;
+      sh:sourceShape _:5089a376325a403b926b5c31d5e95e726656;
       sh:value "456"
     ], [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
@@ -24,10 +24,10 @@
       sh:resultPath ex:age;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
-      sh:sourceShape _:ebc83c7c91ca49f6a54b8e3d6925d2f63896;
+      sh:sourceShape _:5089a376325a403b926b5c31d5e95e726656;
       sh:value "456"
     ] .
 
-_:ebc83c7c91ca49f6a54b8e3d6925d2f63896 a sh:PropertyShape;
+_:5089a376325a403b926b5c31d5e95e726656 a sh:PropertyShape;
   sh:datatype xsd:integer;
   sh:path ex:age .

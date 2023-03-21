@@ -33,4 +33,8 @@ public interface PlanNode {
 
 	boolean requiresSorted();
 
+	default boolean isGuaranteedEmpty() {
+		return false;
+	}
+
 }

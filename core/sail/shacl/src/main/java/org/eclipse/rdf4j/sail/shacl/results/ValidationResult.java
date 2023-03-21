@@ -190,6 +190,13 @@ public class ValidationResult {
 	}
 
 	/**
+	 * @return conforms
+	 */
+	public boolean conforms() {
+		return severity != Severity.Violation;
+	}
+
+	/**
 	 * @return the type of the source constraint that caused the violation
 	 */
 	public SourceConstraintComponent getSourceConstraintComponent() {
