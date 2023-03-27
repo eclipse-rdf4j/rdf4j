@@ -89,30 +89,19 @@ components:
               namespace: http://www.w3.org/2005/sparql-results#
           examples:
             SelectQueryResult:
-              description: SELECT query result in XML
-              value:
-                $ref: "#/components/examples/SparqlXmlBindings"
+              $ref: "#/components/examples/SparqlXmlBindings"
             AskQueryResult:
-              description: ASK query result in XML
-              value:
-                $ref: "#/components/examples/SparqlXmlBoolean"
+              $ref: "#/components/examples/SparqlXmlBoolean"
         application/x-binary-rdf-results-table:
           schema:
             type: string
             format: binary
         application/sparql-results+json:
-          schema:
-            type: object
-            format: json
           examples:
             SelectQueryResult:
-              description: SELECT query result in JSON
-              value:
-                $ref: "#/components/examples/SparqlJsonBindings"
+              $ref: "#/components/examples/SparqlJsonBindings"
             AskQueryResult:
-              description: ASK query result in JSON
-              value:
-                $ref: "#/components/examples/SparqlJsonBoolean"
+              $ref: "#/components/examples/SparqlJsonBoolean"
         text/boolean:
           schema:
             type: string
@@ -199,7 +188,8 @@ components:
             type: string
             format: binary
   examples:
-    SparqlXmlBindings: |
+    SparqlXmlBindings:
+      value: |
         <?xml version='1.0' encoding='UTF-8'?>
         <sparql xmlns='http://www.w3.org/2005/sparql-results#'>
           <head>
@@ -221,30 +211,33 @@ components:
             </result>
           </results>
         </sparql>
-    SparqlXmlBoolean: |
-      <?xml version="1.0"?>
-      <sparql xmlns="http://www.w3.org/2005/sparql-results#">
-        <head>
-        </head>
-        <boolean>true</boolean>
-      </sparql>
+    SparqlXmlBoolean: 
+      value: |
+        <?xml version="1.0"?>
+        <sparql xmlns="http://www.w3.org/2005/sparql-results#">
+          <head>
+          </head>
+          <boolean>true</boolean>
+        </sparql>
     SparqlJsonBindings:
-      head:
-        vars: [ "s", "p", "o" ]
-        results:
-          bindings:
-            - s:
-                type: "uri"
-                value: "http://example.org/s1"
-            - p:
-                type: "uri"
-                value: "http://example.org/p1"
-            - o:
-                type: "literal"
-                value: "foo"
+      value:
+        head:
+          vars: [ "s", "p", "o" ]
+          results:
+            bindings:
+              - s:
+                  type: "uri"
+                  value: "http://example.org/s1"
+              - p:
+                  type: "uri"
+                  value: "http://example.org/p1"
+              - o:
+                  type: "literal"
+                  value: "foo"
     SparqlJsonBoolean:
-      head: {}
-      boolean: true
+      value:
+        head: {}
+        boolean: true
 
 paths:
   /protocol:
@@ -440,6 +433,13 @@ paths:
       tags:
         - Repositories
       summary: Repository creation
+      parameters:
+        - name: repositoryID
+          in: path
+          description: The repository ID
+          required: true
+          schema:
+            type: string
       description: |
         A new repository with can be created on the server by sending a PUT request to this endpoint.
 
@@ -448,6 +448,9 @@ paths:
         description: configuration of the repository to be created
         required: true
         $ref: "#/components/requestBodies/RdfData"
+      responses:
+        '204': 
+          description: created
 
   /repositories/{repositoryID}/statements:
     get:
@@ -578,7 +581,6 @@ paths:
       requestBody:
         content:
           application/x-www-form-urlencoded:
-            description: SPARQL 1.1 update encoded as a form parameter
             schema:
               type: object
               properties:
@@ -587,7 +589,6 @@ paths:
             example:
               update: INSERT {?s ?p ?o} WHERE {?s ?p ?o}
           application/sparql-update:
-            description: SPARQL 1.1 update in plain text
             schema:
               type: string
             example: INSERT {?s ?p ?o} WHERE {?s ?p ?o}
