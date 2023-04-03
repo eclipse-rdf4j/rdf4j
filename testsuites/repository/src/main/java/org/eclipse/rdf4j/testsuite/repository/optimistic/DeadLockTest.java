@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.repository.optimistic;
 
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.Assert.assertNull;
 
 import java.util.concurrent.CountDownLatch;
 
@@ -22,20 +22,20 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Test;
 
 public class DeadLockTest {
 
-	@BeforeAll
+	@BeforeClass
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	@AfterAll
+	@AfterClass
 	public static void afterClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
@@ -56,7 +56,7 @@ public class DeadLockTest {
 
 	private IRI REMBRANDT;
 
-	@BeforeEach
+	@Before
 	public void setUp() throws Exception {
 		repo = OptimisticIsolationTest.getEmptyInitializedRepository(DeadLockTest.class);
 		ValueFactory uf = repo.getValueFactory();
@@ -67,7 +67,7 @@ public class DeadLockTest {
 		b = repo.getConnection();
 	}
 
-	@AfterEach
+	@After
 	public void tearDown() throws Exception {
 		try {
 			a.close();

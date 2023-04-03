@@ -10,19 +10,55 @@
 
 rdf4j:SHACLShapeGraph {
 
+ex:
+	sh:declare [
+		sh:prefix "ex" ;
+		sh:namespace "http://example.com/ns#"^^xsd:anyURI ;
+	] ,
+	[
+		sh:prefix "owl" ;
+		sh:namespace "http://www.w3.org/2002/07/owl#"^^xsd:anyURI ;
+	] ,
+	[
+		sh:prefix "rdf" ;
+		sh:namespace "http://www.w3.org/1999/02/22-rdf-syntax-ns#"^^xsd:anyURI ;
+	] ,
+	[
+		sh:prefix "rdfs" ;
+		sh:namespace "http://www.w3.org/2000/01/rdf-schema#"^^xsd:anyURI ;
+	] ,
+	[
+		sh:prefix "sh" ;
+		sh:namespace "http://www.w3.org/ns/shacl#"^^xsd:anyURI ;
+	] ,
+	[
+		sh:prefix "xsd" ;
+		sh:namespace "http://www.w3.org/2001/XMLSchema#"^^xsd:anyURI ;
+	],
+	[
+		sh:prefix "dcat" ;
+		sh:namespace "http://www.w3.org/ns/dcat#"^^xsd:anyURI ;
+	],
+	[
+		sh:prefix "dc" ;
+		sh:namespace "http://purl.org/dc/terms/"^^xsd:anyURI ;
+	],
+	[
+		sh:prefix "skos" ;
+		sh:namespace "http://www.w3.org/2004/02/skos/core#"^^xsd:anyURI ;
+	],
+	[
+		sh:prefix "foaf" ;
+		sh:namespace "http://xmlns.com/foaf/0.1/"^^xsd:anyURI ;
+	] .
 
 
 ex:PersonShape
 	a sh:NodeShape  ;
 	sh:target [
         		a sh:SPARQLTarget ;
+        		sh:prefixes ex: ;
         		sh:select """
-        		        PREFIX ex: <http://example.com/ns#>
-                                PREFIX owl: <http://www.w3.org/2002/07/owl#>
-                                PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-                                PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-                                PREFIX sh: <http://www.w3.org/ns/shacl#>
-                                PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
         			SELECT ?this
         			WHERE {

@@ -44,7 +44,7 @@ import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
 import org.eclipse.rdf4j.testsuite.sparql.vocabulary.EX;
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
 
 /**
  * Tests on SPARQL property paths.

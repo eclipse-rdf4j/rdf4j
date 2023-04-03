@@ -12,17 +12,19 @@
 package org.eclipse.rdf4j.sail.shacl.ast.targets;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedSplitter;
@@ -66,15 +68,15 @@ public class TargetClass extends Target {
 					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope));
 		} else {
 			planNode = new Select(connection,
-					getQueryFragment("?a", "?c", null, new StatementMatcher.StableRandomVariableProvider()),
+					SparqlFragment.bgp(Set.of(),
+							getQueryFragment("?a", "?c", null, new StatementMatcher.StableRandomVariableProvider())),
 					"?a", b -> new ValidationTuple(b.getValue("a"), scope, false, dataGraph), dataGraph);
 		}
 
 		return Unique.getInstance(planNode, false);
 	}
 
-	@Override
-	public String getQueryFragment(String subjectVariable, String objectVariable,
+	String getQueryFragment(String subjectVariable, String objectVariable,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		Set<Resource> targets = targetClass;
@@ -137,51 +139,40 @@ public class TargetClass extends Target {
 	}
 
 	@Override
-	public Stream<StatementMatcher> getStatementMatcher(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		assert (subject == null);
-
-		Stream<Resource> stream = targetClass.stream();
-
-		if (rdfsSubClassOfReasoner != null) {
-			stream = stream
-					.map(rdfsSubClassOfReasoner::backwardsChain)
-					.flatMap(Collection::stream)
-					.distinct();
-		}
-
-		return stream
-				.map(t -> new StatementMatcher(object, new StatementMatcher.Variable(RDF.TYPE),
-						new StatementMatcher.Variable(t)));
-
-	}
-
-	@Override
-	public String getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
+	public SparqlFragment getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider, Set<String> inheritedVarNames) {
 		assert (subject == null);
 
 		Collection<Resource> targetClass;
 
 		if (rdfsSubClassOfReasoner != null) {
-			targetClass = this.targetClass
-					.stream()
-					.map(rdfsSubClassOfReasoner::backwardsChain)
-					.flatMap(Collection::stream)
-					.distinct()
-					.collect(Collectors.toList());
+			if (this.targetClass.size() == 1) {
+				targetClass = rdfsSubClassOfReasoner.backwardsChain((Resource) this.targetClass.toArray()[0]);
+			} else {
+				targetClass = this.targetClass
+						.stream()
+						.map(rdfsSubClassOfReasoner::backwardsChain)
+						.flatMap(Collection::stream)
+						.collect(Collectors.toSet());
+			}
 		} else {
 			targetClass = this.targetClass;
 		}
 
+		List<StatementMatcher> statementMatchers = targetClass.stream()
+				.map(t -> new StatementMatcher(object, new StatementMatcher.Variable(RDF.TYPE),
+						new StatementMatcher.Variable(t), this, Set.of()))
+				.collect(Collectors.toList());
+
 		if (targetClass.size() == 1) {
 
-			return targetClass.stream()
+			String queryFragment = targetClass.stream()
 					.findFirst()
 					.map(r -> object.asSparqlVariable() + " a <" + r + "> .")
 					.orElseThrow(IllegalStateException::new);
+
+			return SparqlFragment.bgp(List.of(), queryFragment, statementMatchers);
 
 		} else {
 
@@ -193,10 +184,17 @@ public class TargetClass extends Target {
 
 			String randomSparqlVariable = stableRandomVariableProvider.next().asSparqlVariable();
 
-			return object.asSparqlVariable() + " a " + randomSparqlVariable + ".\n" +
+			String queryFragment = object.asSparqlVariable() + " a " + randomSparqlVariable + ".\n" +
 					"FILTER(" + randomSparqlVariable + " in ( " + in + " ))";
+
+			return SparqlFragment.bgp(List.of(), queryFragment, statementMatchers);
 		}
 
+	}
+
+	@Override
+	public Set<Namespace> getNamespaces() {
+		return Set.of();
 	}
 
 	@Override
@@ -215,4 +213,5 @@ public class TargetClass extends Target {
 	public int hashCode() {
 		return Objects.hash(targetClass);
 	}
+
 }

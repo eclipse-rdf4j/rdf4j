@@ -62,9 +62,14 @@ public class FilterByPredicate implements PlanNode {
 
 			ValidationTuple next = null;
 
-			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
+			private CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
 
 			List<IRI> filterOnPredicates = null;
+
+			@Override
+			protected void init() {
+				parentIterator = parent.iterator();
+			}
 
 			void calculateNext() {
 				if (filterOnPredicates == null) {
@@ -128,18 +133,20 @@ public class FilterByPredicate implements PlanNode {
 			}
 
 			@Override
-			public void localClose() throws SailException {
-				parentIterator.close();
+			public void localClose() {
+				if (parentIterator != null) {
+					parentIterator.close();
+				}
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				calculateNext();
 				return next != null;
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 				calculateNext();
 
 				ValidationTuple temp = next;

@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -33,6 +34,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
+import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencerConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 public class ForwardChainingShapeSource implements ShapeSource {
@@ -40,7 +42,6 @@ public class ForwardChainingShapeSource implements ShapeSource {
 	// SHACL Vocabulary from W3C - https://www.w3.org/ns/shacl.ttl
 	private final static IRI shaclVocabularyGraph = iri(RDF4J.NAMESPACE, "shaclVocabularyGraph");
 	private final static SchemaCachingRDFSInferencer shaclVocabulary = createShaclVocabulary();
-	private static final Resource[] defaultContext = { RDF4J.SHACL_SHAPE_GRAPH };
 
 	private final RepositoryConnection connection;
 	private final Resource[] context;
@@ -66,23 +67,26 @@ public class ForwardChainingShapeSource implements ShapeSource {
 	}
 
 	private SailRepository forwardChain(RepositoryConnection shapesRepoConnection) {
-		SailRepository shapesRepoWithReasoning = new SailRepository(
-				SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore(), false));
-		shapesRepoWithReasoning.init();
-
-		try (var shapesRepoWithReasoningConnection = shapesRepoWithReasoning.getConnection()) {
-
-			shapesRepoWithReasoningConnection.begin(IsolationLevels.NONE);
-
-			try (var statements = shapesRepoConnection.getStatements(null, null, null, false)) {
-				shapesRepoWithReasoningConnection.add(statements);
+		try (var statements = shapesRepoConnection.getStatements(null, null, null, false)) {
+			if (!statements.hasNext()) {
+				return new SailRepository(new MemoryStore());
 			}
 
-			enrichShapes(shapesRepoWithReasoningConnection);
-			shapesRepoWithReasoningConnection.commit();
-		}
+			SailRepository shapesRepoWithReasoning = new SailRepository(
+					SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore(), false));
 
-		return shapesRepoWithReasoning;
+			try (var shapesRepoWithReasoningConnection = shapesRepoWithReasoning.getConnection()) {
+				shapesRepoWithReasoningConnection.begin(IsolationLevels.NONE);
+
+				shapesRepoWithReasoningConnection.add(statements);
+				enrichShapes(shapesRepoWithReasoningConnection);
+
+				shapesRepoWithReasoningConnection.commit();
+			}
+
+			return shapesRepoWithReasoning;
+
+		}
 	}
 
 	private static SchemaCachingRDFSInferencer createShaclVocabulary() {
@@ -96,6 +100,17 @@ public class ForwardChainingShapeSource implements ShapeSource {
 						shaclVocabularyGraph));
 				connection.commit();
 			}
+
+			// warm up the fast instantiation
+			SchemaCachingRDFSInferencer fastInstantiated = SchemaCachingRDFSInferencer
+					.fastInstantiateFrom(schemaCachingRDFSInferencer, new MemoryStore());
+			try (SchemaCachingRDFSInferencerConnection connection = fastInstantiated.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.commit();
+			} finally {
+				fastInstantiated.shutDown();
+			}
+
 			return schemaCachingRDFSInferencer;
 		} catch (IOException e) {
 			throw new IllegalStateException("Resource could not be read: shacl-sparql-inference/shaclVocabulary.ttl",
@@ -158,15 +173,6 @@ public class ForwardChainingShapeSource implements ShapeSource {
 
 	}
 
-	private Stream<Resource> getContext(Predicates predicate) {
-		assert context == null;
-
-		return connection.getStatements(null, predicate.getIRI(), null, true)
-				.stream()
-				.map(Statement::getContext)
-				.distinct();
-	}
-
 	public Stream<Resource> getTargetableShape() {
 		assert context != null;
 		return Stream
@@ -184,7 +190,22 @@ public class ForwardChainingShapeSource implements ShapeSource {
 
 	public boolean isType(Resource subject, IRI type) {
 		assert context != null;
-		return connection.hasStatement(subject, RDF.TYPE, type, true, context);
+		if (connection.hasStatement(subject, RDF.TYPE, type, true, context)) {
+			return true;
+		}
+		if (type.equals(SHACL.NODE_SHAPE)) {
+			if (connection.hasStatement(subject, RDF.TYPE, SHACL.SHAPE, true, context)) {
+				return true;
+			}
+			try (Stream<Statement> stream = connection.getStatements(subject, null, null, true, context).stream()) {
+				return stream
+						.map(Statement::getPredicate)
+						.map(Value::stringValue)
+						.anyMatch(predicate -> predicate.startsWith(SHACL.NAMESPACE)
+								|| predicate.startsWith(DASH.NAMESPACE));
+			}
+		}
+		return false;
 	}
 
 	public Stream<Resource> getSubjects(Predicates predicate) {

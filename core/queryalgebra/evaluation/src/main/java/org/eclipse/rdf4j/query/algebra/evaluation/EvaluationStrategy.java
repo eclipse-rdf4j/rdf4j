@@ -10,22 +10,26 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
-import java.util.ArrayDeque;
-import java.util.HashSet;
 import java.util.Queue;
 import java.util.Set;
+import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.ArrayBindingBasedQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLFederatedService;
@@ -175,11 +179,25 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	}
 
 	default <T> Set<T> makeSet() {
-		return new HashSet<>();
+		return new DefaultCollectionFactory().createSet();
 	}
 
 	default <T> Queue<T> makeQueue() {
-		return new ArrayDeque<>();
+		return new DefaultCollectionFactory().createQueue();
 	}
 
+	/**
+	 * Set the collection factory that will create the collections to use during query evaluaton.
+	 *
+	 * @param a CollectionFactory that should be used during future query evaluations
+	 **/
+	@Experimental
+	public default void setCollectionFactory(Supplier<CollectionFactory> collectionFactory) {
+		// Do nothing per default. Implementations should take this value and use it
+	}
+
+	@Experimental
+	public default Supplier<CollectionFactory> getCollectionFactory() {
+		return DefaultCollectionFactory::new;
+	}
 }

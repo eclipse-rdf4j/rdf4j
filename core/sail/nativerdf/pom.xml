@@ -32,6 +32,11 @@
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-collection-factory-mapdb</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-model</artifactId>
 			<version>${project.version}</version>
 		</dependency>
@@ -89,11 +94,6 @@
 			<groupId>org.openjdk.jmh</groupId>
 			<artifactId>jmh-generator-annprocess</artifactId>
 			<version>${jmhVersion}</version>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.junit.jupiter</groupId>
-			<artifactId>junit-jupiter-params</artifactId>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>

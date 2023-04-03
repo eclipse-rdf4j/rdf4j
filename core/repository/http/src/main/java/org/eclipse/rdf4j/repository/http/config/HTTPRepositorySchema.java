@@ -10,9 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.http.config;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 
 /**
@@ -20,33 +21,27 @@ import org.eclipse.rdf4j.repository.http.HTTPRepository;
  * {@link HTTPRepository}s.
  *
  * @author Arjohn Kampman
+ *
+ * @deprecated since 4.3.0. Use {@link CONFIG} instead.
+ *
  */
+@Deprecated(since = "4.3.0", forRemoval = true)
 public class HTTPRepositorySchema {
 
-	/**
-	 * The HTTPRepository schema namespace (<var>http://www.openrdf.org/config/repository/http#</var>).
-	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/http#";
 
 	/**
-	 * <var>http://www.openrdf.org/config/repository/http#repositoryURL</var>
+	 * @deprecated use {@link CONFIG#url} instead.
 	 */
-	public final static IRI REPOSITORYURL;
+	public final static IRI REPOSITORYURL = iri(NAMESPACE, "repositoryURL");
 
 	/**
-	 * <var>http://www.openrdf.org/config/repository/http#username</var>
+	 * @deprecated use {@link CONFIG#username} instead.
 	 */
-	public final static IRI USERNAME;
+	public final static IRI USERNAME = iri(NAMESPACE, "username");
 
 	/**
-	 * <var>http://www.openrdf.org/config/repository/http#password</var>
+	 * @deprecated use {@link CONFIG#password} instead.
 	 */
-	public final static IRI PASSWORD;
-
-	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
-		REPOSITORYURL = factory.createIRI(NAMESPACE, "repositoryURL");
-		USERNAME = factory.createIRI(NAMESPACE, "username");
-		PASSWORD = factory.createIRI(NAMESPACE, "password");
-	}
+	public final static IRI PASSWORD = iri(NAMESPACE, "password");
 }

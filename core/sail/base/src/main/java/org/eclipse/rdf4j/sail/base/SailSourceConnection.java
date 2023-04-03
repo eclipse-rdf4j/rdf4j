@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
@@ -159,6 +160,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	 */
 	protected SailSourceConnection(AbstractSail sail, SailStore store, FederatedServiceResolver resolver) {
 		this(sail, store, new DefaultEvaluationStrategyFactory(resolver));
+
 	}
 
 	/**
@@ -179,6 +181,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				? ((FederatedServiceResolverClient) evalStratFactory).getFederatedServiceResolver()
 				: null;
 		this.queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
+		this.evalStratFactory.setCollectionFactory(sail.getCollectionFactory());
 	}
 
 	/**
@@ -229,7 +232,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		SailSource branch = null;
 		SailDataset rdfDataset = null;
 		CloseableIteration<BindingSet, QueryEvaluationException> iteration = null;
-
 		boolean allGood = false;
 		try {
 			branch = branch(IncludeInferred.fromBoolean(includeInferred));
@@ -272,7 +274,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 							branch.close();
 						}
 					}
-
 				}
 			}
 		}

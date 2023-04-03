@@ -11,16 +11,18 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.targets;
 
+import java.util.List;
 import java.util.Set;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterTargetIsSubject;
@@ -65,21 +67,6 @@ public class DashAllSubjects extends Target {
 	}
 
 	@Override
-	public String getQueryFragment(String subjectVariable, String objectVariable,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
-
-//		return targetObjectsOf.stream()
-//			.map(target -> "\n{ BIND(<" + target + "> as " + tempVar + ")\n" + objectVariable + " "
-//				+ tempVar + " " + subjectVariable
-//				+ ". }\n")
-//			.reduce((a, b) -> a + " UNION " + b)
-//			.get();
-
-		throw new UnsupportedOperationException("Not sure what calls this code!");
-	}
-
-	@Override
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			PlanNode parent) {
 		return new FilterTargetIsSubject(connectionsGroup.getBaseConnection(), dataGraph, parent)
@@ -87,31 +74,34 @@ public class DashAllSubjects extends Target {
 	}
 
 	@Override
-	public Stream<StatementMatcher> getStatementMatcher(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		assert (subject == null);
-
-		return Stream.of(
-				new StatementMatcher(
-						object,
-						null,
-						null
-				)
-		);
-	}
-
-	@Override
-	public String getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
+	public SparqlFragment getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider, Set<String> inheritedVarNames) {
 		assert (subject == null);
 
 		String tempVar1 = stableRandomVariableProvider.next().asSparqlVariable();
 		String tempVar2 = stableRandomVariableProvider.next().asSparqlVariable();
 
-		return "?" + object.getName() + " " + tempVar1 + " " + tempVar2 + " .";
+		String queryFragment = object.asSparqlVariable() + " " + tempVar1 + " " + tempVar2 + " .";
 
+		return SparqlFragment.bgp(List.of(), queryFragment, new StatementMatcher(object, null, null, this, Set.of()));
 	}
 
+	@Override
+	public Set<Namespace> getNamespaces() {
+		return Set.of();
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		return o != null && getClass() == o.getClass();
+	}
+
+	@Override
+	public int hashCode() {
+		return 748329;
+	}
 }

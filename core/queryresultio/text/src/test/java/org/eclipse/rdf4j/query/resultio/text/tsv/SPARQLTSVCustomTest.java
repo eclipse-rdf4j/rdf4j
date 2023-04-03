@@ -52,7 +52,7 @@ public class SPARQLTSVCustomTest {
 				List.of(new ListBindingSet(bindingNames,
 						SimpleValueFactory.getInstance().createLiteral("1", XSD.STRING))));
 		String result = writeTupleResult(tqr);
-		assertEquals("?test\n\"1\"^^<http://www.w3.org/2001/XMLSchema#string>\n", result);
+		assertEquals("?test\n\"1\"\n", result);
 	}
 
 	/**

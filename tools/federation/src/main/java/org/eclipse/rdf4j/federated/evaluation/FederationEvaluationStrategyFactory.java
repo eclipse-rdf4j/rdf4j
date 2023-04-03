@@ -67,15 +67,22 @@ public class FederationEvaluationStrategyFactory extends StrictEvaluationStrateg
 	public FederationEvalStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
 
-		// Note: currently dataset, triplesource and statistics are explicitly ignored in the federation
+		// Note: currently dataset, triplesource and statistics are explicitly ignored
+		// in the federation
 
 		switch (federationType) {
-		case LOCAL:
-			return new SailFederationEvalStrategy(federationContext);
+		case LOCAL: {
+			SailFederationEvalStrategy evalStrategy = new SailFederationEvalStrategy(federationContext);
+			evalStrategy.setCollectionFactory(collectionFactorySupplier);
+			return evalStrategy;
+		}
 		case REMOTE:
 		case HYBRID:
-		default:
-			return new SparqlFederationEvalStrategy(federationContext);
+		default: {
+			SparqlFederationEvalStrategy evalStrategy = new SparqlFederationEvalStrategy(federationContext);
+			evalStrategy.setCollectionFactory(collectionFactorySupplier);
+			return evalStrategy;
+		}
 		}
 	}
 }

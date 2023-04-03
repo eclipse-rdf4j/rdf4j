@@ -9,21 +9,20 @@
 @prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
 
 rdf4j:SHACLShapeGraph {
-ex:PersonShape
-	a sh:NodeShape  ;
-	sh:targetClass ex:Person ;
-	sh:or (
-	sh:property [
-		sh:path ex:phoneNumber ;
-		sh:minLength 8 ;
-	];
 
-	sh:property [
-        	sh:path ex:phoneNumber2 ;
-        	sh:minCount 1 ;
-        ]
-        )
-	.
-
+ex:PersonShape a sh:NodeShape;
+  sh:targetClass ex:Person ;
+  sh:or (
+      [ a sh:NodeShape;
+        sh:property [ a sh:PropertyShape;
+            sh:minLength 8;
+            sh:path ex:phoneNumber
+          ]
+      ] [ a sh:NodeShape;
+        sh:property [ a sh:PropertyShape;
+            sh:minCount 1;
+            sh:path ex:phoneNumber2
+          ]
+      ]) .
 
 }

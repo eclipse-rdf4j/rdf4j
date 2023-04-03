@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * @author Håvard Ottestad
@@ -37,8 +37,6 @@ import org.junit.rules.TemporaryFolder;
 public class QueryBenchmarkTest {
 
 	private static SailRepository repository;
-
-	public static TemporaryFolder tempDir = new TemporaryFolder();
 
 	private static final String query1;
 	private static final String query2;
@@ -61,11 +59,9 @@ public class QueryBenchmarkTest {
 	static List<Statement> statementList;
 
 	@BeforeAll
-	public static void beforeClass() throws IOException {
-		tempDir.create();
-		File file = tempDir.newFolder();
+	public static void beforeClass(@TempDir File dataDir) throws IOException {
 
-		repository = new SailRepository(new NativeStore(file, "spoc,ospc,psoc"));
+		repository = new SailRepository(new NativeStore(dataDir, "spoc,ospc,psoc"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -88,9 +84,7 @@ public class QueryBenchmarkTest {
 
 	@AfterAll
 	public static void afterClass() throws IOException {
-		tempDir.delete();
 		repository.shutDown();
-		tempDir = null;
 		repository = null;
 		statementList = null;
 	}

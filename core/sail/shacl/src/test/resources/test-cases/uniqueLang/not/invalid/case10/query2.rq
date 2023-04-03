@@ -6,6 +6,8 @@ PREFIX sh: <http://www.w3.org/ns/shacl#>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
 INSERT DATA {
-ex:bigCo rdfs:label "Big Co", "Big Co"@en,  "Stor bedrift"@no.
+
+ex:smallCo a ex:Company ;
+        rdfs:label "Small Co", "Small Co"@en,  "Liten bedrift"@no.
 
 }

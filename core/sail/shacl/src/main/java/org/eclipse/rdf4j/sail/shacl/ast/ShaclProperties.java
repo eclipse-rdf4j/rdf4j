@@ -32,6 +32,7 @@ public class ShaclProperties {
 
 	private static final Logger logger = LoggerFactory.getLogger(ShaclProperties.class);
 
+	private Resource id;
 	private IRI type;
 
 	private final List<IRI> clazz = new ArrayList<>();
@@ -91,11 +92,11 @@ public class ShaclProperties {
 	boolean closed = false;
 	private Resource ignoredProperties;
 
-	private Resource id;
-
 	private final List<Literal> message = new ArrayList<>();
 
 	private IRI severity;
+
+	private final List<Resource> sparql = new ArrayList<>();
 
 	public ShaclProperties() {
 	}
@@ -110,16 +111,17 @@ public class ShaclProperties {
 
 				switch (predicate) {
 				case "http://www.w3.org/1999/02/22-rdf-syntax-ns#type":
-					if (object.stringValue().equals("http://www.w3.org/ns/shacl#NodeShape")) {
+					if (object.equals(SHACL.NODE_SHAPE)) {
 						if (type != null && !type.equals(SHACL.NODE_SHAPE)) {
 							throw new IllegalStateException(
-									"Shape with multiple types: <" + type + ">, <" + SHACL.NODE_SHAPE + ">");
+									"Shape " + id + " with multiple types: <" + type + ">, <" + SHACL.NODE_SHAPE + ">");
 						}
 						type = SHACL.NODE_SHAPE;
-					} else if (object.stringValue().equals("http://www.w3.org/ns/shacl#PropertyShape")) {
+					} else if (object.equals(SHACL.PROPERTY_SHAPE)) {
 						if (type != null && !type.equals(SHACL.PROPERTY_SHAPE)) {
 							throw new IllegalStateException(
-									"Shape with multiple types: <" + type + ">, <" + SHACL.PROPERTY_SHAPE + ">");
+									"Shape " + id + " with multiple types: <" + type + ">, <" + SHACL.PROPERTY_SHAPE
+											+ ">");
 						}
 						type = SHACL.PROPERTY_SHAPE;
 					}
@@ -260,7 +262,12 @@ public class ShaclProperties {
 					if (path != null) {
 						throw new IllegalStateException(predicate + " already populated");
 					}
-					assert type != SHACL.NODE_SHAPE;
+					if (type == null) {
+						type = SHACL.PROPERTY_SHAPE;
+					} else if (!type.equals(SHACL.PROPERTY_SHAPE)) {
+						throw new IllegalStateException("Shape " + id
+								+ " has sh:path and must be of type sh:PropertyShape but is type " + type);
+					}
 					path = (Resource) object;
 					break;
 				case "http://www.w3.org/ns/shacl#in":
@@ -317,6 +324,12 @@ public class ShaclProperties {
 				case "http://rdf4j.org/shacl-extensions#targetShape":
 					targetShape.add((Resource) object);
 					break;
+				case "http://www.w3.org/ns/shacl#sparql":
+					if (!object.isResource()) {
+						throw new IllegalStateException("Object is not a resource: " + statement);
+					}
+					sparql.add((Resource) object);
+					break;
 
 				default:
 					if (predicate.startsWith(SHACL.NAMESPACE)) {
@@ -331,7 +344,7 @@ public class ShaclProperties {
 
 		// We default to sh:NodeShape if no other type is given.
 		if (type == null) {
-			type = SHACL.NODE_SHAPE;
+			type = path == null ? SHACL.NODE_SHAPE : SHACL.PROPERTY_SHAPE;
 		}
 
 	}
@@ -518,5 +531,9 @@ public class ShaclProperties {
 
 	public Boolean getQualifiedValueShapesDisjoint() {
 		return qualifiedValueShapesDisjoint;
+	}
+
+	public List<Resource> getSparql() {
+		return sparql;
 	}
 }

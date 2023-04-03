@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -18,6 +18,7 @@ import java.io.InputStream;
 import java.util.Properties;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

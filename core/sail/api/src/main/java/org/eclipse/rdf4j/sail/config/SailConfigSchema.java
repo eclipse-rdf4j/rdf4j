@@ -10,47 +10,43 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.config;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 
 /**
  * Defines constants for the Sail repository schema which are used to initialize repositories.
  *
  * @author Arjohn Kampman
+ * @deprecated use {@link CONFIG} instead.
  */
+@Deprecated(since = "4.3.0", forRemoval = true)
 public class SailConfigSchema {
 
 	/**
-	 * The Sail API schema namespace ( <var>http://www.openrdf.org/config/sail#</var>).
+	 * The (Obsolete) Sail API schema namespace ( <var>http://www.openrdf.org/config/sail#</var>).
 	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/sail#";
 
 	/**
-	 * <var>http://www.openrdf.org/config/sail#sailType</var>
+	 * @deprecated use {@link CONFIG#type} instead.
 	 */
-	public final static IRI SAILTYPE;
+	public final static IRI SAILTYPE = iri(NAMESPACE, "sailType");
 
 	/**
-	 * <var>http://www.openrdf.org/config/sail#delegate</var>
+	 * @deprecated use {@link CONFIG#delegate} instead.
 	 */
-	public final static IRI DELEGATE;
+	public final static IRI DELEGATE = iri(NAMESPACE, "delegate");
 
 	/**
-	 * <var>http://www.openrdf.org/config/sail#iterationCacheSyncTreshold</var>
+	 * @deprecated use {@link CONFIG#iterationCacheSyncThreshold} instead.
 	 */
-	public final static IRI ITERATION_CACHE_SYNC_THRESHOLD;
+	public final static IRI ITERATION_CACHE_SYNC_THRESHOLD = iri(NAMESPACE, "iterationCacheSyncThreshold");
 
 	/**
-	 * <var>http://www.openrdf.org/config/sail#connectionTimeOut</var>
+	 * @deprecated use {@link CONFIG#connectionTimeOut} instead.
 	 */
-	public final static IRI CONNECTION_TIME_OUT;
+	public final static IRI CONNECTION_TIME_OUT = iri(NAMESPACE, "connectionTimeOut");
 
-	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
-		SAILTYPE = factory.createIRI(NAMESPACE, "sailType");
-		DELEGATE = factory.createIRI(NAMESPACE, "delegate");
-		ITERATION_CACHE_SYNC_THRESHOLD = factory.createIRI(NAMESPACE, "iterationCacheSyncTreshold");
-		CONNECTION_TIME_OUT = factory.createIRI(NAMESPACE, "connectionTimeOut");
-	}
 }

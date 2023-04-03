@@ -19,6 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
+import javax.servlet.annotation.MultipartConfig;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
@@ -31,6 +32,7 @@ import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 /**
  * All requests are serviced by this Servlet, though it usually delegates to other Servlets.
  */
+@MultipartConfig
 public class WorkbenchGateway extends AbstractServlet {
 
 	private static final String DEFAULT_SERVER = "default-server";

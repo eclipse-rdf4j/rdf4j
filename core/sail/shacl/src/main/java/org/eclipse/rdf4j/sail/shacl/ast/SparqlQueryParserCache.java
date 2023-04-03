@@ -21,11 +21,16 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.QueryParser;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+import com.google.common.util.concurrent.UncheckedExecutionException;
 
 public class SparqlQueryParserCache {
+
+	private static final Logger logger = LoggerFactory.getLogger(SparqlQueryParserCache.class);
 
 	private static final Cache<String, TupleExpr> PARSER_QUERY_CACHE = CacheBuilder.newBuilder()
 			.expireAfterAccess(1, TimeUnit.MINUTES)
@@ -62,6 +67,12 @@ public class SparqlQueryParserCache {
 				throw new IllegalStateException(cause);
 			}
 			throw new IllegalStateException(e);
+		} catch (UncheckedExecutionException e) {
+			if (e.getCause() instanceof MalformedQueryException) {
+				logger.error("Error parsing query: \n{}", query, e.getCause());
+				throw ((MalformedQueryException) e.getCause());
+			}
+			throw e;
 		}
 
 	}

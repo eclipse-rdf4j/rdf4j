@@ -61,22 +61,28 @@ public class UnorderedSelect implements PlanNode {
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(subject,
-					predicate, object, true, dataGraph);
+			CloseableIteration<? extends Statement, SailException> statements;
 
 			@Override
-			public void localClose() throws SailException {
-				statements.close();
+			protected void init() {
+				assert statements == null;
+				statements = connection.getStatements(subject, predicate, object, true, dataGraph);
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			public void localClose() {
+				if (statements != null) {
+					statements.close();
+				}
+			}
+
+			@Override
+			protected boolean localHasNext() {
 				return statements.hasNext();
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
-
+			protected ValidationTuple loggingNext() {
 				return mapper.apply(statements.next());
 			}
 

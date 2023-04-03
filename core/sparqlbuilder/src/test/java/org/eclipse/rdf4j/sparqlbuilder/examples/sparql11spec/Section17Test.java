@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 
-import static org.hamcrest.MatcherAssert.assertThat;
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
@@ -29,7 +29,7 @@ public class Section17Test extends BaseExamples {
 		Variable attributeIRI = SparqlBuilder.var("attribute_iri");
 		Iri type = rdf.iri("type");
 		Expression in = Expressions.in(attributeIRI, type);
-		assertThat(in.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(in.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"?attribute_iri IN ( rdf:type )"
 		));
 	}
@@ -40,7 +40,7 @@ public class Section17Test extends BaseExamples {
 		Variable attributeIRI = SparqlBuilder.var("attribute_iri");
 		Iri type = rdf.iri("type");
 		Expression notIn = Expressions.notIn(attributeIRI, type);
-		assertThat(notIn.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(notIn.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"?attribute_iri NOT IN ( rdf:type )"
 		));
 	}

@@ -12,14 +12,17 @@
 package org.eclipse.rdf4j.sail.shacl.ast.paths;
 
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.sail.shacl.ast.Exportable;
 import org.eclipse.rdf4j.sail.shacl.ast.Identifiable;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
+import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.Targetable;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeWrapper;
@@ -78,11 +81,31 @@ public abstract class Path implements Identifiable, Exportable, Targetable {
 
 	}
 
-	public abstract PlanNode getAdded(ConnectionsGroup connectionsGroup,
+	/**
+	 * Get all values added in this transaction.
+	 */
+	public abstract PlanNode getAllAdded(ConnectionsGroup connectionsGroup,
 			Resource[] dataGraph, PlanNodeWrapper planNodeWrapper);
 
 	/**
-	 * @return true if feature is currently supported by the ShaclSail
+	 * Get values added in this transaction. Validation performance may improve if more value are retrieved. Validation
+	 * correctness and completeness will not be affected if fewer values are retrieved, or if no items are retrieved.
 	 */
-	public abstract boolean isSupported();
+	public abstract PlanNode getAnyAdded(ConnectionsGroup connectionsGroup,
+			Resource[] dataGraph, PlanNodeWrapper planNodeWrapper);
+
+	public String getVariablePrefix(StatementMatcher.Variable subject, StatementMatcher.Variable object) {
+		String className = this.getClass().getSimpleName();
+		return subject.getName() + "_" + (object != null ? object.getName() : "null") + "_" + className + "_";
+	}
+
+	abstract public boolean isSupported();
+
+	public abstract String toSparqlPathString();
+
+	@Override
+	public final Set<Namespace> getNamespaces() {
+		return Set.of();
+	}
+
 }

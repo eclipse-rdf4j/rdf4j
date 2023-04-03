@@ -54,16 +54,21 @@ public class ValuesBackedNode implements PlanNode {
 			final Iterator<ValidationTuple> iterator = tuples.iterator();
 
 			@Override
-			public void localClose() throws SailException {
+			protected void init() {
+				// no-op
 			}
 
 			@Override
-			public boolean localHasNext() throws SailException {
+			public void localClose() {
+			}
+
+			@Override
+			public boolean localHasNext() {
 				return iterator.hasNext();
 			}
 
 			@Override
-			public ValidationTuple loggingNext() throws SailException {
+			public ValidationTuple loggingNext() {
 				return iterator.next();
 			}
 

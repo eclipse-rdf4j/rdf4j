@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics;
 
-import static junit.framework.TestCase.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -178,8 +178,8 @@ public class EvaluationStatisticsTest {
 
 		double diff = Math.abs(expected - estimated);
 		if (100.0 / expected * diff > percentage) {
-			assertEquals("Estimated cardinality should be within " + percentage + "% of expected cardinality", expected,
-					estimated);
+			assertEquals(expected, estimated,
+					"Estimated cardinality should be within " + percentage + "% of expected cardinality");
 		}
 
 	}

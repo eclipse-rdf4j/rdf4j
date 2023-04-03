@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.console.command;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.anyBoolean;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.startsWith;
 import static org.mockito.Mockito.verify;
@@ -22,7 +21,6 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
-import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
@@ -48,9 +46,8 @@ public class DropTest extends AbstractCommandTest {
 		addRepositories("drop", MEMORY_MEMBER_ID1);
 		manager.addRepositoryConfig(new RepositoryConfig(PROXY_ID, new ProxyRepositoryConfig(MEMORY_MEMBER_ID1)));
 
-		ConsoleState state = mock(ConsoleState.class);
-		when(state.getManager()).thenReturn(manager);
-		drop = new Drop(mockConsoleIO, state, new Close(mockConsoleIO, state));
+		when(mockConsoleState.getManager()).thenReturn(manager);
+		drop = new Drop(mockConsoleIO, mockConsoleState, new Close(mockConsoleIO, mockConsoleState));
 	}
 
 	private void setUserDropConfirm(boolean confirm) throws IOException {

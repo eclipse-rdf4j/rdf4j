@@ -12,13 +12,13 @@
 package org.eclipse.rdf4j.sail.shacl.ast.paths;
 
 import java.util.Set;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeWrapper;
@@ -28,29 +28,39 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
 public class ZeroOrMorePath extends Path {
 
-	private final Path zeroOrMorePath;
+	private final Path path;
 
-	public ZeroOrMorePath(Resource id, Resource zeroOrMorePath, ShapeSource shapeSource) {
+	public ZeroOrMorePath(Resource id, Resource path, ShapeSource shapeSource) {
 		super(id);
-		this.zeroOrMorePath = Path.buildPath(shapeSource, zeroOrMorePath);
+		this.path = Path.buildPath(shapeSource, path);
+	}
 
+	public ZeroOrMorePath(Resource id, Path path) {
+		super(id);
+		this.path = path;
 	}
 
 	@Override
 	public String toString() {
-		return "ZeroOrMorePath{ " + zeroOrMorePath + " }";
+		return "ZeroOrMorePath{ " + path + " }";
 	}
 
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
-		model.add(subject, SHACL.ZERO_OR_MORE_PATH, zeroOrMorePath.getId());
-		zeroOrMorePath.toModel(zeroOrMorePath.getId(), null, model, cycleDetection);
+		model.add(subject, SHACL.ZERO_OR_MORE_PATH, path.getId());
+		path.toModel(path.getId(), null, model, cycleDetection);
 	}
 
 	@Override
-	public PlanNode getAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+	public PlanNode getAllAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			PlanNodeWrapper planNodeWrapper) {
 		throw new ShaclUnsupportedException();
+	}
+
+	@Override
+	public PlanNode getAnyAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+			PlanNodeWrapper planNodeWrapper) {
+		return getAllAdded(connectionsGroup, dataGraph, planNodeWrapper);
 	}
 
 	@Override
@@ -59,16 +69,19 @@ public class ZeroOrMorePath extends Path {
 	}
 
 	@Override
-	public Stream<StatementMatcher> getStatementMatcher(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		throw new ShaclUnsupportedException();
+	public String toSparqlPathString() {
+		assert path.toSparqlPathString().equals(path.toSparqlPathString().trim());
+		if (path instanceof SimplePath || path instanceof AlternativePath || path instanceof SequencePath) {
+			return path.toSparqlPathString() + "*";
+		}
+		return "(" + path.toSparqlPathString() + ")*";
 	}
 
 	@Override
-	public String getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
+	public SparqlFragment getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider, Set<String> inheritedVarNames) {
 		throw new ShaclUnsupportedException();
 	}
+
 }

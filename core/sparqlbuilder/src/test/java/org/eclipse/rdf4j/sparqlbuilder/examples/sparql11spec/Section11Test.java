@@ -11,8 +11,8 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
-import static org.hamcrest.MatcherAssert.assertThat;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
@@ -43,7 +43,7 @@ public class Section11Test extends BaseExamples {
 						book.has(base.iri("price"), lprice))
 				.groupBy(org)
 				.having(Expressions.gt(sum, 10));
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX : <http://books.example/>\n"
 						+ "SELECT (SUM(?lprice) AS ?totalPrice)\n"
 						+ "WHERE {\n"
@@ -76,7 +76,7 @@ public class Section11Test extends BaseExamples {
 				.where(org.has(affiliates, auth), auth.has(writesBook, book), book.has(price, lprice))
 				.groupBy(org)
 				.having(Expressions.gt(sum, 10));
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX : <http://books.example/>\n"
 						+ "SELECT (SUM(?lprice) AS ?totalPrice)\n"
 						+ "WHERE {\n"
@@ -97,7 +97,7 @@ public class Section11Test extends BaseExamples {
 		query.select(SparqlBuilder.as(Expressions.avg(y), avg))
 				.where(a.has(base.iri("x"), x).andHas(base.iri("y"), y))
 				.groupBy(x);
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"SELECT (AVG(?y) AS ?avg)\n"
 						+ "WHERE {\n"
 						+ "  ?a :x ?x ;\n"
@@ -117,7 +117,7 @@ public class Section11Test extends BaseExamples {
 				.where(x.has(base.iri("size"), size))
 				.groupBy(x)
 				.having(Expressions.gt(avgSize, 10));
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX : <http://data.example/>\n"
 						+ "SELECT (AVG(?size) AS ?asize)\n"
 						+ "WHERE {\n"
@@ -138,7 +138,7 @@ public class Section11Test extends BaseExamples {
 				.select(x, twiceMin.as(min))
 				.where(x.has(base.iri("p"), y), x.has(base.iri("q"), z))
 				.groupBy(x, Expressions.str(z));
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX : <http://example.com/data/#>\n"
 						+ "SELECT ?x ((MIN(?y) * 2) AS ?min)\n"
 						+ "WHERE {\n"
@@ -159,7 +159,7 @@ public class Section11Test extends BaseExamples {
 				.select(g, Expressions.avg(p).as(avg), midRange.as(c))
 				.where(g.has(base.iri("p"), p))
 				.groupBy(g);
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX : <http://example.com/data/#>\n"
 						+ "SELECT ?g (AVG(?p) AS ?avg) (((MIN(?p) + MAX(?p)) / 2) AS ?c)\n"
 						+ "WHERE {\n"

@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
 import java.util.List;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -82,11 +83,11 @@ public abstract class LogicalOperatorConstraintComponent extends AbstractConstra
 						.collect(Collectors.toList()));
 
 				String pathQuery1 = path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner,
-						stableRandomVariableProvider);
+						stableRandomVariableProvider, Set.of()).getFragment();
 				String pathQuery2 = path.getTargetQueryFragment(subject, filterNotExistsVariable,
-						rdfsSubClassOfReasoner, stableRandomVariableProvider);
+						rdfsSubClassOfReasoner, stableRandomVariableProvider, Set.of()).getFragment();
 				String pathQuery3 = path.getTargetQueryFragment(subject, stableRandomVariableProvider.next(),
-						rdfsSubClassOfReasoner, stableRandomVariableProvider);
+						rdfsSubClassOfReasoner, stableRandomVariableProvider, Set.of()).getFragment();
 
 				// check that all values for the path from our subject match the filter condition
 				String unionCondition1 = String.join("\n",
@@ -119,10 +120,16 @@ public abstract class LogicalOperatorConstraintComponent extends AbstractConstra
 
 				List<StatementMatcher> statementMatchers = SparqlFragment.getStatementMatchers(sparqlFragments);
 
-				statementMatchers.add(new StatementMatcher(subject, null, null));
-				statementMatchers.add(new StatementMatcher(null, null, subject));
+				statementMatchers.add(new StatementMatcher(subject, null, null, null, Set.of()));
+				statementMatchers.add(new StatementMatcher(null, null, subject, null, Set.of()));
 
-				SparqlFragment sparqlFragment = SparqlFragment.union(unionCondition1, unionCondition2, unionCondition3);
+				boolean supportsIncrementalValidation = sparqlFragments.stream()
+						.allMatch(SparqlFragment::supportsIncrementalEvaluation);
+
+				SparqlFragment sparqlFragment = SparqlFragment.unionQueryStrings(targetChain.getNamespaces(),
+						unionCondition1,
+						unionCondition2,
+						unionCondition3, supportsIncrementalValidation);
 				sparqlFragment.addStatementMatchers(statementMatchers);
 
 				return sparqlFragment;

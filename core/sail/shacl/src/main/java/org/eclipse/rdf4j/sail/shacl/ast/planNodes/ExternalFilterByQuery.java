@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.slf4j.Logger;
@@ -41,7 +42,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 	private final String queryString;
 
 	public ExternalFilterByQuery(SailConnection connection, Resource[] dataGraph, PlanNode parent,
-			String queryFragment,
+			SparqlFragment queryFragment,
 			StatementMatcher.Variable queryVariable,
 			Function<ValidationTuple, Value> filterOn) {
 		super(parent);
@@ -50,12 +51,13 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 		this.queryVariable = queryVariable;
 		this.filterOn = filterOn;
 
-		queryFragment = "SELECT ?" + queryVariable.getName() + " WHERE {\n" + queryFragment + "\n}";
-		this.queryString = StatementMatcher.StableRandomVariableProvider.normalize(queryFragment);
+		this.queryString = queryFragment.getNamespacesForSparql()
+				+ StatementMatcher.StableRandomVariableProvider.normalize("SELECT " + queryVariable.asSparqlVariable()
+						+ " WHERE {\n" + queryFragment.getFragment() + "\n}");
 		try {
-			this.query = SparqlQueryParserCache.get(queryFragment);
+			this.query = SparqlQueryParserCache.get(queryString);
 		} catch (MalformedQueryException e) {
-			logger.error("Malformed query:\n{}", queryFragment);
+			logger.error("Malformed query:\n{}", queryString);
 			throw e;
 		}
 		dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);

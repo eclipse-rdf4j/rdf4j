@@ -10,10 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder.var;
 import static org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns.and;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
-import static org.hamcrest.MatcherAssert.assertThat;
 
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
@@ -31,7 +31,7 @@ public class Section5Test extends BaseExamples {
 		Variable name = var("name"), mbox = var("mbox");
 		Variable x = var("x");
 		query.prefix(foaf).select(name, mbox).where(x.has(foaf.iri("name"), name), x.has(foaf.iri("mbox"), mbox));
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX foaf:    <http://xmlns.com/foaf/0.1/>\n"
 						+ "SELECT ?name ?mbox\n"
 						+ "WHERE  {\n"
@@ -43,7 +43,7 @@ public class Section5Test extends BaseExamples {
 		GraphPattern mboxPattern = and(x.has(foaf.iri("mbox"), mbox));
 		QueryPattern where = SparqlBuilder.where(and(namePattern, mboxPattern));
 		query.where(where);
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX foaf:    <http://xmlns.com/foaf/0.1/>\n"
 						+ "SELECT ?name ?mbox\n"
 						+ "WHERE  { { ?x foaf:name ?name . }\n"
@@ -56,7 +56,7 @@ public class Section5Test extends BaseExamples {
 	public void example_5_2_1() {
 		Variable x = var("x");
 		query.select(x);
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"SELECT ?x\n"
 						+ "WHERE {}"));
 	}
@@ -70,13 +70,13 @@ public class Section5Test extends BaseExamples {
 						.and(x.has(foaf.iri("mbox"), mbox))
 						.and()
 						.filter(Expressions.regex(name, "Smith"))
-						.getQueryString(),
-				stringEqualsIgnoreCaseAndWhitespace(
-						" {  ?x foaf:name ?name .\n"
-								+ "    ?x foaf:mbox ?mbox .\n"
-								+ "    FILTER ( regex(?name, \"Smith\"))\n"
-								+ " }\n"
-				));
+						.getQueryString()
+		).is(stringEqualsIgnoreCaseAndWhitespace(
+				" {  ?x foaf:name ?name .\n"
+						+ "    ?x foaf:mbox ?mbox .\n"
+						+ "    FILTER ( regex(?name, \"Smith\"))\n"
+						+ " }\n"
+		));
 		// NOTE: removed the other two examples in which the filter expression is before or between the
 		// triple patterns, respectively. The SparqlBuilder cannot generate this without additional curly
 		// braces, and the point of the examples is to show that all these versions are equivalent, so

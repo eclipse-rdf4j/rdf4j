@@ -10,7 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -24,7 +26,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.testsuite.sail.RDFNotifyingStoreTest;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * An extension of RDFStoreTest for testing the class <var>org.eclipse.rdf4j.sesame.sail.memory.MemoryStore</var>.
@@ -56,17 +58,17 @@ public class MemoryStoreTest extends RDFNotifyingStoreTest {
 				"http://example.org/");
 		CloseableIteration<? extends BindingSet, QueryEvaluationException> res = con.evaluate(tupleQuery.getTupleExpr(),
 				null, EmptyBindingSet.getInstance(), false);
-		assertTrue("expect a result", res.hasNext());
+		assertTrue(res.hasNext(), "expect a result");
 		int count = 0;
 		while (res.hasNext()) {
 			BindingSet bs = res.next();
 			Value v = bs.getValue("resource");
-			assertTrue("expect non-null value", v != null);
-			assertTrue("expect IRI", v instanceof IRI);
-			assertTrue("expect <http://unexisting_resource>", "http://unexisting_resource".equals(v.stringValue()));
+			assertNotNull(v, "expect non-null value");
+			assertTrue(v instanceof IRI, "expect IRI");
+			assertEquals("http://unexisting_resource", v.stringValue(), "expect <http://unexisting_resource>");
 			count++;
 		}
-		assertTrue("expect single solution", count == 1);
+		assertEquals(1, count, "expect single solution");
 	}
 
 }

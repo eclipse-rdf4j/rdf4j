@@ -18,6 +18,6 @@ ex:PersonShape a sh:NodeShape;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:steve;
       sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:HasValueConstraintComponent;
+      sh:sourceConstraintComponent <http://datashapes.org/dash#HasValueInConstraintComponent>;
       sh:sourceShape ex:PersonShape
     ] .

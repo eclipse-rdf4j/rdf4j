@@ -6,7 +6,7 @@ PREFIX sh: <http://www.w3.org/ns/shacl#>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
 delete {
-ex:steve a ex:SecondTarget.
+ex:steve a ex:Person.
 
 }
 

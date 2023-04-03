@@ -11,11 +11,10 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
-import java.io.IOException;
 
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -24,9 +23,8 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.testsuite.sail.RDFNotifyingStoreTest;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * An extension of RDFStoreTest for testing the class {@link LmdbStore}.
@@ -37,9 +35,8 @@ public class LmdbStoreTest extends RDFNotifyingStoreTest {
 	 * Variables *
 	 *-----------*/
 
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
-	private File dataDir;
+	@TempDir
+	public File dataDir;
 
 	/*---------*
 	 * Methods *
@@ -47,18 +44,13 @@ public class LmdbStoreTest extends RDFNotifyingStoreTest {
 
 	@Override
 	protected NotifyingSail createSail() throws SailException {
-		try {
-			dataDir = tempDir.newFolder();
-			NotifyingSail sail = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
-			sail.init();
-			return sail;
-		} catch (IOException e) {
-			throw new AssertionError(e);
-		}
+		NotifyingSail sail = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		sail.init();
+		return sail;
 	}
 
 	// Test for SES-542
-	@Test()
+	@Test
 	public void testGetNamespacePersistence() throws Exception {
 		con.begin();
 		con.setNamespace("rdf", RDF.NAMESPACE);

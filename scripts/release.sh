@@ -110,6 +110,10 @@ mvn clean;
 git checkout main;
 mvn clean;
 
+echo "Running maven clean and install -DskipTests";
+mvn clean;
+mvn install -DskipTests;
+
 MVN_CURRENT_SNAPSHOT_VERSION=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" pom.xml)
 
 # replace "SNAPSHOT" with ""
