@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
@@ -123,6 +122,16 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		this.id = properties.getId();
 		this.contexts = shapeSource.getActiveContexts();
 
+		if (properties.getSeverity() != null) {
+			IRI iri = properties.getSeverity();
+			try {
+				if (iri.getNamespace().equals(SHACL.NAMESPACE)) {
+					this.severity = Severity.valueOf(iri.getLocalName());
+				}
+			} catch (IllegalArgumentException iae) {
+				logger.warn("Unknown sh:severity {}", iri.toString());
+			}
+		}
 		if (!properties.getTargetClass().isEmpty()) {
 			target.add(new TargetClass(properties.getTargetClass()));
 		}
