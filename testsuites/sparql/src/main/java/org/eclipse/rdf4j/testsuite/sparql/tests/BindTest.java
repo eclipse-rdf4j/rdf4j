@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.explanation.Explanation.Level;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
 import org.junit.Test;
 
@@ -192,5 +193,81 @@ public class BindTest extends AbstractComplianceTest {
 		List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
 
 		assertThat(result).isEmpty();
+	}
+
+	@Test
+	public void testGH4499BindFilterNotExist1() {
+		Model testData = new ModelBuilder().setNamespace("ex", "http://example.org/")
+				.subject("ex:a")
+				.add("ex:p", "ex:c1")
+				.add("ex:p", "ex:c2")
+				.add("ex:p", "ex:c3")
+				.subject("ex:c1")
+				.add(RDF.TYPE, "ex:T")
+				.add("ex:q", "something")
+				.subject("ex:c2")
+				.add(RDF.TYPE, "ex:T")
+				.build();
+		conn.add(testData);
+
+		String query = "PREFIX ex: <http://example.org/>\n"
+				+ "SELECT *\n"
+				+ "    WHERE {\n"
+				+ "            BIND ( ex:a AS ?a )\n"
+				+ "            BIND ( ex:b AS ?b )\n"
+				+ "            ?a ex:p* ?c .\n"
+				+ "            FILTER EXISTS { ?c rdf:type ex:T }\n"
+				+ "            FILTER NOT EXISTS { ?c ex:q ?d}\n"
+				+ "}";
+
+		System.out.println(conn.prepareTupleQuery(query).explain(Level.Executed));
+		List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+
+		assertThat(result).hasSize(1);
+
+		var bs = result.get(0);
+
+		assertThat(bs.getValue("a").stringValue()).isEqualTo("http://example.org/a");
+		assertThat(bs.getValue("c").stringValue()).isEqualTo("http://example.org/c2");
+		assertThat(bs.getValue("d")).isNull();
+
+	}
+
+	@Test
+	public void testGH4499BindFilterNotExist2() {
+		Model testData = new ModelBuilder().setNamespace("ex", "http://example.org/")
+				.subject("ex:a")
+				.add("ex:p", "ex:c1")
+				.add("ex:p", "ex:c2")
+				.add("ex:p", "ex:c3")
+				.subject("ex:c1")
+				.add(RDF.TYPE, "ex:T")
+				.add("ex:q", "something")
+				.subject("ex:c2")
+				.add(RDF.TYPE, "ex:T")
+				.build();
+		conn.add(testData);
+
+		String query = "PREFIX ex: <http://example.org/>\n"
+				+ "SELECT *\n"
+				+ "    WHERE {\n"
+				+ "            FILTER EXISTS { ?c rdf:type ex:T }\n"
+				+ "            FILTER NOT EXISTS { ?c ex:q ?d}\n"
+				+ "            BIND ( ex:a AS ?a )\n"
+				+ "            BIND ( ex:b AS ?b )\n"
+				+ "            ?a ex:p* ?c .\n"
+				+ "}";
+
+		System.out.println(conn.prepareTupleQuery(query).explain(Level.Executed));
+		List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+
+		assertThat(result).hasSize(1);
+
+		var bs = result.get(0);
+
+		assertThat(bs.getValue("a").stringValue()).isEqualTo("http://example.org/a");
+		assertThat(bs.getValue("c").stringValue()).isEqualTo("http://example.org/c2");
+		assertThat(bs.getValue("d")).isNull();
+
 	}
 }
