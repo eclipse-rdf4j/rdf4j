@@ -79,6 +79,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParserRegistry;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 
@@ -414,7 +415,10 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 				mimeType = mimeType.substring(0, semiColonIdx);
 			}
 			dataFormat = Rio.getParserFormatForMIMEType(mimeType)
-					.orElse(Rio.getParserFormatForFileName(url.getPath()).orElseThrow(Rio.unsupportedFormat(mimeType)));
+					.orElseGet(() -> Rio.getParserFormatForFileName(url.getPath())
+							.orElseThrow(() -> new UnsupportedRDFormatException(
+									"Could not find RDF format for URL: " + url.toExternalForm())));
+
 		}
 
 		try {
