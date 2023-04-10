@@ -31,7 +31,6 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
-import org.eclipse.rdf4j.query.explanation.Explanation.Level;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
 import org.junit.Test;
 
@@ -220,7 +219,6 @@ public class BindTest extends AbstractComplianceTest {
 				+ "            FILTER NOT EXISTS { ?c ex:q ?d}\n"
 				+ "}";
 
-		System.out.println(conn.prepareTupleQuery(query).explain(Level.Executed));
 		List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
 
 		assertThat(result).hasSize(1);
@@ -252,13 +250,12 @@ public class BindTest extends AbstractComplianceTest {
 				+ "SELECT *\n"
 				+ "    WHERE {\n"
 				+ "            FILTER EXISTS { ?c rdf:type ex:T }\n"
-				+ "            FILTER NOT EXISTS { ?c ex:q ?d}\n"
+				+ "            FILTER NOT EXISTS { ?c ex:q ?d }\n"
 				+ "            BIND ( ex:a AS ?a )\n"
 				+ "            BIND ( ex:b AS ?b )\n"
 				+ "            ?a ex:p* ?c .\n"
 				+ "}";
 
-		System.out.println(conn.prepareTupleQuery(query).explain(Level.Executed));
 		List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
 
 		assertThat(result).hasSize(1);
