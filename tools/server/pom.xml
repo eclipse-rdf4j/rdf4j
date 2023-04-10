@@ -109,6 +109,7 @@
 				<configuration>
 					<warName>rdf4j-server</warName>
 					<archiveClasses>true</archiveClasses>
+					<attachClasses>true</attachClasses>
 					<webappDirectory>${testserver.webapp.dir}</webappDirectory>
 				</configuration>
 			</plugin>

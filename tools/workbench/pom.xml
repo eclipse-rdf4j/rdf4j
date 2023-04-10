@@ -63,6 +63,7 @@
 				<configuration>
 					<warName>rdf4j-workbench</warName>
 					<archiveClasses>true</archiveClasses>
+					<attachClasses>true</attachClasses>
 				</configuration>
 			</plugin>
 			<plugin>
