@@ -19,7 +19,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -79,6 +81,29 @@ public class TupleExprBuilderTest {
 			e.printStackTrace();
 			fail("should parse ask query with solution modifiers");
 		}
+
+	}
+
+	@Test
+	public void testValuesOptionalQuery() throws Exception {
+		String query = "select ?parent ?child\n"
+				+ "where {\n"
+				+ "    values ?type {<owl:Class>}\n"
+				+ "    ?parent <rdf:type> ?type .\n"
+				+ "    optional {\n"
+				+ "        ?child <rdfs:subClassOf> ?parent ;\n"
+				+ "               <rdf:type> ?type .\n"
+				+ "    }\n"
+				+ "}";
+
+		TupleExprBuilder builder = new TupleExprBuilder(SimpleValueFactory.getInstance());
+		ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(query);
+		TupleExpr result = builder.visit(qc, null);
+
+		assertThat(result).isInstanceOf(Projection.class);
+		Join topJoin = (Join) ((Projection) result).getArg();
+
+		assertThat(topJoin.getLeftArg()).isInstanceOf(BindingSetAssignment.class);
 
 	}
 

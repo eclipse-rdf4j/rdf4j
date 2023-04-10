@@ -2077,7 +2077,22 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		bsa.setBindingSets(bindingSets);
 
-		graphPattern.addRequiredTE(bsa);
+		if (graphPattern.getInlineData() != null) {
+			GraphPattern parentGP = graphPattern;
+			graphPattern = new GraphPattern(parentGP);
+
+			graphPattern.setInlineData(bsa);
+
+			TupleExpr te = graphPattern.buildTupleExpr();
+			if (node.isScopeChange()) {
+				((VariableScopeChange) te).setVariableScopeChange(true);
+			}
+			parentGP.addRequiredTE(te);
+
+			graphPattern = parentGP;
+		} else {
+			graphPattern.setInlineData(bsa);
+		}
 		return bsa;
 	}
 

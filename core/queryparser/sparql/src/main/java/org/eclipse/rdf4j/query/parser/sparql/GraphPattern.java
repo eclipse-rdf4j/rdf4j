@@ -19,6 +19,7 @@ import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -63,6 +64,8 @@ public class GraphPattern {
 	 * The boolean constraints in this graph pattern.
 	 */
 	private List<ValueExpr> constraints = new ArrayList<>();
+
+	private BindingSetAssignment inlineData;
 
 	/**
 	 * Creates a new graph pattern.
@@ -156,6 +159,7 @@ public class GraphPattern {
 		requiredTEs.clear();
 		optionalTEs.clear();
 		constraints.clear();
+		inlineData = null;
 	}
 
 	/**
@@ -195,7 +199,19 @@ public class GraphPattern {
 			result = new Filter(result, constraint);
 		}
 
+		if (getInlineData() != null) {
+			result = new Join(getInlineData(), result);
+		}
+
 		return result;
+	}
+
+	public BindingSetAssignment getInlineData() {
+		return inlineData;
+	}
+
+	public void setInlineData(BindingSetAssignment bsa) {
+		this.inlineData = bsa;
 	}
 
 }

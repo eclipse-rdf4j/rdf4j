@@ -1,0 +1,12 @@
+prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+prefix owl: <http://www.w3.org/2002/07/owl#>
+
+select ?parent ?child
+where {
+    ?parent rdf:type owl:Class .
+    optional {
+        ?child rdfs:subClassOf ?parent ;
+               rdf:type owl:Class .
+    }
+}
