@@ -10,8 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.model;
 
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
@@ -23,6 +27,8 @@ import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.base.InternedIRI;
+import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.util.URIUtil;
@@ -75,11 +81,9 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * A cache of the most common IRIs to improve lookup performance when users use our vocabularies (eg.
 	 * {@link RDF#TYPE}).
 	 */
+	private volatile String[] internedIriLookup = new String[4];
+	private volatile MemIRI[] internedIriToMemIri = new MemIRI[4];
 
-//	private final Cache<Value, MemLiteral> literalCache = CacheBuilder.newBuilder().concurrencyLevel(Runtime.getRuntime().availableProcessors()).weakKeys().weakValues().initialCapacity(1000).maximumSize(1000).build();
-//	private final Cache<Value, MemIRI> iriCache = CacheBuilder.newBuilder().concurrencyLevel(Runtime.getRuntime().availableProcessors()).weakKeys().weakValues().initialCapacity(1000).maximumSize(1000).build();
-//	private final Cache<Value, MemBNode> bNodeCache = CacheBuilder.newBuilder().concurrencyLevel(Runtime.getRuntime().availableProcessors()).weakKeys().weakValues().initialCapacity(1000).maximumSize(1000).build();
-//	private final Cache<Value, MemTriple> tripleCache = CacheBuilder.newBuilder().concurrencyLevel(Runtime.getRuntime().availableProcessors()).weakKeys().weakValues().initialCapacity(1000).maximumSize(1000).build();
 	public MemValueFactory() {
 	}
 
@@ -136,6 +140,9 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * See getMemValue() for description.
 	 */
 	public MemIRI getMemURI(IRI uri) {
+		if (uri instanceof InternedIRI) {
+			return getMemIriForInternedIri(((InternedIRI) uri));
+		}
 		if (uri == null) {
 			return null;
 		} else if (isOwnMemIRI(uri)) {
@@ -309,14 +316,113 @@ public class MemValueFactory extends AbstractValueFactory {
 			return (MemIRI) uri;
 		}
 
-		return iriRegistry.getOrAdd(uri, () -> {
+		if (uri instanceof InternedIRI) {
+			return getMemIriForInternedIri((InternedIRI) uri);
+		}
 
-			String namespace = uri.getNamespace();
+		return iriRegistry.getOrAdd(uri, key -> {
 
-			String sharedNamespace = namespaceRegistry.getOrAdd(namespace, () -> namespace);
+			String namespace = key.getNamespace();
+
+			String sharedNamespace = namespaceRegistry.getOrAdd(namespace, Function.identity());
 
 			// Create a MemURI and add it to the registry
-			return new MemIRI(this, sharedNamespace, uri.getLocalName());
+			return new MemIRI(this, sharedNamespace, key.getLocalName());
+		});
+	}
+
+	private MemIRI getMemIriForInternedIri(InternedIRI internedIRI) {
+
+		String stringValue = internedIRI.stringValue();
+
+		String[] internedIriLookup_local = internedIriLookup;
+		MemIRI[] internedIriToMemIri_local = internedIriToMemIri;
+
+		for (int i = 0; i < internedIriLookup_local.length; i++) {
+			if (internedIriLookup_local[i] == stringValue) {
+				return internedIriToMemIri_local[i];
+			}
+		}
+
+		return addInternedIriToCache(internedIRI, stringValue);
+	}
+
+	private MemIRI addInternedIriToCache(InternedIRI internedIRI, String stringValue) {
+		String[] internedIriLookup_local;
+		MemIRI[] internedIriToMemIri_local;
+		synchronized (this) {
+
+			internedIriLookup_local = internedIriLookup;
+			internedIriToMemIri_local = internedIriToMemIri;
+
+			for (int i = 0; i < internedIriLookup_local.length; i++) {
+				if (internedIriLookup_local[i] == stringValue) {
+					return internedIriToMemIri_local[i];
+				} else if (internedIriLookup_local[i] == null) {
+					internedIriLookup_local[i] = stringValue;
+					internedIriToMemIri_local[i] = iriRegistry.getOrAdd(internedIRI, key -> {
+
+						String namespace = key.getNamespace();
+
+						String sharedNamespace = namespaceRegistry.getOrAdd(namespace, Function.identity());
+
+						// Create a MemURI and add it to the registry
+						MemIRI memIRI = new MemIRI(this, sharedNamespace, key.getLocalName());
+						if (key instanceof InternedIRI) {
+							memIRI.interned = (InternedIRI) key;
+						}
+
+						return memIRI;
+					});
+					return internedIriToMemIri_local[i];
+
+				}
+			}
+
+			internedIriToMemIri = Arrays.copyOf(internedIriToMemIri_local, internedIriToMemIri_local.length * 2);
+			internedIriLookup = Arrays.copyOf(internedIriLookup_local, internedIriLookup_local.length * 2);
+
+			assert internedIriLookup.length == internedIriToMemIri.length;
+
+			internedIriLookup_local = internedIriLookup;
+			internedIriToMemIri_local = internedIriToMemIri;
+
+			for (int i = 0; i < internedIriLookup_local.length; i++) {
+				if (internedIriLookup_local[i] == stringValue) {
+					assert false;
+				} else if (internedIriLookup_local[i] == null) {
+					internedIriLookup_local[i] = stringValue;
+					internedIriToMemIri_local[i] = iriRegistry.getOrAdd(internedIRI, key -> {
+
+						String namespace = key.getNamespace();
+
+						String sharedNamespace = namespaceRegistry.getOrAdd(namespace, Function.identity());
+
+						// Create a MemURI and add it to the registry
+						MemIRI memIRI = new MemIRI(this, sharedNamespace, key.getLocalName());
+						if (key instanceof InternedIRI) {
+							memIRI.interned = (InternedIRI) key;
+						}
+
+						return memIRI;
+					});
+					return internedIriToMemIri_local[i];
+
+				}
+			}
+
+		}
+
+		assert false;
+
+		return iriRegistry.getOrAdd(internedIRI, key -> {
+
+			String namespace = key.getNamespace();
+
+			String sharedNamespace = namespaceRegistry.getOrAdd(namespace, Function.identity());
+
+			// Create a MemURI and add it to the registry
+			return new MemIRI(this, sharedNamespace, key.getLocalName());
 		});
 	}
 
@@ -327,7 +433,7 @@ public class MemValueFactory extends AbstractValueFactory {
 		if (isOwnMemBnode(bnode)) {
 			return (MemBNode) bnode;
 		}
-		return bnodeRegistry.getOrAdd(bnode, () -> new MemBNode(this, bnode.getID()));
+		return bnodeRegistry.getOrAdd(bnode, key -> new MemBNode(this, key.getID()));
 	}
 
 	/**
@@ -338,30 +444,30 @@ public class MemValueFactory extends AbstractValueFactory {
 			return (MemLiteral) literal;
 		}
 
-		return literalRegistry.getOrAdd(literal, () -> {
-			String label = literal.getLabel();
-			CoreDatatype coreDatatype = literal.getCoreDatatype();
-			IRI datatype = coreDatatype != CoreDatatype.NONE ? coreDatatype.getIri() : literal.getDatatype();
+		return literalRegistry.getOrAdd(literal, key -> {
+			String label = key.getLabel();
+			CoreDatatype coreDatatype = key.getCoreDatatype();
+			IRI datatype = coreDatatype != CoreDatatype.NONE ? coreDatatype.getIri() : key.getDatatype();
 
-			if (Literals.isLanguageLiteral(literal)) {
-				return new MemLiteral(this, label, literal.getLanguage().get());
+			if (Literals.isLanguageLiteral(key)) {
+				return new MemLiteral(this, label, key.getLanguage().get());
 			} else {
 				try {
 					if (coreDatatype.isXSDDatatype()) {
 						if (((CoreDatatype.XSD) coreDatatype).isIntegerDatatype()) {
-							return new IntegerMemLiteral(this, label, literal.integerValue(), coreDatatype);
+							return new IntegerMemLiteral(this, label, key.integerValue(), coreDatatype);
 						} else if (coreDatatype == CoreDatatype.XSD.DECIMAL) {
-							return new DecimalMemLiteral(this, label, literal.decimalValue(), coreDatatype);
+							return new DecimalMemLiteral(this, label, key.decimalValue(), coreDatatype);
 						} else if (coreDatatype == CoreDatatype.XSD.FLOAT) {
-							return new NumericMemLiteral(this, label, literal.floatValue(), coreDatatype);
+							return new NumericMemLiteral(this, label, key.floatValue(), coreDatatype);
 						} else if (coreDatatype == CoreDatatype.XSD.DOUBLE) {
-							return new NumericMemLiteral(this, label, literal.doubleValue(), coreDatatype);
+							return new NumericMemLiteral(this, label, key.doubleValue(), coreDatatype);
 						} else if (coreDatatype == CoreDatatype.XSD.BOOLEAN) {
-							return new BooleanMemLiteral(this, label, literal.booleanValue());
+							return new BooleanMemLiteral(this, label, key.booleanValue());
 						} else if (coreDatatype == CoreDatatype.XSD.DATETIME) {
-							return new CalendarMemLiteral(this, label, coreDatatype, literal.calendarValue());
+							return new CalendarMemLiteral(this, label, coreDatatype, key.calendarValue());
 						} else if (coreDatatype == CoreDatatype.XSD.DATETIMESTAMP) {
-							return new CalendarMemLiteral(this, label, coreDatatype, literal.calendarValue());
+							return new CalendarMemLiteral(this, label, coreDatatype, key.calendarValue());
 						}
 					}
 
@@ -388,7 +494,7 @@ public class MemValueFactory extends AbstractValueFactory {
 			boolean wasNew = tripleRegistry.add(newMemTriple);
 
 			if (!wasNew) {
-				return tripleRegistry.getOrAdd(triple, () -> newMemTriple);
+				return tripleRegistry.getOrAdd(triple, (key) -> newMemTriple);
 			} else {
 				return newMemTriple;
 			}
@@ -405,32 +511,54 @@ public class MemValueFactory extends AbstractValueFactory {
 
 	@Override
 	public IRI createIRI(String namespace, String localName) {
-		return iriRegistry.getOrAdd(SimpleValueFactory.getInstance().createIRI(namespace, localName), () -> {
+		return iriRegistry.getOrAdd(new NamespaceIRI(namespace, localName), (key) -> {
 
-			if (namespace.indexOf(':') == -1) {
-				throw new IllegalArgumentException("Not a valid (absolute) URI: " + namespace + localName);
+			if (key.getNamespace().indexOf(':') == -1) {
+				throw new IllegalArgumentException(
+						"Not a valid (absolute) URI: " + key.getNamespace() + key.getLocalName());
 			}
 
 			String correctNamespace;
 			String correctLocalName;
 
-			if (!URIUtil.isCorrectURISplit(namespace, localName)) {
-				IRI iri = super.createIRI(namespace + localName);
+			if (!URIUtil.isCorrectURISplit(key.getNamespace(), key.getLocalName())) {
+				IRI iri = super.createIRI(key.getNamespace() + key.getLocalName());
 				correctNamespace = iri.getNamespace();
 				correctLocalName = iri.getLocalName();
 
 			} else {
-				correctNamespace = namespace;
-				correctLocalName = localName;
+				correctNamespace = key.getNamespace();
+				correctLocalName = key.getLocalName();
 			}
 
-			String sharedNamespace = namespaceRegistry.getOrAdd(correctNamespace, () -> correctNamespace);
+			String sharedNamespace = namespaceRegistry.getOrAdd(correctNamespace, Function.identity());
 
 			// Create a MemURI and add it to the registry
 			return new MemIRI(this, sharedNamespace, correctLocalName);
 
 		});
 
+	}
+
+	private static final class NamespaceIRI extends SimpleIRI {
+		private final String namespace;
+		private final String localName;
+
+		public NamespaceIRI(String namespace, String localName) {
+			super(namespace + localName);
+			this.namespace = namespace;
+			this.localName = localName;
+		}
+
+		@Override
+		public String getNamespace() {
+			return namespace;
+		}
+
+		@Override
+		public String getLocalName() {
+			return localName;
+		}
 	}
 
 	@Override
@@ -471,7 +599,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	}
 
 	private Literal getSharedLiteral(MemLiteral newLiteral) {
-		return literalRegistry.getOrAdd(newLiteral, () -> newLiteral);
+		return literalRegistry.getOrAdd(newLiteral, (key) -> ((MemLiteral) key));
 	}
 
 }

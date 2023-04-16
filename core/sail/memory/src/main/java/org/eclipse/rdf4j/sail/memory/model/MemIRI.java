@@ -14,6 +14,7 @@ import java.lang.ref.SoftReference;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.InternedIRI;
 
 /**
  * A MemoryStore-specific implementation of URI that stores separated namespace and local name information to enable
@@ -45,7 +46,7 @@ public class MemIRI extends MemResource implements IRI {
 	/**
 	 * The MemURI's hash code, 0 if not yet initialized.
 	 */
-	private volatile int hashCode = 0;
+	private transient int hashCode = 0;
 
 	/**
 	 * The list of statements for which this MemURI is the predicate.
@@ -111,6 +112,8 @@ public class MemIRI extends MemResource implements IRI {
 		return localName;
 	}
 
+	transient InternedIRI interned = null;
+
 	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
@@ -119,6 +122,10 @@ public class MemIRI extends MemResource implements IRI {
 
 		if (o == null) {
 			return false;
+		}
+
+		if (o == interned) {
+			return true;
 		}
 
 		if (o.getClass() == MemIRI.class) {
@@ -142,13 +149,23 @@ public class MemIRI extends MemResource implements IRI {
 				if (toStringCache != null) {
 					String stringValue = toStringCache.get();
 					if (stringValue != null) {
-						return stringValue.equals(oStr);
+						boolean equals = stringValue.equals(oStr);
+						if (equals && o instanceof InternedIRI) {
+							interned = (InternedIRI) o;
+						}
+						return equals;
 					}
 				}
 
-				return namespace.length() + localName.length() == oStr.length() &&
+				boolean equals = namespace.length() + localName.length() == oStr.length() &&
 						oStr.endsWith(localName) &&
 						oStr.startsWith(namespace);
+
+				if (equals && o instanceof InternedIRI) {
+					interned = (InternedIRI) o;
+				}
+
+				return equals;
 			}
 		}
 
@@ -157,11 +174,17 @@ public class MemIRI extends MemResource implements IRI {
 
 	@Override
 	public int hashCode() {
-		if (hashCode == 0) {
-			hashCode = stringValue().hashCode();
+		int localHashCode = hashCode;
+		if (localHashCode == 0) {
+			InternedIRI localInterned = interned;
+			if (localInterned != null) {
+				localHashCode = localInterned.hashCode();
+			} else {
+				localHashCode = stringValue().hashCode();
+			}
+			hashCode = localHashCode;
 		}
-
-		return hashCode;
+		return localHashCode;
 	}
 
 	@Override

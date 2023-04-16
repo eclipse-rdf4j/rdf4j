@@ -20,6 +20,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import org.slf4j.Logger;
@@ -111,7 +112,7 @@ public class WeakObjectRegistry<K, E extends K> extends AbstractSet<E> {
 
 	}
 
-	private int getIndex(Object key) {
+	private int getIndex(K key) {
 		int i = Math.abs(key.hashCode());
 		return i % objectMap.length;
 	}
@@ -236,7 +237,7 @@ public class WeakObjectRegistry<K, E extends K> extends AbstractSet<E> {
 
 	}
 
-	public E getOrAdd(K key, Supplier<E> supplier) {
+	public E getOrAdd(K key, Function<K, E> supplier) {
 
 		int index = getIndex(key);
 		Map<E, WeakReference<E>> weakReferenceMap = objectMap[index];
@@ -258,7 +259,7 @@ public class WeakObjectRegistry<K, E extends K> extends AbstractSet<E> {
 		// we could not find the object, so we will use the supplier to create a new object and add that
 		boolean writeLock = locks[index].writeLock();
 		try {
-			E object = supplier.get();
+			E object = supplier.apply(key);
 			WeakReference<E> ref = weakReferenceMap.put(object, new WeakReference<>(object));
 			if (ref != null) {
 				E e = ref.get();
@@ -282,7 +283,7 @@ public class WeakObjectRegistry<K, E extends K> extends AbstractSet<E> {
 	@Override
 	public boolean remove(Object object) {
 
-		int index = getIndex(object);
+		int index = getIndex(((K) object));
 		boolean writeLock = locks[index].writeLock();
 		try {
 			Map<E, WeakReference<E>> weakReferenceMap = objectMap[index];
