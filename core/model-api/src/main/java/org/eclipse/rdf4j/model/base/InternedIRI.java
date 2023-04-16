@@ -15,10 +15,11 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.lang.reflect.Field;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Value;
 
 /**
  * An IRI implementation that interns the stringValue so that two objects can be compared by their stringValue
@@ -30,6 +31,8 @@ import org.eclipse.rdf4j.model.Value;
 public final class InternedIRI implements IRI {
 	private static final long serialVersionUID = 169243429049169159L;
 
+	public static Set<InternedIRI> ALL_LOADED_INTERNED_IRIS = ConcurrentHashMap.newKeySet();
+
 	private final String namespace;
 	private final String localName;
 	private final String stringValue;
@@ -40,6 +43,7 @@ public final class InternedIRI implements IRI {
 		this.localName = localName;
 		this.stringValue = namespace.concat(localName).intern();
 		this.hashCode = stringValue.hashCode();
+		ALL_LOADED_INTERNED_IRIS.add(this);
 	}
 
 	@Override
@@ -73,11 +77,8 @@ public final class InternedIRI implements IRI {
 			return stringValue == ((InternedIRI) o).stringValue;
 		}
 
-		if (o instanceof Value) {
-			Value value = (Value) o;
-			if (value.isIRI()) {
-				return stringValue.equals(value.stringValue());
-			}
+		if (o instanceof IRI) {
+			return stringValue.equals(((IRI) o).stringValue());
 		}
 
 		return false;
