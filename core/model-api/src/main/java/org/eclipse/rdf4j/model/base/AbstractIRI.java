@@ -45,9 +45,16 @@ public abstract class AbstractIRI implements IRI {
 		return false;
 	}
 
+	private transient int hashCode = 0;
+
 	@Override
 	public int hashCode() {
-		return stringValue().hashCode();
+		int localHashCode = hashCode;
+		if (localHashCode != 0)
+			return localHashCode;
+		localHashCode = stringValue().hashCode();
+		hashCode = localHashCode;
+		return localHashCode;
 	}
 
 	@Override
