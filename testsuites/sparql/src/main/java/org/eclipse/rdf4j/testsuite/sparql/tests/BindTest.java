@@ -228,7 +228,6 @@ public class BindTest extends AbstractComplianceTest {
 		assertThat(bs.getValue("a").stringValue()).isEqualTo("http://example.org/a");
 		assertThat(bs.getValue("c").stringValue()).isEqualTo("http://example.org/c2");
 		assertThat(bs.getValue("d")).isNull();
-
 	}
 
 	@Test

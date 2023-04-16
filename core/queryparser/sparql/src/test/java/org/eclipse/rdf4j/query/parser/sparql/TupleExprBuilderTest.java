@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.query.parser.sparql;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -34,6 +35,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.ParseException;
 import org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilder;
 import org.eclipse.rdf4j.query.parser.sparql.ast.TokenMgrError;
 import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -42,12 +44,18 @@ import org.junit.jupiter.api.Timeout;
  */
 public class TupleExprBuilderTest {
 
+	private TupleExprBuilder builder;
+
+	@BeforeEach
+	public void setupBuilder() {
+		builder = new TupleExprBuilder(SimpleValueFactory.getInstance());
+	}
+
 	@Test
 	public void testSimpleAliasHandling() {
 		String query = "SELECT (?a as ?b) WHERE { ?a ?x ?z }";
 
 		try {
-			TupleExprBuilder builder = new TupleExprBuilder(SimpleValueFactory.getInstance());
 			ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(query);
 			TupleExpr result = builder.visit(qc, null);
 
@@ -67,11 +75,43 @@ public class TupleExprBuilderTest {
 	}
 
 	@Test
+	public void testBindVarReuseHandling() {
+		String query = "SELECT * WHERE { ?s ?p ?o. BIND(<foo:bar> as ?o) }";
+
+		assertThatExceptionOfType(VisitorException.class).isThrownBy(() -> {
+			ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(query);
+			builder.visit(qc, null);
+		}).withMessageContaining("BIND clause alias 'o' was previously used");
+	}
+
+	@Test
+	public void testBindVarReuseHandling2() {
+		String query = "SELECT * WHERE { { ?s ?p ?o } BIND(<foo:bar> as ?o) }";
+
+		assertThatExceptionOfType(VisitorException.class).isThrownBy(() -> {
+			ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(query);
+			builder.visit(qc, null);
+		}).withMessageContaining("BIND clause alias 'o' was previously used");
+	}
+
+	@Test
+	public void testBindVarReuseHandling3() {
+		String query = "SELECT * WHERE {  BIND(<foo:bar> as ?o) ?s ?p ?o. }";
+
+		ASTQueryContainer qc;
+		try {
+			qc = SyntaxTreeBuilder.parseQuery(query);
+			builder.visit(qc, null);
+		} catch (Exception e) {
+			fail("BIND alias before reuse in BGP should be allowed");
+		}
+	}
+
+	@Test
 	public void testAskQuerySolutionModifiers() {
 		String query = "ASK WHERE { ?foo ?bar ?baz . } ORDER BY ?foo LIMIT 1";
 
 		try {
-			TupleExprBuilder builder = new TupleExprBuilder(SimpleValueFactory.getInstance());
 			ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(query);
 			TupleExpr result = builder.visit(qc, null);
 			assertTrue(result instanceof Order);
@@ -87,7 +127,6 @@ public class TupleExprBuilderTest {
 		String query = "ASK WHERE { ?s !<http://example.org/p> <http://example.org/o> . }";
 
 		try {
-			TupleExprBuilder builder = new TupleExprBuilder(SimpleValueFactory.getInstance());
 			ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(query);
 			TupleExpr result = builder.visit(qc, null);
 
