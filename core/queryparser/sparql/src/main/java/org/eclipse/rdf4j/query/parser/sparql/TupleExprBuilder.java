@@ -2375,12 +2375,13 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		extension.addElement(new ExtensionElem(ve.clone(), alias));
 
 		TupleExpr result;
-		TupleExpr arg = graphPattern.buildTupleExpr();
 
-		// check if alias is not previously used.
+		// get a tupleExpr that represents the basic graph pattern, sofar.
+		TupleExpr arg = graphPattern.buildJoinFromRequiredTEs();
+
+		// check if alias is not previously used in the BGP
 		if (arg.getBindingNames().contains(alias)) {
-			// SES-2314 we need to doublecheck that the reused varname is not
-			// just
+			// SES-2314 we need to doublecheck that the reused varname is not just
 			// for an anonymous var or a constant.
 			VarCollector collector = new VarCollector();
 			arg.visit(collector);
@@ -2394,25 +2395,12 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			}
 		}
 
-		if (arg instanceof Filter) {
-			result = arg;
-			// we need to push down the extension so that filters can operate on
-			// the BIND expression.
-			while (((Filter) arg).getArg() instanceof Filter) {
-				arg = ((Filter) arg).getArg();
-			}
+		extension.setArg(arg);
+		result = extension;
 
-			extension.setArg(((Filter) arg).getArg());
-			((Filter) arg).setArg(extension);
-		} else {
-			extension.setArg(arg);
-			result = extension;
-		}
-
-		GraphPattern replacementGP = new GraphPattern(graphPattern);
-		replacementGP.addRequiredTE(result);
-
-		graphPattern = replacementGP;
+		// replace the previous basic graph pattern with the extended version
+		graphPattern.clearRequiredTEs();
+		graphPattern.addRequiredTE(result);
 
 		return result;
 	}

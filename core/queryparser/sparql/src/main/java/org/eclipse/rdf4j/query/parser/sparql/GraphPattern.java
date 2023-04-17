@@ -98,6 +98,13 @@ public class GraphPattern {
 		requiredTEs.add(te);
 	}
 
+	/**
+	 * Remove all values for required tuple expressions in this {@link GraphPattern}
+	 */
+	void clearRequiredTEs() {
+		requiredTEs.clear();
+	}
+
 	public void addRequiredSP(Var subjVar, Var predVar, Var objVar) {
 
 		addRequiredTE(new StatementPattern(spScope, subjVar, predVar, objVar,
@@ -164,18 +171,7 @@ public class GraphPattern {
 	 * @return A tuple expression for this graph pattern.
 	 */
 	public TupleExpr buildTupleExpr() {
-		TupleExpr result;
-
-		if (requiredTEs.isEmpty()) {
-			result = new SingletonSet();
-		} else {
-			result = requiredTEs.get(0);
-
-			for (int i = 1; i < requiredTEs.size(); i++) {
-				TupleExpr te = requiredTEs.get(i);
-				result = new Join(result, te);
-			}
-		}
+		TupleExpr result = buildJoinFromRequiredTEs();
 
 		for (Map.Entry<TupleExpr, List<ValueExpr>> entry : optionalTEs) {
 			List<ValueExpr> constraints = entry.getValue();
@@ -198,4 +194,22 @@ public class GraphPattern {
 		return result;
 	}
 
+	/**
+	 * Build a single tuple expression representing _only_ the basic graph pattern, by joining the required TEs
+	 */
+	TupleExpr buildJoinFromRequiredTEs() {
+		TupleExpr result;
+
+		if (requiredTEs.isEmpty()) {
+			result = new SingletonSet();
+		} else {
+			result = requiredTEs.get(0);
+
+			for (int i = 1; i < requiredTEs.size(); i++) {
+				TupleExpr te = requiredTEs.get(i);
+				result = new Join(result, te);
+			}
+		}
+		return result;
+	}
 }

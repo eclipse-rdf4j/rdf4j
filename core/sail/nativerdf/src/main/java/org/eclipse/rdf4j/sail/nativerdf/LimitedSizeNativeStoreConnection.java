@@ -19,7 +19,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.limited.LimitedSizeEvaluationS
 
 /**
  * @author Jerven Bolleman, SIB Swiss Institute of Bioinformatics
+ *
+ * @deprecated since 4.2.4. See https://github.com/eclipse/rdf4j/issues/3983
  */
+@Deprecated(since = "4.2.4", forRemoval = true)
 public class LimitedSizeNativeStoreConnection extends NativeStoreConnection {
 
 	private int maxCollectionsSize = Integer.MAX_VALUE;
