@@ -23,7 +23,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 
 /**
  * @author Jerven Bolleman, SIB Swiss Institute of Bioinformatics
+ *
+ * @deprecated since 4.2.4. See https://github.com/eclipse/rdf4j/issues/3983
  */
+@Deprecated(forRemoval = true, since = "4.2.4")
 public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 
 	private final AtomicLong used = new AtomicLong();
