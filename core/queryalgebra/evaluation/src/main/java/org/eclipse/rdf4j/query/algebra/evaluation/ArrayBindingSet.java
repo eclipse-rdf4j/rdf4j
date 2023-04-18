@@ -46,6 +46,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	private final boolean[] whichBindingsHaveBeenSet;
 
 	private final Value[] values;
+	private boolean empty;
 
 	/**
 	 * Creates a new Array-based BindingSet for the supplied bindings names. <em>The supplied list of binding names is
@@ -58,6 +59,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		this.bindingNames = names;
 		this.values = new Value[names.length];
 		this.whichBindingsHaveBeenSet = new boolean[names.length];
+		this.empty = true;
 	}
 
 	public ArrayBindingSet(BindingSet toCopy, Set<String> names, String[] namesArray) {
@@ -238,6 +240,9 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public int size() {
+		if (empty) {
+			return 0;
+		}
 		int size = 0;
 
 		for (boolean value : whichBindingsHaveBeenSet) {
@@ -360,6 +365,9 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public boolean isEmpty() {
+		if (empty) {
+			return true;
+		}
 		for (int index = 0; index < values.length; index++) {
 			if (whichBindingsHaveBeenSet[index]) {
 				return false;
@@ -369,6 +377,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	}
 
 	private void clearCache() {
+		this.empty = false;
 		bindingNamesSetCache = null;
 	}
 }

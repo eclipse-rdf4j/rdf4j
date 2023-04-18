@@ -162,6 +162,10 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 			return false;
 		}
 
+		if (name == var.name && value == var.value) {
+			return anonymous == var.anonymous;
+		}
+
 		return anonymous == var.anonymous && !(name == null && var.name != null || value == null && var.value != null)
 				&& Objects.equals(name, var.name) && Objects.equals(value, var.value);
 	}
