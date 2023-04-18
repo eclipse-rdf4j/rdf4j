@@ -110,7 +110,7 @@ public class QueryBenchmark {
 
 		QueryBenchmark queryBenchmark = new QueryBenchmark();
 		queryBenchmark.beforeClass();
-		for (int i = 0; i < 100; i++) {
+		for (int i = 0; i < 500; i++) {
 			System.out.println(i);
 			queryBenchmark.pathExpressionQuery1();
 			queryBenchmark.groupByQuery();

@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
@@ -51,7 +52,7 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 	Value hasValue;
 
 	public HasValueConstraintComponent(Value hasValue) {
-		this.hasValue = hasValue;
+		this.hasValue = SparqlQueryParserCache.getInternedIriOrElse(hasValue);
 	}
 
 	@Override

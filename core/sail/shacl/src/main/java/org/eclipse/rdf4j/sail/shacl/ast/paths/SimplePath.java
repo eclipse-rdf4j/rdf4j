@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeWrapper;
@@ -38,7 +39,7 @@ public class SimplePath extends Path {
 
 	public SimplePath(IRI predicate) {
 		super(predicate);
-		this.predicate = predicate;
+		this.predicate = SparqlQueryParserCache.getInternedIriOrElse(predicate);
 	}
 
 	@Override

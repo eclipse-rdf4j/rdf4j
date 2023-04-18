@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclAstLists;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -37,7 +38,8 @@ public class InConstraintComponent extends SimpleAbstractConstraintComponent {
 
 	public InConstraintComponent(ShapeSource shapeSource, Resource in) {
 		super(in);
-		this.in = Collections.unmodifiableSet(new LinkedHashSet<>(ShaclAstLists.toList(shapeSource, in, Value.class)));
+		this.in = Collections.unmodifiableSet(SparqlQueryParserCache
+				.getInternedIriOrElse(new LinkedHashSet<>(ShaclAstLists.toList(shapeSource, in, Value.class))));
 	}
 
 	public InConstraintComponent(InConstraintComponent inConstraintComponent) {

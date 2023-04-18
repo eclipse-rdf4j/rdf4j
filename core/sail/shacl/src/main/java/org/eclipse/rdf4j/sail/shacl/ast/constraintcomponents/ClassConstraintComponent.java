@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
@@ -51,8 +52,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 	private final Set<Resource> clazzSet;
 
 	public ClassConstraintComponent(IRI clazz) {
-		this.clazz = clazz;
-		this.clazzSet = Set.of(clazz);
+		this.clazz = SparqlQueryParserCache.getInternedIriOrElse(clazz);
+		this.clazzSet = Set.of(this.clazz);
 	}
 
 	@Override

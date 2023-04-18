@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.DatatypeFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
@@ -35,8 +36,8 @@ public class DatatypeConstraintComponent extends SimpleAbstractConstraintCompone
 	private final IRI datatype;
 
 	public DatatypeConstraintComponent(IRI datatype) {
-		this.datatype = datatype;
-		this.coreDatatype = CoreDatatype.from(datatype);
+		this.datatype = SparqlQueryParserCache.getInternedIriOrElse(datatype);
+		this.coreDatatype = CoreDatatype.from(this.datatype);
 	}
 
 	@Override

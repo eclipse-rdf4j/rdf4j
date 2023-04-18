@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclAstLists;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
@@ -55,7 +56,8 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 	public DashHasValueInConstraintComponent(ShapeSource shapeSource, Resource hasValueIn) {
 		super(hasValueIn);
 		this.hasValueIn = Collections
-				.unmodifiableSet(new LinkedHashSet<>(ShaclAstLists.toList(shapeSource, hasValueIn, Value.class)));
+				.unmodifiableSet(SparqlQueryParserCache.getInternedIriOrElse(
+						new LinkedHashSet<>(ShaclAstLists.toList(shapeSource, hasValueIn, Value.class))));
 	}
 
 	public DashHasValueInConstraintComponent(DashHasValueInConstraintComponent dashHasValueInConstraintComponent) {
