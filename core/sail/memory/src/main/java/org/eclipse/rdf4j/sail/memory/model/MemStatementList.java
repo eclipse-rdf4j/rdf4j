@@ -77,6 +77,8 @@ public class MemStatementList {
 			MemStatement[] statements = getStatements();
 			int length = statements.length;
 
+			boolean shouldGrowArray = true;
+
 			if (length > (int) SIZE.getAcquire(this)) {
 
 				int previouslyInsertedIndex = (int) PREVIOUSLY_INSERTED_INDEX.getOpaque(this);
@@ -91,10 +93,11 @@ public class MemStatementList {
 					if (statements[i] == null) {
 
 						boolean success = STATEMENTS_ARRAY.compareAndSet(statements, i, null, st);
-						if (success) {
 
-							// check if the statements array has been swapped out (because it was grown) while we
-							// were
+						if (success) {
+							shouldGrowArray = false;
+
+							// check if the statements array has been swapped out (because it has grown) while we were
 							// inserting into it
 							MemStatement[] statementsAfterInsert = getStatements();
 							if (statementsAfterInsert != statements
@@ -111,14 +114,11 @@ public class MemStatementList {
 							return;
 						}
 					}
-
 				}
-
 			}
 
-			// statements array is probably full
-
-			if (STATEMENTS.compareAndSet(this, statements, null)) {// Grow array
+			if (shouldGrowArray && STATEMENTS.compareAndSet(this, statements, null)) {
+				// Grow array
 				MemStatement[] newArray = new MemStatement[Math.max(4, length * 2)];
 				if (statements != EMPTY_ARRAY) {
 					System.arraycopy(statements, 0, newArray, 0, length);
@@ -126,9 +126,11 @@ public class MemStatementList {
 
 				STATEMENTS.setRelease(this, newArray);
 			}
+
 			if (Thread.interrupted()) {
 				throw new InterruptedException();
 			}
+
 		} while (true);
 
 	}

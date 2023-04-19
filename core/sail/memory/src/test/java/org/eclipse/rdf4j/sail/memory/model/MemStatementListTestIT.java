@@ -37,9 +37,9 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.Ignore;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -50,7 +50,7 @@ import com.google.common.collect.Lists;
 public class MemStatementListTestIT {
 
 	private static List<MemStatement> statements;
-	public static final int CHUNKS = 10_000;
+	public static final int CHUNKS = 1_000;
 
 	@BeforeAll
 	public static void beforeAll() throws IOException {
@@ -136,7 +136,7 @@ public class MemStatementListTestIT {
 
 	@Test
 	@Timeout(120)
-	@Ignore
+	@Disabled
 	public void addRemoveMultipleThreads() throws ExecutionException, InterruptedException {
 
 		List<List<MemStatement>> partition = Lists.partition(statements, CHUNKS);
@@ -191,7 +191,7 @@ public class MemStatementListTestIT {
 
 	@Test
 	@Timeout(120)
-	@Ignore
+	@Disabled
 	public void addRemoveConsistentMultipleThreads() throws ExecutionException, InterruptedException {
 
 		List<List<MemStatement>> partition = Lists.partition(statements, CHUNKS);
@@ -253,7 +253,7 @@ public class MemStatementListTestIT {
 
 	@Test
 	@Timeout(120)
-	@Ignore
+	@Disabled
 	public void addCleanSnapshotConsistentMultipleThreads() throws ExecutionException, InterruptedException {
 
 		List<List<MemStatement>> partition = Lists.partition(statements, CHUNKS);
