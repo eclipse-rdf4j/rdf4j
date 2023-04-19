@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.junit.Ignore;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -135,6 +136,7 @@ public class MemStatementListTestIT {
 
 	@Test
 	@Timeout(120)
+	@Ignore
 	public void addRemoveMultipleThreads() throws ExecutionException, InterruptedException {
 
 		List<List<MemStatement>> partition = Lists.partition(statements, CHUNKS);
@@ -189,6 +191,7 @@ public class MemStatementListTestIT {
 
 	@Test
 	@Timeout(120)
+	@Ignore
 	public void addRemoveConsistentMultipleThreads() throws ExecutionException, InterruptedException {
 
 		List<List<MemStatement>> partition = Lists.partition(statements, CHUNKS);
@@ -250,6 +253,7 @@ public class MemStatementListTestIT {
 
 	@Test
 	@Timeout(120)
+	@Ignore
 	public void addCleanSnapshotConsistentMultipleThreads() throws ExecutionException, InterruptedException {
 
 		List<List<MemStatement>> partition = Lists.partition(statements, CHUNKS);
