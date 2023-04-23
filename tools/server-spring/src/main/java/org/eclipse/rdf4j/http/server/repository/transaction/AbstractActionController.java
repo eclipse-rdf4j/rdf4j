@@ -39,7 +39,7 @@ import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.AbstractController;
 
 /**
- * Handles requests for transaction creation on a repository.
+ * Handles requests for transaction operations on a repository.
  *
  * @author Jeen Broekstra
  */
@@ -86,6 +86,11 @@ public abstract class AbstractActionController extends AbstractController implem
 
 	}
 
+	// Comes from disposableBean interface so to be able to stop the ActiveTransactionRegistry scheduler
+	@Override
+	public void destroy() throws Exception {
+		ActiveTransactionRegistry.INSTANCE.destroyScheduler();
+	}
 	/**
 	 * Handle the specific action as part of the supplied {@link Transaction} object.
 	 * 
@@ -96,30 +101,6 @@ public abstract class AbstractActionController extends AbstractController implem
 	protected abstract ModelAndView handleAction(HttpServletRequest request, HttpServletResponse response,
 			Transaction transaction) throws Exception;
 
-	/* private methods */
-
-	private UUID getTransactionID(HttpServletRequest request) throws ClientHTTPException {
-		String pathInfoStr = request.getPathInfo();
-
-		UUID txnID = null;
-
-		if (pathInfoStr != null && !pathInfoStr.equals("/")) {
-			String[] pathInfo = pathInfoStr.substring(1).split("/");
-			// should be of the form: /<Repository>/transactions/<txnID>
-			if (pathInfo.length == 3) {
-				try {
-					txnID = UUID.fromString(pathInfo[2]);
-					logger.debug("txnID is '{}'", txnID);
-				} catch (IllegalArgumentException e) {
-					throw new ClientHTTPException(SC_BAD_REQUEST, "not a valid transaction id: " + pathInfo[2]);
-				}
-			} else {
-				logger.warn("could not determine transaction id from path info {} ", pathInfoStr);
-			}
-		}
-
-		return txnID;
-	}
 
 	static RDFFormat getRDFFormat(HttpServletRequest request) {
 		return Rio.getParserFormatForMIMEType(request.getContentType())
@@ -149,10 +130,30 @@ public abstract class AbstractActionController extends AbstractController implem
 		return new ModelAndView(SimpleResponseView.getInstance(), model);
 	}
 
-	// Comes from disposableBean interface so to be able to stop the ActiveTransactionRegistry scheduler
-	@Override
-	public void destroy() throws Exception {
-		ActiveTransactionRegistry.INSTANCE.destroyScheduler();
+	/* private methods */
+
+	private UUID getTransactionID(HttpServletRequest request) throws ClientHTTPException {
+		String pathInfoStr = request.getPathInfo();
+
+		UUID txnID = null;
+
+		if (pathInfoStr != null && !pathInfoStr.equals("/")) {
+			String[] pathInfo = pathInfoStr.substring(1).split("/");
+			// should be of the form: /<Repository>/transactions/<txnID>
+			if (pathInfo.length == 3) {
+				try {
+					txnID = UUID.fromString(pathInfo[2]);
+					logger.debug("txnID is '{}'", txnID);
+				} catch (IllegalArgumentException e) {
+					throw new ClientHTTPException(SC_BAD_REQUEST, "not a valid transaction id: " + pathInfo[2]);
+				}
+			} else {
+				logger.warn("could not determine transaction id from path info {} ", pathInfoStr);
+			}
+		}
+
+		return txnID;
 	}
+
 
 }

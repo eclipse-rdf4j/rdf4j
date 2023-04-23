@@ -20,7 +20,6 @@ import static org.eclipse.rdf4j.http.protocol.Protocol.QUERY_LANGUAGE_PARAM_NAME
 import static org.eclipse.rdf4j.http.protocol.Protocol.REMOVE_GRAPH_PARAM_NAME;
 import static org.eclipse.rdf4j.http.protocol.Protocol.USING_GRAPH_PARAM_NAME;
 import static org.eclipse.rdf4j.http.protocol.Protocol.USING_NAMED_GRAPH_PARAM_NAME;
-import static org.eclipse.rdf4j.http.server.repository.transaction.AbstractActionController.getCharset;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
@@ -171,7 +170,6 @@ public class UpdateController extends AbstractActionController {
 
 		try {
 			// determine if any variable bindings have been set on this update.
-			@SuppressWarnings("unchecked")
 			Enumeration<String> parameterNames = request.getParameterNames();
 
 			Map<String, Value> bindings = new HashMap<>();
