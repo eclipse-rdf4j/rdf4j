@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.http.server.repository.transaction;
 
 import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
+
 import static org.eclipse.rdf4j.http.protocol.Protocol.CONTEXT_PARAM_NAME;
 
 import java.nio.charset.Charset;
@@ -91,16 +92,16 @@ public abstract class AbstractActionController extends AbstractController implem
 	public void destroy() throws Exception {
 		ActiveTransactionRegistry.INSTANCE.destroyScheduler();
 	}
+
 	/**
 	 * Handle the specific action as part of the supplied {@link Transaction} object.
-	 * 
+	 *
 	 * @param request     the request
 	 * @param transaction the transaction on which the action is to be executed
 	 * @return result of the action (may not be null)
 	 */
 	protected abstract ModelAndView handleAction(HttpServletRequest request, HttpServletResponse response,
 			Transaction transaction) throws Exception;
-
 
 	static RDFFormat getRDFFormat(HttpServletRequest request) {
 		return Rio.getParserFormatForMIMEType(request.getContentType())
@@ -154,6 +155,5 @@ public abstract class AbstractActionController extends AbstractController implem
 
 		return txnID;
 	}
-
 
 }

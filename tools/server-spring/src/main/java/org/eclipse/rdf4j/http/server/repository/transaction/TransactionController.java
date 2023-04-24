@@ -31,7 +31,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
 /**
  * Handles requests for transaction rollbacks on a repository, and provides backward-compatible (deprecated) support for
  * all other transaction operations.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class TransactionController extends AbstractController implements DisposableBean {

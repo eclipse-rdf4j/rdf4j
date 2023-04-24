@@ -4,7 +4,7 @@
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/org/documents/edl-v10.php 
+ * http://www.eclipse.org/org/documents/edl-v10.php
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 
 import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
 import static javax.servlet.http.HttpServletResponse.SC_NOT_ACCEPTABLE;
+
 import static org.eclipse.rdf4j.http.protocol.Protocol.BINDING_PREFIX;
 import static org.eclipse.rdf4j.http.protocol.Protocol.INCLUDE_INFERRED_PARAM_NAME;
 import static org.eclipse.rdf4j.http.protocol.Protocol.INSERT_GRAPH_PARAM_NAME;
