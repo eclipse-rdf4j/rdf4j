@@ -8,6 +8,9 @@
 	</parent>
 	<artifactId>rdf4j-compliance</artifactId>
 	<packaging>pom</packaging>
+	<properties>
+		<enforce-java-ee-provided-only.skip>true</enforce-java-ee-provided-only.skip>
+	</properties>
 	<modules>
 		<module>repository</module>
 		<module>rio</module>

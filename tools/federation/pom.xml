@@ -10,6 +10,9 @@
 		<artifactId>rdf4j-tools</artifactId>
 		<version>4.3.0-SNAPSHOT</version>
 	</parent>
+	<properties>
+		<enforce-java-ee-provided-only.skip>true</enforce-java-ee-provided-only.skip>
+	</properties>
 	<build>
 		<plugins>
 			<plugin>

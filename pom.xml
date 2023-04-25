@@ -362,7 +362,9 @@
 		<maven.compiler.source>${java.version}</maven.compiler.source>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+		<enforce-no-java-ee.skip>true</enforce-no-java-ee.skip>
 		<enforce-javaee-provided.fail>true</enforce-javaee-provided.fail>
+		<enforce-java-ee-provided-only.skip>false</enforce-java-ee-provided-only.skip>
 		<slf4j.version>1.7.36</slf4j.version>
 		<logback.version>1.2.11</logback.version>
 		<log4j.version>2.17.2</log4j.version>
@@ -1016,6 +1018,46 @@
 									</banDuplicateClasses>
 								</rules>
 								<fail>true</fail>
+							</configuration>
+						</execution>
+						<execution>
+							<id>enforce-no-java-ee</id>
+							<goals>
+								<goal>enforce</goal>
+							</goals>
+							<configuration>
+								<rules>
+									<bannedDependencies>
+										<excludes>
+											<exclude>javax.*</exclude>
+											<exclude>jakarta.*</exclude>
+										</excludes>
+									</bannedDependencies>
+								</rules>
+								<fail>true</fail>
+								<skip>${enforce-no-java-ee.skip}</skip>
+							</configuration>
+						</execution>
+						<execution>
+							<id>enforce-java-ee-provided-only</id>
+							<goals>
+								<goal>enforce</goal>
+							</goals>
+							<configuration>
+								<rules>
+									<bannedDependencies>
+										<excludes>
+											<exclude>javax.*</exclude>
+											<exclude>jakarta.*</exclude>
+										</excludes>
+										<includes>
+											<include>javax.*:*:*:jar:provided</include>
+											<include>jakarta.*:*:*:jar:provided</include>
+										</includes>
+									</bannedDependencies>
+								</rules>
+								<fail>true</fail>
+								<skip>${enforce-java-ee-provided-only.skip}</skip>
 							</configuration>
 						</execution>
 					</executions>

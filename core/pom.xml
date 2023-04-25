@@ -8,6 +8,9 @@
 	</parent>
 	<artifactId>rdf4j-core</artifactId>
 	<packaging>pom</packaging>
+	<properties>
+		<enforce-no-java-ee.skip>false</enforce-no-java-ee.skip>
+	</properties>
 	<modules>
 		<module>common</module>
 		<module>model-api</module>

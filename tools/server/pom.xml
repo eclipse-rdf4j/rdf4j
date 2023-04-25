@@ -11,6 +11,7 @@
 	<name>RDF4J: HTTP server</name>
 	<description>HTTP server implementing a REST-style protocol</description>
 	<properties>
+		<enforce-java-ee-provided-only.skip>true</enforce-java-ee-provided-only.skip>
 		<testserver.webapp.dir>${project.build.directory}/rdf4j-server</testserver.webapp.dir>
 	</properties>
 	<dependencies>

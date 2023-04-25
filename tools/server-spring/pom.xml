@@ -9,6 +9,9 @@
 	<artifactId>rdf4j-http-server-spring</artifactId>
 	<name>RDF4J: HTTP server - core</name>
 	<description>HTTP server implementing a REST-style protocol</description>
+	<properties>
+		<enforce-java-ee-provided-only.skip>true</enforce-java-ee-provided-only.skip>
+	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>

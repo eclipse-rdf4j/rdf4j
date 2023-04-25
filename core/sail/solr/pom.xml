@@ -10,8 +10,10 @@
 	<name>RDF4J: Solr Sail Index</name>
 	<description>StackableSail implementation offering full-text search on literals, based on Solr.</description>
 	<properties>
+		<enforce-no-java-ee.skip>true</enforce-no-java-ee.skip>
 		<!-- FIXME: Support for embedded Solr server require non-provided Java EE dependencies -->
 		<enforce-javaee-provided.fail>false</enforce-javaee-provided.fail>
+		<enforce-java-ee-provided-only.skip>true</enforce-java-ee-provided-only.skip>
 	</properties>
 	<dependencies>
 		<dependency>
