@@ -103,14 +103,17 @@
 		</dependency>
 		<!-- TODO ideally reuse repository-compliace -->
 		<dependency>
-			<groupId>org.eclipse.jetty</groupId>
-			<artifactId>jetty-server</artifactId>
+			<groupId>com.github.mjeanroy</groupId>
+			<artifactId>junit-servers-jetty-9</artifactId>
+			<version>${junit-servers.version}</version>
 			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.eclipse.jetty</groupId>
-			<artifactId>jetty-webapp</artifactId>
-			<scope>test</scope>
+			<exclusions>
+				<!-- Excluded to avoid duplicate classes -->
+				<exclusion>
+					<groupId>org.mortbay.jasper</groupId>
+					<artifactId>apache-jsp</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>com.github.ziplet</groupId>

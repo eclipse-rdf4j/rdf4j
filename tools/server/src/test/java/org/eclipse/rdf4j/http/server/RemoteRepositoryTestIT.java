@@ -24,40 +24,44 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
-import org.junit.jupiter.api.AfterAll;
+import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
+import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
+import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
+import com.github.mjeanroy.junit.servers.jupiter.JunitServerExtension;
+import com.github.mjeanroy.junit.servers.servers.EmbeddedServer;
+
+@ExtendWith(JunitServerExtension.class)
 public class RemoteRepositoryTestIT {
 
-	public static final IRI CONTEXT1 = Values.iri("http://example.com/context1");
-	public static final IRI CONTEXT2 = Values.iri("http://example.com/context2");
-	public static final IRI CONTEXT3 = Values.iri("http://example.com/context3");
-	private static TestServer server;
+	private static final IRI CONTEXT1 = Values.iri("http://example.com/context1");
+	private static final IRI CONTEXT2 = Values.iri("http://example.com/context2");
+	private static final IRI CONTEXT3 = Values.iri("http://example.com/context3");
+	private static final String TEST_REPO_ID = "Test";
+
+	private static Repository systemRepo;
 
 	@BeforeAll
-	public static void startServer() throws Exception {
-		server = new TestServer();
-		try {
-			server.start();
-		} catch (Exception e) {
-			server.stop();
-			throw e;
-		}
-	}
+	static void beforeAll(EmbeddedServer<?> server) {
+		RemoteRepositoryManager manager = RemoteRepositoryManager.getInstance(server.getUrl());
 
-	@AfterAll
-	public static void stopServer() throws Exception {
-		server.stop();
+		MemoryStoreConfig memStoreConfig = new MemoryStoreConfig();
+		SailRepositoryConfig sailRepConfig = new SailRepositoryConfig(memStoreConfig);
+		RepositoryConfig repConfig = new RepositoryConfig(TEST_REPO_ID, sailRepConfig);
+		manager.addRepositoryConfig(repConfig);
+
+		systemRepo = new HTTPRepository(Protocol.getRepositoryLocation(server.getUrl(), TEST_REPO_ID));
 	}
 
 	@BeforeEach
 	public void beforeEach() {
-		Repository systemRepo = new HTTPRepository(
-				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_REPO_ID));
 		try (RepositoryConnection connection = systemRepo.getConnection()) {
 			connection.begin();
 			connection.clear();
@@ -79,10 +83,6 @@ public class RemoteRepositoryTestIT {
 
 	@Test
 	public void testClearDefaultContextOnly() {
-
-		Repository systemRepo = new HTTPRepository(
-				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_REPO_ID));
-
 		try (RepositoryConnection connection = systemRepo.getConnection()) {
 
 			// clear the default graph
@@ -106,10 +106,6 @@ public class RemoteRepositoryTestIT {
 
 	@Test
 	public void testClearDefaultContextOnlySingleTransaction() {
-
-		Repository systemRepo = new HTTPRepository(
-				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_REPO_ID));
-
 		try (RepositoryConnection connection = systemRepo.getConnection()) {
 			connection.begin();
 			// clear the default graph
@@ -131,10 +127,6 @@ public class RemoteRepositoryTestIT {
 
 	@Test
 	public void testClearSingleContextSingleTransaction() {
-
-		Repository systemRepo = new HTTPRepository(
-				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_REPO_ID));
-
 		try (RepositoryConnection connection = systemRepo.getConnection()) {
 			connection.begin();
 			connection.clear(CONTEXT1);
@@ -155,10 +147,6 @@ public class RemoteRepositoryTestIT {
 
 	@Test
 	public void testClearAllContextsSingleTransaction() {
-
-		Repository systemRepo = new HTTPRepository(
-				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_REPO_ID));
-
 		try (RepositoryConnection connection = systemRepo.getConnection()) {
 			connection.begin();
 			// clear the default graph
@@ -177,10 +165,6 @@ public class RemoteRepositoryTestIT {
 
 	@Test
 	public void testClearAllContexts() {
-
-		Repository systemRepo = new HTTPRepository(
-				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_REPO_ID));
-
 		try (RepositoryConnection connection = systemRepo.getConnection()) {
 			// clear the all graphs
 			connection.begin();
@@ -200,10 +184,6 @@ public class RemoteRepositoryTestIT {
 
 	@Test
 	public void testClearSpecificContexts() {
-
-		Repository systemRepo = new HTTPRepository(
-				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_REPO_ID));
-
 		try (RepositoryConnection connection = systemRepo.getConnection()) {
 			// clear the all graphs
 			connection.begin();

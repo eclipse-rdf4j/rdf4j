@@ -18,43 +18,33 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.http.client.shacl.RemoteShaclValidationException;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
+import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
+import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
-import org.junit.jupiter.api.AfterAll;
+import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
+import com.github.mjeanroy.junit.servers.jupiter.JunitServerExtension;
+import com.github.mjeanroy.junit.servers.servers.EmbeddedServer;
+
+@ExtendWith(JunitServerExtension.class)
 public class TransactionSettingsIT {
+	private static final String TEST_SHACL_REPO_ID = "Test-SHACL";
 
-	private static TestServer server;
-
-	private static final ValueFactory vf = SimpleValueFactory.getInstance();
-
-	@BeforeAll
-	public static void startServer() throws Exception {
-		server = new TestServer();
-		try {
-			server.start();
-		} catch (Exception e) {
-			server.stop();
-			throw e;
-		}
-	}
-
-	@AfterAll
-	public static void stopServer() throws Exception {
-		server.stop();
-	}
+	private static Repository repository;
 
 	String shacl = "@base <http://example.com/ns> .\n" +
 			"@prefix ex: <http://example.com/ns#> .\n" +
@@ -74,10 +64,20 @@ public class TransactionSettingsIT {
 			"        sh:path rdfs:label ;\n" +
 			"        sh:minCount 1 .";
 
+	@BeforeAll
+	static void beforeAll(EmbeddedServer<?> server) {
+		RemoteRepositoryManager manager = RemoteRepositoryManager.getInstance(server.getUrl());
+
+		ShaclSailConfig shaclConfig = new ShaclSailConfig(new MemoryStoreConfig());
+		SailRepositoryConfig sailRepConfig = new SailRepositoryConfig(shaclConfig);
+		RepositoryConfig repConfig = new RepositoryConfig(TEST_SHACL_REPO_ID, sailRepConfig);
+		manager.addRepositoryConfig(repConfig);
+
+		repository = new HTTPRepository(Protocol.getRepositoryLocation(server.getUrl(), TEST_SHACL_REPO_ID));
+	}
+
 	@BeforeEach
 	public void before() {
-		Repository repository = new HTTPRepository(
-				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_SHACL_REPO_ID));
 		try (RepositoryConnection connection = repository.getConnection()) {
 			connection.setIsolationLevel(IsolationLevels.NONE);
 			connection.begin();
@@ -89,9 +89,6 @@ public class TransactionSettingsIT {
 
 	@Test
 	public void testValid() throws Exception {
-
-		Repository repository = new HTTPRepository(
-				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_SHACL_REPO_ID));
 		try (RepositoryConnection connection = repository.getConnection()) {
 
 			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk, IsolationLevels.NONE);
@@ -107,10 +104,7 @@ public class TransactionSettingsIT {
 	}
 
 	@Test
-	public void testInvalid() throws Throwable {
-
-		Repository repository = new HTTPRepository(
-				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_SHACL_REPO_ID));
+	public void testInvalid(EmbeddedServer<?> server) throws Throwable {
 		try (RepositoryConnection connection = repository.getConnection()) {
 
 			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk, IsolationLevels.NONE);
@@ -128,9 +122,6 @@ public class TransactionSettingsIT {
 
 	@Test
 	public void testInvalidSnapshot() throws Throwable {
-
-		Repository repository = new HTTPRepository(
-				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_SHACL_REPO_ID));
 		try (RepositoryConnection connection = repository.getConnection()) {
 
 			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk, IsolationLevels.SNAPSHOT);
@@ -148,9 +139,6 @@ public class TransactionSettingsIT {
 
 	@Test
 	public void testInvalidRollsBackCorrectly() {
-
-		Repository repository = new HTTPRepository(
-				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_SHACL_REPO_ID));
 		try (RepositoryConnection connection = repository.getConnection()) {
 
 			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk, IsolationLevels.NONE);
@@ -177,9 +165,6 @@ public class TransactionSettingsIT {
 
 	@Test
 	public void testValidationDisabled() throws Throwable {
-
-		Repository repository = new HTTPRepository(
-				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_SHACL_REPO_ID));
 		try (RepositoryConnection connection = repository.getConnection()) {
 
 			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Disabled, IsolationLevels.NONE);
@@ -203,10 +188,7 @@ public class TransactionSettingsIT {
 	}
 
 	@Test
-	public void testValidationDisabledSnapshotSerializableValidation() throws Throwable {
-
-		Repository repository = new HTTPRepository(
-				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_SHACL_REPO_ID));
+	public void testValidationDisabledSnapshotSerializableValidation(EmbeddedServer<?> server) throws Throwable {
 		try (RepositoryConnection connection = repository.getConnection()) {
 
 			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Disabled, IsolationLevels.SNAPSHOT);

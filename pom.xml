@@ -376,6 +376,7 @@
 		<jmhVersion>1.35</jmhVersion>
 		<servlet.version>3.1.0</servlet.version>
 		<junit.version>5.8.2</junit.version>
+		<junit-servers.version>3.0.0</junit-servers.version>
 		<jetty.version>9.4.50.v20221201</jetty.version>
 	</properties>
 	<dependencyManagement>
@@ -987,7 +988,7 @@
 											<include>javax.servlet.jsp:jsp-api:*:*:provided</include>
 											<include>javax.servlet:jstl:*:*:provided</include>
 											<!-- Allow test server dependencies -->
-											<include>javax.servlet:javax.servlet-api:*:*:test</include>
+											<include>javax*:*:*:*:test</include>
 										</includes>
 									</bannedDependencies>
 								</rules>

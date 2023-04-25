@@ -69,7 +69,7 @@ public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 	 * @return the server url
 	 */
 	public String getServerUrl() {
-		return "http://" + HOST + ":" + PORT + CONTEXT_PATH;
+		return server.getUrl();
 	}
 
 	@Override

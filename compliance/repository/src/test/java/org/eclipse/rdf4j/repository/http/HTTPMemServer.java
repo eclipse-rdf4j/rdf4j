@@ -39,7 +39,7 @@ public class HTTPMemServer {
 
 	private static final int PORT = 18081;
 
-	private static final String TEST_REPO_ID = "Test";
+	public static final String TEST_REPO_ID = "Test";
 
 	private static final String TEST_INFERENCE_REPO_ID = "Test-RDFS";
 
@@ -57,8 +57,7 @@ public class HTTPMemServer {
 
 	public HTTPMemServer() throws IOException {
 		System.clearProperty("DEBUG");
-		PropertiesReader reader = new PropertiesReader("maven-config.properties");
-		String webappDir = reader.getProperty("testserver.webapp.dir");
+		String webappDir = getWebappDir();
 		logger.debug("build path: {}", webappDir);
 
 		jetty = new Server(PORT);
@@ -72,13 +71,22 @@ public class HTTPMemServer {
 		manager = RemoteRepositoryManager.getInstance(SERVER_URL);
 	}
 
+	public static String getWebappDir() {
+		try {
+			PropertiesReader reader = new PropertiesReader("maven-config.properties");
+			return reader.getProperty("testserver.webapp.dir");
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
 	public void start() throws Exception {
 		File dataDir = new File(System.getProperty("user.dir") + "/target/datadir");
 		dataDir.mkdirs();
 		System.setProperty("org.eclipse.rdf4j.appdata.basedir", dataDir.getAbsolutePath());
 
 		jetty.start();
-		createTestRepositories();
+		createTestRepositories(manager);
 	}
 
 	public void stop() throws Exception {
@@ -91,15 +99,17 @@ public class HTTPMemServer {
 		}
 	}
 
-	private void createTestRepositories() throws RepositoryException, RepositoryConfigException {
+	public static void createTestRepositories(RemoteRepositoryManager manager)
+			throws RepositoryException, RepositoryConfigException {
 		try {
 			RepositoryConfig testRepoConfig = RepositoryConfigUtil.getRepositoryConfig(
-					Rio.parse(getClass().getResourceAsStream("/fixtures/memory.ttl"), "", RDFFormat.TURTLE),
+					Rio.parse(HTTPMemServer.class.getResourceAsStream("/fixtures/memory.ttl"), "", RDFFormat.TURTLE),
 					TEST_REPO_ID);
 			manager.addRepositoryConfig(testRepoConfig);
 
 			RepositoryConfig testInferenceRepoConfig = RepositoryConfigUtil.getRepositoryConfig(
-					Rio.parse(getClass().getResourceAsStream("/fixtures/memory-rdfs.ttl"), "", RDFFormat.TURTLE),
+					Rio.parse(HTTPMemServer.class.getResourceAsStream("/fixtures/memory-rdfs.ttl"), "",
+							RDFFormat.TURTLE),
 					TEST_INFERENCE_REPO_ID);
 			manager.addRepositoryConfig(testInferenceRepoConfig);
 		} catch (IOException e) {

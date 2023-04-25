@@ -56,34 +56,26 @@ import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
+import com.github.mjeanroy.junit.servers.jupiter.JunitServerExtension;
+import com.github.mjeanroy.junit.servers.servers.EmbeddedServer;
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.opencsv.CSVReader;
 
+@ExtendWith(JunitServerExtension.class)
 public class ProtocolIT {
-
-	private static TestServer server;
 
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
-	@BeforeAll
-	public static void startServer() throws Exception {
-		server = new TestServer();
-		try {
-			server.start();
-		} catch (Exception e) {
-			server.stop();
-			throw e;
-		}
-	}
+	private static String repositoryUrl;
 
-	@AfterAll
-	public static void stopServer() throws Exception {
-		server.stop();
+	@BeforeAll
+	static void beforeAll(EmbeddedServer<?> server) {
+		repositoryUrl = Protocol.getRepositoryLocation(server.getUrl(), "Test");
 	}
 
 	/**
@@ -91,7 +83,7 @@ public class ProtocolIT {
 	 */
 	@Test
 	public void testRepository_PUT() throws Exception {
-		putFile(Protocol.getStatementsLocation(TestServer.REPOSITORY_URL), "/testcases/default-graph-1.ttl");
+		putFile(Protocol.getStatementsLocation(repositoryUrl), "/testcases/default-graph-1.ttl");
 	}
 
 	/**
@@ -99,7 +91,7 @@ public class ProtocolIT {
 	 */
 	@Test
 	public void testRepository_DELETE() throws Exception {
-		delete(Protocol.getStatementsLocation(TestServer.REPOSITORY_URL));
+		delete(Protocol.getStatementsLocation(repositoryUrl));
 	}
 
 	/**
@@ -107,7 +99,7 @@ public class ProtocolIT {
 	 */
 	@Test
 	public void testNullContext_PUT() throws Exception {
-		String location = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
+		String location = Protocol.getStatementsLocation(repositoryUrl);
 		location += "?" + Protocol.CONTEXT_PARAM_NAME + "=" + Protocol.NULL_PARAM_VALUE;
 		putFile(location, "/testcases/default-graph-1.ttl");
 	}
@@ -117,7 +109,7 @@ public class ProtocolIT {
 	 */
 	@Test
 	public void testNullContext_DELETE() throws Exception {
-		String location = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
+		String location = Protocol.getStatementsLocation(repositoryUrl);
 		location += "?" + Protocol.CONTEXT_PARAM_NAME + "=" + Protocol.NULL_PARAM_VALUE;
 		delete(location);
 	}
@@ -127,7 +119,7 @@ public class ProtocolIT {
 	 */
 	@Test
 	public void testNamedContext_PUT() throws Exception {
-		String location = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
+		String location = Protocol.getStatementsLocation(repositoryUrl);
 		String encContext = Protocol.encodeValue(vf.createIRI("urn:x-local:graph1"));
 		location += "?" + Protocol.CONTEXT_PARAM_NAME + "=" + encContext;
 		putFile(location, "/testcases/named-graph-1.ttl");
@@ -138,7 +130,7 @@ public class ProtocolIT {
 	 */
 	@Test
 	public void testNamedContext_DELETE() throws Exception {
-		String location = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
+		String location = Protocol.getStatementsLocation(repositoryUrl);
 		String encContext = Protocol.encodeValue(vf.createIRI("urn:x-local:graph1"));
 		location += "?" + Protocol.CONTEXT_PARAM_NAME + "=" + encContext;
 		delete(location);
@@ -149,7 +141,7 @@ public class ProtocolIT {
 	 */
 	@Test
 	public void testSPARQLselect() throws Exception {
-		try (TupleQueryResult queryResult = evaluateTupleQuery(TestServer.REPOSITORY_URL, "select * where{ ?X ?P ?Y }",
+		try (TupleQueryResult queryResult = evaluateTupleQuery(repositoryUrl, "select * where{ ?X ?P ?Y }",
 				QueryLanguage.SPARQL)) {
 			QueryResultIO.writeTuple(queryResult, TupleQueryResultFormat.SPARQL, System.out);
 		}
@@ -161,7 +153,7 @@ public class ProtocolIT {
 	@Test
 	public void testQueryDirect_POST() throws Exception {
 		String query = "DESCRIBE <monkey:pod>";
-		String location = TestServer.REPOSITORY_URL;
+		String location = repositoryUrl;
 
 		CloseableHttpClient httpclient = HttpClients.createDefault();
 		HttpPost post = new HttpPost(location);
@@ -181,7 +173,7 @@ public class ProtocolIT {
 	@Test
 	public void testUpdateDirect_POST() throws Exception {
 		String query = "delete where { <monkey:pod> ?p ?o }";
-		String location = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
+		String location = Protocol.getStatementsLocation(repositoryUrl);
 
 		CloseableHttpClient httpclient = HttpClients.createDefault();
 		HttpPost post = new HttpPost(location);
@@ -201,7 +193,7 @@ public class ProtocolIT {
 	@Test
 	public void testUpdateForm_POST() throws Exception {
 		String update = "delete where { <monkey:pod> ?p ?o . }";
-		String location = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
+		String location = Protocol.getStatementsLocation(repositoryUrl);
 		CloseableHttpClient httpclient = HttpClients.createDefault();
 		HttpPost post = new HttpPost(location);
 		List<NameValuePair> nvps = new ArrayList<>();
@@ -224,7 +216,7 @@ public class ProtocolIT {
 	@Test
 	public void testContentTypeForGraphQuery1_GET() throws Exception {
 		String query = "DESCRIBE <foo:bar>";
-		String location = TestServer.REPOSITORY_URL;
+		String location = repositoryUrl;
 		location += "?query=" + URLEncoder.encode(query, StandardCharsets.UTF_8);
 
 		URL url = new URL(location);
@@ -266,7 +258,7 @@ public class ProtocolIT {
 	@Test
 	public void testContentTypeForGraphQuery2_GET() throws Exception {
 		String query = "DESCRIBE <foo:bar>";
-		String location = TestServer.REPOSITORY_URL;
+		String location = repositoryUrl;
 		location += "?query=" + URLEncoder.encode(query, StandardCharsets.UTF_8);
 
 		URL url = new URL(location);
@@ -295,7 +287,7 @@ public class ProtocolIT {
 	@Test
 	public void testQueryResponse_HEAD() throws Exception {
 		String query = "DESCRIBE <foo:bar>";
-		String location = TestServer.REPOSITORY_URL;
+		String location = repositoryUrl;
 		location += "?query=" + URLEncoder.encode(query, StandardCharsets.UTF_8);
 
 		URL url = new URL(location);
@@ -336,7 +328,7 @@ public class ProtocolIT {
 	@Test
 	public void testUpdateResponse_HEAD() throws Exception {
 		String query = "INSERT DATA { <foo:foo> <foo:bar> \"foo\". } ";
-		String location = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
+		String location = Protocol.getStatementsLocation(repositoryUrl);
 		location += "?update=" + URLEncoder.encode(query, StandardCharsets.UTF_8);
 
 		URL url = new URL(location);
@@ -384,7 +376,7 @@ public class ProtocolIT {
 		// String repositoryLocation =
 		// Protocol.getRepositoryLocation("http://localhost:8080/openrdf-sesame",
 		// "Test-NativeStore");
-		String repositoryLocation = TestServer.REPOSITORY_URL;
+		String repositoryLocation = repositoryUrl;
 
 		for (int count = 0; count < limitCount; count++) {
 			int i = prng.nextInt(limitPrefix);
@@ -408,7 +400,7 @@ public class ProtocolIT {
 	 */
 	@Test
 	public void testPutEmptyPrefix() throws Exception {
-		String repositoryLocation = TestServer.REPOSITORY_URL;
+		String repositoryLocation = repositoryUrl;
 		String namespacesLocation = Protocol.getNamespacesLocation(repositoryLocation);
 		String emptyPrefixLocation = Protocol.getNamespacePrefixLocation(repositoryLocation, "");
 
@@ -440,7 +432,7 @@ public class ProtocolIT {
 		// String repositoryLocation =
 		// Protocol.getRepositoryLocation("http://localhost:8080/openrdf-sesame",
 		// "Test-NativeStore");
-		String repositoryLocation = TestServer.REPOSITORY_URL;
+		String repositoryLocation = repositoryUrl;
 
 		ExecutorService threadPool = Executors.newFixedThreadPool(20,
 				new ThreadFactoryBuilder().setNameFormat("rdf4j-protocoltest-%d").build());

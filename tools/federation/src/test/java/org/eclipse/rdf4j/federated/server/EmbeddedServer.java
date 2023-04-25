@@ -10,48 +10,36 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.server;
 
-import java.io.File;
+import org.eclipse.rdf4j.federated.SPARQLServerBaseTest;
 
-import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.server.ServerConnector;
-import org.eclipse.jetty.webapp.WebAppContext;
+import com.github.mjeanroy.junit.servers.jetty.EmbeddedJettyConfiguration;
+import com.github.mjeanroy.junit.servers.jetty9.EmbeddedJetty;
+import com.github.mjeanroy.junit.servers.jetty9.EmbeddedJettyFactory;
 
 public class EmbeddedServer {
 
-	public static final String HOST = "localhost";
-	public static final int PORT = 18080;
-	public static final String CONTEXT_PATH = "/";
-	public static final String WAR_PATH = "./build/test/rdf4j-server/";
-
-	private final Server jetty;
+	protected final com.github.mjeanroy.junit.servers.servers.EmbeddedServer<?> server;
 
 	public EmbeddedServer() {
-		this(HOST, PORT, CONTEXT_PATH, WAR_PATH);
+		this(18080, "/", "./build/test/rdf4j-server/");
 	}
 
-	public EmbeddedServer(String host, int port, String contextPath, String warPath) {
-
-		jetty = new Server();
-
-		ServerConnector conn = new ServerConnector(jetty);
-		conn.setHost(host);
-		conn.setPort(port);
-		jetty.addConnector(conn);
-
-		WebAppContext webapp = new WebAppContext();
-		webapp.getServerClasspathPattern().add("org.slf4j.", "ch.qos.logback.");
-		webapp.setContextPath(contextPath);
-		webapp.setTempDirectory(new File("temp/webapp/"));
-		webapp.setWar(warPath);
-		jetty.setHandler(webapp);
+	public EmbeddedServer(int port, String contextPath, String warPath) {
+		EmbeddedJettyConfiguration configuration = EmbeddedJettyConfiguration.builder()
+				.withPort(port)
+				.withPath(contextPath)
+				.withWebapp(warPath)
+				.build();
+		// TODO: Supplying the base class (SPARQLServerBaseTest) for all these server tests for now
+		server = EmbeddedJettyFactory.createFrom(SPARQLServerBaseTest.class, configuration);
 	}
 
 	public void start() throws Exception {
-		jetty.start();
+		server.start();
 	}
 
 	public void stop() throws Exception {
-		jetty.stop();
+		server.stop();
 	}
 
 	/**

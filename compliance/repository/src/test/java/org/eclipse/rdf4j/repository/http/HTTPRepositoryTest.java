@@ -13,9 +13,11 @@ package org.eclipse.rdf4j.repository.http;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.model.util.Values.iri;
 
+import java.io.File;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
@@ -26,35 +28,43 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
 import org.eclipse.rdf4j.testsuite.repository.RepositoryTest;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 
+import com.github.mjeanroy.junit.servers.annotations.TestServerConfiguration;
+import com.github.mjeanroy.junit.servers.jetty.EmbeddedJettyConfiguration;
+import com.github.mjeanroy.junit.servers.jupiter.JunitServerExtension;
+import com.github.mjeanroy.junit.servers.servers.EmbeddedServer;
+
+@ExtendWith(JunitServerExtension.class)
 public class HTTPRepositoryTest extends RepositoryTest {
+	@TempDir
+	static File dataDir;
+	private static EmbeddedServer<?> server;
 
-	private static HTTPMemServer server;
-
-	@BeforeAll
-	public static void startServer() throws Exception {
-		server = new HTTPMemServer();
-		try {
-			server.start();
-		} catch (Exception e) {
-			server.stop();
-			throw e;
-		}
+	@TestServerConfiguration
+	static EmbeddedJettyConfiguration serverConfiguration() {
+		return EmbeddedJettyConfiguration.builder()
+				.withWebapp(HTTPMemServer.getWebappDir())
+				.withProperty("org.eclipse.rdf4j.appdata.basedir", dataDir.getAbsolutePath())
+				.build();
 	}
 
-	@AfterAll
-	public static void stopServer() throws Exception {
-		server.stop();
+	@BeforeAll
+	static void beforeAll(EmbeddedServer<?> server) {
+		HTTPRepositoryTest.server = server;
+		RemoteRepositoryManager manager = RemoteRepositoryManager.getInstance(server.getUrl());
+		HTTPMemServer.createTestRepositories(manager);
 	}
 
 	@Override
 	protected Repository createRepository() {
-		return new HTTPRepository(HTTPMemServer.REPOSITORY_URL);
+		return new HTTPRepository(Protocol.getRepositoryLocation(server.getUrl(), HTTPMemServer.TEST_REPO_ID));
 	}
 
 	@Test
