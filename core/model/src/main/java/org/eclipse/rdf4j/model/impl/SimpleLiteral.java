@@ -228,7 +228,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	public Optional<XSD.Datatype> getXsdDatatype() {
 		CoreDatatype coreDatatype = getCoreDatatype();
 
-		return org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.from(coreDatatype.asXSDDatatype().orElse(null));
+		return org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.from(coreDatatype.asXSDDatatypeOrNull());
 	}
 
 	// Overrides Object.equals(Object), implements Literal.equals(Object)

@@ -77,12 +77,19 @@ public class SortBenchmark {
 	List<Value> valuesList;
 
 	public static void main(String[] args) throws RunnerException, IOException, InterruptedException {
-		Options opt = new OptionsBuilder()
-				.include("SortBenchmark.*") // adapt to run other benchmark tests
-				.forks(1)
-				.build();
+//		Options opt = new OptionsBuilder()
+//				.include("SortBenchmark.*") // adapt to run other benchmark tests
+//				.forks(1)
+//				.build();
+//
+//		new Runner(opt).run();
 
-		new Runner(opt).run();
+		SortBenchmark sortBenchmark = new SortBenchmark();
+		sortBenchmark.setup();
+		for (int i = 0; i < 100; i++) {
+			System.out.println("i = " + i);
+			sortBenchmark.sortByQuery();
+		}
 	}
 
 	@Setup(Level.Trial)

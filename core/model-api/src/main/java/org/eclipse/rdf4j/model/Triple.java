@@ -29,6 +29,11 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 public interface Triple extends Resource {
 
 	@Override
+	default Type getValueType() {
+		return Type.TRIPLE;
+	}
+
+	@Override
 	default boolean isTriple() {
 		return true;
 	}

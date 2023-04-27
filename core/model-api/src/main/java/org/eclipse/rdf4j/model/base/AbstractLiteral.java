@@ -163,7 +163,11 @@ public abstract class AbstractLiteral implements Literal {
 
 	@Override
 	public XMLGregorianCalendar calendarValue() {
-		return value(CalendarLiteral::parseCalendar);
+		XMLGregorianCalendar xmlGregorianCalendar = CalendarLiteral.parseCalendar(getLabel());
+		if (xmlGregorianCalendar == null) {
+			throw new IllegalArgumentException("malformed value");
+		}
+		return xmlGregorianCalendar;
 	}
 
 	@Override

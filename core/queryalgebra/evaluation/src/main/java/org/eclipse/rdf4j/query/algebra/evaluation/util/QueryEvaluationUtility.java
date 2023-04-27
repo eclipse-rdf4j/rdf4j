@@ -10,6 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
+import static javax.xml.datatype.DatatypeConstants.FIELD_UNDEFINED;
+
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Objects;
 
 import javax.xml.datatype.DatatypeConstants;
@@ -56,7 +61,7 @@ public class QueryEvaluationUtility {
 		if (value.isLiteral()) {
 			Literal literal = (Literal) value;
 			String label = literal.getLabel();
-			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatype().orElse(null);
+			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
 
 			if (datatype == CoreDatatype.XSD.STRING) {
 				return Result.fromBoolean(label.length() > 0);
@@ -138,43 +143,44 @@ public class QueryEvaluationUtility {
 		CoreDatatype leftCoreDatatype = leftLit.getCoreDatatype();
 		CoreDatatype rightCoreDatatype = rightLit.getCoreDatatype();
 
-		boolean leftLangLit = leftCoreDatatype == CoreDatatype.RDF.LANGSTRING;
-		boolean rightLangLit = rightCoreDatatype == CoreDatatype.RDF.LANGSTRING;
-
-		CoreDatatype.XSD leftXSDDatatype = leftCoreDatatype.asXSDDatatype().orElse(null);
-		CoreDatatype.XSD rightXSDDatatype = rightCoreDatatype.asXSDDatatype().orElse(null);
-
 		// for purposes of query evaluation in SPARQL, simple literals and string-typed literals with the same lexical
 		// value are considered equal.
 
 		if (leftCoreDatatype == CoreDatatype.XSD.STRING && rightCoreDatatype == CoreDatatype.XSD.STRING) {
 			return Order.from(leftLit.getLabel().compareTo(rightLit.getLabel()));
-		} else if (!(leftLangLit || rightLangLit)) {
+		} else if (leftCoreDatatype != CoreDatatype.RDF.LANGSTRING
+				&& rightCoreDatatype != CoreDatatype.RDF.LANGSTRING) {
 
-			CoreDatatype.XSD commonDatatype = getCommonDatatype(strict, leftXSDDatatype, rightXSDDatatype);
+			if (leftCoreDatatype.isXSDDatatype() && rightCoreDatatype.isXSDDatatype()) {
+				CoreDatatype.XSD leftXSDDatatype = (CoreDatatype.XSD) leftCoreDatatype;
+				CoreDatatype.XSD rightXSDDatatype = (CoreDatatype.XSD) rightCoreDatatype;
 
-			if (commonDatatype != null) {
+				CoreDatatype.XSD commonDatatype = getCommonDatatype(strict, leftXSDDatatype, rightXSDDatatype);
 
-				try {
-					Order order = handleCommonDatatype(leftLit, rightLit, strict, leftXSDDatatype, rightXSDDatatype,
-							leftLangLit, rightLangLit, commonDatatype);
+				if (commonDatatype != null) {
 
-					if (order == Order.illegalArgument) {
+					try {
+						Order order = handleCommonDatatype(leftLit, rightLit, strict, leftXSDDatatype, rightXSDDatatype,
+								commonDatatype);
+
+						if (order == Order.illegalArgument) {
+							if (leftLit.equals(rightLit)) {
+								return Order.equal;
+							}
+						}
+
+						if (order != null) {
+							return order;
+						}
+					} catch (IllegalArgumentException e) {
 						if (leftLit.equals(rightLit)) {
 							return Order.equal;
 						}
 					}
 
-					if (order != null) {
-						return order;
-					}
-				} catch (IllegalArgumentException e) {
-					if (leftLit.equals(rightLit)) {
-						return Order.equal;
-					}
 				}
-
 			}
+
 		}
 
 		// All other cases, e.g. literals with languages, unequal or
@@ -182,7 +188,9 @@ public class QueryEvaluationUtility {
 		// using the operators 'EQ' and 'NE'. See SPARQL's RDFterm-equal
 		// operator
 
-		return otherCases(leftLit, rightLit, leftXSDDatatype, rightXSDDatatype, leftLangLit, rightLangLit);
+		return otherCases(leftLit, rightLit, leftCoreDatatype.asXSDDatatypeOrNull(),
+				rightCoreDatatype.asXSDDatatypeOrNull(), leftCoreDatatype == CoreDatatype.RDF.LANGSTRING,
+				rightCoreDatatype == CoreDatatype.RDF.LANGSTRING);
 
 	}
 
@@ -202,9 +210,107 @@ public class QueryEvaluationUtility {
 		return order.toResult(operator);
 	}
 
+	public static Instant xmlGregorianCalendarToInstant(XMLGregorianCalendar xmlGregCal) {
+		int year = xmlGregCal.getYear();
+		if (year <= 1973 || year >= 2038) {
+			return null;
+		}
+
+		int month = xmlGregCal.getMonth();
+		if (month < 0) {
+			return null;
+		}
+
+		int day = xmlGregCal.getDay();
+		if (day < 0) {
+			return null;
+		}
+
+		int hour = xmlGregCal.getHour();
+		if (hour < 0) {
+			return null;
+		}
+
+		int minute = xmlGregCal.getMinute();
+		if (minute < 0) {
+			return null;
+		}
+
+		int second = xmlGregCal.getSecond();
+		if (second < 0) {
+			return null;
+		}
+
+		int nanosecond = xmlGregCal.getFractionalSecond() != null
+				? xmlGregCal.getFractionalSecond().movePointRight(9).intValue()
+				: 0;
+		if (nanosecond < 0) {
+			return null;
+		}
+
+		LocalDateTime localDateTime = LocalDateTime.of(year, month, day, hour, minute, second, nanosecond);
+		ZoneOffset zoneOffset = xmlGregCal.getTimezone() == FIELD_UNDEFINED
+				? ZoneOffset.UTC
+				: ZoneOffset.ofTotalSeconds(xmlGregCal.getTimezone() * 60);
+		return localDateTime.toInstant(zoneOffset);
+	}
+
+	public static Instant xmlGregorianCalendarDateToInstant(XMLGregorianCalendar xmlGregCal) {
+		int year = xmlGregCal.getYear();
+		if (year <= 1973 || year >= 2038) {
+			return null;
+		}
+
+		int month = xmlGregCal.getMonth();
+		if (month < 0) {
+			return null;
+		}
+
+		int day = xmlGregCal.getDay();
+		if (day < 0) {
+			return null;
+		}
+
+		int timezone = xmlGregCal.getTimezone();
+		if (timezone == FIELD_UNDEFINED || timezone == 0) {
+			return yearMonthDayToInstant(year, month, day);
+		}
+
+		LocalDateTime localDateTime = LocalDateTime.of(year, month, day, 0, 0, 0, 0);
+		ZoneOffset zoneOffset = xmlGregCal.getTimezone() == FIELD_UNDEFINED
+				? ZoneOffset.UTC
+				: ZoneOffset.ofTotalSeconds(xmlGregCal.getTimezone() * 60);
+		return localDateTime.toInstant(zoneOffset);
+	}
+
+	private final static int[] daysInMonth = { 0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+
+	public static Instant yearMonthDayToInstant(int year, int month, int day) {
+
+		// Calculate the number of days from 1970 to the given year
+		long days = (year - 1970) * 365L + (year - 1969) / 4 - (year - 1901) / 100 + (year - 1601) / 400;
+
+		// Adjust for leap years
+		if (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)) {
+			daysInMonth[2] = 29;
+		}
+
+		// Add the number of days in each month up to the given month
+		for (int i = 1; i < month; i++) {
+			days += daysInMonth[i];
+		}
+
+		// Add the number of days in the given month
+		days += day - 1;
+
+		// Calculate the number of seconds and create an Instant object
+		long seconds = days * 24 * 60 * 60;
+		return Instant.ofEpochSecond(seconds);
+	}
+
 	private static Order handleCommonDatatype(Literal leftLit, Literal rightLit, boolean strict,
-			CoreDatatype.XSD leftCoreDatatype, CoreDatatype.XSD rightCoreDatatype, boolean leftLangLit,
-			boolean rightLangLit, CoreDatatype.XSD commonDatatype) {
+			CoreDatatype.XSD leftCoreDatatype, CoreDatatype.XSD rightCoreDatatype,
+			CoreDatatype.XSD commonDatatype) {
 		if (commonDatatype == CoreDatatype.XSD.DOUBLE) {
 			return Order.from(Double.compare(leftLit.doubleValue(), rightLit.doubleValue()));
 		} else if (commonDatatype == CoreDatatype.XSD.FLOAT) {
@@ -216,6 +322,23 @@ public class QueryEvaluationUtility {
 		} else if (commonDatatype == CoreDatatype.XSD.BOOLEAN) {
 			return Order.from(Boolean.compare(leftLit.booleanValue(), rightLit.booleanValue()));
 		} else if (commonDatatype.isCalendarDatatype()) {
+
+			if (commonDatatype == CoreDatatype.XSD.DATETIME) {
+				Instant leftInstant = xmlGregorianCalendarToInstant(leftLit.calendarValue());
+				Instant rightInstant = xmlGregorianCalendarToInstant(rightLit.calendarValue());
+
+				if (leftInstant != null && rightInstant != null) {
+					return Order.from(leftInstant.compareTo(rightInstant));
+				}
+			} else if (commonDatatype == CoreDatatype.XSD.DATE) {
+				Instant leftInstant = xmlGregorianCalendarDateToInstant(leftLit.calendarValue());
+				Instant rightInstant = xmlGregorianCalendarDateToInstant(rightLit.calendarValue());
+
+				if (leftInstant != null && rightInstant != null) {
+					return Order.from(leftInstant.compareTo(rightInstant));
+				}
+			}
+
 			XMLGregorianCalendar left = leftLit.calendarValue();
 			XMLGregorianCalendar right = rightLit.calendarValue();
 
@@ -240,7 +363,7 @@ public class QueryEvaluationUtility {
 			if (compare != DatatypeConstants.INDETERMINATE) {
 				return Order.from(compare);
 			} else {
-				return otherCases(leftLit, rightLit, leftCoreDatatype, rightCoreDatatype, leftLangLit, rightLangLit);
+				return otherCases(leftLit, rightLit, leftCoreDatatype, rightCoreDatatype, false, false);
 			}
 
 		} else if (commonDatatype == CoreDatatype.XSD.STRING) {
@@ -250,8 +373,8 @@ public class QueryEvaluationUtility {
 		return null;
 	}
 
-	private static Order otherCases(Literal leftLit, Literal rightLit, CoreDatatype.XSD leftCoreDatatype,
-			CoreDatatype.XSD rightCoreDatatype, boolean leftLangLit, boolean rightLangLit) {
+	private static Order otherCases(Literal leftLit, Literal rightLit, CoreDatatype leftCoreDatatype,
+			CoreDatatype rightCoreDatatype, boolean leftLangLit, boolean rightLangLit) {
 		boolean literalsEqual = leftLit.equals(rightLit);
 
 		if (!literalsEqual) {
@@ -269,19 +392,22 @@ public class QueryEvaluationUtility {
 				}
 
 				boolean leftString = leftCoreDatatype == CoreDatatype.XSD.STRING;
-				boolean leftNumeric = leftCoreDatatype.isNumericDatatype();
-				boolean leftDate = leftCoreDatatype.isCalendarDatatype();
-
 				boolean rightString = rightCoreDatatype == CoreDatatype.XSD.STRING;
-				boolean rightNumeric = rightCoreDatatype.isNumericDatatype();
-				boolean rightDate = rightCoreDatatype.isCalendarDatatype();
 
 				if (leftString != rightString) {
 					return Order.incompatibleValueExpression;
 				}
+
+				boolean leftNumeric = ((CoreDatatype.XSD) leftCoreDatatype).isNumericDatatype();
+				boolean rightNumeric = ((CoreDatatype.XSD) rightCoreDatatype).isNumericDatatype();
+
 				if (leftNumeric != rightNumeric) {
 					return Order.incompatibleValueExpression;
 				}
+
+				boolean leftDate = ((CoreDatatype.XSD) leftCoreDatatype).isCalendarDatatype();
+				boolean rightDate = ((CoreDatatype.XSD) rightCoreDatatype).isCalendarDatatype();
+
 				if (leftDate != rightDate) {
 					return Order.incompatibleValueExpression;
 				}
@@ -339,8 +465,11 @@ public class QueryEvaluationUtility {
 	}
 
 	public static boolean isPlainLiteral(Literal l) {
-		assert l.getLanguage().isEmpty() || (l.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING);
-		return l.getCoreDatatype() == CoreDatatype.XSD.STRING || l.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING;
+		CoreDatatype coreDatatype = l.getCoreDatatype();
+
+		assert l.getLanguage().isEmpty() || (coreDatatype == CoreDatatype.RDF.LANGSTRING);
+
+		return coreDatatype == CoreDatatype.XSD.STRING || coreDatatype == CoreDatatype.RDF.LANGSTRING;
 	}
 
 	/**
@@ -427,9 +556,10 @@ public class QueryEvaluationUtility {
 		return l.getCoreDatatype() == CoreDatatype.XSD.STRING || l.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING;
 	}
 
-	private static boolean isSupportedDatatype(CoreDatatype.XSD datatype) {
-		return datatype != null && (datatype == CoreDatatype.XSD.STRING || datatype.isNumericDatatype()
-				|| datatype.isCalendarDatatype());
+	private static boolean isSupportedDatatype(CoreDatatype datatype) {
+		return datatype != null && datatype.isXSDDatatype()
+				&& (datatype == CoreDatatype.XSD.STRING || ((CoreDatatype.XSD) datatype).isNumericDatatype()
+						|| ((CoreDatatype.XSD) datatype).isCalendarDatatype());
 	}
 
 	public enum Result {

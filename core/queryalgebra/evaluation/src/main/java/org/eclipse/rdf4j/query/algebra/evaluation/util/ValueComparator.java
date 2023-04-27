@@ -46,47 +46,37 @@ public class ValueComparator implements Comparator<Value> {
 			return 1;
 		}
 
-		// 2. Blank nodes
-		boolean b1 = o1.isBNode();
-		boolean b2 = o2.isBNode();
-		if (b1 && b2) {
+		Value.Type o1Type = o1.getValueType();
+		Value.Type o2Type = o2.getValueType();
+
+		if (o1Type == o2Type) {
+			return compareSameTypes(o1, o2, o1Type);
+		}
+
+		return compareDifferentTypes(o1Type, o2Type);
+	}
+
+	private int compareSameTypes(Value o1, Value o2, Value.Type type) {
+		if (Value.Type.BNODE == type) {
 			return compareBNodes((BNode) o1, (BNode) o2);
-		}
-		if (b1) {
-			return -1;
-		}
-		if (b2) {
-			return 1;
-		}
-
-		// 3. IRIs
-		boolean iri1 = o1.isIRI();
-		boolean iri2 = o2.isIRI();
-		if (iri1 && iri2) {
-			return compareURIs((IRI) o1, (IRI) o2);
-		}
-		if (iri1) {
-			return -1;
-		}
-		if (iri2) {
-			return 1;
-		}
-
-		// 4. Literals
-		boolean l1 = o1.isLiteral();
-		boolean l2 = o2.isLiteral();
-		if (l1 && l2) {
+		} else if (type == Value.Type.IRI) {
+			return compareIRIs((IRI) o1, (IRI) o2);
+		} else if (type == Value.Type.LITERAL) {
 			return compareLiterals((Literal) o1, (Literal) o2);
 		}
-		if (l1) {
-			return -1;
-		}
-		if (l2) {
-			return 1;
-		}
 
-		// 5. RDF-star triples
 		return compareTriples((Triple) o1, (Triple) o2);
+	}
+
+	private static int compareDifferentTypes(Value.Type o1Type, Value.Type o2Type) {
+		/*
+		 * Using ordinal is an optimization written by ChatGPT 4 instead of the following code:
+		 *
+		 * if (o1Type == Value.Type.BNODE) { return -1; } if (o2Type == Value.Type.BNODE) { return 1; } if (o1Type ==
+		 * Value.Type.IRI) { return -1; } if (o2Type == Value.Type.IRI) { return 1; } if (o1Type == Value.Type.LITERAL)
+		 * { return -1; } return 1;
+		 */
+		return o1Type.ordinal() < o2Type.ordinal() ? -1 : 1;
 	}
 
 	public void setStrict(boolean flag) {
@@ -101,8 +91,8 @@ public class ValueComparator implements Comparator<Value> {
 		return leftBNode.getID().compareTo(rightBNode.getID());
 	}
 
-	private int compareURIs(IRI leftURI, IRI rightURI) {
-		return leftURI.toString().compareTo(rightURI.toString());
+	private int compareIRIs(IRI leftURI, IRI rightURI) {
+		return leftURI.stringValue().compareTo(rightURI.stringValue());
 	}
 
 	private int compareLiterals(Literal leftLit, Literal rightLit) {
@@ -142,22 +132,24 @@ public class ValueComparator implements Comparator<Value> {
 		IRI leftDatatype = leftLit.getDatatype();
 		IRI rightDatatype = rightLit.getDatatype();
 
-		if (leftDatatype != null) {
-			if (rightDatatype != null) {
-				// Both literals have datatypes
-				CoreDatatype.XSD leftXmlDatatype = leftLit.getCoreDatatype().asXSDDatatype().orElse(null);
-				CoreDatatype.XSD rightXmlDatatype = rightLit.getCoreDatatype().asXSDDatatype().orElse(null);
+		if (leftDatatype != rightDatatype) {
+			if (leftDatatype != null) {
+				if (rightDatatype != null) {
+					// Both literals have datatypes
+					result = compareDatatypes(leftLit.getCoreDatatype(), rightLit.getCoreDatatype(), leftDatatype,
+							rightDatatype);
 
-				result = compareDatatypes(leftXmlDatatype, rightXmlDatatype, leftDatatype, rightDatatype);
-				if (result != 0) {
-					return result;
+					if (result != 0) {
+						return result;
+					}
+
+				} else {
+					return 1;
 				}
-
 			} else {
-				return 1;
+				// rightDatatype != null
+				return -1;
 			}
-		} else if (rightDatatype != null) {
-			return -1;
 		}
 
 		// datatypes are equal or both literals are untyped; sort by language
@@ -183,36 +175,50 @@ public class ValueComparator implements Comparator<Value> {
 		return leftLit.getLabel().compareTo(rightLit.getLabel());
 	}
 
-	private int compareDatatypes(CoreDatatype.XSD leftDatatype, CoreDatatype.XSD rightDatatype, IRI leftDatatypeIRI,
+	private int compareDatatypes(CoreDatatype leftCoreDatatype, CoreDatatype rightCoreDatatype, IRI leftDatatypeIRI,
 			IRI rightDatatypeIRI) {
-		if (leftDatatype != null && leftDatatype == rightDatatype) {
+
+		if (leftCoreDatatype == CoreDatatype.NONE && rightCoreDatatype == CoreDatatype.NONE) {
+			return compareIRIs(leftDatatypeIRI, rightDatatypeIRI);
+		}
+
+		if (leftCoreDatatype == rightCoreDatatype) {
 			return 0;
-		} else if (leftDatatype != null && leftDatatype.isNumericDatatype()) {
-			if (rightDatatype != null && rightDatatype.isNumericDatatype()) {
+		}
+
+		CoreDatatype.XSD leftXsdDatatype = leftCoreDatatype.asXSDDatatypeOrNull();
+		CoreDatatype.XSD rightXsdDatatype = rightCoreDatatype.asXSDDatatypeOrNull();
+
+		if (leftXsdDatatype == null || rightXsdDatatype == null) {
+			if (leftCoreDatatype != CoreDatatype.NONE && rightCoreDatatype != CoreDatatype.NONE) {
+				return CoreDatatype.compare(leftCoreDatatype, rightCoreDatatype);
+			}
+		}
+
+		if (leftXsdDatatype != null && leftXsdDatatype.isNumericDatatype()) {
+			if (rightXsdDatatype != null && rightXsdDatatype.isNumericDatatype()) {
 				// both are numeric datatypes
-				return leftDatatype.compareTo(rightDatatype);
+				return CoreDatatype.compare(leftCoreDatatype, rightCoreDatatype);
 			} else {
 				return -1;
 			}
-		} else if (rightDatatype != null && rightDatatype.isNumericDatatype()) {
+		} else if (rightXsdDatatype != null && rightXsdDatatype.isNumericDatatype()) {
 			return 1;
-		} else if (leftDatatype != null && leftDatatype.isCalendarDatatype()) {
-			if (rightDatatype != null && rightDatatype.isCalendarDatatype()) {
-				return leftDatatype.compareTo(rightDatatype);
+		} else if (leftXsdDatatype != null && leftXsdDatatype.isCalendarDatatype()) {
+			if (rightXsdDatatype != null && rightXsdDatatype.isCalendarDatatype()) {
+				return CoreDatatype.compare(leftCoreDatatype, rightCoreDatatype);
 			} else {
 				return -1;
 			}
-		} else if (rightDatatype != null && rightDatatype.isCalendarDatatype()) {
+		} else if (rightXsdDatatype != null && rightXsdDatatype.isCalendarDatatype()) {
 			return 1;
 		}
 
-		if (leftDatatype != null && rightDatatype != null) {
-			return leftDatatype.compareTo(rightDatatype);
+		if (leftCoreDatatype != CoreDatatype.NONE && rightCoreDatatype != CoreDatatype.NONE) {
+			return CoreDatatype.compare(leftCoreDatatype, rightCoreDatatype);
 		}
 
-		// incompatible or unordered datatype
-		return compareURIs(leftDatatypeIRI, rightDatatypeIRI);
-
+		return compareIRIs(leftDatatypeIRI, rightDatatypeIRI);
 	}
 
 	private int compareTriples(Triple leftTriple, Triple rightTriple) {
