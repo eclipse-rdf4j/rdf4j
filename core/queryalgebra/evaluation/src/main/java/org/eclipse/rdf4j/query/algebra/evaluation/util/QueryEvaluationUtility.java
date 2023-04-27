@@ -140,27 +140,26 @@ public class QueryEvaluationUtility {
 		// - CoreDatatype.XSD:string
 		// - RDF term (equal and unequal only)
 
-		CoreDatatype leftCoreDatatype = leftLit.getCoreDatatype();
-		CoreDatatype rightCoreDatatype = rightLit.getCoreDatatype();
+		CoreDatatype.XSD leftCoreDatatype = leftLit.getCoreDatatype().asXSDDatatypeOrNull();
+		CoreDatatype.XSD rightCoreDatatype = rightLit.getCoreDatatype().asXSDDatatypeOrNull();
 
 		// for purposes of query evaluation in SPARQL, simple literals and string-typed literals with the same lexical
 		// value are considered equal.
 
 		if (leftCoreDatatype == CoreDatatype.XSD.STRING && rightCoreDatatype == CoreDatatype.XSD.STRING) {
 			return Order.from(leftLit.getLabel().compareTo(rightLit.getLabel()));
-		} else if (leftCoreDatatype != CoreDatatype.RDF.LANGSTRING
-				&& rightCoreDatatype != CoreDatatype.RDF.LANGSTRING) {
+		} else if (leftCoreDatatype != null
+				&& rightCoreDatatype != null) {
 
 			if (leftCoreDatatype.isXSDDatatype() && rightCoreDatatype.isXSDDatatype()) {
-				CoreDatatype.XSD leftXSDDatatype = (CoreDatatype.XSD) leftCoreDatatype;
-				CoreDatatype.XSD rightXSDDatatype = (CoreDatatype.XSD) rightCoreDatatype;
 
-				CoreDatatype.XSD commonDatatype = getCommonDatatype(strict, leftXSDDatatype, rightXSDDatatype);
+				CoreDatatype.XSD commonDatatype = getCommonDatatype(strict, leftCoreDatatype, rightCoreDatatype);
 
 				if (commonDatatype != null) {
 
 					try {
-						Order order = handleCommonDatatype(leftLit, rightLit, strict, leftXSDDatatype, rightXSDDatatype,
+						Order order = handleCommonDatatype(leftLit, rightLit, strict, leftCoreDatatype,
+								rightCoreDatatype,
 								commonDatatype);
 
 						if (order == Order.illegalArgument) {
@@ -188,9 +187,9 @@ public class QueryEvaluationUtility {
 		// using the operators 'EQ' and 'NE'. See SPARQL's RDFterm-equal
 		// operator
 
-		return otherCases(leftLit, rightLit, leftCoreDatatype.asXSDDatatypeOrNull(),
-				rightCoreDatatype.asXSDDatatypeOrNull(), leftCoreDatatype == CoreDatatype.RDF.LANGSTRING,
-				rightCoreDatatype == CoreDatatype.RDF.LANGSTRING);
+		return otherCases(leftLit, rightLit, leftCoreDatatype,
+				rightCoreDatatype, leftCoreDatatype == null && leftLit.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING,
+				rightCoreDatatype == null && rightLit.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING);
 
 	}
 
@@ -323,6 +322,9 @@ public class QueryEvaluationUtility {
 			return Order.from(Boolean.compare(leftLit.booleanValue(), rightLit.booleanValue()));
 		} else if (commonDatatype.isCalendarDatatype()) {
 
+			if (leftLit.getLabel().equals(rightLit.getLabel()))
+				return Order.equal;
+
 //			if (commonDatatype == CoreDatatype.XSD.DATETIME) {
 //				Instant leftInstant = xmlGregorianCalendarToInstant(leftLit.calendarValue());
 //				Instant rightInstant = xmlGregorianCalendarToInstant(rightLit.calendarValue());
@@ -425,29 +427,41 @@ public class QueryEvaluationUtility {
 
 	private static CoreDatatype.XSD getCommonDatatype(boolean strict, CoreDatatype.XSD leftCoreDatatype,
 			CoreDatatype.XSD rightCoreDatatype) {
-		if (leftCoreDatatype != null && rightCoreDatatype != null) {
-			if (leftCoreDatatype == rightCoreDatatype) {
-				return leftCoreDatatype;
-			} else if (leftCoreDatatype.isNumericDatatype() && rightCoreDatatype.isNumericDatatype()) {
-				// left and right arguments have different datatypes, try to find a more general, shared datatype
-				if (leftCoreDatatype == CoreDatatype.XSD.DOUBLE || rightCoreDatatype == CoreDatatype.XSD.DOUBLE) {
-					return CoreDatatype.XSD.DOUBLE;
-				} else if (leftCoreDatatype == CoreDatatype.XSD.FLOAT || rightCoreDatatype == CoreDatatype.XSD.FLOAT) {
-					return CoreDatatype.XSD.FLOAT;
-				} else if (leftCoreDatatype == CoreDatatype.XSD.DECIMAL
-						|| rightCoreDatatype == CoreDatatype.XSD.DECIMAL) {
-					return CoreDatatype.XSD.DECIMAL;
-				} else {
-					return CoreDatatype.XSD.INTEGER;
-				}
-			} else if (!strict && leftCoreDatatype.isCalendarDatatype() && rightCoreDatatype.isCalendarDatatype()) {
-				// We're not running in strict eval mode so we use extended datatype comparsion.
+		if (leftCoreDatatype == null || rightCoreDatatype == null) {
+			return null;
+		}
+
+		if (leftCoreDatatype == rightCoreDatatype) {
+			return leftCoreDatatype;
+		}
+
+		if (leftCoreDatatype.isNumericDatatype() && rightCoreDatatype.isNumericDatatype()) {
+			return getCommonNumericDatatype(leftCoreDatatype, rightCoreDatatype);
+		}
+
+		if (!strict) {
+			if (leftCoreDatatype.isCalendarDatatype() && rightCoreDatatype.isCalendarDatatype()) {
 				return CoreDatatype.XSD.DATETIME;
-			} else if (!strict && leftCoreDatatype.isDurationDatatype() && rightCoreDatatype.isDurationDatatype()) {
+			} else if (leftCoreDatatype.isDurationDatatype() && rightCoreDatatype.isDurationDatatype()) {
 				return CoreDatatype.XSD.DURATION;
 			}
 		}
+
 		return null;
+	}
+
+	private static CoreDatatype.XSD getCommonNumericDatatype(CoreDatatype.XSD leftCoreDatatype,
+			CoreDatatype.XSD rightCoreDatatype) {
+		if (leftCoreDatatype == CoreDatatype.XSD.DOUBLE || rightCoreDatatype == CoreDatatype.XSD.DOUBLE) {
+			return CoreDatatype.XSD.DOUBLE;
+		}
+		if (leftCoreDatatype == CoreDatatype.XSD.FLOAT || rightCoreDatatype == CoreDatatype.XSD.FLOAT) {
+			return CoreDatatype.XSD.FLOAT;
+		}
+		if (leftCoreDatatype == CoreDatatype.XSD.DECIMAL || rightCoreDatatype == CoreDatatype.XSD.DECIMAL) {
+			return CoreDatatype.XSD.DECIMAL;
+		}
+		return CoreDatatype.XSD.INTEGER;
 	}
 
 	/**
@@ -466,9 +480,6 @@ public class QueryEvaluationUtility {
 
 	public static boolean isPlainLiteral(Literal l) {
 		CoreDatatype coreDatatype = l.getCoreDatatype();
-
-		assert l.getLanguage().isEmpty() || (coreDatatype == CoreDatatype.RDF.LANGSTRING);
-
 		return coreDatatype == CoreDatatype.XSD.STRING || coreDatatype == CoreDatatype.RDF.LANGSTRING;
 	}
 

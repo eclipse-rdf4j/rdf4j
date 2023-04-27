@@ -86,9 +86,9 @@ public class SortBenchmark {
 
 		SortBenchmark sortBenchmark = new SortBenchmark();
 		sortBenchmark.setup();
-		for (int i = 0; i < 100; i++) {
+		for (int i = 0; i < 1000; i++) {
 			System.out.println("i = " + i);
-			sortBenchmark.sortByQuery();
+			sortBenchmark.sortDirectly();
 		}
 	}
 

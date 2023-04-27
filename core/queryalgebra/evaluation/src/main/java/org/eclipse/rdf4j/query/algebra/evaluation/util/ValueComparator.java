@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
 import java.util.Comparator;
-import java.util.Optional;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -57,15 +56,16 @@ public class ValueComparator implements Comparator<Value> {
 	}
 
 	private int compareSameTypes(Value o1, Value o2, Value.Type type) {
-		if (Value.Type.BNODE == type) {
+		switch (type) {
+		case BNODE:
 			return compareBNodes((BNode) o1, (BNode) o2);
-		} else if (type == Value.Type.IRI) {
+		case IRI:
 			return compareIRIs((IRI) o1, (IRI) o2);
-		} else if (type == Value.Type.LITERAL) {
+		case LITERAL:
 			return compareLiterals((Literal) o1, (Literal) o2);
+		default:
+			return compareTriples((Triple) o1, (Triple) o2);
 		}
-
-		return compareTriples((Triple) o1, (Triple) o2);
 	}
 
 	private static int compareDifferentTypes(Value.Type o1Type, Value.Type o2Type) {
@@ -125,60 +125,42 @@ public class ValueComparator implements Comparator<Value> {
 	}
 
 	private int comparePlainLiterals(Literal leftLit, Literal rightLit) {
-		int result;
-
-		// FIXME: Confirm these rules work with RDF-1.1
-		// Sort by datatype first, plain literals come before datatyped literals
 		IRI leftDatatype = leftLit.getDatatype();
 		IRI rightDatatype = rightLit.getDatatype();
 
 		if (leftDatatype != rightDatatype) {
-			if (leftDatatype != null) {
-				if (rightDatatype != null) {
-					// Both literals have datatypes
-					result = compareDatatypes(leftLit.getCoreDatatype(), rightLit.getCoreDatatype(), leftDatatype,
-							rightDatatype);
-
-					if (result != 0) {
-						return result;
-					}
-
-				} else {
-					return 1;
-				}
-			} else {
-				// rightDatatype != null
-				return -1;
-			}
-		}
-
-		// datatypes are equal or both literals are untyped; sort by language
-		// tags, simple literals come before literals with language tags
-		Optional<String> leftLanguage = leftLit.getLanguage();
-		Optional<String> rightLanguage = rightLit.getLanguage();
-
-		if (leftLanguage.isPresent()) {
-			if (rightLanguage.isPresent()) {
-				result = leftLanguage.get().compareTo(rightLanguage.get());
+			if (leftDatatype != null && rightDatatype != null) {
+				// Both literals have datatypes
+				int result = compareDatatypes(leftLit.getCoreDatatype(), rightLit.getCoreDatatype(), leftDatatype,
+						rightDatatype);
 				if (result != 0) {
 					return result;
 				}
 			} else {
-				return 1;
+				return leftDatatype == null ? -1 : 1;
 			}
-		} else if (rightLanguage.isPresent()) {
-			return -1;
 		}
 
-		// Literals are equal as fas as their datatypes and language tags are
-		// concerned, compare their labels
+		boolean leftIsLang = leftLit.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING;
+		boolean rightIsLang = rightLit.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING;
+
+		if (leftIsLang && rightIsLang) {
+			int result = leftLit.getLanguage().get().compareTo(rightLit.getLanguage().get());
+			if (result != 0) {
+				return result;
+			}
+		} else if (leftIsLang || rightIsLang) {
+			return leftIsLang ? 1 : -1;
+		}
+
+		// Literals are equal as far as their datatypes and language tags are concerned, compare their labels
 		return leftLit.getLabel().compareTo(rightLit.getLabel());
 	}
 
 	private int compareDatatypes(CoreDatatype leftCoreDatatype, CoreDatatype rightCoreDatatype, IRI leftDatatypeIRI,
 			IRI rightDatatypeIRI) {
 
-		if (leftCoreDatatype == CoreDatatype.NONE && rightCoreDatatype == CoreDatatype.NONE) {
+		if (leftCoreDatatype == CoreDatatype.NONE || rightCoreDatatype == CoreDatatype.NONE) {
 			return compareIRIs(leftDatatypeIRI, rightDatatypeIRI);
 		}
 
@@ -189,36 +171,24 @@ public class ValueComparator implements Comparator<Value> {
 		CoreDatatype.XSD leftXsdDatatype = leftCoreDatatype.asXSDDatatypeOrNull();
 		CoreDatatype.XSD rightXsdDatatype = rightCoreDatatype.asXSDDatatypeOrNull();
 
-		if (leftXsdDatatype == null || rightXsdDatatype == null) {
-			if (leftCoreDatatype != CoreDatatype.NONE && rightCoreDatatype != CoreDatatype.NONE) {
-				return CoreDatatype.compare(leftCoreDatatype, rightCoreDatatype);
-			}
-		}
+		boolean leftNumeric = leftXsdDatatype != null && leftXsdDatatype.isNumericDatatype();
+		boolean rightNumeric = rightXsdDatatype != null && rightXsdDatatype.isNumericDatatype();
+		boolean leftCalendar = leftXsdDatatype != null && leftXsdDatatype.isCalendarDatatype();
+		boolean rightCalendar = rightXsdDatatype != null && rightXsdDatatype.isCalendarDatatype();
 
-		if (leftXsdDatatype != null && leftXsdDatatype.isNumericDatatype()) {
-			if (rightXsdDatatype != null && rightXsdDatatype.isNumericDatatype()) {
-				// both are numeric datatypes
-				return CoreDatatype.compare(leftCoreDatatype, rightCoreDatatype);
-			} else {
-				return -1;
-			}
-		} else if (rightXsdDatatype != null && rightXsdDatatype.isNumericDatatype()) {
-			return 1;
-		} else if (leftXsdDatatype != null && leftXsdDatatype.isCalendarDatatype()) {
-			if (rightXsdDatatype != null && rightXsdDatatype.isCalendarDatatype()) {
-				return CoreDatatype.compare(leftCoreDatatype, rightCoreDatatype);
-			} else {
-				return -1;
-			}
-		} else if (rightXsdDatatype != null && rightXsdDatatype.isCalendarDatatype()) {
-			return 1;
-		}
-
-		if (leftCoreDatatype != CoreDatatype.NONE && rightCoreDatatype != CoreDatatype.NONE) {
+		if (leftNumeric && rightNumeric || leftCalendar && rightCalendar) {
 			return CoreDatatype.compare(leftCoreDatatype, rightCoreDatatype);
 		}
 
-		return compareIRIs(leftDatatypeIRI, rightDatatypeIRI);
+		if (leftNumeric || leftCalendar) {
+			return -1;
+		}
+
+		if (rightNumeric || rightCalendar) {
+			return 1;
+		}
+
+		return CoreDatatype.compare(leftCoreDatatype, rightCoreDatatype);
 	}
 
 	private int compareTriples(Triple leftTriple, Triple rightTriple) {
