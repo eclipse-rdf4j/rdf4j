@@ -113,6 +113,18 @@ public interface CoreDatatype {
 	}
 
 	enum XSD implements CoreDatatype {
+
+		ENTITIES(iri("ENTITIES"), false, false, false, true, false, false, false),
+		ENTITY(iri("ENTITY"), false, false, false, true, false, false, false),
+		ID(iri("ID"), false, false, false, true, false, false, false),
+		IDREF(iri("IDREF"), false, false, false, true, false, false, false),
+		IDREFS(iri("IDREFS"), false, false, false, true, false, false, false),
+		NCNAME(iri("NCName"), false, false, false, true, false, false, false),
+		NMTOKEN(iri("NMTOKEN"), false, false, false, true, false, false, false),
+		NMTOKENS(iri("NMTOKENS"), false, false, false, true, false, false, false),
+		NOTATION(iri("NOTATION"), true, false, false, false, false, false, false),
+		NAME(iri("Name"), false, false, false, true, false, false, false),
+		QNAME(iri("QName"), true, false, false, false, false, false, false),
 		ANYURI(iri("anyURI"), true, false, false, false, false, false, false),
 		BASE64BINARY(iri("base64Binary"), true, false, false, false, false, false, false),
 		BOOLEAN(iri("boolean"), true, false, false, false, false, false, false),
@@ -124,8 +136,6 @@ public interface CoreDatatype {
 		DECIMAL(iri("decimal"), true, false, false, false, true, false, false),
 		DOUBLE(iri("double"), true, false, false, false, false, true, false),
 		DURATION(iri("duration"), true, true, false, false, false, false, false),
-		ENTITIES(iri("ENTITIES"), false, false, false, true, false, false, false),
-		ENTITY(iri("ENTITY"), false, false, false, true, false, false, false),
 		FLOAT(iri("float"), true, false, false, false, false, true, false),
 		GDAY(iri("gDay"), true, false, false, false, false, false, true),
 		GMONTH(iri("gMonth"), true, false, false, false, false, false, true),
@@ -133,24 +143,15 @@ public interface CoreDatatype {
 		GYEAR(iri("gYear"), true, false, false, false, false, false, true),
 		GYEARMONTH(iri("gYearMonth"), true, false, false, false, false, false, true),
 		HEXBINARY(iri("hexBinary"), true, false, false, false, false, false, false),
-		ID(iri("ID"), false, false, false, true, false, false, false),
-		IDREF(iri("IDREF"), false, false, false, true, false, false, false),
-		IDREFS(iri("IDREFS"), false, false, false, true, false, false, false),
 		INT(iri("int"), false, false, true, true, true, false, false),
 		INTEGER(iri("integer"), false, false, true, true, true, false, false),
 		LANGUAGE(iri("language"), false, false, false, true, false, false, false),
 		LONG(iri("long"), false, false, true, true, true, false, false),
-		NAME(iri("Name"), false, false, false, true, false, false, false),
-		NCNAME(iri("NCName"), false, false, false, true, false, false, false),
 		NEGATIVE_INTEGER(iri("negativeInteger"), false, false, true, true, true, false, false),
-		NMTOKEN(iri("NMTOKEN"), false, false, false, true, false, false, false),
-		NMTOKENS(iri("NMTOKENS"), false, false, false, true, false, false, false),
 		NON_NEGATIVE_INTEGER(iri("nonNegativeInteger"), false, false, true, true, true, false, false),
 		NON_POSITIVE_INTEGER(iri("nonPositiveInteger"), false, false, true, true, true, false, false),
 		NORMALIZEDSTRING(iri("normalizedString"), false, false, false, true, false, false, false),
-		NOTATION(iri("NOTATION"), true, false, false, false, false, false, false),
 		POSITIVE_INTEGER(iri("positiveInteger"), false, false, true, true, true, false, false),
-		QNAME(iri("QName"), true, false, false, false, false, false, false),
 		SHORT(iri("short"), false, false, true, true, true, false, false),
 		STRING(iri("string"), true, false, false, false, false, false, false),
 		TIME(iri("time"), true, false, false, false, false, false, true),
@@ -323,8 +324,8 @@ public interface CoreDatatype {
 	enum RDF implements CoreDatatype {
 
 		HTML(iri("HTML")),
-		LANGSTRING(iri("langString")),
-		XMLLITERAL(iri("XMLLiteral"));
+		XMLLITERAL(iri("XMLLiteral")),
+		LANGSTRING(iri("langString"));
 
 		public static final String NAMESPACE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
 
