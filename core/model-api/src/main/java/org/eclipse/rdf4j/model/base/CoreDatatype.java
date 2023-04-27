@@ -22,47 +22,37 @@ public interface CoreDatatype {
 	CoreDatatype NONE = DefaultDatatype.NONE;
 
 	static int compare(CoreDatatype left, CoreDatatype right) {
-		assert left != NONE && right != NONE;
 		if (left.getClass() == right.getClass()) {
 			return Integer.compare(left.ordinal(), right.ordinal());
 		}
 
-		if (left.isXSDDatatype() && right.isRDFDatatype()) {
-			int ret = 1;
-			assert left.getIri().toString().compareTo(right.getIri().toString()) == ret;
-			return ret;
-		}
-		if (left.isXSDDatatype() && right.isGEODatatype()) {
-			int ret = 1;
-			assert left.getIri().toString().compareTo(right.getIri().toString()) == ret;
-			return ret;
+		int compare;
+
+		if (left.isXSDDatatype()) {
+			if (right.isRDFDatatype() || right.isGEODatatype()) {
+				compare = 1;
+			} else {
+				compare = 0;
+			}
+		} else if (left.isRDFDatatype()) {
+			if (right.isXSDDatatype()) {
+				compare = -1;
+			} else if (right.isGEODatatype()) {
+				compare = 1;
+			} else {
+				compare = 0;
+			}
+		} else if (left.isGEODatatype()) {
+			if (right.isXSDDatatype() || right.isRDFDatatype()) {
+				compare = -1;
+			} else {
+				compare = 0;
+			}
+		} else {
+			compare = 0;
 		}
 
-		if (left.isRDFDatatype() && right.isXSDDatatype()) {
-			int ret = -1;
-			assert left.getIri().toString().compareTo(right.getIri().toString()) == ret;
-			return ret;
-		}
-		if (left.isRDFDatatype() && right.isGEODatatype()) {
-			int ret = 1;
-			assert left.getIri().toString().compareTo(right.getIri().toString()) == ret;
-			return ret;
-		}
-
-		if (left.isGEODatatype() && right.isXSDDatatype()) {
-			int ret = -1;
-			assert left.getIri().toString().compareTo(right.getIri().toString()) == ret;
-			return ret;
-		}
-		if (left.isGEODatatype() && right.isRDFDatatype()) {
-			int ret = -1;
-			assert left.getIri().toString().compareTo(right.getIri().toString()) == ret;
-			return ret;
-		}
-
-		assert false;
-		return left.getIri().toString().compareTo(right.getIri().toString());
-
+		return compare;
 	}
 
 	int ordinal();
@@ -89,9 +79,6 @@ public interface CoreDatatype {
 	}
 
 	default XSD asXSDDatatypeOrNull() {
-		if (this.getClass() == XSD.class) {
-			return ((XSD) this);
-		}
 		return null;
 	}
 
@@ -317,6 +304,11 @@ public interface CoreDatatype {
 		@Override
 		public String toString() {
 			return iri.toString();
+		}
+
+		@Override
+		public final XSD asXSDDatatypeOrNull() {
+			return this;
 		}
 
 	}
