@@ -323,21 +323,21 @@ public class QueryEvaluationUtility {
 			return Order.from(Boolean.compare(leftLit.booleanValue(), rightLit.booleanValue()));
 		} else if (commonDatatype.isCalendarDatatype()) {
 
-			if (commonDatatype == CoreDatatype.XSD.DATETIME) {
-				Instant leftInstant = xmlGregorianCalendarToInstant(leftLit.calendarValue());
-				Instant rightInstant = xmlGregorianCalendarToInstant(rightLit.calendarValue());
-
-				if (leftInstant != null && rightInstant != null) {
-					return Order.from(leftInstant.compareTo(rightInstant));
-				}
-			} else if (commonDatatype == CoreDatatype.XSD.DATE) {
-				Instant leftInstant = xmlGregorianCalendarDateToInstant(leftLit.calendarValue());
-				Instant rightInstant = xmlGregorianCalendarDateToInstant(rightLit.calendarValue());
-
-				if (leftInstant != null && rightInstant != null) {
-					return Order.from(leftInstant.compareTo(rightInstant));
-				}
-			}
+//			if (commonDatatype == CoreDatatype.XSD.DATETIME) {
+//				Instant leftInstant = xmlGregorianCalendarToInstant(leftLit.calendarValue());
+//				Instant rightInstant = xmlGregorianCalendarToInstant(rightLit.calendarValue());
+//
+//				if (leftInstant != null && rightInstant != null) {
+//					return Order.from(leftInstant.compareTo(rightInstant));
+//				}
+//			} else if (commonDatatype == CoreDatatype.XSD.DATE) {
+//				Instant leftInstant = xmlGregorianCalendarDateToInstant(leftLit.calendarValue());
+//				Instant rightInstant = xmlGregorianCalendarDateToInstant(rightLit.calendarValue());
+//
+//				if (leftInstant != null && rightInstant != null) {
+//					return Order.from(leftInstant.compareTo(rightInstant));
+//				}
+//			}
 
 			XMLGregorianCalendar left = leftLit.calendarValue();
 			XMLGregorianCalendar right = rightLit.calendarValue();
