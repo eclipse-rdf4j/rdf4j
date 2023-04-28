@@ -84,6 +84,7 @@ import org.eclipse.rdf4j.query.algebra.Like;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.LocalName;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Namespace;
 import org.eclipse.rdf4j.query.algebra.Not;
@@ -1887,28 +1888,41 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		Value leftVal = evaluate(node.getLeftArg(), bindings);
 		Value rightVal = evaluate(node.getRightArg(), bindings);
 
-		return mathOperationApplier(node, leftVal, rightVal, getQueryEvaluationMode());
+		return mathOperationApplier(node, getQueryEvaluationMode(), tripleSource.getValueFactory()).apply(leftVal,
+				rightVal);
 	}
 
-	private Value mathOperationApplier(MathExpr node, Value leftVal, Value rightVal,
-			QueryEvaluationMode queryEvaluationMode) {
-		if (leftVal instanceof Literal && rightVal instanceof Literal) {
-			switch (queryEvaluationMode) {
-			case STRICT:
-				return MathUtil.compute((Literal) leftVal, (Literal) rightVal, node.getOperator());
-			case STANDARD:
-			default:
-				return XMLDatatypeMathUtil.compute((Literal) leftVal, (Literal) rightVal, node.getOperator());
-			}
+	private BiFunction<Value, Value, Value> mathOperationApplier(MathExpr node,
+			QueryEvaluationMode queryEvaluationMode, ValueFactory vf) {
+		final MathOp operator = node.getOperator();
+		switch (queryEvaluationMode) {
+		case STRICT: {
+			return (l, r) -> {
+				if (l instanceof Literal && r instanceof Literal) {
+					return MathUtil.compute((Literal) l, (Literal) r, operator);
+				} else {
+					throw new ValueExprEvaluationException("Both arguments must be literals");
+				}
+			};
 		}
+		case STANDARD:
+		default:
 
-		throw new ValueExprEvaluationException("Both arguments must be literals");
+			return (l, r) -> {
+				if (l instanceof Literal && r instanceof Literal) {
+					return XMLDatatypeMathUtil.compute((Literal) l, (Literal) r, operator, vf);
+				} else {
+					throw new ValueExprEvaluationException("Both arguments must be literals");
+				}
+			};
+		}
 	}
 
 	protected QueryValueEvaluationStep prepare(MathExpr node, QueryEvaluationContext context) {
-		return supplyBinaryValueEvaluation(node,
-				(leftVal, rightVal) -> mathOperationApplier(node, leftVal, rightVal, getQueryEvaluationMode()),
-				context);
+		final BiFunction<Value, Value, Value> mathOperationApplier = mathOperationApplier(node,
+				getQueryEvaluationMode(),
+				tripleSource.getValueFactory());
+		return supplyBinaryValueEvaluation(node, mathOperationApplier, context);
 	}
 
 	@Deprecated(forRemoval = true)
