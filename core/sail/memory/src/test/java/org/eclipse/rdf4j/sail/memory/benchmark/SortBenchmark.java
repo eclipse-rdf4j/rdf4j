@@ -88,7 +88,7 @@ public class SortBenchmark {
 		sortBenchmark.setup();
 		for (int i = 0; i < 1000; i++) {
 			System.out.println("i = " + i);
-			sortBenchmark.sortDirectly();
+			sortBenchmark.sortDirectlySingleThreaded();
 		}
 	}
 
@@ -159,6 +159,17 @@ public class SortBenchmark {
 		Value[] values = new ArrayList<>(valuesList).toArray(new Value[0]);
 
 		Arrays.parallelSort(values, new ValueComparator());
+
+		return values[0];
+
+	}
+
+	@Benchmark
+	public Value sortDirectlySingleThreaded() {
+
+		Value[] values = new ArrayList<>(valuesList).toArray(new Value[0]);
+
+		Arrays.sort(values, new ValueComparator());
 
 		return values[0];
 

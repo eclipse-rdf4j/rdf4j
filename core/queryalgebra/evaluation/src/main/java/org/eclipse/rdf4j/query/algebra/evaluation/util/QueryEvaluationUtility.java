@@ -307,6 +307,36 @@ public class QueryEvaluationUtility {
 		return Instant.ofEpochSecond(seconds);
 	}
 
+	public static long toEpoch(int year, int month, int day, int hour, int minute, int second) {
+
+		long dateEpoch = ((long) day + (long) (year - ((14 - month) / 12)) + ((long) (year - ((14 - month) / 12))) / 4
+				- ((long) (year - ((14 - month) / 12))) / 100 + ((long) (year - ((14 - month) / 12))) / 400
+				+ (31 * ((long) (month + (12 * ((14 - month) / 12) - 2)))) / 12) - 719529;
+
+//
+//		// Calculate the number of days from 1970 to the given year
+//		long days = (year - 1970) * 365L + (year - 1969) / 4 - (year - 1901) / 100 + (year - 1601) / 400;
+//
+//		// Adjust for leap years
+//		if (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)) {
+//			daysInMonth[2] = 29;
+//		}
+//
+//		// Add the number of days in each month up to the given month
+//		for (int i = 1; i < month; i++) {
+//			days += daysInMonth[i];
+//		}
+//
+//		// Add the number of days in the given month
+//		days += day - 1;
+//
+//		// Calculate the number of seconds
+//		long dateEpoch = days * 24 * 60 * 60;
+
+		return dateEpoch + hour * 3600L + minute * 60L + second;
+
+	}
+
 	private static Order handleCommonDatatype(Literal leftLit, Literal rightLit, boolean strict,
 			CoreDatatype.XSD leftCoreDatatype, CoreDatatype.XSD rightCoreDatatype,
 			CoreDatatype.XSD commonDatatype) {
@@ -321,9 +351,6 @@ public class QueryEvaluationUtility {
 		} else if (commonDatatype == CoreDatatype.XSD.BOOLEAN) {
 			return Order.from(Boolean.compare(leftLit.booleanValue(), rightLit.booleanValue()));
 		} else if (commonDatatype.isCalendarDatatype()) {
-
-			if (leftLit.getLabel().equals(rightLit.getLabel()))
-				return Order.equal;
 
 //			if (commonDatatype == CoreDatatype.XSD.DATETIME) {
 //				Instant leftInstant = xmlGregorianCalendarToInstant(leftLit.calendarValue());
@@ -344,7 +371,7 @@ public class QueryEvaluationUtility {
 			XMLGregorianCalendar left = leftLit.calendarValue();
 			XMLGregorianCalendar right = rightLit.calendarValue();
 
-			int compare = left.compare(right);
+			int compare = compareXMLGregorianCalendar(leftCoreDatatype, rightCoreDatatype, left, right);
 
 			// Note: XMLGregorianCalendar.compare() returns compatible values (-1, 0, 1) but INDETERMINATE
 			// needs special treatment
@@ -373,6 +400,35 @@ public class QueryEvaluationUtility {
 		}
 
 		return null;
+	}
+
+	private static int compareXMLGregorianCalendar(CoreDatatype.XSD leftCoreDatatype,
+			CoreDatatype.XSD rightCoreDatatype, XMLGregorianCalendar left, XMLGregorianCalendar right) {
+		if (leftCoreDatatype == rightCoreDatatype && left.getTimezone() == right.getTimezone()) {
+			int leftYear = left.getYear();
+			int rightYear = right.getYear();
+			if (leftYear > 1971 && rightYear > 1971 && leftYear < 2038 && rightYear < 2038) {
+
+				int compare = Long.compare(
+						toEpoch(leftYear, left.getMonth(), left.getDay(), left.getHour(), left.getMinute(),
+								left.getSecond()),
+						toEpoch(rightYear, right.getMonth(), right.getDay(), right.getHour(), right.getMinute(),
+								right.getSecond())
+				);
+				if (compare != 0) {
+					// since the values are different we can assume that we don't need to account for a higher precision
+					return compare;
+				} else {
+					// since the values are equal we need to account for a higher precision
+					return left.compare(right);
+				}
+			} else {
+				// since the values are equal we need to account for a higher precision
+				return left.compare(right);
+			}
+		} else {
+			return left.compare(right);
+		}
 	}
 
 	private static Order otherCases(Literal leftLit, Literal rightLit, CoreDatatype leftCoreDatatype,
