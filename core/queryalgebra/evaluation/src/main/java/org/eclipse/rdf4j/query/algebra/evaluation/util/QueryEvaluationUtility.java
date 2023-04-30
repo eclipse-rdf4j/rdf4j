@@ -10,17 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
-import static javax.xml.datatype.DatatypeConstants.FIELD_UNDEFINED;
-
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.util.Objects;
-
-import javax.xml.datatype.DatatypeConstants;
-import javax.xml.datatype.Duration;
-import javax.xml.datatype.XMLGregorianCalendar;
-
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -28,6 +17,16 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+
+import javax.xml.datatype.DatatypeConstants;
+import javax.xml.datatype.Duration;
+import javax.xml.datatype.XMLGregorianCalendar;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.Objects;
+
+import static javax.xml.datatype.DatatypeConstants.FIELD_UNDEFINED;
 
 /**
  * This class will take over for QueryEvaluationUtil. Currently marked as InternalUseOnly because there may still be
@@ -107,12 +106,12 @@ public class QueryEvaluationUtility {
 		} else {
 			// All other value combinations
 			switch (operator) {
-			case EQ:
-				return Result.fromBoolean(Objects.equals(leftVal, rightVal));
-			case NE:
-				return Result.fromBoolean(!Objects.equals(leftVal, rightVal));
-			default:
-				return Result.incompatibleValueExpression;
+				case EQ:
+					return Result.fromBoolean(Objects.equals(leftVal, rightVal));
+				case NE:
+					return Result.fromBoolean(!Objects.equals(leftVal, rightVal));
+				default:
+					return Result.incompatibleValueExpression;
 			}
 		}
 	}
@@ -125,7 +124,7 @@ public class QueryEvaluationUtility {
 	 * @param rightLit the right literal argument of the comparison.
 	 * @param operator the comparison operator to use.
 	 * @return {@code true} if execution of the supplied operator on the supplied arguments succeeds, {@code false}
-	 *         otherwise.
+	 * otherwise.
 	 */
 	public static Result compareLiterals(Literal leftLit, Literal rightLit, CompareOp operator) {
 		return compareLiterals(leftLit, rightLit, operator, true);
@@ -149,7 +148,7 @@ public class QueryEvaluationUtility {
 		if (leftCoreDatatype == CoreDatatype.XSD.STRING && rightCoreDatatype == CoreDatatype.XSD.STRING) {
 			return Order.from(leftLit.getLabel().compareTo(rightLit.getLabel()));
 		} else if (leftCoreDatatype != null
-				&& rightCoreDatatype != null) {
+			&& rightCoreDatatype != null) {
 
 			if (leftCoreDatatype.isXSDDatatype() && rightCoreDatatype.isXSDDatatype()) {
 
@@ -159,8 +158,8 @@ public class QueryEvaluationUtility {
 
 					try {
 						Order order = handleCommonDatatype(leftLit, rightLit, strict, leftCoreDatatype,
-								rightCoreDatatype,
-								commonDatatype);
+							rightCoreDatatype,
+							commonDatatype);
 
 						if (order == Order.illegalArgument) {
 							if (leftLit.equals(rightLit)) {
@@ -188,8 +187,8 @@ public class QueryEvaluationUtility {
 		// operator
 
 		return otherCases(leftLit, rightLit, leftCoreDatatype,
-				rightCoreDatatype, leftCoreDatatype == null && leftLit.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING,
-				rightCoreDatatype == null && rightLit.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING);
+			rightCoreDatatype, leftCoreDatatype == null && leftLit.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING,
+			rightCoreDatatype == null && rightLit.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING);
 
 	}
 
@@ -202,7 +201,7 @@ public class QueryEvaluationUtility {
 	 * @param strict   boolean indicating whether comparison should use strict (minimally-conforming) SPARQL 1.1
 	 *                 operator behavior, or extended behavior.
 	 * @return {@code true} if execution of the supplied operator on the supplied arguments succeeds, {@code false}
-	 *         otherwise.
+	 * otherwise.
 	 */
 	public static Result compareLiterals(Literal leftLit, Literal rightLit, CompareOp operator, boolean strict) {
 		Order order = compareLiterals(leftLit, rightLit, strict);
@@ -241,16 +240,16 @@ public class QueryEvaluationUtility {
 		}
 
 		int nanosecond = xmlGregCal.getFractionalSecond() != null
-				? xmlGregCal.getFractionalSecond().movePointRight(9).intValue()
-				: 0;
+			? xmlGregCal.getFractionalSecond().movePointRight(9).intValue()
+			: 0;
 		if (nanosecond < 0) {
 			return null;
 		}
 
 		LocalDateTime localDateTime = LocalDateTime.of(year, month, day, hour, minute, second, nanosecond);
 		ZoneOffset zoneOffset = xmlGregCal.getTimezone() == FIELD_UNDEFINED
-				? ZoneOffset.UTC
-				: ZoneOffset.ofTotalSeconds(xmlGregCal.getTimezone() * 60);
+			? ZoneOffset.UTC
+			: ZoneOffset.ofTotalSeconds(xmlGregCal.getTimezone() * 60);
 		return localDateTime.toInstant(zoneOffset);
 	}
 
@@ -277,12 +276,12 @@ public class QueryEvaluationUtility {
 
 		LocalDateTime localDateTime = LocalDateTime.of(year, month, day, 0, 0, 0, 0);
 		ZoneOffset zoneOffset = xmlGregCal.getTimezone() == FIELD_UNDEFINED
-				? ZoneOffset.UTC
-				: ZoneOffset.ofTotalSeconds(xmlGregCal.getTimezone() * 60);
+			? ZoneOffset.UTC
+			: ZoneOffset.ofTotalSeconds(xmlGregCal.getTimezone() * 60);
 		return localDateTime.toInstant(zoneOffset);
 	}
 
-	private final static int[] daysInMonth = { 0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+	private final static int[] daysInMonth = {0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 
 	public static Instant yearMonthDayToInstant(int year, int month, int day) {
 
@@ -310,8 +309,8 @@ public class QueryEvaluationUtility {
 	public static long toEpoch(int year, int month, int day, int hour, int minute, int second) {
 
 		long dateEpoch = ((long) day + (long) (year - ((14 - month) / 12)) + ((long) (year - ((14 - month) / 12))) / 4
-				- ((long) (year - ((14 - month) / 12))) / 100 + ((long) (year - ((14 - month) / 12))) / 400
-				+ (31 * ((long) (month + (12 * ((14 - month) / 12) - 2)))) / 12) - 719529;
+			- ((long) (year - ((14 - month) / 12))) / 100 + ((long) (year - ((14 - month) / 12))) / 400
+			+ (31 * ((long) (month + (12 * ((14 - month) / 12) - 2)))) / 12) - 719529;
 
 //
 //		// Calculate the number of days from 1970 to the given year
@@ -338,8 +337,8 @@ public class QueryEvaluationUtility {
 	}
 
 	private static Order handleCommonDatatype(Literal leftLit, Literal rightLit, boolean strict,
-			CoreDatatype.XSD leftCoreDatatype, CoreDatatype.XSD rightCoreDatatype,
-			CoreDatatype.XSD commonDatatype) {
+											  CoreDatatype.XSD leftCoreDatatype, CoreDatatype.XSD rightCoreDatatype,
+											  CoreDatatype.XSD commonDatatype) {
 		if (commonDatatype == CoreDatatype.XSD.DOUBLE) {
 			return Order.from(Double.compare(leftLit.doubleValue(), rightLit.doubleValue()));
 		} else if (commonDatatype == CoreDatatype.XSD.FLOAT) {
@@ -371,7 +370,7 @@ public class QueryEvaluationUtility {
 			XMLGregorianCalendar left = leftLit.calendarValue();
 			XMLGregorianCalendar right = rightLit.calendarValue();
 
-			int compare = compareXMLGregorianCalendar(leftCoreDatatype, rightCoreDatatype, left, right);
+			int compare = compareXMLGregorianCalendar(leftCoreDatatype, rightCoreDatatype, left, right, leftLit, rightLit);
 
 			// Note: XMLGregorianCalendar.compare() returns compatible values (-1, 0, 1) but INDETERMINATE
 			// needs special treatment
@@ -403,41 +402,48 @@ public class QueryEvaluationUtility {
 	}
 
 	private static int compareXMLGregorianCalendar(CoreDatatype.XSD leftCoreDatatype,
-			CoreDatatype.XSD rightCoreDatatype, XMLGregorianCalendar left, XMLGregorianCalendar right) {
+												   CoreDatatype.XSD rightCoreDatatype, XMLGregorianCalendar left, XMLGregorianCalendar right, Literal leftLit, Literal rightLit) {
 		if (leftCoreDatatype == rightCoreDatatype && left.getTimezone() == right.getTimezone()) {
 			int leftYear = left.getYear();
 			int rightYear = right.getYear();
 			if (leftYear > 1971 && rightYear > 1971 && leftYear < 2038 && rightYear < 2038) {
 
 				int compare = Long.compare(
-						toEpoch(leftYear, left.getMonth(), left.getDay(), left.getHour(), left.getMinute(),
-								left.getSecond()),
-						toEpoch(rightYear, right.getMonth(), right.getDay(), right.getHour(), right.getMinute(),
-								right.getSecond())
+					toEpoch(leftYear, left.getMonth(), left.getDay(), left.getHour(), left.getMinute(),
+						left.getSecond()),
+					toEpoch(rightYear, right.getMonth(), right.getDay(), right.getHour(), right.getMinute(),
+						right.getSecond())
 				);
 				if (compare != 0) {
 					// since the values are different we can assume that we don't need to account for a higher precision
 					return compare;
 				} else {
 					// since the values are equal we need to account for a higher precision
-					return left.compare(right);
+					if (leftLit.getLabel().equals(rightLit.getLabel())) {
+						return 0;
+					} else {
+						return left.compare(right);
+					}
 				}
 			} else {
 				// since the values are equal we need to account for a higher precision
-				return left.compare(right);
-			}
+				if (leftLit.getLabel().equals(rightLit.getLabel())) {
+					return 0;
+				} else {
+					return left.compare(right);
+				}			}
 		} else {
 			return left.compare(right);
 		}
 	}
 
 	private static Order otherCases(Literal leftLit, Literal rightLit, CoreDatatype leftCoreDatatype,
-			CoreDatatype rightCoreDatatype, boolean leftLangLit, boolean rightLangLit) {
+									CoreDatatype rightCoreDatatype, boolean leftLangLit, boolean rightLangLit) {
 		boolean literalsEqual = leftLit.equals(rightLit);
 
 		if (!literalsEqual) {
 			if (!leftLangLit && !rightLangLit && isSupportedDatatype(leftCoreDatatype)
-					&& isSupportedDatatype(rightCoreDatatype)) {
+				&& isSupportedDatatype(rightCoreDatatype)) {
 				// left and right arguments have incompatible but supported datatypes
 
 				// we need to check that the lexical-to-value mapping for both datatypes succeeds
@@ -482,7 +488,7 @@ public class QueryEvaluationUtility {
 	}
 
 	private static CoreDatatype.XSD getCommonDatatype(boolean strict, CoreDatatype.XSD leftCoreDatatype,
-			CoreDatatype.XSD rightCoreDatatype) {
+													  CoreDatatype.XSD rightCoreDatatype) {
 		if (leftCoreDatatype == null || rightCoreDatatype == null) {
 			return null;
 		}
@@ -507,7 +513,7 @@ public class QueryEvaluationUtility {
 	}
 
 	private static CoreDatatype.XSD getCommonNumericDatatype(CoreDatatype.XSD leftCoreDatatype,
-			CoreDatatype.XSD rightCoreDatatype) {
+															 CoreDatatype.XSD rightCoreDatatype) {
 		if (leftCoreDatatype == CoreDatatype.XSD.DOUBLE || rightCoreDatatype == CoreDatatype.XSD.DOUBLE) {
 			return CoreDatatype.XSD.DOUBLE;
 		}
@@ -525,7 +531,7 @@ public class QueryEvaluationUtility {
 	 * optionally a language tag.
 	 *
 	 * @see <a href="http://www.w3.org/TR/2004/REC-rdf-concepts-20040210/#dfn-plain-literal">RDF Literal
-	 *      Documentation</a>
+	 * Documentation</a>
 	 */
 	public static boolean isPlainLiteral(Value v) {
 		if (v.isLiteral()) {
@@ -599,7 +605,7 @@ public class QueryEvaluationUtility {
 	 * @param arg2 the second argument
 	 * @return true iff the two supplied arguments are argument compatible, false otherwise
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#func-arg-compatibility">SPARQL Argument Compatibility
-	 *      Rules</a>
+	 * Rules</a>
 	 */
 	public static boolean compatibleArguments(Literal arg1, Literal arg2) {
 		// 1. The arguments are literals typed as CoreDatatype.XSD:string
@@ -608,9 +614,9 @@ public class QueryEvaluationUtility {
 		// argument is a literal typed as CoreDatatype.XSD:string
 
 		return (isSimpleLiteral(arg1) && isSimpleLiteral(arg2))
-				|| (Literals.isLanguageLiteral(arg1) && Literals.isLanguageLiteral(arg2)
-						&& arg1.getLanguage().equals(arg2.getLanguage()))
-				|| (Literals.isLanguageLiteral(arg1) && isSimpleLiteral(arg2));
+			|| (Literals.isLanguageLiteral(arg1) && Literals.isLanguageLiteral(arg2)
+			&& arg1.getLanguage().equals(arg2.getLanguage()))
+			|| (Literals.isLanguageLiteral(arg1) && isSimpleLiteral(arg2));
 	}
 
 	/**
@@ -625,8 +631,8 @@ public class QueryEvaluationUtility {
 
 	private static boolean isSupportedDatatype(CoreDatatype datatype) {
 		return datatype != null && datatype.isXSDDatatype()
-				&& (datatype == CoreDatatype.XSD.STRING || ((CoreDatatype.XSD) datatype).isNumericDatatype()
-						|| ((CoreDatatype.XSD) datatype).isCalendarDatatype());
+			&& (datatype == CoreDatatype.XSD.STRING || ((CoreDatatype.XSD) datatype).isNumericDatatype()
+			|| ((CoreDatatype.XSD) datatype).isCalendarDatatype());
 	}
 
 	public enum Result {
@@ -712,35 +718,35 @@ public class QueryEvaluationUtility {
 
 			if (this == notEqual) {
 				switch (operator) {
-				case EQ:
-					return Result._false;
-				case NE:
-					return Result._true;
-				case LT:
-				case LE:
-				case GE:
-				case GT:
-					return Result.incompatibleValueExpression;
-				default:
-					return Result.illegalArgument;
+					case EQ:
+						return Result._false;
+					case NE:
+						return Result._true;
+					case LT:
+					case LE:
+					case GE:
+					case GT:
+						return Result.incompatibleValueExpression;
+					default:
+						return Result.illegalArgument;
 				}
 			}
 
 			switch (operator) {
-			case LT:
-				return Result.fromBoolean(value < 0);
-			case LE:
-				return Result.fromBoolean(value <= 0);
-			case EQ:
-				return Result.fromBoolean(value == 0);
-			case NE:
-				return Result.fromBoolean(value != 0);
-			case GE:
-				return Result.fromBoolean(value >= 0);
-			case GT:
-				return Result.fromBoolean(value > 0);
-			default:
-				return Result.illegalArgument;
+				case LT:
+					return Result.fromBoolean(value < 0);
+				case LE:
+					return Result.fromBoolean(value <= 0);
+				case EQ:
+					return Result.fromBoolean(value == 0);
+				case NE:
+					return Result.fromBoolean(value != 0);
+				case GE:
+					return Result.fromBoolean(value >= 0);
+				case GT:
+					return Result.fromBoolean(value > 0);
+				default:
+					return Result.illegalArgument;
 			}
 		}
 	}

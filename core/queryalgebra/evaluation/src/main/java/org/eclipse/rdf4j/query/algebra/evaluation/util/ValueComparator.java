@@ -45,6 +45,10 @@ public class ValueComparator implements Comparator<Value> {
 			return 1;
 		}
 
+		if(o1.getClass() == o2.getClass()){
+			return compareSameTypes(o1, o2, o1.getValueType());
+		}
+
 		Value.Type o1Type = o1.getValueType();
 		Value.Type o2Type = o2.getValueType();
 

@@ -17,6 +17,12 @@ public interface Resource extends Value {
 
 	// Empty place holder as common supertype of IRI and BNode
 
+	default Type getValueType(){
+		if(isIRI()) return Type.IRI;
+		if(isBNode()) return Type.BNODE;
+		return Type.TRIPLE;
+	}
+
 	@Override
 	default boolean isResource() {
 		return true;

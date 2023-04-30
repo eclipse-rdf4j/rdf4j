@@ -43,10 +43,7 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
-import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
-import org.openjdk.jmh.runner.options.Options;
-import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
  * @author Håvard Ottestad
@@ -84,12 +81,14 @@ public class SortBenchmark {
 //
 //		new Runner(opt).run();
 
+		long temp = 0;
 		SortBenchmark sortBenchmark = new SortBenchmark();
 		sortBenchmark.setup();
-		for (int i = 0; i < 1000; i++) {
+		for (int i = 0; i < 2; i++) {
 			System.out.println("i = " + i);
-			sortBenchmark.sortDirectlySingleThreaded();
+			temp += sortBenchmark.compareAllDirectlySingleThreaded();
 		}
+		System.out.println("temp = " + temp);
 	}
 
 	@Setup(Level.Trial)
@@ -172,6 +171,24 @@ public class SortBenchmark {
 		Arrays.sort(values, new ValueComparator());
 
 		return values[0];
+
+	}
+
+	@Benchmark
+	public long compareAllDirectlySingleThreaded() {
+
+		ValueComparator valueComparator = new ValueComparator();
+		long compare = 0;
+
+
+		for (Value value1 : valuesList) {
+			for (Value value2 : valuesList) {
+				compare += valueComparator.compare(value1, value2);
+
+			}
+		}
+
+		return compare;
 
 	}
 
