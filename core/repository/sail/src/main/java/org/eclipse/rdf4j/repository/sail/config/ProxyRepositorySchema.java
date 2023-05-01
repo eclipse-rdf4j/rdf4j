@@ -13,14 +13,14 @@ package org.eclipse.rdf4j.repository.sail.config;
 import static org.eclipse.rdf4j.model.util.Values.iri;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.vocabulary.CONFIG;
+import org.eclipse.rdf4j.model.vocabulary.Config;
 
 /**
  * Defines constants for the HTTPRepository schema which is used by {@link ProxyRepositoryFactory}s to initialize
  * {@link org.eclipse.rdf4j.repository.sail.ProxyRepository}s.
  *
  * @author Dale Visser
- * @deprecated use {@link CONFIG} instead.
+ * @deprecated use {@link Config} instead.
  */
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class ProxyRepositorySchema {
@@ -32,7 +32,7 @@ public class ProxyRepositorySchema {
 	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/proxy#";
 
 	/**
-	 * @deprecated use {@link CONFIG#proxiedID} instead.
+	 * @deprecated use {@link Config#proxiedID} instead.
 	 */
 	public final static IRI PROXIED_ID = iri(NAMESPACE, "proxiedID");
 

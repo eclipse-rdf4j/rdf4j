@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
-import org.eclipse.rdf4j.model.vocabulary.CONFIG;
+import org.eclipse.rdf4j.model.vocabulary.Config;
 
 /**
  * @author Herko ter Horst
@@ -72,7 +72,7 @@ public abstract class AbstractDelegatingSailImplConfig extends AbstractSailImplC
 
 		if (delegate != null) {
 			Resource delegateNode = delegate.export(m);
-			m.add(implNode, CONFIG.delegate, delegateNode);
+			m.add(implNode, Config.delegate, delegateNode);
 		}
 
 		return implNode;
@@ -83,7 +83,7 @@ public abstract class AbstractDelegatingSailImplConfig extends AbstractSailImplC
 		super.parse(m, implNode);
 
 		try {
-			Configurations.getResourceValue(m, implNode, CONFIG.delegate, DELEGATE)
+			Configurations.getResourceValue(m, implNode, Config.delegate, DELEGATE)
 					.ifPresent(delegate -> setDelegate(SailConfigUtil.parseRepositoryImpl(m, delegate)));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);

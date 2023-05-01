@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.repository.config;
 import static org.eclipse.rdf4j.model.util.Values.iri;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.vocabulary.CONFIG;
+import org.eclipse.rdf4j.model.vocabulary.Config;
 
 /**
  * Defines constants for the repository configuration schema that is used by
@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.model.vocabulary.CONFIG;
  * @author Arjohn Kampman
  * @author Jeen Broekstra
  *
- * @deprecated use {@link CONFIG} vocabulary instead.
+ * @deprecated use {@link Config} vocabulary instead.
  */
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class RepositoryConfigSchema {
@@ -36,27 +36,27 @@ public class RepositoryConfigSchema {
 	public final static IRI REPOSITORY_CONTEXT = iri(NAMESPACE, "RepositoryContext");
 
 	/**
-	 * @deprecated use {@link CONFIG#Repository} instead.
+	 * @deprecated use {@link Config#Repository} instead.
 	 */
 	public final static IRI REPOSITORY = iri(NAMESPACE, "Repository");
 
 	/**
-	 * @deprecated use {@link CONFIG.Rep#id} instead.
+	 * @deprecated use {@link Config.Repository#id} instead.
 	 */
 	public final static IRI REPOSITORYID = iri(NAMESPACE, "repositoryID");
 
 	/**
-	 * @deprecated use {@link CONFIG.Rep#impl} instead.
+	 * @deprecated use {@link Config.Repository#impl} instead.
 	 */
 	public final static IRI REPOSITORYIMPL = iri(NAMESPACE, "repositoryImpl");
 
 	/**
-	 * @deprecated use {@link CONFIG.Rep#type} instead.
+	 * @deprecated use {@link Config.Repository#type} instead.
 	 */
 	public final static IRI REPOSITORYTYPE = iri(NAMESPACE, "repositoryType");
 
 	/**
-	 * @deprecated use {@link CONFIG#delegate} instead.
+	 * @deprecated use {@link Config#delegate} instead.
 	 */
 	public final static IRI DELEGATE = iri(NAMESPACE, "delegate");
 }

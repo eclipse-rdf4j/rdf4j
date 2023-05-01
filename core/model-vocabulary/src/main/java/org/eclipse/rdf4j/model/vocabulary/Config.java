@@ -12,15 +12,16 @@ package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.base.InternedIRI;
 
 /**
  * Shared vocabulary for configuration of RDF4J components: Repositories, SAILs, and so on.
  *
  * @author Jeen Broekstra
- *
  * @since 4.3.0
  */
-public class CONFIG {
+@SuppressWarnings("JavadocReference")
+public class Config {
 
 	/**
 	 * The RDF4J config namespace (<var>tag:rdf4j.org,2023:config/</var>).
@@ -51,7 +52,8 @@ public class CONFIG {
 	/**
 	 * Repository config
 	 */
-	public static final class Rep {
+	public static class Repository {
+
 		/**
 		 * Type value for a RepositoryConfig.
 		 *
@@ -82,9 +84,11 @@ public class CONFIG {
 	}
 
 	/**
-	 * HTTP Repository config
+	 * HTTPRepository config
+	 *
+	 * @see org.eclipse.rdf4j.repository.http.HTTPRepository
 	 */
-	public static final class Http {
+	public static final class HTTPRepository {
 		/**
 		 * Setting for a RDF4J HTTP Repository URL.
 		 *
@@ -109,8 +113,10 @@ public class CONFIG {
 
 	/**
 	 * ContextAwareRepository config
+	 *
+	 * @see org.eclipse.rdf4j.repository.contextaware.ContextAwareRepository
 	 */
-	public static final class ContextAware {
+	public static final class ContextAwareRepository {
 		/**
 		 * Setting for including inferred statements by default.
 		 *
@@ -132,7 +138,6 @@ public class CONFIG {
 		 */
 		public final static IRI queryLanguage = Vocabularies.createIRI(NAMESPACE, "ca.queryLanguage");
 		/**
-		 *
 		 * <var>tag:rdf4j.org,2023:config/ca.readContext</var>
 		 */
 		public final static IRI readContext = Vocabularies.createIRI(NAMESPACE, "ca.readContext");
@@ -159,8 +164,9 @@ public class CONFIG {
 	/**
 	 * ProxyRepository config
 	 *
+	 * @see org.eclipse.rdf4j.repository.sail.ProxyRepository
 	 */
-	public static final class Proxy {
+	public static final class ProxyRepository {
 		/**
 		 * <var>tag:rdf4j.org,2023:config/proxy.proxiedID</var>
 		 */
@@ -170,8 +176,10 @@ public class CONFIG {
 
 	/**
 	 * SPARQLRepository config
+	 *
+	 * @see org.eclipse.rdf4j.repository.sparql.SPARQLRepository
 	 */
-	public static final class Sparql {
+	public static final class SPARQLRepository {
 		/**
 		 * Configuration setting for the SPARQL query endpoint.
 		 *
@@ -192,7 +200,7 @@ public class CONFIG {
 		 *
 		 * <var>tag:rdf4j.org,2023:config/sparql.passThroughEnabled</var>
 		 *
-		 * @see SPARQLProtocolSession#isPassThroughEnabled()
+		 * @see org.eclipse.rdf4j.http.client.SPARQLProtocolSession#isPassThroughEnabled()
 		 */
 		public static final IRI passThroughEnabled = Vocabularies.createIRI(NAMESPACE, "sparql.passThroughEnabled");
 	}
@@ -222,30 +230,42 @@ public class CONFIG {
 		 */
 		public final static IRI connectionTimeOut = Vocabularies.createIRI(NAMESPACE, "sail.connectionTimeOut");
 
-		/** <var>tag:rdf4j.org,2023:config/sail.evaluationStrategyFactory</var> */
+		/**
+		 * <var>tag:rdf4j.org,2023:config/sail.evaluationStrategyFactory</var>
+		 */
 		public final static IRI evaluationStrategyFactory = Vocabularies.createIRI(NAMESPACE,
 				"sail.evaluationStrategyFactory");
 
-		/** <var>tag:rdf4j.org,2023:config/sail.defaultQueryEvaluationMode</var> */
+		/**
+		 * <var>tag:rdf4j.org,2023:config/sail.defaultQueryEvaluationMode</var>
+		 */
 		public final static IRI defaultQueryEvaluationMode = Vocabularies.createIRI(NAMESPACE,
 				"sail.defaultQueryEvaluationMode");
 	}
 
 	/**
-	 * Memory Store config
+	 * MemoryStore config
+	 *
+	 * @see org.eclipse.rdf4j.sail.memory.MemoryStore
 	 */
-	public static final class Mem {
-		/** <var>tag:rdf4j.org,2023:config/mem.persist</var> */
+	public static final class MemoryStore {
+		/**
+		 * <var>tag:rdf4j.org,2023:config/mem.persist</var>
+		 */
 		public final static IRI persist = Vocabularies.createIRI(NAMESPACE, "mem.persist");
 
-		/** <var>tag:rdf4j.org,2023:config/mem.syncDelay</var> */
+		/**
+		 * <var>tag:rdf4j.org,2023:config/mem.syncDelay</var>
+		 */
 		public final static IRI syncDelay = Vocabularies.createIRI(NAMESPACE, "mem.syncDelay");
 	}
 
 	/**
-	 * Native Store config
+	 * NativeStore config
+	 *
+	 * @see org.eclipse.rdf4j.sail.nativerdf.NativeStore
 	 */
-	public static final class Native {
+	public static final class NativeStore {
 		/**
 		 * <var>tag:rdf4j.org,2023:config/native.tripleIndexes</var>
 		 */
@@ -278,9 +298,11 @@ public class CONFIG {
 	}
 
 	/**
-	 * SHACL Sail config
+	 * ShaclSail config
+	 *
+	 * @see org.eclipse.rdf4j.sail.shacl.ShaclSail
 	 */
-	public static final class Shacl {
+	public static final class ShaclSail {
 		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.parallelValidation</code>
 		 */
@@ -346,17 +368,20 @@ public class CONFIG {
 	}
 
 	/**
-	 * Lucene Sail config
+	 * LuceneSail config
 	 *
+	 * @see org.eclipse.rdf4j.sail.lucene.LuceneSail
 	 */
-	public static final class Lucene {
+	public static final class LuceneSail {
 		public final static IRI indexDir = Vocabularies.createIRI(NAMESPACE, "lucene.indexDir");
 	}
 
 	/**
-	 * Elasticsearch Store config
+	 * ElasticsearchStore config
+	 *
+	 * @see org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore
 	 */
-	public static final class Ess {
+	public static final class ElasticsearchStore {
 
 		public final static IRI hostname = Vocabularies.createIRI(NAMESPACE, "ess.hostname");
 		public final static IRI port = Vocabularies.createIRI(NAMESPACE, "ess.port");
@@ -365,13 +390,16 @@ public class CONFIG {
 	}
 
 	/**
-	 * Custom Graph Query Inferencer config
+	 * CustomGraphQueryInferencer config
+	 *
+	 * @see org.eclipse.rdf4j.sail.inferencer.fc.CustomGraphQueryInferencer
 	 */
-	public static final class Cgqi {
+	public static final class CustomGraphQueryInferencer {
 		public final static IRI queryLanguage = Vocabularies.createIRI(NAMESPACE, "cgqi.queryLanguage");
 
 		public final static IRI ruleQuery = Vocabularies.createIRI(NAMESPACE, "cgqi.ruleQuery");
 
 		public final static IRI matcherQuery = Vocabularies.createIRI(NAMESPACE, "cgqi.matcherQuery");
 	}
+
 }

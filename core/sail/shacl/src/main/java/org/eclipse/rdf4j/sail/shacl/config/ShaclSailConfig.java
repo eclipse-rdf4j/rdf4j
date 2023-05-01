@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.util.Configurations;
-import org.eclipse.rdf4j.model.vocabulary.CONFIG;
+import org.eclipse.rdf4j.model.vocabulary.Config;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.sail.config.AbstractDelegatingSailImplConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
@@ -211,32 +211,32 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
-		m.setNamespace(CONFIG.NS);
+		m.setNamespace(Config.NS);
 
-		m.add(implNode, CONFIG.Shacl.parallelValidation, BooleanLiteral.valueOf(isParallelValidation()));
-		m.add(implNode, CONFIG.Shacl.logValidationPlans, BooleanLiteral.valueOf(isLogValidationPlans()));
-		m.add(implNode, CONFIG.Shacl.logValidationViolations, BooleanLiteral.valueOf(isLogValidationViolations()));
-		m.add(implNode, CONFIG.Shacl.validationEnabled, BooleanLiteral.valueOf(isValidationEnabled()));
-		m.add(implNode, CONFIG.Shacl.cacheSelectNodes, BooleanLiteral.valueOf(isCacheSelectNodes()));
-		m.add(implNode, CONFIG.Shacl.globalLogValidationExecution,
+		m.add(implNode, Config.ShaclSail.parallelValidation, BooleanLiteral.valueOf(isParallelValidation()));
+		m.add(implNode, Config.ShaclSail.logValidationPlans, BooleanLiteral.valueOf(isLogValidationPlans()));
+		m.add(implNode, Config.ShaclSail.logValidationViolations, BooleanLiteral.valueOf(isLogValidationViolations()));
+		m.add(implNode, Config.ShaclSail.validationEnabled, BooleanLiteral.valueOf(isValidationEnabled()));
+		m.add(implNode, Config.ShaclSail.cacheSelectNodes, BooleanLiteral.valueOf(isCacheSelectNodes()));
+		m.add(implNode, Config.ShaclSail.globalLogValidationExecution,
 				BooleanLiteral.valueOf(isGlobalLogValidationExecution()));
-		m.add(implNode, CONFIG.Shacl.rdfsSubClassReasoning, BooleanLiteral.valueOf(isRdfsSubClassReasoning()));
-		m.add(implNode, CONFIG.Shacl.performanceLogging, BooleanLiteral.valueOf(isPerformanceLogging()));
-		m.add(implNode, CONFIG.Shacl.serializableValidation, BooleanLiteral.valueOf(isSerializableValidation()));
-		m.add(implNode, CONFIG.Shacl.eclipseRdf4jShaclExtensions,
+		m.add(implNode, Config.ShaclSail.rdfsSubClassReasoning, BooleanLiteral.valueOf(isRdfsSubClassReasoning()));
+		m.add(implNode, Config.ShaclSail.performanceLogging, BooleanLiteral.valueOf(isPerformanceLogging()));
+		m.add(implNode, Config.ShaclSail.serializableValidation, BooleanLiteral.valueOf(isSerializableValidation()));
+		m.add(implNode, Config.ShaclSail.eclipseRdf4jShaclExtensions,
 				BooleanLiteral.valueOf(isEclipseRdf4jShaclExtensions()));
-		m.add(implNode, CONFIG.Shacl.dashDataShapes, BooleanLiteral.valueOf(isDashDataShapes()));
+		m.add(implNode, Config.ShaclSail.dashDataShapes, BooleanLiteral.valueOf(isDashDataShapes()));
 
-		m.add(implNode, CONFIG.Shacl.validationResultsLimitTotal,
+		m.add(implNode, Config.ShaclSail.validationResultsLimitTotal,
 				literal(getValidationResultsLimitTotal()));
-		m.add(implNode, CONFIG.Shacl.validationResultsLimitPerConstraint,
+		m.add(implNode, Config.ShaclSail.validationResultsLimitPerConstraint,
 				literal(getValidationResultsLimitPerConstraint()));
 
-		m.add(implNode, CONFIG.Shacl.transactionalValidationLimit,
+		m.add(implNode, Config.ShaclSail.transactionalValidationLimit,
 				literal(getTransactionalValidationLimit()));
 
 		for (IRI shapesGraph : shapesGraphs) {
-			m.add(implNode, CONFIG.Shacl.shapesGraph, shapesGraph);
+			m.add(implNode, Config.ShaclSail.shapesGraph, shapesGraph);
 		}
 
 		return implNode;
@@ -247,61 +247,65 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		super.parse(m, implNode);
 
 		try {
-			Configurations.getLiteralValue(m, implNode, CONFIG.Shacl.parallelValidation, PARALLEL_VALIDATION)
+			Configurations.getLiteralValue(m, implNode, Config.ShaclSail.parallelValidation, PARALLEL_VALIDATION)
 					.ifPresent(l -> setParallelValidation(l.booleanValue()));
 
-			Configurations.getLiteralValue(m, implNode, CONFIG.Shacl.logValidationPlans, LOG_VALIDATION_PLANS)
+			Configurations.getLiteralValue(m, implNode, Config.ShaclSail.logValidationPlans, LOG_VALIDATION_PLANS)
 					.ifPresent(l -> setLogValidationPlans(l.booleanValue()));
 
-			Configurations.getLiteralValue(m, implNode, CONFIG.Shacl.logValidationViolations, LOG_VALIDATION_VIOLATIONS)
+			Configurations
+					.getLiteralValue(m, implNode, Config.ShaclSail.logValidationViolations, LOG_VALIDATION_VIOLATIONS)
 					.ifPresent(l -> setLogValidationViolations(l.booleanValue()));
 
-			Configurations.getLiteralValue(m, implNode, CONFIG.Shacl.validationEnabled, VALIDATION_ENABLED)
+			Configurations.getLiteralValue(m, implNode, Config.ShaclSail.validationEnabled, VALIDATION_ENABLED)
 					.ifPresent(l -> setValidationEnabled(l.booleanValue()));
 
-			Configurations.getLiteralValue(m, implNode, CONFIG.Shacl.cacheSelectNodes, CACHE_SELECT_NODES)
+			Configurations.getLiteralValue(m, implNode, Config.ShaclSail.cacheSelectNodes, CACHE_SELECT_NODES)
 					.ifPresent(l -> setCacheSelectNodes(l.booleanValue()));
 
 			Configurations
-					.getLiteralValue(m, implNode, CONFIG.Shacl.globalLogValidationExecution,
+					.getLiteralValue(m, implNode, Config.ShaclSail.globalLogValidationExecution,
 							GLOBAL_LOG_VALIDATION_EXECUTION)
 					.ifPresent(l -> setGlobalLogValidationExecution(l.booleanValue()));
 
-			Configurations.getLiteralValue(m, implNode, CONFIG.Shacl.rdfsSubClassReasoning, RDFS_SUB_CLASS_REASONING)
+			Configurations
+					.getLiteralValue(m, implNode, Config.ShaclSail.rdfsSubClassReasoning, RDFS_SUB_CLASS_REASONING)
 					.ifPresent(l -> setRdfsSubClassReasoning(l.booleanValue()));
 
-			Configurations.getLiteralValue(m, implNode, CONFIG.Shacl.performanceLogging, PERFORMANCE_LOGGING)
+			Configurations.getLiteralValue(m, implNode, Config.ShaclSail.performanceLogging, PERFORMANCE_LOGGING)
 					.ifPresent(l -> setPerformanceLogging(l.booleanValue()));
 
-			Configurations.getLiteralValue(m, implNode, CONFIG.Shacl.serializableValidation, SERIALIZABLE_VALIDATION)
+			Configurations
+					.getLiteralValue(m, implNode, Config.ShaclSail.serializableValidation, SERIALIZABLE_VALIDATION)
 					.ifPresent(l -> setSerializableValidation(l.booleanValue()));
 
 			Configurations
-					.getLiteralValue(m, implNode, CONFIG.Shacl.eclipseRdf4jShaclExtensions,
+					.getLiteralValue(m, implNode, Config.ShaclSail.eclipseRdf4jShaclExtensions,
 							ShaclSailSchema.ECLIPSE_RDF4J_SHACL_EXTENSIONS)
 					.ifPresent(l -> setEclipseRdf4jShaclExtensions(l.booleanValue()));
 
-			Configurations.getLiteralValue(m, implNode, CONFIG.Shacl.dashDataShapes, ShaclSailSchema.DASH_DATA_SHAPES)
+			Configurations
+					.getLiteralValue(m, implNode, Config.ShaclSail.dashDataShapes, ShaclSailSchema.DASH_DATA_SHAPES)
 					.ifPresent(l -> setDashDataShapes(l.booleanValue()));
 
 			Configurations
-					.getLiteralValue(m, implNode, CONFIG.Shacl.validationResultsLimitTotal,
+					.getLiteralValue(m, implNode, Config.ShaclSail.validationResultsLimitTotal,
 							ShaclSailSchema.VALIDATION_RESULTS_LIMIT_TOTAL)
 					.ifPresent(l -> setValidationResultsLimitTotal(l.longValue()));
 
 			Configurations
-					.getLiteralValue(m, implNode, CONFIG.Shacl.validationResultsLimitPerConstraint,
+					.getLiteralValue(m, implNode, Config.ShaclSail.validationResultsLimitPerConstraint,
 							ShaclSailSchema.VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT)
 					.ifPresent(l -> setValidationResultsLimitPerConstraint(l.longValue()));
 
 			Configurations
-					.getLiteralValue(m, implNode, CONFIG.Shacl.transactionalValidationLimit,
+					.getLiteralValue(m, implNode, Config.ShaclSail.transactionalValidationLimit,
 							ShaclSailSchema.TRANSACTIONAL_VALIDATION_LIMIT)
 					.ifPresent(l -> setTransactionalValidationLimit(l.longValue()));
 
 			setShapesGraphs(
 					Configurations
-							.getPropertyValues(m, implNode, CONFIG.Shacl.shapesGraph, ShaclSailSchema.SHAPES_GRAPH)
+							.getPropertyValues(m, implNode, Config.ShaclSail.shapesGraph, ShaclSailSchema.SHAPES_GRAPH)
 							.stream()
 							.peek(v -> {
 								if (!v.isIRI()) {

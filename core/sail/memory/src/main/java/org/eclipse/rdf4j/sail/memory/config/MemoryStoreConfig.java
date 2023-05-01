@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
-import org.eclipse.rdf4j.model.vocabulary.CONFIG;
+import org.eclipse.rdf4j.model.vocabulary.Config;
 import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 
@@ -65,14 +65,14 @@ public class MemoryStoreConfig extends BaseSailConfig {
 	@Override
 	public Resource export(Model graph) {
 		Resource implNode = super.export(graph);
-		graph.setNamespace(CONFIG.NS);
+		graph.setNamespace(Config.NS);
 
 		if (persist) {
-			graph.add(implNode, CONFIG.Mem.persist, BooleanLiteral.TRUE);
+			graph.add(implNode, Config.MemoryStore.persist, BooleanLiteral.TRUE);
 		}
 
 		if (syncDelay != 0) {
-			graph.add(implNode, CONFIG.Mem.syncDelay, literal(syncDelay));
+			graph.add(implNode, Config.MemoryStore.syncDelay, literal(syncDelay));
 		}
 
 		return implNode;
@@ -84,22 +84,25 @@ public class MemoryStoreConfig extends BaseSailConfig {
 
 		try {
 
-			Configurations.getLiteralValue(graph, implNode, CONFIG.Mem.persist, PERSIST).ifPresent(persistValue -> {
-				try {
-					setPersist((persistValue).booleanValue());
-				} catch (IllegalArgumentException e) {
-					throw new SailConfigException(
-							"Boolean value required for " + CONFIG.Mem.persist + " property, found " + persistValue);
-				}
-			});
+			Configurations.getLiteralValue(graph, implNode, Config.MemoryStore.persist, PERSIST)
+					.ifPresent(persistValue -> {
+						try {
+							setPersist((persistValue).booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Boolean value required for " + Config.MemoryStore.persist + " property, found "
+											+ persistValue);
+						}
+					});
 
-			Configurations.getLiteralValue(graph, implNode, CONFIG.Mem.syncDelay, SYNC_DELAY)
+			Configurations.getLiteralValue(graph, implNode, Config.MemoryStore.syncDelay, SYNC_DELAY)
 					.ifPresent(syncDelayValue -> {
 						try {
 							setSyncDelay((syncDelayValue).longValue());
 						} catch (NumberFormatException e) {
 							throw new SailConfigException(
-									"Long integer value required for " + CONFIG.Mem.syncDelay + " property, found "
+									"Long integer value required for " + Config.MemoryStore.syncDelay
+											+ " property, found "
 											+ syncDelayValue);
 						}
 					});

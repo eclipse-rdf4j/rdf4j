@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.Configurations;
-import org.eclipse.rdf4j.model.vocabulary.CONFIG;
+import org.eclipse.rdf4j.model.vocabulary.Config;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.Repository;
@@ -58,7 +58,7 @@ public class RepositoryConfigUtil {
 	public static Set<String> getRepositoryIDs(Model model) throws RepositoryException {
 		Set<String> idSet = new LinkedHashSet<>();
 
-		Configurations.getPropertyValues(model, null, CONFIG.Rep.id, RepositoryConfigSchema.REPOSITORYID)
+		Configurations.getPropertyValues(model, null, Config.Repository.id, RepositoryConfigSchema.REPOSITORYID)
 				.forEach(value -> {
 					if (value.isLiteral()) {
 						idSet.add(((Literal) value).getLabel());
@@ -70,7 +70,7 @@ public class RepositoryConfigUtil {
 	private static Statement getIDStatement(Model model, String repositoryID) {
 		Literal idLiteral = literal(repositoryID);
 
-		Model idStatementList = model.filter(null, CONFIG.Rep.id, idLiteral);
+		Model idStatementList = model.filter(null, Config.Repository.id, idLiteral);
 
 		if (idStatementList.isEmpty()) {
 			idStatementList = model.filter(null, RepositoryConfigSchema.REPOSITORYID, idLiteral);
@@ -90,7 +90,7 @@ public class RepositoryConfigUtil {
 		try (RepositoryConnection con = repository.getConnection()) {
 			Set<String> idSet = new LinkedHashSet<>();
 
-			try (RepositoryResult<Statement> idStatementIter = con.getStatements(null, CONFIG.Rep.id, null,
+			try (RepositoryResult<Statement> idStatementIter = con.getStatements(null, Config.Repository.id, null,
 					true)) {
 				while (idStatementIter.hasNext()) {
 					Statement idStatement = idStatementIter.next();
@@ -255,7 +255,7 @@ public class RepositoryConfigUtil {
 			throws RepositoryException, RepositoryConfigException {
 		Literal idLiteral = con.getRepository().getValueFactory().createLiteral(repositoryID);
 		List<Statement> idStatementList = Iterations
-				.asList(con.getStatements(null, CONFIG.Rep.id, idLiteral, true));
+				.asList(con.getStatements(null, Config.Repository.id, idLiteral, true));
 
 		if (idStatementList.size() == 1) {
 			return idStatementList.get(0);

@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
-import org.eclipse.rdf4j.model.vocabulary.CONFIG;
+import org.eclipse.rdf4j.model.vocabulary.Config;
 import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 
@@ -42,16 +42,16 @@ public class ElasticsearchStoreConfig extends BaseSailConfig {
 		Resource implNode = super.export(graph);
 
 		if (hostname != null) {
-			graph.add(implNode, CONFIG.Ess.hostname, literal(hostname));
+			graph.add(implNode, Config.ElasticsearchStore.hostname, literal(hostname));
 		}
 		if (clusterName != null) {
-			graph.add(implNode, CONFIG.Ess.clusterName, literal(clusterName));
+			graph.add(implNode, Config.ElasticsearchStore.clusterName, literal(clusterName));
 		}
 		if (index != null) {
-			graph.add(implNode, CONFIG.Ess.index, literal(index));
+			graph.add(implNode, Config.ElasticsearchStore.index, literal(index));
 		}
 		if (port != -1) {
-			graph.add(implNode, CONFIG.Ess.port, literal(port));
+			graph.add(implNode, Config.ElasticsearchStore.port, literal(port));
 		}
 
 		return implNode;
@@ -63,48 +63,53 @@ public class ElasticsearchStoreConfig extends BaseSailConfig {
 
 		try {
 
-			Configurations.getLiteralValue(graph, implNode, CONFIG.Ess.hostname, ElasticsearchStoreSchema.hostname)
+			Configurations
+					.getLiteralValue(graph, implNode, Config.ElasticsearchStore.hostname,
+							ElasticsearchStoreSchema.hostname)
 					.ifPresent(value -> {
 						try {
 							setHostname(value.stringValue());
 						} catch (IllegalArgumentException e) {
 							throw new SailConfigException(
-									"String value required for " + CONFIG.Ess.hostname
+									"String value required for " + Config.ElasticsearchStore.hostname
 											+ " property, found "
 											+ value);
 						}
 					});
 
-			Configurations.getLiteralValue(graph, implNode, CONFIG.Ess.index, ElasticsearchStoreSchema.index)
+			Configurations
+					.getLiteralValue(graph, implNode, Config.ElasticsearchStore.index, ElasticsearchStoreSchema.index)
 					.ifPresent(value -> {
 						try {
 							setIndex(value.stringValue());
 						} catch (IllegalArgumentException e) {
 							throw new SailConfigException(
-									"String value required for " + CONFIG.Ess.index + " property, found "
+									"String value required for " + Config.ElasticsearchStore.index + " property, found "
 											+ value);
 						}
 					});
 
 			Configurations
-					.getLiteralValue(graph, implNode, CONFIG.Ess.clusterName, ElasticsearchStoreSchema.clusterName)
+					.getLiteralValue(graph, implNode, Config.ElasticsearchStore.clusterName,
+							ElasticsearchStoreSchema.clusterName)
 					.ifPresent(value -> {
 						try {
 							setClusterName(value.stringValue());
 						} catch (IllegalArgumentException e) {
 							throw new SailConfigException(
-									"String value required for " + CONFIG.Ess.clusterName
+									"String value required for " + Config.ElasticsearchStore.clusterName
 											+ " property, found " + value);
 						}
 					});
 
-			Configurations.getLiteralValue(graph, implNode, CONFIG.Ess.port, ElasticsearchStoreSchema.port)
+			Configurations
+					.getLiteralValue(graph, implNode, Config.ElasticsearchStore.port, ElasticsearchStoreSchema.port)
 					.ifPresent(value -> {
 						try {
 							setPort(value.intValue());
 						} catch (IllegalArgumentException e) {
 							throw new SailConfigException(
-									"Integer value required for " + CONFIG.Ess.port + " property, found "
+									"Integer value required for " + Config.ElasticsearchStore.port + " property, found "
 											+ value);
 						}
 					});

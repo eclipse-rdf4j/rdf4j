@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
-import org.eclipse.rdf4j.model.vocabulary.CONFIG;
+import org.eclipse.rdf4j.model.vocabulary.Config;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SP;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -100,28 +100,31 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 
 		try {
 
-			Optional<Literal> language = Configurations.getLiteralValue(m, implNode, CONFIG.Cgqi.queryLanguage,
+			Optional<Literal> language = Configurations.getLiteralValue(m, implNode,
+					Config.CustomGraphQueryInferencer.queryLanguage,
 					QUERY_LANGUAGE);
 
 			if (language.isPresent()) {
 				setQueryLanguage(QueryLanguage.valueOf(language.get().stringValue()));
 				if (null == getQueryLanguage()) {
 					throw new SailConfigException(
-							"Valid value required for " + CONFIG.Cgqi.queryLanguage + " property, found "
+							"Valid value required for " + Config.CustomGraphQueryInferencer.queryLanguage
+									+ " property, found "
 									+ language.get());
 				}
 			} else {
 				setQueryLanguage(QueryLanguage.SPARQL);
 			}
 
-			Optional<Resource> object = Configurations.getResourceValue(m, implNode, CONFIG.Cgqi.ruleQuery,
+			Optional<Resource> object = Configurations.getResourceValue(m, implNode,
+					Config.CustomGraphQueryInferencer.ruleQuery,
 					RULE_QUERY);
 			if (object.isPresent()) {
 				Models.objectLiteral(m.getStatements(object.get(), SP.TEXT_PROPERTY, null))
 						.ifPresent(lit -> setRuleQuery(lit.stringValue()));
 			}
 
-			object = Configurations.getResourceValue(m, implNode, CONFIG.Cgqi.matcherQuery,
+			object = Configurations.getResourceValue(m, implNode, Config.CustomGraphQueryInferencer.matcherQuery,
 					MATCHER_QUERY);
 			if (object.isPresent()) {
 				Models.objectLiteral(m.getStatements(object.get(), SP.TEXT_PROPERTY, null))
@@ -161,10 +164,10 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
 		if (null != language) {
-			m.add(implNode, CONFIG.Cgqi.queryLanguage, literal(language.getName()));
+			m.add(implNode, Config.CustomGraphQueryInferencer.queryLanguage, literal(language.getName()));
 		}
-		addQueryNode(m, implNode, CONFIG.Cgqi.ruleQuery, ruleQuery);
-		addQueryNode(m, implNode, CONFIG.Cgqi.matcherQuery, matcherQuery);
+		addQueryNode(m, implNode, Config.CustomGraphQueryInferencer.ruleQuery, ruleQuery);
+		addQueryNode(m, implNode, Config.CustomGraphQueryInferencer.matcherQuery, matcherQuery);
 		return implNode;
 	}
 
