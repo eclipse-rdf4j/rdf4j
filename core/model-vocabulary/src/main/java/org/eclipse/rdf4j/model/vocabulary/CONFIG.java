@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -20,6 +21,7 @@ import org.eclipse.rdf4j.model.Namespace;
  *
  * @since 4.3.0
  */
+@Experimental
 public class CONFIG {
 
 	/**

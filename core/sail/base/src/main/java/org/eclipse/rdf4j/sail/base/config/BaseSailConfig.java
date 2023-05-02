@@ -11,6 +11,8 @@
 package org.eclipse.rdf4j.sail.base.config;
 
 import static org.eclipse.rdf4j.model.util.Values.literal;
+import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.DEFAULT_QUERY_EVALUATION_MODE;
+import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.EVALUATION_STRATEGY_FACTORY;
 
 import java.util.Optional;
 
@@ -25,6 +27,9 @@ import org.eclipse.rdf4j.sail.config.AbstractSailImplConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 
 public abstract class BaseSailConfig extends AbstractSailImplConfig {
+
+	private static final boolean USE_CONFIG = "true"
+			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
 
 	private String evalStratFactoryClassName;
 
@@ -63,12 +68,19 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		Resource implNode = super.export(graph);
 
 		if (evalStratFactoryClassName != null) {
-			graph.add(implNode, CONFIG.Sail.evaluationStrategyFactory,
-					literal(evalStratFactoryClassName));
+			if (USE_CONFIG) {
+				graph.add(implNode, CONFIG.Sail.evaluationStrategyFactory, literal(evalStratFactoryClassName));
+			} else {
+				graph.add(implNode, EVALUATION_STRATEGY_FACTORY, literal(evalStratFactoryClassName));
+			}
+
 		}
 		getDefaultQueryEvaluationMode().ifPresent(mode -> {
-			graph.add(implNode, CONFIG.Sail.defaultQueryEvaluationMode,
-					literal(mode.getValue()));
+			if (USE_CONFIG) {
+				graph.add(implNode, CONFIG.Sail.defaultQueryEvaluationMode, literal(mode.getValue()));
+			} else {
+				graph.add(implNode, DEFAULT_QUERY_EVALUATION_MODE, literal(mode.getValue()));
+			}
 		});
 
 		return implNode;
@@ -80,12 +92,12 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 
 		try {
 			Configurations.getLiteralValue(graph, implNode, CONFIG.Sail.defaultQueryEvaluationMode,
-					BaseSailSchema.DEFAULT_QUERY_EVALUATION_MODE)
+					DEFAULT_QUERY_EVALUATION_MODE)
 					.ifPresent(qem -> setDefaultQueryEvaluationMode(
 							QueryEvaluationMode.valueOf(qem.stringValue())));
 
 			Configurations.getLiteralValue(graph, implNode, CONFIG.Sail.evaluationStrategyFactory,
-					BaseSailSchema.EVALUATION_STRATEGY_FACTORY)
+					EVALUATION_STRATEGY_FACTORY)
 					.ifPresent(factoryClassName -> {
 						setEvaluationStrategyFactoryClassName(factoryClassName.stringValue());
 					});

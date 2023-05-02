@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail.config;
 
+import static org.eclipse.rdf4j.repository.sail.config.SailRepositorySchema.SAILIMPL;
 import static org.eclipse.rdf4j.sail.config.SailConfigSchema.SAILTYPE;
 
 import java.util.Optional;
@@ -30,6 +31,9 @@ import org.eclipse.rdf4j.sail.config.SailRegistry;
  * @author Arjohn Kampman
  */
 public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
+
+	private static final boolean USE_CONFIG = "true"
+			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
 
 	private SailImplConfig sailImplConfig;
 
@@ -71,7 +75,11 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 		if (sailImplConfig != null) {
 			model.setNamespace(CONFIG.NS);
 			Resource sailImplNode = sailImplConfig.export(model);
-			model.add(repImplNode, CONFIG.Sail.impl, sailImplNode);
+			if (USE_CONFIG) {
+				model.add(repImplNode, CONFIG.Sail.impl, sailImplNode);
+			} else {
+				model.add(repImplNode, SAILIMPL, sailImplNode);
+			}
 		}
 
 		return repImplNode;
@@ -81,7 +89,7 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 	public void parse(Model model, Resource repImplNode) throws RepositoryConfigException {
 		try {
 			Optional<Resource> sailImplNode = Configurations.getResourceValue(model, repImplNode,
-					CONFIG.Sail.impl, SailRepositorySchema.SAILIMPL);
+					CONFIG.Sail.impl, SAILIMPL);
 			if (sailImplNode.isPresent()) {
 				Configurations.getLiteralValue(model, sailImplNode.get(), CONFIG.Sail.type, SAILTYPE)
 						.ifPresent(typeLit -> {
