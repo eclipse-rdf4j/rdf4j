@@ -43,7 +43,7 @@ public class QueryJoinOptimizer extends org.eclipse.rdf4j.query.algebra.evaluati
 		implements QueryOptimizer {
 
 	public QueryJoinOptimizer() {
-		this(null);
+		this(new EvaluationStatistics());
 	}
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics) {
