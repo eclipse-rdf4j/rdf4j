@@ -143,8 +143,8 @@ public abstract class TupleQueryResultTest {
 		try (TupleQueryResult result = con.prepareTupleQuery(multipleResultQuery).evaluate()) {
 			List<String> headers = result.getBindingNames();
 
-			assertThat(headers.get(0)).isEqualTo("P").as("first header element");
-			assertThat(headers.get(1)).isEqualTo("D").as("second header element");
+			assertThat(headers.get(0)).as("first header element").isEqualTo("P");
+			assertThat(headers.get(1)).as("second header element").isEqualTo("D");
 		}
 	}
 
