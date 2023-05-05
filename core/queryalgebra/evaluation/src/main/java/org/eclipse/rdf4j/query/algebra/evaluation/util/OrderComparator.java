@@ -43,11 +43,11 @@ public class OrderComparator implements Comparator<BindingSet> {
 
 	private final static Logger logger = LoggerFactory.getLogger(OrderComparator.class);
 
-	private final ValueComparator cmp;
+	private final Comparator<Value> cmp;
 
 	private final Comparator<BindingSet> bindingContentsComparator;
 
-	public OrderComparator(EvaluationStrategy strategy, Order order, ValueComparator cmp,
+	public OrderComparator(EvaluationStrategy strategy, Order order, Comparator<Value> cmp,
 			QueryEvaluationContext context) {
 		this.cmp = cmp;
 		this.bindingContentsComparator = precompileComparator(strategy, order, context);

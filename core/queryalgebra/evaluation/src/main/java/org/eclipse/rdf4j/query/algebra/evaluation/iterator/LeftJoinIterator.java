@@ -32,6 +32,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 
 public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvaluationException> {
 
+	private static final EmptyIteration<BindingSet, QueryEvaluationException> EMPTY_ITERATION = new EmptyIteration<>();
+
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -62,7 +64,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 		leftIter = strategy.evaluate(join.getLeftArg(), bindings);
 
 		// Initialize with empty iteration so that var is never null
-		rightIter = new EmptyIteration<>();
+		rightIter = EMPTY_ITERATION;
 
 		prepareRightArg = strategy.precompile(join.getRightArg(), context);
 		join.setAlgorithm(this);
@@ -82,7 +84,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 		leftIter = left.evaluate(bindings);
 
 		// Initialize with empty iteration so that var is never null
-		rightIter = new EmptyIteration<>();
+		rightIter = EMPTY_ITERATION;
 
 		prepareRightArg = right;
 		this.joinCondition = joinCondition;

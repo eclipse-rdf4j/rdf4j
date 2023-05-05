@@ -43,10 +43,7 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
-import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
-import org.openjdk.jmh.runner.options.Options;
-import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
  * @author Håvard Ottestad
@@ -77,12 +74,21 @@ public class SortBenchmark {
 	List<Value> valuesList;
 
 	public static void main(String[] args) throws RunnerException, IOException, InterruptedException {
-		Options opt = new OptionsBuilder()
-				.include("SortBenchmark.*") // adapt to run other benchmark tests
-				.forks(1)
-				.build();
+//		Options opt = new OptionsBuilder()
+//				.include("SortBenchmark.*") // adapt to run other benchmark tests
+//				.forks(1)
+//				.build();
+//
+//		new Runner(opt).run();
 
-		new Runner(opt).run();
+		long temp = 0;
+		SortBenchmark sortBenchmark = new SortBenchmark();
+		sortBenchmark.setup();
+		for (int i = 0; i < 2; i++) {
+			System.out.println("i = " + i);
+			temp += sortBenchmark.compareAllDirectlySingleThreaded();
+		}
+		System.out.println("temp = " + temp);
 	}
 
 	@Setup(Level.Trial)
@@ -154,6 +160,35 @@ public class SortBenchmark {
 		Arrays.parallelSort(values, new ValueComparator());
 
 		return values[0];
+
+	}
+
+	@Benchmark
+	public Value sortDirectlySingleThreaded() {
+
+		Value[] values = new ArrayList<>(valuesList).toArray(new Value[0]);
+
+		Arrays.sort(values, new ValueComparator());
+
+		return values[0];
+
+	}
+
+	@Benchmark
+	public long compareAllDirectlySingleThreaded() {
+
+		ValueComparator valueComparator = new ValueComparator();
+		long compare = 0;
+
+
+		for (Value value1 : valuesList) {
+			for (Value value2 : valuesList) {
+				compare += valueComparator.compare(value1, value2);
+
+			}
+		}
+
+		return compare;
 
 	}
 

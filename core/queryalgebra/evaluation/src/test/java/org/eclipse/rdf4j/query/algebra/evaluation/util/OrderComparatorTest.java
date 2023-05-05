@@ -14,6 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
@@ -109,7 +110,7 @@ public class OrderComparatorTest {
 		}
 	}
 
-	class ComparatorStub extends ValueComparator {
+	class ComparatorStub implements Comparator<Value> {
 
 		Iterator<Integer> iter;
 

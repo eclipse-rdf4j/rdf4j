@@ -17,6 +17,20 @@ import java.io.Serializable;
  */
 public interface Value extends Serializable {
 
+	public enum Type {
+		BNODE,
+		IRI,
+		LITERAL,
+		TRIPLE
+	}
+
+	default Type getValueType(){
+		if(isIRI()) return Type.IRI;
+		if(isLiteral()) return Type.LITERAL;
+		if(isBNode()) return Type.BNODE;
+		return Type.TRIPLE;
+	}
+
 	/**
 	 * Check if the object is an instance of the given type. Typically 2x than using instanceof.
 	 * <p>

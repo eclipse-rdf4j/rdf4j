@@ -65,7 +65,7 @@ public class QueryEvaluationUtil {
 		if (value.isLiteral()) {
 			Literal literal = (Literal) value;
 			String label = literal.getLabel();
-			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatype().orElse(null);
+			CoreDatatype datatype = literal.getCoreDatatype();
 
 			if (datatype == CoreDatatype.XSD.STRING) {
 				return label.length() > 0;
@@ -79,16 +79,17 @@ public class QueryEvaluationUtil {
 				} catch (IllegalArgumentException e) {
 					return false;
 				}
-			} else if (datatype != null && datatype.isIntegerDatatype()) {
+			} else if (datatype instanceof CoreDatatype.XSD && ((CoreDatatype.XSD) datatype).isIntegerDatatype()) {
 				try {
-					String normInt = XMLDatatypeUtil.normalize(label, datatype);
+					String normInt = XMLDatatypeUtil.normalize(label, ((CoreDatatype.XSD) datatype));
 					return !normInt.equals("0");
 				} catch (IllegalArgumentException e) {
 					return false;
 				}
-			} else if (datatype != null && datatype.isFloatingPointDatatype()) {
+			} else if (datatype instanceof CoreDatatype.XSD
+					&& ((CoreDatatype.XSD) datatype).isFloatingPointDatatype()) {
 				try {
-					String normFP = XMLDatatypeUtil.normalize(label, datatype);
+					String normFP = XMLDatatypeUtil.normalize(label, ((CoreDatatype.XSD) datatype));
 					return !normFP.equals("0.0E0") && !normFP.equals("NaN");
 				} catch (IllegalArgumentException e) {
 					return false;
@@ -162,8 +163,8 @@ public class QueryEvaluationUtil {
 		// - CoreDatatype.XSD:string
 		// - RDF term (equal and unequal only)
 
-		CoreDatatype.XSD leftCoreDatatype = leftLit.getCoreDatatype().asXSDDatatype().orElse(null);
-		CoreDatatype.XSD rightCoreDatatype = rightLit.getCoreDatatype().asXSDDatatype().orElse(null);
+		CoreDatatype.XSD leftCoreDatatype = leftLit.getCoreDatatype().asXSDDatatypeOrNull();
+		CoreDatatype.XSD rightCoreDatatype = rightLit.getCoreDatatype().asXSDDatatypeOrNull();
 
 		boolean leftLangLit = Literals.isLanguageLiteral(leftLit);
 		boolean rightLangLit = Literals.isLanguageLiteral(rightLit);

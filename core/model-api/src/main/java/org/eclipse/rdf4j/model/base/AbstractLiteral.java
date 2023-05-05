@@ -163,7 +163,11 @@ public abstract class AbstractLiteral implements Literal {
 
 	@Override
 	public XMLGregorianCalendar calendarValue() {
-		return value(CalendarLiteral::parseCalendar);
+		XMLGregorianCalendar xmlGregorianCalendar = CalendarLiteral.parseCalendar(getLabel());
+		if (xmlGregorianCalendar == null) {
+			throw new IllegalArgumentException("malformed value");
+		}
+		return xmlGregorianCalendar;
 	}
 
 	@Override
@@ -207,6 +211,7 @@ public abstract class AbstractLiteral implements Literal {
 		private final String label;
 		private final CoreDatatype coreDatatype;
 		private final IRI datatype;
+		transient private XMLGregorianCalendar cachedCalendarValue;
 
 		TypedLiteral(String label) {
 			this.label = label;
@@ -259,6 +264,16 @@ public abstract class AbstractLiteral implements Literal {
 		@Override
 		public CoreDatatype getCoreDatatype() {
 			return coreDatatype;
+		}
+
+		@Override
+		public XMLGregorianCalendar calendarValue() {
+			XMLGregorianCalendar localCalendar = cachedCalendarValue;
+			if (localCalendar == null) {
+				localCalendar = super.calendarValue();
+				cachedCalendarValue = localCalendar;
+			}
+			return localCalendar;
 		}
 	}
 

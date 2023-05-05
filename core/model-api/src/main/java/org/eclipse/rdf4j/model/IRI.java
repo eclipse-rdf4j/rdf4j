@@ -34,6 +34,11 @@ package org.eclipse.rdf4j.model;
 public interface IRI extends Resource {
 
 	@Override
+	default Type getValueType() {
+		return Type.IRI;
+	}
+
+	@Override
 	default boolean isIRI() {
 		return true;
 	}

@@ -43,6 +43,11 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 public interface Literal extends Value {
 
 	@Override
+	default Type getValueType() {
+		return Type.LITERAL;
+	}
+
+	@Override
 	default boolean isLiteral() {
 		return true;
 	}

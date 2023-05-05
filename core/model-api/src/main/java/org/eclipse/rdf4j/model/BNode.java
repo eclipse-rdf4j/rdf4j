@@ -23,6 +23,11 @@ package org.eclipse.rdf4j.model;
 public interface BNode extends Resource {
 
 	@Override
+	default Type getValueType() {
+		return Type.BNODE;
+	}
+
+	@Override
 	default boolean isBNode() {
 		return true;
 	}

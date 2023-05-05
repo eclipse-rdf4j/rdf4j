@@ -21,6 +21,42 @@ public interface CoreDatatype {
 
 	CoreDatatype NONE = DefaultDatatype.NONE;
 
+	static int compare(CoreDatatype left, CoreDatatype right) {
+		if (left.getClass() == right.getClass()) {
+			return Integer.compare(left.ordinal(), right.ordinal());
+		}
+
+		int compare;
+
+		if (left.isXSDDatatype()) {
+			if (right.isRDFDatatype() || right.isGEODatatype()) {
+				compare = 1;
+			} else {
+				compare = 0;
+			}
+		} else if (left.isRDFDatatype()) {
+			if (right.isXSDDatatype()) {
+				compare = -1;
+			} else if (right.isGEODatatype()) {
+				compare = 1;
+			} else {
+				compare = 0;
+			}
+		} else if (left.isGEODatatype()) {
+			if (right.isXSDDatatype() || right.isRDFDatatype()) {
+				compare = -1;
+			} else {
+				compare = 0;
+			}
+		} else {
+			compare = 0;
+		}
+
+		return compare;
+	}
+
+	int ordinal();
+
 	/**
 	 * Checks whether the supplied datatype is an XML Schema Datatype.
 	 *
@@ -40,6 +76,10 @@ public interface CoreDatatype {
 
 	default Optional<XSD> asXSDDatatype() {
 		return Optional.empty();
+	}
+
+	default XSD asXSDDatatypeOrNull() {
+		return null;
 	}
 
 	default Optional<RDF> asRDFDatatype() {
@@ -264,6 +304,11 @@ public interface CoreDatatype {
 		@Override
 		public String toString() {
 			return iri.toString();
+		}
+
+		@Override
+		public final XSD asXSDDatatypeOrNull() {
+			return this;
 		}
 
 	}

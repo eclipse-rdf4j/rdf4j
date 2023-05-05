@@ -30,7 +30,7 @@ public class DatatypeFilter extends FilterPlanNode {
 	public DatatypeFilter(PlanNode parent, IRI datatype) {
 		super(parent);
 		this.datatype = datatype;
-		this.xsdDatatype = CoreDatatype.from(datatype).asXSDDatatype().orElse(null);
+		this.xsdDatatype = CoreDatatype.from(datatype).asXSDDatatypeOrNull();
 //		stackTrace = Thread.currentThread().getStackTrace();
 	}
 
