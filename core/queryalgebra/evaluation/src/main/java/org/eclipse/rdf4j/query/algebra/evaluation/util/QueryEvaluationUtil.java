@@ -221,7 +221,7 @@ public class QueryEvaluationUtil {
 							return compareWithOperator(operator, compare);
 						} else {
 							return otherCases(leftLit, rightLit, operator, leftCoreDatatype, rightCoreDatatype,
-									leftLangLit, rightLangLit);
+									leftLangLit, rightLangLit, strict);
 						}
 
 					} else if (commonDatatype == CoreDatatype.XSD.STRING) {
@@ -248,13 +248,14 @@ public class QueryEvaluationUtil {
 		// using the operators 'EQ' and 'NE'. See SPARQL's RDFterm-equal
 		// operator
 
-		return otherCases(leftLit, rightLit, operator, leftCoreDatatype, rightCoreDatatype, leftLangLit, rightLangLit);
+		return otherCases(leftLit, rightLit, operator, leftCoreDatatype, rightCoreDatatype, leftLangLit, rightLangLit,
+				strict);
 
 	}
 
 	private static boolean otherCases(Literal leftLit, Literal rightLit, CompareOp operator,
 			CoreDatatype.XSD leftCoreDatatype, CoreDatatype.XSD rightCoreDatatype, boolean leftLangLit,
-			boolean rightLangLit) {
+			boolean rightLangLit, boolean strict) {
 		boolean literalsEqual = leftLit.equals(rightLit);
 
 		if (!literalsEqual) {
@@ -271,22 +272,24 @@ public class QueryEvaluationUtil {
 					throw new ValueExprEvaluationException("not a valid datatype value: " + rightLit);
 				}
 
-				boolean leftString = leftCoreDatatype == CoreDatatype.XSD.STRING;
-				boolean leftNumeric = leftCoreDatatype.isNumericDatatype();
-				boolean leftDate = leftCoreDatatype.isCalendarDatatype();
+				if (strict) {
+					boolean leftString = leftCoreDatatype == CoreDatatype.XSD.STRING;
+					boolean leftNumeric = leftCoreDatatype.isNumericDatatype();
+					boolean leftDate = leftCoreDatatype.isCalendarDatatype();
 
-				boolean rightString = rightCoreDatatype == CoreDatatype.XSD.STRING;
-				boolean rightNumeric = rightCoreDatatype.isNumericDatatype();
-				boolean rightDate = rightCoreDatatype.isCalendarDatatype();
+					boolean rightString = rightCoreDatatype == CoreDatatype.XSD.STRING;
+					boolean rightNumeric = rightCoreDatatype.isNumericDatatype();
+					boolean rightDate = rightCoreDatatype.isCalendarDatatype();
 
-				if (leftString != rightString) {
-					throw STRING_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION;
-				}
-				if (leftNumeric != rightNumeric) {
-					throw NUMERIC_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION;
-				}
-				if (leftDate != rightDate) {
-					throw DATE_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION;
+					if (leftString != rightString) {
+						throw STRING_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION;
+					}
+					if (leftNumeric != rightNumeric) {
+						throw NUMERIC_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION;
+					}
+					if (leftDate != rightDate) {
+						throw DATE_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION;
+					}
 				}
 			} else if (!leftLangLit && !rightLangLit) {
 				// For literals with unsupported datatypes we don't know if their values are equal
