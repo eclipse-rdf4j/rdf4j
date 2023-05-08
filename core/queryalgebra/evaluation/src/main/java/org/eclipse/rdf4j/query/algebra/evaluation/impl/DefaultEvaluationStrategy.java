@@ -1115,7 +1115,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	@Override
 	public Value evaluate(ValueExpr expr, BindingSet bindings)
 			throws QueryEvaluationException {
-		return precompile(expr, new QueryEvaluationContext.Minimal(dataset)).evaluate(bindings);
+		return precompile(expr,
+				new QueryEvaluationContext.Minimal(DefaultEvaluationStrategy.this.sharedValueOfNow, dataset))
+				.evaluate(bindings);
 	}
 
 	@Deprecated(forRemoval = true)
