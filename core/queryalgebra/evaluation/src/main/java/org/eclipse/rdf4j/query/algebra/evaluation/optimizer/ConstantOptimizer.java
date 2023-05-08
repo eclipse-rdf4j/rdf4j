@@ -44,11 +44,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Rand;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.rdfterm.STRUUID;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.rdfterm.UUID;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -73,7 +72,8 @@ public class ConstantOptimizer implements QueryOptimizer {
 	 */
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		ConstantVisitor visitor = new ConstantVisitor(strategy);
+		ConstantVisitor visitor = new ConstantVisitor(strategy,
+				new QueryEvaluationContext.Minimal(new SimpleDataset()));
 		tupleExpr.visit(visitor);
 		Set<String> varsBefore = visitor.varNames;
 
@@ -115,9 +115,11 @@ public class ConstantOptimizer implements QueryOptimizer {
 	private static class ConstantVisitor extends VarNameCollector {
 
 		private final EvaluationStrategy strategy;
+		private final QueryEvaluationContext context;
 
-		public ConstantVisitor(EvaluationStrategy strategy) {
+		public ConstantVisitor(EvaluationStrategy strategy, QueryEvaluationContext context) {
 			this.strategy = strategy;
+			this.context = context;
 		}
 
 		List<ProjectionElemList> projElemLists = Collections.emptyList();
@@ -205,7 +207,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 
 			if (isConstant(binaryValueOp.getLeftArg()) && isConstant(binaryValueOp.getRightArg())) {
 				try {
-					Value value = strategy.evaluate(binaryValueOp, EmptyBindingSet.getInstance());
+					Value value = strategy.precompile(binaryValueOp, context).evaluate(EmptyBindingSet.getInstance());
 					binaryValueOp.replaceWith(new ValueConstant(value));
 				} catch (ValueExprEvaluationException e) {
 					// TODO: incompatible values types(?), remove the affected part
@@ -223,7 +225,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 
 			if (isConstant(unaryValueOp.getArg())) {
 				try {
-					Value value = strategy.evaluate(unaryValueOp, EmptyBindingSet.getInstance());
+					Value value = strategy.precompile(unaryValueOp, context).evaluate(EmptyBindingSet.getInstance());
 					unaryValueOp.replaceWith(new ValueConstant(value));
 				} catch (ValueExprEvaluationException e) {
 					// TODO: incompatible values types(?), remove the affected part
@@ -262,7 +264,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 			// All arguments are constant
 
 			try {
-				Value value = strategy.evaluate(functionCall, EmptyBindingSet.getInstance());
+				Value value = strategy.precompile(functionCall, context).evaluate(EmptyBindingSet.getInstance());
 				functionCall.replaceWith(new ValueConstant(value));
 			} catch (ValueExprEvaluationException e) {
 				// TODO: incompatible values types(?), remove the affected part of
@@ -290,7 +292,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 			// we treat constant functions as the 'regular case' and make
 			// exceptions for specific SPARQL built-in functions that require
 			// different treatment.
-			return !(function instanceof Rand) && !(function instanceof UUID) && !(function instanceof STRUUID);
+			return !(function.mustReturnDifferentResult());
 		}
 
 		@Override
@@ -331,7 +333,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 
 			if (isConstant(node.getArg()) && isConstant(node.getPatternArg()) && isConstant(node.getFlagsArg())) {
 				try {
-					Value value = strategy.evaluate(node, EmptyBindingSet.getInstance());
+					Value value = strategy.precompile(node, context).evaluate(EmptyBindingSet.getInstance());
 					node.replaceWith(new ValueConstant(value));
 				} catch (ValueExprEvaluationException e) {
 					logger.debug("Failed to evaluate BinaryValueOperator with two constant arguments", e);

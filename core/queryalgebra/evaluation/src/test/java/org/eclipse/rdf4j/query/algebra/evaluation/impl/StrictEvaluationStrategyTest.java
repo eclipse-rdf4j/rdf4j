@@ -227,4 +227,27 @@ public class StrictEvaluationStrategyTest {
 			fail(e.getMessage());
 		}
 	}
+
+	@Test
+	public void testSES869ValueOfNow() {
+
+		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
+				"SELECT ?p ( NOW() as ?n ) { BIND (NOW() as ?p ) }", null);
+		QueryEvaluationStep prepared = strategy.precompile(pq.getTupleExpr());
+
+		try (CloseableIteration<BindingSet, QueryEvaluationException> result = prepared
+				.evaluate(EmptyBindingSet.getInstance())) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+
+			BindingSet bs = result.next();
+			Value p = bs.getValue("p");
+			Value n = bs.getValue("n");
+
+			assertNotNull(p);
+			assertNotNull(n);
+			assertEquals(p, n);
+			assertTrue(p == n);
+		}
+	}
 }

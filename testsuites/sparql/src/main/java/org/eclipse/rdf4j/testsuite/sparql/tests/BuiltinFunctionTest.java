@@ -111,6 +111,7 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 			assertNotNull(p);
 			assertNotNull(n);
 			assertEquals(p, n);
+			assertTrue(p == n);
 		}
 	}
 
