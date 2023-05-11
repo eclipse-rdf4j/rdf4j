@@ -226,10 +226,6 @@
 		</profile>
 		<profile>
 			<id>use-sonatype-snapshots</id>
-			<activation>
-				<!-- active on all Java 11 and higher builds by default -->
-				<jdk>[11,)</jdk>
-			</activation>
 			<repositories>
 				<repository>
 					<releases>
