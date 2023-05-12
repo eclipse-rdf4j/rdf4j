@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
+import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.EQ;
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.LT;
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.NE;
@@ -155,6 +156,9 @@ public class QueryEvaluationUtilTest {
 
 	@Test
 	public void testCompareEQ() {
+		assertCompareFalse(literal("value NOT"), literal("1", XSD.INTEGER), EQ, false);
+		assertCompareException(literal("value NOT"), literal("1", XSD.INTEGER), EQ, true);
+
 		assertCompareTrue(arg1simple, arg1simple, EQ);
 		assertCompareTrue(arg1en, arg1en, EQ);
 		assertCompareTrue(arg2cy, arg2cy, EQ);
@@ -237,6 +241,10 @@ public class QueryEvaluationUtilTest {
 
 	@Test
 	public void testCompareNE() {
+
+		assertCompareTrue(literal("value NOT"), literal("1", XSD.INTEGER), NE, false);
+		assertCompareException(literal("value NOT"), literal("1", XSD.INTEGER), NE, true);
+
 		assertCompareFalse(arg1simple, arg1simple, NE);
 		assertCompareFalse(arg1en, arg1en, NE);
 		assertCompareFalse(arg1cy, arg1cy, NE);

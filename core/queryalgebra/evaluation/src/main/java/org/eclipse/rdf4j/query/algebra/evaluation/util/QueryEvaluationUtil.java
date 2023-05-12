@@ -221,7 +221,7 @@ public class QueryEvaluationUtil {
 							return compareWithOperator(operator, compare);
 						} else {
 							return otherCases(leftLit, rightLit, operator, leftCoreDatatype, rightCoreDatatype,
-									leftLangLit, rightLangLit);
+									leftLangLit, rightLangLit, strict);
 						}
 
 					} else if (commonDatatype == CoreDatatype.XSD.STRING) {
@@ -248,13 +248,14 @@ public class QueryEvaluationUtil {
 		// using the operators 'EQ' and 'NE'. See SPARQL's RDFterm-equal
 		// operator
 
-		return otherCases(leftLit, rightLit, operator, leftCoreDatatype, rightCoreDatatype, leftLangLit, rightLangLit);
+		return otherCases(leftLit, rightLit, operator, leftCoreDatatype, rightCoreDatatype, leftLangLit, rightLangLit,
+				strict);
 
 	}
 
 	private static boolean otherCases(Literal leftLit, Literal rightLit, CompareOp operator,
 			CoreDatatype.XSD leftCoreDatatype, CoreDatatype.XSD rightCoreDatatype, boolean leftLangLit,
-			boolean rightLangLit) {
+			boolean rightLangLit, boolean strict) {
 		boolean literalsEqual = leftLit.equals(rightLit);
 
 		if (!literalsEqual) {
@@ -271,23 +272,7 @@ public class QueryEvaluationUtil {
 					throw new ValueExprEvaluationException("not a valid datatype value: " + rightLit);
 				}
 
-				boolean leftString = leftCoreDatatype == CoreDatatype.XSD.STRING;
-				boolean leftNumeric = leftCoreDatatype.isNumericDatatype();
-				boolean leftDate = leftCoreDatatype.isCalendarDatatype();
-
-				boolean rightString = rightCoreDatatype == CoreDatatype.XSD.STRING;
-				boolean rightNumeric = rightCoreDatatype.isNumericDatatype();
-				boolean rightDate = rightCoreDatatype.isCalendarDatatype();
-
-				if (leftString != rightString) {
-					throw STRING_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION;
-				}
-				if (leftNumeric != rightNumeric) {
-					throw NUMERIC_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION;
-				}
-				if (leftDate != rightDate) {
-					throw DATE_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION;
-				}
+				validateDatatypeCompatibility(strict, leftCoreDatatype, rightCoreDatatype);
 			} else if (!leftLangLit && !rightLangLit) {
 				// For literals with unsupported datatypes we don't know if their values are equal
 				throw UNSUPPOERTED_TYPES_EXCEPTION;
@@ -306,6 +291,89 @@ public class QueryEvaluationUtil {
 			throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
 		default:
 			throw new IllegalArgumentException("Unknown operator: " + operator);
+		}
+	}
+
+	/**
+	 * Validate if we are comparing supported but incompatible datatypes. Throws a {@link ValueExprEvaluationException}
+	 * if this is the case.
+	 * <p>
+	 * Used in a <i>strict / minimally-conforming</i> interpretation of the SPARQL specification. In the
+	 * <a href="https://www.w3.org/TR/sparql11-query/#OperatorMapping">SPARQL 1.1 operator mapping table</a>, when
+	 * comparing two literals with different datatypes (that cannot be cast to a common type), the only mapping that
+	 * applies is comparison using RDF term-equality:
+	 *
+	 * <table>
+	 * <tr>
+	 * <td>A != B</td>
+	 * <td>RDF term</td>
+	 * <td>RDF term</td>
+	 * <td>fn:not(RDFterm-equal(A, B))</td>
+	 * <td>xsd:boolean</td>
+	 * </tr>
+	 * </table>
+	 *
+	 * <a href="https://www.w3.org/TR/sparql11-query/#func-RDFterm-equal">RDFterm-equal</a> is defined as follows:
+	 *
+	 * <blockquote> Returns TRUE if term1 and term2 are the same RDF term as defined in
+	 * <a href="http://www.w3.org/TR/rdf-concepts/">Resource Description Framework (RDF): Concepts and Abstract Syntax
+	 * [CONCEPTS]</a>; <strong>produces a type error if the arguments are both literal but are not the same RDF
+	 * term</strong>; returns FALSE otherwise. term1 and term2 are the same if any of the following is true:
+	 *
+	 * <ul>
+	 * <li>term1 and term2 are equivalent IRIs as defined in
+	 * <a href="http://www.w3.org/TR/rdf-concepts/#section-Graph-URIref">6.4 RDF URI References of [CONCEPTS]</a>.
+	 * <li>term1 and term2 are equivalent literals as defined in
+	 * <a href="http://www.w3.org/TR/rdf-concepts/#section-Literal-Equality">6.5.1 Literal Equality of [CONCEPTS]</a>.
+	 * <li>term1 and term2 are the same blank node as described in
+	 * <a href="http://www.w3.org/TR/rdf-concepts/#section-blank-nodes">6.6 Blank Nodes of [CONCEPTS]</a>.
+	 * </ul>
+	 * </blockquote>
+	 *
+	 * (emphasis ours)
+	 * <p>
+	 * When applying the SPARQL specification in a minimally-conforming manner, RDFterm-equal is supposed to return a
+	 * type error whenever we compare two literals with incompatible datatypes: we have two literals, but they are not
+	 * the same RDF term (as they are not equivalent literals as defined in the linked section in RDF Concepts). This
+	 * holds <i>even if</i> those two datatypes that fully supported and understood (say, when comparing an xsd:string
+	 * and an xsd:boolean).
+	 * <p>
+	 * In a non-strict interpretation, however, we allow comparing comparing two literals with incompatible but
+	 * supported datatypes (string, numeric, calendar): An equality comparison will result in <code>false</code>, and an
+	 * inequality comparison will result in <code>true</code>. Note that this does not violate the SPARQL specification
+	 * as it falls under <a href="https://www.w3.org/TR/sparql11-query/#operatorExtensibility">operator extensibility
+	 * (section 17.3.1)</a>.
+	 *
+	 * @param strict            flag indicating if query evaluation is operating in strict/minimally-conforming mode.
+	 * @param leftCoreDatatype  the left datatype to compare
+	 * @param rightCoreDatatype the right datatype to compare
+	 * @throws ValueExprEvaluationException if query evaluation is operating in strict mode, and the two supplied
+	 *                                      datatypes are both supported datatypes but not comparable.
+	 *
+	 * @see <a href="https://github.com/eclipse/rdf4j/issues/3947">Github issue #3947</a>
+	 */
+	private static void validateDatatypeCompatibility(boolean strict, CoreDatatype.XSD leftCoreDatatype,
+			CoreDatatype.XSD rightCoreDatatype) throws ValueExprEvaluationException {
+		if (!strict) {
+			return;
+		}
+
+		boolean leftString = leftCoreDatatype == CoreDatatype.XSD.STRING;
+		boolean rightString = rightCoreDatatype == CoreDatatype.XSD.STRING;
+		if (leftString != rightString) {
+			throw STRING_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION;
+		}
+
+		boolean leftNumeric = leftCoreDatatype.isNumericDatatype();
+		boolean rightNumeric = rightCoreDatatype.isNumericDatatype();
+		if (leftNumeric != rightNumeric) {
+			throw NUMERIC_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION;
+		}
+
+		boolean leftDate = leftCoreDatatype.isCalendarDatatype();
+		boolean rightDate = rightCoreDatatype.isCalendarDatatype();
+		if (leftDate != rightDate) {
+			throw DATE_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION;
 		}
 	}
 
