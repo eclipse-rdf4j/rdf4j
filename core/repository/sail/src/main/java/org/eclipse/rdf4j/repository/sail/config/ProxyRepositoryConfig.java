@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.repository.sail.config;
 
 import static org.eclipse.rdf4j.model.util.Values.literal;
+import static org.eclipse.rdf4j.repository.sail.config.ProxyRepositorySchema.PROXIED_ID;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -21,6 +22,9 @@ import org.eclipse.rdf4j.repository.config.AbstractRepositoryImplConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 
 public class ProxyRepositoryConfig extends AbstractRepositoryImplConfig {
+
+	private static final boolean USE_CONFIG = "true"
+			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
 
 	private String proxiedID;
 
@@ -53,7 +57,11 @@ public class ProxyRepositoryConfig extends AbstractRepositoryImplConfig {
 	public Resource export(Model model) {
 		Resource implNode = super.export(model);
 		if (null != this.proxiedID) {
-			model.add(implNode, CONFIG.Proxy.proxiedID, literal(this.proxiedID));
+			if (USE_CONFIG) {
+				model.add(implNode, CONFIG.Proxy.proxiedID, literal(this.proxiedID));
+			} else {
+				model.add(implNode, PROXIED_ID, literal(this.proxiedID));
+			}
 		}
 		return implNode;
 	}
@@ -64,7 +72,7 @@ public class ProxyRepositoryConfig extends AbstractRepositoryImplConfig {
 
 		try {
 			Configurations
-					.getLiteralValue(model, implNode, CONFIG.Proxy.proxiedID, ProxyRepositorySchema.PROXIED_ID)
+					.getLiteralValue(model, implNode, CONFIG.Proxy.proxiedID, PROXIED_ID)
 					.ifPresent(lit -> setProxiedRepositoryID(lit.getLabel()));
 		} catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);

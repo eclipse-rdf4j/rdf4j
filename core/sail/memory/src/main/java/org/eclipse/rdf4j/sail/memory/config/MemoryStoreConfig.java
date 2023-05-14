@@ -28,6 +28,9 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
  */
 public class MemoryStoreConfig extends BaseSailConfig {
 
+	private static final boolean USE_CONFIG = "true"
+			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
+
 	private boolean persist = false;
 
 	private long syncDelay = 0L;
@@ -63,16 +66,24 @@ public class MemoryStoreConfig extends BaseSailConfig {
 	}
 
 	@Override
-	public Resource export(Model graph) {
-		Resource implNode = super.export(graph);
-		graph.setNamespace(CONFIG.NS);
+	public Resource export(Model m) {
+		Resource implNode = super.export(m);
+		m.setNamespace(CONFIG.NS);
 
 		if (persist) {
-			graph.add(implNode, CONFIG.Mem.persist, BooleanLiteral.TRUE);
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.Mem.persist, BooleanLiteral.TRUE);
+			} else {
+				m.add(implNode, PERSIST, BooleanLiteral.TRUE);
+			}
 		}
 
 		if (syncDelay != 0) {
-			graph.add(implNode, CONFIG.Mem.syncDelay, literal(syncDelay));
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.Mem.syncDelay, literal(syncDelay));
+			} else {
+				m.add(implNode, SYNC_DELAY, literal(syncDelay));
+			}
 		}
 
 		return implNode;

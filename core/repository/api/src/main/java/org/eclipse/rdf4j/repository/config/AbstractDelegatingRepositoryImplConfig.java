@@ -21,6 +21,9 @@ import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 public abstract class AbstractDelegatingRepositoryImplConfig extends AbstractRepositoryImplConfig
 		implements DelegatingRepositoryImplConfig {
 
+	private static final boolean USE_CONFIG = "true"
+			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
+
 	private RepositoryImplConfig delegate;
 
 	/**
@@ -69,7 +72,11 @@ public abstract class AbstractDelegatingRepositoryImplConfig extends AbstractRep
 
 		if (delegate != null) {
 			Resource delegateNode = delegate.export(model);
-			model.add(resource, CONFIG.delegate, delegateNode);
+			if (USE_CONFIG) {
+				model.add(resource, CONFIG.delegate, delegateNode);
+			} else {
+				model.add(resource, RepositoryConfigSchema.DELEGATE, delegateNode);
+			}
 		}
 
 		return resource;

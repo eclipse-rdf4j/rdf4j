@@ -30,6 +30,9 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
  */
 public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
 
+	private static final boolean USE_CONFIG = "true"
+			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
+
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/sparql#";
@@ -54,7 +57,6 @@ public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
 	 * Configuration setting for enabling/disabling direct result pass-through. Optional.
 	 *
 	 * @see SPARQLProtocolSession#isPassThroughEnabled()
-	 *
 	 * @deprecated use {@link CONFIG#passThroughEnabled} instead.
 	 */
 	public static final IRI PASS_THROUGH_ENABLED = vf
@@ -110,13 +112,25 @@ public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
 
 		m.setNamespace("sparql", NAMESPACE);
 		if (getQueryEndpointUrl() != null) {
-			m.add(implNode, CONFIG.Sparql.queryEndpoint, vf.createIRI(getQueryEndpointUrl()));
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.Sparql.queryEndpoint, vf.createIRI(getQueryEndpointUrl()));
+			} else {
+				m.add(implNode, QUERY_ENDPOINT, vf.createIRI(getQueryEndpointUrl()));
+			}
 		}
 		if (getUpdateEndpointUrl() != null) {
-			m.add(implNode, CONFIG.Sparql.updateEndpoint, vf.createIRI(getUpdateEndpointUrl()));
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.Sparql.updateEndpoint, vf.createIRI(getUpdateEndpointUrl()));
+			} else {
+				m.add(implNode, UPDATE_ENDPOINT, vf.createIRI(getUpdateEndpointUrl()));
+			}
 		}
 		if (getPassThroughEnabled() != null) {
-			m.add(implNode, CONFIG.Sparql.passThroughEnabled, BooleanLiteral.valueOf(getPassThroughEnabled()));
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.Sparql.passThroughEnabled, BooleanLiteral.valueOf(getPassThroughEnabled()));
+			} else {
+				m.add(implNode, PASS_THROUGH_ENABLED, BooleanLiteral.valueOf(getPassThroughEnabled()));
+			}
 		}
 
 		return implNode;

@@ -24,6 +24,9 @@ import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 public abstract class AbstractDelegatingSailImplConfig extends AbstractSailImplConfig
 		implements DelegatingSailImplConfig {
 
+	private static final boolean USE_CONFIG = "true"
+			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
+
 	private SailImplConfig delegate;
 
 	/**
@@ -72,7 +75,11 @@ public abstract class AbstractDelegatingSailImplConfig extends AbstractSailImplC
 
 		if (delegate != null) {
 			Resource delegateNode = delegate.export(m);
-			m.add(implNode, CONFIG.delegate, delegateNode);
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.delegate, delegateNode);
+			} else {
+				m.add(implNode, DELEGATE, delegateNode);
+			}
 		}
 
 		return implNode;

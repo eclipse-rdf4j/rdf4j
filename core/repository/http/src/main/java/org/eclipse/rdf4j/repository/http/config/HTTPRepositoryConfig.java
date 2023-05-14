@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.http.config;
 
+import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.REPOSITORYURL;
+
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -23,6 +25,9 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
  * @author Arjohn Kampman
  */
 public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
+
+	private static final boolean USE_CONFIG = "true"
+			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
 
 	private String url;
 
@@ -77,7 +82,12 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 
 		if (url != null) {
 			graph.setNamespace(CONFIG.PREFIX, CONFIG.NAMESPACE);
-			graph.add(implNode, CONFIG.Http.url, SimpleValueFactory.getInstance().createIRI(url));
+			if (USE_CONFIG) {
+				graph.add(implNode, CONFIG.Http.url, SimpleValueFactory.getInstance().createIRI(url));
+			} else {
+				graph.add(implNode, REPOSITORYURL, SimpleValueFactory.getInstance().createIRI(url));
+			}
+
 		}
 
 		return implNode;
@@ -90,7 +100,7 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 		try {
 
 			Configurations
-					.getIRIValue(model, implNode, CONFIG.Http.url, HTTPRepositorySchema.REPOSITORYURL)
+					.getIRIValue(model, implNode, CONFIG.Http.url, REPOSITORYURL)
 					.ifPresent(iri -> setURL(iri.stringValue()));
 
 			Configurations

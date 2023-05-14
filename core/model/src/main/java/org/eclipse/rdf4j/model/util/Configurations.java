@@ -21,21 +21,27 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Utility functions for working with RDF4J Models representing configuration settings.
  *
  * @author Jeen Broekstra
- *
  * @implNote intended for internal use only.
  */
 @InternalUseOnly
 public class Configurations {
 
+	private static final boolean USE_CONFIG = "true"
+			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
+
+	private static final Logger logger = LoggerFactory.getLogger(Configurations.class);
+
 	/**
 	 * Retrieve a property value for the supplied subject as a {@link Resource} if present, falling back to a supplied
 	 * legacy property .
-	 *
+	 * <p>
 	 * This method allows querying repository config models with a mix of old and new namespaces.
 	 *
 	 * @param model          the model to retrieve property values from.
@@ -45,19 +51,20 @@ public class Configurations {
 	 * @return the resource value for supplied subject and property (or the legacy property ), if present.
 	 */
 	@InternalUseOnly
-	public static Optional<Resource> getResourceValue(Model model, Resource subject, IRI property,
-			IRI legacyProperty) {
-		var result = Models.objectResource(model.getStatements(subject, property, null));
-		if (result.isPresent()) {
-			return result;
+	public static Optional<Resource> getResourceValue(Model model, Resource subject, IRI property, IRI legacyProperty) {
+		if (!USE_CONFIG) {
+			var result = Models.objectResource(model.getStatements(subject, legacyProperty, null));
+			if (result.isPresent()) {
+				return result;
+			}
 		}
-		return Models.objectResource(model.getStatements(subject, legacyProperty, null));
+		return Models.objectResource(model.getStatements(subject, property, null));
 	}
 
 	/**
 	 * Retrieve a property value for the supplied subject as a {@link Literal} if present, falling back to a supplied
 	 * legacy property .
-	 *
+	 * <p>
 	 * This method allows querying repository config models with a mix of old and new namespaces.
 	 *
 	 * @param model          the model to retrieve property values from.
@@ -67,20 +74,20 @@ public class Configurations {
 	 * @return the literal value for supplied subject and property (or the legacy property ), if present.
 	 */
 	@InternalUseOnly
-	public static Optional<Literal> getLiteralValue(Model model, Resource subject, IRI property,
-			IRI legacyProperty) {
-
-		var result = Models.objectLiteral(model.getStatements(subject, property, null));
-		if (result.isPresent()) {
-			return result;
+	public static Optional<Literal> getLiteralValue(Model model, Resource subject, IRI property, IRI legacyProperty) {
+		if (!USE_CONFIG) {
+			var result = Models.objectLiteral(model.getStatements(subject, legacyProperty, null));
+			if (result.isPresent()) {
+				return result;
+			}
 		}
-		return Models.objectLiteral(model.getStatements(subject, legacyProperty, null));
+		return Models.objectLiteral(model.getStatements(subject, property, null));
 	}
 
 	/**
 	 * Retrieve all property values for the supplied subject as a Set of values and include all values for any legacy
 	 * property.
-	 *
+	 * <p>
 	 * This method allows querying repository config models with a mix of old and new namespaces.
 	 *
 	 * @param model          the model to retrieve property values from.
@@ -90,18 +97,34 @@ public class Configurations {
 	 * @return the set of values for supplied subject and property (and/or legacy property).
 	 */
 	@InternalUseOnly
-	public static Set<Value> getPropertyValues(Model model, Resource subject, IRI property,
-			IRI legacyProperty) {
-		final Set<Value> results = new HashSet<>();
-		results.addAll(model.filter(subject, property, null).objects());
-		results.addAll(model.filter(subject, legacyProperty, null).objects());
-		return results;
+	public static Set<Value> getPropertyValues(Model model, Resource subject, IRI property, IRI legacyProperty) {
+
+		Set<Value> objects = model.filter(subject, property, null).objects();
+		Set<Value> legacyObjects = model.filter(subject, legacyProperty, null).objects();
+		if (USE_CONFIG) {
+			legacyObjects = Set.of();
+		}
+
+		if (!objects.equals(legacyObjects)) {
+			logger.warn("Discrepancy between use of the old and config vocabulary.");
+			if (objects.containsAll(legacyObjects)) {
+				return objects;
+			} else if (legacyObjects.containsAll(objects)) {
+				return legacyObjects;
+			}
+
+			Set<Value> results = new HashSet<>(objects);
+			results.addAll(legacyObjects);
+			return results;
+		}
+
+		return legacyObjects;
 	}
 
 	/**
 	 * Retrieve a property value for the supplied subject as a {@link IRI} if present, falling back to a supplied legacy
 	 * property .
-	 *
+	 * <p>
 	 * This method allows querying repository config models with a mix of old and new namespaces.
 	 *
 	 * @param model          the model to retrieve property values from.
@@ -111,12 +134,13 @@ public class Configurations {
 	 * @return the IRI value for supplied subject and property (or the legacy property ), if present.
 	 */
 	@InternalUseOnly
-	public static Optional<IRI> getIRIValue(Model model, Resource subject, IRI property,
-			IRI legacyProperty) {
-		var result = Models.objectIRI(model.getStatements(subject, property, null));
-		if (result.isPresent()) {
-			return result;
+	public static Optional<IRI> getIRIValue(Model model, Resource subject, IRI property, IRI legacyProperty) {
+		if (!USE_CONFIG) {
+			var result = Models.objectIRI(model.getStatements(subject, legacyProperty, null));
+			if (result.isPresent()) {
+				return result;
+			}
 		}
-		return Models.objectIRI(model.getStatements(subject, legacyProperty, null));
+		return Models.objectIRI(model.getStatements(subject, property, null));
 	}
 }

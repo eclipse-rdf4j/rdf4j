@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.elasticsearchstore.config;
 
 import static org.eclipse.rdf4j.model.util.Values.literal;
+import static org.eclipse.rdf4j.sail.elasticsearchstore.config.ElasticsearchStoreSchema.hostname;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +29,9 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
  */
 public class ElasticsearchStoreConfig extends BaseSailConfig {
 
+	private static final boolean USE_CONFIG = "true"
+			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
+
 	private String hostname;
 	private int port = -1;
 	private String clusterName;
@@ -38,20 +42,36 @@ public class ElasticsearchStoreConfig extends BaseSailConfig {
 	}
 
 	@Override
-	public Resource export(Model graph) {
-		Resource implNode = super.export(graph);
+	public Resource export(Model m) {
+		Resource implNode = super.export(m);
 
 		if (hostname != null) {
-			graph.add(implNode, CONFIG.Ess.hostname, literal(hostname));
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.Ess.hostname, literal(hostname));
+			} else {
+				m.add(implNode, ElasticsearchStoreSchema.hostname, literal(hostname));
+			}
 		}
 		if (clusterName != null) {
-			graph.add(implNode, CONFIG.Ess.clusterName, literal(clusterName));
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.Ess.clusterName, literal(clusterName));
+			} else {
+				m.add(implNode, ElasticsearchStoreSchema.clusterName, literal(clusterName));
+			}
 		}
 		if (index != null) {
-			graph.add(implNode, CONFIG.Ess.index, literal(index));
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.Ess.index, literal(index));
+			} else {
+				m.add(implNode, ElasticsearchStoreSchema.index, literal(index));
+			}
 		}
 		if (port != -1) {
-			graph.add(implNode, CONFIG.Ess.port, literal(port));
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.Ess.port, literal(port));
+			} else {
+				m.add(implNode, ElasticsearchStoreSchema.port, literal(port));
+			}
 		}
 
 		return implNode;

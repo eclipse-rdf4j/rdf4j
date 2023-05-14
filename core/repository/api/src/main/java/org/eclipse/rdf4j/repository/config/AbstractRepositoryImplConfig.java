@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.repository.config;
 
 import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.model.util.Values.literal;
+import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORYTYPE;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
@@ -25,6 +26,9 @@ import org.eclipse.rdf4j.model.vocabulary.CONFIG;
  * @author Herko ter Horst
  */
 public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
+
+	private static final boolean USE_CONFIG = "true"
+			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
 
 	private String type;
 
@@ -65,7 +69,12 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 		BNode implNode = bnode();
 
 		if (type != null) {
-			model.add(implNode, CONFIG.Rep.type, literal(type));
+			if (USE_CONFIG) {
+				model.add(implNode, CONFIG.Rep.type, literal(type));
+			} else {
+				model.add(implNode, REPOSITORYTYPE, literal(type));
+			}
+
 		}
 
 		return implNode;
@@ -74,7 +83,7 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 	@Override
 	public void parse(Model model, Resource resource) throws RepositoryConfigException {
 		Configurations
-				.getLiteralValue(model, resource, CONFIG.Rep.type, RepositoryConfigSchema.REPOSITORYTYPE)
+				.getLiteralValue(model, resource, CONFIG.Rep.type, REPOSITORYTYPE)
 				.ifPresent(typeLit -> setType(typeLit.getLabel()));
 	}
 
@@ -91,7 +100,7 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 	public static RepositoryImplConfig create(Model model, Resource resource) throws RepositoryConfigException {
 		try {
 			final Literal typeLit = Configurations
-					.getLiteralValue(model, resource, CONFIG.Rep.type, RepositoryConfigSchema.REPOSITORYTYPE)
+					.getLiteralValue(model, resource, CONFIG.Rep.type, REPOSITORYTYPE)
 					.orElse(null);
 			if (typeLit != null) {
 				RepositoryFactory factory = RepositoryRegistry.getInstance()

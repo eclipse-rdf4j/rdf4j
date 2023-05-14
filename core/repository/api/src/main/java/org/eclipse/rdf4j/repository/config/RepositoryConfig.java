@@ -12,6 +12,9 @@ package org.eclipse.rdf4j.repository.config;
 
 import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.model.util.Values.literal;
+import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORY;
+import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORYID;
+import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORYIMPL;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -27,6 +30,9 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
  * @author Arjohn Kampman
  */
 public class RepositoryConfig {
+
+	private static final boolean USE_CONFIG = "true"
+			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
 
 	private String id;
 
@@ -132,16 +138,27 @@ public class RepositoryConfig {
 		model.setNamespace(XSD.NS);
 		model.setNamespace(CONFIG.NS);
 		model.add(repositoryNode, RDF.TYPE, CONFIG.Rep.Repository);
+		model.add(repositoryNode, RDF.TYPE, REPOSITORY);
 
 		if (id != null) {
-			model.add(repositoryNode, CONFIG.Rep.id, literal(id));
+			if (USE_CONFIG) {
+				model.add(repositoryNode, CONFIG.Rep.id, literal(id));
+			} else {
+				model.add(repositoryNode, REPOSITORYID, literal(id));
+			}
+
 		}
 		if (title != null) {
 			model.add(repositoryNode, RDFS.LABEL, literal(title));
 		}
 		if (implConfig != null) {
 			Resource implNode = implConfig.export(model);
-			model.add(repositoryNode, CONFIG.Rep.impl, implNode);
+			if (USE_CONFIG) {
+				model.add(repositoryNode, CONFIG.Rep.impl, implNode);
+			} else {
+				model.add(repositoryNode, REPOSITORYIMPL, implNode);
+			}
+
 		}
 	}
 
@@ -149,7 +166,7 @@ public class RepositoryConfig {
 		try {
 			Configurations
 					.getLiteralValue(model, repositoryNode, CONFIG.Rep.id,
-							RepositoryConfigSchema.REPOSITORYID)
+							REPOSITORYID)
 					.ifPresent(lit -> setID(lit.getLabel()));
 
 			Models.objectLiteral(model.getStatements(repositoryNode, RDFS.LABEL, null))
@@ -157,7 +174,7 @@ public class RepositoryConfig {
 
 			Configurations
 					.getResourceValue(model, repositoryNode, CONFIG.Rep.impl,
-							RepositoryConfigSchema.REPOSITORYIMPL)
+							REPOSITORYIMPL)
 					.ifPresent(res -> setRepositoryImplConfig(AbstractRepositoryImplConfig.create(model, res)));
 		} catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);

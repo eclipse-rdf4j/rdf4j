@@ -12,12 +12,16 @@ package org.eclipse.rdf4j.sail.config;
 
 import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.model.util.Values.literal;
+import static org.eclipse.rdf4j.sail.config.SailConfigSchema.CONNECTION_TIME_OUT;
+import static org.eclipse.rdf4j.sail.config.SailConfigSchema.ITERATION_CACHE_SYNC_THRESHOLD;
+import static org.eclipse.rdf4j.sail.config.SailConfigSchema.SAILTYPE;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 
 /**
@@ -26,6 +30,9 @@ import org.eclipse.rdf4j.model.vocabulary.CONFIG;
  * @author Herko ter Horst
  */
 public abstract class AbstractSailImplConfig implements SailImplConfig {
+
+	private static final boolean USE_CONFIG = "true"
+			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
 
 	private String type;
 
@@ -67,15 +74,27 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 		BNode implNode = bnode();
 
 		if (type != null) {
-			m.add(implNode, CONFIG.Sail.type, literal(type));
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.Sail.type, literal(type));
+			} else {
+				m.add(implNode, SAILTYPE, literal(type));
+			}
 		}
 
 		if (iterationCacheSyncThreshold > 0) {
-			m.add(implNode, CONFIG.Sail.iterationCacheSyncThreshold, literal(iterationCacheSyncThreshold));
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.Sail.iterationCacheSyncThreshold, literal(iterationCacheSyncThreshold));
+			} else {
+				m.add(implNode, ITERATION_CACHE_SYNC_THRESHOLD, literal(iterationCacheSyncThreshold));
+			}
 		}
 
 		if (connectionTimeOut > 0) {
-			m.add(implNode, CONFIG.Sail.connectionTimeOut, literal(connectionTimeOut));
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.Sail.connectionTimeOut, literal(connectionTimeOut));
+			} else {
+				m.add(implNode, CONNECTION_TIME_OUT, literal(connectionTimeOut));
+			}
 		}
 		return implNode;
 	}
@@ -83,14 +102,14 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 	@Override
 	public void parse(Model m, Resource implNode) throws SailConfigException {
 		try {
-			Configurations.getLiteralValue(m, implNode, CONFIG.Sail.type, SailConfigSchema.SAILTYPE)
+			Configurations.getLiteralValue(m, implNode, CONFIG.Sail.type, SAILTYPE)
 					.ifPresent(lit -> setType(lit.getLabel()));
 			Configurations
 					.getLiteralValue(m, implNode, CONFIG.Sail.iterationCacheSyncThreshold,
-							SailConfigSchema.ITERATION_CACHE_SYNC_THRESHOLD)
+							ITERATION_CACHE_SYNC_THRESHOLD)
 					.ifPresent(lit -> setIterationCacheSyncThreshold(lit.longValue()));
 			Configurations
-					.getLiteralValue(m, implNode, CONFIG.Sail.connectionTimeOut, SailConfigSchema.CONNECTION_TIME_OUT)
+					.getLiteralValue(m, implNode, CONFIG.Sail.connectionTimeOut, CONNECTION_TIME_OUT)
 					.ifPresent(lit -> setConnectionTimeOut(lit.longValue()));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
