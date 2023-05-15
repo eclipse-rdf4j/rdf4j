@@ -145,6 +145,7 @@ public class ShaclSailConfigTest {
 
 		assertThat(shaclSailConfig.isParallelValidation()).isFalse();
 		assertThat(shaclSailConfig.isCacheSelectNodes()).isTrue();
+		assertThat(shaclSailConfig.getShapesGraphs()).hasSameElementsAs(ShaclSailConfig.SHAPES_GRAPHS_DEFAULT);
 	}
 
 	@Test

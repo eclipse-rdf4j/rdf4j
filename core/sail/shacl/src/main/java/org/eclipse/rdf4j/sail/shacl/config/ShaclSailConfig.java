@@ -327,20 +327,22 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 							ShaclSailSchema.TRANSACTIONAL_VALIDATION_LIMIT)
 					.ifPresent(l -> setTransactionalValidationLimit(l.longValue()));
 
-			setShapesGraphs(
-					Configurations
-							.getPropertyValues(m, implNode, CONFIG.Shacl.shapesGraph, ShaclSailSchema.SHAPES_GRAPH)
-							.stream()
-							.peek(v -> {
-								if (!v.isIRI()) {
-									throw new IllegalArgumentException(
-											"Expected IRI but found " + v.getClass().getSimpleName() + "for value "
-													+ v.stringValue());
-								}
-							})
-							.map(o -> ((IRI) o))
-							.collect(Collectors.toUnmodifiableSet())
-			);
+			if (m.contains(implNode, CONFIG.Shacl.shapesGraph, null) || m.contains(implNode, SHAPES_GRAPH, null)) {
+				setShapesGraphs(
+						Configurations
+								.getPropertyValues(m, implNode, CONFIG.Shacl.shapesGraph, ShaclSailSchema.SHAPES_GRAPH)
+								.stream()
+								.peek(v -> {
+									if (!v.isIRI()) {
+										throw new IllegalArgumentException(
+												"Expected IRI but found " + v.getClass().getSimpleName() + "for value "
+														+ v.stringValue());
+									}
+								})
+								.map(o -> ((IRI) o))
+								.collect(Collectors.toUnmodifiableSet())
+				);
+			}
 
 		} catch (IllegalArgumentException e) {
 			throw new SailConfigException("error parsing Sail configuration", e);
