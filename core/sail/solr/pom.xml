@@ -47,18 +47,6 @@
 				</exclusion>
 			</exclusions>
 		</dependency>
-		<!-- solr-core pulls in log4j -->
-		<dependency>
-			<groupId>org.slf4j</groupId>
-			<artifactId>log4j-over-slf4j</artifactId>
-			<optional>true</optional>
-		</dependency>
-		<!-- solr-core pulls in log4j2 -->
-		<dependency>
-			<groupId>org.apache.logging.log4j</groupId>
-			<artifactId>log4j-to-slf4j</artifactId>
-			<optional>true</optional>
-		</dependency>
 	</dependencies>
 	<repositories>
 		<repository>

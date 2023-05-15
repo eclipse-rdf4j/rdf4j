@@ -34,7 +34,7 @@ public class NoShapesTest {
 			connectionSpy.begin();
 			connectionSpy.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connectionSpy.commit();
-			verify(connectionSpy, never()).prepareValidation();
+			verify(connectionSpy, never()).prepareValidation(new ValidationSettings());
 		}
 
 		try (SailConnection connection = shaclSail.getConnection()) {
@@ -43,7 +43,7 @@ public class NoShapesTest {
 			connectionSpy.begin();
 			connectionSpy.addStatement(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
 			connectionSpy.commit();
-			verify(connectionSpy, never()).prepareValidation();
+			verify(connectionSpy, never()).prepareValidation(new ValidationSettings());
 		}
 
 		try (SailConnection connection = shaclSail.getConnection()) {
@@ -53,7 +53,7 @@ public class NoShapesTest {
 			connectionSpy.addStatement(RDF.TYPE, RDF.TYPE, RDF.PREDICATE);
 			connectionSpy.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE, RDF4J.SHACL_SHAPE_GRAPH);
 			connectionSpy.commit();
-			verify(connectionSpy, never()).prepareValidation();
+			verify(connectionSpy, never()).prepareValidation(new ValidationSettings());
 		}
 
 		shaclSail.shutDown();

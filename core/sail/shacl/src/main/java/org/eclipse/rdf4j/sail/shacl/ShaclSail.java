@@ -325,6 +325,7 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 				SHACL.PREFIXES,
 				SHACL.PREFIX_PROP,
 				SHACL.NAMESPACE_PROP,
+				SHACL.SEVERITY_PROP,
 				DASH.hasValueIn,
 				RSX.targetShape
 		);
@@ -398,7 +399,8 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 
 		try (ShapeSource shapeSource = new CombinedShapeSource(shapesRepoConnection, sailConnection)
 				.withContext(shapesGraphs)) {
-			return Shape.Factory.getShapes(shapeSource, this);
+			return Shape.Factory.getShapes(shapeSource,
+					new Shape.ParseSettings(isEclipseRdf4jShaclExtensions(), isDashDataShapes()));
 		}
 
 	}
@@ -408,7 +410,8 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 			throws SailException {
 
 		try (ShapeSource shapeSource = new ForwardChainingShapeSource(shapesRepoConnection).withContext(shapesGraphs)) {
-			return Shape.Factory.getShapes(shapeSource, this);
+			return Shape.Factory.getShapes(shapeSource,
+					new Shape.ParseSettings(isEclipseRdf4jShaclExtensions(), isDashDataShapes()));
 		}
 
 	}

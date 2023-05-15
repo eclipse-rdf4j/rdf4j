@@ -14,14 +14,14 @@
       rsx:dataGraph rdf4j:nil;
       rsx:shapesGraph rdf4j:nil;
       sh:focusNode ex:validPerson1;
-      sh:resultPath _:e009e77d2c3f4a1d84019ecc9f2da3ad5800;
+      sh:resultPath _:5089a376325a403b926b5c31d5e95e7215347;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:ClassConstraintComponent;
       sh:sourceShape [ a sh:PropertyShape;
           sh:class ex:Person;
-          sh:path _:e009e77d2c3f4a1d84019ecc9f2da3ad5800
+          sh:path _:5089a376325a403b926b5c31d5e95e7215347
         ];
       sh:value ex:peter
     ] .
 
-_:e009e77d2c3f4a1d84019ecc9f2da3ad5800 sh:alternativePath (ex:knows ex:knows2) .
+_:5089a376325a403b926b5c31d5e95e7215347 sh:alternativePath (ex:knows ex:knows2) .

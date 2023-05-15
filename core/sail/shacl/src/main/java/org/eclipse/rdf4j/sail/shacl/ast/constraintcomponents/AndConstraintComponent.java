@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
 import org.eclipse.rdf4j.sail.shacl.ast.Cache;
@@ -49,16 +48,16 @@ public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 	List<Shape> and;
 
 	public AndConstraintComponent(Resource id, ShapeSource shapeSource,
-			Cache cache, ShaclSail shaclSail) {
+			Shape.ParseSettings parseSettings, Cache cache) {
 		super(id);
 		and = ShaclAstLists.toList(shapeSource, id, Resource.class)
 				.stream()
 				.map(r -> new ShaclProperties(r, shapeSource))
 				.map(p -> {
 					if (p.getType() == SHACL.NODE_SHAPE) {
-						return NodeShape.getInstance(p, shapeSource, cache, shaclSail);
+						return NodeShape.getInstance(p, shapeSource, parseSettings, cache);
 					} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-						return PropertyShape.getInstance(p, shapeSource, cache, shaclSail);
+						return PropertyShape.getInstance(p, shapeSource, parseSettings, cache);
 					}
 					throw new IllegalStateException("Unknown shape type for " + p.getId());
 				})

@@ -13,7 +13,7 @@
   sh:result [ a sh:ValidationResult;
       rsx:dataGraph ex:g1;
       rsx:shapesGraph ex:shapesGraph1;
-      sh:focusNode ex:validPerson2;
+      sh:focusNode ex:validPerson1;
       sh:resultPath ex:age;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
@@ -22,7 +22,7 @@
     ], [ a sh:ValidationResult;
       rsx:dataGraph ex:g1;
       rsx:shapesGraph ex:shapesGraph1;
-      sh:focusNode ex:validPerson1;
+      sh:focusNode ex:validPerson2;
       sh:resultPath ex:age;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:DatatypeConstraintComponent;

@@ -15,6 +15,7 @@ import static org.eclipse.rdf4j.model.util.Values.iri;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -33,6 +34,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencerConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -58,6 +60,17 @@ public class ForwardChainingShapeSource implements ShapeSource {
 
 	}
 
+	public ForwardChainingShapeSource(SailConnection connection) {
+		this.context = null;
+
+		assert connection.isActive();
+
+		repository = forwardChain(connection);
+		this.connection = repository.getConnection();
+		this.connection.begin(IsolationLevels.NONE);
+
+	}
+
 	private ForwardChainingShapeSource(Repository repository, RepositoryConnection connection,
 			Resource[] context) {
 		this.connection = connection;
@@ -67,6 +80,29 @@ public class ForwardChainingShapeSource implements ShapeSource {
 	}
 
 	private SailRepository forwardChain(RepositoryConnection shapesRepoConnection) {
+		try (var statements = shapesRepoConnection.getStatements(null, null, null, false)) {
+			if (!statements.hasNext()) {
+				return new SailRepository(new MemoryStore());
+			}
+
+			SailRepository shapesRepoWithReasoning = new SailRepository(
+					SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore(), false));
+
+			try (var shapesRepoWithReasoningConnection = shapesRepoWithReasoning.getConnection()) {
+				shapesRepoWithReasoningConnection.begin(IsolationLevels.NONE);
+
+				shapesRepoWithReasoningConnection.add(statements);
+				enrichShapes(shapesRepoWithReasoningConnection);
+
+				shapesRepoWithReasoningConnection.commit();
+			}
+
+			return shapesRepoWithReasoning;
+
+		}
+	}
+
+	private SailRepository forwardChain(SailConnection shapesRepoConnection) {
 		try (var statements = shapesRepoConnection.getStatements(null, null, null, false)) {
 			if (!statements.hasNext()) {
 				return new SailRepository(new MemoryStore());
@@ -133,9 +169,20 @@ public class ForwardChainingShapeSource implements ShapeSource {
 			return;
 		}
 
-		// TODO: We need to handle DASH_CONSTANTS for the other shape graphs too!
-
 		shaclSailConnection.add(DASH_CONSTANTS, RDF4J.SHACL_SHAPE_GRAPH);
+		shaclSailConnection.add(DASH_CONSTANTS);
+		shaclSailConnection.add(DASH_CONSTANTS, new Resource[] { null });
+
+		try (Stream<Statement> stream = shaclSailConnection
+				.getStatements(null, SHACL.SHAPES_GRAPH, null, false)
+				.stream()) {
+
+			stream.forEach(s -> {
+				shaclSailConnection.add(DASH_CONSTANTS, ((IRI) s.getObject()));
+			});
+
+		}
+
 		implicitTargetClass(shaclSailConnection);
 
 	}
@@ -166,10 +213,22 @@ public class ForwardChainingShapeSource implements ShapeSource {
 	}
 
 	public Stream<ShapesGraph> getAllShapeContexts() {
-		if (connection.hasStatement(null, null, null, false, RDF4J.SHACL_SHAPE_GRAPH)) {
+		assert context != null;
+
+		if (!connection.hasStatement(null, SHACL.SHAPES_GRAPH, null, false)) {
 			return Stream.of(new ShapesGraph(RDF4J.SHACL_SHAPE_GRAPH));
 		}
-		return Stream.empty();
+
+		try (Stream<? extends Statement> stream = connection
+				.getStatements(null, SHACL.SHAPES_GRAPH, null, false, context)
+				.stream()) {
+
+			return stream
+					.collect(Collectors.groupingBy(Statement::getSubject))
+					.entrySet()
+					.stream()
+					.map(entry -> new ShapeSource.ShapesGraph(entry.getKey(), entry.getValue()));
+		}
 
 	}
 

@@ -17,13 +17,12 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
-import org.eclipse.rdf4j.common.iterator.EmptyIterator;
-import org.eclipse.rdf4j.common.iterator.SingletonIterator;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
@@ -334,9 +333,9 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 					.createStatement(subject, predicate, object, contexts[0]);
 			Statement foundStatement = statements.get(statement);
 			if (foundStatement == null) {
-				return EmptyIterator::new;
+				return List.of();
 			}
-			return () -> new SingletonIterator<>(foundStatement);
+			return List.of(foundStatement);
 		} else if (model == null && subject == null && predicate == null && object == null && contexts != null
 				&& contexts.length == 0) {
 			return this;

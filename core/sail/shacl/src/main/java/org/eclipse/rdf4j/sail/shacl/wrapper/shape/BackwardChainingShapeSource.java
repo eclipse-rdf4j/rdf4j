@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.wrapper.shape;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -20,6 +22,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -50,11 +53,38 @@ public class BackwardChainingShapeSource implements ShapeSource {
 
 	public Stream<ShapesGraph> getAllShapeContexts() {
 		assert context != null;
+		if (context.length == 0) {
+			// union context
+			try (Stream<? extends Statement> stream = connection
+					.getStatements(null, SHACL.SHAPES_GRAPH, null, false, context)
+					.stream()) {
+
+				List<ShapesGraph> collect = stream
+						.collect(Collectors.groupingBy(Statement::getSubject))
+						.entrySet()
+						.stream()
+						.map(entry -> new ShapesGraph(entry.getKey(), entry.getValue()))
+						.collect(Collectors.toList());
+
+				collect = new ArrayList<>();
+				collect.add(new ShapesGraph(RDF4J.NIL));
+
+				return collect.stream();
+
+			}
+
+		}
+
 		try (Stream<? extends Statement> stream = connection
 				.getStatements(null, SHACL.SHAPES_GRAPH, null, false, context)
 				.stream()) {
 
-			return stream
+			List<? extends Statement> collect = stream.collect(Collectors.toList());
+
+			if (collect.size() > 0) {
+				System.out.println();
+			}
+			return collect.stream()
 					.collect(Collectors.groupingBy(Statement::getSubject))
 					.entrySet()
 					.stream()

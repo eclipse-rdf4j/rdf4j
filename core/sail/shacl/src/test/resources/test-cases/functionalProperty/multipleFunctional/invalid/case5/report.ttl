@@ -12,18 +12,18 @@
   sh:conforms false;
   sh:result [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
-      sh:focusNode 2;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:AndConstraintComponent;
-      sh:sourceShape ex:IdAndUsernameAreBothFunctionalProperties;
-      sh:value 2
-    ], [ a sh:ValidationResult;
-      rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode 1;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:sourceShape ex:IdAndUsernameAreBothFunctionalProperties;
       sh:value 1
+    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode 2;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:AndConstraintComponent;
+      sh:sourceShape ex:IdAndUsernameAreBothFunctionalProperties;
+      sh:value 2
     ] .
 
 ex:IdAndUsernameAreBothFunctionalProperties a sh:NodeShape;

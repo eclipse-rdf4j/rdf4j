@@ -154,4 +154,5 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 	public int hashCode() {
 		return Objects.hash(mapper);
 	}
+
 }

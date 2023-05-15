@@ -81,6 +81,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShapes;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.params.provider.Arguments;
 import org.slf4j.Logger;
@@ -287,6 +288,20 @@ abstract public class AbstractShaclTest {
 		return individualTestCases;
 	}
 
+	@BeforeAll
+	static void beforeAll() {
+		IRI[] shapesGraphs = SHAPE_GRAPHS.stream()
+				.map(g -> {
+					if (g.equals(RDF4J.NIL)) {
+						return null;
+					}
+					return g;
+				})
+				.toArray(IRI[]::new);
+
+		ShaclValidator.CONTEXTS = shapesGraphs;
+	}
+
 	@AfterEach
 	void tearDown() {
 		fullLogging = false;
@@ -387,6 +402,68 @@ abstract public class AbstractShaclTest {
 		System.out.println("### shacl.ttl ###");
 		System.out.println(removeLeadingPrefixStatements(testCase.getShaclData()));
 		System.out.println("#####################\n\n");
+
+	}
+
+	void runWithShaclValidator(TestCase testCase) {
+
+		SailRepository shapesRepo = new SailRepository(new MemoryStore());
+		SailRepository dataRepo = new SailRepository(new MemoryStore());
+
+		try {
+
+			Utils.loadShapeData(shapesRepo, testCase.getShacl());
+			if (testCase.hasInitialData()) {
+				Utils.loadInitialData(dataRepo, testCase.getInitialData());
+			}
+
+			for (File queryFile : testCase.getQueries()) {
+				try {
+					String query = FileUtils.readFileToString(queryFile, StandardCharsets.UTF_8);
+
+					logger.debug(queryFile.getName());
+
+					try (SailRepositoryConnection connection = dataRepo.getConnection()) {
+						connection.prepareUpdate(query).execute();
+					} catch (MalformedQueryException e) {
+						System.err.println(query + "\n");
+						throw e;
+					}
+
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+
+			}
+
+			printTestCase(testCase);
+
+			printCurrentState(dataRepo);
+
+			ValidationReport validationReport1 = ShaclValidator.validate(dataRepo.getSail(), shapesRepo.getSail());
+
+			Assertions.assertEquals(testCase.expectedResult == ExpectedResult.valid, validationReport1.conforms(),
+					"Validation result does not match expected result");
+
+			ValidationReport validationReport2 = ShaclValidator.validate(dataRepo.getSail(), shapesRepo.getSail());
+
+			Assertions.assertEquals(testCase.expectedResult == ExpectedResult.valid, validationReport2.conforms(),
+					"Validation result does not match expected result");
+
+//			writeActualModelToExpectedModelForDevPurposes(testCase.testCasePath, validationReport1.asModel());
+
+			testValidationReport(testCase.testCasePath, validationReport1.asModel());
+			testValidationReport(testCase.testCasePath, validationReport2.asModel());
+
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		} finally {
+			try {
+				shapesRepo.shutDown();
+			} finally {
+				dataRepo.shutDown();
+			}
+		}
 
 	}
 
@@ -894,9 +971,10 @@ abstract public class AbstractShaclTest {
 							"Expected validation to succeed for " + testCase.getTestCasePath());
 				} else {
 					Assertions.assertTrue(exception, "Expected validation to fail for " + testCase.getTestCasePath());
+					testValidationReport(testCase.testCasePath, validationReportActual);
+
 				}
 
-				testValidationReport(testCase.testCasePath, validationReportActual);
 			}
 		} finally {
 			shaclRepository.shutDown();
@@ -942,14 +1020,11 @@ abstract public class AbstractShaclTest {
 
 			printResults(report);
 
-			if (!report.conforms()) {
-				testValidationReport(testCase.getTestCasePath(), report.asModel());
-			}
-
 			if (testCase.getExpectedResult() == ExpectedResult.valid) {
 				Assertions.assertTrue(report.conforms());
 			} else {
 				Assertions.assertFalse(report.conforms());
+				testValidationReport(testCase.getTestCasePath(), report.asModel());
 			}
 		} finally {
 			shaclRepository.shutDown();

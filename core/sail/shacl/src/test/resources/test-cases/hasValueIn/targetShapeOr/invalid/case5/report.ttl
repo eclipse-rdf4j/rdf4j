@@ -16,16 +16,16 @@
       sh:resultPath ex:info2;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:MinCountConstraintComponent;
-      sh:sourceShape _:node1ftskin5gx42671
+      sh:sourceShape _:5089a376325a403b926b5c31d5e95e729817
     ], [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:validPerson1;
       sh:resultPath ex:info2;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:MinCountConstraintComponent;
-      sh:sourceShape _:node1ftskin5gx42671
+      sh:sourceShape _:5089a376325a403b926b5c31d5e95e729817
     ] .
 
-_:node1ftskin5gx42671 a sh:PropertyShape;
+_:5089a376325a403b926b5c31d5e95e729817 a sh:PropertyShape;
   sh:minCount 1;
   sh:path ex:info2 .

@@ -12,20 +12,20 @@
   sh:conforms false;
   sh:result [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
-      sh:focusNode ex:validPerson5;
-      sh:resultPath ex:knows;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:OrConstraintComponent;
-      sh:sourceShape ex:personShapeOr;
-      sh:value ex:a
-    ], [ a sh:ValidationResult;
-      rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:validPerson2;
       sh:resultPath ex:knows;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:OrConstraintComponent;
       sh:sourceShape ex:personShapeOr;
       sh:value ex:d
+    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:validPerson5;
+      sh:resultPath ex:knows;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:OrConstraintComponent;
+      sh:sourceShape ex:personShapeOr;
+      sh:value ex:a
     ] .
 
 ex:personShapeOr a sh:PropertyShape;
