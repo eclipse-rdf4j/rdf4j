@@ -366,7 +366,7 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 	 * These methods should be overriding in case a store can deliver a better serialization protocol.
 	 */
 	protected Serializer<BindingSet> createBindingSetSerializer() {
-		return new SerializerJava();
+		return new BindingSetSerializer(createValueSerializer());
 	}
 
 	protected <T> Serializer<T> createAnySerializer() {
@@ -374,7 +374,7 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 	}
 
 	protected Serializer<Value> createValueSerializer() {
-		return new SerializerJava();
+		return new ValueSerializer();
 	}
 
 	protected Serializer<BindingSetKey> createBindingSetKeySerializer() {
