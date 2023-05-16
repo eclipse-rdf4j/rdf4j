@@ -177,7 +177,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		BiConsumer<Entry, MutableBindingSet> bindSolution = makeBindSolution(aggregates);
 		Collection<Entry> entries = buildEntries(aggregates);
-		Set<BindingSet> bindingSets = cf.createSetOfBindingSets();
+		Set<BindingSet> bindingSets = cf.createSetOfBindingSets(context::createBindingSet, context::hasBinding,
+				context::getValue, context::setBinding);
 		BiConsumer<BindingSet, MutableBindingSet> setValues = makeSetValues(getValues, setBindings);
 		for (Entry entry : entries) {
 			MutableBindingSet sol = makeNewBindingSet.get();
@@ -289,7 +290,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 				// Fixing this requires separating the computation of the aggregates and their
 				// distinct sets if needed from the intermediary values.
 
-				Map<BindingSetKey, Entry> entries = new LinkedHashMap<>();
+				Map<BindingSetKey, Entry> entries = cf.createGroupByMap();
 				// Make an optimized hash function valid during this query evaluation step.
 				ToIntFunction<BindingSet> hashMaker = cf.hashOfBindingSetFuntion(getValues);
 				while (iter.hasNext()) {
@@ -384,8 +385,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		private final Supplier<T> makeAggregateCollector;
 
 		public AggregatePredicateCollectorSupplier(AggregateFunction<T, D> agg,
-				Supplier<Predicate<D>> makePotentialDistinctTest,
-				Supplier<T> makeAggregateCollector, String name) {
+				Supplier<Predicate<D>> makePotentialDistinctTest, Supplier<T> makeAggregateCollector, String name) {
 			super();
 			this.agg = agg;
 			this.makePotentialDistinctTest = makePotentialDistinctTest;
@@ -409,12 +409,10 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		if (operator instanceof Count) {
 			if (((Count) operator).getArg() == null) {
 				WildCardCountAggregate wildCardCountAggregate = new WildCardCountAggregate();
-				Supplier<Predicate<BindingSet>> potentialDistinctTest = operator.isDistinct()
-						? DistinctBindingSets::new
+				Supplier<Predicate<BindingSet>> potentialDistinctTest = operator.isDistinct() ? DistinctBindingSets::new
 						: () -> ALWAYS_TRUE_BINDING_SET;
 				return new AggregatePredicateCollectorSupplier<>(wildCardCountAggregate, potentialDistinctTest,
-						() -> new CountCollector(vf),
-						ge.getName());
+						() -> new CountCollector(vf), ge.getName());
 			} else {
 				QueryStepEvaluator f = new QueryStepEvaluator(
 						strategy.precompile(((Count) operator).getArg(), context));
@@ -473,8 +471,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			var function = factory.orElseThrow(
 					() -> new QueryEvaluationException("Unknown aggregate function '" + aggOperator.getIRI() + "'"))
 					.buildFunction(new QueryStepEvaluator(strategy.precompile(aggOperator.getArg(), context)));
-			return new AggregatePredicateCollectorSupplier<>(function, predicate,
-					() -> factory.get().getCollector(),
+			return new AggregatePredicateCollectorSupplier<>(function, predicate, () -> factory.get().getCollector(),
 					ge.getName());
 
 		}

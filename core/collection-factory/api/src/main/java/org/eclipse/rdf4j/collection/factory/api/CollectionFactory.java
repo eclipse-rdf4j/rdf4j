@@ -19,7 +19,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.function.ToIntBiFunction;
 import java.util.function.ToIntFunction;
 
@@ -28,6 +31,8 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 /**
  * A Factory that may generate optimised and/or disk based collections
@@ -61,7 +66,26 @@ public interface CollectionFactory extends AutoCloseable {
 	/**
 	 * @return a set that may be optimised and/or disk based
 	 */
-	public Set<BindingSet> createSetOfBindingSets();
+	public default Set<BindingSet> createSetOfBindingSets() {
+		// note the odd lambda returning a lambda
+		Function<String, Predicate<BindingSet>> gethas = (n) -> (b) -> b.hasBinding(n);
+		Function<String, Function<BindingSet, Value>> getget = (n) -> (b) -> b.getValue(n);
+		Function<String, BiConsumer<Value, MutableBindingSet>> getSet = (n) -> (v, b) -> b.setBinding(n, v);
+		return createSetOfBindingSets(MapBindingSet::new, gethas, getget, getSet);
+	}
+
+	/**
+	 * Allows optimizations beyond what would otherwise be possible, regarding disk access and storage.
+	 *
+	 * @param create a supplier that makes bindingsets
+	 * @param a      supplier used to create prebound hasBinding predicates
+	 * @param a      supplier used to create prebound getValue functions
+	 * @param a      supplier used to create prebound setValue functions
+	 * @return a set that may be optimised and/or disk based
+	 */
+	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> create,
+			Function<String, Predicate<BindingSet>> getHas, Function<String, Function<BindingSet, Value>> getget,
+			Function<String, BiConsumer<Value, MutableBindingSet>> getSet);
 
 	/**
 	 * @return a set that may be optimised and/or disk based for Values

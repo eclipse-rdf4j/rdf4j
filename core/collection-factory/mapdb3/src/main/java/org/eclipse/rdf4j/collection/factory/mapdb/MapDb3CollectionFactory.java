@@ -19,7 +19,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
 
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
@@ -28,6 +31,7 @@ import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.mapdb.DB;
 import org.mapdb.DB.HashMapMaker;
 import org.mapdb.DBException;
@@ -90,10 +94,12 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 	}
 
 	@Override
-	public Set<BindingSet> createSetOfBindingSets() {
+	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> create,
+			Function<String, Predicate<BindingSet>> getHas, Function<String, Function<BindingSet, Value>> getget,
+			Function<String, BiConsumer<Value, MutableBindingSet>> getSet) {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
-			Serializer<BindingSet> serializer = createBindingSetSerializer();
+			Serializer<BindingSet> serializer = createBindingSetSerializer(create, getHas, getget, getSet);
 			MemoryTillSizeXSet<BindingSet> set = new MemoryTillSizeXSet<>(colectionId++,
 					delegate.createSetOfBindingSets(), serializer);
 			return new CommitingSet<>(set, iterationCacheSyncThreshold, db);
@@ -364,9 +370,15 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 
 	/**
 	 * These methods should be overriding in case a store can deliver a better serialization protocol.
+	 *
+	 * @param getGet
+	 * @param getHas
+	 * @param create
 	 */
-	protected Serializer<BindingSet> createBindingSetSerializer() {
-		return new BindingSetSerializer(createValueSerializer());
+	protected Serializer<BindingSet> createBindingSetSerializer(Supplier<MutableBindingSet> create,
+			Function<String, Predicate<BindingSet>> getHas, Function<String, Function<BindingSet, Value>> getGet,
+			Function<String, BiConsumer<Value, MutableBindingSet>> getSet) {
+		return new BindingSetSerializer(createValueSerializer(), create, getHas, getGet, getSet);
 	}
 
 	protected <T> Serializer<T> createAnySerializer() {
