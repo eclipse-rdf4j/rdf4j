@@ -361,6 +361,7 @@
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<enforce-javaee-provided.fail>true</enforce-javaee-provided.fail>
+		<enforce-no-javax-dependencies.fail>true</enforce-no-javax-dependencies.fail>
 		<jakartaee.version>8.0.0</jakartaee.version>
 		<!-- Jakarta XML Binding is part of Jakarta EE BOM from version 9 -->
 		<jaxb.version>2.3.3</jaxb.version>
@@ -975,7 +976,7 @@
 										</excludes>
 									</bannedDependencies>
 								</rules>
-								<fail>true</fail>
+								<fail>${enforce-no-javax-dependencies.fail}</fail>
 							</configuration>
 						</execution>
 						<execution>
