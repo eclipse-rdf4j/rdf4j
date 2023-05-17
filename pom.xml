@@ -264,6 +264,8 @@
 							<failWhenReviewNeeded>true</failWhenReviewNeeded>
 							<!-- TODO: maven/mavencentral/org.openjdk.jmh/jmh-generator-annprocess/1.35, GPL-2.0-only WITH Classpath-exception-2.0, restricted, #3045 -->
 							<excludeGroupIds>org.openjdk.jmh</excludeGroupIds>
+							<!-- TODO: maven/mavencentral/org.elasticsearch/elasticsearch/7.15.2, Elastic-2.0 AND SSPL-1.0 AND Apache-2.0 AND (Apache-2.0 AND Elastic-2.0 AND SSPL-1.0) AND (Elastic-2.0 AND LicenseRef-scancode-elastic-license-2018 AND SSPL-1.0), restricted, #6158 -->
+							<excludeArtifactIds>elasticsearch</excludeArtifactIds>
 						</configuration>
 					</plugin>
 				</plugins>
