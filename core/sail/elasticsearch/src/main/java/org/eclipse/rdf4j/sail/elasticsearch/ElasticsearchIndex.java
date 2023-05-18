@@ -88,6 +88,13 @@ import com.google.common.collect.Iterables;
 /**
  * Requires an Elasticsearch cluster with the DeleteByQuery plugin.
  *
+ * Note that, while RDF4J is licensed under the EDL, several ElasticSearch dependencies are licensed under the Elastic
+ * license or the SSPL, which may have implications for some projects.
+ *
+ * Please consult the ElasticSearch website and license FAQ for more information.
+ *
+ * @see <a href="https://www.elastic.co/licensing/elastic-license/faq">Elastic License FAQ</a>
+ *
  * @see LuceneSail
  */
 public class ElasticsearchIndex extends AbstractSearchIndex {

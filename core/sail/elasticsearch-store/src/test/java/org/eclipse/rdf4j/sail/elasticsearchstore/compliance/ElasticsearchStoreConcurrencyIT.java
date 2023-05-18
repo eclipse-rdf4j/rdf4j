@@ -10,10 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore.compliance;
 
-import java.io.File;
 import java.io.IOException;
 
-import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -23,7 +21,6 @@ import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.eclipse.rdf4j.testsuite.sail.SailConcurrencyTest;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.io.TempDir;
 
 /**
  * An extension of {@link SailConcurrencyTest} for testing the class
@@ -31,21 +28,18 @@ import org.junit.jupiter.api.io.TempDir;
  */
 public class ElasticsearchStoreConcurrencyIT extends SailConcurrencyTest {
 
-	@TempDir
-	static File installLocation;
-	private static ElasticsearchClusterRunner runner;
 	private static SingletonClientProvider clientPool;
 
 	@BeforeAll
 	public static void beforeClass() throws IOException, InterruptedException {
-		runner = TestHelpers.startElasticsearch(installLocation);
-		clientPool = new SingletonClientProvider("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER);
+		TestHelpers.openClient();
+		clientPool = new SingletonClientProvider("localhost", TestHelpers.PORT, TestHelpers.CLUSTER);
 	}
 
 	@AfterAll
 	public static void afterClass() throws Exception {
 		clientPool.close();
-		TestHelpers.stopElasticsearch(runner);
+		TestHelpers.closeClient();
 	}
 
 	/*---------*

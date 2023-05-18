@@ -16,7 +16,6 @@ import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
 import org.assertj.core.util.Files;
-import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -50,7 +49,6 @@ import org.openjdk.jmh.annotations.Warmup;
 public class InitBenchmark {
 
 	private static final File installLocation = Files.newTemporaryFolder();
-	private static ElasticsearchClusterRunner runner;
 	SingletonClientProvider clientPool;
 
 	@Setup(Level.Trial)
@@ -58,23 +56,23 @@ public class InitBenchmark {
 		// JMH does not correctly set JAVA_HOME. Change the JAVA_HOME below if you the following error:
 		// [EmbeddedElsHandler] INFO p.a.t.e.ElasticServer - could not find java; set JAVA_HOME or ensure java is in
 		// PATH
-		runner = TestHelpers.startElasticsearch(installLocation);
+		TestHelpers.openClient();
 
-		clientPool = new SingletonClientProvider("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER);
+		clientPool = new SingletonClientProvider("localhost", TestHelpers.PORT, TestHelpers.CLUSTER);
 		System.gc();
 	}
 
 	@TearDown(Level.Trial)
 	public void afterClass() throws Exception {
 		clientPool.close();
-		TestHelpers.stopElasticsearch(runner);
+		TestHelpers.closeClient();
 	}
 
 	@Benchmark
 	public void initWithElasticsearchClientCreation() {
 
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex",
+				new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER, "testindex",
 						ExtensibleStore.Cache.NONE));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {

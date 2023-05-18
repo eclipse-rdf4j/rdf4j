@@ -10,11 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore.compliance;
 
-import java.io.File;
 import java.io.IOException;
 
-import org.assertj.core.util.Files;
-import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
@@ -27,20 +24,18 @@ import org.junit.jupiter.api.Disabled;
 
 public class ElasticsearchStoreRepositoryIT extends RepositoryTest {
 
-	private static final File installLocation = Files.newTemporaryFolder();
-	private static ElasticsearchClusterRunner runner;
 	private static SingletonClientProvider clientPool;
 
 	@BeforeAll
 	public static void beforeClass() throws IOException, InterruptedException {
-		runner = TestHelpers.startElasticsearch(installLocation);
-		clientPool = new SingletonClientProvider("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER);
+		TestHelpers.openClient();
+		clientPool = new SingletonClientProvider("localhost", TestHelpers.PORT, TestHelpers.CLUSTER);
 	}
 
 	@AfterAll
 	public static void afterClass() throws Exception {
 		clientPool.close();
-		TestHelpers.stopElasticsearch(runner);
+		TestHelpers.closeClient();
 	}
 
 	@Override

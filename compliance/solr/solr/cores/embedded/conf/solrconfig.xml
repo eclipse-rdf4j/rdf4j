@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <config>
-	<luceneMatchVersion>8.5.0</luceneMatchVersion>
+	<luceneMatchVersion>8.9.0</luceneMatchVersion>
 	<dataDir>target/test-data</dataDir>
 	<requestHandler name="/select" class="solr.SearchHandler"/>
 	<requestHandler name="/get" class="solr.RealTimeGetHandler"/>
+	<directoryFactory class="org.apache.solr.core.RAMDirectoryFactory"/>
+	<indexConfig>
+		<lockType>single</lockType>
+	</indexConfig>
 </config>
