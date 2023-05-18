@@ -260,6 +260,8 @@
 							<failWhenReviewNeeded>true</failWhenReviewNeeded>
 							<!-- TODO: maven/mavencentral/org.openjdk.jmh/jmh-generator-annprocess/1.35, GPL-2.0-only WITH Classpath-exception-2.0, restricted, #3045 -->
 							<excludeGroupIds>org.openjdk.jmh</excludeGroupIds>
+							<!-- We can safely ignore the restricted label on ES, see: https://github.com/eclipse/rdf4j/pull/4355#issuecomment-1521573125 -->
+							<excludeArtifactIds>elasticsearch</excludeArtifactIds>
 						</configuration>
 					</plugin>
 				</plugins>
