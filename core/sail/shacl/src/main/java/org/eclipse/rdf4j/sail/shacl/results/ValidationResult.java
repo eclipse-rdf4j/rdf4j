@@ -190,13 +190,6 @@ public class ValidationResult {
 	}
 
 	/**
-	 * @return conforms
-	 */
-	public boolean conforms() {
-		return severity != Severity.Violation;
-	}
-
-	/**
 	 * @return the type of the source constraint that caused the violation
 	 */
 	public SourceConstraintComponent getSourceConstraintComponent() {
@@ -238,5 +231,29 @@ public class ValidationResult {
 
 	public void setPathIri(Value path) {
 		this.pathIri = path;
+	}
+
+	protected Optional<Value> getValue() {
+		return value;
+	}
+
+	protected Shape getShape() {
+		return shape;
+	}
+
+	protected ConstraintComponent getSourceConstraint() {
+		return sourceConstraint;
+	}
+
+	protected Severity getSeverity() {
+		return severity;
+	}
+
+	protected Resource[] getDataGraphs() {
+		return dataGraphs;
+	}
+
+	protected Resource[] getShapesGraphs() {
+		return shapesGraphs;
 	}
 }

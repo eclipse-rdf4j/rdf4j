@@ -37,6 +37,7 @@ import java.util.stream.Stream;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.jena.query.Dataset;
 import org.apache.jena.query.DatasetFactory;
 import org.apache.jena.riot.RDFDataMgr;
@@ -289,7 +290,7 @@ abstract public class AbstractShaclTest {
 	}
 
 	@BeforeAll
-	static void beforeAll() {
+	static void beforeAll() throws IllegalAccessException {
 		IRI[] shapesGraphs = SHAPE_GRAPHS.stream()
 				.map(g -> {
 					if (g.equals(RDF4J.NIL)) {
@@ -299,7 +300,7 @@ abstract public class AbstractShaclTest {
 				})
 				.toArray(IRI[]::new);
 
-		ShaclValidator.CONTEXTS = shapesGraphs;
+		FieldUtils.writeDeclaredStaticField(ShaclValidator.class, "CONTEXTS", shapesGraphs, true);
 	}
 
 	@AfterEach
