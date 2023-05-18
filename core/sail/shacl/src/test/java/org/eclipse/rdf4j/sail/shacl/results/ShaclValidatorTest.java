@@ -9,7 +9,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  ******************************************************************************/
 
-package org.eclipse.rdf4j.sail.shacl;
+package org.eclipse.rdf4j.sail.shacl.results;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -18,14 +18,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.io.StringReader;
 
+import org.apache.commons.lang3.reflect.FieldUtils;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.shacl.ShaclValidator;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -38,8 +41,8 @@ import org.junit.jupiter.api.parallel.Isolated;
 public class ShaclValidatorTest {
 
 	@BeforeAll
-	static void afterAll() {
-		ShaclValidator.CONTEXTS = new Resource[] {};
+	static void beforeAll() throws IllegalAccessException {
+		FieldUtils.writeDeclaredStaticField(ShaclValidator.class, "CONTEXTS", new Resource[] {}, true);
 	}
 
 	@Test
@@ -86,8 +89,10 @@ public class ShaclValidatorTest {
 		}
 
 		ValidationReport validate = ShaclValidator.validate(data.getSail(), shapes.getSail());
-		assertTrue(validate.conforms());
+		assertFalse(validate.conforms());
 		assertEquals(1, validate.getValidationResult().size());
+		assertEquals(SHACL.WARNING, validate.getValidationResult().get(0).getSeverity().getIri());
+
 	}
 
 	@Test
@@ -102,8 +107,9 @@ public class ShaclValidatorTest {
 		}
 
 		ValidationReport validate = ShaclValidator.validate(data.getSail(), shapes.getSail());
-		assertTrue(validate.conforms());
+		assertFalse(validate.conforms());
 		assertEquals(1, validate.getValidationResult().size());
+		assertEquals(SHACL.INFO, validate.getValidationResult().get(0).getSeverity().getIri());
 	}
 
 	@Test

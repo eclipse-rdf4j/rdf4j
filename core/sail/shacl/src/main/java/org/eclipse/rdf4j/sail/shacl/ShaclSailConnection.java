@@ -1115,7 +1115,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			try (CloseableIteration<? extends ValidationTuple, SailException> iterator = planNode.iterator()) {
 				validationResults = new ValidationResultIterator(iterator,
-						sail.getEffectiveValidationResultsLimitPerConstraint(), shape.getSeverity());
+						sail.getEffectiveValidationResultsLimitPerConstraint());
 				return validationResults;
 			} finally {
 				handlePostLogging(before, validationResults);

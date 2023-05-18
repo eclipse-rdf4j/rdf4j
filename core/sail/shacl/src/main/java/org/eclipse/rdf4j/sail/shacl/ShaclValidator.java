@@ -40,8 +40,9 @@ public class ShaclValidator {
 
 	private static final Resource[] ALL_CONTEXTS = {};
 
-	// protected so that tests can override
-	protected static Resource[] CONTEXTS = {};
+	// tests can write to this field using reflection
+	@SuppressWarnings("FieldMayBeFinal")
+	private static Resource[] CONTEXTS = {};
 
 	public static ValidationReport validate(Sail dataRepo, Sail shapesRepo) {
 
@@ -97,7 +98,7 @@ public class ShaclValidator {
 
 				.map(planNode -> {
 					try (CloseableIteration<? extends ValidationTuple, SailException> iterator = planNode.iterator()) {
-						return new ValidationResultIterator(iterator, 1000, planNode.getShape().getSeverity());
+						return new ValidationResultIterator(iterator, 1000);
 					}
 				})
 				.collect(Collectors.toList());
