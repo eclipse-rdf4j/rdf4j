@@ -19,7 +19,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.structures.FedXDataset;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.AbstractTupleQueryResultHandler;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
@@ -530,5 +535,44 @@ public class BasicTests extends SPARQLBaseTest {
 		/* test DESCRIBE query for a single resource (one federation member to simulate single source) */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl"));
 		execute("/tests/basic/query_describe1.rq", "/tests/basic/query_describe1_singleSource.ttl", false, true);
+	}
+
+	@Test
+	public void test_EscapingQuotedLiteral() throws Exception {
+
+		IRI publication = Values.iri("http://example.org/mypublication");
+		Literal quotedTitle = Values.literal("'A publication with quoted (') title'");
+
+		/* add two members */
+		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+
+		// add some additional quoted literal
+		try (RepositoryConnection conn1 = getRepository(1).getConnection()) {
+			conn1.add(publication, DCTERMS.TITLE, quotedTitle);
+		}
+
+		// add data to second endpoint to do a join with the literal
+		try (RepositoryConnection conn2 = getRepository(2).getConnection()) {
+			conn2.add(publication, RDFS.COMMENT, quotedTitle);
+		}
+
+		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
+
+			// SELECT query (with an artificial join on ?title to simulate the escaping issue
+			TupleQuery tq = conn
+					.prepareTupleQuery(
+							"SELECT * WHERE { ?publication <http://purl.org/dc/terms/title> ?title ; rdfs:comment ?title }");
+
+			try (TupleQueryResult tqr = tq.evaluate()) {
+				while (tqr.hasNext()) {
+
+					BindingSet bs = tqr.next();
+					Assertions.assertEquals(publication, bs.getValue("publication"));
+					Assertions.assertEquals(quotedTitle, bs.getValue("title"));
+					Assertions.assertFalse(tqr.hasNext(), "Result is expected to have a single result");
+				}
+			}
+		}
+
 	}
 }
