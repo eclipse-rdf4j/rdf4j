@@ -24,12 +24,24 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @ConfigurationProperties(prefix = "rdf4j.spring.repository.remote")
 public class RemoteRepositoryProperties {
+
 	/**
 	 * URL of the SPARQL endpoint
 	 */
 	@NotBlank
 	@Pattern(regexp = "^(https?|ftp|file)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|]")
 	private String managerUrl = null;
+
+	/**
+	 * Optional username of the SPARQL endpoint
+	 */
+	private String username = null;
+
+	/**
+	 * Optional password of the SPARQL endpoint
+	 */
+	private String password = null;
+
 	/**
 	 * Name of the repository
 	 */
@@ -45,6 +57,22 @@ public class RemoteRepositoryProperties {
 		this.managerUrl = managerUrl;
 	}
 
+	public String getUsername() {
+		return username;
+	}
+
+	public void setUsername(String username) {
+		this.username = username;
+	}
+
+	public String getPassword() {
+		return password;
+	}
+
+	public void setPassword(String password) {
+		this.password = password;
+	}
+
 	public String getName() {
 		return name;
 	}
@@ -53,15 +81,16 @@ public class RemoteRepositoryProperties {
 		this.name = name;
 	}
 
+	public boolean isUsernamePasswordConfigured() {
+		return username != null && password != null;
+	}
+
 	@Override
 	public String toString() {
 		return "RemoteRepositoryConfig{"
-				+ "managerUrl='"
-				+ managerUrl
-				+ '\''
-				+ ", name='"
-				+ name
-				+ '\''
-				+ '}';
+				+ "managerUrl='" + managerUrl + "'"
+				+ (username != null ? ", username='" + username + "'" : "")
+				+ (password != null ? ", password='****'" : "")
+				+ ", name='" + name + "' }";
 	}
 }

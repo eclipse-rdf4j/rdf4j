@@ -50,7 +50,7 @@ public class RdfsShaclConnectionTest {
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
 			((ShaclSailConnection) connection).rdfsSubClassOfReasoner = RdfsSubClassOfReasoner
-					.createReasoner((ShaclSailConnection) connection);
+					.createReasoner((ShaclSailConnection) connection, new ValidationSettings());
 			VerySimpleRdfsBackwardsChainingConnection connection2 = new VerySimpleRdfsBackwardsChainingConnection(
 					connection,
 					((ShaclSailConnection) connection).getRdfsSubClassOfReasoner());
@@ -71,7 +71,7 @@ public class RdfsShaclConnectionTest {
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
 			((ShaclSailConnection) connection).rdfsSubClassOfReasoner = RdfsSubClassOfReasoner
-					.createReasoner((ShaclSailConnection) connection);
+					.createReasoner((ShaclSailConnection) connection, new ValidationSettings());
 
 			VerySimpleRdfsBackwardsChainingConnection connection2 = new VerySimpleRdfsBackwardsChainingConnection(
 					connection,
@@ -121,7 +121,7 @@ public class RdfsShaclConnectionTest {
 			connection.commit();
 
 			((ShaclSailConnection) connection).rdfsSubClassOfReasoner = RdfsSubClassOfReasoner
-					.createReasoner((ShaclSailConnection) connection);
+					.createReasoner((ShaclSailConnection) connection, new ValidationSettings());
 
 			VerySimpleRdfsBackwardsChainingConnection connection2 = new VerySimpleRdfsBackwardsChainingConnection(
 					connection,

@@ -10,5 +10,6 @@
 rdf4j:SHACLShapeGraph {
   ex:PersonShape a sh:NodeShape;
     sh:targetNode ex:steve;
-    sh:hasValue ex:peter .
+    sh:hasValue ex:peter ;
+    sh:message "This is a contradiction!" .
 }

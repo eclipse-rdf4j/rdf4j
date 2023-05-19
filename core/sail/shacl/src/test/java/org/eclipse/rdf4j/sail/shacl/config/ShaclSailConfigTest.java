@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.junit.jupiter.api.Assertions;
@@ -74,6 +75,22 @@ public class ShaclSailConfigTest {
 
 		BNode implNode = vf.createBNode();
 		ModelBuilder mb = new ModelBuilder().subject(implNode);
+
+		mb.add(CONFIG.Shacl.parallelValidation, false);
+		mb.add(CONFIG.Shacl.logValidationPlans, false);
+		mb.add(CONFIG.Shacl.logValidationViolations, false);
+		mb.add(CONFIG.Shacl.validationEnabled, false);
+		mb.add(CONFIG.Shacl.cacheSelectNodes, false);
+		mb.add(CONFIG.Shacl.globalLogValidationExecution, false);
+		mb.add(CONFIG.Shacl.rdfsSubClassReasoning, true);
+		mb.add(CONFIG.Shacl.performanceLogging, false);
+		mb.add(CONFIG.Shacl.eclipseRdf4jShaclExtensions, false);
+		mb.add(CONFIG.Shacl.dashDataShapes, false);
+		mb.add(CONFIG.Shacl.serializableValidation, true);
+
+		mb.add(CONFIG.Shacl.validationResultsLimitTotal, 1000);
+		mb.add(CONFIG.Shacl.validationResultsLimitPerConstraint, 30);
+		mb.add(CONFIG.Shacl.transactionalValidationLimit, 90);
 
 		mb.add(PARALLEL_VALIDATION, true);
 		mb.add(LOG_VALIDATION_PLANS, true);
@@ -128,6 +145,7 @@ public class ShaclSailConfigTest {
 
 		assertThat(shaclSailConfig.isParallelValidation()).isFalse();
 		assertThat(shaclSailConfig.isCacheSelectNodes()).isTrue();
+		assertThat(shaclSailConfig.getShapesGraphs()).hasSameElementsAs(ShaclSailConfig.SHAPES_GRAPHS_DEFAULT);
 	}
 
 	@Test

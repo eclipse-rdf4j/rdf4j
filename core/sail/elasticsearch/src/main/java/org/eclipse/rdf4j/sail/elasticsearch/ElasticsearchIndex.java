@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.sail.lucene.DocumentDistance;
 import org.eclipse.rdf4j.sail.lucene.DocumentResult;
 import org.eclipse.rdf4j.sail.lucene.DocumentScore;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
+import org.eclipse.rdf4j.sail.lucene.QuerySpec;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.elasticsearch.action.ActionRequestBuilder;
@@ -86,6 +87,13 @@ import com.google.common.collect.Iterables;
 
 /**
  * Requires an Elasticsearch cluster with the DeleteByQuery plugin.
+ *
+ * Note that, while RDF4J is licensed under the EDL, several ElasticSearch dependencies are licensed under the Elastic
+ * license or the SSPL, which may have implications for some projects.
+ *
+ * Please consult the ElasticSearch website and license FAQ for more information.
+ *
+ * @see <a href="https://www.elastic.co/licensing/elastic-license/faq">Elastic License FAQ</a>
  *
  * @see LuceneSail
  */
@@ -173,7 +181,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	private String analyzer;
 
-	private final String queryAnalyzer = "standard";
+	private String queryAnalyzer = DEFAULT_ANALYZER;
 
 	private Function<? super String, ? extends SpatialContext> geoContextMapper;
 
@@ -199,6 +207,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		indexName = parameters.getProperty(INDEX_NAME_KEY, DEFAULT_INDEX_NAME);
 		documentType = parameters.getProperty(DOCUMENT_TYPE_KEY, DEFAULT_DOCUMENT_TYPE);
 		analyzer = parameters.getProperty(LuceneSail.ANALYZER_CLASS_KEY, DEFAULT_ANALYZER);
+		queryAnalyzer = parameters.getProperty(LuceneSail.QUERY_ANALYZER_CLASS_KEY, DEFAULT_ANALYZER);
 		// slightly hacky cast to cope with the fact that Properties is
 		// Map<Object,Object>
 		// even though it is effectively Map<String,String>
@@ -528,16 +537,22 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	 * Parse the passed query.
 	 *
 	 * @param subject
-	 * @param query       string
-	 * @param propertyURI
-	 * @param highlight
+	 * @param spec    query to process
 	 * @return the parsed query
 	 * @throws MalformedQueryException
 	 * @throws IOException
+	 * @throws IllegalArgumentException if the spec contains a multi-param query
 	 */
 	@Override
-	protected Iterable<? extends DocumentScore> query(Resource subject, String query, IRI propertyURI,
-			boolean highlight) throws MalformedQueryException, IOException {
+	protected Iterable<? extends DocumentScore> query(Resource subject, QuerySpec spec)
+			throws MalformedQueryException, IOException {
+		if (spec.getQueryPatterns().size() != 1) {
+			throw new IllegalArgumentException("Multi-param query not implemented!");
+		}
+		QuerySpec.QueryParam param = spec.getQueryPatterns().iterator().next();
+		IRI propertyURI = param.getProperty();
+		boolean highlight = param.isHighlight();
+		String query = param.getQuery();
 		QueryBuilder qb = prepareQuery(propertyURI, QueryBuilders.queryStringQuery(query));
 		SearchRequestBuilder request = client.prepareSearch();
 		if (highlight) {

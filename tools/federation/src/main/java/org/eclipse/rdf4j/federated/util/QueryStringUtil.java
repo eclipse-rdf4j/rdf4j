@@ -893,7 +893,7 @@ public class QueryStringUtil {
 	 */
 	protected static StringBuilder appendLiteral(StringBuilder sb, Literal lit) {
 		sb.append("'''");
-		sb.append(lit.getLabel().replace("\"", "\\\""));
+		sb.append(lit.getLabel().replace("\"", "\\\"").replace("'", "\\'"));
 		sb.append("'''");
 
 		if (lit.getLanguage().isPresent()) {

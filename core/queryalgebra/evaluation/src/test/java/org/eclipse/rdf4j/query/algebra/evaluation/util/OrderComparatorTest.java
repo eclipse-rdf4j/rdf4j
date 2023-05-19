@@ -19,6 +19,7 @@ import java.util.Iterator;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -88,13 +89,23 @@ public class OrderComparatorTest {
 		@Override
 		public void setOptimizerPipeline(QueryOptimizerPipeline pipeline) {
 			// TODO Auto-generated method stub
-
 		}
 
 		@Override
 		public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics, BindingSet bindings) {
 			// TODO Auto-generated method stub
 			return null;
+		}
+
+		@Override
+		public QueryEvaluationMode getQueryEvaluationMode() {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public void setQueryEvaluationMode(QueryEvaluationMode queryEvaluationMode) {
+			// TODO Auto-generated method stub
+
 		}
 	}
 

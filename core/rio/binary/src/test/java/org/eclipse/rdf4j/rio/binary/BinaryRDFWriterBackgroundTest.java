@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFWriterTest;
 import org.eclipse.rdf4j.rio.RioSetting;
-import org.eclipse.rdf4j.rio.helpers.BinaryRDFWriterSettings;
 
 /**
  * @author Arjohn Kampman

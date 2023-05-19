@@ -33,6 +33,8 @@ import org.slf4j.LoggerFactory;
 
 public class ValidationTuple {
 
+	private static final Resource[] NULL_CONTEXT = { null };
+
 	private static final Logger logger = LoggerFactory.getLogger(ValidationTuple.class);
 	private static final ValueComparator valueComparator = new ValueComparator();
 
@@ -86,7 +88,7 @@ public class ValidationTuple {
 	}
 
 	public ValidationTuple(Value a, Value c, ConstraintComponent.Scope scope, boolean hasValue, Resource context) {
-		this(a, c, scope, hasValue, new Resource[] { context });
+		this(a, c, scope, hasValue, context == null ? NULL_CONTEXT : new Resource[] { context });
 	}
 
 	public ValidationTuple(Value a, Value c, ConstraintComponent.Scope scope, boolean hasValue, Resource[] contexts) {
@@ -480,4 +482,5 @@ public class ValidationTuple {
 	public Resource[] getContexts() {
 		return contexts;
 	}
+
 }

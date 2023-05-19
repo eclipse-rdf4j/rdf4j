@@ -10,16 +10,25 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import java.util.function.Supplier;
+
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 
+/**
+ *
+ * @deprecated since 4.3.0 - use {@link DefaultEvaluationStrategyFactory} instead.
+ */
+@Deprecated(since = "4.3.0", forRemoval = true)
 public class ExtendedEvaluationStrategyFactory extends AbstractEvaluationStrategyFactory
 		implements FederatedServiceResolverClient {
 
 	private FederatedServiceResolver serviceResolver;
+	private Supplier<CollectionFactory> collectionFactorySupplier;
 
 	public ExtendedEvaluationStrategyFactory() {
 	}
@@ -38,10 +47,18 @@ public class ExtendedEvaluationStrategyFactory extends AbstractEvaluationStrateg
 	}
 
 	@Override
+	public void setCollectionFactory(Supplier<CollectionFactory> collectionFactory) {
+		this.collectionFactorySupplier = collectionFactory;
+	}
+
+	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
-		return new ExtendedEvaluationStrategy(tripleSource, dataset, serviceResolver, getQuerySolutionCacheThreshold(),
+		ExtendedEvaluationStrategy extendedEvaluationStrategy = new ExtendedEvaluationStrategy(tripleSource, dataset,
+				serviceResolver, getQuerySolutionCacheThreshold(),
 				evaluationStatistics);
+		extendedEvaluationStrategy.setCollectionFactory(collectionFactorySupplier);
+		return extendedEvaluationStrategy;
 	}
 
 }

@@ -11,10 +11,9 @@
 package org.eclipse.rdf4j.query.resultio.sparqlstarjson;
 
 /**
- * @deprecated since 3.4.0 - moved to
- *             {@link org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONWriterFactory}
+ * @deprecated Moved to {@link org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONWriterFactory}
  */
-@Deprecated
+@Deprecated(since = "3.4.0")
 public class SPARQLStarResultsJSONWriterFactory
 		extends org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONWriterFactory {
 }

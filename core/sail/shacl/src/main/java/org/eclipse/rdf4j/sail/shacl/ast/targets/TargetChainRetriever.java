@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -32,6 +33,8 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.ArrayBindingBasedQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -41,7 +44,9 @@ import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LoggingCloseableIteration;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -74,20 +79,24 @@ public class TargetChainRetriever implements PlanNode {
 	private final Dataset dataset;
 	private final Set<String> varNames;
 	private final String sparqlProjection;
+	private final EffectiveTarget.EffectiveTargetFragment removedStatementTarget;
+	private final boolean hasValue;
+	private final Set<String> varNamesInQueryFragment;
 
 	private StackTraceElement[] stackTrace;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public TargetChainRetriever(ConnectionsGroup connectionsGroup,
 			Resource[] dataGraph, List<StatementMatcher> statementMatchers,
-			List<StatementMatcher> removedStatementMatchers, String queryFragment,
-			List<StatementMatcher.Variable> vars, ConstraintComponent.Scope scope) {
+			List<StatementMatcher> removedStatementMatchers,
+			EffectiveTarget.EffectiveTargetFragment removedStatementTarget, SparqlFragment queryFragment,
+			List<Variable<Value>> vars, ConstraintComponent.Scope scope, boolean hasValue) {
 		this.connectionsGroup = connectionsGroup;
 		this.dataGraph = dataGraph;
 		this.varNames = vars.stream().map(StatementMatcher.Variable::getName).collect(Collectors.toSet());
-
+		assert !this.varNames.isEmpty();
 		this.dataset = PlanNodeHelper.asDefaultGraphDataset(this.dataGraph);
-		this.statementMatchers = StatementMatcher.reduce(varNames, statementMatchers);
+		this.statementMatchers = StatementMatcher.reduce(statementMatchers);
 
 		this.scope = scope;
 
@@ -96,17 +105,31 @@ public class TargetChainRetriever implements PlanNode {
 				.reduce((a, b) -> a + " " + b)
 				.orElseThrow(IllegalStateException::new);
 
-		this.queryFragment = StatementMatcher.StableRandomVariableProvider.normalize(queryFragment);
+		this.queryFragment = queryFragment.getNamespacesForSparql()
+				+ StatementMatcher.StableRandomVariableProvider.normalize(queryFragment.getFragment());
 
 //		this.stackTrace = Thread.currentThread().getStackTrace();
 
-		queryParserFactory = QueryParserRegistry.getInstance()
+		this.queryParserFactory = QueryParserRegistry.getInstance()
 				.get(QueryLanguage.SPARQL)
 				.get();
 
+		this.varNamesInQueryFragment = Set.of(ArrayBindingBasedQueryEvaluationContext
+				.findAllVariablesUsedInQuery(((QueryRoot) queryParserFactory.getParser()
+						.parseQuery("select * where {\n" + this.queryFragment + "\n}", null)
+						.getTupleExpr())));
+
+		assert !varNamesInQueryFragment.isEmpty();
+
 		this.removedStatementMatchers = removedStatementMatchers != null
-				? StatementMatcher.reduce(varNames, removedStatementMatchers)
+				? StatementMatcher.reduce(removedStatementMatchers)
 				: Collections.emptyList();
+
+		this.removedStatementTarget = removedStatementTarget;
+
+		this.hasValue = hasValue;
+
+		assert scope == ConstraintComponent.Scope.propertyShape || !this.hasValue;
 
 	}
 
@@ -115,18 +138,27 @@ public class TargetChainRetriever implements PlanNode {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final Iterator<StatementMatcher> statementPatternIterator = statementMatchers.iterator();
-			final Iterator<StatementMatcher> removedStatementIterator = removedStatementMatchers.iterator();
+			private final Iterator<StatementMatcher> statementPatternIterator = statementMatchers.iterator();
+			private final Iterator<StatementMatcher> removedStatementIterator = removedStatementMatchers.iterator();
 
-			StatementMatcher currentStatementMatcher;
-			CloseableIteration<? extends Statement, SailException> statements;
-			ValidationTuple next;
+			private StatementMatcher currentStatementMatcher;
+			private String sparqlValuesDecl;
+			private Set<String> currentVarNames;
+			private CloseableIteration<? extends Statement, SailException> statements;
+			private ValidationTuple next;
 
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> results;
+			private CloseableIteration<? extends BindingSet, QueryEvaluationException> results;
 
-			ParsedQuery parsedQuery;
+			private ParsedQuery parsedQuery;
+
+			private boolean removedStatement = false;
 
 			private final List<BindingSet> bulk = new ArrayList<>(BULK_SIZE);
+
+			@Override
+			protected void init() {
+				// no-op
+			}
 
 			public void calculateNextStatementMatcher() {
 				if (statements != null && statements.hasNext()) {
@@ -157,13 +189,22 @@ public class TargetChainRetriever implements PlanNode {
 					if (statementPatternIterator.hasNext()) {
 						currentStatementMatcher = statementPatternIterator.next();
 						connection = connectionsGroup.getAddedStatements();
+						removedStatement = false;
 					} else {
 						if (!connectionsGroup.getStats().hasRemoved()) {
 							break;
 						}
 						currentStatementMatcher = removedStatementIterator.next();
 						connection = connectionsGroup.getRemovedStatements();
+						removedStatement = true;
 					}
+
+					this.sparqlValuesDecl = currentStatementMatcher.getSparqlValuesDecl(varNames, removedStatement,
+							varNamesInQueryFragment);
+					this.currentVarNames = currentStatementMatcher.getVarNames(varNames, removedStatement,
+							varNamesInQueryFragment);
+
+					assert !currentVarNames.isEmpty();
 
 					statements = connection.getStatements(
 							currentStatementMatcher.getSubjectValue(),
@@ -198,18 +239,15 @@ public class TargetChainRetriever implements PlanNode {
 
 						if (parsedQuery == null) {
 							String query = "select " + sparqlProjection + " where {\n" +
-									currentStatementMatcher.getSparqlValuesDecl() +
+									sparqlValuesDecl +
 									queryFragment + "\n" +
 									"}";
 
 							parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
 						}
 
-						Set<String> varNames = currentStatementMatcher.getVarNames();
-
-						List<BindingSet> bulk = readStatementsInBulk(varNames);
-
-						setBindings(varNames, bulk);
+						List<BindingSet> bulk = readStatementsInBulk(currentVarNames);
+						setBindings(currentVarNames, bulk);
 
 						results = connectionsGroup.getBaseConnection()
 								.evaluate(parsedQuery.getTupleExpr(), dataset,
@@ -227,16 +265,16 @@ public class TargetChainRetriever implements PlanNode {
 					if (nextBinding.size() == 1) {
 						Iterator<Binding> iterator = nextBinding.iterator();
 						if (iterator.hasNext()) {
-							next = new ValidationTuple(iterator.next().getValue(), scope, false, dataGraph);
+							next = new ValidationTuple(iterator.next().getValue(), scope, hasValue, dataGraph);
 						} else {
-							next = new ValidationTuple((Value) null, scope, false, dataGraph);
+							next = new ValidationTuple((Value) null, scope, hasValue, dataGraph);
 						}
 					} else {
 						Value[] values = StreamSupport.stream(nextBinding.spliterator(), false)
 								.sorted(Comparator.comparing(Binding::getName))
 								.map(Binding::getValue)
 								.toArray(Value[]::new);
-						next = new ValidationTuple(values, scope, false, dataGraph);
+						next = new ValidationTuple(values, scope, hasValue, dataGraph);
 
 					}
 
@@ -247,35 +285,70 @@ public class TargetChainRetriever implements PlanNode {
 			private List<BindingSet> readStatementsInBulk(Set<String> varNames) {
 				bulk.clear();
 
-				for (int i = 0; i < BULK_SIZE && statements.hasNext(); i++) {
+				while (bulk.size() < BULK_SIZE && statements.hasNext()) {
 					Statement next = statements.next();
-
-					Binding[] bindings = new Binding[varNames.size()];
-					int j = 0;
-
-					if (currentStatementMatcher.getSubjectValue() == null
-							&& currentStatementMatcher.getSubjectName() != null) {
-						bindings[j++] = new SimpleBinding(currentStatementMatcher.getSubjectName(), next.getSubject());
+					Stream<EffectiveTarget.StatementsAndMatcher> rootStatements = Stream
+							.of(new EffectiveTarget.StatementsAndMatcher(List.of(next), currentStatementMatcher));
+					if (removedStatement) {
+						Stream<EffectiveTarget.StatementsAndMatcher> root = removedStatementTarget.getRoot(
+								connectionsGroup,
+								dataGraph, currentStatementMatcher,
+								next);
+						if (root != null) {
+							rootStatements = root;
+						}
 					}
 
-					if (currentStatementMatcher.getPredicateValue() == null
-							&& currentStatementMatcher.getPredicateName() != null) {
-						bindings[j++] = new SimpleBinding(currentStatementMatcher.getPredicateName(),
-								next.getPredicate());
-					}
+					rootStatements
+							.filter(EffectiveTarget.StatementsAndMatcher::hasStatements)
+							.flatMap(statementsAndMatcher -> {
+								StatementMatcher newCurrentStatementMatcher = statementsAndMatcher
+										.getStatementMatcher();
 
-					if (currentStatementMatcher.getObjectValue() == null
-							&& currentStatementMatcher.getObjectName() != null) {
-						bindings[j++] = new SimpleBinding(currentStatementMatcher.getObjectName(), next.getObject());
-					}
-					if (bindings.length == 1) {
-						bulk.add(new SingletonBindingSet(bindings[0].getName(), bindings[0].getValue()));
+								return statementsAndMatcher.getStatements()
+										.stream()
+										.map(temp -> {
+											Binding[] bindings = new Binding[varNames.size()];
+											int j = 0;
 
-					} else {
-						bulk.add(new SimpleBindingSet(varNames, bindings));
-					}
+											if (newCurrentStatementMatcher.getSubjectValue() == null
+													&& currentVarNames
+															.contains(newCurrentStatementMatcher.getSubjectName())) {
+												bindings[j++] = new SimpleBinding(
+														newCurrentStatementMatcher.getSubjectName(),
+														temp.getSubject());
+											}
+
+											if (newCurrentStatementMatcher.getPredicateValue() == null
+													&& currentVarNames
+															.contains(newCurrentStatementMatcher.getPredicateName())) {
+												bindings[j++] = new SimpleBinding(
+														newCurrentStatementMatcher.getPredicateName(),
+														temp.getPredicate());
+											}
+
+											if (newCurrentStatementMatcher.getObjectValue() == null
+													&& currentVarNames
+															.contains(newCurrentStatementMatcher.getObjectName())) {
+												bindings[j++] = new SimpleBinding(
+														newCurrentStatementMatcher.getObjectName(),
+														temp.getObject());
+											}
+											if (bindings.length == 1) {
+												return new SingletonBindingSet(bindings[0].getName(),
+														bindings[0].getValue());
+
+											} else {
+												return new SimpleBindingSet(varNames, bindings);
+											}
+										});
+
+							})
+							.distinct()
+							.forEach(bulk::add);
 
 				}
+
 				return bulk;
 			}
 
@@ -295,7 +368,7 @@ public class TargetChainRetriever implements PlanNode {
 			}
 
 			@Override
-			public void localClose() throws SailException {
+			public void localClose() {
 
 				try {
 					if (statements != null) {
@@ -310,7 +383,7 @@ public class TargetChainRetriever implements PlanNode {
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 				calculateNextResult();
 
 				ValidationTuple temp = next;
@@ -320,7 +393,7 @@ public class TargetChainRetriever implements PlanNode {
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				calculateNextResult();
 
 				return next != null;

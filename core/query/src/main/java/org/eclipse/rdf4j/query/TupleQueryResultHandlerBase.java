@@ -14,7 +14,7 @@ package org.eclipse.rdf4j.query;
  * @author Jeen Broekstra
  * @deprecated since 2.0. Use {@link AbstractTupleQueryResultHandler} instead.
  */
-@Deprecated
+@Deprecated(since = "2.0")
 public class TupleQueryResultHandlerBase extends AbstractTupleQueryResultHandler {
 
 }

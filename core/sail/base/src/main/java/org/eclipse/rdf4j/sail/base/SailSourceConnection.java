@@ -19,6 +19,8 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -36,8 +38,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
@@ -144,20 +147,20 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	// Track the time used when evaluating a query, used by explain(...)
 	private boolean trackTime;
 
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
+	// current query evaluation mode
+	private QueryEvaluationMode queryEvaluationMode;
 
 	/**
 	 * Creates a new {@link SailConnection}, using the given {@link SailStore} to manage the state.
 	 *
 	 * @param sail
 	 * @param store
-	 * @param resolver the FederatedServiceResolver to use with the {@link StrictEvaluationStrategy default
+	 * @param resolver the FederatedServiceResolver to use with the {@link DefaultEvaluationStrategy default
 	 *                 EvaluationStrategy}.
 	 */
 	protected SailSourceConnection(AbstractSail sail, SailStore store, FederatedServiceResolver resolver) {
-		this(sail, store, new StrictEvaluationStrategyFactory(resolver));
+		this(sail, store, new DefaultEvaluationStrategyFactory(resolver));
+
 	}
 
 	/**
@@ -173,20 +176,20 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		this.store = store;
 		this.defaultIsolationLevel = sail.getDefaultIsolationLevel();
 		this.evalStratFactory = evalStratFactory;
-		this.federatedServiceResolver = (evalStratFactory instanceof StrictEvaluationStrategyFactory)
-				? ((StrictEvaluationStrategyFactory) evalStratFactory).getFederatedServiceResolver()
-				: null;
-	}
 
-	/*---------*
-	 * Methods *
-	 *---------*/
+		this.federatedServiceResolver = (evalStratFactory instanceof FederatedServiceResolverClient)
+				? ((FederatedServiceResolverClient) evalStratFactory).getFederatedServiceResolver()
+				: null;
+		this.queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
+		this.evalStratFactory.setCollectionFactory(sail.getCollectionFactory());
+	}
 
 	/**
 	 * Returns the {@link FederatedServiceResolver} being used.
 	 *
 	 * @return null if a custom {@link EvaluationStrategyFactory} is being used.
 	 */
+	@Override
 	public FederatedServiceResolver getFederatedServiceResolver() {
 		return federatedServiceResolver;
 	}
@@ -206,6 +209,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		if (federatedServiceResolver != null && evalStrat instanceof FederatedServiceResolverClient) {
 			((FederatedServiceResolverClient) evalStrat).setFederatedServiceResolver(federatedServiceResolver);
 		}
+		evalStrat.setQueryEvaluationMode(queryEvaluationMode);
 		return evalStrat;
 	}
 
@@ -228,7 +232,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		SailSource branch = null;
 		SailDataset rdfDataset = null;
 		CloseableIteration<BindingSet, QueryEvaluationException> iteration = null;
-
 		boolean allGood = false;
 		try {
 			branch = branch(IncludeInferred.fromBoolean(includeInferred));
@@ -271,7 +274,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 							branch.close();
 						}
 					}
-
 				}
 			}
 		}
@@ -439,6 +441,17 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	}
 
 	@Override
+	public void setTransactionSettings(TransactionSetting... settings) {
+		this.queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
+		for (TransactionSetting setting : settings) {
+			if (setting instanceof QueryEvaluationMode) {
+				this.queryEvaluationMode = ((QueryEvaluationMode) setting);
+			}
+		}
+		super.setTransactionSettings(settings);
+	}
+
+	@Override
 	protected void startTransactionInternal() throws SailException {
 		assert explicitOnlyBranch == null;
 		assert inferredOnlyBranch == null;
@@ -466,6 +479,8 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		explicitOnlyBranch = null;
 		inferredOnlyBranch = null;
 		includeInferredBranch = null;
+
+		queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
 		try {
 			if (toCloseInferredBranch != null) {
 				toCloseInferredBranch.flush();
@@ -492,6 +507,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			includeInferredBranch = null;
 			explicitOnlyBranch = null;
 			inferredOnlyBranch = null;
+
+			queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
+
 			try {
 				if (datasets.containsKey(null)) {
 					toCloseDataset = datasets.remove(null);
@@ -538,6 +556,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				}
 			}
 		}
+
 	}
 
 	@Override

@@ -50,4 +50,26 @@ public class Formatter {
 
 	}
 
+	public static String formatSparqlQuery(String query) {
+		StringBuilder stringBuilder = new StringBuilder();
+		query = query.replace(" .", " .\n");
+		query = query.replace("\n\n", "\n");
+		String[] split = query.split("\n");
+		int indent = 0;
+		for (String s : split) {
+			s = s.trim();
+			if (s.startsWith("}")) {
+				indent--;
+			}
+			for (int i = 0; i < indent; i++) {
+				stringBuilder.append("\t");
+			}
+			stringBuilder.append(s).append("\n");
+			if (s.endsWith("{")) {
+				indent++;
+			}
+		}
+		return stringBuilder.toString().trim();
+	}
+
 }

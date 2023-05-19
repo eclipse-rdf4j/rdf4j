@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
 import java.util.Collections;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -24,6 +25,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclAstLists;
+import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValueInFilter;
@@ -63,11 +65,11 @@ public class InConstraintComponent extends SimpleAbstractConstraintComponent {
 	}
 
 	@Override
-	String getSparqlFilterExpression(String varName, boolean negated) {
+	String getSparqlFilterExpression(Variable<Value> variable, boolean negated) {
 		if (negated) {
-			return "?" + varName + " IN (" + getInSetAsString() + ")";
+			return "" + variable.asSparqlVariable() + " IN (" + getInSetAsString() + ")";
 		} else {
-			return "?" + varName + " NOT IN (" + getInSetAsString() + ")";
+			return "" + variable.asSparqlVariable() + " NOT IN (" + getInSetAsString() + ")";
 		}
 	}
 
@@ -98,6 +100,11 @@ public class InConstraintComponent extends SimpleAbstractConstraintComponent {
 	@Override
 	Function<PlanNode, FilterPlanNode> getFilterAttacher() {
 		return (parent) -> new ValueInFilter(parent, in);
+	}
+
+	@Override
+	public List<Literal> getDefaultMessage() {
+		return List.of();
 	}
 
 }

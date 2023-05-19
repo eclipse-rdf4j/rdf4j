@@ -19,7 +19,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.structures.FedXDataset;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.AbstractTupleQueryResultHandler;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
@@ -29,6 +34,7 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.util.Repositories;
 import org.junit.jupiter.api.Assertions;
@@ -183,6 +189,51 @@ public class BasicTests extends SPARQLBaseTest {
 	}
 
 	@Test
+	public void testFederationSubSetQueryWithDataset() throws Exception {
+		String ns1 = "http://namespace1.org/";
+		String ns2 = "http://namespace2.org/";
+		prepareTest(Arrays.asList("/tests/data/data1.trig", "/tests/data/data2.ttl"));
+		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
+			TupleQuery tq = conn
+					.prepareTupleQuery("SELECT ?person WHERE { ?person a <http://xmlns.com/foaf/0.1/Person> }");
+
+			try (TupleQueryResult result = tq.evaluate()) {
+
+				try (TupleQueryResult expected = tupleQueryResultBuilder(List.of("person"))
+						.add(List.of(vf.createIRI(ns1, "Person_1")))
+						.add(List.of(vf.createIRI(ns1, "Person_2")))
+						.add(List.of(vf.createIRI(ns1, "Person_3")))
+						.add(List.of(vf.createIRI(ns1, "Person_4")))
+						.add(List.of(vf.createIRI(ns1, "Person_5")))
+						.add(List.of(vf.createIRI(ns2, "Person_6")))
+						.add(List.of(vf.createIRI(ns2, "Person_7")))
+						.add(List.of(vf.createIRI(ns2, "Person_8")))
+						.add(List.of(vf.createIRI(ns2, "Person_9")))
+						.add(List.of(vf.createIRI(ns2, "Person_10")))
+						.build()) {
+
+					compareTupleQueryResults(result, expected, false);
+				}
+			}
+
+			// evaluate against ep 1 and ep 3 only
+			SimpleDataset fedxDataset = new SimpleDataset();
+			fedxDataset.addDefaultGraph(vf.createIRI(ns1, "PG1"));
+			tq.setDataset(fedxDataset);
+			try (TupleQueryResult result = tq.evaluate()) {
+
+				try (TupleQueryResult expected = tupleQueryResultBuilder(List.of("person"))
+						.add(List.of(vf.createIRI(ns1, "Person_1")))
+						.build()) {
+
+					compareTupleQueryResults(result, expected, false);
+				}
+			}
+		}
+
+	}
+
+	@Test
 	public void testQueryBinding() throws Exception {
 
 		final QueryManager qm = federationContext().getQueryManager();
@@ -198,13 +249,14 @@ public class BasicTests extends SPARQLBaseTest {
 		TupleQuery query = qm.prepareTupleQuery(queryString);
 		query.setBinding("person", vf.createIRI("http://namespace1.org/", "Person_1"));
 
-		TupleQueryResult actual = query.evaluate();
+		try (TupleQueryResult actual = query.evaluate();
 
-		TupleQueryResult expected = tupleQueryResultBuilder(List.of("name"))
-				.add(List.of(vf.createLiteral("Person1")))
-				.build();
+				TupleQueryResult expected = tupleQueryResultBuilder(List.of("name"))
+						.add(List.of(vf.createLiteral("Person1")))
+						.build()) {
 
-		compareTupleQueryResults(actual, expected, false);
+			compareTupleQueryResults(actual, expected, false);
+		}
 	}
 
 	@Test
@@ -483,5 +535,44 @@ public class BasicTests extends SPARQLBaseTest {
 		/* test DESCRIBE query for a single resource (one federation member to simulate single source) */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl"));
 		execute("/tests/basic/query_describe1.rq", "/tests/basic/query_describe1_singleSource.ttl", false, true);
+	}
+
+	@Test
+	public void test_EscapingQuotedLiteral() throws Exception {
+
+		IRI publication = Values.iri("http://example.org/mypublication");
+		Literal quotedTitle = Values.literal("'A publication with quoted (') title'");
+
+		/* add two members */
+		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+
+		// add some additional quoted literal
+		try (RepositoryConnection conn1 = getRepository(1).getConnection()) {
+			conn1.add(publication, DCTERMS.TITLE, quotedTitle);
+		}
+
+		// add data to second endpoint to do a join with the literal
+		try (RepositoryConnection conn2 = getRepository(2).getConnection()) {
+			conn2.add(publication, RDFS.COMMENT, quotedTitle);
+		}
+
+		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
+
+			// SELECT query (with an artificial join on ?title to simulate the escaping issue
+			TupleQuery tq = conn
+					.prepareTupleQuery(
+							"SELECT * WHERE { ?publication <http://purl.org/dc/terms/title> ?title ; rdfs:comment ?title }");
+
+			try (TupleQueryResult tqr = tq.evaluate()) {
+				while (tqr.hasNext()) {
+
+					BindingSet bs = tqr.next();
+					Assertions.assertEquals(publication, bs.getValue("publication"));
+					Assertions.assertEquals(quotedTitle, bs.getValue("title"));
+					Assertions.assertFalse(tqr.hasNext(), "Result is expected to have a single result");
+				}
+			}
+		}
+
 	}
 }

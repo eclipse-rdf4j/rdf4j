@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-sail</artifactId>
-		<version>4.2.5-SNAPSHOT</version>
+		<version>4.3.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-sail-elasticsearch</artifactId>
 	<name>RDF4J: Elastic Search Sail Index</name>
@@ -22,14 +22,20 @@
 			<optional>true</optional>
 			<exclusions>
 				<exclusion>
-					<groupId>log4j</groupId>
-					<artifactId>log4j</artifactId>
-				</exclusion>
-				<exclusion>
 					<groupId>commons-logging</groupId>
 					<artifactId>commons-logging</artifactId>
 				</exclusion>
+				<exclusion>
+					<groupId>org.apache.httpcomponents</groupId>
+					<artifactId>httpcore</artifactId>
+				</exclusion>
 			</exclusions>
+		</dependency>
+		<!-- org.elasticsearch.client:transport pulls in JCL -->
+		<dependency>
+			<groupId>org.slf4j</groupId>
+			<artifactId>jcl-over-slf4j</artifactId>
+			<scope>runtime</scope>
 		</dependency>
 	</dependencies>
 </project>

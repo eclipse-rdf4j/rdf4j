@@ -4,11 +4,15 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-sail</artifactId>
-		<version>4.2.5-SNAPSHOT</version>
+		<version>4.3.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-sail-solr</artifactId>
 	<name>RDF4J: Solr Sail Index</name>
 	<description>StackableSail implementation offering full-text search on literals, based on Solr.</description>
+	<properties>
+		<!-- FIXME: Support for embedded Solr server require non-provided Java EE dependencies -->
+		<enforce-javaee-provided.fail>false</enforce-javaee-provided.fail>
+	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
@@ -26,11 +30,6 @@
 				</exclusion>
 			</exclusions>
 		</dependency>
-		<dependency>
-			<groupId>jakarta.xml.bind</groupId>
-			<artifactId>jakarta.xml.bind-api</artifactId>
-			<version>${jaxb.version}</version>
-		</dependency>
 		<!-- needed for embedded solr server -->
 		<dependency>
 			<groupId>org.apache.solr</groupId>
@@ -40,19 +39,7 @@
 			<exclusions>
 				<exclusion>
 					<groupId>org.apache.logging.log4j</groupId>
-					<artifactId>log4j-core</artifactId>
-				</exclusion>
-				<exclusion>
-					<groupId>org.apache.logging.log4j</groupId>
-					<artifactId>log4j-api</artifactId>
-				</exclusion>
-				<exclusion>
-					<groupId>org.apache.logging.log4j</groupId>
-					<artifactId>log4j-1.2-api</artifactId>
-				</exclusion>
-				<exclusion>
-					<groupId>org.apache.logging.log4j</groupId>
-					<artifactId>log4j-sl4j-impl</artifactId>
+					<artifactId>*</artifactId>
 				</exclusion>
 				<exclusion>
 					<groupId>jdk.tools</groupId>

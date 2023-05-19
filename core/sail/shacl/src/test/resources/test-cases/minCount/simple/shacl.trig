@@ -10,8 +10,9 @@
   ex:PersonShape a sh:NodeShape;
     sh:targetClass ex:Person;
     sh:property [
-        sh:path ex:ssn;
-        sh:minCount 2
+        sh:path [ sh:alternativePath (ex:ssn ex:socialSecurityNumber) ];
+        sh:minCount 2 ;
+        sh:message "Requires at least 2 social security numbers", "Trenger minst 2 fødselsnummer"@no-nb, "Requires at least 2 social security numbers"@en ;
       ] .
 
 }

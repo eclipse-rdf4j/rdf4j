@@ -28,7 +28,10 @@ public class RDFJSONWriterSettings {
 	 * Defaults to false.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.rdfjson.allow_multiple_object_values}.
+	 *
+	 * @deprecated Use {@link org.eclipse.rdf4j.rio.rdfjson.RDFJSONWriterSettings#ALLOW_MULTIPLE_OBJECT_VALUES} instead.
 	 */
+	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<Boolean> ALLOW_MULTIPLE_OBJECT_VALUES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.rdfjson.allow_multiple_object_values", "Allow multiple object values",
 			Boolean.FALSE);

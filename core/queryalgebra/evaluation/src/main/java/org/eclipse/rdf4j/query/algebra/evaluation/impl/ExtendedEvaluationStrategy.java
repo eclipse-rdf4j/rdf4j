@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
@@ -30,13 +31,16 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.XMLDatatypeMathUtil;
  * comparison and mathematical operators to the minimally-conforming {@link StrictEvaluationStrategy}.
  *
  * @author Jeen Broekstra
+ * @deprecated Use {@link DefaultEvaluationStrategy} instead.
  */
+@Deprecated(since = "4.3.0", forRemoval = true)
 public class ExtendedEvaluationStrategy extends TupleFunctionEvaluationStrategy {
 
 	public ExtendedEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
 			FederatedServiceResolver serviceResolver, long iterationCacheSyncThreshold,
 			EvaluationStatistics evaluationStatistics) {
 		super(tripleSource, dataset, serviceResolver, iterationCacheSyncThreshold, evaluationStatistics);
+		this.setQueryEvaluationMode(QueryEvaluationMode.STANDARD);
 	}
 
 	@Deprecated(forRemoval = true)

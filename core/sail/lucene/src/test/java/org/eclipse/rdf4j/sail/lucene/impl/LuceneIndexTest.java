@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.util.HashSet;
 import java.util.Set;
 
+import org.apache.lucene.analysis.en.EnglishAnalyzer;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.DirectoryReader;
@@ -405,6 +406,19 @@ public class LuceneIndexTest {
 		assertEquals(true, index.accept(literal2), "Is the second literal accepted?");
 		assertEquals(true, index.accept(literal3), "Is the third literal accepted?");
 		assertEquals(false, index.accept(literal4), "Is the fourth literal accepted?");
+	}
+
+	@Test
+	public void testInstantiatesCustomQueryAnalyzer() throws Exception {
+		LuceneIndex index = new LuceneIndex();
+		java.util.Properties props = new java.util.Properties();
+		props.put(LuceneSail.QUERY_ANALYZER_CLASS_KEY, EnglishAnalyzer.class.getName());
+		props.put(LuceneSail.ANALYZER_CLASS_KEY, EnglishAnalyzer.class.getName());
+		props.put(LuceneSail.LUCENE_RAMDIR_KEY, "true");
+		index.initialize(props);
+
+		assertTrue(index.getAnalyzer() instanceof EnglishAnalyzer);
+		assertTrue(index.getQueryAnalyzer() instanceof EnglishAnalyzer);
 	}
 
 	private void assertStatement(Statement statement) throws Exception {

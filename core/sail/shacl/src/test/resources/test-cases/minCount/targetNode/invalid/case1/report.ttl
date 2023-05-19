@@ -12,20 +12,22 @@
   sh:conforms false;
   sh:result [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
-      sh:focusNode ex:validPerson2;
-      sh:resultPath ex:ssn;
+      sh:focusNode ex:validPerson1;
+      sh:resultPath _:5089a376325a403b926b5c31d5e95e7212905;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:MinCountConstraintComponent;
-      sh:sourceShape _:node1ftskin5gx53978
+      sh:sourceShape _:5089a376325a403b926b5c31d5e95e7212904
     ], [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
-      sh:focusNode ex:validPerson1;
-      sh:resultPath ex:ssn;
+      sh:focusNode ex:validPerson2;
+      sh:resultPath _:5089a376325a403b926b5c31d5e95e7212905;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:MinCountConstraintComponent;
-      sh:sourceShape _:node1ftskin5gx53978
+      sh:sourceShape _:5089a376325a403b926b5c31d5e95e7212904
     ] .
 
-_:node1ftskin5gx53978 a sh:PropertyShape;
+_:5089a376325a403b926b5c31d5e95e7212904 a sh:PropertyShape;
   sh:minCount 2;
-  sh:path ex:ssn .
+  sh:path _:5089a376325a403b926b5c31d5e95e7212905 .
+
+_:5089a376325a403b926b5c31d5e95e7212905 sh:alternativePath (ex:ssn ex:socialSecurityNumber) .

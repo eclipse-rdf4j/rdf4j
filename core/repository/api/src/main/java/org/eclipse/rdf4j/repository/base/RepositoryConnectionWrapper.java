@@ -292,10 +292,10 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	}
 
 	/**
-	 * @deprecated since 2.0. Use {@link #isActive()} instead.
+	 * @deprecated Use {@link #isActive()} instead.
 	 */
 	@Override
-	@Deprecated
+	@Deprecated(since = "2.0")
 	public boolean isAutoCommit() throws RepositoryException {
 		return getDelegate().isAutoCommit();
 	}

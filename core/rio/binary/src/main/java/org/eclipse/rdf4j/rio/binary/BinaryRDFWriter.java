@@ -57,7 +57,6 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
-import org.eclipse.rdf4j.rio.helpers.BinaryRDFWriterSettings;
 
 /**
  * A {@link RDFWriter} for the binary RDF format.

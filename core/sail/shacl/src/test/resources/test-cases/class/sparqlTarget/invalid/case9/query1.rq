@@ -9,7 +9,7 @@ INSERT DATA {
 ex:validPerson1 a ex:SecondTarget ;
 	ex:knows ex:peter.
 
-ex:peter a ex:SecondTarget.
-ex:steve a ex:SecondTarget.
+ex:peter a ex:SecondTarget, ex:Person, ex:Human.
+ex:steve a ex:SecondTarget, ex:Person, ex:Human.
 
 }

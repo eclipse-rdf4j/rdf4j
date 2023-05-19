@@ -36,7 +36,7 @@ public class BooleanRioSetting extends AbstractRioSetting<Boolean> {
 	/**
 	 * Converts a String to a Boolean
 	 *
-	 * @return a Boolean representing the supplied string value. Iff the string value is "true" (ignoring case), the
+	 * @return a Boolean representing the supplied string value. If the string value is "true" (ignoring case), the
 	 *         returned Boolean will be {@code true}, otherwise {@code false}.
 	 */
 	@Override

@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-tools</artifactId>
-		<version>4.2.5-SNAPSHOT</version>
+		<version>4.3.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-http-server</artifactId>
 	<packaging>war</packaging>
@@ -32,6 +32,16 @@
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
+			<groupId>javax.servlet.jsp</groupId>
+			<artifactId>jsp-api</artifactId>
+			<scope>provided</scope>
+		</dependency>
+		<dependency>
+			<groupId>javax.servlet</groupId>
+			<artifactId>jstl</artifactId>
+			<scope>provided</scope>
+		</dependency>
+		<dependency>
 			<groupId>org.ebaysf.web</groupId>
 			<artifactId>cors-filter</artifactId>
 		</dependency>
@@ -49,20 +59,11 @@
 					<groupId>org.slf4j</groupId>
 					<artifactId>slf4j-nop</artifactId>
 				</exclusion>
-				<exclusion>
-					<groupId>javax.servlet</groupId>
-					<artifactId>servlet-api</artifactId>
-				</exclusion>
 			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>ch.qos.logback</groupId>
 			<artifactId>logback-classic</artifactId>
-			<scope>runtime</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.slf4j</groupId>
-			<artifactId>jcl-over-slf4j</artifactId>
 			<scope>runtime</scope>
 		</dependency>
 		<dependency>
@@ -81,29 +82,6 @@
 			<scope>test</scope>
 		</dependency>
 		<dependency>
-			<groupId>org.eclipse.jetty</groupId>
-			<artifactId>apache-jsp</artifactId>
-			<scope>test</scope>
-			<exclusions>
-				<exclusion>
-					<groupId>org.glassfish</groupId>
-					<artifactId>javax.el</artifactId>
-				</exclusion>
-			</exclusions>
-		</dependency>
-		<!--		Jetty-jsp is including a snapshot version of javax.el, thid breaks the build-->
-		<dependency>
-			<groupId>org.glassfish</groupId>
-			<artifactId>javax.el</artifactId>
-			<version>3.0.0</version>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.slf4j</groupId>
-			<artifactId>log4j-over-slf4j</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
 			<groupId>org.apache.httpcomponents</groupId>
 			<artifactId>httpmime</artifactId>
 			<scope>test</scope>
@@ -111,6 +89,11 @@
 		<dependency>
 			<groupId>com.opencsv</groupId>
 			<artifactId>opencsv</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.slf4j</groupId>
+			<artifactId>jcl-over-slf4j</artifactId>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
@@ -126,16 +109,17 @@
 				<configuration>
 					<warName>rdf4j-server</warName>
 					<archiveClasses>true</archiveClasses>
+					<attachClasses>true</attachClasses>
 					<webappDirectory>${testserver.webapp.dir}</webappDirectory>
 				</configuration>
 			</plugin>
 			<plugin>
-				<groupId>org.apache.tomcat.maven</groupId>
-				<artifactId>tomcat7-maven-plugin</artifactId>
+				<groupId>org.eclipse.jetty</groupId>
+				<artifactId>jetty-maven-plugin</artifactId>
 				<configuration>
-					<warFile>${project.build.directory}/rdf4j-server.war</warFile>
-					<server>tomcat</server>
-					<path>/rdf4j-server</path>
+					<webApp>
+						<contextPath>/rdf4j-server</contextPath>
+					</webApp>
 				</configuration>
 			</plugin>
 		</plugins>

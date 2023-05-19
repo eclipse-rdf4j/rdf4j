@@ -11,10 +11,10 @@
 package org.eclipse.rdf4j.common.logging.base;
 
 /**
- * @deprecated since 4.0. Use {@link SimpleLogRecord} instead.
+ * @deprecated Use {@link SimpleLogRecord} instead.
  * @author Jeen Broekstra
  */
-@Deprecated
+@Deprecated(since = "4.0")
 public class LogRecordBase extends SimpleLogRecord {
 
 }

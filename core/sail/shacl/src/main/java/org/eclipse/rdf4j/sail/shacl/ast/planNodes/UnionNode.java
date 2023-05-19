@@ -39,7 +39,7 @@ public class UnionNode implements PlanNode {
 	}
 
 	public static PlanNode getInstance(PlanNode... nodes) {
-		PlanNode[] planNodes = Arrays.stream(nodes).filter(n -> !(n instanceof EmptyNode)).flatMap(n -> {
+		PlanNode[] planNodes = Arrays.stream(nodes).filter(n -> !(n.isGuaranteedEmpty())).flatMap(n -> {
 			if (n instanceof UnionNode) {
 				return Arrays.stream(((UnionNode) n).nodes);
 			}
@@ -58,7 +58,7 @@ public class UnionNode implements PlanNode {
 	}
 
 	public static PlanNode getInstanceDedupe(PlanNode... nodes) {
-		PlanNode[] planNodes = Arrays.stream(nodes).filter(n -> !(n instanceof EmptyNode)).distinct().flatMap(n -> {
+		PlanNode[] planNodes = Arrays.stream(nodes).filter(n -> !(n.isGuaranteedEmpty())).distinct().flatMap(n -> {
 			if (n instanceof UnionNode) {
 				return Arrays.stream(((UnionNode) n).nodes);
 			}
@@ -82,20 +82,27 @@ public class UnionNode implements PlanNode {
 		if (nodes.length == 1) {
 			return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-				final CloseableIteration<? extends ValidationTuple, SailException> iterator = nodes[0].iterator();
+				private CloseableIteration<? extends ValidationTuple, SailException> iterator;
 
 				@Override
-				public void localClose() throws SailException {
-					iterator.close();
+				protected void init() {
+					iterator = nodes[0].iterator();
 				}
 
 				@Override
-				protected ValidationTuple loggingNext() throws SailException {
+				public void localClose() {
+					if (iterator != null) {
+						iterator.close();
+					}
+				}
+
+				@Override
+				protected ValidationTuple loggingNext() {
 					return iterator.next();
 				}
 
 				@Override
-				protected boolean localHasNext() throws SailException {
+				protected boolean localHasNext() {
 					return iterator.hasNext();
 				}
 			};
@@ -103,15 +110,20 @@ public class UnionNode implements PlanNode {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseableIteration<? extends ValidationTuple, SailException>[] iterators = Arrays
-					.stream(nodes)
-					.map(PlanNode::iterator)
-					.toArray(CloseableIteration[]::new);
+			private CloseableIteration<? extends ValidationTuple, SailException>[] iterators;
 
 			final ValidationTuple[] peekList = new ValidationTuple[nodes.length];
 
 			ValidationTuple next;
 			ValidationTuple prev;
+
+			@Override
+			protected void init() {
+				iterators = Arrays
+						.stream(nodes)
+						.map(PlanNode::iterator)
+						.toArray(CloseableIteration[]::new);
+			}
 
 			private void calculateNext() {
 
@@ -156,35 +168,37 @@ public class UnionNode implements PlanNode {
 			}
 
 			@Override
-			public void localClose() throws SailException {
-				Throwable thrown = null;
-				for (int i = 0; i < iterators.length; i++) {
-					try {
-						iterators[i].close();
-					} catch (Throwable t) {
-						if (thrown != null) {
-							thrown.addSuppressed(t);
-						} else {
-							thrown = t;
+			public void localClose() {
+				if (iterators != null) {
+					Throwable thrown = null;
+					for (int i = 0; i < iterators.length; i++) {
+						try {
+							iterators[i].close();
+						} catch (Throwable t) {
+							if (thrown != null) {
+								thrown.addSuppressed(t);
+							} else {
+								thrown = t;
+							}
+						} finally {
+							iterators[i] = null;
 						}
-					} finally {
-						iterators[i] = null;
 					}
-				}
 
-				if (thrown != null) {
-					throw new SailException(thrown);
+					if (thrown != null) {
+						throw new SailException(thrown);
+					}
 				}
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				calculateNext();
 				return next != null;
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 				calculateNext();
 
 				assert !(prev != null && next.compareActiveTarget(prev) < 0);

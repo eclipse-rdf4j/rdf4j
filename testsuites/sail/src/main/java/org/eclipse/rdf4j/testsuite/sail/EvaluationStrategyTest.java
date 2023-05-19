@@ -10,23 +10,22 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.sail;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.model.util.Values.iri;
+import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import java.io.File;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.ExtendedEvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.ExtendedEvaluationStrategyFactory;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
@@ -42,7 +41,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Test cases for behavior of {@link StrictEvaluationStrategy} and {@link ExtendedEvaluationStrategy} on base Sail
+ * Test cases for behavior of {@link DefaultEvaluationStrategy} and {@link QueryEvaluationMode} on base Sail
  * implementations.
  *
  * @author Jeen Broekstra
@@ -60,13 +59,18 @@ public abstract class EvaluationStrategyTest {
 	}
 
 	@TempDir
-	public File tempDir;
+	private File tempDir;
 
 	private Repository strictRepo;
 
-	private Repository extendedRepo;
+	private Repository standardRepo;
 
 	private RepositoryManager manager;
+
+	private Literal gYearLit = literal("2009", XSD.GYEAR);
+	private Literal gYearMonthLit = literal("2009-01", CoreDatatype.XSD.GYEARMONTH);
+	private IRI s1 = iri("urn:s1");
+	private IRI s2 = iri("urn:s2");
 
 	/**
 	 * @throws java.lang.Exception
@@ -76,14 +80,13 @@ public abstract class EvaluationStrategyTest {
 		manager = RepositoryProvider.getRepositoryManager(tempDir);
 
 		BaseSailConfig strictStoreConfig = getBaseSailConfig();
-		strictStoreConfig.setEvaluationStrategyFactoryClassName(StrictEvaluationStrategyFactory.class.getName());
+		strictStoreConfig.setDefaultQueryEvaluationMode(QueryEvaluationMode.STRICT);
 
 		strictRepo = createRepo(strictStoreConfig, "test-strict");
 
-		BaseSailConfig extendedStoreConfig = getBaseSailConfig();
-		extendedStoreConfig.setEvaluationStrategyFactoryClassName(ExtendedEvaluationStrategyFactory.class.getName());
-
-		extendedRepo = createRepo(extendedStoreConfig, "test-extended");
+		BaseSailConfig standardStoreConfig = getBaseSailConfig();
+		standardStoreConfig.setDefaultQueryEvaluationMode(QueryEvaluationMode.STANDARD);
+		standardRepo = createRepo(standardStoreConfig, "test-standard");
 	}
 
 	private Repository createRepo(BaseSailConfig config, String id) {
@@ -95,39 +98,53 @@ public abstract class EvaluationStrategyTest {
 
 	@Test
 	public void testDatetimeSubtypesStrict() {
-		ValueFactory vf = strictRepo.getValueFactory();
-
 		try (RepositoryConnection conn = strictRepo.getConnection()) {
-			Literal l1 = vf.createLiteral("2009", XSD.GYEAR);
-			Literal l2 = vf.createLiteral("2009-01", CoreDatatype.XSD.GYEARMONTH);
-			IRI s1 = vf.createIRI("urn:s1");
-			IRI s2 = vf.createIRI("urn:s2");
-			conn.add(s1, RDFS.LABEL, l1);
-			conn.add(s2, RDFS.LABEL, l2);
+
+			conn.add(s1, RDFS.LABEL, gYearLit);
+			conn.add(s2, RDFS.LABEL, gYearMonthLit);
 
 			String query = "SELECT * WHERE { ?s rdfs:label ?l . FILTER(?l >= \"2008\"^^xsd:gYear) }";
 
 			List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
-			assertEquals(1, result.size());
+
+			assertThat(result).hasSize(1);
 		}
 	}
 
 	@Test
 	public void testDatetimeSubtypesExtended() {
-		ValueFactory vf = extendedRepo.getValueFactory();
-
-		try (RepositoryConnection conn = extendedRepo.getConnection()) {
-			Literal l1 = vf.createLiteral("2009", CoreDatatype.XSD.GYEAR);
-			Literal l2 = vf.createLiteral("2009-01", XSD.GYEARMONTH);
-			IRI s1 = vf.createIRI("urn:s1");
-			IRI s2 = vf.createIRI("urn:s2");
-			conn.add(s1, RDFS.LABEL, l1);
-			conn.add(s2, RDFS.LABEL, l2);
+		try (RepositoryConnection conn = standardRepo.getConnection()) {
+			conn.add(s1, RDFS.LABEL, gYearLit);
+			conn.add(s2, RDFS.LABEL, gYearMonthLit);
 
 			String query = "SELECT * WHERE { ?s rdfs:label ?l . FILTER(?l >= \"2008\"^^xsd:gYear) }";
 
 			List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
-			assertEquals(2, result.size());
+			assertThat(result).hasSize(2);
+		}
+	}
+
+	@Test
+	public void testQueryEvaluationMode_Override() {
+		try (RepositoryConnection conn = strictRepo.getConnection()) {
+			conn.add(s1, RDFS.LABEL, gYearLit);
+			conn.add(s2, RDFS.LABEL, gYearMonthLit);
+
+			String query = "SELECT * WHERE { ?s rdfs:label ?l . FILTER(?l >= \"2008\"^^xsd:gYear) }";
+
+			{
+				conn.begin(QueryEvaluationMode.STANDARD);
+				List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+				conn.commit();
+				assertThat(result).hasSize(2);
+			}
+
+			{
+				List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+				// evaluation should be back to strict mode outside of the previous transaction
+				assertThat(result).hasSize(1);
+			}
+
 		}
 	}
 

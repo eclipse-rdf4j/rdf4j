@@ -43,8 +43,7 @@ public class DatatypeFilter extends FilterPlanNode {
 		Literal literal = (Literal) t.getValue();
 		if (xsdDatatype != null) {
 			if (literal.getCoreDatatype() == xsdDatatype) {
-				boolean validValue = XMLDatatypeUtil.isValidValue(literal.stringValue(), xsdDatatype);
-				return validValue;
+				return XMLDatatypeUtil.isValidValue(literal.stringValue(), xsdDatatype);
 			}
 			return false;
 		} else {

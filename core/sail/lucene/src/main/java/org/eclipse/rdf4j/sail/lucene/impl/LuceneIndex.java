@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 
 import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.lucene.analysis.Analyzer;
@@ -61,6 +62,7 @@ import org.apache.lucene.queryparser.classic.ParseException;
 import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.BoostQuery;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
@@ -81,6 +83,7 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.RAMDirectory;
 import org.apache.lucene.util.Bits;
+import org.eclipse.rdf4j.common.iterator.EmptyIterator;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
@@ -94,6 +97,7 @@ import org.eclipse.rdf4j.sail.lucene.DocumentDistance;
 import org.eclipse.rdf4j.sail.lucene.DocumentResult;
 import org.eclipse.rdf4j.sail.lucene.DocumentScore;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
+import org.eclipse.rdf4j.sail.lucene.QuerySpec;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.eclipse.rdf4j.sail.lucene.SimpleBulkUpdater;
@@ -105,6 +109,7 @@ import org.locationtech.spatial4j.shape.Shape;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
@@ -183,6 +188,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	public LuceneIndex(Directory directory, Analyzer analyzer, Similarity similarity) throws IOException {
 		this.directory = directory;
 		this.analyzer = analyzer;
+		this.queryAnalyzer = analyzer;
 		this.similarity = similarity;
 		this.geoStrategyMapper = createSpatialStrategyMapper(Collections.<String, String>emptyMap());
 
@@ -195,6 +201,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		super.initialize(parameters);
 		this.directory = createDirectory(parameters);
 		this.analyzer = createAnalyzer(parameters);
+		this.queryAnalyzer = createQueryAnalyzer(parameters);
 		this.similarity = createSimilarity(parameters);
 		// slightly hacky cast to cope with the fact that Properties is
 		// Map<Object,Object>
@@ -223,11 +230,22 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	protected Analyzer createAnalyzer(Properties parameters) throws Exception {
+		return createAnalyzerWithFallback(parameters, LuceneSail.ANALYZER_CLASS_KEY, StandardAnalyzer::new);
+	}
+
+	protected Analyzer createQueryAnalyzer(Properties parameters) throws Exception {
+		return createAnalyzerWithFallback(parameters, LuceneSail.QUERY_ANALYZER_CLASS_KEY, StandardAnalyzer::new);
+	}
+
+	private Analyzer createAnalyzerWithFallback(Properties parameters, String parameterKey, Supplier<Analyzer> fallback)
+			throws Exception {
 		Analyzer a;
-		if (parameters.containsKey(LuceneSail.ANALYZER_CLASS_KEY)) {
-			a = (Analyzer) Class.forName(parameters.getProperty(LuceneSail.ANALYZER_CLASS_KEY)).newInstance();
+		if (parameters.containsKey(parameterKey)) {
+			a = (Analyzer) Class.forName(parameters.getProperty(LuceneSail.ANALYZER_CLASS_KEY))
+					.getDeclaredConstructor()
+					.newInstance();
 		} else {
-			a = new StandardAnalyzer();
+			a = fallback.get();
 		}
 		return a;
 	}
@@ -243,8 +261,6 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	private void postInit() throws IOException {
-		this.queryAnalyzer = new StandardAnalyzer();
-
 		// do some initialization for new indices
 		if (!DirectoryReader.indexExists(directory)) {
 			logger.debug("creating new Lucene index in directory {}", directory);
@@ -274,6 +290,11 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	public Analyzer getAnalyzer() {
+		return analyzer;
+	}
+
+	@VisibleForTesting
+	Analyzer getQueryAnalyzer() {
 		return analyzer;
 	}
 
@@ -701,26 +722,28 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * Parse the passed query.
 	 *
-	 * @param subject
-	 * @param query       string
-	 * @param propertyURI
-	 * @param highlight
+	 * @param subject subject
+	 * @param spec    spec
 	 * @return the parsed query
 	 * @throws MalformedQueryException when the parsing breaks
 	 * @throws IOException
 	 */
 	@Override
-	protected Iterable<? extends DocumentScore> query(Resource subject, String query, IRI propertyURI,
-			boolean highlight) throws MalformedQueryException, IOException {
+	protected Iterable<? extends DocumentScore> query(Resource subject, QuerySpec spec)
+			throws MalformedQueryException, IOException {
 		Query q;
 		try {
-			q = getQueryParser(propertyURI).parse(query);
+			q = createQuery(spec.getQueryPatterns());
 		} catch (ParseException e) {
 			throw new MalformedQueryException(e);
 		}
 
+		if (q == null) {
+			return EmptyIterator::new;
+		}
+
 		final Highlighter highlighter;
-		if (highlight) {
+		if (spec.isHighlight()) {
 			Formatter formatter = new SimpleHTMLFormatter(SearchFields.HIGHLIGHTER_PRE_TAG,
 					SearchFields.HIGHLIGHTER_POST_TAG);
 			highlighter = new Highlighter(formatter, new QueryScorer(q));
@@ -736,6 +759,44 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		}
 		return Iterables.transform(Arrays.asList(docs.scoreDocs),
 				(ScoreDoc doc) -> new LuceneDocumentScore(doc, highlighter, LuceneIndex.this));
+	}
+
+	/**
+	 * create a query from the params
+	 *
+	 * @param queryPatterns the params
+	 * @return boolean query for multiple params, query for single param, null for empty collection
+	 * @throws ParseException query parsing exception
+	 */
+	private Query createQuery(Collection<QuerySpec.QueryParam> queryPatterns) throws ParseException {
+		Iterator<QuerySpec.QueryParam> it = queryPatterns.iterator();
+
+		if (!it.hasNext()) {
+			return null;
+		}
+
+		QuerySpec.QueryParam first = it.next();
+
+		Query q = getQueryParser(first.getProperty()).parse(first.getQuery());
+		if (!it.hasNext()) {
+			return q;
+		}
+
+		BooleanQuery.Builder bld = new BooleanQuery.Builder();
+		if (first.getBoost() != null) {
+			q = new BoostQuery(q, first.getBoost());
+		}
+		bld.add(q, Occur.SHOULD);
+		do {
+			QuerySpec.QueryParam param = it.next();
+			Query parsedQuery = getQueryParser(param.getProperty()).parse(param.getQuery());
+			if (param.getBoost() != null) {
+				parsedQuery = new BoostQuery(parsedQuery, param.getBoost());
+			}
+			bld.add(parsedQuery, Occur.SHOULD);
+		} while (it.hasNext());
+
+		return bld.build();
 	}
 
 	@Override

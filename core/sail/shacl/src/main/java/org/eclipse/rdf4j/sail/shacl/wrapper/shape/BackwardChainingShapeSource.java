@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.wrapper.shape;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -18,7 +20,9 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Statements;
+import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -49,11 +53,38 @@ public class BackwardChainingShapeSource implements ShapeSource {
 
 	public Stream<ShapesGraph> getAllShapeContexts() {
 		assert context != null;
+		if (context.length == 0) {
+			// union context
+			try (Stream<? extends Statement> stream = connection
+					.getStatements(null, SHACL.SHAPES_GRAPH, null, false, context)
+					.stream()) {
+
+				List<ShapesGraph> collect = stream
+						.collect(Collectors.groupingBy(Statement::getSubject))
+						.entrySet()
+						.stream()
+						.map(entry -> new ShapesGraph(entry.getKey(), entry.getValue()))
+						.collect(Collectors.toList());
+
+				collect = new ArrayList<>();
+				collect.add(new ShapesGraph(RDF4J.NIL));
+
+				return collect.stream();
+
+			}
+
+		}
+
 		try (Stream<? extends Statement> stream = connection
 				.getStatements(null, SHACL.SHAPES_GRAPH, null, false, context)
 				.stream()) {
 
-			return stream
+			List<? extends Statement> collect = stream.collect(Collectors.toList());
+
+			if (collect.size() > 0) {
+				System.out.println();
+			}
+			return collect.stream()
 					.collect(Collectors.groupingBy(Statement::getSubject))
 					.entrySet()
 					.stream()
@@ -139,8 +170,38 @@ public class BackwardChainingShapeSource implements ShapeSource {
 
 	public boolean isType(Resource subject, IRI type) {
 		assert context != null;
-		return DASH_CONSTANTS.contains(subject, RDF.TYPE, type)
-				|| connection.hasStatement(subject, RDF.TYPE, type, true, context);
+		if (DASH_CONSTANTS.contains(subject, RDF.TYPE, type)
+				|| connection.hasStatement(subject, RDF.TYPE, type, true, context)) {
+			return true;
+		}
+		if (!(type == SHACL.NODE_SHAPE || type == SHACL.PROPERTY_SHAPE)) {
+			if (type.equals(SHACL.NODE_SHAPE)) {
+				type = SHACL.NODE_SHAPE;
+			} else if (type.equals(SHACL.PROPERTY_SHAPE)) {
+				type = SHACL.PROPERTY_SHAPE;
+			}
+		}
+
+		if (type == SHACL.PROPERTY_SHAPE) {
+			return connection.hasStatement(subject, SHACL.PATH, null, true, context);
+		} else if (type == SHACL.NODE_SHAPE) {
+			if (connection.hasStatement(subject, SHACL.PATH, null, true, context)) {
+				return false;
+			}
+			if (connection.hasStatement(null, SHACL.NODE, subject, true, context)) {
+				return true;
+			}
+			try (Stream<? extends Statement> stream = connection.getStatements(subject, null, null, true, context)
+					.stream()) {
+				return stream
+						.map(Statement::getPredicate)
+						.map(Value::stringValue)
+						.anyMatch(predicate -> predicate.startsWith(SHACL.NAMESPACE)
+								|| predicate.startsWith(DASH.NAMESPACE));
+			}
+		} else {
+			return false;
+		}
 	}
 
 	@Override

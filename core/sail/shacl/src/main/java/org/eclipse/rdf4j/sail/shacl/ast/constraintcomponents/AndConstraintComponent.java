@@ -16,10 +16,11 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
 import org.eclipse.rdf4j.sail.shacl.ast.Cache;
@@ -31,6 +32,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -46,16 +48,16 @@ public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 	List<Shape> and;
 
 	public AndConstraintComponent(Resource id, ShapeSource shapeSource,
-			Cache cache, ShaclSail shaclSail) {
+			Shape.ParseSettings parseSettings, Cache cache) {
 		super(id);
 		and = ShaclAstLists.toList(shapeSource, id, Resource.class)
 				.stream()
 				.map(r -> new ShaclProperties(r, shapeSource))
 				.map(p -> {
 					if (p.getType() == SHACL.NODE_SHAPE) {
-						return NodeShape.getInstance(p, shapeSource, cache, shaclSail);
+						return NodeShape.getInstance(p, shapeSource, parseSettings, cache);
 					} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-						return PropertyShape.getInstance(p, shapeSource, cache, shaclSail);
+						return PropertyShape.getInstance(p, shapeSource, parseSettings, cache);
 					}
 					throw new IllegalStateException("Unknown shape type for " + p.getId());
 				})
@@ -146,13 +148,17 @@ public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 	@Override
 	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
-		return and.stream()
-				.anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope, dataGraph, stableRandomVariableProvider));
+		for (Shape c : and) {
+			if (c.requiresEvaluation(connectionsGroup, scope, dataGraph, stableRandomVariableProvider)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	@Override
-	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
+	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(Variable<Value> subject,
+			Variable<Value> object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 
@@ -161,6 +167,11 @@ public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 				getTargetChain(),
 				SparqlFragment::join, SparqlFragment::and);
 
+	}
+
+	@Override
+	public List<Literal> getDefaultMessage() {
+		return List.of();
 	}
 
 }

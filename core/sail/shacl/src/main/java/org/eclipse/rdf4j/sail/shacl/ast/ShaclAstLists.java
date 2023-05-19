@@ -82,8 +82,12 @@ public class ShaclAstLists {
 			if (type.isInstance(value)) {
 				ret.add(((T) value));
 			} else {
-				throw new IllegalStateException("RDF list should contain only type " + type.getSimpleName()
-						+ ", but found " + value.getClass().getSimpleName());
+				if (value == null) {
+					throw new IllegalStateException("RDF list node " + head + " does not have a value for rdf:first");
+				} else {
+					throw new IllegalStateException("RDF list should contain only type " + type.getSimpleName()
+							+ ", but found " + value.getClass().getSimpleName());
+				}
 			}
 
 			head = shapeSource.getRdfRest(head);

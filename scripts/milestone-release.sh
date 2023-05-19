@@ -112,8 +112,9 @@ if ! git push --dry-run > /dev/null 2>&1; then
 fi
 
 
-echo "Running mvn clean";
+echo "Running maven clean and install -DskipTests";
 mvn clean;
+mvn install -DskipTests;
 
 MVN_CURRENT_SNAPSHOT_VERSION=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" pom.xml)
 
@@ -171,13 +172,20 @@ echo "(if you are on linux or windows, remember to use CTRL+SHIFT+C to copy)."
 echo "Log in, then choose 'Build with Parameters' and type in ${MVN_VERSION_RELEASE}"
 read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
-mvn clean
+mvn clean -Dmaven.clean.failOnError=false
+
+git checkout develop
+mvn clean -Dmaven.clean.failOnError=false
+git checkout main
+mvn clean -Dmaven.clean.failOnError=false
 
 echo "Build javadocs"
 read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 git checkout "${MVN_VERSION_RELEASE}"
+mvn clean -Dmaven.clean.failOnError=false
 mvn clean
+mvn compile -Pquick -Dmaven.compiler.failOnError=false
 mvn package -Passembly -DskipTests
 
 git checkout main

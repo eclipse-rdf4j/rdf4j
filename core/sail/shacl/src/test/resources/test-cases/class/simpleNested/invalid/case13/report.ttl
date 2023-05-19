@@ -16,7 +16,7 @@
       sh:resultPath ex:knows2;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:ClassConstraintComponent;
-      sh:sourceShape _:node1ftskin5gx8001;
+      sh:sourceShape _:5089a376325a403b926b5c31d5e95e722498;
       sh:value ex:peter
     ], [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
@@ -24,10 +24,10 @@
       sh:resultPath ex:knows2;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:ClassConstraintComponent;
-      sh:sourceShape _:node1ftskin5gx8001;
+      sh:sourceShape _:5089a376325a403b926b5c31d5e95e722498;
       sh:value ex:peter
     ] .
 
-_:node1ftskin5gx8001 a sh:PropertyShape;
+_:5089a376325a403b926b5c31d5e95e722498 a sh:PropertyShape;
   sh:class ex:Person;
   sh:path ex:knows2 .

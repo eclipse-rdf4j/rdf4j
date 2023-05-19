@@ -17,13 +17,6 @@
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:sourceShape ex:PersonShape;
       sh:value ex:validPerson2
-    ], [ a sh:ValidationResult;
-      rsx:shapesGraph rdf4j:SHACLShapeGraph;
-      sh:focusNode ex:validPerson1;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:sourceShape ex:PersonShape;
-      sh:value ex:validPerson1
     ] .
 
 ex:PersonShape a sh:NodeShape;

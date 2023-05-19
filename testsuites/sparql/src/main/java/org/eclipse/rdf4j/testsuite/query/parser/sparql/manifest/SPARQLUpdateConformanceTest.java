@@ -55,9 +55,9 @@ import junit.framework.TestSuite;
  *
  * @author Jeen Broekstra
  *
- * @deprecated since 3.3.0. Use {@link SPARQL11UpdateComplianceTest} instead.
+ * @deprecated Use {@link SPARQL11UpdateComplianceTest} instead.
  */
-@Deprecated
+@Deprecated(since = "3.3.0")
 public abstract class SPARQLUpdateConformanceTest extends TestCase {
 
 	/*-----------*

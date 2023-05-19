@@ -7,7 +7,7 @@
 @prefix rsx: <http://rdf4j.org/shacl-extensions#> .
 @prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
 
- {
+ rdf4j:SHACLShapeGraph {
   ex:shape1 a sh:NodeShape;
     rsx:targetShape [
         sh:property [
@@ -21,7 +21,5 @@
         sh:path ex:info2;
         sh:minCount 1
       ] .
-
-  rdf4j:nil sh:shapesGraph rdf4j:nil.
 
 }

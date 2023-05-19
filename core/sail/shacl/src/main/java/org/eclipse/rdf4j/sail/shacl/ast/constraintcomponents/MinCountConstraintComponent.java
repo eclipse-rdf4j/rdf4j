@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
@@ -80,7 +81,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 			if (connectionsGroup.hasAddedStatements()) {
 				PlanNode addedByPath = getTargetChain().getPath()
 						.get()
-						.getAdded(connectionsGroup, validationSettings.getDataGraph(), null);
+						.getAnyAdded(connectionsGroup, validationSettings.getDataGraph(), null);
 				LeftOuterJoin leftOuterJoin = new LeftOuterJoin(target, addedByPath);
 				target = new GroupByCountFilter(leftOuterJoin, count -> count < minCount);
 			}
@@ -95,7 +96,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
 			PlanNode addedByPath = getTargetChain().getPath()
 					.get()
-					.getAdded(connectionsGroup, validationSettings.getDataGraph(), null);
+					.getAnyAdded(connectionsGroup, validationSettings.getDataGraph(), null);
 			LeftOuterJoin leftOuterJoin = new LeftOuterJoin(target, addedByPath);
 			target = new GroupByCountFilter(leftOuterJoin, count -> count < minCount);
 		}
@@ -106,7 +107,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 				validationSettings.getDataGraph(), getTargetChain().getPath()
 						.get()
 						.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
-								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
+								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()),
 				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 						validationSettings.getDataGraph())
 		);
@@ -148,10 +149,11 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
 			String pathQuery = getTargetChain().getPath()
 					.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
-							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider))
-					.orElseThrow(IllegalStateException::new);
+							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()))
+					.orElseThrow(IllegalStateException::new)
+					.getFragment();
 
-			query += "\nFILTER(NOT EXISTS{" + pathQuery + "})";
+			query += "\nFILTER(NOT EXISTS{\n" + pathQuery + "\n})";
 		} else {
 
 			StringBuilder condition = new StringBuilder();
@@ -163,8 +165,9 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
 				String pathQuery = getTargetChain().getPath()
 						.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
-								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider))
-						.orElseThrow(IllegalStateException::new);
+								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()))
+						.orElseThrow(IllegalStateException::new)
+						.getFragment();
 
 				condition.append(pathQuery).append("\n");
 			}
@@ -188,12 +191,13 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
 			String innerCondition = String.join(" && ", notEquals);
 
-			query += "\nFILTER(NOT EXISTS{" + condition + "FILTER(" + innerCondition + ")\n})";
+			query += "\nFILTER(NOT EXISTS{\n" + condition.toString().trim() + "\nFILTER(" + innerCondition + ")\n})";
 		}
 
-		List<StatementMatcher.Variable> allTargetVariables = effectiveTarget.getAllTargetVariables();
+		var allTargetVariables = effectiveTarget.getAllTargetVariables();
 
-		return new ValidationQuery(query, allTargetVariables, null, scope, getConstraintComponent(), null, null);
+		return new ValidationQuery(getTargetChain().getNamespaces(), query, allTargetVariables, null, scope, this, null,
+				null);
 
 	}
 
@@ -201,4 +205,10 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 	public ValidationApproach getOptimalBulkValidationApproach() {
 		return ValidationApproach.SPARQL;
 	}
+
+	@Override
+	public List<Literal> getDefaultMessage() {
+		return List.of();
+	}
+
 }

@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
+//TODO: at 5.0 move to subpackage values
 public class RegexValueEvaluationStepSupplier {
 	/**
 	 * Returns value evaluation steps that determines whether the two operands match according to the <code>regex</code>

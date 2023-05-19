@@ -4,8 +4,6 @@ weight: 7
 toc: true
 autonumbering: true
 ---
-(new in RDF4J 3.1)
-
 FedX provides transparent federation of multiple SPARQL endpoints under a single virtual endpoint.
 <!--more-->
 As an example, a knowledge graph such as Wikidata can be queried in a federation with endpoints that are linked to Wikidata as an integration hub. In a federated SPARQL query in FedX, one no longer needs to explicitly address specific endpoints using SERVICE clauses. Instead, FedX automatically selects relevant sources, sends statement patterns to these sources for evaluation, and joins the individual results. FedX seamlessly integrates into RDF4J using the Repository API and can be used as a drop-in component in existing applications including the RDF4J Workbench.
@@ -112,12 +110,12 @@ The following snippet depicts an example repository configuration that defines a
 # RDF4J configuration template for a FedX Repository
 #
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix rep: <http://www.openrdf.org/config/repository#>.
+@prefix config: <tag:rdf4j.org,2023:config/>.
 @prefix fedx: <http://rdf4j.org/config/federation#>.
 
-[] a rep:Repository ;
-   rep:repositoryImpl [
-      rep:repositoryType "fedx:FedXRepository" ;
+[] a config:Repository ;
+   config:rep.impl [
+      config:rep.type "fedx:FedXRepository" ;
       fedx:member [
          fedx:store "ResolvableRepository" ;
          fedx:repositoryName "my-repository-1"
@@ -127,7 +125,7 @@ The following snippet depicts an example repository configuration that defines a
          fedx:repositoryName "my-repository-2"
       ]
    ];
-   rep:repositoryID "my-federation" ;
+   config:rep.id "my-federation" ;
    rdfs:label "FedX Federation" .
 ```
 

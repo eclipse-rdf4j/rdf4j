@@ -13,11 +13,17 @@
   sh:result [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:validPerson1;
-      sh:resultPath ex:ssn;
+      sh:resultMessage "Requires at least 2 social security numbers"@en, "Trenger minst 2 fødselsnummer"@no-nb,
+        "Requires at least 2 social security numbers";
+      sh:resultPath _:5089a376325a403b926b5c31d5e95e7212978;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:MinCountConstraintComponent;
       sh:sourceShape [ a sh:PropertyShape;
+          sh:message "Requires at least 2 social security numbers"@en, "Trenger minst 2 fødselsnummer"@no-nb,
+            "Requires at least 2 social security numbers";
           sh:minCount 2;
-          sh:path ex:ssn
+          sh:path _:5089a376325a403b926b5c31d5e95e7212978
         ]
     ] .
+
+_:5089a376325a403b926b5c31d5e95e7212978 sh:alternativePath (ex:ssn ex:socialSecurityNumber) .

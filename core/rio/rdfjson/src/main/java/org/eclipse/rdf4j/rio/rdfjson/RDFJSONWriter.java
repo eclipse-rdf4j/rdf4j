@@ -37,7 +37,6 @@ import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
-import org.eclipse.rdf4j.rio.helpers.RDFJSONWriterSettings;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonFactoryBuilder;
@@ -224,7 +223,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 	 * Returns the correct syntax for a Resource, depending on whether it is a URI or a Blank Node (ie, BNode)
 	 *
 	 * @param uriOrBnode The resource to serialise to a string
-	 * @return The string value of the sesame resource
+	 * @return The string value of the RDF4J resource
 	 */
 	public static String resourceToString(final Resource uriOrBnode) {
 		if (uriOrBnode instanceof IRI) {

@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-compliance</artifactId>
-		<version>4.2.5-SNAPSHOT</version>
+		<version>4.3.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-repository-compliance</artifactId>
 	<packaging>war</packaging>
@@ -16,74 +16,33 @@
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-repository-http</artifactId>
-			<version>${project.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-repository-sparql</artifactId>
-			<version>${project.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-repository-sail</artifactId>
-			<version>${project.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-repository-manager</artifactId>
-			<version>${project.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-sail-memory</artifactId>
-			<version>${project.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-sail-inferencer</artifactId>
-			<version>${project.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-http-protocol</artifactId>
-			<version>${project.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-repository-testsuite</artifactId>
-			<version>${project.version}</version>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-rio-turtle</artifactId>
-			<version>${project.version}</version>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-rio-nquads</artifactId>
 			<version>${project.version}</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.eclipse.jetty</groupId>
 			<artifactId>jetty-server</artifactId>
+			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.eclipse.jetty</groupId>
 			<artifactId>jetty-webapp</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>org.slf4j</groupId>
-			<artifactId>jcl-over-slf4j</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
-			<groupId>org.slf4j</groupId>
-			<artifactId>log4j-over-slf4j</artifactId>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-http-server</artifactId>
+			<version>${project.version}</version>
+			<classifier>classes</classifier>
 			<scope>test</scope>
+			<exclusions>
+				<!-- FIXME: This exclusion is required because Spring dependency management is done in rdf4j-tools module -->
+				<exclusion>
+					<groupId>org.springframework</groupId>
+					<artifactId>spring-jcl</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
@@ -102,8 +61,6 @@
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-war-plugin</artifactId>
 				<configuration>
-					<warName>rdf4j-server</warName>
-					<archiveClasses>true</archiveClasses>
 					<webappDirectory>${testserver.webapp.dir}</webappDirectory>
 				</configuration>
 			</plugin>

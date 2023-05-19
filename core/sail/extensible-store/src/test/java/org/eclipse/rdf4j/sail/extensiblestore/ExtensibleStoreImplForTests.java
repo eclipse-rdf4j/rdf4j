@@ -20,6 +20,10 @@ public class ExtensibleStoreImplForTests
 	public ExtensibleStoreImplForTests() {
 	}
 
+	public ExtensibleStoreImplForTests(Cache cache) {
+		super(cache);
+	}
+
 	@Override
 	protected synchronized void initializeInternal() throws SailException {
 		namespaceStore = new SimpleMemoryNamespaceStore();

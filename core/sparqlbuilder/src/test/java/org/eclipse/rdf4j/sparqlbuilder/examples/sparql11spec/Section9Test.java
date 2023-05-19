@@ -11,11 +11,11 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.notEquals;
 import static org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder.prefix;
 import static org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder.var;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
-import static org.hamcrest.MatcherAssert.assertThat;
 
 import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
@@ -65,7 +65,7 @@ public class Section9Test extends BaseExamples {
 				.pred(dc.iri("title"))
 				.or(rdfs.iri("label")), displayString);
 		// NOTE: changed example: removed curly braces around, added brackets in path, added dot at end
-		assertThat(tp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(tp.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				":book1 ( dc:title | rdfs:label ) ?displayString ."
 		));
 	}
@@ -74,7 +74,7 @@ public class Section9Test extends BaseExamples {
 	public void example_9_2__2_alt_noprefix() {
 		TriplePattern tp = book1.has(path -> path.pred(DC.TITLE).or(RDFS.LABEL), displayString);
 		// NOTE: changed example: removed curly braces around, added brackets in path, added dot at end
-		assertThat(tp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(tp.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				":book1 ( <http://purl.org/dc/elements/1.1/title> | <http://www.w3.org/2000/01/rdf-schema#label> ) ?displayString ."
 		));
 	}
@@ -85,7 +85,7 @@ public class Section9Test extends BaseExamples {
 				.and(x.has(path -> path
 						.pred(foaf.iri("knows"))
 						.then(foaf.iri("name")), name));
-		assertThat(gp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(gp.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"{\n"
 						+ "    ?x foaf:mbox <mailto:alice@example> .\n"
 						+ "    ?x foaf:knows / foaf:name ?name .\n"
@@ -101,7 +101,7 @@ public class Section9Test extends BaseExamples {
 						.pred(foaf.iri("knows"))
 						.then(foaf.iri("knows"))
 						.then(foaf.iri("name")), name));
-		assertThat(gp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(gp.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"{\n"
 						+ "    ?x foaf:mbox <mailto:alice@example> .\n"
 						+ "    ?x foaf:knows / foaf:knows / foaf:name ?name .\n"
@@ -119,7 +119,7 @@ public class Section9Test extends BaseExamples {
 				.filter(notEquals(x, y))
 				.and(y.has(foaf.iri("name"), name));
 		// NOTE: changed example: moved FILTER to end of graph pattern, added dot
-		assertThat(gp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(gp.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"  { ?x foaf:mbox <mailto:alice@example> .\n"
 						+ "    ?x foaf:knows / foaf:knows ?y .\n"
 						+ "    ?y foaf:name ?name .\n"
@@ -132,7 +132,7 @@ public class Section9Test extends BaseExamples {
 	public void example_9_2__6_inverse() {
 		TriplePattern tp = mailto.has(path -> path.pred(foaf.iri("mbox")).inv(), x);
 		// NOTE: changed example: removed curly braces, added dot, added brackets in path
-		assertThat(tp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(tp.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				" <mailto:alice@example> ^ ( foaf:mbox ) ?x ."
 		));
 	}
@@ -146,7 +146,7 @@ public class Section9Test extends BaseExamples {
 				y)
 				.filter(notEquals(x, y));
 		// NOTE: changed example: added brackets in path
-		assertThat(gp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(gp.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"{\n"
 						+ "    ?x foaf:knows/^ ( foaf:knows ) ?y .  \n"
 						+ "    FILTER(?x != ?y)\n"
@@ -163,7 +163,7 @@ public class Section9Test extends BaseExamples {
 						.then(foaf.iri("name")), name
 				));
 		// NOTE: changed example: added brackets in path
-		assertThat(gp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(gp.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"  {\n"
 						+ "    ?x foaf:mbox <mailto:alice@example> .\n"
 						+ "    ?x foaf:knows+/foaf:name ?name .\n"
@@ -178,7 +178,7 @@ public class Section9Test extends BaseExamples {
 				.or(ex.iri("fatherOf"))
 				.oneOrMore(), me);
 		// NOTE: changed example: remove curly braces, added dot
-		assertThat(tp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(tp.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"?ancestor (ex:motherOf|ex:fatherOf)+ <#me> ."
 		));
 	}
@@ -191,7 +191,7 @@ public class Section9Test extends BaseExamples {
 				.then(s -> s.pred(rdfs.iri("subClassOf"))
 						.zeroOrMore()),
 				type);
-		assertThat(tp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(tp.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"<http://example/thing> rdf:type / rdfs:subClassOf * ?type ."
 		));
 	}
@@ -204,7 +204,7 @@ public class Section9Test extends BaseExamples {
 				.then(s -> s.pred(rdfs.iri("subClassOf"))
 						.zeroOrMore()),
 				type);
-		assertThat(tp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(tp.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"?x rdf:type / rdfs:subClassOf * ?type ."
 		));
 	}
@@ -217,7 +217,7 @@ public class Section9Test extends BaseExamples {
 						.pred(rdfs.iri("subPropertyOf"))
 						.zeroOrMore(),
 						property));
-		assertThat(gp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(gp.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"{ ?x ?p ?v . ?p rdfs:subPropertyOf* :property . }"
 		));
 	}
@@ -228,7 +228,7 @@ public class Section9Test extends BaseExamples {
 				.negProp()
 				.pred(rdf.iri("type"))
 				.invPred(rdf.iri("type")), y);
-		assertThat(tp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(tp.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				" ?x !(rdf:type|^rdf:type) ?y ."
 		));
 	}
@@ -240,7 +240,7 @@ public class Section9Test extends BaseExamples {
 				.pred(rdf.iri("rest"))
 				.zeroOrMore()
 				.then(rdf.iri("first")), element);
-		assertThat(tp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(tp.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				":list rdf:rest*/rdf:first ?element ."
 		));
 	}
@@ -254,7 +254,7 @@ public class Section9Test extends BaseExamples {
 				.where(s.has(p -> p
 						.pred(base.iri("item"))
 						.then(base.iri("price")), x));
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX :   <http://example/>\n"
 						+ "SELECT * \n"
 						+ "WHERE {  ?s :item/:price ?x . }"
@@ -270,7 +270,7 @@ public class Section9Test extends BaseExamples {
 				.prefix(base)
 				.where(s.has(base.iri("item"), _a)
 						.and(_a.has(base.iri("price"), x)));
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX :   <http://example/>\n"
 						+ "SELECT * \n"
 						+ "WHERE {"
@@ -289,7 +289,7 @@ public class Section9Test extends BaseExamples {
 				.prefix(base)
 				.where(s.has(base.iri("item"), _a)
 						.and(_a.has(base.iri("price"), x)));
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX :   <http://example/>\n"
 						+ "SELECT * \n"
 						+ "WHERE {"
@@ -307,7 +307,7 @@ public class Section9Test extends BaseExamples {
 				.where(order.has(p -> p
 						.pred(base.iri("item"))
 						.then(base.iri("price")), x));
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				" PREFIX :   <http://example/>\n"
 						+ "  SELECT (sum(?x) AS ?total)\n"
 						+ "  WHERE { \n"
@@ -327,7 +327,7 @@ public class Section9Test extends BaseExamples {
 						.then(RDFS.SUBCLASSOF)
 						.zeroOrMore(),
 						type));
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX  rdfs:   <http://www.w3.org/2000/01/rdf-schema#> \n"
 						+ "  PREFIX  rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
 						+ "  SELECT ?x ?type\n"
@@ -348,7 +348,7 @@ public class Section9Test extends BaseExamples {
 								.pred(FOAF.KNOWS)
 								.oneOrMore(),
 								person));
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
 						+ "  PREFIX :     <http://example/>\n"
 						+ "  SELECT ?person\n"

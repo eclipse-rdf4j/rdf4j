@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
-import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 import org.eclipse.rdf4j.rio.helpers.JSONSettings;
 
 import com.fasterxml.jackson.core.JsonFactory;
@@ -57,7 +56,7 @@ public class JSONLDParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Creates a Sesame JSONLD Parser using the given {@link ValueFactory} to create new {@link Value}s.
+	 * Creates a JSONLD Parser using the given {@link ValueFactory} to create new {@link Value}s.
 	 *
 	 * @param valueFactory The ValueFactory to use
 	 */

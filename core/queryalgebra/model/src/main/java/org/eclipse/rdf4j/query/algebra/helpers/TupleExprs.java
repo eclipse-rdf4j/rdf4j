@@ -134,9 +134,9 @@ public class TupleExprs {
 	 * @param expr a {@link TupleExpr}
 	 * @return <code>true</code> if the {@link TupleExpr} is {@link GraphPatternGroupable} and has its graph pattern
 	 *         group flag set to <code>true</code>, <code>false</code> otherwise.
-	 * @deprecated since 3.2. Use {@link #isVariableScopeChange(TupleExpr)} instead.
+	 * @deprecated Use {@link #isVariableScopeChange(TupleExpr)} instead.
 	 */
-	@Deprecated
+	@Deprecated(since = "3.2")
 	public static boolean isGraphPatternGroup(TupleExpr expr) {
 		if (expr instanceof GraphPatternGroupable) {
 			return ((GraphPatternGroupable) expr).isGraphPatternGroup();
@@ -151,9 +151,9 @@ public class TupleExprs {
 	 * @param t a tuple expression.
 	 * @return <code>true</code> if the TupleExpr contains a projection (outside of a Join), <code>false</code>
 	 *         otherwise.
-	 * @deprecated since 2.0. Use {@link #containsSubquery(TupleExpr)} instead.
+	 * @deprecated Use {@link #containsSubquery(TupleExpr)} instead.
 	 */
-	@Deprecated
+	@Deprecated(since = "2.0")
 	public static boolean containsProjection(TupleExpr t) {
 		Deque<TupleExpr> queue = new ArrayDeque<>();
 		queue.add(t);

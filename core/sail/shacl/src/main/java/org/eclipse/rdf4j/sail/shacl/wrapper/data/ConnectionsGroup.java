@@ -130,7 +130,7 @@ public class ConnectionsGroup implements AutoCloseable {
 
 			BufferedSplitter bufferedSplitter = nodeCache.computeIfAbsent(planNode, parent -> {
 				matchedCache[0] = false;
-				return new BufferedSplitter(parent, true, true);
+				return new BufferedSplitter(parent, true);
 			});
 
 			logger.debug("Found in cache: {} {}  -  {} : {}", matchedCache[0] ? " TRUE" : "FALSE",
@@ -144,6 +144,8 @@ public class ConnectionsGroup implements AutoCloseable {
 	}
 
 	public RdfsSubClassOfReasoner getRdfsSubClassOfReasoner() {
+		if (rdfsSubClassOfReasonerProvider == null)
+			return null;
 		return rdfsSubClassOfReasonerProvider.getRdfsSubClassOfReasoner();
 	}
 

@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.model.Literal;

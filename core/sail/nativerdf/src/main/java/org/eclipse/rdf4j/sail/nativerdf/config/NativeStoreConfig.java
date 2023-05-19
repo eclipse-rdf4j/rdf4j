@@ -10,8 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf.config;
 
+import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.FORCE_SYNC;
-import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.NAMESPACE;
 import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.NAMESPACE_CACHE_SIZE;
 import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.NAMESPACE_ID_CACHE_SIZE;
 import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.TRIPLE_INDEXES;
@@ -20,10 +20,9 @@ import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.VALUE_ID
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
-import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 
@@ -32,25 +31,15 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
  */
 public class NativeStoreConfig extends BaseSailConfig {
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
+	private static final boolean USE_CONFIG = "true"
+			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
 
 	private String tripleIndexes;
-
 	private boolean forceSync = false;
-
 	private int valueCacheSize = -1;
-
 	private int valueIDCacheSize = -1;
-
 	private int namespaceCacheSize = -1;
-
 	private int namespaceIDCacheSize = -1;
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
 
 	public NativeStoreConfig() {
 		super(NativeStoreFactory.SAIL_TYPE);
@@ -121,26 +110,49 @@ public class NativeStoreConfig extends BaseSailConfig {
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
-		ValueFactory vf = SimpleValueFactory.getInstance();
+		m.setNamespace(CONFIG.NS);
 
-		m.setNamespace("ns", NAMESPACE);
 		if (tripleIndexes != null) {
-			m.add(implNode, TRIPLE_INDEXES, vf.createLiteral(tripleIndexes));
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.Native.tripleIndexes, literal(tripleIndexes));
+			} else {
+				m.add(implNode, TRIPLE_INDEXES, literal(tripleIndexes));
+			}
 		}
 		if (forceSync) {
-			m.add(implNode, FORCE_SYNC, vf.createLiteral(forceSync));
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.Native.forceSync, literal(forceSync));
+			} else {
+				m.add(implNode, FORCE_SYNC, literal(forceSync));
+			}
 		}
 		if (valueCacheSize >= 0) {
-			m.add(implNode, VALUE_CACHE_SIZE, vf.createLiteral(valueCacheSize));
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.Native.valueCacheSize, literal(valueCacheSize));
+			} else {
+				m.add(implNode, VALUE_CACHE_SIZE, literal(valueCacheSize));
+			}
 		}
 		if (valueIDCacheSize >= 0) {
-			m.add(implNode, VALUE_ID_CACHE_SIZE, vf.createLiteral(valueIDCacheSize));
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.Native.valueIDCacheSize, literal(valueIDCacheSize));
+			} else {
+				m.add(implNode, VALUE_ID_CACHE_SIZE, literal(valueIDCacheSize));
+			}
 		}
 		if (namespaceCacheSize >= 0) {
-			m.add(implNode, NAMESPACE_CACHE_SIZE, vf.createLiteral(namespaceCacheSize));
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.Native.namespaceCacheSize, literal(namespaceCacheSize));
+			} else {
+				m.add(implNode, NAMESPACE_CACHE_SIZE, literal(namespaceCacheSize));
+			}
 		}
 		if (namespaceIDCacheSize >= 0) {
-			m.add(implNode, NAMESPACE_ID_CACHE_SIZE, vf.createLiteral(namespaceIDCacheSize));
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.Native.namespaceIDCacheSize, literal(namespaceIDCacheSize));
+			} else {
+				m.add(implNode, NAMESPACE_ID_CACHE_SIZE, literal(namespaceIDCacheSize));
+			}
 		}
 
 		return implNode;
@@ -152,52 +164,63 @@ public class NativeStoreConfig extends BaseSailConfig {
 
 		try {
 
-			Models.objectLiteral(m.getStatements(implNode, TRIPLE_INDEXES, null))
+			Configurations.getLiteralValue(m, implNode, CONFIG.Native.tripleIndexes, TRIPLE_INDEXES)
 					.ifPresent(lit -> setTripleIndexes(lit.getLabel()));
-			Models.objectLiteral(m.getStatements(implNode, FORCE_SYNC, null)).ifPresent(lit -> {
-				try {
-					setForceSync(lit.booleanValue());
-				} catch (IllegalArgumentException e) {
-					throw new SailConfigException(
-							"Boolean value required for " + FORCE_SYNC + " property, found " + lit);
-				}
-			});
 
-			Models.objectLiteral(m.getStatements(implNode, VALUE_CACHE_SIZE, null)).ifPresent(lit -> {
-				try {
-					setValueCacheSize(lit.intValue());
-				} catch (NumberFormatException e) {
-					throw new SailConfigException(
-							"Integer value required for " + VALUE_CACHE_SIZE + " property, found " + lit);
-				}
-			});
+			Configurations.getLiteralValue(m, implNode, CONFIG.Native.forceSync, FORCE_SYNC)
+					.ifPresent(lit -> {
+						try {
+							setForceSync(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Boolean value required for " + CONFIG.Native.forceSync + " property, found "
+											+ lit);
+						}
+					});
 
-			Models.objectLiteral(m.getStatements(implNode, VALUE_ID_CACHE_SIZE, null)).ifPresent(lit -> {
-				try {
-					setValueIDCacheSize(lit.intValue());
-				} catch (NumberFormatException e) {
-					throw new SailConfigException(
-							"Integer value required for " + VALUE_ID_CACHE_SIZE + " property, found " + lit);
-				}
-			});
+			Configurations.getLiteralValue(m, implNode, CONFIG.Native.valueCacheSize, VALUE_CACHE_SIZE)
+					.ifPresent(lit -> {
+						try {
+							setValueCacheSize(lit.intValue());
+						} catch (NumberFormatException e) {
+							throw new SailConfigException(
+									"Integer value required for " + CONFIG.Native.valueCacheSize + " property, found "
+											+ lit);
+						}
+					});
 
-			Models.objectLiteral(m.getStatements(implNode, NAMESPACE_CACHE_SIZE, null)).ifPresent(lit -> {
-				try {
-					setNamespaceCacheSize(lit.intValue());
-				} catch (NumberFormatException e) {
-					throw new SailConfigException(
-							"Integer value required for " + NAMESPACE_CACHE_SIZE + " property, found " + lit);
-				}
-			});
+			Configurations.getLiteralValue(m, implNode, CONFIG.Native.valueIDCacheSize, VALUE_ID_CACHE_SIZE)
+					.ifPresent(lit -> {
+						try {
+							setValueIDCacheSize(lit.intValue());
+						} catch (NumberFormatException e) {
+							throw new SailConfigException(
+									"Integer value required for " + CONFIG.Native.valueIDCacheSize + " property, found "
+											+ lit);
+						}
+					});
 
-			Models.objectLiteral(m.getStatements(implNode, NAMESPACE_ID_CACHE_SIZE, null)).ifPresent(lit -> {
-				try {
-					setNamespaceIDCacheSize(lit.intValue());
-				} catch (NumberFormatException e) {
-					throw new SailConfigException(
-							"Integer value required for " + NAMESPACE_ID_CACHE_SIZE + " property, found " + lit);
-				}
-			});
+			Configurations.getLiteralValue(m, implNode, CONFIG.Native.namespaceCacheSize, NAMESPACE_CACHE_SIZE)
+					.ifPresent(lit -> {
+						try {
+							setNamespaceCacheSize(lit.intValue());
+						} catch (NumberFormatException e) {
+							throw new SailConfigException(
+									"Integer value required for " + CONFIG.Native.namespaceCacheSize
+											+ " property, found " + lit);
+						}
+					});
+
+			Configurations.getLiteralValue(m, implNode, CONFIG.Native.namespaceIDCacheSize, NAMESPACE_ID_CACHE_SIZE)
+					.ifPresent(lit -> {
+						try {
+							setNamespaceIDCacheSize(lit.intValue());
+						} catch (NumberFormatException e) {
+							throw new SailConfigException(
+									"Integer value required for " + CONFIG.Native.namespaceIDCacheSize
+											+ " property, found " + lit);
+						}
+					});
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}

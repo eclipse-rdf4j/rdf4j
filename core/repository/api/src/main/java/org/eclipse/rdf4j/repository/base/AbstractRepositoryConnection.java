@@ -190,9 +190,9 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	}
 
 	/**
-	 * @deprecated since 2.0. Use {@link #begin()} instead.
+	 * @deprecated Use {@link #begin()} instead.
 	 */
-	@Deprecated
+	@Deprecated(since = "2.0")
 	@Override
 	public void setAutoCommit(boolean autoCommit) throws RepositoryException {
 		if (isActive()) {
@@ -207,9 +207,9 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	}
 
 	/**
-	 * @deprecated since 2.0. Use {@link #isActive()} instead.
+	 * @deprecated Use {@link #isActive()} instead.
 	 */
-	@Deprecated
+	@Deprecated(since = "2.0")
 	@Override
 	public boolean isAutoCommit() throws RepositoryException {
 		return !isActive();

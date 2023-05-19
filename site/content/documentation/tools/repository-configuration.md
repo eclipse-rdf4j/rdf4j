@@ -13,27 +13,24 @@ The [RDF4J Console](/documentation/tools/console/) comes with a number of defaul
 To create your own templates, it’s easiest to start with an existing template and modify that to your needs. The default “memory.ttl” template looks like this:
 
     #
-    # Rdf4j configuration template for a main-memory repository
+    # RDF4J configuration template for a main-memory repository
     #
     @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-    @prefix rep: <http://www.openrdf.org/config/repository#>.
-    @prefix sr: <http://www.openrdf.org/config/repository/sail#>.
-    @prefix sail: <http://www.openrdf.org/config/sail#>.
-    @prefix ms: <http://www.openrdf.org/config/sail/memory#>.
+    @prefix config: <tag:rdf4j.org,2023:config/>.
 
-    [] a rep:Repository ;
-       rep:repositoryID "{%Repository ID|memory%}" ;
+    [] a config:Repository ;
+       config:rep.id "{%Repository ID|memory%}" ;
        rdfs:label "{%Repository title|Memory store%}" ;
-       rep:repositoryImpl [
-          rep:repositoryType "openrdf:SailRepository" ;
-          sr:sailImpl [
-             sail:sailType "openrdf:MemoryStore" ;
-             ms:persist {%Persist|true|false%} ;
-             ms:syncDelay {%Sync delay|0%}
+       config:rep.impl [
+          config:rep.type "openrdf:SailRepository" ;
+          config:sail.impl [
+             config:sail.type "openrdf:MemoryStore" ;
+             config:mem.persist {%Persist|true|false%} ;
+             config:mem.syncDelay {%Sync delay|0%}
           ]
        ].
 
 Template variables are written down as `{%var name%}` and can specify zero or more values, seperated by vertical bars (“|”). If one value is specified then this value is interpreted as the default value for the variable. The Console will use this default value when the user simply hits the Enter key. If multiple variable values are specified, e.g. `{%Persist|true|false%}`, then this is interpreted as set of all possible values. If the user enters an unspecified value then that is considered to be an error. The value that is specified first is used as the default value.
 
-The URIs that are used in the templates are the URIs that are specified by the `RepositoryConfig` and `SailConfig` classes of RDF4J’s repository configuration mechanism. The relevant namespaces and URIs can be found in the javadoc of these classes, or in [Repository and Sail Configuration](/documentation/reference/configuration/).
+The URIs that are used in the templates are terms defined in the RDF4J Config vocabulary. The relevant namespace and URIs can be found in the {{< javadoc "CONFIG" "model/vocabulary/config.html" >}} vocabulary javadoc, or in [Repository and Sail Configuration](/documentation/reference/configuration/).
 

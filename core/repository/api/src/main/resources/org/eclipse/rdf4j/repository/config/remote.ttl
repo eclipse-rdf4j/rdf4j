@@ -1,14 +1,13 @@
 #
-# Sesame configuration template for a (proxy for a) remote repository
+# RDF4J configuration template for a (proxy for a) remote repository
 #
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix rep: <http://www.openrdf.org/config/repository#>.
-@prefix hr: <http://www.openrdf.org/config/repository/http#>.
+@prefix config: <tag:rdf4j.org,2023:config/>.
 
-[] a rep:Repository ;
-   rep:repositoryImpl [
-      rep:repositoryType "openrdf:HTTPRepository" ;
-      hr:repositoryURL <{%Sesame server location|http://localhost:8080/openrdf-sesame%}/repositories/{%Remote repository ID|SYSTEM%}>
-   ];
-   rep:repositoryID "{%Local repository ID|SYSTEM@localhost%}" ;
-   rdfs:label "{%Repository title|SYSTEM repository @localhost%}" .
+[] a config:Repository ;
+    config:rep.impl [
+        config:rep.type "openrdf:HTTPRepository" ;
+        config:http.url <{%RDF4J Server location|http://localhost:8080/rdf4j-server%}/repositories/{%Remote repository ID|SYSTEM%}>
+    ];
+    config:rep.id "{%Local repository ID|SYSTEM@localhost%}" ;
+    rdfs:label "{%Repository title|SYSTEM repository @localhost%}" .

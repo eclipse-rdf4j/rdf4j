@@ -29,9 +29,9 @@ public interface RepositoryConnectionListener {
 	/**
 	 * @param conn
 	 * @param autoCommit
-	 * @deprecated since 2.0. Use {@link #begin(RepositoryConnection)} instead.
+	 * @deprecated Use {@link #begin(RepositoryConnection)} instead.
 	 */
-	@Deprecated
+	@Deprecated(since = "2.0")
 	void setAutoCommit(RepositoryConnection conn, boolean autoCommit);
 
 	void begin(RepositoryConnection conn);

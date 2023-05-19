@@ -6,31 +6,63 @@
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
 @prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+@prefix dc: <http://purl.org/dc/terms/> .
 
 rdf4j:SHACLShapeGraph {
+ex:
+	sh:declare [
+		sh:prefix "ex" ;
+		sh:namespace "http://example.com/ns#"^^xsd:anyURI ;
+	] ,
+	[
+		sh:prefix "owl" ;
+		sh:namespace "http://www.w3.org/2002/07/owl#"^^xsd:anyURI ;
+	] ,
+	[
+		sh:prefix "rdf" ;
+		sh:namespace "http://www.w3.org/1999/02/22-rdf-syntax-ns#"^^xsd:anyURI ;
+	] ,
+	[
+		sh:prefix "rdfs" ;
+		sh:namespace "http://www.w3.org/2000/01/rdf-schema#"^^xsd:anyURI ;
+	] ,
+	[
+		sh:prefix "sh" ;
+		sh:namespace "http://www.w3.org/ns/shacl#"^^xsd:anyURI ;
+	] ,
+	[
+		sh:prefix "xsd" ;
+		sh:namespace "http://www.w3.org/2001/XMLSchema#"^^xsd:anyURI ;
+	],
+	[
+		sh:prefix "dcat" ;
+		sh:namespace "http://www.w3.org/ns/dcat#"^^xsd:anyURI ;
+	],
+	[
+		sh:prefix "dc" ;
+		sh:namespace "http://purl.org/dc/terms/"^^xsd:anyURI ;
+	],
+	[
+		sh:prefix "skos" ;
+		sh:namespace "http://www.w3.org/2004/02/skos/core#"^^xsd:anyURI ;
+	],
+	[
+		sh:prefix "foaf" ;
+		sh:namespace "http://xmlns.com/foaf/0.1/"^^xsd:anyURI ;
+	] .
+
+
   ex:PersonShape
   	a sh:NodeShape  ;
   	sh:target [
           		a sh:SPARQLTarget ;
+        		sh:prefixes ex: ;
           		sh:select """
-                                  PREFIX ex: <http://example.com/ns#>
-                                  PREFIX owl: <http://www.w3.org/2002/07/owl#>
-                                  PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-                                  PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-                                  PREFIX sh: <http://www.w3.org/ns/shacl#>
-                                  PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-                                  PREFIX dcat: <http://www.w3.org/ns/dcat#>
-                                  PREFIX dc: <http://purl.org/dc/terms/>
-                                  PREFIX skos:  <http://www.w3.org/2004/02/skos/core#>
-                                  PREFIX foaf:  <http://xmlns.com/foaf/0.1/>
-
-
           			SELECT ?this
           			WHERE {
           			        # we want to validate that all Datasets with >=3 Distributions has a dc:title
           				?this a dcat:Dataset .
           				?this dcat:distribution ?distribution.
-          				FILTER(! EXISTS {?this dc:language "no"})
           			}
           			GROUP BY ?this
                                   HAVING(COUNT(?distribution) >= 3)

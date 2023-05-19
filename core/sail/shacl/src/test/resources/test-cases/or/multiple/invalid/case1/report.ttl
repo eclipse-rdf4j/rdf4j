@@ -17,7 +17,7 @@
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:OrConstraintComponent;
       sh:sourceShape ex:personShapeOr;
-      sh:value ex:fluffy
+      sh:value ex:pete
     ], [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:validPerson1;
@@ -25,7 +25,7 @@
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:OrConstraintComponent;
       sh:sourceShape ex:personShapeOr;
-      sh:value ex:pete
+      sh:value ex:fluffy
     ] .
 
 ex:personShapeOr a sh:PropertyShape;

@@ -1,0 +1,40 @@
+@prefix : <http://namespace1.org/> .
+@prefix ns3: <http://namespace3.org/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . 
+@prefix owl:  <http://www.w3.org/2002/07/owl#> . 
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> . 
+
+:PG1 { 
+    :Person_1 rdf:type foaf:Person .
+    :Person_1 rdf:type :Person .
+    :Person_1 foaf:name "Person1" .
+    :Person_1 foaf:age "20"^^xsd:integer .
+}
+
+:PG2 {
+    :Person_2 rdf:type foaf:Person .
+    :Person_2 rdf:type :Person .
+    :Person_2 foaf:name "Person2" .
+    :Person_2 foaf:age "27"^^xsd:integer .
+}
+
+:PG3 {
+    :Person_3 rdf:type foaf:Person .
+    :Person_3 rdf:type :Person .
+    :Person_3 foaf:name "Person3" .
+    :Person_3 foaf:age "30"^^xsd:integer .
+}
+
+:PG4 {
+    :Person_4 rdf:type foaf:Person .
+    :Person_4 rdf:type :Person .
+    :Person_4 foaf:name "Person4" .
+}
+
+:PG5 {
+    :Person_5 rdf:type foaf:Person .
+    :Person_5 rdf:type :Person .
+    :Person_5 foaf:name "Person5" .
+}

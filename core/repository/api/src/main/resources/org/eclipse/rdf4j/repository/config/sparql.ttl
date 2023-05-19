@@ -1,15 +1,14 @@
 #
-# Sesame configuration template for a Repository proxy for a SPARQL endpoint
+# RDF4J configuration template for a Repository proxy for a SPARQL endpoint
 #
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix rep: <http://www.openrdf.org/config/repository#>.
-@prefix sparql: <http://www.openrdf.org/config/repository/sparql#>.
+@prefix config: <tag:rdf4j.org,2023:config/>.
 
-[] a rep:Repository ;
-   rep:repositoryImpl [
-      rep:repositoryType "openrdf:SPARQLRepository" ;
-      sparql:query-endpoint <{%SPARQL query endpoint|%}> ;
-      sparql:update-endpoint <{%SPARQL update endpoint|%}> ;
-   ];
-   rep:repositoryID "{%Local repository ID|endpoint@localhost%}" ;
-   rdfs:label "{%Repository title|SPARQL endpoint repository @localhost%}" .
+[] a config:Repository ;
+    config:rep.impl [
+        config:rep.type "openrdf:SPARQLRepository" ;
+        config:sparql.queryEndpoint <{%SPARQL query endpoint|%}> ;
+        config:sparql.updateEndpoint <{%SPARQL update endpoint|%}> ;
+    ];
+    config:rep.id "{%Local repository ID|endpoint@localhost%}" ;
+    rdfs:label "{%Repository title|SPARQL endpoint repository @localhost%}" .

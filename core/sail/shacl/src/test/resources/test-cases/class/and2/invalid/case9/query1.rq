@@ -12,4 +12,6 @@ ex:validPerson1 a ex:SecondTarget ;
 ex:peter a ex:SecondTarget.
 ex:steve a ex:SecondTarget.
 
+ex:peter a ex:Person, ex:Human.
+
 }

@@ -82,10 +82,11 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 
 		try (TupleQueryResult result = tq.evaluate()) {
 			assertNotNull(result);
-
+			assertTrue(result.hasNext());
 			Literal d1 = (Literal) result.next().getValue("d");
+			assertTrue(result.hasNext());
 			Literal d2 = (Literal) result.next().getValue("d");
-
+			assertFalse(result.hasNext());
 			assertNotNull(d1);
 			assertEquals(d1, d2);
 		} catch (QueryEvaluationException e) {
@@ -110,6 +111,7 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 			assertNotNull(p);
 			assertNotNull(n);
 			assertEquals(p, n);
+			assertTrue(p == n);
 		}
 	}
 
@@ -282,7 +284,6 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 		query = "ask {filter (regex(\"Валовой\", \"валовой\")) }";
 
 		assertFalse("case-sensitive match on Cyrillic should fail", conn.prepareBooleanQuery(query).evaluate());
-
 	}
 
 	@Test
@@ -306,6 +307,59 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 		try (Stream<BindingSet> result = tq.evaluate().stream()) {
 			long count = result.count();
 			assertEquals(1, count);
+		}
+	}
+
+	@Test
+	public void testDateCastFunction_date() {
+		String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
+				+ "SELECT (xsd:date(\"2022-09-09\") AS ?date) { }";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, qry).evaluate()) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			assertEquals("2022-09-09", result.next().getValue("date").stringValue());
+			assertFalse(result.hasNext());
+		}
+	}
+
+	@Test
+	public void testDateCastFunction_date_withTimeZone_utc() {
+		String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
+				+ "SELECT (xsd:date(\"2022-09-09Z\") AS ?date) { }";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, qry).evaluate()) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			assertEquals("2022-09-09Z", result.next().getValue("date").stringValue());
+			assertFalse(result.hasNext());
+		}
+	}
+
+	@Test
+	public void testDateCastFunction_dateTime_withTimeZone_offset() {
+		String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
+				+ "SELECT (xsd:date(\"2022-09-09T14:45:13+03:00\") AS ?date) { }";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, qry).evaluate()) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			assertEquals("2022-09-09+03:00", result.next().getValue("date").stringValue());
+			assertFalse(result.hasNext());
+		}
+	}
+
+	@Test
+	public void testDateCastFunction_invalidInput() {
+		String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
+				+ "SELECT (xsd:date(\"2022-09-xx\") AS ?date) { }";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, qry).evaluate()) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			assertFalse("There should be no binding because the cast should have failed.",
+					result.next().hasBinding("date"));
+			assertFalse(result.hasNext());
 		}
 	}
 }

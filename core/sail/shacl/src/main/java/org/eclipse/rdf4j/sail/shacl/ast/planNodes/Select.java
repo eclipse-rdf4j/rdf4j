@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.slf4j.Logger;
@@ -48,26 +49,28 @@ public class Select implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public Select(SailConnection connection, String queryFragment, String orderBy,
+	public Select(SailConnection connection, SparqlFragment queryFragment, String orderBy,
 			Function<BindingSet, ValidationTuple> mapper, Resource[] dataGraph) {
 		this.connection = connection;
 		assert this.connection != null;
 		this.mapper = mapper;
-		if (queryFragment.trim().equals("")) {
+		String fragment = queryFragment.getFragment();
+		if (fragment.trim().equals("")) {
 			logger.error("Query is empty", new Throwable("This throwable is just to log the stack trace"));
 
 			// empty set
-			queryFragment = "" +
+			fragment = "" +
 					"?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c.\n" +
 					"FILTER (NOT EXISTS {?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c})";
 		}
 		sorted = orderBy != null;
 
-		if (!sorted && queryFragment.trim().startsWith("select ")) {
-			this.query = StatementMatcher.StableRandomVariableProvider.normalize(queryFragment);
+		if (!sorted && fragment.trim().startsWith("select ")) {
+			this.query = queryFragment.getNamespacesForSparql() + "\n"
+					+ StatementMatcher.StableRandomVariableProvider.normalize(fragment);
 		} else {
-			this.query = StatementMatcher.StableRandomVariableProvider
-					.normalize("select * where {\n" + queryFragment + "\n}" + (sorted ? " order by " + orderBy : ""));
+			this.query = queryFragment.getNamespacesForSparql() + "\n" + StatementMatcher.StableRandomVariableProvider
+					.normalize("select * where {\n" + fragment + "\n}" + (sorted ? " order by " + orderBy : ""));
 		}
 
 		dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
@@ -77,7 +80,7 @@ public class Select implements PlanNode {
 	public Select(SailConnection connection, String query, Function<BindingSet, ValidationTuple> mapper,
 			Resource[] dataGraph) {
 		assert !query.toLowerCase().contains("order by") : "Queries with order by are not supported.";
-		assert query.trim().toLowerCase().startsWith("select") : "Expected query to start with select.";
+		assert query.trim().toLowerCase().contains("select ") : "Expected query to contain select.";
 
 		this.connection = connection;
 		assert this.connection != null;
@@ -92,10 +95,9 @@ public class Select implements PlanNode {
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet = null;
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet;
 
-			private void init() {
-
+			protected void init() {
 				if (bindingSet != null) {
 					return;
 				}
@@ -104,6 +106,10 @@ public class Select implements PlanNode {
 					TupleExpr tupleExpr = SparqlQueryParserCache.get(query);
 
 					bindingSet = connection.evaluate(tupleExpr, dataset, EmptyBindingSet.getInstance(), true);
+					if (logger.isTraceEnabled()) {
+						boolean hasNext = bindingSet.hasNext();
+						logger.trace("SPARQL query (hasNext={}) \n{}", hasNext, Formatter.formatSparqlQuery(query));
+					}
 				} catch (MalformedQueryException e) {
 					logger.error("Malformed query:\n{}", query);
 					throw e;
@@ -111,21 +117,19 @@ public class Select implements PlanNode {
 			}
 
 			@Override
-			public void localClose() throws SailException {
+			public void localClose() {
 				if (bindingSet != null) {
 					bindingSet.close();
 				}
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
-				init();
+			protected boolean localHasNext() {
 				return bindingSet.hasNext();
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
-				init();
+			protected ValidationTuple loggingNext() {
 				return mapper.apply(bindingSet.next());
 			}
 

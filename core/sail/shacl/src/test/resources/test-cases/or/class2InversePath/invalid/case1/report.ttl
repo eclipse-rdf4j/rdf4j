@@ -13,7 +13,7 @@
   sh:result [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:validPerson1;
-      sh:resultPath _:node1ftskin5gx58130;
+      sh:resultPath _:5089a376325a403b926b5c31d5e95e7213899;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:sourceShape ex:personShapeOr;
@@ -32,6 +32,6 @@ ex:personShapeOr a sh:PropertyShape;
               ]
           ])
     ];
-  sh:path _:node1ftskin5gx58130 .
+  sh:path _:5089a376325a403b926b5c31d5e95e7213899 .
 
-_:node1ftskin5gx58130 sh:inversePath ex:inverseKnows .
+_:5089a376325a403b926b5c31d5e95e7213899 sh:inversePath ex:inverseKnows .

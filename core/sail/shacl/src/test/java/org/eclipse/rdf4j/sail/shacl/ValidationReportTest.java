@@ -247,7 +247,7 @@ public class ValidationReportTest {
 					"      sh:focusNode <http://example.com/ns#validPerson1>;\n" +
 					"      rsx:shapesGraph rdf4j:SHACLShapeGraph;\n" +
 					"      sh:resultPath <http://example.com/ns#knows>;\n" +
-					"      sh:sourceConstraintComponent sh:HasValueConstraintComponent;\n" +
+					"      sh:sourceConstraintComponent <http://datashapes.org/dash#HasValueInConstraintComponent>;\n" +
 					"      sh:resultSeverity sh:Violation;\n" +
 					"      sh:sourceShape [ a sh:PropertyShape;\n" +
 					"          sh:path <http://example.com/ns#knows>;\n" +

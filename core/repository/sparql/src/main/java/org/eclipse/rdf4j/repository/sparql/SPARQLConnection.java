@@ -173,9 +173,9 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	 *
 	 * @param flag the value to set this to.
 	 * @see https://www.w3.org/TR/sparql11-update/#clear
-	 * @deprecated since 3.6.0 - use {@link #setSilentClear(boolean)} instead.
+	 * @deprecated Use {@link #setSilentClear(boolean)} instead.
 	 */
-	@Deprecated
+	@Deprecated(since = "3.6.0")
 	public void enableSilentMode(boolean flag) {
 		setSilentClear(flag);
 	}

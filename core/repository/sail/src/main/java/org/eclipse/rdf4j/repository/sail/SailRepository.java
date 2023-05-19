@@ -100,6 +100,15 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 	}
 
 	@Override
+	public FederatedServiceResolver getFederatedServiceResolver() {
+		FederatedServiceResolverClient stack = findSailOf(sail, FederatedServiceResolverClient.class);
+		if (stack != null) {
+			return stack.getFederatedServiceResolver();
+		}
+		return null;
+	}
+
+	@Override
 	public void setRepositoryResolver(RepositoryResolver resolver) {
 		RepositoryResolverClient stack = findSailOf(sail, RepositoryResolverClient.class);
 		if (stack != null) {

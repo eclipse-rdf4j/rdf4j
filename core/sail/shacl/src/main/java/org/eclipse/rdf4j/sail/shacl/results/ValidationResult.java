@@ -23,6 +23,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -35,6 +36,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.ast.Severity;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.SparqlConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 
 /**
@@ -51,19 +53,22 @@ public class ValidationResult {
 	private final Shape shape;
 
 	private final SourceConstraintComponent sourceConstraintComponent;
+	private final ConstraintComponent sourceConstraint;
 	private final Severity severity;
 	private final Value focusNode;
 	private final Resource[] dataGraphs;
 	private final Resource[] shapesGraphs;
 	private Path path;
 	private ValidationResult detail;
+	private Value pathIri;
 
 	public ValidationResult(Value focusNode, Value value, Shape shape,
-			SourceConstraintComponent sourceConstraintComponent, Severity severity, ConstraintComponent.Scope scope,
+			ConstraintComponent sourceConstraint, Severity severity, ConstraintComponent.Scope scope,
 			Resource[] dataGraphs, Resource[] shapesGraphs) {
 		this.focusNode = focusNode;
 		assert this.focusNode != null;
-		this.sourceConstraintComponent = sourceConstraintComponent;
+		this.sourceConstraintComponent = sourceConstraint.getConstraintComponent();
+		this.sourceConstraint = sourceConstraint;
 		this.shape = shape;
 
 		if (sourceConstraintComponent.producesValidationResultValue()) {
@@ -133,16 +138,20 @@ public class ValidationResult {
 		if (this.path != null) {
 			path.toModel(path.getId(), null, model, new HashSet<>());
 			model.add(getId(), SHACL.RESULT_PATH, path.getId());
+		} else if (pathIri != null) {
+			model.add(getId(), SHACL.RESULT_PATH, pathIri);
+		}
+
+		if (sourceConstraint instanceof SparqlConstraintComponent) {
+			model.add(getId(), SHACL.SOURCE_CONSTRAINT, ((SparqlConstraintComponent) sourceConstraint).getId());
 		}
 
 		model.add(getId(), SHACL.SOURCE_CONSTRAINT_COMPONENT, getSourceConstraintComponent().getIri());
 		model.add(getId(), SHACL.RESULT_SEVERITY, severity.getIri());
 
-		// TODO: Figure out how sh:detail should work!
-//		if (detail != null) {
-//			model.add(getId(), SHACL.DETAIL, detail.getId());
-//			detail.asModel(model);
-//		}
+		for (Literal message : shape.getMessage()) {
+			model.add(getId(), SHACL.RESULT_MESSAGE, message);
+		}
 
 		shape.toModel(getId(), SHACL.SOURCE_SHAPE, model, new HashSet<>());
 
@@ -218,5 +227,33 @@ public class ValidationResult {
 	@Override
 	public int hashCode() {
 		return Objects.hash(value, shape, sourceConstraintComponent, severity, focusNode, path, detail);
+	}
+
+	public void setPathIri(Value path) {
+		this.pathIri = path;
+	}
+
+	protected Optional<Value> getValue() {
+		return value;
+	}
+
+	protected Shape getShape() {
+		return shape;
+	}
+
+	protected ConstraintComponent getSourceConstraint() {
+		return sourceConstraint;
+	}
+
+	protected Severity getSeverity() {
+		return severity;
+	}
+
+	protected Resource[] getDataGraphs() {
+		return dataGraphs;
+	}
+
+	protected Resource[] getShapesGraphs() {
+		return shapesGraphs;
 	}
 }

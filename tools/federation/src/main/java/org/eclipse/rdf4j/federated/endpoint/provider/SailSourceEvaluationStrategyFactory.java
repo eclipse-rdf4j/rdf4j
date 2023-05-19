@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.federated.endpoint.provider;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.federated.algebra.PrecompiledQueryNode;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -155,6 +156,16 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptim
 			}
 
 			return actualQuery;
+		}
+
+		@Override
+		public QueryEvaluationMode getQueryEvaluationMode() {
+			return delegate.getQueryEvaluationMode();
+		}
+
+		@Override
+		public void setQueryEvaluationMode(QueryEvaluationMode queryEvaluationMode) {
+			delegate.setQueryEvaluationMode(queryEvaluationMode);
 		}
 	}
 }

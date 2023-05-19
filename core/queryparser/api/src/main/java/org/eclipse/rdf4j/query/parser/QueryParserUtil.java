@@ -54,7 +54,7 @@ public class QueryParserUtil {
 				parsedOperation = parser.parseUpdate(operation, baseURI);
 			}
 		} else {
-			// SPARQL is the only QL supported by sesame that has update
+			// SPARQL is the only QL supported by RDF4J that has update
 			// operations, so we simply redirect to parseQuery
 			parsedOperation = parser.parseQuery(operation, baseURI);
 		}

@@ -75,4 +75,9 @@ public class EmptyNode implements PlanNode {
 	public boolean requiresSorted() {
 		return false;
 	}
+
+	@Override
+	public boolean isGuaranteedEmpty() {
+		return true;
+	}
 }

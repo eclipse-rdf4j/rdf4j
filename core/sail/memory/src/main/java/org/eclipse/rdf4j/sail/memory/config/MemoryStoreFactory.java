@@ -55,6 +55,7 @@ public class MemoryStoreFactory implements SailFactory {
 		if (config instanceof MemoryStoreConfig) {
 			MemoryStoreConfig memConfig = (MemoryStoreConfig) config;
 
+			memConfig.getDefaultQueryEvaluationMode().ifPresent(memoryStore::setDefaultQueryEvaluationMode);
 			memoryStore.setPersist(memConfig.getPersist());
 			memoryStore.setSyncDelay(memConfig.getSyncDelay());
 

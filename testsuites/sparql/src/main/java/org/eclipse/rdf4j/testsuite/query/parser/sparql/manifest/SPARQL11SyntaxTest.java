@@ -58,9 +58,9 @@ import junit.framework.TestSuite;
  * A SPARQL 1.1 syntax test, created by reading in a W3C working-group style manifest.
  *
  * @author Jeen Broekstra
- * @deprecated since 3.3.0 Use {@link SPARQL11SyntaxComplianceTest} instead.
+ * @deprecated Use {@link SPARQL11SyntaxComplianceTest} instead.
  */
-@Deprecated
+@Deprecated(since = "3.3.0")
 public abstract class SPARQL11SyntaxTest extends TestCase {
 
 	/*-----------*

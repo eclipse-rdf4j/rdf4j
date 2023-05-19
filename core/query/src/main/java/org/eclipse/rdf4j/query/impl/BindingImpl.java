@@ -14,9 +14,9 @@ import org.eclipse.rdf4j.model.Value;
 
 /**
  * @author Jeen Broekstra
- * @deprecated since 2.0. Use {@link SimpleBinding} instead.
+ * @deprecated Use {@link SimpleBinding} instead.
  */
-@Deprecated
+@Deprecated(since = "2.0")
 public class BindingImpl extends SimpleBinding {
 
 	private static final long serialVersionUID = 1L;

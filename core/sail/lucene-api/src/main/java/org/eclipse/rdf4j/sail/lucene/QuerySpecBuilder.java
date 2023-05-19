@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.lucene;
 
 import static org.eclipse.rdf4j.model.vocabulary.RDF.TYPE;
+import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.BOOST;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.INDEXID;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.LUCENE_QUERY;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.MATCHES;
@@ -22,12 +23,15 @@ import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SNIPPET;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -149,11 +153,12 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 			}
 
 			// find the relevant outgoing patterns
-			StatementPattern typePattern, queryPattern, propertyPattern, scorePattern, snippetPattern;
+			StatementPattern typePattern, propertyPattern, scorePattern, snippetPattern;
+			List<StatementPattern> queryPatterns;
 
 			try {
 				typePattern = getPattern(matchesVar, filter.typePatterns);
-				queryPattern = getPattern(matchesVar, filter.queryPatterns);
+				queryPatterns = getQueryVar(matchesVar, filter.queryPatterns);
 				propertyPattern = getPattern(matchesVar, filter.propertyPatterns);
 				scorePattern = getPattern(matchesVar, filter.scorePatterns);
 				snippetPattern = getPattern(matchesVar, filter.snippetPatterns);
@@ -164,19 +169,100 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 
 			// fetch the query String
 			String queryString = null;
+			List<QuerySpec.QueryParam> queries = new ArrayList<>();
+			StatementPattern litQueryPattern = null;
+			boolean multiFieldQuery = false;
 
-			if (queryPattern != null) {
-				Var queryVar = queryPattern.getObjectVar();
-				Value queryValue = queryVar.hasValue() ? queryVar.getValue() : bindings.getValue(queryVar.getName());
+			if (!queryPatterns.isEmpty()) {
+				Var queryVar = queryPatterns.get(0).getObjectVar();
+				Value firstQueryValue = queryVar.hasValue() ? queryVar.getValue()
+						: bindings.getValue(queryVar.getName());
+				multiFieldQuery = firstQueryValue == null || !firstQueryValue.isLiteral();
 
-				if (queryValue instanceof Literal) {
-					queryString = ((Literal) queryValue).getLabel();
+				if (multiFieldQuery) {
+					// multiple queries
+					for (StatementPattern queryPattern : queryPatterns) {
+						Var queryPatternVar = queryPattern.getObjectVar();
+						StatementPattern fieldQueryQueryPattern = getPattern(queryPatternVar, filter.queryPatterns);
+						StatementPattern fieldQueryBoostPattern = getPattern(queryPatternVar, filter.boostPatterns);
+						StatementPattern fieldQueryPropertyPattern = getPattern(queryPatternVar,
+								filter.propertyPatterns);
+						StatementPattern fieldQuerySnippetPattern = getPattern(queryPatternVar, filter.snippetPatterns);
+						StatementPattern fieldTypePattern = getPattern(queryPatternVar, filter.typePatterns);
+
+						String query = null;
+						IRI property = null;
+						Float boost = null;
+						Var snippetVar = fieldQuerySnippetPattern == null ? null
+								: fieldQuerySnippetPattern.getObjectVar();
+
+						if (fieldQueryQueryPattern != null) {
+							Var fieldQueryQueryVar = fieldQueryQueryPattern.getObjectVar();
+							Value queryValue = fieldQueryQueryVar.hasValue() ? fieldQueryQueryVar.getValue()
+									: bindings.getValue(fieldQueryQueryVar.getName());
+
+							if (queryValue instanceof Literal) {
+								query = ((Literal) queryValue).getLabel();
+							}
+						}
+
+						if (fieldQueryBoostPattern != null) {
+							Var fieldQueryBoostVar = fieldQueryBoostPattern.getObjectVar();
+							Value boostValue = fieldQueryBoostVar.hasValue() ? fieldQueryBoostVar.getValue()
+									: bindings.getValue(fieldQueryBoostVar.getName());
+
+							if (boostValue instanceof Literal) {
+								boost = ((Literal) boostValue).floatValue();
+							}
+						}
+
+						if (fieldQueryPropertyPattern != null) {
+							Var propertyVar = fieldQueryPropertyPattern.getObjectVar();
+							Value propertyValue = propertyVar.hasValue() ? propertyVar.getValue()
+									: bindings.getValue(propertyVar.getName());
+
+							// if property is a restriction, it should be an URI
+							if (propertyValue instanceof IRI) {
+								property = (IRI) propertyValue;
+							}
+							// otherwise, it should be a variable
+							else if (propertyValue != null) {
+								failOrWarn(PROPERTY + " should have a property URI or a variable as object: "
+										+ propertyVar.getValue());
+								continue;
+							}
+						}
+
+						// check the snippet variable, if any
+						if (snippetVar != null && snippetVar.hasValue()) {
+							failOrWarn(SNIPPET + " should have a variable as object: " + snippetVar.getValue());
+							continue;
+						}
+
+						// check type pattern
+						if (fieldTypePattern == null) {
+							logger.debug("Query variable '{}' has not rdf:type, assuming {}", fieldTypePattern,
+									LUCENE_QUERY);
+						}
+
+						queries.add(new QuerySpec.QueryParam(queryPattern, fieldQueryQueryPattern,
+								fieldQueryPropertyPattern, fieldQuerySnippetPattern, fieldQueryBoostPattern,
+								fieldTypePattern, query, property, boost));
+					}
+				} else {
+					// using literal query
+					queryString = ((Literal) firstQueryValue).getLabel();
+					litQueryPattern = queryPatterns.get(0);
 				}
 			}
 
 			// check property restriction or variable
 			IRI propertyURI = null;
 			if (propertyPattern != null) {
+				if (multiFieldQuery) {
+					failOrWarn(PROPERTY + " can't be used with " + MATCHES + " for non literal query");
+					continue;
+				}
 				Var propertyVar = propertyPattern.getObjectVar();
 				Value propertyValue = propertyVar.hasValue() ? propertyVar.getValue()
 						: bindings.getValue(propertyVar.getName());
@@ -212,8 +298,12 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 				logger.debug("Query variable '{}' has not rdf:type, assuming {}", subject, LUCENE_QUERY);
 			}
 
-			QuerySpec querySpec = new QuerySpec(matchesPattern, queryPattern, propertyPattern, scorePattern,
-					snippetPattern, typePattern, idPattern, subject, queryString, propertyURI);
+			if (!multiFieldQuery) {
+				queries.add(new QuerySpec.QueryParam(litQueryPattern, propertyPattern, snippetPattern, null,
+						queryString, propertyURI, null));
+			}
+
+			QuerySpec querySpec = new QuerySpec(matchesPattern, queries, scorePattern, typePattern, idPattern, subject);
 
 			if (querySpec.isEvaluable()) {
 				// constant optimizer
@@ -222,7 +312,13 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 				// evaluate later
 				TupleFunctionCall funcCall = new TupleFunctionCall();
 				funcCall.setURI(LuceneSailSchema.SEARCH.toString());
-				funcCall.addArg(queryPattern.getObjectVar());
+				if (multiFieldQuery) {
+					funcCall.addArg(new ValueConstant(QUERY));
+					funcCall.addArg(new ValueConstant(Values.literal(queryPatterns.size())));
+					queryPatterns.stream().map(StatementPattern::getObjectVar).forEach(funcCall::addArg);
+				} else {
+					funcCall.addArg(queryPatterns.get(0).getObjectVar());
+				}
 				if (subject != null) {
 					funcCall.addArg(matchesPattern.getSubjectVar());
 				} else {
@@ -301,6 +397,57 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 		return result;
 	}
 
+	/**
+	 * Return all the var of the patterns with the subject subjectVar, if a pattern is a literal, it will return a
+	 * singleton list, otherwise it will return an empty list or a list without any literal var
+	 */
+	private List<StatementPattern> getQueryVar(Var subjectVar, ArrayList<StatementPattern> patterns)
+			throws IllegalArgumentException {
+		StatementPattern litResult = null;
+		List<StatementPattern> objectResult = null;
+
+		for (StatementPattern pattern : patterns) {
+			// ignore other subject
+			if (!pattern.getSubjectVar().equals(subjectVar)) {
+				continue;
+			}
+
+			Var queryPatternVar = pattern.getObjectVar();
+			if (queryPatternVar.hasValue() && queryPatternVar.getValue().isLiteral()) {
+				if (objectResult != null) {
+					throw new IllegalArgumentException("query can't be done over both literal and resource!");
+				}
+				if (litResult != null) {
+					throw new IllegalArgumentException(
+							"multiple StatementPatterns with the same subject: " + litResult + ", " + pattern);
+				} else {
+					litResult = pattern;
+				}
+			} else {
+				if (litResult != null) {
+					throw new IllegalArgumentException("query can't be done over both literal and resource!");
+				}
+				if (objectResult == null) {
+					objectResult = new ArrayList<>();
+				}
+				objectResult.add(pattern);
+			}
+		}
+		// remove the result from the list, to filter out superflous patterns
+		// we have one literal
+		if (litResult != null) {
+			patterns.remove(litResult);
+			return List.of(litResult);
+		}
+		// we have resources
+		if (objectResult != null) {
+			patterns.removeAll(objectResult);
+			return objectResult;
+		}
+		// no query
+		return List.of();
+	}
+
 	private static class PatternFilter extends AbstractQueryModelVisitor<RuntimeException> {
 
 		public ArrayList<StatementPattern> typePatterns = new ArrayList<>();
@@ -316,6 +463,8 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 		public ArrayList<StatementPattern> snippetPatterns = new ArrayList<>();
 
 		public ArrayList<StatementPattern> idPatterns = new ArrayList<>();
+
+		public ArrayList<StatementPattern> boostPatterns = new ArrayList<>();
 
 		/**
 		 * Method implementing the visitor pattern that gathers all statements using a predicate from the LuceneSail's
@@ -337,6 +486,8 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 				snippetPatterns.add(node);
 			} else if (INDEXID.equals(predicate)) {
 				idPatterns.add(node);
+			} else if (BOOST.equals(predicate)) {
+				boostPatterns.add(node);
 			} else if (TYPE.equals(predicate)) {
 				Value object = node.getObjectVar().getValue();
 				if (LUCENE_QUERY.equals(object)) {

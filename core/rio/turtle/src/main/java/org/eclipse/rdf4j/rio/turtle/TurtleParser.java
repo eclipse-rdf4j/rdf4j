@@ -41,7 +41,6 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
-import org.eclipse.rdf4j.rio.helpers.TurtleParserSettings;
 
 /**
  * RDF parser for <a href="https://www.w3.org/TR/turtle/">RDF-1.1 Turtle</a> files. This parser is not thread-safe,

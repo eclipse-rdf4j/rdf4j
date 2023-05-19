@@ -10,5 +10,12 @@
  *******************************************************************************/
 /**
  * ElasticSearch index for the {@link org.eclipse.rdf4j.sail.lucene.LuceneSail}.
+ *
+ * Note that, while RDF4J is licensed under the EDL, several ElasticSearch dependencies are licensed under the Elastic
+ * License or the SSPL, which may have implications for some projects.
+ *
+ * Please consult the ElasticSearch website and license FAQ for more information.
+ *
+ * @see <a href="https://www.elastic.co/licensing/elastic-license/faq">Elastic License FAQ</a>
  */
 package org.eclipse.rdf4j.sail.elasticsearch;

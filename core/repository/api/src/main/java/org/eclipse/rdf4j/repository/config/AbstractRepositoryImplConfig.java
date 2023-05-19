@@ -10,20 +10,25 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.config;
 
+import static org.eclipse.rdf4j.model.util.Values.bnode;
+import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORYTYPE;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
-import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 
 /**
  * @author Herko ter Horst
  */
 public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
+
+	private static final boolean USE_CONFIG = "true"
+			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
 
 	private String type;
 
@@ -61,10 +66,15 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 
 	@Override
 	public Resource export(Model model) {
-		BNode implNode = SimpleValueFactory.getInstance().createBNode();
+		BNode implNode = bnode();
 
 		if (type != null) {
-			model.add(implNode, REPOSITORYTYPE, SimpleValueFactory.getInstance().createLiteral(type));
+			if (USE_CONFIG) {
+				model.add(implNode, CONFIG.Rep.type, literal(type));
+			} else {
+				model.add(implNode, REPOSITORYTYPE, literal(type));
+			}
+
 		}
 
 		return implNode;
@@ -72,7 +82,8 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 
 	@Override
 	public void parse(Model model, Resource resource) throws RepositoryConfigException {
-		Models.objectLiteral(model.getStatements(resource, REPOSITORYTYPE, null))
+		Configurations
+				.getLiteralValue(model, resource, CONFIG.Rep.type, REPOSITORYTYPE)
 				.ifPresent(typeLit -> setType(typeLit.getLabel()));
 	}
 
@@ -88,10 +99,8 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 	 */
 	public static RepositoryImplConfig create(Model model, Resource resource) throws RepositoryConfigException {
 		try {
-			// Literal typeLit = GraphUtil.getOptionalObjectLiteral(graph,
-			// implNode, REPOSITORYTYPE);
-
-			final Literal typeLit = Models.objectLiteral(model.getStatements(resource, REPOSITORYTYPE, null))
+			final Literal typeLit = Configurations
+					.getLiteralValue(model, resource, CONFIG.Rep.type, REPOSITORYTYPE)
 					.orElse(null);
 			if (typeLit != null) {
 				RepositoryFactory factory = RepositoryRegistry.getInstance()
@@ -109,4 +118,5 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 			throw new RepositoryConfigException(e.getMessage(), e);
 		}
 	}
+
 }

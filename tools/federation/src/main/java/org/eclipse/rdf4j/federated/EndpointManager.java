@@ -92,7 +92,7 @@ public class EndpointManager {
 
 	/**
 	 * Remove the provided endpoint from this endpoint manager to be used by the {@link FederationManager}. In addition,
-	 * this method unregisters the {@link FederatedService} from Sesame
+	 * this method unregisters the {@link FederatedService} from RDF4J.
 	 *
 	 * @param e the endpoint
 	 *

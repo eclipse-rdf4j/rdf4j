@@ -13,21 +13,21 @@
   sh:result [ a sh:ValidationResult;
       rsx:dataGraph rdf4j:nil;
       rsx:shapesGraph rdf4j:nil;
-      sh:focusNode ex:validPerson5;
-      sh:resultPath ex:knows;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:sourceShape ex:personShapeOr;
-      sh:value ex:a
-    ], [ a sh:ValidationResult;
-      rsx:dataGraph rdf4j:nil;
-      rsx:shapesGraph rdf4j:nil;
       sh:focusNode ex:validPerson2;
       sh:resultPath ex:knows;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:sourceShape ex:personShapeOr;
       sh:value ex:d
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode ex:validPerson5;
+      sh:resultPath ex:knows;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:sourceShape ex:personShapeOr;
+      sh:value ex:a
     ] .
 
 ex:personShapeOr a sh:PropertyShape;

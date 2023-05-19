@@ -52,12 +52,15 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 
 			@Override
 			public boolean hasNext() throws SailException {
+				if (closed) {
+					return false;
+				}
 				calculateNext();
 				return !buffer.isEmpty();
 			}
 
 			private void calculateNext() {
-
+				assert !closed;
 				while (buffer.isEmpty()) {
 					boolean success = parent.incrementIterator();
 					if (!success) {

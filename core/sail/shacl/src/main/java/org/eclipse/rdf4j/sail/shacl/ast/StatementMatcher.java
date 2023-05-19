@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -25,92 +27,100 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 
 public class StatementMatcher {
 
-	private final String subjectName;
-	private final Resource subjectValue;
+	private final Variable<? extends Resource> subject;
+	private final Variable<IRI> predicate;
+	private final Variable<? extends Value> object;
 
-	private final String predicateName;
-	private final IRI predicateValue;
+//	private final Set<String> varNames;
+	private final Targetable origin;
 
-	private final String objectName;
-	private final Value objectValue;
-	private final Set<String> varNames;
+	private final Set<String> inheritedVarNames;
 
-	public StatementMatcher(String subjectName, Resource subjectValue, String predicateName, IRI predicateValue,
-			String objectName, Value objectValue) {
-		this.subjectName = subjectName;
-		this.subjectValue = subjectValue;
-		this.predicateName = predicateName;
-		this.predicateValue = predicateValue;
-		this.objectName = objectName;
-		this.objectValue = objectValue;
-		this.varNames = calculateVarNames(subjectName, predicateName, objectName);
+	private List<StatementMatcher> subset = List.of();
+
+	private final static Variable<Resource> NULL_SUBJECT = new Variable<>();
+	private final static Variable<IRI> NULL_PREDICATE = new Variable<>();
+	private final static Variable<Value> NULL_OBJECT = new Variable<>();
+
+	public StatementMatcher(Variable<? extends Resource> subject, Variable<IRI> predicate,
+			Variable<? extends Value> object, Targetable origin,
+			Set<String> inheritedVarNames) {
+		this.subject = Objects.requireNonNullElse(subject, NULL_SUBJECT);
+		this.predicate = Objects.requireNonNullElse(predicate, NULL_PREDICATE);
+		this.object = Objects.requireNonNullElse(object, NULL_OBJECT);
+
+		this.origin = origin;
+		this.inheritedVarNames = inheritedVarNames;
+
+//		this.varNames = calculateVarNames(this.subject, this.predicate, this.object);
+
+		assert this.subject.name == null || this.subject.value == null;
+		assert this.predicate.name == null || this.predicate.value == null;
+		assert this.object.name == null || this.object.value == null;
+
 	}
 
-	private static Set<String> calculateVarNames(String subjectName, String predicateName, String objectName) {
-		if (subjectName != null) {
-			if (predicateName != null) {
-				if (objectName != null) {
-					return Set.of(subjectName, predicateName, objectName);
+	private static Set<String> calculateVarNames(Variable<?> subject, Variable<?> predicate, Variable<?> object) {
+		if (subject.baseName == null && predicate.baseName == null && object.baseName == null) {
+			if (subject.name != null) {
+				if (predicate.name != null) {
+					if (object.name != null) {
+						return Set.of(subject.name, predicate.name, object.name);
+					} else {
+						return Set.of(subject.name, predicate.name);
+					}
 				} else {
-					return Set.of(subjectName, predicateName);
+					if (object.name != null) {
+						return Set.of(subject.name, object.name);
+					} else {
+						return Set.of(subject.name);
+					}
 				}
 			} else {
-				if (objectName != null) {
-					return Set.of(subjectName, objectName);
+				if (predicate.name != null) {
+					if (object.name != null) {
+						return Set.of(predicate.name, object.name);
+					} else {
+						return Set.of(predicate.name);
+					}
 				} else {
-					return Set.of(subjectName);
+					if (object.name != null) {
+						return Set.of(object.name);
+					} else {
+						return Set.of();
+					}
 				}
 			}
 		} else {
-			if (predicateName != null) {
-				if (objectName != null) {
-					return Set.of(predicateName, objectName);
-				} else {
-					return Set.of(predicateName);
-				}
-			} else {
-				if (objectName != null) {
-					return Set.of(objectName);
-				} else {
-					return Set.of();
-				}
+			HashSet<String> varNames = new HashSet<>();
+			if (subject.name != null) {
+				varNames.add(subject.name);
 			}
+			if (subject.baseName != null) {
+				varNames.add(subject.baseName);
+			}
+
+			if (predicate.name != null) {
+				varNames.add(predicate.name);
+			}
+			if (predicate.baseName != null) {
+				varNames.add(predicate.baseName);
+			}
+
+			if (object.name != null) {
+				varNames.add(object.name);
+			}
+			if (object.baseName != null) {
+				varNames.add(object.baseName);
+			}
+			return varNames;
 		}
 	}
 
-	public StatementMatcher(Variable subject, Variable predicate, Variable object) {
-		this.subjectName = subject == null ? null : subject.name;
-		this.subjectValue = subject == null ? null : (Resource) subject.value;
-		this.predicateName = predicate == null ? null : predicate.name;
-		this.predicateValue = predicate == null ? null : (IRI) predicate.value;
-		this.objectName = object == null ? null : object.name;
-		this.objectValue = object == null ? null : object.value;
-		this.varNames = calculateVarNames(subjectName, predicateName, objectName);
-	}
-
-	public static List<StatementMatcher> reduce(Set<String> varNames, List<StatementMatcher> statementMatchers) {
-		statementMatchers = statementMatchers
-				.stream()
-				.map(s -> {
-					String subjectName = s.subjectName;
-					if (subjectName != null && !varNames.contains(subjectName)) {
-						subjectName = null;
-					}
-
-					String predicateName = s.predicateName;
-					if (predicateName != null && !varNames.contains(predicateName)) {
-						predicateName = null;
-					}
-
-					String objectName = s.objectName;
-					if (objectName != null && !varNames.contains(objectName)) {
-						objectName = null;
-					}
-					return new StatementMatcher(subjectName, s.subjectValue, predicateName, s.predicateValue,
-							objectName, s.objectValue);
-
-				})
-				.collect(Collectors.toList());
+	public static List<StatementMatcher> reduce(List<StatementMatcher> statementMatchers) {
+		if (statementMatchers.size() == 1) {
+			return statementMatchers;
+		}
 
 		List<StatementMatcher> wildcardMatchers = statementMatchers
 				.stream()
@@ -126,7 +136,14 @@ public class StatementMatcher {
 				.filter(s -> {
 					for (StatementMatcher statementMatcher : wildcardMatchers) {
 						if (statementMatcher != s && statementMatcher.covers(s)) {
-							return false;
+							if (!s.hasSubset(statementMatcher)) {
+								statementMatcher.addSubset(s);
+								for (StatementMatcher matcher : s.subset) {
+									statementMatcher.addSubset(matcher);
+								}
+								s.subset = List.of();
+								return false;
+							}
 						}
 					}
 
@@ -136,79 +153,151 @@ public class StatementMatcher {
 
 	}
 
-	private boolean covers(StatementMatcher s) {
-
-		if (subjectIsWildcard()) {
-			if (s.subjectName != null) {
-				return false;
-			}
+	private void addSubset(StatementMatcher s) {
+		if (subset.isEmpty()) {
+			subset = List.of(s);
+		} else if (subset.size() == 1) {
+			subset = List.of(subset.get(0), s);
+		} else if (subset.size() == 2) {
+			subset = List.of(subset.get(0), subset.get(1), s);
 		} else {
-			if (!Objects.equals(subjectName, s.subjectName)) {
-				return false;
+			if (subset.size() == 3) {
+				subset = new ArrayList<>(subset);
 			}
-			if (!Objects.equals(subjectValue, s.subjectValue)) {
-				return false;
-			}
+			subset.add(s);
 		}
 
-		if (predicateIsWildcard()) {
-			if (s.predicateName != null) {
-				return false;
-			}
-		} else {
-			if (!Objects.equals(predicateName, s.predicateName)) {
-				return false;
-			}
-			if (!Objects.equals(predicateValue, s.predicateValue)) {
-				return false;
-			}
+	}
+
+	public static List<StatementMatcher> swap(List<StatementMatcher> statementMatchers, Variable<?> existingVariable,
+			Variable<?> newVariable) {
+		if (statementMatchers.size() == 0) {
+			return List.of();
+		}
+		if (statementMatchers.size() == 1) {
+			StatementMatcher statementMatcher = statementMatchers.get(0);
+			return List.of(statementMatcher.swap(existingVariable, newVariable));
 		}
 
-		if (objectIsWildcard()) {
-			return s.objectName == null;
-		} else {
-			if (!Objects.equals(objectName, s.objectName)) {
-				return false;
-			}
-			return Objects.equals(objectValue, s.objectValue);
+		return statementMatchers
+				.stream()
+				.map(statementMatcher -> statementMatcher.swap(existingVariable, newVariable))
+				.collect(Collectors.toList());
+
+	}
+
+	private static String formatForToString(String field, String name, Value value) {
+		if (value == null && name == null) {
+			return field + "[*]";
+		}
+		StringBuilder ret = new StringBuilder(field).append("[");
+		if (name != null) {
+			ret.append("\"").append(name).append("\"").append("=");
 		}
 
+		if (value == null) {
+			ret.append("*");
+		} else if (value.isIRI()) {
+			IRI iri = (IRI) value;
+			if (iri.getNamespace().equals(RDF.NAMESPACE)) {
+				ret.append(RDF.PREFIX + ":").append(iri.getLocalName());
+			} else if (iri.getNamespace().equals(SHACL.NAMESPACE)) {
+				ret.append(SHACL.PREFIX + ":").append(iri.getLocalName());
+			} else if (iri.getNamespace().equals(RDFS.NAMESPACE)) {
+				ret.append(RDFS.PREFIX + ":").append(iri.getLocalName());
+			} else {
+				ret.append("<").append(iri).append(">");
+			}
+		} else {
+			ret.append(value);
+		}
+		return ret.append("]").toString();
+	}
+
+	private StatementMatcher swap(Variable<?> existingVariable, Variable<?> newVariable) {
+		String subjectName = getSubjectName();
+		Resource subjectValue = getSubjectValue();
+		String predicateName = getPredicateName();
+		IRI predicateValue = getPredicateValue();
+		String objectName = getObjectName();
+		Value objectValue = getObjectValue();
+		boolean changed = false;
+
+		if (Objects.equals(existingVariable.name, subjectName)
+				&& Objects.equals(existingVariable.value, subjectValue)) {
+			changed = true;
+			subjectName = newVariable.name;
+			subjectValue = (Resource) newVariable.value;
+		}
+
+		if (Objects.equals(existingVariable.name, predicateName)
+				&& Objects.equals(existingVariable.value, predicateValue)) {
+			changed = true;
+			predicateName = newVariable.name;
+			predicateValue = (IRI) newVariable.value;
+		}
+
+		if (Objects.equals(existingVariable.name, objectName) && Objects.equals(existingVariable.value, objectValue)) {
+			changed = true;
+			objectName = newVariable.name;
+			objectValue = newVariable.value;
+		}
+
+		if (changed) {
+			assert subset.isEmpty();
+			return new StatementMatcher(new Variable<>(subjectName, subjectValue),
+					new Variable<>(predicateName, predicateValue), new Variable<>(objectName, objectValue), origin,
+					inheritedVarNames);
+		}
+		return this;
+
+	}
+
+	public boolean covers(StatementMatcher s) {
+		return covers(subject, s.subject)
+				&& covers(predicate, s.predicate)
+				&& covers(object, s.object);
+	}
+
+	private static boolean covers(Variable<?> bigger, Variable<?> smaller) {
+		return Objects.equals(bigger.name, smaller.name)
+				&& (bigger.isWildcard() || Objects.equals(bigger.value, smaller.value));
 	}
 
 	public String getSubjectName() {
-		return subjectName;
+		return subject.name;
 	}
 
 	public Resource getSubjectValue() {
-		return subjectValue;
+		return subject.value;
 	}
 
 	public boolean subjectIsWildcard() {
-		return subjectName == null && subjectValue == null;
+		return subject.isWildcard();
 	}
 
 	public String getPredicateName() {
-		return predicateName;
+		return predicate.name;
 	}
 
 	public IRI getPredicateValue() {
-		return predicateValue;
+		return predicate.value;
 	}
 
 	public boolean predicateIsWildcard() {
-		return predicateName == null && predicateValue == null;
+		return predicate.isWildcard();
 	}
 
 	public String getObjectName() {
-		return objectName;
+		return object.name;
 	}
 
 	public Value getObjectValue() {
-		return objectValue;
+		return object.value;
 	}
 
 	public boolean objectIsWildcard() {
-		return objectName == null && objectValue == null;
+		return object.isWildcard();
 	}
 
 	@Override
@@ -220,36 +309,143 @@ public class StatementMatcher {
 			return false;
 		}
 		StatementMatcher that = (StatementMatcher) o;
-		return Objects.equals(subjectName, that.subjectName) &&
-				Objects.equals(subjectValue, that.subjectValue) &&
-				Objects.equals(predicateName, that.predicateName) &&
-				Objects.equals(predicateValue, that.predicateValue) &&
-				Objects.equals(objectName, that.objectName) &&
-				Objects.equals(objectValue, that.objectValue);
+		return Objects.equals(subject.name, that.subject.name) &&
+				Objects.equals(subject.value, that.subject.value) &&
+				Objects.equals(predicate.name, that.predicate.name) &&
+				Objects.equals(predicate.value, that.predicate.value) &&
+				Objects.equals(object.name, that.object.name) &&
+				Objects.equals(object.value, that.object.value);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(subjectName, subjectValue, predicateName, predicateValue, objectName, objectValue);
+		return Objects.hash(subject, predicate, object);
 	}
 
-	public String getSparqlValuesDecl() {
+	public String getSparqlValuesDecl(Set<String> varNamesRestriction, boolean addInheritedVarNames,
+			Set<String> varNamesInQueryFragment) {
 		StringBuilder sb = new StringBuilder("VALUES ( ");
-		if (subjectName != null) {
-			sb.append("?").append(subjectName).append(" ");
+		if (subject.name != null && varNamesRestriction.contains(subject.name) ||
+				subject.baseName != null && varNamesRestriction.contains(subject.baseName)) {
+			if (varNamesInQueryFragment.contains(subject.name)) {
+				sb.append("?").append(subject.name).append(" ");
+			}
 		}
-		if (predicateName != null) {
-			sb.append("?").append(predicateName).append(" ");
+		if (predicate.name != null && varNamesRestriction.contains(predicate.name) ||
+				predicate.baseName != null && varNamesRestriction.contains(predicate.baseName)) {
+			if (varNamesInQueryFragment.contains(predicate.name)) {
+				sb.append("?").append(predicate.name).append(" ");
+			}
 		}
-		if (objectName != null) {
-			sb.append("?").append(objectName).append(" ");
+		if (object.name != null && varNamesRestriction.contains(object.name) ||
+				object.baseName != null && varNamesRestriction.contains(object.baseName)) {
+			if (varNamesInQueryFragment.contains(object.name)) {
+				sb.append("?").append(object.name).append(" ");
+			}
 		}
+		if (addInheritedVarNames) {
+			for (String inheritedVarName : inheritedVarNames) {
+				if (!inheritedVarName.equals(subject.name) &&
+						!inheritedVarName.equals(predicate.name) &&
+						!inheritedVarName.equals(object.name) &&
+
+						varNamesRestriction.contains(inheritedVarName)) {
+					if (varNamesInQueryFragment.contains(inheritedVarName)) {
+						sb.append("?").append(inheritedVarName).append(" ");
+					}
+				}
+
+			}
+		}
+
 		sb.append("){}\n");
 		return sb.toString();
 	}
 
-	public Set<String> getVarNames() {
-		return varNames;
+	public Set<String> getVarNames(Set<String> varNamesRestriction, boolean addInheritedVarNames,
+			Set<String> varNamesInQueryFragment) {
+		if (varNamesRestriction.isEmpty()) {
+			return Set.of();
+		}
+
+		HashSet<String> ret = new HashSet<>();
+		if (subject.name != null && varNamesRestriction.contains(subject.name)
+				&& varNamesInQueryFragment.contains(subject.name)) {
+			ret.add(subject.name);
+		} else if (subject.baseName != null && varNamesRestriction.contains(subject.baseName)
+				&& varNamesInQueryFragment.contains(subject.name)) {
+			ret.add(subject.name);
+		}
+
+		if (predicate.name != null && varNamesRestriction.contains(predicate.name)
+				&& varNamesInQueryFragment.contains(predicate.name)) {
+			ret.add(predicate.name);
+		} else if (predicate.baseName != null && varNamesRestriction.contains(predicate.baseName)
+				&& varNamesInQueryFragment.contains(predicate.name)) {
+			ret.add(predicate.name);
+		}
+
+		if (object.name != null && varNamesRestriction.contains(object.name)
+				&& varNamesInQueryFragment.contains(object.name)) {
+			ret.add(object.name);
+		} else if (object.baseName != null && varNamesRestriction.contains(object.baseName)
+				&& varNamesInQueryFragment.contains(object.name)) {
+			ret.add(object.name);
+		}
+
+		if (addInheritedVarNames) {
+			for (String inheritedVarName : inheritedVarNames) {
+				if (varNamesRestriction.contains(inheritedVarName)
+						&& varNamesInQueryFragment.contains(inheritedVarName)) {
+					ret.add(inheritedVarName);
+				}
+			}
+		}
+
+		return ret;
+	}
+
+	@Override
+	public String toString() {
+		return "StatementMatcher{ " +
+				formatForToString("s", subject.name, subject.value) + ", " +
+				formatForToString("p", predicate.name, predicate.value) + ", " +
+				formatForToString("o", object.name, object.value) + " }";
+	}
+
+	public boolean hasSubset(StatementMatcher currentStatementMatcher) {
+		for (StatementMatcher statementMatcher : subset) {
+			if (currentStatementMatcher == statementMatcher) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public Targetable getOrigin() {
+		return origin;
+	}
+
+	public boolean hasSubject(Variable<Resource> variable) {
+		if (subject.name == null) {
+			return false;
+		}
+		// noinspection StringEquality
+		if (variable.name == subject.name) {
+			return true;
+		}
+		return variable.name.equals(subject.name);
+	}
+
+	public boolean hasObject(Variable<Value> variable) {
+		if (object.name == null) {
+			return false;
+		}
+		// noinspection StringEquality
+		if (variable.name == object.name) {
+			return true;
+		}
+		return variable.name.equals(object.name);
 	}
 
 	public static class StableRandomVariableProvider {
@@ -257,29 +453,10 @@ public class StatementMatcher {
 		// We just need a random base that isn't used elsewhere in the ShaclSail, but we don't want it to be stable so
 		// we can compare the SPARQL queries where these variables are used
 		private static final String BASE = UUID.randomUUID().toString().replace("-", "") + "_";
-		private final String prefix;
-
 		// Best effort to store the highest value of all counters
 		private static volatile int max = 0;
-
+		private final String prefix;
 		private int counter = -1;
-
-		public Variable next() {
-			counter++;
-
-			// this isn't really threadsafe, but that is ok because the variable is just used as a guide
-			if (counter > max) {
-				max = counter;
-			}
-			return current();
-		}
-
-		public Variable current() {
-			if (counter < 0) {
-				throw new IllegalStateException("next() has not been called");
-			}
-			return new Variable(prefix + BASE + counter + "_");
-		}
 
 		public StableRandomVariableProvider() {
 			this.prefix = "";
@@ -342,15 +519,36 @@ public class StatementMatcher {
 
 			return normalizedQuery;
 		}
+
+		public Variable<Value> next() {
+			counter++;
+
+			// this isn't really threadsafe, but that is ok because the variable is just used as a guide
+			if (counter > max) {
+				max = counter;
+			}
+			return current();
+		}
+
+		public Variable<Value> current() {
+			if (counter < 0) {
+				throw new IllegalStateException("next() has not been called");
+			}
+			return new Variable<>(prefix + BASE + counter + "_");
+		}
 	}
 
-	public static class Variable {
-		public static final Variable VALUE = new Variable("value");
+	public static class Variable<T extends Value> {
+		public static final Variable<Value> VALUE = new Variable<>("value");
+		public static final Variable<Value> THIS = new Variable<>("this");
 
 		String name;
-		Value value;
+		T value;
 
-		public Variable(String name, Value value) {
+		// the original name used to generate a temporary variable for complex paths
+		String baseName;
+
+		public Variable(String name, T value) {
 			this.name = name;
 			this.value = value;
 		}
@@ -359,20 +557,28 @@ public class StatementMatcher {
 			this.name = name;
 		}
 
-		public Variable(Value value) {
+		public Variable(Variable<?> baseVariable, String name) {
+			this.name = name;
+			this.baseName = baseVariable.name;
+		}
+
+		public Variable(T value) {
 			this.value = value;
+		}
+
+		public Variable() {
 		}
 
 		public String getName() {
 			return name;
 		}
 
-		public Value getValue() {
+		public T getValue() {
 			return value;
 		}
 
 		public boolean isWildcard() {
-			return name == null && value == null;
+			return value == null;
 		}
 
 		public String asSparqlVariable() {
@@ -391,7 +597,7 @@ public class StatementMatcher {
 			if (o == null || getClass() != o.getClass()) {
 				return false;
 			}
-			Variable variable = (Variable) o;
+			Variable<?> variable = (Variable<?>) o;
 			return Objects.equals(name, variable.name) &&
 					Objects.equals(value, variable.value);
 		}
@@ -408,41 +614,5 @@ public class StatementMatcher {
 					", value=" + value +
 					'}';
 		}
-	}
-
-	@Override
-	public String toString() {
-		return "StatementMatcher{ " +
-				formatForToString("s", subjectName, subjectValue) + ", " +
-				formatForToString("p", predicateName, predicateValue) + ", " +
-				formatForToString("o", objectName, objectValue) + " }";
-	}
-
-	private static String formatForToString(String field, String name, Value value) {
-		if (value == null && name == null) {
-			return field + "[*]";
-		}
-		StringBuilder ret = new StringBuilder(field).append("[");
-		if (name != null) {
-			ret.append("\"").append(name).append("\"").append("=");
-		}
-
-		if (value == null) {
-			ret.append("*");
-		} else if (value.isIRI()) {
-			IRI iri = (IRI) value;
-			if (iri.getNamespace().equals(RDF.NAMESPACE)) {
-				ret.append(RDF.PREFIX + ":").append(iri.getLocalName());
-			} else if (iri.getNamespace().equals(SHACL.NAMESPACE)) {
-				ret.append(SHACL.PREFIX + ":").append(iri.getLocalName());
-			} else if (iri.getNamespace().equals(RDFS.NAMESPACE)) {
-				ret.append(RDFS.PREFIX + ":").append(iri.getLocalName());
-			} else {
-				ret.append("<").append(iri).append(">");
-			}
-		} else {
-			ret.append(value);
-		}
-		return ret.append("]").toString();
 	}
 }

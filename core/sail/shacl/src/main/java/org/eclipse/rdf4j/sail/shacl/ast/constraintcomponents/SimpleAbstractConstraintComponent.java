@@ -11,17 +11,20 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
-import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
@@ -93,7 +96,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 		} else {
 
 			PlanNode invalidValuesDirectOnPath = path.get()
-					.getAdded(connectionsGroup, validationSettings.getDataGraph(),
+					.getAnyAdded(connectionsGroup, validationSettings.getDataGraph(),
 							planNode -> getFilterAttacherWithNegation(negatePlan, planNode));
 
 			PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(),
@@ -128,7 +131,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 								.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 										new StatementMatcher.Variable("c"),
 										connectionsGroup.getRdfsSubClassOfReasoner(),
-										stableRandomVariableProvider),
+										stableRandomVariableProvider, Set.of()),
 						connectionsGroup.hasPreviousStateConnection(),
 						connectionsGroup.getPreviousStateConnection(),
 						b -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
@@ -194,7 +197,8 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 						validationSettings.getDataGraph(), path.get()
 								.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 										new StatementMatcher.Variable("c"),
-										connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
+										connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider,
+										Set.of()),
 						false, null,
 						BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph())
 				);
@@ -215,33 +219,35 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);
 		String query = effectiveTarget.getQuery(false);
 
-		StatementMatcher.Variable value;
+		Variable<Value> value;
 
 		if (scope == Scope.nodeShape) {
 
 			value = null;
 
-			query += getSparqlFilter(negatePlan, effectiveTarget.getTargetVar(), stableRandomVariableProvider);
+			query += "\n" + getSparqlFilter(negatePlan, effectiveTarget.getTargetVar(), stableRandomVariableProvider);
 
 		} else {
 			value = StatementMatcher.Variable.VALUE;
 
-			String pathQuery = targetChain.getPath()
+			Optional<SparqlFragment> sparqlFragment = targetChain.getPath()
 					.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
-							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider))
-					.orElseThrow(IllegalStateException::new);
+							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()));
 
-			query += pathQuery;
-			query += getSparqlFilter(negatePlan, value, stableRandomVariableProvider);
+			String pathQuery = sparqlFragment.map(SparqlFragment::getFragment).orElseThrow(IllegalStateException::new);
+
+			query += "\n" + pathQuery;
+			query += "\n" + getSparqlFilter(negatePlan, value, stableRandomVariableProvider);
 		}
 
-		List<StatementMatcher.Variable> allTargetVariables = effectiveTarget.getAllTargetVariables();
+		var allTargetVariables = effectiveTarget.getAllTargetVariables();
 
-		return new ValidationQuery(query, allTargetVariables, value, scope, getConstraintComponent(), null, null);
+		return new ValidationQuery(getTargetChain().getNamespaces(), query, allTargetVariables, value, scope, this,
+				null, null);
 
 	}
 
-	private String getSparqlFilter(boolean negatePlan, StatementMatcher.Variable variable,
+	private String getSparqlFilter(boolean negatePlan, Variable<Value> variable,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		// We use BIND and COALESCE because the filter expression could cause an error and the SHACL spec implicitly
 		// says that values that cause errors are in violation of the constraint.
@@ -251,7 +257,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 		String tempVar = stableRandomVariableProvider.next().asSparqlVariable();
 
 		return String.join("\n",
-				"BIND((" + getSparqlFilterExpression(variable.getName(), negatePlan) + ") as " + tempVar + ")",
+				"BIND((" + getSparqlFilterExpression(variable, negatePlan) + ") as " + tempVar + ")",
 				"FILTER(COALESCE(" + tempVar + ", true))"
 		);
 	}
@@ -261,11 +267,11 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 	 * should evaluate to true for values that fail validation, unless negated==true. If the filter condition throws an
 	 * error (a SPARQL runtime error, not Java error) then the error will be caught and coalesced to `true`.
 	 *
-	 * @param varName
+	 * @param variable
 	 * @param negated
 	 * @return a string that is the body of a SPARQL filter
 	 */
-	abstract String getSparqlFilterExpression(String varName, boolean negated);
+	abstract String getSparqlFilterExpression(Variable<Value> variable, boolean negated);
 
 	private PlanNode getFilterAttacherWithNegation(boolean negatePlan, PlanNode allTargets) {
 		if (negatePlan) {

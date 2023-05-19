@@ -1,27 +1,22 @@
 #
-# Sesame configuration template for a native RDF repository with
+# RDF4J configuration template for a native RDF repository with
 # RDF Schema inferencing
 #
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix rep: <http://www.openrdf.org/config/repository#>.
-@prefix sr: <http://www.openrdf.org/config/repository/sail#>.
-@prefix sail: <http://www.openrdf.org/config/sail#>.
-@prefix ns: <http://www.openrdf.org/config/sail/native#>.
-@prefix sb: <http://www.openrdf.org/config/sail/base#>.
+@prefix config: <tag:rdf4j.org,2023:config/>.
 
-
-[] a rep:Repository ;
-   rep:repositoryID "{%Repository ID|native-rdfs%}" ;
-   rdfs:label "{%Repository title|Native store with RDF Schema inferencing%}" ;
-   rep:repositoryImpl [
-      rep:repositoryType "openrdf:SailRepository" ;
-      sr:sailImpl [
-         sail:sailType "rdf4j:SchemaCachingRDFSInferencer" ;
-         sail:delegate [
-            sail:sailType "openrdf:NativeStore" ;
-	    sail:iterationCacheSyncThreshold "{%Query Iteration Cache size|10000%}";
-            ns:tripleIndexes "{%Triple indexes|spoc,posc%}";
-            sb:evaluationStrategyFactory "{%EvaluationStrategyFactory|org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory%}"
-         ]
-      ]
-   ].
+[] a config:Repository ;
+    config:rep.id "{%Repository ID|native-rdfs%}" ;
+    rdfs:label "{%Repository title|Native store with RDF Schema inferencing%}" ;
+    config:rep.impl [
+        config:rep.type "openrdf:SailRepository" ;
+        config:sail.impl [
+            config:sail.type "rdf4j:SchemaCachingRDFSInferencer" ;
+            config:delegate [
+                config:sail.type "openrdf:NativeStore" ;
+                config:sail.iterationCacheSyncThreshold "{%Query Iteration Cache size|10000%}";
+                config:native.tripleIndexes "{%Triple indexes|spoc,posc%}";
+                config:sail.defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"
+            ]
+        ]
+    ].

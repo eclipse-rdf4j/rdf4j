@@ -1,0 +1,35 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+
+[] a sh:ValidationReport;
+  rdf4j:truncated false;
+  sh:conforms false;
+  sh:result [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:validPerson1;
+      sh:resultPath _:5089a376325a403b926b5c31d5e95e7216112;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:sourceShape [ a sh:PropertyShape;
+          sh:not [ a sh:NodeShape;
+              sh:property [ a sh:PropertyShape;
+                  sh:datatype xsd:string;
+                  sh:path ([
+                        sh:alternativePath (ex:altPath2 ex:altPath3 ex:altPath4)
+                      ] [
+                        sh:alternativePath (ex:altPath5 ex:altPath6 ex:altPath7)
+                      ] ex:age)
+                ]
+            ];
+          sh:path _:5089a376325a403b926b5c31d5e95e7216112
+        ];
+      sh:value []
+    ] .
+
+_:5089a376325a403b926b5c31d5e95e7216112 sh:alternativePath (ex:altPath0 ex:altPath1) .

@@ -182,7 +182,7 @@ public class WorkbenchServlet extends AbstractServlet {
 		builder.transform(this.getTransformationUrl(req), "server.xsl");
 		builder.start("error-message");
 		builder.result(
-				"The entered credentials entered either failed to authenticate to the Sesame server, or were unauthorized for the requested operation.");
+				"The entered credentials entered either failed to authenticate to the RDF4J server, or were unauthorized for the requested operation.");
 		builder.end();
 	}
 

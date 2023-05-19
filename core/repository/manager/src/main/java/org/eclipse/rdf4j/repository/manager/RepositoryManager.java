@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModelFactory;
 import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
@@ -56,12 +57,17 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	/**
 	 * The {@link org.eclipse.rdf4j.repository.sail.ProxyRepository} schema namespace (
 	 * <var>http://www.openrdf.org/config/repository/proxy#</var>).
+	 *
+	 * @deprecated use {@link CONFIG.Proxy} instead.
 	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/proxy#";
 
 	/**
 	 * <var>http://www.openrdf.org/config/repository/proxy#proxiedID</var>
+	 *
+	 * @deprecated use {@link CONFIG.Proxy#proxiedID} instead.
 	 */
+	@Deprecated(since = "4.3.0", forRemoval = true)
 	public final static IRI PROXIED_ID = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "proxiedID");
 
 	/*-----------*
@@ -256,7 +262,8 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 			RepositoryConfig config = getRepositoryConfig(id);
 			Model model = new LinkedHashModel();
 			config.export(model, Values.bnode());
-			if (model.contains(null, PROXIED_ID, Values.literal(repositoryID))) {
+			if (model.contains(null, CONFIG.Proxy.proxiedID, Values.literal(repositoryID))
+					|| model.contains(null, PROXIED_ID, Values.literal(repositoryID))) {
 				return false;
 			}
 		}
@@ -444,17 +451,17 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	public abstract Collection<RepositoryInfo> getAllRepositoryInfos() throws RepositoryException;
 
 	/**
-	 * @deprecated since 4.0 - use {@link #getAllRepositoryInfos()} instead.
+	 * @deprecated Use {@link #getAllRepositoryInfos()} instead.
 	 */
-	@Deprecated
+	@Deprecated(since = "4.0")
 	public Collection<RepositoryInfo> getAllUserRepositoryInfos() throws RepositoryException {
 		return getAllRepositoryInfos();
 	}
 
 	/**
-	 * @deprecated since 4.0 - use {@link #getAllRepositoryInfos()} instead.
+	 * @deprecated Use {@link #getAllRepositoryInfos()} instead.
 	 */
-	@Deprecated
+	@Deprecated(since = "4.0")
 	public Collection<RepositoryInfo> getAllRepositoryInfos(boolean skipSystemRepo) throws RepositoryException {
 		return getAllRepositoryInfos();
 	}

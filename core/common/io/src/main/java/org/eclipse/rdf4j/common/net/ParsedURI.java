@@ -22,7 +22,7 @@ import java.util.StringTokenizer;
  *
  * @deprecated use {@link ParsedIRI} instead
  */
-@Deprecated
+@Deprecated(since = "2.3")
 public class ParsedURI implements java.lang.Cloneable {
 
 	/*

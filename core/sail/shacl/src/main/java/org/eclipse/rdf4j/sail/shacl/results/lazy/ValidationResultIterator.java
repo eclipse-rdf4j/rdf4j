@@ -72,20 +72,6 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 					ValidationResult validationResult1 = validationResults.get(validationResults.size() - 1);
 					validationResultsRet.add(validationResult1);
 
-//					ValidationResult parent = null;
-//
-//					// we iterate in reverse order to get the most recent validation result first
-//					for (int i = validationResults.size() - 1; i >= 0; i--) {
-//						ValidationResult validationResult = validationResults.get(i);
-//						if (parent == null) {
-//							parent = validationResult;
-//							validationResultsRet.add(parent);
-//						} else {
-//							parent.setDetail(validationResult);
-//							parent = validationResult;
-//						}
-//					}
-
 					counter++;
 				}
 

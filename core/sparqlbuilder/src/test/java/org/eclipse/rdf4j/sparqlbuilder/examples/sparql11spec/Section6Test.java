@@ -11,9 +11,9 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder.var;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
-import static org.hamcrest.MatcherAssert.assertThat;
 
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
@@ -36,7 +36,7 @@ public class Section6Test extends BaseExamples {
 				GraphPatterns.optional(x.has(foaf.iri("mbox"), mbox)));
 
 		query.prefix(foaf).select(name, mbox).where(where);
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
 						+ "SELECT ?name ?mbox\n"
 						+ "WHERE  { ?x foaf:name  ?name .\n"
@@ -55,7 +55,7 @@ public class Section6Test extends BaseExamples {
 				.optional();
 
 		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX  dc:  <http://purl.org/dc/elements/1.1/>\n"
 						+ "PREFIX  ns:  <https://example.org/ns#>\n"
 						+ "SELECT  ?title ?price\n"
@@ -77,7 +77,7 @@ public class Section6Test extends BaseExamples {
 				.select(name, mbox, hpage)
 				.where(namePattern, GraphPatterns.and(x.has(foaf.iri("mbox"), mbox)).optional(),
 						GraphPatterns.and(x.has(foaf.iri("homepage"), hpage)).optional());
-		assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+		assertThat(query.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
 						+ "SELECT ?name ?mbox ?hpage\n"
 						+ "WHERE  { ?x foaf:name  ?name .\n"

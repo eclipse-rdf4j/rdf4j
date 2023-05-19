@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 
 /**
  * A plan node that can only be closed once
@@ -25,13 +26,17 @@ import org.eclipse.rdf4j.sail.SailException;
 public class SingleCloseablePlanNode implements PlanNode {
 
 	private final PlanNode parent;
+	private final Shape shape;
+	boolean receivedLogger = false;
 
-	public SingleCloseablePlanNode(PlanNode parent) {
+	public SingleCloseablePlanNode(PlanNode parent, Shape shape) {
 		this.parent = PlanNodeHelper.handleSorting(this, parent);
+		this.shape = shape;
 	}
 
 	@Override
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+		assert receivedLogger;
 		return new SingleCloseableIteration(parent);
 	}
 
@@ -57,6 +62,7 @@ public class SingleCloseablePlanNode implements PlanNode {
 
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		receivedLogger = true;
 		parent.receiveLogger(validationExecutionLogger);
 	}
 
@@ -68,6 +74,10 @@ public class SingleCloseablePlanNode implements PlanNode {
 	@Override
 	public boolean requiresSorted() {
 		return false;
+	}
+
+	public Shape getShape() {
+		return shape;
 	}
 
 	@Override

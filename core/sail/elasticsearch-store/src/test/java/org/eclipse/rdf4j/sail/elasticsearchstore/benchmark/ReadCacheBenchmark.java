@@ -11,7 +11,6 @@
 
 package org.eclipse.rdf4j.sail.elasticsearchstore.benchmark;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -19,8 +18,6 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.IOUtils;
-import org.assertj.core.util.Files;
-import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Literal;
@@ -32,6 +29,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
+import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStore;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -56,10 +54,6 @@ import org.openjdk.jmh.annotations.Warmup;
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ReadCacheBenchmark {
-
-	private static final File installLocation = Files.newTemporaryFolder();
-	private static ElasticsearchClusterRunner runner;
-
 	private SailRepository repoWithoutCache;
 	private SailRepository repoWithCache;
 
@@ -82,16 +76,13 @@ public class ReadCacheBenchmark {
 		// JMH does not correctly set JAVA_HOME. Change the JAVA_HOME below if you the following error:
 		// [EmbeddedElsHandler] INFO p.a.t.e.ElasticServer - could not find java; set JAVA_HOME or ensure java is in
 		// PATH
-		runner = TestHelpers.startElasticsearch(installLocation);
+		TestHelpers.openClient();
 
-		repoWithoutCache = new SailRepository(
-				new ElasticsearchStore("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex1",
-						false));
+		repoWithoutCache = new SailRepository(new ElasticsearchStore("localhost", TestHelpers.PORT,
+				TestHelpers.CLUSTER, "testindex1", ExtensibleStore.Cache.NONE));
 
 		repoWithCache = new SailRepository(
-				new ElasticsearchStore("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex2",
-						true));
-
+				new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER, "testindex2"));
 		try (SailRepositoryConnection connection = repoWithCache.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.clear();
@@ -116,9 +107,9 @@ public class ReadCacheBenchmark {
 	}
 
 	@TearDown(Level.Trial)
-	public void afterClass() {
+	public void afterClass() throws IOException {
 		repoWithoutCache.shutDown();
-		TestHelpers.stopElasticsearch(runner);
+		TestHelpers.closeClient();
 	}
 
 	@Benchmark

@@ -17,8 +17,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 
 import org.apache.commons.io.FileUtils;
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.collection.factory.mapdb.MapDbCollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockManager;
@@ -127,6 +130,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ,
 				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
 		setDefaultIsolationLevel(IsolationLevels.SNAPSHOT_READ);
+		config.getDefaultQueryEvaluationMode().ifPresent(this::setDefaultQueryEvaluationMode);
 		EvaluationStrategyFactory evalStrategyFactory = config.getEvaluationStrategyFactory();
 		if (evalStrategyFactory != null) {
 			setEvaluationStrategyFactory(evalStrategyFactory);
@@ -164,6 +168,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		}
 		evalStratFactory.setQuerySolutionCacheThreshold(getIterationCacheSyncThreshold());
 		evalStratFactory.setTrackResultSize(isTrackResultSize());
+		evalStratFactory.setCollectionFactory(getCollectionFactory());
 		return evalStratFactory;
 	}
 
@@ -395,5 +400,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	private boolean upgradeStore(File dataDir, String version) throws IOException, SailException {
 		// nothing to do, just update version number
 		return true;
+	}
+
+	@Override
+	public Supplier<CollectionFactory> getCollectionFactory() {
+		return () -> new MapDbCollectionFactory(getIterationCacheSyncThreshold());
 	}
 }

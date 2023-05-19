@@ -162,4 +162,8 @@ public class SingletonBindingSet implements BindingSet {
 		return sb.toString();
 	}
 
+	@Override
+	public boolean isEmpty() {
+		return false;
+	}
 }

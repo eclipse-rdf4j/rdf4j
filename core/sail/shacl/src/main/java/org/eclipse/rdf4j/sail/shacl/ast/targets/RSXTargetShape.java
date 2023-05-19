@@ -15,14 +15,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ast.Cache;
 import org.eclipse.rdf4j.sail.shacl.ast.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.ast.PropertyShape;
@@ -43,16 +42,14 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 public class RSXTargetShape extends Target {
 
 	private final Shape targetShape;
-	private final StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider(
-			"rsx_");
 
-	public RSXTargetShape(Resource targetShape, ShapeSource shapeSource, ShaclSail shaclSail) {
+	public RSXTargetShape(Resource targetShape, ShapeSource shapeSource, Shape.ParseSettings parseSettings) {
 		ShaclProperties p = new ShaclProperties(targetShape, shapeSource);
 
 		if (p.getType() == SHACL.NODE_SHAPE) {
-			this.targetShape = NodeShape.getInstance(p, shapeSource, new Cache(), shaclSail);
+			this.targetShape = NodeShape.getInstance(p, shapeSource, parseSettings, new Cache());
 		} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-			this.targetShape = PropertyShape.getInstance(p, shapeSource, new Cache(), shaclSail);
+			this.targetShape = PropertyShape.getInstance(p, shapeSource, parseSettings, new Cache());
 		} else {
 			throw new IllegalStateException("Unknown shape type for " + p.getId());
 		}
@@ -81,34 +78,24 @@ public class RSXTargetShape extends Target {
 
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
-		StatementMatcher.Variable object = stableRandomVariableProvider.next();
+		var object = stableRandomVariableProvider.next();
 
 		SparqlFragment sparqlFragment = this.targetShape.buildSparqlValidNodes_rsx_targetShape(null, object,
 				connectionsGroup.getRdfsSubClassOfReasoner(), null, stableRandomVariableProvider);
 
 		List<StatementMatcher> statementMatchers = sparqlFragment.getStatementMatchers();
 
-		String query = sparqlFragment.getFragment();
-
-		List<StatementMatcher.Variable> vars = Collections.singletonList(object);
+		var vars = Collections.singletonList(object);
 
 		return Unique.getInstance(new TargetChainRetriever(
 				connectionsGroup,
-				dataGraph, statementMatchers,
+				dataGraph,
 				statementMatchers,
-				query,
+				statementMatchers,
+				null, sparqlFragment,
 				vars,
-				scope
-		), false);
-
-	}
-
-	@Override
-	public String getQueryFragment(String subjectVariable, String objectVariable,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
-
-		throw new UnsupportedOperationException(this.getClass().getSimpleName());
+				scope,
+				false), false);
 
 	}
 
@@ -118,37 +105,30 @@ public class RSXTargetShape extends Target {
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 		StatementMatcher.Variable variable = stableRandomVariableProvider.next();
 
-		String query = getTargetQueryFragment(null, variable, connectionsGroup.getRdfsSubClassOfReasoner(),
-				stableRandomVariableProvider);
+		SparqlFragment sparqlFragment = getTargetQueryFragment(null, variable,
+				connectionsGroup.getRdfsSubClassOfReasoner(),
+				stableRandomVariableProvider, Set.of());
 
 		// TODO: this is a slow way to solve this problem! We should use bulk operations.
-		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), dataGraph, parent, query, variable,
+		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), dataGraph, parent, sparqlFragment,
+				variable,
 				ValidationTuple::getActiveTarget).getTrueNode(UnBufferedPlanNode.class);
 	}
 
 	@Override
-	public Stream<StatementMatcher> getStatementMatcher(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+	public SparqlFragment getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider, Set<String> inheritedVarNames) {
 		assert (subject == null);
 
 		return this.targetShape
 				.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, null,
-						stableRandomVariableProvider)
-				.getStatementMatchers()
-				.stream();
+						stableRandomVariableProvider);
 	}
 
 	@Override
-	public String getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
-		assert (subject == null);
-
-		return this.targetShape
-				.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, null,
-						stableRandomVariableProvider)
-				.getFragment();
-
+	public Set<Namespace> getNamespaces() {
+		return Set.of();
 	}
 
 	@Override
@@ -167,4 +147,5 @@ public class RSXTargetShape extends Target {
 	public int hashCode() {
 		return Objects.hash(targetShape);
 	}
+
 }

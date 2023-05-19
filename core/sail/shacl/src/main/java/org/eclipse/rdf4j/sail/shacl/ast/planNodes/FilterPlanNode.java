@@ -33,6 +33,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 
 	private CloseableIteration<ValidationTuple, SailException> iterator;
 	private ValidationExecutionLogger validationExecutionLogger;
+	private boolean closed;
 
 	abstract boolean checkTuple(ValidationTuple t);
 
@@ -78,7 +79,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 
 		return new CloseableIteration<>() {
 
-			CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
+			private CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
 
 			ValidationTuple next;
 
@@ -201,14 +202,18 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	@Override
 	public void close() {
 		if ((trueNode == null || trueNode.isClosed()) && (falseNode == null || falseNode.isClosed())) {
-			iterator.close();
-			iterator = null;
+			if (iterator != null) {
+				iterator.close();
+				iterator = null;
+				closed = true;
+			}
 		}
 
 	}
 
 	@Override
 	public boolean incrementIterator() {
+		assert !closed;
 		if (iterator.hasNext()) {
 			iterator.next();
 			return true;

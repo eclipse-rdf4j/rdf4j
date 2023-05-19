@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * query in fedx (potentially subqueries are still running, and jobs are scheduled).
  *
  * If some external component calls close() on this iteration AND if the corresponding query is still running, the query
- * is aborted within FedX. An example case would be Sesame's QueryInteruptIterations, which is used to enforce
+ * is aborted within FedX. An example case would be RDF4J's QueryInteruptIterations, which is used to enforce
  * maxQueryTime.
  *
  * If the query is finished, the FederationManager is notified that the query is done, and the query is removed from the

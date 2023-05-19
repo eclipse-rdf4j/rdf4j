@@ -13,16 +13,18 @@
   sh:result [ a sh:ValidationResult;
       rsx:dataGraph rdf4j:nil;
       rsx:shapesGraph rdf4j:nil;
-      sh:focusNode _:541f9425e6641896;
+      sh:focusNode _:29bf0cfaf52d3f0e;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:sourceShape ex:PersonShape;
-      sh:value _:541f9425e6641896
+      sh:value _:29bf0cfaf52d3f0e
     ] .
 
 ex:PersonShape a sh:NodeShape;
   sh:not [ a sh:PropertyShape;
       sh:minCount 2;
-      sh:path ex:ssn
+      sh:path [
+          sh:alternativePath (ex:ssn ex:socialSecurityNumber)
+        ]
     ];
   sh:targetClass ex:Person .

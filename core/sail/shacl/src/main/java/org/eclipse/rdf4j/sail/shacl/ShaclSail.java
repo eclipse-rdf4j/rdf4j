@@ -176,7 +176,8 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 
 	// lockManager used for read/write locks used to synchronize validation so that SNAPSHOT isolation is sufficient to
 	// achieve SERIALIZABLE isolation wrt. validation
-	final ReadPrefReadWriteLockManager serializableValidationLock = new ReadPrefReadWriteLockManager();
+	final ReadPrefReadWriteLockManager serializableValidationLock = new ReadPrefReadWriteLockManager(
+			"ShaclSail_SerializableValidation");
 
 	// shapesCacheLockManager used to keep track of changes to the cache
 	private StampedLockManager.Cache<List<ContextWithShapes>> cachedShapes;
@@ -311,11 +312,20 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 				SHACL.HAS_VALUE,
 				SHACL.TARGET_PROP,
 				SHACL.INVERSE_PATH,
+				SHACL.ALTERNATIVE_PATH,
 				SHACL.NODE,
 				SHACL.QUALIFIED_MAX_COUNT,
 				SHACL.QUALIFIED_MIN_COUNT,
 				SHACL.QUALIFIED_VALUE_SHAPE,
 				SHACL.SHAPES_GRAPH,
+				SHACL.MESSAGE,
+				SHACL.DECLARE,
+				SHACL.SPARQL,
+				SHACL.SELECT,
+				SHACL.PREFIXES,
+				SHACL.PREFIX_PROP,
+				SHACL.NAMESPACE_PROP,
+				SHACL.SEVERITY_PROP,
 				DASH.hasValueIn,
 				RSX.targetShape
 		);
@@ -389,7 +399,8 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 
 		try (ShapeSource shapeSource = new CombinedShapeSource(shapesRepoConnection, sailConnection)
 				.withContext(shapesGraphs)) {
-			return Shape.Factory.getShapes(shapeSource, this);
+			return Shape.Factory.getShapes(shapeSource,
+					new Shape.ParseSettings(isEclipseRdf4jShaclExtensions(), isDashDataShapes()));
 		}
 
 	}
@@ -399,7 +410,8 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 			throws SailException {
 
 		try (ShapeSource shapeSource = new ForwardChainingShapeSource(shapesRepoConnection).withContext(shapesGraphs)) {
-			return Shape.Factory.getShapes(shapeSource, this);
+			return Shape.Factory.getShapes(shapeSource,
+					new Shape.ParseSettings(isEclipseRdf4jShaclExtensions(), isDashDataShapes()));
 		}
 
 	}

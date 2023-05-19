@@ -11,10 +11,10 @@
 package org.eclipse.rdf4j.common.logging.base;
 
 /**
- * @deprecated since 4.0. Use {@link AbstractLogReader} instead.
+ * @deprecated Use {@link AbstractLogReader} instead.
  * @author Jeen Broekstra
  */
-@Deprecated
+@Deprecated(since = "4.0")
 public abstract class LogReaderBase extends AbstractLogReader {
 
 }

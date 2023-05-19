@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-compliance</artifactId>
-		<version>4.2.5-SNAPSHOT</version>
+		<version>4.3.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-lucene-compliance</artifactId>
 	<name>RDF4J: Lucene Sail Tests</name>
@@ -37,11 +37,6 @@
 		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>jcl-over-slf4j</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.slf4j</groupId>
-			<artifactId>log4j-over-slf4j</artifactId>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>

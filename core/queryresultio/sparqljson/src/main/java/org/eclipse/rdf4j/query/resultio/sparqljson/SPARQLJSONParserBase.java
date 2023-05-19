@@ -12,9 +12,9 @@ package org.eclipse.rdf4j.query.resultio.sparqljson;
 
 /**
  * @author Jeen Broekstra
- * @deprecated since 2.0. Use {@link AbstractSPARQLJSONParser} instead.
+ * @deprecated Use {@link AbstractSPARQLJSONParser} instead.
  */
-@Deprecated
+@Deprecated(since = "2.0")
 public abstract class SPARQLJSONParserBase extends AbstractSPARQLJSONParser {
 
 }

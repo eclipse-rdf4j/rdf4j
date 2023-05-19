@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
 import java.text.ParseException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -25,6 +26,8 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.apache.lucene.geo.SimpleWKTShapeParser;
 import org.eclipse.rdf4j.model.IRI;
@@ -535,23 +538,17 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		Iterable<? extends DocumentScore> hits = null;
 
 		try {
-			// parse the query string to a lucene query
-
-			String sQuery = query.getQueryString();
-
-			if (!sQuery.isEmpty()) {
-				// if the query requests for the snippet, create a highlighter using
-				// this query
-				boolean highlight = (query.getSnippetVariableName() != null || query.getPropertyVariableName() != null);
+			if (query.getQueryPatterns()
+					.stream()
+					.map(QuerySpec.QueryParam::getQuery)
+					.anyMatch(s -> !s.isEmpty())) {
+				// at least one query isn't empty
 
 				// distinguish the two cases of subject == null
-				hits = query(query.getSubject(), query.getQueryString(), query.getPropertyURI(), highlight);
-			} else {
-				hits = null;
+				hits = query(query.getSubject(), query);
 			}
 		} catch (Exception e) {
-			logger.error("There was a problem evaluating query '" + query.getQueryString() + "' for property '"
-					+ query.getPropertyURI() + "!", e);
+			logger.error("There was a problem evaluating query '" + query.getCatQuery() + "'!", e);
 		}
 
 		return hits;
@@ -583,13 +580,17 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		if (scoreVar != null) {
 			bindingNames.add(scoreVar);
 		}
-		final String snippetVar = query.getSnippetVariableName();
-		if (snippetVar != null) {
-			bindingNames.add(snippetVar);
-		}
-		final String propertyVar = query.getPropertyVariableName();
-		if (propertyVar != null && query.getPropertyURI() == null) {
-			bindingNames.add(propertyVar);
+
+		for (QuerySpec.QueryParam param : query.getQueryPatterns()) {
+			final String snippetVar = param.getSnippetVarName();
+			if (snippetVar != null) {
+				bindingNames.add(snippetVar);
+			}
+
+			final String propertyVar = param.getPropertyVarName();
+			if (propertyVar != null && param.getProperty() == null) {
+				bindingNames.add(propertyVar);
+			}
 		}
 
 		if (hits != null) {
@@ -617,40 +618,72 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 					derivedBindings.addBinding(scoreVar, SearchFields.scoreToLiteral(score));
 				}
 
-				if (snippetVar != null || propertyVar != null) {
+				if (query.isHighlight()) {
 					if (hit.isHighlighted()) {
-						// limit to the queried field, if there was one
-						Collection<String> fields;
-						if (query.getPropertyURI() != null) {
-							String fieldname = SearchFields.getPropertyField(query.getPropertyURI());
-							fields = Collections.singleton(fieldname);
-						} else {
-							fields = doc.getPropertyNames();
-						}
+						Set<QueryBindingSet> reducedSet = query.getQueryPatterns()
+								.stream()
+								// ignore non highlighted param
+								.filter(QuerySpec.QueryParam::isHighlight)
+								.map(queryParam -> {
+									String snippetVar = queryParam.getSnippetVarName();
+									String propertyVar = queryParam.getPropertyVarName();
 
-						// extract snippets from Lucene's query results
-						for (String field : fields) {
-							Iterable<String> snippets = hit.getSnippets(field);
-							if (snippets != null) {
-								for (String snippet : snippets) {
-									if (snippet != null && !snippet.isEmpty()) {
-										// create an individual binding set for each
-										// snippet
-										QueryBindingSet snippetBindings = new QueryBindingSet(derivedBindings);
-
-										if (snippetVar != null) {
-											snippetBindings.addBinding(snippetVar, vf.createLiteral(snippet));
-										}
-
-										if (propertyVar != null && query.getPropertyURI() == null) {
-											snippetBindings.addBinding(propertyVar, vf.createIRI(field));
-										}
-
-										bindingSets.add(snippetBindings);
+									// limit to the queried field, if there was one
+									Collection<String> fields;
+									if (queryParam.getProperty() != null) {
+										String fieldname = SearchFields.getPropertyField(queryParam.getProperty());
+										fields = Collections.singleton(fieldname);
+									} else {
+										fields = doc.getPropertyNames();
 									}
-								}
-							}
-						}
+
+									// extract snippets from Lucene's query results
+									Set<QueryBindingSet> paramBindings = new HashSet<>();
+									for (String field : fields) {
+										Iterable<String> snippets = hit.getSnippets(field);
+										if (snippets != null) {
+											for (String snippet : snippets) {
+												if (snippet != null && !snippet.isEmpty()) {
+													// create an individual binding set for each
+													// snippet
+													QueryBindingSet snippetBindings = new QueryBindingSet();
+													if (snippetVar != null) {
+														snippetBindings.addBinding(snippetVar,
+																vf.createLiteral(snippet));
+													}
+
+													if (propertyVar != null && queryParam.getProperty() == null) {
+														snippetBindings.addBinding(propertyVar, vf.createIRI(field));
+													}
+
+													paramBindings.add(snippetBindings);
+												}
+											}
+										}
+									}
+									// return the bindings
+									return paramBindings;
+								})
+								.reduce(Set.of(derivedBindings), (bindingA, bindingB) -> {
+									// Edge case for a param without any binding
+									if (bindingA.isEmpty()) {
+										return bindingB;
+									}
+									if (bindingB.isEmpty()) {
+										return bindingA;
+									}
+									// Create the cartesian product of all bindings
+									Set<QueryBindingSet> paramBindings = new HashSet<>();
+									for (QueryBindingSet a : bindingA) {
+										for (QueryBindingSet b : bindingB) {
+											QueryBindingSet binding = new QueryBindingSet(a);
+											binding.addAll(b);
+											paramBindings.add(binding);
+										}
+									}
+									return paramBindings;
+								});
+						bindingSets.addAll(reducedSet);
 					} else {
 						logger.warn(
 								"Lucene Query requests snippet, but no highlighter was generated for it, no snippets will be generated!\n{}",
@@ -899,8 +932,8 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 
 	protected abstract void deleteDocument(SearchDocument doc) throws IOException;
 
-	protected abstract Iterable<? extends DocumentScore> query(Resource subject, String q, IRI property,
-			boolean highlight) throws MalformedQueryException, IOException;
+	protected abstract Iterable<? extends DocumentScore> query(Resource subject, QuerySpec param)
+			throws MalformedQueryException, IOException;
 
 	protected abstract Iterable<? extends DocumentDistance> geoQuery(IRI geoProperty, Point p, IRI units,
 			double distance, String distanceVar, Var context) throws MalformedQueryException, IOException;

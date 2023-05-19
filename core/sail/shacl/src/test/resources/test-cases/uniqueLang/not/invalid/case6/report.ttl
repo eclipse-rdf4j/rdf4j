@@ -19,11 +19,11 @@
       sh:value ex:bigCo1
     ], [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
-      sh:focusNode ex:bigCo4;
+      sh:focusNode ex:bigCo2;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:sourceShape ex:PersonShape;
-      sh:value ex:bigCo4
+      sh:value ex:bigCo2
     ], [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:bigCo3;
@@ -33,11 +33,11 @@
       sh:value ex:bigCo3
     ], [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
-      sh:focusNode ex:bigCo2;
+      sh:focusNode ex:bigCo4;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:sourceShape ex:PersonShape;
-      sh:value ex:bigCo2
+      sh:value ex:bigCo4
     ] .
 
 ex:PersonShape a sh:NodeShape;

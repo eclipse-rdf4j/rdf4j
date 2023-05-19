@@ -88,7 +88,7 @@ public class SHACLManifestTestSuiteFactory {
 	 * Creates a new {@link TestSuite} for executiong of {@link AbstractSHACLTest} s.
 	 *
 	 * @param factory                   a factory class that creates each individual test case.
-	 * @param officialWorkingGroupTests indicates whether to use the official W3C working group tests, or Sesame's own
+	 * @param officialWorkingGroupTests indicates whether to use the official W3C working group tests, or RDF4J's own
 	 *                                  set of tests.
 	 * @param approvedTestsOnly         if <code>true</code>, use working group-approved tests only. Has no influence
 	 *                                  when officialWorkingGroup tests is set to <code>false</code>.

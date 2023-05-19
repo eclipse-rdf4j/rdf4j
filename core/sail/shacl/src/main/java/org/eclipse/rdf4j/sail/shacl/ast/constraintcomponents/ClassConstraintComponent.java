@@ -15,13 +15,17 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
@@ -90,7 +94,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				BufferedSplitter addedTargetsBufferedSplitter = new BufferedSplitter(
 						target.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false, null));
 				addedTargets = addedTargetsBufferedSplitter.getPlanNode();
-				PlanNode addedByPath = path.getAdded(connectionsGroup, validationSettings.getDataGraph(), null);
+				PlanNode addedByPath = path.getAllAdded(connectionsGroup, validationSettings.getDataGraph(), null);
 
 				addedByPath = target.getTargetFilter(connectionsGroup,
 						validationSettings.getDataGraph(), Unique.getInstance(new TrimToTarget(addedByPath), false));
@@ -131,7 +135,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 					connectionsGroup.getBaseConnection(),
 					validationSettings.getDataGraph(),
 					path.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
-							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
+							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()),
 					false,
 					null,
 					BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph())
@@ -299,35 +303,38 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);
 		String query = effectiveTarget.getQuery(false);
 
-		StatementMatcher.Variable value;
+		Variable<Value> value;
 
 		if (scope == Scope.nodeShape) {
 
 			value = null;
 
-			StatementMatcher.Variable target = effectiveTarget.getTargetVar();
+			var target = effectiveTarget.getTargetVar();
 
-			query += getFilter(connectionsGroup, target);
+			query += "\n" + getFilter(connectionsGroup, target);
 
 		} else {
-			value = new StatementMatcher.Variable("value");
+			value = new Variable<>("value");
 
-			String pathQuery = getTargetChain().getPath()
+			SparqlFragment sparqlFragment = getTargetChain().getPath()
 					.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
-							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider))
+							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()))
 					.orElseThrow(IllegalStateException::new);
 
-			query += pathQuery;
-			query += getFilter(connectionsGroup, value);
+			String pathQuery = sparqlFragment.getFragment();
+
+			query += "\n" + pathQuery;
+			query += "\n" + getFilter(connectionsGroup, value);
 		}
 
-		List<StatementMatcher.Variable> allTargetVariables = effectiveTarget.getAllTargetVariables();
+		var allTargetVariables = effectiveTarget.getAllTargetVariables();
 
-		return new ValidationQuery(query, allTargetVariables, value, scope, getConstraintComponent(), null, null);
+		return new ValidationQuery(getTargetChain().getNamespaces(), query, allTargetVariables, value, scope, this,
+				null, null);
 
 	}
 
-	private String getFilter(ConnectionsGroup connectionsGroup, StatementMatcher.Variable target) {
+	private String getFilter(ConnectionsGroup connectionsGroup, Variable<Value> target) {
 
 		RdfsSubClassOfReasoner rdfsSubClassOfReasoner = connectionsGroup.getRdfsSubClassOfReasoner();
 		Set<Resource> allClasses;
@@ -339,15 +346,20 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 		}
 
 		String condition = allClasses.stream()
-				.map(c -> "EXISTS{?" + target.getName() + " a <" + c.stringValue() + ">}")
+				.map(c -> "EXISTS{" + target.asSparqlVariable() + " a <" + c.stringValue() + ">}")
 				.reduce((a, b) -> a + " || " + b)
 				.orElseThrow(IllegalStateException::new);
 
-		return "\nFILTER(!(" + condition + "))";
+		return "FILTER(!(" + condition + "))";
 	}
 
 	@Override
 	public ValidationApproach getOptimalBulkValidationApproach() {
 		return ValidationApproach.SPARQL;
+	}
+
+	@Override
+	public List<Literal> getDefaultMessage() {
+		return List.of();
 	}
 }

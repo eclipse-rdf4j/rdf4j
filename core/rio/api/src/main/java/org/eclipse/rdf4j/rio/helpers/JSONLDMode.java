@@ -15,7 +15,10 @@ package org.eclipse.rdf4j.rio.helpers;
  *
  * @author Peter Ansell
  * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#features">JSONLD Features</a>
+ *
+ * @deprecated Use {@link org.eclipse.rdf4j.rio.jsonld.JSONLDMode} instead.
  */
+@Deprecated(since = "4.3.0", forRemoval = true)
 public enum JSONLDMode {
 
 	EXPAND("Expansion", "http://json-ld.org/spec/latest/json-ld-api/index.html#expansion"),

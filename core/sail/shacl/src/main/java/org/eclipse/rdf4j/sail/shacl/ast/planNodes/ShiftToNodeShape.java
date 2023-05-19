@@ -32,21 +32,31 @@ public class ShiftToNodeShape implements PlanNode {
 
 	public ShiftToNodeShape(PlanNode parent) {
 		this.parent = PlanNodeHelper.handleSorting(this, parent);
-		// this.stackTrace = Thread.currentThread().getStackTrace();
+//		this.stackTrace = Thread.currentThread().getStackTrace();
 	}
 
 	@Override
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
+			private CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
 			Iterator<ValidationTuple> iterator = Collections.emptyIterator();
+
+			@Override
+			protected void init() {
+				parentIterator = parent.iterator();
+			}
 
 			public void calculateNext() {
 				if (!iterator.hasNext()) {
 					if (parentIterator.hasNext()) {
-						List<ValidationTuple> validationTuples = parentIterator.next().shiftToNodeShape();
-						iterator = validationTuples.iterator();
+						try {
+							List<ValidationTuple> validationTuples = parentIterator.next().shiftToNodeShape();
+							iterator = validationTuples.iterator();
+						} catch (AssertionError e) {
+							throw e;
+						}
+
 					}
 					assert iterator.hasNext() || !parentIterator.hasNext();
 				}
@@ -54,19 +64,21 @@ public class ShiftToNodeShape implements PlanNode {
 			}
 
 			@Override
-			public void localClose() throws SailException {
-				parentIterator.close();
+			public void localClose() {
+				if (parentIterator != null) {
+					parentIterator.close();
+				}
 				iterator = Collections.emptyIterator();
 			}
 
 			@Override
-			protected boolean localHasNext() throws SailException {
+			protected boolean localHasNext() {
 				calculateNext();
 				return iterator.hasNext();
 			}
 
 			@Override
-			protected ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() {
 				calculateNext();
 
 				return iterator.next();

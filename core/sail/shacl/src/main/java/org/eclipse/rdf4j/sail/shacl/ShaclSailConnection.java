@@ -48,7 +48,6 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShapes;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.SingleCloseablePlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationExecutionLogger;
@@ -482,12 +481,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	}
 
-	void prepareValidation() throws InterruptedException {
+	void prepareValidation(ValidationSettings validationSettings) throws InterruptedException {
 
 		assert isValidationEnabled();
 
 		if (sail.isRdfsSubClassReasoning()) {
-			rdfsSubClassOfReasoner = RdfsSubClassOfReasoner.createReasoner(this);
+			rdfsSubClassOfReasoner = RdfsSubClassOfReasoner.createReasoner(this, validationSettings);
 		}
 
 		if (!isBulkValidation()) {
@@ -864,7 +863,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			stats.setEmptyIncludingCurrentTransaction(ConnectionHelper.isEmpty(this));
 
-			prepareValidation();
+			prepareValidation(
+					new ValidationSettings(null, sail.isLogValidationPlans(), false, sail.isPerformanceLogging()));
 
 			ValidationReport invalidTuples = null;
 			if (useSerializableValidation) {
@@ -1080,7 +1080,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		return 0;
 	}
 
-	private class ValidationContainer {
+	public class ValidationContainer {
 		private final Shape shape;
 		private final PlanNode planNode;
 		private final ValidationExecutionLogger validationExecutionLogger;
@@ -1089,10 +1089,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			this.shape = shape;
 			this.validationExecutionLogger = ValidationExecutionLogger
 					.getInstance(sail.isGlobalLogValidationExecution());
-			if (!(planNode instanceof EmptyNode)) {
-				this.planNode = new SingleCloseablePlanNode(planNode);
-				this.planNode.receiveLogger(validationExecutionLogger);
-
+			if (!(planNode.isGuaranteedEmpty())) {
+				assert planNode instanceof SingleCloseablePlanNode;
+				planNode.receiveLogger(validationExecutionLogger);
+				this.planNode = planNode;
 			} else {
 				this.planNode = planNode;
 			}
@@ -1102,12 +1102,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			return shape;
 		}
 
-		public PlanNode getPlanNode() {
-			return planNode;
-		}
-
 		public boolean hasPlanNode() {
-			return !(planNode instanceof EmptyNode);
+			return !(planNode.isGuaranteedEmpty());
 		}
 
 		public ValidationResultIterator performValidation() {

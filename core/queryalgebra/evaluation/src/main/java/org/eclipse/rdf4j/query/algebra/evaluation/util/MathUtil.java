@@ -15,12 +15,10 @@ import java.math.BigInteger;
 import java.math.MathContext;
 import java.math.RoundingMode;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
@@ -40,49 +38,32 @@ public class MathUtil {
 
 	private static int decimalExpansionScale = DEFAULT_DECIMAL_EXPANSION_SCALE;
 
+	public static Literal compute(Literal leftLit, Literal rightLit, MathOp op) throws ValueExprEvaluationException {
+		final ValueFactory vf = SimpleValueFactory.getInstance();
+		return compute(leftLit, rightLit, op, vf);
+	}
+
 	/**
 	 * Computes the result of applying the supplied math operator on the supplied left and right operand.
 	 *
 	 * @param leftLit  a numeric datatype literal
 	 * @param rightLit a numeric datatype literal
 	 * @param op       a mathematical operator, as definied by MathExpr.MathOp.
+	 * @param vf       a ValueFactory used to create the result
 	 * @return a numeric datatype literal containing the result of the operation. The result will be datatype according
 	 *         to the most specific data type the two operands have in common per the SPARQL/XPath spec.
 	 * @throws ValueExprEvaluationException
 	 */
-	public static Literal compute(Literal leftLit, Literal rightLit, MathOp op) throws ValueExprEvaluationException {
-		final ValueFactory vf = SimpleValueFactory.getInstance();
+	public static Literal compute(Literal leftLit, Literal rightLit, MathOp op, ValueFactory vf)
+			throws ValueExprEvaluationException {
 
-		IRI leftDatatype = leftLit.getDatatype();
-		IRI rightDatatype = rightLit.getDatatype();
+		CoreDatatype leftDatatype = leftLit.getCoreDatatype();
+		CoreDatatype rightDatatype = rightLit.getCoreDatatype();
 
-		// Only numeric value can be used in math expressions
-		if (!XMLDatatypeUtil.isNumericDatatype(leftDatatype)) {
-			throw new ValueExprEvaluationException("Not a number: " + leftLit);
-		}
-		if (!XMLDatatypeUtil.isNumericDatatype(rightDatatype)) {
-			throw new ValueExprEvaluationException("Not a number: " + rightLit);
-		}
+		CoreDatatype.XSD leftDatatypeXSD = validateNumericArgument(leftLit, leftDatatype);
+		CoreDatatype.XSD rightDatatypeXSD = validateNumericArgument(rightLit, rightDatatype);
 
-		// Determine most specific datatype that the arguments have in common,
-		// choosing from xsd:integer, xsd:decimal, xsd:float and xsd:double as
-		// per the SPARQL/XPATH spec
-		IRI commonDatatype;
-
-		if (leftDatatype.equals(XSD.DOUBLE) || rightDatatype.equals(XSD.DOUBLE)) {
-			commonDatatype = XSD.DOUBLE;
-		} else if (leftDatatype.equals(XSD.FLOAT) || rightDatatype.equals(XSD.FLOAT)) {
-			commonDatatype = XSD.FLOAT;
-		} else if (leftDatatype.equals(XSD.DECIMAL) || rightDatatype.equals(XSD.DECIMAL)) {
-			commonDatatype = XSD.DECIMAL;
-		} else if (op == MathOp.DIVIDE) {
-			// Result of integer divide is decimal and requires the arguments to
-			// be handled as such, see for details:
-			// http://www.w3.org/TR/xpath-functions/#func-numeric-divide
-			commonDatatype = XSD.DECIMAL;
-		} else {
-			commonDatatype = XSD.INTEGER;
-		}
+		CoreDatatype.XSD commonDatatype = determineCommonDatatype(op, leftDatatypeXSD, rightDatatypeXSD);
 
 		// Note: Java already handles cases like divide-by-zero appropriately
 		// for floats and doubles, see:
@@ -90,86 +71,140 @@ public class MathUtil {
 		// Chapter02/floatingPt2.html
 
 		try {
-			if (commonDatatype.equals(XSD.DOUBLE)) {
-				double left = leftLit.doubleValue();
-				double right = rightLit.doubleValue();
-
-				switch (op) {
-				case PLUS:
-					return vf.createLiteral(left + right);
-				case MINUS:
-					return vf.createLiteral(left - right);
-				case MULTIPLY:
-					return vf.createLiteral(left * right);
-				case DIVIDE:
-					return vf.createLiteral(left / right);
-				default:
-					throw new IllegalArgumentException("Unknown operator: " + op);
-				}
-			} else if (commonDatatype.equals(XSD.FLOAT)) {
-				float left = leftLit.floatValue();
-				float right = rightLit.floatValue();
-
-				switch (op) {
-				case PLUS:
-					return vf.createLiteral(left + right);
-				case MINUS:
-					return vf.createLiteral(left - right);
-				case MULTIPLY:
-					return vf.createLiteral(left * right);
-				case DIVIDE:
-					return vf.createLiteral(left / right);
-				default:
-					throw new IllegalArgumentException("Unknown operator: " + op);
-				}
-			} else if (commonDatatype.equals(XSD.DECIMAL)) {
-				BigDecimal left = leftLit.decimalValue();
-				BigDecimal right = rightLit.decimalValue();
-
-				switch (op) {
-				case PLUS:
-					return vf.createLiteral(left.add(right));
-				case MINUS:
-					return vf.createLiteral(left.subtract(right));
-				case MULTIPLY:
-					return vf.createLiteral(left.multiply(right));
-				case DIVIDE:
-					// Divide by zero handled through NumberFormatException
-					BigDecimal result;
-					try {
-						// try to return the exact quotient if possible.
-						result = left.divide(right, MathContext.UNLIMITED);
-					} catch (ArithmeticException e) {
-						// non-terminating decimal expansion in quotient, using
-						// scaling and rounding.
-						result = left.setScale(getDecimalExpansionScale(), RoundingMode.HALF_UP)
-								.divide(right, RoundingMode.HALF_UP);
-					}
-
-					return vf.createLiteral(result);
-				default:
-					throw new IllegalArgumentException("Unknown operator: " + op);
-				}
-			} else { // XMLSchema.INTEGER
-				BigInteger left = leftLit.integerValue();
-				BigInteger right = rightLit.integerValue();
-
-				switch (op) {
-				case PLUS:
-					return vf.createLiteral(left.add(right));
-				case MINUS:
-					return vf.createLiteral(left.subtract(right));
-				case MULTIPLY:
-					return vf.createLiteral(left.multiply(right));
-				case DIVIDE:
-					throw new RuntimeException("Integer divisions should be processed as decimal divisions");
-				default:
-					throw new IllegalArgumentException("Unknown operator: " + op);
-				}
+			switch (commonDatatype) {
+			case DOUBLE:
+				return computeForXsdDouble(leftLit, rightLit, op, vf);
+			case FLOAT:
+				return computeForXsdFloat(leftLit, rightLit, op, vf);
+			case DECIMAL:
+				return computeForXsdDecimal(leftLit, rightLit, op, vf);
+			default:
+				return computeForXsdInteger(leftLit, rightLit, op, vf);
 			}
 		} catch (NumberFormatException | ArithmeticException e) {
 			throw new ValueExprEvaluationException(e);
 		}
+	}
+
+	private static CoreDatatype.XSD validateNumericArgument(Literal lit, CoreDatatype datatype) {
+		// Only numeric value can be used in math expressions
+		if (!datatype.isXSDDatatype()) {
+			throw new ValueExprEvaluationException("Not a number: " + lit);
+		}
+		CoreDatatype.XSD leftDatatypeXSD = (CoreDatatype.XSD) datatype;
+		if (!leftDatatypeXSD.isNumericDatatype()) {
+			throw new ValueExprEvaluationException("Not a number: " + lit);
+		}
+		return leftDatatypeXSD;
+	}
+
+	private static Literal computeForXsdInteger(Literal leftLit, Literal rightLit, MathOp op, ValueFactory vf) {
+		BigInteger left = leftLit.integerValue();
+		BigInteger right = rightLit.integerValue();
+
+		switch (op) {
+		case PLUS:
+			return vf.createLiteral(left.add(right));
+		case MINUS:
+			return vf.createLiteral(left.subtract(right));
+		case MULTIPLY:
+			return vf.createLiteral(left.multiply(right));
+		case DIVIDE:
+			throw new RuntimeException("Integer divisions should be processed as decimal divisions");
+		default:
+			throw new IllegalArgumentException("Unknown operator: " + op);
+		}
+	}
+
+	private static Literal computeForXsdDecimal(Literal leftLit, Literal rightLit, MathOp op, ValueFactory vf) {
+		BigDecimal left = leftLit.decimalValue();
+		BigDecimal right = rightLit.decimalValue();
+
+		switch (op) {
+		case PLUS:
+			return vf.createLiteral(left.add(right));
+		case MINUS:
+			return vf.createLiteral(left.subtract(right));
+		case MULTIPLY:
+			return vf.createLiteral(left.multiply(right));
+		case DIVIDE:
+			// Divide by zero handled through NumberFormatException
+			BigDecimal result;
+			try {
+				// try to return the exact quotient if possible.
+				result = left.divide(right, MathContext.UNLIMITED);
+			} catch (ArithmeticException e) {
+				// non-terminating decimal expansion in quotient, using
+				// scaling and rounding.
+				result = left.setScale(getDecimalExpansionScale(), RoundingMode.HALF_UP)
+						.divide(right,
+								RoundingMode.HALF_UP);
+			}
+
+			return vf.createLiteral(result);
+		default:
+			throw new IllegalArgumentException("Unknown operator: " + op);
+		}
+	}
+
+	private static Literal computeForXsdFloat(Literal leftLit, Literal rightLit, MathOp op, ValueFactory vf) {
+		float left = leftLit.floatValue();
+		float right = rightLit.floatValue();
+
+		switch (op) {
+		case PLUS:
+			return vf.createLiteral(left + right);
+		case MINUS:
+			return vf.createLiteral(left - right);
+		case MULTIPLY:
+			return vf.createLiteral(left * right);
+		case DIVIDE:
+			return vf.createLiteral(left / right);
+		default:
+			throw new IllegalArgumentException("Unknown operator: " + op);
+		}
+	}
+
+	private static Literal computeForXsdDouble(Literal leftLit, Literal rightLit, MathOp op, ValueFactory vf) {
+		double left = leftLit.doubleValue();
+		double right = rightLit.doubleValue();
+
+		switch (op) {
+		case PLUS:
+			return vf.createLiteral(left + right);
+		case MINUS:
+			return vf.createLiteral(left - right);
+		case MULTIPLY:
+			return vf.createLiteral(left * right);
+		case DIVIDE:
+			return vf.createLiteral(left / right);
+		default:
+			throw new IllegalArgumentException("Unknown operator: " + op);
+		}
+	}
+
+	private static CoreDatatype.XSD determineCommonDatatype(MathOp op, CoreDatatype.XSD leftDatatype,
+			CoreDatatype.XSD rightDatatype) {
+		// Determine most specific datatype that the arguments have in common,
+		// choosing from xsd:integer, xsd:decimal, xsd:float and xsd:double as
+		// per the SPARQL/XPATH spec
+		CoreDatatype.XSD commonDatatype;
+
+		if (leftDatatype.equals(CoreDatatype.XSD.DOUBLE) || rightDatatype.equals(CoreDatatype.XSD.DOUBLE)) {
+			commonDatatype = CoreDatatype.XSD.DOUBLE;
+		} else if (leftDatatype.equals(CoreDatatype.XSD.FLOAT) || rightDatatype.equals(CoreDatatype.XSD.FLOAT)) {
+			commonDatatype = CoreDatatype.XSD.FLOAT;
+		} else if (leftDatatype.equals(CoreDatatype.XSD.DECIMAL) || rightDatatype.equals(CoreDatatype.XSD.DECIMAL)) {
+			commonDatatype = CoreDatatype.XSD.DECIMAL;
+		} else if (op == MathOp.DIVIDE) {
+			// Result of integer divide is decimal and requires the arguments to
+			// be handled as such, see for details:
+			// http://www.w3.org/TR/xpath-functions/#func-numeric-divide
+			commonDatatype = CoreDatatype.XSD.DECIMAL;
+		} else {
+			commonDatatype = CoreDatatype.XSD.INTEGER;
+		}
+		return commonDatatype;
 	}
 
 	/**

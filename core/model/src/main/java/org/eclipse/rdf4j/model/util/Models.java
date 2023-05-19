@@ -734,10 +734,10 @@ public class Models {
 	 *           {@link #isomorphic(Iterable, Iterable)} implementation.
 	 * @see #isomorphic(Iterable, Iterable)
 	 * @since 3.6.0
-	 * @deprecated since 3.6.0 - use {@link #isomorphic(Iterable, Iterable)} instead.
+	 * @deprecated Use {@link #isomorphic(Iterable, Iterable)} instead.
 	 */
 	@Experimental
-	@Deprecated
+	@Deprecated(since = "3.6.0")
 	public static boolean legacyIsomorphic(Iterable<? extends Statement> model1, Iterable<? extends Statement> model2) {
 		if (model1 == model2) {
 			return true;

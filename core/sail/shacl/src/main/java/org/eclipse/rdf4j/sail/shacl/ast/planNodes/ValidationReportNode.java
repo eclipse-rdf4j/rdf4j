@@ -36,20 +36,27 @@ public class ValidationReportNode implements PlanNode {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			private final CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator();
+			private CloseableIteration<? extends ValidationTuple, SailException> iterator;
 
 			@Override
-			public void localClose() throws SailException {
-				iterator.close();
+			protected void init() {
+				iterator = parent.iterator();
 			}
 
 			@Override
-			public boolean localHasNext() throws SailException {
+			public void localClose() {
+				if (iterator != null) {
+					iterator.close();
+				}
+			}
+
+			@Override
+			public boolean localHasNext() {
 				return iterator.hasNext();
 			}
 
 			@Override
-			public ValidationTuple loggingNext() throws SailException {
+			public ValidationTuple loggingNext() {
 				ValidationTuple next = iterator.next();
 				return next.addValidationResult(validationResultFunction);
 			}

@@ -13,9 +13,12 @@ package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.common.exception.ValidationException;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 
@@ -33,15 +36,16 @@ public class ShaclSailValidationException extends SailException implements Valid
 	 */
 	@Override
 	public Model validationReportAsModel() {
+		Model model = getValidationReport().asModel();
 
-		ValidationReport validationReport = getValidationReport();
-
-		Model model = validationReport.asModel();
 		model.setNamespace(RSX.NS);
 		model.setNamespace(RDF4J.NS);
 		model.setNamespace(SHACL.NS);
-		return model;
+		model.setNamespace(XSD.NS);
+		model.setNamespace(RDF.NS);
+		model.setNamespace(RDFS.NS);
 
+		return model;
 	}
 
 	/**

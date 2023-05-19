@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-tools</artifactId>
-		<version>4.2.5-SNAPSHOT</version>
+		<version>4.3.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-http-workbench</artifactId>
 	<packaging>war</packaging>
@@ -28,7 +28,7 @@
 			<artifactId>rdf4j-config</artifactId>
 			<version>${project.version}</version>
 		</dependency>
-		<!-- TODO rather include into rdf4j-storage, however, 
+		<!-- TODO rather include into rdf4j-storage, however,
 		requires resolving cyclic dependency on test scope -->
 		<dependency>
 			<groupId>org.eclipse.rdf4j</groupId>
@@ -38,11 +38,7 @@
 		<dependency>
 			<groupId>javax.servlet</groupId>
 			<artifactId>javax.servlet-api</artifactId>
-		</dependency>
-		<!-- Required for CommonsMultipartResolver from the Spring Framework -->
-		<dependency>
-			<groupId>commons-fileupload</groupId>
-			<artifactId>commons-fileupload</artifactId>
+			<scope>provided</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.slf4j</groupId>
@@ -50,16 +46,10 @@
 		</dependency>
 		<dependency>
 			<groupId>org.slf4j</groupId>
-			<artifactId>slf4j-jdk14</artifactId>
-			<scope>runtime</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.slf4j</groupId>
 			<artifactId>jcl-over-slf4j</artifactId>
 			<scope>runtime</scope>
 		</dependency>
 		<dependency>
-			<!-- needs extra dependencies: objenesis & hamcrest -->
 			<groupId>org.mockito</groupId>
 			<artifactId>mockito-core</artifactId>
 			<scope>test</scope>
@@ -73,15 +63,22 @@
 				<configuration>
 					<warName>rdf4j-workbench</warName>
 					<archiveClasses>true</archiveClasses>
+					<attachClasses>true</attachClasses>
 				</configuration>
 			</plugin>
 			<plugin>
-				<groupId>org.apache.tomcat.maven</groupId>
-				<artifactId>tomcat7-maven-plugin</artifactId>
+				<groupId>org.eclipse.jetty</groupId>
+				<artifactId>jetty-maven-plugin</artifactId>
 				<configuration>
-					<warFile>${project.build.directory}/rdf4j-workbench.war</warFile>
-					<path>/rdf4j-workbench</path>
-					<server>tomcat</server>
+					<webApp>
+						<contextPath>/rdf4j-workbench</contextPath>
+					</webApp>
+					<contextHandlers>
+						<contextHandler implementation="org.eclipse.jetty.maven.plugin.JettyWebAppContext">
+							<war>${project.basedir}/../server/target/rdf4j-server.war</war>
+							<contextPath>/rdf4j-server</contextPath>
+						</contextHandler>
+					</contextHandlers>
 				</configuration>
 			</plugin>
 		</plugins>

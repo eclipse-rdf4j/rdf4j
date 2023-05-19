@@ -39,6 +39,7 @@ public class EmbeddedServer {
 		jetty.addConnector(conn);
 
 		WebAppContext webapp = new WebAppContext();
+		webapp.getServerClasspathPattern().add("org.slf4j.", "ch.qos.logback.");
 		webapp.setContextPath(contextPath);
 		webapp.setTempDirectory(new File("temp/webapp/"));
 		webapp.setWar(warPath);

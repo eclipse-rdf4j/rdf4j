@@ -103,6 +103,14 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
+	public FederatedServiceResolver getFederatedServiceResolver() {
+		if (sailConnection instanceof FederatedServiceResolverClient) {
+			return ((FederatedServiceResolverClient) sailConnection).getFederatedServiceResolver();
+		}
+		return null;
+	}
+
+	@Override
 	public void setRepositoryResolver(RepositoryResolver resolver) {
 		if (sailConnection instanceof RepositoryResolverClient) {
 			((RepositoryResolverClient) sailConnection).setRepositoryResolver(resolver);

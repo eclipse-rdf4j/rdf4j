@@ -89,29 +89,26 @@ import org.slf4j.LoggerFactory;
  *
  * // create a Repository to access the sails
  * SailRepository repository = new SailRepository(lucenesail);
- * repository.initialize();
  * </pre>
  *
- * <h2>Asking full-text queries</h2> Text queries are expressed using the virtual properties of the LuceneSail. An
- * example query looks like this (SERQL): <code>
- * SELECT Subject, Score, Snippet
- * FROM {Subject} <http://www.openrdf.org/contrib/lucenesail#matches> {}
- * <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> {<http://www.openrdf.org/contrib/lucenesail#LuceneQuery>};
- * <http://www.openrdf.org/contrib/lucenesail#query> {"my Lucene query"};
- * <http://www.openrdf.org/contrib/lucenesail#score> {Score};
- * <http://www.openrdf.org/contrib/lucenesail#snippet> {Snippet}</code>
+ * <h2>Asking full-text queries</h2> Text queries are expressed using the virtual properties of the LuceneSail.
  * <p>
- * In SPARQL: <code>
- * SELECT ?subject ?score ?snippet ?resource WHERE {
- * ?subject <http://www.openrdf.org/contrib/lucenesail#matches> [
- * a <http://www.openrdf.org/contrib/lucenesail#LuceneQuery> ;
- * <http://www.openrdf.org/contrib/lucenesail#query> "my Lucene query" ;
- * <http://www.openrdf.org/contrib/lucenesail#score> ?score ;
- * <http://www.openrdf.org/contrib/lucenesail#snippet> ?snippet ;
- * <http://www.openrdf.org/contrib/lucenesail#resource> ?resource
- * ]
+ * In SPARQL:
+ *
+ * <pre>{@code
+ * SELECT ?subject ?score ?snippet ?resource
+ * WHERE {
+ *   ?subject <http://www.openrdf.org/contrib/lucenesail#matches> [
+ *      a <http://www.openrdf.org/contrib/lucenesail#LuceneQuery> ;
+ *      <http://www.openrdf.org/contrib/lucenesail#query> "my Lucene query" ;
+ *      <http://www.openrdf.org/contrib/lucenesail#score> ?score ;
+ *      <http://www.openrdf.org/contrib/lucenesail#snippet> ?snippet ;
+ *      <http://www.openrdf.org/contrib/lucenesail#resource> ?resource
+ *   ]
  * }
- * </code> When defining queries, these properties <b>type and query are mandatory</b>. Also, the <b>matches relation is
+ * }</pre>
+ *
+ * When defining queries, these properties <b>type and query are mandatory</b>. Also, the <b>matches relation is
  * mandatory</b>. When one of these misses, the query will not be executed as expected. The failure behavior can be
  * configured, setting the Sail property "incompletequeryfail" to true will throw a SailException when such patterns are
  * found, this is the default behavior to help finding inaccurate queries. Set it to false to have warnings logged
@@ -155,14 +152,14 @@ import org.slf4j.LoggerFactory;
  * <h2 name="indexidsyntax">Set and select Lucene sail by id</h2> The property {@link #INDEX_ID} is to configure the id
  * of the index and filter every request without the search:indexid predicate, the request would be:
  *
- * <pre>
+ * <pre>{@code
  * ?subj search:matches [
  * 	      search:indexid my:lucene_index_id;
  * 	      search:query "search terms...";
  * 	      search:property my:property;
  * 	      search:score ?score;
  * 	      search:snippet ?snippet ] .
- * </pre>
+ * }</pre>
  * <p>
  * If a LuceneSail is using another LuceneSail as a base sail, the evaluation mode should be set to
  * {@link TupleFunctionEvaluationMode#NATIVE}.
@@ -189,19 +186,20 @@ public class LuceneSail extends NotifyingSailWrapper {
 
 	/*
 	 * FIXME: Add a proper reference to the ISWC paper in the Javadoc. Gunnar: only when/if the paper is accepted
-	 * Enrico: paper was rejected Leo: We need to resubmit it. FIXME: Add settings that instruct a LuceneSailConnection
-	 * or LuceneIndex which properties are to be handled in which way. This is conceptually similar to Lucene's Field
-	 * types: should properties be stored in the wrapped Sail (enabling retrieval through RDF queries), indexed in the
-	 * LuceneIndex (enabling full-text search using Lucene queries embedded in RDF graph queries) or both? Gunnar and
-	 * Leo: we had this in the old version, we might add later. Enrico: in beagle we set the default setting to index
-	 * AND store a field, so that when you extend the ontology you can be sure it is indexed and stored by the
-	 * lucenesail without touching it. For certain (very rare) predicates (like the full text of the resource) we then
-	 * explicitly turned off the store option. That would be a desired behaviour. In the old version an RDF file was
-	 * used, but it should be done differently, that is too hard-coded! can't that information be stored in the wrapped
-	 * sail itself? Annotate a predicate with the proper lucene values (store / index / storeAndIndex), if nothing is
-	 * given, take the default, and read this on starting the lucenesail. Leo: ok, default = index and store, agreed.
-	 * Leo: about configuration: RDF config is agreed, if passed as file, inside the wrapped sail, or in an extra sail
-	 * should all be possible.
+	 * Enrico: paper was rejected Leo: We need to resubmit it.
+	 *
+	 * FIXME: Add settings that instruct a LuceneSailConnection or LuceneIndex which properties are to be handled in
+	 * which way. This is conceptually similar to Lucene's Field types: should properties be stored in the wrapped Sail
+	 * (enabling retrieval through RDF queries), indexed in the LuceneIndex (enabling full-text search using Lucene
+	 * queries embedded in RDF graph queries) or both? Gunnar and Leo: we had this in the old version, we might add
+	 * later. Enrico: in beagle we set the default setting to index AND store a field, so that when you extend the
+	 * ontology you can be sure it is indexed and stored by the lucenesail without touching it. For certain (very rare)
+	 * predicates (like the full text of the resource) we then explicitly turned off the store option. That would be a
+	 * desired behaviour. In the old version an RDF file was used, but it should be done differently, that is too
+	 * hard-coded! can't that information be stored in the wrapped sail itself? Annotate a predicate with the proper
+	 * lucene values (store / index / storeAndIndex), if nothing is given, take the default, and read this on starting
+	 * the lucenesail. Leo: ok, default = index and store, agreed. Leo: about configuration: RDF config is agreed, if
+	 * passed as file, inside the wrapped sail, or in an extra sail should all be possible.
 	 */
 
 	/*
@@ -213,11 +211,14 @@ public class LuceneSail extends NotifyingSailWrapper {
 	 * etc. Gunnar: I would we restrict this to one. Enrico might have other requirements? Enrico: we need 1) an
 	 * arbitrary number of lucene expressions and 2) an arbitrary combination with ordinary structured queries (see
 	 * lucenesail paper, fig. 1 on page 6) Leo: combining lucene query with normal query is required, having multiple
-	 * lucene queries in one SPARQL query is a good idea, which should be doable. Lower priority. FIXME: We should
-	 * escape those chars in predicates/field names that have a special meaning in Lucene's query syntax, using ":" in a
-	 * field name might lead to problems (it will when you start to query on these fields). Enrico: yes, we escaped
-	 * those : sucessfully with a simple \, the only difficuilty was to figure out how many \ are needed (how often they
-	 * get unescaped until they arrive at Lucene) Leo noticed this. Gunnar asks: Does lucene not have a escape syntax?
+	 * lucene queries in one SPARQL query is a good idea, which should be doable. Lower priority.
+	 *
+	 * FIXME: We should escape those chars in predicates/field names that have a special meaning in Lucene's query
+	 * syntax, using ":" in a field name might lead to problems (it will when you start to query on these fields).
+	 * Enrico: yes, we escaped those : sucessfully with a simple \, the only difficuilty was to figure out how many \
+	 * are needed (how often they get unescaped until they arrive at Lucene) Leo noticed this. Gunnar asks: Does lucene
+	 * not have a escape syntax?
+	 *
 	 * FIXME: The getScore method is a convenient and efficient way of testing whether a given document matches a query,
 	 * as it adds the document URI to the Lucene query instead of firing the query and looping over the result set. The
 	 * problem with this method is that I am not sure whether adding the URI to the Lucene query will lead to a
@@ -225,14 +226,15 @@ public class LuceneSail extends NotifyingSailWrapper {
 	 * the search method with the scores reposted to its listener, or the getScore method, but not both. The order of
 	 * matching documents will probably be the same when sorting on score (field is indexed without normalization + only
 	 * unique values). Still, it is counterintuitive when a particular document is returned with a given score and a
-	 * getScore for that same URI gives a different score. FIXME: the code is very much NOT thread-safe, especially when
-	 * you are changing the index and querying it with LuceneSailConnection at the same time: the IndexReaders/Searchers
-	 * are closed after each statement addition or removal but they must also remain open while we are looping over
-	 * search results. Also, internal document numbers are used in the communication between LuceneIndex and
-	 * LuceneSailConnection, which is not a good idea. Some mechanism has to be introduced to support external querying
-	 * while the index is being modified (basically: make sure that a single search process keeps using the same
-	 * IndexSearcher). Gunnar and Leo: we are not sure if the original lucenesail was 100% threadsafe, but at least it
-	 * had "synchronized" everywhere :)
+	 * getScore for that same URI gives a different score.
+	 *
+	 * FIXME: the code is very much NOT thread-safe, especially when you are changing the index and querying it with
+	 * LuceneSailConnection at the same time: the IndexReaders/Searchers are closed after each statement addition or
+	 * removal but they must also remain open while we are looping over search results. Also, internal document numbers
+	 * are used in the communication between LuceneIndex and LuceneSailConnection, which is not a good idea. Some
+	 * mechanism has to be introduced to support external querying while the index is being modified (basically: make
+	 * sure that a single search process keeps using the same IndexSearcher). Gunnar and Leo: we are not sure if the
+	 * original lucenesail was 100% threadsafe, but at least it had "synchronized" everywhere :)
 	 * http://gnowsis.opendfki.de/repos/gnowsis/trunk/lucenesail/src/java/org/openrdf/sesame/sailimpl/
 	 * lucenesail/LuceneIndex.java This might be a big issue in Nepomuk... Enrico: do we have multiple threads? do we
 	 * need separate threads? Leo: we have separate threads, but we don't care much for now.
@@ -318,6 +320,12 @@ public class LuceneSail extends NotifyingSailWrapper {
 	 * Set this key as sail parameter to configure the Lucene analyzer class implementation to use for text analysis.
 	 */
 	public static final String ANALYZER_CLASS_KEY = "analyzer";
+
+	/**
+	 * Set this key as sail parameter to configure the Lucene analyzer class implementation used for query analysis. In
+	 * most cases this should be set to the same value as {@link #ANALYZER_CLASS_KEY}
+	 */
+	public static final String QUERY_ANALYZER_CLASS_KEY = "queryAnalyzer";
 
 	/**
 	 * Set this key as sail parameter to configure {@link org.apache.lucene.search.similarities.Similarity} class

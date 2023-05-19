@@ -85,6 +85,14 @@ public class SailConnectionWrapper
 	}
 
 	@Override
+	public FederatedServiceResolver getFederatedServiceResolver() {
+		if (wrappedCon instanceof FederatedServiceResolverClient) {
+			return ((FederatedServiceResolverClient) wrappedCon).getFederatedServiceResolver();
+		}
+		return null;
+	}
+
+	@Override
 	public boolean isOpen() throws SailException {
 		return wrappedCon.isOpen();
 	}

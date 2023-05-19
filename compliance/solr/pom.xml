@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-compliance</artifactId>
-		<version>4.2.5-SNAPSHOT</version>
+		<version>4.3.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-solr-compliance</artifactId>
 	<name>RDF4J: Solr Sail Tests</name>
@@ -43,16 +43,16 @@
 			<artifactId>jcl-over-slf4j</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- solr-core pulls in log4j -->
 		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>log4j-over-slf4j</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- solr-core pulls in log4j2 -->
 		<dependency>
-			<!-- bridging component for log4j2 to slf4j -->
 			<groupId>org.apache.logging.log4j</groupId>
 			<artifactId>log4j-to-slf4j</artifactId>
-			<version>2.9.1</version>
 			<scope>test</scope>
 		</dependency>
 		<!-- needed for embedded solr server -->
@@ -64,11 +64,7 @@
 			<exclusions>
 				<exclusion>
 					<groupId>org.apache.logging.log4j</groupId>
-					<artifactId>log4j-core</artifactId>
-				</exclusion>
-				<exclusion>
-					<groupId>org.apache.logging.log4j</groupId>
-					<artifactId>log4j-slf4j-impl</artifactId>
+					<artifactId>*</artifactId>
 				</exclusion>
 				<exclusion>
 					<groupId>jdk.tools</groupId>

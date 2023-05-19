@@ -28,7 +28,10 @@ public class NTriplesParserSettings {
 	 * Defaults to true.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.ntriples.fail_on_invalid_lines}
+	 *
+	 * @deprecated Use {@link org.eclipse.rdf4j.rio.ntriples.NTriplesParserSettings#FAIL_ON_INVALID_LINES} instead.
 	 */
+	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<Boolean> FAIL_ON_INVALID_LINES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.ntriples.fail_on_invalid_lines", "Fail on N-Triples invalid lines", Boolean.TRUE);
 

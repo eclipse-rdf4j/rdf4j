@@ -740,9 +740,9 @@ class TripleStore implements Closeable {
 	 * @param context The context for the pattern, or <var>-1</var> for a wildcard.
 	 * @return The number of triples that were removed.
 	 * @throws IOException
-	 * @deprecated since 2.5.3. use {@link #removeTriplesByContext(int, int, int, int)} instead.
+	 * @deprecated Use {@link #removeTriplesByContext(int, int, int, int)} instead.
 	 */
-	@Deprecated
+	@Deprecated(since = "2.5.3")
 	public int removeTriples(int subj, int pred, int obj, int context) throws IOException {
 		Map<Integer, Long> countPerContext = removeTriplesByContext(subj, pred, obj, context);
 		return (int) countPerContext.values().stream().mapToLong(Long::longValue).sum();
@@ -778,7 +778,7 @@ class TripleStore implements Closeable {
 	 * @throws IOException
 	 * @deprecated since 2.5.3. use {@link #removeTriplesByContext(int, int, int, int, boolean)} instead.
 	 */
-	@Deprecated
+	@Deprecated(since = "2.5.3")
 	public int removeTriples(int subj, int pred, int obj, int context, boolean explicit) throws IOException {
 		Map<Integer, Long> countPerContext = removeTriplesByContext(subj, pred, obj, context, explicit);
 		return (int) countPerContext.values().stream().mapToLong(Long::longValue).sum();

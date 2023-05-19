@@ -2,15 +2,11 @@
 <xsl:stylesheet version="1.0"
 	xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
 	xmlns:sparql="http://www.w3.org/2005/sparql-results#" xmlns="http://www.w3.org/1999/xhtml">
-
 	<xsl:include href="../locale/messages.xsl" />
-
 	<xsl:variable name="title">
 		<xsl:value-of select="$repository-create.title" />
 	</xsl:variable>
-
 	<xsl:include href="template.xsl" />
-
 	<xsl:template match="sparql:sparql">
 		<form action="create" method="post">
 			<table class="dataentry">
@@ -76,8 +72,7 @@
 						</th>
 						<td>
 							<textarea id="ruleQuery" name="Rule query" rows="8"
-								cols="80" wrap="hard">
-							</textarea>
+								cols="80" wrap="hard"></textarea>
 						</td>
 					</tr>
 					<tr>
@@ -86,8 +81,7 @@
 						</th>
 						<td>
 							<textarea id="matcherQuery" name="Matcher query (optional)" rows="8"
-								cols="80" wrap="hard">
-							</textarea>
+								cols="80" wrap="hard"></textarea>
 						</td>
 					</tr>
 					<tr>
@@ -101,11 +95,29 @@
 						<td></td>
 					</tr>
 					<tr>
+						<th>
+							<xsl:value-of select="$repository-evaluation-mode.label" />
+						</th>
+						<td>
+							<select id="queryEvalMode" name="Query Evaluation Mode">
+								<option selected="selected"
+									value="STRICT">
+									strict
+								</option>
+								<option
+									value="STANDARD">
+									standard
+								</option>
+							</select>
+						</td>
+						<td></td>
+					</tr>
+					<tr>
 						<td></td>
 						<td>
 							<input type="button" value="{$cancel.label}" style="float:right"
 								data-href="repositories"
-                                onclick="document.location.href=this.getAttribute('data-href')" />
+								onclick="document.location.href=this.getAttribute('data-href')" />
 							<input id="create" type="button" value="{$create.label}"
 								onclick="checkOverwrite()" />
 						</td>
@@ -113,8 +125,6 @@
 				</tbody>
 			</table>
 		</form>
-		<script src="../../scripts/create.js" type="text/javascript">
-		</script>
+		<script src="../../scripts/create.js" type="text/javascript"></script>
 	</xsl:template>
-
 </xsl:stylesheet>

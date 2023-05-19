@@ -1,30 +1,25 @@
 #
-# Sesame configuration template for a main-memory repository with
+# RDF4J configuration template for a main-memory repository with
 # RDF Schema and direct type hierarchy inferencing
 #
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix rep: <http://www.openrdf.org/config/repository#>.
-@prefix sr: <http://www.openrdf.org/config/repository/sail#>.
-@prefix sail: <http://www.openrdf.org/config/sail#>.
-@prefix ms: <http://www.openrdf.org/config/sail/memory#>.
-@prefix sb: <http://www.openrdf.org/config/sail/base#>.
+@prefix config: <tag:rdf4j.org,2023:config/>.
 
-
-[] a rep:Repository ;
-   rep:repositoryID "{%Repository ID|memory-rdfs-dt%}" ;
+[] a config:Repository ;
+   config:rep.id "{%Repository ID|memory-rdfs-dt%}" ;
    rdfs:label "{%Repository title|Memory store with RDF Schema and direct type inferencing%}" ;
-   rep:repositoryImpl [
-      rep:repositoryType "openrdf:SailRepository" ;
-      sr:sailImpl [
-         sail:sailType "openrdf:DirectTypeHierarchyInferencer" ;
-         sail:delegate [
-            sail:sailType "rdf4j:SchemaCachingRDFSInferencer" ;
-            sail:delegate [
-               sail:sailType "openrdf:MemoryStore" ;
-	       sail:iterationCacheSyncThreshold "{%Query Iteration Cache size|10000%}";
-               ms:persist {%Persist|true|false%} ;
-               ms:syncDelay {%Sync delay|0%};
-               sb:evaluationStrategyFactory "{%EvaluationStrategyFactory|org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory%}"
+   config:rep.impl [
+      config:rep.type "openrdf:SailRepository" ;
+      config:sail.impl [
+         config:sail.type "openrdf:DirectTypeHierarchyInferencer" ;
+         config:delegate [
+            config:sail.type "rdf4j:SchemaCachingRDFSInferencer" ;
+            config:delegate [
+                config:sail.type "openrdf:MemoryStore" ;
+                config:sail.iterationCacheSyncThreshold "{%Query Iteration Cache size|10000%}";
+                config:mem.persist {%Persist|true|false%} ;
+                config:mem.syncDelay {%Sync delay|0%};
+                config:sail.defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"
             ]
          ]
       ]

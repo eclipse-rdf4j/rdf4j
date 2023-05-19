@@ -28,7 +28,10 @@ public class BinaryRDFWriterSettings {
 	 * Defaults to {@code 2}.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.binary.format_version}
+	 *
+	 * @deprecated Use {@link org.eclipse.rdf4j.rio.binary.BinaryRDFWriterSettings#VERSION} instead.
 	 */
+	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<Long> VERSION = new LongRioSetting(
 			"org.eclipse.rdf4j.rio.binary.format_version", "Binary RDF format", 2L);
 
@@ -39,7 +42,10 @@ public class BinaryRDFWriterSettings {
 	 * Defaults to {@code 8192}.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.binary.buffer_size}
+	 *
+	 * @deprecated Use {@link org.eclipse.rdf4j.rio.binary.BinaryRDFWriterSettings#BUFFER_SIZE} instead.
 	 */
+	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<Long> BUFFER_SIZE = new LongRioSetting(
 			"org.eclipse.rdf4j.rio.binary.buffer_size", "Buffer size", 8192L);
 
@@ -50,7 +56,10 @@ public class BinaryRDFWriterSettings {
 	 * Defaults to {@code "UTF-8"}.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.binary.charset}
+	 *
+	 * @deprecated Use {@link org.eclipse.rdf4j.rio.binary.BinaryRDFWriterSettings#CHARSET} instead.
 	 */
+	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<String> CHARSET = new StringRioSetting(
 			"org.eclipse.rdf4j.rio.binary.charset", "Charset", StandardCharsets.UTF_8.name());
 
@@ -68,7 +77,10 @@ public class BinaryRDFWriterSettings {
 	 * Defaults to {@code true}.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.binary.recycle_ids}
+	 *
+	 * @deprecated Use {@link org.eclipse.rdf4j.rio.binary.BinaryRDFWriterSettings#RECYCLE_IDS} instead.
 	 */
+	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<Boolean> RECYCLE_IDS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.binary.recycle_ids", "Charset", true);
 

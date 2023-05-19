@@ -389,7 +389,7 @@ public class RDFFormat extends FileFormat {
 	 *                           <var>false</var> otherwise.
 	 * @deprecated since 3.2.0
 	 */
-	@Deprecated
+	@Deprecated(since = "3.2.0")
 	public RDFFormat(String name, String mimeType, Charset charset, String fileExtension, boolean supportsNamespaces,
 			boolean supportsContexts) {
 		this(name, mimeType, charset, fileExtension, supportsNamespaces, supportsContexts, NO_RDF_STAR);
@@ -434,7 +434,7 @@ public class RDFFormat extends FileFormat {
 	 *                           <var>false</var> otherwise.
 	 * @deprecated since 3.2.0
 	 */
-	@Deprecated
+	@Deprecated(since = "3.2.0")
 	public RDFFormat(String name, String mimeType, Charset charset, Collection<String> fileExtensions,
 			boolean supportsNamespaces, boolean supportsContexts) {
 		this(name, mimeType, charset, fileExtensions, supportsNamespaces, supportsContexts, NO_RDF_STAR);
@@ -480,7 +480,7 @@ public class RDFFormat extends FileFormat {
 	 *                           <var>false</var> otherwise.
 	 * @deprecated since 3.2.0
 	 */
-	@Deprecated
+	@Deprecated(since = "3.2.0")
 	public RDFFormat(String name, Collection<String> mimeTypes, Charset charset, Collection<String> fileExtensions,
 			boolean supportsNamespaces, boolean supportsContexts) {
 		this(name, mimeTypes, charset, fileExtensions, null, supportsNamespaces, supportsContexts, NO_RDF_STAR);
@@ -529,7 +529,7 @@ public class RDFFormat extends FileFormat {
 	 *                           <var>false</var> otherwise.
 	 * @deprecated since 3.2.0
 	 */
-	@Deprecated
+	@Deprecated(since = "3.2.0")
 	public RDFFormat(String name, Collection<String> mimeTypes, Charset charset, Collection<String> fileExtensions,
 			IRI standardURI, boolean supportsNamespaces, boolean supportsContexts) {
 		this(name, mimeTypes, charset, fileExtensions, standardURI, supportsNamespaces, supportsContexts, NO_RDF_STAR);

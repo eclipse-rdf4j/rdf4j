@@ -31,7 +31,6 @@ import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
 import org.eclipse.rdf4j.rio.helpers.JSONSettings;
-import org.eclipse.rdf4j.rio.helpers.RDFJSONParserSettings;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonFactoryBuilder;

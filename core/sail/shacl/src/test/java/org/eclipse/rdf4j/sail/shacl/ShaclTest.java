@@ -56,4 +56,10 @@ public class ShaclTest extends AbstractShaclTest {
 		runWithAutomaticLogging(() -> referenceImplementationTestCaseValidation(testCase));
 	}
 
+	@ParameterizedTest
+	@MethodSource("testCases")
+	public void testShaclValidator(TestCase testCase) {
+		runWithAutomaticLogging(() -> runWithShaclValidator(testCase));
+	}
+
 }

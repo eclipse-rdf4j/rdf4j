@@ -11,12 +11,9 @@
 
 package org.eclipse.rdf4j.sail.elasticsearchstore.benchmark;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
-import org.assertj.core.util.Files;
-import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -25,6 +22,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
+import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStore;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -53,8 +51,6 @@ public class DeleteBenchmark {
 	// @Param({ "100", "1000", "10000" })
 	public int NUMBER_OF_STATEMENTS = 10000;
 
-	private static final File installLocation = Files.newTemporaryFolder();
-	private static ElasticsearchClusterRunner runner;
 	private SailRepository elasticsearchStore;
 
 	@Setup(Level.Trial)
@@ -62,20 +58,20 @@ public class DeleteBenchmark {
 		// JMH does not correctly set JAVA_HOME. Change the JAVA_HOME below if you the following error:
 		// [EmbeddedElsHandler] INFO p.a.t.e.ElasticServer - could not find java; set JAVA_HOME or ensure java is in
 		// PATH
-		runner = TestHelpers.startElasticsearch(installLocation);
+		TestHelpers.openClient();
 
 		elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex",
-						false));
+				new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER, "testindex",
+						ExtensibleStore.Cache.NONE));
 
 		System.gc();
 
 	}
 
 	@TearDown(Level.Trial)
-	public void afterClass() {
+	public void afterClass() throws IOException {
 		elasticsearchStore.shutDown();
-		TestHelpers.stopElasticsearch(runner);
+		TestHelpers.closeClient();
 	}
 
 	@Setup(Level.Invocation)

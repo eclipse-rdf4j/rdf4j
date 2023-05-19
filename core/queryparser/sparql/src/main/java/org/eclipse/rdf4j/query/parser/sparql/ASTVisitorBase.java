@@ -12,9 +12,9 @@ package org.eclipse.rdf4j.query.parser.sparql;
 
 /**
  * @author Jeen Broekstra
- * @deprecated since 2.0. Use {@link AbstractASTVisitor} instead.
+ * @deprecated Use {@link AbstractASTVisitor} instead.
  */
-@Deprecated
+@Deprecated(since = "2.0")
 public abstract class ASTVisitorBase extends AbstractASTVisitor {
 
 }

@@ -10,16 +10,16 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.config;
 
-import static org.eclipse.rdf4j.sail.memory.config.MemoryStoreSchema.NAMESPACE;
+import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.sail.memory.config.MemoryStoreSchema.PERSIST;
 import static org.eclipse.rdf4j.sail.memory.config.MemoryStoreSchema.SYNC_DELAY;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
-import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 
@@ -27,6 +27,9 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
  * @author Arjohn Kampman
  */
 public class MemoryStoreConfig extends BaseSailConfig {
+
+	private static final boolean USE_CONFIG = "true"
+			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
 
 	private boolean persist = false;
 
@@ -63,16 +66,24 @@ public class MemoryStoreConfig extends BaseSailConfig {
 	}
 
 	@Override
-	public Resource export(Model graph) {
-		Resource implNode = super.export(graph);
+	public Resource export(Model m) {
+		Resource implNode = super.export(m);
+		m.setNamespace(CONFIG.NS);
 
-		graph.setNamespace("ms", NAMESPACE);
 		if (persist) {
-			graph.add(implNode, PERSIST, BooleanLiteral.TRUE);
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.Mem.persist, BooleanLiteral.TRUE);
+			} else {
+				m.add(implNode, PERSIST, BooleanLiteral.TRUE);
+			}
 		}
 
 		if (syncDelay != 0) {
-			graph.add(implNode, SYNC_DELAY, SimpleValueFactory.getInstance().createLiteral(syncDelay));
+			if (USE_CONFIG) {
+				m.add(implNode, CONFIG.Mem.syncDelay, literal(syncDelay));
+			} else {
+				m.add(implNode, SYNC_DELAY, literal(syncDelay));
+			}
 		}
 
 		return implNode;
@@ -84,23 +95,25 @@ public class MemoryStoreConfig extends BaseSailConfig {
 
 		try {
 
-			Models.objectLiteral(graph.getStatements(implNode, PERSIST, null)).ifPresent(persistValue -> {
+			Configurations.getLiteralValue(graph, implNode, CONFIG.Mem.persist, PERSIST).ifPresent(persistValue -> {
 				try {
 					setPersist((persistValue).booleanValue());
 				} catch (IllegalArgumentException e) {
 					throw new SailConfigException(
-							"Boolean value required for " + PERSIST + " property, found " + persistValue);
+							"Boolean value required for " + CONFIG.Mem.persist + " property, found " + persistValue);
 				}
 			});
 
-			Models.objectLiteral(graph.getStatements(implNode, SYNC_DELAY, null)).ifPresent(syncDelayValue -> {
-				try {
-					setSyncDelay((syncDelayValue).longValue());
-				} catch (NumberFormatException e) {
-					throw new SailConfigException(
-							"Long integer value required for " + SYNC_DELAY + " property, found " + syncDelayValue);
-				}
-			});
+			Configurations.getLiteralValue(graph, implNode, CONFIG.Mem.syncDelay, SYNC_DELAY)
+					.ifPresent(syncDelayValue -> {
+						try {
+							setSyncDelay((syncDelayValue).longValue());
+						} catch (NumberFormatException e) {
+							throw new SailConfigException(
+									"Long integer value required for " + CONFIG.Mem.syncDelay + " property, found "
+											+ syncDelayValue);
+						}
+					});
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}

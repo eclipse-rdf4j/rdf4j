@@ -17,9 +17,9 @@ import org.eclipse.rdf4j.query.resultio.text.tsv.SPARQLResultsTSVMappingStrategy
  * Extends {@link SPARQLResultsTSVMappingStrategy} with support for parsing a {@link org.eclipse.rdf4j.model.Triple}.
  *
  * @author Pavel Mihaylov
- * @deprecated since 3.4.0 - functionality has been folded into {@link SPARQLResultsTSVMappingStrategy}
+ * @deprecated Functionality has been folded into {@link SPARQLResultsTSVMappingStrategy}
  */
-@Deprecated
+@Deprecated(since = "3.4.0")
 public class SPARQLStarResultsTSVMappingStrategy extends SPARQLResultsTSVMappingStrategy {
 	public SPARQLStarResultsTSVMappingStrategy(ValueFactory valueFactory) {
 		super(valueFactory);

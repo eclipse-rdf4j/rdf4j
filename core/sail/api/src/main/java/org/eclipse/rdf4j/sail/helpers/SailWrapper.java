@@ -12,7 +12,9 @@ package org.eclipse.rdf4j.sail.helpers;
 
 import java.io.File;
 import java.util.List;
+import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
@@ -84,6 +86,14 @@ public class SailWrapper implements StackableSail, FederatedServiceResolverClien
 	}
 
 	@Override
+	public FederatedServiceResolver getFederatedServiceResolver() {
+		if (baseSail instanceof FederatedServiceResolverClient) {
+			return ((FederatedServiceResolverClient) baseSail).getFederatedServiceResolver();
+		}
+		return null;
+	}
+
+	@Override
 	public File getDataDir() {
 		return baseSail.getDataDir();
 	}
@@ -135,4 +145,9 @@ public class SailWrapper implements StackableSail, FederatedServiceResolverClien
 		return baseSail.getDefaultIsolationLevel();
 	}
 
+	@Override
+	public Supplier<CollectionFactory> getCollectionFactory() {
+		verifyBaseSailSet();
+		return baseSail.getCollectionFactory();
+	}
 }

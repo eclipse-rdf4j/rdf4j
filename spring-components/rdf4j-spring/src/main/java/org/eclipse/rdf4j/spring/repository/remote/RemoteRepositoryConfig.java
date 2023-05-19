@@ -15,7 +15,6 @@ import java.lang.invoke.MethodHandles;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
-import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.spring.support.ConfigurationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,7 +41,15 @@ public class RemoteRepositoryConfig {
 		Repository repository;
 		logger.info("Using these repository properties: {}", repositoryProperties);
 		try {
-			RepositoryManager repositoryManager = new RemoteRepositoryManager(repositoryProperties.getManagerUrl());
+			RemoteRepositoryManager repositoryManager = new RemoteRepositoryManager(
+					repositoryProperties.getManagerUrl());
+
+			if (repositoryProperties.isUsernamePasswordConfigured()) {
+				logger.debug("Set username: {} and password: ****", repositoryProperties.getUsername());
+				repositoryManager.setUsernameAndPassword(repositoryProperties.getUsername(),
+						repositoryProperties.getPassword());
+			}
+
 			repositoryManager.init();
 			repository = repositoryManager.getRepository(repositoryProperties.getName());
 			logger.debug("Successfully initialized repository config: {}", repositoryProperties);
