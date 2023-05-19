@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.collection.factory.mapdb;
 
 import java.util.AbstractMap;
 import java.util.AbstractSet;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -36,6 +37,7 @@ import org.mapdb.DB;
 import org.mapdb.DB.HashMapMaker;
 import org.mapdb.DBException;
 import org.mapdb.DBMaker;
+import org.mapdb.DBMaker.Maker;
 import org.mapdb.HTreeMap;
 import org.mapdb.Serializer;
 import org.mapdb.serializer.SerializerJava;
@@ -48,12 +50,15 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 	protected volatile long colectionId = 0;
 	protected final long iterationCacheSyncThreshold;
 	private final CollectionFactory delegate;
+	// The chances that someone would run a 32bit non "sun" vm are just miniscule
+	// So I am not going to worry about this.
+	private static final boolean ON_32_BIT_VM = "32".equals(System.getProperty("sun.arch.data.model"));
 
-	private static final class RDF4jMapDB3Exception extends RDF4JException {
+	protected static final class RDF4jMapDB3Exception extends RDF4JException {
 
 		private static final long serialVersionUID = 1L;
 
-		public RDF4jMapDB3Exception(String string, DBException e) {
+		public RDF4jMapDB3Exception(String string, Exception e) {
 			super(string, e);
 		}
 
@@ -74,7 +79,13 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 			synchronized (this) {
 				if (this.db == null) {
 					try {
-						this.db = DBMaker.tempFileDB().closeOnJvmShutdown().make();
+						final Maker dbmaker = DBMaker.tempFileDB().closeOnJvmShutdown();
+						// On 32 bit machines this may fail to often so guard it.
+						if (!ON_32_BIT_VM) {
+							// mmap is much faster than random access file.
+							dbmaker.fileMmapEnable();
+						}
+						this.db = dbmaker.make();
 					} catch (DBException e) {
 						throw new RDF4jMapDB3Exception("could not initialize temp db", e);
 					}
@@ -192,9 +203,13 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 	}
 
 	@Override
-	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues,
+	public final BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues,
 			ToIntFunction<BindingSet> hashOfBindingSetCalculator) {
-		return delegate.createBindingSetKey(bindingSet, getValues, hashOfBindingSetCalculator);
+		List<Value> values = new ArrayList<>(getValues.size());
+		for (int i = 0; i < getValues.size(); i++) {
+			values.add(getValues.get(i).apply(bindingSet));
+		}
+		return new MapDb3BindingSetKey(values, hashOfBindingSetCalculator.applyAsInt(bindingSet));
 	}
 
 	protected static final class CommitingSet<T> extends AbstractSet<T> {
@@ -389,7 +404,7 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 		return new ValueSerializer();
 	}
 
-	protected Serializer<BindingSetKey> createBindingSetKeySerializer() {
-		return new SerializerJava();
+	protected final Serializer<BindingSetKey> createBindingSetKeySerializer() {
+		return new BindingSetKeySerializer(createValueSerializer());
 	}
 }
