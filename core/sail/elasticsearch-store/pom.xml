@@ -130,6 +130,46 @@
 				<java.sec.mgr>-Djava.security.manager=allow</java.sec.mgr>
 			</properties>
 		</profile>
+		<profile>
+			<id>skipIfSkipITs</id>
+			<activation>
+				<property>
+					<name>skipITs</name>
+					<value>true</value>
+				</property>
+			</activation>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>com.github.alexcojocaru</groupId>
+						<artifactId>elasticsearch-maven-plugin</artifactId>
+						<configuration>
+							<skip>true</skip>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+		<profile>
+			<id>skipIfSkipTests</id>
+			<activation>
+				<property>
+					<name>skipTests</name>
+					<value>true</value>
+				</property>
+			</activation>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>com.github.alexcojocaru</groupId>
+						<artifactId>elasticsearch-maven-plugin</artifactId>
+						<configuration>
+							<skip>true</skip>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
 	</profiles>
 	<build>
 		<plugins>
@@ -145,6 +185,8 @@
 				<artifactId>elasticsearch-maven-plugin</artifactId>
 				<version>6.26</version>
 				<configuration>
+					<skip>${skipITs}</skip>
+					<skip>${skipTests}</skip>
 					<version>${elasticsearch.version}</version>
 					<clusterName>test</clusterName>
 					<transportPort>9300</transportPort>
