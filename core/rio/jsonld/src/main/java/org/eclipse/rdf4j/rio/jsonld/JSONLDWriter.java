@@ -132,7 +132,13 @@ public class JSONLDWriter extends AbstractRDFWriter implements CharSink {
 
 			Object output = JsonLdProcessor.fromRDF(model, opts, serialiser);
 
-			final JSONLDMode mode = getWriterConfig().get(JSONLDSettings.JSONLD_MODE);
+			final JSONLDMode mode;
+			Object obj = getWriterConfig().get(JSONLDSettings.JSONLD_MODE);
+			if (obj instanceof JSONLDMode) {
+				mode = (JSONLDMode) obj;
+			} else {
+				mode = JSONLDMode.valueOf(((org.eclipse.rdf4j.rio.helpers.JSONLDMode) obj).name());
+			}
 
 			if (writerConfig.get(JSONLDSettings.HIERARCHICAL_VIEW)) {
 				output = JSONLDHierarchicalProcessor.fromJsonLdObject(output);
