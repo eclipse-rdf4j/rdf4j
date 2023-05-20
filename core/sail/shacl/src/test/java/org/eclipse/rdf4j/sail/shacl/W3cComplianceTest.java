@@ -25,24 +25,23 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShapes;
-import org.junit.jupiter.api.Disabled;
+import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -55,7 +54,7 @@ public class W3cComplianceTest {
 				.map(Arguments::of);
 	}
 
-	@Disabled
+	// @Disabled
 	@ParameterizedTest
 	@MethodSource("data")
 	public void test(URL testCasePath) throws IOException, InterruptedException {
@@ -166,44 +165,24 @@ public class W3cComplianceTest {
 	private void runTest(URL resourceName) throws IOException, InterruptedException {
 		W3C_shaclTestValidate expected = new W3C_shaclTestValidate(resourceName);
 
-		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-		shaclSail.setParallelValidation(false);
-		SailRepository sailRepository = new SailRepository(shaclSail);
+		SailRepository data = new SailRepository(new MemoryStore());
 
-		Utils.loadShapeData(sailRepository, resourceName, RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-
-		Model statements = extractShapesModel(shaclSail);
-
-		System.out.println(AbstractShaclTest.modelToString(statements, RDFFormat.TURTLE));
-
-		boolean actualConforms = true;
-		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.begin();
 			connection.add(resourceName, "http://example.org/", RDFFormat.TRIG);
 			connection.commit();
-
-			connection.begin();
-//			ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
-//			actualConforms = revalidate.conforms();
-			connection.commit();
-		} catch (IOException e) {
-			e.printStackTrace();
-		} catch (RepositoryException e) {
-			if (e.getCause() instanceof ShaclSailValidationException) {
-				Model statements1 = ((ShaclSailValidationException) e.getCause()).validationReportAsModel();
-				actualConforms = statements1.contains(null, SHACL.CONFORMS,
-						SimpleValueFactory.getInstance().createLiteral(true));
-
-				System.out.println("\n######### Report ######### \n");
-				Rio.write(statements1, System.out, RDFFormat.TRIG);
-				System.out.println("\n##################### \n");
-			}
-
-		} finally {
-			sailRepository.shutDown();
 		}
 
-		assertEquals(expected.conforms, actualConforms);
+		SailRepository shapes = new SailRepository(new MemoryStore());
+
+		try (RepositoryConnection conn = shapes.getConnection()) {
+			conn.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+			conn.add(resourceName, resourceName.toString(), RDFFormat.TURTLE);
+			conn.commit();
+		}
+
+		ValidationReport validate = ShaclValidator.validate(data.getSail(), shapes.getSail());
+		assertEquals(expected.conforms, validate.conforms());
 	}
 
 	static class W3C_shaclTestValidate {
