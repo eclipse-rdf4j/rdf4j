@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.IOException;
@@ -48,17 +49,58 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 public class W3cComplianceTest {
 
+	private final static Set<String> TESTS_FAILING_DUE_TO_MISSING_FEATURES_FROM_THE_SPEC = Set.of(
+			"/core/node/closed-001.ttl",
+			"/core/node/closed-002.ttl",
+			"/core/node/disjoint-001.ttl",
+			"/core/node/equals-001.ttl",
+			"/core/node/xone-001.ttl",
+			"/core/node/xone-duplicate.ttl",
+			"/core/path/path-complex-001.ttl",
+			"/core/path/path-oneOrMore-001.ttl",
+			"/core/path/path-zeroOrMore-001.ttl",
+			"/core/path/path-zeroOrOne-001.ttl",
+			"/core/property/disjoint-001.ttl",
+			"/core/property/equals-001.ttl",
+			"/core/property/lessThan-001.ttl",
+			"/core/property/lessThan-002.ttl",
+			"/core/property/lessThanOrEquals-001.ttl",
+			"/core/property/qualifiedMinCountDisjoint-001.ttl",
+			"/core/property/qualifiedValueShapesDisjoint-001.ttl",
+			"/core/property/uniqueLang-002.ttl");
+
 	public static Stream<Arguments> data() {
 		return getTestFiles().stream()
 				.sorted(Comparator.comparing(URL::toString))
 				.map(Arguments::of);
 	}
 
-	// @Disabled
 	@ParameterizedTest
 	@MethodSource("data")
 	public void test(URL testCasePath) throws IOException, InterruptedException {
-		runTest(testCasePath);
+		boolean testPassed = false;
+		try {
+			runTest(testCasePath);
+			testPassed = true;
+		} catch (AssertionError e) {
+			if (e.toString().equals("org.opentest4j.AssertionFailedError: expected: <false> but was: <true>")) {
+				testPassed = false;
+			} else if (e.toString().equals("org.opentest4j.AssertionFailedError: expected: <true> but was: <false>")) {
+				testPassed = false;
+			} else {
+				throw e;
+			}
+		} finally {
+			String shortTestCasePath = testCasePath.toString().split("w3c")[1];
+			if (testPassed) {
+				assertThat(shortTestCasePath).isNotIn(TESTS_FAILING_DUE_TO_MISSING_FEATURES_FROM_THE_SPEC)
+						.as("Test case %s was not expected to pass, but passed anyway. If you think that this makes sense because you've implemented more of the SHACL spec then just remove this test case from the TESTS_FAILING_DUE_TO_MISSING_FEATURES_FROM_THE_SPEC set",
+								shortTestCasePath);
+			} else {
+				assertThat(shortTestCasePath).isIn(TESTS_FAILING_DUE_TO_MISSING_FEATURES_FROM_THE_SPEC)
+						.as("Test case %s was not expected to fail.", shortTestCasePath);
+			}
+		}
 	}
 
 	@ParameterizedTest
