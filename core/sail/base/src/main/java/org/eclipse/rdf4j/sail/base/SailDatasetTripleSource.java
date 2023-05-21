@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -119,7 +120,8 @@ public class SailDatasetTripleSource implements RDFStarTripleSource {
 				return triples;
 			}
 			iterationWrapper = new TripleSourceIterationWrapper<>(triples);
-			return new DistinctIteration<>(iterationWrapper);
+			// TODO: see if use of collection factory is possible here.
+			return new DistinctIteration<>(iterationWrapper, new HashSet<>());
 		} catch (Throwable t) {
 			try {
 				if (triples != null) {

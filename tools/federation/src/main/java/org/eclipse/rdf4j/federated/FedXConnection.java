@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.federated;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -264,13 +265,25 @@ public class FedXConnection extends AbstractSailConnection {
 
 		// execute the union in a separate thread
 		federationContext.getManager().getExecutor().execute(union);
+		CollectionFactory cf = federation.getCollectionFactory().get();
+		ExceptionConvertingIteration<Resource, SailException> conv = new ExceptionConvertingIteration<>(union) {
 
-		return new DistinctIteration<>(new ExceptionConvertingIteration<>(union) {
 			@Override
 			protected SailException convert(RuntimeException e) {
 				return new SailException(e);
 			}
-		});
+		};
+		return new DistinctIteration<Resource>(conv, cf::createSet) {
+
+			protected void handleClose() {
+				try {
+					cf.close();
+				} finally {
+					super.handleClose();
+				}
+			}
+
+		};
 	}
 
 	@Override

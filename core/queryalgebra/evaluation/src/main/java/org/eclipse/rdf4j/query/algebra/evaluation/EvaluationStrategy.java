@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
-import java.util.Queue;
-import java.util.Set;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
@@ -156,14 +154,6 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 
 	default QueryValueEvaluationStep precompile(ValueExpr arg, QueryEvaluationContext context) {
 		return new QueryValueEvaluationStep.Minimal(this, arg);
-	}
-
-	default <T> Set<T> makeSet() {
-		return new DefaultCollectionFactory().createSet();
-	}
-
-	default <T> Queue<T> makeQueue() {
-		return new DefaultCollectionFactory().createQueue();
 	}
 
 	/**

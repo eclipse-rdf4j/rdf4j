@@ -41,7 +41,12 @@ public class DistinctIteration<E> extends FilterIteration<E> {
 	public DistinctIteration(CloseableIteration<? extends E> iter) {
 		super(iter);
 
-		excludeSet = makeSet();
+		excludeSet = new HashSet<>();
+	}
+
+	public DistinctIteration(CloseableIteration<? extends E> iter, Set<E> set) {
+		super(iter);
+		excludeSet = set;
 	}
 
 	public DistinctIteration(CloseableIteration<? extends E> iter, Supplier<Set<E>> setMaker) {
@@ -86,9 +91,4 @@ public class DistinctIteration<E> extends FilterIteration<E> {
 	protected boolean add(E object) {
 		return excludeSet.add(object);
 	}
-
-	protected Set<E> makeSet() {
-		return new HashSet<>();
-	}
-
 }
