@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.rio.RDFWriterTest;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.rio.helpers.RDFJSONWriterSettings;
 
 /**
  * JUnit test for the RDF/JSON streaming writer.
