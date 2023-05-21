@@ -15,6 +15,7 @@ import java.lang.ref.Cleaner;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -575,7 +576,11 @@ public class QueryResults extends Iterations {
 		private final GraphQueryResult unfiltered;
 
 		public GraphQueryResultFilter(GraphQueryResult wrappedResult) {
-			this.filter = new DistinctIteration<>(wrappedResult);
+			this(wrappedResult, new HashSet<>());
+		}
+
+		public GraphQueryResultFilter(GraphQueryResult wrappedResult, Set<Statement> distinctSet) {
+			this.filter = new DistinctIteration<>(wrappedResult, distinctSet);
 			this.unfiltered = wrappedResult;
 		}
 
@@ -639,7 +644,11 @@ public class QueryResults extends Iterations {
 		private final TupleQueryResult unfiltered;
 
 		public TupleQueryResultFilter(TupleQueryResult wrappedResult) {
-			this.filter = new DistinctIteration<>(wrappedResult);
+			this(wrappedResult, new HashSet<>());
+		}
+
+		public TupleQueryResultFilter(TupleQueryResult wrappedResult, Set<BindingSet> distinct) {
+			this.filter = new DistinctIteration<>(wrappedResult, distinct);
 			this.unfiltered = wrappedResult;
 		}
 

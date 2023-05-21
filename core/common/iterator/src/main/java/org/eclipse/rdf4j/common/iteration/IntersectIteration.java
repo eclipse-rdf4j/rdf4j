@@ -107,7 +107,7 @@ public class IntersectIteration<E> extends FilterIteration<E> {
 	protected boolean accept(E object) {
 		if (!initialized) {
 			// Build set of elements-to-include from second argument
-			includeSet = Iterations.asSet(arg2);
+			includeSet = Iterations.addAll(arg2, setMaker.get());
 			initialized = true;
 		}
 

@@ -110,8 +110,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 		this.currentLength = minLength;
 		this.bindings = bindings;
-
-		collectionFactory = strategy.getCollectionFactory().get();
+		this.collectionFactory = strategy.getCollectionFactory().get();
 
 		// This is all necessary for optimized collections to be usable. This only becomes important on very large
 		// stores with large intermediary results.
@@ -121,7 +120,6 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 				PathIteration::getGet, PathIteration::getSet);
 		this.valueQueue = collectionFactory.createBindingSetQueue(ValuePair::new, PathIteration::getHas,
 				PathIteration::getGet, PathIteration::getSet);
-
 		createIteration();
 	}
 

@@ -542,7 +542,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			throws QueryEvaluationException {
 		QueryEvaluationStep leftArg = precompile(node.getLeftArg(), context);
 		QueryEvaluationStep rightArg = precompile(node.getRightArg(), context);
-		return new IntersectionQueryEvaluationStep(leftArg, rightArg, this::makeSet);
+		return new IntersectionQueryEvaluationStep(leftArg, rightArg, this.getCollectionFactory().get());
 	}
 
 	protected QueryEvaluationStep prepare(Join node, QueryEvaluationContext context) throws QueryEvaluationException {
@@ -710,12 +710,22 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		final QueryEvaluationStep child = precompile(node.getArg(), context);
+		CollectionFactory cf = this.getCollectionFactory().get();
 		return bindings -> {
 			final CloseableIteration<BindingSet> evaluate = child.evaluate(bindings);
-			return new DistinctIteration<BindingSet>(evaluate,
-					DefaultEvaluationStrategy.this::makeSet);
-		};
+			return new DistinctIteration<BindingSet>(evaluate, cf::createSet) {
 
+				@Override
+				protected void handleClose() {
+					try {
+						cf.close();
+					} finally {
+						super.handleClose();
+					}
+				}
+
+			};
+		};
 	}
 
 	protected QueryEvaluationStep prepare(Reduced node, QueryEvaluationContext context)
