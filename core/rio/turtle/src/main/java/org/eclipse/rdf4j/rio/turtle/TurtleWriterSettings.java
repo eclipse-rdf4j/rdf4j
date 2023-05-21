@@ -43,4 +43,9 @@ public class TurtleWriterSettings {
 	 */
 	private TurtleWriterSettings() {
 	}
+
+	static {
+		assert ABBREVIATE_NUMBERS.equals(org.eclipse.rdf4j.rio.helpers.TurtleWriterSettings.ABBREVIATE_NUMBERS);
+	}
+
 }

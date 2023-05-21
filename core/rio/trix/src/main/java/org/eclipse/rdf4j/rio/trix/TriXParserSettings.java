@@ -50,4 +50,11 @@ public class TriXParserSettings {
 	private TriXParserSettings() {
 	}
 
+	static {
+		assert FAIL_ON_MISSING_DATATYPE
+				.equals(org.eclipse.rdf4j.rio.helpers.TriXParserSettings.FAIL_ON_MISSING_DATATYPE);
+		assert FAIL_ON_INVALID_STATEMENT
+				.equals(org.eclipse.rdf4j.rio.helpers.TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
+	}
+
 }
