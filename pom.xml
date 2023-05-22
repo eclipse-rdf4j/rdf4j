@@ -368,7 +368,7 @@
 		<jackson.version>2.13.4</jackson.version>
 		<httpcore.version>4.4.16</httpcore.version>
 		<jsonldjava.version>0.13.4</jsonldjava.version>
-		<last.japicmp.compare.version>4.0.0</last.japicmp.compare.version>
+		<last.japicmp.compare.version>5.0.0</last.japicmp.compare.version>
 		<jaxb.version>2.3.3</jaxb.version>
 		<lwjgl.version>3.3.1</lwjgl.version>
 		<lucene.version>8.9.0</lucene.version>
