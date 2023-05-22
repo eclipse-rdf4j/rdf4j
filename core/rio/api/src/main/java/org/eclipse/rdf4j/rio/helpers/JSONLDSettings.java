@@ -32,7 +32,6 @@ public class JSONLDSettings {
 	 *
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 *
-	 * @deprecated Use {@link org.eclipse.rdf4j.rio.jsonld.JSONLDSettings#COMPACT_ARRAYS} instead.
 	 */
 	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<Boolean> COMPACT_ARRAYS = new BooleanRioSetting(
@@ -42,7 +41,6 @@ public class JSONLDSettings {
 	 * If specified, it is used to retrieve remote documents and contexts; otherwise the processor's built-in loader is
 	 * used.
 	 *
-	 * @deprecated Use {@link org.eclipse.rdf4j.rio.jsonld.JSONLDSettings#DOCUMENT_LOADER} instead.
 	 */
 	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<DocumentLoader> DOCUMENT_LOADER = new ClassRioSetting<>(
@@ -59,7 +57,6 @@ public class JSONLDSettings {
 	 *
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 *
-	 * @deprecated Use {@link org.eclipse.rdf4j.rio.jsonld.JSONLDSettings#OPTIMIZE} instead.
 	 */
 	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<Boolean> OPTIMIZE = new BooleanRioSetting("org.eclipse.rdf4j.rio.jsonld.optimize",
@@ -77,7 +74,6 @@ public class JSONLDSettings {
 	 *
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 *
-	 * @deprecated Use {@link org.eclipse.rdf4j.rio.jsonld.JSONLDSettings#PRODUCE_GENERALIZED_RDF} instead.
 	 */
 	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<Boolean> PRODUCE_GENERALIZED_RDF = new BooleanRioSetting(
@@ -94,7 +90,6 @@ public class JSONLDSettings {
 	 *
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 *
-	 * @deprecated Use {@link org.eclipse.rdf4j.rio.jsonld.JSONLDSettings#USE_NATIVE_TYPES} instead.
 	 */
 	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<Boolean> USE_NATIVE_TYPES = new BooleanRioSetting(
@@ -110,7 +105,6 @@ public class JSONLDSettings {
 	 *
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 *
-	 * @deprecated Use {@link org.eclipse.rdf4j.rio.jsonld.JSONLDSettings#USE_RDF_TYPE} instead.
 	 */
 	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<Boolean> USE_RDF_TYPE = new BooleanRioSetting(
@@ -123,7 +117,6 @@ public class JSONLDSettings {
 	 *
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#features">JSONLD Features</a>
 	 *
-	 * @deprecated Use {@link org.eclipse.rdf4j.rio.jsonld.JSONLDSettings#JSONLD_MODE} instead.
 	 */
 	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<JSONLDMode> JSONLD_MODE = new RioSettingImpl<>(
@@ -136,7 +129,6 @@ public class JSONLDSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.jsonld.hierarchical_view}.
 	 *
-	 * @deprecated Use {@link org.eclipse.rdf4j.rio.jsonld.JSONLDSettings#HIERARCHICAL_VIEW} instead.
 	 */
 	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<Boolean> HIERARCHICAL_VIEW = new BooleanRioSetting(

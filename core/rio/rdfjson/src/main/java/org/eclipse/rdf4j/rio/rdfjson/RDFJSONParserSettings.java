@@ -103,4 +103,19 @@ public class RDFJSONParserSettings {
 	private RDFJSONParserSettings() {
 	}
 
+	static {
+		assert FAIL_ON_MULTIPLE_OBJECT_VALUES
+				.equals(org.eclipse.rdf4j.rio.helpers.RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_VALUES);
+		assert FAIL_ON_MULTIPLE_OBJECT_TYPES
+				.equals(org.eclipse.rdf4j.rio.helpers.RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_TYPES);
+		assert FAIL_ON_MULTIPLE_OBJECT_LANGUAGES
+				.equals(org.eclipse.rdf4j.rio.helpers.RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_LANGUAGES);
+		assert FAIL_ON_MULTIPLE_OBJECT_DATATYPES
+				.equals(org.eclipse.rdf4j.rio.helpers.RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_DATATYPES);
+		assert FAIL_ON_UNKNOWN_PROPERTY
+				.equals(org.eclipse.rdf4j.rio.helpers.RDFJSONParserSettings.FAIL_ON_UNKNOWN_PROPERTY);
+		assert SUPPORT_GRAPHS_EXTENSION
+				.equals(org.eclipse.rdf4j.rio.helpers.RDFJSONParserSettings.SUPPORT_GRAPHS_EXTENSION);
+	}
+
 }

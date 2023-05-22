@@ -39,7 +39,7 @@ import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
-import org.eclipse.rdf4j.rio.binary.BinaryRDFWriterSettings;
+import org.eclipse.rdf4j.rio.helpers.BinaryRDFWriterSettings;
 
 /**
  * <p>

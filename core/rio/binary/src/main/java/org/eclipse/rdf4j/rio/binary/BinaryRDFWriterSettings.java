@@ -83,4 +83,11 @@ public class BinaryRDFWriterSettings {
 	private BinaryRDFWriterSettings() {
 	}
 
+	static {
+		assert VERSION.equals(org.eclipse.rdf4j.rio.helpers.BinaryRDFWriterSettings.VERSION);
+		assert BUFFER_SIZE.equals(org.eclipse.rdf4j.rio.helpers.BinaryRDFWriterSettings.BUFFER_SIZE);
+		assert CHARSET.equals(org.eclipse.rdf4j.rio.helpers.BinaryRDFWriterSettings.CHARSET);
+		assert RECYCLE_IDS.equals(org.eclipse.rdf4j.rio.helpers.BinaryRDFWriterSettings.RECYCLE_IDS);
+	}
+
 }

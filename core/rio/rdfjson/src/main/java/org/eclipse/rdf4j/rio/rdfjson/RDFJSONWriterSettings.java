@@ -39,4 +39,9 @@ public class RDFJSONWriterSettings {
 	private RDFJSONWriterSettings() {
 	}
 
+	static {
+		assert ALLOW_MULTIPLE_OBJECT_VALUES
+				.equals(org.eclipse.rdf4j.rio.helpers.RDFJSONWriterSettings.ALLOW_MULTIPLE_OBJECT_VALUES);
+	}
+
 }
