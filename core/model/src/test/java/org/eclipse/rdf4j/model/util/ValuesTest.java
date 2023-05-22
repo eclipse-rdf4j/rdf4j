@@ -17,8 +17,8 @@ import static org.eclipse.rdf4j.model.util.Values.iri;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.model.util.Values.namespace;
 import static org.eclipse.rdf4j.model.util.Values.triple;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
