@@ -10,8 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.nio.ByteBuffer;
 
@@ -31,8 +31,8 @@ public class VarintTest {
 			bb.clear();
 			Varint.writeUnsigned(bb, values[i]);
 			bb.flip();
-			assertEquals("Encoding should use " + (i + 1) + " bytes", i + 1, bb.remaining());
-			assertEquals("Encoded and decoded value should be equal", values[i], Varint.readUnsigned(bb));
+			assertEquals(i + 1, bb.remaining(), "Encoding should use " + (i + 1) + " bytes");
+			assertEquals(values[i], Varint.readUnsigned(bb), "Encoded and decoded value should be equal");
 		}
 	}
 
@@ -47,7 +47,7 @@ public class VarintTest {
 			bb.flip();
 			long[] actual = new long[4];
 			Varint.readListUnsigned(bb, actual);
-			assertArrayEquals("Encoded and decoded value should be equal", expected, actual);
+			assertArrayEquals(expected, actual, "Encoded and decoded value should be equal");
 		}
 	}
 }

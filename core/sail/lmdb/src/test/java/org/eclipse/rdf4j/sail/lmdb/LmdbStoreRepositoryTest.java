@@ -17,9 +17,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.testsuite.repository.RepositoryTest;
-import org.junit.Rule;
 import org.junit.jupiter.api.io.TempDir;
-import org.junit.rules.TemporaryFolder;
 
 public class LmdbStoreRepositoryTest extends RepositoryTest {
 	@TempDir

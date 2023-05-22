@@ -11,7 +11,7 @@
 package org.eclipse.rdf4j.repository.sail.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 
 import java.io.IOException;

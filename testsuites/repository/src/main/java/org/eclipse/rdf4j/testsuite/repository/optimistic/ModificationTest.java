@@ -10,8 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.repository.optimistic;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -22,20 +22,20 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public class ModificationTest {
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
@@ -52,7 +52,7 @@ public class ModificationTest {
 
 	private IRI PICASSO;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		repo = OptimisticIsolationTest.getEmptyInitializedRepository(ModificationTest.class);
 		ValueFactory uf = repo.getValueFactory();
@@ -61,7 +61,7 @@ public class ModificationTest {
 		con = repo.getConnection();
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		try {
 			con.close();

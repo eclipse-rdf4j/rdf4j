@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.repository.optimistic;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -31,11 +31,12 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.UnknownTransactionStateException;
 import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,12 +47,12 @@ import org.slf4j.LoggerFactory;
  */
 public class IsolationLevelTest {
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
@@ -72,13 +73,13 @@ public class IsolationLevelTest {
 	 * Methods *
 	 *---------*/
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		store = OptimisticIsolationTest.getEmptyInitializedRepository(IsolationLevelTest.class);
 		failed = null;
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		store.shutDown();
 	}
@@ -480,7 +481,7 @@ public class IsolationLevelTest {
 			}
 			Value obj = stmts.next().getObject();
 			if (stmts.hasNext()) {
-				org.junit.Assert.fail("multiple literals: " + obj + " and " + stmts.next());
+				Assertions.fail("multiple literals: " + obj + " and " + stmts.next());
 			}
 			return (Literal) obj;
 		}

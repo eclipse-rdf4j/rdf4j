@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.repository.optimistic;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,20 +28,20 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public class MonotonicTest {
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
@@ -88,7 +88,7 @@ public class MonotonicTest {
 
 	private IRI BELSHAZZAR;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		repo = OptimisticIsolationTest.getEmptyInitializedRepository(MonotonicTest.class);
 		lf = repo.getValueFactory();
@@ -112,7 +112,7 @@ public class MonotonicTest {
 		b = repo.getConnection();
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		try {
 			a.close();
