@@ -10,15 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import java.util.Map;
+import java.io.File;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL11UpdateComplianceTest;
-import org.junit.Rule;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Test SPARQL 1.1 Update functionality on a native store.
@@ -27,19 +25,11 @@ import org.junit.rules.TemporaryFolder;
  */
 public class NativeSPARQL11UpdateComplianceTest extends SPARQL11UpdateComplianceTest {
 
-	public NativeSPARQL11UpdateComplianceTest(String displayName, String testURI, String name, String requestFile,
-			IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
-			Map<String, IRI> resultNamedGraphs) {
-		super(displayName, testURI, name, requestFile, defaultGraphURI, inputNamedGraphs, resultDefaultGraphURI,
-				resultNamedGraphs);
-		// TODO Auto-generated constructor stub
-	}
-
-	@Rule
-	public TemporaryFolder folder = new TemporaryFolder();
+	@TempDir
+	public File folder;
 
 	@Override
 	protected Repository newRepository() throws Exception {
-		return new DatasetRepository(new SailRepository(new NativeStore(folder.newFolder(), "spoc")));
+		return new DatasetRepository(new SailRepository(new NativeStore(folder, "spoc")));
 	}
 }
