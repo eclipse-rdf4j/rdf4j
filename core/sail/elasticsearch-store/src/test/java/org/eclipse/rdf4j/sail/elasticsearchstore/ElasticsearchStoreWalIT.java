@@ -10,8 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -54,7 +54,7 @@ public class ElasticsearchStoreWalIT extends AbstractElasticsearchStoreIT {
 
 			long size = connection.size();
 			System.out.println(size);
-			assertEquals("Since transaction failed there should be no statements in the store", 0, size);
+			assertEquals(0, size, "Since transaction failed there should be no statements in the store");
 
 		}
 
@@ -119,7 +119,7 @@ public class ElasticsearchStoreWalIT extends AbstractElasticsearchStoreIT {
 
 			long size = connection.size();
 			System.out.println(size);
-			assertEquals("Since transaction failed there should be no statements in the store", count, size);
+			assertEquals(count, size, "Since transaction failed there should be no statements in the store");
 
 		}
 
