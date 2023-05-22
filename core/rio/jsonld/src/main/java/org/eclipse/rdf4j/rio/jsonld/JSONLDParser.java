@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
+import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 import org.eclipse.rdf4j.rio.helpers.JSONSettings;
 
 import com.fasterxml.jackson.core.JsonFactory;
@@ -105,7 +106,8 @@ public class JSONLDParser extends AbstractRDFParser {
 	/**
 	 * Parse
 	 *
-	 * @param nextParser
+	 * @param in
+	 * @param reader
 	 * @param baseURI
 	 * @throws IOException
 	 * @throws RDFParseException

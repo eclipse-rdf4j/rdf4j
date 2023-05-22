@@ -41,4 +41,7 @@ public class NTriplesParserSettings {
 	private NTriplesParserSettings() {
 	}
 
+	static {
+		assert FAIL_ON_INVALID_LINES.equals(org.eclipse.rdf4j.rio.helpers.NTriplesParserSettings.FAIL_ON_INVALID_LINES);
+	}
 }

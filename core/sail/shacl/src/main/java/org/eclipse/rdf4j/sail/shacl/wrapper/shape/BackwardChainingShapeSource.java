@@ -81,9 +81,6 @@ public class BackwardChainingShapeSource implements ShapeSource {
 
 			List<? extends Statement> collect = stream.collect(Collectors.toList());
 
-			if (collect.size() > 0) {
-				System.out.println();
-			}
 			return collect.stream()
 					.collect(Collectors.groupingBy(Statement::getSubject))
 					.entrySet()

@@ -38,4 +38,8 @@ public class NTriplesWriterSettings {
 	private NTriplesWriterSettings() {
 	}
 
+	static {
+		assert ESCAPE_UNICODE.equals(org.eclipse.rdf4j.rio.helpers.NTriplesWriterSettings.ESCAPE_UNICODE);
+	}
+
 }

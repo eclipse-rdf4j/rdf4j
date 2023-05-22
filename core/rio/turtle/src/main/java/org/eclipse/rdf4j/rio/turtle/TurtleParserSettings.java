@@ -48,4 +48,12 @@ public class TurtleParserSettings {
 			"Allow processing of Turtle-star data by the standard Turtle parser",
 			Boolean.TRUE);
 
+	private TurtleParserSettings() {
+	}
+
+	static {
+		assert CASE_INSENSITIVE_DIRECTIVES
+				.equals(org.eclipse.rdf4j.rio.helpers.TurtleParserSettings.CASE_INSENSITIVE_DIRECTIVES);
+		assert ACCEPT_TURTLESTAR.equals(org.eclipse.rdf4j.rio.helpers.TurtleParserSettings.ACCEPT_TURTLESTAR);
+	}
 }
