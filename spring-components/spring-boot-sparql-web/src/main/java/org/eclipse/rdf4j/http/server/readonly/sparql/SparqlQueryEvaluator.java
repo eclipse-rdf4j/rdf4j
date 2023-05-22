@@ -24,13 +24,14 @@ public interface SparqlQueryEvaluator {
 	 * @param repository      the repository against which the query is to be executed
 	 * @param query           The query to be evaluated
 	 * @param acceptHeader    needed to find the best response format.
-	 * @param defaultGraphUri see {@link Dataset#getDefaultGraphs()}
-	 * @param namedGraphUris  see {@link Dataset#getNamedGraphs()}
+	 * @param defaultGraphUri The graphs that are embedded in the query with FROM {@link Dataset#getDefaultGraphs()}
+	 * @param namedGraphUris  The graphs that are embedded in the query with FROM NAMED see
+	 *                        {@link Dataset#getNamedGraphs()}
 	 * @throws MalformedQueryException If the supplied query is malformed.
 	 * @throws IOException             if there is a problem with the {@link EvaluateResult#getOutputstream()}
 	 * @throws IllegalStateException   if no acceptHeader is present
 	 */
 	void evaluate(EvaluateResult result, Repository repository, String query, String acceptHeader,
-			String defaultGraphUri,
+			String[] defaultGraphUri,
 			String[] namedGraphUris) throws MalformedQueryException, IllegalStateException, IOException;
 }

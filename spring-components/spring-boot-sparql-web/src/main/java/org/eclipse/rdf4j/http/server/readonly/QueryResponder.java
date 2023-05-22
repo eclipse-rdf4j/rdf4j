@@ -54,7 +54,7 @@ public class QueryResponder {
 			HttpServletRequest request, HttpServletResponse response) throws IOException {
 		try {
 			EvaluateResultHttpResponse result = new EvaluateResultHttpResponse(response);
-			sparqlQueryEvaluator.evaluate(result, repository, query, acceptHeader, defaultGraphUri,
+			sparqlQueryEvaluator.evaluate(result, repository, query, acceptHeader, toArray(defaultGraphUri),
 					toArray(namedGraphUri));
 		} catch (MalformedQueryException | IllegalStateException | IOException e) {
 			response.sendError(HttpServletResponse.SC_BAD_REQUEST);
@@ -69,7 +69,7 @@ public class QueryResponder {
 
 		try {
 			EvaluateResultHttpResponse result = new EvaluateResultHttpResponse(response);
-			sparqlQueryEvaluator.evaluate(result, repository, query, acceptHeader, defaultGraphUri,
+			sparqlQueryEvaluator.evaluate(result, repository, query, acceptHeader, toArray(defaultGraphUri),
 					toArray(namedGraphUri));
 		} catch (MalformedQueryException | IllegalStateException | IOException e) {
 			response.sendError(HttpServletResponse.SC_BAD_REQUEST, e.getMessage());

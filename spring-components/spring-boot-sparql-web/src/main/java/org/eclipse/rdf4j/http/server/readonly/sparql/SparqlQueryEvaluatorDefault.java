@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.http.server.readonly.sparql;
 import java.io.IOException;
 import java.util.Arrays;
 
-import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.Query;
@@ -28,7 +28,7 @@ class SparqlQueryEvaluatorDefault implements SparqlQueryEvaluator {
 
 	@Override
 	public void evaluate(EvaluateResult result, Repository repository, String query,
-			String acceptHeader, String defaultGraphUri, String[] namedGraphUris)
+			String acceptHeader, String[] defaultGraphUri, String[] namedGraphUris)
 			throws MalformedQueryException, IOException, IllegalStateException {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			Query preparedQuery = connection.prepareQuery(QueryLanguage.SPARQL, query);
@@ -42,24 +42,27 @@ class SparqlQueryEvaluatorDefault implements SparqlQueryEvaluator {
 	}
 
 	/**
-	 * @param q               the query
 	 * @param defaultGraphUri
 	 * @param namedGraphUris
 	 * @param connection
 	 * @see <a href="https://www.w3.org/TR/sparql11-protocol/#dataset">protocol dataset</a>
 	 */
-	private Dataset getQueryDataSet(String defaultGraphUri, String[] namedGraphUris, RepositoryConnection connection) {
+	private Dataset getQueryDataSet(String[] defaultGraphUri, String[] namedGraphUris,
+			RepositoryConnection connection) {
 		SimpleDataset dataset = new SimpleDataset();
 
+		ValueFactory valueFactory = connection.getValueFactory();
 		if (defaultGraphUri != null) {
-			IRI defaultIri = connection.getValueFactory().createIRI(defaultGraphUri);
-			dataset.addDefaultGraph(defaultIri);
+			Arrays.stream(defaultGraphUri)
+					.map(valueFactory::createIRI)
+					.forEach(dataset::addDefaultGraph);
 		}
 
-		Arrays.stream(namedGraphUris).forEach(namedGraphUri -> {
-			IRI namedIri = connection.getValueFactory().createIRI(namedGraphUri);
-			dataset.addNamedGraph(namedIri);
-		});
+		if (namedGraphUris != null) {
+			Arrays.stream(namedGraphUris)
+					.map(valueFactory::createIRI)
+					.forEach(dataset::addNamedGraph);
+		}
 		return dataset;
 	}
 }
