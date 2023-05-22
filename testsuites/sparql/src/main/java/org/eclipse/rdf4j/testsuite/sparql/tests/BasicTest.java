@@ -10,8 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.sparql.tests;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -24,9 +24,11 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.AbstractTupleQueryResultHandler;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
 import org.eclipse.rdf4j.testsuite.sparql.vocabulary.EX;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Test;
 
 /**
  * Basic SPARQL functionality tests
@@ -36,21 +38,28 @@ import org.junit.Test;
  */
 public class BasicTest extends AbstractComplianceTest {
 
-	@Test
-	public void testIdenticalVariablesInStatementPattern() {
+	public BasicTest(Repository repo) {
+		super(repo);
+	}
+
+	private void testIdenticalVariablesInStatementPattern() {
 		conn.add(EX.ALICE, DC.PUBLISHER, EX.BOB);
 
-		String queryBuilder = "SELECT ?publisher " +
-				"{ ?publisher <http://purl.org/dc/elements/1.1/publisher> ?publisher }";
+		String queryBuilder = "SELECT ?publisher "
+				+ "{ ?publisher <http://purl.org/dc/elements/1.1/publisher> ?publisher }";
 
-		conn.prepareTupleQuery(QueryLanguage.SPARQL, queryBuilder)
-				.evaluate(new AbstractTupleQueryResultHandler() {
+		conn.prepareTupleQuery(QueryLanguage.SPARQL, queryBuilder).evaluate(new AbstractTupleQueryResultHandler() {
 
-					@Override
-					public void handleSolution(BindingSet bindingSet) {
-						fail("nobody is self published");
-					}
-				});
+			@Override
+			public void handleSolution(BindingSet bindingSet) {
+				fail("nobody is self published");
+			}
+		});
+	}
+
+	public Stream<DynamicTest> tests() {
+		return Stream.of(
+				makeTest("testIdenticalVariablesInStatementPattern", this::testIdenticalVariablesInStatementPattern));
 	}
 
 	@Test

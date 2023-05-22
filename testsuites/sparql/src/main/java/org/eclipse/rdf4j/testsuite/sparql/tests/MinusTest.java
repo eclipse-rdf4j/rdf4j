@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.sparql.tests;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -21,8 +21,9 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
 
 /**
  * Test for queries using MINUS
@@ -31,8 +32,11 @@ import org.junit.Test;
  */
 public class MinusTest extends AbstractComplianceTest {
 
-	@Test
-	public void testScopingOfFilterInMinus() {
+	public MinusTest(Repository repo) {
+		super(repo);
+	}
+
+	private void testScopingOfFilterInMinus() {
 
 		String ex = "http://example/";
 		IRI a1 = Values.iri(ex, "a1");
@@ -50,29 +54,23 @@ public class MinusTest extends AbstractComplianceTest {
 		conn.add(a2, predicate2, Values.bnode());
 
 		TupleQuery tupleQuery = conn.prepareTupleQuery(
-				"PREFIX : <http://example/>\n" +
-						"SELECT * WHERE {\n" +
-						"  ?a :predicate1 ?p1\n" +
-						"  MINUS {\n" +
-						"    ?a :predicate2 ?p2 .\n" +
-						"    FILTER(?p2 = ?p1)\n" +
-						"  }\n" +
-						"} ORDER BY ?a\n"
-		);
+				"PREFIX : <http://example/>\n" + "SELECT * WHERE {\n" + "  ?a :predicate1 ?p1\n" + "  MINUS {\n"
+						+ "    ?a :predicate2 ?p2 .\n" + "    FILTER(?p2 = ?p1)\n" + "  }\n" + "} ORDER BY ?a\n");
 
 		try (Stream<BindingSet> stream = tupleQuery.evaluate().stream()) {
 			List<BindingSet> collect = stream.collect(Collectors.toList());
 			assertEquals(2, collect.size());
 
 			List<Value> expectedValues = List.of(a1, a2);
-			List<Value> actualValues = collect
-					.stream()
-					.map(b -> b.getValue("a"))
-					.collect(Collectors.toList());
+			List<Value> actualValues = collect.stream().map(b -> b.getValue("a")).collect(Collectors.toList());
 
 			assertEquals(expectedValues, actualValues);
 		}
 
+	}
+
+	public Stream<DynamicTest> tests() {
+		return Stream.of(makeTest("ScopingOfFilterInMinus", this::testScopingOfFilterInMinus));
 	}
 
 }

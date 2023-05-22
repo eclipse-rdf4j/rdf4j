@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.sparql.tests;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -20,8 +20,10 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Test;
 
 /**
  * Test for queries using EXISTS
@@ -30,8 +32,11 @@ import org.junit.Test;
  */
 public class ExistsTest extends AbstractComplianceTest {
 
-	@Test
-	public void testFilterNotExistsBindingToCurrentSolutionMapping() {
+	public ExistsTest(Repository repo) {
+		super(repo);
+	}
+
+	private void testFilterNotExistsBindingToCurrentSolutionMapping() {
 
 		String ex = "http://example/";
 		IRI a1 = Values.iri(ex, "a1");
@@ -48,15 +53,9 @@ public class ExistsTest extends AbstractComplianceTest {
 		conn.add(a2, predicate1, both);
 		conn.add(a2, predicate2, Values.bnode());
 
-		TupleQuery tupleQuery = conn.prepareTupleQuery(
-				"PREFIX : <http://example/>\n" +
-						"SELECT * WHERE {\n" +
-						"  ?a :predicate1 ?p1\n" +
-						"  FILTER NOT EXISTS {\n" +
-						"    ?a :predicate2 ?p2 .\n" +
-						"    FILTER(?p2 = ?p1)\n" +
-						"  }\n" +
-						"}\n");
+		TupleQuery tupleQuery = conn.prepareTupleQuery("PREFIX : <http://example/>\n" + "SELECT * WHERE {\n"
+				+ "  ?a :predicate1 ?p1\n" + "  FILTER NOT EXISTS {\n" + "    ?a :predicate2 ?p2 .\n"
+				+ "    FILTER(?p2 = ?p1)\n" + "  }\n" + "}\n");
 
 		try (Stream<BindingSet> stream = tupleQuery.evaluate().stream()) {
 			List<BindingSet> collect = stream.collect(Collectors.toList());
@@ -64,6 +63,11 @@ public class ExistsTest extends AbstractComplianceTest {
 			assertEquals(a2, collect.get(0).getValue("a"));
 		}
 
+	}
+
+	public Stream<DynamicTest> tests() {
+		return Stream.of(makeTest("FilterNotExistsBindingToCurrentSolutionMapping",
+				this::testFilterNotExistsBindingToCurrentSolutionMapping));
 	}
 
 }

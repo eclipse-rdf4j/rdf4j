@@ -12,11 +12,10 @@ package org.eclipse.rdf4j.testsuite.sparql;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
-import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.config.RepositoryFactory;
@@ -38,77 +37,134 @@ import org.eclipse.rdf4j.testsuite.sparql.tests.PropertyPathTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.SubselectTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.UnionTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.ValuesTest;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.runner.RunWith;
-import org.junit.runners.Suite;
-import org.junit.runners.Suite.SuiteClasses;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.TestFactory;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * A suite of custom compliance tests on SPARQL query functionality for RDF4J Repositories.
  * <p>
  * To use this test suite, extend the abstract suite class, making sure that the correct {@link RepositoryFactory} gets
- * set on initialization, and torn down after. For example, to run the suite against an RDF4J Memory Store:
- *
- * <pre>
- * <code>
- * 	&#64;BeforeClass
-	public static void setUpFactory() throws Exception {
-		setRepositoryFactory(new SailRepositoryFactory() {
-			&#64;Override
-			public RepositoryImplConfig getConfig() {
-				return new SailRepositoryConfig(new MemoryStoreFactory().getConfig());
-			}
-		});
-	}
-
-	&#64;AfterClass
-	public static void tearDownFactory() throws Exception {
-		setRepositoryFactory(null);
-	}
- * </code>
- * </pre>
+ * set on construction,
  *
  * @author Jeen Broekstra
- * @implNote currently implemented as an abstract JUnit-4 suite. This suite is marked Experimental as we may want to
- *           make further improvements to its setup (including migrating to JUnit 5 when its suite support matures) in
- *           future minor releases.
  */
-@RunWith(Suite.class)
-@SuiteClasses({ AggregateTest.class, ArbitraryLengthPathTest.class, BasicTest.class, BindTest.class,
-		BuiltinFunctionTest.class, ConstructTest.class, DefaultGraphTest.class, DescribeTest.class, GroupByTest.class,
-		InTest.class, OptionalTest.class, PropertyPathTest.class, SubselectTest.class, UnionTest.class,
-		ValuesTest.class, OrderByTest.class, ExistsTest.class, MinusTest.class })
 @Experimental
 public abstract class RepositorySPARQLComplianceTestSuite {
-	@BeforeClass
+
+	@TestFactory
+	Stream<DynamicTest> aggregate() throws RDF4JException, IOException {
+		return new AggregateTest(getEmptyInitializedRepository()).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> arbitraryLengthPath() throws RDF4JException, IOException {
+		return new ArbitraryLengthPathTest(getEmptyInitializedRepository()).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> basic() throws RDF4JException, IOException {
+		return new BasicTest(getEmptyInitializedRepository()).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> bind() throws RDF4JException, IOException {
+		return new BindTest(getEmptyInitializedRepository()).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> builtinFunction() throws RDF4JException, IOException {
+		return new BuiltinFunctionTest(getEmptyInitializedRepository()).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> construct() throws RDF4JException, IOException {
+		return new ConstructTest(getEmptyInitializedRepository()).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> defaultGraph() throws RDF4JException, IOException {
+		return new DefaultGraphTest(getEmptyInitializedRepository()).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> describe() throws RDF4JException, IOException {
+		return new DescribeTest(getEmptyInitializedRepository()).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> groupBy() throws RDF4JException, IOException {
+		return new GroupByTest(getEmptyInitializedRepository()).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> in() throws RDF4JException, IOException {
+		return new InTest(getEmptyInitializedRepository()).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> optional() throws RDF4JException, IOException {
+		return new OptionalTest(getEmptyInitializedRepository()).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> propertyPath() throws RDF4JException, IOException {
+		return new PropertyPathTest(getEmptyInitializedRepository()).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> subselect() throws RDF4JException, IOException {
+		return new SubselectTest(getEmptyInitializedRepository()).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> union() throws RDF4JException, IOException {
+		return new UnionTest(getEmptyInitializedRepository()).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> values() throws RDF4JException, IOException {
+		return new ValuesTest(getEmptyInitializedRepository()).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> orderBy() throws RDF4JException, IOException {
+		return new OrderByTest(getEmptyInitializedRepository()).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> exists() throws RDF4JException, IOException {
+		return new ExistsTest(getEmptyInitializedRepository()).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> minus() throws RDF4JException, IOException {
+		return new MinusTest(getEmptyInitializedRepository()).tests();
+	}
+
+	@BeforeAll
 	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void tearDownClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
-	private static RepositoryFactory factory;
+	@TempDir
+	private File dataDir;
 
-	private static File dataDir;
+	protected final RepositoryFactory factory;
 
-	public static void setRepositoryFactory(RepositoryFactory factory) throws IOException {
-		if (dataDir != null && dataDir.isDirectory()) {
-			FileUtil.deleteDir(dataDir);
-			dataDir = null;
-		}
-		RepositorySPARQLComplianceTestSuite.factory = factory;
+	public RepositorySPARQLComplianceTestSuite(RepositoryFactory factory) {
+		super();
+		this.factory = factory;
 	}
 
-	public static Repository getEmptyInitializedRepository(Class<?> caller) throws RDF4JException, IOException {
-		if (dataDir != null && dataDir.isDirectory()) {
-			FileUtil.deleteDir(dataDir);
-			dataDir = null;
-		}
-		dataDir = Files.createTempDirectory(caller.getSimpleName()).toFile();
+	public Repository getEmptyInitializedRepository() throws RDF4JException, IOException {
 		Repository repository = factory.getRepository(factory.getConfig());
 		repository.setDataDir(dataDir);
 		try (RepositoryConnection con = repository.getConnection()) {
