@@ -19,7 +19,6 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Deque;
 import java.util.HashMap;
@@ -47,10 +46,8 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.TestFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,7 +57,6 @@ import org.slf4j.LoggerFactory;
  * @author Jeen Broekstra
  * @see <a href="https://www.w3.org/2009/sparql/docs/tests/">sparql docs tests</a>
  */
-@RunWith(Parameterized.class)
 public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest {
 
 	private static final Logger logger = LoggerFactory.getLogger(SPARQL11UpdateComplianceTest.class);
@@ -78,109 +74,172 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 
 	private static final List<String> excludedSubdirs = List.of("service");
 
-	private String queryFileURL;
-	private String resultFileURL;
-	private final Dataset dataset;
-	private boolean ordered;
-	private Repository dataRep;
-
 	protected Repository expectedResultRepo;
 
-	private final String requestFile;
+	public SPARQL11UpdateComplianceTest() {
 
-	private final IRI inputDefaultGraphURI;
-
-	private final Map<String, IRI> inputNamedGraphs;
-
-	private final IRI resultDefaultGraphURI;
-
-	private final Map<String, IRI> resultNamedGraphs;
-
-	@Parameterized.Parameters(name = "{0}")
-	public static Collection<Object[]> data() {
-		return Arrays.asList(getTestData());
 	}
 
-	public SPARQL11UpdateComplianceTest(String displayName, String testURI, String name, String requestFile,
-			IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
-			Map<String, IRI> resultNamedGraphs) {
-		super(displayName, testURI, name);
-		this.requestFile = requestFile;
-		this.inputDefaultGraphURI = defaultGraphURI;
-		this.inputNamedGraphs = inputNamedGraphs;
-		this.resultDefaultGraphURI = resultDefaultGraphURI;
-		this.resultNamedGraphs = resultNamedGraphs;
+	protected class DynamicSPARQL11UpdateComplianceTest extends DynamicSparqlComplianceTest {
+		private String queryFileURL;
+		private String resultFileURL;
+		private final Dataset dataset;
+		private boolean ordered;
+		private Repository dataRep;
+		private final String requestFile;
 
-		final SimpleDataset ds = new SimpleDataset();
+		private final IRI inputDefaultGraphURI;
 
-		// This ensures that the repository operates in 'exclusive
-		// mode': the default graph _only_ consists of the null-context (instead
-		// of the entire repository).
-		ds.addDefaultGraph(null);
-		ds.addDefaultRemoveGraph(null);
-		ds.setDefaultInsertGraph(null);
+		private final Map<String, IRI> inputNamedGraphs;
 
-		if (this.inputNamedGraphs.size() > 0) {
-			for (String ng : inputNamedGraphs.keySet()) {
-				IRI namedGraph = SimpleValueFactory.getInstance().createIRI(ng);
-				ds.addNamedGraph(namedGraph);
+		private final IRI resultDefaultGraphURI;
+
+		private final Map<String, IRI> resultNamedGraphs;
+
+		public DynamicSPARQL11UpdateComplianceTest(String displayName, String testURI, String name, String requestFile,
+				IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
+				Map<String, IRI> resultNamedGraphs) {
+			super(displayName, testURI, name);
+			this.requestFile = requestFile;
+			this.inputDefaultGraphURI = defaultGraphURI;
+			this.inputNamedGraphs = inputNamedGraphs;
+			this.resultDefaultGraphURI = resultDefaultGraphURI;
+			this.resultNamedGraphs = resultNamedGraphs;
+
+			final SimpleDataset ds = new SimpleDataset();
+
+			// This ensures that the repository operates in 'exclusive
+			// mode': the default graph _only_ consists of the null-context (instead
+			// of the entire repository).
+			ds.addDefaultGraph(null);
+			ds.addDefaultRemoveGraph(null);
+			ds.setDefaultInsertGraph(null);
+
+			if (this.inputNamedGraphs.size() > 0) {
+				for (String ng : inputNamedGraphs.keySet()) {
+					IRI namedGraph = SimpleValueFactory.getInstance().createIRI(ng);
+					ds.addNamedGraph(namedGraph);
+				}
 			}
-		}
-		this.dataset = ds;
-	}
-
-	@Before
-	public void setUp() throws Exception {
-		dataRep = createRepository();
-
-		try (RepositoryConnection conn = dataRep.getConnection()) {
-			conn.clear();
-
-			if (inputDefaultGraphURI != null) {
-				URL graphURL = new URL(inputDefaultGraphURI.stringValue());
-				conn.add(graphURL, null, Rio.getParserFormatForFileName(graphURL.toString())
-						.orElseThrow(Rio.unsupportedFormat(graphURL.toString())));
-			}
-
-			for (String ng : inputNamedGraphs.keySet()) {
-				URL graphURL = new URL(inputNamedGraphs.get(ng).stringValue());
-				conn.add(graphURL, null,
-						Rio.getParserFormatForFileName(graphURL.toString())
-								.orElseThrow(Rio.unsupportedFormat(graphURL.toString())),
-						dataRep.getValueFactory().createIRI(ng));
-			}
+			this.dataset = ds;
 		}
 
-		expectedResultRepo = createRepository();
+		@Override
+		protected Repository getDataRepository() {
+			return this.dataRep;
+		}
 
-		try (RepositoryConnection conn = expectedResultRepo.getConnection()) {
-			conn.clear();
+		@Override
+		protected final void runTest() throws Exception {
 
-			if (resultDefaultGraphURI != null) {
-				URL graphURL = new URL(resultDefaultGraphURI.stringValue());
-				conn.add(graphURL, null, Rio.getParserFormatForFileName(graphURL.toString())
-						.orElseThrow(Rio.unsupportedFormat(graphURL.toString())));
-			}
+			logger.debug("running {}", getName());
 
-			for (String ng : resultNamedGraphs.keySet()) {
-				URL graphURL = new URL(resultNamedGraphs.get(ng).stringValue());
-				conn.add(graphURL, null,
-						Rio.getParserFormatForFileName(graphURL.toString())
-								.orElseThrow(Rio.unsupportedFormat(graphURL.toString())),
-						dataRep.getValueFactory().createIRI(ng));
+			RepositoryConnection con = dataRep.getConnection();
+			RepositoryConnection erCon = expectedResultRepo.getConnection();
+			try {
+				String updateString = readUpdateString();
+
+				con.begin();
+
+				Update update = con.prepareUpdate(QueryLanguage.SPARQL, updateString, requestFile);
+
+				assertThatNoException().isThrownBy(() -> {
+					int hashCode = update.hashCode();
+					if (hashCode == System.identityHashCode(update)) {
+						throw new UnsupportedOperationException(
+								"hashCode() result is the same as  the identityHashCode in "
+										+ update.getClass().getName());
+					}
+				});
+
+				update.setDataset(dataset);
+				update.execute();
+
+				con.commit();
+
+				// check default graph
+				logger.info("checking default graph");
+				compareGraphs(Iterations.asList(con.getStatements(null, null, null, true, (Resource) null)),
+						Iterations.asList(erCon.getStatements(null, null, null, true, (Resource) null)));
+
+				for (String namedGraph : inputNamedGraphs.keySet()) {
+					logger.info("checking named graph {}", namedGraph);
+					IRI contextURI = con.getValueFactory().createIRI(namedGraph.replaceAll("\"", ""));
+					compareGraphs(Iterations.asList(con.getStatements(null, null, null, true, contextURI)),
+							Iterations.asList(erCon.getStatements(null, null, null, true, contextURI)));
+				}
+			} catch (Exception e) {
+				if (con.isActive()) {
+					con.rollback();
+				}
+				throw e;
+			} finally {
+				con.close();
+				erCon.close();
 			}
 		}
-	}
 
-	@After
-	public void tearDown() {
-		if (dataRep != null) {
-			dataRep.shutDown();
-			dataRep = null;
+		private String readUpdateString() throws IOException {
+			try (InputStream stream = new URL(requestFile).openStream()) {
+				return IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
+			}
 		}
-		if (expectedResultRepo != null) {
-			expectedResultRepo.shutDown();
-			expectedResultRepo = null;
+
+		@Override
+		public void setUp() throws Exception {
+			dataRep = createRepository();
+
+			try (RepositoryConnection conn = dataRep.getConnection()) {
+				conn.clear();
+
+				if (inputDefaultGraphURI != null) {
+					URL graphURL = new URL(inputDefaultGraphURI.stringValue());
+					conn.add(graphURL, null, Rio.getParserFormatForFileName(graphURL.toString())
+							.orElseThrow(Rio.unsupportedFormat(graphURL.toString())));
+				}
+
+				for (String ng : inputNamedGraphs.keySet()) {
+					URL graphURL = new URL(inputNamedGraphs.get(ng).stringValue());
+					conn.add(graphURL, null,
+							Rio.getParserFormatForFileName(graphURL.toString())
+									.orElseThrow(Rio.unsupportedFormat(graphURL.toString())),
+							dataRep.getValueFactory().createIRI(ng));
+				}
+			}
+
+			expectedResultRepo = createRepository();
+
+			try (RepositoryConnection conn = expectedResultRepo.getConnection()) {
+				conn.clear();
+
+				if (resultDefaultGraphURI != null) {
+					URL graphURL = new URL(resultDefaultGraphURI.stringValue());
+					conn.add(graphURL, null, Rio.getParserFormatForFileName(graphURL.toString())
+							.orElseThrow(Rio.unsupportedFormat(graphURL.toString())));
+				}
+
+				for (String ng : resultNamedGraphs.keySet()) {
+					URL graphURL = new URL(resultNamedGraphs.get(ng).stringValue());
+					conn.add(graphURL, null,
+							Rio.getParserFormatForFileName(graphURL.toString())
+									.orElseThrow(Rio.unsupportedFormat(graphURL.toString())),
+							dataRep.getValueFactory().createIRI(ng));
+				}
+			}
+		}
+
+		@Override
+		public void tearDown() throws Exception {
+			if (dataRep != null) {
+				clear(dataRep);
+				dataRep.shutDown();
+				dataRep = null;
+			}
+			if (expectedResultRepo != null) {
+				clear(expectedResultRepo);
+				expectedResultRepo.shutDown();
+				expectedResultRepo = null;
+			}
 		}
 	}
 
@@ -195,20 +254,15 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 
 	protected abstract Repository newRepository() throws Exception;
 
-	@Override
-	protected Repository getDataRepository() {
-		return this.dataRep;
-	}
+	@TestFactory
+	public Collection<DynamicTest> getTestData() {
 
-	private static Object[][] getTestData() {
-
-		List<Object[]> tests = new ArrayList<>();
+		List<DynamicTest> tests = new ArrayList<>();
 
 		Deque<String> manifests = new ArrayDeque<>();
-		manifests.add(
-				SPARQL11UpdateComplianceTest.class.getClassLoader()
-						.getResource("testcases-sparql-1.1-w3c/manifest-all.ttl")
-						.toExternalForm());
+		manifests.add(SPARQL11UpdateComplianceTest.class.getClassLoader()
+				.getResource("testcases-sparql-1.1-w3c/manifest-all.ttl")
+				.toExternalForm());
 		while (!manifests.isEmpty()) {
 			String pop = manifests.pop();
 			SPARQLUpdateTestManifest manifest = new SPARQLUpdateTestManifest(pop);
@@ -216,14 +270,11 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 			manifests.addAll(manifest.subManifests);
 		}
 
-		Object[][] result = new Object[tests.size()][6];
-		tests.toArray(result);
-
-		return result;
+		return tests;
 	}
 
-	static class SPARQLUpdateTestManifest {
-		List<Object[]> tests = new ArrayList<>();
+	class SPARQLUpdateTestManifest {
+		List<DynamicTest> tests = new ArrayList<>();
 		List<String> subManifests = new ArrayList<>();
 
 		public SPARQLUpdateTestManifest(String filename) {
@@ -284,10 +335,9 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 					for (BindingSet bs : result) {
 						// FIXME I'm sure there's a neater way to do this
 						String testName = bs.getValue("testName").stringValue();
-						String displayName = filename.substring(
-								filename.lastIndexOf("testcases-sparql-1.1-w3c/")
-										+ "testcases-sparql-1.1-w3c/".length(),
-								filename.lastIndexOf("/"))
+						String displayName = filename
+								.substring(filename.lastIndexOf("testcases-sparql-1.1-w3c/")
+										+ "testcases-sparql-1.1-w3c/".length(), filename.lastIndexOf("/"))
 								+ ": " + testName;
 
 						IRI testURI = (IRI) bs.getValue("testURI");
@@ -330,75 +380,15 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 								resultNamedGraphs.put(namedGraphLabel, namedGraphData);
 							}
 						}
-
-						tests.add(new Object[] {
-								displayName,
-								testURI.stringValue(),
-								testName,
-								requestFile.stringValue(),
-								defaultGraphURI,
-								inputNamedGraphs,
-								resultDefaultGraphURI,
-								resultNamedGraphs
-						});
+						DynamicSPARQL11UpdateComplianceTest ds11ut = new DynamicSPARQL11UpdateComplianceTest(
+								displayName, testURI.stringValue(), testName, requestFile.stringValue(),
+								defaultGraphURI, inputNamedGraphs, resultDefaultGraphURI, resultNamedGraphs);
+						if (!shouldIgnoredTest(testName))
+							tests.add(DynamicTest.dynamicTest(displayName, ds11ut::test));
 					}
 				}
 			}
 		}
 	}
 
-	@Override
-	protected void runTest() throws Exception {
-
-		logger.debug("running {}", getName());
-
-		RepositoryConnection con = dataRep.getConnection();
-		RepositoryConnection erCon = expectedResultRepo.getConnection();
-		try {
-			String updateString = readUpdateString();
-
-			con.begin();
-
-			Update update = con.prepareUpdate(QueryLanguage.SPARQL, updateString, requestFile);
-
-			assertThatNoException().isThrownBy(() -> {
-				int hashCode = update.hashCode();
-				if (hashCode == System.identityHashCode(update)) {
-					throw new UnsupportedOperationException(
-							"hashCode() result is the same as  the identityHashCode in " + update.getClass().getName());
-				}
-			});
-
-			update.setDataset(dataset);
-			update.execute();
-
-			con.commit();
-
-			// check default graph
-			logger.info("checking default graph");
-			compareGraphs(Iterations.asList(con.getStatements(null, null, null, true, (Resource) null)),
-					Iterations.asList(erCon.getStatements(null, null, null, true, (Resource) null)));
-
-			for (String namedGraph : inputNamedGraphs.keySet()) {
-				logger.info("checking named graph {}", namedGraph);
-				IRI contextURI = con.getValueFactory().createIRI(namedGraph.replaceAll("\"", ""));
-				compareGraphs(Iterations.asList(con.getStatements(null, null, null, true, contextURI)),
-						Iterations.asList(erCon.getStatements(null, null, null, true, contextURI)));
-			}
-		} catch (Exception e) {
-			if (con.isActive()) {
-				con.rollback();
-			}
-			throw e;
-		} finally {
-			con.close();
-			erCon.close();
-		}
-	}
-
-	private String readUpdateString() throws IOException {
-		try (InputStream stream = new URL(requestFile).openStream()) {
-			return IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
-		}
-	}
 }

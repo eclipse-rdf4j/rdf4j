@@ -20,7 +20,6 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Deque;
 import java.util.List;
@@ -37,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.parser.ParsedOperation;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
+import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.helpers.SailUpdateExecutor;
@@ -45,7 +45,8 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.runners.Parameterized;
+import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.TestFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,46 +61,116 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 
 	private static final List<String> excludedSubdirs = List.of();
 
-	private final String queryFileURL;
-	private final boolean positiveTest;
+	public class DynamicSPARQLSyntaxComplianceTest extends DynamicSparqlComplianceTest {
+		private final String queryFileURL;
+		private final boolean positiveTest;
 
-	@Parameterized.Parameters(name = "{0}")
-	public static Collection<Object[]> data() {
-		return Arrays.asList(getTestData());
+		public DynamicSPARQLSyntaxComplianceTest(String displayName, String testURI, String name, String queryFileURL,
+				boolean positiveTest) {
+
+			super(displayName, testURI, name);
+			this.queryFileURL = queryFileURL;
+			this.positiveTest = positiveTest;
+		}
+
+		@Override
+		protected void runTest() throws Exception {
+			InputStream stream = new URL(queryFileURL).openStream();
+			String query = IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
+			stream.close();
+
+			try {
+				ParsedOperation operation = parseOperation(query, queryFileURL);
+
+				assertThatNoException().isThrownBy(() -> {
+					int hashCode = operation.hashCode();
+					if (hashCode == System.identityHashCode(operation)) {
+						throw new UnsupportedOperationException(
+								"hashCode() result is the same as  the identityHashCode in "
+										+ operation.getClass().getName());
+					}
+				});
+
+				if (!positiveTest) {
+					boolean dataBlockUpdate = false;
+					if (operation instanceof ParsedUpdate) {
+						for (UpdateExpr updateExpr : ((ParsedUpdate) operation).getUpdateExprs()) {
+							if (updateExpr instanceof InsertData || updateExpr instanceof DeleteData) {
+								// parsing for these operation happens during actual
+								// execution, so try and execute.
+								dataBlockUpdate = true;
+
+								MemoryStore store = new MemoryStore();
+								store.init();
+								NotifyingSailConnection conn = store.getConnection();
+								try {
+									conn.begin();
+									SailUpdateExecutor exec = new SailUpdateExecutor(conn, store.getValueFactory(),
+											null);
+									exec.executeUpdate(updateExpr, null, null, true, -1);
+									conn.rollback();
+									fail("Negative test case should have failed to parse");
+								} catch (SailException e) {
+									if (!(e.getCause() instanceof RDFParseException)) {
+										logger.error("unexpected error in negative test case", e);
+										fail("unexpected error in negative test case");
+									}
+									// fall through - a parse exception is expected for a
+									// negative test case
+									conn.rollback();
+								} finally {
+									conn.close();
+								}
+							}
+						}
+					}
+					if (!dataBlockUpdate) {
+						fail("Negative test case should have failed to parse");
+					}
+				}
+			} catch (MalformedQueryException e) {
+				if (positiveTest) {
+					e.printStackTrace();
+					fail("Positive test case failed: " + e.getMessage());
+				}
+			}
+		}
+
+		@Override
+		protected Repository getDataRepository() {
+			return null; // not needed in syntax tests
+		}
+
+		@Override
+		public void tearDown() throws Exception {
+			// not needed in syntax tests
+		}
+
+		@Override
+		public void setUp() throws Exception {
+			// not needed in syntax tests
+		}
 	}
 
-	public SPARQLSyntaxComplianceTest(String displayName, String testURI, String name, String queryFileURL,
-			boolean positiveTest) {
-
-		super(displayName, testURI, name);
-		this.queryFileURL = queryFileURL;
-		this.positiveTest = positiveTest;
-	}
-
-	private static Object[][] getTestData() {
-
-		List<Object[]> tests = new ArrayList<>();
+	@TestFactory
+	public Collection<DynamicTest> getTestData() {
+		List<DynamicTest> tests = new ArrayList<>();
 
 		Deque<String> manifests = new ArrayDeque<>();
-		manifests.add(
-				SPARQLSyntaxComplianceTest.class.getClassLoader()
-						.getResource("testcases-sparql-1.1-w3c/manifest-all.ttl")
-						.toExternalForm());
+		manifests.add(SPARQLSyntaxComplianceTest.class.getClassLoader()
+				.getResource("testcases-sparql-1.1-w3c/manifest-all.ttl")
+				.toExternalForm());
 		while (!manifests.isEmpty()) {
 			String pop = manifests.pop();
 			SPARQLSyntaxManifest manifest = new SPARQLSyntaxManifest(pop);
 			tests.addAll(manifest.tests);
 			manifests.addAll(manifest.subManifests);
 		}
-
-		Object[][] result = new Object[tests.size()][6];
-		tests.toArray(result);
-
-		return result;
+		return tests;
 	}
 
-	static class SPARQLSyntaxManifest {
-		List<Object[]> tests = new ArrayList<>();
+	class SPARQLSyntaxManifest {
+		List<DynamicTest> tests = new ArrayList<>();
 		List<String> subManifests = new ArrayList<>();
 
 		public SPARQLSyntaxManifest(String filename) {
@@ -146,10 +217,9 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 					for (BindingSet bs : result) {
 						// FIXME I'm sure there's a neater way to do this
 						String testName = bs.getValue("Name").stringValue();
-						String displayName = filename.substring(
-								filename.lastIndexOf("testcases-sparql-1.1-w3c/")
-										+ "testcases-sparql-1.1-w3c/".length(),
-								filename.lastIndexOf("/"))
+						String displayName = filename
+								.substring(filename.lastIndexOf("testcases-sparql-1.1-w3c/")
+										+ "testcases-sparql-1.1-w3c/".length(), filename.lastIndexOf("/"))
 								+ ": " + testName;
 
 						IRI testURI = (IRI) bs.getValue("TestURI");
@@ -160,12 +230,11 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 								|| type.equals(
 										"http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveUpdateSyntaxTest11");
 
-						tests.add(new Object[] {
-								displayName,
-								testURI.stringValue(),
-								testName,
-								action.stringValue(),
-								positiveTest });
+						DynamicSPARQLSyntaxComplianceTest ds11ut = new DynamicSPARQLSyntaxComplianceTest(displayName,
+								testURI.stringValue(), testName, action.stringValue(),
+								positiveTest);
+						if (!shouldIgnoredTest(testName))
+							tests.add(DynamicTest.dynamicTest(displayName, ds11ut::test));
 					}
 				}
 
@@ -176,65 +245,4 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 	}
 
 	protected abstract ParsedOperation parseOperation(String operation, String fileURL) throws MalformedQueryException;
-
-	@Override
-	protected void runTest() throws Exception {
-		InputStream stream = new URL(queryFileURL).openStream();
-		String query = IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
-		stream.close();
-
-		try {
-			ParsedOperation operation = parseOperation(query, queryFileURL);
-
-			assertThatNoException().isThrownBy(() -> {
-				int hashCode = operation.hashCode();
-				if (hashCode == System.identityHashCode(operation)) {
-					throw new UnsupportedOperationException("hashCode() result is the same as  the identityHashCode in "
-							+ operation.getClass().getName());
-				}
-			});
-
-			if (!positiveTest) {
-				boolean dataBlockUpdate = false;
-				if (operation instanceof ParsedUpdate) {
-					for (UpdateExpr updateExpr : ((ParsedUpdate) operation).getUpdateExprs()) {
-						if (updateExpr instanceof InsertData || updateExpr instanceof DeleteData) {
-							// parsing for these operation happens during actual
-							// execution, so try and execute.
-							dataBlockUpdate = true;
-
-							MemoryStore store = new MemoryStore();
-							store.init();
-							NotifyingSailConnection conn = store.getConnection();
-							try {
-								conn.begin();
-								SailUpdateExecutor exec = new SailUpdateExecutor(conn, store.getValueFactory(), null);
-								exec.executeUpdate(updateExpr, null, null, true, -1);
-								conn.rollback();
-								fail("Negative test case should have failed to parse");
-							} catch (SailException e) {
-								if (!(e.getCause() instanceof RDFParseException)) {
-									logger.error("unexpected error in negative test case", e);
-									fail("unexpected error in negative test case");
-								}
-								// fall through - a parse exception is expected for a
-								// negative test case
-								conn.rollback();
-							} finally {
-								conn.close();
-							}
-						}
-					}
-				}
-				if (!dataBlockUpdate) {
-					fail("Negative test case should have failed to parse");
-				}
-			}
-		} catch (MalformedQueryException e) {
-			if (positiveTest) {
-				e.printStackTrace();
-				fail("Positive test case failed: " + e.getMessage());
-			}
-		}
-	}
 }

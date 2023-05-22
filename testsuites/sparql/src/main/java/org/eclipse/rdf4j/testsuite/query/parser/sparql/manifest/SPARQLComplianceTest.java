@@ -34,7 +34,6 @@ import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
-import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,52 +49,161 @@ public abstract class SPARQLComplianceTest {
 
 	private List<String> ignoredTests = new ArrayList<>();
 
-	private final String displayName;
-	private final String testURI;
-	private final String name;
+	public SPARQLComplianceTest() {
+	}
 
 	/**
 	 * @param displayName
 	 * @param testURI
 	 * @param name
 	 */
-	public SPARQLComplianceTest(String displayName, String testURI, String name) {
-		this.displayName = displayName;
-		this.testURI = testURI;
-		this.name = name;
+	protected abstract class DynamicSparqlComplianceTest {
+		private final String displayName;
+		private final String testURI;
+		private final String name;
+
+		public DynamicSparqlComplianceTest(String displayName, String testURI, String name) {
+			this.displayName = displayName;
+			this.testURI = testURI;
+			this.name = name;
+		}
+
+		public void test() {
+			assumeThat(getIgnoredTests().contains(getName())).withFailMessage("test case '%s' is ignored", getName())
+					.isFalse();
+			try {
+				setUp();
+				runTest();
+			} catch (Exception e) {
+				try {
+					tearDown();
+				} catch (Exception e2) {
+
+				}
+			}
+		}
+
+		/**
+		 * @return the displayName
+		 */
+		public String getDisplayName() {
+			return displayName;
+		}
+
+		/**
+		 * @return the testURI
+		 */
+		public String getTestURI() {
+			return testURI;
+		}
+
+		/**
+		 * @return the name
+		 */
+		public String getName() {
+			return name;
+		}
+
+		protected void uploadDataset(Dataset dataset) throws Exception {
+			try (RepositoryConnection con = getDataRepository().getConnection()) {
+				// Merge default and named graphs to filter duplicates
+				Set<IRI> graphURIs = new HashSet<>();
+				graphURIs.addAll(dataset.getDefaultGraphs());
+				graphURIs.addAll(dataset.getNamedGraphs());
+
+				for (Resource graphURI : graphURIs) {
+					upload(((IRI) graphURI), graphURI);
+				}
+			}
+		}
+
+		protected abstract Repository getDataRepository();
+
+		protected void upload(IRI graphURI, Resource context) throws Exception {
+
+			RepositoryConnection con = getDataRepository().getConnection();
+			try {
+				con.begin();
+				RDFFormat rdfFormat = Rio.getParserFormatForFileName(graphURI.toString()).orElse(RDFFormat.TURTLE);
+				RDFParser rdfParser = Rio.createParser(rdfFormat, getDataRepository().getValueFactory());
+				// rdfParser.setPreserveBNodeIDs(true);
+
+				RDFInserter rdfInserter = new RDFInserter(con);
+				rdfInserter.enforceContext(context);
+				rdfParser.setRDFHandler(rdfInserter);
+
+				URL graphURL = new URL(graphURI.toString());
+				try (InputStream in = graphURL.openStream()) {
+					rdfParser.parse(in, graphURI.toString());
+				}
+
+				con.commit();
+			} catch (Exception e) {
+				if (con.isActive()) {
+					con.rollback();
+				}
+				throw e;
+			} finally {
+				con.close();
+			}
+		}
+
+		protected void compareGraphs(Iterable<Statement> queryResult, Iterable<Statement> expectedResult)
+				throws Exception {
+			if (!Models.isomorphic(expectedResult, queryResult)) {
+				StringBuilder message = new StringBuilder(128);
+				message.append("\n============ ");
+				message.append(getName());
+				message.append(" =======================\n");
+				message.append("Expected result: \n");
+				for (Statement st : expectedResult) {
+					message.append(st.toString());
+					message.append("\n");
+				}
+				message.append("=============");
+				StringUtil.appendN('=', getName().length(), message);
+				message.append("========================\n");
+
+				message.append("Query result: \n");
+				for (Statement st : queryResult) {
+					message.append(st.toString());
+					message.append("\n");
+				}
+				message.append("=============");
+				StringUtil.appendN('=', getName().length(), message);
+				message.append("========================\n");
+
+				logger.error(message.toString());
+				fail(message.toString());
+			}
+		}
+
+		protected abstract void runTest() throws Exception;
+
+		public abstract void tearDown() throws Exception;
+
+		public abstract void setUp() throws Exception;
+
+		protected void clear(Repository repo) {
+			try (RepositoryConnection con = repo.getConnection()) {
+				con.clear();
+				con.clearNamespaces();
+			}
+		}
 	}
 
-	@Test
-	public void test() throws Exception {
-		assumeThat(getIgnoredTests().contains(getName())).withFailMessage("test case '%s' is ignored", getName())
-				.isFalse();
-		runTest();
+	protected static final void printBindingSet(BindingSet bs, StringBuilder appendable) {
+		List<String> names = new ArrayList<>(bs.getBindingNames());
+		Collections.sort(names);
+
+		for (String name : names) {
+			if (bs.hasBinding(name)) {
+				appendable.append(bs.getBinding(name));
+				appendable.append(' ');
+			}
+		}
+		appendable.append("\n");
 	}
-
-	/**
-	 * @return the displayName
-	 */
-	public String getDisplayName() {
-		return displayName;
-	}
-
-	/**
-	 * @return the testURI
-	 */
-	public String getTestURI() {
-		return testURI;
-	}
-
-	/**
-	 * @return the name
-	 */
-	public String getName() {
-		return name;
-	}
-
-	protected abstract void runTest() throws Exception;
-
-	protected abstract Repository getDataRepository();
 
 	/**
 	 * Verifies if the selected subManifest occurs in the supplied list of excluded subdirs.
@@ -123,61 +231,6 @@ public abstract class SPARQLComplianceTest {
 		return result;
 	}
 
-	protected void uploadDataset(Dataset dataset) throws Exception {
-		try (RepositoryConnection con = getDataRepository().getConnection()) {
-			// Merge default and named graphs to filter duplicates
-			Set<IRI> graphURIs = new HashSet<>();
-			graphURIs.addAll(dataset.getDefaultGraphs());
-			graphURIs.addAll(dataset.getNamedGraphs());
-
-			for (Resource graphURI : graphURIs) {
-				upload(((IRI) graphURI), graphURI);
-			}
-		}
-	}
-
-	protected void upload(IRI graphURI, Resource context) throws Exception {
-		RepositoryConnection con = getDataRepository().getConnection();
-
-		try {
-			con.begin();
-			RDFFormat rdfFormat = Rio.getParserFormatForFileName(graphURI.toString()).orElse(RDFFormat.TURTLE);
-			RDFParser rdfParser = Rio.createParser(rdfFormat, getDataRepository().getValueFactory());
-			// rdfParser.setPreserveBNodeIDs(true);
-
-			RDFInserter rdfInserter = new RDFInserter(con);
-			rdfInserter.enforceContext(context);
-			rdfParser.setRDFHandler(rdfInserter);
-
-			URL graphURL = new URL(graphURI.toString());
-			try (InputStream in = graphURL.openStream()) {
-				rdfParser.parse(in, graphURI.toString());
-			}
-
-			con.commit();
-		} catch (Exception e) {
-			if (con.isActive()) {
-				con.rollback();
-			}
-			throw e;
-		} finally {
-			con.close();
-		}
-	}
-
-	protected static final void printBindingSet(BindingSet bs, StringBuilder appendable) {
-		List<String> names = new ArrayList<>(bs.getBindingNames());
-		Collections.sort(names);
-
-		for (String name : names) {
-			if (bs.hasBinding(name)) {
-				appendable.append(bs.getBinding(name));
-				appendable.append(' ');
-			}
-		}
-		appendable.append("\n");
-	}
-
 	/**
 	 * @return the ignoredTests
 	 */
@@ -189,6 +242,10 @@ public abstract class SPARQLComplianceTest {
 		this.ignoredTests.add(ignoredTest);
 	}
 
+	protected boolean shouldIgnoredTest(String ignoredTest) {
+		return this.ignoredTests.contains(ignoredTest);
+	}
+
 	/**
 	 * @param ignoredTests the ignoredTests to set
 	 */
@@ -196,32 +253,4 @@ public abstract class SPARQLComplianceTest {
 		this.ignoredTests = ignoredTests;
 	}
 
-	protected void compareGraphs(Iterable<Statement> queryResult, Iterable<Statement> expectedResult) {
-		if (!Models.isomorphic(expectedResult, queryResult)) {
-			StringBuilder message = new StringBuilder(128);
-			message.append("\n============ ");
-			message.append(getName());
-			message.append(" =======================\n");
-			message.append("Expected result: \n");
-			for (Statement st : expectedResult) {
-				message.append(st.toString());
-				message.append("\n");
-			}
-			message.append("=============");
-			StringUtil.appendN('=', getName().length(), message);
-			message.append("========================\n");
-
-			message.append("Query result: \n");
-			for (Statement st : queryResult) {
-				message.append(st.toString());
-				message.append("\n");
-			}
-			message.append("=============");
-			StringUtil.appendN('=', getName().length(), message);
-			message.append("========================\n");
-
-			logger.error(message.toString());
-			fail(message.toString());
-		}
-	}
 }

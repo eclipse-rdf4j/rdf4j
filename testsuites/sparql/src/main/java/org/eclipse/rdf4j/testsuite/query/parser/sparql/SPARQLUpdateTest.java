@@ -10,12 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.query.parser.sparql;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -393,35 +393,34 @@ public abstract class SPARQLUpdateTest {
 
 		operation.execute();
 
-		RepositoryResult<Statement> sts = con.getStatements(bob, complexAge, null, true);
+		Value v1;
+		try (RepositoryResult<Statement> sts = con.getStatements(bob, complexAge, null, true)) {
 
-		assertTrue(sts.hasNext());
+			assertTrue(sts.hasNext());
 
-		Value v1 = sts.next().getObject();
+			v1 = sts.next().getObject();
+		}
 
-		sts.close();
+		try (RepositoryResult<Statement> sts = con.getStatements(null, RDF.VALUE, null, true)) {
 
-		sts = con.getStatements(null, RDF.VALUE, null, true);
+			assertTrue(sts.hasNext());
 
-		assertTrue(sts.hasNext());
+			Value v2 = sts.next().getSubject();
 
-		Value v2 = sts.next().getSubject();
-
-		assertEquals(v1, v2);
-
-		sts.close();
+			assertEquals(v1, v2);
+		}
 
 		String query = getNamespaceDeclarations()
 				+ " SELECT ?bn ?age ?l WHERE { ex:bob ex:complexAge ?bn. ?bn rdf:value ?age. ?bn rdfs:label ?l .} ";
 
-		TupleQueryResult result = con.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();
+		try (TupleQueryResult result = con.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
 
-		assertTrue(result.hasNext());
+			assertTrue(result.hasNext());
 
-		BindingSet bs = result.next();
+			BindingSet bs = result.next();
 
-		assertFalse(result.hasNext());
-
+			assertFalse(result.hasNext());
+		}
 	}
 
 	@Test
@@ -666,10 +665,10 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		String message = "labels should have been inserted in corresponding named graphs only.";
-		assertTrue(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true, graph1));
-		assertFalse(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true, graph2));
-		assertTrue(message, con.hasStatement(alice, RDFS.LABEL, f.createLiteral("Alice"), true, graph2));
-		assertFalse(message, con.hasStatement(alice, RDFS.LABEL, f.createLiteral("Alice"), true, graph1));
+		assertTrue(con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true, graph1), message);
+		assertFalse(con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true, graph2), message);
+		assertTrue(con.hasStatement(alice, RDFS.LABEL, f.createLiteral("Alice"), true, graph2), message);
+		assertFalse(con.hasStatement(alice, RDFS.LABEL, f.createLiteral("Alice"), true, graph1), message);
 	}
 
 	@Test
@@ -684,10 +683,10 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		String message = "label should have been inserted in default graph, for ex:bob only";
-		assertTrue(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true));
-		assertFalse(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true, graph1));
-		assertFalse(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true, graph2));
-		assertFalse(message, con.hasStatement(alice, RDFS.LABEL, f.createLiteral("Alice"), true));
+		assertTrue(con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true), message);
+		assertFalse(con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true, graph1), message);
+		assertFalse(con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true, graph2), message);
+		assertFalse(con.hasStatement(alice, RDFS.LABEL, f.createLiteral("Alice"), true), message);
 	}
 
 	@Test
@@ -702,9 +701,9 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		String message = "label should have been inserted in graph2, for ex:bob only";
-		assertTrue(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true, graph2));
-		assertFalse(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true, graph1));
-		assertFalse(message, con.hasStatement(alice, RDFS.LABEL, f.createLiteral("Alice"), true));
+		assertTrue(con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true, graph2), message);
+		assertFalse(con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true, graph1), message);
+		assertFalse(con.hasStatement(alice, RDFS.LABEL, f.createLiteral("Alice"), true), message);
 	}
 
 	@Test
@@ -719,10 +718,10 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		String message = "label should have been inserted in graph1 only, for ex:bob only";
-		assertTrue(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true, graph1));
-		assertFalse(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true, graph2));
-		assertFalse(message, con.hasStatement(alice, RDFS.LABEL, f.createLiteral("Alice"), true, graph2));
-		assertFalse(message, con.hasStatement(alice, RDFS.LABEL, f.createLiteral("Alice"), true, graph1));
+		assertTrue(con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true, graph1), message);
+		assertFalse(con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true, graph2), message);
+		assertFalse(con.hasStatement(alice, RDFS.LABEL, f.createLiteral("Alice"), true, graph2), message);
+		assertFalse(con.hasStatement(alice, RDFS.LABEL, f.createLiteral("Alice"), true, graph1), message);
 	}
 
 	@Test
@@ -740,12 +739,12 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		String msg = "foaf:name properties should have been deleted";
-		assertFalse(msg, con.hasStatement(bob, FOAF.NAME, f.createLiteral("Bob"), true));
-		assertFalse(msg, con.hasStatement(alice, FOAF.NAME, f.createLiteral("Alice"), true));
+		assertFalse(con.hasStatement(bob, FOAF.NAME, f.createLiteral("Bob"), true), msg);
+		assertFalse(con.hasStatement(alice, FOAF.NAME, f.createLiteral("Alice"), true), msg);
 
 		msg = "foaf:knows properties should not have been deleted";
-		assertTrue(msg, con.hasStatement(bob, FOAF.KNOWS, null, true));
-		assertTrue(msg, con.hasStatement(alice, FOAF.KNOWS, null, true));
+		assertTrue(con.hasStatement(bob, FOAF.KNOWS, null, true), msg);
+		assertTrue(con.hasStatement(alice, FOAF.KNOWS, null, true), msg);
 	}
 
 	@Test
@@ -763,8 +762,8 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		String msg = "foaf:name properties should have been deleted";
-		assertFalse(msg, con.hasStatement(bob, FOAF.NAME, f.createLiteral("Bob"), true));
-		assertFalse(msg, con.hasStatement(alice, FOAF.NAME, f.createLiteral("Alice"), true));
+		assertFalse(con.hasStatement(bob, FOAF.NAME, f.createLiteral("Bob"), true), msg);
+		assertFalse(con.hasStatement(alice, FOAF.NAME, f.createLiteral("Alice"), true), msg);
 
 	}
 
@@ -783,12 +782,12 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		String msg = "foaf:name properties should have been deleted";
-		assertFalse(msg, con.hasStatement(bob, FOAF.NAME, f.createLiteral("Bob"), true));
-		assertFalse(msg, con.hasStatement(alice, FOAF.NAME, f.createLiteral("Alice"), true));
+		assertFalse(con.hasStatement(bob, FOAF.NAME, f.createLiteral("Bob"), true), msg);
+		assertFalse(con.hasStatement(alice, FOAF.NAME, f.createLiteral("Alice"), true), msg);
 
 		msg = "ex:containsPerson properties should not have been deleted";
-		assertTrue(msg, con.hasStatement(graph1, f.createIRI(EX_NS, "containsPerson"), bob, true));
-		assertTrue(msg, con.hasStatement(graph2, f.createIRI(EX_NS, "containsPerson"), alice, true));
+		assertTrue(con.hasStatement(graph1, f.createIRI(EX_NS, "containsPerson"), bob, true), msg);
+		assertTrue(con.hasStatement(graph2, f.createIRI(EX_NS, "containsPerson"), alice, true), msg);
 
 	}
 
@@ -809,8 +808,8 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		String msg = "two new statements about ex:book1 should have been inserted";
-		assertTrue(msg, con.hasStatement(book1, DC.TITLE, f.createLiteral("book 1"), true));
-		assertTrue(msg, con.hasStatement(book1, DC.CREATOR, f.createLiteral("Ringo"), true));
+		assertTrue(con.hasStatement(book1, DC.TITLE, f.createLiteral("book 1"), true), msg);
+		assertTrue(con.hasStatement(book1, DC.CREATOR, f.createLiteral("Ringo"), true), msg);
 	}
 
 	@Test
@@ -830,8 +829,9 @@ public abstract class SPARQLUpdateTest {
 
 		String msg = "new statement about ex:book1 should have been inserted";
 
-		assertTrue(msg,
-				con.hasStatement(book1, DC.TITLE, f.createLiteral("the number four", CoreDatatype.XSD.INTEGER), true));
+		assertTrue(
+				con.hasStatement(book1, DC.TITLE, f.createLiteral("the number four", CoreDatatype.XSD.INTEGER), true),
+				msg);
 	}
 
 	@Test
@@ -850,7 +850,7 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		String msg = "new statement about ex:book1 should have been inserted";
-		assertTrue(msg, con.hasStatement(book1, DC.TITLE, f.createLiteral("book 1", "en"), true));
+		assertTrue(con.hasStatement(book1, DC.TITLE, f.createLiteral("book 1", "en"), true), msg);
 	}
 
 	@Test
@@ -984,9 +984,9 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		String msg = "newly inserted statement missing";
-		assertTrue(msg, con.hasStatement(book1, DC.TITLE, f.createLiteral("book 1"), true));
-		assertTrue(msg, con.hasStatement(book1, DC.CREATOR, f.createLiteral("Ringo"), true));
-		assertTrue(msg, con.hasStatement(book2, DC.CREATOR, f.createLiteral("George"), true));
+		assertTrue(con.hasStatement(book1, DC.TITLE, f.createLiteral("book 1"), true), msg);
+		assertTrue(con.hasStatement(book1, DC.CREATOR, f.createLiteral("Ringo"), true), msg);
+		assertTrue(con.hasStatement(book2, DC.CREATOR, f.createLiteral("George"), true), msg);
 	}
 
 	@Test
@@ -1006,8 +1006,8 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		String msg = "two new statements about ex:book1 should have been inserted in graph1";
-		assertTrue(msg, con.hasStatement(book1, DC.TITLE, f.createLiteral("book 1"), true, graph1));
-		assertTrue(msg, con.hasStatement(book1, DC.CREATOR, f.createLiteral("Ringo"), true, graph1));
+		assertTrue(con.hasStatement(book1, DC.TITLE, f.createLiteral("book 1"), true, graph1), msg);
+		assertTrue(con.hasStatement(book1, DC.CREATOR, f.createLiteral("Ringo"), true, graph1), msg);
 	}
 
 	@Test
@@ -1042,7 +1042,7 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		String msg = "statement should have been deleted.";
-		assertFalse(msg, con.hasStatement(alice, FOAF.KNOWS, bob, true));
+		assertFalse(con.hasStatement(alice, FOAF.KNOWS, bob, true), msg);
 	}
 
 	@Test
@@ -1061,7 +1061,7 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		String msg = "statement should have been deleted.";
-		assertFalse(msg, con.hasStatement(i18n, FOAF.KNOWS, bob, true));
+		assertFalse(con.hasStatement(i18n, FOAF.KNOWS, bob, true), msg);
 	}
 
 	@Test
@@ -1077,8 +1077,8 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		String msg = "statement should have been deleted.";
-		assertFalse(msg, con.hasStatement(alice, FOAF.KNOWS, bob, true));
-		assertFalse(msg, con.hasStatement(alice, FOAF.MBOX, f.createLiteral("alice@example.org"), true));
+		assertFalse(con.hasStatement(alice, FOAF.KNOWS, bob, true), msg);
+		assertFalse(con.hasStatement(alice, FOAF.MBOX, f.createLiteral("alice@example.org"), true), msg);
 	}
 
 	@Test
@@ -1094,7 +1094,7 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		String msg = "statement should have been deleted from graph1";
-		assertFalse(msg, con.hasStatement(alice, FOAF.KNOWS, bob, true, graph1));
+		assertFalse(con.hasStatement(alice, FOAF.KNOWS, bob, true, graph1), msg);
 	}
 
 	@Test
@@ -1113,7 +1113,7 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		String msg = "statement should have not have been deleted from graph1";
-		assertTrue(msg, con.hasStatement(alice, FOAF.KNOWS, bob, true, graph1));
+		assertTrue(con.hasStatement(alice, FOAF.KNOWS, bob, true, graph1), msg);
 	}
 
 	@Test
@@ -1528,12 +1528,12 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		String msg = "foaf:name properties should have been deleted";
-		assertFalse(msg, con.hasStatement(bob, FOAF.NAME, f.createLiteral("Bob"), true));
-		assertFalse(msg, con.hasStatement(alice, FOAF.NAME, f.createLiteral("Alice"), true));
+		assertFalse(con.hasStatement(bob, FOAF.NAME, f.createLiteral("Bob"), true), msg);
+		assertFalse(con.hasStatement(alice, FOAF.NAME, f.createLiteral("Alice"), true), msg);
 
 		msg = "foaf:name properties with value 'foo' should have been added";
-		assertTrue(msg, con.hasStatement(bob, FOAF.NAME, f.createLiteral("foo"), true));
-		assertTrue(msg, con.hasStatement(alice, FOAF.NAME, f.createLiteral("foo"), true));
+		assertTrue(con.hasStatement(bob, FOAF.NAME, f.createLiteral("foo"), true), msg);
+		assertTrue(con.hasStatement(alice, FOAF.NAME, f.createLiteral("foo"), true), msg);
 	}
 
 	@Test
@@ -1553,12 +1553,12 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		String msg = "foaf:name properties should have been deleted";
-		assertFalse(msg, con.hasStatement(bob, FOAF.NAME, f.createLiteral("Bob"), true));
-		assertFalse(msg, con.hasStatement(alice, FOAF.NAME, f.createLiteral("Alice"), true));
+		assertFalse(con.hasStatement(bob, FOAF.NAME, f.createLiteral("Bob"), true), msg);
+		assertFalse(con.hasStatement(alice, FOAF.NAME, f.createLiteral("Alice"), true), msg);
 
 		msg = "foaf:name properties with value 'foo' should not have been added";
-		assertFalse(msg, con.hasStatement(bob, FOAF.NAME, f.createLiteral("foo"), true));
-		assertFalse(msg, con.hasStatement(alice, FOAF.NAME, f.createLiteral("foo"), true));
+		assertFalse(con.hasStatement(bob, FOAF.NAME, f.createLiteral("foo"), true), msg);
+		assertFalse(con.hasStatement(alice, FOAF.NAME, f.createLiteral("foo"), true), msg);
 	}
 
 	@Test
@@ -1578,12 +1578,12 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		String msg = "statements about bob should have been removed from graph1";
-		assertFalse(msg, con.hasStatement(bob, null, null, true, graph1));
+		assertFalse(con.hasStatement(bob, null, null, true, graph1), msg);
 
 		msg = "statements about bob should have been added to graph2";
-		assertTrue(msg, con.hasStatement(bob, FOAF.NAME, f.createLiteral("Bob"), true, graph2));
-		assertTrue(msg, con.hasStatement(bob, FOAF.MBOX, null, true, graph2));
-		assertTrue(msg, con.hasStatement(bob, FOAF.KNOWS, alice, true, graph2));
+		assertTrue(con.hasStatement(bob, FOAF.NAME, f.createLiteral("Bob"), true, graph2), msg);
+		assertTrue(con.hasStatement(bob, FOAF.MBOX, null, true, graph2), msg);
+		assertTrue(con.hasStatement(bob, FOAF.KNOWS, alice, true, graph2), msg);
 	}
 
 	@Test
@@ -1626,12 +1626,12 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		String msg = "statements about book1 should have been removed from bookStore";
-		assertFalse(msg, con.hasStatement(book1, null, null, true, bookStore));
+		assertFalse(con.hasStatement(book1, null, null, true, bookStore), msg);
 
 		msg = "statements about book1 should have been added to bookStore2";
-		assertTrue(msg, con.hasStatement(book1, RDF.TYPE, null, true, bookStore2));
-		assertTrue(msg, con.hasStatement(book1, DC.DATE, null, true, bookStore2));
-		assertTrue(msg, con.hasStatement(book1, DC.TITLE, null, true, bookStore2));
+		assertTrue(con.hasStatement(book1, RDF.TYPE, null, true, bookStore2), msg);
+		assertTrue(con.hasStatement(book1, DC.DATE, null, true, bookStore2), msg);
+		assertTrue(con.hasStatement(book1, DC.TITLE, null, true, bookStore2), msg);
 	}
 
 	@Test
@@ -1678,8 +1678,8 @@ public abstract class SPARQLUpdateTest {
 		updDelete.execute();
 
 		String msg = "statement should have been deleted.";
-		assertFalse(msg, con.hasStatement(alice, FOAF.KNOWS, bob, true, graph2));
-		assertFalse(msg, con.hasStatement(alice, FOAF.MBOX, f.createLiteral("alice@example.org"), true, graph2));
+		assertFalse(con.hasStatement(alice, FOAF.KNOWS, bob, true, graph2), msg);
+		assertFalse(con.hasStatement(alice, FOAF.MBOX, f.createLiteral("alice@example.org"), true, graph2), msg);
 	}
 
 	@Test
