@@ -46,8 +46,8 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.testsuite.sparql.vocabulary.EX;
-import org.junit.After;
-import org.junit.Before;
+import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.function.Executable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,20 +58,31 @@ import org.slf4j.LoggerFactory;
  */
 public abstract class AbstractComplianceTest {
 
+	protected DynamicTest makeTest(String name, Executable x) {
+		return DynamicTest.dynamicTest(name, () -> {
+			setUp();
+			x.execute();
+			tearDown();
+		});
+	}
+
 	protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
-	protected Repository repo;
+	protected final Repository repo;
 	protected RepositoryConnection conn;
 
-	@Before
-	public void setUp() throws Exception {
-		repo = RepositorySPARQLComplianceTestSuite.getEmptyInitializedRepository(this.getClass());
+	public AbstractComplianceTest(Repository repo) {
+		this.repo = repo;
+	}
+
+	public void setUp() {
+		repo.init();
 		conn = new RepositoryConnectionWrapper(repo.getConnection());
 	}
 
-	@After
 	public void tearDown() {
 		try {
+			conn.clear();
 			conn.close();
 		} finally {
 			repo.shutDown();

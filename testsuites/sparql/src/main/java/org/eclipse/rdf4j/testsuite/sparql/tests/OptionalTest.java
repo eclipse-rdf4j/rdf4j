@@ -11,11 +11,11 @@
 package org.eclipse.rdf4j.testsuite.sparql.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.StringReader;
 import java.util.List;
@@ -29,9 +29,11 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests on OPTIONAL clause behavior.
@@ -41,15 +43,14 @@ import org.junit.Test;
  */
 public class OptionalTest extends AbstractComplianceTest {
 
-	@Test
-	public void testSES1898LeftJoinSemantics1() throws Exception {
+	public OptionalTest(Repository repo) {
+		super(repo);
+	}
+
+	private void testSES1898LeftJoinSemantics1() throws Exception {
 		loadTestData("/testdata-query/dataset-ses1898.trig");
-		String query = "  PREFIX : <http://example.org/> " +
-				"  SELECT * WHERE { " +
-				"    ?s :p1 ?v1 . " +
-				"    OPTIONAL {?s :p2 ?v2 } ." +
-				"     ?s :p3 ?v2 . " +
-				"  } ";
+		String query = "  PREFIX : <http://example.org/> " + "  SELECT * WHERE { " + "    ?s :p1 ?v1 . "
+				+ "    OPTIONAL {?s :p2 ?v2 } ." + "     ?s :p3 ?v2 . " + "  } ";
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 		try (Stream<BindingSet> result = tq.evaluate().stream()) {
@@ -58,28 +59,19 @@ public class OptionalTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testSES1121VarNamesInOptionals() throws Exception {
+	private void testSES1121VarNamesInOptionals() throws Exception {
 		// Verifying that variable names have no influence on order of optionals
 		// in query. See SES-1121.
 
 		loadTestData("/testdata-query/dataset-ses1121.trig");
 
-		String query1 = getNamespaceDeclarations() +
-				" SELECT DISTINCT *\n" +
-				" WHERE { GRAPH ?g { \n" +
-				"          OPTIONAL { ?var35 ex:p ?b . } \n " +
-				"          OPTIONAL { ?b ex:q ?c . } \n " +
-				"       } \n" +
-				" } \n";
+		String query1 = getNamespaceDeclarations() + " SELECT DISTINCT *\n" + " WHERE { GRAPH ?g { \n"
+				+ "          OPTIONAL { ?var35 ex:p ?b . } \n " + "          OPTIONAL { ?b ex:q ?c . } \n "
+				+ "       } \n" + " } \n";
 
-		String query2 = getNamespaceDeclarations() +
-				" SELECT DISTINCT *\n" +
-				" WHERE { GRAPH ?g { \n" +
-				"          OPTIONAL { ?var35 ex:p ?b . } \n " +
-				"          OPTIONAL { ?b ex:q ?var2 . } \n " +
-				"       } \n" +
-				" } \n";
+		String query2 = getNamespaceDeclarations() + " SELECT DISTINCT *\n" + " WHERE { GRAPH ?g { \n"
+				+ "          OPTIONAL { ?var35 ex:p ?b . } \n " + "          OPTIONAL { ?b ex:q ?var2 . } \n "
+				+ "       } \n" + " } \n";
 
 		TupleQuery tq1 = conn.prepareTupleQuery(QueryLanguage.SPARQL, query1);
 		TupleQuery tq2 = conn.prepareTupleQuery(QueryLanguage.SPARQL, query2);
@@ -105,29 +97,15 @@ public class OptionalTest extends AbstractComplianceTest {
 
 	}
 
-	@Test
-	public void testSameTermRepeatInOptional() throws Exception {
+	private void testSameTermRepeatInOptional() throws Exception {
 		loadTestData("/testdata-query/dataset-query.trig");
-		String query = getNamespaceDeclarations() +
-				" SELECT ?l ?opt1 ?opt2 " +
-				" FROM ex:optional-sameterm-graph " +
-				" WHERE { " +
-				"          ?s ex:p ex:A ; " +
-				"          { " +
-				"              { " +
-				"                 ?s ?p ?l ." +
-				"                 FILTER(?p = rdfs:label) " +
-				"              } " +
-				"              OPTIONAL { " +
-				"                 ?s ?p ?opt1 . " +
-				"                 FILTER (?p = ex:prop1) " +
-				"              } " +
-				"              OPTIONAL { " +
-				"                 ?s ?p ?opt2 . " +
-				"                 FILTER (?p = ex:prop2) " +
-				"              } " +
-				"          }" +
-				" } ";
+		String query = getNamespaceDeclarations() + " SELECT ?l ?opt1 ?opt2 " + " FROM ex:optional-sameterm-graph "
+				+ " WHERE { " + "          ?s ex:p ex:A ; " + "          { " + "              { "
+				+ "                 ?s ?p ?l ." + "                 FILTER(?p = rdfs:label) " + "              } "
+				+ "              OPTIONAL { " + "                 ?s ?p ?opt1 . "
+				+ "                 FILTER (?p = ex:prop1) " + "              } " + "              OPTIONAL { "
+				+ "                 ?s ?p ?opt2 . " + "                 FILTER (?p = ex:prop2) " + "              } "
+				+ "          }" + " } ";
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
@@ -164,26 +142,24 @@ public class OptionalTest extends AbstractComplianceTest {
 	 * See https://github.com/eclipse/rdf4j/issues/3072
 	 *
 	 */
-	@Test
-	public void testValuesAfterOptional() throws Exception {
-		String data = "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . \n"
-				+ "@prefix :     <urn:ex:> . \n"
-				+ ":r1 a rdfs:Resource . \n"
-				+ ":r2 a rdfs:Resource ; rdfs:label \"a label\" . \n";
+	private void testValuesAfterOptional() throws Exception {
+		String data = "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . \n" + "@prefix :     <urn:ex:> . \n"
+				+ ":r1 a rdfs:Resource . \n" + ":r2 a rdfs:Resource ; rdfs:label \"a label\" . \n";
 
-		String query = ""
-				+ "prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> \n"
-				+ "prefix :     <urn:ex:> \n"
-				+ "\n"
-				+ "select ?resource ?label where { \n"
-				+ "  ?resource a rdfs:Resource . \n"
-				+ "  optional { ?resource rdfs:label ?label } \n"
-				+ "  values ?label { undef } \n"
-				+ "}";
+		String query = "" + "prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> \n" + "prefix :     <urn:ex:> \n"
+				+ "\n" + "select ?resource ?label where { \n" + "  ?resource a rdfs:Resource . \n"
+				+ "  optional { ?resource rdfs:label ?label } \n" + "  values ?label { undef } \n" + "}";
 
 		conn.add(new StringReader(data), RDFFormat.TURTLE);
 
 		List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
 		assertThat(result).hasSize(2);
+	}
+
+	public Stream<DynamicTest> tests() {
+		return Stream.of(makeTest("SameTermRepeatInOptional", this::testSameTermRepeatInOptional),
+				makeTest("ValuesAfterOptional", this::testValuesAfterOptional),
+				makeTest("SES1121VarNamesInOptionals", this::testSES1121VarNamesInOptionals),
+				makeTest("SES1898LeftJoinSemantics1", this::testSES1898LeftJoinSemantics1));
 	}
 }

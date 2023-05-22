@@ -10,12 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.sparql.tests;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -25,8 +27,10 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests on SPRQL UNION clauses.
@@ -36,32 +40,26 @@ import org.junit.Test;
  */
 public class UnionTest extends AbstractComplianceTest {
 
-	@Test
-	public void testEmptyUnion() {
-		String query = "PREFIX : <http://example.org/> "
-				+ "SELECT ?visibility WHERE {"
+	public UnionTest(Repository repo) {
+		super(repo);
+	}
+
+	private void testEmptyUnion() {
+		String query = "PREFIX : <http://example.org/> " + "SELECT ?visibility WHERE {"
 				+ "OPTIONAL { SELECT ?var WHERE { :s a :MyType . BIND (:s as ?var ) .} } ."
-				+ "BIND (IF(BOUND(?var), 'VISIBLE', 'HIDDEN') as ?visibility)"
-				+ "}";
+				+ "BIND (IF(BOUND(?var), 'VISIBLE', 'HIDDEN') as ?visibility)" + "}";
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
 			assertNotNull(result);
 			assertFalse(result.hasNext());
 		}
 	}
 
-	@Test
-	public void testSameTermRepeatInUnion() throws Exception {
+	private void testSameTermRepeatInUnion() throws Exception {
 		loadTestData("/testdata-query/dataset-query.trig");
-		String query = "PREFIX foaf:<http://xmlns.com/foaf/0.1/>\n" +
-				"SELECT * {\n" +
-				"    {\n" +
-				"        ?sameTerm foaf:mbox ?mbox\n" +
-				"        FILTER sameTerm(?sameTerm,$william)\n" +
-				"    } UNION {\n" +
-				"        ?x foaf:knows ?sameTerm\n" +
-				"        FILTER sameTerm(?sameTerm,$william)\n" +
-				"    }\n" +
-				"}";
+		String query = "PREFIX foaf:<http://xmlns.com/foaf/0.1/>\n" + "SELECT * {\n" + "    {\n"
+				+ "        ?sameTerm foaf:mbox ?mbox\n" + "        FILTER sameTerm(?sameTerm,$william)\n"
+				+ "    } UNION {\n" + "        ?x foaf:knows ?sameTerm\n"
+				+ "        FILTER sameTerm(?sameTerm,$william)\n" + "    }\n" + "}";
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 		tq.setBinding("william", conn.getValueFactory().createIRI("http://example.org/william"));
@@ -90,33 +88,16 @@ public class UnionTest extends AbstractComplianceTest {
 
 	}
 
-	@Test
-	public void testSameTermRepeatInUnionAndOptional() throws Exception {
+	private void testSameTermRepeatInUnionAndOptional() throws Exception {
 		loadTestData("/testdata-query/dataset-query.trig");
 
-		String query = getNamespaceDeclarations() +
-				"SELECT * {\n" +
-				"    {\n" +
-				"        ex:a ?p ?prop1\n" +
-				"        FILTER (?p = ex:prop1)\n" +
-				"    } UNION {\n" +
-				"          ?s ex:p ex:A ; " +
-				"          { " +
-				"              { " +
-				"                 ?s ?p ?l ." +
-				"                 FILTER(?p = rdfs:label) " +
-				"              } " +
-				"              OPTIONAL { " +
-				"                 ?s ?p ?opt1 . " +
-				"                 FILTER (?p = ex:prop1) " +
-				"              } " +
-				"              OPTIONAL { " +
-				"                 ?s ?p ?opt2 . " +
-				"                 FILTER (?p = ex:prop2) " +
-				"              } " +
-				"          }" +
-				"    }\n" +
-				"}";
+		String query = getNamespaceDeclarations() + "SELECT * {\n" + "    {\n" + "        ex:a ?p ?prop1\n"
+				+ "        FILTER (?p = ex:prop1)\n" + "    } UNION {\n" + "          ?s ex:p ex:A ; " + "          { "
+				+ "              { " + "                 ?s ?p ?l ." + "                 FILTER(?p = rdfs:label) "
+				+ "              } " + "              OPTIONAL { " + "                 ?s ?p ?opt1 . "
+				+ "                 FILTER (?p = ex:prop1) " + "              } " + "              OPTIONAL { "
+				+ "                 ?s ?p ?opt2 . " + "                 FILTER (?p = ex:prop2) " + "              } "
+				+ "          }" + "    }\n" + "}";
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
@@ -149,6 +130,12 @@ public class UnionTest extends AbstractComplianceTest {
 			fail(e.getMessage());
 		}
 
+	}
+
+	public Stream<DynamicTest> tests() {
+		return Stream.of(makeTest("EmptyUnion", this::testEmptyUnion),
+				makeTest("SameTermRepeatInUnion", this::testSameTermRepeatInUnion),
+				makeTest("SameTermRepeatInUnionAndOptional", this::testSameTermRepeatInUnionAndOptional));
 	}
 
 }

@@ -21,6 +21,7 @@ import java.math.BigDecimal;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -34,8 +35,9 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
 
 /**
  * Tests on SPARQL aggregate function compliance.
@@ -44,15 +46,44 @@ import org.junit.Test;
  */
 public class AggregateTest extends AbstractComplianceTest {
 
+	public AggregateTest(Repository repo) {
+		super(repo);
+	}
+
+	public Stream<DynamicTest> tests() {
+		return Stream.of(
+				makeTest("MaxAggregateWithGroupEmptyResult", this::testMaxAggregateWithGroupEmptyResult),
+				makeTest("MaxAggregateWithoutGroupEmptySolution", this::testMaxAggregateWithoutGroupEmptySolution),
+				makeTest("MinAggregateWithGroupEmptyResult", this::testMinAggregateWithGroupEmptyResult),
+				makeTest("MinAggregateWithoutGroupEmptySolution", this::testMinAggregateWithoutGroupEmptySolution),
+				makeTest("SampleAggregateWithGroupEmptyResult", this::testSampleAggregateWithGroupEmptyResult),
+				makeTest("SampleAggregateWithoutGroupEmptySolution",
+						this::testSampleAggregateWithoutGroupEmptySolution),
+				makeTest("SES2361UndefMin", this::testSES2361UndefMin),
+				makeTest("CountOrderBy_ImplicitGroup", this::testCountOrderBy_ImplicitGroup),
+				makeTest("DistinctMax", this::testDistinctMax),
+				makeTest("Max", this::testMax),
+				makeTest("DistinctAvg", this::testDistinctAvg),
+				makeTest("Avg", this::testAvg),
+				makeTest("DistinctSum", this::testDistinctSum),
+				makeTest("Sum", this::testSum),
+				makeTest("CountHaving", this::testCountHaving),
+				makeTest("SES1970CountDistinctWildcard", this::testSES1970CountDistinctWildcard),
+				makeTest("GroupConcatNonDistinct", this::testGroupConcatNonDistinct),
+				makeTest("GroupConcatDistinct", this::testGroupConcatDistinct),
+				makeTest("SES1979MinMaxInf", this::testSES1979MinMaxInf),
+				makeTest("SES2361UndefSum", this::testSES2361UndefSum),
+				makeTest("SES2361UndefCountWildcard", this::testSES2361UndefCountWildcard),
+				makeTest("SES2361UndefCount", this::testSES2361UndefCount),
+				makeTest("SES2361UndefMax", this::testSES2361UndefMax)
+		);
+	}
+
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/1978
 	 */
-	@Test
-	public void testMaxAggregateWithGroupEmptyResult() {
-		String query = "select ?s (max(?o) as ?omax) {\n" +
-				"   ?s ?p ?o .\n" +
-				" }\n" +
-				" group by ?s\n";
+	private void testMaxAggregateWithGroupEmptyResult() {
+		String query = "select ?s (max(?o) as ?omax) {\n" + "   ?s ?p ?o .\n" + " }\n" + " group by ?s\n";
 
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			assertThat(result.hasNext()).isFalse();
@@ -62,11 +93,8 @@ public class AggregateTest extends AbstractComplianceTest {
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/1978
 	 */
-	@Test
-	public void testMaxAggregateWithoutGroupEmptySolution() {
-		String query = "select (max(?o) as ?omax) {\n" +
-				"   ?s ?p ?o .\n" +
-				" }\n";
+	private void testMaxAggregateWithoutGroupEmptySolution() {
+		String query = "select (max(?o) as ?omax) {\n" + "   ?s ?p ?o .\n" + " }\n";
 
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			assertThat(result.next()).isEmpty();
@@ -76,12 +104,9 @@ public class AggregateTest extends AbstractComplianceTest {
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/1978
 	 */
-	@Test
-	public void testMinAggregateWithGroupEmptyResult() {
-		String query = "select ?s (min(?o) as ?omin) {\n" +
-				"   ?s ?p ?o .\n" +
-				" }\n" +
-				" group by ?s\n";
+
+	private void testMinAggregateWithGroupEmptyResult() {
+		String query = "select ?s (min(?o) as ?omin) {\n" + "   ?s ?p ?o .\n" + " }\n" + " group by ?s\n";
 
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			assertThat(result.hasNext()).isFalse();
@@ -91,11 +116,8 @@ public class AggregateTest extends AbstractComplianceTest {
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/1978
 	 */
-	@Test
-	public void testMinAggregateWithoutGroupEmptySolution() {
-		String query = "select (min(?o) as ?omin) {\n" +
-				"   ?s ?p ?o .\n" +
-				" }\n";
+	private void testMinAggregateWithoutGroupEmptySolution() {
+		String query = "select (min(?o) as ?omin) {\n" + "   ?s ?p ?o .\n" + " }\n";
 
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			assertThat(result.next()).isEmpty();
@@ -105,12 +127,8 @@ public class AggregateTest extends AbstractComplianceTest {
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/1978
 	 */
-	@Test
-	public void testSampleAggregateWithGroupEmptyResult() {
-		String query = "select ?s (sample(?o) as ?osample) {\n" +
-				"   ?s ?p ?o .\n" +
-				" }\n" +
-				" group by ?s\n";
+	private void testSampleAggregateWithGroupEmptyResult() {
+		String query = "select ?s (sample(?o) as ?osample) {\n" + "   ?s ?p ?o .\n" + " }\n" + " group by ?s\n";
 
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			assertThat(result.hasNext()).isFalse();
@@ -120,19 +138,15 @@ public class AggregateTest extends AbstractComplianceTest {
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/1978
 	 */
-	@Test
-	public void testSampleAggregateWithoutGroupEmptySolution() {
-		String query = "select (sample(?o) as ?osample) {\n" +
-				"   ?s ?p ?o .\n" +
-				" }\n";
+	private void testSampleAggregateWithoutGroupEmptySolution() {
+		String query = "select (sample(?o) as ?osample) {\n" + "   ?s ?p ?o .\n" + " }\n";
 
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			assertThat(result.next()).isEmpty();
 		}
 	}
 
-	@Test
-	public void testSES2361UndefMin() {
+	private void testSES2361UndefMin() {
 		String query = "SELECT (MIN(?v) as ?min) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
 			assertThat((Iterable<?>) result).isNotNull();
@@ -142,8 +156,7 @@ public class AggregateTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testSES2361UndefMax() {
+	private void testSES2361UndefMax() {
 		String query = "SELECT (MAX(?v) as ?max) WHERE { VALUES ?v { 1 2 7 undef 3 4 }}";
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
 			assertThat((Iterable<?>) result).isNotNull();
@@ -153,8 +166,7 @@ public class AggregateTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testSES2361UndefCount() {
+	private void testSES2361UndefCount() {
 		String query = "SELECT (COUNT(?v) as ?c) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
 			assertThat((Iterable<?>) result).isNotNull();
@@ -164,8 +176,7 @@ public class AggregateTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testSES2361UndefCountWildcard() {
+	private void testSES2361UndefCountWildcard() {
 		String query = "SELECT (COUNT(*) as ?c) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
 			assertThat((Iterable<?>) result).isNotNull();
@@ -175,8 +186,7 @@ public class AggregateTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testSES2361UndefSum() {
+	private void testSES2361UndefSum() {
 		String query = "SELECT (SUM(?v) as ?s) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
 			assertThat((Iterable<?>) result).isNotNull();
@@ -186,8 +196,7 @@ public class AggregateTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testSES1979MinMaxInf() throws Exception {
+	private void testSES1979MinMaxInf() throws Exception {
 		loadTestData("/testdata-query/dataset-ses1979.trig");
 		String query = "prefix : <http://example.org/> select (min(?o) as ?min) (max(?o) as ?max) where { ?s :float ?o }";
 
@@ -205,13 +214,11 @@ public class AggregateTest extends AbstractComplianceTest {
 
 	}
 
-	@Test
-	public void testGroupConcatDistinct() throws Exception {
+	private void testGroupConcatDistinct() throws Exception {
 		loadTestData("/testdata-query/dataset-query.trig");
 
-		String query = getNamespaceDeclarations() +
-				"SELECT (GROUP_CONCAT(DISTINCT ?l) AS ?concat)" +
-				"WHERE { ex:groupconcat-test ?p ?l . }";
+		String query = getNamespaceDeclarations() + "SELECT (GROUP_CONCAT(DISTINCT ?l) AS ?concat)"
+				+ "WHERE { ex:groupconcat-test ?p ?l . }";
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
@@ -244,12 +251,10 @@ public class AggregateTest extends AbstractComplianceTest {
 
 	}
 
-	@Test
-	public void testGroupConcatNonDistinct() throws Exception {
+	private void testGroupConcatNonDistinct() throws Exception {
 		loadTestData("/testdata-query/dataset-query.trig");
-		String query = getNamespaceDeclarations() +
-				"SELECT (GROUP_CONCAT(?l) AS ?concat)" +
-				"WHERE { ex:groupconcat-test ?p ?l . }";
+		String query = getNamespaceDeclarations() + "SELECT (GROUP_CONCAT(?l) AS ?concat)"
+				+ "WHERE { ex:groupconcat-test ?p ?l . }";
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
@@ -282,8 +287,7 @@ public class AggregateTest extends AbstractComplianceTest {
 
 	}
 
-	@Test
-	public void testSES1970CountDistinctWildcard() throws Exception {
+	private void testSES1970CountDistinctWildcard() throws Exception {
 		loadTestData("/testdata-query/dataset-ses1970.trig");
 
 		String query = "SELECT (COUNT(DISTINCT *) AS ?c) {?s ?p ?o }";
@@ -302,8 +306,7 @@ public class AggregateTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testCountHaving() {
+	private void testCountHaving() {
 		BNode bnode1 = bnode();
 		BNode bnode2 = bnode();
 		BNode bnode3 = bnode();
@@ -323,8 +326,7 @@ public class AggregateTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testSum() {
+	private void testSum() {
 		mixedDataForNumericAggregates();
 
 		String query = "SELECT ?a (SUM(?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
@@ -342,8 +344,7 @@ public class AggregateTest extends AbstractComplianceTest {
 
 	}
 
-	@Test
-	public void testDistinctSum() {
+	private void testDistinctSum() {
 		mixedDataForNumericAggregates();
 
 		String query = "SELECT ?a (SUM(DISTINCT ?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
@@ -360,8 +361,7 @@ public class AggregateTest extends AbstractComplianceTest {
 
 	}
 
-	@Test
-	public void testAvg() {
+	private void testAvg() {
 		mixedDataForNumericAggregates();
 
 		String query = "SELECT ?a (AVG(?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
@@ -377,8 +377,7 @@ public class AggregateTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testDistinctAvg() {
+	private void testDistinctAvg() {
 		mixedDataForNumericAggregates();
 
 		String query = "SELECT ?a (AVG(DISTINCT ?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
@@ -395,8 +394,7 @@ public class AggregateTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testMax() {
+	private void testMax() {
 		mixedDataForNumericAggregates();
 
 		String query = "SELECT ?a (MAX(?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
@@ -414,8 +412,7 @@ public class AggregateTest extends AbstractComplianceTest {
 
 	}
 
-	@Test
-	public void testDistinctMax() {
+	private void testDistinctMax() {
 		mixedDataForNumericAggregates();
 
 		String query = "SELECT ?a (MAX(DISTINCT ?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
@@ -435,14 +432,10 @@ public class AggregateTest extends AbstractComplianceTest {
 	/**
 	 * @see <a href="https://github.com/eclipse/rdf4j/issues/4290">https://github.com/eclipse/rdf4j/issues/4290</a>
 	 */
-	@Test
-	public void testCountOrderBy_ImplicitGroup() {
+	private void testCountOrderBy_ImplicitGroup() {
 		mixedDataForNumericAggregates();
 
-		String query = "select (count(*) as ?c) where { \n"
-				+ "	?s ?p ?o .\n"
-				+ "} \n"
-				+ "order by (?s)";
+		String query = "select (count(*) as ?c) where { \n" + "	?s ?p ?o .\n" + "} \n" + "order by (?s)";
 
 		TupleQuery preparedQuery = conn.prepareTupleQuery(query);
 
@@ -498,4 +491,5 @@ public class AggregateTest extends AbstractComplianceTest {
 		}
 		return count;
 	}
+
 }

@@ -10,10 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.sparql.tests;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -21,8 +22,10 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests on SPARQL nested SELECT query handling.
@@ -31,8 +34,11 @@ import org.junit.Test;
  */
 public class SubselectTest extends AbstractComplianceTest {
 
-	@Test
-	public void testSES2373SubselectOptional() {
+	public SubselectTest(Repository repo) {
+		super(repo);
+	}
+
+	private void testSES2373SubselectOptional() {
 		conn.prepareUpdate(QueryLanguage.SPARQL,
 				"insert data {" + "<u:1> <u:r> <u:subject> ." + "<u:1> <u:v> 1 ." + "<u:1> <u:x> <u:x1> ."
 						+ "<u:2> <u:r> <u:subject> ." + "<u:2> <u:v> 2 ." + "<u:2> <u:x> <u:x2> ."
@@ -41,75 +47,52 @@ public class SubselectTest extends AbstractComplianceTest {
 						+ "<u:5> <u:r> <u:subject> ." + "<u:5> <u:v> 5 ." + "<u:5> <u:x> <u:x5> ." + "}")
 				.execute();
 
-		String qb = "select ?x { \n" +
-				" { select ?v { ?v <u:r> <u:subject> filter (?v = <u:1>) } }.\n" +
-				"  optional {  select ?val { ?v <u:v> ?val .} }\n" +
-				"  ?v <u:x> ?x \n" +
-				"}\n";
+		String qb = "select ?x { \n" + " { select ?v { ?v <u:r> <u:subject> filter (?v = <u:1>) } }.\n"
+				+ "  optional {  select ?val { ?v <u:v> ?val .} }\n" + "  ?v <u:x> ?x \n" + "}\n";
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb);
 		try (TupleQueryResult result = tq.evaluate()) {
-			assertTrue("The query should return a result", result.hasNext());
+			assertTrue(result.hasNext(), "The query should return a result");
 			BindingSet b = result.next();
-			assertTrue("?x is from the mandatory part of the query and should be bound", b.hasBinding("x"));
+			assertTrue(b.hasBinding("x"), "?x is from the mandatory part of the query and should be bound");
 		}
 	}
 
-	@Test
-	public void testSES2154SubselectOptional() {
+	private void testSES2154SubselectOptional() {
 
-		String ub = "insert data { \n" +
-				" <urn:s1> a <urn:C> .  \n" +
-				" <urn:s2> a <urn:C> .  \n" +
-				" <urn:s3> a <urn:C> .  \n" +
-				" <urn:s4> a <urn:C> .  \n" +
-				" <urn:s5> a <urn:C> .  \n" +
-				" <urn:s6> a <urn:C> .  \n" +
-				" <urn:s7> a <urn:C> .  \n" +
-				" <urn:s8> a <urn:C> .  \n" +
-				" <urn:s9> a <urn:C> .  \n" +
-				" <urn:s10> a <urn:C> .  \n" +
-				" <urn:s11> a <urn:C> .  \n" +
-				" <urn:s12> a <urn:C> .  \n" +
-				" <urn:s1> <urn:p> \"01\" .  \n" +
-				" <urn:s2> <urn:p> \"02\" .  \n" +
-				" <urn:s3> <urn:p> \"03\" .  \n" +
-				" <urn:s4> <urn:p> \"04\" .  \n" +
-				" <urn:s5> <urn:p> \"05\" .  \n" +
-				" <urn:s6> <urn:p> \"06\" .  \n" +
-				" <urn:s7> <urn:p> \"07\" .  \n" +
-				" <urn:s8> <urn:p> \"08\" .  \n" +
-				" <urn:s9> <urn:p> \"09\" .  \n" +
-				" <urn:s10> <urn:p> \"10\" .  \n" +
-				" <urn:s11> <urn:p> \"11\" .  \n" +
-				" <urn:s12> <urn:p> \"12\" .  \n" +
-				"} \n";
+		String ub = "insert data { \n" + " <urn:s1> a <urn:C> .  \n" + " <urn:s2> a <urn:C> .  \n"
+				+ " <urn:s3> a <urn:C> .  \n" + " <urn:s4> a <urn:C> .  \n" + " <urn:s5> a <urn:C> .  \n"
+				+ " <urn:s6> a <urn:C> .  \n" + " <urn:s7> a <urn:C> .  \n" + " <urn:s8> a <urn:C> .  \n"
+				+ " <urn:s9> a <urn:C> .  \n" + " <urn:s10> a <urn:C> .  \n" + " <urn:s11> a <urn:C> .  \n"
+				+ " <urn:s12> a <urn:C> .  \n" + " <urn:s1> <urn:p> \"01\" .  \n" + " <urn:s2> <urn:p> \"02\" .  \n"
+				+ " <urn:s3> <urn:p> \"03\" .  \n" + " <urn:s4> <urn:p> \"04\" .  \n" + " <urn:s5> <urn:p> \"05\" .  \n"
+				+ " <urn:s6> <urn:p> \"06\" .  \n" + " <urn:s7> <urn:p> \"07\" .  \n" + " <urn:s8> <urn:p> \"08\" .  \n"
+				+ " <urn:s9> <urn:p> \"09\" .  \n" + " <urn:s10> <urn:p> \"10\" .  \n"
+				+ " <urn:s11> <urn:p> \"11\" .  \n" + " <urn:s12> <urn:p> \"12\" .  \n" + "} \n";
 
 		conn.prepareUpdate(QueryLanguage.SPARQL, ub).execute();
 
-		String qb = "SELECT ?s ?label\n" +
-				"WHERE { \n" +
-				" 	  ?s a <urn:C> \n .\n" +
-				" 	  OPTIONAL  { {SELECT ?label  WHERE { \n" +
-				"                     ?s <urn:p> ?label . \n" +
-				"   	      } ORDER BY ?label LIMIT 2 \n" +
-				"		    }\n" +
-				"       }\n" +
-				"}\n" +
-				"ORDER BY ?s\n" +
-				"LIMIT 10 \n";
+		String qb = "SELECT ?s ?label\n" + "WHERE { \n" + " 	  ?s a <urn:C> \n .\n"
+				+ " 	  OPTIONAL  { {SELECT ?label  WHERE { \n" + "                     ?s <urn:p> ?label . \n"
+				+ "   	      } ORDER BY ?label LIMIT 2 \n" + "		    }\n" + "       }\n" + "}\n" + "ORDER BY ?s\n"
+				+ "LIMIT 10 \n";
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb);
 		try (TupleQueryResult evaluate = tq.evaluate()) {
-			assertTrue("The query should return a result", evaluate.hasNext());
+			assertTrue(evaluate.hasNext(), "The query should return a result");
 
 			List<BindingSet> result = QueryResults.asList(evaluate);
 			assertEquals(10, result.size());
 			for (BindingSet bs : result) {
 				Literal label = (Literal) bs.getValue("label");
-				assertTrue("wrong label value (expected '01' or '02', but got '" + label.stringValue() + "')",
-						label.stringValue().equals("01") || label.stringValue().equals("02"));
+				assertTrue(label.stringValue().equals("01") || label.stringValue().equals("02"),
+						"wrong label value (expected '01' or '02', but got '" + label.stringValue() + "')");
 			}
 		}
+	}
+
+	public Stream<DynamicTest> tests() {
+		return Stream.of(makeTest("SES2373SubselectOptional", this::testSES2373SubselectOptional),
+				makeTest("SES2154SubselectOptional", this::testSES2154SubselectOptional));
 	}
 }
