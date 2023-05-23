@@ -211,7 +211,7 @@ echo "DONE!"
 
 echo ""
 echo "You will now want to inform the community about the new milestone build!"
-echo " - Check if all recently completed issues have the correct milestone: https://github.com/eclipse/rdf4j/projects/19"
+echo " - Check if all recently completed issues have the correct milestone: https://github.com/eclipse/rdf4j/issues?q=is%3Aissue+no%3Amilestone+-label%3A%22cannot+reproduce%22+-label%3A%22%F0%9F%94%A7+internal+task%22+-label%3Awontfix+-label%3Astale+-label%3Aduplicate+sort%3Aupdated-desc+is%3Aclosed"
 echo " - For issues closed in the current milestone, those issues need to be tagged with the RDF4J milestone number (use Github labels M1, M2 or M3)"
 echo "Remember that milestone builds are not releases!"
 
