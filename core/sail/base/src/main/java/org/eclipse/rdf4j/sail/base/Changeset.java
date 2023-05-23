@@ -127,12 +127,28 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		refbacks = null;
 		prepend = null;
 		observed = null;
-		approved = null;
-		deprecated = null;
 		approvedContexts = null;
 		deprecatedContexts = null;
 		addedNamespaces = null;
 		removedPrefixes = null;
+		try {
+			if (approved instanceof AutoCloseable) {
+				((AutoCloseable) approved).close();
+			}
+		} catch (Exception e) {
+			throw new SailException(e);
+		} finally {
+			approved = null;
+			if (deprecated instanceof AutoCloseable) {
+				try {
+					((AutoCloseable) deprecated).close();
+				} catch (Exception e) {
+					throw new SailException(e);
+				} finally {
+					deprecated = null;
+				}
+			}
+		}
 	}
 
 	@Override
@@ -416,7 +432,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				approved = createEmptyModel();
 			}
 			approved.add(statement);
-			approvedEmpty = approved == null || approved.isEmpty();
+			approvedEmpty = false;
 			if (statement.getContext() != null) {
 				if (approvedContexts == null) {
 					approvedContexts = new HashSet<>();
@@ -447,7 +463,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				deprecated = createEmptyModel();
 			}
 			deprecated.add(statement);
-			deprecatedEmpty = deprecated == null || deprecated.isEmpty();
+			deprecatedEmpty = false;
 			Resource ctx = statement.getContext();
 			if (approvedContexts != null && approvedContexts.contains(ctx)
 					&& !approved.contains(null, null, null, ctx)) {
@@ -885,7 +901,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				approved = createEmptyModel();
 			}
 			approved.addAll(approve);
-			approvedEmpty = approved == null || approved.isEmpty();
+			approvedEmpty = approvedEmpty && approve.isEmpty();
 
 			if (approveContexts != null) {
 				if (approvedContexts == null) {
@@ -912,7 +928,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				deprecated = createEmptyModel();
 			}
 			deprecated.addAll(deprecate);
-			deprecatedEmpty = deprecated == null || deprecated.isEmpty();
+			deprecatedEmpty = deprecatedEmpty && deprecate.isEmpty();
 
 			for (Statement statement : deprecate) {
 				Resource ctx = statement.getContext();

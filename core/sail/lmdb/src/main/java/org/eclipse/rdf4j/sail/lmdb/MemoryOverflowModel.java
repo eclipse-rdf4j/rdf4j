@@ -14,11 +14,15 @@ import java.io.File;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.lang.management.GarbageCollectorMXBean;
+import java.lang.management.ManagementFactory;
 import java.nio.file.Files;
-import java.util.Collection;
 import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.model.IRI;
@@ -41,7 +45,7 @@ import org.slf4j.LoggerFactory;
  * estimated memory usage is more than the amount of free memory available. Once the threshold is cross this
  * implementation seamlessly changes to a disk based {@link SailSourceModel}.
  */
-abstract class MemoryOverflowModel extends AbstractModel {
+abstract class MemoryOverflowModel extends AbstractModel implements AutoCloseable {
 
 	private static final long serialVersionUID = 4119844228099208169L;
 
@@ -49,8 +53,8 @@ abstract class MemoryOverflowModel extends AbstractModel {
 
 	private static final int LARGE_BLOCK = 10000;
 
-	// To reduce the chance of OOM we will always overflow once we get close to running out of memory even if we think
-	// we have space for one more block. The limit is currently set at 32 MB
+	// To reduce the chance of OOM we will always overflow once we get close to running out of memory.
+	// The limit is currently set at 32 MB
 	private static final int MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = 32 * 1024 * 1024;
 
 	final Logger logger = LoggerFactory.getLogger(MemoryOverflowModel.class);
@@ -63,27 +67,17 @@ abstract class MemoryOverflowModel extends AbstractModel {
 
 	transient SailSourceModel disk;
 
-	private long baseline = 0;
+	private final boolean verifyAdditions;
 
-	private long maxBlockSize = 0;
+	private final SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
-	SimpleValueFactory vf = SimpleValueFactory.getInstance();
-
-	public MemoryOverflowModel() {
+	public MemoryOverflowModel(boolean verifyAdditions) {
+		this.verifyAdditions = verifyAdditions;
 		memory = new LinkedHashModel(LARGE_BLOCK);
 	}
 
-	public MemoryOverflowModel(Model model) {
-		this(model.getNamespaces());
-		addAll(model);
-	}
-
-	public MemoryOverflowModel(Set<Namespace> namespaces, Collection<? extends Statement> c) {
-		this(namespaces);
-		addAll(c);
-	}
-
-	public MemoryOverflowModel(Set<Namespace> namespaces) {
+	public MemoryOverflowModel(Set<Namespace> namespaces, boolean verifyAdditions) {
+		this.verifyAdditions = verifyAdditions;
 		memory = new LinkedHashModel(namespaces, LARGE_BLOCK);
 	}
 
@@ -227,40 +221,71 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		}
 	}
 
+	static class GcInfo {
+		long count;
+		long time;
+	}
+
+	private final Map<String, GcInfo> prevGcInfo = new ConcurrentHashMap<>();
+
+	private synchronized boolean highGcLoad() {
+		boolean highLoad = false;
+
+		// get all garbage collector MXBeans.
+		List<GarbageCollectorMXBean> gcBeans = ManagementFactory.getGarbageCollectorMXBeans();
+		for (GarbageCollectorMXBean gcBean : gcBeans) {
+			long count = gcBean.getCollectionCount();
+			long time = gcBean.getCollectionTime();
+
+			GcInfo prevInfo = prevGcInfo.get(gcBean.getName());
+			if (prevInfo != null) {
+				long countDiff = count - prevInfo.count;
+				long timeDiff = time - prevInfo.time;
+				if (countDiff != 0) {
+					double gcLoad = (double) timeDiff / countDiff;
+					// TODO find good threshold
+					if (gcLoad > 100) {
+						highLoad = true;
+					}
+				}
+			} else {
+				prevInfo = new GcInfo();
+				prevGcInfo.put(gcBean.getName(), prevInfo);
+			}
+			prevInfo.count = count;
+			prevInfo.time = time;
+		}
+		return highLoad;
+	}
+
 	private synchronized void checkMemoryOverflow() {
 		if (disk == null) {
 			int size = size();
 			if (size >= LARGE_BLOCK && size % LARGE_BLOCK == 0) {
-				// maximum heap size the JVM can allocate
-				long maxMemory = RUNTIME.maxMemory();
+				boolean overflow = highGcLoad();
+				if (!overflow) {
+					// maximum heap size the JVM can allocate
+					long maxMemory = RUNTIME.maxMemory();
 
-				// total currently allocated JVM memory
-				long totalMemory = RUNTIME.totalMemory();
+					// total currently allocated JVM memory
+					long totalMemory = RUNTIME.totalMemory();
 
-				// amount of memory free in the currently allocated JVM memory
-				long freeMemory = RUNTIME.freeMemory();
+					// amount of memory free in the currently allocated JVM memory
+					long freeMemory = RUNTIME.freeMemory();
 
-				// estimated memory used
-				long used = totalMemory - freeMemory;
+					// estimated memory used
+					long used = totalMemory - freeMemory;
 
-				// amount of memory the JVM can still allocate from the OS (upper boundary is the max heap)
-				long freeToAllocateMemory = maxMemory - used;
+					// amount of memory the JVM can still allocate from the OS (upper boundary is the max heap)
+					long freeToAllocateMemory = maxMemory - used;
 
-				if (baseline > 0) {
-					long blockSize = used - baseline;
-					if (blockSize > maxBlockSize) {
-						maxBlockSize = blockSize;
-					}
-
-					// Sync if either the estimated size of the next block is larger than remaining memory, or
-					// if less than 15% of the heap is still free (this last condition to avoid GC overhead limit)
-					if (freeToAllocateMemory < MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING ||
-							freeToAllocateMemory < Math.min(0.15 * maxMemory, maxBlockSize)) {
-						logger.debug("syncing at {} triples. max block size: {}", size, maxBlockSize);
-						overflowToDisk();
-					}
+					// try to prevent OOM
+					overflow = freeToAllocateMemory < MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
 				}
-				baseline = used;
+				if (overflow) {
+					logger.debug("syncing at {} triples.", size);
+					overflowToDisk();
+				}
 			}
 		}
 	}
@@ -271,32 +296,36 @@ abstract class MemoryOverflowModel extends AbstractModel {
 			dataDir = Files.createTempDirectory("model").toFile();
 			logger.debug("memory overflow using temp directory {}", dataDir);
 			store = createSailStore(dataDir);
-			disk = new SailSourceModel(store) {
-
-				@Override
-				protected void finalize() throws Throwable {
-					logger.debug("finalizing {}", dataDir);
-					if (disk == this) {
-						try {
-							store.close();
-						} catch (SailException e) {
-							logger.error(e.toString(), e);
-						} finally {
-							FileUtil.deleteDir(dataDir);
-							dataDir = null;
-							store = null;
-							disk = null;
-						}
-					}
-					super.finalize();
-				}
-			};
+			disk = new SailSourceModel(store, verifyAdditions);
 			disk.addAll(memory);
 			memory = new LinkedHashModel(memory.getNamespaces(), LARGE_BLOCK);
 			logger.debug("overflow synced to disk");
 		} catch (IOException | SailException e) {
 			String path = dataDir != null ? dataDir.getAbsolutePath() : "(unknown)";
 			logger.error("Error while writing to overflow directory " + path, e);
+		}
+	}
+
+	@Override
+	public void close() throws IOException {
+		if (disk != null) {
+			logger.debug("closing {}", dataDir);
+			try {
+				disk.close();
+			} catch (Exception e) {
+				logger.error(e.toString(), e);
+			} finally {
+				try {
+					store.close();
+				} catch (SailException e) {
+					logger.error(e.toString(), e);
+				} finally {
+					FileUtil.deleteDir(dataDir);
+					dataDir = null;
+					store = null;
+					disk = null;
+				}
+			}
 		}
 	}
 }

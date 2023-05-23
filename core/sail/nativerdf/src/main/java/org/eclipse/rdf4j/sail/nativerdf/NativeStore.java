@@ -72,6 +72,10 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	final static class MemoryOverflowIntoNativeStore extends MemoryOverflowModel {
 		private static final long serialVersionUID = 1L;
 
+		public MemoryOverflowIntoNativeStore() {
+			super(false);
+		}
+
 		/**
 		 * The class is static to avoid taking a pointer which might make it hard to get a phantom reference.
 		 */
