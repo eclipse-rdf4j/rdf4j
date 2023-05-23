@@ -201,13 +201,6 @@ public class MemIRI extends MemResource implements IRI {
 	}
 
 	/**
-	 * Removes a statement from this MemURI's list of statements for which it is the predicate.
-	 */
-	public void removePredicateStatement(MemStatement st) throws InterruptedException {
-		predicateStatements.remove(st);
-	}
-
-	/**
 	 * Removes statements from old snapshots (those that have expired at or before the specified snapshot version) from
 	 * this MemValue's list of statements for which it is the predicate.
 	 *
@@ -230,11 +223,6 @@ public class MemIRI extends MemResource implements IRI {
 	@Override
 	public void addObjectStatement(MemStatement st) throws InterruptedException {
 		objectStatements.add(st);
-	}
-
-	@Override
-	public void removeObjectStatement(MemStatement st) throws InterruptedException {
-		objectStatements.remove(st);
 	}
 
 	@Override

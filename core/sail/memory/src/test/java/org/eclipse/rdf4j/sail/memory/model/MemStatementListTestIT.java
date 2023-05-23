@@ -12,16 +12,21 @@
 package org.eclipse.rdf4j.sail.memory.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Random;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -39,7 +44,6 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -76,6 +80,7 @@ public class MemStatementListTestIT {
 					statements = stream
 							.map(s -> ((MemStatement) s))
 							.sorted(Comparator.comparing(Object::toString))
+							.limit(10000)
 							.collect(Collectors.toList());
 				}
 				connection.commit();
@@ -87,9 +92,8 @@ public class MemStatementListTestIT {
 
 	@BeforeEach
 	public void beforeEach() {
-		Random random = new Random(4823924);
 		for (MemStatement statement : statements) {
-			statement.setTillSnapshot(Math.max(6, random.nextInt()));
+			statement.setTillSnapshot(Integer.MAX_VALUE);
 		}
 
 	}
@@ -129,109 +133,110 @@ public class MemStatementListTestIT {
 			executorService.shutdownNow();
 		}
 
-		long count = Arrays.stream(memStatementList.getStatements()).filter(Objects::nonNull).count();
-		assertEquals(statements.size(), count);
+		assertTrue(memStatementList.verifySizeForTesting());
+		assertEquals(statements.size(), memStatementList.getRealSizeForTesting());
 		assertEquals(statements.size(), memStatementList.size());
 	}
 
 	@Test
 	@Timeout(120)
-	@Disabled
-	public void addRemoveMultipleThreads() throws ExecutionException, InterruptedException {
+	public void addMultipleThreadsAndCleanupThread() throws ExecutionException, InterruptedException {
 
 		List<List<MemStatement>> partition = Lists.partition(statements, CHUNKS);
-		ArrayList<MemStatement> shuffled = new ArrayList<>(statements);
-		Collections.shuffle(shuffled, new Random(475839531));
-		List<List<MemStatement>> partition2 = Lists.partition(shuffled, CHUNKS);
 
 		MemStatementList memStatementList = new MemStatementList();
+
+		AtomicInteger snapshotVersion = new AtomicInteger(1);
+		Random random = new Random();
+
+		List<MemStatement> removedStatements = new LinkedList<>();
+
+		CountDownLatch countDownLatch = new CountDownLatch(1);
 
 		ExecutorService executorService = Executors.newCachedThreadPool();
 		try {
 
-			List<? extends Future<?>> collect = Stream.concat(
-					partition
-							.stream()
-							.map(l -> () -> {
-								try {
-									for (MemStatement statement : l) {
-										memStatementList.add(statement);
-									}
-								} catch (InterruptedException e) {
-									throw new IllegalStateException();
+			Future<?> cleanupFuture = executorService.submit(() -> {
+				try {
+					while (true) {
+						try {
+
+							if (Thread.interrupted()) {
+								break;
+							}
+
+							int currentSnapshot = snapshotVersion.get();
+							int highestUnusedTillSnapshot = currentSnapshot - 1;
+
+							MemStatement[] statements = memStatementList.getStatements();
+
+							/*
+							 * The order of the statement list won't change from lastStmtPos down while we don't have
+							 * the write lock (it might shrink or grow) as (1) new statements are always appended last,
+							 * (2) we are the only process that removes statements, (3) this list is cleared on close.
+							 */
+
+							for (int i = statements.length - 1; i >= 0; i--) {
+								if (Thread.currentThread().isInterrupted()) {
+									break;
 								}
 
-							}),
-					partition2
-							.stream()
-							.map(l -> (Runnable) () -> {
-								try {
-									for (MemStatement statement : l) {
-										memStatementList.remove(statement);
-									}
-								} catch (InterruptedException e) {
-									throw new IllegalStateException();
+								MemStatement st = statements[i];
+								if (st == null) {
+									continue;
 								}
-							})
-			)
-					.collect(Collectors.toList())
-					.stream()
-					.map(executorService::submit)
-					.collect(Collectors.toList());
 
-			for (Future<?> future : collect) {
-				future.get();
-			}
+								if (st.getTillSnapshot() <= highestUnusedTillSnapshot) {
+									// stale statement
 
-		} finally {
-			executorService.shutdownNow();
-		}
-
-	}
-
-	@Test
-	@Timeout(120)
-	@Disabled
-	public void addRemoveConsistentMultipleThreads() throws ExecutionException, InterruptedException {
-
-		List<List<MemStatement>> partition = Lists.partition(statements, CHUNKS);
-		ArrayList<MemStatement> shuffled = new ArrayList<>(statements);
-		Collections.shuffle(shuffled, new Random(475839531));
-		List<List<MemStatement>> partition2 = Lists.partition(shuffled, CHUNKS);
-
-		MemStatementList memStatementList = new MemStatementList();
-
-		ExecutorService executorService = Executors.newCachedThreadPool();
-		try {
-
-			List<? extends Future<?>> collect = Stream.concat(
-					partition
-							.stream()
-							.map(l -> () -> {
-								try {
-									for (MemStatement statement : l) {
-										memStatementList.add(statement);
-										statement.setTillSnapshot(5);
-									}
-								} catch (InterruptedException e) {
-									throw new IllegalStateException();
-								}
-							}),
-					partition2
-							.stream()
-							.map(l -> (Runnable) () -> {
-								for (MemStatement statement : l) {
-									while (statement.getTillSnapshot() != 5) {
-										Thread.onSpinWait();
-									}
 									try {
-										memStatementList.remove(statement);
-									} catch (InterruptedException e) {
-										throw new IllegalStateException(e);
+										if (memStatementList.optimisticRemove(st, i)) {
+											removedStatements.add(st);
+										} else {
+											System.err.println("Failed to remove!");
+										}
+									} catch (Error e) {
+										System.err.println(e);
+										throw e;
 									}
+
 								}
-							})
-			)
+
+							}
+
+						} catch (Throwable t) {
+							if (t instanceof InterruptedException) {
+								Thread.currentThread().interrupt();
+							}
+							fail(t);
+						}
+					}
+				} finally {
+					countDownLatch.countDown();
+				}
+			});
+
+			List<? extends Future<?>> collect = partition
+					.stream()
+					.map(l -> (Runnable) () -> {
+						try {
+							for (MemStatement statement : l) {
+								MemStatement memStatement = new MemStatement(statement.getSubject(),
+										statement.getPredicate(), statement.getObject(), statement.getContext(),
+										snapshotVersion.get());
+								memStatementList.add(memStatement);
+								assertEquals(Integer.MAX_VALUE, memStatement.getTillSnapshot());
+								memStatement.setTillSnapshot(snapshotVersion.get() + 50);
+
+								if (random.nextInt(10) == 0) {
+									int i = snapshotVersion.incrementAndGet();
+								}
+							}
+						} catch (InterruptedException e) {
+							throw new IllegalStateException();
+						}
+
+					})
 					.collect(Collectors.toList())
 					.stream()
 					.map(executorService::submit)
@@ -241,78 +246,57 @@ public class MemStatementListTestIT {
 				future.get();
 			}
 
-		} finally {
-			executorService.shutdownNow();
-		}
+			boolean cancel = cleanupFuture.cancel(true);
+			countDownLatch.await();
 
-		long count = Arrays.stream(memStatementList.getStatements()).filter(Objects::nonNull).count();
-		assertEquals(0, memStatementList.size());
-		assertEquals(0, count);
+			boolean sizeIsCorrect = memStatementList.verifySizeForTesting();
+			if (!sizeIsCorrect) {
+				int realSize = memStatementList.getRealSizeForTesting();
+				int size = memStatementList.size();
+				assertEquals(realSize, size, "Expected calculated size should be equal to the actual size variable");
+			}
 
-	}
+			assertTrue(cleanupFuture.isDone() || cleanupFuture.isCancelled());
+			assertEquals(statements.size(), removedStatements.size() + memStatementList.size());
 
-	@Test
-	@Timeout(120)
-	@Disabled
-	public void addCleanSnapshotConsistentMultipleThreads() throws ExecutionException, InterruptedException {
+			HashSet<MemStatement> removedStatementsSet = new HashSet<>(removedStatements);
+			if (removedStatementsSet.size() < removedStatements.size()) {
+				HashSet<MemStatement> temp = new HashSet<>(removedStatementsSet);
+				for (MemStatement st : removedStatements) {
+					if (!temp.contains(st)) {
+						System.out.println();
+					}
+					temp.remove(st);
+				}
+			}
+			assertEquals(removedStatementsSet.size(), removedStatements.size());
 
-		List<List<MemStatement>> partition = Lists.partition(statements, CHUNKS);
-
-		List<Integer> tillSnapshots = partition.stream()
-				.map(memStatements -> memStatements.stream().mapToInt(MemStatement::getTillSnapshot).max().getAsInt()
-						+ 1)
-				.collect(Collectors.toList());
-		Collections.shuffle(tillSnapshots, new Random(4759354));
-
-		MemStatementList memStatementList = new MemStatementList();
-		ExecutorService executorService = Executors.newCachedThreadPool();
-		AtomicInteger atomicInteger = new AtomicInteger(partition.size());
-		try {
-
-			List<? extends Future<?>> collect = Stream.concat(
-					partition
-							.stream()
-							.map(l -> () -> {
-								try {
-									for (MemStatement statement : l) {
-										memStatementList.add(statement);
-									}
-									atomicInteger.decrementAndGet();
-								} catch (InterruptedException e) {
-									throw new IllegalStateException();
-								}
-							}),
-					tillSnapshots
-							.stream()
-							.map(cleanSnapshot -> (Runnable) () -> {
-								try {
-									while (atomicInteger.get() > 0) {
-										memStatementList.cleanSnapshots(cleanSnapshot);
-										Thread.yield();
-									}
-
-									memStatementList.cleanSnapshots(cleanSnapshot);
-								} catch (InterruptedException e) {
-									throw new IllegalStateException();
-								}
-							})
-			)
-					.collect(Collectors.toList())
-					.stream()
-					.map(executorService::submit)
+			List<MemStatement> collect1 = Arrays.stream(memStatementList.getStatements())
+					.filter(Objects::nonNull)
 					.collect(Collectors.toList());
 
-			for (Future<?> future : collect) {
-				future.get();
+			Set<MemStatement> memStatementsLeft = new HashSet<>(collect1);
+
+			assertEquals(memStatementsLeft.size(), collect1.size());
+			assertEquals(memStatementList.size(), memStatementsLeft.size());
+
+			for (MemStatement memStatement : memStatementsLeft) {
+				assertFalse(removedStatementsSet.contains(memStatement));
+			}
+
+			for (MemStatement memStatement : removedStatementsSet) {
+				assertFalse(memStatementsLeft.contains(memStatement));
+			}
+
+			removedStatementsSet.addAll(memStatementsLeft);
+
+			for (MemStatement statement : statements) {
+				assertTrue(removedStatementsSet.contains(statement));
 			}
 
 		} finally {
 			executorService.shutdownNow();
 		}
-
-		long count = Arrays.stream(memStatementList.getStatements()).filter(Objects::nonNull).count();
-		assertEquals(0, memStatementList.size());
-		assertEquals(0, count);
 
 	}
 

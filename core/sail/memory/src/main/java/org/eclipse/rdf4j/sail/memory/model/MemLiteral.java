@@ -117,11 +117,6 @@ public class MemLiteral extends SimpleLiteral implements MemValue {
 	}
 
 	@Override
-	public void removeObjectStatement(MemStatement st) throws InterruptedException {
-		objectStatements.remove(st);
-	}
-
-	@Override
 	public void cleanSnapshotsFromObjectStatements(int currentSnapshot) throws InterruptedException {
 		objectStatements.cleanSnapshots(currentSnapshot);
 	}
