@@ -42,7 +42,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	 *------------*/
 
 	/**
-	 * Registry containing the set of MemURI objects as used by a MemoryStore. This registry enables the reuse of
+	 * Registry containing the set of MemIRI objects as used by a MemoryStore. This registry enables the reuse of
 	 * objects, minimizing the number of objects in main memory.
 	 */
 	private final WeakObjectRegistry<IRI, MemIRI> iriRegistry = new WeakObjectRegistry<>();
@@ -66,7 +66,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	private final WeakObjectRegistry<Literal, MemLiteral> literalRegistry = new WeakObjectRegistry<>();
 
 	/**
-	 * Registry containing the set of namespce strings as used by MemURI objects in a MemoryStore. This registry enables
+	 * Registry containing the set of namespce strings as used by MemIRI objects in a MemoryStore. This registry enables
 	 * the reuse of objects, minimizing the number of objects in main memory.
 	 */
 	private final WeakObjectRegistry<String, String> namespaceRegistry = new WeakObjectRegistry<>();
@@ -103,7 +103,7 @@ public class MemValueFactory extends AbstractValueFactory {
 		if (value == null) {
 			return null;
 		} else if (value.isIRI()) {
-			return getMemURI((IRI) value);
+			return getMemIRI((IRI) value);
 		} else if (value.isBNode()) {
 			return getMemBNode((BNode) value);
 		} else if (value.isTriple()) {
@@ -122,26 +122,26 @@ public class MemValueFactory extends AbstractValueFactory {
 		if (resource == null) {
 			return null;
 		} else if (resource.isIRI()) {
-			return getMemURI((IRI) resource);
+			return getMemIRI((IRI) resource);
 		} else if (resource.isBNode()) {
 			return getMemBNode((BNode) resource);
 		} else if (resource.isTriple()) {
 			return getMemTriple((Triple) resource);
 		} else {
-			throw new IllegalArgumentException("resource is not a URI or BNode: " + resource);
+			throw new IllegalArgumentException("resource is not an IRI or BNode: " + resource);
 		}
 	}
 
 	/**
 	 * See getMemValue() for description.
 	 */
-	public MemIRI getMemURI(IRI uri) {
-		if (uri == null) {
+	public MemIRI getMemIRI(IRI iri) {
+		if (iri == null) {
 			return null;
-		} else if (isOwnMemIRI(uri)) {
-			return (MemIRI) uri;
+		} else if (isOwnMemIRI(iri)) {
+			return (MemIRI) iri;
 		} else {
-			return iriRegistry.get(uri);
+			return iriRegistry.get(iri);
 		}
 	}
 
@@ -203,15 +203,15 @@ public class MemValueFactory extends AbstractValueFactory {
 	}
 
 	/**
-	 * Gets all URIs that are managed by this value factory.
+	 * Gets all IRIs that are managed by this value factory.
 	 * <p>
 	 * <b>Warning:</b> This method is not synchronized.
 	 *
-	 * @return An unmodifiable Set of MemURI objects.
+	 * @return An unmodifiable Set of MemIRI objects.
 	 * @deprecated Use getMemIRIsIterator() instead.
 	 */
 	@Deprecated(forRemoval = true, since = "4.0.0")
-	public Set<MemIRI> getMemURIs() {
+	public Set<MemIRI> getMemIRIs() {
 		return Collections.unmodifiableSet(iriRegistry);
 	}
 
@@ -233,7 +233,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * <p>
 	 * <b>Warning:</b> This method is not synchronized.
 	 *
-	 * @return An unmodifiable Set of MemURI objects.
+	 * @return An unmodifiable Set of MemIRI objects.
 	 * @deprecated Use getMemLiteralsIterator() instead.
 	 */
 	@Deprecated(forRemoval = true, since = "4.0.0")
@@ -242,7 +242,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	}
 
 	/**
-	 * Gets all URIs that are managed by this value factory.
+	 * Gets all IRIs that are managed by this value factory.
 	 *
 	 * @return An autocloseable iterator.
 	 */
@@ -291,32 +291,32 @@ public class MemValueFactory extends AbstractValueFactory {
 	 */
 	public MemResource getOrCreateMemResource(Resource resource) {
 		if (resource.isIRI()) {
-			return getOrCreateMemURI((IRI) resource);
+			return getOrCreateMemIRI((IRI) resource);
 		} else if (resource.isBNode()) {
 			return getOrCreateMemBNode((BNode) resource);
 		} else if (resource.isTriple()) {
 			return getOrCreateMemTriple((Triple) resource);
 		} else {
-			throw new IllegalArgumentException("resource is not a URI or BNode: " + resource);
+			throw new IllegalArgumentException("resource is not an IRI or BNode: " + resource);
 		}
 	}
 
 	/**
 	 * See {@link #getOrCreateMemValue(Value)} for description.
 	 */
-	public MemIRI getOrCreateMemURI(IRI uri) {
-		if (isOwnMemIRI(uri)) {
-			return (MemIRI) uri;
+	public MemIRI getOrCreateMemIRI(IRI iri) {
+		if (isOwnMemIRI(iri)) {
+			return (MemIRI) iri;
 		}
 
-		return iriRegistry.getOrAdd(uri, () -> {
+		return iriRegistry.getOrAdd(iri, () -> {
 
-			String namespace = uri.getNamespace();
+			String namespace = iri.getNamespace();
 
 			String sharedNamespace = namespaceRegistry.getOrAdd(namespace, () -> namespace);
 
-			// Create a MemURI and add it to the registry
-			return new MemIRI(this, sharedNamespace, uri.getLocalName());
+			// Create a MemIRI and add it to the registry
+			return new MemIRI(this, sharedNamespace, iri.getLocalName());
 		});
 	}
 
@@ -384,7 +384,7 @@ public class MemValueFactory extends AbstractValueFactory {
 		if (memTriple == null) {
 			// Create a MemTriple and add it to the registry
 			MemTriple newMemTriple = new MemTriple(this, getOrCreateMemResource(triple.getSubject()),
-					getOrCreateMemURI(triple.getPredicate()), getOrCreateMemValue(triple.getObject()));
+					getOrCreateMemIRI(triple.getPredicate()), getOrCreateMemValue(triple.getObject()));
 			boolean wasNew = tripleRegistry.add(newMemTriple);
 
 			if (!wasNew) {
@@ -399,8 +399,8 @@ public class MemValueFactory extends AbstractValueFactory {
 	}
 
 	@Override
-	public IRI createIRI(String uri) {
-		return getOrCreateMemURI(super.createIRI(uri));
+	public IRI createIRI(String iri) {
+		return getOrCreateMemIRI(super.createIRI(iri));
 	}
 
 	@Override
@@ -408,7 +408,7 @@ public class MemValueFactory extends AbstractValueFactory {
 		return iriRegistry.getOrAdd(SimpleValueFactory.getInstance().createIRI(namespace, localName), () -> {
 
 			if (namespace.indexOf(':') == -1) {
-				throw new IllegalArgumentException("Not a valid (absolute) URI: " + namespace + localName);
+				throw new IllegalArgumentException("Not a valid (absolute) IRI: " + namespace + localName);
 			}
 
 			String correctNamespace;
@@ -426,7 +426,7 @@ public class MemValueFactory extends AbstractValueFactory {
 
 			String sharedNamespace = namespaceRegistry.getOrAdd(correctNamespace, () -> correctNamespace);
 
-			// Create a MemURI and add it to the registry
+			// Create a MemIRI and add it to the registry
 			return new MemIRI(this, sharedNamespace, correctLocalName);
 
 		});

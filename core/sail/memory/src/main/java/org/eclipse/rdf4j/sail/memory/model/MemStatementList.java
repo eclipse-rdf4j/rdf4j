@@ -328,6 +328,30 @@ public class MemStatementList {
 		}
 	}
 
+	boolean verifySizeForTesting() {
+		MemStatement[] statements1 = getStatementsWithoutInterrupt();
+		int size = 0;
+		for (int i = 0; i < statements1.length; i++) {
+			if (statements1[i] != null) {
+				size++;
+			}
+		}
+		return size == size();
+
+	}
+
+	int getRealSizeForTesting() {
+		MemStatement[] statements1 = getStatementsWithoutInterrupt();
+		int size = 0;
+		for (int i = 0; i < statements1.length; i++) {
+			if (statements1[i] != null) {
+				size++;
+			}
+		}
+		return size;
+
+	}
+
 	static {
 		try {
 			SIZE = MethodHandles.lookup()

@@ -74,6 +74,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	private final AbstractSail sailBase;
 
 	private volatile boolean txnActive;
+	private static final VarHandle TXN_ACTIVE;
 
 	private volatile boolean txnPrepared;
 
@@ -90,16 +91,6 @@ public abstract class AbstractSailConnection implements SailConnection {
 	@SuppressWarnings("FieldMayBeFinal")
 	private boolean isOpen = true;
 	private static final VarHandle IS_OPEN;
-
-	static {
-		try {
-			IS_OPEN = MethodHandles.lookup()
-					.in(AbstractSailConnection.class)
-					.findVarHandle(AbstractSailConnection.class, "isOpen", boolean.class);
-		} catch (ReflectiveOperationException e) {
-			throw new Error(e);
-		}
-	}
 
 	/**
 	 * Lock used to prevent concurrent calls to update methods like addStatement, clear, commit, etc. within a
@@ -138,9 +129,12 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	private IsolationLevel transactionIsolationLevel;
 
-	// used to decide if we need to call flush()
+	// Used to decide if we need to call flush(). Use the VarHandles below in relase/acquire mode instead.
 	private volatile boolean statementsAdded;
 	private volatile boolean statementsRemoved;
+
+	private static final VarHandle STATEMENTS_ADDED;
+	private static final VarHandle STATEMENTS_REMOVED;
 
 	/*--------------*
 	 * Constructors *
@@ -148,7 +142,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	public AbstractSailConnection(AbstractSail sailBase) {
 		this.sailBase = sailBase;
-		txnActive = false;
+		TXN_ACTIVE.setRelease(this, false);
 		if (debugEnabled) {
 			activeIterationsDebug = new ConcurrentHashMap<>();
 		} else {
@@ -177,7 +171,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 * @throws SailException if no transaction is active.
 	 */
 	protected void verifyIsActive() throws SailException {
-		if (!isActive()) {
+		if (!((boolean) TXN_ACTIVE.getAcquire(this))) {
 			throw new SailException("No active transaction");
 		}
 	}
@@ -215,7 +209,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 				}
 
 				startTransactionInternal();
-				txnActive = true;
+				TXN_ACTIVE.setRelease(this, true);
 			} finally {
 				updateLock.unlock();
 			}
@@ -268,7 +262,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			try {
 				forceCloseActiveOperations();
 
-				if (txnActive) {
+				if ((boolean) TXN_ACTIVE.getAcquire(this)) {
 					logger.warn("Rolling back transaction due to connection close",
 							debugEnabled ? new Throwable() : null);
 					try {
@@ -276,7 +270,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 						// rollback method will try to obtain a connection lock
 						rollbackInternal();
 					} finally {
-						txnActive = false;
+						TXN_ACTIVE.setRelease(this, false);
 						txnPrepared = false;
 					}
 				}
@@ -417,7 +411,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	protected final boolean transactionActive() {
-		return txnActive;
+		return (boolean) TXN_ACTIVE.getAcquire(this);
 	}
 
 	/**
@@ -459,7 +453,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 			updateLock.lock();
 			try {
-				if (txnActive) {
+				if ((boolean) TXN_ACTIVE.getAcquire(this)) {
 					prepareInternal();
 					txnPrepared = true;
 				}
@@ -489,12 +483,12 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 			updateLock.lock();
 			try {
-				if (txnActive) {
+				if ((boolean) TXN_ACTIVE.getAcquire(this)) {
 					if (!txnPrepared) {
 						prepareInternal();
 					}
 					commitInternal();
-					txnActive = false;
+					TXN_ACTIVE.setRelease(this, false);
 					txnPrepared = false;
 				}
 			} finally {
@@ -525,11 +519,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 			updateLock.lock();
 			try {
-				if (txnActive) {
+				if ((boolean) TXN_ACTIVE.getAcquire(this)) {
 					try {
 						rollbackInternal();
 					} finally {
-						txnActive = false;
+						TXN_ACTIVE.setRelease(this, false);
 						txnPrepared = false;
 					}
 				} else {
@@ -553,7 +547,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 			flushPendingUpdates();
 		}
 		addStatement(null, subj, pred, obj, contexts);
-		statementsAdded = true;
+
+		STATEMENTS_ADDED.setRelease(this, true);
 	}
 
 	@Override
@@ -562,7 +557,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			flushPendingUpdates();
 		}
 		removeStatement(null, subj, pred, obj, contexts);
-		statementsRemoved = true;
+		STATEMENTS_REMOVED.setRelease(this, true);
 	}
 
 	@Override
@@ -604,7 +599,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 				startUpdate(op);
 			}
 		}
-		statementsAdded = true;
+		STATEMENTS_ADDED.setRelease(this, true);
 	}
 
 	/**
@@ -632,7 +627,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 				startUpdate(op);
 			}
 		}
-		statementsRemoved = true;
+		STATEMENTS_REMOVED.setRelease(this, true);
 	}
 
 	@Override
@@ -703,7 +698,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			try {
 				verifyIsActive();
 				clearInternal(contexts);
-				statementsRemoved = true;
+				STATEMENTS_REMOVED.setRelease(this, true);
 			} finally {
 				updateLock.unlock();
 			}
@@ -836,19 +831,20 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public boolean pendingRemovals() {
-		return statementsRemoved;
+		return (boolean) STATEMENTS_REMOVED.getAcquire(this);
+
 	}
 
 	protected boolean pendingAdds() {
-		return statementsAdded;
+		return (boolean) STATEMENTS_ADDED.getAcquire(this);
 	}
 
 	protected void setStatementsAdded() {
-		statementsAdded = true;
+		STATEMENTS_ADDED.setRelease(this, true);
 	}
 
 	protected void setStatementsRemoved() {
-		statementsRemoved = true;
+		STATEMENTS_REMOVED.setRelease(this, true);
 	}
 
 	@Deprecated(forRemoval = true)
@@ -992,9 +988,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 * @throws SailException
 	 */
 	private void flushPendingUpdates() throws SailException {
-		if ((statementsAdded || statementsRemoved) && isActive()) {
+		if ((pendingAdds() || pendingRemovals()) && isActive()) {
 			if (isActive()) {
 				synchronized (this) {
+					// we are inside a synchornized block so there isn't much point using the VarHandle
 					if ((statementsAdded || statementsRemoved) && isActive()) {
 						flush();
 						statementsAdded = false;
@@ -1126,6 +1123,46 @@ public abstract class AbstractSailConnection implements SailConnection {
 				javaLock.unlock();
 				isActive = false;
 			}
+		}
+	}
+
+	static {
+		try {
+			IS_OPEN = MethodHandles.lookup()
+					.in(AbstractSailConnection.class)
+					.findVarHandle(AbstractSailConnection.class, "isOpen", boolean.class);
+		} catch (ReflectiveOperationException e) {
+			throw new Error(e);
+		}
+	}
+
+	static {
+		try {
+			TXN_ACTIVE = MethodHandles.lookup()
+					.in(AbstractSailConnection.class)
+					.findVarHandle(AbstractSailConnection.class, "txnActive", boolean.class);
+		} catch (ReflectiveOperationException e) {
+			throw new Error(e);
+		}
+	}
+
+	static {
+		try {
+			STATEMENTS_REMOVED = MethodHandles.lookup()
+					.in(AbstractSailConnection.class)
+					.findVarHandle(AbstractSailConnection.class, "statementsRemoved", boolean.class);
+		} catch (ReflectiveOperationException e) {
+			throw new Error(e);
+		}
+	}
+
+	static {
+		try {
+			STATEMENTS_ADDED = MethodHandles.lookup()
+					.in(AbstractSailConnection.class)
+					.findVarHandle(AbstractSailConnection.class, "statementsAdded", boolean.class);
+		} catch (ReflectiveOperationException e) {
+			throw new Error(e);
 		}
 	}
 }

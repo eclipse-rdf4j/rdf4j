@@ -155,7 +155,7 @@ public class MemValueFactoryConcurrentBenchmark extends BaseConcurrentBenchmark 
 			Random r = new Random(random.nextInt());
 			for (int i = 0; i < BUCKET_SIZE; i++) {
 				MemIRI orCreateMemURI = valueFactory
-						.getOrCreateMemURI(Values.iri("http://example.com", "" + r.nextInt(BUCKET_SIZE / 10)));
+						.getOrCreateMemIRI(Values.iri("http://example.com", "" + r.nextInt(BUCKET_SIZE / 10)));
 				blackhole.consume(orCreateMemURI);
 			}
 		});

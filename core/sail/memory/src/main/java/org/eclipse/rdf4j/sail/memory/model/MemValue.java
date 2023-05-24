@@ -22,7 +22,7 @@ public interface MemValue extends Value {
 	 *-----------*/
 
 	/**
-	 * A shared empty MemStatementList that is returned by MemURI and MemBNode to represent an empty list. The use of a
+	 * A shared empty MemStatementList that is returned by MemIRI and MemBNode to represent an empty list. The use of a
 	 * shared list reduces memory usage.
 	 */
 	MemStatementList EMPTY_LIST = new MemStatementList(0);
