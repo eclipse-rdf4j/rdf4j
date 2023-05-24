@@ -349,7 +349,7 @@ class SailSourceBranch implements SailSource {
 				// the ´semaphore´. Synchronizing on the ´pending´ collection could potentially lead to a deadlock when
 				// closing a Changeset during rollback.
 				for (Changeset c : pending) {
-					c.prepend(merged);
+					c.prepend(merged.shallowClone());
 				}
 			}
 		} finally {
@@ -477,7 +477,10 @@ class SailSourceBranch implements SailSource {
 					&& !isChanged((Changeset) sink)) {
 				// one change to apply that is not in use to an empty Changeset
 				Changeset dst = (Changeset) sink;
-				dst.setChangeset(changes.pop());
+				Changeset src = changes.pop();
+				dst.setChangeset(src);
+				// correctly close changeset
+				src.close();
 			} else {
 				Iterator<Changeset> iter = changes.iterator();
 				while (iter.hasNext()) {
@@ -517,6 +520,9 @@ class SailSourceBranch implements SailSource {
 
 		change.sinkDeprecated(sink);
 		change.sinkApproved(sink);
+
+		// correctly close changeset
+		change.close();
 	}
 
 }
