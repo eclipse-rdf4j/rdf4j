@@ -127,10 +127,17 @@ public class MemIRI extends MemResource implements IRI {
 				// two different MemIRI from the same MemoryStore can not be equal.
 				return false;
 			}
-			return namespace.length() == oMemIRI.namespace.length() &&
-					localName.length() == oMemIRI.localName.length() &&
-					namespace.equals(oMemIRI.namespace) &&
-					localName.equals(oMemIRI.localName);
+			boolean equalLengtsh = namespace.length() == oMemIRI.namespace.length() &&
+					localName.length() == oMemIRI.localName.length();
+
+			if (equalLengtsh) {
+				if (namespace.equals(oMemIRI.namespace)) {
+					if (localName.equals(oMemIRI.localName)) {
+						return true;
+					}
+				}
+			}
+			return false;
 
 		}
 
@@ -142,7 +149,16 @@ public class MemIRI extends MemResource implements IRI {
 				if (toStringCache != null) {
 					String stringValue = toStringCache.get();
 					if (stringValue != null) {
-						return stringValue.equals(oStr);
+						if (oStr == stringValue) {
+							return true;
+						} else {
+							boolean equals = stringValue.equals(oStr);
+							if (equals) {
+								toStringCache = new SoftReference<>(oStr);
+							}
+							return equals;
+						}
+
 					}
 				}
 
