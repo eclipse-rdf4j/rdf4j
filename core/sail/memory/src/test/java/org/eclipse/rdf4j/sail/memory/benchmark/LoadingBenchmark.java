@@ -76,7 +76,7 @@ public class LoadingBenchmark {
 
 		LoadingBenchmark loadingBenchmark = new LoadingBenchmark();
 		loadingBenchmark.isolationLevel = "NONE";
-		for (int i = 0; i < 100; i++) {
+		for (int i = 0; i < 500; i++) {
 			System.out.println(i);
 			loadingBenchmark.loadRealData();
 		}
