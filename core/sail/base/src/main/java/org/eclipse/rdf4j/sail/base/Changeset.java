@@ -76,9 +76,9 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		}
 	}
 
-	AdderBasedReadWriteLock readWriteLock = new AdderBasedReadWriteLock();
-	AdderBasedReadWriteLock refBacksReadWriteLock = new AdderBasedReadWriteLock();
-	Semaphore prependLock = new Semaphore(1);
+	final AdderBasedReadWriteLock readWriteLock = new AdderBasedReadWriteLock();
+	final AdderBasedReadWriteLock refBacksReadWriteLock = new AdderBasedReadWriteLock();
+	final Semaphore prependLock = new Semaphore(1);
 
 	/**
 	 * Set of {@link SailDataset}s that are currently using this {@link Changeset} to derive the state of the
@@ -252,16 +252,17 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public void removeRefback(SailDatasetImpl dataset) {
-		assert !closed;
-		long writeLock = refBacksReadWriteLock.writeLock();
-		try {
-			if (refbacks != null) {
-				refbacks.removeIf(d -> d == dataset);
+		if (refbacks != null) {
+			// assert !closed;
+			long writeLock = refBacksReadWriteLock.writeLock();
+			try {
+				if (refbacks != null) {
+					refbacks.removeIf(d -> d == dataset);
+				}
+			} finally {
+				refBacksReadWriteLock.unlockWriter(writeLock);
 			}
-		} finally {
-			refBacksReadWriteLock.unlockWriter(writeLock);
 		}
-
 	}
 
 	public boolean isRefback() {
