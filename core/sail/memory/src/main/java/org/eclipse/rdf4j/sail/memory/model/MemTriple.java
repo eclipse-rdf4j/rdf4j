@@ -84,15 +84,8 @@ public class MemTriple extends MemResource implements Triple {
 	}
 
 	@Override
-	public void removeObjectStatement(MemStatement st) throws InterruptedException {
-		objectStatements.remove(st);
-
-	}
-
-	@Override
 	public void cleanSnapshotsFromObjectStatements(int currentSnapshot) throws InterruptedException {
 		objectStatements.cleanSnapshots(currentSnapshot);
-
 	}
 
 	@Override
@@ -108,11 +101,6 @@ public class MemTriple extends MemResource implements Triple {
 	@Override
 	public void addContextStatement(MemStatement st) {
 		throw new UnsupportedOperationException("RDF-star triples can not be used as context identifier");
-	}
-
-	@Override
-	public void removeContextStatement(MemStatement st) {
-		// no-op
 	}
 
 	@Override
