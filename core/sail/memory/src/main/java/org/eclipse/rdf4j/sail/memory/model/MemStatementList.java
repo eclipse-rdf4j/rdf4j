@@ -15,7 +15,6 @@ import java.lang.invoke.VarHandle;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
-import java.util.concurrent.locks.StampedLock;
 
 /**
  * A dedicated data structure for storing MemStatement objects, offering operations optimized for their use in the
@@ -46,8 +45,6 @@ public class MemStatementList {
 	private volatile boolean prioritiseCleanup;
 	private static final VarHandle PRIORITISE_CLEANUP;
 
-	private final StampedLock addRemoveLock = new StampedLock();
-
 	private final AtomicReference<Thread> prioritisedThread = new AtomicReference<>();
 
 	public MemStatementList() {
@@ -75,69 +72,73 @@ public class MemStatementList {
 			}
 		}
 
-		long readLock = addRemoveLock.readLock();
-		try {
-			do {
+		do {
 
-				MemStatement[] statements = getStatements();
-				int length = statements.length;
+			MemStatement[] statements = getStatements();
+			int length = statements.length;
 
-				if (length > (int) SIZE.getAcquire(this)) {
+			boolean shouldGrowArray = true;
 
-					int previouslyInsertedIndex = (int) PREVIOUSLY_INSERTED_INDEX.getOpaque(this);
-					if (previouslyInsertedIndex >= length) {
-						continue;
-					}
+			if (length > (int) SIZE.getAcquire(this)) {
 
-					int i = previouslyInsertedIndex + 1 >= length ? 0 : previouslyInsertedIndex + 1;
+				int previouslyInsertedIndex = (int) PREVIOUSLY_INSERTED_INDEX.getOpaque(this);
+				if (previouslyInsertedIndex >= length) {
+					continue;
+				}
 
-					for (; i != previouslyInsertedIndex; i = (i + 1 >= length ? 0 : i + 1)) {
+				int i = previouslyInsertedIndex + 1 >= length ? 0 : previouslyInsertedIndex + 1;
 
-						if (statements[i] == null) {
+				for (; i != previouslyInsertedIndex; i = (i + 1 >= length ? 0 : i + 1)) {
 
-							boolean success = STATEMENTS_ARRAY.compareAndSet(statements, i, null, st);
-							if (success) {
+					if (statements[i] == null) {
 
-								// check if the statements array has been swapped out (because it was grown) while we
-								// were
-								// inserting into it
-								MemStatement[] statementsAfterInsert = getStatements();
-								if (statementsAfterInsert != statements
-										&& STATEMENTS_ARRAY.getAcquire(statements, i) != st) {
-									// we wrote into an array while it was growing and our write was lost
-									break;
-								}
+						boolean success = STATEMENTS_ARRAY.compareAndSet(statements, i, null, st);
 
-								PREVIOUSLY_INSERTED_INDEX.setRelease(this, i);
-								SIZE.getAndAdd(this, 1);
+						if (success) {
+							shouldGrowArray = false;
 
-								updateGuaranteedLastIndexInUse(i);
-
-								return;
+							// check if the statements array has been swapped out (because it has grown) while we were
+							// inserting into it
+							MemStatement[] statementsAfterInsert = getStatementsWithoutInterrupt();
+							if (statementsAfterInsert != statements
+									&& STATEMENTS_ARRAY.getAcquire(statementsAfterInsert, i) != st) {
+								// We wrote into an array while it was growing and our write was lost.
+								break;
 							}
+
+							PREVIOUSLY_INSERTED_INDEX.setRelease(this, i);
+							SIZE.getAndAdd(this, 1);
+
+							updateGuaranteedLastIndexInUse(i);
+
+							return;
 						}
-
+					} else if (previouslyInsertedIndex < 0 && i == length - 1) {
+						// The array is full but no threads have made it to the code line where the
+						// PREVIOUSLY_INSERTED_INDEX is updated. Don't grow the array just yet, it is better to wait
+						// until PREVIOUSLY_INSERTED_INDEX is updated.
+						shouldGrowArray = false;
+						break;
 					}
+				}
+			}
 
+			if (shouldGrowArray && STATEMENTS.compareAndSet(this, statements, null)) {
+				// Grow array
+				MemStatement[] newArray = new MemStatement[Math.max(4, length * 2)];
+				if (statements != EMPTY_ARRAY) {
+					System.arraycopy(statements, 0, newArray, 0, length);
 				}
 
-				// statements array is probably full
+				STATEMENTS.setRelease(this, newArray);
+			}
 
-				if (STATEMENTS.compareAndSet(this, statements, null)) {// Grow array
-					MemStatement[] newArray = new MemStatement[Math.max(4, length * 2)];
-					if (statements != EMPTY_ARRAY) {
-						System.arraycopy(statements, 0, newArray, 0, length);
-					}
+			if (Thread.interrupted()) {
+				throw new InterruptedException();
+			}
 
-					STATEMENTS.setRelease(this, newArray);
-				}
-				if (Thread.interrupted()) {
-					throw new InterruptedException();
-				}
-			} while (true);
-		} finally {
-			addRemoveLock.unlockRead(readLock);
-		}
+		} while (true);
+
 	}
 
 	private void updateGuaranteedLastIndexInUse(int newValue) {
@@ -151,81 +152,60 @@ public class MemStatementList {
 		}
 	}
 
-	public void remove(MemStatement st) throws InterruptedException {
+	public boolean optimisticRemove(MemStatement st) throws InterruptedException {
 
-		do {
-			MemStatement[] statements = getStatements();
+		MemStatement[] statements = getStatements();
 
-			boolean success = true;
-			for (int i = 0; i < statements.length; i++) {
-				if (statements[i] == st) {
-
-					success = innerRemove(st, statements, i);
-
-					break;
-				}
+		for (int i = 0; i < statements.length; i++) {
+			if (statements[i] == st) {
+				return optimisticInnerRemove(st, statements, i);
 			}
-			if (success) {
-				break;
-			}
-			if (Thread.interrupted()) {
-				throw new InterruptedException();
-			}
-		} while (true);
+		}
+		if (Thread.interrupted()) {
+			throw new InterruptedException();
+		}
+		return false;
 	}
 
-	public void remove(MemStatement st, int index) throws InterruptedException {
+	public boolean optimisticRemove(MemStatement st, int index) throws InterruptedException {
+		MemStatement[] statements = getStatements();
 
-		do {
-			MemStatement[] statements = getStatements();
-
-			if (statements[index] == st && innerRemove(st, statements, index)) {
-				return;
-			} else {
-				remove(st);
-			}
-			if (Thread.interrupted()) {
-				throw new InterruptedException();
-			}
-		} while (true);
+		if (statements[index] == st && optimisticInnerRemove(st, statements, index)) {
+			return true;
+		} else {
+			return optimisticRemove(st);
+		}
 	}
 
-	private boolean innerRemove(MemStatement st, MemStatement[] statements, int i) throws InterruptedException {
-		long writeLock = addRemoveLock.writeLock();
-		try {
-			if (getStatements() != statements) {
-				return false;
-			}
+	private boolean optimisticInnerRemove(MemStatement toRemove, MemStatement[] statements, int i) {
 
-			boolean success = STATEMENTS_ARRAY.compareAndSet(statements, i, st, null);
-			if (success) {
-				while (true) {
-					int size = size();
-					boolean decrementedSize = SIZE.compareAndSet(this, size, size - 1);
-					if (decrementedSize) {
-						return true;
-					}
+		boolean success = STATEMENTS_ARRAY.weakCompareAndSet(statements, i, toRemove, null);
+		if (success) {
+
+			MemStatement[] statementsAfterRemoval = getStatementsWithoutInterrupt();
+			if (statementsAfterRemoval != statements) {
+				// We don't know if the statement was removed because the STATEMENTS_ARRAY has changed (because it
+				// grew). Since it can never shrink we know that if we managed to remove the statement then the index
+				// should either be null or a different statement
+				if (STATEMENTS_ARRAY.getAcquire(statementsAfterRemoval, i) == toRemove) {
+					return false;
 				}
-			} else {
-				return false;
 			}
-		} finally {
-			addRemoveLock.unlockWrite(writeLock);
+			SIZE.getAndAdd(this, -1);
+
+			return true;
+		} else {
+			return false;
 		}
 
 	}
 
 	public void clear() {
-		long writeLock = addRemoveLock.writeLock();
-		try {
-			statements = EMPTY_ARRAY;
-			size = 0;
-			previouslyInsertedIndex = -1;
-			guaranteedLastIndexInUse = -10;
-			prioritiseCleanup = false;
-		} finally {
-			addRemoveLock.unlockWrite(writeLock);
-		}
+		statements = EMPTY_ARRAY;
+		size = 0;
+		previouslyInsertedIndex = -1;
+		guaranteedLastIndexInUse = -10;
+		prioritiseCleanup = false;
 	}
 
 	public void cleanSnapshots(int currentSnapshot) throws InterruptedException {
@@ -244,7 +224,7 @@ public class MemStatementList {
 
 				MemStatement statement = statements[i];
 				if (statement != null && statement.getTillSnapshot() <= currentSnapshot) {
-					boolean success = innerRemove(statement, statements, i);
+					boolean success = optimisticInnerRemove(statement, statements, i);
 					if (!success) {
 						error = true;
 						break;
@@ -301,6 +281,15 @@ public class MemStatementList {
 			if (Thread.interrupted()) {
 				throw new InterruptedException();
 			}
+			Thread.onSpinWait();
+			statements = (MemStatement[]) STATEMENTS.getAcquire(this);
+		}
+		return statements;
+	}
+
+	private MemStatement[] getStatementsWithoutInterrupt() {
+		MemStatement[] statements = (MemStatement[]) STATEMENTS.getAcquire(this);
+		while (statements == null) {
 			Thread.onSpinWait();
 			statements = (MemStatement[]) STATEMENTS.getAcquire(this);
 		}
@@ -382,4 +371,27 @@ public class MemStatementList {
 		STATEMENTS_ARRAY = MethodHandles.arrayElementVarHandle(MemStatement[].class);
 	}
 
+	boolean verifySizeForTesting() {
+		MemStatement[] statements1 = getStatementsWithoutInterrupt();
+		int size = 0;
+		for (int i = 0; i < statements1.length; i++) {
+			if (statements1[i] != null) {
+				size++;
+			}
+		}
+		return size == size();
+
+	}
+
+	int getRealSizeForTesting() {
+		MemStatement[] statements1 = getStatementsWithoutInterrupt();
+		int size = 0;
+		for (int i = 0; i < statements1.length; i++) {
+			if (statements1[i] != null) {
+				size++;
+			}
+		}
+		return size;
+
+	}
 }

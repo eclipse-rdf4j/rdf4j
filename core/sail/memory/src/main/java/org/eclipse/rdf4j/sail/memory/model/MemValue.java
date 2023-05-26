@@ -66,11 +66,6 @@ public interface MemValue extends Value {
 	void addObjectStatement(MemStatement st) throws InterruptedException;
 
 	/**
-	 * Removes a statement from this MemValue's list of statements for which it is the object.
-	 */
-	void removeObjectStatement(MemStatement st) throws InterruptedException;
-
-	/**
 	 * Removes statements from old snapshots (those that have expired at or before the specified snapshot version) from
 	 * this MemValue's list of statements for which it is the object.
 	 *

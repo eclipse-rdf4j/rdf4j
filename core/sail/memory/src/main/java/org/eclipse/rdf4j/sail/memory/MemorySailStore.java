@@ -433,7 +433,7 @@ class MemorySailStore implements SailStore {
 					}
 
 					// stale statement
-					this.statements.remove(st, i);
+					this.statements.optimisticRemove(st, i);
 					prioritiseCleaning = prioritiseSnapshotCleaningIfLowOnMemory(prioritiseCleaning);
 				}
 
