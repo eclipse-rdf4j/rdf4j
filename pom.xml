@@ -361,6 +361,11 @@
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<enforce-javaee-provided.fail>true</enforce-javaee-provided.fail>
+		<enforce-no-javax-dependencies.fail>true</enforce-no-javax-dependencies.fail>
+		<jakartaee.version>8.0.0</jakartaee.version>
+		<!-- Jakarta XML Binding is part of Jakarta EE BOM from version 9 -->
+		<jaxb.version>2.3.3</jaxb.version>
+		<jetty.version>10.0.15</jetty.version>
 		<slf4j.version>1.7.36</slf4j.version>
 		<logback.version>1.2.11</logback.version>
 		<log4j.version>2.17.2</log4j.version>
@@ -377,12 +382,23 @@
 		<spring.version>5.3.23</spring.version>
 		<guava.version>30.1.1-jre</guava.version>
 		<jmhVersion>1.35</jmhVersion>
-		<servlet.version>3.1.0</servlet.version>
 		<junit.version>5.8.2</junit.version>
-		<jetty.version>9.4.50.v20221201</jetty.version>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
+			<dependency>
+				<groupId>jakarta.platform</groupId>
+				<artifactId>jakarta.jakartaee-bom</artifactId>
+				<version>${jakartaee.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<!-- Jakarta XML Binding is part of Jakarta EE BOM from version 9 -->
+			<dependency>
+				<groupId>jakarta.xml.bind</groupId>
+				<artifactId>jakarta.xml.bind-api</artifactId>
+				<version>${jaxb.version}</version>
+			</dependency>
 			<!-- Jackson Bill-of-Materials -->
 			<dependency>
 				<groupId>com.fasterxml.jackson</groupId>
@@ -945,6 +961,22 @@
 									</requireMavenVersion>
 								</rules>
 								<fail>true</fail>
+							</configuration>
+						</execution>
+						<execution>
+							<id>enforce-banned-dependencies</id>
+							<goals>
+								<goal>enforce</goal>
+							</goals>
+							<configuration>
+								<rules>
+									<bannedDependencies>
+										<excludes>
+											<exclude>javax.*</exclude>
+										</excludes>
+									</bannedDependencies>
+								</rules>
+								<fail>${enforce-no-javax-dependencies.fail}</fail>
 							</configuration>
 						</execution>
 						<execution>
