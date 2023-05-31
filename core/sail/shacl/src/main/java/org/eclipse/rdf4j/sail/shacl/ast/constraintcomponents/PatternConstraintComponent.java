@@ -66,7 +66,7 @@ public class PatternConstraintComponent extends SimpleAbstractConstraintComponen
 	}
 
 	private static String escapeRegexForSparql(String pattern) {
-		return pattern.replace("\\", "\\\\");
+		return pattern.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
 	}
 
 	@Override

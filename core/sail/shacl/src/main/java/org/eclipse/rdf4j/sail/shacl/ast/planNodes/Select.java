@@ -74,7 +74,9 @@ public class Select implements PlanNode {
 		}
 
 		dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
-
+		if (logger.isDebugEnabled()) {
+			this.stackTrace = Thread.currentThread().getStackTrace();
+		}
 	}
 
 	public Select(SailConnection connection, String query, Function<BindingSet, ValidationTuple> mapper,
@@ -89,6 +91,9 @@ public class Select implements PlanNode {
 		this.dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
 
 		this.sorted = false;
+		if (logger.isDebugEnabled()) {
+			this.stackTrace = Thread.currentThread().getStackTrace();
+		}
 	}
 
 	@Override
@@ -111,6 +116,11 @@ public class Select implements PlanNode {
 						logger.trace("SPARQL query (hasNext={}) \n{}", hasNext, Formatter.formatSparqlQuery(query));
 					}
 				} catch (MalformedQueryException e) {
+					if (stackTrace != null) {
+						Exception rootCause = new Exception("Root cause");
+						rootCause.setStackTrace(stackTrace);
+						logger.debug("Select plan node with malformed query", rootCause);
+					}
 					logger.error("Malformed query:\n{}", query);
 					throw e;
 				}

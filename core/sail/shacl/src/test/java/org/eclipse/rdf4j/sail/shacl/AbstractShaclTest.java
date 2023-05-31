@@ -95,6 +95,7 @@ import org.topbraid.shacl.vocabulary.SH;
 import com.google.common.collect.Lists;
 
 import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.LoggerContext;
 
 /**
  * @author Håvard Ottestad
@@ -1157,20 +1158,17 @@ abstract public class AbstractShaclTest {
 	}
 
 	void runWithAutomaticLogging(Runnable r) {
-		ch.qos.logback.classic.Logger shaclSailConnectionLogger = (ch.qos.logback.classic.Logger) LoggerFactory
-				.getLogger(ShaclSailConnection.class.getName());
-		Level shaclSailConnectionLoggerLevel = shaclSailConnectionLogger.getLevel();
-		ch.qos.logback.classic.Logger shaclSailLogger = (ch.qos.logback.classic.Logger) LoggerFactory
-				.getLogger(ShaclSail.class.getName());
-		Level shaclSailLoggerLevel = shaclSailLogger.getLevel();
+		LoggerContext loggerContext = (LoggerContext) LoggerFactory.getILoggerFactory();
+		ch.qos.logback.classic.Logger shaclPackageLogger = loggerContext.getLogger("org.eclipse.rdf4j.sail.shacl");
+
+		Level originalLogLevel = shaclPackageLogger.getLevel();
 
 		try {
 			r.run();
 		} catch (Throwable t) {
 			fullLogging = true;
 
-			shaclSailConnectionLogger.setLevel(Level.DEBUG);
-			shaclSailLogger.setLevel(Level.DEBUG);
+			shaclPackageLogger.setLevel(Level.DEBUG);
 
 			System.out.println("\n##############################################");
 			System.out.println("###### Re-running test with full logging #####");
@@ -1180,8 +1178,7 @@ abstract public class AbstractShaclTest {
 			throw t;
 		} finally {
 			fullLogging = false;
-			shaclSailConnectionLogger.setLevel(shaclSailConnectionLoggerLevel);
-			shaclSailLogger.setLevel(shaclSailLoggerLevel);
+			shaclPackageLogger.setLevel(originalLogLevel);
 
 		}
 	}
