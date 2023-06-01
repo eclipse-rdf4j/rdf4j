@@ -15,17 +15,12 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShapes;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.SingleCloseablePlanNode;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationExecutionLogger;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.eclipse.rdf4j.sail.shacl.results.lazy.LazyValidationReport;
 import org.eclipse.rdf4j.sail.shacl.results.lazy.ValidationResultIterator;
@@ -34,11 +29,14 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.VerySimpleRdfsBackwardsChainingConnection;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.CombinedShapeSource;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Experimental
 public class ShaclValidator {
 
 	private static final Resource[] ALL_CONTEXTS = {};
+	private static final Logger logger = LoggerFactory.getLogger(ShaclValidator.class);
 
 	// tests can write to this field using reflection
 	@SuppressWarnings("FieldMayBeFinal")
@@ -82,25 +80,18 @@ public class ShaclValidator {
 
 		List<ValidationResultIterator> collect = shapes
 				.stream()
-				.flatMap(contextWithShapes -> {
-					return contextWithShapes
-							.getShapes()
-							.stream()
-							.map(shape -> shape.generatePlans(connectionsGroup,
-									new ValidationSettings(contextWithShapes.getDataGraph(), false, true, false)));
-				}
+				.flatMap(contextWithShapes -> contextWithShapes
+						.getShapes()
+						.stream()
+						.map(shape -> new ShapeValidationContainer(
+								shape,
+								() -> shape.generatePlans(connectionsGroup,
+										new ValidationSettings(contextWithShapes.getDataGraph(), false, true, false)),
+								false, false, 1000, false, logger)
+						)
 				)
-				.map(planNode -> {
-					assert planNode instanceof SingleCloseablePlanNode;
-					planNode.receiveLogger(ValidationExecutionLogger.getInstance(false));
-					return (SingleCloseablePlanNode) planNode;
-				})
-
-				.map(planNode -> {
-					try (CloseableIteration<? extends ValidationTuple, SailException> iterator = planNode.iterator()) {
-						return new ValidationResultIterator(iterator, 1000);
-					}
-				})
+				.filter(ShapeValidationContainer::hasPlanNode)
+				.map(ShapeValidationContainer::performValidation)
 				.collect(Collectors.toList());
 
 		return new LazyValidationReport(collect, 10000);

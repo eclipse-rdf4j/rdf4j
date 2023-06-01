@@ -195,17 +195,9 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 
 						statementMatchers.addAll(optimizedStatementMatchers);
 
-						if (value.isIRI()) {
-							return "BIND(<" + value + "> as " + object.asSparqlVariable() + ")\n"
-									+ targetQueryFragment.getFragment();
-						}
-						if (value.isLiteral()) {
-							return "BIND(" + value + " as " + object.asSparqlVariable() + ")\n"
-									+ targetQueryFragment.getFragment();
-						}
+						return "BIND(" + stringRepresentationOfValue(value) + " as " + object.asSparqlVariable() + ")\n"
+								+ targetQueryFragment.getFragment();
 
-						throw new UnsupportedOperationException(
-								"value was unsupported type: " + value.getClass().getSimpleName());
 					})
 					.collect(
 							Collectors.joining("} UNION {\n" + VALUES_INJECTION_POINT + "\n",

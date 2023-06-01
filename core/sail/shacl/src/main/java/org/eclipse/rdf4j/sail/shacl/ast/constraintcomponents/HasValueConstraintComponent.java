@@ -165,36 +165,18 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 
 			SparqlFragment targetQueryFragment = path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner,
 					stableRandomVariableProvider, Set.of());
-			if (hasValue.isIRI()) {
-				return SparqlFragment.bgp(List.of(),
-						"BIND(<" + hasValue + "> as " + object.asSparqlVariable() + ")\n"
-								+ targetQueryFragment.getFragment(),
-						StatementMatcher.swap(targetQueryFragment.getStatementMatchers(), object,
-								new Variable<>((IRI) hasValue)),
-						null);
-			}
-			if (hasValue.isLiteral()) {
-				return SparqlFragment.bgp(List.of(),
-						"BIND(" + hasValue.toString() + " as " + object.asSparqlVariable() + ")\n"
-								+ targetQueryFragment.getFragment(),
-						StatementMatcher.swap(targetQueryFragment.getStatementMatchers(), object,
-								new Variable<>((Literal) hasValue)),
-						null);
-			}
 
-			throw new UnsupportedOperationException(
-					"value was unsupported type: " + hasValue.getClass().getSimpleName());
+			return SparqlFragment.bgp(List.of(),
+					"BIND(" + stringRepresentationOfValue(hasValue) + " as " + object.asSparqlVariable() + ")\n"
+							+ targetQueryFragment.getFragment(),
+					StatementMatcher.swap(targetQueryFragment.getStatementMatchers(), object,
+							new Variable<>(hasValue)),
+					null);
 
 		} else {
-			if (hasValue.isIRI()) {
-				return SparqlFragment.filterCondition(List.of(), object.asSparqlVariable() + " = <" + hasValue + ">",
-						List.of());
-			} else if (hasValue.isLiteral()) {
-				return SparqlFragment.filterCondition(List.of(), object.asSparqlVariable() + " = " + hasValue,
-						List.of());
-			}
-			throw new UnsupportedOperationException(
-					"value was unsupported type: " + hasValue.getClass().getSimpleName());
+			return SparqlFragment.filterCondition(List.of(),
+					object.asSparqlVariable() + " = " + stringRepresentationOfValue(hasValue),
+					List.of());
 
 		}
 	}
@@ -233,24 +215,6 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 		return new ValidationQuery(getTargetChain().getNamespaces(), query, allTargetVariables, null, scope, this, null,
 				null);
 
-	}
-
-	private String stringRepresentationOfValue(Value value) {
-		if (value.isIRI()) {
-			return "<" + value + ">";
-		}
-		if (value.isLiteral()) {
-			IRI datatype = ((Literal) value).getDatatype();
-			if (datatype == null) {
-				return "\"" + value.stringValue() + "\"";
-			}
-			if (((Literal) value).getLanguage().isPresent()) {
-				return "\"" + value.stringValue() + "\"@" + ((Literal) value).getLanguage().get();
-			}
-			return "\"" + value.stringValue() + "\"^^<" + datatype.stringValue() + ">";
-		}
-
-		throw new IllegalStateException(value.getClass().getSimpleName());
 	}
 
 	@Override
