@@ -521,15 +521,18 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					.stream()
 					.flatMap(contextWithShapes -> contextWithShapes.getShapes()
 							.stream()
-							.map(shape -> new ValidationContainer(
+							.map(shape -> new ShapeValidationContainer(
 									shape,
-									shape.generatePlans(connectionsGroup,
+									() -> shape.generatePlans(connectionsGroup,
 											new ValidationSettings(contextWithShapes.getDataGraph(),
 													sail.isLogValidationPlans(), validateEntireBaseSail,
-													sail.isPerformanceLogging()))
+													sail.isPerformanceLogging())),
+									sail.isGlobalLogValidationExecution(), sail.isLogValidationViolations(),
+									sail.getEffectiveValidationResultsLimitPerConstraint(), sail.isPerformanceLogging(),
+									logger
 							))
 					)
-					.filter(ValidationContainer::hasPlanNode)
+					.filter(ShapeValidationContainer::hasPlanNode)
 					.map(validationContainer -> validationContainer::performValidation);
 
 			List<ValidationResultIterator> validationResultIterators = new ArrayList<>(numberOfShapes);
@@ -1080,6 +1083,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		return 0;
 	}
 
+	@Deprecated(forRemoval = true)
 	public class ValidationContainer {
 		private final Shape shape;
 		private final PlanNode planNode;
@@ -1117,6 +1121,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				validationResults = new ValidationResultIterator(iterator,
 						sail.getEffectiveValidationResultsLimitPerConstraint());
 				return validationResults;
+			} catch (Exception e) {
+				throw new SailException("Error validating SHACL Shape " + shape.getId() + "\n" + shape, e);
 			} finally {
 				handlePostLogging(before, validationResults);
 			}

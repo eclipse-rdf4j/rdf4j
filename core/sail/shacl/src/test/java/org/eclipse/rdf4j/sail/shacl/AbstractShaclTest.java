@@ -11,7 +11,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import static org.junit.jupiter.api.parallel.ExecutionMode.CONCURRENT;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import java.io.File;
@@ -80,10 +79,11 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShapes;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.params.provider.Arguments;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -95,11 +95,13 @@ import org.topbraid.shacl.vocabulary.SH;
 import com.google.common.collect.Lists;
 
 import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.LoggerContext;
 
 /**
  * @author Håvard Ottestad
  */
-@Execution(CONCURRENT)
+@Isolated("Because we are modifying the static CONTEXTS field in the ShaclValidator class")
+//@Execution(CONCURRENT)
 abstract public class AbstractShaclTest {
 
 	private static final Logger logger = LoggerFactory.getLogger(AbstractShaclTest.class);
@@ -301,6 +303,11 @@ abstract public class AbstractShaclTest {
 				.toArray(IRI[]::new);
 
 		FieldUtils.writeDeclaredStaticField(ShaclValidator.class, "CONTEXTS", shapesGraphs, true);
+	}
+
+	@AfterAll
+	static void afterAll() throws IllegalAccessException {
+		FieldUtils.writeDeclaredStaticField(ShaclValidator.class, "CONTEXTS", new Resource[] {}, true);
 	}
 
 	@AfterEach
@@ -1157,20 +1164,17 @@ abstract public class AbstractShaclTest {
 	}
 
 	void runWithAutomaticLogging(Runnable r) {
-		ch.qos.logback.classic.Logger shaclSailConnectionLogger = (ch.qos.logback.classic.Logger) LoggerFactory
-				.getLogger(ShaclSailConnection.class.getName());
-		Level shaclSailConnectionLoggerLevel = shaclSailConnectionLogger.getLevel();
-		ch.qos.logback.classic.Logger shaclSailLogger = (ch.qos.logback.classic.Logger) LoggerFactory
-				.getLogger(ShaclSail.class.getName());
-		Level shaclSailLoggerLevel = shaclSailLogger.getLevel();
+		LoggerContext loggerContext = (LoggerContext) LoggerFactory.getILoggerFactory();
+		ch.qos.logback.classic.Logger shaclPackageLogger = loggerContext.getLogger("org.eclipse.rdf4j.sail.shacl");
+
+		Level originalLogLevel = shaclPackageLogger.getLevel();
 
 		try {
 			r.run();
 		} catch (Throwable t) {
 			fullLogging = true;
 
-			shaclSailConnectionLogger.setLevel(Level.DEBUG);
-			shaclSailLogger.setLevel(Level.DEBUG);
+			shaclPackageLogger.setLevel(Level.DEBUG);
 
 			System.out.println("\n##############################################");
 			System.out.println("###### Re-running test with full logging #####");
@@ -1180,8 +1184,7 @@ abstract public class AbstractShaclTest {
 			throw t;
 		} finally {
 			fullLogging = false;
-			shaclSailConnectionLogger.setLevel(shaclSailConnectionLoggerLevel);
-			shaclSailLogger.setLevel(shaclSailLoggerLevel);
+			shaclPackageLogger.setLevel(originalLogLevel);
 
 		}
 	}

@@ -11,6 +11,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
@@ -110,6 +112,36 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 			s[i] = s[i].trim();
 		}
 		return s;
+	}
+
+	public String stringRepresentationOfValue(Value value) {
+		if (value.isIRI()) {
+			return "<" + value + ">";
+		}
+		if (value.isLiteral()) {
+			IRI datatype = ((Literal) value).getDatatype();
+			if (datatype == null) {
+				return "\"" + value.stringValue()
+						.replace("\\", "\\\\")
+						.replace("\"", "\\\"")
+						.replace("\n", "\\n")
+						+ "\"";
+			}
+			if (((Literal) value).getLanguage().isPresent()) {
+				return "\"" + value.stringValue()
+						.replace("\\", "\\\\")
+						.replace("\"", "\\\"")
+						.replace("\n", "\\n")
+						+ "\"@" + ((Literal) value).getLanguage().get();
+			}
+			return "\"" + value.stringValue()
+					.replace("\\", "\\\\")
+					.replace("\"", "\\\"")
+					.replace("\n", "\\n")
+					+ "\"^^<" + datatype.stringValue() + ">";
+		}
+
+		throw new IllegalStateException(value.getClass().getSimpleName());
 	}
 
 }
