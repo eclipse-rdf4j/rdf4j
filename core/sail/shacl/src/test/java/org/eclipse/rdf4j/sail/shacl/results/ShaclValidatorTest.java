@@ -18,8 +18,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.io.StringReader;
 
-import org.apache.commons.lang3.reflect.FieldUtils;
-import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -29,20 +27,12 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclValidator;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.parallel.Isolated;
 
 /**
  * @author Håvard Ottestad
  */
-@Isolated
 public class ShaclValidatorTest {
-
-	@BeforeAll
-	static void beforeAll() throws IllegalAccessException {
-		FieldUtils.writeDeclaredStaticField(ShaclValidator.class, "CONTEXTS", new Resource[] {}, true);
-	}
 
 	@Test
 	public void testDefaultGraphIsUnionValid() throws Exception {

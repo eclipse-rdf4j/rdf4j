@@ -11,7 +11,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import static org.junit.jupiter.api.parallel.ExecutionMode.CONCURRENT;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import java.io.File;
@@ -80,10 +79,11 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShapes;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.params.provider.Arguments;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -100,7 +100,8 @@ import ch.qos.logback.classic.LoggerContext;
 /**
  * @author Håvard Ottestad
  */
-@Execution(CONCURRENT)
+@Isolated("Because we are modifying the static CONTEXTS field in the ShaclValidator class")
+//@Execution(CONCURRENT)
 abstract public class AbstractShaclTest {
 
 	private static final Logger logger = LoggerFactory.getLogger(AbstractShaclTest.class);
@@ -302,6 +303,11 @@ abstract public class AbstractShaclTest {
 				.toArray(IRI[]::new);
 
 		FieldUtils.writeDeclaredStaticField(ShaclValidator.class, "CONTEXTS", shapesGraphs, true);
+	}
+
+	@AfterAll
+	static void afterAll() throws IllegalAccessException {
+		FieldUtils.writeDeclaredStaticField(ShaclValidator.class, "CONTEXTS", new Resource[] {}, true);
 	}
 
 	@AfterEach
