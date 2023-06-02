@@ -18,7 +18,7 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.sail.memory.model.MemStatement;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * This test class should be removed when we remove

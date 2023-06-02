@@ -11,10 +11,11 @@
 package org.eclipse.rdf4j.sail.lucene;
 
 import static org.eclipse.rdf4j.model.util.Values.literal;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -30,11 +31,10 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.evaluation.TupleFunctionEvaluationMode;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 public class MultiParamTest {
 	private static final String NAMESPACE = "http://example.org/";
@@ -63,14 +63,14 @@ public class MultiParamTest {
 	private static final IRI p2 = iri("p2");
 	private static final IRI p3 = iri("p3");
 
-	@Rule
-	public TemporaryFolder tmpFolder = new TemporaryFolder();
+	@TempDir
+	public File tmpFolder;
 
 	LuceneSail luceneSail;
 	SailRepository repository;
 	SailRepositoryConnection conn;
 
-	@Before
+	@BeforeEach
 	public void setup() throws IOException {
 		MemoryStore memoryStore = new MemoryStore();
 		// sail with the ex:text1 filter
@@ -78,7 +78,7 @@ public class MultiParamTest {
 		luceneSail.setParameter(LuceneSail.INDEX_CLASS_KEY, LuceneSail.DEFAULT_INDEX_CLASS);
 		luceneSail.setEvaluationMode(TupleFunctionEvaluationMode.NATIVE);
 		luceneSail.setBaseSail(memoryStore);
-		luceneSail.setDataDir(tmpFolder.newFolder());
+		luceneSail.setDataDir(newFolder(tmpFolder, "junit"));
 		repository = new SailRepository(luceneSail);
 		repository.init();
 
@@ -117,7 +117,7 @@ public class MultiParamTest {
 		conn.commit();
 	}
 
-	@After
+	@AfterEach
 	public void complete() {
 		try {
 			conn.close();
@@ -144,9 +144,9 @@ public class MultiParamTest {
 
 			while (result.hasNext()) {
 				Value next = result.next().getValue("subj");
-				assertTrue("unknown value: " + next, values.remove(next.toString()));
+				assertTrue(values.remove(next.toString()), "unknown value: " + next);
 			}
-			assertTrue("missing value" + values, values.isEmpty());
+			assertTrue(values.isEmpty(), "missing value" + values);
 		}
 	}
 
@@ -170,9 +170,9 @@ public class MultiParamTest {
 
 			while (result.hasNext()) {
 				Value next = result.next().getValue("subj");
-				assertTrue("unknown value: " + next, values.remove(next.toString()));
+				assertTrue(values.remove(next.toString()), "unknown value: " + next);
 			}
-			assertTrue("missing value" + values, values.isEmpty());
+			assertTrue(values.isEmpty(), "missing value" + values);
 		}
 	}
 
@@ -196,9 +196,9 @@ public class MultiParamTest {
 
 			while (result.hasNext()) {
 				Value next = result.next().getValue("subj");
-				assertTrue("unknown value: " + next, values.remove(next.toString()));
+				assertTrue(values.remove(next.toString()), "unknown value: " + next);
 			}
-			assertTrue("missing value" + values, values.isEmpty());
+			assertTrue(values.isEmpty(), "missing value" + values);
 		}
 	}
 
@@ -228,9 +228,9 @@ public class MultiParamTest {
 			while (result.hasNext()) {
 				BindingSet binding = result.next();
 				Value next = binding.getValue("subj");
-				assertTrue("unknown value: " + next, values.remove(next.toString()));
+				assertTrue(values.remove(next.toString()), "unknown value: " + next);
 			}
-			assertTrue("missing value" + values, values.isEmpty());
+			assertTrue(values.isEmpty(), "missing value" + values);
 		}
 	}
 
@@ -265,9 +265,9 @@ public class MultiParamTest {
 				Value snippet1 = bindings.getValue("sp1");
 				Value snippet2 = bindings.getValue("sp2");
 				String obj = next + ":" + snippet1 + ":" + snippet2;
-				assertTrue("unknown value: " + obj, values.remove(obj));
+				assertTrue(values.remove(obj), "unknown value: " + obj);
 			}
-			assertTrue("missing value" + values, values.isEmpty());
+			assertTrue(values.isEmpty(), "missing value" + values);
 		}
 	}
 
@@ -463,5 +463,14 @@ public class MultiParamTest {
 				fail();
 			}
 		}
+	}
+
+	private static File newFolder(File root, String... subDirs) throws IOException {
+		String subFolder = String.join("/", subDirs);
+		File result = new File(root, subFolder);
+		if (!result.mkdirs()) {
+			throw new IOException("Couldn't create folders " + root);
+		}
+		return result;
 	}
 }

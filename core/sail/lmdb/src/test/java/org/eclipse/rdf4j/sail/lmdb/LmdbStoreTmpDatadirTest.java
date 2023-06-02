@@ -10,8 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
@@ -26,10 +26,10 @@ public class LmdbStoreTmpDatadirTest {
 		LmdbStore store = new LmdbStore(dataDir);
 
 		store.init();
-		assertTrue("Data dir not set correctly", dataDir.equals(store.getDataDir()));
+		assertTrue(dataDir.equals(store.getDataDir()), "Data dir not set correctly");
 
 		store.shutDown();
-		assertTrue("Data dir does not exist anymore", dataDir.exists());
+		assertTrue(dataDir.exists(), "Data dir does not exist anymore");
 	}
 
 	@Test
@@ -37,10 +37,10 @@ public class LmdbStoreTmpDatadirTest {
 		LmdbStore store = new LmdbStore();
 		store.init();
 		File dataDir = store.getDataDir();
-		assertTrue("Temp data dir not created", dataDir != null && dataDir.exists());
+		assertTrue(dataDir != null && dataDir.exists(), "Temp data dir not created");
 
 		store.shutDown();
-		assertFalse("Temp data dir still exists", dataDir.exists());
+		assertFalse(dataDir.exists(), "Temp data dir still exists");
 	}
 
 	@Test
@@ -53,7 +53,7 @@ public class LmdbStoreTmpDatadirTest {
 		store.init();
 		File dataDir2 = store.getDataDir();
 		store.shutDown();
-		assertFalse("Temp data dirs are the same", dataDir1.equals(dataDir2));
+		assertFalse(dataDir1.equals(dataDir2), "Temp data dirs are the same");
 	}
 
 	@Test
@@ -68,7 +68,7 @@ public class LmdbStoreTmpDatadirTest {
 		File tmpDataDir = store.getDataDir();
 		store.shutDown();
 
-		assertFalse("Temp data dir still exists", tmpDataDir.exists());
-		assertTrue("Data dir does not exist anymore", dataDir.exists());
+		assertFalse(tmpDataDir.exists(), "Temp data dir still exists");
+		assertTrue(dataDir.exists(), "Data dir does not exist anymore");
 	}
 }

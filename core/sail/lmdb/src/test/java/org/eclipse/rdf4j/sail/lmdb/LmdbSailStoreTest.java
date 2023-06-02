@@ -10,9 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 
@@ -72,9 +72,9 @@ public class LmdbSailStoreTest {
 			conn.remove((IRI) null, null, null, CTX_1);
 		}
 		try (RepositoryConnection conn = repo.getConnection()) {
-			assertTrue("Statement 0 incorrectly removed", conn.hasStatement(S0, false));
-			assertFalse("Statement 1 still not removed", conn.hasStatement(S1, false, CTX_1));
-			assertTrue("Statement 2 incorrectly removed", conn.hasStatement(S2, false, CTX_2));
+			assertTrue(conn.hasStatement(S0, false), "Statement 0 incorrectly removed");
+			assertFalse(conn.hasStatement(S1, false, CTX_1), "Statement 1 still not removed");
+			assertTrue(conn.hasStatement(S2, false, CTX_2), "Statement 2 incorrectly removed");
 		}
 	}
 
@@ -84,9 +84,9 @@ public class LmdbSailStoreTest {
 			conn.remove((IRI) null, null, null, (Resource) null);
 		}
 		try (RepositoryConnection conn = repo.getConnection()) {
-			assertFalse("Statement 0 still not removed", conn.hasStatement(S0, false));
-			assertTrue("Statement 1 incorrectly removed", conn.hasStatement(S1, false, CTX_1));
-			assertTrue("Statement 2 incorrectly removed", conn.hasStatement(S2, false, CTX_2));
+			assertFalse(conn.hasStatement(S0, false), "Statement 0 still not removed");
+			assertTrue(conn.hasStatement(S1, false, CTX_1), "Statement 1 incorrectly removed");
+			assertTrue(conn.hasStatement(S2, false, CTX_2), "Statement 2 incorrectly removed");
 		}
 	}
 
@@ -96,9 +96,9 @@ public class LmdbSailStoreTest {
 			conn.remove((IRI) null, null, null, CTX_INV);
 		}
 		try (RepositoryConnection conn = repo.getConnection()) {
-			assertTrue("Statement 0 incorrectly removed", conn.hasStatement(S0, false));
-			assertTrue("Statement 1 incorrectly removed", conn.hasStatement(S1, false, CTX_1));
-			assertTrue("Statement 2 incorrectly removed", conn.hasStatement(S2, false, CTX_2));
+			assertTrue(conn.hasStatement(S0, false), "Statement 0 incorrectly removed");
+			assertTrue(conn.hasStatement(S1, false, CTX_1), "Statement 1 incorrectly removed");
+			assertTrue(conn.hasStatement(S2, false, CTX_2), "Statement 2 incorrectly removed");
 		}
 	}
 
@@ -108,9 +108,9 @@ public class LmdbSailStoreTest {
 			conn.remove((IRI) null, null, null, CTX_1, CTX_2);
 		}
 		try (RepositoryConnection conn = repo.getConnection()) {
-			assertTrue("Statement 0 incorrectly removed", conn.hasStatement(S0, false));
-			assertFalse("Statement 1 still not removed", conn.hasStatement(S1, false, CTX_1));
-			assertFalse("Statement 2 still not removed", conn.hasStatement(S2, false, CTX_2));
+			assertTrue(conn.hasStatement(S0, false), "Statement 0 incorrectly removed");
+			assertFalse(conn.hasStatement(S1, false, CTX_1), "Statement 1 still not removed");
+			assertFalse(conn.hasStatement(S2, false, CTX_2), "Statement 2 still not removed");
 		}
 	}
 
@@ -120,9 +120,9 @@ public class LmdbSailStoreTest {
 			conn.clear(CTX_1, CTX_2);
 		}
 		try (RepositoryConnection conn = repo.getConnection()) {
-			assertTrue("Statement 0 incorrectly removed", conn.hasStatement(S0, false));
-			assertFalse("Statement 1 still not removed", conn.hasStatement(S1, false, CTX_1));
-			assertFalse("Statement 2 still not removed", conn.hasStatement(S2, false, CTX_2));
+			assertTrue(conn.hasStatement(S0, false), "Statement 0 incorrectly removed");
+			assertFalse(conn.hasStatement(S1, false, CTX_1), "Statement 1 still not removed");
+			assertFalse(conn.hasStatement(S2, false, CTX_2), "Statement 2 still not removed");
 		}
 	}
 
