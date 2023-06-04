@@ -91,7 +91,7 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 				throw new RuntimeException("Expr is of unexpected type: " + expr.getClass().getCanonicalName()
 						+ ". Please report this problem.");
 			}
-			phaser.register();
+			currentPhaser.register();
 			scheduler.schedule(
 					new ParallelJoinTask(new PhaserHandlingParallelExecutor(this, currentPhaser), strategy, expr, b));
 		}
@@ -132,7 +132,7 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 
 			totalBindings += count;
 
-			phaser.register();
+			currentPhaser.register();
 			scheduler.schedule(taskCreator.getTask(new PhaserHandlingParallelExecutor(this, currentPhaser), bindings));
 		}
 
