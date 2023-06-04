@@ -136,6 +136,15 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					priorityArgs.addAll(orderedSubselects);
 				}
 
+				// Build new join hierarchy
+				TupleExpr priorityJoins = null;
+				if (priorityArgs.size() > 0) {
+					priorityJoins = priorityArgs.get(0);
+					for (int i = 1; i < priorityArgs.size(); i++) {
+						priorityJoins = new Join(priorityJoins, priorityArgs.get(i));
+					}
+				}
+
 				// Reorder the (recursive) join arguments to a more optimal sequence
 				List<TupleExpr> orderedJoinArgs = new ArrayList<>(joinArgs.size());
 
@@ -177,24 +186,56 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 					// order all other join arguments based on available statistics
 					while (!joinArgs.isEmpty()) {
-						TupleExpr tupleExpr = selectNextTupleExpr(joinArgs, cardinalityMap, varsMap, varFreqMap);
 
-						joinArgs.remove(tupleExpr);
-						orderedJoinArgs.add(tupleExpr);
+						TupleExpr replacement = null;
 
-						// Recursively optimize join arguments
-						tupleExpr.visit(this);
+						if (!orderedJoinArgs.isEmpty()) {
+							// Note: generated hierarchy is right-recursive to help the
+							// IterativeEvaluationOptimizer to factor out the left-most join
+							// argument
+							int i = orderedJoinArgs.size() - 1;
+							replacement = orderedJoinArgs.get(i);
+							for (i--; i >= 0; i--) {
+								replacement = new Join(orderedJoinArgs.get(i), replacement);
+							}
+
+							if (priorityJoins != null) {
+								replacement = new Join(priorityJoins, replacement);
+							}
+						}
+
+						List<Join> allJoins = new ArrayList<>();
+
+						if (replacement != null) {
+							for (TupleExpr joinArg : joinArgs) {
+								allJoins.add(new Join(joinArg, replacement));
+							}
+						} else {
+							for (int i = 0; i < joinArgs.size(); i++) {
+								for (int j = 0; j < joinArgs.size(); j++) {
+									if (i != j) { // exclude same element pairs
+										allJoins.add(new Join(joinArgs.get(i), joinArgs.get(j)));
+									}
+								}
+							}
+						}
+
+						Join tupleExpr = selectNextTupleExpr(allJoins, cardinalityMap, varsMap, varFreqMap);
+
+						TupleExpr leftArg = tupleExpr.getLeftArg();
+						TupleExpr rightArg = tupleExpr.getRightArg();
+
+						if (joinArgs.remove(leftArg)) {
+							orderedJoinArgs.add(leftArg);
+						}
+						if (joinArgs.remove(rightArg)) {
+							orderedJoinArgs.add(rightArg);
+						}
+
+//						// Recursively optimize join arguments
+//						tupleExpr.visit(this);
 
 						boundVars.addAll(tupleExpr.getBindingNames());
-					}
-				}
-
-				// Build new join hierarchy
-				TupleExpr priorityJoins = null;
-				if (priorityArgs.size() > 0) {
-					priorityJoins = priorityArgs.get(0);
-					for (int i = 1; i < priorityArgs.size(); i++) {
-						priorityJoins = new Join(priorityJoins, priorityArgs.get(i));
 					}
 				}
 
@@ -464,20 +505,20 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		 * selects the tuple expression with highest number of bound variables, preferring variables that have been
 		 * bound in other tuple expressions over variables with a fixed value.
 		 */
-		protected TupleExpr selectNextTupleExpr(List<TupleExpr> expressions, Map<TupleExpr, Double> cardinalityMap,
+		protected Join selectNextTupleExpr(List<Join> expressions, Map<TupleExpr, Double> cardinalityMap,
 				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap) {
 			if (expressions.size() == 1) {
-				TupleExpr tupleExpr = expressions.get(0);
+				Join tupleExpr = expressions.get(0);
 				if (tupleExpr.getCostEstimate() < 0) {
 					tupleExpr.setCostEstimate(getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap));
 				}
 				return tupleExpr;
 			}
 
-			TupleExpr result = null;
+			Join result = null;
 			double lowestCost = Double.POSITIVE_INFINITY;
 
-			for (TupleExpr tupleExpr : expressions) {
+			for (Join tupleExpr : expressions) {
 				// Calculate a score for this tuple expression
 				double cost = getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap);
 
@@ -521,10 +562,16 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			if (hasCachedCardinality(tupleExpr)) {
 				cost = ((AbstractQueryModelNode) tupleExpr).getCardinality();
 			} else {
-				cost = cardinalityMap.get(tupleExpr);
+				cost = statistics.getCardinality(tupleExpr);
 			}
 
-			List<Var> vars = varsMap.get(tupleExpr);
+            List<Var> vars = varsMap.computeIfAbsent(tupleExpr, (tupleExpr1 -> {
+                if (tupleExpr instanceof ZeroLengthPath) {
+                    return  ((ZeroLengthPath) tupleExpr).getVarList();
+                } else {
+                    return getStatementPatternVars(tupleExpr);
+                }
+            }));
 
 			// Compensate for variables that are bound earlier in the evaluation
 			List<Var> unboundVars = getUnboundVars(vars);

@@ -10,7 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.model;
 
+import java.nio.charset.StandardCharsets;
+
 import org.eclipse.rdf4j.model.Value;
+
+import com.google.common.hash.HashFunction;
+import com.google.common.hash.Hashing;
+
+import net.agkn.hll.HLL;
 
 /**
  * A MemoryStore-specific extension of the Value interface, giving it node properties.
@@ -80,4 +87,17 @@ public interface MemValue extends Value {
 	boolean hasObjectStatements();
 
 	boolean hasContextStatements();
+
+	static HLL getHLL() {
+		return new HLL(13/* log2m */, 5/* registerWidth */);
+	}
+
+	static long getHashForHLL(MemValue value) {
+		return MemValue.HASH_FUNCTION
+				.hashString(value.toString(), StandardCharsets.UTF_8)
+				.asLong();
+	}
+
+	static HashFunction HASH_FUNCTION = Hashing.murmur3_128();
+
 }
