@@ -275,6 +275,7 @@ public class FedXConnection extends AbstractSailConnection {
 		};
 		return new DistinctIteration<Resource>(conv, cf::createSet) {
 
+			@Override
 			protected void handleClose() {
 				try {
 					cf.close();

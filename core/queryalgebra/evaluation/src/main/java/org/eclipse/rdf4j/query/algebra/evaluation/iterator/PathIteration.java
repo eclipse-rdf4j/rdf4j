@@ -110,6 +110,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 		this.currentLength = minLength;
 		this.bindings = bindings;
+
 		this.collectionFactory = strategy.getCollectionFactory().get();
 
 		// This is all necessary for optimized collections to be usable. This only becomes important on very large
