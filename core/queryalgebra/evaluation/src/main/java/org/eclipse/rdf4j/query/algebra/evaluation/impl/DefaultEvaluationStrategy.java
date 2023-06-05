@@ -533,16 +533,15 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	protected QueryEvaluationStep prepare(Group node, QueryEvaluationContext context) throws QueryEvaluationException {
-		return bindings -> new GroupIterator(DefaultEvaluationStrategy.this, node, bindings,
-				iterationCacheSyncThreshold,
-				context);
+		return bindings -> new GroupIterator(DefaultEvaluationStrategy.this, node, bindings, context);
 	}
 
 	protected QueryEvaluationStep prepare(Intersection node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		QueryEvaluationStep leftArg = precompile(node.getLeftArg(), context);
 		QueryEvaluationStep rightArg = precompile(node.getRightArg(), context);
-		return new IntersectionQueryEvaluationStep(leftArg, rightArg, this.getCollectionFactory().get());
+
+		return new IntersectionQueryEvaluationStep(leftArg, rightArg, getCollectionFactory());
 	}
 
 	protected QueryEvaluationStep prepare(Join node, QueryEvaluationContext context) throws QueryEvaluationException {
@@ -710,20 +709,19 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		final QueryEvaluationStep child = precompile(node.getArg(), context);
-		CollectionFactory cf = this.getCollectionFactory().get();
+		final CollectionFactory cf = this.getCollectionFactory().get();
 		return bindings -> {
 			final CloseableIteration<BindingSet> evaluate = child.evaluate(bindings);
-			return new DistinctIteration<BindingSet>(evaluate, cf::createSet) {
+			return new DistinctIteration<BindingSet>(evaluate, cf.createSetOfBindingSets()) {
 
 				@Override
-				protected void handleClose() {
+				protected void handleClose() throws QueryEvaluationException {
 					try {
 						cf.close();
 					} finally {
 						super.handleClose();
 					}
 				}
-
 			};
 		};
 	}

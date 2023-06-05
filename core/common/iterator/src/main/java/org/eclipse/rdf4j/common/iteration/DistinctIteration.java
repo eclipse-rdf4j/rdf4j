@@ -38,17 +38,30 @@ public class DistinctIteration<E> extends FilterIteration<E> {
 	 *
 	 * @param iter The underlying iterator.
 	 */
+	@Deprecated
 	public DistinctIteration(CloseableIteration<? extends E> iter) {
 		super(iter);
 
 		excludeSet = new HashSet<>();
 	}
 
-	public DistinctIteration(CloseableIteration<? extends E> iter, Set<E> set) {
+	/**
+	 * Creates a new DistinctIterator.
+	 *
+	 * @param Set<E> a hopefully optimized set
+	 * @param iter   The underlying iterator.
+	 */
+	public DistinctIteration(CloseableIteration<? extends E> iter, Set<E> excludeSet) {
 		super(iter);
-		excludeSet = set;
+		this.excludeSet = excludeSet;
 	}
 
+	/**
+	 * Creates a new DistinctIterator.
+	 *
+	 * @param Supplier<Set<E>> a supplier of a hopefully optimized set
+	 * @param iter             The underlying iterator.
+	 */
 	public DistinctIteration(CloseableIteration<? extends E> iter, Supplier<Set<E>> setMaker) {
 		super(iter);
 		excludeSet = setMaker.get();

@@ -43,6 +43,7 @@ public class FedXRule implements BeforeEachCallback, AfterEachCallback {
 		for (Consumer<FedXConfig> configConsumer : configurations) {
 			configConsumer.accept(fedxConfig);
 		}
+
 		List<Endpoint> endpoints = Collections.<Endpoint>emptyList();
 		repository = FedXFactory.newFederation().withMembers(endpoints).withConfig(fedxConfig).create();
 		repository.init();

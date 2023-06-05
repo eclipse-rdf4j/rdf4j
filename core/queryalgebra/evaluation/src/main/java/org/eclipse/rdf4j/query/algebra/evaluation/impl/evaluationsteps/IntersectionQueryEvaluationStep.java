@@ -11,12 +11,12 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IntersectIteration;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 
 /**
@@ -24,40 +24,30 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
  */
 public class IntersectionQueryEvaluationStep implements QueryEvaluationStep {
 
-	private static final class IntersectIterationUsingSetFromCollectionFactory
-			extends IntersectIteration<BindingSet> {
-		private final CollectionFactory cf;
-
-		private IntersectIterationUsingSetFromCollectionFactory(CloseableIteration<BindingSet> arg1,
-				CloseableIteration<BindingSet> arg2, CollectionFactory cf) {
-			super(arg1, arg2, false, cf::createSetOfBindingSets);
-			this.cf = cf;
-		}
-
-		@Override
-		protected void handleClose() throws QueryEvaluationException {
-			try {
-				cf.close();
-			} finally {
-				super.handleClose();
-			}
-		}
-	}
-
 	private final QueryEvaluationStep leftArg;
 	private final Function<BindingSet, DelayedEvaluationIteration> rightArgDelayed;
-	private final CollectionFactory collectionFactory;
+	private final Supplier<CollectionFactory> cfs;
 
 	public IntersectionQueryEvaluationStep(QueryEvaluationStep leftArg, QueryEvaluationStep rightArg,
-			CollectionFactory collectionFactory) {
-		this.collectionFactory = collectionFactory;
+			Supplier<CollectionFactory> cfs) {
+		this.cfs = cfs;
 		this.leftArg = leftArg;
 		rightArgDelayed = bs -> new DelayedEvaluationIteration(rightArg, bs);
 	}
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bs) {
-		return new IntersectIterationUsingSetFromCollectionFactory(leftArg.evaluate(bs), rightArgDelayed.apply(bs),
-				collectionFactory);
+		CollectionFactory cf = cfs.get();
+		return new IntersectIteration<>(leftArg.evaluate(bs), rightArgDelayed.apply(bs), cf::createSetOfBindingSets) {
+			@Override
+			protected void handleClose() {
+				try {
+					cf.close();
+				} finally {
+					super.handleClose();
+				}
+			}
+		};
 	}
+
 }

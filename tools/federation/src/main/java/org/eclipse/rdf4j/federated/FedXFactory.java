@@ -220,7 +220,6 @@ public class FedXFactory {
 		if (this.writeStrategyFactory != null) {
 			federation.setWriteStrategyFactory(writeStrategyFactory);
 		}
-
 		FedXRepository repo = new FedXRepository(federation, this.config);
 		if (this.repositoryResolver != null) {
 			repo.setRepositoryResolver(repositoryResolver);
