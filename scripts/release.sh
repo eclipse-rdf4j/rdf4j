@@ -19,7 +19,7 @@ echo "The release script requires several external command line tools:"
 echo " - git"
 echo " - mvn"
 echo " - gh (the GitHub CLI, see https://github.com/cli/cli)"
-echo " - xmlllint (http://xmlsoft.org/xmllint.html)"
+echo " - xmllint (http://xmlsoft.org/xmllint.html)"
 
 echo ""
 echo "This script will stop if an unhandled error occurs";
