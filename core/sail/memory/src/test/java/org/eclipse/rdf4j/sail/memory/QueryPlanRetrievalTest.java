@@ -992,4 +992,44 @@ public class QueryPlanRetrievalTest {
 
 	}
 
+	@Test
+	public void tempTest() throws IOException {
+
+		String expected = "Projection\n" +
+				"╠══ProjectionElemList\n" +
+				"║     ProjectionElem \"a\"\n" +
+				"║     ProjectionElem \"b\"\n" +
+				"║     ProjectionElem \"c\"\n" +
+				"╚══StatementPattern (resultSizeEstimate=12)\n" +
+				"      Var (name=a)\n" +
+				"      Var (name=b)\n" +
+				"      Var (name=c)\n";
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.add(
+					QueryPlanRetrievalTest.class.getClassLoader().getResource("benchmarkFiles/datagovbe-valid.ttl"));
+			connection.commit();
+		}
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery("" +
+					"PREFIX dcat: <http://www.w3.org/ns/dcat#> \n" +
+					"" +
+					"select * where {" +
+					"?a dcat:dataset ?dataset.\n" +
+					"?dataset dcat:distribution ?distribution.\n" +
+					"?distribution dcat:accessURL <http://data.biodiversity.be/dataset/60019b6c-810b-4154-8455-77af1976af93>.\n"
+					+
+					"" +
+					"}");
+			String actual = query.explain(Explanation.Level.Timed).toString();
+
+			assertThat(actual).isEqualToNormalizingNewlines(expected);
+		}
+
+		sailRepository.shutDown();
+
+	}
+
 }

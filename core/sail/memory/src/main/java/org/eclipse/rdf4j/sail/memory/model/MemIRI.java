@@ -62,6 +62,8 @@ public class MemIRI extends MemResource implements IRI {
 	 * The list of statements for which this MemURI is the object.
 	 */
 	transient private final MemStatementList objectStatements = new MemStatementList();
+	transient public final HLL objectStatements_subjects = MemValue.getHLL();
+	transient public final HLL objectStatements_predicate = MemValue.getHLL();
 
 	/*--------------*
 	 * Constructors *
@@ -231,6 +233,8 @@ public class MemIRI extends MemResource implements IRI {
 	@Override
 	public void addObjectStatement(MemStatement st) throws InterruptedException {
 		objectStatements.add(st);
+		objectStatements_subjects.addRaw(MemValue.getHashForHLL(st.getSubject()));
+		objectStatements_predicate.addRaw(MemValue.getHashForHLL(st.getPredicate()));
 	}
 
 	@Override

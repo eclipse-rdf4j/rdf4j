@@ -245,13 +245,20 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					// argument
 					int i = orderedJoinArgs.size() - 1;
 					TupleExpr replacement = orderedJoinArgs.get(i);
+					statistics.getCardinality(replacement);
 					for (i--; i >= 0; i--) {
 						replacement = new Join(orderedJoinArgs.get(i), replacement);
+						statistics.getCardinality(replacement);
 					}
 
 					if (priorityJoins != null) {
+						statistics.getCardinality(priorityJoins);
+
 						replacement = new Join(priorityJoins, replacement);
+						statistics.getCardinality(replacement);
 					}
+
+					statistics.getCardinality(node);
 
 					// Replace old join hierarchy
 					node.replaceWith(replacement);
@@ -565,13 +572,13 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				cost = statistics.getCardinality(tupleExpr);
 			}
 
-            List<Var> vars = varsMap.computeIfAbsent(tupleExpr, (tupleExpr1 -> {
-                if (tupleExpr instanceof ZeroLengthPath) {
-                    return  ((ZeroLengthPath) tupleExpr).getVarList();
-                } else {
-                    return getStatementPatternVars(tupleExpr);
-                }
-            }));
+			List<Var> vars = varsMap.computeIfAbsent(tupleExpr, (tupleExpr1 -> {
+				if (tupleExpr instanceof ZeroLengthPath) {
+					return ((ZeroLengthPath) tupleExpr).getVarList();
+				} else {
+					return getStatementPatternVars(tupleExpr);
+				}
+			}));
 
 			// Compensate for variables that are bound earlier in the evaluation
 			List<Var> unboundVars = getUnboundVars(vars);
