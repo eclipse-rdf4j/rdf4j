@@ -95,7 +95,7 @@ For import statements, the following conventions hold:
 
 - we do not use wildcard imports or wildcard static imports
 - we allow static imports where possible, but do not require their use
-- we apply a fixed ordering for import statements, following Eclipse conventions. Import statements are ordered in groups separated by a single empty line, in the following order: static imports, java.\*, javax.\*, org.\*, com.\*, everything else.
+- we apply a fixed ordering for import statements, following Eclipse conventions. Import statements are ordered in groups separated by a single empty line, in the following order: static imports, java.\*, javax.\*, jakarta.\*, org.\*, com.\*, everything else.
 
 There are various ways to apply these conventions to your code, depending on which editor/IDE you use.
 
@@ -115,7 +115,7 @@ Similarly, to apply templates:
 For import organization, the Eclipse defaults should be fine, but you can make sure as follows:
 
 1. go to 'Preferences' -> 'Java' -> 'Code Style' -> 'Organize Imports'. 
-2. Make sure the list of ordered groups corresponds to 'java', 'javax', 'org', 'com'.
+2. Make sure the list of ordered groups corresponds to 'java', 'javax','jakarta', 'org', 'com'.
 3. Make sure the numbers of (static) imports needed for wildcard imports are set suitable high (99 or more).
 
 You can apply import organization by hitting Ctrl+Shift+O, or you can configure Eclipse to automtaically organize imports on save. This can be activated by going to 'Preferences' -> 'Java' -> 'Editor' -> 'Save Actions' and making sure the 'Organize imports' option checkbox is ticked.

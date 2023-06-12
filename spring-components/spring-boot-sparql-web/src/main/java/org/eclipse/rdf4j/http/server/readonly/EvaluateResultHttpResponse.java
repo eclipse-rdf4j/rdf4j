@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.http.server.readonly;
 import java.io.IOException;
 import java.io.OutputStream;
 
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.http.server.readonly.sparql.EvaluateResult;
 

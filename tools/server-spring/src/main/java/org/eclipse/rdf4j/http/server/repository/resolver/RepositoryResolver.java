@@ -11,7 +11,7 @@
 
 package org.eclipse.rdf4j.http.server.repository.resolver;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.repository.Repository;

@@ -15,7 +15,7 @@ import static org.eclipse.rdf4j.query.parser.QueryParserRegistry.getInstance;
 import java.net.MalformedURLException;
 import java.net.URL;
 
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterFactory;

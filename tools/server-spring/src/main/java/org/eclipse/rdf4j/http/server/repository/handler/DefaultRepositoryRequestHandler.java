@@ -15,7 +15,7 @@ import static org.eclipse.rdf4j.http.protocol.Protocol.QUERY_PARAM_NAME;
 
 import java.io.IOException;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 
 import org.apache.http.HttpStatus;
 import org.eclipse.rdf4j.common.exception.RDF4JException;

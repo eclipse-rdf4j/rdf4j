@@ -11,7 +11,7 @@
 
 package org.eclipse.rdf4j.http.server.repository.handler;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 
 import org.springframework.web.servlet.ModelAndView;
 
