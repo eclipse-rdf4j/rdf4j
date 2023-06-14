@@ -1076,6 +1076,13 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 				case HttpURLConnection.HTTP_UNAVAILABLE: // 503
 					throw new QueryInterruptedException();
 				default:
+
+					if (contentTypeIs(response, "application/shacl-validation-report")
+							&& getContentTypeSerialisation(response) == RDFFormat.BINARY) {
+						throw new RepositoryException(new RemoteShaclValidationException(
+								response.getEntity().getContent(), "", RDFFormat.BINARY));
+					}
+
 					ErrorInfo errInfo = getErrorInfo(response);
 					// Throw appropriate exception
 					if (errInfo.getErrorType() == ErrorType.MALFORMED_DATA) {
@@ -1087,10 +1094,10 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 					} else if (errInfo.getErrorType() == ErrorType.UNSUPPORTED_QUERY_LANGUAGE) {
 						throw new UnsupportedQueryLanguageException(errInfo.getErrorMessage());
 					} else if (contentTypeIs(response, "application/shacl-validation-report")) {
+						// Legacy support for validation exceptions prior to 4.3.3
 						RDFFormat format = getContentTypeSerialisation(response);
-						throw new RepositoryException(new RemoteShaclValidationException(
-								new StringReader(errInfo.toString()), "", format));
-
+						throw new RepositoryException(
+								new RemoteShaclValidationException(new StringReader(errInfo.toString()), "", format));
 					} else if (errInfo.toString().length() > 0) {
 						throw new RepositoryException(errInfo.toString());
 					} else {

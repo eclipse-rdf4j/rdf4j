@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server;
 
-import java.io.StringWriter;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -19,9 +18,10 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.common.exception.ValidationException;
 import org.eclipse.rdf4j.common.webapp.views.SimpleResponseView;
-import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.http.server.repository.statements.ValidationExceptionView;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.RDFWriterFactory;
+import org.eclipse.rdf4j.rio.RDFWriterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.servlet.HandlerExceptionResolver;
@@ -72,25 +72,21 @@ public class ProtocolExceptionResolver implements HandlerExceptionResolver {
 		}
 
 		if (temp instanceof ValidationException) {
-			// This is currently just a simple fix that causes the validation report to be printed.
-			// This should not be the final solution.
-			Model validationReportModel = ((ValidationException) temp).validationReportAsModel();
 
-			StringWriter stringWriter = new StringWriter();
+			model.put(SimpleResponseView.SC_KEY, HttpServletResponse.SC_CONFLICT);
 
-			// We choose RDFJSON because this format doesn't rename blank nodes.
-			Rio.write(validationReportModel, stringWriter, RDFFormat.RDFJSON);
+			ProtocolUtil.logRequestParameters(request);
 
-			statusCode = HttpServletResponse.SC_CONFLICT;
-			errMsg = stringWriter.toString();
+			RDFWriterFactory rdfWriterFactory = RDFWriterRegistry.getInstance().get(RDFFormat.BINARY).orElseThrow();
 
-			Map<String, String> headers = new HashMap<>();
-			headers.put("Content-Type", "application/shacl-validation-report+rdf+json");
-			model.put(SimpleResponseView.CUSTOM_HEADERS_KEY, headers);
+			model.put(ValidationExceptionView.FACTORY_KEY, rdfWriterFactory);
+			model.put(ValidationExceptionView.VALIDATION_EXCEPTION, temp);
+			return new ModelAndView(ValidationExceptionView.getInstance(), model);
+
+		} else {
+			model.put(SimpleResponseView.SC_KEY, statusCode);
+			model.put(SimpleResponseView.CONTENT_KEY, errMsg);
 		}
-
-		model.put(SimpleResponseView.SC_KEY, statusCode);
-		model.put(SimpleResponseView.CONTENT_KEY, errMsg);
 
 		return new ModelAndView(SimpleResponseView.getInstance(), model);
 	}

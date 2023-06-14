@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.http.client.shacl;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.StringReader;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -25,30 +26,29 @@ import org.eclipse.rdf4j.rio.helpers.ParseErrorLogger;
 
 @InternalUseOnly
 class RemoteValidation {
-
-	StringReader stringReader;
-	String baseUri;
-	RDFFormat format;
-
 	Model model;
 
+	RemoteValidation(InputStream inputStream, String baseUri, RDFFormat format) {
+		try {
+			ParserConfig parserConfig = new ParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+			model = Rio.parse(inputStream, baseUri, format, parserConfig, SimpleValueFactory.getInstance(),
+					new ParseErrorLogger());
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
 	RemoteValidation(StringReader stringReader, String baseUri, RDFFormat format) {
-		this.stringReader = stringReader;
-		this.baseUri = baseUri;
-		this.format = format;
+		try {
+			ParserConfig parserConfig = new ParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+			model = Rio.parse(stringReader, baseUri, format, parserConfig, SimpleValueFactory.getInstance(),
+					new ParseErrorLogger());
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
 	}
 
 	Model asModel() {
-		if (model == null) {
-			try {
-				ParserConfig parserConfig = new ParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
-				model = Rio.parse(stringReader, baseUri, format, parserConfig, SimpleValueFactory.getInstance(),
-						new ParseErrorLogger());
-			} catch (IOException e) {
-				throw new RuntimeException(e);
-			}
-		}
-
 		return model;
 	}
 
