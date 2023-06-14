@@ -108,16 +108,11 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 									HLL rightHLL = rightPredicate.predicateStatements_subjects.clone();
 									HLL leftHLL = leftPredicate.predicateStatements_subjects.clone();
 
-									double rightRowsPerId = ((double) rightPredicate.getPredicateStatementCount())
-											/ rightHLL.cardinality();
-									double leftRowsPerId = ((double) leftPredicate.getPredicateStatementCount())
-											/ leftHLL.cardinality();
+									int rightCount = rightPredicate.getPredicateStatementCount();
+									int leftCount = leftPredicate.getPredicateStatementCount();
 
-									long unionCardinality = getUnionCardinality(rightHLL, leftHLL);
-									long intersectionCardinality = rightHLL.cardinality() + leftHLL.cardinality()
-											- unionCardinality;
-
-									double joinCardinality = intersectionCardinality * rightRowsPerId * leftRowsPerId;
+									double joinCardinality = estimateJoinCardinality(rightHLL, leftHLL, rightCount,
+											leftCount);
 
 									this.cardinality = joinCardinality;
 									node.setResultSizeEstimate(joinCardinality);
@@ -146,6 +141,8 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 									 *
 									 */
 
+								} else {
+									System.out.println();
 								}
 
 							} else if (!leftArg.getPredicateVar().isConstant()
@@ -164,16 +161,9 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 									HLL rightHLL = rightObject.objectStatements_subjects.clone();
 									HLL leftHLL = leftPredicate.predicateStatements_objects.clone();
 
-									double rightRowsPerId = ((double) rightObject.getObjectStatementCount())
-											/ rightHLL.cardinality();
-									double leftRowsPerId = ((double) leftPredicate.getPredicateStatementCount())
-											/ leftHLL.cardinality();
-
-									long unionCardinality = getUnionCardinality(rightHLL, leftHLL);
-									long intersectionCardinality = rightHLL.cardinality() + leftHLL.cardinality()
-											- unionCardinality;
-
-									double joinCardinality = intersectionCardinality * rightRowsPerId * leftRowsPerId;
+									double joinCardinality = estimateJoinCardinality(rightHLL, leftHLL,
+											rightObject.getObjectStatementCount(),
+											leftPredicate.getPredicateStatementCount());
 
 									this.cardinality = joinCardinality;
 									node.setResultSizeEstimate(joinCardinality);
@@ -202,8 +192,9 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 									 *
 									 */
 
+								} else {
+									System.out.println();
 								}
-
 							}
 						}
 
@@ -248,6 +239,19 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 			} catch (CloneNotSupportedException e) {
 				throw new RuntimeException(e);
 			}
+		}
+
+		private double estimateJoinCardinality(HLL rightHLL, HLL leftHLL, double rightCount, double leftCount)
+				throws CloneNotSupportedException {
+			double rightRowsPerId = rightCount / rightHLL.cardinality();
+			double leftRowsPerId = leftCount / leftHLL.cardinality();
+
+			long unionCardinality = getUnionCardinality(rightHLL, leftHLL);
+			long intersectionCardinality = rightHLL.cardinality() + leftHLL.cardinality()
+					- unionCardinality;
+
+			double joinCardinality = intersectionCardinality * rightRowsPerId * leftRowsPerId;
+			return joinCardinality;
 		}
 
 		private long getUnionCardinality(HLL rightHLL, HLL leftHLL) throws CloneNotSupportedException {
