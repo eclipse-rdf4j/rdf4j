@@ -22,7 +22,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
 import java.io.StringReader;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -51,6 +56,7 @@ import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -185,6 +191,8 @@ public class SPARQLParserTest {
 
 		UpdateExpr expr = exprs.get(0);
 		assertTrue(expr instanceof Modify);
+		verifySerializable(expr);
+
 		Modify m = (Modify) expr;
 		TupleExpr whereClause = m.getWhereExpr();
 		assertTrue(whereClause instanceof Projection);
@@ -201,6 +209,7 @@ public class SPARQLParserTest {
 		// test that the parser correctly parses the object value as an integer, instead of as a decimal.
 		String query = "select ?Concept where { ?Concept a 1. ?Concept2 a 1. } ";
 		ParsedTupleQuery q = (ParsedTupleQuery) parser.parseQuery(query, null);
+		verifySerializable(q.getTupleExpr());
 
 		// all we're verifying is that the query is parsed without error. If it doesn't parse as integer but as a
 		// decimal, the
@@ -216,6 +225,7 @@ public class SPARQLParserTest {
 		ParsedTupleQuery q = (ParsedTupleQuery) parser.parseQuery(qb.toString(), null);
 		TupleExpr tupleExpr = q.getTupleExpr();
 		assertTrue(tupleExpr instanceof QueryRoot);
+		verifySerializable(tupleExpr);
 		tupleExpr = ((QueryRoot) tupleExpr).getArg();
 		assertNotNull(tupleExpr);
 		assertTrue(tupleExpr instanceof Projection);
@@ -230,6 +240,7 @@ public class SPARQLParserTest {
 		ParsedGraphQuery q = (ParsedGraphQuery) parser.parseQuery(qb.toString(), null);
 
 		TupleExpr te = q.getTupleExpr();
+		verifySerializable(te);
 		assertTrue(te instanceof QueryRoot);
 		te = ((QueryRoot) te).getArg();
 		assertNotNull(te);
@@ -245,6 +256,7 @@ public class SPARQLParserTest {
 
 		assertNotNull(query);
 		TupleExpr te = query.getTupleExpr();
+		verifySerializable(te);
 		assertTrue(te instanceof QueryRoot);
 		te = ((QueryRoot) te).getArg();
 		assertTrue(te instanceof Projection);
@@ -267,6 +279,7 @@ public class SPARQLParserTest {
 		ParsedQuery query = parser.parseQuery(queryString, null);
 
 		TupleExpr te = query.getTupleExpr();
+		verifySerializable(te);
 		assertThat(te).isInstanceOf(QueryRoot.class);
 		te = ((QueryRoot) te).getArg();
 		assertThat(te).isInstanceOf(Projection.class);
@@ -287,6 +300,7 @@ public class SPARQLParserTest {
 
 		ParsedQuery q = parser.parseQuery(qb.toString(), null);
 		TupleExpr te = q.getTupleExpr();
+		verifySerializable(te);
 		assertTrue(te instanceof QueryRoot);
 		te = ((QueryRoot) te).getArg();
 		assertNotNull(te);
@@ -313,6 +327,7 @@ public class SPARQLParserTest {
 
 		ParsedQuery q = parser.parseQuery(qb.toString(), null);
 		TupleExpr te = q.getTupleExpr();
+		verifySerializable(te);
 		assertTrue(te instanceof QueryRoot);
 		te = ((QueryRoot) te).getArg();
 		assertNotNull(te);
@@ -348,6 +363,7 @@ public class SPARQLParserTest {
 
 		// parsing should not throw exception
 		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+		verifySerializable(tupleExpr);
 
 	}
 
@@ -359,6 +375,7 @@ public class SPARQLParserTest {
 
 		// parsing should not throw exception
 		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+		verifySerializable(tupleExpr);
 
 	}
 
@@ -371,6 +388,7 @@ public class SPARQLParserTest {
 
 		// parsing should not throw exception
 		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+		verifySerializable(tupleExpr);
 
 	}
 
@@ -381,6 +399,7 @@ public class SPARQLParserTest {
 
 		ParsedQuery parsedQuery = parser.parseQuery(query, null);
 		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+		verifySerializable(tupleExpr);
 		assertTrue(tupleExpr instanceof QueryRoot);
 		tupleExpr = ((QueryRoot) tupleExpr).getArg();
 
@@ -401,6 +420,7 @@ public class SPARQLParserTest {
 
 		ParsedQuery parsedQuery = parser.parseQuery(query, null);
 		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+		verifySerializable(tupleExpr);
 		assertTrue(tupleExpr instanceof QueryRoot);
 		tupleExpr = ((QueryRoot) tupleExpr).getArg();
 		assertTrue(tupleExpr instanceof Slice);
@@ -422,6 +442,7 @@ public class SPARQLParserTest {
 
 		ParsedQuery parsedQuery = parser.parseQuery(query, null);
 		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+		verifySerializable(tupleExpr);
 		assertTrue(tupleExpr instanceof QueryRoot);
 		tupleExpr = ((QueryRoot) tupleExpr).getArg();
 		assertTrue(tupleExpr instanceof Slice);
@@ -455,7 +476,10 @@ public class SPARQLParserTest {
 				+ "} GROUP BY ?s ?o";
 
 		// should parse without error
-		parser.parseQuery(query, null);
+		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+		verifySerializable(tupleExpr);
+
 	}
 
 	@Test
@@ -468,22 +492,23 @@ public class SPARQLParserTest {
 					+ "WHERE {\n"
 					+ "	?s ?p ?o \n"
 					+ "} GROUP BY ?s ?o";
-			var parsedExpression = parser.parseQuery(query, null).getTupleExpr();
-			assertTrue(parsedExpression instanceof QueryRoot);
-			parsedExpression = ((QueryRoot) parsedExpression).getArg();
-			assertTrue(parsedExpression instanceof Projection);
-			parsedExpression = ((Projection) parsedExpression).getArg();
-			assertTrue(parsedExpression instanceof Extension);
-			var extensionElements = ((Extension) parsedExpression).getElements();
+			var tupleExpr = parser.parseQuery(query, null).getTupleExpr();
+			verifySerializable(tupleExpr);
+			assertTrue(tupleExpr instanceof QueryRoot);
+			tupleExpr = ((QueryRoot) tupleExpr).getArg();
+			assertTrue(tupleExpr instanceof Projection);
+			tupleExpr = ((Projection) tupleExpr).getArg();
+			assertTrue(tupleExpr instanceof Extension);
+			var extensionElements = ((Extension) tupleExpr).getElements();
 			assertEquals(1, extensionElements.size());
 			assertTrue(extensionElements.get(0).getExpr() instanceof AggregateFunctionCall);
 			assertEquals(factory.getIri(), ((AggregateFunctionCall) extensionElements.get(0).getExpr()).getIRI());
-			parsedExpression = ((Extension) parsedExpression).getArg();
-			assertTrue(parsedExpression instanceof Group);
-			assertEquals(1, ((Group) parsedExpression).getGroupElements().size());
+			tupleExpr = ((Extension) tupleExpr).getArg();
+			assertTrue(tupleExpr instanceof Group);
+			assertEquals(1, ((Group) tupleExpr).getGroupElements().size());
 			assertEquals(extensionElements.get(0).getExpr(),
-					((Group) parsedExpression).getGroupElements().get(0).getOperator());
-			assertTrue(((Group) parsedExpression).getGroupElements().get(0).getOperator().isDistinct());
+					((Group) tupleExpr).getGroupElements().get(0).getOperator());
+			assertTrue(((Group) tupleExpr).getGroupElements().get(0).getOperator().isDistinct());
 		} finally {
 			CustomAggregateFunctionRegistry.getInstance().remove(factory);
 		}
@@ -499,28 +524,29 @@ public class SPARQLParserTest {
 					+ "WHERE {\n"
 					+ "	?s ?p ?o \n"
 					+ "} GROUP BY ?s \nHAVING (rj:x(distinct ?o) > 50) ";
-			var parsedExpression = parser.parseQuery(query, null).getTupleExpr();
-			assertTrue(parsedExpression instanceof QueryRoot);
-			parsedExpression = ((QueryRoot) parsedExpression).getArg();
-			assertTrue(parsedExpression instanceof Projection);
-			parsedExpression = ((Projection) parsedExpression).getArg();
-			assertTrue(parsedExpression instanceof Extension);
-			var extensionElements = ((Extension) parsedExpression).getElements();
+			var tupleExpr = parser.parseQuery(query, null).getTupleExpr();
+			verifySerializable(tupleExpr);
+			assertTrue(tupleExpr instanceof QueryRoot);
+			tupleExpr = ((QueryRoot) tupleExpr).getArg();
+			assertTrue(tupleExpr instanceof Projection);
+			tupleExpr = ((Projection) tupleExpr).getArg();
+			assertTrue(tupleExpr instanceof Extension);
+			var extensionElements = ((Extension) tupleExpr).getElements();
 			assertEquals(1, extensionElements.size());
 			assertTrue(extensionElements.get(0).getExpr() instanceof AggregateFunctionCall);
 			assertEquals(factory.getIri(), ((AggregateFunctionCall) extensionElements.get(0).getExpr()).getIRI());
-			parsedExpression = ((Extension) parsedExpression).getArg();
-			assertTrue(parsedExpression instanceof Filter);
-			parsedExpression = ((Filter) parsedExpression).getArg();
-			assertTrue(parsedExpression instanceof Extension);
-			parsedExpression = ((Extension) parsedExpression).getArg();
-			assertTrue(parsedExpression instanceof Group);
-			assertEquals(2, ((Group) parsedExpression).getGroupElements().size());
+			tupleExpr = ((Extension) tupleExpr).getArg();
+			assertTrue(tupleExpr instanceof Filter);
+			tupleExpr = ((Filter) tupleExpr).getArg();
+			assertTrue(tupleExpr instanceof Extension);
+			tupleExpr = ((Extension) tupleExpr).getArg();
+			assertTrue(tupleExpr instanceof Group);
+			assertEquals(2, ((Group) tupleExpr).getGroupElements().size());
 			assertEquals(extensionElements.get(0).getExpr(),
-					((Group) parsedExpression).getGroupElements().get(0).getOperator());
+					((Group) tupleExpr).getGroupElements().get(0).getOperator());
 			assertEquals(extensionElements.get(0).getExpr(),
-					((Group) parsedExpression).getGroupElements().get(1).getOperator());
-			assertTrue(((Group) parsedExpression).getGroupElements().get(0).getOperator().isDistinct());
+					((Group) tupleExpr).getGroupElements().get(1).getOperator());
+			assertTrue(((Group) tupleExpr).getGroupElements().get(0).getOperator().isDistinct());
 		} finally {
 			CustomAggregateFunctionRegistry.getInstance().remove(factory);
 		}
@@ -536,23 +562,24 @@ public class SPARQLParserTest {
 					+ "WHERE {\n"
 					+ "	?s ?p ?o \n"
 					+ "} GROUP BY ?s ?o";
-			var parsedExpression = parser.parseQuery(query, null).getTupleExpr();
-			assertTrue(parsedExpression instanceof QueryRoot);
-			parsedExpression = ((QueryRoot) parsedExpression).getArg();
-			assertTrue(parsedExpression instanceof Projection);
-			parsedExpression = ((Projection) parsedExpression).getArg();
-			assertTrue(parsedExpression instanceof Extension);
-			var extensionElements = ((Extension) parsedExpression).getElements();
+			var tupleExpr = parser.parseQuery(query, null).getTupleExpr();
+			verifySerializable(tupleExpr);
+			assertTrue(tupleExpr instanceof QueryRoot);
+			tupleExpr = ((QueryRoot) tupleExpr).getArg();
+			assertTrue(tupleExpr instanceof Projection);
+			tupleExpr = ((Projection) tupleExpr).getArg();
+			assertTrue(tupleExpr instanceof Extension);
+			var extensionElements = ((Extension) tupleExpr).getElements();
 			assertEquals(2, extensionElements.size());
 			assertTrue(extensionElements.get(0).getExpr() instanceof AggregateFunctionCall);
 			assertTrue(extensionElements.get(1).getExpr() instanceof Sum);
 			assertEquals(factory.getIri(), ((AggregateFunctionCall) extensionElements.get(0).getExpr()).getIRI());
-			parsedExpression = ((Extension) parsedExpression).getArg();
-			assertTrue(parsedExpression instanceof Group);
-			assertEquals(2, ((Group) parsedExpression).getGroupElements().size());
+			tupleExpr = ((Extension) tupleExpr).getArg();
+			assertTrue(tupleExpr instanceof Group);
+			assertEquals(2, ((Group) tupleExpr).getGroupElements().size());
 			assertEquals(extensionElements.get(0).getExpr(),
-					((Group) parsedExpression).getGroupElements().get(0).getOperator());
-			assertTrue(((Group) parsedExpression).getGroupElements().get(0).getOperator().isDistinct());
+					((Group) tupleExpr).getGroupElements().get(0).getOperator());
+			assertTrue(((Group) tupleExpr).getGroupElements().get(0).getOperator().isDistinct());
 		} finally {
 			CustomAggregateFunctionRegistry.getInstance().remove(factory);
 		}
@@ -607,7 +634,9 @@ public class SPARQLParserTest {
 				+ "} GROUP BY ?o";
 
 		// should parse without error
-		parser.parseQuery(query, null);
+		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+		verifySerializable(tupleExpr);
 	}
 
 	@Test
@@ -641,7 +670,9 @@ public class SPARQLParserTest {
 				+ "} GROUP BY ?o";
 
 		// should parse without error
-		parser.parseQuery(query, null);
+		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+		verifySerializable(tupleExpr);
 	}
 
 	@Test
@@ -652,7 +683,9 @@ public class SPARQLParserTest {
 				+ "} GROUP BY ?o";
 
 		// should parse without error
-		parser.parseQuery(query, null);
+		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+		verifySerializable(tupleExpr);
 	}
 
 	@Test
@@ -663,7 +696,9 @@ public class SPARQLParserTest {
 				"}";
 
 		// should parse without error
-		parser.parseQuery(query, null);
+		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+		verifySerializable(tupleExpr);
 	}
 
 	@Test
@@ -673,7 +708,9 @@ public class SPARQLParserTest {
 				"} GROUP BY ?o";
 
 		// should parse without error
-		parser.parseQuery(query, null);
+		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+		verifySerializable(tupleExpr);
 	}
 
 	@Test
@@ -683,7 +720,9 @@ public class SPARQLParserTest {
 				"} GROUP BY ?o";
 
 		// should parse without error
-		parser.parseQuery(query, null);
+		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+		verifySerializable(tupleExpr);
 	}
 
 	@Test
@@ -693,18 +732,22 @@ public class SPARQLParserTest {
 				"} GROUP BY ?o";
 
 		// should parse without error
-		parser.parseQuery(query, null);
+		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+		verifySerializable(tupleExpr);
 	}
 
 	@Test
 	public void testDefaultPrefixes() {
-		String queryTuple = "SELECT ?s {?s ex:aaa ex:ooo}";
+		String query = "SELECT ?s {?s ex:aaa ex:ooo}";
 
 		Set<Namespace> defaultPrefixes = new HashSet<>();
 		defaultPrefixes.add(new SimpleNamespace("ex", "http://example.org/"));
 		SPARQLParser parser = new SPARQLParser(defaultPrefixes);
 
-		parser.parseQuery(queryTuple, null);
+		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+		verifySerializable(tupleExpr);
 	}
 
 	@Test
@@ -722,6 +765,8 @@ public class SPARQLParserTest {
 
 		ParsedQuery parsedQuery = parser.parseQuery(query, null);
 		assertInstanceOf(ParsedGraphQuery.class, parsedQuery);
+		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+		verifySerializable(tupleExpr);
 
 		ParsedGraphQuery parsedGraphQuery = (ParsedGraphQuery) parsedQuery;
 
@@ -740,6 +785,8 @@ public class SPARQLParserTest {
 
 		ParsedQuery parsedQuery = parser.parseQuery(query, null);
 		assertInstanceOf(ParsedGraphQuery.class, parsedQuery);
+		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+		verifySerializable(tupleExpr);
 
 		ParsedGraphQuery parsedGraphQuery = (ParsedGraphQuery) parsedQuery;
 
@@ -771,6 +818,7 @@ public class SPARQLParserTest {
 		ParsedUpdate parsedUpdate = parser.parseUpdate(query, null);
 		assertEquals(1, parsedUpdate.getUpdateExprs().size());
 		UpdateExpr expr = parsedUpdate.getUpdateExprs().get(0);
+		verifySerializable(expr);
 
 		assertInstanceOf(InsertData.class, expr);
 		Model parse = Rio.parse(new StringReader(((InsertData) expr).getDataBlock()), RDFFormat.TURTLE);
@@ -797,6 +845,7 @@ public class SPARQLParserTest {
 		ParsedUpdate parsedUpdate = parser.parseUpdate(query, null);
 		assertEquals(1, parsedUpdate.getUpdateExprs().size());
 		UpdateExpr expr = parsedUpdate.getUpdateExprs().get(0);
+		verifySerializable(expr);
 
 		assertInstanceOf(InsertData.class, expr);
 		Model parse = Rio.parse(new StringReader(((InsertData) expr).getDataBlock()), RDFFormat.TURTLE);
@@ -822,6 +871,7 @@ public class SPARQLParserTest {
 		ParsedUpdate parsedUpdate = parser.parseUpdate(query, null);
 		assertEquals(1, parsedUpdate.getUpdateExprs().size());
 		UpdateExpr expr = parsedUpdate.getUpdateExprs().get(0);
+		verifySerializable(expr);
 
 		assertInstanceOf(InsertData.class, expr);
 		Model parse = Rio.parse(new StringReader(((InsertData) expr).getDataBlock()), RDFFormat.TURTLE);
@@ -848,6 +898,7 @@ public class SPARQLParserTest {
 		ParsedUpdate parsedUpdate = parser.parseUpdate(query, null);
 		assertEquals(1, parsedUpdate.getUpdateExprs().size());
 		UpdateExpr expr = parsedUpdate.getUpdateExprs().get(0);
+		verifySerializable(expr);
 
 		assertInstanceOf(DeleteData.class, expr);
 		Model parse = Rio.parse(new StringReader(((DeleteData) expr).getDataBlock()), RDFFormat.TURTLE);
@@ -874,6 +925,7 @@ public class SPARQLParserTest {
 		ParsedUpdate parsedUpdate = parser.parseUpdate(query, null);
 		assertEquals(1, parsedUpdate.getUpdateExprs().size());
 		UpdateExpr expr = parsedUpdate.getUpdateExprs().get(0);
+		verifySerializable(expr);
 
 		assertInstanceOf(DeleteData.class, expr);
 		Model parse = Rio.parse(new StringReader(((DeleteData) expr).getDataBlock()), RDFFormat.TURTLE);
@@ -899,6 +951,7 @@ public class SPARQLParserTest {
 		ParsedUpdate parsedUpdate = parser.parseUpdate(query, null);
 		assertEquals(1, parsedUpdate.getUpdateExprs().size());
 		UpdateExpr expr = parsedUpdate.getUpdateExprs().get(0);
+		verifySerializable(expr);
 
 		assertInstanceOf(DeleteData.class, expr);
 		Model parse = Rio.parse(new StringReader(((DeleteData) expr).getDataBlock()), RDFFormat.TURTLE);
@@ -919,7 +972,8 @@ public class SPARQLParserTest {
 				"} group by ?s";
 
 		// should parse without error
-		parser.parseQuery(query, null);
+		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+		verifySerializable(parsedQuery.getTupleExpr());
 	}
 
 	private AggregateFunctionFactory buildDummyFactory() {
@@ -939,5 +993,32 @@ public class SPARQLParserTest {
 				return null;
 			}
 		};
+	}
+
+	private void verifySerializable(QueryModelNode tupleExpr) {
+		byte[] bytes = objectToBytes(tupleExpr);
+		QueryModelNode parsed = (QueryModelNode) bytesToObject(bytes);
+		assertEquals(tupleExpr, parsed);
+	}
+
+	private byte[] objectToBytes(Serializable object) {
+		try (var byteArrayOutputStream = new ByteArrayOutputStream()) {
+			try (var objectOutputStream = new ObjectOutputStream(byteArrayOutputStream)) {
+				objectOutputStream.writeObject(object);
+			}
+			return byteArrayOutputStream.toByteArray();
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	private Object bytesToObject(byte[] str) {
+		try (ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(str)) {
+			try (ObjectInputStream objectInputStream = new ObjectInputStream(byteArrayInputStream)) {
+				return objectInputStream.readObject();
+			}
+		} catch (IOException | ClassNotFoundException e) {
+			throw new RuntimeException(e);
+		}
 	}
 }

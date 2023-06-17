@@ -30,8 +30,6 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 
 	private boolean constant = false;
 
-	private QueryModelNode parent;
-
 	private int cachedHashCode = 0;
 
 	@Deprecated(forRemoval = true, since = "4.1.0")
@@ -103,14 +101,9 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	}
 
 	@Override
-	public QueryModelNode getParentNode() {
-		return parent;
-	}
-
-	@Override
 	public void setParentNode(QueryModelNode parent) {
-		assert this.parent == null;
-		this.parent = parent;
+		assert getParentNode() == null;
+		super.setParentNode(parent);
 	}
 
 	@Override
@@ -120,11 +113,11 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 
 	@Override
 	public void replaceWith(QueryModelNode replacement) {
-		if (parent == null) {
+		if (getParentNode() == null) {
 			throw new IllegalStateException("Node has no parent");
 		}
 
-		parent.replaceChildNode(this, replacement);
+		getParentNode().replaceChildNode(this, replacement);
 	}
 
 	@Override
