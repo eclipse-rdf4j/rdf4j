@@ -10,19 +10,24 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lucene;
 
+import java.io.Serializable;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.BindingSet;
 
-class BindingSetCollection implements Collection<BindingSet> {
+class BindingSetCollection implements Collection<BindingSet>, Serializable {
+
+	private static final long serialVersionUID = -6021486457076678712L;
 
 	private final Set<String> bindingNames;
 
-	private final Collection<BindingSet> bindingSets;
+	private final LinkedHashSet<BindingSet> bindingSets;
 
-	BindingSetCollection(Set<String> bindingNames, Collection<BindingSet> bindingSets) {
+	BindingSetCollection(HashSet<String> bindingNames, LinkedHashSet<BindingSet> bindingSets) {
 		this.bindingNames = bindingNames;
 		this.bindingSets = bindingSets;
 	}
@@ -58,7 +63,42 @@ class BindingSetCollection implements Collection<BindingSet> {
 
 	@Override
 	public boolean equals(Object o) {
-		return bindingSets.equals(o);
+		if (this == o) {
+			return true;
+		}
+
+		if (o instanceof BindingSetCollection) {
+			BindingSetCollection o1 = (BindingSetCollection) o;
+			if (bindingNames.size() != o1.bindingNames.size() || bindingSets.size() != o1.bindingSets.size()) {
+				return false;
+			}
+
+			if (bindingNames.equals(o1.bindingNames)) {
+				if (bindingSets.equals(o1.bindingSets)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		if (!(o instanceof Collection)) {
+			return false;
+		}
+
+		Collection<?> o1 = (Collection<?>) o;
+
+		if (o1.size() == size()) {
+			HashSet<BindingSet> bindingSets1 = new HashSet<>();
+			for (Object o2 : o1) {
+				if (o2 instanceof BindingSet) {
+					bindingSets1.add((BindingSet) o2);
+				}
+			}
+
+			return bindingSets.equals(bindingSets1);
+		}
+
+		return o1.equals(this);
 	}
 
 	@Override

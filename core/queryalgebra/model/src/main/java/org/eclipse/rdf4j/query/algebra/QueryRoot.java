@@ -43,7 +43,14 @@ public class QueryRoot extends UnaryTupleOperator {
 
 	@Override
 	public boolean equals(Object other) {
-		return other instanceof QueryRoot && super.equals(other);
+		if (this == other) {
+			return true;
+		}
+		if (other instanceof QueryRoot) {
+			QueryRoot o = (QueryRoot) other;
+			return super.equals(o);
+		}
+		return false;
 	}
 
 	@Override

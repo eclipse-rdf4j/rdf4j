@@ -14,7 +14,6 @@ import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
 import java.text.ParseException;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -26,8 +25,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import org.apache.lucene.geo.SimpleWKTShapeParser;
 import org.eclipse.rdf4j.model.IRI;
@@ -561,7 +558,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	 * @return a LinkedHashSet containing generated bindings
 	 * @throws SailException
 	 */
-	private Collection<BindingSet> generateBindingSets(QuerySpec query, Iterable<? extends DocumentScore> hits)
+	private BindingSetCollection generateBindingSets(QuerySpec query, Iterable<? extends DocumentScore> hits)
 			throws SailException {
 		// Since one resource can be returned many times, it can lead now to
 		// multiple occurrences
@@ -571,7 +568,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		// unique.
 		LinkedHashSet<BindingSet> bindingSets = new LinkedHashSet<>();
 
-		Set<String> bindingNames = new HashSet<>();
+		HashSet<String> bindingNames = new HashSet<>();
 		final String matchVar = query.getMatchesVariableName();
 		if (matchVar != null) {
 			bindingNames.add(matchVar);
@@ -733,7 +730,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		}
 	}
 
-	private Collection<BindingSet> generateBindingSets(DistanceQuerySpec query,
+	private BindingSetCollection generateBindingSets(DistanceQuerySpec query,
 			Iterable<? extends DocumentDistance> hits) throws SailException {
 		// Since one resource can be returned many times, it can lead now to
 		// multiple occurrences
@@ -743,7 +740,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		// unique.
 		LinkedHashSet<BindingSet> bindingSets = new LinkedHashSet<>();
 
-		Set<String> bindingNames = new HashSet<>();
+		HashSet<String> bindingNames = new HashSet<>();
 		final String subjVar = query.getSubjectVar();
 		if (subjVar != null) {
 			bindingNames.add(subjVar);
@@ -833,7 +830,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		return hits;
 	}
 
-	private Collection<BindingSet> generateBindingSets(GeoRelationQuerySpec query,
+	private BindingSetCollection generateBindingSets(GeoRelationQuerySpec query,
 			Iterable<? extends DocumentResult> hits) throws SailException {
 		// Since one resource can be returned many times, it can lead now to
 		// multiple occurrences
@@ -843,7 +840,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		// unique.
 		LinkedHashSet<BindingSet> bindingSets = new LinkedHashSet<>();
 
-		Set<String> bindingNames = new HashSet<>();
+		HashSet<String> bindingNames = new HashSet<>();
 		final String subjVar = query.getSubjectVar();
 		if (subjVar != null) {
 			bindingNames.add(subjVar);

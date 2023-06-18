@@ -97,10 +97,16 @@ public class Projection extends UnaryTupleOperator {
 
 	@Override
 	public boolean equals(Object other) {
-		if (other instanceof Projection && super.equals(other)) {
-			Projection o = (Projection) other;
-			return projElemList.equals(o.getProjectionElemList());
+		if (this == other) {
+			return true;
 		}
+		if (other instanceof Projection) {
+			Projection o = (Projection) other;
+			if (super.equals(o)) {
+				return projElemList.equals(o.getProjectionElemList());
+			}
+		}
+
 		return false;
 	}
 
