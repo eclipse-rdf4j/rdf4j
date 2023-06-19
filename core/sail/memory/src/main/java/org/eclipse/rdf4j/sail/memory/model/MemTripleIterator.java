@@ -42,7 +42,7 @@ public class MemTripleIterator<X extends Exception> extends LookAheadIteration<M
 	/**
 	 * The object of statements to return, or null if any object is OK.
 	 */
-	private final MemValue object;
+	private final BaseMemValue object;
 
 	/**
 	 * Indicates which snapshot should be iterated over.
@@ -69,7 +69,7 @@ public class MemTripleIterator<X extends Exception> extends LookAheadIteration<M
 	 * @param predicate     predicate of pattern.
 	 * @param object        object of pattern.
 	 */
-	public MemTripleIterator(MemStatementList statementList, MemResource subject, MemIRI predicate, MemValue object,
+	public MemTripleIterator(MemStatementList statementList, MemResource subject, MemIRI predicate, BaseMemValue object,
 			int snapshot) throws InterruptedException {
 		this.statementList = statementList.getStatements();
 		this.statementListSize = statementList.getGuaranteedLastIndexInUse() + 1;

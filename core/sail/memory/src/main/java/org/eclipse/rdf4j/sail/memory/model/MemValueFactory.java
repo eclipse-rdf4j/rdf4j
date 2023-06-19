@@ -99,7 +99,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * @return A previously created MemValue that is equal to <var>value</var>, or <var>null</var> if no such value
 	 *         exists or if <var>value</var> is equal to <var>null</var>.
 	 */
-	public MemValue getMemValue(Value value) {
+	public BaseMemValue getMemValue(Value value) {
 		if (value == null) {
 			return null;
 		} else if (value.isIRI()) {
@@ -276,7 +276,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * @param value A Resource or Literal.
 	 * @return The existing or created MemValue.
 	 */
-	public MemValue getOrCreateMemValue(Value value) {
+	public BaseMemValue getOrCreateMemValue(Value value) {
 		if (value.isResource()) {
 			return getOrCreateMemResource((Resource) value);
 		} else if (value.isLiteral()) {

@@ -253,7 +253,7 @@ public class MemStatementList {
 	 * @param snapshot
 	 * @return
 	 */
-	public MemStatement getExact(MemResource subject, MemIRI predicate, MemValue object, MemResource context,
+	public MemStatement getExact(MemResource subject, MemIRI predicate, BaseMemValue object, MemResource context,
 			int snapshot) throws InterruptedException {
 
 		MemStatement[] statements = getStatements();

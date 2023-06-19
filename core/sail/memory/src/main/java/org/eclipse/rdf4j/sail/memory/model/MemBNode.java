@@ -19,27 +19,15 @@ public class MemBNode extends MemResource implements BNode {
 
 	private static final long serialVersionUID = -887382892580321647L;
 
-	/*------------*
-	 * Attributes *
-	 *------------*/
-
 	/**
 	 * The object that created this MemBNode.
 	 */
 	transient final private Object creator;
 
 	/**
-	 * The list of statements for which this MemBNode is the object.
-	 */
-	transient private final MemStatementList objectStatements = new MemStatementList();
-	/**
 	 * The blank node's identifier.
 	 */
 	private final String id;
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
 
 	/**
 	 * Creates a new MemBNode for a bnode ID.
@@ -67,39 +55,28 @@ public class MemBNode extends MemResource implements BNode {
 	}
 
 	@Override
-	public MemStatementList getObjectStatementList() {
-
-		return objectStatements;
-
-	}
-
-	@Override
-	public int getObjectStatementCount() {
-
-		return objectStatements.size();
-
-	}
-
-	@Override
-	public void addObjectStatement(MemStatement st) throws InterruptedException {
-
-		objectStatements.add(st);
-	}
-
-	@Override
-	public void cleanSnapshotsFromObjectStatements(int currentSnapshot) throws InterruptedException {
-		objectStatements.cleanSnapshots(currentSnapshot);
-
-	}
-
-	@Override
 	public boolean hasPredicateStatements() {
 		return false;
 	}
 
 	@Override
-	public boolean hasObjectStatements() {
-		return !objectStatements.isEmpty();
+	public MemStatementList getPredicateStatementList() {
+		return EMPTY_LIST;
+	}
+
+	@Override
+	public int getPredicateStatementCount() {
+		return 0;
+	}
+
+	@Override
+	public void addPredicateStatement(MemStatement st) throws InterruptedException {
+		// no-op
+	}
+
+	@Override
+	public void cleanSnapshotsFromPredicateStatements(int currentSnapshot) throws InterruptedException {
+		// no-op
 	}
 
 	@Override

@@ -17,10 +17,10 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.sail.memory.model.BaseMemValue;
 import org.eclipse.rdf4j.sail.memory.model.MemIRI;
 import org.eclipse.rdf4j.sail.memory.model.MemResource;
 import org.eclipse.rdf4j.sail.memory.model.MemStatementList;
-import org.eclipse.rdf4j.sail.memory.model.MemValue;
 import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
 
 import net.agkn.hll.HLL;
@@ -292,7 +292,7 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 			}
 
 			if (obj != null) {
-				MemValue memObj = valueFactory.getMemValue(obj);
+				BaseMemValue memObj = valueFactory.getMemValue(obj);
 				if (memObj != null) {
 					minListSizes = Math.min(minListSizes, memObj.getObjectStatementCount());
 					if (minListSizes == 0) {

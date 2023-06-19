@@ -28,8 +28,8 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.memory.model.BaseMemValue;
 import org.eclipse.rdf4j.sail.memory.model.MemIRI;
-import org.eclipse.rdf4j.sail.memory.model.MemValue;
 import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -134,7 +134,7 @@ public class MemValueFactoryConcurrentBenchmark extends BaseConcurrentBenchmark 
 			List<Value> values = this.values.get(random.nextInt(this.values.size()));
 
 			for (Value value : values) {
-				MemValue memValue = valueFactory.getMemValue(value);
+				BaseMemValue memValue = valueFactory.getMemValue(value);
 				blackhole.consume(memValue);
 			}
 

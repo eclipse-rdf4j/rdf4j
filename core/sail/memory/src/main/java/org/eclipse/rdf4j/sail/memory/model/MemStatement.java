@@ -22,7 +22,7 @@ import org.slf4j.LoggerFactory;
  * A MemStatement is a Statement which contains context information and a flag indicating whether the statement is
  * explicit or inferred.
  */
-public class MemStatement extends GenericStatement<MemResource, MemIRI, MemValue> {
+public class MemStatement extends GenericStatement<MemResource, MemIRI, BaseMemValue> {
 
 	private static final Logger logger = LoggerFactory.getLogger(MemStatement.class);
 
@@ -69,7 +69,7 @@ public class MemStatement extends GenericStatement<MemResource, MemIRI, MemValue
 	/**
 	 * Creates a new MemStatement with the supplied subject, predicate, object and context and marks it as 'explicit'.
 	 */
-	public MemStatement(MemResource subject, MemIRI predicate, MemValue object, MemResource context,
+	public MemStatement(MemResource subject, MemIRI predicate, BaseMemValue object, MemResource context,
 			int sinceSnapshot) {
 		this(subject, predicate, object, context, true, sinceSnapshot);
 	}
@@ -78,7 +78,8 @@ public class MemStatement extends GenericStatement<MemResource, MemIRI, MemValue
 	 * Creates a new MemStatement with the supplied subject, predicate, object and context. The value of the
 	 * <var>explicit</var> parameter determines if this statement is marked as 'explicit' or not.
 	 */
-	public MemStatement(MemResource subject, MemIRI predicate, MemValue object, MemResource context, boolean explicit,
+	public MemStatement(MemResource subject, MemIRI predicate, BaseMemValue object, MemResource context,
+			boolean explicit,
 			int sinceSnapshot) {
 		super(subject, predicate, object, context);
 		this.explicit = explicit;
@@ -135,7 +136,7 @@ public class MemStatement extends GenericStatement<MemResource, MemIRI, MemValue
 		}
 	}
 
-	public boolean matchesSPO(MemResource subject, MemIRI predicate, MemValue object) {
+	public boolean matchesSPO(MemResource subject, MemIRI predicate, BaseMemValue object) {
 		return (object == null || object == this.object) && (subject == null || subject == this.subject) &&
 				(predicate == null || predicate == this.predicate);
 	}
@@ -149,7 +150,7 @@ public class MemStatement extends GenericStatement<MemResource, MemIRI, MemValue
 		return false;
 	}
 
-	public boolean exactMatch(MemResource subject, MemIRI predicate, MemValue object, MemResource context) {
+	public boolean exactMatch(MemResource subject, MemIRI predicate, BaseMemValue object, MemResource context) {
 		return this.subject == subject && this.predicate == predicate && this.object == object
 				&& this.context == context;
 	}

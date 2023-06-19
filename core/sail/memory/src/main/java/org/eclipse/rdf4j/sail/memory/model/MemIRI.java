@@ -11,12 +11,9 @@
 package org.eclipse.rdf4j.sail.memory.model;
 
 import java.lang.ref.SoftReference;
-import java.nio.charset.StandardCharsets;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
-
-import net.agkn.hll.HLL;
 
 /**
  * A MemoryStore-specific implementation of URI that stores separated namespace and local name information to enable
@@ -49,21 +46,6 @@ public class MemIRI extends MemResource implements IRI {
 	 * The MemURI's hash code, 0 if not yet initialized.
 	 */
 	private volatile int hashCode = 0;
-
-	/**
-	 * The list of statements for which this MemURI is the predicate.
-	 */
-	transient private final MemStatementList predicateStatements = new MemStatementList();
-
-	transient public final HLL predicateStatements_subjects = MemValue.getHLL();
-	transient public final HLL predicateStatements_objects = MemValue.getHLL();
-
-	/**
-	 * The list of statements for which this MemURI is the object.
-	 */
-	transient private final MemStatementList objectStatements = new MemStatementList();
-	transient public final HLL objectStatements_subjects = MemValue.getHLL();
-	transient public final HLL objectStatements_predicate = MemValue.getHLL();
 
 	/*--------------*
 	 * Constructors *
@@ -181,75 +163,6 @@ public class MemIRI extends MemResource implements IRI {
 	public boolean hasStatements() {
 		return !subjectStatements.isEmpty() || !predicateStatements.isEmpty() || !objectStatements.isEmpty()
 				|| !contextStatements.isEmpty();
-	}
-
-	/**
-	 * Gets the list of statements for which this MemURI is the predicate.
-	 *
-	 * @return a MemStatementList containing the statements.
-	 */
-	public MemStatementList getPredicateStatementList() {
-		return predicateStatements;
-	}
-
-	/**
-	 * Gets the number of Statements for which this MemURI is the predicate.
-	 *
-	 * @return An integer larger than or equal to 0.
-	 */
-	public int getPredicateStatementCount() {
-		return predicateStatements.size();
-	}
-
-	/**
-	 * Adds a statement to this MemURI's list of statements for which it is the predicate.
-	 */
-	public void addPredicateStatement(MemStatement st) throws InterruptedException {
-		predicateStatements.add(st);
-		predicateStatements_subjects.addRaw(MemValue.getHashForHLL(st.getSubject()));
-		predicateStatements_objects.addRaw(MemValue.getHashForHLL(st.getObject()));
-	}
-
-	/**
-	 * Removes statements from old snapshots (those that have expired at or before the specified snapshot version) from
-	 * this MemValue's list of statements for which it is the predicate.
-	 *
-	 * @param currentSnapshot The current snapshot version.
-	 */
-	public void cleanSnapshotsFromPredicateStatements(int currentSnapshot) throws InterruptedException {
-		predicateStatements.cleanSnapshots(currentSnapshot);
-	}
-
-	@Override
-	public MemStatementList getObjectStatementList() {
-		return objectStatements;
-	}
-
-	@Override
-	public int getObjectStatementCount() {
-		return objectStatements.size();
-	}
-
-	@Override
-	public void addObjectStatement(MemStatement st) throws InterruptedException {
-		objectStatements.add(st);
-		objectStatements_subjects.addRaw(MemValue.getHashForHLL(st.getSubject()));
-		objectStatements_predicate.addRaw(MemValue.getHashForHLL(st.getPredicate()));
-	}
-
-	@Override
-	public void cleanSnapshotsFromObjectStatements(int currentSnapshot) throws InterruptedException {
-		objectStatements.cleanSnapshots(currentSnapshot);
-	}
-
-	@Override
-	public boolean hasPredicateStatements() {
-		return !predicateStatements.isEmpty();
-	}
-
-	@Override
-	public boolean hasObjectStatements() {
-		return !objectStatements.isEmpty();
 	}
 
 }

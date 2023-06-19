@@ -92,7 +92,7 @@ public interface MemValue extends Value {
 		return new HLL(13/* log2m */, 5/* registerWidth */);
 	}
 
-	static long getHashForHLL(MemValue value) {
+	static long getHashForHLL(BaseMemValue value) {
 		return MemValue.HASH_FUNCTION
 				.hashString(value.toString(), StandardCharsets.UTF_8)
 				.asLong();

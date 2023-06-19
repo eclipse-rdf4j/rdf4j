@@ -27,14 +27,9 @@ public class MemTriple extends MemResource implements Triple {
 
 	private final MemResource subject;
 	private final MemIRI predicate;
-	private final MemValue object;
+	private final BaseMemValue object;
 
-	/**
-	 * The list of statements for which this MemTriple is the object.
-	 */
-	transient private final MemStatementList objectStatements = new MemStatementList();
-
-	public MemTriple(Object creator, MemResource subject, MemIRI predicate, MemValue object) {
+	public MemTriple(Object creator, MemResource subject, MemIRI predicate, BaseMemValue object) {
 		this.creator = creator;
 		this.subject = subject;
 		this.predicate = predicate;
@@ -64,28 +59,7 @@ public class MemTriple extends MemResource implements Triple {
 
 	@Override
 	public boolean hasStatements() {
-		// TODO Auto-generated method stub
-		return false;
-	}
-
-	@Override
-	public MemStatementList getObjectStatementList() {
-		return objectStatements;
-	}
-
-	@Override
-	public int getObjectStatementCount() {
-		return getObjectStatementList().size();
-	}
-
-	@Override
-	public void addObjectStatement(MemStatement st) throws InterruptedException {
-		objectStatements.add(st);
-	}
-
-	@Override
-	public void cleanSnapshotsFromObjectStatements(int currentSnapshot) throws InterruptedException {
-		objectStatements.cleanSnapshots(currentSnapshot);
+		return !subjectStatements.isEmpty() || !objectStatements.isEmpty();
 	}
 
 	@Override
@@ -119,7 +93,7 @@ public class MemTriple extends MemResource implements Triple {
 	}
 
 	@Override
-	public MemValue getObject() {
+	public BaseMemValue getObject() {
 		return object;
 	}
 
@@ -149,17 +123,32 @@ public class MemTriple extends MemResource implements Triple {
 	}
 
 	@Override
-	public boolean hasObjectStatements() {
-		return !objectStatements.isEmpty();
-	}
-
-	@Override
 	public boolean hasContextStatements() {
 		return false;
 	}
 
-	public boolean matchesSPO(MemResource subject, MemIRI predicate, MemValue object) {
+	public boolean matchesSPO(MemResource subject, MemIRI predicate, BaseMemValue object) {
 		return (object == null || object == this.object) && (subject == null || subject == this.subject) &&
 				(predicate == null || predicate == this.predicate);
+	}
+
+	@Override
+	public MemStatementList getPredicateStatementList() {
+		return EMPTY_LIST;
+	}
+
+	@Override
+	public int getPredicateStatementCount() {
+		return 0;
+	}
+
+	@Override
+	public void addPredicateStatement(MemStatement st) throws InterruptedException {
+		// no-op
+	}
+
+	@Override
+	public void cleanSnapshotsFromPredicateStatements(int currentSnapshot) throws InterruptedException {
+		// no-op
 	}
 }

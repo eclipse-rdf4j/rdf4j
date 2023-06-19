@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.memory.model.BaseMemValue;
 import org.eclipse.rdf4j.sail.memory.model.MemBNode;
 import org.eclipse.rdf4j.sail.memory.model.MemIRI;
 import org.eclipse.rdf4j.sail.memory.model.MemResource;
@@ -57,7 +58,6 @@ import org.eclipse.rdf4j.sail.memory.model.MemStatementIteratorCache;
 import org.eclipse.rdf4j.sail.memory.model.MemStatementList;
 import org.eclipse.rdf4j.sail.memory.model.MemTriple;
 import org.eclipse.rdf4j.sail.memory.model.MemTripleIterator;
-import org.eclipse.rdf4j.sail.memory.model.MemValue;
 import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
 import org.eclipse.rdf4j.sail.memory.model.WeakObjectRegistry;
 import org.slf4j.Logger;
@@ -219,7 +219,7 @@ class MemorySailStore implements SailStore {
 			return EMPTY_ITERATION;
 		}
 
-		MemValue memObj = valueFactory.getMemValue(obj);
+		BaseMemValue memObj = valueFactory.getMemValue(obj);
 		if (obj != null && memObj == null) {
 			// non-existent object
 			return EMPTY_ITERATION;
@@ -270,7 +270,7 @@ class MemorySailStore implements SailStore {
 	}
 
 	private CloseableIteration<MemStatement, SailException> getMemStatementIterator(MemResource subj, MemIRI pred,
-			MemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts, MemStatementList statementList)
+			BaseMemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts, MemStatementList statementList)
 			throws InterruptedException {
 
 		if (explicit != null && !explicit) {
@@ -294,7 +294,7 @@ class MemorySailStore implements SailStore {
 				iteratorCache);
 	}
 
-	private MemStatementList getSmallestStatementList(MemResource subj, MemIRI pred, MemValue obj) {
+	private MemStatementList getSmallestStatementList(MemResource subj, MemIRI pred, BaseMemValue obj) {
 		MemStatementList smallestList = null;
 
 		if (subj != null) {
@@ -351,7 +351,7 @@ class MemorySailStore implements SailStore {
 			return EMPTY_TRIPLE_ITERATION;
 		}
 
-		MemValue memObj = valueFactory.getMemValue(obj);
+		BaseMemValue memObj = valueFactory.getMemValue(obj);
 		if (obj != null && memObj == null) {
 			// non-existent object
 			return EMPTY_TRIPLE_ITERATION;
@@ -388,10 +388,10 @@ class MemorySailStore implements SailStore {
 			prioritiseCleaning = prioritiseSnapshotCleaningIfLowOnMemory(prioritiseCleaning);
 
 			// Sets used to keep track of which lists have already been processed
-			HashSet<MemValue> processedSubjects = new HashSet<>();
-			HashSet<MemValue> processedPredicates = new HashSet<>();
-			HashSet<MemValue> processedObjects = new HashSet<>();
-			HashSet<MemValue> processedContexts = new HashSet<>();
+			HashSet<BaseMemValue> processedSubjects = new HashSet<>();
+			HashSet<BaseMemValue> processedPredicates = new HashSet<>();
+			HashSet<BaseMemValue> processedObjects = new HashSet<>();
+			HashSet<BaseMemValue> processedContexts = new HashSet<>();
 
 			MemStatement[] statements = this.statements.getStatements();
 
@@ -422,7 +422,7 @@ class MemorySailStore implements SailStore {
 						pred.cleanSnapshotsFromPredicateStatements(highestUnusedTillSnapshot);
 					}
 
-					MemValue obj = st.getObject();
+					BaseMemValue obj = st.getObject();
 					if (processedObjects.add(obj)) {
 						obj.cleanSnapshotsFromObjectStatements(highestUnusedTillSnapshot);
 					}
@@ -813,7 +813,7 @@ class MemorySailStore implements SailStore {
 			// Get or create MemValues for the operands
 			MemResource memSubj = valueFactory.getOrCreateMemResource(subj);
 			MemIRI memPred = valueFactory.getOrCreateMemURI(pred);
-			MemValue memObj = valueFactory.getOrCreateMemValue(obj);
+			BaseMemValue memObj = valueFactory.getOrCreateMemValue(obj);
 			MemResource memContext = context == null ? null : valueFactory.getOrCreateMemResource(context);
 
 			if (memSubj.hasSubjectStatements() && memPred.hasPredicateStatements() && memObj.hasObjectStatements()
@@ -834,7 +834,8 @@ class MemorySailStore implements SailStore {
 			return st;
 		}
 
-		private boolean statementAlreadyExists(boolean explicit, MemResource memSubj, MemIRI memPred, MemValue memObj,
+		private boolean statementAlreadyExists(boolean explicit, MemResource memSubj, MemIRI memPred,
+				BaseMemValue memObj,
 				MemResource memContext, int nextSnapshot) throws InterruptedException {
 
 			MemStatementList statementList = getSmallestMemStatementList(memSubj, memPred, memObj, memContext);
@@ -854,7 +855,7 @@ class MemorySailStore implements SailStore {
 			return false;
 		}
 
-		private MemStatementList getSmallestMemStatementList(MemResource memSubj, MemIRI memPred, MemValue memObj,
+		private MemStatementList getSmallestMemStatementList(MemResource memSubj, MemIRI memPred, BaseMemValue memObj,
 				MemResource memContext) {
 			MemStatementList statementList = memSubj.getSubjectStatementList();
 			if (statementList.size() <= 1) {

@@ -42,9 +42,9 @@ import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
+import org.eclipse.rdf4j.sail.memory.model.BaseMemValue;
 import org.eclipse.rdf4j.sail.memory.model.MemIRI;
 import org.eclipse.rdf4j.sail.memory.model.MemResource;
-import org.eclipse.rdf4j.sail.memory.model.MemValue;
 
 /**
  * Functionality to read and write MemoryStore to/from a file.
@@ -255,7 +255,7 @@ class FileIO {
 			SailSink inferred) throws IOException, ClassCastException, SailException {
 		MemResource memSubj = (MemResource) readValue(dataIn);
 		MemIRI memPred = (MemIRI) readValue(dataIn);
-		MemValue memObj = (MemValue) readValue(dataIn);
+		BaseMemValue memObj = (BaseMemValue) readValue(dataIn);
 		MemResource memContext = null;
 		if (hasContext) {
 			memContext = (MemResource) readValue(dataIn);

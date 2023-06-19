@@ -15,57 +15,6 @@ import org.eclipse.rdf4j.model.Resource;
 /**
  * A MemoryStore-specific extension of Resource giving it subject statements.
  */
-public abstract class MemResource implements MemValue, Resource {
+public abstract class MemResource extends BaseMemValue implements Resource {
 
-	/**
-	 * The list of statements for which this MemURI is the subject.
-	 */
-	transient final MemStatementList subjectStatements = new MemStatementList();
-
-	/**
-	 * The list of statements for which this MemURI represents the context.
-	 */
-	transient final MemStatementList contextStatements = new MemStatementList();
-
-	public MemStatementList getSubjectStatementList() {
-		return subjectStatements;
-	}
-
-	public int getSubjectStatementCount() {
-		return subjectStatements.size();
-	}
-
-	public void addSubjectStatement(MemStatement st) throws InterruptedException {
-		subjectStatements.add(st);
-	}
-
-	public void cleanSnapshotsFromSubjectStatements(int currentSnapshot) throws InterruptedException {
-		subjectStatements.cleanSnapshots(currentSnapshot);
-	}
-
-	@Override
-	public boolean hasSubjectStatements() {
-		return !subjectStatements.isEmpty();
-	}
-
-	@Override
-	public boolean hasContextStatements() {
-		return !contextStatements.isEmpty();
-	}
-
-	public MemStatementList getContextStatementList() {
-		return contextStatements;
-	}
-
-	public int getContextStatementCount() {
-		return contextStatements.size();
-	}
-
-	public void addContextStatement(MemStatement st) throws InterruptedException {
-		contextStatements.add(st);
-	}
-
-	public void cleanSnapshotsFromContextStatements(int currentSnapshot) throws InterruptedException {
-		contextStatements.cleanSnapshots(currentSnapshot);
-	}
 }

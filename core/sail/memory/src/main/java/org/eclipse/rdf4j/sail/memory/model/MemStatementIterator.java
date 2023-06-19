@@ -49,7 +49,7 @@ public class MemStatementIterator implements CloseableIteration<MemStatement, Sa
 	/**
 	 * The object of statements to return, or null if any object is OK.
 	 */
-	private final MemValue object;
+	private final BaseMemValue object;
 
 	/**
 	 * The context of statements to return, or null if any context is OK.
@@ -104,7 +104,8 @@ public class MemStatementIterator implements CloseableIteration<MemStatement, Sa
 	 * @param object        object of pattern.
 	 * @param contexts      context(s) of pattern.
 	 */
-	public MemStatementIterator(MemStatementList statementList, MemResource subject, MemIRI predicate, MemValue object,
+	public MemStatementIterator(MemStatementList statementList, MemResource subject, MemIRI predicate,
+			BaseMemValue object,
 			Boolean explicit, int snapshot, MemStatementIteratorCache iteratorCache, MemResource... contexts)
 			throws InterruptedException {
 		this.statementList = statementList.getStatements();
@@ -128,7 +129,7 @@ public class MemStatementIterator implements CloseableIteration<MemStatement, Sa
 	}
 
 	public static CloseableIteration<MemStatement, SailException> cacheAwareInstance(MemStatementList smallestList,
-			MemResource subj, MemIRI pred, MemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts,
+			MemResource subj, MemIRI pred, BaseMemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts,
 			MemStatementIteratorCache iteratorCache) throws InterruptedException {
 
 		if (smallestList.size() > MemStatementIterator.MIN_SIZE_TO_CONSIDER_FOR_CACHE) {
