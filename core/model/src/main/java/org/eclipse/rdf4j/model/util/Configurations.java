@@ -106,7 +106,7 @@ public class Configurations {
 		}
 
 		if (!objects.equals(legacyObjects)) {
-			logger.warn("Discrepancy between use of the old and config vocabulary.");
+			logger.warn("Discrepancy between use of the old and new config vocabulary.");
 			if (objects.containsAll(legacyObjects)) {
 				return objects;
 			} else if (legacyObjects.containsAll(objects)) {
