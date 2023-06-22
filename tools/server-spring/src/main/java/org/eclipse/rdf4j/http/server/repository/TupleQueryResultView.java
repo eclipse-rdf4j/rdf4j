@@ -75,7 +75,8 @@ public class TupleQueryResultView extends QueryResultView {
 
 		final Boolean headersOnly = (Boolean) model.get(HEADERS_ONLY);
 		if (headersOnly == null || !headersOnly.booleanValue()) {
-			try (OutputStream out = response.getOutputStream()) {
+			OutputStream out = response.getOutputStream();
+			try {
 				TupleQueryResultWriter qrWriter = qrWriterFactory.getWriter(out);
 				TupleQueryResult tupleQueryResult = (TupleQueryResult) model.get(QUERY_RESULT_KEY);
 
@@ -109,6 +110,10 @@ public class TupleQueryResultView extends QueryResultView {
 			} catch (TupleQueryResultHandlerException e) {
 				logger.error("Serialization error", e);
 				response.sendError(SC_INTERNAL_SERVER_ERROR, "Serialization error: " + e.getMessage());
+			} finally {
+				// Using explicit close because using a try-with-resources would commit the response before the
+				// catch clause handling, resulting in no error being sent. See GH-4512
+				out.close();
 			}
 		}
 		logEndOfRequest(request);
