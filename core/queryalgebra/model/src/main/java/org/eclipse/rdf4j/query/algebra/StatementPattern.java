@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.io.Serializable;
 import java.util.AbstractSet;
 import java.util.Arrays;
 import java.util.Collection;
@@ -208,9 +209,11 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 		return new SmallStringSet(subjectVar, predicateVar, objectVar, contextVar);
 	}
 
-	private static class SmallStringSet extends AbstractSet<String> {
+	private static class SmallStringSet extends AbstractSet<String> implements Serializable {
 
-		String[] values;
+		private static final long serialVersionUID = 8771966058555603264L;
+
+		private final String[] values;
 
 		public SmallStringSet(Var var1, Var var2, Var var3, Var var4) {
 			String[] values = new String[(var1 != null ? 1 : 0) + (var2 != null ? 1 : 0) + (var3 != null ? 1 : 0)

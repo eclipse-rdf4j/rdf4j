@@ -11,6 +11,12 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
 import java.util.ArrayDeque;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -43,7 +49,37 @@ public class ParentReferenceChecker implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		verifySerializable(tupleExpr);
 		tupleExpr.visit(new ParentCheckingVisitor());
+	}
+
+	private void verifySerializable(QueryModelNode tupleExpr) {
+		byte[] bytes = objectToBytes(tupleExpr);
+		QueryModelNode parsed = (QueryModelNode) bytesToObject(bytes);
+//		byte[] bytesAfterSecondSerialization = objectToBytes(parsed);
+//		assert Arrays.equals(bytes, bytesAfterSecondSerialization);
+		assert tupleExpr.equals(parsed);
+	}
+
+	private byte[] objectToBytes(Serializable object) {
+		try (var byteArrayOutputStream = new ByteArrayOutputStream()) {
+			try (var objectOutputStream = new ObjectOutputStream(byteArrayOutputStream)) {
+				objectOutputStream.writeObject(object);
+			}
+			return byteArrayOutputStream.toByteArray();
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	private Object bytesToObject(byte[] str) {
+		try (ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(str)) {
+			try (ObjectInputStream objectInputStream = new ObjectInputStream(byteArrayInputStream)) {
+				return objectInputStream.readObject();
+			}
+		} catch (IOException | ClassNotFoundException e) {
+			throw new RuntimeException(e);
+		}
 	}
 
 	private class ParentCheckingVisitor extends AbstractQueryModelVisitor<RuntimeException> {
