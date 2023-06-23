@@ -12,7 +12,9 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.Queue;
 import java.util.Set;
+import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -64,6 +66,8 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 	private ValuePair currentVp;
 
+	private final CollectionFactory cf;
+
 	private static final String JOINVAR_PREFIX = "intermediate_join_";
 
 	public PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
@@ -82,10 +86,10 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 		this.currentLength = minLength;
 		this.bindings = bindings;
-
-		this.reportedValues = strategy.makeSet();
-		this.unreportedValues = strategy.makeSet();
-		this.valueQueue = strategy.makeQueue();
+		this.cf = strategy.getCollectionFactory().get();
+		this.reportedValues = cf.createSet();
+		this.unreportedValues = cf.createSet();
+		this.valueQueue = cf.createQueue();
 
 		createIteration();
 	}
@@ -205,6 +209,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
 		try {
+			cf.close();
 			super.handleClose();
 		} finally {
 			Iterations.closeCloseable(currentIter);

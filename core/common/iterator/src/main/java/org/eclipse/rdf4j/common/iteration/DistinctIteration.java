@@ -39,15 +39,9 @@ public class DistinctIteration<E, X extends Exception> extends FilterIteration<E
 	 *
 	 * @param iter The underlying iterator.
 	 */
-	public DistinctIteration(Iteration<? extends E, ? extends X> iter) {
+	public DistinctIteration(Iteration<? extends E, ? extends X> iter, Set<E> excludeSet) {
 		super(iter);
-
-		excludeSet = makeSet();
-	}
-
-	public DistinctIteration(Iteration<? extends E, ? extends X> iter, Supplier<Set<E>> setMaker) {
-		super(iter);
-		excludeSet = setMaker.get();
+		this.excludeSet = excludeSet;
 	}
 
 	/*---------*
@@ -82,9 +76,4 @@ public class DistinctIteration<E, X extends Exception> extends FilterIteration<E
 	protected boolean add(E object) throws X {
 		return excludeSet.add(object);
 	}
-
-	protected Set<E> makeSet() {
-		return new HashSet<>();
-	}
-
 }

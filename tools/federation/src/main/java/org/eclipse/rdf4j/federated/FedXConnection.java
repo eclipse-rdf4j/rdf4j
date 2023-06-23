@@ -11,12 +11,15 @@
 package org.eclipse.rdf4j.federated;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
+import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.federated.algebra.PassThroughTupleExpr;
@@ -265,13 +268,20 @@ public class FedXConnection extends AbstractSailConnection {
 
 		// execute the union in a separate thread
 		federationContext.getManager().getExecutor().execute(union);
+		CollectionFactory cf = federation.getCollectionFactory().get();
+		return new DistinctIteration<>(new ToSailExceptionConvertingIteration<>(union), cf.createSet()) {
 
-		return new DistinctIteration<>(new ExceptionConvertingIteration<>(union) {
 			@Override
-			protected SailException convert(Exception e) {
-				return new SailException(e);
+			protected void handleClose() throws SailException {
+				try {
+					cf.close();
+				} catch (SailException e) {
+					super.handleClose();
+					throw e;
+				}
 			}
-		});
+
+		};
 	}
 
 	@Override
@@ -301,12 +311,7 @@ public class FedXConnection extends AbstractSailConnection {
 			CloseableIteration<Statement, QueryEvaluationException> res = null;
 			try {
 				res = strategy.getStatements(queryInfo, subj, pred, obj, contexts);
-				return new ExceptionConvertingIteration<>(res) {
-					@Override
-					protected SailException convert(Exception e) {
-						return new SailException(e);
-					}
-				};
+				return new ToSailExceptionConvertingIteration<>(res);
 			} catch (Throwable t) {
 				if (res != null) {
 					res.close();
@@ -453,6 +458,18 @@ public class FedXConnection extends AbstractSailConnection {
 			return Integer.parseInt(q.stringValue());
 		}
 		return 0;
+	}
+
+	private static final class ToSailExceptionConvertingIteration<V>
+			extends ExceptionConvertingIteration<V, SailException> {
+		private ToSailExceptionConvertingIteration(Iteration<? extends V, ? extends Exception> iter) {
+			super(iter);
+		}
+
+		@Override
+		protected SailException convert(Exception e) {
+			return new SailException(e);
+		}
 	}
 
 	/**

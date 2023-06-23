@@ -17,7 +17,8 @@ public class DistinctIntersectionIterationTest extends CloseableIterationTest {
 
 	@Override
 	protected CloseableIteration<String, Exception> createTestIteration() {
-		return new IntersectIteration<>(createStringList1Iteration(), createStringList2Iteration(), true);
+		return new IntersectIteration<>(createStringList1Iteration(), createStringList2Iteration(), true,
+				new HashSet<>());
 	}
 
 	@Override

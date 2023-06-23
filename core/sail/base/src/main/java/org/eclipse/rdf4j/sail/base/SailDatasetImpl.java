@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -320,8 +321,10 @@ class SailDatasetImpl implements SailDataset {
 						changes.getApprovedTriples(subj, pred, obj).iterator());
 
 				// merge newly approved triples in the changeset with data from the backing source
+				// TODO: see if use of collection factory is possible here.
 				return new DistinctIteration<>(
-						DualUnionIteration.getWildcardInstance(iter, tripleExceptionCloseableIteratorIteration));
+						DualUnionIteration.getWildcardInstance(iter, tripleExceptionCloseableIteratorIteration),
+						new HashSet<>());
 			}
 
 			// nothing relevant in the backing source, just return all matching approved triples from the changeset

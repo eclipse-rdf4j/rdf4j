@@ -11,13 +11,15 @@
 package org.eclipse.rdf4j.common.iteration;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 
 public class IntersectionIterationTest extends CloseableIterationTest {
 
 	@Override
 	protected CloseableIteration<String, Exception> createTestIteration() {
-		return new IntersectIteration<>(createStringList1Iteration(), createStringList2Iteration());
+		return new IntersectIteration<>(createStringList1Iteration(), createStringList2Iteration(), false,
+				new HashSet<>());
 	}
 
 	@Override

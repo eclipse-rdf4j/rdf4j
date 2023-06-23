@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.federation;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Set;
@@ -185,7 +186,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 			resultIters
 					.add(TupleFunctionEvaluationStrategy.evaluate(func, funcCall.getResultVars(), bs, vf, argValues));
 		}
-		return (resultIters.size() > 1) ? new DistinctIteration<>(new UnionIteration<>(resultIters))
+		return (resultIters.size() > 1) ? new DistinctIteration<>(new UnionIteration<>(resultIters), new HashSet<>())
 				: resultIters.get(0);
 	}
 

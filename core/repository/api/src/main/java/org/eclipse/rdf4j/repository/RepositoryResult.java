@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.repository;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 
@@ -91,7 +92,7 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 			return;
 		}
 
-		wrappedIter = new DistinctIteration<T, RepositoryException>(wrappedIter);
+		wrappedIter = new DistinctIteration<T, RepositoryException>(wrappedIter, new HashSet<>());
 	}
 
 	/**

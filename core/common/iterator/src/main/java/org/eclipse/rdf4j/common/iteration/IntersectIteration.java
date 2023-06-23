@@ -11,9 +11,7 @@
 
 package org.eclipse.rdf4j.common.iteration;
 
-import java.util.HashSet;
 import java.util.Set;
-import java.util.function.Supplier;
 
 /**
  * An Iteration that returns the intersection of the results of two Iterations. Optionally, the Iteration can be
@@ -35,39 +33,22 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 
 	private boolean initialized;
 
-	private Set<E> includeSet;
-
-	private final Supplier<Set<E>> setMaker;
+	private final Set<E> includeSet;
 
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
 	/**
-	 * Creates a new IntersectIteration that returns the intersection of the results of two Iterations. By default,
-	 * duplicates are <em>not</em> filtered from the results.
-	 *
-	 * @param arg1 An Iteration containing the first set of elements.
-	 * @param arg2 An Iteration containing the second set of elements.
-	 */
-	public IntersectIteration(Iteration<? extends E, ? extends X> arg1, Iteration<? extends E, ? extends X> arg2) {
-		this(arg1, arg2, false);
-	}
-
-	public IntersectIteration(Iteration<? extends E, ? extends X> arg1, Iteration<? extends E, ? extends X> arg2,
-			Supplier<Set<E>> setMaker) {
-		this(arg1, arg2, false, setMaker);
-	}
-
-	/**
 	 * Creates a new IntersectIteration that returns the intersection of the results of two Iterations.
 	 *
 	 * @param arg1     An Iteration containing the first set of elements.
 	 * @param arg2     An Iteration containing the second set of elements.
 	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
+	 * @param set      A set used to determine the intersection
 	 */
 	public IntersectIteration(Iteration<? extends E, ? extends X> arg1, Iteration<? extends E, ? extends X> arg2,
-			boolean distinct) {
+			boolean distinct, Set<E> set) {
 		super(arg1);
 
 		assert arg2 != null;
@@ -75,26 +56,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 		this.arg2 = arg2;
 		this.distinct = distinct;
 		this.initialized = false;
-		this.setMaker = this::makeSet;
-	}
-
-	/**
-	 * Creates a new IntersectIteration that returns the intersection of the results of two Iterations.
-	 *
-	 * @param arg1     An Iteration containing the first set of elements.
-	 * @param arg2     An Iteration containing the second set of elements.
-	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
-	 */
-	public IntersectIteration(Iteration<? extends E, ? extends X> arg1, Iteration<? extends E, ? extends X> arg2,
-			boolean distinct, Supplier<Set<E>> setMaker) {
-		super(arg1);
-
-		assert arg2 != null;
-
-		this.arg2 = arg2;
-		this.distinct = distinct;
-		this.initialized = false;
-		this.setMaker = setMaker;
+		this.includeSet = set;
 	}
 
 	/*--------------*
@@ -107,9 +69,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	@Override
 	protected boolean accept(E object) throws X {
 		if (!initialized) {
-			// Build set of elements-to-include from second argument
-			includeSet = Iterations.asSet(arg2);
-			initialized = true;
+			initialize();
 		}
 
 		if (inIncludeSet(object)) {
@@ -127,9 +87,12 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 		return false;
 	}
 
-	// this method does not seem to "addSecondSet" since the second set seems to be ignored
-	public Set<E> addSecondSet(Iteration<? extends E, ? extends X> arg2, Set<E> set) throws X {
-		return Iterations.addAll(arg2, setMaker.get());
+	private void initialize() throws X {
+		// Build set of elements-to-include from second argument
+		while (arg2.hasNext()) {
+			includeSet.add(arg2.next());
+		}
+		initialized = true;
 	}
 
 	protected boolean removeFromIncludeSet(E object) {
@@ -138,10 +101,6 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 
 	protected boolean inIncludeSet(E object) {
 		return includeSet.contains(object);
-	}
-
-	protected Set<E> makeSet() {
-		return new HashSet<>();
 	}
 
 	@Override

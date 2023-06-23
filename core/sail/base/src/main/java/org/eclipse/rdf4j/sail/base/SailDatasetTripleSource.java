@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.HashSet;
+
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
@@ -77,7 +79,8 @@ public class SailDatasetTripleSource implements RDFStarTripleSource {
 			// projections and conversions) we need to make sure we de-duplicate the RDF-star triples here.
 			triples = dataset.getTriples(subj, pred, obj);
 			iterationWrapper = new TripleSourceIterationWrapper<>(triples);
-			return new DistinctIteration<>(iterationWrapper);
+			// TODO: see if use of collection factory is possible here.
+			return new DistinctIteration<>(iterationWrapper, new HashSet<>());
 		} catch (Throwable t) {
 			try {
 				if (triples != null) {
