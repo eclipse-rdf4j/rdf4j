@@ -75,45 +75,43 @@ public class TupleQueryResultView extends QueryResultView {
 
 		final Boolean headersOnly = (Boolean) model.get(HEADERS_ONLY);
 		if (headersOnly == null || !headersOnly.booleanValue()) {
-			OutputStream out = response.getOutputStream();
-			try {
-				TupleQueryResultWriter qrWriter = qrWriterFactory.getWriter(out);
-				TupleQueryResult tupleQueryResult = (TupleQueryResult) model.get(QUERY_RESULT_KEY);
+			try (OutputStream out = response.getOutputStream()) {
+				// ensure we handle exceptions _before_ closing the stream
+				try {
+					TupleQueryResultWriter qrWriter = qrWriterFactory.getWriter(out);
+					TupleQueryResult tupleQueryResult = (TupleQueryResult) model.get(QUERY_RESULT_KEY);
 
-				if (qrWriter.getSupportedSettings().contains(BasicQueryWriterSettings.JSONP_CALLBACK)) {
-					String parameter = request.getParameter(DEFAULT_JSONP_CALLBACK_PARAMETER);
+					if (qrWriter.getSupportedSettings().contains(BasicQueryWriterSettings.JSONP_CALLBACK)) {
+						String parameter = request.getParameter(DEFAULT_JSONP_CALLBACK_PARAMETER);
 
-					if (parameter != null) {
-						parameter = parameter.trim();
+						if (parameter != null) {
+							parameter = parameter.trim();
 
-						if (parameter.isEmpty()) {
-							parameter = BasicQueryWriterSettings.JSONP_CALLBACK.getDefaultValue();
+							if (parameter.isEmpty()) {
+								parameter = BasicQueryWriterSettings.JSONP_CALLBACK.getDefaultValue();
+							}
+
+							// check callback function name is a valid javascript function
+							// name
+							if (!JSONP_VALIDATOR.matcher(parameter).matches()) {
+								throw new IOException("Callback function name was invalid");
+							}
+
+							qrWriter.getWriterConfig().set(BasicQueryWriterSettings.JSONP_CALLBACK, parameter);
 						}
-
-						// check callback function name is a valid javascript function
-						// name
-						if (!JSONP_VALIDATOR.matcher(parameter).matches()) {
-							throw new IOException("Callback function name was invalid");
-						}
-
-						qrWriter.getWriterConfig().set(BasicQueryWriterSettings.JSONP_CALLBACK, parameter);
 					}
+
+					QueryResults.report(tupleQueryResult, qrWriter);
+				} catch (QueryInterruptedException e) {
+					logger.error("Query interrupted", e);
+					response.sendError(SC_SERVICE_UNAVAILABLE, "Query evaluation took too long");
+				} catch (QueryEvaluationException e) {
+					logger.error("Query evaluation error", e);
+					response.sendError(SC_INTERNAL_SERVER_ERROR, "Query evaluation error: " + e.getMessage());
+				} catch (TupleQueryResultHandlerException e) {
+					logger.error("Serialization error", e);
+					response.sendError(SC_INTERNAL_SERVER_ERROR, "Serialization error: " + e.getMessage());
 				}
-
-				QueryResults.report(tupleQueryResult, qrWriter);
-
-				// Using explicit close because using a try-with-resources would commit the response before the
-				// catch clause handling, resulting in no error being sent. See GH-4512
-				out.close();
-			} catch (QueryInterruptedException e) {
-				logger.error("Query interrupted", e);
-				response.sendError(SC_SERVICE_UNAVAILABLE, "Query evaluation took too long");
-			} catch (QueryEvaluationException e) {
-				logger.error("Query evaluation error", e);
-				response.sendError(SC_INTERNAL_SERVER_ERROR, "Query evaluation error: " + e.getMessage());
-			} catch (TupleQueryResultHandlerException e) {
-				logger.error("Serialization error", e);
-				response.sendError(SC_INTERNAL_SERVER_ERROR, "Serialization error: " + e.getMessage());
 			}
 		}
 		logEndOfRequest(request);
