@@ -101,6 +101,10 @@ public class TupleQueryResultView extends QueryResultView {
 				}
 
 				QueryResults.report(tupleQueryResult, qrWriter);
+
+				// Using explicit close because using a try-with-resources would commit the response before the
+				// catch clause handling, resulting in no error being sent. See GH-4512
+				out.close();
 			} catch (QueryInterruptedException e) {
 				logger.error("Query interrupted", e);
 				response.sendError(SC_SERVICE_UNAVAILABLE, "Query evaluation took too long");
@@ -110,10 +114,6 @@ public class TupleQueryResultView extends QueryResultView {
 			} catch (TupleQueryResultHandlerException e) {
 				logger.error("Serialization error", e);
 				response.sendError(SC_INTERNAL_SERVER_ERROR, "Serialization error: " + e.getMessage());
-			} finally {
-				// Using explicit close because using a try-with-resources would commit the response before the
-				// catch clause handling, resulting in no error being sent. See GH-4512
-				out.close();
 			}
 		}
 		logEndOfRequest(request);
