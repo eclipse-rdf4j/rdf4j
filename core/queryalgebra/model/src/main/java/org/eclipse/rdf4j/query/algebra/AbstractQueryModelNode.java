@@ -17,6 +17,8 @@ import java.util.Objects;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreePrinter;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 /**
  * Base implementation of {@link QueryModelNode}.
  */
@@ -30,6 +32,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 	private static final long serialVersionUID = 3006199552086476178L;
 
+	@JsonIgnore
 	private QueryModelNode parent;
 
 	private boolean isVariableScopeChange;
