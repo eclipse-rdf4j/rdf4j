@@ -72,18 +72,21 @@ public class GraphQueryResultView extends QueryResultView {
 
 		if (!headersOnly) {
 			try (OutputStream out = response.getOutputStream()) {
-				RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
-				GraphQueryResult graphQueryResult = (GraphQueryResult) model.get(QUERY_RESULT_KEY);
-				QueryResults.report(graphQueryResult, rdfWriter);
-			} catch (QueryInterruptedException e) {
-				logger.error("Query interrupted", e);
-				response.sendError(SC_SERVICE_UNAVAILABLE, "Query evaluation took too long");
-			} catch (QueryEvaluationException e) {
-				logger.error("Query evaluation error", e);
-				response.sendError(SC_INTERNAL_SERVER_ERROR, "Query evaluation error: " + e.getMessage());
-			} catch (RDFHandlerException e) {
-				logger.error("Serialization error", e);
-				response.sendError(SC_INTERNAL_SERVER_ERROR, "Serialization error: " + e.getMessage());
+				// ensure we handle exceptions _before_ closing the stream
+				try {
+					RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
+					GraphQueryResult graphQueryResult = (GraphQueryResult) model.get(QUERY_RESULT_KEY);
+					QueryResults.report(graphQueryResult, rdfWriter);
+				} catch (QueryInterruptedException e) {
+					logger.error("Query interrupted", e);
+					response.sendError(SC_SERVICE_UNAVAILABLE, "Query evaluation took too long");
+				} catch (QueryEvaluationException e) {
+					logger.error("Query evaluation error", e);
+					response.sendError(SC_INTERNAL_SERVER_ERROR, "Query evaluation error: " + e.getMessage());
+				} catch (RDFHandlerException e) {
+					logger.error("Serialization error", e);
+					response.sendError(SC_INTERNAL_SERVER_ERROR, "Serialization error: " + e.getMessage());
+				}
 			}
 		}
 		logEndOfRequest(request);
