@@ -15,6 +15,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -108,6 +109,32 @@ public class BaseConcurrentBenchmark {
 					localConnection.close();
 				}
 			}
+		};
+	}
+
+	<T> Runnable getRunnable(CountDownLatch startSignal, T inputData,
+			Consumer<T> workload) {
+
+		return () -> {
+			try {
+				startSignal.await();
+			} catch (InterruptedException e) {
+				throw new IllegalStateException();
+			}
+			workload.accept(inputData);
+		};
+	}
+
+	<T, S> Runnable getRunnable(CountDownLatch startSignal, T inputData1,
+			S inputData2, BiConsumer<T, S> workload) {
+
+		return () -> {
+			try {
+				startSignal.await();
+			} catch (InterruptedException e) {
+				throw new IllegalStateException();
+			}
+			workload.accept(inputData1, inputData2);
 		};
 	}
 
