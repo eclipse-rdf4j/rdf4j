@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.sail.elasticsearchstore.compliance;
 
 import java.io.File;
-import java.io.IOException;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -29,7 +28,7 @@ public class ElasticsearchStoreConnectionIT extends RepositoryConnectionTest {
 	private static SingletonClientProvider clientPool;
 
 	@BeforeAll
-	public static void beforeClass() throws IOException, InterruptedException {
+	public static void beforeClass() {
 		TestHelpers.openClient();
 		clientPool = new SingletonClientProvider("localhost", TestHelpers.PORT, TestHelpers.CLUSTER);
 	}

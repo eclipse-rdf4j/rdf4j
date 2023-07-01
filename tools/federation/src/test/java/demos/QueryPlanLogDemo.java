@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 
 public class QueryPlanLogDemo {
 
-	public static void main(String[] args) throws Exception {
+	public static void main(String[] args) {
 
 		FedXConfig config = new FedXConfig().withEnableMonitoring(true).withLogQueryPlan(true);
 		Repository repo = FedXFactory.newFederation()

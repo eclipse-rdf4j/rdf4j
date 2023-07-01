@@ -34,7 +34,7 @@ import com.google.common.collect.Sets;
 public class HashJoinTest {
 
 	@Test
-	public void testSimple() throws Exception {
+	public void testSimple() {
 
 		List<BindingSet> leftBlock = new ArrayList<>();
 		leftBlock.add(bindingSet(binding("x", irid("p1"))));
@@ -58,7 +58,7 @@ public class HashJoinTest {
 	}
 
 	@Test
-	public void testMultipleBindings() throws Exception {
+	public void testMultipleBindings() {
 
 		List<BindingSet> leftBlock = new ArrayList<>();
 		leftBlock.add(bindingSet(binding("x", irid("p1")), binding("y", l("P1"))));
@@ -79,7 +79,7 @@ public class HashJoinTest {
 	}
 
 	@Test
-	public void testLeftJoin_NoResultForBinding() throws Exception {
+	public void testLeftJoin_NoResultForBinding() {
 
 		List<BindingSet> leftBlock = new ArrayList<>();
 		leftBlock.add(bindingSet(binding("x", irid("p1")), binding("y", l("P1"))));

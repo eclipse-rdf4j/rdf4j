@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore.compliance;
 
-import java.io.IOException;
-
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -31,7 +29,7 @@ public class ElasticsearchStoreConcurrencyIT extends SailConcurrencyTest {
 	private static SingletonClientProvider clientPool;
 
 	@BeforeAll
-	public static void beforeClass() throws IOException, InterruptedException {
+	public static void beforeClass() {
 		TestHelpers.openClient();
 		clientPool = new SingletonClientProvider("localhost", TestHelpers.PORT, TestHelpers.CLUSTER);
 	}

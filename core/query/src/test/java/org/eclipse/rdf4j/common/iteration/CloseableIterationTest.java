@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 public abstract class CloseableIterationTest extends IterationTest {
 
 	@Override
-	protected abstract CloseableIteration<String, Exception> createTestIteration() throws Exception;
+	protected abstract CloseableIteration<String, Exception> createTestIteration();
 
 	@Test
 	public void testClosedIteration() throws Exception {

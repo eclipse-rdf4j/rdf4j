@@ -38,7 +38,7 @@ import org.junit.jupiter.api.Test;
 public abstract class GraphQueryResultTest {
 
 	@BeforeAll
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
@@ -74,7 +74,7 @@ public abstract class GraphQueryResultTest {
 	}
 
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		try {
 			con.close();
 			con = null;
@@ -84,7 +84,7 @@ public abstract class GraphQueryResultTest {
 		}
 	}
 
-	protected Repository createRepository() throws Exception {
+	protected Repository createRepository() {
 		Repository repository = newRepository();
 
 		try (RepositoryConnection con = repository.getConnection()) {
@@ -97,7 +97,7 @@ public abstract class GraphQueryResultTest {
 		return repository;
 	}
 
-	protected abstract Repository newRepository() throws Exception;
+	protected abstract Repository newRepository();
 
 	/*
 	 * build some simple SPARQL queries to use for testing the result set object.
@@ -123,7 +123,7 @@ public abstract class GraphQueryResultTest {
 	}
 
 	@Test
-	public void testDescribeEmpty() throws Exception {
+	public void testDescribeEmpty() {
 		GraphQueryResult result = con.prepareGraphQuery(QueryLanguage.SPARQL, emptyDescribeQuery).evaluate();
 		assertFalse(result.hasNext(), "Query result should be empty");
 
@@ -132,7 +132,7 @@ public abstract class GraphQueryResultTest {
 	}
 
 	@Test
-	public void testDescribeSingle() throws Exception {
+	public void testDescribeSingle() {
 		GraphQueryResult result = con.prepareGraphQuery(QueryLanguage.SPARQL, singleDescribeQuery).evaluate();
 		assertTrue(result.hasNext(), "Query result should not be empty");
 
@@ -142,7 +142,7 @@ public abstract class GraphQueryResultTest {
 	}
 
 	@Test
-	public void testDescribeMultiple() throws Exception {
+	public void testDescribeMultiple() {
 		GraphQueryResult result = con.prepareGraphQuery(QueryLanguage.SPARQL, multipleDescribeQuery).evaluate();
 		assertTrue(result.hasNext(), "Query result should not be empty");
 
@@ -152,7 +152,7 @@ public abstract class GraphQueryResultTest {
 	}
 
 	@Test
-	public void testConstructEmpty() throws Exception {
+	public void testConstructEmpty() {
 		GraphQueryResult result = con.prepareGraphQuery(QueryLanguage.SPARQL, emptyConstructQuery).evaluate();
 		assertFalse(result.hasNext(), "Query result should be empty");
 
@@ -161,7 +161,7 @@ public abstract class GraphQueryResultTest {
 	}
 
 	@Test
-	public void testConstructSingle() throws Exception {
+	public void testConstructSingle() {
 		GraphQueryResult result = con.prepareGraphQuery(QueryLanguage.SPARQL, singleConstructQuery).evaluate();
 		assertTrue(result.hasNext(), "Query result should not be empty");
 
@@ -171,7 +171,7 @@ public abstract class GraphQueryResultTest {
 	}
 
 	@Test
-	public void testConstructMultiple() throws Exception {
+	public void testConstructMultiple() {
 		GraphQueryResult result = con.prepareGraphQuery(QueryLanguage.SPARQL, multipleConstructQuery).evaluate();
 		assertTrue(result.hasNext(), "Query result should not be empty");
 

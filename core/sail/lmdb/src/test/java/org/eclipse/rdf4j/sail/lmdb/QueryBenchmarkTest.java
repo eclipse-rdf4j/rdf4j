@@ -85,7 +85,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@AfterAll
-	public static void afterClass() throws IOException {
+	public static void afterClass() {
 		tempDir.delete();
 		repository.shutDown();
 		tempDir = null;

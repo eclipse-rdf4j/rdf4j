@@ -120,7 +120,7 @@ public class TargetBenchmarkInitialData {
 	}
 
 	@Benchmark
-	public void benchmark() throws Exception {
+	public void benchmark() {
 		runBenchmark(repository);
 	}
 

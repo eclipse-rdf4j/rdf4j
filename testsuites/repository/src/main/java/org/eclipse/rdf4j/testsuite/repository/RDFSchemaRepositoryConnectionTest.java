@@ -52,7 +52,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testDomainInference(IsolationLevel level) throws Exception {
+	public void testDomainInference(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.begin();
@@ -65,7 +65,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testSubClassInference(IsolationLevel level) throws Exception {
+	public void testSubClassInference(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.begin();
@@ -82,7 +82,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/1685
 	 */
-	public void testSubClassInferenceAfterRemoval(IsolationLevel level) throws Exception {
+	public void testSubClassInferenceAfterRemoval(IsolationLevel level) {
 		setupTest(level);
 
 		IRI mother = vf.createIRI("http://example.org/Mother");
@@ -107,7 +107,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testMakeExplicit(IsolationLevel level) throws Exception {
+	public void testMakeExplicit(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.begin();
@@ -126,7 +126,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testExplicitFlag(IsolationLevel level) throws Exception {
+	public void testExplicitFlag(IsolationLevel level) {
 		setupTest(level);
 
 		RepositoryResult<Statement> result = testCon.getStatements(RDF.TYPE, RDF.TYPE, null, true);
@@ -146,7 +146,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testInferencerUpdates(IsolationLevel level) throws Exception {
+	public void testInferencerUpdates(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.begin(IsolationLevels.READ_COMMITTED);
@@ -161,7 +161,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testInferencerQueryDuringTransaction(IsolationLevel level) throws Exception {
+	public void testInferencerQueryDuringTransaction(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.begin();
@@ -174,7 +174,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 
 	@ParameterizedTest
 	@EnumSource(IsolationLevels.class)
-	public void testInferencerTransactionIsolation(IsolationLevel level) throws Exception {
+	public void testInferencerTransactionIsolation(IsolationLevel level) {
 		setupTest(level);
 
 		if (IsolationLevels.NONE.isCompatibleWith(level)) {
@@ -194,7 +194,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testContextStatementsNotDuplicated(IsolationLevel level) throws Exception {
+	public void testContextStatementsNotDuplicated(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.add(bob, RDF.TYPE, FOAF.PERSON, RDF.FIRST);
@@ -211,7 +211,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testContextStatementsNotDuplicated2(IsolationLevel level) throws Exception {
+	public void testContextStatementsNotDuplicated2(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.add(FOAF.PERSON, RDF.TYPE, RDFS.CLASS, RDF.FIRST);

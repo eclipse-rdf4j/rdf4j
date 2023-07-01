@@ -36,10 +36,9 @@ public class TestInfoServlet {
 	private final RepositoryInfo info = new RepositoryInfo();
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		servlet.setRepositoryInfo(info);
 		manager = mock(RepositoryManager.class);
 		servlet.setRepositoryManager(manager);

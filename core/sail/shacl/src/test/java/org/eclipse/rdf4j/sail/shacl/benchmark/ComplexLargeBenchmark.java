@@ -112,7 +112,7 @@ public class ComplexLargeBenchmark {
 		}
 	}
 
-	public static void main(String[] args) throws IOException, InterruptedException {
+	public static void main(String[] args) throws InterruptedException {
 		ComplexLargeBenchmark complexLargeBenchmark = new ComplexLargeBenchmark();
 		complexLargeBenchmark.setUp();
 		for (int i = 0; i < 20; i++) {

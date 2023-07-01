@@ -74,7 +74,7 @@ public class ElasticsearchSailIndexedPropertiesTest extends ESIntegTestCase {
 	}
 
 	@Test
-	public void testTriplesStored() throws Exception {
+	public void testTriplesStored() {
 		delegateTest.testTriplesStored();
 	}
 

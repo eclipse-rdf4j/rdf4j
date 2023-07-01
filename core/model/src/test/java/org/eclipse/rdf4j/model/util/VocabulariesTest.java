@@ -28,7 +28,7 @@ import org.junit.jupiter.api.Test;
 public class VocabulariesTest {
 
 	@Test
-	public void testVocabAllIRI() throws Exception {
+	public void testVocabAllIRI() {
 		Set<IRI> dcIRIs = new HashSet<>(Arrays.asList(DC.CONTRIBUTOR, DC.COVERAGE, DC.CREATOR, DC.DATE, DC.DESCRIPTION,
 				DC.FORMAT, DC.IDENTIFIER, DC.LANGUAGE, DC.PUBLISHER, DC.RELATION, DC.RIGHTS, DC.SOURCE, DC.SUBJECT,
 				DC.TITLE, DC.TYPE));
@@ -39,7 +39,7 @@ public class VocabulariesTest {
 	}
 
 	@Test
-	public void testVocabAllIRIHYDRA() throws Exception {
+	public void testVocabAllIRIHYDRA() {
 		Set<IRI> hydraIRIs = new HashSet<>(Arrays.asList(HYDRA.API_DOCUMENTATION, HYDRA.CLASS, HYDRA.COLLECTION,
 				HYDRA.ERROR,
 				HYDRA.IRI_TEMPLATE, HYDRA.IRI_TEMPLATE_MAPPING, HYDRA.LINK, HYDRA.OPERATION,

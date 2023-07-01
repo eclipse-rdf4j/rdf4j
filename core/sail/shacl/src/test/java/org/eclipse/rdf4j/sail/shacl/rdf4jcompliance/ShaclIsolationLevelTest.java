@@ -30,7 +30,7 @@ public class ShaclIsolationLevelTest extends SailIsolationLevelTest {
 	}
 
 	@Override
-	public void testLargeTransaction(IsolationLevel isolationLevel, int count) throws InterruptedException {
+	public void testLargeTransaction(IsolationLevel isolationLevel, int count) {
 		// see: https://github.com/eclipse/rdf4j/issues/1795
 	}
 }

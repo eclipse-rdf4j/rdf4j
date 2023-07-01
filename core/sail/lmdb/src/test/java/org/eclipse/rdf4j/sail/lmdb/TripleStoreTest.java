@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.Assert.assertEquals;
 
 import java.io.File;
-import java.io.IOException;
 
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -33,7 +32,7 @@ public class TripleStoreTest {
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 	}
 
-	int count(RecordIterator it) throws IOException {
+	int count(RecordIterator it) {
 		int count = 0;
 		while (it.next() != null) {
 			count++;

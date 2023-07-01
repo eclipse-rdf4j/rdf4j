@@ -644,13 +644,13 @@ abstract class AbstractReadWriteLockManagerTest {
 		assertTrue(lock.isActive());
 	}
 
-	private void writeLockTry(AbstractReadWriteLockManager lockManager) throws InterruptedException {
+	private void writeLockTry(AbstractReadWriteLockManager lockManager) {
 		Lock lock = lockManager.tryWriteLock();
 		assertNotNull(lock);
 		assertTrue(lock.isActive());
 	}
 
-	private void readLockTry(AbstractReadWriteLockManager lockManager) throws InterruptedException {
+	private void readLockTry(AbstractReadWriteLockManager lockManager) {
 		Lock lock = lockManager.tryReadLock();
 		assertNotNull(lock);
 		assertTrue(lock.isActive());

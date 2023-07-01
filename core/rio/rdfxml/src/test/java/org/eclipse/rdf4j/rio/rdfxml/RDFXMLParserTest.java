@@ -54,7 +54,7 @@ public class RDFXMLParserTest {
 	private Locale platformLocale;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		platformLocale = Locale.getDefault();
 
 		Locale.setDefault(Locale.ENGLISH);
@@ -68,7 +68,7 @@ public class RDFXMLParserTest {
 	}
 
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		Locale.setDefault(platformLocale);
 	}
 

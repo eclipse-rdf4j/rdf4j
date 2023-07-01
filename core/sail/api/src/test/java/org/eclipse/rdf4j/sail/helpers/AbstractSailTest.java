@@ -38,7 +38,7 @@ public class AbstractSailTest {
 	private final Random random = new Random(43252333);
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 
 		subject = new AbstractSail() {
 

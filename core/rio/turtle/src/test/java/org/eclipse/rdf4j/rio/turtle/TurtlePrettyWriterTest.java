@@ -113,7 +113,7 @@ public class TurtlePrettyWriterTest extends AbstractTurtleWriterTest {
 	}
 
 	@Test
-	public void testAbbreviateNumbers() throws Exception {
+	public void testAbbreviateNumbers() {
 		StringWriter sw = new StringWriter();
 
 		WriterConfig config = new WriterConfig();
@@ -128,7 +128,7 @@ public class TurtlePrettyWriterTest extends AbstractTurtleWriterTest {
 	}
 
 	@Test
-	public void testDontAbbreviateNumbers() throws Exception {
+	public void testDontAbbreviateNumbers() {
 		StringWriter sw = new StringWriter();
 
 		WriterConfig config = new WriterConfig();

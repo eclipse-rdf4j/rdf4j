@@ -32,12 +32,12 @@ import org.junit.Test;
 public class DeleteInsertTest {
 
 	@BeforeClass
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
 	@AfterClass
-	public static void afterClass() throws Exception {
+	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
@@ -58,7 +58,7 @@ public class DeleteInsertTest {
 	}
 
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		try {
 			con.close();
 		} finally {

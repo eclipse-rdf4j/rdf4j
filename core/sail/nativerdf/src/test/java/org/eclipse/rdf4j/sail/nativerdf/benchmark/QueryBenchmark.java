@@ -117,7 +117,7 @@ public class QueryBenchmark {
 	}
 
 	@Setup(Level.Trial)
-	public void beforeClass() throws IOException, InterruptedException {
+	public void beforeClass() throws IOException {
 		file = Files.newTemporaryFolder();
 
 		repository = new SailRepository(new NativeStore(file, "spoc,ospc,psoc"));

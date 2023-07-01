@@ -31,7 +31,7 @@ public abstract class IterationTest {
 		return new CloseableIteratorIteration<>(stringList2.iterator());
 	}
 
-	protected abstract Iteration<String, Exception> createTestIteration() throws Exception;
+	protected abstract Iteration<String, Exception> createTestIteration();
 
 	protected abstract int getTestIterationSize();
 

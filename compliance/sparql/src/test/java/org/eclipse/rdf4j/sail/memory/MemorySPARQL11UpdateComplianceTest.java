@@ -33,7 +33,7 @@ public class MemorySPARQL11UpdateComplianceTest extends SPARQL11UpdateCompliance
 	}
 
 	@Override
-	protected Repository newRepository() throws Exception {
+	protected Repository newRepository() {
 		return new SailRepository(new MemoryStore());
 	}
 

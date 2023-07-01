@@ -342,10 +342,9 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 	/**
 	 * Contexts can only be tested in combination with a sail, as the triples have to be retrieved from the sail
 	 *
-	 * @throws Exception
 	 */
 	@Test
-	public void testContexts() throws Exception {
+	public void testContexts() {
 		// add a sail
 		MemoryStore memoryStore = new MemoryStore();
 		// enable lock tracking
@@ -393,10 +392,9 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 	/**
 	 * Contexts can only be tested in combination with a sail, as the triples have to be retrieved from the sail
 	 *
-	 * @throws Exception
 	 */
 	@Test
-	public void testContextsRemoveContext2() throws Exception {
+	public void testContextsRemoveContext2() {
 		// add a sail
 		MemoryStore memoryStore = new MemoryStore();
 		// enable lock tracking
@@ -455,7 +453,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		assertEquals("Is the fourth literal accepted?", false, index.accept(literal4));
 	}
 
-	private void assertStatement(Statement statement) throws Exception {
+	private void assertStatement(Statement statement) {
 		SearchDocument document = index.getDocument(statement.getSubject(), statement.getContext());
 		if (document == null) {
 			fail("Missing document " + statement.getSubject());
@@ -463,7 +461,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		assertStatement(statement, document);
 	}
 
-	private void assertNoStatement(Statement statement) throws Exception {
+	private void assertNoStatement(Statement statement) {
 		SearchDocument document = index.getDocument(statement.getSubject(), statement.getContext());
 		if (document == null) {
 			return;

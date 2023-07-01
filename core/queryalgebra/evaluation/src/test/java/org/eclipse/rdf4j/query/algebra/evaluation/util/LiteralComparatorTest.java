@@ -64,7 +64,7 @@ public class LiteralComparatorTest {
 	private final ValueComparator cmp = new ValueComparator();
 
 	@Test
-	public void testNumeric() throws Exception {
+	public void testNumeric() {
 		assertTrue(cmp.compare(one, one) == 0);
 		assertTrue(cmp.compare(one, ten) < 0);
 		assertTrue(cmp.compare(ten, one) > 0);
@@ -72,7 +72,7 @@ public class LiteralComparatorTest {
 	}
 
 	@Test
-	public void testString() throws Exception {
+	public void testString() {
 		assertTrue(cmp.compare(a, a) == 0);
 		assertTrue(cmp.compare(a, b) < 0);
 		assertTrue(cmp.compare(b, a) > 0);
@@ -80,7 +80,7 @@ public class LiteralComparatorTest {
 	}
 
 	@Test
-	public void testSameLanguage() throws Exception {
+	public void testSameLanguage() {
 		assertTrue(cmp.compare(la, la) == 0);
 		assertTrue(cmp.compare(la, lb) < 0);
 		assertTrue(cmp.compare(lb, la) > 0);
@@ -88,12 +88,12 @@ public class LiteralComparatorTest {
 	}
 
 	@Test
-	public void testDifferentLanguage() throws Exception {
+	public void testDifferentLanguage() {
 		cmp.compare(la, lf);
 	}
 
 	@Test
-	public void testBoolean() throws Exception {
+	public void testBoolean() {
 		assertTrue(cmp.compare(f, f) == 0);
 		assertTrue(cmp.compare(f, t) < 0);
 		assertTrue(cmp.compare(t, f) > 0);
@@ -101,7 +101,7 @@ public class LiteralComparatorTest {
 	}
 
 	@Test
-	public void testDateTime() throws Exception {
+	public void testDateTime() {
 		assertTrue(cmp.compare(date1, date1) == 0);
 		assertTrue(cmp.compare(date1, date2) < 0);
 		assertTrue(cmp.compare(date2, date1) > 0);
@@ -109,7 +109,7 @@ public class LiteralComparatorTest {
 	}
 
 	@Test
-	public void testBothSimple() throws Exception {
+	public void testBothSimple() {
 		assertTrue(cmp.compare(simple1, simple1) == 0);
 		assertTrue(cmp.compare(simple1, simple2) < 0);
 		assertTrue(cmp.compare(simple2, simple1) > 0);
@@ -117,17 +117,17 @@ public class LiteralComparatorTest {
 	}
 
 	@Test
-	public void testLeftSimple() throws Exception {
+	public void testLeftSimple() {
 		assertTrue(cmp.compare(simple1, typed1) == 0);
 	}
 
 	@Test
-	public void testRightSimple() throws Exception {
+	public void testRightSimple() {
 		assertTrue(cmp.compare(typed1, simple1) == 0);
 	}
 
 	@Test
-	public void testOrder() throws Exception {
+	public void testOrder() {
 		Literal en4 = vf.createLiteral("4", "en");
 		Literal nine = vf.createLiteral(9);
 		List<Literal> list = new ArrayList<>();

@@ -69,7 +69,7 @@ public abstract class SailConcurrencyTest {
 	 *---------*/
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		store = createSail();
 		store.init();
 		vf = store.getValueFactory();
@@ -78,7 +78,7 @@ public abstract class SailConcurrencyTest {
 	protected abstract Sail createSail() throws SailException;
 
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		store.shutDown();
 	}
 

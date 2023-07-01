@@ -32,7 +32,7 @@ public class ElasticsearchStoreConfigTest {
 	private ModelBuilder mb;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		subject = new ElasticsearchStoreConfig();
 		implNode = SimpleValueFactory.getInstance().createBNode();
 		mb = new ModelBuilder().subject(implNode);

@@ -16,7 +16,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
-import java.io.IOException;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -35,13 +34,13 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTest {
 	@Override
-	protected Repository createRepository(File dataDir) throws IOException {
+	protected Repository createRepository(File dataDir) {
 		return new SailRepository(new LimitedSizeNativeStore(dataDir, "spoc"));
 	}
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testSES715(IsolationLevel level) throws Exception {
+	public void testSES715(IsolationLevel level) {
 		setupTest(level);
 
 		// load 1000 triples in two different contexts
@@ -78,7 +77,7 @@ public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTe
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testLimit(IsolationLevel level) throws Exception {
+	public void testLimit(IsolationLevel level) {
 		setupTest(level);
 
 		((LimitedSizeNativeStoreConnection) ((SailRepositoryConnection) testCon).getSailConnection())

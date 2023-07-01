@@ -29,7 +29,7 @@ import org.junit.jupiter.api.io.TempDir;
 public class LmdbStoreErrorHandlingTest {
 
 	@Test
-	public void testMapFullError(@TempDir File dataDir) throws Exception {
+	public void testMapFullError(@TempDir File dataDir) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,psoc");
 		// set small db size
 		config.setValueDBSize(50000);

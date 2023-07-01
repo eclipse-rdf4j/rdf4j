@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.http.client;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
@@ -41,12 +40,12 @@ public class BackgroundGraphResultHangTest {
 		}
 
 		@Override
-		public void parse(InputStream in, String baseURI) throws IOException, RDFParseException, RDFHandlerException {
+		public void parse(InputStream in, String baseURI) throws RDFParseException, RDFHandlerException {
 			throw new RDFParseException("invalid RDF ");
 		}
 
 		@Override
-		public void parse(Reader reader, String baseURI) throws IOException, RDFParseException, RDFHandlerException {
+		public void parse(Reader reader, String baseURI) throws RDFParseException, RDFHandlerException {
 			throw new RDFParseException("invalid RDF ");
 		}
 

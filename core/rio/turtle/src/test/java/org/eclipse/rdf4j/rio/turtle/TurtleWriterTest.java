@@ -673,7 +673,7 @@ public class TurtleWriterTest extends AbstractTurtleWriterTest {
 	}
 
 	@Test
-	public void testIgnoreAbbreviateNumbers() throws Exception {
+	public void testIgnoreAbbreviateNumbers() {
 		StringWriter sw = new StringWriter();
 
 		WriterConfig config = new WriterConfig();

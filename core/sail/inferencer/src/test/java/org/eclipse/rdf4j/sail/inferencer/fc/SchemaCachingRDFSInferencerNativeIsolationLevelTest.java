@@ -40,12 +40,12 @@ public class SchemaCachingRDFSInferencerNativeIsolationLevelTest extends SailIso
 	}
 
 	@Override
-	public void testLargeTransactionSerializable() throws InterruptedException {
+	public void testLargeTransactionSerializable() {
 		// ignored since test is slow
 	}
 
 	@Override
-	public void testSnapshot() throws Exception {
+	public void testSnapshot() {
 		// see: https://github.com/eclipse/rdf4j/issues/1794
 	}
 }

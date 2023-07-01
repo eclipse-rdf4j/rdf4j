@@ -55,13 +55,13 @@ public class SparqlTest extends AbstractCommandTest {
 	}
 
 	@Test
-	public final void testSelectError() throws IOException {
+	public final void testSelectError() {
 		cmd.executeQuery("select ?s ?p ?o where { ?s ?p ?o }", "select");
 		verify(mockConsoleIO, never()).writeError(anyString());
 	}
 
 	@Test
-	public final void testSelectMissingBindings() throws IOException {
+	public final void testSelectMissingBindings() {
 		cmd.executeQuery("select ?s ?p ?o where { ?s a foaf:Organization }", "select");
 		verify(mockConsoleIO, never()).writeError(anyString());
 	}
@@ -124,7 +124,7 @@ public class SparqlTest extends AbstractCommandTest {
 	}
 
 	@Test
-	public final void testOutputFileWrongFormat() throws IOException {
+	public final void testOutputFileWrongFormat() {
 		File f = new File(locationFile, "out.ttl");
 
 		// SELECT should use sparql result format, not a triple file format

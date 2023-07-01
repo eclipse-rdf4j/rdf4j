@@ -98,7 +98,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 @Timeout(value = 10, unit = TimeUnit.MINUTES)
 public abstract class RepositoryConnectionTest {
 	@BeforeAll
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		// Turn off debugging for this test, as the cleanup processes are working correctly,
 		// but they debug a lot of information in testOrderByQueriesAreInterrupable
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
@@ -231,7 +231,7 @@ public abstract class RepositoryConnectionTest {
 	}
 
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		try {
 			testCon2.close();
 		} finally {
@@ -279,7 +279,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testAddStatementWithContext(IsolationLevel level) throws Exception {
+	public void testAddStatementWithContext(IsolationLevel level) {
 		setupTest(level);
 
 		Statement statement = vf.createStatement(alice, name, nameAlice, context1);
@@ -292,7 +292,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testAddLiteralWithNewline(IsolationLevel level) throws Exception {
+	public void testAddLiteralWithNewline(IsolationLevel level) {
 		setupTest(level);
 
 		Literal test = vf.createLiteral("this is a test\n");
@@ -303,7 +303,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testTransactionIsolation(IsolationLevel level) throws Exception {
+	public void testTransactionIsolation(IsolationLevel level) {
 		setupTest(level);
 
 		if (IsolationLevels.READ_UNCOMMITTED.isCompatibleWith(level)) {
@@ -481,7 +481,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testAutoCommit(IsolationLevel level) throws Exception {
+	public void testAutoCommit(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.begin();
@@ -498,7 +498,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testRollback(IsolationLevel level) throws Exception {
+	public void testRollback(IsolationLevel level) {
 		setupTest(level);
 
 		if (IsolationLevels.NONE.isCompatibleWith(level)) {
@@ -518,7 +518,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testSimpleTupleQuery(IsolationLevel level) throws Exception {
+	public void testSimpleTupleQuery(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.add(alice, name, nameAlice, context2);
@@ -550,7 +550,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testPrepareSPARQLQuery(IsolationLevel level) throws Exception {
+	public void testPrepareSPARQLQuery(IsolationLevel level) {
 		setupTest(level);
 
 		StringBuilder queryBuilder = new StringBuilder();
@@ -585,7 +585,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testSimpleTupleQueryUnicode(IsolationLevel level) throws Exception {
+	public void testSimpleTupleQueryUnicode(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.add(alexander, name, Александър);
@@ -607,7 +607,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testPreparedTupleQuery(IsolationLevel level) throws Exception {
+	public void testPreparedTupleQuery(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.add(alice, name, nameAlice, context2);
@@ -641,7 +641,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testPreparedTupleQueryUnicode(IsolationLevel level) throws Exception {
+	public void testPreparedTupleQueryUnicode(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.add(alexander, name, Александър);
@@ -668,7 +668,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testSimpleGraphQuery(IsolationLevel level) throws Exception {
+	public void testSimpleGraphQuery(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.add(alice, name, nameAlice, context2);
@@ -703,7 +703,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testPreparedGraphQuery(IsolationLevel level) throws Exception {
+	public void testPreparedGraphQuery(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.begin();
@@ -742,7 +742,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testSimpleBooleanQuery(IsolationLevel level) throws Exception {
+	public void testSimpleBooleanQuery(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.add(alice, name, nameAlice, context2);
@@ -765,7 +765,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testPreparedBooleanQuery(IsolationLevel level) throws Exception {
+	public void testPreparedBooleanQuery(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.add(alice, name, nameAlice, context2);
@@ -789,7 +789,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testDataset(IsolationLevel level) throws Exception {
+	public void testDataset(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.add(alice, name, nameAlice, context2);
@@ -847,7 +847,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testGetStatements(IsolationLevel level) throws Exception {
+	public void testGetStatements(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.add(bob, name, nameBob);
@@ -873,7 +873,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testGetStatementsIterable(IsolationLevel level) throws Exception {
+	public void testGetStatementsIterable(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.add(bob, name, nameBob);
@@ -897,7 +897,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testGetStatementsMalformedTypedLiteral(IsolationLevel level) throws Exception {
+	public void testGetStatementsMalformedTypedLiteral(IsolationLevel level) {
 		setupTest(level);
 
 		Literal invalidIntegerLiteral = vf.createLiteral("the number four", XSD.INTEGER);
@@ -920,7 +920,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testGetStatementsMalformedLanguageLiteral(IsolationLevel level) throws Exception {
+	public void testGetStatementsMalformedLanguageLiteral(IsolationLevel level) {
 		setupTest(level);
 
 		Literal invalidLanguageLiteral = vf.createLiteral("the number four", "en_us");
@@ -944,7 +944,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testGetStatementsInSingleContext(IsolationLevel level) throws Exception {
+	public void testGetStatementsInSingleContext(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.begin();
@@ -995,7 +995,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testGetStatementsInMultipleContexts(IsolationLevel level) throws Exception {
+	public void testGetStatementsInMultipleContexts(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.clear();
@@ -1085,7 +1085,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testDuplicateFilter(IsolationLevel level) throws Exception {
+	public void testDuplicateFilter(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.begin();
@@ -1110,7 +1110,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testRemoveStatements(IsolationLevel level) throws Exception {
+	public void testRemoveStatements(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.begin();
@@ -1133,7 +1133,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testRemoveStatementWithContext(IsolationLevel level) throws Exception {
+	public void testRemoveStatementWithContext(IsolationLevel level) {
 		setupTest(level);
 
 		Statement statement = vf.createStatement(alice, name, nameAlice, context1);
@@ -1151,7 +1151,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testRemoveStatementCollection(IsolationLevel level) throws Exception {
+	public void testRemoveStatementCollection(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.begin();
@@ -1174,7 +1174,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testRemoveStatementIteration(IsolationLevel level) throws Exception {
+	public void testRemoveStatementIteration(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.begin();
@@ -1196,7 +1196,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testGetNamespace(IsolationLevel level) throws Exception {
+	public void testGetNamespace(IsolationLevel level) {
 		setupTest(level);
 
 		setupNamespaces();
@@ -1208,7 +1208,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testGetNamespaces(IsolationLevel level) throws Exception {
+	public void testGetNamespaces(IsolationLevel level) {
 		setupTest(level);
 
 		setupNamespaces();
@@ -1222,7 +1222,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testImportNamespacesFromIterable(IsolationLevel level) throws Exception {
+	public void testImportNamespacesFromIterable(IsolationLevel level) {
 		setupTest(level);
 
 		Model nsAwareModel = new LinkedHashModel();
@@ -1239,7 +1239,7 @@ public abstract class RepositoryConnectionTest {
 		assertThat(testCon.getNamespace(EXAMPLE)).isEqualTo(EXAMPLE_NS);
 	}
 
-	private void setupNamespaces() throws IOException, RDFParseException, RepositoryException {
+	private void setupNamespaces() throws RDFParseException, RepositoryException {
 		testCon.setNamespace(EXAMPLE, EXAMPLE_NS);
 		testCon.setNamespace(RDF_PREFIX, "http://www.w3.org/1999/02/22-rdf-syntax-ns#");
 		testCon.setNamespace(RDFS_PREFIX, RDFS_NS);
@@ -1250,7 +1250,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testClear(IsolationLevel level) throws Exception {
+	public void testClear(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.add(bob, name, nameBob);
@@ -1434,7 +1434,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testEmptyRollback(IsolationLevel level) throws Exception {
+	public void testEmptyRollback(IsolationLevel level) {
 		setupTest(level);
 
 		if (IsolationLevels.NONE.isCompatibleWith(level)) {
@@ -1453,7 +1453,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testEmptyCommit(IsolationLevel level) throws Exception {
+	public void testEmptyCommit(IsolationLevel level) {
 		setupTest(level);
 
 		if (IsolationLevels.NONE.isCompatibleWith(level)) {
@@ -1472,7 +1472,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testOpen(IsolationLevel level) throws Exception {
+	public void testOpen(IsolationLevel level) {
 		setupTest(level);
 
 		assertThat(testCon.isOpen()).isTrue();
@@ -1484,7 +1484,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testSizeRollback(IsolationLevel level) throws Exception {
+	public void testSizeRollback(IsolationLevel level) {
 		setupTest(level);
 
 		if (IsolationLevels.NONE.isCompatibleWith(level)) {
@@ -1506,7 +1506,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testSizeCommit(IsolationLevel level) throws Exception {
+	public void testSizeCommit(IsolationLevel level) {
 		setupTest(level);
 
 		if (IsolationLevels.NONE.isCompatibleWith(level)) {
@@ -1528,7 +1528,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testSizeDuplicateStatement(IsolationLevel level) throws Exception {
+	public void testSizeDuplicateStatement(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.begin();
@@ -1692,7 +1692,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testQueryInTransaction(IsolationLevel level) throws Exception {
+	public void testQueryInTransaction(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.add(bob, RDF.TYPE, FOAF.PERSON);
@@ -1710,7 +1710,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testUpdateInTransaction(IsolationLevel level) throws Exception {
+	public void testUpdateInTransaction(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.add(bob, RDF.TYPE, FOAF.PERSON);
@@ -1727,7 +1727,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testInferredStatementCount(IsolationLevel level) throws Exception {
+	public void testInferredStatementCount(IsolationLevel level) {
 		setupTest(level);
 
 		assertThat(testCon.isEmpty()).isTrue();
@@ -1744,7 +1744,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testGetContextIDs(IsolationLevel level) throws Exception {
+	public void testGetContextIDs(IsolationLevel level) {
 		setupTest(level);
 
 		assertThat(Iterations.asList(testCon.getContextIDs())).isEmpty();
@@ -1802,7 +1802,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testOptionalFilter(IsolationLevel level) throws Exception {
+	public void testOptionalFilter(IsolationLevel level) {
 		setupTest(level);
 
 		String optional = "{ ?s :p1 ?v1 OPTIONAL {?s :p2 ?v2 FILTER(?v1<3) } }";
@@ -1830,7 +1830,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testOrPredicate(IsolationLevel level) throws Exception {
+	public void testOrPredicate(IsolationLevel level) {
 		setupTest(level);
 
 		String union = "{ :s ?p :o FILTER (?p = :p1 || ?p = :p2) }";
@@ -1855,7 +1855,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testSES713(IsolationLevel level) throws Exception {
+	public void testSES713(IsolationLevel level) {
 		setupTest(level);
 
 		String queryString = "SELECT * { ?sub ?pred ?obj . FILTER ( 'not a number' + 1 = ?obj )}";
@@ -1868,7 +1868,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testSES2172ChineseChars(IsolationLevel level) throws Exception {
+	public void testSES2172ChineseChars(IsolationLevel level) {
 		setupTest(level);
 
 		String updateString = "INSERT DATA { <urn:subject1> rdfs:label \"\\u8BBE\\u5907\". }";
@@ -1895,7 +1895,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testQueryDefaultGraph(IsolationLevel level) throws Exception {
+	public void testQueryDefaultGraph(IsolationLevel level) {
 		setupTest(level);
 
 		IRI graph = vf.createIRI("urn:test:default");
@@ -1907,7 +1907,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testQueryBaseURI(IsolationLevel level) throws Exception {
+	public void testQueryBaseURI(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.add(vf.createIRI(URN_TEST_S1), vf.createIRI(URN_TEST_P1), vf.createIRI(URN_TEST_O1));
@@ -1919,7 +1919,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testUpdateBaseURI(IsolationLevel level) throws Exception {
+	public void testUpdateBaseURI(IsolationLevel level) {
 		setupTest(level);
 
 		testCon.prepareUpdate(QueryLanguage.SPARQL, "INSERT DATA { <> a <> }", URN_TEST_S1).execute();
@@ -1928,7 +1928,7 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testDeleteDefaultGraph(IsolationLevel level) throws Exception {
+	public void testDeleteDefaultGraph(IsolationLevel level) {
 		setupTest(level);
 
 		IRI g1 = vf.createIRI("urn:test:g1");

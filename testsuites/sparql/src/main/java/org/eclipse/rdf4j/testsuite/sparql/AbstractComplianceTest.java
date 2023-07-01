@@ -71,7 +71,7 @@ public abstract class AbstractComplianceTest {
 	}
 
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		try {
 			conn.close();
 		} finally {

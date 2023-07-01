@@ -18,7 +18,6 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.File;
-import java.io.IOException;
 import java.io.InputStream;
 
 import org.eclipse.rdf4j.model.Model;
@@ -56,11 +55,10 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 	private static final String PROXY_ID = "proxy";
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@BeforeEach
 	@Override
-	public void setUp() throws Exception {
+	public void setUp() {
 		subject = new LocalRepositoryManager(datadir);
 		subject.init();
 
@@ -74,10 +72,9 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 	}
 
 	/**
-	 * @throws IOException if a problem occurs deleting temporary resources
 	 */
 	@AfterEach
-	public void tearDown() throws IOException {
+	public void tearDown() {
 		subject.shutDown();
 	}
 
@@ -99,7 +96,7 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 	}
 
 	@Test
-	public void testRestartManagerWithoutTransaction() throws Exception {
+	public void testRestartManagerWithoutTransaction() {
 		Repository rep = subject.getRepository(TEST_REPO);
 		assertNotNull("Expected repository to exist.", rep);
 		assertTrue("Expected repository to be initialized.", rep.isInitialized());
@@ -126,7 +123,7 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 	}
 
 	@Test
-	public void testRestartManagerWithTransaction() throws Exception {
+	public void testRestartManagerWithTransaction() {
 		Repository rep = subject.getRepository(TEST_REPO);
 		assertNotNull("Expected repository to exist.", rep);
 		assertTrue("Expected repository to be initialized.", rep.isInitialized());

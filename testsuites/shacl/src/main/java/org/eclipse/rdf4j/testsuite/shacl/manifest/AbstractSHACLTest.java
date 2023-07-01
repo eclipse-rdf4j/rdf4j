@@ -78,11 +78,11 @@ public abstract class AbstractSHACLTest extends TestCase {
 	 *---------*/
 
 	@Override
-	public void setUp() throws Exception {
+	public void setUp() {
 		dataRep = createRepository(shapesGraph);
 	}
 
-	protected Repository createRepository(Model shapesGraph) throws Exception {
+	protected Repository createRepository(Model shapesGraph) {
 		Repository repo = new SailRepository(newSail());
 		try (RepositoryConnection conn = repo.getConnection()) {
 			conn.clear();
@@ -100,7 +100,7 @@ public abstract class AbstractSHACLTest extends TestCase {
 	protected abstract Sail newSail();
 
 	@Override
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		if (dataRep != null) {
 			dataRep.shutDown();
 			dataRep = null;
@@ -108,7 +108,7 @@ public abstract class AbstractSHACLTest extends TestCase {
 	}
 
 	@Override
-	public void runTest() throws Exception {
+	public void runTest() {
 		try {
 			upload(dataRep, dataGraph);
 			assertTrue(conforms);

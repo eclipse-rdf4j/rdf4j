@@ -21,7 +21,7 @@ public class LookAheadIterationTest extends CloseableIterationTest {
 		return new LookAheadIteration<String, Exception>() {
 
 			@Override
-			protected String getNextElement() throws Exception {
+			protected String getNextElement() {
 				if (iter.hasNext()) {
 					return iter.next();
 				} else {
