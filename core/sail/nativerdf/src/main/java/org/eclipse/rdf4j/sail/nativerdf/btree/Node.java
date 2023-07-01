@@ -227,7 +227,7 @@ class Node {
 		dataChanged = true;
 	}
 
-	public Node getChildNode(int nodeIdx) throws IOException {
+	public Node getChildNode(int nodeIdx) {
 		assert nodeIdx >= 0 : "nodeIdx must be positive, is: " + nodeIdx;
 		assert nodeIdx <= valueCount : "nodeIdx out of range (" + nodeIdx + " > " + valueCount + ")";
 

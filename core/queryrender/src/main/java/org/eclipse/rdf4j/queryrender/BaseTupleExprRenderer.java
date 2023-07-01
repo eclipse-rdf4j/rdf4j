@@ -184,9 +184,8 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	 *
 	 * @param theValue the ValueExpr to convert
 	 * @return the expression as a Value, or null if it cannot be converted
-	 * @throws Exception if there is an error converting to a Value
 	 */
-	private Value asValue(ValueExpr theValue) throws Exception {
+	private Value asValue(ValueExpr theValue) {
 		if (theValue instanceof ValueConstant) {
 			return ((ValueConstant) theValue).getValue();
 		} else if (theValue instanceof Var) {

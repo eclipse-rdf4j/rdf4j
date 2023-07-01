@@ -16,7 +16,6 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -298,7 +297,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 		return parameters;
 	}
 
-	private Map<String, String> getUrlParameterMap(String url) throws UnsupportedEncodingException {
+	private Map<String, String> getUrlParameterMap(String url) {
 		String qry = url.substring(url.indexOf(';') + 1);
 		Map<String, String> parameters = new HashMap<>();
 		for (String param : qry.split("&")) {

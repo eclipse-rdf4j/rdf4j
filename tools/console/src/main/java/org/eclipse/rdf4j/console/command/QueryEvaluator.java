@@ -68,7 +68,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	private final TupleAndGraphQueryEvaluator evaluator;
 
 	private final List<String> sparqlQueryStart = Arrays
-			.asList(new String[] { "select", "construct", "describe", "ask", "prefix", "base" });
+			.asList("select", "construct", "describe", "ask", "prefix", "base");
 
 	private final long MAX_INPUT = 1_000_000;
 

@@ -16,7 +16,6 @@ import java.io.InputStream;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -88,8 +87,7 @@ public class HDTParser extends AbstractRDFParser {
 
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
-		Set<RioSetting<?>> result = new HashSet<>();
-		return result;
+		return Set.of();
 	}
 
 	@Override

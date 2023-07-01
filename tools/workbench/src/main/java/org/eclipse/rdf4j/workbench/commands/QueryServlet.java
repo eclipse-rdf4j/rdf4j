@@ -123,7 +123,7 @@ public class QueryServlet extends TransformationServlet {
 		super.init(config);
 		try {
 			this.storage = QueryStorage.getSingletonInstance(this.appConfig);
-		} catch (RepositoryException | IOException e) {
+		} catch (RepositoryException e) {
 			throw new ServletException(e);
 		}
 	}

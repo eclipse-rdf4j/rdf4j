@@ -42,7 +42,7 @@ class NativeStatementIterator extends LookAheadIteration<Statement, SailExceptio
 	/**
 	 * Creates a new NativeStatementIterator.
 	 */
-	public NativeStatementIterator(RecordIterator btreeIter, ValueStore valueStore) throws IOException {
+	public NativeStatementIterator(RecordIterator btreeIter, ValueStore valueStore) {
 		this.btreeIter = btreeIter;
 		this.valueStore = valueStore;
 	}

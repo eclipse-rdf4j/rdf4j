@@ -335,11 +335,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	@Override
 	protected NotifyingSailConnection getConnectionInternal() throws SailException {
-		try {
-			return new LmdbStoreConnection(this);
-		} catch (IOException e) {
-			throw new SailException(e);
-		}
+		return new LmdbStoreConnection(this);
 	}
 
 	@Override
@@ -397,7 +393,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return backingStore;
 	}
 
-	private boolean upgradeStore(File dataDir, String version) throws IOException, SailException {
+	private boolean upgradeStore(File dataDir, String version) throws SailException {
 		// nothing to do, just update version number
 		return true;
 	}

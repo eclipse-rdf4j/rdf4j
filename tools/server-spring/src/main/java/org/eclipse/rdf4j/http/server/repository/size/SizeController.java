@@ -38,7 +38,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
 public class SizeController extends AbstractController {
 
 	public SizeController() throws ApplicationContextException {
-		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD });
+		setSupportedMethods(METHOD_GET, METHOD_HEAD);
 	}
 
 	@Override

@@ -420,11 +420,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 	@Override
 	protected NotifyingSailConnection getConnectionInternal() throws SailException {
-		try {
-			return new NativeStoreConnection(this);
-		} catch (IOException e) {
-			throw new SailException(e);
-		}
+		return new NativeStoreConnection(this);
 	}
 
 	@Override
