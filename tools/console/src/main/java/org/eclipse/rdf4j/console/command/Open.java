@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-import java.io.IOException;
-
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.LockRemover;
@@ -85,14 +83,10 @@ public class Open extends ConsoleCommand {
 				writeln("Opened repository '" + repoID + "'");
 			}
 		} catch (RepositoryLockedException e) {
-			try {
-				if (LockRemover.tryToRemoveLock(e, consoleIO)) {
-					openRepository(repoID);
-				} else {
-					writeError(OPEN_FAILURE, e);
-				}
-			} catch (IOException ioe) {
-				writeError("Unable to remove lock", ioe);
+			if (LockRemover.tryToRemoveLock(e, consoleIO)) {
+				openRepository(repoID);
+			} else {
+				writeError(OPEN_FAILURE, e);
 			}
 		} catch (RepositoryConfigException | RepositoryException e) {
 			writeError(OPEN_FAILURE, e);

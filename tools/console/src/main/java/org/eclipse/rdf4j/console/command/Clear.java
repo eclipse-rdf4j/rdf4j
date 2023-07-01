@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-import java.io.IOException;
-
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.LockRemover;
@@ -101,8 +99,6 @@ public class Clear extends ConsoleCommand {
 				}
 			} catch (RepositoryException re) {
 				writeError("Unable to restart repository", re);
-			} catch (IOException ioe) {
-				writeError("Unable to remove lock", ioe);
 			}
 		} catch (RepositoryException e) {
 			writeError("Failed to clear repository", e);

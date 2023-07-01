@@ -238,14 +238,10 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		if (!str.isEmpty()) {
 			return str;
 		}
-		try {
-			writeln("Enter multi-line " + queryLn.getName() + " query "
-					+ "(terminate with line containing single '.')");
-			return consoleIO.readMultiLineInput();
-		} catch (IOException e) {
-			writeError("Failed to read query", e);
-		}
-		return null;
+
+		writeln("Enter multi-line " + queryLn.getName() + " query "
+				+ "(terminate with line containing single '.')");
+		return consoleIO.readMultiLineInput();
 	}
 
 	/**
