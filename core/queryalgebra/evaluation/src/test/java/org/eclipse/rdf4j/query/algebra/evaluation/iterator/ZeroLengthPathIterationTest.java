@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.ModelTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -50,19 +51,7 @@ public class ZeroLengthPathIterationTest {
 		m.add(RDF.ALT, RDF.TYPE, RDFS.CLASS);
 		m.add(RDF.BAG, RDF.TYPE, RDFS.CLASS);
 
-		TripleSource ts = new TripleSource() {
-
-			@Override
-			public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj,
-					IRI pred, Value obj, Resource... contexts) throws QueryEvaluationException {
-				return new CloseableIteratorIteration<>(m.getStatements(subj, pred, obj, contexts).iterator());
-			}
-
-			@Override
-			public ValueFactory getValueFactory() {
-				return vf;
-			}
-		};
+		TripleSource ts = new ModelTripleSource(m, vf);
 		evaluator = new StrictEvaluationStrategy(ts, null);
 	}
 

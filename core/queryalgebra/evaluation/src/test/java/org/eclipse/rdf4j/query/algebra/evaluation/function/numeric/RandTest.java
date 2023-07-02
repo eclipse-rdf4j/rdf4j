@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -84,20 +85,8 @@ public class RandTest {
 
 	@Test
 	public void testPrepare() {
-		QueryValueEvaluationStep precompile = new StrictEvaluationStrategy(new TripleSource() {
-
-			@Override
-			public ValueFactory getValueFactory() {
-				return SimpleValueFactory.getInstance();
-			}
-
-			@Override
-			public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj,
-					IRI pred, Value obj, Resource... contexts) throws QueryEvaluationException {
-				// TODO Auto-generated method stub
-				return null;
-			}
-		}, null).precompile(new FunctionCall(new Rand().getURI()), new QueryEvaluationContext.Minimal(null));
+		QueryValueEvaluationStep precompile = new StrictEvaluationStrategy(new EmptyTripleSource(), null)
+				.precompile(new FunctionCall(new Rand().getURI()), new QueryEvaluationContext.Minimal(null));
 		try {
 			Set<Double> previous = new HashSet<>();
 			for (int i = 0; i < 100; i++) {

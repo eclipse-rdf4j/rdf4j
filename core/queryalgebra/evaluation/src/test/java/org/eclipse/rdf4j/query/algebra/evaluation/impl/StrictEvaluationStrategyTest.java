@@ -25,23 +25,27 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.SKOS;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
-import org.eclipse.rdf4j.query.TupleQuery;
-import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -248,6 +252,117 @@ public class StrictEvaluationStrategyTest {
 			assertNotNull(n);
 			assertEquals(p, n);
 			assertTrue(p == n);
+		}
+	}
+
+	@Test
+	public void testGH4646() {
+		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
+				"PREFIX  owl:  <http://www.w3.org/2002/07/owl#>\n"
+						+ "PREFIX  xsd:  <http://www.w3.org/2001/XMLSchema#>\n"
+						+ "PREFIX  skos: <http://www.w3.org/2004/02/skos/core#>\n"
+						+ "\n"
+						+ "SELECT  (?p AS ?resource) (?violates AS ?property) (?c AS ?value)\n"
+						+ "WHERE\n"
+						+ "  {   { SELECT DISTINCT  ?c ?violates ?p\n"
+						+ "        WHERE\n"
+						+ "          { GRAPH <http://test.com/inportdata>\n"
+						+ "              { ?c  ?p  ?x\n"
+						+ "                FILTER ( ?p IN (skos:hasTopConcept, skos:narrower, skos:broader, skos:related, skos:member, skos:broaderTransitive, skos:narrowerTransitive) )\n"
+						+ "                OPTIONAL\n"
+						+ "                  { ?c  rdf:type  ?cType }\n"
+						+ "              }\n"
+						+ "            { SELECT  ?p ?domainType\n"
+						+ "              WHERE\n"
+						+ "                { GRAPH <tmp:validationengine/uni-schema>\n"
+						+ "                    {   { ?p (rdfs:domain/(((owl:unionOf/(rdf:rest)*)/rdf:first))*)/^(rdfs:subClassOf)* ?domainType\n"
+						+ "                          FILTER isIRI(?domainType)\n"
+						+ "                        }\n"
+						+ "                      UNION\n"
+						+ "                        { ?p (rdfs:subPropertyOf)+ ?parentProperty .\n"
+						+ "                          ?parentProperty (rdfs:domain/(((owl:unionOf/(rdf:rest)*)/rdf:first))*)/^(rdfs:subClassOf)* ?domainType\n"
+						+ "                          FILTER isIRI(?domainType)\n"
+						+ "                        }\n"
+						+ "                    }\n"
+						+ "                }\n"
+						+ "            }\n"
+						+ "            BIND(coalesce(sameTerm(?cType, ?domainType), false) AS ?typeMatch)\n"
+						+ "            BIND(<urn:domainViolationBy> AS ?violates)\n"
+						+ "          }\n"
+						+ "        GROUP BY ?c ?p ?violates\n"
+						+ "        HAVING ( MAX(?typeMatch) = false )\n"
+						+ "      }\n"
+						+ "    UNION\n"
+						+ "      { SELECT DISTINCT  ?c ?violates ?p\n"
+						+ "        WHERE\n"
+						+ "          { GRAPH <http://test.com/inportdata>\n"
+						+ "              { ?x  ?p  ?c\n"
+						+ "                FILTER ( ?p IN (skos:hasTopConcept, skos:narrower, skos:broader, skos:related, skos:member, skos:broaderTransitive, skos:narrowerTransitive) )\n"
+						+ "                OPTIONAL\n"
+						+ "                  { ?c  rdf:type  ?cType }\n"
+						+ "              }\n"
+						+ "            { SELECT  ?p ?rangeType\n"
+						+ "              WHERE\n"
+						+ "                { GRAPH <tmp:validationengine/uni-schema>\n"
+						+ "                    {   { ?p (rdfs:range/(((owl:unionOf/(rdf:rest)*)/rdf:first))*)/^(rdfs:subClassOf)* ?rangeType\n"
+						+ "                          FILTER isIRI(?rangeType)\n"
+						+ "                        }\n"
+						+ "                      UNION\n"
+						+ "                        { ?p (rdfs:subPropertyOf)+ ?parentProperty .\n"
+						+ "                          ?parentProperty (rdfs:range/(((owl:unionOf/(rdf:rest)*)/rdf:first))*)/^(rdfs:subClassOf)* ?rangeType\n"
+						+ "                          FILTER isIRI(?rangeType)\n"
+						+ "                        }\n"
+						+ "                    }\n"
+						+ "                }\n"
+						+ "            }\n"
+						+ "            BIND(coalesce(sameTerm(?cType, ?rangeType), false) AS ?typeMatch)\n"
+						+ "            BIND(<urn:rangeViolationBy> AS ?violates)\n"
+						+ "          }\n"
+						+ "        GROUP BY ?c ?p ?violates\n"
+						+ "        HAVING ( MAX(?typeMatch) = false )\n"
+						+ "      }\n"
+						+ "  }",
+				null);
+		Model m = new LinkedHashModel();
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI alignedTest0 = vf.createIRI("http://example.org/", "alignedtest/0");
+		IRI import1 = vf.createIRI("http://example.org/", "alignedtest/import_1");
+		IRI import2 = vf.createIRI("http://example.org/", "alignedtest/import_2");
+		IRI alignedTest1 = vf.createIRI("http://example.org/", "alignedtest/1");
+		/**
+		 * <http://localhost/alignedtest/0> skos:hasTopConcept <http://localhost/alignedtest/import_1>; a
+		 * skos:ConceptScheme.
+		 */
+		m.add(alignedTest0, SKOS.HAS_TOP_CONCEPT, import1);
+		m.add(alignedTest0, RDF.TYPE, SKOS.CONCEPT_SCHEME);
+		/**
+		 * <http://localhost/alignedtest/1> skos:hasTopConcept <http://localhost/alignedtest/import_1>.
+		 */
+		m.add(alignedTest1, SKOS.HAS_TOP_CONCEPT,
+				import1);
+		/**
+		 * <http://localhost/alignedtest/import_1> a skos:Concept ; skos:prefLabel "imported concept 1"@en ;
+		 * skos:altLabel "imported concept 1"@en ; skos:topConceptOf <http://localhost/alignedtest/0> ; skos:narrower
+		 * <http://localhost/alignedtest/import_2> ; skos:topConceptOf <http://localhost/alignedtest/1> .
+		 */
+		m.add(import1, RDF.TYPE, SKOS.CONCEPT);
+		m.add(import1, SKOS.PREF_LABEL, vf.createLiteral("imported concept 1", "en"));
+		m.add(import1, SKOS.ALT_LABEL, vf.createLiteral("imported concept 1", "en"));
+		m.add(import1, SKOS.TOP_CONCEPT_OF, alignedTest0);
+		m.add(import1, SKOS.TOP_CONCEPT_OF, alignedTest1);
+		m.add(import1, SKOS.NARROWER, import2);
+		/**
+		 * <http://localhost/alignedtest/import_2> skos:prefLabel "import concept 2"@en.
+		 */
+		m.add(import2, SKOS.PREF_LABEL, vf.createLiteral("imported concept 2", "en"));
+		TripleSource ts = new ModelTripleSource(m, vf);
+		strategy = new StrictEvaluationStrategy(ts, null);
+		QueryEvaluationStep prepared = strategy.precompile(pq.getTupleExpr());
+
+		try (CloseableIteration<BindingSet, QueryEvaluationException> result = prepared
+				.evaluate(EmptyBindingSet.getInstance())) {
+			assertNotNull(result);
+			assertFalse(result.hasNext());
 		}
 	}
 }
