@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.iterator.EmptyIterator;
 import org.eclipse.rdf4j.common.iterator.UnionIterator;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -45,9 +46,12 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
  */
 public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
+	private static boolean assertsEnabled = false;
+
+	static {
+		// noinspection AssertWithSideEffects
+		assert assertsEnabled = true;
+	}
 
 	protected final String[] joinAttributes;
 	private final CloseableIteration<BindingSet, QueryEvaluationException> leftIter;
@@ -99,6 +103,14 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 		this.mapMaker = this::makeHashTable;
 		this.mapValueMaker = this::makeHashValue;
 		this.bsMaker = context::createBindingSet;
+
+		if (assertsEnabled) {
+			// During testing we check that all join attributes are accounted for by the ArrayBindingSet
+			MutableBindingSet bindingSet = context.createBindingSet();
+			for (String joinAttribute : joinAttributes) {
+				bindingSet.addBinding(joinAttribute, Values.literal("test value"));
+			}
+		}
 	}
 
 	public HashJoinIteration(
