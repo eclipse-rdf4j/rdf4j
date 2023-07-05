@@ -102,7 +102,11 @@ public class Configurations {
 		Set<Value> objects = model.filter(subject, property, null).objects();
 		Set<Value> legacyObjects = model.filter(subject, legacyProperty, null).objects();
 		if (USE_CONFIG) {
-			legacyObjects = Set.of();
+			legacyObjects = objects;
+		} else {
+			if (objects.isEmpty()) {
+				return legacyObjects;
+			}
 		}
 
 		if (!objects.equals(legacyObjects)) {

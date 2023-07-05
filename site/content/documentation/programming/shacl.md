@@ -6,18 +6,18 @@ autonumbering: true
 ---
 The SHapes Constraint Language (SHACL) is a language for validating RDF graphs.
 <!--more-->
-This documentation is for RDF4J 2.5 and onwards, as the SHACL engine was experimental until this release.
+This documentation is for RDF4J 2.5 and onwards, as the SHACL Engine was experimental until this release.
 
-## How does the SHACL engine work
+## Understanding the RDF4J SHACL Engine
 
-The SHACL engine works by analyzing the changes made in a transaction and creating a set of validation
+The SHACL Engine works by analyzing the changes made in a transaction and creating a set of validation
 plans (similar to query plans) and executing these as part of the transaction `commit()` call.
 
-In many cases the SHACL engine can validate your changes based on your changes alone.
-In some cases your changes may affect or be affected by data already in the database, in which case the
-engine will query the database for that particular data.
+The SHACL Engine can often validate your changes based solely on the changes themselves. However, 
+there are times when your alterations may have an impact on, or be influenced by, pre-existing data in 
+the database. In these cases, the engine retrieves the related data from the database.
 
-Here is an example of when data in the database affects the validation plans:
+Let's consider an example to understand how the current data in the database can influence the validation plans:
 
 ```turtle
 ex:PersonShape
@@ -26,24 +26,23 @@ ex:PersonShape
     sh:property [
         sh:path ex:age ;
         sh:datatype xsd:int ;
-        sh:message "A person's age must be a number (xsd:int)." ;
+        sh:message "A person's age must be an integer (xsd:int)." ;
     ] .
 ```
 
-Initial data in the database.
+Here is the initial data in the database:
 
 ```
 ex:pete a ex:Person.
 ```
-Data added by a transaction.
+
+Next, a transaction adds the following data:
 
 ```
 ex:pete ex:age "eighteen".
 ```
 
-For this example the SHACL engine will match the predicate `ex:age` with `ex:PersonShape` and realise that `ex:pete`
-might already be defined as a `ex:Person` in the database. The validation plan will then include checking if `ex:pete`
-is type `ex:Person`.
+In this scenario, the SHACL Engine will match the predicate `ex:age` with `ex:PersonShape` and realize that `ex:pete` may be already defined as an `ex:Person` in the database. As a result, the validation plan will include a check to confirm if `ex:pete` is indeed categorized as `ex:Person`.
 
 ## How to load and update SHACL shapes
 
@@ -105,42 +104,70 @@ An always-up-to-date list of features can be found by calling the static method 
 
 As of writing this documentation the following features are supported.
 
+
 - `sh:targetClass`
 - `sh:targetNode`
 - `sh:targetSubjectsOf`
 - `sh:targetObjectsOf`
-- `sh:message`
-- `sh:path`
-- `sh:inversePath`
-- `sh:property`
+- `sh:target` for use with DASH targets and `sh:SPARQLTarget`
+
+
+- `sh:path`, `sh:inversePath`, `sh:alternativePath` and sequence paths
+
+
 - `sh:node`
-- `sh:or`
+- `sh:property`
+
+
 - `sh:and`
+- `sh:or`
 - `sh:not`
+
+
 - `sh:minCount`
 - `sh:maxCount`
+
+
+- `sh:qualifiedMinCount`
+- `sh:qualifiedMaxCount`
+- `sh:qualifiedValueShape`
+
+
+- `sh:nodeKind`
 - `sh:minLength`
 - `sh:maxLength`
 - `sh:pattern` and `sh:flags`
-- `sh:nodeKind`
 - `sh:languageIn`
-- `sh:uniqueLang`
 - `sh:datatype`
 - `sh:class`
+- `sh:hasValue`
+- `sh:in`
 - `sh:minExclusive`
 - `sh:minInclusive`
 - `sh:maxExclusive`
 - `sh:maxInclusive`
-- `sh:in`
+- `sh:uniqueLang`
+
+
+- `sh:sparql`
+- `sh:select`
+- `sh:prefixes`
+- `sh:prefix`
+- `sh:namespace`
+- `sh:declare`
+
+
 - `sh:deactivated`
-- `sh:hasValue`
-- `sh:qualifiedMaxCount`
-- `sh:qualifiedMinCount`
-- `sh:qualifiedValueShape`
+- `sh:severity`
+- `sh:message`
+
+
 - `sh:shapesGraph`
+
+
 - `dash:hasValueIn`
-- `sh:target` for use with DASH targets
 - `rsx:targetShape`
+
 
 DASH and RSX features need to be explicitly enabled, for instance with `setDashDataShapes(true)` and
 `setEclipseRdf4jShaclExtensions(true)`. These are currently experimental features. For more information
@@ -149,9 +176,7 @@ about the RSX features, see the [RSX section](#rsx---eclipse-rdf4j-shacl-extensi
 Implicit `sh:targetClass` is supported for nodes that are `rdfs:Class` and either of `sh:PropertyShape` or `sh:NodeShape`. Validation for all nodes,
 equivalent to `owl:Thing` or `rdfs:Resource` in an environment with a reasoner, can be enabled by setting `setUndefinedTargetValidatesAllSubjects(true)`.
 
-`sh:path` is limited to single predicate paths, e.g. `ex:age` or a single inverse path. Sequence paths, alternative paths and the like are not supported.
-
-Nested `sh:property` is not supported.
+`sh:path`supports single predicate paths, e.g. `ex:age`, inverse paths, sequence paths and alternate paths.
 
 ## Validation results
 
@@ -197,8 +222,6 @@ The `validationReportModel` follows the report format specified by the W3C SHACL
 
 The `ValidationReport` class provides the same information as the validationReportModel, but as a Java object with getters for accessing the report data.
 
-There is no support for `sh:severity`, all violations will trigger an exception.
-
 ### Limiting the validation report
 
 Large validation reports take time to generate and can use large amounts of memory.
@@ -217,8 +240,8 @@ Limitations can either be configured directly in the ShaclSail or through the co
 
 ### Retrieving violated shapes
 
-Since all shapes are stored in the SHACL shapes graph, the actual shape that was violated can be retrieved from the
-ShaclSail when a transaction fails.
+The validation report contains the portions of the source shape responsible for the violation. As the SHACL 
+shapes graph stores all shapes, you can obtain the entire violated shape from the ShaclSail when a transaction fails.
 
 ```java
 try {
@@ -292,16 +315,16 @@ validated, and for each of those shapes only the least amount of data is retriev
 Parallel validation further increases performance and is enabled by default. This can be disabled with `setParallelValidation(false)`.
 
 Some workloads will not fit in memory and need to be validated while stored on disk. This can be achieved by using a
-NativeStore and using the new transaction settings introduced in 3.3.0.
+NativeStore and specifying the `Bulk` transaction setting. 
 
  - `ShaclSail.TransactionSettings.ValidationApproach.Auto`: Let the ShaclSail choose the best approach.
  - `ShaclSail.TransactionSettings.ValidationApproach.Bulk`: Optimized for large transactions, disables caching and parallel validation and runs a full validation step at the end of the transaction.
  - `ShaclSail.TransactionSettings.ValidationApproach.Disabled`: Disable validation.
 
 Disabling validation for a transaction may leave your data in an invalid state. Running a transaction with bulk validation will force a full validation.
-This is a useful approach if you need to use multiple transactions to bulk load your data.
+This is a useful approach if you need to use multiple transactions to bulk load your data. You can always skip this if you are certain that your changes are valid. 
 
-As of 3.6.0 there are also a set of experimental transaction settings for hinting about performance aspects of the validation.
+There are also a set of experimental transaction settings for hinting about performance aspects of the validation.
 - `ShaclSail.TransactionSettings.PerformanceHint.CacheEnabled`: Enable the cache that stores intermediate results so these only need to be computed once.
 - `ShaclSail.TransactionSettings.PerformanceHint.CacheDisabled`: Disable the cache.
 - `ShaclSail.TransactionSettings.PerformanceHint.ParallelValidation`: Run validation in parallel (multithreaded).
@@ -314,8 +337,13 @@ SailRepository sailRepository = new SailRepository(shaclSail);
 
 try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
-    connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Bulk);
-
+      connection.begin(
+          IsolationLevels.NONE, 
+          ShaclSail.TransactionSettings.ValidationApproach.Bulk, 
+          ShaclSail.TransactionSettings.PerformanceHint.CacheDisabled, 
+          ShaclSail.TransactionSettings.PerformanceHint.SerialValidation
+      );    
+        
 //    You can enable parallel validation and the intermediate cache for better performance if you have sufficient memory 
 //    connection.begin(
 //        IsolationLevels.NONE, 
@@ -350,11 +378,11 @@ sailRepository.shutDown();
 ```
 
 ### Automatic bulk validation
-Large transactions will take up significant amounts of memory because the transactional validation needs to analyze the transactional 
+Large transactions will take up significant amounts of memory because the transactional validation needs to track and analyze the transactional 
 changes in order to decide what needs to be validated. Very large transactions could exceed the amount of memory available and cause the 
 JVM to crash.
 
-As of 4.0.0 transactions can automatically be switched to bulk validation if they exceed a set limit. 
+As of 4.0.0 transactions will automatically be switched to bulk validation if they exceed a set limit. 
 
 - `setTransactionalValidationLimit(1000)` will make transactions switch to bulk validation if the transaction size is more than 1000 statements. Default is 500 000.
    - `<http://rdf4j.org/config/sail/shacl#transactionalValidationLimit>`
@@ -362,7 +390,7 @@ As of 4.0.0 transactions can automatically be switched to bulk validation if the
 Automatic bulk validation is not compatible with serializable validation.
 
 ## Reasoning
-By default, the ShaclSail supports the simple rdfs:subClassOf reasoning required by the W3C recommendation. There is no
+By default, the ShaclSail supports the simple `rdfs:subClassOf` reasoning required by the SHACL W3C recommendation. There is no
 support for `sh:entailment`, however the entire reasoner can be disabled with `setRdfsSubClassReasoning(false)`.
 
 ## Shapes graph
@@ -397,6 +425,7 @@ ex:shapesGraph1 {
         sh:targetClass ex:Person ;       
 }  
 
+
 ex:shapesGraph2 {
     ex:PersonShape       
         sh:property [
@@ -404,8 +433,9 @@ ex:shapesGraph2 {
             sh:datatype xsd:int ;
         ] .
 
-    rdf4j:nil sh:shapesGraph ex:shapesGraph1, ex:shapesGraph2.         
+    ex:dataGraph sh:shapesGraph ex:shapesGraph1, ex:shapesGraph2.         
 }
+
 
 ex:shapesGraph3 {
     ex:PersonShape       
@@ -413,17 +443,16 @@ ex:shapesGraph3 {
             sh:path ex:age ;
             sh:minCount 1;
         ] .
-
 }
 ```
 
-The above shapes will result in all the data in the default graph (unnamed graph) being validated against the shapes defined in the union
-of both `ex:shapesGraph1` and `ex:shapesGraph2`. The shape defined in `ex:shapesGraph3` is effectively ignored. The resource `rdf4j:nil` is used to refer to the default graph.
+The above shapes will result in all the data in `ex:dataGraph` being validated against the shapes defined in the union
+of both `ex:shapesGraph1` and `ex:shapesGraph2`. The shape defined in `ex:shapesGraph3` is effectively ignored. 
 
 The following data is valid.
 
 ```trig
-{
+ex:dataGraph {
     ex:steve a ex:Person.
     
     ex:jane a ex:Person;
@@ -433,13 +462,16 @@ The following data is valid.
 
 While the following data is invalid.
 
-
 ```trig
-{    
+ex:dataGraph {    
     ex:john a ex:Person;
         ex:age "seventy two".
 }  
 ```
+
+It is also possible to validate the data in the default (unnamed) graph. Use `rdf4j:nil` to refer to the default graph. 
+
+To validate all the data in your database, e.g. the union of the default graph and all named graphs, you simply need to put your shapes in the `rdf4j:SHACLShapeGraph`.
 
 
 ## RSX - Eclipse RDF4J SHACL Extensions

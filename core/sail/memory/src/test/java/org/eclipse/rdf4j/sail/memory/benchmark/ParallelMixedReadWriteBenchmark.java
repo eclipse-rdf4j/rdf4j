@@ -59,6 +59,9 @@ import org.slf4j.LoggerFactory;
 import ch.qos.logback.classic.Logger;
 
 /**
+ * This benchmark tests performance in a low memory scenario where snapshot cleanup is vital for the throughput
+ * performance.
+ *
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
