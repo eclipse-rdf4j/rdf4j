@@ -19,6 +19,7 @@ import java.util.concurrent.CountDownLatch;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -27,6 +28,8 @@ import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
@@ -34,6 +37,16 @@ import org.junit.jupiter.api.parallel.Isolated;
 @Tag("slow")
 @Isolated
 public class TransactionalIsolationSlowIT {
+
+	@BeforeAll
+	public static void beforeAll() {
+		ParentReferenceChecker.skip = true;
+	}
+
+	@AfterAll
+	public static void afterAll() {
+		ParentReferenceChecker.skip = false;
+	}
 
 	@Test
 	public void testIsolationMultithreaded_READ_COMMITTED() throws Throwable {

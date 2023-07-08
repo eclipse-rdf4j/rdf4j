@@ -11,6 +11,9 @@
 
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
@@ -30,8 +33,20 @@ import org.openjdk.jmh.runner.options.TimeValue;
 @Isolated
 public class BenchmarkIT {
 
+	@BeforeAll
+	static void beforeAll() {
+		ParentReferenceChecker.skip = true;
+	}
+
+	@AfterAll
+	static void afterAll() {
+		ParentReferenceChecker.skip = false;
+	}
+
 	@Test
 	public void test() throws RunnerException {
+		ParentReferenceChecker.skip = true;
+
 		Options opt = new OptionsBuilder()
 				.include("")
 				.exclude(ComplexLargeBenchmark.class.getSimpleName())
