@@ -41,6 +41,8 @@ public class ParentReferenceChecker implements QueryOptimizer {
 
 	private static final Logger logger = LoggerFactory.getLogger(ParentReferenceChecker.class);
 
+	public static boolean skip = false;
+
 	private final QueryOptimizer previousOptimizerInPipeline;
 
 	public ParentReferenceChecker(QueryOptimizer previousOptimizerInPipeline) {
@@ -49,11 +51,16 @@ public class ParentReferenceChecker implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		if (skip) {
+			return;
+		}
+
 		verifySerializable(tupleExpr);
 		tupleExpr.visit(new ParentCheckingVisitor());
 	}
 
 	private void verifySerializable(QueryModelNode tupleExpr) {
+
 		byte[] bytes = objectToBytes(tupleExpr);
 		QueryModelNode parsed = (QueryModelNode) bytesToObject(bytes);
 //		byte[] bytesAfterSecondSerialization = objectToBytes(parsed);
