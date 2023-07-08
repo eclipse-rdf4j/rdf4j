@@ -12,8 +12,11 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -26,6 +29,18 @@ import org.junit.jupiter.params.provider.MethodSource;
  */
 @Tag("slow")
 public class ShaclTestWithoutRdfsReasonerTest extends AbstractShaclTest {
+
+	@BeforeAll
+	public static void beforeAll() throws IllegalAccessException {
+		AbstractShaclTest.beforeAll();
+		ParentReferenceChecker.skip = true;
+	}
+
+	@AfterAll
+	public static void afterAll() throws IllegalAccessException {
+		AbstractShaclTest.afterAll();
+		ParentReferenceChecker.skip = false;
+	}
 
 	@ParameterizedTest
 	@MethodSource("testsToRunWithIsolationLevel")

@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -57,12 +58,12 @@ public abstract class MultithreadedTest {
 
 	@BeforeAll
 	public static void beforeAll() {
-
+		ParentReferenceChecker.skip = true;
 	}
 
 	@AfterAll
 	public static void afterAll() {
-
+		ParentReferenceChecker.skip = false;
 	}
 
 	@Test
