@@ -31,18 +31,16 @@ public class TestPropPathMisbehaviour {
 	private SPARQLParser parser;
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		parser = new SPARQLParser();
 	}
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		parser = null;
 	}
 

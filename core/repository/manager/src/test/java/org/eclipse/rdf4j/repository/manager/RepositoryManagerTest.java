@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.repository.manager;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Collection;
 
@@ -37,7 +36,7 @@ public class RepositoryManagerTest {
 	protected RepositoryManager subject;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		subject = new RepositoryManager() {
 
 			@Override
@@ -47,7 +46,7 @@ public class RepositoryManagerTest {
 			}
 
 			@Override
-			public URL getLocation() throws MalformedURLException {
+			public URL getLocation() {
 				return null;
 			}
 

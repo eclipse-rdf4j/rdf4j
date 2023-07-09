@@ -50,13 +50,13 @@ public class DropTest extends AbstractCommandTest {
 		drop = new Drop(mockConsoleIO, mockConsoleState, new Close(mockConsoleIO, mockConsoleState));
 	}
 
-	private void setUserDropConfirm(boolean confirm) throws IOException {
+	private void setUserDropConfirm(boolean confirm) {
 		when(mockConsoleIO.askProceed(startsWith("WARNING: you are about to drop repository '"), anyBoolean()))
 				.thenReturn(confirm);
 	}
 
 	@Test
-	public final void testSafeDrop() throws RepositoryException, IOException {
+	public final void testSafeDrop() throws RepositoryException {
 		setUserDropConfirm(true);
 		assertThat(manager.isSafeToRemove(PROXY_ID)).isTrue();
 		drop.execute("drop", PROXY_ID);
@@ -67,7 +67,7 @@ public class DropTest extends AbstractCommandTest {
 	}
 
 	@Test
-	public final void testUnsafeDropCancel() throws RepositoryException, IOException {
+	public final void testUnsafeDropCancel() throws RepositoryException {
 		setUserDropConfirm(true);
 		assertThat(manager.isSafeToRemove(MEMORY_MEMBER_ID1)).isFalse();
 		when(mockConsoleIO.askProceed(startsWith("WARNING: dropping this repository may break"), anyBoolean()))
@@ -77,7 +77,7 @@ public class DropTest extends AbstractCommandTest {
 	}
 
 	@Test
-	public final void testUserAbortedUnsafeDropBeforeWarning() throws IOException {
+	public final void testUserAbortedUnsafeDropBeforeWarning() {
 		setUserDropConfirm(false);
 		drop.execute("drop", MEMORY_MEMBER_ID1);
 		verify(mockConsoleIO, never()).askProceed(startsWith("WARNING: dropping this repository may break"),

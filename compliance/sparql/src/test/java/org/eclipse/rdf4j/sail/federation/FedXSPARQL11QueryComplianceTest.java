@@ -60,7 +60,7 @@ public class FedXSPARQL11QueryComplianceTest extends SPARQL11QueryComplianceTest
 	}
 
 	@Override
-	protected Repository newRepository() throws Exception {
+	protected Repository newRepository() {
 		initManager();
 
 		addMemoryStore("repo1");
@@ -75,7 +75,7 @@ public class FedXSPARQL11QueryComplianceTest extends SPARQL11QueryComplianceTest
 		return new DatasetRepository(repo);
 	}
 
-	private void addMemoryStore(String repoId) throws RepositoryConfigException, RepositoryException, IOException {
+	private void addMemoryStore(String repoId) throws RepositoryConfigException, RepositoryException {
 		RepositoryImplConfig implConfig = new SailRepositoryConfig(new MemoryStoreConfig());
 		RepositoryConfig config = new RepositoryConfig(repoId, implConfig);
 		manager.addRepositoryConfig(config);

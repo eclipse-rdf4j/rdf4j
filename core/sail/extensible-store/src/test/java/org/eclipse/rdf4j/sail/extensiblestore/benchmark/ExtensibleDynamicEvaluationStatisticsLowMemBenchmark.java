@@ -63,7 +63,7 @@ public class ExtensibleDynamicEvaluationStatisticsLowMemBenchmark {
 	}
 
 	@Setup(Level.Iteration)
-	public void beforeClassIteration() throws IOException, InterruptedException {
+	public void beforeClassIteration() throws InterruptedException {
 
 		System.gc();
 		Thread.sleep(100);

@@ -24,7 +24,7 @@ public class MemoryGeoSPARQLQueryTest extends GeoSPARQLManifestTest {
 	}
 
 	@Override
-	protected Repository newRepository() throws Exception {
+	protected Repository newRepository() {
 		return new SailRepository(new MemoryStore());
 	}
 }

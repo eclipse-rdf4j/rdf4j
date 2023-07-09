@@ -147,7 +147,7 @@ public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 	}
 
 	@Override
-	public Endpoint loadEndpoint(int i) throws Exception {
+	public Endpoint loadEndpoint(int i) {
 		return useRemoteRepositoryEndpoint ? EndpointFactory.loadRemoteRepository(getServerUrl(), "endpoint" + i)
 				: EndpointFactory.loadSPARQLEndpoint("http://endpoint" + i, getRepositoryUrl("endpoint" + i));
 	}

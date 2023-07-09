@@ -15,7 +15,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -65,7 +64,7 @@ public class JSONLDWriterBackgroundTest extends RDFWriterTest {
 
 	@Override
 	protected Model parse(InputStream reader, String baseURI)
-			throws RDFParseException, RDFHandlerException, IOException {
+			throws RDFParseException, RDFHandlerException {
 		return QueryResults
 				.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat(),
 						null));
@@ -74,7 +73,7 @@ public class JSONLDWriterBackgroundTest extends RDFWriterTest {
 	@Test
 	@Override
 	@Disabled("TODO: Determine why this test is breaking")
-	public void testIllegalPrefix() throws RDFHandlerException, RDFParseException, IOException {
+	public void testIllegalPrefix() throws RDFHandlerException, RDFParseException {
 	}
 
 	@Test

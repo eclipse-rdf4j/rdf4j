@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.sail.elasticsearchstore.config;
 
 import static org.eclipse.rdf4j.model.util.Values.literal;
-import static org.eclipse.rdf4j.sail.elasticsearchstore.config.ElasticsearchStoreSchema.hostname;
 
 import java.util.ArrayList;
 import java.util.List;

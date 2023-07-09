@@ -16,7 +16,6 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.io.File;
 
 import org.eclipse.rdf4j.sail.SailLockedException;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -26,7 +25,7 @@ public class NativeStoreDirLockTest {
 	File dataDir;
 
 	@Test
-	public void testLocking() throws Exception {
+	public void testLocking() {
 		NativeStore sail = new NativeStore(dataDir, "spoc,posc");
 		sail.init();
 

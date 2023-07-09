@@ -31,7 +31,7 @@ public class ModelBuilderTest {
 	private Model model;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		model = new LinkedHashModel();
 		testBuilder = new ModelBuilder(model);
 	}

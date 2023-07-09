@@ -143,7 +143,7 @@ public class EvaluationStrategyWithRDFStarTest {
 	}
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		// prepare data
 		triples.clear();
 		triples.add(vf.createTriple(vf.createIRI("urn:a"), vf.createIRI("urn:p"), vf.createIRI("urn:b")));

@@ -15,7 +15,6 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 
 import java.io.File;
-import java.io.IOException;
 
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
@@ -36,19 +35,17 @@ import org.junit.jupiter.api.io.TempDir;
 public class LocalRepositoryManagerTest extends RepositoryManagerTest {
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@BeforeEach
-	public void setUp(@TempDir File datadir) throws Exception {
+	public void setUp(@TempDir File datadir) {
 		subject = new LocalRepositoryManager(datadir);
 		subject.init();
 	}
 
 	/**
-	 * @throws IOException if a problem occurs deleting temporary resources
 	 */
 	@AfterEach
-	public void tearDown() throws IOException {
+	public void tearDown() {
 		subject.shutDown();
 	}
 

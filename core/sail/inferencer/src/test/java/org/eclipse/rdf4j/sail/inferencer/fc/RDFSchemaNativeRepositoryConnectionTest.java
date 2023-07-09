@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.sail.inferencer.fc;
 
 import java.io.File;
-import java.io.IOException;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -20,7 +19,7 @@ import org.eclipse.rdf4j.testsuite.repository.RDFSchemaRepositoryConnectionTest;
 
 public class RDFSchemaNativeRepositoryConnectionTest extends RDFSchemaRepositoryConnectionTest {
 	@Override
-	protected Repository createRepository(File dataDir) throws IOException {
+	protected Repository createRepository(File dataDir) {
 		return new SailRepository(new ForwardChainingRDFSInferencer(new NativeStore(dataDir, "spoc")));
 	}
 }

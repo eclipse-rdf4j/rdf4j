@@ -35,12 +35,12 @@ import org.junit.jupiter.api.Test;
 public abstract class SparqlAggregatesTest {
 
 	@BeforeAll
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
 	@AfterAll
-	public static void afterClass() throws Exception {
+	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
@@ -69,7 +69,7 @@ public abstract class SparqlAggregatesTest {
 	private ValueFactory vf;
 
 	@Test
-	public void testSelect() throws Exception {
+	public void testSelect() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, selectNameMbox);
 		TupleQueryResult result = query.evaluate();
 		assertTrue(result.hasNext());
@@ -80,7 +80,7 @@ public abstract class SparqlAggregatesTest {
 	}
 
 	@Test
-	public void testConcat() throws Exception {
+	public void testConcat() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, concatMbox);
 		TupleQueryResult result = query.evaluate();
 		assertTrue(result.hasNext());
@@ -91,7 +91,7 @@ public abstract class SparqlAggregatesTest {
 	}
 
 	@Test
-	public void testConcatOptional() throws Exception {
+	public void testConcatOptional() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, concatOptionalMbox);
 		TupleQueryResult result = query.evaluate();
 		assertTrue(result.hasNext());
@@ -103,7 +103,7 @@ public abstract class SparqlAggregatesTest {
 	}
 
 	@Test
-	public void testCount() throws Exception {
+	public void testCount() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, countMbox);
 		TupleQueryResult result = query.evaluate();
 		assertTrue(result.hasNext());
@@ -114,7 +114,7 @@ public abstract class SparqlAggregatesTest {
 	}
 
 	@Test
-	public void testCountOptional() throws Exception {
+	public void testCountOptional() {
 		Set<String> zeroOr1 = new HashSet<>();
 		zeroOr1.add("0");
 		zeroOr1.add("1");
@@ -129,7 +129,7 @@ public abstract class SparqlAggregatesTest {
 	}
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		repository = createRepository();
 		vf = repository.getValueFactory();
 		createUser("james", "James Leigh", "james@leigh");
@@ -138,7 +138,7 @@ public abstract class SparqlAggregatesTest {
 		conn = repository.getConnection();
 	}
 
-	protected Repository createRepository() throws Exception {
+	protected Repository createRepository() {
 		Repository repository = newRepository();
 		try (RepositoryConnection con = repository.getConnection()) {
 			con.clear();
@@ -147,10 +147,10 @@ public abstract class SparqlAggregatesTest {
 		return repository;
 	}
 
-	protected abstract Repository newRepository() throws Exception;
+	protected abstract Repository newRepository();
 
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		conn.close();
 		conn = null;
 

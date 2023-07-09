@@ -173,8 +173,6 @@ public class Load extends ConsoleCommand {
 			}
 		} catch (RepositoryException e) {
 			writeError("Unable to restart repository", e);
-		} catch (IOException e) {
-			writeError("Unable to remove lock", e);
 		}
 	}
 

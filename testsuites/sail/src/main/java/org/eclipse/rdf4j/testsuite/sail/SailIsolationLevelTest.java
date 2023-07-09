@@ -82,7 +82,7 @@ public abstract class SailIsolationLevelTest {
 	 *---------*/
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		store = createSail();
 		store.init();
 		vf = store.getValueFactory();
@@ -90,7 +90,7 @@ public abstract class SailIsolationLevelTest {
 	}
 
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		store.shutDown();
 	}
 
@@ -110,12 +110,12 @@ public abstract class SailIsolationLevelTest {
 	}
 
 	@Test
-	public void testNone() throws Exception {
+	public void testNone() {
 		readPending(IsolationLevels.NONE);
 	}
 
 	@Test
-	public void testReadUncommitted() throws Exception {
+	public void testReadUncommitted() {
 		rollbackTriple(IsolationLevels.READ_UNCOMMITTED);
 		readPending(IsolationLevels.READ_UNCOMMITTED);
 		readPendingWhileActive(IsolationLevels.READ_UNCOMMITTED);

@@ -151,7 +151,7 @@ public abstract class AbstractGenericLuceneTest {
 	}
 
 	@AfterEach
-	public void tearDown() throws IOException, RepositoryException {
+	public void tearDown() throws RepositoryException {
 		try {
 			if (connection != null) {
 				connection.close();
@@ -459,7 +459,7 @@ public abstract class AbstractGenericLuceneTest {
 	}
 
 	@Test
-	public void testCharlyTerm() throws Exception {
+	public void testCharlyTerm() {
 
 		try (RepositoryConnection localConnection = repository.getConnection()) {
 			localConnection.begin();
@@ -617,10 +617,9 @@ public abstract class AbstractGenericLuceneTest {
 	/**
 	 * Tests adding data to two contexts (graphs).
 	 *
-	 * @throws Exception
 	 */
 	@Test
-	public void testContextHandling() throws Exception {
+	public void testContextHandling() {
 		connection.add(SUBJECT_4, PREDICATE_1, vf.createLiteral("sfourponecone"), CONTEXT_1);
 		connection.add(SUBJECT_4, PREDICATE_2, vf.createLiteral("sfourptwocone"), CONTEXT_1);
 		connection.add(SUBJECT_5, PREDICATE_1, vf.createLiteral("sfiveponecone"), CONTEXT_1);
@@ -651,10 +650,9 @@ public abstract class AbstractGenericLuceneTest {
 	/**
 	 * we experienced problems with the NULL context and lucenesail in August 2008
 	 *
-	 * @throws Exception
 	 */
 	@Test
-	public void testNullContextHandling() throws Exception {
+	public void testNullContextHandling() {
 		connection.add(SUBJECT_4, PREDICATE_1, vf.createLiteral("sfourponecone"));
 		connection.add(SUBJECT_4, PREDICATE_2, vf.createLiteral("sfourptwocone"));
 		connection.add(SUBJECT_5, PREDICATE_1, vf.createLiteral("sfiveponecone"));
@@ -727,10 +725,9 @@ public abstract class AbstractGenericLuceneTest {
 	/**
 	 * Checks if reindexing does not corrupt the new index and if complex query still is evaluated properly.
 	 *
-	 * @throws Exception
 	 */
 	@Test
-	public void testReindexing() throws Exception {
+	public void testReindexing() {
 		sail.reindex();
 		testComplexQueryTwo();
 	}
@@ -805,7 +802,7 @@ public abstract class AbstractGenericLuceneTest {
 	}
 
 	@Test
-	public void testIndexWriterState() throws Exception {
+	public void testIndexWriterState() {
 		final String brokenTrig = "{ broken }";
 		RepositoryConnection conn = repository.getConnection();
 		try (StringReader sr = new StringReader(brokenTrig)) {
@@ -821,7 +818,7 @@ public abstract class AbstractGenericLuceneTest {
 		conn.close();
 	}
 
-	protected void assertQueryResult(String literal, IRI predicate, Resource resultUri) throws Exception {
+	protected void assertQueryResult(String literal, IRI predicate, Resource resultUri) {
 		// fire a query for all subjects with a given term
 		String queryString = "SELECT ?Resource " + "WHERE { ?Resource <" + MATCHES + "> [ " + " <" + QUERY + "> \""
 				+ literal + "\" ]. } ";
@@ -837,7 +834,7 @@ public abstract class AbstractGenericLuceneTest {
 		}
 	}
 
-	protected void assertNoQueryResult(String literal) throws Exception {
+	protected void assertNoQueryResult(String literal) {
 		// fire a query for all subjects with a given term
 		String queryString = "SELECT ?Resource " + "WHERE { ?Resource <" + MATCHES + "> [ " + " <" + QUERY + "> \""
 				+ literal + "\" ]. } ";

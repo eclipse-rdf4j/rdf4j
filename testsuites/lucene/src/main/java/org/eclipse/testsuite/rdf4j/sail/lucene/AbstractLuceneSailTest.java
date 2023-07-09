@@ -21,7 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -106,10 +105,10 @@ public abstract class AbstractLuceneSailTest {
 		QUERY_STRING = buffer.toString();
 	}
 
-	protected abstract void configure(LuceneSail sail) throws IOException;
+	protected abstract void configure(LuceneSail sail);
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		// set logging, uncomment this to get better logging for debugging
 		// org.apache.log4j.BasicConfigurator.configure();
 
@@ -141,7 +140,7 @@ public abstract class AbstractLuceneSailTest {
 	}
 
 	@AfterEach
-	public void tearDown() throws IOException, RepositoryException {
+	public void tearDown() throws RepositoryException {
 		if (repository != null) {
 			repository.shutDown();
 		}
@@ -149,7 +148,7 @@ public abstract class AbstractLuceneSailTest {
 	}
 
 	@Test
-	public void testTriplesStored() throws Exception {
+	public void testTriplesStored() {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			// are the triples stored in the underlying sail?
 			assertTrue(connection.hasStatement(SUBJECT_1, PREDICATE_1, vf.createLiteral("one"), false));
@@ -847,7 +846,7 @@ public abstract class AbstractLuceneSailTest {
 	}
 
 	@Test
-	public void testContextHandling() throws Exception {
+	public void testContextHandling() {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(SUBJECT_4, PREDICATE_1, vf.createLiteral("sfourponecone"), CONTEXT_1);
@@ -879,7 +878,7 @@ public abstract class AbstractLuceneSailTest {
 	}
 
 	@Test
-	public void testConcurrentReadingAndWriting() throws Exception {
+	public void testConcurrentReadingAndWriting() {
 
 		try (RepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
@@ -929,10 +928,9 @@ public abstract class AbstractLuceneSailTest {
 	/**
 	 * we experienced problems with the NULL context and lucenesail in August 2008
 	 *
-	 * @throws Exception
 	 */
 	@Test
-	public void testNullContextHandling() throws Exception {
+	public void testNullContextHandling() {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			connection.add(SUBJECT_4, PREDICATE_1, vf.createLiteral("sfourponecone"));
 			connection.add(SUBJECT_4, PREDICATE_2, vf.createLiteral("sfourptwocone"));
@@ -1006,7 +1004,7 @@ public abstract class AbstractLuceneSailTest {
 	}
 
 	@Test
-	public void testReindexing() throws Exception {
+	public void testReindexing() {
 		sail.reindex();
 		testComplexQueryTwo();
 	}
@@ -1083,7 +1081,7 @@ public abstract class AbstractLuceneSailTest {
 		assertEquals(0, exceptions.size(), "Exceptions occurred during testMultithreadedAdd, see stacktraces above");
 	}
 
-	protected void assertQueryResult(String literal, IRI predicate, Resource resultUri) throws Exception {
+	protected void assertQueryResult(String literal, IRI predicate, Resource resultUri) {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			// fire a query for all subjects with a given term
 			String queryString = "SELECT ?Resource WHERE { ?Resource <" + MATCHES + "> [ " + " <" + QUERY + "> \""
@@ -1101,7 +1099,7 @@ public abstract class AbstractLuceneSailTest {
 		}
 	}
 
-	protected void assertNoQueryResult(String literal) throws Exception {
+	protected void assertNoQueryResult(String literal) {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			// fire a query for all subjects with a given term
 			String queryString = "SELECT ?Resource WHERE { ?Resource <" + MATCHES + "> [ " + " <" + QUERY + "> \""

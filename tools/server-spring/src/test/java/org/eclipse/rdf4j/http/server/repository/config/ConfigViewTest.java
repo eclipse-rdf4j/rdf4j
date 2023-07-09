@@ -31,7 +31,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 public class ConfigViewTest {
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 	}
 
 	@Test

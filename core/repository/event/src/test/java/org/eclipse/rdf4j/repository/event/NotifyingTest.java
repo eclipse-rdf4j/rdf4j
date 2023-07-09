@@ -44,7 +44,7 @@ public class NotifyingTest {
 	static class InvocationHandlerStub implements InvocationHandler {
 
 		@Override
-		public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+		public Object invoke(Object proxy, Method method, Object[] args) {
 			if (Boolean.TYPE.equals(method.getReturnType())) {
 				return false;
 			}
@@ -100,7 +100,7 @@ public class NotifyingTest {
 	}
 
 	@Test
-	public void testUpdate() throws Exception {
+	public void testUpdate() {
 		final Update updateStub = new UpdateStub();
 		final RepositoryConnection stub = new RepositoryConnectionStub() {
 
@@ -129,7 +129,7 @@ public class NotifyingTest {
 	}
 
 	@Test
-	public void testRemove() throws Exception {
+	public void testRemove() {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		final IRI uri = vf.createIRI("http://example.com/");
 		final RepositoryConnection stub = new RepositoryConnectionStub() {

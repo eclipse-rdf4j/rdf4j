@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore.compliance;
 
-import java.io.IOException;
-
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStoreImplForTests;
@@ -20,7 +18,7 @@ import org.eclipse.rdf4j.testsuite.repository.SparqlRegexTest;
 public class ExtensibleStoreSparqlRegexTest extends SparqlRegexTest {
 
 	@Override
-	protected Repository newRepository() throws IOException {
+	protected Repository newRepository() {
 		return new SailRepository(new ExtensibleStoreImplForTests());
 	}
 

@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import java.io.IOException;
-
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -51,7 +49,7 @@ public class NativeStoreConnection extends SailSourceConnection implements Threa
 	 * Constructors *
 	 *--------------*/
 
-	protected NativeStoreConnection(NativeStore sail) throws IOException {
+	protected NativeStoreConnection(NativeStore sail) {
 		super(sail, sail.getSailStore(), sail.getEvaluationStrategyFactory());
 		this.nativeStore = sail;
 		sailChangedEvent = new DefaultSailChangedEvent(sail);

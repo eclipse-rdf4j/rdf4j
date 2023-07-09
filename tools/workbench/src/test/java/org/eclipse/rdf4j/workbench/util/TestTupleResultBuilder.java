@@ -48,7 +48,7 @@ public class TestTupleResultBuilder {
 	}
 
 	@Test
-	public final void testSES1846Normal() throws Exception {
+	public final void testSES1846Normal() {
 		TupleResultBuilder builder = new TupleResultBuilder(new SPARQLBooleanXMLWriter(new ByteArrayOutputStream()),
 				SimpleValueFactory.getInstance());
 		builder.startBoolean();
@@ -57,7 +57,7 @@ public class TestTupleResultBuilder {
 	}
 
 	@Test
-	public final void testSES1846regression() throws Exception {
+	public final void testSES1846regression() {
 		TupleResultBuilder builder = new TupleResultBuilder(new SPARQLBooleanXMLWriter(new ByteArrayOutputStream()),
 				SimpleValueFactory.getInstance());
 		try {

@@ -109,9 +109,8 @@ public class DataStore implements Closeable {
 	 * Returns the maximum value-ID that is in use.
 	 *
 	 * @return The largest ID, or <var>0</var> if the store does not contain any values.
-	 * @throws IOException If an I/O error occurs.
 	 */
-	public int getMaxID() throws IOException {
+	public int getMaxID() {
 		return idFile.getMaxID();
 	}
 

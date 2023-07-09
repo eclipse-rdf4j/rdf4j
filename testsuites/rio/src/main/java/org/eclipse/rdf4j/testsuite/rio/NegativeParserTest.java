@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.testsuite.rio;
 
 import java.io.InputStream;
-import java.net.MalformedURLException;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.rio.RDFParseException;
@@ -47,7 +46,7 @@ public class NegativeParserTest extends TestCase {
 	 *--------------*/
 
 	public NegativeParserTest(IRI testUri, String caseURI, String inputURL, String baseURL, RDFParser targetParser,
-			FailureMode failureMode) throws MalformedURLException {
+			FailureMode failureMode) {
 		super(caseURI);
 		this.testUri = testUri;
 		this.inputURL = inputURL;

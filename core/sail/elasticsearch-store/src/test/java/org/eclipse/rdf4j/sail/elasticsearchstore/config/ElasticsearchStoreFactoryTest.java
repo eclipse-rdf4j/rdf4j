@@ -23,7 +23,7 @@ public class ElasticsearchStoreFactoryTest {
 	private ElasticsearchStoreFactory subject;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		subject = new ElasticsearchStoreFactory();
 	}
 

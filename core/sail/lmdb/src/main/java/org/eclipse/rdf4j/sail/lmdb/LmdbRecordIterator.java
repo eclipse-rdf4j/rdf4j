@@ -119,7 +119,7 @@ class LmdbRecordIterator implements RecordIterator {
 	}
 
 	@Override
-	public long[] next() throws IOException {
+	public long[] next() {
 		long stamp = txnLock.readLock();
 		try {
 			if (txnRefVersion != txnRef.version()) {
@@ -185,7 +185,7 @@ class LmdbRecordIterator implements RecordIterator {
 	}
 
 	@Override
-	public void close() throws IOException {
+	public void close() {
 		if (!closed) {
 			try {
 				mdb_cursor_close(cursor);

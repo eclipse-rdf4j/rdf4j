@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
-import java.io.IOException;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -25,7 +24,7 @@ public class LmdbSparqlOrderByTest extends SparqlOrderByTest {
 	File dataDir;
 
 	@Override
-	protected Repository newRepository() throws IOException {
+	protected Repository newRepository() {
 		return new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc")));
 	}
 }

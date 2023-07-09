@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.Closeable;
-import java.io.IOException;
 
 /**
  * An iterator that iterates over records, for example those in a key-value database.
@@ -22,16 +21,14 @@ interface RecordIterator extends Closeable {
 	 * Returns the next record.
 	 *
 	 * @return A record that or <tt>null</tt> if all records have been returned.
-	 * @throws IOException In case an I/O error occurred.
 	 */
-	long[] next() throws IOException;
+	long[] next();
 
 	/**
 	 * Closes the iterator, freeing any resources that it uses. Once closed, the iterator will not return any more
 	 * records.
 	 *
-	 * @throws IOException In case an I/O error occurred.
 	 */
 	@Override
-	void close() throws IOException;
+	void close();
 }

@@ -58,19 +58,19 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 	private TestLocalRepositoryManager repoManager;
 
 	@BeforeEach
-	public void before() throws Exception {
+	public void before() {
 		File baseDir = new File(tempDir.toFile(), "data");
 		repoManager = new TestLocalRepositoryManager(baseDir);
 		repoManager.init();
 	}
 
 	@AfterEach
-	public void after() throws Exception {
+	public void after() {
 		repoManager.shutDown();
 	}
 
 	@Test
-	public void testWithLocalRepositoryManager() throws Exception {
+	public void testWithLocalRepositoryManager() {
 
 		addMemoryStore("repo1");
 		addMemoryStore("repo2");
@@ -102,7 +102,7 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 	}
 
 	@Test
-	public void testWithLocalRepositoryManager_FactoryInitialization() throws Exception {
+	public void testWithLocalRepositoryManager_FactoryInitialization() {
 
 		addMemoryStore("repo1");
 		addMemoryStore("repo2");
@@ -129,7 +129,7 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 	}
 
 	@Test
-	public void testWithLocalRepositoryManager_CustomFederatedServiceResolver() throws Exception {
+	public void testWithLocalRepositoryManager_CustomFederatedServiceResolver() {
 
 		addMemoryStore("repo1");
 		addMemoryStore("repo2");
@@ -191,7 +191,7 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 	}
 
 	@Test
-	public void testMultipleFederationInstances() throws Exception {
+	public void testMultipleFederationInstances() {
 
 		addMemoryStore("repo1");
 		addMemoryStore("repo2");
@@ -236,7 +236,7 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 		}
 	}
 
-	protected void addMemoryStore(String repoId) throws Exception {
+	protected void addMemoryStore(String repoId) {
 
 		RepositoryImplConfig implConfig = new SailRepositoryConfig(new MemoryStoreConfig());
 		RepositoryConfig config = new RepositoryConfig(repoId, implConfig);

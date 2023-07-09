@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.sail.lucene;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 
@@ -36,13 +35,13 @@ public class LuceneSailTest extends AbstractLuceneSailTest {
 	 * LuceneSail)
 	 */
 	@Override
-	protected void configure(LuceneSail sail) throws IOException {
+	protected void configure(LuceneSail sail) {
 		sail.setParameter(LuceneSail.INDEX_CLASS_KEY, LuceneIndex.class.getName());
 		sail.setParameter(LuceneSail.LUCENE_RAMDIR_KEY, "true");
 	}
 
 	@Test
-	public void testReindexing_SingleResource() throws Exception {
+	public void testReindexing_SingleResource() {
 
 		// wipe the Lucene index to allow specific test data
 		try (RepositoryConnection connection = repository.getConnection()) {

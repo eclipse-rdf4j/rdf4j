@@ -124,7 +124,7 @@ public abstract class AbstractParserHandlingTest {
 	 * @param unknownDatatypeStatements A {@link Model} containing statements which all contain unknown datatypes.
 	 * @return An InputStream based on the given parameters.
 	 */
-	protected InputStream getUnknownDatatypeStream(Model model) throws Exception {
+	protected InputStream getUnknownDatatypeStream(Model model) {
 		return serialize(model);
 	}
 
@@ -135,7 +135,7 @@ public abstract class AbstractParserHandlingTest {
 	 * @param knownDatatypeStatements A {@link Model} containing statements which all contain known datatypes.
 	 * @return An InputStream based on the given parameters.
 	 */
-	protected InputStream getKnownDatatypeStream(Model model) throws Exception {
+	protected InputStream getKnownDatatypeStream(Model model) {
 		return serialize(model);
 	}
 
@@ -146,7 +146,7 @@ public abstract class AbstractParserHandlingTest {
 	 * @param unknownLanguageStatements A {@link Model} containing statements which all contain unknown language tags.
 	 * @return An InputStream based on the given parameters.
 	 */
-	protected InputStream getUnknownLanguageStream(Model model) throws Exception {
+	protected InputStream getUnknownLanguageStream(Model model) {
 		return serialize(model);
 	}
 
@@ -157,7 +157,7 @@ public abstract class AbstractParserHandlingTest {
 	 * @param knownLanguageStatements A {@link Model} containing statements which all contain known language tags.
 	 * @return An InputStream based on the given parameters.
 	 */
-	protected InputStream getKnownLanguageStream(Model model) throws Exception {
+	protected InputStream getKnownLanguageStream(Model model) {
 		return serialize(model);
 	}
 
@@ -211,10 +211,9 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		testParser = getParser();
 
 		testParser.setValueFactory(vf);
@@ -226,10 +225,9 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		testListener.reset();
 		testListener = null;
 		testStatements.clear();

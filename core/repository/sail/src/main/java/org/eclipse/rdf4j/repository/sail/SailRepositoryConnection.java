@@ -153,7 +153,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	public void begin() throws RepositoryException {
 		try {
 			// always call receiveTransactionSettings(...) before calling begin();
-			sailConnection.setTransactionSettings(new TransactionSetting[0]);
+			sailConnection.setTransactionSettings();
 
 			if (getIsolationLevel() != null) {
 				sailConnection.begin(getIsolationLevel());
@@ -169,7 +169,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	public void begin(IsolationLevel level) throws RepositoryException {
 		try {
 			// always call receiveTransactionSettings(...) before calling begin();
-			sailConnection.setTransactionSettings(new TransactionSetting[0]);
+			sailConnection.setTransactionSettings();
 
 			if (level != null) {
 				sailConnection.begin(level);

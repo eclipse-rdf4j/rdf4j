@@ -1093,12 +1093,12 @@ class TripleStore implements Closeable {
 			pool.close();
 		}
 
-		void clear(long txn) throws IOException {
+		void clear(long txn) {
 			mdb_drop(txn, dbiExplicit, false);
 			mdb_drop(txn, dbiInferred, false);
 		}
 
-		void destroy(long txn) throws IOException {
+		void destroy(long txn) {
 			mdb_drop(txn, dbiExplicit, true);
 			mdb_drop(txn, dbiInferred, true);
 		}

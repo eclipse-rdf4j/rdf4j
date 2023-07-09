@@ -89,7 +89,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 		}
 	}
 
-	private void findMinimum() throws IOException {
+	private void findMinimum() {
 		Node nextCurrentNode = currentNode = tree.readRootNode();
 
 		if (nextCurrentNode == null) {

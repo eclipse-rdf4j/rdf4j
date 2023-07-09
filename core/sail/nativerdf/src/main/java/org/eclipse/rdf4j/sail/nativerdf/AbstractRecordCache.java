@@ -118,10 +118,9 @@ abstract class AbstractRecordCache implements RecordCache {
 	 * longer {@link #isValid() valid}.
 	 *
 	 * @return An iterator over all records.
-	 * @throws IllegalStateException If the cache is not/no longer {@link #isValid() valid}.
 	 */
 	@Override
-	public final RecordIterator getRecords() throws IOException {
+	public final RecordIterator getRecords() {
 		if (isValid()) {
 			return getRecordsInternal();
 		}
@@ -129,7 +128,7 @@ abstract class AbstractRecordCache implements RecordCache {
 		throw new IllegalStateException();
 	}
 
-	protected abstract RecordIterator getRecordsInternal() throws IOException;
+	protected abstract RecordIterator getRecordsInternal();
 
 	/**
 	 * Checks whether the cache is still valid. Caches are valid if the number of stored records is smaller than or

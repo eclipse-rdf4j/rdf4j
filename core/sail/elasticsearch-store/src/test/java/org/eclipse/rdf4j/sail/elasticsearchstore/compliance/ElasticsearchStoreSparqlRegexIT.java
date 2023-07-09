@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore.compliance;
 
-import java.io.IOException;
-
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
@@ -26,7 +24,7 @@ public class ElasticsearchStoreSparqlRegexIT extends SparqlRegexTest {
 	private static SingletonClientProvider clientPool;
 
 	@BeforeAll
-	public static void beforeClass() throws IOException, InterruptedException {
+	public static void beforeClass() {
 		TestHelpers.openClient();
 		clientPool = new SingletonClientProvider("localhost", TestHelpers.PORT, TestHelpers.CLUSTER);
 	}
@@ -38,7 +36,7 @@ public class ElasticsearchStoreSparqlRegexIT extends SparqlRegexTest {
 	}
 
 	@Override
-	protected Repository newRepository() throws IOException {
+	protected Repository newRepository() {
 		SailRepository sailRepository = new SailRepository(
 				new ElasticsearchStore(clientPool, "index1"));
 		return sailRepository;

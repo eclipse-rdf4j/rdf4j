@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.manager;
 
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Collection;
 
@@ -26,7 +25,7 @@ public class RepositoryManagerIntegrationTest {
 	protected RepositoryManager subject;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		subject = new RepositoryManager() {
 
 			@Override
@@ -36,7 +35,7 @@ public class RepositoryManagerIntegrationTest {
 			}
 
 			@Override
-			public URL getLocation() throws MalformedURLException {
+			public URL getLocation() {
 				return null;
 			}
 

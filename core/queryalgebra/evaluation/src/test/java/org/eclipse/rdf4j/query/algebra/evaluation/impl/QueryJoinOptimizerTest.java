@@ -94,7 +94,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void testSES2116JoinBind() throws Exception {
+	public void testSES2116JoinBind() {
 
 		StringBuilder qb = new StringBuilder();
 		qb.append("SELECT ?subject ?name ?row {\n" + "  ?subject <http://localhost/table_1> ?uri .\n"
@@ -112,7 +112,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void bindSubselectJoinOrder() throws Exception {
+	public void bindSubselectJoinOrder() {
 		String query = "SELECT * WHERE {\n" + "    BIND (bnode() as ?ct01) \n" + "    { SELECT ?s WHERE {\n"
 				+ "            ?s ?p ?o .\n" + "      }\n" + "      LIMIT 10\n" + "    }\n" + "}";
 

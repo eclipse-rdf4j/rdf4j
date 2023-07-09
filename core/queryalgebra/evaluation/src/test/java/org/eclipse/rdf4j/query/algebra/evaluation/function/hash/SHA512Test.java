@@ -18,10 +18,9 @@ import org.junit.jupiter.api.BeforeEach;
 public class SHA512Test extends HashFunctionTest {
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		setHashFunction(new SHA512());
 		setToHash("abc");
 		setExpectedDigest(

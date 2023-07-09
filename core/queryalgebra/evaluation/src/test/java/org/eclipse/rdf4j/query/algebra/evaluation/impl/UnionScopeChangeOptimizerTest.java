@@ -28,7 +28,7 @@ public class UnionScopeChangeOptimizerTest extends QueryOptimizerTest {
 	private Union union;
 
 	@BeforeEach
-	public void setup() throws Exception {
+	public void setup() {
 		subject = getOptimizer();
 		union = new Union();
 		union.setVariableScopeChange(true);

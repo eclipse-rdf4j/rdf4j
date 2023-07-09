@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
-import java.io.IOException;
-
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -47,7 +45,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	 * Constructors *
 	 *--------------*/
 
-	protected LmdbStoreConnection(LmdbStore sail) throws IOException {
+	protected LmdbStoreConnection(LmdbStore sail) {
 		super(sail, sail.getSailStore(), sail.getEvaluationStrategyFactory());
 		this.lmdbStore = sail;
 		sailChangedEvent = new DefaultSailChangedEvent(sail);

@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.nativerdf;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.File;
-import java.io.IOException;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -42,7 +41,7 @@ public class TestNativeStoreMemoryOverflow {
 	private RepositoryConnection testCon2;
 
 	@BeforeEach
-	public void setUp(@TempDir File dataDir) throws Exception {
+	public void setUp(@TempDir File dataDir) {
 		testRepository = createRepository(dataDir);
 	}
 
@@ -56,12 +55,12 @@ public class TestNativeStoreMemoryOverflow {
 		testCon2.setIsolationLevel(level);
 	}
 
-	private Repository createRepository(File dataDir) throws IOException {
+	private Repository createRepository(File dataDir) {
 		return new SailRepository(new NativeStore(dataDir, "spoc"));
 	}
 
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		testCon2.close();
 		testCon.close();
 		testRepository.shutDown();
@@ -69,7 +68,7 @@ public class TestNativeStoreMemoryOverflow {
 
 	@ParameterizedTest
 	@EnumSource(IsolationLevels.class)
-	public void test(IsolationLevel level) throws Exception {
+	public void test(IsolationLevel level) {
 		setupConnections(level);
 
 		int size = 10000; // this should really be bigger

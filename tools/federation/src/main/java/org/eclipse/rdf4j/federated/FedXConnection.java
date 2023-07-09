@@ -244,7 +244,7 @@ public class FedXConnection extends AbstractSailConnection {
 		for (Endpoint e : federation.getMembers()) {
 			union.addTask(new ParallelTask<>() {
 				@Override
-				public CloseableIteration<Resource, QueryEvaluationException> performTask() throws Exception {
+				public CloseableIteration<Resource, QueryEvaluationException> performTask() {
 					try (RepositoryConnection conn = e.getConnection()) {
 						// we need to materialize the contexts as they are only accessible
 						// while the connection is open

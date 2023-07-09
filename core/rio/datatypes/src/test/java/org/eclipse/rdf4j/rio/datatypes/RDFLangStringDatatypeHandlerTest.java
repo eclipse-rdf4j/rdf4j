@@ -30,19 +30,19 @@ public class RDFLangStringDatatypeHandlerTest extends AbstractDatatypeHandlerTes
 	@Disabled("There are no invalid values for RDF LangString other than null, which is tested seperately")
 	@Test
 	@Override
-	public void testVerifyDatatypeInvalidValue() throws Exception {
+	public void testVerifyDatatypeInvalidValue() {
 	}
 
 	@Disabled("There are no invalid values for RDF LangString other than null, which is tested seperately")
 	@Test
 	@Override
-	public void testNormalizeDatatypeInvalidValue() throws Exception {
+	public void testNormalizeDatatypeInvalidValue() {
 	}
 
 	@Disabled("This test relies on a null language, which is not allowed for RDF.LANGSTRING")
 	@Test
 	@Override
-	public void testNormalizeDatatypeValidValue() throws Exception {
+	public void testNormalizeDatatypeValidValue() {
 	}
 
 	// -------------------------------------

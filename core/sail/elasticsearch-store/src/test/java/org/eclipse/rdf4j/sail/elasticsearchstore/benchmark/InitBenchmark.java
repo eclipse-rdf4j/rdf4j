@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.elasticsearchstore.benchmark;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
 import org.assertj.core.util.Files;
@@ -52,7 +51,7 @@ public class InitBenchmark {
 	SingletonClientProvider clientPool;
 
 	@Setup(Level.Trial)
-	public void beforeClass() throws IOException, InterruptedException {
+	public void beforeClass() {
 		// JMH does not correctly set JAVA_HOME. Change the JAVA_HOME below if you the following error:
 		// [EmbeddedElsHandler] INFO p.a.t.e.ElasticServer - could not find java; set JAVA_HOME or ensure java is in
 		// PATH

@@ -46,10 +46,9 @@ public class MemoryStoreTest extends RDFNotifyingStoreTest {
 	/**
 	 * reproduces GH-3053
 	 *
-	 * @throws Exception
 	 */
 	@Test
-	public void testZeroOrOnePropPathNonExisting() throws Exception {
+	public void testZeroOrOnePropPathNonExisting() {
 		ParsedTupleQuery tupleQuery = (ParsedTupleQuery) QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
 				"SELECT ?resource WHERE {\n" +
 						"    <http://unexisting_resource> (^(<http://predicate_a>)*) / <http://predicate_b>? ?resource\n"

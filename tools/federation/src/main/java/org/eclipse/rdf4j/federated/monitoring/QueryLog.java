@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.monitoring;
 
-import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.federated.FedXConfig;
@@ -39,12 +38,12 @@ public class QueryLog {
 	private final AtomicBoolean active = new AtomicBoolean(false);
 	private Logger queryLog;
 
-	public QueryLog() throws IOException {
+	public QueryLog() {
 		log.info("Initializing logging of queries");
 		initQueryLog();
 	}
 
-	private void initQueryLog() throws IOException {
+	private void initQueryLog() {
 
 		queryLog = LoggerFactory.getLogger("QueryLog");
 

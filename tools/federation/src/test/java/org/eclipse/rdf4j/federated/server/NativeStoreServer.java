@@ -38,7 +38,7 @@ public class NativeStoreServer implements Server {
 	}
 
 	@Override
-	public void initialize(int nRepositories) throws Exception {
+	public void initialize(int nRepositories) {
 
 		for (int i = 1; i <= nRepositories; i++) {
 			NativeStore store = NativeStoreProvideTest.createNativeStore(new File(dataDir, "endpoint" + i));
@@ -51,7 +51,7 @@ public class NativeStoreServer implements Server {
 	}
 
 	@Override
-	public void shutdown() throws Exception {
+	public void shutdown() {
 
 	}
 

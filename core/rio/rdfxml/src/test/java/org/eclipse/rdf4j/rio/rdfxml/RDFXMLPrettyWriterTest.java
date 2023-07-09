@@ -18,7 +18,6 @@ import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.StringReader;
 import java.io.StringWriter;
-import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -118,8 +117,7 @@ public class RDFXMLPrettyWriterTest extends AbstractRDFXMLWriterTest {
 	}
 
 	@Test
-	public void compactXMLPrintTest() throws RDFHandlerException, IOException, ClassNotFoundException,
-			NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
+	public void compactXMLPrintTest() throws RDFHandlerException {
 		OutputStream outputStream = new ByteArrayOutputStream();
 		PrintStream printStream = new PrintStream(outputStream);
 		System.setOut(printStream);

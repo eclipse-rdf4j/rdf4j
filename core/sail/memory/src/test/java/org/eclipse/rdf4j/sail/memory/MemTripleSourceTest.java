@@ -68,10 +68,9 @@ public class MemTripleSourceTest {
 	private SailSource source;
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		store = new MemoryStore();
 		store.init();
 		f = store.getValueFactory();
@@ -82,10 +81,9 @@ public class MemTripleSourceTest {
 	}
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		if (snapshot != null) {
 			snapshot.close();
 		}

@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.sail.nativerdf;
 
 import java.io.File;
-import java.io.IOException;
 
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -42,10 +41,6 @@ public class LimitedSizeNativeStore extends NativeStore {
 
 	@Override
 	protected NotifyingSailConnection getConnectionInternal() throws SailException {
-		try {
-			return new LimitedSizeNativeStoreConnection(this);
-		} catch (IOException e) {
-			throw new SailException(e);
-		}
+		return new LimitedSizeNativeStoreConnection(this);
 	}
 }

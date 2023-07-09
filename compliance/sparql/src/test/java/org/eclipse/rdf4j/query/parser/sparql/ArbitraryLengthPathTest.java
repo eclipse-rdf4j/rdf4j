@@ -35,54 +35,54 @@ public class ArbitraryLengthPathTest {
 	private RepositoryConnection con;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		repo = new SailRepository(new MemoryStore());
 		con = repo.getConnection();
 	}
 
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		con.close();
 		repo.shutDown();
 	}
 
 	@Test
-	public void test10() throws Exception {
+	public void test10() {
 		populate(10);
 		String sparql = "ASK { <urn:test:root> <urn:test:hasChild>* <urn:test:node-end> }";
 		assertTrue(con.prepareBooleanQuery(QueryLanguage.SPARQL, sparql).evaluate());
 	}
 
 	@Test
-	public void test100() throws Exception {
+	public void test100() {
 		populate(100);
 		String sparql = "ASK { <urn:test:root> <urn:test:hasChild>* <urn:test:node-end> }";
 		assertTrue(con.prepareBooleanQuery(QueryLanguage.SPARQL, sparql).evaluate());
 	}
 
 	@Test
-	public void test1000() throws Exception {
+	public void test1000() {
 		populate(1000);
 		String sparql = "ASK { <urn:test:root> <urn:test:hasChild>* <urn:test:node-end> }";
 		assertTrue(con.prepareBooleanQuery(QueryLanguage.SPARQL, sparql).evaluate());
 	}
 
 	@Test
-	public void test10000() throws Exception {
+	public void test10000() {
 		populate(10000);
 		String sparql = "ASK { <urn:test:root> <urn:test:hasChild>* <urn:test:node-end> }";
 		assertTrue(con.prepareBooleanQuery(QueryLanguage.SPARQL, sparql).evaluate());
 	}
 
 	@Test
-	public void test100000() throws Exception {
+	public void test100000() {
 		populate(100000);
 		String sparql = "ASK { <urn:test:root> <urn:test:hasChild>* <urn:test:node-end> }";
 		assertTrue(con.prepareBooleanQuery(QueryLanguage.SPARQL, sparql).evaluate());
 	}
 
 	@Test
-	public void testDirection() throws Exception {
+	public void testDirection() {
 		ValueFactory vf = con.getValueFactory();
 		con.add(vf.createIRI("urn:test:a"), vf.createIRI("urn:test:rel"), vf.createIRI("urn:test:b"));
 		con.add(vf.createIRI("urn:test:b"), vf.createIRI("urn:test:rel"), vf.createIRI("urn:test:a"));
@@ -91,7 +91,7 @@ public class ArbitraryLengthPathTest {
 	}
 
 	@Test
-	public void testSimilarPatterns() throws Exception {
+	public void testSimilarPatterns() {
 		ValueFactory vf = con.getValueFactory();
 		con.add(vf.createIRI("urn:test:a"), RDF.TYPE, vf.createIRI("urn:test:c"));
 		con.add(vf.createIRI("urn:test:b"), RDF.TYPE, vf.createIRI("urn:test:d"));

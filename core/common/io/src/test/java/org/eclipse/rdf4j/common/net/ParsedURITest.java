@@ -15,8 +15,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.net.URISyntaxException;
-
 import org.junit.jupiter.api.Test;
 
 /**
@@ -86,150 +84,150 @@ public class ParsedURITest {
 	}
 
 	@Test
-	public void testRoundTripQueryString() throws Exception {
+	public void testRoundTripQueryString() {
 		assertRoundTrip(
 				"http://localhost:8080/callimachus/pipelines/render-html.xpl?result&template=http%3A%2F%2Flocalhost%3A8080%2Fcallimachus%2Fconcept-view.xhtml%3Ftemplate%26realm%3Dhttp%3A%2F%2Flocalhost%3A8080%2F&this=http%3A%2F%2Flocalhost%3A8080%2Fsun&query=view");
 	}
 
-	private void assertRoundTrip(String uri) throws URISyntaxException {
+	private void assertRoundTrip(String uri) {
 		assertResolves(uri, "http://example.com/", uri);
 	}
 
 	@Test
-	public void testParentFile() throws URISyntaxException {
+	public void testParentFile() {
 		assertResolves("../dir", "http://example.com/dir/dir/file", "http://example.com/dir/dir");
 	}
 
 	@Test
-	public void testRootFile() throws URISyntaxException {
+	public void testRootFile() {
 		assertResolves("/dir", "http://example.com/dir/dir", "http://example.com/dir");
 	}
 
 	@Test
-	public void testFrag() throws URISyntaxException {
+	public void testFrag() {
 		assertResolves("#frag", "http://example.com/dir/dir/file?qs#frag", "http://example.com/dir/dir/file?qs#frag");
 	}
 
 	@Test
-	public void testIdentity() throws URISyntaxException {
+	public void testIdentity() {
 		assertResolves("", "http://example.com/dir/dir/file?qs", "http://example.com/dir/dir/file?qs");
 	}
 
 	@Test
-	public void testOpaque() throws URISyntaxException {
+	public void testOpaque() {
 		assertResolves("urn:test", "http://example.com/dir/dir/file?qs#frag", "urn:test");
 	}
 
 	@Test
-	public void testFragment() throws URISyntaxException {
+	public void testFragment() {
 		assertResolves("#frag2", "http://example.com/dir/dir/file?qs#frag", "http://example.com/dir/dir/file?qs#frag2");
 	}
 
 	@Test
-	public void testQueryString() throws URISyntaxException {
+	public void testQueryString() {
 		assertResolves("?qs2#frag", "http://example.com/dir/dir/file?qs#frag",
 				"http://example.com/dir/dir/file?qs2#frag");
 	}
 
 	@Test
-	public void testDirectory() throws URISyntaxException {
+	public void testDirectory() {
 		assertResolves(".", "http://example.com/dir/dir/file?qs#frag", "http://example.com/dir/dir/");
 	}
 
 	@Test
-	public void testSameDirectory() throws URISyntaxException {
+	public void testSameDirectory() {
 		assertResolves("file2?qs#frag", "http://example.com/dir/dir/file?qs#frag",
 				"http://example.com/dir/dir/file2?qs#frag");
 	}
 
 	@Test
-	public void testNestedDirectory() throws URISyntaxException {
+	public void testNestedDirectory() {
 		assertResolves("nested/file?qs#frag", "http://example.com/dir/dir/file?qs#frag",
 				"http://example.com/dir/dir/nested/file?qs#frag");
 	}
 
 	@Test
-	public void testParentDirectory() throws URISyntaxException {
+	public void testParentDirectory() {
 		assertResolves("../file?qs#frag", "http://example.com/dir/dir/file?qs#frag",
 				"http://example.com/dir/file?qs#frag");
 	}
 
 	@Test
-	public void testOtherDirectory() throws URISyntaxException {
+	public void testOtherDirectory() {
 		assertResolves("../dir2/file?qs#frag", "http://example.com/dir/dir/file?qs#frag",
 				"http://example.com/dir/dir2/file?qs#frag");
 	}
 
 	@Test
-	public void testSameAuthority() throws URISyntaxException {
+	public void testSameAuthority() {
 		assertResolves("/dir2/dir/file?qs#frag", "http://example.com/dir/dir/file?qs#frag",
 				"http://example.com/dir2/dir/file?qs#frag");
 	}
 
 	@Test
-	public void testIdentityDir() throws URISyntaxException {
+	public void testIdentityDir() {
 		assertResolves("", "http://example.com/dir/dir/", "http://example.com/dir/dir/");
 	}
 
 	@Test
-	public void testOpaqueDir() throws URISyntaxException {
+	public void testOpaqueDir() {
 		assertResolves("urn:test", "http://example.com/dir/dir/", "urn:test");
 	}
 
 	@Test
-	public void testFragmentDir() throws URISyntaxException {
+	public void testFragmentDir() {
 		assertResolves("#frag2", "http://example.com/dir/dir/", "http://example.com/dir/dir/#frag2");
 	}
 
 	@Test
-	public void testQueryStringDir() throws URISyntaxException {
+	public void testQueryStringDir() {
 		assertResolves("?qs2", "http://example.com/dir/dir/", "http://example.com/dir/dir/?qs2");
 	}
 
 	@Test
-	public void testDirectoryDir() throws URISyntaxException {
+	public void testDirectoryDir() {
 		assertResolves("file", "http://example.com/dir/dir/", "http://example.com/dir/dir/file");
 	}
 
 	@Test
-	public void testSameDirectoryDir() throws URISyntaxException {
+	public void testSameDirectoryDir() {
 		assertResolves("file2?qs#frag", "http://example.com/dir/dir/", "http://example.com/dir/dir/file2?qs#frag");
 	}
 
 	@Test
-	public void testNestedDirectoryDir() throws URISyntaxException {
+	public void testNestedDirectoryDir() {
 		assertResolves("nested/", "http://example.com/dir/dir/", "http://example.com/dir/dir/nested/");
 	}
 
 	@Test
-	public void testNestedDirectoryFileDir() throws URISyntaxException {
+	public void testNestedDirectoryFileDir() {
 		assertResolves("nested/file?qs#frag", "http://example.com/dir/dir/",
 				"http://example.com/dir/dir/nested/file?qs#frag");
 	}
 
 	@Test
-	public void testParentDirectoryDir() throws URISyntaxException {
+	public void testParentDirectoryDir() {
 		assertResolves("../file?qs#frag", "http://example.com/dir/dir/", "http://example.com/dir/file?qs#frag");
 	}
 
 	@Test
-	public void testOtherDirectoryDir() throws URISyntaxException {
+	public void testOtherDirectoryDir() {
 		assertResolves("../dir2/", "http://example.com/dir/dir/", "http://example.com/dir/dir2/");
 	}
 
 	@Test
-	public void testOtherDirectoryFileDir() throws URISyntaxException {
+	public void testOtherDirectoryFileDir() {
 		assertResolves("../dir2/file?qs#frag", "http://example.com/dir/dir/",
 				"http://example.com/dir/dir2/file?qs#frag");
 	}
 
 	@Test
-	public void testSameAuthorityDir() throws URISyntaxException {
+	public void testSameAuthorityDir() {
 		assertResolves("/dir2/dir/file?qs#frag", "http://example.com/dir/dir/",
 				"http://example.com/dir2/dir/file?qs#frag");
 	}
 
-	private void assertResolves(String relative, String base, String absolute) throws URISyntaxException {
+	private void assertResolves(String relative, String base, String absolute) {
 		assertEquals(absolute, new ParsedURI(base).resolve(relative).toString());
 	}
 

@@ -20,13 +20,10 @@ import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
-import java.util.Objects;
 
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.Header;
 import org.apache.http.HeaderElement;
@@ -75,7 +72,7 @@ public class SPARQLProtocolSessionTest {
 	}
 
 	@BeforeEach
-	public void setUp(MockServerClient client) throws Exception {
+	public void setUp(MockServerClient client) {
 		serverURL = "http://localhost:" + client.getPort() + "/rdf4j-server";
 		sparqlSession = createProtocolSession();
 	}

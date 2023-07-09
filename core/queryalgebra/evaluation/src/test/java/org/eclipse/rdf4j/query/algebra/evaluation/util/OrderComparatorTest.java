@@ -140,7 +140,7 @@ public class OrderComparatorTest {
 	private final int NEG = -7349;
 
 	@Test
-	public void testEquals() throws Exception {
+	public void testEquals() {
 		order.addElement(asc);
 		cmp.setIterator(List.of(ZERO).iterator());
 		OrderComparator sud = new OrderComparator(strategy, order, cmp, context);
@@ -148,7 +148,7 @@ public class OrderComparatorTest {
 	}
 
 	@Test
-	public void testZero() throws Exception {
+	public void testZero() {
 		order.addElement(asc);
 		order.addElement(asc);
 		cmp.setIterator(Arrays.asList(ZERO, POS).iterator());
@@ -157,7 +157,7 @@ public class OrderComparatorTest {
 	}
 
 	@Test
-	public void testTerm() throws Exception {
+	public void testTerm() {
 		order.addElement(asc);
 		order.addElement(asc);
 		cmp.setIterator(Arrays.asList(POS, NEG).iterator());
@@ -166,7 +166,7 @@ public class OrderComparatorTest {
 	}
 
 	@Test
-	public void testAscLessThan() throws Exception {
+	public void testAscLessThan() {
 		order.addElement(asc);
 		cmp.setIterator(List.of(NEG).iterator());
 		OrderComparator sud = new OrderComparator(strategy, order, cmp, context);
@@ -174,7 +174,7 @@ public class OrderComparatorTest {
 	}
 
 	@Test
-	public void testAscGreaterThan() throws Exception {
+	public void testAscGreaterThan() {
 		order.addElement(asc);
 		cmp.setIterator(List.of(POS).iterator());
 		OrderComparator sud = new OrderComparator(strategy, order, cmp, context);
@@ -182,7 +182,7 @@ public class OrderComparatorTest {
 	}
 
 	@Test
-	public void testDescLessThan() throws Exception {
+	public void testDescLessThan() {
 		order.addElement(desc);
 		cmp.setIterator(List.of(NEG).iterator());
 		OrderComparator sud = new OrderComparator(strategy, order, cmp, context);
@@ -190,7 +190,7 @@ public class OrderComparatorTest {
 	}
 
 	@Test
-	public void testDescGreaterThan() throws Exception {
+	public void testDescGreaterThan() {
 		order.addElement(desc);
 		cmp.setIterator(List.of(POS).iterator());
 		OrderComparator sud = new OrderComparator(strategy, order, cmp, context);
@@ -198,7 +198,7 @@ public class OrderComparatorTest {
 	}
 
 	@Test
-	public void testDisjunctBindingNames() throws Exception {
+	public void testDisjunctBindingNames() {
 		OrderComparator sud = new OrderComparator(strategy, order, cmp, context);
 		QueryBindingSet a = new QueryBindingSet();
 		QueryBindingSet b = new QueryBindingSet();
@@ -222,7 +222,7 @@ public class OrderComparatorTest {
 	}
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		asc.setAscending(true);
 		desc.setAscending(false);
 	}

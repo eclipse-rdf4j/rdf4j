@@ -15,7 +15,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -62,7 +61,7 @@ public class LuceneIndexIdFilteringTest {
 	SailRepository repository;
 
 	@BeforeEach
-	public void setup(@TempDir File dataDir) throws IOException {
+	public void setup(@TempDir File dataDir) {
 		// sails schema
 		// sailType1(LuceneSail) -> sailType2(LuceneSail) -> sailType3(LuceneSail) -> memoryStore(MemoryStore)
 

@@ -227,7 +227,7 @@ class ValueStore extends AbstractValueFactory {
 		});
 	}
 
-	private long nextId(byte type) throws IOException {
+	private long nextId(byte type) {
 		long result = nextId;
 		nextId++;
 		// encode type in lower 2 bits of id
@@ -797,7 +797,7 @@ class ValueStore extends AbstractValueFactory {
 		return uriData;
 	}
 
-	private byte[] bnode2data(BNode bNode, boolean create) throws IOException {
+	private byte[] bnode2data(BNode bNode, boolean create) {
 		byte[] idData = bNode.getID().getBytes(StandardCharsets.UTF_8);
 
 		byte[] bNodeData = new byte[1 + idData.length];
@@ -893,7 +893,7 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
-	private LmdbBNode data2bnode(long id, byte[] data, LmdbBNode value) throws IOException {
+	private LmdbBNode data2bnode(long id, byte[] data, LmdbBNode value) {
 		String nodeID = new String(data, 1, data.length - 1, StandardCharsets.UTF_8);
 		if (value == null) {
 			return new LmdbBNode(revision, nodeID, id);

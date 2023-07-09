@@ -35,8 +35,6 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
-import org.eclipse.rdf4j.query.TupleQuery;
-import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
@@ -53,7 +51,7 @@ public class StrictEvaluationStrategyTest {
 	private EvaluationStrategy strategy;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		strategy = new StrictEvaluationStrategy(new EmptyTripleSource(), null);
 	}
 
@@ -61,7 +59,7 @@ public class StrictEvaluationStrategyTest {
 	 * Verifies if only those input bindings that actually occur in the query are returned in the result. See SES-2373.
 	 */
 	@Test
-	public void testBindings() throws Exception {
+	public void testBindings() {
 		String query = "SELECT ?a ?b WHERE {}";
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 
@@ -84,7 +82,7 @@ public class StrictEvaluationStrategyTest {
 	}
 
 	@Test
-	public void testOptimize() throws Exception {
+	public void testOptimize() {
 
 		QueryOptimizer optimizer1 = mock(QueryOptimizer.class);
 		QueryOptimizer optimizer2 = mock(QueryOptimizer.class);
@@ -101,7 +99,7 @@ public class StrictEvaluationStrategyTest {
 	}
 
 	@Test
-	public void testEvaluateRegexFlags() throws Exception {
+	public void testEvaluateRegexFlags() {
 
 		String query = "SELECT ?a WHERE { "
 				+ "VALUES ?a { \"foo.bar\" \"foo bar\" } \n"
@@ -205,7 +203,7 @@ public class StrictEvaluationStrategyTest {
 	}
 
 	@Test
-	public void testSES1991NOWEvaluation() throws Exception {
+	public void testSES1991NOWEvaluation() {
 		String query = "PREFIX ex:<http://example.org> SELECT ?d WHERE {VALUES(?s ?p ?o) {(ex:type rdf:type ex:type)(ex:type ex:type ex:type)} . BIND(NOW() as ?d) } LIMIT 2";
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 		QueryEvaluationStep prepared = strategy.precompile(pq.getTupleExpr());

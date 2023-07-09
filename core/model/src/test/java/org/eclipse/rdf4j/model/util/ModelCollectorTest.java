@@ -32,7 +32,7 @@ public class ModelCollectorTest {
 	private final ValueFactory F = SimpleValueFactory.getInstance();
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		for (int i = 0; i < nrStmts; i++) {
 			stmts.add(F.createStatement(F.createIRI("http://www.example.com/" + i), RDFS.LABEL, F.createLiteral(i)));
 		}

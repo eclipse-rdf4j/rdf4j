@@ -35,7 +35,7 @@ class UnclosableClientProvider implements ClientProvider {
 	}
 
 	@Override
-	public void close() throws Exception {
+	public void close() {
 
 		logger.debug("Client was provided by user and was not closed.");
 		// no op

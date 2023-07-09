@@ -37,7 +37,7 @@ public class SolrSailTest extends AbstractLuceneSailTest {
 	}
 
 	@AfterAll
-	public static void tearDownClass() throws Exception {
+	public static void tearDownClass() {
 		System.setProperty("solr.solr.home", toRestoreSolrHome == null ? "" : toRestoreSolrHome);
 		toRestoreSolrHome = null;
 	}

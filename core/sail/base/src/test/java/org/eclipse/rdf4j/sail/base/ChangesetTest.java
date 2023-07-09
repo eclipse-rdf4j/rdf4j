@@ -34,7 +34,7 @@ public class ChangesetTest {
 	Resource[] allGraph = {};
 
 	@Test
-	public void testConcurrency() throws InterruptedException, ExecutionException {
+	public void testConcurrency() {
 
 		Changeset changeset = getChangeset();
 

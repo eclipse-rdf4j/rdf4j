@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 public class BaseSailConfigTest {
 
 	@Test
-	public void testParseQueryEvaluationMode() throws Exception {
+	public void testParseQueryEvaluationMode() {
 		var implNode = bnode();
 
 		{

@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.benchmark;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -57,7 +56,7 @@ public class InstanceofBenchmark {
 	List<Value> subjects;
 
 	@Setup(Level.Iteration)
-	public void setUp() throws InterruptedException, IOException {
+	public void setUp() {
 
 		subjects = new ArrayList<>();
 		Random random = new Random(89439204);

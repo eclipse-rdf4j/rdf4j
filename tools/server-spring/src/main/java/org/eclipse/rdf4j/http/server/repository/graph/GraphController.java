@@ -59,7 +59,7 @@ public class GraphController extends AbstractController {
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	public GraphController() throws ApplicationContextException {
-		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD, METHOD_POST, "PUT", "DELETE" });
+		setSupportedMethods(METHOD_GET, METHOD_HEAD, METHOD_POST, "PUT", "DELETE");
 	}
 
 	@Override

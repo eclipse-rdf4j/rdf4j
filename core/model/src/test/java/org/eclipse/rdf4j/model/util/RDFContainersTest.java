@@ -54,7 +54,7 @@ public class RDFContainersTest {
 	private IRI RDF_3;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		a = Literals.createLiteral(vf, "A");
 		b = Literals.createLiteral(vf, "B");
 		c = Literals.createLiteral(vf, "C");

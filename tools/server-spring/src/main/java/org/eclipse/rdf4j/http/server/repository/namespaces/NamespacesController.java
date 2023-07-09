@@ -53,7 +53,7 @@ public class NamespacesController extends AbstractController {
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	public NamespacesController() throws ApplicationContextException {
-		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD, "DELETE" });
+		setSupportedMethods(METHOD_GET, METHOD_HEAD, "DELETE");
 	}
 
 	@Override

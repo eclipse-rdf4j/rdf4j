@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import java.io.IOException;
-
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
@@ -29,9 +27,8 @@ public class LimitedSizeNativeStoreConnection extends NativeStoreConnection {
 
 	/**
 	 * @param nativeStore
-	 * @throws IOException
 	 */
-	protected LimitedSizeNativeStoreConnection(NativeStore nativeStore) throws IOException {
+	protected LimitedSizeNativeStoreConnection(NativeStore nativeStore) {
 		super(nativeStore);
 	}
 

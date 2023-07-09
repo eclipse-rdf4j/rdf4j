@@ -35,24 +35,22 @@ import org.junit.jupiter.api.Test;
 public class StatementCollectorTest {
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 	}
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 	}
 
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.helpers.StatementCollector#StatementCollector()}.
 	 */
 	@Test
-	public final void testStatementCollector() throws Exception {
+	public final void testStatementCollector() {
 		StatementCollector collector = new StatementCollector();
 
 		assertNotNull(collector.getStatements());
@@ -64,7 +62,7 @@ public class StatementCollectorTest {
 	 * .
 	 */
 	@Test
-	public final void testStatementCollectorList() throws Exception {
+	public final void testStatementCollectorList() {
 		List<Statement> testList = new ArrayList<>();
 		StatementCollector collector = new StatementCollector(testList);
 
@@ -79,7 +77,7 @@ public class StatementCollectorTest {
 	 * .
 	 */
 	@Test
-	public final void testStatementCollectorSet() throws Exception {
+	public final void testStatementCollectorSet() {
 		Set<Statement> testList = new LinkedHashSet<>();
 		StatementCollector collector = new StatementCollector(testList);
 
@@ -94,7 +92,7 @@ public class StatementCollectorTest {
 	 * .
 	 */
 	@Test
-	public final void testStatementCollectorCollectionModel() throws Exception {
+	public final void testStatementCollectorCollectionModel() {
 		Model testList = new LinkedHashModel();
 		StatementCollector collector = new StatementCollector(testList);
 
@@ -122,7 +120,7 @@ public class StatementCollectorTest {
 	 * .
 	 */
 	@Test
-	public final void testStatementCollectorCollectionModelMapIndependent() throws Exception {
+	public final void testStatementCollectorCollectionModelMapIndependent() {
 		Model testList = new LinkedHashModel();
 		Map<String, String> testNamespaces = new LinkedHashMap<>();
 		StatementCollector collector = new StatementCollector(testList, testNamespaces);
@@ -140,7 +138,7 @@ public class StatementCollectorTest {
 	 * .
 	 */
 	@Test
-	public final void testStatementCollectorCollectionMapModel() throws Exception {
+	public final void testStatementCollectorCollectionMapModel() {
 		Collection<Statement> testList = new LinkedHashModel();
 		Map<String, String> testNamespaces = new LinkedHashMap<>();
 		StatementCollector collector = new StatementCollector(testList, testNamespaces);
@@ -155,7 +153,7 @@ public class StatementCollectorTest {
 	 * Test method for {@link org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler#startRDF()}.
 	 */
 	@Test
-	public final void testStartRDF() throws Exception {
+	public final void testStartRDF() {
 		StatementCollector testCollector = new StatementCollector();
 		testCollector.startRDF();
 	}
@@ -164,7 +162,7 @@ public class StatementCollectorTest {
 	 * Test method for {@link org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler#endRDF()}.
 	 */
 	@Test
-	public final void testEndRDF() throws Exception {
+	public final void testEndRDF() {
 		StatementCollector testCollector = new StatementCollector();
 		testCollector.startRDF();
 		testCollector.endRDF();
@@ -173,10 +171,9 @@ public class StatementCollectorTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler#handleComment(java.lang.String)} .
 	 *
-	 * @throws Exception
 	 */
 	@Test
-	public final void testHandleComment() throws Exception {
+	public final void testHandleComment() {
 		StatementCollector testCollector = new StatementCollector();
 		// StatementCollector must be able to handle comments, but does not
 		// preserve them
