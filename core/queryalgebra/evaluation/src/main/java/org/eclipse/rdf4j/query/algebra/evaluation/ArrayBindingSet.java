@@ -27,6 +27,8 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * An array implementation of the {@link BindingSet} interface.
@@ -37,6 +39,8 @@ import org.eclipse.rdf4j.query.impl.SimpleBinding;
 public class ArrayBindingSet extends AbstractBindingSet implements MutableBindingSet {
 
 	private static final long serialVersionUID = -1L;
+
+	private static final Logger logger = LoggerFactory.getLogger(ArrayBindingSet.class);
 
 	private final String[] bindingNames;
 
@@ -94,7 +98,8 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	public BiConsumer<Value, ArrayBindingSet> getDirectSetBinding(String bindingName) {
 		int index = getIndex(bindingName);
 		if (index == -1) {
-			assert false : "variable not known to ArrayBindingSet : " + bindingName;
+			logger.error("Variable not known to ArrayBindingSet : " + bindingName);
+			assert false : "Variable not known to ArrayBindingSet : " + bindingName;
 			return null;
 		}
 		return (v, a) -> {
@@ -107,7 +112,8 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	public BiConsumer<Value, ArrayBindingSet> getDirectAddBinding(String bindingName) {
 		int index = getIndex(bindingName);
 		if (index == -1) {
-			assert false : "variable not known to ArrayBindingSet : " + bindingName;
+			logger.error("Variable not known to ArrayBindingSet : " + bindingName);
+			assert false : "Variable not known to ArrayBindingSet : " + bindingName;
 			return null;
 		}
 		return (v, a) -> {
@@ -324,7 +330,10 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	public void addBinding(Binding binding) {
 		int index = getIndex(binding.getName());
 		if (index == -1) {
-			assert false : "We don't actually support adding a binding.";
+			logger.error(
+					"We don't actually support adding a binding. " + binding.getName() + " : " + binding.getValue());
+			assert false
+					: "We don't actually support adding a binding. " + binding.getName() + " : " + binding.getValue();
 			return;
 		}
 

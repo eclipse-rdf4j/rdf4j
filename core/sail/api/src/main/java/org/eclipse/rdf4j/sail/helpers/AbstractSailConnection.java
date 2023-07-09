@@ -55,6 +55,13 @@ import org.slf4j.LoggerFactory;
  */
 public abstract class AbstractSailConnection implements SailConnection {
 
+	private static boolean assertsEnabled = false;
+
+	static {
+		// noinspection AssertWithSideEffects
+		assert assertsEnabled = true;
+	}
+
 	private static final ConcurrentCleaner cleaner = new ConcurrentCleaner();
 
 	/**
@@ -310,6 +317,9 @@ public abstract class AbstractSailConnection implements SailConnection {
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> iteration = null;
 			try {
 				iteration = evaluateInternal(tupleExpr, dataset, bindings, includeInferred);
+				if (assertsEnabled) {
+					iteration = new TupleExprWrapperIteration<>(iteration, tupleExpr);
+				}
 				return registerIteration(iteration);
 			} catch (Throwable t) {
 				if (iteration != null) {
