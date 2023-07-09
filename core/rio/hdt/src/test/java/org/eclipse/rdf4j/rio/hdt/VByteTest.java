@@ -34,7 +34,7 @@ public class VByteTest {
 
 	@Test
 	public void test128Input() {
-		byte b[] = new byte[] { (byte) 0x00, (byte) 0x81 };
+		byte[] b = new byte[] { (byte) 0x00, (byte) 0x81 };
 
 		try (ByteArrayInputStream bis = new ByteArrayInputStream(b)) {
 			assertEquals(128, VByte.decode(bis), "128 not correctly decoded");

@@ -74,17 +74,17 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 	 * @param name
 	 * @param pos
 	 */
-	protected HDTDictionarySectionPFC(String name, long pos) {
+	HDTDictionarySectionPFC(String name, long pos) {
 		super(name, pos);
 	}
 
 	@Override
-	protected int size() {
+	int size() {
 		return totalStrings;
 	}
 
 	@Override
-	protected byte[] get(int i) throws IOException {
+	byte[] get(int i) throws IOException {
 		// HDT index start counting from 1
 		int idx = i - 1;
 
@@ -101,7 +101,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 	}
 
 	@Override
-	protected void parse(InputStream is) throws IOException {
+	void parse(InputStream is) throws IOException {
 		CRC8 crc8 = new CRC8();
 		crc8.update((byte) HDTDictionarySection.Type.FRONT.getValue());
 
@@ -112,7 +112,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 				CheckedInputStream cis = new CheckedInputStream(uis, crc8)) {
 
 			long val = VByte.decode(cis);
-			if (totalStrings > Integer.MAX_VALUE) {
+			if (val > Integer.MAX_VALUE) {
 				throw new UnsupportedOperationException(getDebugPartStr() + " max number of strings exceeded: " + val);
 			}
 			totalStrings = (int) val;

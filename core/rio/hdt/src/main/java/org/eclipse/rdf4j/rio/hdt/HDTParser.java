@@ -97,9 +97,9 @@ public class HDTParser extends AbstractRDFParser {
 			throw new IllegalArgumentException("Input stream must not be 'null'");
 		}
 
-		if (in instanceof FileInputStream) {
-			// "TODO: use more optimized way to parse the file, eg. filechannel / membuffer"
-		}
+//		if (in instanceof FileInputStream) {
+//			 TODO: use more optimized way to parse the file, eg. filechannel / membuffer
+//		}
 
 		HDTDictionarySection shared = null;
 		HDTDictionarySection subjects = null;
@@ -163,9 +163,10 @@ public class HDTParser extends AbstractRDFParser {
 			rdfHandler.startRDF();
 		}
 
-		int cnt = 0;
+		assert shared != null;
 		int size = shared.size();
 
+		assert section != null;
 		while (section.hasNext()) {
 			int[] t = section.next();
 			byte[] s = getSO(t[0], size, shared, subjects);
@@ -188,7 +189,7 @@ public class HDTParser extends AbstractRDFParser {
 	 */
 	@Override
 	public synchronized void parse(Reader reader, String baseURI)
-			throws IOException, RDFParseException, RDFHandlerException {
+			throws RDFParseException, RDFHandlerException {
 		throw new UnsupportedOperationException("HDT is binary, text readers not supported.");
 	}
 
