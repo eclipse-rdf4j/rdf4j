@@ -26,7 +26,6 @@ import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.iterator.EmptyIterator;
 import org.eclipse.rdf4j.common.iterator.UnionIterator;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
