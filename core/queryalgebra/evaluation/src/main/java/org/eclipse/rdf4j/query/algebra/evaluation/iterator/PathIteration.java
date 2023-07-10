@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
+import java.util.HashSet;
 import java.util.Queue;
 import java.util.Set;
 
@@ -66,6 +67,8 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 	private static final String JOINVAR_PREFIX = "intermediate_join_";
 
+	private final Set<String> intermediateVarRegistry = new HashSet<>();
+
 	public PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
 			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings)
 			throws QueryEvaluationException {
@@ -104,13 +107,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 			while (currentIter != null && currentIter.hasNext()) {
 				BindingSet potentialNextElement = currentIter.next();
-				MutableBindingSet nextElement;
-				// if it is not a compatible type of BindingSet
-				if (potentialNextElement instanceof QueryBindingSet) {
-					nextElement = (MutableBindingSet) potentialNextElement;
-				} else {
-					nextElement = new QueryBindingSet(potentialNextElement);
-				}
+				MutableBindingSet nextElement = nextElementObject(potentialNextElement);
 
 				if (!startVarFixed && !endVarFixed && currentVp != null) {
 					Value startValue = currentVp.getStartValue();
@@ -182,7 +179,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 						if (!nextElement.hasBinding(endVar.getName())) {
 							addBinding(nextElement, endVar.getName(), v2);
 						}
-						return nextElement;
+						return clean(nextElement, potentialNextElement);
 					}
 				} else {
 					continue again;
@@ -196,6 +193,31 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 			valueQueue.clear();
 			return null;
 		}
+	}
+
+	private BindingSet clean(MutableBindingSet nextElement, BindingSet potentialNextElement) {
+		if (nextElement == potentialNextElement) {
+			return nextElement;
+		} else {
+			QueryBindingSet qbs = new QueryBindingSet();
+			for (String bn : nextElement.getBindingNames()) {
+				if (nextElement.hasBinding(bn) && !intermediateVarRegistry.contains(bn)) {
+					qbs.setBinding(bn, nextElement.getValue(bn));
+				}
+			}
+			return qbs;
+		}
+	}
+
+	private MutableBindingSet nextElementObject(BindingSet potentialNextElement) {
+		MutableBindingSet nextElement;
+		// if it is not a compatible type of BindingSet
+		if (potentialNextElement instanceof QueryBindingSet) {
+			nextElement = (MutableBindingSet) potentialNextElement;
+		} else {
+			nextElement = new QueryBindingSet(potentialNextElement);
+		}
+		return nextElement;
 	}
 
 	private void addBinding(MutableBindingSet bs, String name, Value value) {
@@ -427,6 +449,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 	}
 
 	public Var createAnonVar(String varName) {
+		intermediateVarRegistry.add(varName);
 		Var var = new Var(varName);
 		var.setAnonymous(true);
 		return var;
