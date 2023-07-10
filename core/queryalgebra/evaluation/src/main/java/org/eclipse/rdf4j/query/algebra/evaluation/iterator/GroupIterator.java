@@ -501,7 +501,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		@Override
 		public Value getFinalValue() {
-			return SimpleValueFactory.getInstance().createLiteral(Long.toString(value), CoreDatatype.XSD.INTEGER);
+			return vf.createLiteral(Long.toString(value), CoreDatatype.XSD.INTEGER);
 		}
 	}
 
@@ -571,10 +571,10 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			}
 
 			if (count == 0) {
-				return SimpleValueFactory.getInstance().createLiteral("0", CoreDatatype.XSD.INTEGER);
+				return vf.createLiteral("0", CoreDatatype.XSD.INTEGER);
 			}
 
-			Literal sizeLit = SimpleValueFactory.getInstance().createLiteral(count);
+			Literal sizeLit = vf.createLiteral(count);
 			return MathUtil.compute(sum, sizeLit, MathOp.DIVIDE);
 		}
 	}
@@ -800,9 +800,9 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		@Override
 		public Value getFinalValue() throws ValueExprEvaluationException {
 			if (concatenated == null || concatenated.length() == 0) {
-				return SimpleValueFactory.getInstance().createLiteral("");
+				return vf.createLiteral("");
 			}
-			return SimpleValueFactory.getInstance().createLiteral(concatenated.toString());
+			return vf.createLiteral(concatenated.toString());
 		}
 	}
 
