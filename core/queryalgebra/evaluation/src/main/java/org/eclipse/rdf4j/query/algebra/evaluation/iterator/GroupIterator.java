@@ -473,7 +473,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			var function = factory.orElseThrow(
 					() -> new QueryEvaluationException("Unknown aggregate function '" + aggOperator.getIRI() + "'"))
 					.buildFunction(new QueryStepEvaluator(strategy.precompile(aggOperator.getArg(), context)));
-			return new AggregatePredicateCollectorSupplier<>(function, predicate,
+			return new AggregatePredicateCollectorSupplier(function, predicate,
 					() -> factory.get().getCollector(),
 					ge.getName());
 
@@ -542,7 +542,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 	}
 
-	private class AvgCollector implements AggregateCollector {
+	private static class AvgCollector implements AggregateCollector {
 		private final ValueFactory vf;
 		private Literal sum;
 		private long count;

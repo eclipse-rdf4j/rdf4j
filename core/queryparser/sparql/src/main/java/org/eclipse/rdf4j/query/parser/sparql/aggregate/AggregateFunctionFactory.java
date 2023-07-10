@@ -36,7 +36,7 @@ public interface AggregateFunctionFactory {
 	 * @param evaluationStep used to process values from an iterator's binding set
 	 * @return an aggregate function evaluator
 	 */
-	AggregateFunction buildFunction(Function<BindingSet, Value> evaluationStep);
+	AggregateFunction<?, ?> buildFunction(Function<BindingSet, Value> evaluationStep);
 
 	/**
 	 * @return result collector associated with given function type

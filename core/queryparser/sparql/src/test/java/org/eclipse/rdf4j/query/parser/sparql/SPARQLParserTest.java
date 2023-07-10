@@ -984,7 +984,7 @@ public class SPARQLParserTest {
 			}
 
 			@Override
-			public AggregateFunction buildFunction(Function<BindingSet, Value> evaluationStep) {
+			public AggregateFunction<?, ?> buildFunction(Function<BindingSet, Value> evaluationStep) {
 				return null;
 			}
 

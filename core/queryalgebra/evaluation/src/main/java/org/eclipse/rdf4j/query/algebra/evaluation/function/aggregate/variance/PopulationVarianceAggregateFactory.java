@@ -15,6 +15,7 @@ import java.util.function.Function;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.StatisticCollector;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.StatisticalAggregateFunction;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunction;
@@ -35,7 +36,7 @@ public class PopulationVarianceAggregateFactory implements AggregateFunctionFact
 	}
 
 	@Override
-	public AggregateFunction buildFunction(Function<BindingSet, Value> evaluationStep) {
+	public AggregateFunction<StatisticCollector, Value> buildFunction(Function<BindingSet, Value> evaluationStep) {
 		return new StatisticalAggregateFunction(evaluationStep);
 	}
 
