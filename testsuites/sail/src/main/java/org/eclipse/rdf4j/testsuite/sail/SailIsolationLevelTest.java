@@ -301,7 +301,7 @@ public abstract class SailIsolationLevelTest {
 		try (SailConnection con = store.getConnection()) {
 			// open an iteration outside the transaction and leave it open while another transaction is begun and
 			// committed
-			try (CloseableIteration<? extends Statement, SailException> unusedStatements = con.getStatements(null, null,
+			try (CloseableIteration<? extends Statement> unusedStatements = con.getStatements(null, null,
 					null, true)) {
 				con.begin(level);
 				con.addStatement(RDF.NIL, RDF.TYPE, RDF.LIST);
@@ -450,7 +450,7 @@ public abstract class SailIsolationLevelTest {
 				insertTestStatement(con, i);
 			}
 			int counter = 0;
-			try (CloseableIteration<? extends Statement, SailException> stmts = con.getStatements(null, null, null,
+			try (CloseableIteration<? extends Statement> stmts = con.getStatements(null, null, null,
 					false)) {
 				while (stmts.hasNext()) {
 					Statement st = stmts.next();
@@ -603,7 +603,7 @@ public abstract class SailIsolationLevelTest {
 
 	protected long count(SailConnection con, Resource subj, IRI pred, Value obj, boolean includeInferred,
 			Resource... contexts) throws SailException {
-		try (CloseableIteration<? extends Statement, SailException> stmts = con.getStatements(subj, pred, obj,
+		try (CloseableIteration<? extends Statement> stmts = con.getStatements(subj, pred, obj,
 				includeInferred, contexts)) {
 			long counter = 0;
 			while (stmts.hasNext()) {
@@ -615,7 +615,7 @@ public abstract class SailIsolationLevelTest {
 	}
 
 	protected Literal readLiteral(SailConnection con, final IRI subj, final IRI pred) throws SailException {
-		try (CloseableIteration<? extends Statement, SailException> stmts = con.getStatements(subj, pred, null,
+		try (CloseableIteration<? extends Statement> stmts = con.getStatements(subj, pred, null,
 				false)) {
 			if (!stmts.hasNext()) {
 				return null;

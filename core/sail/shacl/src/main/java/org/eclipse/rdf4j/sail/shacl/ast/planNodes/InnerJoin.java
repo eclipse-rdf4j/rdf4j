@@ -36,7 +36,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 
 	private final PlanNode left;
 	private final PlanNode right;
-	private CloseableIteration<ValidationTuple, SailException> iterator;
+	private CloseableIteration<ValidationTuple> iterator;
 	private NotifyingPushablePlanNode joined;
 	private NotifyingPushablePlanNode discardedLeft;
 	private NotifyingPushablePlanNode discardedRight;
@@ -91,16 +91,16 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple> iterator() {
 		throw new IllegalStateException();
 	}
 
-	public CloseableIteration<ValidationTuple, SailException> internalIterator() {
+	public CloseableIteration<ValidationTuple> internalIterator() {
 
-		return new CloseableIteration<ValidationTuple, SailException>() {
+		return new CloseableIteration<ValidationTuple>() {
 
-			final CloseableIteration<? extends ValidationTuple, SailException> leftIterator = left.iterator();
-			final CloseableIteration<? extends ValidationTuple, SailException> rightIterator = right.iterator();
+			final CloseableIteration<? extends ValidationTuple> leftIterator = left.iterator();
+			final CloseableIteration<? extends ValidationTuple> rightIterator = right.iterator();
 
 			ValidationTuple next;
 			ValidationTuple nextLeft;
@@ -388,7 +388,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 		}
 
 		@Override
-		public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+		public CloseableIteration<? extends ValidationTuple> iterator() {
 			return delegate.iterator();
 		}
 

@@ -26,19 +26,19 @@ import org.mockito.junit.jupiter.MockitoExtension;
 public class SilentIterationTest {
 
 	@Mock
-	private CloseableIteration<Object, Exception> delegate;
+	private CloseableIteration<Object> delegate;
 
 	@InjectMocks
-	private SilentIteration<Object, Exception> subject;
+	private SilentIteration<Object> subject;
 
 	@Test
-	public void hasNextSwallowsException() throws Exception {
+	public void hasNextSwallowsException() {
 		when(delegate.hasNext()).thenThrow(new RuntimeException());
 		assertThat(subject.hasNext()).isFalse();
 	}
 
 	@Test
-	public void nextConvertsException() throws Exception {
+	public void nextConvertsException() {
 		when(delegate.next()).thenThrow(new RuntimeException());
 		assertThatExceptionOfType(NoSuchElementException.class).isThrownBy(subject::next);
 	}

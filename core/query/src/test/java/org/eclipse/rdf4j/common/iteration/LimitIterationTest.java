@@ -18,12 +18,12 @@ import org.junit.jupiter.api.Test;
 
 public class LimitIterationTest extends CloseableIterationTest {
 
-	protected static LimitIteration<String, Exception> createLimitIteration(int limit) {
+	protected static LimitIteration<String> createLimitIteration(int limit) {
 		return new LimitIteration<>(createStringList1Iteration(), limit);
 	}
 
 	@Override
-	protected CloseableIteration<String, Exception> createTestIteration() {
+	protected CloseableIteration<String> createTestIteration() {
 		return createLimitIteration(5);
 	}
 
@@ -35,7 +35,7 @@ public class LimitIterationTest extends CloseableIterationTest {
 	@Test
 	public void testInRangeOffset() throws Exception {
 		for (int limit = 0; limit < stringList1.size(); limit++) {
-			Iteration<String, Exception> iter = createLimitIteration(limit);
+			CloseableIteration<String> iter = createLimitIteration(limit);
 			List<String> resultList = Iterations.asList(iter);
 			List<String> expectedList = stringList1.subList(0, limit);
 			assertEquals(expectedList, resultList, "testInRangeOffset failed for limit: " + limit);
@@ -44,7 +44,7 @@ public class LimitIterationTest extends CloseableIterationTest {
 
 	@Test
 	public void testOutOfRangeOffset() throws Exception {
-		Iteration<String, Exception> iter = createLimitIteration(2 * stringList1.size());
+		CloseableIteration<String> iter = createLimitIteration(2 * stringList1.size());
 		List<String> resultList = Iterations.asList(iter);
 		assertEquals(stringList1, resultList);
 	}

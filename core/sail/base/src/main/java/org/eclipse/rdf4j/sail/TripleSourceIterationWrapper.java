@@ -19,12 +19,12 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 @InternalUseOnly
-public class TripleSourceIterationWrapper<T> implements CloseableIteration<T, QueryEvaluationException> {
+public class TripleSourceIterationWrapper<T> implements CloseableIteration<T> {
 
-	private final CloseableIteration<? extends T, SailException> delegate;
+	private final CloseableIteration<? extends T> delegate;
 	private boolean closed = false;
 
-	public TripleSourceIterationWrapper(CloseableIteration<? extends T, SailException> delegate) {
+	public TripleSourceIterationWrapper(CloseableIteration<? extends T> delegate) {
 		this.delegate = Objects.requireNonNull(delegate, "The iterator was null");
 	}
 

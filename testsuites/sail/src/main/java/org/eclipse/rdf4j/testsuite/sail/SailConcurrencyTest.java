@@ -263,7 +263,7 @@ public abstract class SailConcurrencyTest {
 			try {
 				try (SailConnection connection = store.getConnection()) {
 					while (continueRunning) {
-						try (CloseableIteration<? extends Resource, SailException> contextIter = connection
+						try (CloseableIteration<? extends Resource> contextIter = connection
 								.getContextIDs()) {
 							while (contextIter.hasNext()) {
 								Resource context = contextIter.next();

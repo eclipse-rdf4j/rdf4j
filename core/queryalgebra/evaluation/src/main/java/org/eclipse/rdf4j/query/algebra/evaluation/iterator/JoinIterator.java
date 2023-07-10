@@ -31,15 +31,15 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
  *
  * @author Jeen Broekstra
  */
-public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class JoinIterator extends LookAheadIteration<BindingSet> {
 
 	/*-----------*
 	 * Variables *
 	 *-----------*/
 
-	private final CloseableIteration<BindingSet, QueryEvaluationException> leftIter;
+	private final CloseableIteration<BindingSet> leftIter;
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
+	private CloseableIteration<BindingSet> rightIter;
 
 	private final QueryEvaluationStep preparedRight;
 

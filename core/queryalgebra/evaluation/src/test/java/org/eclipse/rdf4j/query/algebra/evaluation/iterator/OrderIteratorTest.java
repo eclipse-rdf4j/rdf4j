@@ -35,7 +35,7 @@ import org.junit.jupiter.api.Test;
  */
 public class OrderIteratorTest {
 
-	class IterationStub extends CloseableIteratorIteration<BindingSet, QueryEvaluationException> {
+	class IterationStub extends CloseableIteratorIteration<BindingSet> {
 
 		int hasNextCount = 0;
 

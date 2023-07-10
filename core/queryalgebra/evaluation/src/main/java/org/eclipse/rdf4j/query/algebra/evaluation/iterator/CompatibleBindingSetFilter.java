@@ -21,11 +21,11 @@ import org.eclipse.rdf4j.query.QueryResults;
  * @deprecated
  */
 @Deprecated
-public class CompatibleBindingSetFilter extends FilterIteration<BindingSet, QueryEvaluationException> {
+public class CompatibleBindingSetFilter extends FilterIteration<BindingSet> {
 
 	private final BindingSet inputBindings;
 
-	public CompatibleBindingSetFilter(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public CompatibleBindingSetFilter(CloseableIteration<BindingSet> iter,
 			BindingSet inputBindings) {
 		super(iter);
 

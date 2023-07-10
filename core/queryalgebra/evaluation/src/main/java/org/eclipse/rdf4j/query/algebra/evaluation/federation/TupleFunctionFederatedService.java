@@ -72,7 +72,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 
 	@Override
 	public boolean ask(Service service, BindingSet bindings, String baseUri) throws QueryEvaluationException {
-		try (final CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(service,
+		try (final CloseableIteration<BindingSet> iter = evaluate(service,
 				new SingletonIteration<>(bindings), baseUri)) {
 			if (iter.hasNext()) {
 				BindingSet bs = iter.next();
@@ -84,9 +84,9 @@ public class TupleFunctionFederatedService implements FederatedService {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> select(Service service,
+	public CloseableIteration<BindingSet> select(Service service,
 			final Set<String> projectionVars, BindingSet bindings, String baseUri) throws QueryEvaluationException {
-		final CloseableIteration<BindingSet, QueryEvaluationException> iter, eval;
+		final CloseableIteration<BindingSet> iter, eval;
 		eval = evaluate(service, new SingletonIteration<>(bindings), baseUri);
 		iter = service.isSilent() ? new SilentIteration<>(eval) : eval;
 		if (service.getBindingNames().equals(projectionVars)) {
@@ -147,8 +147,8 @@ public class TupleFunctionFederatedService implements FederatedService {
 	}
 
 	@Override
-	public final CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service,
-			CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
+	public final CloseableIteration<BindingSet> evaluate(Service service,
+			CloseableIteration<BindingSet> bindings, String baseUri)
 			throws QueryEvaluationException {
 		if (!bindings.hasNext()) {
 			return QueryEvaluationStep.EMPTY_ITERATION;
@@ -165,7 +165,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 
 		List<ValueExpr> argExprs = funcCall.getArgs();
 
-		List<CloseableIteration<BindingSet, QueryEvaluationException>> resultIters = new ArrayList<>();
+		List<CloseableIteration<BindingSet>> resultIters = new ArrayList<>();
 		while (bindings.hasNext()) {
 			BindingSet bs = bindings.next();
 			Value[] argValues = new Value[argExprs.size()];

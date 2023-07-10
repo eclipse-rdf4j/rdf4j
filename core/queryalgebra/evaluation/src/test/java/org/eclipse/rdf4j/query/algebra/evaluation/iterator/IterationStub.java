@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
-class IterationStub extends CloseableIteratorIteration<BindingSet, QueryEvaluationException> implements Serializable {
+class IterationStub extends CloseableIteratorIteration<BindingSet> implements Serializable {
 
 	/**
 	 *

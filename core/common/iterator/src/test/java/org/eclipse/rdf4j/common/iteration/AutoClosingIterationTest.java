@@ -81,7 +81,7 @@ public class AutoClosingIterationTest {
 		return new CloseableIterationForTesting(list);
 	}
 
-	static class CloseableIterationForTesting implements CloseableIteration<String, Exception> {
+	static class CloseableIterationForTesting implements CloseableIteration<String> {
 
 		public boolean closed = false;
 		Iterator<String> iterator;

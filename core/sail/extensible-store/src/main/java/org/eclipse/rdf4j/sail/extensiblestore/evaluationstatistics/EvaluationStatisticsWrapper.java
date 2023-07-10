@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.DataStructureInterface;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 
@@ -50,7 +49,7 @@ public class EvaluationStatisticsWrapper implements DataStructureInterface {
 	}
 
 	@Override
-	public CloseableIteration<? extends ExtensibleStatement, SailException> getStatements(Resource subject,
+	public CloseableIteration<? extends ExtensibleStatement> getStatements(Resource subject,
 			IRI predicate,
 			Value object, boolean inferred, Resource... context) {
 		return delegate.getStatements(subject, predicate, object, inferred, context);

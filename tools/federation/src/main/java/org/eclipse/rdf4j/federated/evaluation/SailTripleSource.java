@@ -56,7 +56,7 @@ public class SailTripleSource extends TripleSourceBase {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
+	public CloseableIteration<BindingSet> getStatements(
 			StatementPattern stmt,
 			final BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
 			throws RepositoryException, MalformedQueryException,
@@ -105,7 +105,7 @@ public class SailTripleSource extends TripleSourceBase {
 	}
 
 	@Override
-	public CloseableIteration<Statement, QueryEvaluationException> getStatements(
+	public CloseableIteration<Statement> getStatements(
 			Resource subj, IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts)
 			throws RepositoryException,
 			MalformedQueryException, QueryEvaluationException {
@@ -123,7 +123,7 @@ public class SailTripleSource extends TripleSourceBase {
 
 				resultHolder.set(new ExceptionConvertingIteration<>(repoResult) {
 					@Override
-					protected QueryEvaluationException convert(Exception arg0) {
+					protected QueryEvaluationException convert(RuntimeException arg0) {
 						return new QueryEvaluationException(arg0);
 					}
 				});
@@ -175,7 +175,7 @@ public class SailTripleSource extends TripleSourceBase {
 
 	@SuppressWarnings("unchecked")
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
+	public CloseableIteration<BindingSet> getStatements(
 			TupleExpr preparedQuery,
 			BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
 			throws RepositoryException, MalformedQueryException,
@@ -200,14 +200,14 @@ public class SailTripleSource extends TripleSourceBase {
 				log.debug("Details:", e);
 			}
 
-			CloseableIteration<BindingSet, QueryEvaluationException> res = null;
+			CloseableIteration<BindingSet> res = null;
 			try {
 				if (precompiledQueryNode != null) {
-					res = (CloseableIteration<BindingSet, QueryEvaluationException>) sailConn.evaluate(
+					res = (CloseableIteration<BindingSet>) sailConn.evaluate(
 							precompiledQueryNode, null, EmptyBindingSet.getInstance(), queryInfo.getIncludeInferred());
 				} else {
 					// fallback: attempt the original tuple expression
-					res = (CloseableIteration<BindingSet, QueryEvaluationException>) sailConn.evaluate(preparedQuery,
+					res = (CloseableIteration<BindingSet>) sailConn.evaluate(preparedQuery,
 							null, EmptyBindingSet.getInstance(), queryInfo.getIncludeInferred());
 				}
 

@@ -77,12 +77,12 @@ public class UnionNode implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple> iterator() {
 
 		if (nodes.length == 1) {
 			return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-				private CloseableIteration<? extends ValidationTuple, SailException> iterator;
+				private CloseableIteration<? extends ValidationTuple> iterator;
 
 				@Override
 				protected void init() {
@@ -110,7 +110,7 @@ public class UnionNode implements PlanNode {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			private CloseableIteration<? extends ValidationTuple, SailException>[] iterators;
+			private CloseableIteration<? extends ValidationTuple>[] iterators;
 
 			final ValidationTuple[] peekList = new ValidationTuple[nodes.length];
 

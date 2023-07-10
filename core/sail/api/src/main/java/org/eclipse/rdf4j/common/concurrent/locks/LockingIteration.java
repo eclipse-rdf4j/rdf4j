@@ -15,7 +15,6 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 
 /**
@@ -23,7 +22,7 @@ import org.eclipse.rdf4j.common.iteration.IterationWrapper;
  * before the lock is released. This iterator closes itself as soon as all elements have been read.
  */
 @Deprecated(since = "4.1.0")
-public class LockingIteration<E, X extends Exception> extends IterationWrapper<E, X> {
+public class LockingIteration<E> extends IterationWrapper<E> {
 
 	/**
 	 * The lock to release when the Iteration is closed.
@@ -37,7 +36,7 @@ public class LockingIteration<E, X extends Exception> extends IterationWrapper<E
 	 * @param iter The underlying Iteration, must not be <var>null</var>.
 	 */
 	@Deprecated(since = "4.1.0", forRemoval = true)
-	public LockingIteration(Lock lock, Iteration<? extends E, X> iter) {
+	public LockingIteration(Lock lock, CloseableIteration<? extends E> iter) {
 		super(iter);
 		if (iter instanceof EmptyIteration) {
 			lock.release();
@@ -47,8 +46,8 @@ public class LockingIteration<E, X extends Exception> extends IterationWrapper<E
 		}
 	}
 
-	public static <T, R extends Exception> CloseableIteration<T, R> getInstance(Lock lock,
-			CloseableIteration<T, R> iter) {
+	public static <T, R extends Exception> CloseableIteration<T> getInstance(Lock lock,
+			CloseableIteration<T> iter) {
 		if (iter instanceof EmptyIteration) {
 			lock.release();
 			return iter;
@@ -58,7 +57,7 @@ public class LockingIteration<E, X extends Exception> extends IterationWrapper<E
 	}
 
 	@Override
-	protected void handleClose() throws X {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {

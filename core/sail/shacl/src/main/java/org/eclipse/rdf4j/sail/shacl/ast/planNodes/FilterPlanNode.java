@@ -31,7 +31,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	private PushablePlanNode trueNode;
 	private PushablePlanNode falseNode;
 
-	private CloseableIteration<ValidationTuple, SailException> iterator;
+	private CloseableIteration<ValidationTuple> iterator;
 	private ValidationExecutionLogger validationExecutionLogger;
 	private boolean closed;
 
@@ -70,16 +70,16 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple> iterator() {
 
 		throw new IllegalStateException("Must specify if filter should return false or true nodes!");
 	}
 
-	private CloseableIteration<ValidationTuple, SailException> iteratorInternal() {
+	private CloseableIteration<ValidationTuple> iteratorInternal() {
 
 		return new CloseableIteration<>() {
 
-			private CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
+			private CloseableIteration<? extends ValidationTuple> parentIterator;
 
 			ValidationTuple next;
 

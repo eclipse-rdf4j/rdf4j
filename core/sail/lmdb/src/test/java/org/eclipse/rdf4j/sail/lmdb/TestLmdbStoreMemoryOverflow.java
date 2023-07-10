@@ -95,7 +95,7 @@ public class TestLmdbStoreMemoryOverflow {
 		testCon.close();
 	}
 
-	private static final class DynamicIteration implements CloseableIteration<Statement, RuntimeException> {
+	private static final class DynamicIteration implements CloseableIteration<Statement> {
 
 		private final int size;
 

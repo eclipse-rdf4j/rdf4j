@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * @author James Leigh
  */
 @Deprecated(since = "4.1.0")
-public abstract class QueueIteration<E, T extends Exception> extends LookAheadIteration<E, T> {
+public abstract class QueueIteration<E, T extends RuntimeException> extends LookAheadIteration<E> {
 
 	private final AtomicBoolean done = new AtomicBoolean(false);
 
@@ -165,7 +165,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	 * Returns the next item in the queue, which may be <var>null</var>, or throws an exception.
 	 */
 	@Override
-	public E getNextElement() throws T {
+	public E getNextElement() {
 		if (isClosed()) {
 			return null;
 		}
@@ -202,7 +202,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	}
 
 	@Override
-	public void handleClose() throws T {
+	public void handleClose() {
 		try {
 			super.handleClose();
 		} finally {

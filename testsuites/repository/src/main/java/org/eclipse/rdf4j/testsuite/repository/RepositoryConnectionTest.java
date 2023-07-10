@@ -109,8 +109,6 @@ public abstract class RepositoryConnectionTest {
 		return IsolationLevels.values();
 	}
 
-	private static final String URN_TEST_OTHER = "urn:test:other";
-
 	private static final String SPARQL_DEL_ALL = "DELETE { ?s ?p ?o } WHERE { ?s ?p ?o }";
 
 	private static final String URN_TEST_O1 = "urn:test:o1";
@@ -527,14 +525,13 @@ public abstract class RepositoryConnectionTest {
 		testCon.add(bob, name, nameBob, context1);
 		testCon.add(bob, mbox, mboxBob, context1);
 		testCon.add(context1, publisher, nameBob);
-		StringBuilder queryBuilder = new StringBuilder(128);
-		queryBuilder.append(" PREFIX foaf: <" + FOAF_NS + "> \n");
-		queryBuilder.append(" SELECT ?name ?mbox");
-		queryBuilder.append(" WHERE { [] foaf:name ?name;");
-		queryBuilder.append("            foaf:mbox ?mbox. }");
+		String queryBuilder = " PREFIX foaf: <" + FOAF_NS + "> \n" +
+				" SELECT ?name ?mbox" +
+				" WHERE { [] foaf:name ?name;" +
+				"            foaf:mbox ?mbox. }";
 
-		try (TupleQueryResult result = testCon.prepareTupleQuery(queryBuilder.toString()).evaluate()) {
-			assertThat(result).isNotNull();
+		try (TupleQueryResult result = testCon.prepareTupleQuery(queryBuilder).evaluate()) {
+			assertThat((Iterable<?>) result).isNotNull();
 			assertThat(result.hasNext()).isTrue();
 			while (result.hasNext()) {
 				BindingSet solution = result.next();
@@ -589,13 +586,12 @@ public abstract class RepositoryConnectionTest {
 		setupTest(level);
 
 		testCon.add(alexander, name, Александър);
-		StringBuilder queryBuilder = new StringBuilder(128);
-		queryBuilder.append(" PREFIX foaf: <" + FOAF_NS + "> \n");
-		queryBuilder.append(" SELECT ?person");
-		queryBuilder.append(" WHERE { ?person foaf:name \"").append(Александър.getLabel()).append("\". }");
+		String queryBuilder = " PREFIX foaf: <" + FOAF_NS + "> \n" +
+				" SELECT ?person" +
+				" WHERE { ?person foaf:name \"" + Александър.getLabel() + "\". }";
 
-		try (TupleQueryResult result = testCon.prepareTupleQuery(queryBuilder.toString()).evaluate()) {
-			assertThat(result).isNotNull();
+		try (TupleQueryResult result = testCon.prepareTupleQuery(queryBuilder).evaluate()) {
+			assertThat((Iterable<?>) result).isNotNull();
 			assertThat(result.hasNext()).isTrue();
 			while (result.hasNext()) {
 				BindingSet solution = result.next();
@@ -616,16 +612,15 @@ public abstract class RepositoryConnectionTest {
 		testCon.add(bob, name, nameBob, context1);
 		testCon.add(bob, mbox, mboxBob, context1);
 		testCon.add(context1, publisher, nameBob);
-		StringBuilder queryBuilder = new StringBuilder();
-		queryBuilder.append(" PREFIX foaf: <" + FOAF_NS + "> \n");
-		queryBuilder.append(" SELECT ?name ?mbox \n");
-		queryBuilder.append(" WHERE { [] foaf:name ?name; \n");
-		queryBuilder.append("            foaf:mbox ?mbox . }");
-		TupleQuery query = testCon.prepareTupleQuery(queryBuilder.toString());
+		String queryBuilder = " PREFIX foaf: <" + FOAF_NS + "> \n" +
+				" SELECT ?name ?mbox \n" +
+				" WHERE { [] foaf:name ?name; \n" +
+				"            foaf:mbox ?mbox . }";
+		TupleQuery query = testCon.prepareTupleQuery(queryBuilder);
 		query.setBinding(NAME, nameBob);
 
 		try (TupleQueryResult result = query.evaluate()) {
-			assertThat(result).isNotNull();
+			assertThat((Iterable<?>) result).isNotNull();
 			assertThat(result.hasNext()).isTrue();
 			while (result.hasNext()) {
 				BindingSet solution = result.next();
@@ -646,16 +641,15 @@ public abstract class RepositoryConnectionTest {
 
 		testCon.add(alexander, name, Александър);
 
-		StringBuilder queryBuilder = new StringBuilder();
-		queryBuilder.append(" PREFIX foaf: <" + FOAF_NS + "> \n");
-		queryBuilder.append(" SELECT ?person \n");
-		queryBuilder.append(" WHERE { ?person foaf:name ?name . }");
+		String queryBuilder = " PREFIX foaf: <" + FOAF_NS + "> \n" +
+				" SELECT ?person \n" +
+				" WHERE { ?person foaf:name ?name . }";
 
-		TupleQuery query = testCon.prepareTupleQuery(queryBuilder.toString());
+		TupleQuery query = testCon.prepareTupleQuery(queryBuilder);
 		query.setBinding(NAME, Александър);
 
 		try (TupleQueryResult result = query.evaluate()) {
-			assertThat(result).isNotNull();
+			assertThat((Iterable<?>) result).isNotNull();
 			assertThat(result.hasNext()).isTrue();
 
 			while (result.hasNext()) {
@@ -679,14 +673,13 @@ public abstract class RepositoryConnectionTest {
 		testCon.add(bob, mbox, mboxBob, context1);
 		testCon.add(context1, publisher, nameBob);
 
-		StringBuilder queryBuilder = new StringBuilder(128);
-		queryBuilder.append(" PREFIX foaf: <" + FOAF_NS + "> \n");
-		queryBuilder.append(" CONSTRUCT\n");
-		queryBuilder.append(" WHERE { [] foaf:name ?name;\n");
-		queryBuilder.append("            foaf:mbox ?mbox.}");
+		String queryBuilder = " PREFIX foaf: <" + FOAF_NS + "> \n" +
+				" CONSTRUCT\n" +
+				" WHERE { [] foaf:name ?name;\n" +
+				"            foaf:mbox ?mbox.}";
 
-		try (GraphQueryResult result = testCon.prepareGraphQuery(queryBuilder.toString()).evaluate()) {
-			assertThat(result).isNotNull();
+		try (GraphQueryResult result = testCon.prepareGraphQuery(queryBuilder).evaluate()) {
+			assertThat((Iterable<?>) result).isNotNull();
 			assertThat(result.hasNext()).isTrue();
 
 			while (result.hasNext()) {
@@ -714,16 +707,15 @@ public abstract class RepositoryConnectionTest {
 		testCon.add(bob, mbox, mboxBob, context1);
 		testCon.add(context1, publisher, nameBob);
 		testCon.commit();
-		StringBuilder queryBuilder = new StringBuilder(128);
-		queryBuilder.append(" PREFIX foaf: <" + FOAF_NS + "> \n");
-		queryBuilder.append(" CONSTRUCT\n");
-		queryBuilder.append(" WHERE { [] foaf:name ?name;\n");
-		queryBuilder.append("            foaf:mbox ?mbox.}");
-		GraphQuery query = testCon.prepareGraphQuery(queryBuilder.toString());
+		String queryBuilder = " PREFIX foaf: <" + FOAF_NS + "> \n" +
+				" CONSTRUCT\n" +
+				" WHERE { [] foaf:name ?name;\n" +
+				"            foaf:mbox ?mbox.}";
+		GraphQuery query = testCon.prepareGraphQuery(queryBuilder);
 		query.setBinding(NAME, nameBob);
 
 		try (GraphQueryResult result = query.evaluate()) {
-			assertThat(result).isNotNull();
+			assertThat((Iterable<?>) result).isNotNull();
 			assertThat(result.hasNext()).isTrue();
 			while (result.hasNext()) {
 				Statement st = result.next();
@@ -753,12 +745,11 @@ public abstract class RepositoryConnectionTest {
 		testCon.add(bob, mbox, mboxBob, context1);
 		testCon.add(context1, publisher, nameBob);
 
-		StringBuilder queryBuilder = new StringBuilder(64);
-		queryBuilder.append(PREFIX_FOAF + FOAF_NS + "> ");
-		queryBuilder.append(ASK);
-		queryBuilder.append("{ ?p foaf:name ?name }");
+		String queryBuilder = PREFIX_FOAF + FOAF_NS + "> " +
+				ASK +
+				"{ ?p foaf:name ?name }";
 
-		boolean exists = testCon.prepareBooleanQuery(QueryLanguage.SPARQL, queryBuilder.toString()).evaluate();
+		boolean exists = testCon.prepareBooleanQuery(QueryLanguage.SPARQL, queryBuilder).evaluate();
 
 		assertThat(exists).isTrue();
 	}
@@ -776,12 +767,11 @@ public abstract class RepositoryConnectionTest {
 		testCon.add(bob, mbox, mboxBob, context1);
 		testCon.add(context1, publisher, nameBob);
 
-		StringBuilder queryBuilder = new StringBuilder();
-		queryBuilder.append(PREFIX_FOAF + FOAF_NS + "> ");
-		queryBuilder.append(ASK);
-		queryBuilder.append("{ ?p foaf:name ?name }");
+		String queryBuilder = PREFIX_FOAF + FOAF_NS + "> " +
+				ASK +
+				"{ ?p foaf:name ?name }";
 
-		BooleanQuery query = testCon.prepareBooleanQuery(QueryLanguage.SPARQL, queryBuilder.toString());
+		BooleanQuery query = testCon.prepareBooleanQuery(QueryLanguage.SPARQL, queryBuilder);
 		query.setBinding(NAME, nameBob);
 
 		assertThat(query.evaluate()).isTrue();
@@ -861,7 +851,7 @@ public abstract class RepositoryConnectionTest {
 			while (result.hasNext()) {
 				Statement st = result.next();
 				assertNull(st.getContext(), "Statement should not be in a context ");
-				assertTrue(st.getPredicate().equals(name), "Statement predicate should be equal to name ");
+				assertEquals(st.getPredicate(), name, "Statement predicate should be equal to name ");
 			}
 		}
 
@@ -881,15 +871,15 @@ public abstract class RepositoryConnectionTest {
 		assertTrue(testCon.hasStatement(bob, name, nameBob, false), "Repository should contain statement");
 
 		try (RepositoryResult<Statement> result = testCon.getStatements(null, name, null, false)) {
-			assertThat(result).isNotNull();
-			assertThat(result).isNotEmpty();
+			assertThat((Iterable<?>) result).isNotNull();
+			assertThat((Iterable<?>) result).isNotEmpty();
 
 			for (Statement st : result) {
 				assertThat(st.getContext()).isNull();
 				assertThat(st.getPredicate()).isEqualTo(name);
 			}
 
-			assertThat(result).isEmpty();
+			assertThat((Iterable<?>) result).isEmpty();
 			assertThat(result.isClosed()).isTrue();
 		}
 
@@ -910,7 +900,7 @@ public abstract class RepositoryConnectionTest {
 				assertTrue(statements.hasNext());
 				Statement st = statements.next();
 				assertTrue(st.getObject() instanceof Literal);
-				assertTrue(st.getObject().equals(invalidIntegerLiteral));
+				assertEquals(st.getObject(), invalidIntegerLiteral);
 			}
 		} catch (RepositoryException e) {
 			// shouldn't happen
@@ -933,7 +923,7 @@ public abstract class RepositoryConnectionTest {
 				assertTrue(statements.hasNext());
 				Statement st = statements.next();
 				assertTrue(st.getObject() instanceof Literal);
-				assertTrue(st.getObject().equals(invalidLanguageLiteral));
+				assertEquals(st.getObject(), invalidLanguageLiteral);
 			}
 		} catch (RepositoryException e) {
 			e.printStackTrace();
@@ -982,7 +972,7 @@ public abstract class RepositoryConnectionTest {
 
 		// Check handling of getStatements with an unknown context ID
 		try (RepositoryResult<Statement> result = testCon.getStatements(null, null, null, false, unknownContext)) {
-			assertThat(result).isNotNull();
+			assertThat((Iterable<?>) result).isNotNull();
 			assertThat(result.hasNext()).isFalse();
 		}
 
@@ -1054,7 +1044,7 @@ public abstract class RepositoryConnectionTest {
 		testCon.commit();
 
 		try (RepositoryResult<Statement> iter = testCon.getStatements(null, null, null, false, context1)) {
-			assertThat(iter).isNotNull();
+			assertThat((Iterable<?>) iter).isNotNull();
 			assertThat(iter.hasNext()).isTrue();
 		}
 
@@ -1185,7 +1175,7 @@ public abstract class RepositoryConnectionTest {
 		assertThat(testCon.hasStatement(bob, name, nameBob, false)).isTrue();
 		assertThat(testCon.hasStatement(alice, name, nameAlice, false)).isTrue();
 
-		try (CloseableIteration<? extends Statement, RepositoryException> iter = testCon.getStatements(null, null, null,
+		try (CloseableIteration<? extends Statement> iter = testCon.getStatements(null, null, null,
 				false)) {
 			testCon.remove(iter);
 		}
@@ -1792,10 +1782,12 @@ public abstract class RepositoryConnectionTest {
 		xcal.setTimezone(OFFSET);
 		TupleQuery query = testCon.prepareTupleQuery(QueryLanguage.SPARQL, SELECT_BY_DATE);
 		query.setBinding("date", vf.createLiteral(xcal));
-		TupleQueryResult result = query.evaluate();
-		List<BindingSet> list = new ArrayList<>();
-		while (result.hasNext()) {
-			list.add(result.next());
+		List<BindingSet> list;
+		try (TupleQueryResult result = query.evaluate()) {
+			list = new ArrayList<>();
+			while (result.hasNext()) {
+				list.add(result.next());
+			}
 		}
 		assertThat(list).hasSize(7);
 	}
@@ -2008,7 +2000,7 @@ public abstract class RepositoryConnectionTest {
 	}
 
 	private long getTotalStatementCount(RepositoryConnection connection) throws RepositoryException {
-		try (CloseableIteration<? extends Statement, RepositoryException> iter = connection.getStatements(null, null,
+		try (CloseableIteration<? extends Statement> iter = connection.getStatements(null, null,
 				null, true)) {
 			return iter.stream().count();
 		}

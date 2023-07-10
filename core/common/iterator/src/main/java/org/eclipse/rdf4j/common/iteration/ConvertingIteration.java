@@ -19,7 +19,7 @@ import java.util.Objects;
  * over objects of type <var>T</var> (the target type).
  */
 @Deprecated(since = "4.1.0")
-public abstract class ConvertingIteration<S, T, X extends Exception> extends AbstractCloseableIteration<T, X> {
+public abstract class ConvertingIteration<S, T> extends AbstractCloseableIteration<T> {
 
 	/*-----------*
 	 * Variables *
@@ -28,7 +28,7 @@ public abstract class ConvertingIteration<S, T, X extends Exception> extends Abs
 	/**
 	 * The source type iteration.
 	 */
-	private final Iteration<? extends S, ? extends X> iter;
+	private final CloseableIteration<? extends S> iter;
 
 	/*--------------*
 	 * Constructors *
@@ -39,7 +39,7 @@ public abstract class ConvertingIteration<S, T, X extends Exception> extends Abs
 	 *
 	 * @param iter The source type iteration for this <var>ConvertingIteration</var>, must not be <var>null</var>.
 	 */
-	protected ConvertingIteration(Iteration<? extends S, ? extends X> iter) {
+	protected ConvertingIteration(CloseableIteration<? extends S> iter) {
 		this.iter = Objects.requireNonNull(iter, "The iterator was null");
 	}
 
@@ -50,16 +50,16 @@ public abstract class ConvertingIteration<S, T, X extends Exception> extends Abs
 	/**
 	 * Converts a source type object to a target type object.
 	 */
-	protected abstract T convert(S sourceObject) throws X;
+	protected abstract T convert(S sourceObject);
 
 	/**
 	 * Checks whether the source type iteration contains more elements.
 	 *
 	 * @return <var>true</var> if the source type iteration contains more elements, <var>false</var> otherwise.
-	 * @throws X
+	 *
 	 */
 	@Override
-	public boolean hasNext() throws X {
+	public boolean hasNext() {
 		if (isClosed()) {
 			return false;
 		}
@@ -73,12 +73,12 @@ public abstract class ConvertingIteration<S, T, X extends Exception> extends Abs
 	/**
 	 * Returns the next element from the source type iteration.
 	 *
-	 * @throws X
+	 *
 	 * @throws java.util.NoSuchElementException If all elements have been returned.
 	 * @throws IllegalStateException            If the iteration has been closed.
 	 */
 	@Override
-	public T next() throws X {
+	public T next() {
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
@@ -94,7 +94,7 @@ public abstract class ConvertingIteration<S, T, X extends Exception> extends Abs
 	 *                                       {@link #next}.
 	 */
 	@Override
-	public void remove() throws X {
+	public void remove() {
 		if (isClosed()) {
 			throw new IllegalStateException("The iteration has been closed.");
 		}
@@ -105,11 +105,11 @@ public abstract class ConvertingIteration<S, T, X extends Exception> extends Abs
 	 * Closes this iteration as well as the wrapped iteration if it is a {@link CloseableIteration}.
 	 */
 	@Override
-	protected void handleClose() throws X {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {
-			Iterations.closeCloseable(iter);
+			iter.close();
 		}
 	}
 }

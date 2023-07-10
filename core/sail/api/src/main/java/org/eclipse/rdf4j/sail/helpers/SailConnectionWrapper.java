@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Query;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
@@ -108,18 +107,18 @@ public class SailConnectionWrapper
 	}
 
 	@Override
-	public CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
+	public CloseableIteration<? extends BindingSet> evaluate(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 		return wrappedCon.evaluate(tupleExpr, dataset, bindings, includeInferred);
 	}
 
 	@Override
-	public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
+	public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
 		return wrappedCon.getContextIDs();
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
+	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts) throws SailException {
 		return wrappedCon.getStatements(subj, pred, obj, includeInferred, contexts);
 	}
@@ -191,7 +190,7 @@ public class SailConnectionWrapper
 	}
 
 	@Override
-	public CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException {
+	public CloseableIteration<? extends Namespace> getNamespaces() throws SailException {
 		return wrappedCon.getNamespaces();
 	}
 

@@ -47,7 +47,7 @@ public class ExclusiveStatement extends FedXStatementPattern implements Exclusiv
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(
+	public CloseableIteration<BindingSet> evaluate(
 			BindingSet bindings) throws QueryEvaluationException {
 
 		try {
@@ -64,7 +64,7 @@ public class ExclusiveStatement extends FedXStatementPattern implements Exclusiv
 			 * getStatements(subj, pred, obj) instead of evaluating a prepared query.
 			 */
 
-			CloseableIteration<BindingSet, QueryEvaluationException> res;
+			CloseableIteration<BindingSet> res;
 			if (t.usePreparedQuery(this, queryInfo)) {
 
 				AtomicBoolean isEvaluated = new AtomicBoolean(false); // is filter evaluated

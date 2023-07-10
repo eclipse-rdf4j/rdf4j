@@ -171,7 +171,7 @@ public class SnapshotSailStoreTest {
 					}
 
 					@Override
-					public CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException {
+					public CloseableIteration<? extends Namespace> getNamespaces() throws SailException {
 						return new EmptyIteration<>();
 					}
 
@@ -181,12 +181,12 @@ public class SnapshotSailStoreTest {
 					}
 
 					@Override
-					public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
+					public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
 						return new EmptyIteration<>();
 					}
 
 					@Override
-					public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
+					public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
 							Value obj,
 							Resource... contexts) throws SailException {
 						return new EmptyIteration<>();

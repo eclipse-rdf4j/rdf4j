@@ -45,7 +45,7 @@ public class ControlledWorkerLeftJoin extends JoinExecutorBase<BindingSet> {
 	protected final LeftJoin join;
 
 	public ControlledWorkerLeftJoin(ControlledWorkerScheduler<BindingSet> scheduler, FederationEvalStrategy strategy,
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
+			CloseableIteration<BindingSet> leftIter,
 			LeftJoin join, BindingSet bindings, QueryInfo queryInfo)
 			throws QueryEvaluationException {
 		super(strategy, leftIter, join.getRightArg(), bindings, queryInfo);

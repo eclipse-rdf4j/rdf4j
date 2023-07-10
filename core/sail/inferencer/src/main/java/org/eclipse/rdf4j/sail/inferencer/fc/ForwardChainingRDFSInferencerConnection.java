@@ -336,7 +336,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Resource xxx = nt.getSubject();
 			IRI aaa = nt.getPredicate();
 
-			CloseableIteration<? extends Statement, SailException> t1Iter;
+			CloseableIteration<? extends Statement> t1Iter;
 			t1Iter = getWrappedConnection().getStatements(aaa, RDFS.DOMAIN, null, true);
 
 			while (t1Iter.hasNext()) {
@@ -367,7 +367,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Value zzz = nt.getObject();
 
 			if (aaa instanceof IRI && zzz instanceof Resource) {
-				CloseableIteration<? extends Statement, SailException> t1Iter;
+				CloseableIteration<? extends Statement> t1Iter;
 				t1Iter = getWrappedConnection().getStatements(null, (IRI) aaa, null, true);
 
 				while (t1Iter.hasNext()) {
@@ -397,7 +397,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Value uuu = nt.getObject();
 
 			if (uuu instanceof Resource) {
-				CloseableIteration<? extends Statement, SailException> t1Iter;
+				CloseableIteration<? extends Statement> t1Iter;
 				t1Iter = getWrappedConnection().getStatements(aaa, RDFS.RANGE, null, true);
 
 				while (t1Iter.hasNext()) {
@@ -428,7 +428,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Value zzz = nt.getObject();
 
 			if (aaa instanceof IRI && zzz instanceof Resource) {
-				CloseableIteration<? extends Statement, SailException> t1Iter;
+				CloseableIteration<? extends Statement> t1Iter;
 				t1Iter = getWrappedConnection().getStatements(null, (IRI) aaa, null, true);
 
 				while (t1Iter.hasNext()) {
@@ -497,7 +497,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Value bbb = nt.getObject();
 
 			if (bbb instanceof Resource) {
-				CloseableIteration<? extends Statement, SailException> t1Iter;
+				CloseableIteration<? extends Statement> t1Iter;
 				t1Iter = getWrappedConnection().getStatements((Resource) bbb, RDFS.SUBPROPERTYOF, null, true);
 
 				while (t1Iter.hasNext()) {
@@ -531,7 +531,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Value ccc = nt.getObject();
 
 			if (ccc instanceof Resource) {
-				CloseableIteration<? extends Statement, SailException> t1Iter;
+				CloseableIteration<? extends Statement> t1Iter;
 				t1Iter = getWrappedConnection().getStatements(null, RDFS.SUBPROPERTYOF, bbb, true);
 
 				while (t1Iter.hasNext()) {
@@ -578,7 +578,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			IRI aaa = nt.getPredicate();
 			Value yyy = nt.getObject();
 
-			CloseableIteration<? extends Statement, SailException> t1Iter;
+			CloseableIteration<? extends Statement> t1Iter;
 			t1Iter = getWrappedConnection().getStatements(aaa, RDFS.SUBPROPERTYOF, null, true);
 
 			while (t1Iter.hasNext()) {
@@ -609,7 +609,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Value bbb = nt.getObject();
 
 			if (aaa instanceof IRI && bbb instanceof IRI) {
-				CloseableIteration<? extends Statement, SailException> t1Iter;
+				CloseableIteration<? extends Statement> t1Iter;
 				t1Iter = getWrappedConnection().getStatements(null, (IRI) aaa, null, true);
 
 				while (t1Iter.hasNext()) {
@@ -659,7 +659,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Value yyy = nt.getObject();
 
 			if (yyy instanceof Resource) {
-				CloseableIteration<? extends Statement, SailException> t1Iter;
+				CloseableIteration<? extends Statement> t1Iter;
 				t1Iter = getWrappedConnection().getStatements(null, RDF.TYPE, xxx, true);
 
 				while (t1Iter.hasNext()) {
@@ -690,7 +690,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Value xxx = nt.getObject();
 
 			if (xxx instanceof Resource) {
-				CloseableIteration<? extends Statement, SailException> t1Iter;
+				CloseableIteration<? extends Statement> t1Iter;
 				t1Iter = getWrappedConnection().getStatements((Resource) xxx, RDFS.SUBCLASSOF, null, true);
 
 				while (t1Iter.hasNext()) {
@@ -742,7 +742,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Value yyy = nt.getObject();
 
 			if (yyy instanceof Resource) {
-				CloseableIteration<? extends Statement, SailException> t1Iter;
+				CloseableIteration<? extends Statement> t1Iter;
 				t1Iter = getWrappedConnection().getStatements((Resource) yyy, RDFS.SUBCLASSOF, null, true);
 
 				while (t1Iter.hasNext()) {
@@ -776,7 +776,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Value zzz = nt.getObject();
 
 			if (zzz instanceof Resource) {
-				CloseableIteration<? extends Statement, SailException> t1Iter;
+				CloseableIteration<? extends Statement> t1Iter;
 				t1Iter = getWrappedConnection().getStatements(null, RDFS.SUBCLASSOF, yyy, true);
 
 				while (t1Iter.hasNext()) {

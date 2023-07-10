@@ -162,7 +162,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		logger.debug("Forward chain all explicit statements");
 		long count = 0;
 
-		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null, null,
+		try (CloseableIteration<? extends Statement> statements = connection.getStatements(null, null,
 				null, false)) {
 			while (statements.hasNext()) {
 				Statement next = statements.next();
@@ -187,7 +187,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 			addAxiomStatements();
 		}
 
-		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null, null,
+		try (CloseableIteration<? extends Statement> statements = connection.getStatements(null, null,
 				null, sail.useInferredToCreateSchema)) {
 			while (statements.hasNext()) {
 				Statement next = statements.next();

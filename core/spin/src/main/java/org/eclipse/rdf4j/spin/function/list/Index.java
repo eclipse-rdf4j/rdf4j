@@ -30,7 +30,7 @@ public class Index implements TupleFunction {
 	}
 
 	@Override
-	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
+	public CloseableIteration<? extends List<? extends Value>> evaluate(
 			final ValueFactory valueFactory, final Value... args) throws QueryEvaluationException {
 		return new CloseableIteratorIteration<>(
 				new Iterator<List<Value>>() {

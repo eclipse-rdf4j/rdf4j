@@ -48,7 +48,7 @@ abstract class DelegatingSailDataset implements SailDataset {
 	}
 
 	@Override
-	public CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException {
+	public CloseableIteration<? extends Namespace> getNamespaces() throws SailException {
 		return delegate.getNamespaces();
 	}
 
@@ -58,18 +58,18 @@ abstract class DelegatingSailDataset implements SailDataset {
 	}
 
 	@Override
-	public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
+	public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
 		return delegate.getContextIDs();
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
+	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws SailException {
 		return delegate.getStatements(subj, pred, obj, contexts);
 	}
 
 	@Override
-	public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred,
+	public CloseableIteration<? extends Triple> getTriples(Resource subj, IRI pred,
 			Value obj) throws SailException {
 		return delegate.getTriples(subj, pred, obj);
 	}

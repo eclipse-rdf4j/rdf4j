@@ -16,25 +16,25 @@ import java.util.Spliterators;
 import java.util.function.Consumer;
 
 /**
- * A {@link Spliterator} implementation that wraps an {@link Iteration}. It handles occurrence of checked exceptions by
- * wrapping them in RuntimeExceptions, and in addition ensures that the wrapped Iteration is closed when exhausted (if
- * it's a {@link CloseableIteration}).
+ * A {@link Spliterator} implementation that wraps an {@link CloseableIteration}. It handles occurrence of checked
+ * exceptions by wrapping them in RuntimeExceptions, and in addition ensures that the wrapped Iteration is closed when
+ * exhausted (if it's a {@link CloseableIteration}).
  *
  * @author Jeen Broekstra
  */
 @Deprecated(since = "4.1.0")
 public class IterationSpliterator<T> extends Spliterators.AbstractSpliterator<T> {
 
-	private final Iteration<T, ? extends Exception> iteration;
+	private final CloseableIteration<T> iteration;
 
 	/**
-	 * Creates a {@link Spliterator} implementation that wraps the supplied {@link Iteration}. It handles occurrence of
-	 * checked exceptions by wrapping them in RuntimeExceptions, and in addition ensures that the wrapped Iteration is
-	 * closed when exhausted (if it's a {@link CloseableIteration}).
+	 * Creates a {@link Spliterator} implementation that wraps the supplied {@link CloseableIteration}. It handles
+	 * occurrence of checked exceptions by wrapping them in RuntimeExceptions, and in addition ensures that the wrapped
+	 * Iteration is closed when exhausted (if it's a {@link CloseableIteration}).
 	 *
 	 * @param iteration the iteration to wrap
 	 */
-	public IterationSpliterator(final Iteration<T, ? extends Exception> iteration) {
+	public IterationSpliterator(final CloseableIteration<T> iteration) {
 		super(Long.MAX_VALUE, Spliterator.IMMUTABLE | Spliterator.NONNULL);
 		this.iteration = iteration;
 	}
@@ -54,18 +54,11 @@ public class IterationSpliterator<T> extends Spliterators.AbstractSpliterator<T>
 				return true;
 			}
 			return false;
-		} catch (Exception e) {
-			if (e instanceof InterruptedException) {
-				Thread.currentThread().interrupt();
-			}
-			if (e instanceof RuntimeException) {
-				throw (RuntimeException) e;
-			}
-			throw new RuntimeException(e);
 		} finally {
 			if (needsToBeClosed) {
 				try {
-					Iterations.closeCloseable(iteration);
+					if (iteration != null)
+						iteration.close();
 				} catch (Exception ignored) {
 				}
 			}
@@ -79,17 +72,10 @@ public class IterationSpliterator<T> extends Spliterators.AbstractSpliterator<T>
 			while (iteration.hasNext()) {
 				action.accept(iteration.next());
 			}
-		} catch (Exception e) {
-			if (e instanceof InterruptedException) {
-				Thread.currentThread().interrupt();
-			}
-			if (e instanceof RuntimeException) {
-				throw (RuntimeException) e;
-			}
-			throw new RuntimeException(e);
 		} finally {
 			try {
-				Iterations.closeCloseable(iteration);
+				if (iteration != null)
+					iteration.close();
 			} catch (Exception ignored) {
 			}
 		}

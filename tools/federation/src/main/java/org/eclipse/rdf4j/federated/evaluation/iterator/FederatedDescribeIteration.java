@@ -16,7 +16,6 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
 import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
@@ -47,7 +46,7 @@ public class FederatedDescribeIteration extends DescribeIteration {
 	private final List<StatementSource> allSources;
 
 	@Deprecated(since = "4.1.0", forRemoval = true)
-	public FederatedDescribeIteration(Iteration<BindingSet, QueryEvaluationException> sourceIter,
+	public FederatedDescribeIteration(CloseableIteration<BindingSet> sourceIter,
 			FederationEvalStrategy strategy, Set<String> describeExprNames, BindingSet parentBindings,
 			QueryInfo queryInfo) {
 		super(sourceIter, strategy, describeExprNames, parentBindings);
@@ -61,7 +60,7 @@ public class FederatedDescribeIteration extends DescribeIteration {
 	}
 
 	@Override
-	protected CloseableIteration<BindingSet, QueryEvaluationException> createNextIteration(Value subject, Value object)
+	protected CloseableIteration<BindingSet> createNextIteration(Value subject, Value object)
 			throws QueryEvaluationException {
 		if (subject == null && object == null) {
 			return new EmptyIteration<>();
@@ -79,7 +78,7 @@ public class FederatedDescribeIteration extends DescribeIteration {
 		StatementSourcePattern stmtSourcePattern = new StatementSourcePattern(pattern, queryInfo);
 		allSources.forEach(stmtSourcePattern::addStatementSource);
 
-		CloseableIteration<BindingSet, QueryEvaluationException> res = stmtSourcePattern.evaluate(parentBindings);
+		CloseableIteration<BindingSet> res = stmtSourcePattern.evaluate(parentBindings);
 
 		// we need to make sure that subject or object are added to the binding set
 		// Note: FedX uses prepared SELECT queries to evaluate a statement pattern and

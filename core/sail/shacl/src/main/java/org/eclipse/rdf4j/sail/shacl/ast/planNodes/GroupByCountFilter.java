@@ -16,7 +16,6 @@ import java.util.function.Function;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * @author Håvard Ottestad
@@ -34,10 +33,10 @@ public class GroupByCountFilter implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			private CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
+			private CloseableIteration<? extends ValidationTuple> parentIterator;
 
 			ValidationTuple next;
 			ValidationTuple tempNext;

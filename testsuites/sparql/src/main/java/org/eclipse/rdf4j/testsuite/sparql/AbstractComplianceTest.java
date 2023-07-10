@@ -17,7 +17,6 @@ import java.io.Reader;
 import java.net.URL;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
@@ -412,15 +411,8 @@ public abstract class AbstractComplianceTest {
 		}
 
 		@Override
-		@Deprecated(since = "4.1.0", forRemoval = true)
-		public <E extends Exception> void add(Iteration<? extends Statement, E> statements, Resource... contexts)
-				throws RepositoryException, E {
-			delegate.add(statements, contexts);
-		}
-
-		@Override
-		public <E extends Exception> void add(CloseableIteration<? extends Statement, E> statements,
-				Resource... contexts) throws RepositoryException, E {
+		public void add(CloseableIteration<? extends Statement> statements,
+				Resource... contexts) throws RepositoryException {
 			delegate.add(statements, contexts);
 		}
 
@@ -446,15 +438,8 @@ public abstract class AbstractComplianceTest {
 		}
 
 		@Override
-		@Deprecated(since = "4.1.0", forRemoval = true)
-		public <E extends Exception> void remove(Iteration<? extends Statement, E> statements, Resource... contexts)
-				throws RepositoryException, E {
-			delegate.remove(statements, contexts);
-		}
-
-		@Override
-		public <E extends Exception> void remove(CloseableIteration<? extends Statement, E> statements,
-				Resource... contexts) throws RepositoryException, E {
+		public void remove(CloseableIteration<? extends Statement> statements,
+				Resource... contexts) throws RepositoryException {
 			delegate.remove(statements, contexts);
 		}
 

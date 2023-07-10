@@ -23,13 +23,13 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  *
  * @author Håvard M. Ottestad
  */
-class TupleExprWrapperIteration<T extends BindingSet, X extends Exception> implements CloseableIteration<T, X> {
+class TupleExprWrapperIteration<T extends BindingSet, X extends Exception> implements CloseableIteration<T> {
 
-	private final CloseableIteration<T, X> delegate;
+	private final CloseableIteration<T> delegate;
 	private final TupleExpr tupleExpr;
 	private final TupleExpr tupleExprClone;
 
-	public TupleExprWrapperIteration(CloseableIteration<T, X> delegate, TupleExpr tupleExpr) {
+	public TupleExprWrapperIteration(CloseableIteration<T> delegate, TupleExpr tupleExpr) {
 		this.delegate = delegate;
 		this.tupleExpr = tupleExpr;
 		this.tupleExprClone = tupleExpr.clone();
@@ -41,22 +41,22 @@ class TupleExprWrapperIteration<T extends BindingSet, X extends Exception> imple
 	}
 
 	@Override
-	public void close() throws X {
+	public void close() {
 		delegate.close();
 	}
 
 	@Override
-	public boolean hasNext() throws X {
+	public boolean hasNext() {
 		return delegate.hasNext();
 	}
 
 	@Override
-	public T next() throws X {
+	public T next() {
 		return delegate.next();
 	}
 
 	@Override
-	public void remove() throws X {
+	public void remove() {
 		delegate.remove();
 	}
 

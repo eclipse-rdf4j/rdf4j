@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.common.iterator.CloseableIterationIterator;
  * @author Arjohn Kampman
  */
 public interface QueryResult<T>
-		extends AutoCloseable, CloseableIteration<T, QueryEvaluationException>, Iterable<T> {
+		extends CloseableIteration<T>, Iterable<T> {
 
 	@Override
 	default Iterator<T> iterator() {

@@ -10,8 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.evaluation.iterator;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 
@@ -27,12 +27,12 @@ public class RepositoryExceptionConvertingIteration<T>
 		extends ExceptionConvertingIteration<T, QueryEvaluationException> {
 
 	public RepositoryExceptionConvertingIteration(
-			Iteration<? extends T, ? extends Exception> iter) {
+			CloseableIteration<? extends T> iter) {
 		super(iter);
 	}
 
 	@Override
-	protected QueryEvaluationException convert(Exception e) {
+	protected QueryEvaluationException convert(RuntimeException e) {
 		return new QueryEvaluationException(e);
 	}
 }

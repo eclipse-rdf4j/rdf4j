@@ -424,15 +424,15 @@ public class ServiceTests extends SPARQLBaseTest {
 		}
 
 		@Override
-		public CloseableIteration<BindingSet, QueryEvaluationException> select(Service service,
+		public CloseableIteration<BindingSet> select(Service service,
 				Set<String> projectionVars, BindingSet bindings, String baseUri) throws QueryEvaluationException {
 			serviceRequestCount.incrementAndGet();
 			return super.select(service, projectionVars, bindings, baseUri);
 		}
 
 		@Override
-		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service,
-				CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
+		public CloseableIteration<BindingSet> evaluate(Service service,
+				CloseableIteration<BindingSet> bindings, String baseUri)
 				throws QueryEvaluationException {
 			boundJoinRequestCount.incrementAndGet();
 			return super.evaluate(service, bindings, baseUri);

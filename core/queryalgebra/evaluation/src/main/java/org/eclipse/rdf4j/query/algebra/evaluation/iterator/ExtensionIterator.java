@@ -29,19 +29,19 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 @Deprecated(since = "4.1.0")
-public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
+public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSet> {
 
 	private final Consumer<MutableBindingSet> setter;
 	private final QueryEvaluationContext context;
 
-	public ExtensionIterator(Extension extension, CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public ExtensionIterator(Extension extension, CloseableIteration<BindingSet> iter,
 			EvaluationStrategy strategy, QueryEvaluationContext context) throws QueryEvaluationException {
 		super(iter);
 		this.context = context;
 		this.setter = buildLambdaToEvaluateTheExpressions(extension, strategy, context);
 	}
 
-	public ExtensionIterator(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public ExtensionIterator(CloseableIteration<BindingSet> iter,
 			Consumer<MutableBindingSet> setter, QueryEvaluationContext context) throws QueryEvaluationException {
 		super(iter);
 		this.setter = setter;

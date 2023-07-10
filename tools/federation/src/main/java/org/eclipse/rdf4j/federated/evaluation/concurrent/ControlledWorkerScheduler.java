@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerJoin;
 import org.eclipse.rdf4j.federated.evaluation.union.ControlledWorkerUnion;
 import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -156,7 +155,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 	}
 
 	@Override
-	public void handleResult(CloseableIteration<T, QueryEvaluationException> res) {
+	public void handleResult(CloseableIteration<T> res) {
 		/* not needed here since the result is passed directly to the control instance */
 		throw new RuntimeException("Unsupported Operation for this scheduler.");
 	}
@@ -214,7 +213,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 
 		@Override
 		public void run() {
-			CloseableIteration<T, QueryEvaluationException> res = null;
+			CloseableIteration<T> res = null;
 
 			try {
 

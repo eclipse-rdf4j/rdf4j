@@ -19,8 +19,8 @@ import java.util.Collection;
  * @deprecated since 2.3 use {@link org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration}
  */
 @Deprecated
-public class CollectionIteration<E, X extends Exception>
-		extends org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration<E, X> {
+public class CollectionIteration<E>
+		extends org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration<E> {
 
 	public CollectionIteration(Collection<E> collection) {
 		super(collection);

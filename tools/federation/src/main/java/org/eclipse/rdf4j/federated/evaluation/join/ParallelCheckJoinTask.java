@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTaskBase;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * A task implementation representing a grouped bound check. See
@@ -42,7 +41,7 @@ public class ParallelCheckJoinTask extends ParallelTaskBase<BindingSet> {
 	}
 
 	@Override
-	protected CloseableIteration<BindingSet, QueryEvaluationException> performTaskInternal() throws Exception {
+	protected CloseableIteration<BindingSet> performTaskInternal() throws Exception {
 		return strategy.evaluateGroupedCheck(expr, bindings);
 	}
 

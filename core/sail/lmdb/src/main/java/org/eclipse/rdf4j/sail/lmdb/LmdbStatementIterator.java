@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.sail.SailException;
  * A statement iterator that wraps a RecordIterator containing statement records and translates these records to
  * {@link Statement} objects.
  */
-class LmdbStatementIterator extends LookAheadIteration<Statement, SailException> {
+class LmdbStatementIterator extends LookAheadIteration<Statement> {
 
 	/*-----------*
 	 * Variables *

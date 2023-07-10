@@ -14,7 +14,7 @@ import java.util.Collection;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
-import org.eclipse.rdf4j.common.iteration.Iteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
@@ -32,7 +32,7 @@ public class LimitedSizeIteratorUtil {
 	 * @return the includeSet
 	 * @throws QueryEvaluationException trigerred when maxSize is smaller than the used value
 	 */
-	public static Set<BindingSet> addAll(Iteration<? extends BindingSet, ? extends QueryEvaluationException> arg2,
+	public static Set<BindingSet> addAll(CloseableIteration<? extends BindingSet> arg2,
 			Set<BindingSet> includeSet, AtomicLong used, long maxSize) throws QueryEvaluationException {
 		while (arg2.hasNext()) {
 			if (includeSet.add(arg2.next()) && used.incrementAndGet() > maxSize) {

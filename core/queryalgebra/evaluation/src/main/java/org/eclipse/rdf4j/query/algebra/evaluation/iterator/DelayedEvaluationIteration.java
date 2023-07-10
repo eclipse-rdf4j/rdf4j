@@ -23,11 +23,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
  * Utility class that removes code duplication and makes a precompiled QueryEvaluationStep available as an iteration
  * that may be created and used later.
  */
-public class DelayedEvaluationIteration extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
+public class DelayedEvaluationIteration extends AbstractCloseableIteration<BindingSet> {
 
 	private final QueryEvaluationStep arg;
 	private final BindingSet bs;
-	private CloseableIteration<BindingSet, QueryEvaluationException> iter;
+	private CloseableIteration<BindingSet> iter;
 
 	public DelayedEvaluationIteration(QueryEvaluationStep arg, BindingSet bs) {
 		super();
@@ -35,7 +35,7 @@ public class DelayedEvaluationIteration extends AbstractCloseableIteration<Bindi
 		this.bs = bs;
 	}
 
-	protected CloseableIteration<BindingSet, QueryEvaluationException> createIteration()
+	protected CloseableIteration<BindingSet> createIteration()
 			throws QueryEvaluationException {
 		return arg.evaluate(bs);
 	}

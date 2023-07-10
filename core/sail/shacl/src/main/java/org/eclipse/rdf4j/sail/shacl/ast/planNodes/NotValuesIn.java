@@ -19,7 +19,6 @@ import java.util.Set;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.sail.SailException;
 
 public class NotValuesIn implements PlanNode {
 
@@ -34,11 +33,11 @@ public class NotValuesIn implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple> iterator() {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			private CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
+			private CloseableIteration<? extends ValidationTuple> parentIterator;
 			Set<Value> notInValueSet;
 			ValidationTuple next;
 
@@ -53,7 +52,7 @@ public class NotValuesIn implements PlanNode {
 				} else {
 					notInValueSet = new HashSet<>();
 
-					try (CloseableIteration<? extends ValidationTuple, SailException> iterator = notIn.iterator()) {
+					try (CloseableIteration<? extends ValidationTuple> iterator = notIn.iterator()) {
 						while (iterator.hasNext()) {
 							notInValueSet.add(iterator.next().getValue());
 						}
