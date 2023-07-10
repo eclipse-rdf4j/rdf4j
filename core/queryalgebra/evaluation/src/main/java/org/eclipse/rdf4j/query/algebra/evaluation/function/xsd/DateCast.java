@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.xsd;
 import static javax.xml.datatype.DatatypeConstants.FIELD_UNDEFINED;
 
 import static org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil.isValidDate;
-import static org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil.isValidDateTime;
 import static org.eclipse.rdf4j.model.vocabulary.XSD.DATE;
 import static org.eclipse.rdf4j.model.vocabulary.XSD.DATETIME;
 import static org.eclipse.rdf4j.model.vocabulary.XSD.STRING;
