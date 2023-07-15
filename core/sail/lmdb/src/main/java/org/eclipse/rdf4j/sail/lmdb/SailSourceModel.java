@@ -45,6 +45,8 @@ class SailSourceModel extends AbstractModel {
 
 	private static final Logger logger = LoggerFactory.getLogger(SailSourceModel.class);
 
+	private final boolean verifyAdditions;
+
 	private final class StatementIterator implements Iterator<Statement> {
 
 		final CloseableIteration<? extends Statement, SailException> stmts;
@@ -97,16 +99,15 @@ class SailSourceModel extends AbstractModel {
 
 	SailSink sink;
 
-	private long size;
-
 	private final IsolationLevels level = IsolationLevels.NONE;
 
-	public SailSourceModel(SailStore store) {
-		this(store.getExplicitSailSource());
+	public SailSourceModel(SailStore store, boolean verifyAdditions) {
+		this(store.getExplicitSailSource(), verifyAdditions);
 	}
 
-	public SailSourceModel(SailSource source) {
+	public SailSourceModel(SailSource source, boolean verifyAdditions) {
 		this.source = source;
+		this.verifyAdditions = verifyAdditions;
 	}
 
 	@Override
@@ -147,21 +148,20 @@ class SailSourceModel extends AbstractModel {
 
 	@Override
 	public synchronized int size() {
-		if (size < 0) {
+		long size = 0;
+		try {
+			CloseableIteration<? extends Statement, SailException> iter;
+			iter = dataset().getStatements(null, null, null);
 			try {
-				CloseableIteration<? extends Statement, SailException> iter;
-				iter = dataset().getStatements(null, null, null);
-				try {
-					while (iter.hasNext()) {
-						iter.next();
-						size++;
-					}
-				} finally {
-					iter.close();
+				while (iter.hasNext()) {
+					iter.next();
+					size++;
 				}
-			} catch (SailException e) {
-				throw new ModelException(e);
+			} finally {
+				iter.close();
 			}
+		} catch (SailException e) {
+			throw new ModelException(e);
 		}
 		if (size > Integer.MAX_VALUE) {
 			return Integer.MAX_VALUE;
@@ -243,12 +243,9 @@ class SailSourceModel extends AbstractModel {
 			throw new UnsupportedOperationException("Incomplete statement");
 		}
 		try {
-			if (contains(subj, pred, obj, contexts)) {
+			if (verifyAdditions && contains(subj, pred, obj, contexts)) {
 				logger.trace("already contains statement {} {} {} {}", subj, pred, obj, contexts);
 				return false;
-			}
-			if (size >= 0) {
-				size++;
 			}
 			if (contexts == null || contexts.length == 0) {
 				sink().approve(subj, pred, obj, null);
@@ -268,7 +265,6 @@ class SailSourceModel extends AbstractModel {
 		try {
 			if (contains(null, null, null, contexts)) {
 				sink().clear(contexts);
-				size = -1;
 				return true;
 			}
 		} catch (SailException e) {
@@ -279,25 +275,23 @@ class SailSourceModel extends AbstractModel {
 
 	@Override
 	public synchronized boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		boolean removed = false;
 		try {
-			if (contains(subj, pred, obj, contexts)) {
-				size = -1;
-				CloseableIteration<? extends Statement, SailException> stmts;
-				stmts = dataset().getStatements(subj, pred, obj, contexts);
-				try {
-					while (stmts.hasNext()) {
-						Statement st = stmts.next();
-						sink().deprecate(st);
-					}
-				} finally {
-					stmts.close();
+			CloseableIteration<? extends Statement, SailException> stmts = dataset().getStatements(subj, pred, obj,
+					contexts);
+			try {
+				while (stmts.hasNext()) {
+					Statement st = stmts.next();
+					sink().deprecate(st);
+					removed = true;
 				}
-				return true;
+			} finally {
+				stmts.close();
 			}
 		} catch (SailException e) {
 			throw new ModelException(e);
 		}
-		return false;
+		return removed;
 	}
 
 	@Override
@@ -372,7 +366,6 @@ class SailSourceModel extends AbstractModel {
 			} finally {
 				stmts.close();
 			}
-			size = -1;
 		} catch (SailException e) {
 			throw new ModelException(e);
 		}
@@ -402,6 +395,21 @@ class SailSourceModel extends AbstractModel {
 			dataset = source.dataset(level);
 		}
 		return dataset;
+	}
+
+	public void close() {
+		if (sink != null) {
+			try {
+				sink.flush();
+			} finally {
+				sink.close();
+				sink = null;
+			}
+		}
+		if (dataset != null) {
+			dataset.close();
+			dataset = null;
+		}
 	}
 
 	private boolean contains(SailDataset dataset, Resource subj, IRI pred, Value obj, Resource... contexts)
