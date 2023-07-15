@@ -712,6 +712,7 @@ class TripleStore implements Closeable {
 					if (requiresResize()) {
 						// map is full, resize required
 						recordCache = new TxnRecordCache(dir);
+						logger.debug("resize of map size {} required while adding - initialize record cache", mapSize);
 					}
 				}
 				if (recordCache != null) {
@@ -779,6 +780,8 @@ class TripleStore implements Closeable {
 					if (requiresResize()) {
 						// map is full, resize required
 						recordCache = new TxnRecordCache(dir);
+						logger.debug("resize of map size {} required while removing - initialize record cache",
+								mapSize);
 					}
 				}
 				if (recordCache != null) {
@@ -821,6 +824,7 @@ class TripleStore implements Closeable {
 						E(mdb_txn_commit(writeTxn));
 						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
 						E(mdb_env_set_mapsize(env, mapSize));
+						logger.debug("resized map to {}", mapSize);
 						E(mdb_txn_begin(env, NULL, 0, pp));
 						writeTxn = pp.get(0);
 					}
@@ -859,41 +863,59 @@ class TripleStore implements Closeable {
 	 */
 	void endTransaction(boolean commit) throws IOException {
 		if (writeTxn != 0) {
-			if (commit) {
-				E(mdb_txn_commit(writeTxn));
-				if (recordCache != null) {
-					StampedLock lock = txnManager.lock();
-					long stamp = lock.writeLock();
+			try {
+				if (commit) {
 					try {
-						txnManager.deactivate();
-						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
-						E(mdb_env_set_mapsize(env, mapSize));
-						// restart write transaction
-						try (MemoryStack stack = stackPush()) {
-							PointerBuffer pp = stack.mallocPointer(1);
-							mdb_txn_begin(env, NULL, 0, pp);
-							writeTxn = pp.get(0);
-						}
-						updateFromCache();
-						// finally, commit write transaction
 						E(mdb_txn_commit(writeTxn));
-					} finally {
-						recordCache = null;
-						try {
-							txnManager.activate();
-						} finally {
-							lock.unlockWrite(stamp);
+						if (recordCache != null) {
+							StampedLock lock = txnManager.lock();
+							long stamp = lock.writeLock();
+							try {
+								txnManager.deactivate();
+								mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
+								E(mdb_env_set_mapsize(env, mapSize));
+								logger.debug("resized map to {}", mapSize);
+								// restart write transaction
+								try (MemoryStack stack = stackPush()) {
+									PointerBuffer pp = stack.mallocPointer(1);
+									mdb_txn_begin(env, NULL, 0, pp);
+									writeTxn = pp.get(0);
+								}
+								updateFromCache();
+								// finally, commit write transaction
+								E(mdb_txn_commit(writeTxn));
+							} finally {
+								recordCache = null;
+								try {
+									txnManager.activate();
+								} finally {
+									lock.unlockWrite(stamp);
+								}
+							}
+						} else {
+							// invalidate open read transaction so that they are not re-used
+							// otherwise iterators won't see the updated data
+							txnManager.reset();
 						}
+					} catch (IOException e) {
+						// abort transaction if exception occurred while committing
+						mdb_txn_abort(writeTxn);
+						throw e;
 					}
 				} else {
-					// invalidate open read transaction so that they are not re-used
-					// otherwise iterators won't see the updated data
-					txnManager.reset();
+					mdb_txn_abort(writeTxn);
 				}
-			} else {
-				mdb_txn_abort(writeTxn);
+			} finally {
+				writeTxn = 0;
+				// ensure that record cache is always reset
+				if (recordCache != null) {
+					try {
+						recordCache.close();
+					} finally {
+						recordCache = null;
+					}
+				}
 			}
-			writeTxn = 0;
 		}
 	}
 

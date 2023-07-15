@@ -162,7 +162,6 @@ class TxnManager {
 	class Txn implements Closeable, AutoCloseable {
 
 		private long txn;
-		private List<Long> staleTxns;
 		private long version;
 
 		Txn(long txn) {
@@ -209,26 +208,19 @@ class TxnManager {
 				active.remove(this);
 			}
 			free(txn);
-			if (staleTxns != null) {
-				for (long staleTxn : staleTxns) {
-					free(staleTxn);
-				}
-			}
 		}
 
 		/**
-		 * Marks current transaction as stale as it points to "old" data.
+		 * Resets current transaction as it points to "old" data.
 		 */
 		void reset() throws IOException {
-			if (staleTxns == null) {
-				staleTxns = new ArrayList<>(5);
-			}
-			staleTxns.add(txn);
-			txn = createReadTxnInternal();
+			mdb_txn_reset(txn);
+			E(mdb_txn_renew(txn));
+			version++;
 		}
 
 		/**
-		 * Triggers active state of current and stale transactions.
+		 * Triggers active state of current transaction.
 		 */
 		void setActive(boolean active) throws IOException {
 			if (active) {
@@ -236,15 +228,6 @@ class TxnManager {
 				version++;
 			} else {
 				mdb_txn_reset(txn);
-			}
-			if (staleTxns != null) {
-				for (Long staleTxn : staleTxns) {
-					if (active) {
-						E(mdb_txn_renew(staleTxn));
-					} else {
-						mdb_txn_reset(staleTxn);
-					}
-				}
 			}
 		}
 
