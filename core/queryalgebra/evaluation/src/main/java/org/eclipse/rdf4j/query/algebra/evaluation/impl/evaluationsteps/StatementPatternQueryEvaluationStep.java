@@ -94,6 +94,16 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		Var objVar = statementPattern.getObjectVar();
 		Var conVar = statementPattern.getContextVar();
 
+		// First create the getters before removing duplicate vars since we need the getters when creating
+		// JoinStatementWithBindingSetIterator. If there are duplicate vars, for instance ?v1 as both subject and
+		// context then we still need to bind the value from ?v1 in the subject and context arguments of
+		// getStatement(...).
+		getContextVar = makeGetVarValue(conVar, context);
+		getSubjectVar = makeGetVarValue(subjVar, context);
+		getPredicateVar = makeGetVarValue(predVar, context);
+		getObjectVar = makeGetVarValue(objVar, context);
+
+		// then remove duplicate vars
 		if (subjVar != null) {
 			if (predVar != null && predVar.getName().equals(subjVar.getName())) {
 				predVar = null;
@@ -124,11 +134,6 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		converter = makeConverter(context, subjVar, predVar, objVar, conVar);
 
 		unboundTest = getUnboundTest(context, subjVar, predVar, objVar, conVar);
-
-		getContextVar = makeGetVarValue(conVar, context);
-		getSubjectVar = makeGetVarValue(subjVar, context);
-		getPredicateVar = makeGetVarValue(predVar, context);
-		getObjectVar = makeGetVarValue(objVar, context);
 
 	}
 

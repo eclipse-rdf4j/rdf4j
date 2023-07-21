@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.fail;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.StringWriter;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -24,6 +25,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.eclipse.rdf4j.common.io.IOUtil;
@@ -52,6 +54,7 @@ import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -304,6 +307,17 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 
 			message.append("# Query:\n\n");
 			message.append(readQueryString().trim()).append("\n");
+			message.append(footer).append("\n");
+
+			message.append("# Data:\n\n");
+			try (RepositoryConnection connection = dataRepository.getConnection()) {
+				try (RepositoryResult<Statement> statements = connection.getStatements(null, null, null)) {
+					List<Statement> collect = statements.stream().collect(Collectors.toList());
+					StringWriter stringWriter = new StringWriter();
+					Rio.write(collect, stringWriter, RDFFormat.TRIG);
+					message.append(stringWriter.toString().trim()).append("\n");
+				}
+			}
 			message.append(footer).append("\n");
 
 			message.append("# Expected bindings:\n\n");

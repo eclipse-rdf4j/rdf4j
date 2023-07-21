@@ -39,6 +39,8 @@ public class GenericPlanNode {
 	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
 	private final static AtomicLong uniqueIdSuffix = new AtomicLong();
 
+	private static final String spoc[] = { "s", "p", "o", "c" };
+
 	private final static String newLine = System.getProperty("line.separator");
 
 	private final String id = "UUID_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet();
@@ -292,9 +294,14 @@ public class GenericPlanNode {
 
 			String left = plans.get(0).getHumanReadable(prettyBoxDrawingType + 1);
 			String right = plans.get(1).getHumanReadable(prettyBoxDrawingType + 1);
+			boolean join = type.contains("Join");
+
 			{
 				String[] split = left.split(newLine);
-				sb.append(start).append(horizontal).append(split[0]).append(newLine);
+				sb.append(start).append(horizontal).append(" ").append(split[0]);
+				if (join)
+					sb.append(" [left]");
+				sb.append(newLine);
 				for (int i = 1; i < split.length; i++) {
 					sb.append(vertical).append("  ").append(split[i]).append(newLine);
 				}
@@ -302,18 +309,32 @@ public class GenericPlanNode {
 
 			{
 				String[] split = right.split(newLine);
-				sb.append(end).append(horizontal).append(split[0]).append(newLine);
+				sb.append(end).append(horizontal).append(" ").append(split[0]);
+				if (join)
+					sb.append(" [right]");
+				sb.append(newLine);
+
 				for (int i = 1; i < split.length; i++) {
 					sb.append("   ").append(split[i]).append(newLine);
 				}
 			}
 
 		} else {
-			plans.forEach(
-					child -> sb.append(Arrays.stream(child.getHumanReadable(prettyBoxDrawingType + 1).split(newLine))
-							.map(c -> "   " + c)
-							.reduce((a, b) -> a + newLine + b)
-							.orElse("") + newLine));
+
+			for (int i = 0; i < plans.size(); i++) {
+				GenericPlanNode child = plans.get(i);
+				int j = i;
+				sb.append(Arrays.stream(child.getHumanReadable(prettyBoxDrawingType + 1).split(newLine))
+						.map(c -> {
+							if (type.startsWith("StatementPattern") && child.type.startsWith("Var")) {
+								return spoc[j] + ": " + c;
+							}
+							return c;
+						})
+						.map(c -> "   " + c)
+						.reduce((a, b) -> a + newLine + b)
+						.orElse("")).append(newLine);
+			}
 		}
 
 		return sb.toString();
