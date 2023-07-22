@@ -29,7 +29,7 @@ dependency-reduced-pom.xml
 *.iws
 
 # Hugo
-.hugo_build.lock 
+.hugo_build.lock
 
 # Mac nonsense
 .DS_Store
@@ -47,3 +47,4 @@ formatter-maven-cache.properties
 compliance/*/overlays
 docker/ignore
 /core/queryparser/sparql/JavaCC/javacc/
+/scripts/temp/

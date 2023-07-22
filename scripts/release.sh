@@ -110,9 +110,6 @@ mvn clean;
 git checkout main;
 mvn clean;
 
-echo "Running maven clean and install -DskipTests";
-mvn clean;
-mvn install -DskipTests;
 
 MVN_CURRENT_SNAPSHOT_VERSION=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" pom.xml)
 
@@ -120,6 +117,30 @@ MVN_CURRENT_SNAPSHOT_VERSION=$(xmllint --xpath "//*[local-name()='project']/*[lo
 MVN_VERSION_RELEASE="${MVN_CURRENT_SNAPSHOT_VERSION/-SNAPSHOT/}"
 
 MVN_NEXT_SNAPSHOT_VERSION="$(increment_version "$MVN_VERSION_RELEASE" 3)-SNAPSHOT"
+
+BRANCH="releases/${MVN_VERSION_RELEASE}"
+
+RELEASE_NOTES_BRANCH="${MVN_VERSION_RELEASE}-release-notes"
+
+git checkout develop
+MVN_VERSION_DEVELOP=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" pom.xml)
+git checkout main;
+
+cd scripts
+rm -rf temp
+mkdir temp
+echo "MVN_CURRENT_SNAPSHOT_VERSION=\"${MVN_CURRENT_SNAPSHOT_VERSION}\"" > temp/constants.txt
+echo "MVN_VERSION_RELEASE=\"${MVN_VERSION_RELEASE}\"" > temp/constants.txt
+echo "MVN_NEXT_SNAPSHOT_VERSION=\"${MVN_NEXT_SNAPSHOT_VERSION}\"" > temp/constants.txt
+echo "BRANCH=\"${BRANCH}\"" > temp/constants.txt
+echo "RELEASE_NOTES_BRANCH=\"${RELEASE_NOTES_BRANCH}\"" > temp/constants.txt
+echo "MVN_VERSION_DEVELOP=\"${MVN_VERSION_DEVELOP}\"" > temp/constants.txt
+cd ..
+
+echo "Running maven clean and install -DskipTests";
+mvn clean;
+mvn install -DskipTests;
+
 
 echo "";
 echo "Your current maven snapshot version is: '${MVN_CURRENT_SNAPSHOT_VERSION}'"
@@ -130,16 +151,10 @@ read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 # set maven version
 mvn versions:set -DnewVersion="${MVN_VERSION_RELEASE}"
 
-# set the MVN_VERSION_RELEASE version again just to be on the safe side
-MVN_VERSION_RELEASE=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" pom.xml)
-
-# find out a way to test that we set the correct version!
-
 #Remove backup files. Finally, commit the version number changes:
 mvn versions:commit
 
 
-BRANCH="releases/${MVN_VERSION_RELEASE}"
 
 # delete old release branch if it exits
 if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
@@ -201,10 +216,6 @@ echo "Preparing a merge-branch to merge into develop"
 read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 
-git checkout develop
-git pull
-
-MVN_VERSION_DEVELOP=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" pom.xml)
 
 git checkout "${BRANCH}"
 
@@ -230,13 +241,18 @@ echo "Build javadocs"
 read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 git checkout "${MVN_VERSION_RELEASE}"
-mvn clean -Dmaven.clean.failOnError=false
+
+# temporarily disable exiting on error
+set +e
 mvn clean
-mvn compile -Pquick -Dmaven.compiler.failOnError=false
+mvn compile -DskipTests
+mvn package -Passembly -DskipTests
+set -e
+
 mvn package -Passembly -DskipTests
 
+
 git checkout main
-RELEASE_NOTES_BRANCH="${MVN_VERSION_RELEASE}-release-notes"
 git checkout -b "${RELEASE_NOTES_BRANCH}"
 
 tar -cvzf "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" -C target/site/apidocs .
@@ -267,4 +283,4 @@ echo "     - Make sure that all issues in the milestone are closed, or move them
 
 echo ""
 echo "To generate the news item and release-notes you will want to run the following command:"
-echo "./release-notes.sh 4.3.4 patch-release-notes.md patch-news-item.md 4.3.4-release-notes"
+echo "./release-notes.sh ${MVN_VERSION_RELEASE} patch-release-notes.md patch-news-item.md ${RELEASE_NOTES_BRANCH}"
