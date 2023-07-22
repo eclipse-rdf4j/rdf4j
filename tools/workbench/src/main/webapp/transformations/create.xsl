@@ -28,7 +28,7 @@
 									Memory Store
 								</option>
 								<option value="memory-lucene">
-									Memory Store + Lucene 
+									Memory Store + Lucene
                                 </option>
 								<option value="memory-rdfs">
 									Memory Store + RDFS
@@ -42,18 +42,9 @@
 								<option value="memory-customrule">
 									Memory Store + Custom Graph Query Inference
 								</option>
-								<option value="memory-spin">
-									Memory Store + SPIN support
-								</option>
-								<option value="memory-spin-rdfs">
-									Memory Store + RDFS and SPIN support
-								</option>
 								<option value="memory-shacl">
 									Memory Store + SHACL
 								</option>
-                                <!-- disabled pending GH-1304  option value="memory-spin-rdfs-lucene">
-                                    In Memory Store with RDFS+SPIN+Lucene support
-                                </option -->
 								<option value="native">
 									Native Store
 								</option>
@@ -72,18 +63,9 @@
 								<option value="native-customrule">
 									Native Store + Custom Graph Query Inference
 								</option>
-								<option value="native-spin">
-									Native Store + SPIN support
-								</option>
-								<option value="native-spin-rdfs">
-									Native Store + RDFS and SPIN support
-								</option>
 								<option value="native-shacl">
 									Native Store + SHACL
 								</option>
-                                <!-- disabled pending GH-1304  option value="native-spin-rdfs-lucene">
-									Native Java Store with RDFS+SPIN+Lucene support
-								</option -->
 								<option value="remote">
 									Remote RDF Store
 								</option>
