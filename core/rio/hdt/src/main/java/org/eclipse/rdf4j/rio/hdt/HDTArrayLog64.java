@@ -34,15 +34,15 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
  * @author Bart Hanssens
  */
 class HDTArrayLog64 extends HDTArray {
-	private byte buffer[];
+	private byte[] buffer;
 
 	@Override
-	protected int getType() {
+	int getType() {
 		return HDTArray.Type.LOG64.getValue();
 	}
 
 	@Override
-	protected int get(int i) {
+	int get(int i) {
 		// start byte of the value, and start bit in that start byte
 		int bytePos = (i * nrbits) / 8;
 		int bitPos = (i * nrbits) % 8;
@@ -63,14 +63,14 @@ class HDTArrayLog64 extends HDTArray {
 	}
 
 	@Override
-	protected void parse(InputStream is) throws IOException {
+	void parse(InputStream is) throws IOException {
 		super.parse(is);
 
 		// don't close CheckedInputStream, as it will close the underlying inputstream
 		try (UncloseableInputStream uis = new UncloseableInputStream(is);
 				CheckedInputStream cis = new CheckedInputStream(uis, new CRC32())) {
 			// read bytes, minimum 1
-			long bytes = (nrbits * entries + 7) / 8;
+			long bytes = ((long) nrbits * entries + 7) / 8;
 			if (bytes > Integer.MAX_VALUE) {
 				throw new UnsupportedOperationException("Maximum number of bytes in array exceeded: " + bytes);
 			}
