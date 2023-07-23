@@ -135,7 +135,7 @@ public class AggregateTest extends AbstractComplianceTest {
 	public void testSES2361UndefMin() {
 		String query = "SELECT (MIN(?v) as ?min) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			assertThat(result).isNotNull();
+			assertThat((Iterable<?>) result).isNotNull();
 			assertThat(result.hasNext()).isTrue();
 			assertThat(result.next().getValue("min").stringValue()).isEqualTo("1");
 			assertThat(result.hasNext()).isFalse();
@@ -146,10 +146,10 @@ public class AggregateTest extends AbstractComplianceTest {
 	public void testSES2361UndefMax() {
 		String query = "SELECT (MAX(?v) as ?max) WHERE { VALUES ?v { 1 2 7 undef 3 4 }}";
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			assertThat(result).isNotNull();
+			assertThat((Iterable<?>) result).isNotNull();
 			assertThat(result.hasNext()).isTrue();
 			assertThat(result.next().getValue("max").stringValue()).isEqualTo("7");
-			assertThat(result).isEmpty();
+			assertThat((Iterable<?>) result).isEmpty();
 		}
 	}
 
@@ -157,10 +157,10 @@ public class AggregateTest extends AbstractComplianceTest {
 	public void testSES2361UndefCount() {
 		String query = "SELECT (COUNT(?v) as ?c) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			assertThat(result).isNotNull();
+			assertThat((Iterable<?>) result).isNotNull();
 			assertThat(result.hasNext()).isTrue();
 			assertThat(result.next().getValue("c").stringValue()).isEqualTo("4");
-			assertThat(result).isEmpty();
+			assertThat((Iterable<?>) result).isEmpty();
 		}
 	}
 
@@ -168,10 +168,10 @@ public class AggregateTest extends AbstractComplianceTest {
 	public void testSES2361UndefCountWildcard() {
 		String query = "SELECT (COUNT(*) as ?c) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			assertThat(result).isNotNull();
+			assertThat((Iterable<?>) result).isNotNull();
 			assertThat(result.hasNext()).isTrue();
 			assertThat(result.next().getValue("c").stringValue()).isEqualTo("4");
-			assertThat(result).isEmpty();
+			assertThat((Iterable<?>) result).isEmpty();
 		}
 	}
 
@@ -179,10 +179,10 @@ public class AggregateTest extends AbstractComplianceTest {
 	public void testSES2361UndefSum() {
 		String query = "SELECT (SUM(?v) as ?s) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			assertThat(result).isNotNull();
+			assertThat((Iterable<?>) result).isNotNull();
 			assertThat(result.hasNext()).isTrue();
 			assertThat(result.next().getValue("s").stringValue()).isEqualTo("10");
-			assertThat(result).isEmpty();
+			assertThat((Iterable<?>) result).isEmpty();
 		}
 	}
 
@@ -195,7 +195,7 @@ public class AggregateTest extends AbstractComplianceTest {
 
 		try (TupleQueryResult evaluate = tq.evaluate()) {
 			List<BindingSet> result = QueryResults.asList(evaluate);
-			assertThat(result).isNotNull().hasSize(1);
+			assertThat((Iterable<?>) result).isNotNull().hasSize(1);
 			assertThat(result.get(0).getValue("min")).isEqualTo(literal(Float.NEGATIVE_INFINITY));
 			assertThat(result.get(0).getValue("max")).isEqualTo(literal(Float.POSITIVE_INFINITY));
 		} catch (QueryEvaluationException e) {
@@ -216,7 +216,7 @@ public class AggregateTest extends AbstractComplianceTest {
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
 		try (TupleQueryResult result = tq.evaluate()) {
-			assertThat(result).isNotNull();
+			assertThat((Iterable<?>) result).isNotNull();
 
 			while (result.hasNext()) {
 				BindingSet bs = result.next();
@@ -254,7 +254,7 @@ public class AggregateTest extends AbstractComplianceTest {
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
 		try (TupleQueryResult result = tq.evaluate()) {
-			assertThat(result).isNotNull();
+			assertThat((Iterable<?>) result).isNotNull();
 
 			while (result.hasNext()) {
 				BindingSet bs = result.next();
@@ -291,7 +291,7 @@ public class AggregateTest extends AbstractComplianceTest {
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
 		try (TupleQueryResult result = tq.evaluate()) {
-			assertThat(result).isNotNull();
+			assertThat((Iterable<?>) result).isNotNull();
 
 			assertThat(result.hasNext()).isTrue();
 			BindingSet s = result.next();
@@ -433,7 +433,7 @@ public class AggregateTest extends AbstractComplianceTest {
 	}
 
 	/**
-	 * @see https://github.com/eclipse/rdf4j/issues/4290
+	 * @see <a href="https://github.com/eclipse/rdf4j/issues/4290">https://github.com/eclipse/rdf4j/issues/4290</a>
 	 */
 	@Test
 	public void testCountOrderBy_ImplicitGroup() {

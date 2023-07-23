@@ -31,7 +31,7 @@ public interface QueryEvaluationStep {
 	 */
 	@Deprecated(since = "4.1.0", forRemoval = true)
 	class DelayedEvaluationIteration
-			extends DelayedIteration<BindingSet, QueryEvaluationException> {
+			extends DelayedIteration<BindingSet> {
 		private final QueryEvaluationStep arg;
 		private final BindingSet bs;
 
@@ -41,16 +41,16 @@ public interface QueryEvaluationStep {
 		}
 
 		@Override
-		protected CloseableIteration<? extends BindingSet, ? extends QueryEvaluationException> createIteration()
+		protected CloseableIteration<? extends BindingSet> createIteration()
 				throws QueryEvaluationException {
 			return arg.evaluate(bs);
 		}
 	}
 
-	EmptyIteration<BindingSet, QueryEvaluationException> EMPTY_ITERATION = new EmptyIteration<>();
+	EmptyIteration<BindingSet> EMPTY_ITERATION = new EmptyIteration<>();
 	QueryEvaluationStep EMPTY = bindings -> EMPTY_ITERATION;
 
-	CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings);
+	CloseableIteration<BindingSet> evaluate(BindingSet bindings);
 
 	/**
 	 * A fall back implementation that wraps a pre-existing evaluate method on a strategy
@@ -76,7 +76,7 @@ public interface QueryEvaluationStep {
 	 * @return a new evaluation step that executes wrap on the inner qes.
 	 */
 	static QueryEvaluationStep wrap(QueryEvaluationStep qes,
-			Function<CloseableIteration<BindingSet, QueryEvaluationException>, CloseableIteration<BindingSet, QueryEvaluationException>> wrap) {
+			Function<CloseableIteration<BindingSet>, CloseableIteration<BindingSet>> wrap) {
 		return bs -> wrap.apply(qes.evaluate(bs));
 	}
 }

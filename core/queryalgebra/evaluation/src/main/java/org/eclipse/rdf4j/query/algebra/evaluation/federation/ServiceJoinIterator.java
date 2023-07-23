@@ -37,7 +37,7 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 	 * @param strategy
 	 * @throws QueryEvaluationException
 	 */
-	public ServiceJoinIterator(CloseableIteration<BindingSet, QueryEvaluationException> leftIter, Service service,
+	public ServiceJoinIterator(CloseableIteration<BindingSet> leftIter, Service service,
 			BindingSet bindings, EvaluationStrategy strategy) throws QueryEvaluationException {
 		super(leftIter, service, bindings);
 		this.service = service;

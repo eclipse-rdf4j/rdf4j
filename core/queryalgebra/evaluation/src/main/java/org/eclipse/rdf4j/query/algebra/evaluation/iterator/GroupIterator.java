@@ -75,7 +75,7 @@ import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateFunctionRe
  * @author Jerven Bolleman
  * @author Tomas Kovachev
  */
-public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryEvaluationException> {
+public class GroupIterator extends CloseableIteratorIteration<BindingSet> {
 
 	/*-----------*
 	 * Constants *

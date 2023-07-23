@@ -22,22 +22,19 @@ import org.slf4j.LoggerFactory;
  * @author Jeen Broekstra
  */
 @Deprecated(since = "4.1.0")
-public class SilentIteration<T, E extends Exception> extends IterationWrapper<T, E> {
+public class SilentIteration<T> extends IterationWrapper<T> {
 
 	private static final Logger logger = LoggerFactory.getLogger(SilentIteration.class);
 
-	public SilentIteration(CloseableIteration<T, E> iter) {
+	public SilentIteration(CloseableIteration<T> iter) {
 		super(iter);
 	}
 
 	@Override
-	public boolean hasNext() throws E {
+	public boolean hasNext() {
 		try {
 			return super.hasNext();
 		} catch (Exception e) {
-			if (e instanceof InterruptedException) {
-				Thread.currentThread().interrupt();
-			}
 			if (logger.isTraceEnabled()) {
 				logger.trace("Suppressed error in SILENT iteration: " + e.getMessage(), e);
 			}
@@ -46,16 +43,13 @@ public class SilentIteration<T, E extends Exception> extends IterationWrapper<T,
 	}
 
 	@Override
-	public T next() throws E {
+	public T next() {
 		try {
 			return super.next();
 		} catch (NoSuchElementException e) {
 			// pass through
 			throw e;
 		} catch (Exception e) {
-			if (e instanceof InterruptedException) {
-				Thread.currentThread().interrupt();
-			}
 			if (logger.isTraceEnabled()) {
 				logger.trace("Converted error in SILENT iteration: " + e.getMessage(), e);
 			}
@@ -64,13 +58,10 @@ public class SilentIteration<T, E extends Exception> extends IterationWrapper<T,
 	}
 
 	@Override
-	protected void handleClose() throws E {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} catch (Exception e) {
-			if (e instanceof InterruptedException) {
-				Thread.currentThread().interrupt();
-			}
 			if (logger.isTraceEnabled()) {
 				logger.trace("Suppressed error in SILENT iteration: " + e.getMessage(), e);
 			}

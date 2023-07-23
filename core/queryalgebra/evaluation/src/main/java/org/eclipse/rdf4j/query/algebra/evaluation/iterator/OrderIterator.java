@@ -33,7 +33,6 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.DelayedIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.LimitIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -45,7 +44,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @author Arjohn Kampman
  */
 @Deprecated(since = "4.1.0")
-public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationException> {
+public class OrderIterator extends DelayedIteration<BindingSet> {
 
 	private static class SerializedQueue<E extends Serializable> extends AbstractQueue<E> implements Closeable {
 
@@ -228,7 +227,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 	 * Variables *
 	 *-----------*/
 
-	private final CloseableIteration<BindingSet, QueryEvaluationException> iter;
+	private final CloseableIteration<BindingSet> iter;
 
 	private final Comparator<BindingSet> comparator;
 
@@ -248,17 +247,17 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 	 * Constructors *
 	 *--------------*/
 
-	public OrderIterator(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public OrderIterator(CloseableIteration<BindingSet> iter,
 			Comparator<BindingSet> comparator) {
 		this(iter, comparator, Long.MAX_VALUE, false);
 	}
 
-	public OrderIterator(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public OrderIterator(CloseableIteration<BindingSet> iter,
 			Comparator<BindingSet> comparator, long limit, boolean distinct) {
 		this(iter, comparator, limit, distinct, Integer.MAX_VALUE);
 	}
 
-	public OrderIterator(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public OrderIterator(CloseableIteration<BindingSet> iter,
 			Comparator<BindingSet> comparator, long limit, boolean distinct, long iterationSyncThreshold) {
 		this.iter = iter;
 		this.comparator = comparator;
@@ -272,7 +271,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 	 *---------*/
 
 	@Override
-	protected Iteration<BindingSet, QueryEvaluationException> createIteration() throws QueryEvaluationException {
+	protected CloseableIteration<BindingSet> createIteration() throws QueryEvaluationException {
 		BindingSet threshold = null;
 		List<BindingSet> list = new LinkedList<>();
 		int limit2 = limit >= Integer.MAX_VALUE / 2 ? Integer.MAX_VALUE : (int) limit * 2;

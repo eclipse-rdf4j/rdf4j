@@ -14,7 +14,6 @@ import java.util.Queue;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -29,7 +28,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
-public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class PathIteration extends LookAheadIteration<BindingSet> {
 
 	/**
 	 *
@@ -38,7 +37,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 	private long currentLength;
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> currentIter;
+	private CloseableIteration<BindingSet> currentIter;
 
 	private final BindingSet bindings;
 
@@ -94,7 +93,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 	protected BindingSet getNextElement() throws QueryEvaluationException {
 		again: while (true) {
 			while (currentIter != null && !currentIter.hasNext()) {
-				Iterations.closeCloseable(currentIter);
+				currentIter.close();
 				createIteration();
 				// stop condition: if the iter is an EmptyIteration
 				if (currentIter == null) {
@@ -207,7 +206,9 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 		try {
 			super.handleClose();
 		} finally {
-			Iterations.closeCloseable(currentIter);
+			if (currentIter != null) {
+				currentIter.close();
+			}
 		}
 
 	}

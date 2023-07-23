@@ -34,7 +34,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author Andreas Schwarte
  */
-public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, QueryEvaluationException>
+public class ParallelServiceExecutor extends LookAheadIteration<BindingSet>
 		implements ParallelExecutor<BindingSet> {
 
 	/*
@@ -51,7 +51,7 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 	protected final BindingSet bindings;
 	protected final FederationContext federationContext;
 
-	protected CloseableIteration<BindingSet, QueryEvaluationException> rightIter = null;
+	protected CloseableIteration<BindingSet> rightIter = null;
 	protected boolean finished = false;
 	protected Exception error = null;
 
@@ -81,7 +81,7 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 	}
 
 	@Override
-	public void addResult(CloseableIteration<BindingSet, QueryEvaluationException> res) {
+	public void addResult(CloseableIteration<BindingSet> res) {
 
 		rightIter = res;
 		latch.countDown();
@@ -159,7 +159,7 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 	private class ParallelServiceTask extends ParallelTaskBase<BindingSet> {
 
 		@Override
-		protected CloseableIteration<BindingSet, QueryEvaluationException> performTaskInternal() throws Exception {
+		protected CloseableIteration<BindingSet> performTaskInternal() throws Exception {
 
 			// Note: in order two avoid deadlocks we consume the SERVICE result.
 			// This is basically required to avoid processing background tuple

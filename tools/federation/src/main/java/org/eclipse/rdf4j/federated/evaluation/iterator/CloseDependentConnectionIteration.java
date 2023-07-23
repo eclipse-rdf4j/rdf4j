@@ -22,14 +22,14 @@ import org.slf4j.LoggerFactory;
  *
  * @author Andreas Schwarte
  */
-public class CloseDependentConnectionIteration<T> extends AbstractCloseableIteration<T, QueryEvaluationException> {
+public class CloseDependentConnectionIteration<T> extends AbstractCloseableIteration<T> {
 
 	private static final Logger logger = LoggerFactory.getLogger(CloseDependentConnectionIteration.class);
 
-	protected final CloseableIteration<T, QueryEvaluationException> inner;
+	protected final CloseableIteration<T> inner;
 	protected final RepositoryConnection dependentConn;
 
-	public CloseDependentConnectionIteration(CloseableIteration<T, QueryEvaluationException> inner,
+	public CloseDependentConnectionIteration(CloseableIteration<T> inner,
 			RepositoryConnection dependentConn) {
 		this.inner = inner;
 		this.dependentConn = dependentConn;

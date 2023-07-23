@@ -29,9 +29,9 @@ public class Length implements TupleFunction {
 	}
 
 	@Override
-	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
+	public CloseableIteration<? extends List<? extends Value>> evaluate(
 			final ValueFactory valueFactory, final Value... args) throws QueryEvaluationException {
-		return new SingletonIteration<List<? extends Value>, QueryEvaluationException>(
+		return new SingletonIteration<List<? extends Value>>(
 				Collections.singletonList(valueFactory.createLiteral(args.length)));
 	}
 }

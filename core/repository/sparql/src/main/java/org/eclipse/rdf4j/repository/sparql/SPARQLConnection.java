@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
@@ -145,7 +144,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	 * operation is modified to respond with a success message when removing a non-existent named graph.
 	 *
 	 * @param silent the value to set this to.
-	 * @see https://www.w3.org/TR/sparql11-update/#clear
+	 * @see <a href="https://www.w3.org/TR/sparql11-update/#clear">https://www.w3.org/TR/sparql11-update/#clear</a>
 	 */
 	public void setSilentClear(boolean silent) {
 		this.silentClear = silent;
@@ -157,7 +156,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	 * <p>
 	 * By default, the SPARQL connection executes the {@link #clear(Resource...)} API operation by converting it to a
 	 * SPARQL `CLEAR GRAPH` update operation. This operation has an optional <code>SILENT</code> modifier, which can be
-	 * enabled by setting this flag to <code>true</code>. The behavior of this modifier is speficied as follows in the
+	 * enabled by setting this flag to <code>true</code>. The behavior of this modifier is specified as follows in the
 	 * SPARQL 1.1 Recommendation:
 	 *
 	 * <blockquote> If the store records the existence of empty graphs, then the SPARQL 1.1 Update service, by default,
@@ -172,7 +171,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	 * operation is modified to respond with a success message when removing a non-existent named graph.
 	 *
 	 * @param flag the value to set this to.
-	 * @see https://www.w3.org/TR/sparql11-update/#clear
+	 * @see <a href="https://www.w3.org/TR/sparql11-update/#clear">https://www.w3.org/TR/sparql11-update/#clear</a>
 	 * @deprecated Use {@link #setSilentClear(boolean)} instead.
 	 */
 	@Deprecated(since = "3.6.0")
@@ -227,7 +226,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			TupleQuery query = prepareTupleQuery(SPARQL, NAMEDGRAPHS, "");
 			iter = query.evaluate();
 			result = new RepositoryResult<>(new ExceptionConvertingIteration<Resource, RepositoryException>(
-					new ConvertingIteration<BindingSet, Resource, QueryEvaluationException>(iter) {
+					new ConvertingIteration<BindingSet, Resource>(iter) {
 
 						@Override
 						protected Resource convert(BindingSet bindings) throws QueryEvaluationException {
@@ -236,7 +235,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 					}) {
 
 				@Override
-				protected RepositoryException convert(Exception e) {
+				protected RepositoryException convert(RuntimeException e) {
 					return new RepositoryException(e);
 				}
 			});
@@ -248,14 +247,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			throw new RepositoryException(e);
 		} finally {
 			if (!allGood) {
-				try {
-					if (result != null) {
-						result.close();
-					}
-				} finally {
-					if (iter != null) {
-						iter.close();
-					}
+				if (iter != null) {
+					iter.close();
 				}
 			}
 		}
@@ -330,7 +323,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 					toStatementIteration(qRes, subj, pred, obj)) {
 
 				@Override
-				protected RepositoryException convert(Exception e) {
+				protected RepositoryException convert(RuntimeException e) {
 					return new RepositoryException(e);
 				}
 			});
@@ -338,14 +331,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			return result;
 		} finally {
 			if (!allGood) {
-				try {
-					if (result != null) {
-						result.close();
-					}
-				} finally {
-					if (qRes != null) {
-						qRes.close();
-					}
+				if (qRes != null) {
+					qRes.close();
 				}
 			}
 		}
@@ -355,7 +342,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			boolean includeInferred, Resource... contexts) throws RepositoryException {
 		if (hasStatement(subj, pred, obj, includeInferred, contexts)) {
 			Statement st = getValueFactory().createStatement(subj, pred, obj);
-			CloseableIteration<Statement, RepositoryException> cursor;
+			CloseableIteration<Statement> cursor;
 			cursor = new SingletonIteration<>(st);
 			return new RepositoryResult<>(cursor);
 		} else {
@@ -377,7 +364,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			result = new RepositoryResult<>(
 					new ExceptionConvertingIteration<>(gRes) {
 						@Override
-						protected RepositoryException convert(Exception e) {
+						protected RepositoryException convert(RuntimeException e) {
 							return new RepositoryException(e);
 						}
 					});
@@ -385,14 +372,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			return result;
 		} finally {
 			if (!allGood) {
-				try {
-					if (result != null) {
-						result.close();
-					}
-				} finally {
-					if (gRes != null) {
-						gRes.close();
-					}
+				if (gRes != null) {
+					gRes.close();
 				}
 			}
 		}
@@ -540,9 +521,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 			// RDFInserter only throws wrapped RepositoryExceptions
 			throw (RepositoryException) e.getCause();
-		} catch (RDFParseException e) {
-			conditionalRollback(localTransaction);
-			throw e;
 		} catch (IOException | RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
@@ -570,9 +548,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 			// RDFInserter only throws wrapped RepositoryExceptions
 			throw (RepositoryException) e.getCause();
-		} catch (RDFParseException e) {
-			conditionalRollback(localTransaction);
-			throw e;
 		} catch (IOException | RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
@@ -601,9 +576,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 			// RDFInserter only throws wrapped RepositoryExceptions
 			throw (RepositoryException) e.getCause();
-		} catch (RDFParseException e) {
-			conditionalRollback(localTransaction);
-			throw e;
 		} catch (IOException | RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
@@ -633,9 +605,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 			// RDFInserter only throws wrapped RepositoryExceptions
 			throw (RepositoryException) e.getCause();
-		} catch (RDFParseException e) {
-			conditionalRollback(localTransaction);
-			throw e;
 		} catch (IOException | RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
@@ -680,15 +649,15 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		}
 
 		if (contexts.length == 0) {
-			sparqlTransaction.append(clearMode + " ALL ");
+			sparqlTransaction.append(clearMode).append(" ALL ");
 			sparqlTransaction.append("; ");
 		} else {
 			for (Resource context : contexts) {
 				if (context == null) {
-					sparqlTransaction.append(clearMode + " DEFAULT ");
+					sparqlTransaction.append(clearMode).append(" DEFAULT ");
 					sparqlTransaction.append("; ");
 				} else if (context instanceof IRI) {
-					sparqlTransaction.append(clearMode + " GRAPH <" + context.stringValue() + "> ");
+					sparqlTransaction.append(clearMode).append(" GRAPH <").append(context.stringValue()).append("> ");
 					sparqlTransaction.append("; ");
 				} else {
 					throw new RepositoryException("SPARQL does not support named graphs identified by blank nodes.");
@@ -800,7 +769,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 						// the blank node id.
 						namedGraph = "urn:nodeid:" + context.stringValue();
 					}
-					qb.append("    GRAPH <" + namedGraph + "> { \n");
+					qb.append("    GRAPH <").append(namedGraph).append("> { \n");
 				}
 				createDataBody(qb, statements, true);
 				if (context != null) {
@@ -829,7 +798,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 						// the blank node id.
 						namedGraph = "urn:nodeid:" + context.stringValue();
 					}
-					qb.append("    GRAPH <" + namedGraph + "> { \n");
+					qb.append("    GRAPH <").append(namedGraph).append("> { \n");
 				}
 				createDataBody(qb, statements, true);
 				if (context != null) {
@@ -856,16 +825,16 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 						// the blank node id.
 						namedGraph = "urn:nodeid:" + context.stringValue();
 					}
-					qb.append("    GRAPH <" + namedGraph + "> { \n");
+					qb.append("    GRAPH <").append(namedGraph).append("> { \n");
 				}
 			}
 			if (st.getSubject() instanceof BNode) {
-				qb.append("_:" + st.getSubject().stringValue() + " ");
+				qb.append("_:").append(st.getSubject().stringValue()).append(" ");
 			} else {
-				qb.append("<" + st.getSubject().stringValue() + "> ");
+				qb.append("<").append(st.getSubject().stringValue()).append("> ");
 			}
 
-			qb.append("<" + st.getPredicate().stringValue() + "> ");
+			qb.append("<").append(st.getPredicate().stringValue()).append("> ");
 
 			if (st.getObject() instanceof Literal) {
 				Literal lit = (Literal) st.getObject();
@@ -877,13 +846,13 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 					qb.append("@");
 					qb.append(lit.getLanguage().get());
 				} else {
-					qb.append("^^<" + lit.getDatatype().stringValue() + ">");
+					qb.append("^^<").append(lit.getDatatype().stringValue()).append(">");
 				}
 				qb.append(" ");
 			} else if (st.getObject() instanceof BNode) {
-				qb.append("_:" + st.getObject().stringValue() + " ");
+				qb.append("_:").append(st.getObject().stringValue()).append(" ");
 			} else {
-				qb.append("<" + st.getObject().stringValue() + "> ");
+				qb.append("<").append(st.getObject().stringValue()).append("> ");
 			}
 			qb.append(". \n");
 
@@ -994,10 +963,10 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 						// the blank node id.
 						namedGraph = "urn:nodeid:" + context.stringValue();
 					}
-					qb.append("    GRAPH <" + namedGraph + "> { \n");
+					qb.append("    GRAPH <").append(namedGraph).append("> { \n");
 				}
 				createBGP(qb, subject, predicate, object);
-				if (context != null && context instanceof IRI) {
+				if (context instanceof IRI) {
 					qb.append(" } \n");
 				}
 			}
@@ -1012,16 +981,16 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	private void createBGP(StringBuilder qb, Resource subject, IRI predicate, Value object) {
 		if (subject != null) {
 			if (subject instanceof BNode) {
-				qb.append("_:" + subject.stringValue() + " ");
+				qb.append("_:").append(subject.stringValue()).append(" ");
 			} else {
-				qb.append("<" + subject.stringValue() + "> ");
+				qb.append("<").append(subject.stringValue()).append("> ");
 			}
 		} else {
 			qb.append("?subj");
 		}
 
 		if (predicate != null) {
-			qb.append("<" + predicate.stringValue() + "> ");
+			qb.append("<").append(predicate.stringValue()).append("> ");
 		} else {
 			qb.append("?pred");
 		}
@@ -1037,13 +1006,13 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 					qb.append("@");
 					qb.append(lit.getLanguage().get());
 				} else {
-					qb.append("^^<" + lit.getDatatype().stringValue() + ">");
+					qb.append("^^<").append(lit.getDatatype().stringValue()).append(">");
 				}
 				qb.append(" ");
 			} else if (object instanceof BNode) {
-				qb.append("_:" + object.stringValue() + " ");
+				qb.append("_:").append(object.stringValue()).append(" ");
 			} else {
-				qb.append("<" + object.stringValue() + "> ");
+				qb.append("<").append(object.stringValue()).append("> ");
 			}
 		} else {
 			qb.append("?obj");
@@ -1076,7 +1045,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	 * @return the converted iteration
 	 */
 	@Deprecated(since = "4.1.0", forRemoval = true)
-	protected Iteration<Statement, QueryEvaluationException> toStatementIteration(TupleQueryResult iter,
+	protected CloseableIteration<Statement> toStatementIteration(TupleQueryResult iter,
 			final Resource subj, final IRI pred, final Value obj) {
 
 		return new ConvertingIteration<>(iter) {

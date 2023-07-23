@@ -306,7 +306,7 @@ public class IsolationLevelTest {
 				insertTestStatement(con, i);
 			}
 			int counter = 0;
-			try (CloseableIteration<? extends Statement, RepositoryException> stmts = con.getStatements(null, null,
+			try (CloseableIteration<? extends Statement> stmts = con.getStatements(null, null,
 					null, false)) {
 				while (stmts.hasNext()) {
 					Statement st = stmts.next();
@@ -461,7 +461,7 @@ public class IsolationLevelTest {
 
 	protected long count(RepositoryConnection con, Resource subj, IRI pred, Value obj, boolean includeInferred,
 			Resource... contexts) throws RepositoryException {
-		try (CloseableIteration<Statement, RepositoryException> stmts = con.getStatements(subj, pred, obj,
+		try (CloseableIteration<Statement> stmts = con.getStatements(subj, pred, obj,
 				includeInferred, contexts)) {
 			long counter = 0;
 			while (stmts.hasNext()) {
@@ -473,7 +473,7 @@ public class IsolationLevelTest {
 	}
 
 	protected Literal readLiteral(RepositoryConnection con, final IRI subj, final IRI pred) throws RepositoryException {
-		try (CloseableIteration<? extends Statement, RepositoryException> stmts = con.getStatements(subj, pred, null,
+		try (CloseableIteration<? extends Statement> stmts = con.getStatements(subj, pred, null,
 				false)) {
 			if (!stmts.hasNext()) {
 				return null;

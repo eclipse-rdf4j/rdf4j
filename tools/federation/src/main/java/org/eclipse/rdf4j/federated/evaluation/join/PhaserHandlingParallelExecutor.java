@@ -16,7 +16,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * A delegating {@link ParallelExecutor} which arrives and de-registers on the phaser on completion of a task.
@@ -36,7 +35,7 @@ class PhaserHandlingParallelExecutor implements ParallelExecutor<BindingSet> {
 	}
 
 	@Override
-	public void addResult(CloseableIteration<BindingSet, QueryEvaluationException> res) {
+	public void addResult(CloseableIteration<BindingSet> res) {
 		delegate.addResult(res);
 	}
 

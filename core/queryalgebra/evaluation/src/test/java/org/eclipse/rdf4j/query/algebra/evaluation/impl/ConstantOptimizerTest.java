@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
@@ -67,7 +66,7 @@ public class ConstantOptimizerTest extends QueryOptimizerTest {
 		optimized.visit(finder);
 		assertThat(finder.logicalAndfound).isFalse();
 
-		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(optimized,
+		CloseableIteration<BindingSet> result = strategy.evaluate(optimized,
 				new EmptyBindingSet());
 		assertNotNull(result);
 		assertTrue(result.hasNext());
@@ -102,7 +101,7 @@ public class ConstantOptimizerTest extends QueryOptimizerTest {
 		optimized.visit(finder);
 		assertThat(finder.functionCallFound).isFalse();
 
-		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(optimized,
+		CloseableIteration<BindingSet> result = strategy.evaluate(optimized,
 				new EmptyBindingSet());
 		assertNotNull(result);
 		assertTrue(result.hasNext());

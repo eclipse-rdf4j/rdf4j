@@ -18,8 +18,7 @@ import java.net.URL;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.eclipse.rdf4j.common.iteration.Iteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -392,9 +391,9 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	}
 
 	@Override
-	public <E extends Exception> void add(Iteration<? extends Statement, E> statements, Resource... contexts)
-			throws RepositoryException, E {
-		try {
+	public void add(CloseableIteration<? extends Statement> statements, Resource... contexts)
+			throws RepositoryException {
+		try (statements) {
 			Objects.requireNonNull(contexts,
 					"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 
@@ -410,8 +409,6 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 				conditionalRollback(localTransaction);
 				throw e;
 			}
-		} finally {
-			Iterations.closeCloseable(statements);
 		}
 	}
 
@@ -458,9 +455,9 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	}
 
 	@Override
-	public <E extends Exception> void remove(Iteration<? extends Statement, E> statements, Resource... contexts)
-			throws RepositoryException, E {
-		try {
+	public void remove(CloseableIteration<? extends Statement> statements, Resource... contexts)
+			throws RepositoryException {
+		try (statements) {
 			boolean localTransaction = startLocalTransaction();
 
 			try {
@@ -473,8 +470,6 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 				conditionalRollback(localTransaction);
 				throw e;
 			}
-		} finally {
-			Iterations.closeCloseable(statements);
 		}
 	}
 

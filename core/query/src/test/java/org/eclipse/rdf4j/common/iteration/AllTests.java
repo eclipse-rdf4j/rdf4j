@@ -19,7 +19,7 @@ import org.junit.platform.suite.api.Suite;
 @Suite
 @SelectClasses({ LimitIterationTest.class, EmptyIterationTest.class, OffsetIterationTest.class,
 		ConvertingIterationTest.class, CloseableIteratorIterationTest.class, DelayedIterationTest.class,
-		DistinctIterationTest.class, ExceptionConvertingIterationTest.class, FilterIterationTest.class,
+		DistinctIterationTest.class, FilterIterationTest.class,
 		IntersectionIterationTest.class, DistinctIntersectionIterationTest.class, IteratorIterationTest.class,
 		LookAheadIterationTest.class, MinusIterationTest.class, DistinctMinusIterationTest.class,
 		SingletonIterationTest.class, UnionIterationTest.class, })

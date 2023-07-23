@@ -37,7 +37,7 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple> iterator() {
 		return new CloseableIteration<>() {
 
 			{

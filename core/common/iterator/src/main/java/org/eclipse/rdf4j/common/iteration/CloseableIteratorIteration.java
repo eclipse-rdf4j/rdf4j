@@ -19,7 +19,7 @@ import java.util.Objects;
  * An Iteration that can convert an {@link Iterator} to a {@link CloseableIteration}.
  */
 @Deprecated(since = "4.1.0")
-public class CloseableIteratorIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
+public class CloseableIteratorIteration<E> extends AbstractCloseableIteration<E> {
 
 	private Iterator<? extends E> iter;
 
@@ -46,7 +46,7 @@ public class CloseableIteratorIteration<E, X extends Exception> extends Abstract
 	}
 
 	@Override
-	public boolean hasNext() throws X {
+	public boolean hasNext() {
 		if (isClosed()) {
 			return false;
 		}
@@ -59,7 +59,7 @@ public class CloseableIteratorIteration<E, X extends Exception> extends Abstract
 	}
 
 	@Override
-	public E next() throws X {
+	public E next() {
 		if (isClosed()) {
 			throw new NoSuchElementException("Iteration has been closed");
 		}
@@ -68,7 +68,7 @@ public class CloseableIteratorIteration<E, X extends Exception> extends Abstract
 	}
 
 	@Override
-	public void remove() throws X {
+	public void remove() {
 		if (isClosed()) {
 			throw new IllegalStateException("Iteration has been closed");
 		}

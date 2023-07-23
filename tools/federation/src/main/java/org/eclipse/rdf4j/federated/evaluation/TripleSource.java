@@ -53,7 +53,7 @@ public interface TripleSource {
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
 	 */
-	CloseableIteration<BindingSet, QueryEvaluationException> getStatements(TupleExpr preparedQuery,
+	CloseableIteration<BindingSet> getStatements(TupleExpr preparedQuery,
 			final BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
 
@@ -70,7 +70,7 @@ public interface TripleSource {
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
 	 */
-	CloseableIteration<BindingSet, QueryEvaluationException> getStatements(String preparedQuery,
+	CloseableIteration<BindingSet> getStatements(String preparedQuery,
 			final BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
 
@@ -88,7 +88,7 @@ public interface TripleSource {
 	 *             {@link #getStatements(String, BindingSet, QueryType, QueryInfo)}
 	 */
 	@Deprecated(forRemoval = true)
-	default CloseableIteration<BindingSet, QueryEvaluationException> getStatements(String preparedQuery,
+	default CloseableIteration<BindingSet> getStatements(String preparedQuery,
 			QueryType queryType, QueryInfo queryInfo)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		return getStatements(preparedQuery, EmptyBindingSet.getInstance(), queryType, queryInfo);
@@ -106,7 +106,7 @@ public interface TripleSource {
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
 	 */
-	CloseableIteration<BindingSet, QueryEvaluationException> getStatements(String preparedQuery,
+	CloseableIteration<BindingSet> getStatements(String preparedQuery,
 			BindingSet queryBindings,
 			QueryType queryType, QueryInfo queryInfo)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
@@ -124,7 +124,7 @@ public interface TripleSource {
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
 	 */
-	CloseableIteration<BindingSet, QueryEvaluationException> getStatements(StatementPattern stmt,
+	CloseableIteration<BindingSet> getStatements(StatementPattern stmt,
 			final BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
 
@@ -142,7 +142,7 @@ public interface TripleSource {
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
 	 */
-	CloseableIteration<Statement, QueryEvaluationException> getStatements(
+	CloseableIteration<Statement> getStatements(
 			Resource subj, IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
 

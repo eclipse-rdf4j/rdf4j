@@ -160,7 +160,7 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings)
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings)
 			throws QueryEvaluationException {
 
 		try {

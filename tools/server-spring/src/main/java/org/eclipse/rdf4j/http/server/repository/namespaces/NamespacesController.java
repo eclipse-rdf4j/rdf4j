@@ -87,7 +87,7 @@ public class NamespacesController extends AbstractController {
 			try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
 				final ValueFactory vf = repositoryCon.getValueFactory();
 				try {
-					try (CloseableIteration<? extends Namespace, RepositoryException> iter = repositoryCon
+					try (CloseableIteration<? extends Namespace> iter = repositoryCon
 							.getNamespaces()) {
 						while (iter.hasNext()) {
 							Namespace ns = iter.next();

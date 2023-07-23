@@ -328,7 +328,7 @@ public abstract class RDFStoreTest {
 		con.addStatement(subj, pred, obj);
 		con.commit();
 
-		try (CloseableIteration<? extends Statement, SailException> stIter = con.getStatements(null, null, null,
+		try (CloseableIteration<? extends Statement> stIter = con.getStatements(null, null, null,
 				false)) {
 			assertTrue(stIter.hasNext());
 
@@ -342,7 +342,7 @@ public abstract class RDFStoreTest {
 		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
 				"SELECT * WHERE { ?S ?P ?O. FILTER(?P = <" + pred.stringValue() + ">)}", null);
 
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
+		CloseableIteration<? extends BindingSet> iter;
 		iter = con.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false);
 
 		try {
@@ -504,7 +504,7 @@ public abstract class RDFStoreTest {
 		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
 				"SELECT ?C WHERE { [] a ?C }", null);
 
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
+		CloseableIteration<? extends BindingSet> iter;
 		iter = con.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false);
 
 		con.begin();
@@ -659,7 +659,7 @@ public abstract class RDFStoreTest {
 		TupleExpr tupleExpr = tupleQuery.getTupleExpr();
 
 		MapBindingSet bindings = new MapBindingSet(2);
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
+		CloseableIteration<? extends BindingSet> iter;
 
 		iter = con.evaluate(tupleExpr, null, bindings, false);
 		int resultCount = verifyQueryResult(iter, 1);
@@ -727,7 +727,7 @@ public abstract class RDFStoreTest {
 		con.setNamespace("rdf", RDF.NAMESPACE);
 		con.commit();
 
-		try (CloseableIteration<? extends Namespace, SailException> namespaces = con.getNamespaces()) {
+		try (CloseableIteration<? extends Namespace> namespaces = con.getNamespaces()) {
 			assertTrue(namespaces.hasNext());
 			Namespace rdf = namespaces.next();
 			assertEquals("rdf", rdf.getPrefix());
@@ -962,7 +962,7 @@ public abstract class RDFStoreTest {
 		con.commit();
 	}
 
-	private <T, X extends Exception> T first(CloseableIteration<T, X> iter) throws X {
+	private <T, X extends Exception> T first(CloseableIteration<T> iter) throws X {
 		try (iter) {
 			if (iter.hasNext()) {
 				return iter.next();
@@ -980,7 +980,7 @@ public abstract class RDFStoreTest {
 		return countElements(con.getStatements(null, null, null, false));
 	}
 
-	private <T, X extends Exception> int countElements(CloseableIteration<T, X> iter) throws X {
+	private <T, X extends Exception> int countElements(CloseableIteration<T> iter) throws X {
 		int count = 0;
 
 		try (iter) {
@@ -1000,7 +1000,7 @@ public abstract class RDFStoreTest {
 		return countElements(con.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false));
 	}
 
-	private int verifyQueryResult(CloseableIteration<? extends BindingSet, QueryEvaluationException> resultIter,
+	private int verifyQueryResult(CloseableIteration<? extends BindingSet> resultIter,
 			int expectedBindingCount) throws QueryEvaluationException {
 		int resultCount = 0;
 

@@ -105,7 +105,7 @@ public class MemStatementIteratorCache {
 		return new CachedIteration(cached.iterator());
 	}
 
-	private static class CachedIteration implements CloseableIteration<MemStatement, SailException> {
+	private static class CachedIteration implements CloseableIteration<MemStatement> {
 
 		private Iterator<MemStatement> iter;
 

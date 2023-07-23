@@ -180,9 +180,9 @@ class NativeSailStore implements SailStore {
 		return contextIDs;
 	}
 
-	CloseableIteration<Resource, SailException> getContexts() throws IOException {
+	CloseableIteration<Resource> getContexts() throws IOException {
 		RecordIterator btreeIter = tripleStore.getAllTriplesSortedByContext(false);
-		CloseableIteration<? extends Statement, SailException> stIter1;
+		CloseableIteration<? extends Statement> stIter1;
 		if (btreeIter == null) {
 			// Iterator over all statements
 			stIter1 = createStatementIterator(null, null, null, true);
@@ -190,7 +190,7 @@ class NativeSailStore implements SailStore {
 			stIter1 = new NativeStatementIterator(btreeIter, valueStore);
 		}
 
-		FilterIteration<Statement, SailException> stIter2 = new FilterIteration<Statement, SailException>(
+		FilterIteration<Statement> stIter2 = new FilterIteration<Statement>(
 				stIter1) {
 			@Override
 			protected boolean accept(Statement st) {
@@ -198,7 +198,7 @@ class NativeSailStore implements SailStore {
 			}
 		};
 
-		return new ConvertingIteration<Statement, Resource, SailException>(stIter2) {
+		return new ConvertingIteration<Statement, Resource>(stIter2) {
 			@Override
 			protected Resource convert(Statement sourceObject) throws SailException {
 				return sourceObject.getContext();
@@ -216,7 +216,7 @@ class NativeSailStore implements SailStore {
 	 *                 no contexts are supplied the method operates on the entire repository.
 	 * @return A StatementIterator that can be used to iterate over the statements that match the specified pattern.
 	 */
-	CloseableIteration<? extends Statement, SailException> createStatementIterator(Resource subj, IRI pred, Value obj,
+	CloseableIteration<? extends Statement> createStatementIterator(Resource subj, IRI pred, Value obj,
 			boolean explicit, Resource... contexts) throws IOException {
 		int subjID = NativeValue.UNKNOWN_ID;
 		if (subj != null) {
@@ -606,17 +606,17 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public CloseableIteration<? extends Namespace, SailException> getNamespaces() {
-			return new CloseableIteratorIteration<Namespace, SailException>(namespaceStore.iterator());
+		public CloseableIteration<? extends Namespace> getNamespaces() {
+			return new CloseableIteratorIteration<Namespace>(namespaceStore.iterator());
 		}
 
 		@Override
-		public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
+		public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
 			return new CloseableIteratorIteration<>(contextStore.iterator());
 		}
 
 		@Override
-		public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) throws SailException {
 			try {
 				return createStatementIterator(subj, pred, obj, explicit, contexts);

@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.model.Triple;
  *
  * @author Jeen Broekstra
  */
-public class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTriple, X> {
+public class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTriple> {
 
 	/*-----------*
 	 * Variables *

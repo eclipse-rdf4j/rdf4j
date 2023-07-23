@@ -204,7 +204,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		if (emptyGraph) {
 			return EMPTY_ITERATION;
 		} else if (bindings.isEmpty()) {
@@ -250,7 +250,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		Value object = getObjectVar != null ? getObjectVar.apply(bindings) : null;
 
-		CloseableIteration<? extends Statement, QueryEvaluationException> iteration = null;
+		CloseableIteration<? extends Statement> iteration = null;
 		try {
 			iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
 			if (iteration instanceof EmptyIteration) {
@@ -288,7 +288,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			return null;
 		}
 
-		CloseableIteration<? extends Statement, QueryEvaluationException> iteration = null;
+		CloseableIteration<? extends Statement> iteration = null;
 		try {
 			iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
 			if (iteration instanceof EmptyIteration) {
@@ -309,16 +309,16 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		}
 	}
 
-	private CloseableIteration<? extends Statement, QueryEvaluationException> handleFilter(Resource[] contexts,
+	private CloseableIteration<? extends Statement> handleFilter(Resource[] contexts,
 			Resource subject, IRI predicate, Value object,
-			CloseableIteration<? extends Statement, QueryEvaluationException> iteration) {
+			CloseableIteration<? extends Statement> iteration) {
 
 		Predicate<Statement> filter = filterContextOrEqualVariables(statementPattern, subject, predicate, object,
 				contexts);
 
 		if (filter != null) {
 			// Only if there is filter code to execute do we make this filter iteration.
-			return new FilterIteration<Statement, QueryEvaluationException>(iteration) {
+			return new FilterIteration<Statement>(iteration) {
 
 				@Override
 				protected boolean accept(Statement object) throws QueryEvaluationException {
@@ -488,15 +488,15 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	 * it of course is an unneeded expense.
 	 */
 	private static final class ConvertStatementToBindingSetIterator
-			implements CloseableIteration<BindingSet, QueryEvaluationException> {
+			implements CloseableIteration<BindingSet> {
 
 		private final BiConsumer<MutableBindingSet, Statement> action;
 		private final QueryEvaluationContext context;
-		private final CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iteration;
+		private final CloseableIteration<? extends Statement> iteration;
 		private boolean closed = false;
 
 		private ConvertStatementToBindingSetIterator(
-				CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iteration,
+				CloseableIteration<? extends Statement> iteration,
 				BiConsumer<MutableBindingSet, Statement> action, QueryEvaluationContext context) {
 			assert iteration != null;
 			this.iteration = iteration;
@@ -535,16 +535,16 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	private static final class JoinStatementWithBindingSetIterator
-			implements CloseableIteration<BindingSet, QueryEvaluationException> {
+			implements CloseableIteration<BindingSet> {
 
 		private final BiConsumer<MutableBindingSet, Statement> action;
 		private final QueryEvaluationContext context;
 		private final BindingSet bindings;
-		private final CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iteration;
+		private final CloseableIteration<? extends Statement> iteration;
 		private boolean closed = false;
 
 		private JoinStatementWithBindingSetIterator(
-				CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iteration,
+				CloseableIteration<? extends Statement> iteration,
 				BiConsumer<MutableBindingSet, Statement> action, BindingSet bindings, QueryEvaluationContext context) {
 			assert iteration != null;
 			this.iteration = iteration;

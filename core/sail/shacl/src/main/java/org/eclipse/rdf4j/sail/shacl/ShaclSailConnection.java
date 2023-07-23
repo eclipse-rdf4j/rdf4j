@@ -1037,7 +1037,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
+	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts) throws SailException {
 		if (useDefaultShapesGraph && contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			return ConnectionHelper
@@ -1117,7 +1117,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			ValidationResultIterator validationResults = null;
 
-			try (CloseableIteration<? extends ValidationTuple, SailException> iterator = planNode.iterator()) {
+			try (CloseableIteration<? extends ValidationTuple> iterator = planNode.iterator()) {
 				validationResults = new ValidationResultIterator(iterator,
 						sail.getEffectiveValidationResultsLimitPerConstraint());
 				return validationResults;

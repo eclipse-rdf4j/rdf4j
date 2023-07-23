@@ -25,14 +25,14 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  *
  * @author Andreas Schwarte
  */
-public class IndependentJoingroupBindingsIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class IndependentJoingroupBindingsIteration extends LookAheadIteration<BindingSet> {
 
 	protected final BindingSet bindings;
-	protected final CloseableIteration<BindingSet, QueryEvaluationException> iter;
+	protected final CloseableIteration<BindingSet> iter;
 	protected ArrayList<BindingSet> result = null;
 	protected int currentIdx = 0;
 
-	public IndependentJoingroupBindingsIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public IndependentJoingroupBindingsIteration(CloseableIteration<BindingSet> iter,
 			BindingSet bindings) {
 		this.bindings = bindings;
 		this.iter = iter;

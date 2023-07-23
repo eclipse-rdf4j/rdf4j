@@ -167,7 +167,7 @@ public class IterationBenchmarks {
 				.orElse(0);
 	}
 
-	private CloseableIteration<String, Exception> getIterator(List<String> list) {
+	private CloseableIteration<String> getIterator(List<String> list) {
 		return new CloseableIteration<>() {
 
 			final Iterator<String> iterator = list.iterator();

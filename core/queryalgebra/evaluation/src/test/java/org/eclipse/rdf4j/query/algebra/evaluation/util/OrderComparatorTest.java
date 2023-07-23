@@ -52,13 +52,13 @@ public class OrderComparatorTest {
 	class EvaluationStrategyStub implements EvaluationStrategy {
 
 		@Override
-		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service expr, String serviceUri,
-				CloseableIteration<BindingSet, QueryEvaluationException> bindings) throws QueryEvaluationException {
+		public CloseableIteration<BindingSet> evaluate(Service expr, String serviceUri,
+				CloseableIteration<BindingSet> bindings) throws QueryEvaluationException {
 			throw new UnsupportedOperationException();
 		}
 
 		@Override
-		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
+		public CloseableIteration<BindingSet> evaluate(TupleExpr expr, BindingSet bindings)
 				throws QueryEvaluationException {
 			throw new UnsupportedOperationException();
 		}

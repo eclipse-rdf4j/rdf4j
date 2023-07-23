@@ -50,7 +50,7 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 	private static final Logger log = LoggerFactory.getLogger(ControlledWorkerBoundJoin.class);
 
 	public ControlledWorkerBoundJoin(ControlledWorkerScheduler<BindingSet> scheduler, FederationEvalStrategy strategy,
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
+			CloseableIteration<BindingSet> leftIter,
 			TupleExpr rightArg, BindingSet bindings, QueryInfo queryInfo)
 			throws QueryEvaluationException {
 		super(scheduler, strategy, leftIter, rightArg, bindings, queryInfo);

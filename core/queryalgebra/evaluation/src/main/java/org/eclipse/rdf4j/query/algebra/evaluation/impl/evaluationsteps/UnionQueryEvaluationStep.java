@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 
 public class UnionQueryEvaluationStep implements QueryEvaluationStep {
@@ -28,9 +27,9 @@ public class UnionQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
-		CloseableIteration<BindingSet, QueryEvaluationException> evaluate = null;
-		CloseableIteration<BindingSet, QueryEvaluationException> evaluate1 = null;
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		CloseableIteration<BindingSet> evaluate = null;
+		CloseableIteration<BindingSet> evaluate1 = null;
 
 		try {
 			evaluate = leftQes.evaluate(bindings);

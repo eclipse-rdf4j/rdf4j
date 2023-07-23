@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * Wrap an inner iteration and suppress exceptions silently
@@ -24,9 +23,9 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 @Deprecated(since = "3.1.2")
 @InternalUseOnly
 public class SilentIteration
-		extends org.eclipse.rdf4j.common.iteration.SilentIteration<BindingSet, QueryEvaluationException> {
+		extends org.eclipse.rdf4j.common.iteration.SilentIteration<BindingSet> {
 
-	public SilentIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter) {
+	public SilentIteration(CloseableIteration<BindingSet> iter) {
 		super(iter);
 	}
 

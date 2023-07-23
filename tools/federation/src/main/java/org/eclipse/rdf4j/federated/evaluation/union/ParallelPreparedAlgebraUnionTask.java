@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTaskBase;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
@@ -47,7 +46,7 @@ public class ParallelPreparedAlgebraUnionTask extends ParallelTaskBase<BindingSe
 	}
 
 	@Override
-	protected CloseableIteration<BindingSet, QueryEvaluationException> performTaskInternal() throws Exception {
+	protected CloseableIteration<BindingSet> performTaskInternal() throws Exception {
 		TripleSource tripleSource = endpoint.getTripleSource();
 		return tripleSource.getStatements(preparedQuery, bindings, filterExpr, queryInfo);
 	}

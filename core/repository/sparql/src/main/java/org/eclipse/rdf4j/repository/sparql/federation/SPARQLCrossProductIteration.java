@@ -29,17 +29,17 @@ import org.eclipse.rdf4j.repository.sparql.query.SPARQLQueryBindingSet;
  *
  * @author Andreas Schwarte
  */
-public class SPARQLCrossProductIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class SPARQLCrossProductIteration extends LookAheadIteration<BindingSet> {
 
 	protected final List<BindingSet> inputBindings;
 
-	protected final CloseableIteration<BindingSet, QueryEvaluationException> resultIteration;
+	protected final CloseableIteration<BindingSet> resultIteration;
 
 	protected Iterator<BindingSet> inputBindingsIterator = null;
 
 	protected BindingSet currentInputBinding = null;
 
-	public SPARQLCrossProductIteration(CloseableIteration<BindingSet, QueryEvaluationException> resultIteration,
+	public SPARQLCrossProductIteration(CloseableIteration<BindingSet> resultIteration,
 			List<BindingSet> inputBindings) {
 		super();
 		this.resultIteration = resultIteration;

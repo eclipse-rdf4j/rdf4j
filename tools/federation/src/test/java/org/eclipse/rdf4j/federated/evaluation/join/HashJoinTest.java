@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.junit.jupiter.api.Assertions;
@@ -46,7 +45,7 @@ public class HashJoinTest {
 		rightBlock.add(bindingSet(binding("x", irid("p1"))));
 		rightBlock.add(bindingSet(binding("x", irid("p4"))));
 
-		CloseableIteration<BindingSet, QueryEvaluationException> joinResultIter = HashJoin.join(leftBlock, rightBlock,
+		CloseableIteration<BindingSet> joinResultIter = HashJoin.join(leftBlock, rightBlock,
 				Sets.newHashSet("x"),
 				Collections.emptyList());
 		List<BindingSet> joinResult = Iterations.asList(joinResultIter);
@@ -67,7 +66,7 @@ public class HashJoinTest {
 		List<BindingSet> rightBlock = new ArrayList<>();
 		rightBlock.add(bindingSet(binding("x", irid("p2")), binding("z", l("something"))));
 
-		CloseableIteration<BindingSet, QueryEvaluationException> joinResultIter = HashJoin.join(leftBlock, rightBlock,
+		CloseableIteration<BindingSet> joinResultIter = HashJoin.join(leftBlock, rightBlock,
 				Sets.newHashSet("x"),
 				Collections.emptyList());
 		List<BindingSet> joinResult = Iterations.asList(joinResultIter);
@@ -88,7 +87,7 @@ public class HashJoinTest {
 		List<BindingSet> rightBlock = new ArrayList<>();
 		rightBlock.add(bindingSet(binding("x", irid("p1")), binding("z", l("something"))));
 
-		CloseableIteration<BindingSet, QueryEvaluationException> joinResultIter = HashJoin.join(leftBlock, rightBlock,
+		CloseableIteration<BindingSet> joinResultIter = HashJoin.join(leftBlock, rightBlock,
 				Sets.newHashSet("x"),
 				Collections.emptyList());
 		List<BindingSet> joinResult = Iterations.asList(joinResultIter);

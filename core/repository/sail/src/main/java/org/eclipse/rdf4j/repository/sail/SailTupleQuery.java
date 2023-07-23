@@ -44,7 +44,7 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 	public TupleQueryResult evaluate() throws QueryEvaluationException {
 		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = null;
+		CloseableIteration<? extends BindingSet> bindingsIter = null;
 
 		boolean allGood = false;
 		try {

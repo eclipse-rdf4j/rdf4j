@@ -37,9 +37,9 @@ public abstract class JoinExecutorBase<T> extends ParallelExecutorBase<T> {
 
 	/* Variables */
 	protected Set<String> joinVars; // might be unknown (i.e. null for some implementations)
-	protected CloseableIteration<T, QueryEvaluationException> leftIter;
+	protected CloseableIteration<T> leftIter;
 
-	public JoinExecutorBase(FederationEvalStrategy strategy, CloseableIteration<T, QueryEvaluationException> leftIter,
+	public JoinExecutorBase(FederationEvalStrategy strategy, CloseableIteration<T> leftIter,
 			TupleExpr rightArg,
 			BindingSet bindings, QueryInfo queryInfo) throws QueryEvaluationException {
 		super(queryInfo);

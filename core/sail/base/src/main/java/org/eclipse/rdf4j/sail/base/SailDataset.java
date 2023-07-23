@@ -43,7 +43,7 @@ public interface SailDataset extends SailClosable {
 	 * @return An iterator over the relevant namespaces, should not contain any duplicates.
 	 * @throws SailException If this object encountered an error or unexpected situation internally.
 	 */
-	CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException;
+	CloseableIteration<? extends Namespace> getNamespaces() throws SailException;
 
 	/**
 	 * Gets the namespace that is associated with the specified prefix, if any.
@@ -61,7 +61,7 @@ public interface SailDataset extends SailClosable {
 	 *
 	 * @return An iterator over the context identifiers, should not contain any duplicates.
 	 */
-	CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException;
+	CloseableIteration<? extends Resource> getContextIDs() throws SailException;
 
 	/**
 	 * Gets all statements that have a specific subject, predicate and/or object. All three parameters may be null to
@@ -76,7 +76,7 @@ public interface SailDataset extends SailClosable {
 	 * @return An iterator over the relevant statements.
 	 * @throws SailException If the triple source failed to get the statements.
 	 */
-	CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
+	CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws SailException;
 
 	/**
@@ -89,7 +89,7 @@ public interface SailDataset extends SailClosable {
 	 * @return An iterator over the relevant triples.
 	 * @throws SailException If the triple source failed to get the RDF-star triples.
 	 */
-	default CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
+	default CloseableIteration<? extends Triple> getTriples(Resource subj, IRI pred, Value obj)
 			throws SailException {
 		throw new SailException("RDF-star triple retrieval not supported by this store");
 	}

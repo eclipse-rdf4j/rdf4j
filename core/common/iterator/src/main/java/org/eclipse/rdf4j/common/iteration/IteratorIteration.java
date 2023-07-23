@@ -14,10 +14,10 @@ package org.eclipse.rdf4j.common.iteration;
 import java.util.Iterator;
 
 /**
- * An Iteration that can convert an {@link Iterator} to a {@link Iteration}.
+ * An Iteration that can convert an {@link Iterator} to a {@link CloseableIteration}.
  */
 @Deprecated(since = "4.1.0")
-public class IteratorIteration<E, X extends Exception> implements Iteration<E, X> {
+public class IteratorIteration<E> implements CloseableIteration<E> {
 
 	private final Iterator<? extends E> iter;
 
@@ -39,5 +39,10 @@ public class IteratorIteration<E, X extends Exception> implements Iteration<E, X
 	@Override
 	public void remove() {
 		iter.remove();
+	}
+
+	@Override
+	public void close() {
+
 	}
 }

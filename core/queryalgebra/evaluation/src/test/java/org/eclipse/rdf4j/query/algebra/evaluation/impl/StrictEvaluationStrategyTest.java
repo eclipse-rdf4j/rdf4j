@@ -70,7 +70,7 @@ public class StrictEvaluationStrategyTest {
 		constants.addBinding("x", vf.createLiteral("X"));
 		constants.addBinding("y", vf.createLiteral("Y"));
 
-		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(pq.getTupleExpr(),
+		CloseableIteration<BindingSet> result = strategy.evaluate(pq.getTupleExpr(),
 				constants);
 		assertNotNull(result);
 		assertTrue(result.hasNext());
@@ -107,7 +107,7 @@ public class StrictEvaluationStrategyTest {
 
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 
-		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(pq.getTupleExpr(),
+		CloseableIteration<BindingSet> result = strategy.evaluate(pq.getTupleExpr(),
 				new EmptyBindingSet());
 
 		List<BindingSet> bindingSets = QueryResults.asList(result);
@@ -170,7 +170,7 @@ public class StrictEvaluationStrategyTest {
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 		QueryEvaluationStep prepared = strategy.precompile(pq.getTupleExpr());
 		assertNotNull(prepared);
-		try (CloseableIteration<BindingSet, QueryEvaluationException> evaluate = prepared
+		try (CloseableIteration<BindingSet> evaluate = prepared
 				.evaluate(EmptyBindingSet.getInstance())) {
 			assertTrue(evaluate.hasNext());
 			BindingSet next = evaluate.next();
@@ -191,7 +191,7 @@ public class StrictEvaluationStrategyTest {
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 		QueryEvaluationStep prepared = strategy.precompile(pq.getTupleExpr());
 		assertNotNull(prepared);
-		try (CloseableIteration<BindingSet, QueryEvaluationException> result = prepared
+		try (CloseableIteration<BindingSet> result = prepared
 				.evaluate(EmptyBindingSet.getInstance())) {
 			assertNotNull(result);
 			assertTrue(result.hasNext());
@@ -208,7 +208,7 @@ public class StrictEvaluationStrategyTest {
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 		QueryEvaluationStep prepared = strategy.precompile(pq.getTupleExpr());
 
-		try (CloseableIteration<BindingSet, QueryEvaluationException> result = prepared
+		try (CloseableIteration<BindingSet> result = prepared
 				.evaluate(EmptyBindingSet.getInstance())) {
 			assertNotNull(result);
 			assertTrue(result.hasNext());
@@ -233,7 +233,7 @@ public class StrictEvaluationStrategyTest {
 				"SELECT ?p ( NOW() as ?n ) { BIND (NOW() as ?p ) }", null);
 		QueryEvaluationStep prepared = strategy.precompile(pq.getTupleExpr());
 
-		try (CloseableIteration<BindingSet, QueryEvaluationException> result = prepared
+		try (CloseableIteration<BindingSet> result = prepared
 				.evaluate(EmptyBindingSet.getInstance())) {
 			assertNotNull(result);
 			assertTrue(result.hasNext());

@@ -62,7 +62,7 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 				return hasStatement;
 			}
 			if (types.size() > 10) {
-				try (CloseableIteration<? extends Statement, SailException> statements = super.getStatements(subj,
+				try (CloseableIteration<? extends Statement> statements = super.getStatements(subj,
 						RDF.TYPE, null, false, contexts)) {
 					return statements.stream()
 							.map(Statement::getObject)
@@ -82,7 +82,7 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
+	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts) throws SailException {
 
 		if (rdfsSubClassOfReasoner != null && includeInferred && obj != null && obj.isResource()
@@ -90,13 +90,13 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 			Set<Resource> inferredTypes = rdfsSubClassOfReasoner.backwardsChain((Resource) obj);
 			if (inferredTypes.size() > 1) {
 
-				CloseableIteration<Statement, SailException>[] statementsMatchingInferredTypes = inferredTypes.stream()
+				CloseableIteration<Statement>[] statementsMatchingInferredTypes = inferredTypes.stream()
 						.map(r -> super.getStatements(subj, pred, r, false, contexts))
 						.toArray(CloseableIteration[]::new);
 
 				return new LookAheadIteration<>() {
 
-					final UnionIteration<Statement, SailException> unionIteration = new UnionIteration<>(
+					final UnionIteration<Statement> unionIteration = new UnionIteration<>(
 							statementsMatchingInferredTypes);
 
 					final HashSet<Statement> dedupe = new HashSet<>();

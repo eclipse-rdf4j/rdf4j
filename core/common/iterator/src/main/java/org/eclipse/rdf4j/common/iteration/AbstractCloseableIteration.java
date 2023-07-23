@@ -18,7 +18,7 @@ package org.eclipse.rdf4j.common.iteration;
  * Instances of this class is not safe to be accessed from multiple threads at the same time.
  */
 @Deprecated(since = "4.1.0")
-public abstract class AbstractCloseableIteration<E, X extends Exception> implements CloseableIteration<E, X> {
+public abstract class AbstractCloseableIteration<E> implements CloseableIteration<E> {
 
 	/*-----------*
 	 * Variables *
@@ -46,7 +46,7 @@ public abstract class AbstractCloseableIteration<E, X extends Exception> impleme
 	 * Calls {@link #handleClose()} upon first call and makes sure the resource closures are only executed once.
 	 */
 	@Override
-	public final void close() throws X {
+	public final void close() {
 		if (!closed) {
 			closed = true;
 			handleClose();
@@ -59,6 +59,6 @@ public abstract class AbstractCloseableIteration<E, X extends Exception> impleme
 	 *
 	 * @throws X
 	 */
-	protected void handleClose() throws X {
+	protected void handleClose() {
 	}
 }

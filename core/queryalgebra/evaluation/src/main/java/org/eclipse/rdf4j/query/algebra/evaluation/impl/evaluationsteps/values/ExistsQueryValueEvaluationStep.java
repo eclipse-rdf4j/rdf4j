@@ -28,7 +28,7 @@ public final class ExistsQueryValueEvaluationStep implements QueryValueEvaluatio
 
 	@Override
 	public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
-		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = subquery.evaluate(bindings)) {
+		try (CloseableIteration<BindingSet> iter = subquery.evaluate(bindings)) {
 			return BooleanLiteral.valueOf(iter.hasNext());
 		}
 	}

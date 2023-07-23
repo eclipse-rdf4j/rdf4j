@@ -92,7 +92,7 @@ public class TestNativeStoreUpgrade {
 			store.init();
 			try (NotifyingSailConnection con = store.getConnection()) {
 				ValueFactory vf = store.getValueFactory();
-				CloseableIteration<? extends Statement, SailException> iter;
+				CloseableIteration<? extends Statement> iter;
 				iter = con.getStatements(RDF.VALUE, RDFS.LABEL, vf.createLiteral("value"), false);
 				try {
 					assertTrue(iter.hasNext());

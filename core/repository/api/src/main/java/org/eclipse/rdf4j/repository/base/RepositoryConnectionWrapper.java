@@ -16,7 +16,7 @@ import java.io.InputStream;
 import java.io.Reader;
 import java.net.URL;
 
-import org.eclipse.rdf4j.common.iteration.Iteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
@@ -84,7 +84,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	 *         {@link #addWithoutCommit(Resource, IRI, Value, Resource[])}
 	 * @throws RepositoryException
 	 * @see #add(Iterable, Resource...)
-	 * @see #add(Iteration, Resource...)
+	 * @see #add(CloseableIteration, Resource...)
 	 * @see #add(Statement, Resource...)
 	 * @see #add(File, String, RDFFormat, Resource...)
 	 * @see #add(InputStream, String, RDFFormat, Resource...)
@@ -121,7 +121,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	 * @throws RepositoryException
 	 * @see #clear(Resource...)
 	 * @see #remove(Iterable, Resource...)
-	 * @see #remove(Iteration, Resource...)
+	 * @see #remove(CloseableIteration, Resource...)
 	 * @see #remove(Statement, Resource...)
 	 * @see #remove(Resource, IRI, Value, Resource...)
 	 */
@@ -167,8 +167,8 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	}
 
 	@Override
-	public <E extends Exception> void add(Iteration<? extends Statement, E> statementIter, Resource... contexts)
-			throws RepositoryException, E {
+	public void add(CloseableIteration<? extends Statement> statementIter, Resource... contexts)
+			throws RepositoryException {
 		if (isDelegatingAdd()) {
 			getDelegate().add(statementIter, contexts);
 		} else {
@@ -358,8 +358,9 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	}
 
 	@Override
-	public <E extends Exception> void remove(Iteration<? extends Statement, E> statementIter, Resource... contexts)
-			throws RepositoryException, E {
+	public void remove(CloseableIteration<? extends Statement> statementIter,
+			Resource... contexts)
+			throws RepositoryException {
 		if (isDelegatingRemove()) {
 			getDelegate().remove(statementIter, contexts);
 		} else {

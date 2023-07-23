@@ -60,7 +60,7 @@ public class EagerReadCache implements DataStructureInterface {
 	}
 
 	@Override
-	public CloseableIteration<? extends ExtensibleStatement, SailException> getStatements(Resource subject,
+	public CloseableIteration<? extends ExtensibleStatement> getStatements(Resource subject,
 			IRI predicate, Value object, boolean inferred, Resource... context) {
 		Model cache = this.cache;
 

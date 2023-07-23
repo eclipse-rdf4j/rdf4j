@@ -25,6 +25,6 @@ public interface TupleFunction {
 
 	String getURI();
 
-	CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
+	CloseableIteration<? extends List<? extends Value>> evaluate(
 			ValueFactory valueFactory, Value... args) throws QueryEvaluationException;
 }

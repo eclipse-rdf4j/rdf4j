@@ -35,19 +35,19 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
  * @deprecated replaced by HashJoinIteration
  */
 @Deprecated
-public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class BottomUpJoinIterator extends LookAheadIteration<BindingSet> {
 
 	/*-----------*
 	 * Variables *
 	 *-----------*/
 
-	private final CloseableIteration<BindingSet, QueryEvaluationException> leftIter;
+	private final CloseableIteration<BindingSet> leftIter;
 
-	private final CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
+	private final CloseableIteration<BindingSet> rightIter;
 
 	private List<BindingSet> scanList;
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> restIter;
+	private CloseableIteration<BindingSet> restIter;
 
 	private Map<BindingSet, List<BindingSet>> hashTable;
 
@@ -146,7 +146,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 				leftIter.close();
 			} finally {
 				try {
-					CloseableIteration<BindingSet, QueryEvaluationException> toCloseRightIter = rightIter;
+					CloseableIteration<BindingSet> toCloseRightIter = rightIter;
 					if (toCloseRightIter != null) {
 						toCloseRightIter.close();
 					}

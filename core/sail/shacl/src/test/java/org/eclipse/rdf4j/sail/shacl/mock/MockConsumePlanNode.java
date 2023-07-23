@@ -15,7 +15,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationExecutionLogger;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
@@ -37,7 +36,7 @@ public class MockConsumePlanNode {
 
 	public List<ValidationTuple> asList() {
 
-		try (CloseableIteration<? extends ValidationTuple, SailException> iterator = innerNode.iterator()) {
+		try (CloseableIteration<? extends ValidationTuple> iterator = innerNode.iterator()) {
 
 			List<ValidationTuple> ret = new ArrayList<>();
 

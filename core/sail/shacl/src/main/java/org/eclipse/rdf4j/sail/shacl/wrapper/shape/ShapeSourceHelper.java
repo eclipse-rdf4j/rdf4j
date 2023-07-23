@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.SailException;
 
 class ShapeSourceHelper {
 
@@ -58,7 +57,7 @@ class ShapeSourceHelper {
 //				.orElse(null);
 //	}
 
-	private static Value getObject(CloseableIteration<? extends Statement, SailException> iteration) {
+	private static Value getObject(CloseableIteration<? extends Statement> iteration) {
 		if (iteration.hasNext()) {
 			return iteration.next().getObject();
 		}

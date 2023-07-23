@@ -16,28 +16,27 @@ import java.util.List;
 import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * An {@link Iteration} that holds on to a {@link SailClosable} until the Iteration is closed. Upon closing, the
- * underlying Iteration is closed before the lock is released. This iterator closes itself as soon as all elements have
- * been read.
+ * An {@link CloseableIteration} that holds on to a {@link SailClosable} until the Iteration is closed. Upon closing,
+ * the underlying Iteration is closed before the lock is released. This iterator closes itself as soon as all elements
+ * have been read.
  *
  * @author James Leigh
  */
-abstract class SailClosingIteration<T, X extends Exception> extends IterationWrapper<T, X> {
+abstract class SailClosingIteration<T, X extends RuntimeException> extends IterationWrapper<T> {
 
 	/**
-	 * Creates a new {@link Iteration} that automatically closes the given {@link SailClosable}s.
+	 * Creates a new {@link CloseableIteration} that automatically closes the given {@link SailClosable}s.
 	 *
 	 * @param iter   The underlying Iteration, must not be <var>null</var>.
 	 * @param closes The {@link SailClosable}s to {@link SailClosable#close()} when the itererator is closed.
 	 * @return a {@link CloseableIteration} that closes the given {@link SailClosable}
 	 */
 	public static <E> SailClosingIteration<E, SailException> makeClosable(
-			CloseableIteration<? extends E, SailException> iter, SailClosable... closes) {
+			CloseableIteration<? extends E> iter, SailClosable... closes) {
 		return new SailClosingIteration<>(iter, closes) {
 
 			@Override
@@ -61,12 +60,12 @@ abstract class SailClosingIteration<T, X extends Exception> extends IterationWra
 	 *--------------*/
 
 	/**
-	 * Creates a new {@link Iteration} that automatically closes the given {@link SailClosable}s.
+	 * Creates a new {@link CloseableIteration} that automatically closes the given {@link SailClosable}s.
 	 *
 	 * @param iter   The underlying Iteration, must not be <var>null</var>.
 	 * @param closes The {@link SailClosable}s to {@link SailClosable#close()} when the itererator is closed.
 	 */
-	public SailClosingIteration(CloseableIteration<? extends T, X> iter, SailClosable... closes) {
+	public SailClosingIteration(CloseableIteration<? extends T> iter, SailClosable... closes) {
 		super(iter);
 		this.closes = closes;
 	}
@@ -76,7 +75,7 @@ abstract class SailClosingIteration<T, X extends Exception> extends IterationWra
 	 *---------*/
 
 	@Override
-	public boolean hasNext() throws X {
+	public boolean hasNext() {
 		if (isClosed()) {
 			return false;
 		}
@@ -89,7 +88,7 @@ abstract class SailClosingIteration<T, X extends Exception> extends IterationWra
 	}
 
 	@Override
-	public T next() throws X {
+	public T next() {
 		if (isClosed()) {
 			throw new NoSuchElementException("Iteration has been closed");
 		}
@@ -102,7 +101,7 @@ abstract class SailClosingIteration<T, X extends Exception> extends IterationWra
 	}
 
 	@Override
-	public void remove() throws X {
+	public void remove() {
 		if (isClosed()) {
 			throw new IllegalStateException();
 		}
@@ -115,7 +114,7 @@ abstract class SailClosingIteration<T, X extends Exception> extends IterationWra
 	}
 
 	@Override
-	protected void handleClose() throws X {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {

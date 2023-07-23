@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 
 public class NaiveHashSetDataStructure implements DataStructureInterface {
@@ -39,7 +38,7 @@ public class NaiveHashSetDataStructure implements DataStructureInterface {
 	}
 
 	@Override
-	synchronized public CloseableIteration<? extends ExtensibleStatement, SailException> getStatements(Resource subject,
+	synchronized public CloseableIteration<? extends ExtensibleStatement> getStatements(Resource subject,
 			IRI predicate,
 			Value object, boolean inferred, Resource... context) {
 		return new FilteringIteration<>(

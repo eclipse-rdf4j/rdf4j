@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Query;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
@@ -88,7 +87,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
+	CloseableIteration<? extends BindingSet> evaluate(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException;
 
 	/**
@@ -97,7 +96,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @return An iterator over the context identifiers, should not contain any duplicates.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException;
+	CloseableIteration<? extends Resource> getContextIDs() throws SailException;
 
 	/**
 	 * Gets all statements from the specified contexts that have a specific subject, predicate and/or object. All three
@@ -116,7 +115,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
+	CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts) throws SailException;
 
 	/**
@@ -141,7 +140,7 @@ public interface SailConnection extends AutoCloseable {
 	default boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
 			throws SailException {
 
-		try (CloseableIteration<? extends Statement, SailException> stIter = getStatements(subj, pred, obj,
+		try (CloseableIteration<? extends Statement> stIter = getStatements(subj, pred, obj,
 				includeInferred, contexts)) {
 			return stIter.hasNext();
 		}
@@ -365,7 +364,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException;
+	CloseableIteration<? extends Namespace> getNamespaces() throws SailException;
 
 	/**
 	 * Gets the namespace that is associated with the specified prefix, if any.

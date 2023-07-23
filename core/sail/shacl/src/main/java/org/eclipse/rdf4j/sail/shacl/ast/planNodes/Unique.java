@@ -65,11 +65,11 @@ public class Unique implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple> iterator() {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			CloseablePeakableIteration<? extends ValidationTuple, SailException> parentIterator;
+			CloseablePeakableIteration<? extends ValidationTuple> parentIterator;
 			Set<ValidationTupleValueAndActiveTarget> targetAndValueDedupeSet;
 
 			boolean propertyShapeWithValue;
@@ -290,12 +290,12 @@ public class Unique implements PlanNode {
 		}
 	}
 
-	static class TargetAndValueSortIterator implements CloseableIteration<ValidationTuple, SailException> {
+	static class TargetAndValueSortIterator implements CloseableIteration<ValidationTuple> {
 
-		private final CloseablePeakableIteration<? extends ValidationTuple, SailException> iterator;
+		private final CloseablePeakableIteration<? extends ValidationTuple> iterator;
 
 		public TargetAndValueSortIterator(
-				CloseablePeakableIteration<? extends ValidationTuple, SailException> iterator) {
+				CloseablePeakableIteration<? extends ValidationTuple> iterator) {
 			this.iterator = iterator;
 		}
 

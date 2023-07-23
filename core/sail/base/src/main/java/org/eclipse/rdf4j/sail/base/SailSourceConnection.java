@@ -213,7 +213,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	}
 
 	@Override
-	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(TupleExpr tupleExpr,
+	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
@@ -230,7 +230,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 		SailSource branch = null;
 		SailDataset rdfDataset = null;
-		CloseableIteration<BindingSet, QueryEvaluationException> iteration = null;
+		CloseableIteration<BindingSet> iteration = null;
 		boolean allGood = false;
 		try {
 			branch = branch(IncludeInferred.fromBoolean(includeInferred));
@@ -351,7 +351,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		try {
 			selfInterruptOnTimeoutThread.start();
 
-			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = evaluate(tupleExpr,
+			try (CloseableIteration<? extends BindingSet> evaluate = evaluate(tupleExpr,
 					dataset, bindings, includeInferred)) {
 				while (evaluate.hasNext()) {
 					if (Thread.interrupted()) {
@@ -390,14 +390,14 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	}
 
 	@Override
-	protected CloseableIteration<? extends Resource, SailException> getContextIDsInternal() throws SailException {
+	protected CloseableIteration<? extends Resource> getContextIDsInternal() throws SailException {
 		SailSource branch = branch(IncludeInferred.explicitOnly);
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
 		return SailClosingIteration.makeClosable(snapshot.getContextIDs(), snapshot, branch);
 	}
 
 	@Override
-	protected CloseableIteration<? extends Statement, SailException> getStatementsInternal(Resource subj, IRI pred,
+	protected CloseableIteration<? extends Statement> getStatementsInternal(Resource subj, IRI pred,
 			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
 		SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
@@ -412,7 +412,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	}
 
 	@Override
-	protected CloseableIteration<? extends Namespace, SailException> getNamespacesInternal() throws SailException {
+	protected CloseableIteration<? extends Namespace> getNamespacesInternal() throws SailException {
 		SailSource branch = branch(IncludeInferred.explicitOnly);
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
 		return SailClosingIteration.makeClosable(snapshot.getNamespaces(), snapshot, branch);
@@ -804,7 +804,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 		boolean statementsRemoved = false;
 
-		try (CloseableIteration<? extends Statement, SailException> iter = dataset.getStatements(subj, pred, obj,
+		try (CloseableIteration<? extends Statement> iter = dataset.getStatements(subj, pred, obj,
 				contexts)) {
 			while (iter.hasNext()) {
 				Statement st = iter.next();
@@ -986,8 +986,8 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		}
 	}
 
-	private <T, X extends Exception> CloseableIteration<T, QueryEvaluationException> interlock(
-			CloseableIteration<T, QueryEvaluationException> iter, SailClosable... closes) {
+	private <T, X extends Exception> CloseableIteration<T> interlock(
+			CloseableIteration<T> iter, SailClosable... closes) {
 		return new SailClosingIteration<T, QueryEvaluationException>(iter, closes) {
 
 			@Override
@@ -999,7 +999,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	private boolean hasStatement(SailDataset dataset, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
-		try (CloseableIteration<? extends Statement, SailException> iter = dataset.getStatements(subj, pred, obj,
+		try (CloseableIteration<? extends Statement> iter = dataset.getStatements(subj, pred, obj,
 				contexts)) {
 			return iter.hasNext();
 		}

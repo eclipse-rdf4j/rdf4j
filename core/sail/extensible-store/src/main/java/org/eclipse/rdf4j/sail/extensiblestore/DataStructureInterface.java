@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 
 /**
@@ -44,7 +43,7 @@ public interface DataStructureInterface {
 		}
 	}
 
-	CloseableIteration<? extends ExtensibleStatement, SailException> getStatements(
+	CloseableIteration<? extends ExtensibleStatement> getStatements(
 			Resource subject,
 			IRI predicate,
 			Value object,
@@ -57,7 +56,7 @@ public interface DataStructureInterface {
 	void init();
 
 	default void clear(boolean inferred, Resource[] contexts) {
-		try (CloseableIteration<? extends ExtensibleStatement, SailException> statements = getStatements(null, null,
+		try (CloseableIteration<? extends ExtensibleStatement> statements = getStatements(null, null,
 				null,
 				inferred, contexts)) {
 			while (statements.hasNext()) {
@@ -72,7 +71,7 @@ public interface DataStructureInterface {
 	default boolean removeStatementsByQuery(Resource subj, IRI pred, Value obj, boolean inferred, Resource[] contexts) {
 
 		boolean deleted = false;
-		try (CloseableIteration<? extends ExtensibleStatement, SailException> statements = getStatements(subj, pred,
+		try (CloseableIteration<? extends ExtensibleStatement> statements = getStatements(subj, pred,
 				obj,
 				inferred, contexts)) {
 			while (statements.hasNext()) {
