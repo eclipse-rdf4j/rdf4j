@@ -302,12 +302,12 @@ abstract public class AbstractShaclTest {
 				})
 				.toArray(IRI[]::new);
 
-		FieldUtils.writeDeclaredStaticField(ShaclValidator.class, "CONTEXTS", shapesGraphs, true);
+		FieldUtils.writeDeclaredStaticField(ShaclValidator.class, "SHAPE_CONTEXTS", shapesGraphs, true);
 	}
 
 	@AfterAll
 	static void afterAll() throws IllegalAccessException {
-		FieldUtils.writeDeclaredStaticField(ShaclValidator.class, "CONTEXTS", new Resource[] {}, true);
+		FieldUtils.writeDeclaredStaticField(ShaclValidator.class, "SHAPE_CONTEXTS", new Resource[] {}, true);
 	}
 
 	@AfterEach
