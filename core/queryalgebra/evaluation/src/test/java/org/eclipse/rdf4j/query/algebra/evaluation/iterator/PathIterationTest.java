@@ -110,6 +110,7 @@ public class PathIterationTest {
 		assertEquals(subClass, result.getBinding("subClass").getValue());
 		assertTrue(result.hasBinding("superClass"), "path zlp evaluation should binding for superClass var");
 		assertEquals(superClass, result.getBinding("superClass").getValue());
+		assertEquals(2, result.size());
 	}
 
 	@Test
