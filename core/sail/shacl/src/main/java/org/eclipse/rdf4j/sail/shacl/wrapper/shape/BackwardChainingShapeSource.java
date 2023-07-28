@@ -53,33 +53,12 @@ public class BackwardChainingShapeSource implements ShapeSource {
 
 	public Stream<ShapesGraph> getAllShapeContexts() {
 		assert context != null;
-		if (context.length == 0) {
-			// union context
-			try (Stream<? extends Statement> stream = connection
-					.getStatements(null, SHACL.SHAPES_GRAPH, null, false, context)
-					.stream()) {
-
-				List<ShapesGraph> collect = stream
-						.collect(Collectors.groupingBy(Statement::getSubject))
-						.entrySet()
-						.stream()
-						.map(entry -> new ShapesGraph(entry.getKey(), entry.getValue()))
-						.collect(Collectors.toList());
-
-				collect = new ArrayList<>();
-				collect.add(new ShapesGraph(RDF4J.NIL));
-
-				return collect.stream();
-
-			}
-
-		}
 
 		try (Stream<? extends Statement> stream = connection
 				.getStatements(null, SHACL.SHAPES_GRAPH, null, false, context)
 				.stream()) {
 
-			List<? extends Statement> collect = stream.collect(Collectors.toList());
+			var collect = stream.collect(Collectors.toList());
 
 			return collect.stream()
 					.collect(Collectors.groupingBy(Statement::getSubject))

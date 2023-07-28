@@ -520,6 +520,11 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 
 			List<ContextWithShapes> parsed = parse(shapeSource, parseSettings);
 
+			return getShapes(parsed);
+
+		}
+
+		public static List<ContextWithShapes> getShapes(List<ContextWithShapes> parsed) {
 			return parsed.stream()
 					.map(contextWithShapes -> {
 						List<Shape> split = split(contextWithShapes.getShapes());
@@ -529,8 +534,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 								contextWithShapes.getShapeGraph(), split);
 
 					})
+					.filter(contextWithShapes -> !contextWithShapes.getShapes().isEmpty())
 					.collect(Collectors.toList());
-
 		}
 
 		private static void calculateIfProducesValidationResult(List<Shape> split) {
@@ -625,22 +630,27 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 					});
 		}
 
-		private static List<ContextWithShapes> parse(ShapeSource shapeSource, ParseSettings parseSettings) {
+		public static List<ContextWithShapes> parse(ShapeSource shapeSource, ParseSettings parseSettings) {
 
 			try (Stream<ShapeSource.ShapesGraph> allShapeContexts = shapeSource.getAllShapeContexts()) {
 				return allShapeContexts
-						.map(shapesGraph -> {
-							Cache cache = new Cache();
-							return getShapesInContext(shapeSource, parseSettings, cache, shapesGraph.getDataGraph(),
-									shapesGraph.getShapesGraph());
-						})
+						.map(shapesGraph -> parse(shapeSource, shapesGraph, parseSettings))
 						.collect(Collectors.toList());
 
 			}
 
 		}
 
-		private static ContextWithShapes getShapesInContext(ShapeSource shapeSource, ParseSettings parseSettings,
+		public static ContextWithShapes parse(ShapeSource shapeSource, ShapeSource.ShapesGraph shapesGraph,
+				ParseSettings parseSettings) {
+
+			Cache cache = new Cache();
+			return getShapesInContext(shapeSource, parseSettings, cache, shapesGraph.getDataGraph(),
+					shapesGraph.getShapesGraph());
+
+		}
+
+		public static ContextWithShapes getShapesInContext(ShapeSource shapeSource, ParseSettings parseSettings,
 				Cache cache,
 				Resource[] dataGraph, Resource[] shapesGraph) {
 			ShapeSource shapeSourceWithContext = shapeSource.withContext(shapesGraph);
