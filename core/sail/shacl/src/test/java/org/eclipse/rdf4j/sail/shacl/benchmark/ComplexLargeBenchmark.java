@@ -15,6 +15,7 @@ import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URL;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
@@ -31,6 +32,8 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.sail.NotifyingSail;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
@@ -294,6 +297,46 @@ public class ComplexLargeBenchmark {
 		try {
 			SailRepository repository = new SailRepository(
 					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
+
+			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+				SimpleValueFactory vf = SimpleValueFactory.getInstance();
+				connection.add(vf.createBNode(), DUMMY_PREDICATE, vf.createBNode());
+				connection.commit();
+			}
+
+			((ShaclSail) repository.getSail()).setParallelValidation(true);
+			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+			((ShaclSail) repository.getSail()).setPerformanceLogging(false);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(realData);
+				connection.commit();
+			}
+
+			repository.shutDown();
+
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+
+	}
+
+	@Benchmark
+	public void noPreloadingNonEmptyParallelLmdb() {
+
+		try {
+			File file = Files.newTemporaryFolder();
+			SailRepository repository = new SailRepository(new ShaclSail(new LmdbStore(file)));
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+				URL shacl = ComplexLargeBenchmark.class.getClassLoader().getResource("complexBenchmark/shacl.trig");
+				connection.add(shacl, RDFFormat.TRIG);
+				connection.commit();
+			}
 
 			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
 
