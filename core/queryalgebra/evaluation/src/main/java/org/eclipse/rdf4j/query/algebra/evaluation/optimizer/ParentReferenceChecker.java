@@ -56,7 +56,7 @@ public class ParentReferenceChecker implements QueryOptimizer {
 		}
 
 		verifySerializable(tupleExpr);
-		tupleExpr.visit(new ParentCheckingVisitor());
+		tupleExpr.visit(new ParentCheckingVisitor(ParentReferenceChecker.this.previousOptimizerInPipeline));
 	}
 
 	private void verifySerializable(QueryModelNode tupleExpr) {
@@ -89,24 +89,24 @@ public class ParentReferenceChecker implements QueryOptimizer {
 		}
 	}
 
-	private class ParentCheckingVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+	private final static class ParentCheckingVisitor extends AbstractQueryModelVisitor<RuntimeException> {
 
 		private final ArrayDeque<QueryModelNode> ancestors = new ArrayDeque<>();
+		private final String previousOptimizer;
+
+		public ParentCheckingVisitor(QueryOptimizer previousOptimizerInPipeline) {
+			if (previousOptimizerInPipeline != null) {
+				this.previousOptimizer = previousOptimizerInPipeline.getClass().getSimpleName();
+			} else
+				this.previousOptimizer = "query parsing";
+		}
 
 		@Override
 		protected void meetNode(QueryModelNode node) throws RuntimeException {
 			QueryModelNode expectedParent = ancestors.peekLast();
 			if (node.getParentNode() != expectedParent) {
-				String previousOptimizer;
-				if (ParentReferenceChecker.this.previousOptimizerInPipeline != null) {
-					previousOptimizer = ParentReferenceChecker.this.previousOptimizerInPipeline.getClass()
-							.getSimpleName();
-				} else {
-					previousOptimizer = "query parsing";
-				}
 				String message = "After " + previousOptimizer + " there was an unexpected parent for node " + node
 						+ ": " + node.getParentNode() + " (expected " + expectedParent + ")";
-
 				assert node.getParentNode() == expectedParent : message;
 			}
 
