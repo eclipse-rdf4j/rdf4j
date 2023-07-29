@@ -11,12 +11,15 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShapes;
@@ -40,7 +43,7 @@ public class ShaclValidator {
 
 	// tests can write to this field using reflection
 	@SuppressWarnings("FieldMayBeFinal")
-	private static Resource[] CONTEXTS = {};
+	private static Resource[] SHAPE_CONTEXTS = ALL_CONTEXTS;
 
 	public static ValidationReport validate(Sail dataRepo, Sail shapesRepo) {
 
@@ -49,8 +52,20 @@ public class ShaclValidator {
 			shapesConnection.begin(IsolationLevels.NONE);
 			try (ShapeSource shapeSource = new CombinedShapeSource(shapesConnection,
 					shapesConnection)) {
-				shapes = Shape.Factory.getShapes(shapeSource.withContext(CONTEXTS),
-						new Shape.ParseSettings(true, true));
+				Stream<ShapeSource.ShapesGraph> allShapeContexts = shapeSource
+						.withContext(SHAPE_CONTEXTS)
+						.getAllShapeContexts();
+				if (SHAPE_CONTEXTS.length == 0) {
+					allShapeContexts = Stream.concat(allShapeContexts,
+							Stream.of(new ShapeSource.ShapesGraph(RDF4J.NIL)));
+				}
+				List<ContextWithShapes> parsed = allShapeContexts
+						.map(context -> Shape.Factory.parse(shapeSource.withContext(context.getShapesGraph()), context,
+								new Shape.ParseSettings(true, true)))
+						.collect(Collectors.toList());
+
+				shapes = Shape.Factory.getShapes(parsed);
+
 			}
 			shapesConnection.commit();
 		}

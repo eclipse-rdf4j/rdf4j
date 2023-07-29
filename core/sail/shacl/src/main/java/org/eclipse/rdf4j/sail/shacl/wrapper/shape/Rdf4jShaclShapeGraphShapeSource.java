@@ -15,6 +15,7 @@ import static org.eclipse.rdf4j.model.util.Values.iri;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -39,7 +40,7 @@ import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencerConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
-public class ForwardChainingShapeSource implements ShapeSource {
+public class Rdf4jShaclShapeGraphShapeSource implements ShapeSource {
 
 	// SHACL Vocabulary from W3C - https://www.w3.org/ns/shacl.ttl
 	private final static IRI shaclVocabularyGraph = iri(RDF4J.NAMESPACE, "shaclVocabularyGraph");
@@ -49,7 +50,7 @@ public class ForwardChainingShapeSource implements ShapeSource {
 	private final Resource[] context;
 	private final Repository repository;
 
-	public ForwardChainingShapeSource(RepositoryConnection connection) {
+	public Rdf4jShaclShapeGraphShapeSource(RepositoryConnection connection) {
 		this.context = null;
 
 		assert connection.isActive();
@@ -60,7 +61,7 @@ public class ForwardChainingShapeSource implements ShapeSource {
 
 	}
 
-	public ForwardChainingShapeSource(SailConnection connection) {
+	public Rdf4jShaclShapeGraphShapeSource(SailConnection connection) {
 		this.context = null;
 
 		assert connection.isActive();
@@ -71,7 +72,7 @@ public class ForwardChainingShapeSource implements ShapeSource {
 
 	}
 
-	private ForwardChainingShapeSource(Repository repository, RepositoryConnection connection,
+	private Rdf4jShaclShapeGraphShapeSource(Repository repository, RepositoryConnection connection,
 			Resource[] context) {
 		this.connection = connection;
 		this.context = context;
@@ -80,7 +81,7 @@ public class ForwardChainingShapeSource implements ShapeSource {
 	}
 
 	private SailRepository forwardChain(RepositoryConnection shapesRepoConnection) {
-		try (var statements = shapesRepoConnection.getStatements(null, null, null, false)) {
+		try (var statements = shapesRepoConnection.getStatements(null, null, null, false, RDF4J.SHACL_SHAPE_GRAPH)) {
 			if (!statements.hasNext()) {
 				return new SailRepository(new MemoryStore());
 			}
@@ -102,8 +103,8 @@ public class ForwardChainingShapeSource implements ShapeSource {
 		}
 	}
 
-	private SailRepository forwardChain(SailConnection shapesRepoConnection) {
-		try (var statements = shapesRepoConnection.getStatements(null, null, null, false)) {
+	private SailRepository forwardChain(SailConnection shapesSailConnection) {
+		try (var statements = shapesSailConnection.getStatements(null, null, null, false, RDF4J.SHACL_SHAPE_GRAPH)) {
 			if (!statements.hasNext()) {
 				return new SailRepository(new MemoryStore());
 			}
@@ -155,7 +156,8 @@ public class ForwardChainingShapeSource implements ShapeSource {
 	}
 
 	private static InputStream getResourceAsStream(String filename) {
-		InputStream resourceAsStream = ForwardChainingShapeSource.class.getClassLoader().getResourceAsStream(filename);
+		InputStream resourceAsStream = Rdf4jShaclShapeGraphShapeSource.class.getClassLoader()
+				.getResourceAsStream(filename);
 		if (resourceAsStream == null) {
 			throw new IllegalStateException("Resource could not be found: " + filename);
 		}
@@ -203,8 +205,8 @@ public class ForwardChainingShapeSource implements ShapeSource {
 		}
 	}
 
-	public ForwardChainingShapeSource withContext(Resource[] context) {
-		return new ForwardChainingShapeSource(repository, connection, context);
+	public Rdf4jShaclShapeGraphShapeSource withContext(Resource[] context) {
+		return new Rdf4jShaclShapeGraphShapeSource(repository, connection, context);
 	}
 
 	@Override
@@ -215,19 +217,17 @@ public class ForwardChainingShapeSource implements ShapeSource {
 	public Stream<ShapesGraph> getAllShapeContexts() {
 		assert context != null;
 
-		if (!connection.hasStatement(null, SHACL.SHAPES_GRAPH, null, false)) {
-			return Stream.of(new ShapesGraph(RDF4J.SHACL_SHAPE_GRAPH));
-		}
-
 		try (Stream<? extends Statement> stream = connection
 				.getStatements(null, SHACL.SHAPES_GRAPH, null, false, context)
 				.stream()) {
 
-			return stream
+			var collect = stream.collect(Collectors.toList());
+
+			return Stream.concat(Stream.of(new ShapesGraph(RDF4J.SHACL_SHAPE_GRAPH)), collect.stream()
 					.collect(Collectors.groupingBy(Statement::getSubject))
 					.entrySet()
 					.stream()
-					.map(entry -> new ShapeSource.ShapesGraph(entry.getKey(), entry.getValue()));
+					.map(entry -> new ShapeSource.ShapesGraph(entry.getKey(), entry.getValue())));
 		}
 
 	}
