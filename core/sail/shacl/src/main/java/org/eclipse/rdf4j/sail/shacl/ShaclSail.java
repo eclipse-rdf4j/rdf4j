@@ -54,7 +54,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShapes;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.CombinedShapeSource;
-import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ForwardChainingShapeSource;
+import org.eclipse.rdf4j.sail.shacl.wrapper.shape.Rdf4jShaclShapeGraphShapeSource;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -409,7 +409,8 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 	public List<ContextWithShapes> getShapes(RepositoryConnection shapesRepoConnection, IRI[] shapesGraphs)
 			throws SailException {
 
-		try (ShapeSource shapeSource = new ForwardChainingShapeSource(shapesRepoConnection).withContext(shapesGraphs)) {
+		try (ShapeSource shapeSource = new Rdf4jShaclShapeGraphShapeSource(shapesRepoConnection)
+				.withContext(shapesGraphs)) {
 			return Shape.Factory.getShapes(shapeSource,
 					new Shape.ParseSettings(isEclipseRdf4jShaclExtensions(), isDashDataShapes()));
 		}

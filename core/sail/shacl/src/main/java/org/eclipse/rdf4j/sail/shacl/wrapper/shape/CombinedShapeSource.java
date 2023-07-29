@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 
 public class CombinedShapeSource implements ShapeSource {
 
-	private final ForwardChainingShapeSource rdf4jShapesGraph;
+	private final Rdf4jShaclShapeGraphShapeSource rdf4jShapesGraph;
 	private final BackwardChainingShapeSource baseSail;
 	private final Resource[] context;
 
@@ -40,7 +40,7 @@ public class CombinedShapeSource implements ShapeSource {
 	private CombinedShapeSource(RepositoryConnection shapesForForwardChainingConnection,
 			SailConnection sailConnection,
 			Resource[] context) {
-		this.rdf4jShapesGraph = new ForwardChainingShapeSource(shapesForForwardChainingConnection);
+		this.rdf4jShapesGraph = new Rdf4jShaclShapeGraphShapeSource(shapesForForwardChainingConnection);
 		this.baseSail = new BackwardChainingShapeSource(sailConnection);
 		this.context = context;
 	}
@@ -48,12 +48,12 @@ public class CombinedShapeSource implements ShapeSource {
 	private CombinedShapeSource(SailConnection shapesForForwardChainingConnection,
 			SailConnection sailConnection,
 			Resource[] context) {
-		this.rdf4jShapesGraph = new ForwardChainingShapeSource(shapesForForwardChainingConnection);
+		this.rdf4jShapesGraph = new Rdf4jShaclShapeGraphShapeSource(shapesForForwardChainingConnection);
 		this.baseSail = new BackwardChainingShapeSource(sailConnection);
 		this.context = context;
 	}
 
-	private CombinedShapeSource(ForwardChainingShapeSource rdf4jShapesGraph, BackwardChainingShapeSource baseSail,
+	private CombinedShapeSource(Rdf4jShaclShapeGraphShapeSource rdf4jShapesGraph, BackwardChainingShapeSource baseSail,
 			Resource[] context) {
 		this.rdf4jShapesGraph = rdf4jShapesGraph;
 		this.baseSail = baseSail;
