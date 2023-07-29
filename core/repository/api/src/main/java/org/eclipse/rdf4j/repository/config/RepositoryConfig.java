@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.repository.config;
 
 import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.model.util.Values.literal;
-import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORY;
 import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORYID;
 import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORYIMPL;
 
@@ -30,9 +29,6 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
  * @author Arjohn Kampman
  */
 public class RepositoryConfig {
-
-	private static final boolean USE_CONFIG = "true"
-			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
 
 	private String id;
 
@@ -138,14 +134,9 @@ public class RepositoryConfig {
 		model.setNamespace(XSD.NS);
 		model.setNamespace(CONFIG.NS);
 		model.add(repositoryNode, RDF.TYPE, CONFIG.Rep.Repository);
-		model.add(repositoryNode, RDF.TYPE, REPOSITORY);
 
 		if (id != null) {
-			if (USE_CONFIG) {
-				model.add(repositoryNode, CONFIG.Rep.id, literal(id));
-			} else {
-				model.add(repositoryNode, REPOSITORYID, literal(id));
-			}
+			model.add(repositoryNode, CONFIG.Rep.id, literal(id));
 
 		}
 		if (title != null) {
@@ -153,11 +144,7 @@ public class RepositoryConfig {
 		}
 		if (implConfig != null) {
 			Resource implNode = implConfig.export(model);
-			if (USE_CONFIG) {
-				model.add(repositoryNode, CONFIG.Rep.impl, implNode);
-			} else {
-				model.add(repositoryNode, REPOSITORYIMPL, implNode);
-			}
+			model.add(repositoryNode, CONFIG.Rep.impl, implNode);
 
 		}
 	}
@@ -165,16 +152,14 @@ public class RepositoryConfig {
 	public void parse(Model model, Resource repositoryNode) throws RepositoryConfigException {
 		try {
 			Configurations
-					.getLiteralValue(model, repositoryNode, CONFIG.Rep.id,
-							REPOSITORYID)
+					.getLiteralValue(model, repositoryNode, CONFIG.Rep.id, REPOSITORYID)
 					.ifPresent(lit -> setID(lit.getLabel()));
 
 			Models.objectLiteral(model.getStatements(repositoryNode, RDFS.LABEL, null))
 					.ifPresent(lit -> setTitle(lit.getLabel()));
 
 			Configurations
-					.getResourceValue(model, repositoryNode, CONFIG.Rep.impl,
-							REPOSITORYIMPL)
+					.getResourceValue(model, repositoryNode, CONFIG.Rep.impl, REPOSITORYIMPL)
 					.ifPresent(res -> setRepositoryImplConfig(AbstractRepositoryImplConfig.create(model, res)));
 		} catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);

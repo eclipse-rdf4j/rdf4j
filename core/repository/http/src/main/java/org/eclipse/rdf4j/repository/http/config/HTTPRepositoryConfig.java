@@ -26,9 +26,6 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
  */
 public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 
-	private static final boolean USE_CONFIG = "true"
-			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
-
 	private String url;
 
 	private String username;
@@ -82,11 +79,7 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 
 		if (url != null) {
 			graph.setNamespace(CONFIG.PREFIX, CONFIG.NAMESPACE);
-			if (USE_CONFIG) {
-				graph.add(implNode, CONFIG.Http.url, SimpleValueFactory.getInstance().createIRI(url));
-			} else {
-				graph.add(implNode, REPOSITORYURL, SimpleValueFactory.getInstance().createIRI(url));
-			}
+			graph.add(implNode, CONFIG.Http.url, SimpleValueFactory.getInstance().createIRI(url));
 
 		}
 

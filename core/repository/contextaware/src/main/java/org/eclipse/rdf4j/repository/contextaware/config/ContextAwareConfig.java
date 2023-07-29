@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Configurations;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG.ContextAware;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.repository.config.AbstractDelegatingRepositoryImplConfig;
@@ -192,39 +193,33 @@ public class ContextAwareConfig extends AbstractDelegatingRepositoryImplConfig {
 	public Resource export(Model model) {
 		Resource repImplNode = super.export(model);
 
+		model.setNamespace(CONFIG.NS);
 		if (includeInferred != null) {
 			model.add(repImplNode, ContextAware.includeInferred, literal(includeInferred));
-			model.add(repImplNode, INCLUDE_INFERRED, literal(includeInferred));
 		}
 		if (maxQueryTime > 0) {
 			model.add(repImplNode, ContextAware.maxQueryTime, literal(maxQueryTime));
-			model.add(repImplNode, MAX_QUERY_TIME, literal(maxQueryTime));
 		}
 		if (queryLanguage != null) {
 			model.add(repImplNode, ContextAware.queryLanguage, literal(queryLanguage.getName()));
-			model.add(repImplNode, QUERY_LANGUAGE, literal(queryLanguage.getName()));
 		}
 		if (baseURI != null) {
 			model.add(repImplNode, ContextAware.base, iri(baseURI));
-			model.add(repImplNode, BASE_URI, iri(baseURI));
 		}
 		for (IRI uri : readContexts) {
 			model.add(repImplNode, ContextAware.readContext, uri);
-			model.add(repImplNode, READ_CONTEXT, uri);
 		}
 		for (IRI resource : addContexts) {
 			model.add(repImplNode, ADD_CONTEXT, resource);
 		}
 		for (IRI resource : removeContexts) {
 			model.add(repImplNode, ContextAware.removeContext, resource);
-			model.add(repImplNode, REMOVE_CONTEXT, resource);
 		}
 		for (IRI resource : archiveContexts) {
 			model.add(repImplNode, ARCHIVE_CONTEXT, resource);
 		}
 		if (insertContext != null) {
 			model.add(repImplNode, ContextAware.insertContext, insertContext);
-			model.add(repImplNode, INSERT_CONTEXT, insertContext);
 		}
 
 		return repImplNode;
@@ -236,23 +231,19 @@ public class ContextAwareConfig extends AbstractDelegatingRepositoryImplConfig {
 
 		try {
 			Configurations
-					.getLiteralValue(model, resource, ContextAware.includeInferred,
-							INCLUDE_INFERRED)
+					.getLiteralValue(model, resource, ContextAware.includeInferred, INCLUDE_INFERRED)
 					.ifPresent(lit -> setIncludeInferred(lit.booleanValue()));
 
 			Configurations
-					.getLiteralValue(model, resource, ContextAware.maxQueryTime,
-							MAX_QUERY_TIME)
+					.getLiteralValue(model, resource, ContextAware.maxQueryTime, MAX_QUERY_TIME)
 					.ifPresent(lit -> setMaxQueryTime(lit.intValue()));
 
 			Configurations
-					.getLiteralValue(model, resource, ContextAware.queryLanguage,
-							QUERY_LANGUAGE)
+					.getLiteralValue(model, resource, ContextAware.queryLanguage, QUERY_LANGUAGE)
 					.ifPresent(lit -> setQueryLanguage(QueryLanguage.valueOf(lit.getLabel())));
 
 			Configurations
-					.getIRIValue(model, resource, ContextAware.base,
-							BASE_URI)
+					.getIRIValue(model, resource, ContextAware.base, BASE_URI)
 					.ifPresent(iri -> setBaseURI(iri.stringValue()));
 
 			Set<Value> objects = Configurations.getPropertyValues(model, resource, ContextAware.readContext,
@@ -262,16 +253,14 @@ public class ContextAwareConfig extends AbstractDelegatingRepositoryImplConfig {
 			objects = model.filter(resource, ADD_CONTEXT, null).objects();
 			setAddContexts(objects.toArray(new IRI[objects.size()]));
 
-			objects = Configurations.getPropertyValues(model, resource, ContextAware.removeContext,
-					REMOVE_CONTEXT);
+			objects = Configurations.getPropertyValues(model, resource, ContextAware.removeContext, REMOVE_CONTEXT);
 			setRemoveContexts(objects.toArray(new IRI[objects.size()]));
 
 			objects = model.filter(resource, ARCHIVE_CONTEXT, null).objects();
 			setArchiveContexts(objects.toArray(new IRI[objects.size()]));
 
 			Configurations
-					.getIRIValue(model, resource, ContextAware.insertContext,
-							INSERT_CONTEXT)
+					.getIRIValue(model, resource, ContextAware.insertContext, INSERT_CONTEXT)
 					.ifPresent(iri -> setInsertContext(iri));
 		} catch (ArrayStoreException e) {
 			throw new RepositoryConfigException(e);

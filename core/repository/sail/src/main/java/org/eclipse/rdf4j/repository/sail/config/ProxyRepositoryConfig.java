@@ -23,9 +23,6 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 
 public class ProxyRepositoryConfig extends AbstractRepositoryImplConfig {
 
-	private static final boolean USE_CONFIG = "true"
-			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
-
 	private String proxiedID;
 
 	public ProxyRepositoryConfig() {
@@ -57,11 +54,7 @@ public class ProxyRepositoryConfig extends AbstractRepositoryImplConfig {
 	public Resource export(Model model) {
 		Resource implNode = super.export(model);
 		if (null != this.proxiedID) {
-			if (USE_CONFIG) {
-				model.add(implNode, CONFIG.Proxy.proxiedID, literal(this.proxiedID));
-			} else {
-				model.add(implNode, PROXIED_ID, literal(this.proxiedID));
-			}
+			model.add(implNode, CONFIG.Proxy.proxiedID, literal(this.proxiedID));
 		}
 		return implNode;
 	}

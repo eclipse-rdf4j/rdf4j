@@ -30,9 +30,6 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
  */
 public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
 
-	private static final boolean USE_CONFIG = "true"
-			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
-
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/sparql#";
@@ -40,7 +37,7 @@ public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
 	/**
 	 * Configuration setting for the SPARQL query endpoint. Required.
 	 *
-	 * @deprecated use {@link CONFIG#queryEndpoint} instead.
+	 * @deprecated use {@link CONFIG.Sparql#queryEndpoint} instead.
 	 */
 	public static final IRI QUERY_ENDPOINT = vf
 			.createIRI("http://www.openrdf.org/config/repository/sparql#query-endpoint");
@@ -48,7 +45,7 @@ public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
 	/**
 	 * Configuration setting for the SPARQL update endpoint. Optional.
 	 *
-	 * @deprecated use {@link CONFIG#updateEndpoint} instead.
+	 * @deprecated use {@link CONFIG.Sparql#updateEndpoint} instead.
 	 */
 	public static final IRI UPDATE_ENDPOINT = vf
 			.createIRI("http://www.openrdf.org/config/repository/sparql#update-endpoint");
@@ -57,7 +54,7 @@ public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
 	 * Configuration setting for enabling/disabling direct result pass-through. Optional.
 	 *
 	 * @see SPARQLProtocolSession#isPassThroughEnabled()
-	 * @deprecated use {@link CONFIG#passThroughEnabled} instead.
+	 * @deprecated use {@link CONFIG.Sparql#passThroughEnabled} instead.
 	 */
 	public static final IRI PASS_THROUGH_ENABLED = vf
 			.createIRI("http://www.openrdf.org/config/repository/sparql#pass-through-enabled");
@@ -112,25 +109,13 @@ public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
 
 		m.setNamespace("sparql", NAMESPACE);
 		if (getQueryEndpointUrl() != null) {
-			if (USE_CONFIG) {
-				m.add(implNode, CONFIG.Sparql.queryEndpoint, vf.createIRI(getQueryEndpointUrl()));
-			} else {
-				m.add(implNode, QUERY_ENDPOINT, vf.createIRI(getQueryEndpointUrl()));
-			}
+			m.add(implNode, CONFIG.Sparql.queryEndpoint, vf.createIRI(getQueryEndpointUrl()));
 		}
 		if (getUpdateEndpointUrl() != null) {
-			if (USE_CONFIG) {
-				m.add(implNode, CONFIG.Sparql.updateEndpoint, vf.createIRI(getUpdateEndpointUrl()));
-			} else {
-				m.add(implNode, UPDATE_ENDPOINT, vf.createIRI(getUpdateEndpointUrl()));
-			}
+			m.add(implNode, CONFIG.Sparql.updateEndpoint, vf.createIRI(getUpdateEndpointUrl()));
 		}
 		if (getPassThroughEnabled() != null) {
-			if (USE_CONFIG) {
-				m.add(implNode, CONFIG.Sparql.passThroughEnabled, BooleanLiteral.valueOf(getPassThroughEnabled()));
-			} else {
-				m.add(implNode, PASS_THROUGH_ENABLED, BooleanLiteral.valueOf(getPassThroughEnabled()));
-			}
+			m.add(implNode, CONFIG.Sparql.passThroughEnabled, BooleanLiteral.valueOf(getPassThroughEnabled()));
 		}
 
 		return implNode;

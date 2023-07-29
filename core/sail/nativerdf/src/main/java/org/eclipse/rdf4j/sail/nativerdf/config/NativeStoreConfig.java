@@ -31,9 +31,6 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
  */
 public class NativeStoreConfig extends BaseSailConfig {
 
-	private static final boolean USE_CONFIG = "true"
-			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
-
 	private String tripleIndexes;
 	private boolean forceSync = false;
 	private int valueCacheSize = -1;
@@ -113,46 +110,22 @@ public class NativeStoreConfig extends BaseSailConfig {
 		m.setNamespace(CONFIG.NS);
 
 		if (tripleIndexes != null) {
-			if (USE_CONFIG) {
-				m.add(implNode, CONFIG.Native.tripleIndexes, literal(tripleIndexes));
-			} else {
-				m.add(implNode, TRIPLE_INDEXES, literal(tripleIndexes));
-			}
+			m.add(implNode, CONFIG.Native.tripleIndexes, literal(tripleIndexes));
 		}
 		if (forceSync) {
-			if (USE_CONFIG) {
-				m.add(implNode, CONFIG.Native.forceSync, literal(forceSync));
-			} else {
-				m.add(implNode, FORCE_SYNC, literal(forceSync));
-			}
+			m.add(implNode, CONFIG.Native.forceSync, literal(forceSync));
 		}
 		if (valueCacheSize >= 0) {
-			if (USE_CONFIG) {
-				m.add(implNode, CONFIG.Native.valueCacheSize, literal(valueCacheSize));
-			} else {
-				m.add(implNode, VALUE_CACHE_SIZE, literal(valueCacheSize));
-			}
+			m.add(implNode, CONFIG.Native.valueCacheSize, literal(valueCacheSize));
 		}
 		if (valueIDCacheSize >= 0) {
-			if (USE_CONFIG) {
-				m.add(implNode, CONFIG.Native.valueIDCacheSize, literal(valueIDCacheSize));
-			} else {
-				m.add(implNode, VALUE_ID_CACHE_SIZE, literal(valueIDCacheSize));
-			}
+			m.add(implNode, CONFIG.Native.valueIDCacheSize, literal(valueIDCacheSize));
 		}
 		if (namespaceCacheSize >= 0) {
-			if (USE_CONFIG) {
-				m.add(implNode, CONFIG.Native.namespaceCacheSize, literal(namespaceCacheSize));
-			} else {
-				m.add(implNode, NAMESPACE_CACHE_SIZE, literal(namespaceCacheSize));
-			}
+			m.add(implNode, CONFIG.Native.namespaceCacheSize, literal(namespaceCacheSize));
 		}
 		if (namespaceIDCacheSize >= 0) {
-			if (USE_CONFIG) {
-				m.add(implNode, CONFIG.Native.namespaceIDCacheSize, literal(namespaceIDCacheSize));
-			} else {
-				m.add(implNode, NAMESPACE_ID_CACHE_SIZE, literal(namespaceIDCacheSize));
-			}
+			m.add(implNode, CONFIG.Native.namespaceIDCacheSize, literal(namespaceIDCacheSize));
 		}
 
 		return implNode;
