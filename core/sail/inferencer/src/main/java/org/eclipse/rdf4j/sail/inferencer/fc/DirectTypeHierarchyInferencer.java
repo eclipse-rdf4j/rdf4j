@@ -100,20 +100,20 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 			DIRECT_SUBCLASSOF_QUERY = QueryParserUtil.parseGraphQuery(QueryLanguage.SPARQL,
 					"CONSTRUCT { ?X sesame:directSubClassOf ?Y } "
 							+ "WHERE { ?X rdfs:subClassOf ?Y . "
-							+ "FILTER X != Y AND "
-							+ "NOT EXISTS { SELECT ?Z WHERE { ?X rdfs:subClassOf ?Z. ?Z rdfs:subClassOf ?Y . FILTER ?X != ?Z AND ?Z != ?Y }}}",
+							+ "FILTER (?X != ?Y && "
+							+ "NOT EXISTS { SELECT ?Z WHERE { ?X rdfs:subClassOf ?Z. ?Z rdfs:subClassOf ?Y . FILTER (?X != ?Z && ?Z != ?Y) }})}",
 					null);
 
 			DIRECT_SUBPROPERTYOF_QUERY = QueryParserUtil.parseGraphQuery(QueryLanguage.SPARQL,
 					"CONSTRUCT { ?X sesame:directSubPropertyOf ?Y } "
 							+ "WHERE { ?X rdfs:subPropertyOf ?Y . "
-							+ "FILTER X != Y AND "
-							+ "NOT EXISTS { SELECT ?Z WHERE { ?X rdfs:subPropertyOf ?Z. ?Z rdfs:subPropertyOf ?Y . FILTER ?X != ?Z AND ?Z != ?Y }}}",
+							+ "FILTER (?X != ?Y && "
+							+ "NOT EXISTS { SELECT ?Z WHERE { ?X rdfs:subPropertyOf ?Z. ?Z rdfs:subPropertyOf ?Y . FILTER (?X != ?Z && ?Z != ?Y) }})}",
 					null);
 
 			DIRECT_TYPE_QUERY = QueryParserUtil.parseGraphQuery(QueryLanguage.SPARQL,
 					"CONSTRUCT { ?X sesame:directType ?Y } WHERE { ?X rdf:type ?Y . \n "
-							+ "FILTER NOT EXISTS { SELECT ?Z WHERE { ?X rdf:type ?Z. ?Z rdfs:subClassOf ?Y . FILTER ?Z != ?Y }}}",
+							+ "FILTER NOT EXISTS { SELECT ?Z WHERE { ?X rdf:type ?Z. ?Z rdfs:subClassOf ?Y . FILTER (?Z != ?Y) }}}",
 					null);
 		} catch (MalformedQueryException e) {
 			// Can only occur due to a bug in this code
