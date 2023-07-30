@@ -360,7 +360,7 @@ public class LinkedHashModel extends AbstractModel {
 		}
 	}
 
-	public static class ModelStatement extends ContextStatement {
+	public static class ModelStatement extends GenericStatement<Resource, IRI, Value> {
 
 		private static final long serialVersionUID = 2200404772364346279L;
 		private Statement statement;
@@ -373,7 +373,7 @@ public class LinkedHashModel extends AbstractModel {
 
 		ModelNode<Resource> ctx;
 
-		public ModelStatement(ModelNode<Resource> subj, ModelNode<IRI> pred, ModelNode<Value> obj,
+		ModelStatement(ModelNode<Resource> subj, ModelNode<IRI> pred, ModelNode<Value> obj,
 				ModelNode<Resource> ctx) {
 			super(subj.getValue(), pred.getValue(), obj.getValue(), ctx.getValue());
 			this.subj = subj;
@@ -382,7 +382,7 @@ public class LinkedHashModel extends AbstractModel {
 			this.ctx = ctx;
 		}
 
-		public ModelStatement(ModelNode<Resource> subj, ModelNode<IRI> pred, ModelNode<Value> obj,
+		ModelStatement(ModelNode<Resource> subj, ModelNode<IRI> pred, ModelNode<Value> obj,
 				ModelNode<Resource> ctx, Statement statement) {
 			super(subj.getValue(), pred.getValue(), obj.getValue(), ctx.getValue());
 			this.subj = subj;
@@ -445,7 +445,7 @@ public class LinkedHashModel extends AbstractModel {
 			IRI pred = st.getPredicate();
 			Value obj = st.getObject();
 			Resource ctx = st.getContext();
-			s.writeObject(new ContextStatement(subj, pred, obj, ctx));
+			s.writeObject(new GenericStatement<>(subj, pred, obj, ctx));
 		}
 	}
 

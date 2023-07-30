@@ -219,8 +219,9 @@ public class RDFXMLParserTest {
 				+
 				"  <test:datapart xmlns:test=\"http://test.org/testing/\">0</test:datapart>\n" +
 				"  <test:datapart xmlns:test=\"http://test.org/testing/\">0</test:datapart>\n" +
-				"  \"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#XMLLiteral>)";
-		String s2 = "(http://mycorp.example.com/papers/NobelPaper1, http://purl.org/metadata/dublin_core#Creator, \"David Hume\")";
+				"  \"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#XMLLiteral>) [null]";
+
+		String s2 = "(http://mycorp.example.com/papers/NobelPaper1, http://purl.org/metadata/dublin_core#Creator, \"David Hume\") [null]";
 		expectedLiteral[0] = s1;
 		expectedLiteral[1] = s2;
 

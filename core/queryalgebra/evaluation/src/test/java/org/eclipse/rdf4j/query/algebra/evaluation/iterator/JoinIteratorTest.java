@@ -106,11 +106,11 @@ public class JoinIteratorTest {
 			right.setBindingSets(rightb);
 		}
 
-		JoinIterator lrIter = new JoinIterator(evaluator, new Join(left, right), bindings, context);
+		JoinIterator lrIter = new JoinIterator(evaluator.precompile(left), evaluator.precompile(right), bindings);
 		Set<BindingSet> lr = Iterations.asSet(lrIter);
 		assertEquals(expectedSize, lr.size());
 
-		JoinIterator rlIter = new JoinIterator(evaluator, new Join(right, left), bindings, context);
+		JoinIterator rlIter = new JoinIterator(evaluator.precompile(right), evaluator.precompile(left), bindings);
 		Set<BindingSet> rl = Iterations.asSet(rlIter);
 		assertEquals(expectedSize, rl.size());
 

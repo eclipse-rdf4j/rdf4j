@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.query.resultio.helpers;
 
 import java.io.InputStream;
-import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -46,8 +45,8 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult implements 
 
 	private final CountDownLatch finishedParsing = new CountDownLatch(1);
 
-	public BackgroundTupleResult(TupleQueryResultParser parser, InputStream in, WeakReference<?> callerRef) {
-		this(new QueueCursor<>(10, callerRef), parser, in);
+	public BackgroundTupleResult(TupleQueryResultParser parser, InputStream in) {
+		this(new QueueCursor<>(10), parser, in);
 	}
 
 	public BackgroundTupleResult(QueueCursor<BindingSet> queue, TupleQueryResultParser parser, InputStream in) {

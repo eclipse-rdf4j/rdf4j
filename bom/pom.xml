@@ -311,11 +311,6 @@
 			</dependency>
 			<dependency>
 				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-common-util</artifactId>
-				<version>${project.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.eclipse.rdf4j</groupId>
 				<artifactId>rdf4j-common-xml</artifactId>
 				<version>${project.version}</version>
 			</dependency>

@@ -99,7 +99,7 @@ public abstract class NTuple extends AbstractQueryModelNode implements TupleExpr
 			args.set(index, (TupleExpr) replacement);
 			replacement.setParentNode(this);
 		} else {
-			super.replaceChildNode(current, replacement);
+			throw new IllegalArgumentException("Node is not a child node: " + current);
 		}
 	}
 

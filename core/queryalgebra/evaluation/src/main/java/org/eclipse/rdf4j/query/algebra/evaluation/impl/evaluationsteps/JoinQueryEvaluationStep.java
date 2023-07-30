@@ -43,7 +43,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 					joinAttributes, context);
 			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
 		} else {
-			eval = (bindings) -> new JoinIterator(strategy, leftPrepared, rightPrepared, join, bindings);
+			eval = (bindings) -> new JoinIterator(leftPrepared, rightPrepared, bindings);
 			join.setAlgorithm(JoinIterator.class.getSimpleName());
 		}
 	}

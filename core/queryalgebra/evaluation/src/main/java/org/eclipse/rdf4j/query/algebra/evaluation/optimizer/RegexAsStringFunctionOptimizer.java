@@ -49,11 +49,6 @@ public class RegexAsStringFunctionOptimizer implements QueryOptimizer {
 	private static class RegexAsStringFunctionVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 		private final ValueFactory vf;
 
-		@Deprecated(forRemoval = true, since = "4.1.0")
-		protected RegexAsStringFunctionVisitor() {
-			vf = SimpleValueFactory.getInstance();
-		}
-
 		protected RegexAsStringFunctionVisitor(ValueFactory vf) {
 			super(false);
 			this.vf = vf;

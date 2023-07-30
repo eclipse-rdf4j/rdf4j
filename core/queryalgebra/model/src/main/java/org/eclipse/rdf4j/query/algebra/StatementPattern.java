@@ -25,9 +25,6 @@ import java.util.Set;
  */
 public class StatementPattern extends AbstractQueryModelNode implements TupleExpr {
 
-	@Deprecated
-	public static final double CARDINALITY_NOT_SET = Double.MIN_VALUE;
-
 	/**
 	 * Indicates the scope of the statement pattern.
 	 */
@@ -59,14 +56,6 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 
 	private Set<String> assuredBindingNames;
 	private List<Var> varList;
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
-
-	@Deprecated(since = "4.0.0", forRemoval = true)
-	public StatementPattern() {
-	}
 
 	/**
 	 * Creates a statement pattern that matches a subject-, predicate- and object variable against statements from all
@@ -122,54 +111,16 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 		return scope;
 	}
 
-	/**
-	 * Sets the context scope for the statement pattern.
-	 */
-	@Deprecated(since = "4.0.0", forRemoval = true)
-	public void setScope(Scope scope) {
-		this.scope = Objects.requireNonNull(scope);
-		assuredBindingNames = null;
-		varList = null;
-		resetCardinality();
-	}
-
 	public Var getSubjectVar() {
 		return subjectVar;
-	}
-
-	@Deprecated(since = "4.0.0", forRemoval = true)
-	public void setSubjectVar(Var subject) {
-		Objects.requireNonNull(subject).setParentNode(this);
-		subjectVar = subject;
-		assuredBindingNames = null;
-		varList = null;
-		resetCardinality();
 	}
 
 	public Var getPredicateVar() {
 		return predicateVar;
 	}
 
-	@Deprecated(since = "4.0.0", forRemoval = true)
-	public void setPredicateVar(Var predicate) {
-		Objects.requireNonNull(predicate).setParentNode(this);
-		predicateVar = predicate;
-		assuredBindingNames = null;
-		varList = null;
-		resetCardinality();
-	}
-
 	public Var getObjectVar() {
 		return objectVar;
-	}
-
-	@Deprecated(since = "4.0.0", forRemoval = true)
-	public void setObjectVar(Var object) {
-		Objects.requireNonNull(object).setParentNode(this);
-		objectVar = object;
-		assuredBindingNames = null;
-		varList = null;
-		resetCardinality();
 	}
 
 	/**
@@ -177,17 +128,6 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 	 */
 	public Var getContextVar() {
 		return contextVar;
-	}
-
-	@Deprecated(since = "4.0.0", forRemoval = true)
-	public void setContextVar(Var context) {
-		if (context != null) {
-			context.setParentNode(this);
-		}
-		contextVar = context;
-		assuredBindingNames = null;
-		varList = null;
-		resetCardinality();
 	}
 
 	@Override
@@ -356,14 +296,26 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (subjectVar == current) {
-			setSubjectVar((Var) replacement);
+			Objects.requireNonNull((Var) replacement).setParentNode(this);
+			subjectVar = (Var) replacement;
 		} else if (predicateVar == current) {
-			setPredicateVar((Var) replacement);
+			Objects.requireNonNull((Var) replacement).setParentNode(this);
+			predicateVar = (Var) replacement;
 		} else if (objectVar == current) {
-			setObjectVar((Var) replacement);
+			Objects.requireNonNull((Var) replacement).setParentNode(this);
+			objectVar = (Var) replacement;
 		} else if (contextVar == current) {
-			setContextVar((Var) replacement);
+			if (replacement != null) {
+				replacement.setParentNode(this);
+			}
+			contextVar = (Var) replacement;
+		} else {
+			throw new IllegalArgumentException("Not a child " + current);
 		}
+
+		assuredBindingNames = null;
+		varList = null;
+		resetCardinality();
 	}
 
 	@Override

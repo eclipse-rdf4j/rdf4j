@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.federated.algebra;
 
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 
 /**
@@ -47,6 +48,11 @@ public class StatementSource extends AbstractQueryModelNode {
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		// no-op
+	}
+
+	@Override
+	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+		throw new IllegalArgumentException("Node is not a child node: " + current);
 	}
 
 	@Override

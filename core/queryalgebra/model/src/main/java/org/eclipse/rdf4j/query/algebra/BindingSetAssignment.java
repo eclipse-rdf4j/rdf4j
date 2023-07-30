@@ -59,6 +59,11 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	}
 
 	@Override
+	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+		throw new IllegalArgumentException("Node is not a child node: " + current);
+	}
+
+	@Override
 	public boolean equals(Object obj) {
 		if (this == obj) {
 			return true;

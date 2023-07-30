@@ -101,22 +101,6 @@ public class MemStatement extends GenericStatement<MemResource, MemIRI, MemValue
 		return snapshot >= sinceSnapshot && snapshot < ((int) TILL_SNAPSHOT.getAcquire(this));
 	}
 
-	@Deprecated(since = "4.0.0", forRemoval = true)
-	public void setExplicit(boolean explicit) {
-		logger.warn(
-				"The explicit field has been set to final for improved performance. Java reflection will be used " +
-						"to modify it. Take note that the MemorySailStore will not detect this change and may " +
-						"assume that it doesn't have any inferred statements!");
-
-		try {
-			Field explicitField = MemStatement.class.getDeclaredField("explicit");
-			explicitField.setAccessible(true);
-			explicitField.set(this, explicit);
-		} catch (NoSuchFieldException | IllegalAccessException e) {
-			throw new RuntimeException(e);
-		}
-	}
-
 	public boolean isExplicit() {
 		return explicit;
 	}

@@ -170,8 +170,6 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 	}
 
 	public Var createAnonVar(String varName) {
-		Var var = new Var(varName);
-		var.setAnonymous(true);
-		return var;
+		return new Var(varName, true);
 	}
 }

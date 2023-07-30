@@ -540,7 +540,7 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 		}
 	}
 
-	static class TreeStatement extends ContextStatement {
+	static class TreeStatement extends GenericStatement<Resource, IRI, Value> {
 
 		private static final long serialVersionUID = -7720419322256724495L;
 

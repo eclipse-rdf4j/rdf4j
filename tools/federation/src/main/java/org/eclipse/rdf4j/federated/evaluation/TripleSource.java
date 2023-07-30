@@ -78,26 +78,6 @@ public interface TripleSource {
 	 * Evaluate a given SPARQL query of the provided query type at the given source.
 	 *
 	 * @param preparedQuery
-	 * @param queryType
-	 * @param queryInfo
-	 * @return the statements
-	 * @throws RepositoryException
-	 * @throws MalformedQueryException
-	 * @throws QueryEvaluationException
-	 * @Deprecated will be removed in 4.0. Replaced with
-	 *             {@link #getStatements(String, BindingSet, QueryType, QueryInfo)}
-	 */
-	@Deprecated(forRemoval = true)
-	default CloseableIteration<BindingSet> getStatements(String preparedQuery,
-			QueryType queryType, QueryInfo queryInfo)
-			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
-		return getStatements(preparedQuery, EmptyBindingSet.getInstance(), queryType, queryInfo);
-	}
-
-	/**
-	 * Evaluate a given SPARQL query of the provided query type at the given source.
-	 *
-	 * @param preparedQuery
 	 * @param queryBindings optional query bindings, use {@link EmptyBindingSet} if there are none
 	 * @param queryType
 	 * @param queryInfo
@@ -188,16 +168,6 @@ public interface TripleSource {
 	 */
 	boolean hasStatements(ExclusiveTupleExpr expr, BindingSet bindings)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
-
-	/**
-	 *
-	 * @return true if a prepared query is to be used preferably, false otherwise
-	 * @deprecated replaced with {@link #usePreparedQuery(StatementPattern, QueryInfo)}, to be removed in 4.0
-	 */
-	@Deprecated(forRemoval = true)
-	default boolean usePreparedQuery() {
-		return true;
-	}
 
 	/**
 	 *

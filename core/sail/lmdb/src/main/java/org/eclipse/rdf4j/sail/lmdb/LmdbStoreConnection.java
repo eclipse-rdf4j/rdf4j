@@ -49,7 +49,6 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		super(sail, sail.getSailStore(), sail.getEvaluationStrategyFactory());
 		this.lmdbStore = sail;
 		sailChangedEvent = new DefaultSailChangedEvent(sail);
-		useConnectionLock = false;
 	}
 
 	/*---------*

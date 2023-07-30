@@ -206,8 +206,9 @@ public class EvaluationStrategyWithRDFStarTest {
 	public void testMatchAllUnbound(boolean bRDFStarData) {
 		EvaluationStrategy strategy = new StrictEvaluationStrategy(createSource(bRDFStarData), null);
 		// case check all unbound
-		try (CloseableIteration<BindingSet> iter = strategy.evaluate(tripleRefNode,
-				new EmptyBindingSet())) {
+		try (CloseableIteration<BindingSet> iter = strategy.precompile(tripleRefNode)
+				.evaluate(
+						new EmptyBindingSet())) {
 			ArrayList<BindingSet> expected = new ArrayList<>();
 			triples.forEach(t -> {
 				expected.add(fromTriple(t));
@@ -225,8 +226,9 @@ public class EvaluationStrategyWithRDFStarTest {
 	@ValueSource(booleans = { false, true })
 	public void testSubjVarBound(boolean bRDFStarData) {
 		EvaluationStrategy strategy = new StrictEvaluationStrategy(createSource(bRDFStarData), null);
-		try (CloseableIteration<BindingSet> iter = strategy.evaluate(tripleRefNode,
-				createWithVarValue(tripleRefNode.getSubjectVar(), vf.createIRI("urn:a")))) {
+		try (CloseableIteration<BindingSet> iter = strategy.precompile(tripleRefNode)
+				.evaluate(
+						createWithVarValue(tripleRefNode.getSubjectVar(), vf.createIRI("urn:a")))) {
 			ArrayList<BindingSet> expected = new ArrayList<>();
 			triples.forEach(t -> {
 				if (t.getSubject().equals(vf.createIRI("urn:a"))) {
@@ -246,8 +248,9 @@ public class EvaluationStrategyWithRDFStarTest {
 	@ValueSource(booleans = { false, true })
 	public void testPredVarBound(boolean bRDFStarData) {
 		EvaluationStrategy strategy = new StrictEvaluationStrategy(createSource(bRDFStarData), null);
-		try (CloseableIteration<BindingSet> iter = strategy.evaluate(tripleRefNode,
-				createWithVarValue(tripleRefNode.getPredicateVar(), vf.createIRI("urn:p")))) {
+		try (CloseableIteration<BindingSet> iter = strategy.precompile(tripleRefNode)
+				.evaluate(
+						createWithVarValue(tripleRefNode.getPredicateVar(), vf.createIRI("urn:p")))) {
 
 			ArrayList<BindingSet> expected = new ArrayList<>();
 			triples.forEach(t -> {
@@ -268,8 +271,9 @@ public class EvaluationStrategyWithRDFStarTest {
 	@ValueSource(booleans = { false, true })
 	public void testObjVarBound(boolean bRDFStarData) {
 		EvaluationStrategy strategy = new StrictEvaluationStrategy(createSource(bRDFStarData), null);
-		try (CloseableIteration<BindingSet> iter = strategy.evaluate(tripleRefNode,
-				createWithVarValue(tripleRefNode.getObjectVar(), vf.createIRI("urn:b")))) {
+		try (CloseableIteration<BindingSet> iter = strategy.precompile(tripleRefNode)
+				.evaluate(
+						createWithVarValue(tripleRefNode.getObjectVar(), vf.createIRI("urn:b")))) {
 
 			ArrayList<BindingSet> expected = new ArrayList<>();
 			triples.forEach(t -> {
@@ -293,7 +297,7 @@ public class EvaluationStrategyWithRDFStarTest {
 		set.addBinding(tripleRefNode.getSubjectVar().getName(), vf.createIRI("urn:a:2"));
 
 		EvaluationStrategy strategy = new StrictEvaluationStrategy(createSource(bRDFStarData), null);
-		try (CloseableIteration<BindingSet> iter = strategy.evaluate(tripleRefNode, set)) {
+		try (CloseableIteration<BindingSet> iter = strategy.precompile(tripleRefNode).evaluate(set)) {
 
 			ArrayList<BindingSet> expected = new ArrayList<>();
 			triples.forEach(t -> {
@@ -317,7 +321,7 @@ public class EvaluationStrategyWithRDFStarTest {
 		QueryBindingSet set = (QueryBindingSet) createWithVarValue(tripleRefNode.getExprVar(), triple);
 
 		EvaluationStrategy strategy = new StrictEvaluationStrategy(createSource(bRDFStarData), null);
-		try (CloseableIteration<BindingSet> iter = strategy.evaluate(tripleRefNode, set)) {
+		try (CloseableIteration<BindingSet> iter = strategy.precompile(tripleRefNode).evaluate(set)) {
 
 			ArrayList<BindingSet> expected = new ArrayList<>();
 			expected.add(fromTriple(triple));

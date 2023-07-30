@@ -53,7 +53,6 @@ public class NativeStoreConnection extends SailSourceConnection implements Threa
 		super(sail, sail.getSailStore(), sail.getEvaluationStrategyFactory());
 		this.nativeStore = sail;
 		sailChangedEvent = new DefaultSailChangedEvent(sail);
-		useConnectionLock = false;
 	}
 
 	/*---------*
