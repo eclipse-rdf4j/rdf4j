@@ -146,7 +146,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 		Function<ArrayBindingSet, Binding> directAccessForVariable = defaultArrayBindingSet
 				.getDirectGetBinding(variableName);
-		return (bs) -> {
+		return bs -> {
 			if (bs.isEmpty()) {
 				return null;
 			}
@@ -242,7 +242,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	@Override
 	public ArrayBindingSet createBindingSet(BindingSet bindings) {
 		if (bindings instanceof ArrayBindingSet) {
-			return new ArrayBindingSet(((ArrayBindingSet) bindings), allVariables);
+			return new ArrayBindingSet((ArrayBindingSet) bindings, allVariables);
 		} else if (bindings == EmptyBindingSet.getInstance()) {
 			return createBindingSet();
 		} else {

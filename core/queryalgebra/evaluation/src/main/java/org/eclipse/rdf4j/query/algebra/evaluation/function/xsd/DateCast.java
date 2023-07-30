@@ -13,16 +13,13 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.xsd;
 import static javax.xml.datatype.DatatypeConstants.FIELD_UNDEFINED;
 
 import static org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil.isValidDate;
-import static org.eclipse.rdf4j.model.vocabulary.XSD.DATE;
-import static org.eclipse.rdf4j.model.vocabulary.XSD.DATETIME;
-import static org.eclipse.rdf4j.model.vocabulary.XSD.STRING;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
 /**
@@ -34,8 +31,8 @@ public class DateCast extends CastFunction {
 	private static final String ZERO = "0";
 
 	@Override
-	protected IRI getXsdDatatype() {
-		return DATE;
+	protected CoreDatatype.XSD getCoreXsdDatatype() {
+		return CoreDatatype.XSD.DATE;
 	}
 
 	@Override
@@ -47,9 +44,9 @@ public class DateCast extends CastFunction {
 	protected Literal convert(ValueFactory vf, Value value) throws ValueExprEvaluationException {
 		if (value instanceof Literal) {
 			Literal literal = (Literal) value;
-			IRI datatype = literal.getDatatype();
+			CoreDatatype datatype = literal.getCoreDatatype();
 
-			if (STRING.equals(datatype) || DATETIME.equals(datatype)) {
+			if (CoreDatatype.XSD.STRING == datatype || CoreDatatype.XSD.DATETIME == datatype) {
 				try {
 					XMLGregorianCalendar calValue = literal.calendarValue();
 					int year = calValue.getYear();
@@ -68,7 +65,7 @@ public class DateCast extends CastFunction {
 						if (FIELD_UNDEFINED != timezoneOffset) {
 							int minutes = Math.abs(timezoneOffset);
 							int hours = minutes / 60;
-							minutes = minutes - (hours * 60);
+							minutes = minutes - hours * 60;
 							builder.append(timezoneOffset > 0 ? "+" : "-");
 							addZeroIfNeeded(hours, builder);
 							builder.append(hours);
@@ -77,7 +74,7 @@ public class DateCast extends CastFunction {
 							builder.append(minutes);
 						}
 
-						return vf.createLiteral(builder.toString(), DATE);
+						return vf.createLiteral(builder.toString(), CoreDatatype.XSD.DATE);
 					} else {
 						throw typeError(literal, null);
 					}

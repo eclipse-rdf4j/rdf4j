@@ -56,11 +56,11 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 			if (!(expr instanceof AggregateOperator)) {
 				QueryValueEvaluationStep prepared = strategy.precompile(extElem.getExpr(), context);
 				BiConsumer<Value, MutableBindingSet> setBinding = context.setBinding(extElem.getName());
-				consumer = andThen(consumer, (targetBindings) -> setValue(setBinding, prepared, targetBindings));
+				consumer = andThen(consumer, targetBindings -> setValue(setBinding, prepared, targetBindings));
 			}
 		}
 		if (consumer == null) {
-			return (bs) -> {
+			return bs -> {
 
 			};
 		}

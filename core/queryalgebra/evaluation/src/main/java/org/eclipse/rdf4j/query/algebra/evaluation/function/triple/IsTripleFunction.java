@@ -34,6 +34,6 @@ public class IsTripleFunction implements Function {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException("expect exactly 1 argument");
 		}
-		return vf.createLiteral((args[0] instanceof Triple));
+		return vf.createLiteral(args[0] instanceof Triple);
 	}
 }

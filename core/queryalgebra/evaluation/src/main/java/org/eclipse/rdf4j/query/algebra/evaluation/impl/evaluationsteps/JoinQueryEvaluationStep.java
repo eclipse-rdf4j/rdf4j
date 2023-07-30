@@ -33,17 +33,17 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		QueryEvaluationStep leftPrepared = strategy.precompile(join.getLeftArg(), context);
 		QueryEvaluationStep rightPrepared = strategy.precompile(join.getRightArg(), context);
 		if (join.getRightArg() instanceof Service) {
-			eval = (bindings) -> new ServiceJoinIterator(leftPrepared.evaluate(bindings),
+			eval = bindings -> new ServiceJoinIterator(leftPrepared.evaluate(bindings),
 					(Service) join.getRightArg(), bindings,
 					strategy);
 			join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
 		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg())) {
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
-			eval = (bindings) -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
+			eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
 					joinAttributes, context);
 			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
 		} else {
-			eval = (bindings) -> new JoinIterator(leftPrepared, rightPrepared, bindings);
+			eval = bindings -> new JoinIterator(leftPrepared, rightPrepared, bindings);
 			join.setAlgorithm(JoinIterator.class.getSimpleName());
 		}
 	}
@@ -54,7 +54,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	private static boolean isOutOfScopeForLeftArgBindings(TupleExpr expr) {
-		return (TupleExprs.isVariableScopeChange(expr) || TupleExprs.containsSubquery(expr));
+		return TupleExprs.isVariableScopeChange(expr) || TupleExprs.containsSubquery(expr);
 	}
 
 }

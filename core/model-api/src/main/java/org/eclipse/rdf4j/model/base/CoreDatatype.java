@@ -50,6 +50,18 @@ public interface CoreDatatype {
 		return Optional.empty();
 	}
 
+	default XSD asXSDDatatypeOrNull() {
+		return isXSDDatatype() ? ((XSD) this) : null;
+	}
+
+	default RDF asRDFDatatypeOrNull() {
+		return isRDFDatatype() ? ((RDF) this) : null;
+	}
+
+	default GEO asGEODatatypeOrNull() {
+		return isGEODatatype() ? ((GEO) this) : null;
+	}
+
 	IRI getIri();
 
 	static CoreDatatype from(IRI datatype) {

@@ -35,7 +35,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -494,14 +494,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	private QueryEvaluationStep trackResultSize(TupleExpr expr, QueryEvaluationStep qes) {
-		return QueryEvaluationStep.wrap(qes, (iter) -> {
+		return QueryEvaluationStep.wrap(qes, iter -> {
 			expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
 			return new ResultSizeCountingIterator(iter, expr);
 		});
 	}
 
 	private QueryEvaluationStep trackTime(TupleExpr expr, QueryEvaluationStep qes) {
-		return QueryEvaluationStep.wrap(qes, (iter) -> {
+		return QueryEvaluationStep.wrap(qes, iter -> {
 			expr.setTotalTimeNanosActual(Math.max(0, expr.getTotalTimeNanosActual()));
 			return new TimedIterator(iter, expr);
 		});
@@ -923,7 +923,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			QueryValueEvaluationStep nodeVes = precompile(nodeIdExpr, context);
 			return QueryValueEvaluationStepSupplier.bnode(nodeVes, vf);
 		} else {
-			return new QueryValueEvaluationStep.ApplyFunctionForEachBinding((bs) -> vf.createBNode());
+			return new QueryValueEvaluationStep.ApplyFunctionForEachBinding(bs -> vf.createBNode());
 		}
 	}
 
@@ -1002,8 +1002,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	private static boolean isNumeric(Value argValue) {
 		if (argValue instanceof Literal) {
 			Literal lit = (Literal) argValue;
-			IRI datatype = lit.getDatatype();
-			return XMLDatatypeUtil.isNumericDatatype(datatype);
+			CoreDatatype.XSD datatype = lit.getCoreDatatype().asXSDDatatypeOrNull();
+			return datatype != null && datatype.isNumericDatatype();
 		} else {
 			return false;
 		}
@@ -1154,7 +1154,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryValueEvaluationStep prepare(Not node, QueryEvaluationContext context) {
 		return supplyUnaryValueEvaluation(node,
-				(v) -> BooleanLiteral.valueOf(!QueryEvaluationUtil.getEffectiveBooleanValue(v)), context);
+				v -> BooleanLiteral.valueOf(!QueryEvaluationUtil.getEffectiveBooleanValue(v)), context);
 	}
 
 	/**

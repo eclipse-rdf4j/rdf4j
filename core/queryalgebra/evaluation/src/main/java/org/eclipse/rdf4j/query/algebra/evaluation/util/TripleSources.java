@@ -46,7 +46,7 @@ public class TripleSources {
 
 					@Override
 					protected boolean accept(Value v) throws QueryEvaluationException {
-						return (v instanceof Resource);
+						return v instanceof Resource;
 					}
 				}) {
 
@@ -115,7 +115,7 @@ public class TripleSources {
 
 	public static Value singleValue(Resource subj, IRI pred, TripleSource store) throws QueryEvaluationException {
 		Statement stmt = single(subj, pred, null, store);
-		return (stmt != null) ? stmt.getObject() : null;
+		return stmt != null ? stmt.getObject() : null;
 	}
 
 	/**
@@ -155,7 +155,7 @@ public class TripleSources {
 
 					@Override
 					protected boolean accept(Statement stmt) throws QueryEvaluationException {
-						return (stmt.getSubject() instanceof IRI);
+						return stmt.getSubject() instanceof IRI;
 					}
 				}) {
 
@@ -174,7 +174,7 @@ public class TripleSources {
 
 					@Override
 					protected boolean accept(Statement stmt) throws QueryEvaluationException {
-						return (stmt.getObject() instanceof Resource);
+						return stmt.getObject() instanceof Resource;
 					}
 				}) {
 
@@ -193,7 +193,7 @@ public class TripleSources {
 
 					@Override
 					protected boolean accept(Statement stmt) throws QueryEvaluationException {
-						return (stmt.getObject() instanceof IRI);
+						return stmt.getObject() instanceof IRI;
 					}
 				}) {
 
@@ -212,7 +212,7 @@ public class TripleSources {
 
 					@Override
 					protected boolean accept(Statement stmt) throws QueryEvaluationException {
-						return (stmt.getObject() instanceof Literal);
+						return stmt.getObject() instanceof Literal;
 					}
 				}) {
 
