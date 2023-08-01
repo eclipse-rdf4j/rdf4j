@@ -50,6 +50,8 @@ public class ExclusiveStatement extends FedXStatementPattern implements Exclusiv
 	public CloseableIteration<BindingSet> evaluate(
 			BindingSet bindings) throws QueryEvaluationException {
 
+		CloseableIteration<BindingSet> res = null;
+
 		try {
 
 			Endpoint ownedEndpoint = queryInfo.getFederationContext()
@@ -64,7 +66,6 @@ public class ExclusiveStatement extends FedXStatementPattern implements Exclusiv
 			 * getStatements(subj, pred, obj) instead of evaluating a prepared query.
 			 */
 
-			CloseableIteration<BindingSet> res;
 			if (t.usePreparedQuery(this, queryInfo)) {
 
 				AtomicBoolean isEvaluated = new AtomicBoolean(false); // is filter evaluated
@@ -101,8 +102,15 @@ public class ExclusiveStatement extends FedXStatementPattern implements Exclusiv
 
 			return res;
 
-		} catch (RepositoryException | MalformedQueryException e) {
-			throw new QueryEvaluationException(e);
+		} catch (Throwable t) {
+			if (res != null) {
+				res.close();
+			}
+			if (t instanceof RepositoryException || t instanceof MalformedQueryException) {
+				throw new QueryEvaluationException(t);
+			} else {
+				throw t;
+			}
 		}
 	}
 }
