@@ -58,7 +58,7 @@ public class BackgroundGraphResultHangTest {
 		Exception exception = assertThrows(QueryEvaluationException.class, () -> {
 			BackgroundGraphResult gRes = new BackgroundGraphResult(new DummyParser(),
 					new ByteArrayInputStream(data.getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8,
-					"http://example.org", null);
+					"http://example.org");
 			gRes.run();
 			gRes.getNamespaces();
 			gRes.hasNext();

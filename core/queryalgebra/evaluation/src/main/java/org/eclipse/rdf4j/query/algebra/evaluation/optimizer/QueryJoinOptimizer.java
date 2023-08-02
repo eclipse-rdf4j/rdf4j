@@ -565,27 +565,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return size;
 		}
 
-		@Deprecated(forRemoval = true, since = "4.1.0")
-		protected List<Var> getUnboundVars(Iterable<Var> vars) {
-
-			List<Var> ret = null;
-
-			for (Var var : vars) {
-				if (!var.hasValue() && var.getName() != null && !boundVars.contains(var.getName())) {
-					if (ret == null) {
-						ret = Collections.singletonList(var);
-					} else {
-						if (ret.size() == 1) {
-							ret = new ArrayList<>(ret);
-						}
-						ret.add(var);
-					}
-				}
-			}
-
-			return ret != null ? ret : Collections.emptyList();
-		}
-
 		protected List<Var> getUnboundVars(List<Var> vars) {
 			int size = vars.size();
 			if (size == 0) {

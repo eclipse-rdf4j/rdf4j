@@ -58,20 +58,6 @@ public class FilterIterator extends FilterIteration<BindingSet> {
 		}
 	}
 
-	@Deprecated(forRemoval = true, since = "4.2.1")
-	public static boolean isPartOfSubQuery(QueryModelNode node) {
-		if (node instanceof SubQueryValueOperator) {
-			return true;
-		}
-
-		QueryModelNode parent = node.getParentNode();
-		if (parent == null) {
-			return false;
-		} else {
-			return isPartOfSubQuery(parent);
-		}
-	}
-
 	/**
 	 * This is used to make sure that no variable is seen by the filter that are not in scope. Historically important in
 	 * subquery cases.

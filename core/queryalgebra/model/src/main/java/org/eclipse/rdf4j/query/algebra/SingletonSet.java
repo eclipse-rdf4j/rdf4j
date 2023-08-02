@@ -39,6 +39,11 @@ public class SingletonSet extends AbstractQueryModelNode implements TupleExpr {
 	}
 
 	@Override
+	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+		throw new IllegalArgumentException("Node is not a child node: " + current);
+	}
+
+	@Override
 	public boolean equals(Object other) {
 		return other instanceof SingletonSet;
 	}

@@ -75,6 +75,15 @@ public class FedXService extends AbstractQueryModelNode implements TupleExpr, Bo
 	}
 
 	@Override
+	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+		if (expr == current) {
+			expr = (Service) replacement;
+		} else {
+			throw new IllegalArgumentException("Node is not a child node: " + current);
+		}
+	}
+
+	@Override
 	public FedXService clone() {
 		return (FedXService) super.clone();
 	}

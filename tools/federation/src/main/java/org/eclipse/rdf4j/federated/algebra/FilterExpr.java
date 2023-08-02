@@ -15,6 +15,7 @@ import java.util.HashSet;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 
@@ -47,6 +48,15 @@ public class FilterExpr extends AbstractQueryModelNode implements FilterValueExp
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
 			throws X {
 		expr.visit(visitor);
+	}
+
+	@Override
+	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+		if (expr == current) {
+			expr = (ValueExpr) replacement;
+		} else {
+			throw new IllegalArgumentException("Node is not a child node: " + current);
+		}
 	}
 
 	public ValueExpr getExpression() {

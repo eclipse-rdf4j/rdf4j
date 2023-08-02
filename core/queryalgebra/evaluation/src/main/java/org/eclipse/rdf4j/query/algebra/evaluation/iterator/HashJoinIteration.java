@@ -31,8 +31,6 @@ import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -65,26 +63,6 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 	 * Constructors *
 	 *--------------*/
 
-	@Deprecated(forRemoval = true)
-	public HashJoinIteration(EvaluationStrategy strategy, Join join, BindingSet bindings)
-			throws QueryEvaluationException {
-		this(strategy, join.getLeftArg(), join.getRightArg(), bindings, false);
-		join.setAlgorithm(this);
-	}
-
-	@Deprecated(forRemoval = true)
-	public HashJoinIteration(EvaluationStrategy strategy, LeftJoin join, BindingSet bindings)
-			throws QueryEvaluationException {
-		this(strategy, join.getLeftArg(), join.getRightArg(), bindings, true);
-		join.setAlgorithm(this);
-	}
-
-	public HashJoinIteration(EvaluationStrategy strategy, TupleExpr left, TupleExpr right, BindingSet bindings,
-			boolean leftJoin) throws QueryEvaluationException {
-		this(strategy.evaluate(left, bindings), left.getBindingNames(), strategy.evaluate(right, bindings),
-				right.getBindingNames(), leftJoin);
-	}
-
 	public HashJoinIteration(QueryEvaluationStep left, QueryEvaluationStep right,
 			BindingSet bindings,
 			boolean leftJoin, String[] joinAttributes, QueryEvaluationContext context)
@@ -98,6 +76,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 		this.bsMaker = context::createBindingSet;
 	}
 
+	@Deprecated(since = "5.0.0", forRemoval = true) // there are still some tests that use this constructor
 	public HashJoinIteration(
 			CloseableIteration<BindingSet> leftIter, Set<String> leftBindingNames,
 			CloseableIteration<BindingSet> rightIter, Set<String> rightBindingNames,
@@ -111,24 +90,6 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 
 		this.leftJoin = leftJoin;
 		this.mapValueMaker = this::makeHashValue;
-		this.bsMaker = QueryBindingSet::new;
-	}
-
-	@Deprecated(forRemoval = true)
-	public HashJoinIteration(
-			CloseableIteration<BindingSet> leftIter, Set<String> leftBindingNames,
-			CloseableIteration<BindingSet> rightIter, Set<String> rightBindingNames,
-			boolean leftJoin, IntFunction<Map<BindingSetHashKey, List<BindingSet>>> mapMaker,
-			IntFunction<List<BindingSet>> mapValueMaker
-	) throws QueryEvaluationException {
-		this.leftIter = leftIter;
-		this.rightIter = rightIter;
-		this.mapMaker = mapMaker;
-
-		joinAttributes = leftBindingNames.stream().filter(rightBindingNames::contains).toArray(String[]::new);
-
-		this.leftJoin = leftJoin;
-		this.mapValueMaker = mapValueMaker;
 		this.bsMaker = QueryBindingSet::new;
 	}
 

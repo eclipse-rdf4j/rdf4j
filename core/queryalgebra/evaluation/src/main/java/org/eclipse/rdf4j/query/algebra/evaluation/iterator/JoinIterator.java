@@ -17,10 +17,7 @@ import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 /**
  * Interleaved join iterator.
@@ -47,8 +44,8 @@ public class JoinIterator extends LookAheadIteration<BindingSet> {
 	 * Constructors *
 	 *--------------*/
 
-	public JoinIterator(EvaluationStrategy strategy, QueryEvaluationStep leftPrepared,
-			QueryEvaluationStep rightPrepared, Join join, BindingSet bindings) throws QueryEvaluationException {
+	public JoinIterator(QueryEvaluationStep leftPrepared,
+			QueryEvaluationStep rightPrepared, BindingSet bindings) throws QueryEvaluationException {
 		leftIter = leftPrepared.evaluate(bindings);
 
 		// Initialize with empty iteration so that var is never null
@@ -56,15 +53,15 @@ public class JoinIterator extends LookAheadIteration<BindingSet> {
 		this.preparedRight = rightPrepared;
 	}
 
-	public JoinIterator(EvaluationStrategy strategy, Join join, BindingSet bindings, QueryEvaluationContext context)
-			throws QueryEvaluationException {
-		leftIter = strategy.evaluate(join.getLeftArg(), bindings);
-
-		// Initialize with empty iteration so that var is never null
-		rightIter = new EmptyIteration<>();
-		preparedRight = strategy.precompile(join.getRightArg(), context);
-		join.setAlgorithm(this);
-	}
+//	public JoinIterator(EvaluationStrategy strategy, Join join, BindingSet bindings, QueryEvaluationContext context)
+//			throws QueryEvaluationException {
+//		leftIter = strategy.evaluate(join.getLeftArg(), bindings);
+//
+//		// Initialize with empty iteration so that var is never null
+//		rightIter = new EmptyIteration<>();
+//		preparedRight = strategy.precompile(join.getRightArg(), context);
+//		join.setAlgorithm(this);
+//	}
 
 	/*---------*
 	 * Methods *

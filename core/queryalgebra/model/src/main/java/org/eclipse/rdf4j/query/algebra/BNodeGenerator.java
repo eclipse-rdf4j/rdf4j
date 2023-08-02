@@ -52,6 +52,11 @@ public class BNodeGenerator extends AbstractQueryModelNode implements ValueExpr 
 	}
 
 	@Override
+	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+		throw new IllegalArgumentException("Node is not a child node: " + current);
+	}
+
+	@Override
 	public boolean equals(Object other) {
 		return other instanceof BNodeGenerator;
 	}

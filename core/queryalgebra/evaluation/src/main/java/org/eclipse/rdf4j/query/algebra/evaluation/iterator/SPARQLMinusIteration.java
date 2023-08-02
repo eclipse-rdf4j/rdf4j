@@ -61,20 +61,6 @@ public class SPARQLMinusIteration extends FilterIteration<BindingSet> {
 		this.initialized = false;
 	}
 
-	/**
-	 * Creates a new MinusIteration that returns the results of the left argument minus the results of the right
-	 * argument.
-	 *
-	 * @param leftArg  An Iteration containing the main set of elements.
-	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
-	 * @param distinct This argument is ignored
-	 */
-	@Deprecated(since = "4.0.0", forRemoval = true)
-	public SPARQLMinusIteration(CloseableIteration<BindingSet> leftArg, CloseableIteration<BindingSet> rightArg,
-			boolean distinct) {
-		this(leftArg, rightArg);
-	}
-
 	/*--------------*
 	 * Constructors *
 	 *--------------*/

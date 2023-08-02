@@ -15,6 +15,7 @@ import java.util.Collection;
 import java.util.List;
 
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 
 /**
@@ -70,6 +71,11 @@ public class ConjunctiveFilterExpr extends AbstractQueryModelNode implements Fil
 		for (FilterExpr expr : expressions) {
 			expr.getExpression().visit(visitor);
 		}
+	}
+
+	@Override
+	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+		throw new UnsupportedOperationException();
 	}
 
 }

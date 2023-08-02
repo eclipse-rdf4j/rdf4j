@@ -280,13 +280,4 @@ public class SailModel extends AbstractModel {
 		return (lsize < Integer.MAX_VALUE) ? (int) lsize : Integer.MAX_VALUE;
 	}
 
-	private void writeObject(ObjectOutputStream out) throws IOException {
-		this.connKey = NonSerializables.register(this.conn);
-		out.defaultWriteObject();
-	}
-
-	private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
-		in.defaultReadObject();
-		this.conn = SailConnection.class.cast(NonSerializables.get(this.connKey));
-	}
 }

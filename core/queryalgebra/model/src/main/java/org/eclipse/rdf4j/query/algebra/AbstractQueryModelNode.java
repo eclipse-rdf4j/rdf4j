@@ -22,7 +22,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 /**
  * Base implementation of {@link QueryModelNode}.
  */
-public abstract class AbstractQueryModelNode implements QueryModelNode, VariableScopeChange, GraphPatternGroupable {
+public abstract class AbstractQueryModelNode implements QueryModelNode, VariableScopeChange {
 
 	private static final double CARDINALITY_NOT_SET = Double.MIN_VALUE;
 
@@ -66,35 +66,6 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	@Override
 	public void setVariableScopeChange(boolean isVariableScopeChange) {
 		this.isVariableScopeChange = isVariableScopeChange;
-	}
-
-	@Override
-	@Deprecated
-	public boolean isGraphPatternGroup() {
-		return isVariableScopeChange();
-	}
-
-	@Override
-	@Deprecated
-	public void setGraphPatternGroup(boolean isGraphPatternGroup) {
-		setVariableScopeChange(isGraphPatternGroup);
-	}
-
-	/**
-	 * Dummy implementation of {@link QueryModelNode#visitChildren} that does nothing. Subclasses should override this
-	 * method when they have child nodes.
-	 */
-	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
-	}
-
-	/**
-	 * Default implementation of {@link QueryModelNode#replaceChildNode(QueryModelNode, QueryModelNode)} that throws an
-	 * {@link IllegalArgumentException} indicating that <var>current</var> is not a child node of this node.
-	 */
-	@Override
-	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
-		throw new IllegalArgumentException("Node is not a child node: " + current);
 	}
 
 	/**

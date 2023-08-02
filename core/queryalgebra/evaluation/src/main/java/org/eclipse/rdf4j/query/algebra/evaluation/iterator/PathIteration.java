@@ -266,7 +266,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			TupleExpr pathExprClone = pathExpression.clone();
 
 			if (startVarFixed && endVarFixed) {
-				Var replacement = createAnonVar(JOINVAR_PREFIX + currentLength + "_" + this.hashCode());
+				String varName = JOINVAR_PREFIX + currentLength + "_" + this.hashCode();
+				Var replacement = new Var(varName, true);
 
 				VarReplacer replacer = new VarReplacer(endVar, replacement, 0, false);
 				pathExprClone.visit(replacer);
@@ -283,13 +284,10 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 				if (startVarFixed && endVarFixed) {
 
-					Var startReplacement = createAnonVar(JOINVAR_PREFIX + currentLength + "_" + this.hashCode());
-					Var endReplacement = createAnonVar("END_" + JOINVAR_PREFIX + this.hashCode());
-					startReplacement.setAnonymous(false);
-					endReplacement.setAnonymous(false);
-
 					Value v = currentVp.getEndValue();
-					startReplacement.setValue(v);
+
+					Var startReplacement = new Var(JOINVAR_PREFIX + currentLength + "_" + this.hashCode(), v);
+					Var endReplacement = new Var("END_" + JOINVAR_PREFIX + this.hashCode());
 
 					VarReplacer replacer = new VarReplacer(startVar, startReplacement, 0, false);
 					pathExprClone.visit(replacer);
@@ -307,8 +305,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 						v = currentVp.getStartValue();
 					}
 
-					Var replacement = createAnonVar(JOINVAR_PREFIX + currentLength + "-" + this.hashCode());
-					replacement.setValue(v);
+					String varName = JOINVAR_PREFIX + currentLength + "-" + this.hashCode();
+					Var replacement = new Var(varName, v, true);
 
 					VarReplacer replacer = new VarReplacer(toBeReplaced, replacement, 0, false);
 					pathExprClone.visit(replacer);
@@ -419,7 +417,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 				QueryModelNode parent = var.getParentNode();
 				parent.replaceChildNode(var, replacement.clone());
 			} else if (replaceAnons && var.isAnonymous() && !var.hasValue()) {
-				Var replacementVar = createAnonVar("anon-replace-" + var.getName() + index);
+				String varName = "anon-replace-" + var.getName() + index;
+				Var replacementVar = new Var(varName, true);
 				QueryModelNode parent = var.getParentNode();
 				parent.replaceChildNode(var, replacementVar);
 			}
@@ -427,9 +426,4 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 	}
 
-	public Var createAnonVar(String varName) {
-		Var var = new Var(varName);
-		var.setAnonymous(true);
-		return var;
-	}
 }

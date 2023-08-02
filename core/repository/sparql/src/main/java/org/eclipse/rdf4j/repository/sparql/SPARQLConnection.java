@@ -319,8 +319,9 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			setBindings(tupleQuery, subj, pred, obj, contexts);
 			tupleQuery.setIncludeInferred(includeInferred);
 			qRes = tupleQuery.evaluate();
+
 			result = new RepositoryResult<>(new ExceptionConvertingIteration<>(
-					toStatementIteration(qRes, subj, pred, obj)) {
+					new BindingSetStatementConvertingIteration(qRes, subj, pred, obj)) {
 
 				@Override
 				protected RepositoryException convert(RuntimeException e) {
@@ -1034,38 +1035,33 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		return silentClear;
 	}
 
-	/**
-	 * Converts a {@link TupleQueryResult} resulting from the {@link #EVERYTHING_WITH_GRAPH} to a statement by using the
-	 * respective values from the {@link BindingSet} or (if provided) the ones from the arguments.
-	 *
-	 * @param iter the {@link TupleQueryResult}
-	 * @param subj the subject {@link Resource} used as input or <code>null</code> if wildcard was used
-	 * @param pred the predicate {@link IRI} used as input or <code>null</code> if wildcard was used
-	 * @param obj  the object {@link Value} used as input or <code>null</code> if wildcard was used
-	 * @return the converted iteration
-	 */
-	@Deprecated(since = "4.1.0", forRemoval = true)
-	protected CloseableIteration<Statement> toStatementIteration(TupleQueryResult iter,
-			final Resource subj, final IRI pred, final Value obj) {
-
-		return new ConvertingIteration<>(iter) {
-
-			@Override
-			protected Statement convert(BindingSet b) throws QueryEvaluationException {
-
-				Resource s = subj == null ? (Resource) b.getValue("s") : subj;
-				IRI p = pred == null ? (IRI) b.getValue("p") : pred;
-				Value o = obj == null ? b.getValue("o") : obj;
-				Resource ctx = (Resource) b.getValue("ctx");
-
-				return SimpleValueFactory.getInstance().createStatement(s, p, o, ctx);
-			}
-
-		};
-	}
-
 	private ModelFactory getModelFactory() {
 		return modelFactory;
 	}
 
+	private static class BindingSetStatementConvertingIteration extends ConvertingIteration<BindingSet, Statement> {
+
+		private final Resource subj;
+		private final IRI pred;
+		private final Value obj;
+
+		public BindingSetStatementConvertingIteration(TupleQueryResult qRes, Resource subj, IRI pred, Value obj) {
+			super(qRes);
+			this.subj = subj;
+			this.pred = pred;
+			this.obj = obj;
+		}
+
+		@Override
+		protected Statement convert(BindingSet b) throws QueryEvaluationException {
+
+			Resource s = subj == null ? (Resource) b.getValue("s") : subj;
+			IRI p = pred == null ? (IRI) b.getValue("p") : pred;
+			Value o = obj == null ? b.getValue("o") : obj;
+			Resource ctx = (Resource) b.getValue("ctx");
+
+			return SimpleValueFactory.getInstance().createStatement(s, p, o, ctx);
+		}
+
+	}
 }

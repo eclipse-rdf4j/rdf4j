@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
-import org.eclipse.rdf4j.query.algebra.GraphPatternGroupable;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -124,22 +123,6 @@ public class TupleExprs {
 	public static boolean isVariableScopeChange(TupleExpr expr) {
 		if (expr instanceof VariableScopeChange) {
 			return ((VariableScopeChange) expr).isVariableScopeChange();
-		}
-		return false;
-	}
-
-	/**
-	 * Verifies if the supplied {@link TupleExpr} represents a group graph pattern.
-	 *
-	 * @param expr a {@link TupleExpr}
-	 * @return <code>true</code> if the {@link TupleExpr} is {@link GraphPatternGroupable} and has its graph pattern
-	 *         group flag set to <code>true</code>, <code>false</code> otherwise.
-	 * @deprecated Use {@link #isVariableScopeChange(TupleExpr)} instead.
-	 */
-	@Deprecated(since = "3.2")
-	public static boolean isGraphPatternGroup(TupleExpr expr) {
-		if (expr instanceof GraphPatternGroupable) {
-			return ((GraphPatternGroupable) expr).isGraphPatternGroup();
 		}
 		return false;
 	}

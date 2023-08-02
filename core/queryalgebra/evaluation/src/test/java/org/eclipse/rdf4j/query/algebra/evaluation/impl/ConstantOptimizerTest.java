@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
-import org.eclipse.rdf4j.query.algebra.helpers.QueryModelVisitorBase;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -66,8 +66,7 @@ public class ConstantOptimizerTest extends QueryOptimizerTest {
 		optimized.visit(finder);
 		assertThat(finder.logicalAndfound).isFalse();
 
-		CloseableIteration<BindingSet> result = strategy.evaluate(optimized,
-				new EmptyBindingSet());
+		CloseableIteration<BindingSet> result = strategy.precompile(optimized).evaluate(new EmptyBindingSet());
 		assertNotNull(result);
 		assertTrue(result.hasNext());
 		BindingSet bindings = result.next();
@@ -101,8 +100,9 @@ public class ConstantOptimizerTest extends QueryOptimizerTest {
 		optimized.visit(finder);
 		assertThat(finder.functionCallFound).isFalse();
 
-		CloseableIteration<BindingSet> result = strategy.evaluate(optimized,
-				new EmptyBindingSet());
+		CloseableIteration<BindingSet> result = strategy.precompile(optimized)
+				.evaluate(
+						new EmptyBindingSet());
 		assertNotNull(result);
 		assertTrue(result.hasNext());
 		BindingSet bindings = result.next();
@@ -112,7 +112,7 @@ public class ConstantOptimizerTest extends QueryOptimizerTest {
 
 	}
 
-	private class AlgebraFinder extends QueryModelVisitorBase<RuntimeException> {
+	private class AlgebraFinder extends AbstractQueryModelVisitor<RuntimeException> {
 
 		public boolean logicalAndfound = false;
 

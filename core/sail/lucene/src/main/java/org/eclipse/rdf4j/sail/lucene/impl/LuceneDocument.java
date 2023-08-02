@@ -46,14 +46,6 @@ public class LuceneDocument implements SearchDocument {
 
 	private final Function<? super String, ? extends SpatialStrategy> geoStrategyMapper;
 
-	/**
-	 * To be removed, no longer used.
-	 */
-	@Deprecated(forRemoval = true)
-	public LuceneDocument() {
-		this(null);
-	}
-
 	public LuceneDocument(Function<? super String, ? extends SpatialStrategy> geoStrategyMapper) {
 		this(new Document(), geoStrategyMapper);
 	}

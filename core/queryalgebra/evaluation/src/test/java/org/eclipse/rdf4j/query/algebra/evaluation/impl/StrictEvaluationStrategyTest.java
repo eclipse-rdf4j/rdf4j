@@ -70,8 +70,9 @@ public class StrictEvaluationStrategyTest {
 		constants.addBinding("x", vf.createLiteral("X"));
 		constants.addBinding("y", vf.createLiteral("Y"));
 
-		CloseableIteration<BindingSet> result = strategy.evaluate(pq.getTupleExpr(),
-				constants);
+		CloseableIteration<BindingSet> result = strategy.precompile(pq.getTupleExpr())
+				.evaluate(
+						constants);
 		assertNotNull(result);
 		assertTrue(result.hasNext());
 		BindingSet bs = result.next();
@@ -107,8 +108,8 @@ public class StrictEvaluationStrategyTest {
 
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 
-		CloseableIteration<BindingSet> result = strategy.evaluate(pq.getTupleExpr(),
-				new EmptyBindingSet());
+		CloseableIteration<BindingSet> result = strategy.precompile(pq.getTupleExpr())
+				.evaluate(EmptyBindingSet.getInstance());
 
 		List<BindingSet> bindingSets = QueryResults.asList(result);
 		assertThat(bindingSets).hasSize(2);
@@ -120,8 +121,7 @@ public class StrictEvaluationStrategyTest {
 
 		pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 
-		result = strategy.evaluate(pq.getTupleExpr(),
-				new EmptyBindingSet());
+		result = strategy.precompile(pq.getTupleExpr()).evaluate(EmptyBindingSet.getInstance());
 
 		bindingSets = QueryResults.asList(result);
 		assertThat(bindingSets).hasSize(1);
@@ -134,8 +134,9 @@ public class StrictEvaluationStrategyTest {
 
 		pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 
-		result = strategy.evaluate(pq.getTupleExpr(),
-				new EmptyBindingSet());
+		result = strategy.precompile(pq.getTupleExpr())
+				.evaluate(
+						new EmptyBindingSet());
 
 		bindingSets = QueryResults.asList(result);
 		assertThat(bindingSets).hasSize(2);

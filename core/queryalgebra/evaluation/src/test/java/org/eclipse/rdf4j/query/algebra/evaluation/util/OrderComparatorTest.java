@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -52,15 +53,19 @@ public class OrderComparatorTest {
 	class EvaluationStrategyStub implements EvaluationStrategy {
 
 		@Override
-		public CloseableIteration<BindingSet> evaluate(Service expr, String serviceUri,
-				CloseableIteration<BindingSet> bindings) throws QueryEvaluationException {
+		public CloseableIteration<BindingSet> evaluate(TupleExpr expr, BindingSet bindings)
+				throws QueryEvaluationException {
 			throw new UnsupportedOperationException();
 		}
 
 		@Override
-		public CloseableIteration<BindingSet> evaluate(TupleExpr expr, BindingSet bindings)
-				throws QueryEvaluationException {
-			throw new UnsupportedOperationException();
+		public QueryEvaluationStep precompile(TupleExpr expr) {
+			return QueryEvaluationStep.minimal(this, expr);
+		}
+
+		@Override
+		public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
+			return QueryEvaluationStep.minimal(this, expr);
 		}
 
 		@Override

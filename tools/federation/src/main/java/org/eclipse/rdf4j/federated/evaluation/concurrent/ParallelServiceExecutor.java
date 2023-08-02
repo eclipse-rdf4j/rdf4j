@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -164,7 +165,8 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet>
 			// Note: in order two avoid deadlocks we consume the SERVICE result.
 			// This is basically required to avoid processing background tuple
 			// request (i.e. HTTP slots) in the correct order.
-			return new CollectionIteration<>(Iterations.asList(strategy.evaluate(service.getService(), bindings)));
+			Service service1 = service.getService();
+			return new CollectionIteration<>(Iterations.asList(strategy.precompile(service1).evaluate(bindings)));
 		}
 
 		@Override

@@ -17,7 +17,6 @@
 		<module>iterator</module>
 		<module>text</module>
 		<module>transaction</module>
-		<module>util</module>
 		<module>xml</module>
 	</modules>
 </project>

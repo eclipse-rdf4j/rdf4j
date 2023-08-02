@@ -49,16 +49,6 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 	private TaskWrapper taskWrapper;
 
 	/**
-	 * Construct a new instance with 20 workers.
-	 *
-	 * @deprecated use {@link #ControlledWorkerScheduler(int, String)}. Scheduled to be removed in 4.0
-	 */
-	@Deprecated(forRemoval = true)
-	public ControlledWorkerScheduler() {
-		this(20, "FedX Worker");
-	}
-
-	/**
 	 * Construct a new instance with the specified number of workers and the given name.
 	 *
 	 * @param nWorkers

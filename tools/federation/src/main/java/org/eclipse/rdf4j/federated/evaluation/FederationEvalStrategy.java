@@ -97,10 +97,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.DescribeIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer;
@@ -140,7 +142,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 					Resource subj, IRI pred, Value obj, Resource... contexts)
 					throws QueryEvaluationException {
 				throw new FedXRuntimeException(
-						"Federation Strategy does not support org.openrdf.query.algebra.evaluation.TripleSource#getStatements."
+						"Federation Strategy does not support org.eclipse.rdf4j.query.algebra.evaluation.TripleSource#getStatements."
 								+
 								" If you encounter this exception, please report it.");
 			}
@@ -314,6 +316,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		new ExclusiveTupleExprOptimizer().optimize(query);
 	}
 
+	@Deprecated(forRemoval = true)
 	@Override
 	public CloseableIteration<BindingSet> evaluate(
 			TupleExpr expr, BindingSet bindings)
@@ -787,6 +790,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 				service.getService().getBaseURI());
 	}
 
+	@Deprecated(forRemoval = true)
 	@Override
 	public Value evaluate(ValueExpr expr, BindingSet bindings)
 			throws ValueExprEvaluationException, QueryEvaluationException {
@@ -864,7 +868,6 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		};
 	}
 
-	@Override
 	public CloseableIteration<BindingSet> evaluate(DescribeOperator operator,
 			final BindingSet bindings) throws QueryEvaluationException {
 
@@ -875,6 +878,19 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		CloseableIteration<BindingSet> iter = evaluate(operator.getArg(), bindings);
 		// Note: we need to evaluate the DESCRIBE over the entire federation
 		return new FederatedDescribeIteration(iter, this, operator.getBindingNames(), bindings,
+				((FederatedDescribeOperator) operator).getQueryInfo());
+	}
+
+	@Override
+	protected QueryEvaluationStep prepare(DescribeOperator operator, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		if (!(operator instanceof FederatedDescribeOperator)) {
+			throw new FedXRuntimeException(
+					"Expected a FedXDescribeOperator Node. Found " + operator.getClass() + " instead.");
+		}
+
+		QueryEvaluationStep child = precompile(operator.getArg(), context);
+		return bs -> new FederatedDescribeIteration(child.evaluate(bs), this, operator.getBindingNames(), bs,
 				((FederatedDescribeOperator) operator).getQueryInfo());
 	}
 

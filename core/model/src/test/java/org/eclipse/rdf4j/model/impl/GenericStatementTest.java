@@ -17,13 +17,13 @@ import org.eclipse.rdf4j.model.StatementTest;
 import org.eclipse.rdf4j.model.Value;
 
 /**
- * Unit tests for {@link SimpleTriple}.
+ * Unit tests for {@link GenericStatement}.
  */
-public class SimpleStatementTest extends StatementTest {
+public class GenericStatementTest extends StatementTest {
 
 	@Override
 	protected Statement statement(Resource subject, IRI predicate, Value object, Resource context) {
-		return new ContextStatement(subject, predicate, object, context);
+		return new GenericStatement<>(subject, predicate, object, context);
 	}
 
 	@Override
