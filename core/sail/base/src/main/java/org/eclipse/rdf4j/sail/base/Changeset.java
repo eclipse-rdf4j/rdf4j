@@ -409,14 +409,17 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		try {
 
 			if (deprecated != null) {
-				deprecated.remove(statement);
-				deprecatedEmpty = deprecated == null || deprecated.isEmpty();
+				boolean removed = deprecated.remove(statement);
+				if (removed) {
+					deprecatedEmpty = deprecated == null || deprecated.isEmpty();
+				}
 			}
 			if (approved == null) {
 				approved = createEmptyModel();
 			}
 			approved.add(statement);
-			approvedEmpty = approved == null || approved.isEmpty();
+			approvedEmpty = false;
+
 			if (statement.getContext() != null) {
 				if (approvedContexts == null) {
 					approvedContexts = new HashSet<>();
@@ -440,14 +443,16 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		long writeLock = readWriteLock.writeLock();
 		try {
 			if (approved != null) {
-				approved.remove(statement);
-				approvedEmpty = approved == null || approved.isEmpty();
+				boolean removed = approved.remove(statement);
+				if (removed) {
+					approvedEmpty = approved == null || approved.isEmpty();
+				}
 			}
 			if (deprecated == null) {
 				deprecated = createEmptyModel();
 			}
 			deprecated.add(statement);
-			deprecatedEmpty = deprecated == null || deprecated.isEmpty();
+			deprecatedEmpty = false;
 			Resource ctx = statement.getContext();
 			if (approvedContexts != null && approvedContexts.contains(ctx)
 					&& !approved.contains(null, null, null, ctx)) {
@@ -879,13 +884,18 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		try {
 
 			if (deprecated != null) {
-				deprecated.removeAll(approve);
+				boolean changed = deprecated.removeAll(approve);
+				if (changed) {
+					deprecatedEmpty = deprecated == null || deprecated.isEmpty();
+				}
 			}
 			if (approved == null) {
 				approved = createEmptyModel();
 			}
-			approved.addAll(approve);
-			approvedEmpty = approved == null || approved.isEmpty();
+			boolean changed = approved.addAll(approve);
+			if (changed) {
+				approvedEmpty = false;
+			}
 
 			if (approveContexts != null) {
 				if (approvedContexts == null) {
@@ -905,14 +915,18 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		try {
 
 			if (approved != null) {
-				approved.removeAll(deprecate);
-				approvedEmpty = approved == null || approved.isEmpty();
+				boolean changed = approved.removeAll(deprecate);
+				if (changed) {
+					approvedEmpty = approved == null || approved.isEmpty();
+				}
 			}
 			if (deprecated == null) {
 				deprecated = createEmptyModel();
 			}
-			deprecated.addAll(deprecate);
-			deprecatedEmpty = deprecated == null || deprecated.isEmpty();
+			boolean changed = deprecated.addAll(deprecate);
+			if (changed) {
+				deprecatedEmpty = false;
+			}
 
 			for (Statement statement : deprecate) {
 				Resource ctx = statement.getContext();
