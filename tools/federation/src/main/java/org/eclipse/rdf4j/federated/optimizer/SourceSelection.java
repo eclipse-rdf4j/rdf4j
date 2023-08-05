@@ -321,8 +321,8 @@ public class SourceSelection {
 		protected CloseableIteration<BindingSet, QueryEvaluationException> performTaskInternal() throws Exception {
 			try {
 				TripleSource t = endpoint.getTripleSource();
-				boolean hasResults;
-				hasResults = t.hasStatements(stmt, EmptyBindingSet.getInstance(), queryInfo, queryInfo.getDataset());
+				boolean hasResults = t.hasStatements(stmt, EmptyBindingSet.getInstance(), queryInfo,
+						queryInfo.getDataset());
 
 				SourceSelection sourceSelection = control.sourceSelection;
 				sourceSelection.cache.updateInformation(new SubQuery(stmt, queryInfo.getDataset()), endpoint,

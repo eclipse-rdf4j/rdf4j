@@ -50,11 +50,13 @@ public class Iterations {
 	 * @return a List containing all elements obtained from the specified iteration.
 	 */
 	public static <E, X extends Exception> List<E> asList(CloseableIteration<? extends E, X> iter) throws X {
-		// stream.collect is slightly slower than addAll for lists
-		List<E> list = new ArrayList<>();
+		try (iter) {
+			// stream.collect is slightly slower than addAll for lists
+			List<E> list = new ArrayList<>();
 
-		// addAll closes the iteration
-		return addAll(iter, list);
+			// addAll closes the iteration
+			return addAll(iter, list);
+		}
 	}
 
 	/**
@@ -115,15 +117,12 @@ public class Iterations {
 	 */
 	public static <E, X extends Exception, C extends Collection<E>> C addAll(CloseableIteration<? extends E, X> iter,
 			C collection) throws X {
-		try {
+		try (iter) {
 			while (iter.hasNext()) {
 				collection.add(iter.next());
 			}
-		} finally {
-			closeCloseable(iter);
+			return collection;
 		}
-
-		return collection;
 	}
 
 	/**
@@ -215,9 +214,11 @@ public class Iterations {
 	 * @return A String representation of the objects provided by the supplied iteration.
 	 */
 	public static <X extends Exception> String toString(CloseableIteration<?, X> iteration, String separator) throws X {
-		StringBuilder sb = new StringBuilder();
-		toString(iteration, separator, sb);
-		return sb.toString();
+		try (iteration) {
+			StringBuilder sb = new StringBuilder();
+			toString(iteration, separator, sb);
+			return sb.toString();
+		}
 	}
 
 	/**
@@ -253,11 +254,13 @@ public class Iterations {
 	public static <X extends Exception> void toString(CloseableIteration<?, X> iteration, String separator,
 			StringBuilder sb)
 			throws X {
-		while (iteration.hasNext()) {
-			sb.append(iteration.next());
+		try (iteration) {
+			while (iteration.hasNext()) {
+				sb.append(iteration.next());
 
-			if (iteration.hasNext()) {
-				sb.append(separator);
+				if (iteration.hasNext()) {
+					sb.append(separator);
+				}
 			}
 		}
 
@@ -295,4 +298,5 @@ public class Iterations {
 		}
 		return set;
 	}
+
 }

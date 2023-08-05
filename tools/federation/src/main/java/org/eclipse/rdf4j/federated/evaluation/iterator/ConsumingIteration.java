@@ -55,6 +55,11 @@ public class ConsumingIteration implements CloseableIteration<BindingSet, QueryE
 		try {
 			while (consumed.size() < max && iter.hasNext()) {
 				consumed.add(iter.next());
+				if (Thread.interrupted()) {
+					Thread.currentThread().interrupt();
+					close();
+					return;
+				}
 			}
 			if (!iter.hasNext()) {
 				iter.close();
@@ -62,7 +67,7 @@ public class ConsumingIteration implements CloseableIteration<BindingSet, QueryE
 			completed = true;
 		} finally {
 			if (!completed) {
-				iter.close();
+				close();
 			}
 		}
 
@@ -70,6 +75,12 @@ public class ConsumingIteration implements CloseableIteration<BindingSet, QueryE
 
 	@Override
 	public boolean hasNext() throws QueryEvaluationException {
+		if (Thread.interrupted()) {
+			Thread.currentThread().interrupt();
+			close();
+			return false;
+		}
+
 		return currentIndex < consumed.size() || innerIter.hasNext();
 	}
 

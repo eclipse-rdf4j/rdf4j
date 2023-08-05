@@ -164,7 +164,9 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 			// Note: in order two avoid deadlocks we consume the SERVICE result.
 			// This is basically required to avoid processing background tuple
 			// request (i.e. HTTP slots) in the correct order.
-			return new CollectionIteration<>(Iterations.asList(strategy.evaluate(service.getService(), bindings)));
+			try (var evaluate = strategy.evaluate(service.getService(), bindings)) {
+				return new CollectionIteration<>(Iterations.asList(evaluate));
+			}
 		}
 
 		@Override
