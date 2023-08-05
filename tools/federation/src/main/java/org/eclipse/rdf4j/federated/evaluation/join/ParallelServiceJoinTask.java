@@ -48,7 +48,9 @@ public class ParallelServiceJoinTask extends ParallelTaskBase<BindingSet> {
 		// Note: in order two avoid deadlocks we consume the SERVICE result.
 		// This is basically required to avoid processing background tuple
 		// request (i.e. HTTP slots) in the correct order.
-		return new CollectionIteration<>(Iterations.asList(strategy.evaluateService(expr, bindings)));
+		try (CloseableIteration<BindingSet> iter = strategy.evaluateService(expr, bindings)) {
+			return new CollectionIteration<>(Iterations.asList(iter));
+		}
 	}
 
 	@Override
