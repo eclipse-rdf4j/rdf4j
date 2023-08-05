@@ -32,6 +32,9 @@ import org.springframework.web.bind.annotation.RestController;
 @Experimental
 @RestController
 public class QueryResponder {
+
+	private static final String[] ALL_GRAPHS = {};
+
 	/**
 	 * The repository that is being served.
 	 */
@@ -77,10 +80,9 @@ public class QueryResponder {
 	}
 
 	private String[] toArray(String namedGraphUri) {
-		String[] namedGraphUris = new String[] {};
 		if (namedGraphUri != null) {
-			namedGraphUris = new String[] { namedGraphUri };
+			return new String[] { namedGraphUri };
 		}
-		return namedGraphUris;
+		return ALL_GRAPHS;
 	}
 }
