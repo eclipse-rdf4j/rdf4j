@@ -145,8 +145,8 @@ public class ValueComparator implements Comparator<Value> {
 		if (leftDatatype != null) {
 			if (rightDatatype != null) {
 				// Both literals have datatypes
-				CoreDatatype.XSD leftXmlDatatype = leftLit.getCoreDatatype().asXSDDatatype().orElse(null);
-				CoreDatatype.XSD rightXmlDatatype = rightLit.getCoreDatatype().asXSDDatatype().orElse(null);
+				CoreDatatype.XSD leftXmlDatatype = leftLit.getCoreDatatype().asXSDDatatypeOrNull();
+				CoreDatatype.XSD rightXmlDatatype = rightLit.getCoreDatatype().asXSDDatatypeOrNull();
 
 				result = compareDatatypes(leftXmlDatatype, rightXmlDatatype, leftDatatype, rightDatatype);
 				if (result != 0) {

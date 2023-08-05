@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.memory.model;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * An extension of MemLiteral that stores a numeric value to avoid parsing.
@@ -35,42 +34,37 @@ public class NumericMemLiteral extends MemLiteral {
 	 * Constructors *
 	 *--------------*/
 
-	public NumericMemLiteral(Object creator, String label, Number number, IRI datatype) {
-		super(creator, label, datatype);
-		this.number = number;
-	}
-
 	public NumericMemLiteral(Object creator, String label, Number number, CoreDatatype datatype) {
 		super(creator, label, datatype);
 		this.number = number;
 	}
 
-	public NumericMemLiteral(Object creator, Number number, IRI datatype) {
+	public NumericMemLiteral(Object creator, Number number, CoreDatatype datatype) {
 		this(creator, XMLDatatypeUtil.toString(number), number, datatype);
 	}
 
 	public NumericMemLiteral(Object creator, byte number) {
-		this(creator, number, XSD.BYTE);
+		this(creator, number, CoreDatatype.XSD.BYTE);
 	}
 
 	public NumericMemLiteral(Object creator, short number) {
-		this(creator, number, XSD.SHORT);
+		this(creator, number, CoreDatatype.XSD.SHORT);
 	}
 
 	public NumericMemLiteral(Object creator, int number) {
-		this(creator, number, XSD.INT);
+		this(creator, number, CoreDatatype.XSD.INT);
 	}
 
 	public NumericMemLiteral(Object creator, long n) {
-		this(creator, n, XSD.LONG);
+		this(creator, n, CoreDatatype.XSD.LONG);
 	}
 
 	public NumericMemLiteral(Object creator, float n) {
-		this(creator, n, XSD.FLOAT);
+		this(creator, n, CoreDatatype.XSD.FLOAT);
 	}
 
 	public NumericMemLiteral(Object creator, double n) {
-		this(creator, n, XSD.DOUBLE);
+		this(creator, n, CoreDatatype.XSD.DOUBLE);
 	}
 
 	/*---------*

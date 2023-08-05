@@ -13,11 +13,10 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.xsd;
 import java.math.BigInteger;
 import java.util.Optional;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * A {@link org.eclipse.rdf4j.query.algebra.evaluation.function.Function} that tries to cast its argument to an
@@ -28,14 +27,14 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 public class IntegerCast extends IntegerCastFunction {
 
 	@Override
-	protected IRI getXsdDatatype() {
-		return XSD.INTEGER;
+	protected CoreDatatype.XSD getCoreXsdDatatype() {
+		return CoreDatatype.XSD.INTEGER;
 	}
 
 	@Override
 	protected Optional<Literal> createTypedLiteral(ValueFactory vf, BigInteger integerValue)
 			throws ArithmeticException {
-		return Optional.of(vf.createLiteral(integerValue.toString(), getXsdDatatype()));
+		return Optional.of(vf.createLiteral(integerValue.toString(), getCoreXsdDatatype()));
 	}
 
 	@Override

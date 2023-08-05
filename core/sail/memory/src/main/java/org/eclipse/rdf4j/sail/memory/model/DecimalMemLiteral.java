@@ -15,7 +15,6 @@ import java.math.BigInteger;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * An extension of MemLiteral that stores a decimal value to avoid parsing.
@@ -37,16 +36,11 @@ public class DecimalMemLiteral extends MemLiteral {
 	 *--------------*/
 
 	public DecimalMemLiteral(Object creator, BigDecimal value) {
-		this(creator, value, XSD.DECIMAL);
+		this(creator, value, CoreDatatype.XSD.DECIMAL);
 	}
 
-	public DecimalMemLiteral(Object creator, BigDecimal value, IRI datatype) {
+	public DecimalMemLiteral(Object creator, BigDecimal value, CoreDatatype datatype) {
 		this(creator, value.toPlainString(), value, datatype);
-	}
-
-	public DecimalMemLiteral(Object creator, String label, BigDecimal value, IRI datatype) {
-		super(creator, label, datatype);
-		this.value = value;
 	}
 
 	public DecimalMemLiteral(Object creator, String label, BigDecimal value, CoreDatatype datatype) {

@@ -32,7 +32,7 @@ public class IntegerLiteral extends SimpleLiteral {
 	 * Creates an xsd:integer literal with the specified value.
 	 */
 	protected IntegerLiteral(BigInteger value) {
-		this(value, XSD.INTEGER);
+		this(value, CoreDatatype.XSD.INTEGER);
 	}
 
 	/**

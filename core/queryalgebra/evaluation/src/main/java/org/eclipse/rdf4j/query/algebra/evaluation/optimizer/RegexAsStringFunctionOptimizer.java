@@ -107,7 +107,7 @@ public class RegexAsStringFunctionOptimizer implements QueryOptimizer {
 		}
 
 		private void strstartsCandidate(Regex node, String regex) {
-			final String potential = regex.substring(1, regex.length());
+			final String potential = regex.substring(1);
 			if (plain(potential)) {
 				ValueConstant vc = new ValueConstant(vf.createLiteral(potential));
 				node.replaceWith(new FunctionCall(FN.STARTS_WITH.stringValue(), node.getArg().clone(), vc));

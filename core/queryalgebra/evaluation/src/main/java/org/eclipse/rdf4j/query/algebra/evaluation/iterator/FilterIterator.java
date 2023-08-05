@@ -86,7 +86,7 @@ public class FilterIterator extends FilterIteration<BindingSet> {
 			if (isVariableInScope(variableName)) {
 				return context.hasBinding(variableName);
 			} else {
-				return (bs) -> false;
+				return bs -> false;
 			}
 		}
 
@@ -99,7 +99,7 @@ public class FilterIterator extends FilterIteration<BindingSet> {
 			if (isVariableInScope(variableName)) {
 				return context.getBinding(variableName);
 			} else {
-				return (bs) -> null;
+				return bs -> null;
 			}
 		}
 
@@ -108,7 +108,7 @@ public class FilterIterator extends FilterIteration<BindingSet> {
 			if (isVariableInScope(variableName)) {
 				return context.getValue(variableName);
 			} else {
-				return (bs) -> null;
+				return bs -> null;
 			}
 		}
 

@@ -36,7 +36,6 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
-import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
@@ -398,8 +397,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet> {
 		}
 	}
 
-	private static final Predicate<BindingSet> ALWAYS_TRUE_BINDING_SET = (t) -> true;
-	private static final Predicate<Value> ALWAYS_TRUE_VALUE = (t) -> true;
+	private static final Predicate<BindingSet> ALWAYS_TRUE_BINDING_SET = t -> true;
+	private static final Predicate<Value> ALWAYS_TRUE_VALUE = t -> true;
 	private static final Supplier<Predicate<Value>> ALWAYS_TRUE_VALUE_SUPPLIER = () -> ALWAYS_TRUE_VALUE;
 
 	private AggregatePredicateCollectorSupplier<?, ?> create(GroupElem ge, ValueFactory vf)
@@ -702,8 +701,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet> {
 				if (v.isLiteral()) {
 					if (distinctValue.test(v)) {
 						Literal literal = (Literal) v;
-						CoreDatatype coreDatatype = literal.getCoreDatatype();
-						if (coreDatatype.isXSDDatatype() && ((CoreDatatype.XSD) coreDatatype).isNumericDatatype()) {
+						CoreDatatype.XSD coreDatatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+						if (coreDatatype != null && coreDatatype.isNumericDatatype()) {
 							sum.value = MathUtil.compute(sum.value, literal, MathOp.PLUS);
 						} else {
 							sum.setTypeError(new ValueExprEvaluationException("not a number: " + v));
@@ -736,8 +735,9 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet> {
 				if (v instanceof Literal) {
 					Literal nextLiteral = (Literal) v;
 					// check if the literal is numeric.
-					if (nextLiteral.getDatatype() != null
-							&& XMLDatatypeUtil.isNumericDatatype(nextLiteral.getDatatype())) {
+					CoreDatatype.XSD datatype = nextLiteral.getCoreDatatype().asXSDDatatypeOrNull();
+
+					if (datatype != null && datatype.isNumericDatatype()) {
 						avg.sum = MathUtil.compute(avg.sum, nextLiteral, MathOp.PLUS);
 					} else {
 						avg.setTypeError(new ValueExprEvaluationException("not a number: " + v));

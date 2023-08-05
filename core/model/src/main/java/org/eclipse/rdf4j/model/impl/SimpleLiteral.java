@@ -78,7 +78,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	 */
 	protected SimpleLiteral(String label) {
 		setLabel(label);
-		setDatatype(org.eclipse.rdf4j.model.vocabulary.XSD.STRING);
+		setDatatype(CoreDatatype.XSD.STRING);
 		optionalLanguageCache = Optional.empty();
 	}
 

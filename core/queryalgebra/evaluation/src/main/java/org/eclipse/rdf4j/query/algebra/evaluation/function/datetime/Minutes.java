@@ -13,13 +13,11 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.datetime;
 import javax.xml.datatype.DatatypeConstants;
 import javax.xml.datatype.XMLGregorianCalendar;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.FN;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
@@ -46,15 +44,15 @@ public class Minutes implements Function {
 		if (argValue instanceof Literal) {
 			Literal literal = (Literal) argValue;
 
-			IRI datatype = literal.getDatatype();
+			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
 
-			if (datatype != null && XMLDatatypeUtil.isCalendarDatatype(datatype)) {
+			if (datatype != null && datatype.isCalendarDatatype()) {
 				try {
 					XMLGregorianCalendar calValue = literal.calendarValue();
 
 					int minutes = calValue.getMinute();
 					if (DatatypeConstants.FIELD_UNDEFINED != minutes) {
-						return valueFactory.createLiteral(String.valueOf(minutes), XSD.INTEGER);
+						return valueFactory.createLiteral(String.valueOf(minutes), CoreDatatype.XSD.INTEGER);
 					} else {
 						throw new ValueExprEvaluationException("can not determine minutes from value: " + argValue);
 					}

@@ -358,8 +358,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		public int hashCode() {
 			final int prime = 31;
 			int result = 1;
-			result = prime * result + ((endValue == null) ? 0 : endValue.hashCode());
-			result = prime * result + ((startValue == null) ? 0 : startValue.hashCode());
+			result = prime * result + (endValue == null ? 0 : endValue.hashCode());
+			result = prime * result + (startValue == null ? 0 : startValue.hashCode());
 			return result;
 		}
 
@@ -412,8 +412,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 		@Override
 		public void meet(Var var) {
-			if (toBeReplaced.equals(var) || (toBeReplaced.isAnonymous() && var.isAnonymous()
-					&& (toBeReplaced.hasValue() && toBeReplaced.getValue().equals(var.getValue())))) {
+			if (toBeReplaced.equals(var) || toBeReplaced.isAnonymous() && var.isAnonymous()
+					&& toBeReplaced.hasValue() && toBeReplaced.getValue().equals(var.getValue())) {
 				QueryModelNode parent = var.getParentNode();
 				parent.replaceChildNode(var, replacement.clone());
 			} else if (replaceAnons && var.isAnonymous() && !var.hasValue()) {

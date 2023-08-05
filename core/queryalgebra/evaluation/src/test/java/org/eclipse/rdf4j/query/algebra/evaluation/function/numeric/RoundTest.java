@@ -54,7 +54,7 @@ public class RoundTest {
 
 			double roundValue = rounded.doubleValue();
 
-			assertEquals((double) 2.0, roundValue, 0.001d);
+			assertEquals(2.0, roundValue, 0.001d);
 		} catch (ValueExprEvaluationException e) {
 			e.printStackTrace();
 			fail(e.getMessage());

@@ -194,12 +194,12 @@ public class SimpleValueFactory extends AbstractValueFactory {
 
 	@Override
 	public Literal createLiteral(BigInteger bigInteger) {
-		return createIntegerLiteral(bigInteger, org.eclipse.rdf4j.model.vocabulary.XSD.INTEGER);
+		return createIntegerLiteral(bigInteger, CoreDatatype.XSD.INTEGER);
 	}
 
 	@Override
 	public Literal createLiteral(BigDecimal bigDecimal) {
-		return createNumericLiteral(bigDecimal, org.eclipse.rdf4j.model.vocabulary.XSD.DECIMAL);
+		return createNumericLiteral(bigDecimal, CoreDatatype.XSD.DECIMAL);
 	}
 
 	/**

@@ -259,7 +259,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 			BindingSetHashKey hashKey = BindingSetHashKey.create(joinAttributes, b);
 
 			List<BindingSet> hashValue = resultHashTable.get(hashKey);
-			boolean newEntry = (hashValue == null);
+			boolean newEntry = hashValue == null;
 			if (newEntry) {
 				hashValue = mapValueMaker.apply(maxListSize);
 			}
@@ -304,7 +304,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 			// when we have more than one value per entry
 			nextHashTable = new HashMap<>(initialSize);
 		} else {
-			List<BindingSet> l = (initialSize > 0) ? new ArrayList<>(initialSize) : null;
+			List<BindingSet> l = initialSize > 0 ? new ArrayList<>(initialSize) : null;
 			nextHashTable = Collections.singletonMap(BindingSetHashKey.EMPTY, l);
 		}
 		return nextHashTable;
