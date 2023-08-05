@@ -38,6 +38,8 @@ import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.SparqlConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The ValidationResult represents the results from a SHACL validation in an easy-to-use Java API.
@@ -47,6 +49,8 @@ import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
  */
 @Deprecated
 public class ValidationResult {
+
+	private static final Logger logger = LoggerFactory.getLogger(ValidationResult.class);
 
 	private Resource id;
 	private final Optional<Value> value;
@@ -73,7 +77,18 @@ public class ValidationResult {
 
 		if (sourceConstraintComponent.producesValidationResultValue()) {
 			assert value != null;
-			this.value = Optional.of(value);
+
+			// value could be null if assertions are disabled
+			// noinspection ConstantValue
+			if (value == null) {
+				logger.error(
+						"Source constraint component {} was expected to produce a value, but value is null! Shape: {}",
+						sourceConstraintComponent, shape);
+			}
+
+			// value could be null if assertions are disabled
+			// noinspection OptionalOfNullableMisuse
+			this.value = Optional.ofNullable(value);
 		} else {
 			assert scope != ConstraintComponent.Scope.propertyShape || value == null;
 			this.value = Optional.empty();
