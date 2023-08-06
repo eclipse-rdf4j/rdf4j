@@ -511,7 +511,6 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		ControlledWorkerScheduler<BindingSet> joinScheduler = federationContext.getManager().getJoinScheduler();
 
 		return bindings -> {
-			boolean completed = false;
 			CloseableIteration<BindingSet> result = null;
 			try {
 				result = resultProvider.evaluate(bindings);
@@ -520,11 +519,11 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 					result = executeJoin(joinScheduler, result, join.getArg(i), join.getJoinVariables(i), bindings,
 							join.getQueryInfo());
 				}
-				completed = true;
-			} finally {
-				if (!completed && result != null) {
+			} catch (Throwable t) {
+				if (result != null) {
 					result.close();
 				}
+				throw t;
 			}
 			return result;
 		};

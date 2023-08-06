@@ -174,8 +174,7 @@ public class FedXConnection extends AbstractSailConnection {
 				if (originalQuery instanceof PassThroughTupleExpr && res instanceof EmptyIteration) {
 					((PassThroughTupleExpr) originalQuery).setPassedThrough(true);
 				}
-				res = new StopRemainingExecutionsOnCloseIteration(res, queryInfo);
-				return res;
+				return new StopRemainingExecutionsOnCloseIteration(res, queryInfo);
 			} catch (Throwable t) {
 				if (res != null) {
 					res.close();
