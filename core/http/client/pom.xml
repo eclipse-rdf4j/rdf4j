@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-http</artifactId>
-		<version>4.3.5-SNAPSHOT</version>
+		<version>4.3.6-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-http-client</artifactId>
 	<name>RDF4J: HTTP client</name>
