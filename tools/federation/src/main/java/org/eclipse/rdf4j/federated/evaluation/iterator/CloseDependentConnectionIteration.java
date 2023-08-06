@@ -38,6 +38,12 @@ public class CloseDependentConnectionIteration<T> extends AbstractCloseableItera
 	@Override
 	public boolean hasNext() throws QueryEvaluationException {
 		try {
+			if (Thread.interrupted()) {
+				Thread.currentThread().interrupt();
+				close();
+				return false;
+			}
+
 			boolean res = inner.hasNext();
 			if (!res) {
 				close();

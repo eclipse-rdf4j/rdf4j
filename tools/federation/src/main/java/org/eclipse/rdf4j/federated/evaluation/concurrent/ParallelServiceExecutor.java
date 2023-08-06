@@ -166,7 +166,9 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet>
 			// This is basically required to avoid processing background tuple
 			// request (i.e. HTTP slots) in the correct order.
 			Service service1 = service.getService();
-			return new CollectionIteration<>(Iterations.asList(strategy.precompile(service1).evaluate(bindings)));
+			try (CloseableIteration<BindingSet> evaluate = strategy.precompile(service1).evaluate(bindings)) {
+				return new CollectionIteration<>(Iterations.asList(evaluate));
+			}
 		}
 
 		@Override

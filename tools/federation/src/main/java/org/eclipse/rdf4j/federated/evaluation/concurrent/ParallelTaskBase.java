@@ -107,7 +107,23 @@ public abstract class ParallelTaskBase<T> implements ParallelTask<T> {
 						logger.debug("Attempting to cancel task {}", this);
 						boolean successfullyCanceled = scheduledFuture.cancel(true);
 						if (!successfullyCanceled) {
-							logger.debug("Task {} could not be cancelled properly.", this);
+							logger.debug("Task {} could not be cancelled properly. Maybe it has already completed.",
+									this);
+						}
+
+						int timeout = 100;
+						for (int i = 0; i < timeout && !scheduledFuture.isDone(); i++) {
+							try {
+								Thread.sleep(1);
+							} catch (InterruptedException e) {
+								Thread.currentThread().interrupt();
+								break;
+							}
+						}
+
+						if (!scheduledFuture.isDone()) {
+							logger.error("Timeout while waiting for task {} to terminate after it was cancelled.",
+									this);
 						}
 					}
 				}
