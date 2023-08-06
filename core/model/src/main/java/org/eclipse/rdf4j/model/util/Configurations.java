@@ -35,6 +35,9 @@ public class Configurations {
 
 	private static final Logger logger = LoggerFactory.getLogger(Configurations.class);
 
+	private static final boolean useLegacyConfig = "true"
+			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig"));
+
 	/**
 	 * Retrieve a property value for the supplied subject as a {@link Resource} if present, falling back to a supplied
 	 * legacy property .
@@ -49,11 +52,16 @@ public class Configurations {
 	 */
 	@InternalUseOnly
 	public static Optional<Resource> getResourceValue(Model model, Resource subject, IRI property, IRI legacyProperty) {
+
 		var result = Models.objectResource(model.getStatements(subject, property, null));
+		var legacyResult = Models.objectResource(model.getStatements(subject, legacyProperty, null));
+		if (!legacyResult.isEmpty() && !result.equals(legacyResult)) {
+			logger.warn("Discrepancy between use of the old and new config vocabulary.");
+		}
 		if (result.isPresent()) {
 			return result;
 		}
-		return Models.objectResource(model.getStatements(subject, legacyProperty, null));
+		return legacyResult;
 	}
 
 	/**
@@ -71,10 +79,15 @@ public class Configurations {
 	@InternalUseOnly
 	public static Optional<Literal> getLiteralValue(Model model, Resource subject, IRI property, IRI legacyProperty) {
 		var result = Models.objectLiteral(model.getStatements(subject, property, null));
+		var legacyResult = Models.objectLiteral(model.getStatements(subject, legacyProperty, null));
+		if (!legacyResult.isEmpty() && !result.equals(legacyResult)) {
+			logger.warn("Discrepancy between use of the old and new config vocabulary.");
+		}
+
 		if (result.isPresent()) {
 			return result;
 		}
-		return Models.objectLiteral(model.getStatements(subject, legacyProperty, null));
+		return legacyResult;
 	}
 
 	/**
@@ -91,11 +104,10 @@ public class Configurations {
 	 */
 	@InternalUseOnly
 	public static Set<Value> getPropertyValues(Model model, Resource subject, IRI property, IRI legacyProperty) {
+		var objects = model.filter(subject, property, null).objects();
+		var legacyObjects = model.filter(subject, legacyProperty, null).objects();
 
-		Set<Value> objects = model.filter(subject, property, null).objects();
-		Set<Value> legacyObjects = model.filter(subject, legacyProperty, null).objects();
-
-		if (!objects.equals(legacyObjects)) {
+		if (!legacyObjects.isEmpty() && !objects.equals(legacyObjects)) {
 			logger.warn("Discrepancy between use of the old and new config vocabulary.");
 			if (objects.containsAll(legacyObjects)) {
 				return objects;
@@ -126,9 +138,14 @@ public class Configurations {
 	@InternalUseOnly
 	public static Optional<IRI> getIRIValue(Model model, Resource subject, IRI property, IRI legacyProperty) {
 		var result = Models.objectIRI(model.getStatements(subject, property, null));
+		var legacyResult = Models.objectIRI(model.getStatements(subject, legacyProperty, null));
+		if (!legacyResult.isEmpty() && !result.equals(legacyResult)) {
+			logger.warn("Discrepancy between use of the old and new config vocabulary.");
+		}
+
 		if (result.isPresent()) {
 			return result;
 		}
-		return Models.objectIRI(model.getStatements(subject, legacyProperty, null));
+		return legacyResult;
 	}
 }

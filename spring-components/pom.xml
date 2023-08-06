@@ -12,9 +12,6 @@
 		<module>rdf4j-spring</module>
 		<module>rdf4j-spring-demo</module>
 	</modules>
-	<properties>
-		<spring.boot.version>2.7.7</spring.boot.version>
-	</properties>
 	<artifactId>rdf4j-spring-components</artifactId>
 	<name>RDF4J: Spring components</name>
 	<description>Components to use with Spring</description>
