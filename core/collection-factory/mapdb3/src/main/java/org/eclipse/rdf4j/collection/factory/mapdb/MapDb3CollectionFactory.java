@@ -10,10 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.collection.factory.mapdb;
 
-import java.io.File;
-import java.io.IOException;
 import java.util.AbstractMap;
 import java.util.AbstractSet;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -35,9 +34,15 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.mapdb.DB;
+import org.mapdb.DB.HashMapMaker;
+import org.mapdb.DBException;
 import org.mapdb.DBMaker;
+import org.mapdb.DBMaker.Maker;
+import org.mapdb.HTreeMap;
+import org.mapdb.Serializer;
+import org.mapdb.serializer.SerializerJava;
 
-public class MapDbCollectionFactory implements CollectionFactory {
+public class MapDb3CollectionFactory implements CollectionFactory {
 	// The size 16 seems like a nice starting value but others could well
 	// be better.
 	private static final int SWITCH_TO_DISK_BASED_SET_AT_SIZE = 16;
@@ -45,22 +50,25 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	protected volatile long colectionId = 0;
 	protected final long iterationCacheSyncThreshold;
 	private final CollectionFactory delegate;
+	// The chances that someone would run a 32bit non "sun" vm are just miniscule
+	// So I am not going to worry about this.
+	private static final boolean ON_32_BIT_VM = "32".equals(System.getProperty("sun.arch.data.model"));
 
-	private static final class RDF4jMapDBException extends RDF4JException {
+	protected static final class RDF4jMapDB3Exception extends RDF4JException {
 
 		private static final long serialVersionUID = 1L;
 
-		public RDF4jMapDBException(String string, IOException e) {
+		public RDF4jMapDB3Exception(String string, Exception e) {
 			super(string, e);
 		}
 
 	}
 
-	public MapDbCollectionFactory(long iterationCacheSyncThreshold) {
+	public MapDb3CollectionFactory(long iterationCacheSyncThreshold) {
 		this(iterationCacheSyncThreshold, new DefaultCollectionFactory());
 	}
 
-	public MapDbCollectionFactory(long iterationCacheSyncThreshold, CollectionFactory delegate) {
+	public MapDb3CollectionFactory(long iterationCacheSyncThreshold, CollectionFactory delegate) {
 
 		this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;
 		this.delegate = delegate;
@@ -71,12 +79,15 @@ public class MapDbCollectionFactory implements CollectionFactory {
 			synchronized (this) {
 				if (this.db == null) {
 					try {
-						this.db = DBMaker.newFileDB(File.createTempFile("group-eval", null))
-								.deleteFilesAfterClose()
-								.closeOnJvmShutdown()
-								.make();
-					} catch (IOException e) {
-						throw new RDF4jMapDBException("could not initialize temp db", e);
+						final Maker dbmaker = DBMaker.tempFileDB().closeOnJvmShutdown();
+						// On 32 bit machines this may fail to often so guard it.
+						if (!ON_32_BIT_VM) {
+							// mmap is much faster than random access file.
+							dbmaker.fileMmapEnable();
+						}
+						this.db = dbmaker.make();
+					} catch (DBException e) {
+						throw new RDF4jMapDB3Exception("could not initialize temp db", e);
 					}
 				}
 			}
@@ -97,16 +108,11 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> create,
 			Function<String, Predicate<BindingSet>> getHas, Function<String, Function<BindingSet, Value>> getget,
 			Function<String, BiConsumer<Value, MutableBindingSet>> getSet) {
-		// No optimizations here
-		return createSetOfBindingSets();
-	}
-
-	@Override
-	public Set<BindingSet> createSetOfBindingSets() {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
+			Serializer<BindingSet> serializer = createBindingSetSerializer(create, getHas, getget, getSet);
 			MemoryTillSizeXSet<BindingSet> set = new MemoryTillSizeXSet<>(colectionId++,
-					delegate.createSetOfBindingSets());
+					delegate.createSetOfBindingSets(), serializer);
 			return new CommitingSet<>(set, iterationCacheSyncThreshold, db);
 		} else {
 			return delegate.createSetOfBindingSets();
@@ -117,7 +123,8 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	public <T> Set<T> createSet() {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
-			MemoryTillSizeXSet<T> set = new MemoryTillSizeXSet<T>(colectionId++, delegate.createSet());
+			Serializer<T> serializer = createAnySerializer();
+			MemoryTillSizeXSet<T> set = new MemoryTillSizeXSet<T>(colectionId++, delegate.createSet(), serializer);
 			return new CommitingSet<T>(set, iterationCacheSyncThreshold, db);
 		} else {
 			return delegate.createSet();
@@ -128,7 +135,8 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	public Set<Value> createValueSet() {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
-			Set<Value> set = new MemoryTillSizeXSet<>(colectionId++, delegate.createValueSet());
+			Serializer<Value> serializer = createValueSerializer();
+			Set<Value> set = new MemoryTillSizeXSet<>(colectionId++, delegate.createValueSet(), serializer);
 			return new CommitingSet<Value>(set, iterationCacheSyncThreshold, db);
 		} else {
 			return delegate.createValueSet();
@@ -139,8 +147,11 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	public <K, V> Map<K, V> createMap() {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
-			return new CommitingMap<>(db.createHashMap(Long.toHexString(colectionId++)).make(),
-					iterationCacheSyncThreshold, db);
+			Serializer<K> keySerializer = createAnySerializer();
+			Serializer<V> valueSerializer = createAnySerializer();
+			HashMapMaker<K, V> hashMap = db.hashMap(Long.toHexString(colectionId++), keySerializer, valueSerializer);
+			HTreeMap<K, V> create = hashMap.create();
+			return new CommitingMap<>(create, iterationCacheSyncThreshold, db);
 		} else {
 			return delegate.createMap();
 		}
@@ -150,7 +161,10 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	public <V> Map<Value, V> createValueKeyedMap() {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
-			return new CommitingMap<>(db.createHashMap(Long.toHexString(colectionId++)).make(),
+			Serializer<Value> keySerializer = createValueSerializer();
+			Serializer<V> valueSerializer = createAnySerializer();
+			return new CommitingMap<>(
+					db.hashMap(Long.toHexString(colectionId++), keySerializer, valueSerializer).create(),
 					iterationCacheSyncThreshold, db);
 		} else {
 			return delegate.createValueKeyedMap();
@@ -178,7 +192,10 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	public <E> Map<BindingSetKey, E> createGroupByMap() {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
-			return new CommitingMap<>(db.createHashMap(Long.toHexString(colectionId++)).make(),
+			Serializer<BindingSetKey> keySerializer = createBindingSetKeySerializer();
+			Serializer<E> valueSerializer = createAnySerializer();
+			return new CommitingMap<>(
+					db.hashMap(Long.toHexString(colectionId++), keySerializer, valueSerializer).create(),
 					iterationCacheSyncThreshold, db);
 		} else {
 			return delegate.createGroupByMap();
@@ -186,9 +203,13 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	}
 
 	@Override
-	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues,
+	public final BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues,
 			ToIntFunction<BindingSet> hashOfBindingSetCalculator) {
-		return delegate.createBindingSetKey(bindingSet, getValues, hashOfBindingSetCalculator);
+		List<Value> values = new ArrayList<>(getValues.size());
+		for (int i = 0; i < getValues.size(); i++) {
+			values.add(getValues.get(i).apply(bindingSet));
+		}
+		return new MapDb3BindingSetKey(values, hashOfBindingSetCalculator.applyAsInt(bindingSet));
 	}
 
 	protected static final class CommitingSet<T> extends AbstractSet<T> {
@@ -281,17 +302,19 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	protected class MemoryTillSizeXSet<V> extends AbstractSet<V> {
 		private Set<V> wrapped;
 		private final long setName;
+		private final Serializer<V> valueSerializer;
 
-		public MemoryTillSizeXSet(long setName, Set<V> wrapped) {
+		public MemoryTillSizeXSet(long setName, Set<V> wrapped, Serializer<V> valueSerializer) {
 			super();
 			this.setName = setName;
 			this.wrapped = wrapped;
+			this.valueSerializer = valueSerializer;
 		}
 
 		@Override
 		public boolean add(V e) {
 			if (wrapped instanceof HashSet && wrapped.size() > SWITCH_TO_DISK_BASED_SET_AT_SIZE) {
-				Set<V> disk = db.getHashSet(Long.toHexString(setName));
+				Set<V> disk = db.hashSet(Long.toHexString(setName), valueSerializer).create();
 				disk.addAll(wrapped);
 				wrapped = disk;
 			}
@@ -301,7 +324,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 		@Override
 		public boolean addAll(Collection<? extends V> arg0) {
 			if (wrapped instanceof HashSet && arg0.size() > SWITCH_TO_DISK_BASED_SET_AT_SIZE) {
-				Set<V> disk = db.getHashSet(Long.toHexString(setName));
+				Set<V> disk = db.hashSet(Long.toHexString(setName), valueSerializer).create();
 				disk.addAll(wrapped);
 				wrapped = disk;
 			}
@@ -360,4 +383,28 @@ public class MapDbCollectionFactory implements CollectionFactory {
 
 	}
 
+	/**
+	 * These methods should be overriding in case a store can deliver a better serialization protocol.
+	 *
+	 * @param getGet
+	 * @param getHas
+	 * @param create
+	 */
+	protected Serializer<BindingSet> createBindingSetSerializer(Supplier<MutableBindingSet> create,
+			Function<String, Predicate<BindingSet>> getHas, Function<String, Function<BindingSet, Value>> getGet,
+			Function<String, BiConsumer<Value, MutableBindingSet>> getSet) {
+		return new BindingSetSerializer(createValueSerializer(), create, getHas, getGet, getSet);
+	}
+
+	protected <T> Serializer<T> createAnySerializer() {
+		return new SerializerJava();
+	}
+
+	protected Serializer<Value> createValueSerializer() {
+		return new ValueSerializer();
+	}
+
+	protected final Serializer<BindingSetKey> createBindingSetKeySerializer() {
+		return new BindingSetKeySerializer(createValueSerializer());
+	}
 }

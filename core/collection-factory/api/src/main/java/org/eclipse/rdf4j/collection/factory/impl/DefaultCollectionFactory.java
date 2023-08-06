@@ -19,7 +19,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
 
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
@@ -27,6 +30,7 @@ import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 
 /**
  * A DefaultCollectionFactory that provides lists/sets/maps using standard common java in memory types
@@ -54,7 +58,9 @@ public class DefaultCollectionFactory implements CollectionFactory {
 	}
 
 	@Override
-	public Set<BindingSet> createSetOfBindingSets() {
+	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> create,
+			Function<String, Predicate<BindingSet>> getHas, Function<String, Function<BindingSet, Value>> getget,
+			Function<String, BiConsumer<Value, MutableBindingSet>> getSet) {
 		return new HashSet<>();
 	}
 
@@ -97,5 +103,4 @@ public class DefaultCollectionFactory implements CollectionFactory {
 		}
 		return new DefaultBindingSetKey(values, hashOfBindingSetCalculator.applyAsInt(bindingSet));
 	}
-
 }
