@@ -337,106 +337,104 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	@Deprecated(forRemoval = true) // this method is still in use and I think that there is quite a lot of work left
-									// before it can be removed
+	// before it can be removed
 	@Override
 	public CloseableIteration<BindingSet> evaluate(TupleExpr expr, BindingSet bindings)
 			throws QueryEvaluationException {
 
-		CloseableIteration<BindingSet> ret;
-
-		if (expr instanceof StatementPattern) {
-			ret = precompile(expr).evaluate(bindings);
-		} else if (expr instanceof UnaryTupleOperator) {
-			CloseableIteration<BindingSet> result;
-			if (expr instanceof Projection) {
+		CloseableIteration<BindingSet> result = null;
+		try {
+			if (expr instanceof StatementPattern) {
 				result = precompile(expr).evaluate(bindings);
-			} else if (expr instanceof MultiProjection) {
+			} else if (expr instanceof UnaryTupleOperator) {
+				if (expr instanceof Projection) {
+					result = precompile(expr).evaluate(bindings);
+				} else if (expr instanceof MultiProjection) {
+					result = precompile(expr).evaluate(bindings);
+				} else if (expr instanceof Filter) {
+					result = precompile(expr).evaluate(bindings);
+				} else if (expr instanceof Service) {
+					result = precompile(expr).evaluate(bindings);
+				} else if (expr instanceof Slice) {
+					result = precompile(expr).evaluate(bindings);
+				} else if (expr instanceof Extension) {
+					result = precompile(expr).evaluate(bindings);
+				} else if (expr instanceof Distinct) {
+					result = precompile(expr).evaluate(bindings);
+				} else if (expr instanceof Reduced) {
+					result = precompile(expr).evaluate(bindings);
+				} else if (expr instanceof Group) {
+					result = precompile(expr).evaluate(bindings);
+				} else if (expr instanceof Order) {
+					result = precompile(expr).evaluate(bindings);
+				} else if (expr instanceof QueryRoot) {
+					// new query, reset shared return value for successive calls of
+					// NOW()
+					this.sharedValueOfNow = null;
+					result = evaluate(((UnaryTupleOperator) expr).getArg(), bindings);
+				} else if (expr instanceof DescribeOperator) {
+					result = precompile(expr).evaluate(bindings);
+				} else {
+					throw new QueryEvaluationException(
+							"Unknown unary tuple operator type: " + ((UnaryTupleOperator) expr).getClass());
+				}
+			} else if (expr instanceof BinaryTupleOperator) {
+				if (expr instanceof Join) {
+					result = precompile(expr).evaluate(bindings);
+				} else if (expr instanceof LeftJoin) {
+					result = precompile(expr).evaluate(bindings);
+				} else if (expr instanceof Union) {
+					result = precompile(expr).evaluate(bindings);
+				} else if (expr instanceof Intersection) {
+					result = precompile(expr).evaluate(bindings);
+				} else if (expr instanceof Difference) {
+					result = precompile(expr).evaluate(bindings);
+				} else {
+					throw new QueryEvaluationException(
+							"Unsupported binary tuple operator type: " + ((BinaryTupleOperator) expr).getClass());
+				}
+			} else if (expr instanceof SingletonSet) {
 				result = precompile(expr).evaluate(bindings);
-			} else if (expr instanceof Filter) {
+			} else if (expr instanceof EmptySet) {
+				result = new EmptyIteration<>();
+			} else if (expr instanceof ZeroLengthPath) {
 				result = precompile(expr).evaluate(bindings);
-			} else if (expr instanceof Service) {
+			} else if (expr instanceof ArbitraryLengthPath) {
 				result = precompile(expr).evaluate(bindings);
-			} else if (expr instanceof Slice) {
+			} else if (expr instanceof BindingSetAssignment) {
 				result = precompile(expr).evaluate(bindings);
-			} else if (expr instanceof Extension) {
-				result = precompile(expr).evaluate(bindings);
-			} else if (expr instanceof Distinct) {
-				result = precompile(expr).evaluate(bindings);
-			} else if (expr instanceof Reduced) {
-				result = precompile(expr).evaluate(bindings);
-			} else if (expr instanceof Group) {
-				result = precompile(expr).evaluate(bindings);
-			} else if (expr instanceof Order) {
-				result = precompile(expr).evaluate(bindings);
-			} else if (expr instanceof QueryRoot) {
-				// new query, reset shared return value for successive calls of
-				// NOW()
-				this.sharedValueOfNow = null;
-				result = evaluate(((UnaryTupleOperator) expr).getArg(), bindings);
-			} else if (expr instanceof DescribeOperator) {
-				result = precompile(expr).evaluate(bindings);
+			} else if (expr instanceof TripleRef) {
+				result = evaluate((TripleRef) expr, bindings);
+			} else if (expr instanceof TupleFunctionCall) {
+				if (getQueryEvaluationMode().compareTo(QueryEvaluationMode.STANDARD) < 0) {
+					throw new QueryEvaluationException(
+							"Tuple function call not supported in query evaluation mode " + getQueryEvaluationMode());
+				}
+				return evaluate(expr, bindings);
 			} else if (expr == null) {
 				throw new IllegalArgumentException("expr must not be null");
 			} else {
-				throw new QueryEvaluationException(
-						"Unknown unary tuple operator type: " + ((UnaryTupleOperator) expr).getClass());
+				throw new QueryEvaluationException("Unsupported tuple expr type: " + expr.getClass());
 			}
-			ret = result;
-		} else if (expr instanceof BinaryTupleOperator) {
-			CloseableIteration<BindingSet> result;
-			if (expr instanceof Join) {
-				result = precompile(expr).evaluate(bindings);
-			} else if (expr instanceof LeftJoin) {
-				result = precompile(expr).evaluate(bindings);
-			} else if (expr instanceof Union) {
-				result = precompile(expr).evaluate(bindings);
-			} else if (expr instanceof Intersection) {
-				result = precompile(expr).evaluate(bindings);
-			} else if (expr instanceof Difference) {
-				result = precompile(expr).evaluate(bindings);
-			} else if (expr == null) {
-				throw new IllegalArgumentException("expr must not be null");
-			} else {
-				throw new QueryEvaluationException(
-						"Unsupported binary tuple operator type: " + ((BinaryTupleOperator) expr).getClass());
-			}
-			ret = result;
-		} else if (expr instanceof SingletonSet) {
-			ret = precompile(expr).evaluate(bindings);
-		} else if (expr instanceof EmptySet) {
-			ret = new EmptyIteration<>();
-		} else if (expr instanceof ZeroLengthPath) {
-			ret = precompile(expr).evaluate(bindings);
-		} else if (expr instanceof ArbitraryLengthPath) {
-			ret = precompile(expr).evaluate(bindings);
-		} else if (expr instanceof BindingSetAssignment) {
-			ret = precompile(expr).evaluate(bindings);
-		} else if (expr instanceof TripleRef) {
-			ret = evaluate((TripleRef) expr, bindings);
-		} else if (expr instanceof TupleFunctionCall) {
-			if (getQueryEvaluationMode().compareTo(QueryEvaluationMode.STANDARD) < 0) {
-				throw new QueryEvaluationException(
-						"Tuple function call not supported in query evaluation mode " + getQueryEvaluationMode());
-			}
-			return evaluate(expr, bindings);
-		} else if (expr == null) {
-			throw new IllegalArgumentException("expr must not be null");
-		} else {
-			throw new QueryEvaluationException("Unsupported tuple expr type: " + expr.getClass());
-		}
 
-		if (trackTime) {
-			// set resultsSizeActual to at least be 0 so we can track iterations that don't procude anything
-			expr.setTotalTimeNanosActual(Math.max(0, expr.getTotalTimeNanosActual()));
-			ret = new TimedIterator(ret, expr);
-		}
+			if (trackTime) {
+				// set resultsSizeActual to at least be 0 so we can track iterations that don't procude anything
+				expr.setTotalTimeNanosActual(Math.max(0, expr.getTotalTimeNanosActual()));
+				result = new TimedIterator(result, expr);
+			}
 
-		if (trackResultSize) {
-			// set resultsSizeActual to at least be 0 so we can track iterations that don't procude anything
-			expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
-			ret = new ResultSizeCountingIterator(ret, expr);
+			if (trackResultSize) {
+				// set resultsSizeActual to at least be 0 so we can track iterations that don't procude anything
+				expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
+				result = new ResultSizeCountingIterator(result, expr);
+			}
+			return result;
+		} catch (Throwable t) {
+			if (result != null) {
+				result.close();
+			}
+			throw t;
 		}
-		return ret;
 	}
 
 	@Override
@@ -562,7 +560,18 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(MultiProjection node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		QueryEvaluationStep arg = precompile(node.getArg(), context);
-		return bindings -> new MultiProjectionIterator(node, arg.evaluate(bindings), bindings);
+		return bindings -> {
+			CloseableIteration<BindingSet> evaluate = null;
+			try {
+				evaluate = arg.evaluate(bindings);
+				return new MultiProjectionIterator(node, evaluate, bindings);
+			} catch (Throwable t) {
+				if (evaluate != null) {
+					evaluate.close();
+				}
+				throw t;
+			}
+		};
 	}
 
 	protected QueryEvaluationStep prepare(Projection node, QueryEvaluationContext context)
@@ -621,7 +630,19 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 //			ves = new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
 			return bs -> new EmptyIteration<>();
 		}
-		return bs -> new FilterIterator(node, arg.evaluate(bs), ves, DefaultEvaluationStrategy.this);
+		return bs -> {
+			CloseableIteration<BindingSet> evaluate = null;
+			try {
+				evaluate = arg.evaluate(bs);
+				return new FilterIterator(node, evaluate, ves, DefaultEvaluationStrategy.this);
+			} catch (Throwable t) {
+				if (evaluate != null) {
+					evaluate.close();
+				}
+				throw t;
+			}
+
+		};
 	}
 
 	protected QueryEvaluationStep prepare(Order node, QueryEvaluationContext context) throws QueryEvaluationException {
@@ -652,32 +673,43 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		public CloseableIteration<BindingSet> evaluate(BindingSet bs) {
 			// TODO fix the sharing of the now element to be safe
 			DefaultEvaluationStrategy.this.sharedValueOfNow = null;
-			CloseableIteration<BindingSet> evaluate = arg.evaluate(bs);
-			CloseableIteration<BindingSet> closeContext = new CloseableIteration<BindingSet>() {
+			CloseableIteration<BindingSet> evaluate = null;
+			try {
+				evaluate = arg.evaluate(bs);
+				var eval = evaluate;
 
-				@Override
-				public boolean hasNext() throws QueryEvaluationException {
-					return evaluate.hasNext();
-				}
+				CloseableIteration<BindingSet> closeContext = new CloseableIteration<>() {
 
-				@Override
-				public BindingSet next() throws QueryEvaluationException {
-					return evaluate.next();
-				}
+					@Override
+					public boolean hasNext() throws QueryEvaluationException {
+						return eval.hasNext();
+					}
 
-				@Override
-				public void remove() throws QueryEvaluationException {
-					evaluate.remove();
+					@Override
+					public BindingSet next() throws QueryEvaluationException {
+						return eval.next();
+					}
 
-				}
+					@Override
+					public void remove() throws QueryEvaluationException {
+						eval.remove();
 
-				@Override
-				public void close() throws QueryEvaluationException {
+					}
+
+					@Override
+					public void close() throws QueryEvaluationException {
+						eval.close();
+					}
+				};
+				return closeContext;
+			} catch (Throwable t) {
+				if (evaluate != null) {
 					evaluate.close();
 				}
-			};
-			return evaluate;
+				throw t;
+			}
 		}
+
 	}
 
 	protected QueryEvaluationStep prepare(DescribeOperator node, QueryEvaluationContext context)

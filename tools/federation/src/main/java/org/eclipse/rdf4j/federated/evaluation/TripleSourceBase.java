@@ -179,7 +179,9 @@ public abstract class TripleSourceBase implements TripleSource {
 					res = new InsertBindingsIteration(res, bindings);
 				}
 
-				resultHolder.set(new ConsumingIteration(res, federationContext.getConfig().getConsumingIterationMax()));
+				res = new ConsumingIteration(res, federationContext.getConfig().getConsumingIterationMax());
+
+				resultHolder.set(res);
 			} catch (Throwable t) {
 				if (res != null) {
 					res.close();

@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -23,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 
 public class MediumConcurrencyTest extends SPARQLBaseTest {
@@ -33,6 +35,8 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 	};
 
 	private static ExecutorService executor;
+
+	private final CountDownLatch countDownLatch = new CountDownLatch(1);
 
 	@BeforeAll
 	public static void beforeClass() {
@@ -63,6 +67,8 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 			futures.add(f);
 		}
 
+		countDownLatch.countDown();
+
 		try {
 			final String message = Assertions.assertTimeoutPreemptively(Duration.ofSeconds(30), () -> {
 				for (Future<String> f : futures) {
@@ -81,6 +87,7 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 
 	protected Future<String> submit(final String query, final int queryId) {
 		return executor.submit(() -> {
+			countDownLatch.await();
 			log.info("Executing query " + queryId + ": " + query);
 			execute("/tests/medium/" + query + ".rq", "/tests/medium/" + query + ".srx", false, true);
 			// uncomment to simulate canceling case
