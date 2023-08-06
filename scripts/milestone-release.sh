@@ -54,9 +54,12 @@ if ! command -v xmllint &> /dev/null; then
     exit 1;
 fi
 
+echo "Running git pull to make sure we are up to date"
+git pull
+
 # check that we are on main or develop
-if  ! git status --porcelain --branch | grep -q "## main...origin/main"; then
-  if  ! git status --porcelain --branch | grep -q "## develop...origin/develop"; then
+if  ! [[ $(git status --porcelain -u no  --branch) == "## main...origin/main" ]]; then
+  if  ! [[ $(git status --porcelain -u no  --branch) == "## develop...origin/develop" ]]; then
     echo""
     echo "You need to be on main or develop!";
     echo "";
@@ -65,10 +68,10 @@ if  ! git status --porcelain --branch | grep -q "## main...origin/main"; then
 fi
 
 ORIGINAL_BRANCH=""
-if  git status --porcelain --branch | grep -q "## main...origin/main"; then
+if  ! [[ $(git status --porcelain -u no  --branch) == "## main...origin/main" ]]; then
   ORIGINAL_BRANCH="main";
 fi
-if  git status --porcelain --branch | grep -q "## develop...origin/develop"; then
+if  ! [[ $(git status --porcelain -u no  --branch) == "## develop...origin/develop" ]]; then
   ORIGINAL_BRANCH="develop";
 fi
 
@@ -76,7 +79,7 @@ echo "Running git pull to make sure we are up to date"
 git checkout develop
 git pull
 
-if  ! git status --porcelain --branch | grep -q "## develop...origin/develop"; then
+if  ! [[ $(git status --porcelain -u no  --branch) == "## develop...origin/develop" ]]; then
   echo""
   echo "There is something wrong with your git. It seems you are not up to date with develop. Run git status";
   echo "";
@@ -86,7 +89,7 @@ fi
 git checkout main
 git pull
 
-if  ! git status --porcelain --branch | grep -q "## main...origin/main"; then
+if  ! [[ $(git status --porcelain -u no  --branch) == "## main...origin/main" ]]; then
   echo""
   echo "There is something wrong with your git. It seems you are not up to date with main. Run git status";
   echo "";
@@ -113,6 +116,8 @@ fi
 
 
 echo "Running maven clean and install -DskipTests";
+mvn clean -Dmaven.clean.failOnError=false
+mvn clean -Dmaven.clean.failOnError=false
 mvn clean;
 mvn install -DskipTests;
 
@@ -173,19 +178,31 @@ echo "Log in, then choose 'Build with Parameters' and type in ${MVN_VERSION_RELE
 read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 mvn clean -Dmaven.clean.failOnError=false
+mvn clean -Dmaven.clean.failOnError=false
 
 git checkout develop
 mvn clean -Dmaven.clean.failOnError=false
+mvn clean -Dmaven.clean.failOnError=false
+
 git checkout main
 mvn clean -Dmaven.clean.failOnError=false
+mvn clean -Dmaven.clean.failOnError=false
+
 
 echo "Build javadocs"
 read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 git checkout "${MVN_VERSION_RELEASE}"
 mvn clean -Dmaven.clean.failOnError=false
+mvn clean -Dmaven.clean.failOnError=false
+
+# temporarily disable exiting on error
+set +e
 mvn clean
-mvn compile -Pquick -Dmaven.compiler.failOnError=false
+mvn compile -DskipTests
+mvn package -Passembly -DskipTests
+set -e
+
 mvn package -Passembly -DskipTests
 
 git checkout main
