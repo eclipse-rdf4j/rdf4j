@@ -66,6 +66,9 @@ if ! command -v xmllint &> /dev/null; then
     exit 1;
 fi
 
+echo "Running git pull to make sure we are up to date"
+git pull
+
 # check that we are on main
 if  ! [[ $(git status --porcelain -u no  --branch) == "## main...origin/main" ]]; then
   echo""
