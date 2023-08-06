@@ -67,7 +67,7 @@ if ! command -v xmllint &> /dev/null; then
 fi
 
 # check that we are on main
-if  ! git status --porcelain --branch | grep -q "## main...origin/main"; then
+if  ! [[ $(git status --porcelain -u no  --branch) == "## main...origin/main" ]]; then
   echo""
   echo "You need to be on main!";
   echo "git checkout main";
@@ -75,6 +75,8 @@ if  ! git status --porcelain --branch | grep -q "## main...origin/main"; then
   exit 1;
 fi
 
+mvn clean -Dmaven.clean.failOnError=false
+mvn clean -Dmaven.clean.failOnError=false
 mvn clean;
 
 echo "Running git pull to make sure we are up to date"
@@ -102,12 +104,17 @@ if ! git push --dry-run > /dev/null 2>&1; then
     exit 1;
 fi
 
+mvn clean -Dmaven.clean.failOnError=false
+mvn clean -Dmaven.clean.failOnError=false
 mvn clean;
 git checkout develop;
-mvn clean;
 git pull;
+mvn clean -Dmaven.clean.failOnError=false
+mvn clean -Dmaven.clean.failOnError=false
 mvn clean;
 git checkout main;
+mvn clean -Dmaven.clean.failOnError=false
+mvn clean -Dmaven.clean.failOnError=false
 mvn clean;
 
 
@@ -138,6 +145,8 @@ echo "MVN_VERSION_DEVELOP=\"${MVN_VERSION_DEVELOP}\"" > temp/constants.txt
 cd ..
 
 echo "Running maven clean and install -DskipTests";
+mvn clean -Dmaven.clean.failOnError=false
+mvn clean -Dmaven.clean.failOnError=false
 mvn clean;
 mvn install -DskipTests;
 
@@ -183,6 +192,8 @@ echo "Log in, then choose 'Build with Parameters' and type in ${MVN_VERSION_RELE
 read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 # Cleanup
+mvn clean -Dmaven.clean.failOnError=false
+mvn clean -Dmaven.clean.failOnError=false
 mvn clean
 
 # Set a new SNAPSHOT version
@@ -231,10 +242,13 @@ echo "It's ok to merge this PR later, so wait for the Jenkins tests to finish."
 read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 mvn clean -Dmaven.clean.failOnError=false
+mvn clean -Dmaven.clean.failOnError=false
 
 git checkout develop
 mvn clean -Dmaven.clean.failOnError=false
+mvn clean -Dmaven.clean.failOnError=false
 git checkout main
+mvn clean -Dmaven.clean.failOnError=false
 mvn clean -Dmaven.clean.failOnError=false
 
 echo "Build javadocs"
