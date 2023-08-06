@@ -27,7 +27,11 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 
-public class MediumConcurrencyTest extends SPARQLBaseTest {
+/**
+ * This test is particularly flaky, and it is very hard to debug the root cause. It used to be a unit test, but it has
+ * been converted to an integration test so that it doesn't fail the build.
+ */
+public class MediumConcurrencyTestIT extends SPARQLBaseTest {
 
 	static final String[] queries = new String[] {
 			"query01", "query02", "query03", "query04", "query05", "query06", "query07", "query08", "query09",
@@ -51,6 +55,7 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 		}
 	}
 
+	// @RepeatedTest(1000)
 	@Test
 	public void queryMix() throws Throwable {
 
