@@ -98,6 +98,30 @@ jobs:
       uses: scacap/action-surefire-report@v1
       with:
         check_name: Test report - slow-tests
+  package-assembly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up JDK
+        uses: actions/setup-java@v1
+        with:
+          java-version: 11
+      - name: Cache local Maven repository
+        uses: actions/cache@v2
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-jdk11-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-jdk11-maven-
+      - name: Package assembly
+        run: mvn package -Passembly -DskipTests
+      - name: Cancel workflow on failure
+        uses: vishnudxb/cancel-workflow@v1.2
+        if: failure()
+        with:
+          repo: eclipse/rdf4j
+          workflow_id: ${{ github.run_id }}
+          access_token: ${{ github.token }}
   copyright-check:
     runs-on: ubuntu-latest
     steps:
