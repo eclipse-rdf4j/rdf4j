@@ -54,6 +54,13 @@ if ! command -v xmllint &> /dev/null; then
     exit 1;
 fi
 
+# check that there are no uncomitted or untracked files
+if  ! [[ $(git status --porcelain) == "" ]]; then
+    echo "";
+    echo "There are uncomitted or untracked files! Commit, delete or unstage files. Run git status for more info.";
+    exit 1;
+fi
+
 echo "Running git pull to make sure we are up to date"
 git pull
 
@@ -68,10 +75,10 @@ if  ! [[ $(git status --porcelain -u no  --branch) == "## main...origin/main" ]]
 fi
 
 ORIGINAL_BRANCH=""
-if  ! [[ $(git status --porcelain -u no  --branch) == "## main...origin/main" ]]; then
+if  git status --porcelain -u no  --branch == "## main...origin/main"; then
   ORIGINAL_BRANCH="main";
 fi
-if  ! [[ $(git status --porcelain -u no  --branch) == "## develop...origin/develop" ]]; then
+if git status --porcelain -u no  --branch == "## develop...origin/develop"; then
   ORIGINAL_BRANCH="develop";
 fi
 
@@ -107,13 +114,6 @@ fi
 
 git checkout "${ORIGINAL_BRANCH}"
 
-
-# check that there are no uncomitted or untracked files
-if  ! [[ $(git status --porcelain) == "" ]]; then
-    echo "";
-    echo "There are uncomitted or untracked files! Commit, delete or unstage files. Run git status for more info.";
-    exit 1;
-fi
 
 # check that we have push access
 if ! git push --dry-run > /dev/null 2>&1; then
