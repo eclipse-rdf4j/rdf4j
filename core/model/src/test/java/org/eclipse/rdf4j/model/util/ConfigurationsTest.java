@@ -15,17 +15,31 @@ import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.model.util.Values.iri;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 
+import org.assertj.core.groups.Tuple;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.springframework.boot.test.system.CapturedOutput;
-import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.slf4j.LoggerFactory;
 
-@ExtendWith(OutputCaptureExtension.class)
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+
 public class ConfigurationsTest {
 
+	private static final Logger logger = (Logger) LoggerFactory.getLogger(Configurations.class);
+	private static ListAppender<ILoggingEvent> listAppender;
+
+	@BeforeEach
+	public void configureLogAppender() {
+		listAppender = new ListAppender<>();
+		listAppender.start();
+		logger.addAppender(listAppender);
+	}
+
 	@Test
-	public void testGetLiteralValue_discrepancy(CapturedOutput output) {
+	public void testGetLiteralValue_discrepancy() {
 		var subject = bnode();
 		var m = new ModelBuilder().subject(subject)
 				.add(RDFS.LABEL, "label")
@@ -34,11 +48,11 @@ public class ConfigurationsTest {
 
 		var result = Configurations.getLiteralValue(m, subject, RDFS.LABEL, RDFS.COMMENT);
 		assertThat(result).contains(literal("label"));
-		assertThat(output).contains("Discrepancy between use of the old and new config vocabulary");
+		assertLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
 	}
 
 	@Test
-	public void testGetLiteralValue_no_discrepancy(CapturedOutput output) {
+	public void testGetLiteralValue_no_discrepancy() {
 		var subject = bnode();
 		var m = new ModelBuilder().subject(subject)
 				.add(RDFS.LABEL, "label")
@@ -46,11 +60,11 @@ public class ConfigurationsTest {
 
 		var result = Configurations.getLiteralValue(m, subject, RDFS.LABEL, RDFS.COMMENT);
 		assertThat(result).contains(literal("label"));
-		assertThat(output).doesNotContain("Discrepancy between use of the old and new config vocabulary");
+		assertNotLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
 	}
 
 	@Test
-	public void testGetResourceValue_discrepancy(CapturedOutput output) {
+	public void testGetResourceValue_discrepancy() {
 		var subject = bnode();
 		var m = new ModelBuilder().subject(subject)
 				.add(RDFS.LABEL, iri("urn:label"))
@@ -59,11 +73,11 @@ public class ConfigurationsTest {
 
 		var result = Configurations.getResourceValue(m, subject, RDFS.LABEL, RDFS.COMMENT);
 		assertThat(result).contains(iri("urn:label"));
-		assertThat(output).contains("Discrepancy between use of the old and new config vocabulary");
+		assertLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
 	}
 
 	@Test
-	public void testGetResourceValue_no_discrepancy(CapturedOutput output) {
+	public void testGetResourceValue_no_discrepancy() {
 		var subject = bnode();
 		var m = new ModelBuilder().subject(subject)
 				.add(RDFS.LABEL, iri("urn:label"))
@@ -71,11 +85,11 @@ public class ConfigurationsTest {
 
 		var result = Configurations.getResourceValue(m, subject, RDFS.LABEL, RDFS.COMMENT);
 		assertThat(result).contains(iri("urn:label"));
-		assertThat(output).doesNotContain("Discrepancy between use of the old and new config vocabulary");
+		assertNotLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
 	}
 
 	@Test
-	public void testGetIRIValue_discrepancy(CapturedOutput output) {
+	public void testGetIRIValue_discrepancy() {
 		var subject = bnode();
 		var m = new ModelBuilder().subject(subject)
 				.add(RDFS.LABEL, iri("urn:label"))
@@ -84,11 +98,11 @@ public class ConfigurationsTest {
 
 		var result = Configurations.getIRIValue(m, subject, RDFS.LABEL, RDFS.COMMENT);
 		assertThat(result).contains(iri("urn:label"));
-		assertThat(output).contains("Discrepancy between use of the old and new config vocabulary");
+		assertLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
 	}
 
 	@Test
-	public void testGetIRIValue_no_discrepancy(CapturedOutput output) {
+	public void testGetIRIValue_no_discrepancy() {
 		var subject = bnode();
 		var m = new ModelBuilder().subject(subject)
 				.add(RDFS.LABEL, iri("urn:label"))
@@ -96,11 +110,11 @@ public class ConfigurationsTest {
 
 		var result = Configurations.getIRIValue(m, subject, RDFS.LABEL, RDFS.COMMENT);
 		assertThat(result).contains(iri("urn:label"));
-		assertThat(output).doesNotContain("Discrepancy between use of the old and new config vocabulary");
+		assertNotLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
 	}
 
 	@Test
-	public void testGetPropertyValues_no_legacy(CapturedOutput output) {
+	public void testGetPropertyValues_no_legacy() {
 		var subject = bnode();
 
 		var m = new ModelBuilder().subject(subject)
@@ -110,11 +124,11 @@ public class ConfigurationsTest {
 
 		var result = Configurations.getPropertyValues(m, subject, RDFS.LABEL, RDFS.COMMENT);
 		assertThat(result).hasSize(2);
-		assertThat(output).doesNotContain("Discrepancy between use of the old and new config vocabulary");
+		assertNotLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
 	}
 
 	@Test
-	public void testGetPropertyValues_no_discrepancy(CapturedOutput output) {
+	public void testGetPropertyValues_no_discrepancy() {
 		var subject = bnode();
 
 		var m = new ModelBuilder().subject(subject)
@@ -126,11 +140,11 @@ public class ConfigurationsTest {
 
 		var result = Configurations.getPropertyValues(m, subject, RDFS.LABEL, RDFS.COMMENT);
 		assertThat(result).hasSize(2);
-		assertThat(output).doesNotContain("Discrepancy between use of the old and new config vocabulary");
+		assertNotLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
 	}
 
 	@Test
-	public void testGetPropertyValues_discrepancy(CapturedOutput output) {
+	public void testGetPropertyValues_discrepancy() {
 		var subject = bnode();
 
 		var m = new ModelBuilder().subject(subject)
@@ -142,6 +156,21 @@ public class ConfigurationsTest {
 
 		var result = Configurations.getPropertyValues(m, subject, RDFS.LABEL, RDFS.COMMENT);
 		assertThat(result).hasSize(3);
-		assertThat(output).contains("Discrepancy between use of the old and new config vocabulary");
+		assertLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
 	}
+
+	/* private methods */
+
+	private static void assertLogged(String message, Level level) {
+		assertThat(listAppender.list)
+				.extracting(ILoggingEvent::getFormattedMessage, ILoggingEvent::getLevel)
+				.containsExactly(Tuple.tuple(message, level));
+	}
+
+	private static void assertNotLogged(String message, Level level) {
+		assertThat(listAppender.list)
+				.extracting(ILoggingEvent::getFormattedMessage, ILoggingEvent::getLevel)
+				.doesNotContain(Tuple.tuple(message, level));
+	}
+
 }

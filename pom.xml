@@ -380,7 +380,6 @@
 		<servlet.version>3.1.0</servlet.version>
 		<junit.version>5.8.2</junit.version>
 		<jetty.version>9.4.50.v20221201</jetty.version>
-		<spring.boot.version>2.7.7</spring.boot.version>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
