@@ -75,6 +75,15 @@ if  ! [[ $(git status --porcelain -u no  --branch) == "## develop...origin/devel
   ORIGINAL_BRANCH="develop";
 fi
 
+echo ""
+echo "You are on branch ${ORIGINAL_BRANCH}"
+read -rp "Do you want to use this branch for your milestone build (y/n)?" choice
+case "${choice}" in
+  y|Y ) echo "";;
+  n|N ) exit;;
+  * ) echo "unknown response, exiting"; exit;;
+esac
+
 echo "Running git pull to make sure we are up to date"
 git checkout develop
 git pull
