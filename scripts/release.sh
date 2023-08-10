@@ -262,7 +262,7 @@ git checkout "${MVN_VERSION_RELEASE}"
 # temporarily disable exiting on error
 set +e
 mvn clean
-mvn compile -DskipTests
+mvn install -DskipTests
 mvn package -Passembly -DskipTests
 set -e
 
