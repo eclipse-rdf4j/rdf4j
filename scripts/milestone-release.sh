@@ -219,7 +219,6 @@ RELEASE_NOTES_BRANCH="${MVN_VERSION_RELEASE}-release-notes"
 git checkout -b "${RELEASE_NOTES_BRANCH}"
 
 tar -cvzf "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" -C target/site/apidocs .
-cp -f "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" "site/static/javadoc/latest.tgz"
 git add --all
 git commit -s -a -m "javadocs for ${MVN_VERSION_RELEASE}"
 git push --set-upstream origin "${RELEASE_NOTES_BRANCH}"
