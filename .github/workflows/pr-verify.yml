@@ -113,6 +113,8 @@ jobs:
           key: ${{ runner.os }}-jdk11-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             ${{ runner.os }}-jdk11-maven-
+      - name: Run install
+        run: mvn -B install -DskipTests
       - name: Package assembly
         run: mvn package -Passembly -DskipTests
       - name: Cancel workflow on failure
