@@ -50,6 +50,19 @@ public class Configurations {
 	}
 
 	/**
+	 * Verifies if the supplied configuration model uses any legacy vocabulary by checking the IRIs of its properties
+	 * 
+	 * @param configModel a configuration model
+	 * @return <code>true</code> if any property IRIs start with <code>http://www.openrdf.org/config</code>,
+	 *         <code>false</code> otherwise.
+	 */
+	public static boolean hasLegacyConfiguration(Model configModel) {
+		return configModel.predicates()
+				.stream()
+				.anyMatch(p -> p.getNamespace().startsWith("http://www.openrdf.org/config"));
+	}
+
+	/**
 	 * Retrieve a property value for the supplied subject as a {@link Resource} if present, falling back to a supplied
 	 * legacy property .
 	 * <p>

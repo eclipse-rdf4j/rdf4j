@@ -11,16 +11,17 @@
 package org.eclipse.rdf4j.repository.manager;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.fail;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.util.Configurations;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.Repository;
@@ -87,22 +88,22 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 	@Test
 	public void testGetRepository() throws RepositoryConfigException, RepositoryException {
 		Repository rep = subject.getRepository(TEST_REPO);
-		assertNotNull("Expected repository to exist.", rep);
-		assertTrue("Expected repository to be initialized.", rep.isInitialized());
+		assertThat(rep).isNotNull();
+		assertThat(rep.isInitialized()).isTrue();
 		rep.shutDown();
 		rep = subject.getRepository(TEST_REPO);
-		assertNotNull("Expected repository to exist.", rep);
-		assertTrue("Expected repository to be initialized.", rep.isInitialized());
+		assertThat(rep).isNotNull();
+		assertThat(rep.isInitialized()).isTrue();
 	}
 
 	@Test
 	public void testRestartManagerWithoutTransaction() {
 		Repository rep = subject.getRepository(TEST_REPO);
-		assertNotNull("Expected repository to exist.", rep);
-		assertTrue("Expected repository to be initialized.", rep.isInitialized());
+		assertThat(rep).isNotNull();
+		assertThat(rep.isInitialized()).isTrue();
 		try (RepositoryConnection conn = rep.getConnection()) {
 			conn.add(conn.getValueFactory().createIRI("urn:sesame:test:subject"), RDF.TYPE, OWL.ONTOLOGY);
-			assertEquals(1, conn.size());
+			assertThat(conn.size()).isEqualTo(1);
 		} finally {
 			rep.shutDown();
 			subject.shutDown();
@@ -111,10 +112,10 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 		subject = new LocalRepositoryManager(datadir);
 		subject.init();
 		Repository rep2 = subject.getRepository(TEST_REPO);
-		assertNotNull("Expected repository to exist.", rep2);
-		assertTrue("Expected repository to be initialized.", rep2.isInitialized());
+		assertThat(rep2).isNotNull();
+		assertThat(rep2.isInitialized()).isTrue();
 		try (RepositoryConnection conn2 = rep2.getConnection()) {
-			assertEquals(1, conn2.size());
+			assertThat(conn2.size()).isEqualTo(1);
 		} finally {
 			rep2.shutDown();
 			subject.shutDown();
@@ -125,13 +126,13 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 	@Test
 	public void testRestartManagerWithTransaction() {
 		Repository rep = subject.getRepository(TEST_REPO);
-		assertNotNull("Expected repository to exist.", rep);
-		assertTrue("Expected repository to be initialized.", rep.isInitialized());
+		assertThat(rep).isNotNull();
+		assertThat(rep.isInitialized()).isTrue();
 		try (RepositoryConnection conn = rep.getConnection()) {
 			conn.begin();
 			conn.add(conn.getValueFactory().createIRI("urn:sesame:test:subject"), RDF.TYPE, OWL.ONTOLOGY);
 			conn.commit();
-			assertEquals(1, conn.size());
+			assertThat(conn.size()).isEqualTo(1);
 		} finally {
 			rep.shutDown();
 			subject.shutDown();
@@ -140,10 +141,10 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 		subject = new LocalRepositoryManager(datadir);
 		subject.init();
 		Repository rep2 = subject.getRepository(TEST_REPO);
-		assertNotNull("Expected repository to exist.", rep2);
-		assertTrue("Expected repository to be initialized.", rep2.isInitialized());
+		assertThat(rep2).isNotNull();
+		assertThat(rep2.isInitialized()).isTrue();
 		try (RepositoryConnection conn2 = rep2.getConnection()) {
-			assertEquals(1, conn2.size());
+			assertThat(conn2.size()).isEqualTo(1);
 		} finally {
 			rep2.shutDown();
 			subject.shutDown();
@@ -183,11 +184,59 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 	}
 
 	@Test
+	public void testGetRepositoryConfig_Legacy() throws Exception {
+		// set up legacy configuration
+		new File(datadir, "repositories/legacyTest").mkdir();
+		InputStream in = getClass().getResourceAsStream("/fixtures/memory-legacy.ttl");
+		Model model = Rio.parse(in, RDFFormat.TURTLE);
+		Rio.write(model, new FileOutputStream(new File(datadir, "repositories/legacyTest/config.ttl")),
+				RDFFormat.TURTLE);
+
+		RepositoryConfig config = subject.getRepositoryConfig("legacyTest");
+		assertThat(config).isNotNull();
+		assertThat(config.getTitle()).isEqualTo("Legacy Test Repository");
+
+		// verify manager has converted the config file.
+		File convertedConfig = new File(datadir, "repositories/legacyTest/config.ttl");
+
+		Model convertedModel = Rio.parse(new FileInputStream(convertedConfig), convertedConfig.toURI().toString(),
+				RDFFormat.TURTLE);
+		assertThat(convertedModel.getNamespaces()).contains(CONFIG.NS);
+		assertThat(Configurations.hasLegacyConfiguration(convertedModel)).isFalse();
+	}
+
+	@Test
+	public void testGetRepositoryConfig_Legacy_useLegacy() throws Exception {
+		// set up legacy configuration
+		new File(datadir, "repositories/legacyTest").mkdir();
+		InputStream in = getClass().getResourceAsStream("/fixtures/memory-legacy.ttl");
+		Model model = Rio.parse(in, RDFFormat.TURTLE);
+		Rio.write(model, new FileOutputStream(new File(datadir, "repositories/legacyTest/config.ttl")),
+				RDFFormat.TURTLE);
+
+		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "true");
+		RepositoryConfig config = subject.getRepositoryConfig("legacyTest");
+		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "");
+
+		assertThat(config).isNotNull();
+		assertThat(config.getTitle()).isEqualTo("Legacy Test Repository");
+
+		// verify manager has NOT converted the config file.
+		File convertedConfig = new File(datadir, "repositories/legacyTest/config.ttl");
+
+		Model convertedModel = Rio.parse(new FileInputStream(convertedConfig), convertedConfig.toURI().toString(),
+				RDFFormat.TURTLE);
+		assertThat(convertedModel.getNamespaces()).doesNotContain(CONFIG.NS);
+		assertThat(Configurations.hasLegacyConfiguration(convertedModel)).isTrue();
+	}
+
+	@Test
 	public void testAddConfig_validation() throws Exception {
 		InputStream in = getClass().getResourceAsStream("/fixtures/memory-invalid.ttl");
 		Model model = Rio.parse(in, RDFFormat.TURTLE);
 
-		assertThrows(RepositoryConfigException.class, () -> RepositoryConfigUtil.getRepositoryConfig(model, "Test"));
+		assertThatExceptionOfType(RepositoryConfigException.class)
+				.isThrownBy(() -> RepositoryConfigUtil.getRepositoryConfig(model, "Test"));
 	}
 
 }
