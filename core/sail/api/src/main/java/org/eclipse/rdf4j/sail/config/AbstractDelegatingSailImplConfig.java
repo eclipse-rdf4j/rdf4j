@@ -68,11 +68,26 @@ public abstract class AbstractDelegatingSailImplConfig extends AbstractSailImplC
 
 	@Override
 	public Resource export(Model m) {
+		if (Configurations.useLegacyConfig()) {
+			return exportLegacy(m);
+		}
+
 		Resource implNode = super.export(m);
 
 		if (delegate != null) {
 			Resource delegateNode = delegate.export(m);
 			m.add(implNode, CONFIG.delegate, delegateNode);
+		}
+
+		return implNode;
+	}
+
+	private Resource exportLegacy(Model m) {
+		Resource implNode = super.export(m);
+
+		if (delegate != null) {
+			Resource delegateNode = delegate.export(m);
+			m.add(implNode, DELEGATE, delegateNode);
 		}
 
 		return implNode;

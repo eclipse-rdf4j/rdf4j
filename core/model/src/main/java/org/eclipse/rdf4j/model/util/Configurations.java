@@ -35,8 +35,19 @@ public class Configurations {
 
 	private static final Logger logger = LoggerFactory.getLogger(Configurations.class);
 
-	private static final boolean useLegacyConfig = "true"
-			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig"));
+	/**
+	 * Verifies if use of legacy configuration vocabulary is preferred. Defaults to <code>false</code>. Can be set by
+	 * having a system property <code>org.eclipse.rdf4j.model.vocabulary.useLegacyConfig</code> set to
+	 * <code>true</code>.
+	 *
+	 * @return <code>true</code> if <code>org.eclipse.rdf4j.model.vocabulary.useLegacyConfig</code> system property is
+	 *         set to <code>true</code>, <code>false</code> otherwise.
+	 *
+	 * @since 5.0.0
+	 */
+	public static boolean useLegacyConfig() {
+		return "true".equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig"));
+	}
 
 	/**
 	 * Retrieve a property value for the supplied subject as a {@link Resource} if present, falling back to a supplied
@@ -55,8 +66,10 @@ public class Configurations {
 
 		var result = Models.objectResource(model.getStatements(subject, property, null));
 		var legacyResult = Models.objectResource(model.getStatements(subject, legacyProperty, null));
-		if (!legacyResult.isEmpty() && !result.equals(legacyResult)) {
-			logger.warn("Discrepancy between use of the old and new config vocabulary.");
+		logDiscrepancyWarning(result, legacyResult);
+
+		if (useLegacyConfig()) {
+			return legacyResult;
 		}
 		if (result.isPresent()) {
 			return result;
@@ -78,12 +91,13 @@ public class Configurations {
 	 */
 	@InternalUseOnly
 	public static Optional<Literal> getLiteralValue(Model model, Resource subject, IRI property, IRI legacyProperty) {
-		var result = Models.objectLiteral(model.getStatements(subject, property, null));
 		var legacyResult = Models.objectLiteral(model.getStatements(subject, legacyProperty, null));
-		if (!legacyResult.isEmpty() && !result.equals(legacyResult)) {
-			logger.warn("Discrepancy between use of the old and new config vocabulary.");
-		}
+		var result = Models.objectLiteral(model.getStatements(subject, property, null));
+		logDiscrepancyWarning(result, legacyResult);
 
+		if (useLegacyConfig()) {
+			return legacyResult;
+		}
 		if (result.isPresent()) {
 			return result;
 		}
@@ -109,6 +123,10 @@ public class Configurations {
 
 		if (!legacyObjects.isEmpty() && !objects.equals(legacyObjects)) {
 			logger.warn("Discrepancy between use of the old and new config vocabulary.");
+
+			if (useLegacyConfig()) {
+				return legacyObjects;
+			}
 			if (objects.containsAll(legacyObjects)) {
 				return objects;
 			} else if (legacyObjects.containsAll(objects)) {
@@ -118,6 +136,13 @@ public class Configurations {
 			Set<Value> results = new HashSet<>(objects);
 			results.addAll(legacyObjects);
 			return results;
+		}
+
+		if (useLegacyConfig()) {
+			if (!objects.isEmpty() && !objects.equals(legacyObjects)) {
+				logger.warn("Discrepancy between use of the old and new config vocabulary.");
+			}
+			return legacyObjects;
 		}
 
 		return objects;
@@ -139,13 +164,24 @@ public class Configurations {
 	public static Optional<IRI> getIRIValue(Model model, Resource subject, IRI property, IRI legacyProperty) {
 		var result = Models.objectIRI(model.getStatements(subject, property, null));
 		var legacyResult = Models.objectIRI(model.getStatements(subject, legacyProperty, null));
-		if (!legacyResult.isEmpty() && !result.equals(legacyResult)) {
-			logger.warn("Discrepancy between use of the old and new config vocabulary.");
-		}
+		logDiscrepancyWarning(result, legacyResult);
 
+		if (useLegacyConfig()) {
+			return legacyResult;
+		}
 		if (result.isPresent()) {
 			return result;
 		}
 		return legacyResult;
+	}
+
+	private static void logDiscrepancyWarning(Optional<? extends Value> newResult,
+			Optional<? extends Value> legacyResult) {
+		var preferred = useLegacyConfig() ? legacyResult : newResult;
+		var fallback = useLegacyConfig() ? newResult : legacyResult;
+
+		if (!fallback.isEmpty() && !preferred.equals(fallback)) {
+			logger.warn("Discrepancy between use of the old and new config vocabulary.");
+		}
 	}
 }

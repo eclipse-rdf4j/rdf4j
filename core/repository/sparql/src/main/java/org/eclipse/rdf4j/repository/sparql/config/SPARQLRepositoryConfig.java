@@ -105,9 +105,13 @@ public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
 
 	@Override
 	public Resource export(Model m) {
+		if (Configurations.useLegacyConfig()) {
+			return exportLegacy(m);
+		}
+
 		Resource implNode = super.export(m);
 
-		m.setNamespace("sparql", NAMESPACE);
+		m.setNamespace(CONFIG.NS);
 		if (getQueryEndpointUrl() != null) {
 			m.add(implNode, CONFIG.Sparql.queryEndpoint, vf.createIRI(getQueryEndpointUrl()));
 		}
@@ -116,6 +120,24 @@ public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
 		}
 		if (getPassThroughEnabled() != null) {
 			m.add(implNode, CONFIG.Sparql.passThroughEnabled, BooleanLiteral.valueOf(getPassThroughEnabled()));
+		}
+
+		return implNode;
+	}
+
+	private Resource exportLegacy(Model m) {
+
+		Resource implNode = super.export(m);
+
+		m.setNamespace("sparql", NAMESPACE);
+		if (getQueryEndpointUrl() != null) {
+			m.add(implNode, QUERY_ENDPOINT, vf.createIRI(getQueryEndpointUrl()));
+		}
+		if (getUpdateEndpointUrl() != null) {
+			m.add(implNode, UPDATE_ENDPOINT, vf.createIRI(getUpdateEndpointUrl()));
+		}
+		if (getPassThroughEnabled() != null) {
+			m.add(implNode, PASS_THROUGH_ENABLED, BooleanLiteral.valueOf(getPassThroughEnabled()));
 		}
 
 		return implNode;

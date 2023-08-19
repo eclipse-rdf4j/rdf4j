@@ -65,11 +65,27 @@ public abstract class AbstractDelegatingRepositoryImplConfig extends AbstractRep
 
 	@Override
 	public Resource export(Model model) {
+		if (Configurations.useLegacyConfig()) {
+			return exportLegacy(model);
+		}
+
+		Resource resource = super.export(model);
+
+		if (delegate != null) {
+			model.setNamespace(CONFIG.NS);
+			Resource delegateNode = delegate.export(model);
+			model.add(resource, CONFIG.delegate, delegateNode);
+		}
+
+		return resource;
+	}
+
+	private Resource exportLegacy(Model model) {
 		Resource resource = super.export(model);
 
 		if (delegate != null) {
 			Resource delegateNode = delegate.export(model);
-			model.add(resource, CONFIG.delegate, delegateNode);
+			model.add(resource, RepositoryConfigSchema.DELEGATE, delegateNode);
 		}
 
 		return resource;

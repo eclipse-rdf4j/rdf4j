@@ -67,6 +67,10 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 
 	@Override
 	public Resource export(Model m) {
+		if (Configurations.useLegacyConfig()) {
+			return exportLegacy(m);
+		}
+
 		BNode implNode = bnode();
 
 		m.setNamespace(CONFIG.NS);
@@ -80,6 +84,24 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 
 		if (connectionTimeOut > 0) {
 			m.add(implNode, CONFIG.Sail.connectionTimeOut, literal(connectionTimeOut));
+		}
+		return implNode;
+	}
+
+	private Resource exportLegacy(Model m) {
+		BNode implNode = bnode();
+
+		m.setNamespace("sail", SailConfigSchema.NAMESPACE);
+		if (type != null) {
+			m.add(implNode, SAILTYPE, literal(type));
+		}
+
+		if (iterationCacheSyncThreshold > 0) {
+			m.add(implNode, ITERATION_CACHE_SYNC_THRESHOLD, literal(iterationCacheSyncThreshold));
+		}
+
+		if (connectionTimeOut > 0) {
+			m.add(implNode, CONNECTION_TIME_OUT, literal(connectionTimeOut));
 		}
 		return implNode;
 	}

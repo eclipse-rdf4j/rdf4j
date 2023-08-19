@@ -62,6 +62,10 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 
 	@Override
 	public Resource export(Model graph) {
+		if (Configurations.useLegacyConfig()) {
+			return exportLegacy(graph);
+		}
+
 		Resource implNode = super.export(graph);
 
 		if (evalStratFactoryClassName != null) {
@@ -70,6 +74,20 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		}
 		getDefaultQueryEvaluationMode().ifPresent(mode -> {
 			graph.add(implNode, CONFIG.Sail.defaultQueryEvaluationMode, literal(mode.getValue()));
+		});
+
+		return implNode;
+	}
+
+	private Resource exportLegacy(Model graph) {
+		Resource implNode = super.export(graph);
+
+		if (evalStratFactoryClassName != null) {
+			graph.add(implNode, EVALUATION_STRATEGY_FACTORY, literal(evalStratFactoryClassName));
+
+		}
+		getDefaultQueryEvaluationMode().ifPresent(mode -> {
+			graph.add(implNode, DEFAULT_QUERY_EVALUATION_MODE, literal(mode.getValue()));
 		});
 
 		return implNode;

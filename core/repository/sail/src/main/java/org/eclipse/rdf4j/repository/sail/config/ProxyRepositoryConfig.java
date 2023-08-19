@@ -52,9 +52,22 @@ public class ProxyRepositoryConfig extends AbstractRepositoryImplConfig {
 
 	@Override
 	public Resource export(Model model) {
+		if (Configurations.useLegacyConfig()) {
+			return exportLegacy(model);
+		}
+
 		Resource implNode = super.export(model);
 		if (null != this.proxiedID) {
+			model.setNamespace(CONFIG.NS);
 			model.add(implNode, CONFIG.Proxy.proxiedID, literal(this.proxiedID));
+		}
+		return implNode;
+	}
+
+	private Resource exportLegacy(Model model) {
+		Resource implNode = super.export(model);
+		if (null != this.proxiedID) {
+			model.add(implNode, PROXIED_ID, literal(this.proxiedID));
 		}
 		return implNode;
 	}

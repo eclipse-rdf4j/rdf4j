@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.junit.jupiter.api.Test;
 
@@ -26,14 +27,16 @@ public class BaseSailConfigTest {
 	public void testParseQueryEvaluationMode() {
 		var implNode = bnode();
 
+		// capitalization wrong
+		var incorrectEvalMode = literal("standard");
+		var correctEvalMode = literal("STANDARD");
+
 		{
 			var config = new BaseSailConfig("stub") {
 			};
 
-			// capitalization wrong
-			var incorrectEvalMode = literal("standard");
 			var model = new ModelBuilder()
-					.add(implNode, BaseSailSchema.DEFAULT_QUERY_EVALUATION_MODE, incorrectEvalMode)
+					.add(implNode, CONFIG.Sail.defaultQueryEvaluationMode, incorrectEvalMode)
 					.build();
 
 			assertThatExceptionOfType(SailConfigException.class).isThrownBy(() -> config.parse(model, implNode));
@@ -42,13 +45,35 @@ public class BaseSailConfigTest {
 		{
 			var config = new BaseSailConfig("stub") {
 			};
-			var correctEvalMode = literal("STANDARD");
+
+			var model = new ModelBuilder()
+					.add(implNode, CONFIG.Sail.defaultQueryEvaluationMode, correctEvalMode)
+					.build();
+
+			config.parse(model, implNode);
+			assertThat(config.getDefaultQueryEvaluationMode()).hasValue(QueryEvaluationMode.STANDARD);
+		}
+
+		{
+			var config = new BaseSailConfig("stub") {
+			};
 			var model = new ModelBuilder()
 					.add(implNode, BaseSailSchema.DEFAULT_QUERY_EVALUATION_MODE, correctEvalMode)
 					.build();
 
 			config.parse(model, implNode);
 			assertThat(config.getDefaultQueryEvaluationMode()).hasValue(QueryEvaluationMode.STANDARD);
+		}
+
+		{
+			var config = new BaseSailConfig("stub") {
+			};
+			var model = new ModelBuilder()
+					.add(implNode, BaseSailSchema.DEFAULT_QUERY_EVALUATION_MODE, correctEvalMode)
+					.add(implNode, CONFIG.Sail.defaultQueryEvaluationMode, incorrectEvalMode)
+					.build();
+
+			assertThatExceptionOfType(SailConfigException.class).isThrownBy(() -> config.parse(model, implNode));
 		}
 
 		{

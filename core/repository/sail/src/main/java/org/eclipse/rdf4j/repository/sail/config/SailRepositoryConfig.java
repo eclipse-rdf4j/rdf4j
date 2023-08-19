@@ -67,12 +67,26 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 
 	@Override
 	public Resource export(Model model) {
-		Resource repImplNode = super.export(model);
+		if (Configurations.useLegacyConfig()) {
+			return exportLegacy(model);
+		}
 
+		Resource repImplNode = super.export(model);
 		if (sailImplConfig != null) {
 			model.setNamespace(CONFIG.NS);
 			Resource sailImplNode = sailImplConfig.export(model);
 			model.add(repImplNode, CONFIG.Sail.impl, sailImplNode);
+		}
+
+		return repImplNode;
+	}
+
+	private Resource exportLegacy(Model model) {
+		Resource repImplNode = super.export(model);
+		if (sailImplConfig != null) {
+			model.setNamespace("sr", SailRepositorySchema.NAMESPACE);
+			Resource sailImplNode = sailImplConfig.export(model);
+			model.add(repImplNode, SAILIMPL, sailImplNode);
 		}
 
 		return repImplNode;

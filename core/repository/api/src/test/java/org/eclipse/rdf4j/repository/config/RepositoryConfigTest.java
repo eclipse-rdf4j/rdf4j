@@ -41,6 +41,23 @@ public class RepositoryConfigTest {
 	}
 
 	@Test
+	public void testParse_useLegacy_newVocabulary() {
+		var repoNode = iri("urn:repo1");
+		Model m = new ModelBuilder()
+				.subject(repoNode)
+				.add(CONFIG.Rep.id, ID)
+				.build();
+
+		RepositoryConfig config = new RepositoryConfig();
+
+		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "true");
+		config.parse(m, repoNode);
+		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "");
+
+		assertThat(config.getID()).isBlank();
+	}
+
+	@Test
 	public void testParse_oldVocabulary() {
 		var repoNode = iri("urn:repo1");
 		Model m = new ModelBuilder()
@@ -48,7 +65,7 @@ public class RepositoryConfigTest {
 				.add(RepositoryConfigSchema.REPOSITORYID, ID)
 				.build();
 
-		RepositoryConfig config = new RepositoryConfig(ID);
+		RepositoryConfig config = new RepositoryConfig();
 
 		config.parse(m, repoNode);
 
@@ -66,11 +83,30 @@ public class RepositoryConfigTest {
 				.add(CONFIG.Rep.id, newId)
 				.build();
 
-		RepositoryConfig config = new RepositoryConfig(ID);
+		RepositoryConfig config = new RepositoryConfig();
 
 		config.parse(m, repoNode);
 
 		assertThat(config.getID()).isEqualTo(newId);
+	}
+
+	@Test
+	public void testParse_useLegacy_mixedVocabulary() {
+		var repoNode = iri("urn:repo1");
+		var newId = "new_test";
+		Model m = new ModelBuilder()
+				.subject(repoNode)
+				.add(RepositoryConfigSchema.REPOSITORYID, ID)
+				.add(CONFIG.Rep.id, newId)
+				.build();
+
+		RepositoryConfig config = new RepositoryConfig();
+
+		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "true");
+		config.parse(m, repoNode);
+		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "");
+
+		assertThat(config.getID()).isEqualTo(ID);
 	}
 
 	@Test
@@ -82,5 +118,19 @@ public class RepositoryConfigTest {
 
 		assertThat(m.filter(repoNode, CONFIG.Rep.id, null).objects()).containsExactly(literal(ID));
 		assertThat(m.filter(repoNode, RepositoryConfigSchema.REPOSITORYID, null).objects()).isEmpty();
+	}
+
+	@Test
+	public void testExport_useLegacy() {
+		var repoNode = iri("urn:repo1");
+		var config = new RepositoryConfig(ID);
+		var m = new DynamicModelFactory().createEmptyModel();
+		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "true");
+		config.export(m, repoNode);
+		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "");
+
+		assertThat(m.filter(repoNode, RepositoryConfigSchema.REPOSITORYID, null).objects())
+				.containsExactly(literal(ID));
+		assertThat(m.filter(repoNode, CONFIG.Rep.id, null).objects()).isEmpty();
 	}
 }

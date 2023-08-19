@@ -39,6 +39,10 @@ public class ElasticsearchStoreConfig extends BaseSailConfig {
 
 	@Override
 	public Resource export(Model m) {
+		if (Configurations.useLegacyConfig()) {
+			return exportLegacy(m);
+		}
+
 		Resource implNode = super.export(m);
 
 		if (hostname != null) {
@@ -52,6 +56,25 @@ public class ElasticsearchStoreConfig extends BaseSailConfig {
 		}
 		if (port != -1) {
 			m.add(implNode, CONFIG.Ess.port, literal(port));
+		}
+
+		return implNode;
+	}
+
+	private Resource exportLegacy(Model m) {
+		Resource implNode = super.export(m);
+
+		if (hostname != null) {
+			m.add(implNode, ElasticsearchStoreSchema.hostname, literal(hostname));
+		}
+		if (clusterName != null) {
+			m.add(implNode, ElasticsearchStoreSchema.clusterName, literal(clusterName));
+		}
+		if (index != null) {
+			m.add(implNode, ElasticsearchStoreSchema.index, literal(index));
+		}
+		if (port != -1) {
+			m.add(implNode, ElasticsearchStoreSchema.port, literal(port));
 		}
 
 		return implNode;

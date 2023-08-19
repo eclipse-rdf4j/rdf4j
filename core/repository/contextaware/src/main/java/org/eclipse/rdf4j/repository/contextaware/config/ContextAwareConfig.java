@@ -191,6 +191,10 @@ public class ContextAwareConfig extends AbstractDelegatingRepositoryImplConfig {
 
 	@Override
 	public Resource export(Model model) {
+		if (Configurations.useLegacyConfig()) {
+			return exportLegacy(model);
+		}
+
 		Resource repImplNode = super.export(model);
 
 		model.setNamespace(CONFIG.NS);
@@ -220,6 +224,40 @@ public class ContextAwareConfig extends AbstractDelegatingRepositoryImplConfig {
 		}
 		if (insertContext != null) {
 			model.add(repImplNode, ContextAware.insertContext, insertContext);
+		}
+
+		return repImplNode;
+	}
+
+	private Resource exportLegacy(Model model) {
+		Resource repImplNode = super.export(model);
+
+		if (includeInferred != null) {
+			model.add(repImplNode, INCLUDE_INFERRED, literal(includeInferred));
+		}
+		if (maxQueryTime > 0) {
+			model.add(repImplNode, MAX_QUERY_TIME, literal(maxQueryTime));
+		}
+		if (queryLanguage != null) {
+			model.add(repImplNode, QUERY_LANGUAGE, literal(queryLanguage.getName()));
+		}
+		if (baseURI != null) {
+			model.add(repImplNode, BASE_URI, iri(baseURI));
+		}
+		for (IRI uri : readContexts) {
+			model.add(repImplNode, READ_CONTEXT, uri);
+		}
+		for (IRI resource : addContexts) {
+			model.add(repImplNode, ADD_CONTEXT, resource);
+		}
+		for (IRI resource : removeContexts) {
+			model.add(repImplNode, REMOVE_CONTEXT, resource);
+		}
+		for (IRI resource : archiveContexts) {
+			model.add(repImplNode, ARCHIVE_CONTEXT, resource);
+		}
+		if (insertContext != null) {
+			model.add(repImplNode, INSERT_CONTEXT, insertContext);
 		}
 
 		return repImplNode;

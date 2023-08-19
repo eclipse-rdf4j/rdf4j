@@ -106,6 +106,10 @@ public class NativeStoreConfig extends BaseSailConfig {
 
 	@Override
 	public Resource export(Model m) {
+		if (Configurations.useLegacyConfig()) {
+			return exportLegacy(m);
+		}
+
 		Resource implNode = super.export(m);
 		m.setNamespace(CONFIG.NS);
 
@@ -126,6 +130,32 @@ public class NativeStoreConfig extends BaseSailConfig {
 		}
 		if (namespaceIDCacheSize >= 0) {
 			m.add(implNode, CONFIG.Native.namespaceIDCacheSize, literal(namespaceIDCacheSize));
+		}
+
+		return implNode;
+	}
+
+	private Resource exportLegacy(Model m) {
+		Resource implNode = super.export(m);
+		m.setNamespace("ns", NativeStoreSchema.NAMESPACE);
+
+		if (tripleIndexes != null) {
+			m.add(implNode, TRIPLE_INDEXES, literal(tripleIndexes));
+		}
+		if (forceSync) {
+			m.add(implNode, FORCE_SYNC, literal(forceSync));
+		}
+		if (valueCacheSize >= 0) {
+			m.add(implNode, VALUE_CACHE_SIZE, literal(valueCacheSize));
+		}
+		if (valueIDCacheSize >= 0) {
+			m.add(implNode, VALUE_ID_CACHE_SIZE, literal(valueIDCacheSize));
+		}
+		if (namespaceCacheSize >= 0) {
+			m.add(implNode, NAMESPACE_CACHE_SIZE, literal(namespaceCacheSize));
+		}
+		if (namespaceIDCacheSize >= 0) {
+			m.add(implNode, NAMESPACE_ID_CACHE_SIZE, literal(namespaceIDCacheSize));
 		}
 
 		return implNode;

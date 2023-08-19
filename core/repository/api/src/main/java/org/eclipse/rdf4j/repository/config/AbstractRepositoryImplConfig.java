@@ -63,10 +63,24 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 
 	@Override
 	public Resource export(Model model) {
+		if (Configurations.useLegacyConfig()) {
+			return exportLegacy(model);
+		}
+
 		BNode implNode = bnode();
 
 		if (type != null) {
 			model.add(implNode, CONFIG.Rep.type, literal(type));
+		}
+
+		return implNode;
+	}
+
+	private Resource exportLegacy(Model model) {
+		BNode implNode = bnode();
+
+		if (type != null) {
+			model.add(implNode, REPOSITORYTYPE, literal(type));
 		}
 
 		return implNode;

@@ -64,6 +64,10 @@ public class MemoryStoreConfig extends BaseSailConfig {
 
 	@Override
 	public Resource export(Model m) {
+		if (Configurations.useLegacyConfig()) {
+			return exportLegacy(m);
+		}
+
 		Resource implNode = super.export(m);
 		m.setNamespace(CONFIG.NS);
 
@@ -73,6 +77,21 @@ public class MemoryStoreConfig extends BaseSailConfig {
 
 		if (syncDelay != 0) {
 			m.add(implNode, CONFIG.Mem.syncDelay, literal(syncDelay));
+		}
+
+		return implNode;
+	}
+
+	private Resource exportLegacy(Model m) {
+		Resource implNode = super.export(m);
+		m.setNamespace("ms", MemoryStoreSchema.NAMESPACE);
+
+		if (persist) {
+			m.add(implNode, PERSIST, BooleanLiteral.TRUE);
+		}
+
+		if (syncDelay != 0) {
+			m.add(implNode, SYNC_DELAY, literal(syncDelay));
 		}
 
 		return implNode;

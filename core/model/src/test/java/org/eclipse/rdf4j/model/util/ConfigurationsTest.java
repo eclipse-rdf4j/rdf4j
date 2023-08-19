@@ -52,6 +52,22 @@ public class ConfigurationsTest {
 	}
 
 	@Test
+	public void testGetLiteralValue_useLegacy_discrepancy() {
+		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "true");
+		var subject = bnode();
+		var m = new ModelBuilder().subject(subject)
+				.add(RDFS.LABEL, "label")
+				.add(RDFS.COMMENT, "comment")
+				.build();
+
+		var result = Configurations.getLiteralValue(m, subject, RDFS.LABEL, RDFS.COMMENT);
+
+		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "");
+		assertThat(result).contains(literal("comment"));
+		assertLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
+	}
+
+	@Test
 	public void testGetLiteralValue_no_discrepancy() {
 		var subject = bnode();
 		var m = new ModelBuilder().subject(subject)
@@ -64,6 +80,22 @@ public class ConfigurationsTest {
 	}
 
 	@Test
+	public void testGetLiteralValue_useLegacy_onlyNew() {
+		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "true");
+
+		var subject = bnode();
+		var m = new ModelBuilder().subject(subject)
+				.add(RDFS.LABEL, "label")
+				.build();
+
+		var result = Configurations.getLiteralValue(m, subject, RDFS.LABEL, RDFS.COMMENT);
+		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "");
+
+		assertThat(result).isEmpty();
+		assertLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
+	}
+
+	@Test
 	public void testGetResourceValue_discrepancy() {
 		var subject = bnode();
 		var m = new ModelBuilder().subject(subject)
@@ -73,6 +105,22 @@ public class ConfigurationsTest {
 
 		var result = Configurations.getResourceValue(m, subject, RDFS.LABEL, RDFS.COMMENT);
 		assertThat(result).contains(iri("urn:label"));
+		assertLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
+	}
+
+	@Test
+	public void testGetResourceValue_useLegacy_discrepancy() {
+		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "true");
+		var subject = bnode();
+		var m = new ModelBuilder().subject(subject)
+				.add(RDFS.LABEL, iri("urn:label"))
+				.add(RDFS.COMMENT, iri("urn:comment"))
+				.build();
+
+		var result = Configurations.getResourceValue(m, subject, RDFS.LABEL, RDFS.COMMENT);
+		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "");
+
+		assertThat(result).contains(iri("urn:comment"));
 		assertLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
 	}
 
@@ -144,6 +192,22 @@ public class ConfigurationsTest {
 	}
 
 	@Test
+	public void testGetPropertyValues_useLegacy_no_discrepancy() {
+		var subject = bnode();
+
+		var m = new ModelBuilder().subject(subject)
+				.add(RDFS.LABEL, "label 1")
+				.add(RDFS.LABEL, "label 2")
+				.add(RDFS.COMMENT, "label 1")
+				.add(RDFS.COMMENT, "label 2")
+				.build();
+
+		var result = Configurations.getPropertyValues(m, subject, RDFS.LABEL, RDFS.COMMENT);
+		assertThat(result).hasSize(2);
+		assertNotLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
+	}
+
+	@Test
 	public void testGetPropertyValues_discrepancy() {
 		var subject = bnode();
 
@@ -156,6 +220,25 @@ public class ConfigurationsTest {
 
 		var result = Configurations.getPropertyValues(m, subject, RDFS.LABEL, RDFS.COMMENT);
 		assertThat(result).hasSize(3);
+		assertLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
+	}
+
+	@Test
+	public void testGetPropertyValues_useLegacy_discrepancy() {
+		var subject = bnode();
+
+		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "true");
+		var m = new ModelBuilder().subject(subject)
+				.add(RDFS.LABEL, "label 1")
+				.add(RDFS.LABEL, "label 2")
+				.add(RDFS.COMMENT, "comment 1")
+				.add(RDFS.COMMENT, "comment 2")
+				.build();
+
+		var result = Configurations.getPropertyValues(m, subject, RDFS.LABEL, RDFS.COMMENT);
+		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "");
+		assertThat(result).hasSize(2).contains(literal("comment 1"), literal("comment 2"));
+
 		assertLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
 	}
 

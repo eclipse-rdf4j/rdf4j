@@ -75,14 +75,28 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 
 	@Override
 	public Resource export(Model graph) {
+		if (Configurations.useLegacyConfig()) {
+			return exportLegacy(graph);
+		}
+
 		Resource implNode = super.export(graph);
 
 		if (url != null) {
-			graph.setNamespace(CONFIG.PREFIX, CONFIG.NAMESPACE);
+			graph.setNamespace(CONFIG.NS);
 			graph.add(implNode, CONFIG.Http.url, SimpleValueFactory.getInstance().createIRI(url));
 
 		}
+		return implNode;
+	}
 
+	private Resource exportLegacy(Model graph) {
+		Resource implNode = super.export(graph);
+
+		if (url != null) {
+			graph.setNamespace("http", HTTPRepositorySchema.NAMESPACE);
+			graph.add(implNode, REPOSITORYURL, SimpleValueFactory.getInstance().createIRI(url));
+
+		}
 		return implNode;
 	}
 
