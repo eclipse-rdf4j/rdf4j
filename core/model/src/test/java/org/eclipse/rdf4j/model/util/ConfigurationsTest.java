@@ -16,6 +16,7 @@ import static org.eclipse.rdf4j.model.util.Values.iri;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import org.assertj.core.groups.Tuple;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,6 +37,29 @@ public class ConfigurationsTest {
 		listAppender = new ListAppender<>();
 		listAppender.start();
 		logger.addAppender(listAppender);
+	}
+
+	@Test
+	public void testHasLegacyConfiguration() {
+		{
+			var subject = bnode();
+			var m = new ModelBuilder().subject(subject)
+					.add(iri("http://www.openrdf.org/config/testConfigProperty"), "label")
+					.add(CONFIG.delegate, "comment")
+					.build();
+
+			assertThat(Configurations.hasLegacyConfiguration(m)).isTrue();
+		}
+
+		{
+			var subject = bnode();
+			var m = new ModelBuilder().subject(subject)
+					.add(CONFIG.delegate, "comment")
+					.add(RDFS.LABEL, "label")
+					.build();
+
+			assertThat(Configurations.hasLegacyConfiguration(m)).isFalse();
+		}
 	}
 
 	@Test
