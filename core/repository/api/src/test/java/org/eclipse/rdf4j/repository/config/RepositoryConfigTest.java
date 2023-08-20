@@ -54,7 +54,7 @@ public class RepositoryConfigTest {
 		config.parse(m, repoNode);
 		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "");
 
-		assertThat(config.getID()).isBlank();
+		assertThat(config.getID()).isEqualTo(ID);
 	}
 
 	@Test

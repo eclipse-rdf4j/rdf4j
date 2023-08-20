@@ -115,7 +115,7 @@ public class ConfigurationsTest {
 		var result = Configurations.getLiteralValue(m, subject, RDFS.LABEL, RDFS.COMMENT);
 		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "");
 
-		assertThat(result).isEmpty();
+		assertThat(result).contains(literal("label"));
 		assertLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
 	}
 
@@ -261,7 +261,7 @@ public class ConfigurationsTest {
 
 		var result = Configurations.getPropertyValues(m, subject, RDFS.LABEL, RDFS.COMMENT);
 		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "");
-		assertThat(result).hasSize(2).contains(literal("comment 1"), literal("comment 2"));
+		assertThat(result).hasSize(4);
 
 		assertLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
 	}

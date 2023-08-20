@@ -186,18 +186,18 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 	@Test
 	public void testGetRepositoryConfig_Legacy() throws Exception {
 		// set up legacy configuration
-		new File(datadir, "repositories/legacyTest").mkdir();
+		new File(datadir, "repositories/legacy").mkdir();
 		InputStream in = getClass().getResourceAsStream("/fixtures/memory-legacy.ttl");
 		Model model = Rio.parse(in, RDFFormat.TURTLE);
-		Rio.write(model, new FileOutputStream(new File(datadir, "repositories/legacyTest/config.ttl")),
+		Rio.write(model, new FileOutputStream(new File(datadir, "repositories/legacy/config.ttl")),
 				RDFFormat.TURTLE);
 
-		RepositoryConfig config = subject.getRepositoryConfig("legacyTest");
+		RepositoryConfig config = subject.getRepositoryConfig("legacy");
 		assertThat(config).isNotNull();
 		assertThat(config.getTitle()).isEqualTo("Legacy Test Repository");
 
 		// verify manager has converted the config file.
-		File convertedConfig = new File(datadir, "repositories/legacyTest/config.ttl");
+		File convertedConfig = new File(datadir, "repositories/legacy/config.ttl");
 
 		Model convertedModel = Rio.parse(new FileInputStream(convertedConfig), convertedConfig.toURI().toString(),
 				RDFFormat.TURTLE);
@@ -208,21 +208,21 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 	@Test
 	public void testGetRepositoryConfig_Legacy_useLegacy() throws Exception {
 		// set up legacy configuration
-		new File(datadir, "repositories/legacyTest").mkdir();
+		new File(datadir, "repositories/legacy").mkdir();
 		InputStream in = getClass().getResourceAsStream("/fixtures/memory-legacy.ttl");
 		Model model = Rio.parse(in, RDFFormat.TURTLE);
-		Rio.write(model, new FileOutputStream(new File(datadir, "repositories/legacyTest/config.ttl")),
+		Rio.write(model, new FileOutputStream(new File(datadir, "repositories/legacy/config.ttl")),
 				RDFFormat.TURTLE);
 
 		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "true");
-		RepositoryConfig config = subject.getRepositoryConfig("legacyTest");
+		RepositoryConfig config = subject.getRepositoryConfig("legacy");
 		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "");
 
 		assertThat(config).isNotNull();
 		assertThat(config.getTitle()).isEqualTo("Legacy Test Repository");
 
 		// verify manager has NOT converted the config file.
-		File convertedConfig = new File(datadir, "repositories/legacyTest/config.ttl");
+		File convertedConfig = new File(datadir, "repositories/legacy/config.ttl");
 
 		Model convertedModel = Rio.parse(new FileInputStream(convertedConfig), convertedConfig.toURI().toString(),
 				RDFFormat.TURTLE);

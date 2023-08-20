@@ -76,18 +76,18 @@ public class Configurations {
 	 */
 	@InternalUseOnly
 	public static Optional<Resource> getResourceValue(Model model, Resource subject, IRI property, IRI legacyProperty) {
+		var preferredProperty = useLegacyConfig() ? legacyProperty : property;
+		var fallbackProperty = useLegacyConfig() ? property : legacyProperty;
 
-		var result = Models.objectResource(model.getStatements(subject, property, null));
-		var legacyResult = Models.objectResource(model.getStatements(subject, legacyProperty, null));
-		logDiscrepancyWarning(result, legacyResult);
+		var preferredResult = Models.objectResource(model.getStatements(subject, preferredProperty, null));
+		var fallbackResult = Models.objectResource(model.getStatements(subject, fallbackProperty, null));
 
-		if (useLegacyConfig()) {
-			return legacyResult;
+		logDiscrepancyWarning(preferredResult, fallbackResult);
+
+		if (preferredResult.isPresent()) {
+			return preferredResult;
 		}
-		if (result.isPresent()) {
-			return result;
-		}
-		return legacyResult;
+		return fallbackResult;
 	}
 
 	/**
@@ -104,17 +104,17 @@ public class Configurations {
 	 */
 	@InternalUseOnly
 	public static Optional<Literal> getLiteralValue(Model model, Resource subject, IRI property, IRI legacyProperty) {
-		var legacyResult = Models.objectLiteral(model.getStatements(subject, legacyProperty, null));
-		var result = Models.objectLiteral(model.getStatements(subject, property, null));
-		logDiscrepancyWarning(result, legacyResult);
+		var preferredProperty = useLegacyConfig() ? legacyProperty : property;
+		var fallbackProperty = useLegacyConfig() ? property : legacyProperty;
 
-		if (useLegacyConfig()) {
-			return legacyResult;
+		var preferredResult = Models.objectLiteral(model.getStatements(subject, preferredProperty, null));
+		var fallbackResult = Models.objectLiteral(model.getStatements(subject, fallbackProperty, null));
+
+		logDiscrepancyWarning(preferredResult, fallbackResult);
+		if (preferredResult.isPresent()) {
+			return preferredResult;
 		}
-		if (result.isPresent()) {
-			return result;
-		}
-		return legacyResult;
+		return fallbackResult;
 	}
 
 	/**
@@ -131,34 +131,27 @@ public class Configurations {
 	 */
 	@InternalUseOnly
 	public static Set<Value> getPropertyValues(Model model, Resource subject, IRI property, IRI legacyProperty) {
-		var objects = model.filter(subject, property, null).objects();
-		var legacyObjects = model.filter(subject, legacyProperty, null).objects();
+		var preferredProperty = useLegacyConfig() ? legacyProperty : property;
+		var fallbackProperty = useLegacyConfig() ? property : legacyProperty;
 
-		if (!legacyObjects.isEmpty() && !objects.equals(legacyObjects)) {
+		var preferredObjects = model.filter(subject, preferredProperty, null).objects();
+		var fallbackObjects = model.filter(subject, fallbackProperty, null).objects();
+
+		if (!fallbackObjects.isEmpty() && !preferredObjects.equals(fallbackObjects)) {
 			logger.warn("Discrepancy between use of the old and new config vocabulary.");
 
-			if (useLegacyConfig()) {
-				return legacyObjects;
-			}
-			if (objects.containsAll(legacyObjects)) {
-				return objects;
-			} else if (legacyObjects.containsAll(objects)) {
-				return legacyObjects;
+			if (preferredObjects.containsAll(fallbackObjects)) {
+				return preferredObjects;
+			} else if (fallbackObjects.containsAll(preferredObjects)) {
+				return fallbackObjects;
 			}
 
-			Set<Value> results = new HashSet<>(objects);
-			results.addAll(legacyObjects);
+			Set<Value> results = new HashSet<>(preferredObjects);
+			results.addAll(fallbackObjects);
 			return results;
 		}
 
-		if (useLegacyConfig()) {
-			if (!objects.isEmpty() && !objects.equals(legacyObjects)) {
-				logger.warn("Discrepancy between use of the old and new config vocabulary.");
-			}
-			return legacyObjects;
-		}
-
-		return objects;
+		return preferredObjects;
 	}
 
 	/**
@@ -175,24 +168,21 @@ public class Configurations {
 	 */
 	@InternalUseOnly
 	public static Optional<IRI> getIRIValue(Model model, Resource subject, IRI property, IRI legacyProperty) {
-		var result = Models.objectIRI(model.getStatements(subject, property, null));
-		var legacyResult = Models.objectIRI(model.getStatements(subject, legacyProperty, null));
-		logDiscrepancyWarning(result, legacyResult);
+		var preferredProperty = useLegacyConfig() ? legacyProperty : property;
+		var fallbackProperty = useLegacyConfig() ? property : legacyProperty;
 
-		if (useLegacyConfig()) {
-			return legacyResult;
+		var preferredResult = Models.objectIRI(model.getStatements(subject, preferredProperty, null));
+		var fallbackResult = Models.objectIRI(model.getStatements(subject, fallbackProperty, null));
+
+		logDiscrepancyWarning(preferredResult, fallbackResult);
+		if (preferredResult.isPresent()) {
+			return preferredResult;
 		}
-		if (result.isPresent()) {
-			return result;
-		}
-		return legacyResult;
+		return fallbackResult;
 	}
 
-	private static void logDiscrepancyWarning(Optional<? extends Value> newResult,
-			Optional<? extends Value> legacyResult) {
-		var preferred = useLegacyConfig() ? legacyResult : newResult;
-		var fallback = useLegacyConfig() ? newResult : legacyResult;
-
+	private static void logDiscrepancyWarning(Optional<? extends Value> preferred,
+			Optional<? extends Value> fallback) {
 		if (!fallback.isEmpty() && !preferred.equals(fallback)) {
 			logger.warn("Discrepancy between use of the old and new config vocabulary.");
 		}
