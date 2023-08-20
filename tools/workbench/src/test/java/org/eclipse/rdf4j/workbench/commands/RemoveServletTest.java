@@ -35,7 +35,7 @@ import org.junit.jupiter.api.Test;
  *
  * @author Dale Visser
  */
-public class TestRemoveServlet {
+public class RemoveServletTest {
 
 	private final RemoveServlet servlet = new RemoveServlet();
 

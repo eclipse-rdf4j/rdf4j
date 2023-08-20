@@ -27,7 +27,7 @@ import org.junit.jupiter.api.Test;
 /**
  * @author dale
  */
-public class TestInfoServlet {
+public class InfoServletTest {
 
 	private final InfoServlet servlet = new InfoServlet();
 

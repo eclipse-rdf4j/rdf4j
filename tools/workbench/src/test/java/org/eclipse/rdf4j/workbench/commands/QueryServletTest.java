@@ -33,7 +33,7 @@ import org.junit.jupiter.api.Test;
 /**
  * @author Dale Visser
  */
-public class TestQueryServlet {
+public class QueryServletTest {
 
 	private static final String SHORT_QUERY = "select * {?s ?p ?o .}";
 

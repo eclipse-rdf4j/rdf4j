@@ -35,7 +35,7 @@ import org.junit.jupiter.api.Test;
 /**
  * @author Dale Visser
  */
-public class TestExploreServlet {
+public class ExploreServletTest {
 
 	private RepositoryConnection connection;
 
