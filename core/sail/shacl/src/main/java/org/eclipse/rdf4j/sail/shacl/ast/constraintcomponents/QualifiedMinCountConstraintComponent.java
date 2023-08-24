@@ -53,7 +53,7 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
 public class QualifiedMinCountConstraintComponent extends AbstractConstraintComponent {
 	Shape qualifiedValueShape;
-	Boolean qualifiedValueShapesDisjoint;
+	boolean qualifiedValueShapesDisjoint;
 	Long qualifiedMinCount;
 
 	public QualifiedMinCountConstraintComponent(Resource id, ShapeSource shapeSource,
@@ -87,7 +87,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
 		model.add(subject, SHACL.QUALIFIED_VALUE_SHAPE, getId());
 
-		if (qualifiedValueShapesDisjoint != null) {
+		if (qualifiedValueShapesDisjoint) {
 			model.add(subject, SHACL.QUALIFIED_VALUE_SHAPES_DISJOINT, literal(qualifiedValueShapesDisjoint));
 		}
 
