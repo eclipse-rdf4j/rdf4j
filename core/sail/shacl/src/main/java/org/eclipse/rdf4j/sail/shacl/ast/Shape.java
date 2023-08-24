@@ -274,8 +274,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 			constraintComponent.add(new UniqueLangConstraintComponent());
 		}
 
-		for (String pattern : properties.getPattern()) {
-			var patternConstraintComponent = new PatternConstraintComponent(pattern,
+		if (properties.getPattern() != null) {
+			var patternConstraintComponent = new PatternConstraintComponent(properties.getPattern(),
 					properties.getFlags());
 			constraintComponent.add(patternConstraintComponent);
 		}
@@ -657,14 +657,28 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 
 			try (Stream<Resource> resources = shapeSourceWithContext.getTargetableShape()) {
 				List<Shape> shapes = resources
-						.map(r -> new ShaclProperties(r, shapeSourceWithContext))
-						.map(p -> {
-							if (p.getType() == SHACL.NODE_SHAPE) {
-								return NodeShape.getInstance(p, shapeSourceWithContext, parseSettings, cache);
-							} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-								return PropertyShape.getInstance(p, shapeSourceWithContext, parseSettings, cache);
+						.map(r -> {
+							try {
+								return new ShaclProperties(r, shapeSourceWithContext);
+							} catch (Exception e) {
+								throw new ShaclShapeParsingException(e, r);
 							}
-							throw new IllegalStateException("Unknown shape type for " + p.getId());
+						})
+						.map(p -> {
+							try {
+								if (p.getType() == SHACL.NODE_SHAPE) {
+									return NodeShape.getInstance(p, shapeSourceWithContext, parseSettings, cache);
+								} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
+									return PropertyShape.getInstance(p, shapeSourceWithContext, parseSettings, cache);
+								}
+								throw new ShaclShapeParsingException("Unknown shape type", p.getId());
+							} catch (Exception e) {
+								if (e instanceof ShaclShapeParsingException) {
+									throw e;
+								}
+								throw new ShaclShapeParsingException(e, p.getId());
+							}
+
 						})
 						.collect(Collectors.toList());
 
