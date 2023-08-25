@@ -48,4 +48,23 @@ public class LessThanOrEqualsConstraintComponent extends AbstractConstraintCompo
 	public List<Literal> getDefaultMessage() {
 		return List.of();
 	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		LessThanOrEqualsConstraintComponent that = (LessThanOrEqualsConstraintComponent) o;
+
+		return predicate.equals(that.predicate);
+	}
+
+	@Override
+	public int hashCode() {
+		return predicate.hashCode() + "LessThanOrEqualsConstraintComponent".hashCode();
+	}
 }

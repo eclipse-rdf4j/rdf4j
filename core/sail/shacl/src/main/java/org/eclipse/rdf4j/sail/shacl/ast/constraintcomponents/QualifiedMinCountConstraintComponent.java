@@ -15,6 +15,7 @@ import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import java.math.BigInteger;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -278,4 +279,31 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 		return List.of();
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		QualifiedMinCountConstraintComponent that = (QualifiedMinCountConstraintComponent) o;
+
+		if (qualifiedValueShapesDisjoint != that.qualifiedValueShapesDisjoint) {
+			return false;
+		}
+		if (!qualifiedValueShape.equals(that.qualifiedValueShape)) {
+			return false;
+		}
+		return Objects.equals(qualifiedMinCount, that.qualifiedMinCount);
+	}
+
+	@Override
+	public int hashCode() {
+		int result = qualifiedValueShape.hashCode();
+		result = 31 * result + (qualifiedValueShapesDisjoint ? 1 : 0);
+		result = 31 * result + (qualifiedMinCount != null ? qualifiedMinCount.hashCode() : 0);
+		return result + "QualifiedMinCountConstraintComponent".hashCode();
+	}
 }

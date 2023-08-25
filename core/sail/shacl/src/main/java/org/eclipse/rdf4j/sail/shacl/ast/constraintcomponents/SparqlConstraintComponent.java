@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -264,4 +265,39 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent {
 		return message;
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		SparqlConstraintComponent that = (SparqlConstraintComponent) o;
+
+		if (produceValidationReports != that.produceValidationReports) {
+			return false;
+		}
+		if (!select.equals(that.select)) {
+			return false;
+		}
+		if (!originalSelect.equals(that.originalSelect)) {
+			return false;
+		}
+		if (!Objects.equals(message, that.message)) {
+			return false;
+		}
+		return Objects.equals(deactivated, that.deactivated);
+	}
+
+	@Override
+	public int hashCode() {
+		int result = (produceValidationReports ? 1 : 0);
+		result = 31 * result + select.hashCode();
+		result = 31 * result + originalSelect.hashCode();
+		result = 31 * result + (message != null ? message.hashCode() : 0);
+		result = 31 * result + (deactivated != null ? deactivated.hashCode() : 0);
+		return result + "SparqlConstraintComponent".hashCode();
+	}
 }

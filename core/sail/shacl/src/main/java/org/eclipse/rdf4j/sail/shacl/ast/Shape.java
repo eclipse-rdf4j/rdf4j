@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -514,27 +515,72 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 				.collect(Collectors.toList());
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (!(o instanceof Shape)) {
+			return false;
+		}
+
+		Shape shape = (Shape) o;
+
+		if (produceValidationReports != shape.produceValidationReports) {
+			return false;
+		}
+		if (deactivated != shape.deactivated) {
+			return false;
+		}
+		if (!Objects.equals(target, shape.target)) {
+			return false;
+		}
+		if (!Objects.equals(message, shape.message)) {
+			return false;
+		}
+		if (severity != shape.severity) {
+			return false;
+		}
+		if (!Objects.equals(constraintComponents, shape.constraintComponents)) {
+			return false;
+		}
+		return true;
+	}
+
+	@Override
+	public int hashCode() {
+		int result = (produceValidationReports ? 1 : 0);
+		result = 31 * result + (target != null ? target.hashCode() : 0);
+		result = 31 * result + (deactivated ? 1 : 0);
+		result = 31 * result + (message != null ? message.hashCode() : 0);
+		result = 31 * result + (severity != null ? severity.hashCode() : 0);
+		result = 31 * result + (constraintComponents != null ? constraintComponents.hashCode() : 0);
+		return result;
+	}
+
 	public static class Factory {
 
-		public static List<ContextWithShapes> getShapes(ShapeSource shapeSource, ParseSettings parseSettings) {
+		public static List<ContextWithShape> getShapes(ShapeSource shapeSource, ParseSettings parseSettings) {
 
-			List<ContextWithShapes> parsed = parse(shapeSource, parseSettings);
+			List<ContextWithShape> parsed = parse(shapeSource, parseSettings);
 
 			return getShapes(parsed);
 
 		}
 
-		public static List<ContextWithShapes> getShapes(List<ContextWithShapes> parsed) {
+		public static List<ContextWithShape> getShapes(List<ContextWithShape> parsed) {
 			return parsed.stream()
-					.map(contextWithShapes -> {
-						List<Shape> split = split(contextWithShapes.getShapes());
+					.flatMap(contextWithShapes -> {
+						List<Shape> split = split(contextWithShapes.getShape());
 						calculateTargetChain(split);
 						calculateIfProducesValidationResult(split);
-						return new ContextWithShapes(contextWithShapes.getDataGraph(),
-								contextWithShapes.getShapeGraph(), split);
-
+						return split.stream().map(s -> {
+							return new ContextWithShape(contextWithShapes.getDataGraph(),
+									contextWithShapes.getShapeGraph(), s);
+						});
 					})
-					.filter(contextWithShapes -> !contextWithShapes.getShapes().isEmpty())
+					.filter(ContextWithShape::hasShape)
+					.distinct()
 					.collect(Collectors.toList());
 		}
 
@@ -582,34 +628,32 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 
 		}
 
-		private static List<Shape> split(List<Shape> collect) {
+		private static List<Shape> split(Shape s) {
 			// split into shapes by target and constraint component to be able to run them in parallel
-			return collect.stream().flatMap(s -> {
-				List<Shape> temp = new ArrayList<>();
-				s.target.forEach(target -> {
-					s.constraintComponents.forEach(constraintComponent -> {
+			List<Shape> temp = new ArrayList<>();
+			s.target.forEach(target -> {
+				s.constraintComponents.forEach(constraintComponent -> {
 
-						if (constraintComponent instanceof PropertyShape) {
-							List<PropertyShape> split = splitPropertyShape(((PropertyShape) constraintComponent))
-									.collect(Collectors.toList());
-							for (PropertyShape propertyShape : split) {
-								Shape shape = s.shallowClone();
-								shape.target.add(target);
-								shape.constraintComponents.add(propertyShape);
-								temp.add(shape);
-							}
-						} else {
+					if (constraintComponent instanceof PropertyShape) {
+						List<PropertyShape> split = splitPropertyShape(((PropertyShape) constraintComponent))
+								.collect(Collectors.toList());
+						for (PropertyShape propertyShape : split) {
 							Shape shape = s.shallowClone();
 							shape.target.add(target);
-							shape.constraintComponents.add(constraintComponent);
+							shape.constraintComponents.add(propertyShape);
 							temp.add(shape);
-
 						}
+					} else {
+						Shape shape = s.shallowClone();
+						shape.target.add(target);
+						shape.constraintComponents.add(constraintComponent);
+						temp.add(shape);
 
-					});
+					}
+
 				});
-				return temp.stream();
-			}).collect(Collectors.toList());
+			});
+			return temp;
 		}
 
 		private static Stream<PropertyShape> splitPropertyShape(PropertyShape propertyShape) {
@@ -630,18 +674,20 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 					});
 		}
 
-		public static List<ContextWithShapes> parse(ShapeSource shapeSource, ParseSettings parseSettings) {
+		public static List<ContextWithShape> parse(ShapeSource shapeSource, ParseSettings parseSettings) {
 
 			try (Stream<ShapeSource.ShapesGraph> allShapeContexts = shapeSource.getAllShapeContexts()) {
 				return allShapeContexts
 						.map(shapesGraph -> parse(shapeSource, shapesGraph, parseSettings))
+						.flatMap(Collection::stream)
+						.distinct()
 						.collect(Collectors.toList());
 
 			}
 
 		}
 
-		public static ContextWithShapes parse(ShapeSource shapeSource, ShapeSource.ShapesGraph shapesGraph,
+		public static List<ContextWithShape> parse(ShapeSource shapeSource, ShapeSource.ShapesGraph shapesGraph,
 				ParseSettings parseSettings) {
 
 			Cache cache = new Cache();
@@ -650,13 +696,13 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 
 		}
 
-		public static ContextWithShapes getShapesInContext(ShapeSource shapeSource, ParseSettings parseSettings,
+		public static List<ContextWithShape> getShapesInContext(ShapeSource shapeSource, ParseSettings parseSettings,
 				Cache cache,
 				Resource[] dataGraph, Resource[] shapesGraph) {
 			ShapeSource shapeSourceWithContext = shapeSource.withContext(shapesGraph);
 
 			try (Stream<Resource> resources = shapeSourceWithContext.getTargetableShape()) {
-				List<Shape> shapes = resources
+				return resources
 						.map(r -> {
 							try {
 								return new ShaclProperties(r, shapeSourceWithContext);
@@ -680,9 +726,10 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 							}
 
 						})
+						.map(shape -> new ContextWithShape(dataGraph, shapesGraph, shape))
+						.filter(ContextWithShape::hasShape)
 						.collect(Collectors.toList());
 
-				return new ContextWithShapes(dataGraph, shapesGraph, shapes);
 			}
 		}
 

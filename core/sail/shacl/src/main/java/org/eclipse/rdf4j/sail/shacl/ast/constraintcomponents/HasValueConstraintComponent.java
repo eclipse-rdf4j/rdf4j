@@ -48,7 +48,7 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 
 public class HasValueConstraintComponent extends AbstractConstraintComponent {
 
-	Value hasValue;
+	private final Value hasValue;
 
 	public HasValueConstraintComponent(Value hasValue) {
 		this.hasValue = hasValue;
@@ -225,5 +225,24 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public List<Literal> getDefaultMessage() {
 		return List.of();
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		HasValueConstraintComponent that = (HasValueConstraintComponent) o;
+
+		return hasValue.equals(that.hasValue);
+	}
+
+	@Override
+	public int hashCode() {
+		return hasValue.hashCode() + "HasValueConstraintComponent".hashCode();
 	}
 }

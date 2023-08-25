@@ -29,6 +29,7 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.DynamicModel;
@@ -40,8 +41,11 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.WriterConfig;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShapes;
+import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShape;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -117,6 +121,9 @@ public class W3cComplianceTest {
 
 		Model statements = extractShapesModel(shaclSail);
 
+		statements.setNamespace(RDF.NS);
+		statements.setNamespace(SHACL.NS);
+
 		sailRepository.shutDown();
 
 		statements
@@ -124,6 +131,10 @@ public class W3cComplianceTest {
 				.subjects()
 				.forEach(s -> {
 					int size = statements.filter(s, RDF.REST, null).objects().size();
+					if (size > 1) {
+						Rio.write(statements, System.out, RDFFormat.TURTLE,
+								new WriterConfig().set(BasicWriterSettings.PRETTY_PRINT, true));
+					}
 					assertEquals(size, 1, s + " has more than one rdf:rest");
 				});
 
@@ -134,11 +145,13 @@ public class W3cComplianceTest {
 	}
 
 	private Model extractShapesModel(ShaclSail shaclSail) throws InterruptedException {
-		List<ContextWithShapes> shapes = shaclSail.getCachedShapes().getDataAndRelease();
+		List<ContextWithShape> shapes = shaclSail.getCachedShapes().getDataAndRelease();
 
 		DynamicModel model = new DynamicModelFactory().createEmptyModel();
 
-		shapes.forEach(shape -> shape.toModel(model));
+		HashSet<Resource> cycleDetection = new HashSet<>();
+
+		shapes.forEach(shape -> shape.toModel(model, cycleDetection));
 
 		return model;
 	}

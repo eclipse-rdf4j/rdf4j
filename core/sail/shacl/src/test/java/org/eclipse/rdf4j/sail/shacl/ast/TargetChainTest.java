@@ -25,7 +25,7 @@ public class TargetChainTest {
 	public void testTargetChain() throws IOException, InterruptedException {
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("shaclExactly.trig");
 
-		List<ContextWithShapes> shapes = shaclSail.getCachedShapes().getDataAndRelease();
+		List<ContextWithShape> shapes = shaclSail.getCachedShapes().getDataAndRelease();
 
 		shaclSail.shutDown();
 	}
@@ -34,11 +34,11 @@ public class TargetChainTest {
 	public void testTargetChainOr() throws IOException, InterruptedException {
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("test-cases/or/maxCount/shacl.trig");
 
-		List<ContextWithShapes> shapes = shaclSail.getCachedShapes().getDataAndRelease();
+		List<ContextWithShape> shapes = shaclSail.getCachedShapes().getDataAndRelease();
 
-		assert shapes.get(0).getShapes().get(0) instanceof NodeShape;
+		assert shapes.get(0).getShape() instanceof NodeShape;
 
-		NodeShape nodeShape = (NodeShape) shapes.get(0).getShapes().get(0);
+		NodeShape nodeShape = (NodeShape) shapes.get(0).getShape();
 
 		assert nodeShape.getTargetChain().isOptimizable();
 

@@ -144,7 +144,7 @@ public class TargetObjectsOf extends Target {
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(targetObjectsOf);
+		return Objects.hash(targetObjectsOf) + "TargetObjectsOf".hashCode();
 	}
 
 }

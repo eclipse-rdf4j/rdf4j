@@ -220,4 +220,13 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		return List.of();
 	}
 
+	@Override
+	public int hashCode() {
+		return "UniqueLangConstraintComponent".hashCode();
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+		return obj instanceof UniqueLangConstraintComponent;
+	}
 }

@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
+import java.util.UUID;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Model;
@@ -40,9 +41,14 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 @InternalUseOnly
 public class ShaclAstLists {
 
+	private static final String uuid = UUID.randomUUID().toString();
+
 	public static void listToRdf(Collection<? extends Value> values, Resource head, Model model) {
 		// The Turtle parser does not add "a rdf:List" statements when parsing the shorthand list format,
 		// so we don't add rdf:List when writing it out either.
+
+		int counter = 0;
+		Resource originalHead = head;
 
 		Iterator<? extends Value> iter = values.iterator();
 		while (iter.hasNext()) {
@@ -50,7 +56,7 @@ public class ShaclAstLists {
 			model.add(head, RDF.FIRST, value);
 
 			if (iter.hasNext()) {
-				Resource next = bnode();
+				Resource next = bnode(originalHead.stringValue() + uuid + counter++);
 				model.add(head, RDF.REST, next);
 				head = next;
 			} else {

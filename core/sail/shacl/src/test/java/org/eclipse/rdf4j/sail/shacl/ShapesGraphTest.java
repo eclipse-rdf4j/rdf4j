@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShape;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.junit.jupiter.api.Assertions;
@@ -185,7 +186,7 @@ public class ShapesGraphTest {
 				List<PlanNode> collect = shaclSail.getCachedShapes()
 						.getDataAndRelease()
 						.stream()
-						.flatMap(s -> s.getShapes().stream())
+						.map(ContextWithShape::getShape)
 						.map(shape -> shape.generatePlans(connectionsGroup, new ValidationSettings()))
 						.filter(s -> !(s.isGuaranteedEmpty()))
 						.collect(Collectors.toList());

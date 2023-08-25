@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -89,5 +90,24 @@ public class DatatypeConstraintComponent extends SimpleAbstractConstraintCompone
 	@Override
 	public List<Literal> getDefaultMessage() {
 		return List.of();
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		DatatypeConstraintComponent that = (DatatypeConstraintComponent) o;
+
+		return datatype.equals(that.datatype);
+	}
+
+	@Override
+	public int hashCode() {
+		return datatype.hashCode() + "DatatypeConstraintComponent".hashCode();
 	}
 }

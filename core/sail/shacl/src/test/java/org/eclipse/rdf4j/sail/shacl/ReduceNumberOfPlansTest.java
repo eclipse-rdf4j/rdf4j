@@ -51,7 +51,7 @@ public class ReduceNumberOfPlansTest {
 				List<PlanNode> collect = shaclSail.getCachedShapes()
 						.getDataAndRelease()
 						.stream()
-						.flatMap(s -> s.getShapes().stream())
+						.map(s -> s.getShape())
 						.map(shape -> shape.generatePlans(connectionsGroup, new ValidationSettings()))
 						.filter(s -> !(s.isGuaranteedEmpty()))
 						.collect(Collectors.toList());
@@ -68,7 +68,7 @@ public class ReduceNumberOfPlansTest {
 				List<PlanNode> collect2 = shaclSail.getCachedShapes()
 						.getDataAndRelease()
 						.stream()
-						.flatMap(s -> s.getShapes().stream())
+						.map(s -> s.getShape())
 						.map(shape -> shape.generatePlans(connectionsGroup, new ValidationSettings()))
 						.filter(s -> !(s.isGuaranteedEmpty()))
 						.collect(Collectors.toList());
@@ -121,7 +121,7 @@ public class ReduceNumberOfPlansTest {
 				List<PlanNode> collect1 = shaclSail.getCachedShapes()
 						.getDataAndRelease()
 						.stream()
-						.flatMap(s -> s.getShapes().stream())
+						.map(s -> s.getShape())
 						.map(shape -> shape.generatePlans(connectionsGroup, new ValidationSettings()))
 						.filter(s -> !(s.isGuaranteedEmpty()))
 						.collect(Collectors.toList());
@@ -138,7 +138,7 @@ public class ReduceNumberOfPlansTest {
 				List<PlanNode> collect2 = shaclSail.getCachedShapes()
 						.getDataAndRelease()
 						.stream()
-						.flatMap(s -> s.getShapes().stream())
+						.map(s -> s.getShape())
 						.map(shape -> shape.generatePlans(connectionsGroup, new ValidationSettings()))
 						.filter(s -> !(s.isGuaranteedEmpty()))
 
@@ -154,7 +154,7 @@ public class ReduceNumberOfPlansTest {
 				List<PlanNode> collect3 = shaclSail.getCachedShapes()
 						.getDataAndRelease()
 						.stream()
-						.flatMap(s -> s.getShapes().stream())
+						.map(s -> s.getShape())
 						.map(shape -> shape.generatePlans(connectionsGroup, new ValidationSettings()))
 						.filter(s -> !(s.isGuaranteedEmpty()))
 

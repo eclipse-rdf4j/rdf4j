@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
@@ -136,7 +137,11 @@ public class SailConnectionShapeSource implements ShapeSource {
 
 	public Stream<Statement> getAllStatements(Resource id) {
 		assert context != null;
-		return connection.getStatements(id, null, null, true, context).stream().map(s -> ((Statement) s));
+		return connection.getStatements(id, null, null, true, context)
+				.stream()
+				.map(s -> ((Statement) s))
+				.map(Statements::stripContext)
+				.distinct();
 	}
 
 	public Value getRdfFirst(Resource subject) {

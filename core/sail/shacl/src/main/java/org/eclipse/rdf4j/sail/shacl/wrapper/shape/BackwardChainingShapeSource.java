@@ -133,7 +133,9 @@ public class BackwardChainingShapeSource implements ShapeSource {
 		return Stream.concat(
 				connection.getStatements(id, null, null, true, context).stream().map(s -> ((Statement) s)),
 				backwardsChained
-		);
+		)
+				.map(Statements::stripContext)
+				.distinct();
 	}
 
 	public Value getRdfFirst(Resource subject) {

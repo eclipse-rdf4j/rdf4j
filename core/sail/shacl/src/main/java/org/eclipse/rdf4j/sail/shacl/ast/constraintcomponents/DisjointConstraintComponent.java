@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -23,7 +24,7 @@ import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 
 public class DisjointConstraintComponent extends AbstractConstraintComponent {
 
-	IRI predicate;
+	private final IRI predicate;
 
 	public DisjointConstraintComponent(IRI predicate) {
 		this.predicate = predicate;
@@ -47,5 +48,24 @@ public class DisjointConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public List<Literal> getDefaultMessage() {
 		return List.of();
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		DisjointConstraintComponent that = (DisjointConstraintComponent) o;
+
+		return predicate.equals(that.predicate);
+	}
+
+	@Override
+	public int hashCode() {
+		return predicate.hashCode() + "DisjointConstraintComponent".hashCode();
 	}
 }
