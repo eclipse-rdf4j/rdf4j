@@ -11,7 +11,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -22,7 +21,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShapes;
+import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShape;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.eclipse.rdf4j.sail.shacl.results.lazy.LazyValidationReport;
@@ -47,7 +46,7 @@ public class ShaclValidator {
 
 	public static ValidationReport validate(Sail dataRepo, Sail shapesRepo) {
 
-		List<ContextWithShapes> shapes;
+		List<ContextWithShape> shapes;
 		try (SailConnection shapesConnection = shapesRepo.getConnection()) {
 			shapesConnection.begin(IsolationLevels.NONE);
 			try (ShapeSource shapeSource = new CombinedShapeSource(shapesConnection,
@@ -59,12 +58,13 @@ public class ShaclValidator {
 					allShapeContexts = Stream.concat(allShapeContexts,
 							Stream.of(new ShapeSource.ShapesGraph(RDF4J.NIL)));
 				}
-				List<ContextWithShapes> parsed = allShapeContexts
+				List<ContextWithShape> parsed = allShapeContexts
 						.map(context -> Shape.Factory.parse(shapeSource.withContext(context.getShapesGraph()), context,
 								new Shape.ParseSettings(true, true)))
+						.flatMap(List::stream)
 						.collect(Collectors.toList());
 
-				shapes = Shape.Factory.getShapes(parsed);
+				shapes = Shape.Factory.getShapes(parsed).stream().distinct().collect(Collectors.toList());
 
 			}
 			shapesConnection.commit();
@@ -90,20 +90,18 @@ public class ShaclValidator {
 
 	}
 
-	private static ValidationReport performValidation(List<ContextWithShapes> shapes,
+	private static ValidationReport performValidation(List<ContextWithShape> shapes,
 			ConnectionsGroup connectionsGroup) {
 
 		List<ValidationResultIterator> collect = shapes
 				.stream()
-				.flatMap(contextWithShapes -> contextWithShapes
-						.getShapes()
-						.stream()
-						.map(shape -> new ShapeValidationContainer(
-								shape,
-								() -> shape.generatePlans(connectionsGroup,
-										new ValidationSettings(contextWithShapes.getDataGraph(), false, true, false)),
-								false, false, 1000, false, logger)
-						)
+				.map(contextWithShape -> new ShapeValidationContainer(
+						contextWithShape.getShape(),
+						() -> contextWithShape.getShape()
+								.generatePlans(connectionsGroup,
+										new ValidationSettings(contextWithShape.getDataGraph(), false, true, false)),
+						false, false, 1000, false, logger
+				)
 				)
 				.filter(ShapeValidationContainer::hasPlanNode)
 				.map(ShapeValidationContainer::performValidation)

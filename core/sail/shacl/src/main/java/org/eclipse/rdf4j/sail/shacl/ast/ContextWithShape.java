@@ -10,9 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -20,24 +22,29 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 
-public class ContextWithShapes {
+public class ContextWithShape {
 
 	private final Resource[] dataGraph;
 	private final Resource[] shapeGraph;
-	private final List<Shape> shapes;
+	private final Shape shape;
 
-	public ContextWithShapes(Resource[] dataGraph, Resource[] shapeGraph, List<Shape> shapes) {
+	public ContextWithShape(Resource[] dataGraph, Resource[] shapeGraph, Shape shape) {
 		this.shapeGraph = shapeGraph;
 		this.dataGraph = dataGraph;
-		this.shapes = shapes;
+		Arrays.sort(this.dataGraph);
+		this.shape = shape;
 	}
 
 	public Resource[] getShapeGraph() {
 		return shapeGraph;
 	}
 
-	public List<Shape> getShapes() {
-		return shapes;
+	public Shape getShape() {
+		return shape;
+	}
+
+	public boolean hasShape() {
+		return shape != null;
 	}
 
 	public Resource[] getDataGraph() {
@@ -52,28 +59,27 @@ public class ContextWithShapes {
 		if (o == null || getClass() != o.getClass()) {
 			return false;
 		}
-		ContextWithShapes that = (ContextWithShapes) o;
-		return Arrays.equals(dataGraph, that.dataGraph) && Arrays.equals(shapeGraph, that.shapeGraph)
-				&& shapes.equals(that.shapes);
+		ContextWithShape that = (ContextWithShape) o;
+		return Arrays.equals(dataGraph, that.dataGraph)
+				&& shape.equals(that.shape);
 	}
 
 	@Override
 	public int hashCode() {
-		int result = Objects.hash(shapes);
+		int result = shape.hashCode();
 		result = 31 * result + Arrays.hashCode(dataGraph);
-		result = 31 * result + Arrays.hashCode(shapeGraph);
 		return result;
 	}
 
-	public void toModel(Model model) {
+	public void toModel(Model model, Set<Resource> cycleDetection) {
 		DynamicModel emptyModel = new DynamicModelFactory().createEmptyModel();
-		for (Shape shape : shapes) {
-			shape.toModel(emptyModel);
-		}
+		shape.toModel(null, null, emptyModel, cycleDetection);
+
 		for (Statement statement : emptyModel) {
 			for (Resource context : shapeGraph) {
 				model.add(statement.getSubject(), statement.getPredicate(), statement.getObject(), context);
 			}
 		}
 	}
+
 }

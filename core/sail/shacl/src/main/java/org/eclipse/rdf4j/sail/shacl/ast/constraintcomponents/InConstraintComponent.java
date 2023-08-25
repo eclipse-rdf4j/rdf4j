@@ -107,4 +107,22 @@ public class InConstraintComponent extends SimpleAbstractConstraintComponent {
 		return List.of();
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		InConstraintComponent that = (InConstraintComponent) o;
+
+		return in.equals(that.in);
+	}
+
+	@Override
+	public int hashCode() {
+		return in.hashCode() + "InConstraintComponent".hashCode();
+	}
 }

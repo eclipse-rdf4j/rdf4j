@@ -211,7 +211,7 @@ public class TargetClass extends Target {
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(targetClass);
+		return Objects.hash(targetClass) + "TargetClass".hashCode();
 	}
 
 }

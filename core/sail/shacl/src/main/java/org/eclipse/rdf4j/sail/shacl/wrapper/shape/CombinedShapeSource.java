@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -118,7 +119,9 @@ public class CombinedShapeSource implements ShapeSource {
 
 	public Stream<Statement> getAllStatements(Resource id) {
 		assert context != null;
-		return Stream.concat(rdf4jShapesGraph.getAllStatements(id), baseSail.getAllStatements(id)).distinct();
+		return Stream.concat(rdf4jShapesGraph.getAllStatements(id), baseSail.getAllStatements(id))
+				.map(Statements::stripContext)
+				.distinct();
 	}
 
 	public Value getRdfFirst(Resource subject) {

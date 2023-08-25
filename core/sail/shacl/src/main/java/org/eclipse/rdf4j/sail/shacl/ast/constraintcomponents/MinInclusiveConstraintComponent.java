@@ -70,4 +70,22 @@ public class MinInclusiveConstraintComponent extends SimpleAbstractConstraintCom
 		return List.of();
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		MinInclusiveConstraintComponent that = (MinInclusiveConstraintComponent) o;
+
+		return minInclusive.equals(that.minInclusive);
+	}
+
+	@Override
+	public int hashCode() {
+		return minInclusive.hashCode() + "MinInclusiveConstraintComponent".hashCode();
+	}
 }

@@ -174,4 +174,22 @@ public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 		return List.of();
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		AndConstraintComponent that = (AndConstraintComponent) o;
+
+		return and.equals(that.and);
+	}
+
+	@Override
+	public int hashCode() {
+		return and.hashCode() + "AndConstraintComponent".hashCode();
+	}
 }

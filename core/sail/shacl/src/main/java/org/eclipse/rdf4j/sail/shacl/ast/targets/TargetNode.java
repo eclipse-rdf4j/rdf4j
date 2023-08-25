@@ -121,7 +121,7 @@ public class TargetNode extends Target {
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(targetNodes);
+		return Objects.hash(targetNodes) + "TargetNode".hashCode();
 	}
 
 }

@@ -211,4 +211,22 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 		return List.of();
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		MinCountConstraintComponent that = (MinCountConstraintComponent) o;
+
+		return minCount == that.minCount;
+	}
+
+	@Override
+	public int hashCode() {
+		return (int) (minCount ^ (minCount >>> 32)) + "MinCountConstraintComponent".hashCode();
+	}
 }

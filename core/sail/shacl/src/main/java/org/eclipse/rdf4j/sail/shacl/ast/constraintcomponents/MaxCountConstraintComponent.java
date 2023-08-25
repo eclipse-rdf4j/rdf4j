@@ -245,4 +245,23 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 	public List<Literal> getDefaultMessage() {
 		return List.of();
 	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		MaxCountConstraintComponent that = (MaxCountConstraintComponent) o;
+
+		return maxCount == that.maxCount;
+	}
+
+	@Override
+	public int hashCode() {
+		return (int) (maxCount ^ (maxCount >>> 32)) + "MaxCountConstraintComponent".hashCode();
+	}
 }

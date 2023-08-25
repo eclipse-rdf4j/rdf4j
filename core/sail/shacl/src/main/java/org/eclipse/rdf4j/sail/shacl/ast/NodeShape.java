@@ -102,10 +102,10 @@ public class NodeShape extends Shape {
 
 		}
 
-		if (cycleDetection.contains(getId())) {
-			return;
-		}
-		cycleDetection.add(getId());
+//		if (cycleDetection.contains(getId())) {
+//			return;
+//		}
+//		cycleDetection.add(getId());
 
 		constraintComponents.forEach(c -> c.toModel(getId(), null, model, cycleDetection));
 

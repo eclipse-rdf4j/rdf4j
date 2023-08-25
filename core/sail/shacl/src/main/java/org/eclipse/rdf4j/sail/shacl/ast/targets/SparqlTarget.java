@@ -138,6 +138,6 @@ public class SparqlTarget extends Target {
 
 	@Override
 	public int hashCode() {
-		return select.hashCode();
+		return select.hashCode() + "SparqlTarget".hashCode();
 	}
 }

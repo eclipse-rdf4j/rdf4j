@@ -51,7 +51,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
-import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShapes;
+import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShape;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.CombinedShapeSource;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.Rdf4jShaclShapeGraphShapeSource;
@@ -180,7 +180,7 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 			"ShaclSail_SerializableValidation");
 
 	// shapesCacheLockManager used to keep track of changes to the cache
-	private StampedLockManager.Cache<List<ContextWithShapes>> cachedShapes;
+	private StampedLockManager.Cache<List<ContextWithShape>> cachedShapes;
 
 	// true if the base sail supports IsolationLevels.SNAPSHOT
 	private boolean supportsSnapshotIsolation;
@@ -195,13 +195,13 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 	private final RevivableExecutorService executorService;
 
 	@InternalUseOnly
-	StampedLockManager.Cache<List<ContextWithShapes>>.WritableState getCachedShapesForWriting()
+	StampedLockManager.Cache<List<ContextWithShape>>.WritableState getCachedShapesForWriting()
 			throws InterruptedException {
 		return cachedShapes.getWriteState();
 	}
 
 	@InternalUseOnly
-	public StampedLockManager.Cache<List<ContextWithShapes>>.ReadableState getCachedShapes()
+	public StampedLockManager.Cache<List<ContextWithShape>>.ReadableState getCachedShapes()
 			throws InterruptedException {
 		return cachedShapes.getReadState();
 	}
@@ -394,7 +394,7 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 	}
 
 	@InternalUseOnly
-	public List<ContextWithShapes> getShapes(RepositoryConnection shapesRepoConnection, SailConnection sailConnection,
+	public List<ContextWithShape> getShapes(RepositoryConnection shapesRepoConnection, SailConnection sailConnection,
 			IRI[] shapesGraphs) throws SailException {
 
 		try (ShapeSource shapeSource = new CombinedShapeSource(shapesRepoConnection, sailConnection)
@@ -406,7 +406,7 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 	}
 
 	@InternalUseOnly
-	public List<ContextWithShapes> getShapes(RepositoryConnection shapesRepoConnection, IRI[] shapesGraphs)
+	public List<ContextWithShape> getShapes(RepositoryConnection shapesRepoConnection, IRI[] shapesGraphs)
 			throws SailException {
 
 		try (ShapeSource shapeSource = new Rdf4jShaclShapeGraphShapeSource(shapesRepoConnection)
@@ -490,7 +490,7 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 	}
 
 	@InternalUseOnly
-	public List<ContextWithShapes> getShapes(IRI[] shapesGraphs, boolean onlyRdf4jShaclShapeGraph) {
+	public List<ContextWithShape> getShapes(IRI[] shapesGraphs, boolean onlyRdf4jShaclShapeGraph) {
 
 		try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
 			shapesRepoConnection.begin(IsolationLevels.READ_COMMITTED);
@@ -517,7 +517,7 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 	public void setShapesGraphs(Set<IRI> shapesGraphs) {
 		if (initialized.get()) {
 			try {
-				try (StampedLockManager.Cache<List<ContextWithShapes>>.WritableState writeState = cachedShapes
+				try (StampedLockManager.Cache<List<ContextWithShape>>.WritableState writeState = cachedShapes
 						.getWriteState()) {
 					super.setShapesGraphs(shapesGraphs);
 					writeState.purge();

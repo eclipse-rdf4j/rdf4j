@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.shacl.ast;
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
@@ -28,7 +29,11 @@ public class ParsingTest {
 	public void initialTest() throws IOException, InterruptedException {
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("test-cases/datatype/not/shacl.trig");
 
-		List<Shape> shapes = shaclSail.getCachedShapes().getDataAndRelease().get(0).getShapes();
+		List<Shape> shapes = shaclSail.getCachedShapes()
+				.getDataAndRelease()
+				.stream()
+				.map(ContextWithShape::getShape)
+				.collect(Collectors.toList());
 
 		DynamicModel emptyModel = new DynamicModelFactory().createEmptyModel();
 
@@ -41,7 +46,11 @@ public class ParsingTest {
 	public void testSplitting() throws IOException, InterruptedException {
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("shaclExactly.trig");
 
-		List<Shape> shapes = shaclSail.getCachedShapes().getDataAndRelease().get(0).getShapes();
+		List<Shape> shapes = shaclSail.getCachedShapes()
+				.getDataAndRelease()
+				.stream()
+				.map(ContextWithShape::getShape)
+				.collect(Collectors.toList());
 
 		Assertions.assertEquals(14, shapes.size());
 

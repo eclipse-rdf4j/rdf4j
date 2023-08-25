@@ -77,7 +77,7 @@ import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach;
-import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShapes;
+import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShape;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -1050,11 +1050,13 @@ abstract public class AbstractShaclTest {
 		SailRepository shaclRepository = getShaclSail(testCase);
 		try {
 
-			List<ContextWithShapes> shapes = ((ShaclSail) shaclRepository.getSail()).getCachedShapes()
+			List<ContextWithShape> shapes = ((ShaclSail) shaclRepository.getSail()).getCachedShapes()
 					.getDataAndRelease();
 
+			HashSet<Resource> cycleDetection = new HashSet<>();
+
 			Model actual = new DynamicModelFactory().createEmptyModel();
-			shapes.forEach(shape -> shape.toModel(actual));
+			shapes.forEach(shape -> shape.toModel(actual, cycleDetection));
 
 			Model expected = new LinkedHashModel(testCase.getShacl());
 

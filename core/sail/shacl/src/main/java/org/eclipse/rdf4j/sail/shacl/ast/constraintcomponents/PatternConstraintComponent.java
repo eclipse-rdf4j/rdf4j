@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -89,4 +90,27 @@ public class PatternConstraintComponent extends SimpleAbstractConstraintComponen
 		return List.of();
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		PatternConstraintComponent that = (PatternConstraintComponent) o;
+
+		if (!pattern.equals(that.pattern)) {
+			return false;
+		}
+		return Objects.equals(flags, that.flags);
+	}
+
+	@Override
+	public int hashCode() {
+		int result = pattern.hashCode();
+		result = 31 * result + (flags != null ? flags.hashCode() : 0);
+		return result + "PatternConstraintComponent".hashCode();
+	}
 }

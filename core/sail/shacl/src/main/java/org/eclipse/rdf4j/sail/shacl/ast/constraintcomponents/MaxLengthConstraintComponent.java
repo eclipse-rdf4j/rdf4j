@@ -73,4 +73,22 @@ public class MaxLengthConstraintComponent extends SimpleAbstractConstraintCompon
 		return List.of();
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		MaxLengthConstraintComponent that = (MaxLengthConstraintComponent) o;
+
+		return maxLength == that.maxLength;
+	}
+
+	@Override
+	public int hashCode() {
+		return (int) (maxLength ^ (maxLength >>> 32)) + "MaxLengthConstraintComponent".hashCode();
+	}
 }

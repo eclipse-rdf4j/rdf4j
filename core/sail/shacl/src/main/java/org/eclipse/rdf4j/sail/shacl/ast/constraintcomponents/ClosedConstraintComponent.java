@@ -15,6 +15,7 @@ import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -75,5 +76,29 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public List<Literal> getDefaultMessage() {
 		return List.of();
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		ClosedConstraintComponent that = (ClosedConstraintComponent) o;
+
+		if (!Objects.equals(paths, that.paths)) {
+			return false;
+		}
+		return Objects.equals(ignoredProperties, that.ignoredProperties);
+	}
+
+	@Override
+	public int hashCode() {
+		int result = paths != null ? paths.hashCode() : 0;
+		result = 31 * result + (ignoredProperties != null ? ignoredProperties.hashCode() : 0);
+		return result;
 	}
 }
