@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.Sail;
@@ -187,6 +188,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		shapesGraphs = sail.getShapesGraphs().stream().map(g -> {
 			if (g.equals(RDF4J.NIL)) {
+				return null;
+			}
+			if (g.equals(SESAME.NIL)) {
 				return null;
 			}
 			return g;

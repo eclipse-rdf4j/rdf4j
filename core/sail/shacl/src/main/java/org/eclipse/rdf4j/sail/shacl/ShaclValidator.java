@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -65,6 +66,14 @@ public class ShaclValidator {
 						.collect(Collectors.toList());
 
 				shapes = Shape.Factory.getShapes(parsed).stream().distinct().collect(Collectors.toList());
+
+				if (logger.isDebugEnabled()) {
+					for (ContextWithShape shape : shapes) {
+						logger.debug("Using data graph(s) {} and shape graph(s) {} with shape {}",
+								Arrays.toString(shape.getDataGraph()), Arrays.toString(shape.getShapeGraph()),
+								shape.getShape());
+					}
+				}
 
 			}
 			shapesConnection.commit();

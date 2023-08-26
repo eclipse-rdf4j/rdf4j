@@ -87,10 +87,6 @@ public class ValidationTuple {
 		this.contexts = contexts;
 	}
 
-	public ValidationTuple(Value a, Value c, ConstraintComponent.Scope scope, boolean hasValue, Resource context) {
-		this(a, c, scope, hasValue, context == null ? NULL_CONTEXT : new Resource[] { context });
-	}
-
 	public ValidationTuple(Value a, Value c, ConstraintComponent.Scope scope, boolean hasValue, Resource[] contexts) {
 		chain = new Value[] { a, c };
 
@@ -99,10 +95,6 @@ public class ValidationTuple {
 		this.validationResults = List.of();
 		this.compressedTuples = Set.of();
 		this.contexts = contexts;
-	}
-
-	public ValidationTuple(Value subject, ConstraintComponent.Scope scope, boolean hasValue, Resource context) {
-		this(subject, scope, hasValue, new Resource[] { context });
 	}
 
 	public ValidationTuple(Value subject, ConstraintComponent.Scope scope, boolean hasValue, Resource[] contexts) {

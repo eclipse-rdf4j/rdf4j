@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.shacl.ast;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -19,6 +20,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 
@@ -31,7 +33,8 @@ public class ContextWithShape {
 	public ContextWithShape(Resource[] dataGraph, Resource[] shapeGraph, Shape shape) {
 		this.shapeGraph = shapeGraph;
 		this.dataGraph = dataGraph;
-		Arrays.sort(this.dataGraph);
+		Arrays.sort(this.dataGraph, Comparator.comparing(v -> v != null ? v.stringValue() : "null"));
+		Arrays.sort(this.shapeGraph, Comparator.comparing(v -> v != null ? v.stringValue() : "null"));
 		this.shape = shape;
 	}
 

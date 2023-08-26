@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import org.apache.commons.text.StringEscapeUtils;
@@ -41,13 +42,13 @@ public class UnorderedSelect implements PlanNode {
 	private final IRI predicate;
 	private final Value object;
 	private final Resource[] dataGraph;
-	private final Function<Statement, ValidationTuple> mapper;
+	private final BiFunction<Statement, Resource[], ValidationTuple> mapper;
 
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public UnorderedSelect(SailConnection connection, Resource subject, IRI predicate, Value object,
-			Resource[] dataGraph, Function<Statement, ValidationTuple> mapper) {
+			Resource[] dataGraph, BiFunction<Statement, Resource[], ValidationTuple> mapper) {
 		this.connection = connection;
 		assert this.connection != null;
 		this.subject = subject;
@@ -83,7 +84,7 @@ public class UnorderedSelect implements PlanNode {
 
 			@Override
 			protected ValidationTuple loggingNext() {
-				return mapper.apply(statements.next());
+				return mapper.apply(statements.next(), dataGraph);
 			}
 
 		};
@@ -188,7 +189,7 @@ public class UnorderedSelect implements PlanNode {
 	}
 
 	public static class Mapper {
-		public static class SubjectScopedMapper implements Function<Statement, ValidationTuple> {
+		public static class SubjectScopedMapper implements BiFunction<Statement, Resource[], ValidationTuple> {
 
 			private final ConstraintComponent.Scope scope;
 
@@ -202,8 +203,8 @@ public class UnorderedSelect implements PlanNode {
 			static SubjectScopedMapper noneInstance = new SubjectScopedMapper(ConstraintComponent.Scope.none);
 
 			@Override
-			public ValidationTuple apply(Statement s) {
-				return new ValidationTuple(s.getSubject(), scope, false, s.getContext());
+			public ValidationTuple apply(Statement s, Resource[] dataGraph) {
+				return new ValidationTuple(s.getSubject(), scope, false, dataGraph);
 			}
 
 			@Override
@@ -232,7 +233,7 @@ public class UnorderedSelect implements PlanNode {
 
 		}
 
-		public static class ObjectScopedMapper implements Function<Statement, ValidationTuple> {
+		public static class ObjectScopedMapper implements BiFunction<Statement, Resource[], ValidationTuple> {
 
 			private final ConstraintComponent.Scope scope;
 
@@ -246,8 +247,8 @@ public class UnorderedSelect implements PlanNode {
 			static ObjectScopedMapper noneInstance = new ObjectScopedMapper(ConstraintComponent.Scope.none);
 
 			@Override
-			public ValidationTuple apply(Statement s) {
-				return new ValidationTuple(s.getObject(), scope, false, s.getContext());
+			public ValidationTuple apply(Statement s, Resource[] dataGraph) {
+				return new ValidationTuple(s.getObject(), scope, false, dataGraph);
 			}
 
 			@Override
@@ -276,7 +277,8 @@ public class UnorderedSelect implements PlanNode {
 
 		}
 
-		public static class SubjectObjectPropertyShapeMapper implements Function<Statement, ValidationTuple> {
+		public static class SubjectObjectPropertyShapeMapper
+				implements BiFunction<Statement, Resource[], ValidationTuple> {
 
 			private SubjectObjectPropertyShapeMapper() {
 			}
@@ -284,9 +286,9 @@ public class UnorderedSelect implements PlanNode {
 			static SubjectObjectPropertyShapeMapper instance = new SubjectObjectPropertyShapeMapper();
 
 			@Override
-			public ValidationTuple apply(Statement s) {
+			public ValidationTuple apply(Statement s, Resource[] dataGraph) {
 				return new ValidationTuple(s.getSubject(), s.getObject(), ConstraintComponent.Scope.propertyShape,
-						true, s.getContext());
+						true, dataGraph);
 			}
 
 			@Override

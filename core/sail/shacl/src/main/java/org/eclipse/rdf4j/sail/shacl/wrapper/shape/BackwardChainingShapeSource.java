@@ -24,8 +24,11 @@ import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.shacl.ast.ShaclParsingException;
+import org.eclipse.rdf4j.sail.shacl.ast.ShaclShapeParsingException;
 
 public class BackwardChainingShapeSource implements ShapeSource {
 
@@ -54,18 +57,22 @@ public class BackwardChainingShapeSource implements ShapeSource {
 	public Stream<ShapesGraph> getAllShapeContexts() {
 		assert context != null;
 
-		try (Stream<? extends Statement> stream = connection
-				.getStatements(null, SHACL.SHAPES_GRAPH, null, false, context)
-				.stream()) {
+		Stream<ShapesGraph> rsxDataAndShapesGraphLink = ShapeSource.getRsxDataAndShapesGraphLink(connection, context);
 
-			var collect = stream.collect(Collectors.toList());
+		Stream<ShapesGraph> shaclShapesGraph;
 
-			return collect.stream()
+		try (var stream = connection.getStatements(null, SHACL.SHAPES_GRAPH, null, false, context).stream()) {
+
+			var collect = stream.collect(Collectors.toList()); // consume entire stream to ensure that it can be closed
+
+			shaclShapesGraph = collect.stream()
 					.collect(Collectors.groupingBy(Statement::getSubject))
 					.entrySet()
 					.stream()
 					.map(entry -> new ShapeSource.ShapesGraph(entry.getKey(), entry.getValue()));
 		}
+
+		return Stream.concat(rsxDataAndShapesGraphLink, shaclShapesGraph);
 
 	}
 
