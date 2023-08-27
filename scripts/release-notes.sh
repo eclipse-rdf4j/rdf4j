@@ -52,12 +52,12 @@ if [[ ${M} == "" ]]; then
   echo "Please make sure that you have cleaned up and closed the milestone connected to ${MVN_VERSION_RELEASE}";
   read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
-  SHOULD_BE_NULL_IF_MILESTONE_IS_CLOSED=$(curl  -s -H "Accept: application/vnd.github.v3+json"  https://api.github.com/repos/eclipse/rdf4j/milestones?state=open | jq '.[] | select(.title == "'"${MVN_VERSION_RELEASE}"'") | .number')
+  SHOULD_BE_NULL_IF_MILESTONE_IS_CLOSED=$(curl  -s -H "Accept: application/vnd.github.v3+json"  https://api.github.com/repos/eclipse-rdf4j/rdf4j/milestones?state=open | jq '.[] | select(.title == "'"${MVN_VERSION_RELEASE}"'") | .number')
   echo "${SHOULD_BE_NULL_IF_MILESTONE_IS_CLOSED}"
   if  ! [[ ${SHOULD_BE_NULL_IF_MILESTONE_IS_CLOSED} == "" ]]; then
       echo "";
       echo "Milestone not closed!";
-      echo "https://github.com/eclipse/rdf4j/milestone/${SHOULD_BE_NULL_IF_MILESTONE_IS_CLOSED}";
+      echo "https://github.com/eclipse-rdf4j/rdf4j/milestone/${SHOULD_BE_NULL_IF_MILESTONE_IS_CLOSED}";
       exit 1;
   fi
 fi
@@ -66,11 +66,11 @@ echo "Version: ${MVN_VERSION_RELEASE}";
 
 # first try to get the GITHUB_MILESTONE number from the closed milestones
 export GITHUB_MILESTONE
-GITHUB_MILESTONE=$(curl  -s -H "Accept: application/vnd.github.v3+json"  https://api.github.com/repos/eclipse/rdf4j/milestones?state=closed\&direction=desc\&sort=title | jq '.[] | select(.title == "'"${MVN_VERSION_RELEASE}"'") | .number')
+GITHUB_MILESTONE=$(curl  -s -H "Accept: application/vnd.github.v3+json"  https://api.github.com/repos/eclipse-rdf4j/rdf4j/milestones?state=closed\&direction=desc\&sort=title | jq '.[] | select(.title == "'"${MVN_VERSION_RELEASE}"'") | .number')
 
 # then try to get the GITHUB_MILESTONE number from the open milestones (this should only be relevant for RDF4J Milestone builds).
 if  [[ ${GITHUB_MILESTONE} == "" ]]; then
-    GITHUB_MILESTONE=$(curl  -s -H "Accept: application/vnd.github.v3+json"  https://api.github.com/repos/eclipse/rdf4j/milestones | jq '.[] | select(.title == "'"${MVN_VERSION_RELEASE}"'") | .number')
+    GITHUB_MILESTONE=$(curl  -s -H "Accept: application/vnd.github.v3+json"  https://api.github.com/repos/eclipse-rdf4j/rdf4j/milestones | jq '.[] | select(.title == "'"${MVN_VERSION_RELEASE}"'") | .number')
 fi
 
 if  [[ ${GITHUB_MILESTONE} == "" ]]; then
@@ -80,9 +80,9 @@ if  [[ ${GITHUB_MILESTONE} == "" ]]; then
 fi
 
 export NUMBER_OF_CLOSED_ISSUES
-NUMBER_OF_CLOSED_ISSUES=$(curl  -s -H "Accept: application/vnd.github.v3+json"  https://api.github.com/repos/eclipse/rdf4j/milestones/${GITHUB_MILESTONE}  | jq '.closed_issues')
+NUMBER_OF_CLOSED_ISSUES=$(curl  -s -H "Accept: application/vnd.github.v3+json"  https://api.github.com/repos/eclipse-rdf4j/rdf4j/milestones/${GITHUB_MILESTONE}  | jq '.closed_issues')
 
-echo "Milestone: https://github.com/eclipse/rdf4j/milestone/${GITHUB_MILESTONE}"
+echo "Milestone: https://github.com/eclipse-rdf4j/rdf4j/milestone/${GITHUB_MILESTONE}"
 echo "Number of closed issues: ${NUMBER_OF_CLOSED_ISSUES}"
 
 export DATETIME
