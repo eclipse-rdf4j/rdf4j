@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 
 public class EqualsConstraintComponent extends AbstractConstraintComponent {
 
-	IRI predicate;
+	private final IRI predicate;
 
 	public EqualsConstraintComponent(IRI predicate) {
 		this.predicate = predicate;
@@ -47,5 +47,24 @@ public class EqualsConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public List<Literal> getDefaultMessage() {
 		return List.of();
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		EqualsConstraintComponent that = (EqualsConstraintComponent) o;
+
+		return predicate.equals(that.predicate);
+	}
+
+	@Override
+	public int hashCode() {
+		return predicate.hashCode() + "EqualsConstraintComponent".hashCode();
 	}
 }

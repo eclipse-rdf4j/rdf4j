@@ -38,9 +38,9 @@ public class ValuesBackedNode implements PlanNode {
 	boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public ValuesBackedNode(SortedSet<Value> values, ConstraintComponent.Scope scope, Resource[] contexts) {
+	public ValuesBackedNode(SortedSet<Value> values, ConstraintComponent.Scope scope, Resource[] dataGraph) {
 		this.tuples = values.stream()
-				.map(c -> new ValidationTuple(c, scope, false, contexts))
+				.map(c -> new ValidationTuple(c, scope, false, dataGraph))
 				.collect(Collectors.toList());
 		this.values = values;
 		this.scope = scope;

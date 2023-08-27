@@ -69,4 +69,23 @@ public class MaxExclusiveConstraintComponent extends SimpleAbstractConstraintCom
 	public List<Literal> getDefaultMessage() {
 		return List.of();
 	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		MaxExclusiveConstraintComponent that = (MaxExclusiveConstraintComponent) o;
+
+		return maxExclusive.equals(that.maxExclusive);
+	}
+
+	@Override
+	public int hashCode() {
+		return maxExclusive.hashCode() + "MaxExclusiveConstraintComponent".hashCode();
+	}
 }

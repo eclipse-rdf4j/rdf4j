@@ -33,7 +33,7 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 
 public class SimplePath extends Path {
 
-	IRI predicate;
+	private final IRI predicate;
 
 	public SimplePath(IRI predicate) {
 		super(predicate);
@@ -132,4 +132,22 @@ public class SimplePath extends Path {
 		return "<" + predicate + ">";
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		SimplePath that = (SimplePath) o;
+
+		return predicate.equals(that.predicate);
+	}
+
+	@Override
+	public int hashCode() {
+		return predicate.hashCode();
+	}
 }

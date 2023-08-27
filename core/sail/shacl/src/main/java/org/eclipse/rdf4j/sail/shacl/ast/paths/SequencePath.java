@@ -196,4 +196,22 @@ public class SequencePath extends Path {
 		return "(" + paths.stream().map(Path::toSparqlPathString).collect(Collectors.joining(" / ")) + ")";
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		SequencePath that = (SequencePath) o;
+
+		return paths.equals(that.paths);
+	}
+
+	@Override
+	public int hashCode() {
+		return paths.hashCode();
+	}
 }

@@ -73,4 +73,22 @@ public class MinLengthConstraintComponent extends SimpleAbstractConstraintCompon
 		return List.of();
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		MinLengthConstraintComponent that = (MinLengthConstraintComponent) o;
+
+		return minLength == that.minLength;
+	}
+
+	@Override
+	public int hashCode() {
+		return (int) (minLength ^ (minLength >>> 32)) + "MinLengthConstraintComponent".hashCode();
+	}
 }

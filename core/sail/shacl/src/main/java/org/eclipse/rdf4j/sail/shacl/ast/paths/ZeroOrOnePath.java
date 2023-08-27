@@ -84,4 +84,22 @@ public class ZeroOrOnePath extends Path {
 		throw new ShaclUnsupportedException();
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		ZeroOrOnePath that = (ZeroOrOnePath) o;
+
+		return path.equals(that.path);
+	}
+
+	@Override
+	public int hashCode() {
+		return path.hashCode();
+	}
 }

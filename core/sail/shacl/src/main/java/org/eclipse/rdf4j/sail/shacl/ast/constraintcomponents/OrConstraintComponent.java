@@ -209,4 +209,22 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 		return List.of();
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		OrConstraintComponent that = (OrConstraintComponent) o;
+
+		return or.equals(that.or);
+	}
+
+	@Override
+	public int hashCode() {
+		return or.hashCode() + "OrConstraintComponent".hashCode();
+	}
 }

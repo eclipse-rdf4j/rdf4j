@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
@@ -49,14 +50,22 @@ public class RepositoryConnectionShapeSource implements ShapeSource {
 
 	public Stream<ShapesGraph> getAllShapeContexts() {
 		assert context == null;
+
+		Stream<ShapesGraph> rsxDataAndShapesGraphLink = ShapeSource.getRsxDataAndShapesGraphLink(connection, context);
+		Stream<ShapesGraph> shapesGraphStream;
+
 		try (Stream<? extends Statement> stream = connection.getStatements(null, SHACL.SHAPES_GRAPH, null, false)
 				.stream()) {
-			return stream
+			shapesGraphStream = stream
 					.collect(Collectors.groupingBy(Statement::getSubject))
 					.entrySet()
 					.stream()
-					.map(entry -> new ShapeSource.ShapesGraph(entry.getKey(), entry.getValue()));
+					.map(entry -> new ShapesGraph(entry.getKey(), entry.getValue()))
+					.collect(Collectors.toList())
+					.stream();
 		}
+
+		return Stream.concat(rsxDataAndShapesGraphLink, shapesGraphStream);
 
 	}
 
@@ -127,7 +136,10 @@ public class RepositoryConnectionShapeSource implements ShapeSource {
 
 	public Stream<Statement> getAllStatements(Resource id) {
 		assert context != null;
-		return connection.getStatements(id, null, null, true, context).stream();
+		return connection.getStatements(id, null, null, true, context)
+				.stream()
+				.map(Statements::stripContext)
+				.distinct();
 	}
 
 	public Value getRdfFirst(Resource subject) {

@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
@@ -69,8 +70,8 @@ public class ShaclProperties {
 	private Literal minInclusive;
 	private Literal maxInclusive;
 
-	private final List<String> pattern = new ArrayList<>();
-	private String flags = null;
+	private String pattern;
+	private String flags;
 
 	private final Set<Resource> targetClass = new HashSet<>();
 	private final TreeSet<Value> targetNode = new TreeSet<>(new ValueComparator());
@@ -85,20 +86,17 @@ public class ShaclProperties {
 
 	private final List<Resource> target = new ArrayList<>();
 
-	private boolean deactivated = false;
+	private Boolean deactivated = null;
 
-	private boolean uniqueLang = false;
+	private Boolean uniqueLang = null;
 
-	boolean closed = false;
+	private Boolean closed = null;
 	private Resource ignoredProperties;
 
 	private final List<Literal> message = new ArrayList<>();
 	private IRI severity;
 
 	private final List<Resource> sparql = new ArrayList<>();
-
-	public ShaclProperties() {
-	}
 
 	public ShaclProperties(Resource id, ShapeSource connection) {
 		this.id = id;
@@ -112,154 +110,302 @@ public class ShaclProperties {
 				case "http://www.w3.org/1999/02/22-rdf-syntax-ns#type":
 					if (object.equals(SHACL.NODE_SHAPE)) {
 						if (type != null && !type.equals(SHACL.NODE_SHAPE)) {
-							throw new IllegalStateException(
-									"Shape " + id + " with multiple types: <" + type + ">, <" + SHACL.NODE_SHAPE + ">");
+							throw new ShaclShapeParsingException(
+									"Shape with multiple types: <" + type + ">, <" + SHACL.NODE_SHAPE + ">", id);
 						}
 						type = SHACL.NODE_SHAPE;
 					} else if (object.equals(SHACL.PROPERTY_SHAPE)) {
 						if (type != null && !type.equals(SHACL.PROPERTY_SHAPE)) {
-							throw new IllegalStateException(
-									"Shape " + id + " with multiple types: <" + type + ">, <" + SHACL.PROPERTY_SHAPE
-											+ ">");
+							throw new ShaclShapeParsingException(
+									"Shape with multiple types: <" + type + ">, <" + SHACL.PROPERTY_SHAPE
+											+ ">",
+									id);
 						}
 						type = SHACL.PROPERTY_SHAPE;
 					}
 					break;
 				case "http://www.w3.org/ns/shacl#or":
-					or.add((Resource) object);
+					try {
+						or.add((Resource) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Resource.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#xone":
-					xone.add((Resource) object);
+					try {
+						xone.add((Resource) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Resource.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#and":
-					and.add((Resource) object);
+					try {
+						and.add((Resource) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Resource.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#not":
-					not.add((Resource) object);
+					try {
+						not.add((Resource) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Resource.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#property":
-					property.add((Resource) object);
+					try {
+						property.add((Resource) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Resource.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#node":
-					node.add((Resource) object);
+					try {
+						node.add((Resource) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Resource.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#message":
-					message.add((Literal) object);
+					try {
+						message.add((Literal) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#severity":
 					if (severity != null) {
-						throw new IllegalStateException(predicate + " already populated");
+						throw getExceptionForAlreadyPopulated(id, predicate, severity, object);
 					}
-					severity = (IRI) object;
+					try {
+						severity = (IRI) object;
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, IRI.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#languageIn":
 					if (languageIn != null) {
-						throw new IllegalStateException(predicate + " already populated");
+						throw getExceptionForAlreadyPopulated(id, predicate, languageIn, object);
 					}
-					languageIn = (Resource) object;
+					try {
+						languageIn = (Resource) object;
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Resource.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#nodeKind":
 					if (nodeKind != null) {
-						throw new IllegalStateException(predicate + " already populated");
+						throw getExceptionForAlreadyPopulated(id, predicate, nodeKind, object);
 					}
-					nodeKind = (Resource) object;
+					try {
+						nodeKind = (Resource) object;
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Resource.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#datatype":
 					if (datatype != null) {
-						throw new IllegalStateException(predicate + " already populated");
+						throw getExceptionForAlreadyPopulated(id, predicate, datatype, object);
 					}
-					datatype = (IRI) object;
+					try {
+						datatype = (IRI) object;
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, IRI.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#minCount":
 					if (minCount != null) {
-						throw new IllegalStateException(predicate + " already populated");
+						throw getExceptionForAlreadyPopulated(id, predicate, minCount, object);
 					}
-					minCount = ((Literal) object).longValue();
+					try {
+						minCount = ((Literal) object).longValue();
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					} catch (NumberFormatException e) {
+						throw getExceptionForLiteralFormatIssue(id, predicate, object, Long.class);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#maxCount":
 					if (maxCount != null) {
-						throw new IllegalStateException(predicate + " already populated");
+						throw getExceptionForAlreadyPopulated(id, predicate, maxCount, object);
 					}
-					maxCount = ((Literal) object).longValue();
+					try {
+						maxCount = ((Literal) object).longValue();
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					} catch (NumberFormatException e) {
+						throw getExceptionForLiteralFormatIssue(id, predicate, object, Long.class);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#minLength":
 					if (minLength != null) {
-						throw new IllegalStateException(predicate + " already populated");
+						throw getExceptionForAlreadyPopulated(id, predicate, minLength, object);
 					}
-					minLength = ((Literal) object).longValue();
+					try {
+						minLength = ((Literal) object).longValue();
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					} catch (NumberFormatException e) {
+						throw getExceptionForLiteralFormatIssue(id, predicate, object, Long.class);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#maxLength":
 					if (maxLength != null) {
-						throw new IllegalStateException(predicate + " already populated");
+						throw getExceptionForAlreadyPopulated(id, predicate, maxLength, object);
 					}
-					maxLength = ((Literal) object).longValue();
+					try {
+						maxLength = ((Literal) object).longValue();
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					} catch (NumberFormatException e) {
+						throw getExceptionForLiteralFormatIssue(id, predicate, object, Long.class);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#minExclusive":
 					if (minExclusive != null) {
-						throw new IllegalStateException(predicate + " already populated");
+						throw getExceptionForAlreadyPopulated(id, predicate, minExclusive, object);
 					}
-					minExclusive = (Literal) object;
+					try {
+						minExclusive = (Literal) object;
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#maxExclusive":
 					if (maxExclusive != null) {
-						throw new IllegalStateException(predicate + " already populated");
+						throw getExceptionForAlreadyPopulated(id, predicate, maxExclusive, object);
 					}
-					maxExclusive = (Literal) object;
+					try {
+						maxExclusive = (Literal) object;
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#minInclusive":
 					if (minInclusive != null) {
-						throw new IllegalStateException(predicate + " already populated");
+						throw getExceptionForAlreadyPopulated(id, predicate, minInclusive, object);
 					}
-					minInclusive = (Literal) object;
+					try {
+						minInclusive = (Literal) object;
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#maxInclusive":
 					if (maxInclusive != null) {
-						throw new IllegalStateException(predicate + " already populated");
+						throw getExceptionForAlreadyPopulated(id, predicate, maxInclusive, object);
 					}
-					maxInclusive = (Literal) object;
+					try {
+						maxInclusive = (Literal) object;
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#pattern":
-					pattern.add(object.stringValue());
+					if (pattern != null) {
+						throw getExceptionForAlreadyPopulated(id, predicate, pattern, object);
+					}
+					try {
+						pattern = ((Literal) object).getLabel();
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#class":
-					clazz.add((IRI) object);
+					try {
+						clazz.add((IRI) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, IRI.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#targetNode":
+					if (!object.isLiteral() && !object.isIRI()) {
+						throw new ShaclShapeParsingException("Expected predicate <" + predicate
+								+ "> to have a Literal or an IRI as object, but found "
+								+ getClassName(object) + " for " + object, id);
+					}
 					targetNode.add(object);
 					break;
 				case "http://www.w3.org/ns/shacl#targetClass":
-					targetClass.add((Resource) object);
+					try {
+						targetClass.add((Resource) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Resource.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#targetSubjectsOf":
-					targetSubjectsOf.add((IRI) object);
+					try {
+						targetSubjectsOf.add((IRI) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, IRI.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#targetObjectsOf":
-					targetObjectsOf.add((IRI) object);
+					try {
+						targetObjectsOf.add((IRI) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, IRI.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#deactivated":
-					deactivated = ((Literal) object).booleanValue();
+					if (deactivated != null) {
+						throw getExceptionForAlreadyPopulated(id, predicate, deactivated, object);
+					}
+					try {
+						deactivated = ((Literal) object).booleanValue();
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					} catch (IllegalArgumentException e) {
+						throw getExceptionForLiteralFormatIssue(id, predicate, object, Boolean.class);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#uniqueLang":
-					uniqueLang = ((Literal) object).booleanValue();
+					if (uniqueLang != null) {
+						throw getExceptionForAlreadyPopulated(id, predicate, uniqueLang, object);
+					}
+					try {
+						uniqueLang = ((Literal) object).booleanValue();
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					} catch (IllegalArgumentException e) {
+						throw getExceptionForLiteralFormatIssue(id, predicate, object, Boolean.class);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#closed":
-					closed = ((Literal) object).booleanValue();
+					if (closed != null) {
+						throw getExceptionForAlreadyPopulated(id, predicate, closed, object);
+					}
+					try {
+						closed = ((Literal) object).booleanValue();
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					} catch (IllegalArgumentException e) {
+						throw getExceptionForLiteralFormatIssue(id, predicate, object, Boolean.class);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#ignoredProperties":
 					if (ignoredProperties != null) {
-						throw new IllegalStateException(predicate + " already populated");
+						throw getExceptionForAlreadyPopulated(id, predicate, ignoredProperties, object);
 					}
-					ignoredProperties = ((Resource) object);
+					try {
+						ignoredProperties = ((Resource) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Resource.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#flags":
 					if (flags != null) {
-						throw new IllegalStateException(predicate + " already populated");
+						throw getExceptionForAlreadyPopulated(id, predicate, flags, object);
 					}
-					flags = object.stringValue();
+					try {
+						flags = ((Literal) object).getLabel();
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#path":
 					if (path != null) {
-						throw new IllegalStateException(predicate + " already populated");
+						throw getExceptionForAlreadyPopulated(id, predicate, path, object);
 					}
 					if (type == null) {
 						type = SHACL.PROPERTY_SHAPE;
@@ -267,67 +413,126 @@ public class ShaclProperties {
 						throw new IllegalStateException("Shape " + id
 								+ " has sh:path and must be of type sh:PropertyShape but is type " + type);
 					}
-					path = (Resource) object;
+					try {
+						path = (Resource) object;
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Resource.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#in":
 					if (in != null) {
-						throw new IllegalStateException(predicate + " already populated");
+						throw getExceptionForAlreadyPopulated(id, predicate, in, object);
 					}
-					in = (Resource) object;
+					try {
+						in = (Resource) object;
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Resource.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#equals":
-					equals.add((IRI) object);
+					try {
+						equals.add((IRI) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, IRI.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#disjoint":
-					disjoint.add((IRI) object);
+					try {
+						disjoint.add((IRI) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, IRI.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#lessThan":
-					lessThan.add((IRI) object);
+					try {
+						lessThan.add((IRI) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, IRI.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#lessThanOrEquals":
-					lessThanOrEquals.add((IRI) object);
+					try {
+						lessThanOrEquals.add((IRI) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, IRI.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#target":
-					target.add((Resource) object);
+					try {
+						target.add((Resource) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Resource.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#hasValue":
 					hasValue.add(object);
 					break;
 				case "http://www.w3.org/ns/shacl#qualifiedValueShape":
 					if (qualifiedValueShape != null) {
-						throw new IllegalStateException(predicate + " already populated");
+						throw getExceptionForAlreadyPopulated(id, predicate, qualifiedValueShape, object);
 					}
-					qualifiedValueShape = ((Resource) object);
+					try {
+						qualifiedValueShape = ((Resource) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Resource.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#qualifiedValueShapesDisjoint":
 					if (qualifiedValueShapesDisjoint != null) {
-						throw new IllegalStateException(predicate + " already populated");
+						throw getExceptionForAlreadyPopulated(id, predicate, qualifiedValueShapesDisjoint, object);
 					}
-					qualifiedValueShapesDisjoint = ((Literal) object).booleanValue();
+					try {
+						qualifiedValueShapesDisjoint = ((Literal) object).booleanValue();
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					} catch (IllegalArgumentException e) {
+						throw getExceptionForLiteralFormatIssue(id, predicate, object, Boolean.class);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#qualifiedMinCount":
 					if (qualifiedMinCount != null) {
-						throw new IllegalStateException(predicate + " already populated");
+						throw getExceptionForAlreadyPopulated(id, predicate, qualifiedMinCount, object);
 					}
-					qualifiedMinCount = ((Literal) object).longValue();
+					try {
+						qualifiedMinCount = ((Literal) object).longValue();
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					} catch (NumberFormatException e) {
+						throw getExceptionForLiteralFormatIssue(id, predicate, object, Long.class);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#qualifiedMaxCount":
 					if (qualifiedMaxCount != null) {
-						throw new IllegalStateException(predicate + " already populated");
+						throw getExceptionForAlreadyPopulated(id, predicate, qualifiedMaxCount, object);
 					}
-					qualifiedMaxCount = ((Literal) object).longValue();
+					try {
+						qualifiedMaxCount = ((Literal) object).longValue();
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					} catch (NumberFormatException e) {
+						throw getExceptionForLiteralFormatIssue(id, predicate, object, Long.class);
+					}
 					break;
 				case "http://datashapes.org/dash#hasValueIn":
-					hasValueIn.add((Resource) object);
+					try {
+						hasValueIn.add((Resource) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Resource.class, object);
+					}
 					break;
 				case "http://rdf4j.org/shacl-extensions#targetShape":
-					targetShape.add((Resource) object);
+					try {
+						targetShape.add((Resource) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Resource.class, object);
+					}
 					break;
 				case "http://www.w3.org/ns/shacl#sparql":
-					if (!object.isResource()) {
-						throw new IllegalStateException("Object is not a resource: " + statement);
+					try {
+						sparql.add((Resource) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Resource.class, object);
 					}
-					sparql.add((Resource) object);
 					break;
 
 				default:
@@ -346,6 +551,63 @@ public class ShaclProperties {
 			type = path == null ? SHACL.NODE_SHAPE : SHACL.PROPERTY_SHAPE;
 		}
 
+	}
+
+	private static ShaclShapeParsingException getExceptionForLiteralFormatIssue(Resource id, String predicate,
+			Value object, Class<?> clazz) {
+		return new ShaclShapeParsingException("Expected predicate <" + predicate + "> to have a "
+				+ clazz.getSimpleName() + " as object but found " + object, id);
+	}
+
+	private static ShaclShapeParsingException getExceptionForAlreadyPopulated(Resource id, String predicate,
+			Object existingObject, Value secondValue) {
+		Value existingValue;
+
+		if (existingObject instanceof Value) {
+			existingValue = (Value) existingObject;
+		} else if (existingObject instanceof String) {
+			existingValue = Values.literal(existingObject);
+		} else if (existingObject instanceof Boolean) {
+			existingValue = Values.literal(existingObject);
+		} else {
+			return new ShaclShapeParsingException("Expected predicate <" + predicate
+					+ "> to have no more than 1 object, found " + existingObject + " and " + secondValue, id);
+		}
+
+		return new ShaclShapeParsingException("Expected predicate <" + predicate
+				+ "> to have no more than 1 object, found " + existingValue + " and " + secondValue, id);
+	}
+
+	private static ShaclShapeParsingException getExceptionForCastIssue(Resource id, String predicate,
+			Class<?> expectedClass, Value object) {
+		String expectedClassString;
+		if (expectedClass == IRI.class) {
+			expectedClassString = "an IRI";
+		} else {
+			expectedClassString = "a " + expectedClass.getSimpleName();
+		}
+
+		return new ShaclShapeParsingException("Expected predicate <" + predicate + "> to have " + expectedClassString
+				+ " as object, but found " + getClassName(object) + " for " + object, id);
+	}
+
+	private static String getClassName(Value object) {
+		if (object == null)
+			return "null";
+		String actualClassName;
+		if (object.isIRI()) {
+			actualClassName = "IRI";
+		} else if (object.isLiteral()) {
+			actualClassName = "Literal";
+		} else if (object.isBNode()) {
+			actualClassName = "BNode";
+		} else if (object.isTriple()) {
+			actualClassName = "Triple";
+		} else {
+			assert false;
+			actualClassName = object.getClass().getSimpleName();
+		}
+		return actualClassName;
 	}
 
 	public List<IRI> getClazz() {
@@ -416,7 +678,7 @@ public class ShaclProperties {
 		return maxInclusive;
 	}
 
-	public List<String> getPattern() {
+	public String getPattern() {
 		return pattern;
 	}
 
@@ -441,11 +703,11 @@ public class ShaclProperties {
 	}
 
 	public boolean isDeactivated() {
-		return deactivated;
+		return deactivated != null && deactivated;
 	}
 
 	public boolean isUniqueLang() {
-		return uniqueLang;
+		return uniqueLang != null && uniqueLang;
 	}
 
 	public Resource getId() {
@@ -473,7 +735,7 @@ public class ShaclProperties {
 	}
 
 	public boolean isClosed() {
-		return closed;
+		return closed != null && closed;
 	}
 
 	public Resource getIgnoredProperties() {
@@ -528,8 +790,8 @@ public class ShaclProperties {
 		return qualifiedMaxCount;
 	}
 
-	public Boolean getQualifiedValueShapesDisjoint() {
-		return qualifiedValueShapesDisjoint;
+	public boolean getQualifiedValueShapesDisjoint() {
+		return qualifiedValueShapesDisjoint != null && qualifiedValueShapesDisjoint;
 	}
 
 	public List<Resource> getSparql() {

@@ -109,26 +109,6 @@ public class LanguageInConstraintComponent extends SimpleAbstractConstraintCompo
 	}
 
 	@Override
-	public boolean equals(Object o) {
-		if (this == o) {
-			return true;
-		}
-		if (o == null || getClass() != o.getClass()) {
-			return false;
-		}
-		if (!super.equals(o)) {
-			return false;
-		}
-		LanguageInConstraintComponent that = (LanguageInConstraintComponent) o;
-		return lowerCaseLanguageIn.equals(that.lowerCaseLanguageIn);
-	}
-
-	@Override
-	public int hashCode() {
-		return Objects.hash(super.hashCode(), lowerCaseLanguageIn);
-	}
-
-	@Override
 	public String toString() {
 		return "LanguageInPropertyShape{" +
 				"languageIn=" + Arrays.toString(languageIn.toArray()) +
@@ -140,5 +120,24 @@ public class LanguageInConstraintComponent extends SimpleAbstractConstraintCompo
 	@Override
 	public List<Literal> getDefaultMessage() {
 		return List.of();
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		LanguageInConstraintComponent that = (LanguageInConstraintComponent) o;
+
+		return languageIn.equals(that.languageIn);
+	}
+
+	@Override
+	public int hashCode() {
+		return languageIn.hashCode() + "LanguageInConstraintComponent".hashCode();
 	}
 }
