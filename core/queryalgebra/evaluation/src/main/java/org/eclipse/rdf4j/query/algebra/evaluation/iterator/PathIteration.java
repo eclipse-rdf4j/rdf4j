@@ -279,7 +279,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 			if (startVarFixed && endVarFixed) {
 				String varName = JOINVAR_PREFIX + currentLength + "_" + this.hashCode();
-				Var replacement = new Var(varName, true);
+				Var replacement = createAnonVar(varName, null, true);
 
 				VarReplacer replacer = new VarReplacer(endVar, replacement, 0, false);
 				pathExprClone.visit(replacer);
@@ -297,9 +297,9 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 				if (startVarFixed && endVarFixed) {
 
 					Value v = currentVp.getEndValue();
-
-					Var startReplacement = new Var(JOINVAR_PREFIX + currentLength + "_" + this.hashCode(), v);
-					Var endReplacement = new Var("END_" + JOINVAR_PREFIX + this.hashCode());
+					Var startReplacement = createAnonVar(JOINVAR_PREFIX + currentLength + "_" + this.hashCode(), v,
+							false);
+					Var endReplacement = createAnonVar("END_" + JOINVAR_PREFIX + this.hashCode(), null, false);
 
 					VarReplacer replacer = new VarReplacer(startVar, startReplacement, 0, false);
 					pathExprClone.visit(replacer);
@@ -318,7 +318,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 					}
 
 					String varName = JOINVAR_PREFIX + currentLength + "-" + this.hashCode();
-					Var replacement = new Var(varName, v, true);
+					Var replacement = createAnonVar(varName, v, true);
 
 					VarReplacer replacer = new VarReplacer(toBeReplaced, replacement, 0, false);
 					pathExprClone.visit(replacer);
@@ -370,8 +370,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		public int hashCode() {
 			final int prime = 31;
 			int result = 1;
-			result = prime * result + (endValue == null ? 0 : endValue.hashCode());
-			result = prime * result + (startValue == null ? 0 : startValue.hashCode());
+			result = prime * result + ((endValue == null) ? 0 : endValue.hashCode());
+			result = prime * result + ((startValue == null) ? 0 : startValue.hashCode());
 			return result;
 		}
 
@@ -424,13 +424,13 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 		@Override
 		public void meet(Var var) {
-			if (toBeReplaced.equals(var) || toBeReplaced.isAnonymous() && var.isAnonymous()
-					&& toBeReplaced.hasValue() && toBeReplaced.getValue().equals(var.getValue())) {
+			if (toBeReplaced.equals(var) || (toBeReplaced.isAnonymous() && var.isAnonymous()
+					&& (toBeReplaced.hasValue() && toBeReplaced.getValue().equals(var.getValue())))) {
 				QueryModelNode parent = var.getParentNode();
 				parent.replaceChildNode(var, replacement.clone());
 			} else if (replaceAnons && var.isAnonymous() && !var.hasValue()) {
 				String varName = "anon-replace-" + var.getName() + index;
-				Var replacementVar = new Var(varName, true);
+				Var replacementVar = createAnonVar(varName, null, true);
 				QueryModelNode parent = var.getParentNode();
 				parent.replaceChildNode(var, replacementVar);
 			}
@@ -440,10 +440,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 	private Var createAnonVar(String varName, Value v, boolean anonymous) {
 		namedIntermediateJoins.add(varName);
-		return new Var(varName, null, anonymous, false);
+		return new Var(varName, v, anonymous, false);
 	}
 
-	public Var createAnonVar(String varName) {
-		return createAnonVar(varName, null, true);
-	}
 }
