@@ -218,17 +218,21 @@ public class Rdf4jShaclShapeGraphShapeSource implements ShapeSource {
 	public Stream<ShapesGraph> getAllShapeContexts() {
 		assert context != null;
 
+		Stream<ShapesGraph> rsxDataAndShapesGraphLink = ShapeSource.getRsxDataAndShapesGraphLink(connection, context);
+
 		try (Stream<? extends Statement> stream = connection
 				.getStatements(null, SHACL.SHAPES_GRAPH, null, false, context)
 				.stream()) {
 
 			var collect = stream.collect(Collectors.toList());
 
-			return Stream.concat(Stream.of(new ShapesGraph(RDF4J.SHACL_SHAPE_GRAPH)), collect.stream()
-					.collect(Collectors.groupingBy(Statement::getSubject))
-					.entrySet()
-					.stream()
-					.map(entry -> new ShapeSource.ShapesGraph(entry.getKey(), entry.getValue())));
+			return Stream.concat(
+					Stream.concat(rsxDataAndShapesGraphLink, Stream.of(new ShapesGraph(RDF4J.SHACL_SHAPE_GRAPH))),
+					collect.stream()
+							.collect(Collectors.groupingBy(Statement::getSubject))
+							.entrySet()
+							.stream()
+							.map(entry -> new ShapeSource.ShapesGraph(entry.getKey(), entry.getValue())));
 		}
 
 	}

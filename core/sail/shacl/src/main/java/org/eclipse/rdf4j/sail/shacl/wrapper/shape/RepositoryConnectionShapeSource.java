@@ -50,14 +50,22 @@ public class RepositoryConnectionShapeSource implements ShapeSource {
 
 	public Stream<ShapesGraph> getAllShapeContexts() {
 		assert context == null;
+
+		Stream<ShapesGraph> rsxDataAndShapesGraphLink = ShapeSource.getRsxDataAndShapesGraphLink(connection, context);
+		Stream<ShapesGraph> shapesGraphStream;
+
 		try (Stream<? extends Statement> stream = connection.getStatements(null, SHACL.SHAPES_GRAPH, null, false)
 				.stream()) {
-			return stream
+			shapesGraphStream = stream
 					.collect(Collectors.groupingBy(Statement::getSubject))
 					.entrySet()
 					.stream()
-					.map(entry -> new ShapeSource.ShapesGraph(entry.getKey(), entry.getValue()));
+					.map(entry -> new ShapesGraph(entry.getKey(), entry.getValue()))
+					.collect(Collectors.toList())
+					.stream();
 		}
+
+		return Stream.concat(rsxDataAndShapesGraphLink, shapesGraphStream);
 
 	}
 

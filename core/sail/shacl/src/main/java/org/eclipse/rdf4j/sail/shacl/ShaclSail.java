@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RSX;
+import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -327,7 +328,9 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 				SHACL.NAMESPACE_PROP,
 				SHACL.SEVERITY_PROP,
 				DASH.hasValueIn,
-				RSX.targetShape
+				RSX.targetShape,
+				RSX.dataGraph,
+				RSX.shapesGraph
 		);
 	}
 
@@ -372,6 +375,9 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 			IRI[] shapesGraphs = getShapesGraphs().stream()
 					.map(g -> {
 						if (g.equals(RDF4J.NIL)) {
+							return null;
+						}
+						if (g.equals(SESAME.NIL)) {
 							return null;
 						}
 						return g;
