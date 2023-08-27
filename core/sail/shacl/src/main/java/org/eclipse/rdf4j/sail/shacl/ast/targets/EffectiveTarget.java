@@ -512,18 +512,18 @@ public class EffectiveTarget {
 	static class ActiveTargetTupleMapper implements Function<ValidationTuple, ValidationTuple> {
 		private final ConstraintComponent.Scope scope;
 		private final boolean includePropertyShapeValues;
-		private final Resource[] contexts;
+		private final Resource[] dataGraph;
 
 		public ActiveTargetTupleMapper(ConstraintComponent.Scope scope, boolean includePropertyShapeValues,
-				Resource[] contexts) {
+				Resource[] dataGraph) {
 			this.scope = scope;
 			this.includePropertyShapeValues = includePropertyShapeValues;
-			this.contexts = contexts;
+			this.dataGraph = dataGraph;
 		}
 
 		@Override
 		public ValidationTuple apply(ValidationTuple validationTuple) {
-			return new ValidationTuple(validationTuple.getActiveTarget(), scope, includePropertyShapeValues, contexts);
+			return new ValidationTuple(validationTuple.getActiveTarget(), scope, includePropertyShapeValues, dataGraph);
 		}
 
 		@Override

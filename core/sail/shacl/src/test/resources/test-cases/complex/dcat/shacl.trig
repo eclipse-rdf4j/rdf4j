@@ -180,7 +180,6 @@
                      ] ,
                      [
                              sh:path  adms:status ;
-                             sh:class skos:Concept ;
                              sh:minCount 1;
                              # sh:severity   sh:Warning
                      ],
@@ -455,11 +454,7 @@
                                                  [ sh:path  dcat:downloadURL ; sh:minCount 1 ]
                                                   ) ;
                      sh:property
-                     [
-                             sh:class   dct:Standard ;
-                             sh:path  dct:conformsTo ;
-                             # sh:severity   sh:Violation
-                     ],
+
                      [
                              sh:class   dct:RightsStatement ;
                              sh:path  dct:rights ;

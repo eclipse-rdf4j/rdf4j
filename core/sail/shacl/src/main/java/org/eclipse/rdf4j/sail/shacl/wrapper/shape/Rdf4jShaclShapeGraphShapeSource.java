@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
@@ -217,17 +218,21 @@ public class Rdf4jShaclShapeGraphShapeSource implements ShapeSource {
 	public Stream<ShapesGraph> getAllShapeContexts() {
 		assert context != null;
 
+		Stream<ShapesGraph> rsxDataAndShapesGraphLink = ShapeSource.getRsxDataAndShapesGraphLink(connection, context);
+
 		try (Stream<? extends Statement> stream = connection
 				.getStatements(null, SHACL.SHAPES_GRAPH, null, false, context)
 				.stream()) {
 
 			var collect = stream.collect(Collectors.toList());
 
-			return Stream.concat(Stream.of(new ShapesGraph(RDF4J.SHACL_SHAPE_GRAPH)), collect.stream()
-					.collect(Collectors.groupingBy(Statement::getSubject))
-					.entrySet()
-					.stream()
-					.map(entry -> new ShapeSource.ShapesGraph(entry.getKey(), entry.getValue())));
+			return Stream.concat(
+					Stream.concat(rsxDataAndShapesGraphLink, Stream.of(new ShapesGraph(RDF4J.SHACL_SHAPE_GRAPH))),
+					collect.stream()
+							.collect(Collectors.groupingBy(Statement::getSubject))
+							.entrySet()
+							.stream()
+							.map(entry -> new ShapeSource.ShapesGraph(entry.getKey(), entry.getValue())));
 		}
 
 	}
@@ -288,7 +293,10 @@ public class Rdf4jShaclShapeGraphShapeSource implements ShapeSource {
 
 	public Stream<Statement> getAllStatements(Resource id) {
 		assert context != null;
-		return connection.getStatements(id, null, null, true, context).stream();
+		return connection.getStatements(id, null, null, true, context)
+				.stream()
+				.map(Statements::stripContext)
+				.distinct();
 	}
 
 	public Value getRdfFirst(Resource subject) {

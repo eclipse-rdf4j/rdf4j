@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -230,4 +231,22 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 		return List.of();
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		DashHasValueInConstraintComponent that = (DashHasValueInConstraintComponent) o;
+
+		return hasValueIn.equals(that.hasValueIn);
+	}
+
+	@Override
+	public int hashCode() {
+		return hasValueIn.hashCode() + "DashHasValueInConstraintComponent".hashCode();
+	}
 }

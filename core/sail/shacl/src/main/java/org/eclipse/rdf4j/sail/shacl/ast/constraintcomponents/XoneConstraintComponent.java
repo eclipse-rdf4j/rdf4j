@@ -98,4 +98,22 @@ public class XoneConstraintComponent extends AbstractConstraintComponent {
 		return List.of();
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		XoneConstraintComponent that = (XoneConstraintComponent) o;
+
+		return xone.equals(that.xone);
+	}
+
+	@Override
+	public int hashCode() {
+		return xone.hashCode() + "XoneConstraintComponent".hashCode();
+	}
 }

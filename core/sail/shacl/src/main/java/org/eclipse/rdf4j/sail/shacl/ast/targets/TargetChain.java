@@ -88,4 +88,36 @@ public class TargetChain {
 	public Set<Namespace> getNamespaces() {
 		return chain.stream().flatMap(targetable -> targetable.getNamespaces().stream()).collect(Collectors.toSet());
 	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		TargetChain that = (TargetChain) o;
+
+		if (chain.size() != that.chain.size()) {
+			return false;
+		}
+
+		for (Targetable targetable : chain) {
+			if (!that.chain.contains(targetable)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	@Override
+	public int hashCode() {
+		int hashCode = 0;
+		for (Targetable targetable : chain) {
+			hashCode += targetable.hashCode();
+		}
+		return hashCode;
+	}
 }

@@ -207,4 +207,22 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 		return List.of();
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		NotConstraintComponent that = (NotConstraintComponent) o;
+
+		return not.equals(that.not);
+	}
+
+	@Override
+	public int hashCode() {
+		return not.hashCode() + "NotConstraintComponent".hashCode();
+	}
 }

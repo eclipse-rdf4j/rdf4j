@@ -77,7 +77,7 @@ import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach;
-import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShapes;
+import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShape;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -321,7 +321,8 @@ abstract public class AbstractShaclTest {
 
 		SailRepository shaclRepository = getShaclSail(testCase);
 
-		boolean containsShapesGraphStatements = testCase.getShacl().contains(null, SHACL.SHAPES_GRAPH, null);
+		boolean containsShapesGraphStatements = testCase.getShacl().contains(null, SHACL.SHAPES_GRAPH, null)
+				|| testCase.getShacl().contains(null, RSX.shapesGraph, null);
 		boolean onlyContainsRdf4jShapesGraph = testCase.getShacl().contexts().equals(Set.of(RDF4J.SHACL_SHAPE_GRAPH));
 
 		if (!containsShapesGraphStatements) {
@@ -564,6 +565,11 @@ abstract public class AbstractShaclTest {
 
 		// sh:shapesGraph
 		if (testCase.testCasePath.startsWith("test-cases/datatype/simpleNamedGraph/")) {
+			return;
+		}
+
+		// rsx:DataAndShapesGraphLink
+		if (testCase.testCasePath.startsWith("test-cases/minCount/unionDataset/")) {
 			return;
 		}
 
@@ -1050,11 +1056,13 @@ abstract public class AbstractShaclTest {
 		SailRepository shaclRepository = getShaclSail(testCase);
 		try {
 
-			List<ContextWithShapes> shapes = ((ShaclSail) shaclRepository.getSail()).getCachedShapes()
+			List<ContextWithShape> shapes = ((ShaclSail) shaclRepository.getSail()).getCachedShapes()
 					.getDataAndRelease();
 
+			HashSet<Resource> cycleDetection = new HashSet<>();
+
 			Model actual = new DynamicModelFactory().createEmptyModel();
-			shapes.forEach(shape -> shape.toModel(actual));
+			shapes.forEach(shape -> shape.toModel(actual, cycleDetection));
 
 			Model expected = new LinkedHashModel(testCase.getShacl());
 
@@ -1071,6 +1079,9 @@ abstract public class AbstractShaclTest {
 			expected.remove(null, RDFS.SUBCLASSOF, null);
 
 			expected.remove(null, SHACL.SHAPES_GRAPH, null);
+			expected.filter(null, RDF.TYPE, RSX.DataAndShapesGraphLink).forEach(s -> {
+				expected.remove(s.getSubject(), null, null);
+			});
 
 			// we add inferred NodeShape and PropertyShape, easier to remove when comparing
 			expected.remove(null, RDF.TYPE, SHACL.NODE_SHAPE);

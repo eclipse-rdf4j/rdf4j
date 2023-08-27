@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.Sail;
@@ -46,7 +47,7 @@ import org.eclipse.rdf4j.sail.UpdateContext;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach;
-import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShapes;
+import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShape;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.SingleCloseablePlanNode;
@@ -95,8 +96,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private Lock exclusiveSerializableValidationLock;
 	private Lock nonExclusiveSerializableValidationLock;
 
-	private StampedLockManager.Cache<List<ContextWithShapes>>.WritableState writableShapesCache;
-	private StampedLockManager.Cache<List<ContextWithShapes>>.ReadableState readableShapesCache;
+	private StampedLockManager.Cache<List<ContextWithShape>>.WritableState writableShapesCache;
+	private StampedLockManager.Cache<List<ContextWithShape>>.ReadableState readableShapesCache;
 
 	private final SailRepositoryConnection shapesRepoConnection;
 
@@ -187,6 +188,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		shapesGraphs = sail.getShapesGraphs().stream().map(g -> {
 			if (g.equals(RDF4J.NIL)) {
+				return null;
+			}
+			if (g.equals(SESAME.NIL)) {
 				return null;
 			}
 			return g;
@@ -466,7 +470,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	}
 
-	private ValidationReport validate(List<ContextWithShapes> shapes, boolean validateEntireBaseSail)
+	private ValidationReport validate(List<ContextWithShape> shapes, boolean validateEntireBaseSail)
 			throws InterruptedException {
 
 		assert isValidationEnabled();
@@ -502,7 +506,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				this::getRdfsSubClassOfReasoner, transactionSettings, sail.sparqlValidation);
 	}
 
-	private ValidationReport performValidation(List<ContextWithShapes> shapes, boolean validateEntireBaseSail,
+	private ValidationReport performValidation(List<ContextWithShape> shapes, boolean validateEntireBaseSail,
 			ConnectionsGroup connectionsGroup) throws InterruptedException {
 		long beforeValidation = 0;
 
@@ -511,27 +515,22 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 
 		try {
-			int numberOfShapes = shapes.stream()
-					.map(ContextWithShapes::getShapes)
-					.map(List::size)
-					.mapToInt(i -> i)
-					.sum();
+			int numberOfShapes = shapes.size();
 
 			Stream<Callable<ValidationResultIterator>> callableStream = shapes
 					.stream()
-					.flatMap(contextWithShapes -> contextWithShapes.getShapes()
-							.stream()
-							.map(shape -> new ShapeValidationContainer(
-									shape,
-									() -> shape.generatePlans(connectionsGroup,
+					.map(contextWithShapes -> new ShapeValidationContainer(
+							contextWithShapes.getShape(),
+							() -> contextWithShapes.getShape()
+									.generatePlans(connectionsGroup,
 											new ValidationSettings(contextWithShapes.getDataGraph(),
 													sail.isLogValidationPlans(), validateEntireBaseSail,
 													sail.isPerformanceLogging())),
-									sail.isGlobalLogValidationExecution(), sail.isLogValidationViolations(),
-									sail.getEffectiveValidationResultsLimitPerConstraint(), sail.isPerformanceLogging(),
-									logger
-							))
-					)
+							sail.isGlobalLogValidationExecution(), sail.isLogValidationViolations(),
+							sail.getEffectiveValidationResultsLimitPerConstraint(), sail.isPerformanceLogging(),
+							logger
+					))
+
 					.filter(ShapeValidationContainer::hasPlanNode)
 					.map(validationContainer -> validationContainer::performValidation);
 
@@ -835,8 +834,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				return;
 			}
 
-			List<ContextWithShapes> currentShapes = null;
-			List<ContextWithShapes> shapesAfterRefresh = null;
+			List<ContextWithShape> currentShapes = null;
+			List<ContextWithShape> shapesAfterRefresh = null;
 
 			if (shapeRefreshNeeded || !connectionListenerActive || isBulkValidation()) {
 				if (writableShapesCache == null) {
@@ -913,12 +912,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	}
 
-	private boolean isEmpty(List<ContextWithShapes> shapesList) {
+	private boolean isEmpty(List<ContextWithShape> shapesList) {
 		if (shapesList == null) {
 			return true;
 		}
-		for (ContextWithShapes shapesWithContext : shapesList) {
-			if (!shapesWithContext.getShapes().isEmpty()) {
+		for (ContextWithShape shapesWithContext : shapesList) {
+			if (shapesWithContext.hasShape()) {
 				return false;
 			}
 		}
@@ -934,7 +933,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		return transactionSettings.getValidationApproach() == ValidationApproach.Bulk;
 	}
 
-	private ValidationReport serializableValidation(List<ContextWithShapes> shapesAfterRefresh)
+	private ValidationReport serializableValidation(List<ContextWithShape> shapesAfterRefresh)
 			throws InterruptedException {
 		try {
 			try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(

@@ -69,4 +69,23 @@ public class MaxInclusiveConstraintComponent extends SimpleAbstractConstraintCom
 	public List<Literal> getDefaultMessage() {
 		return List.of();
 	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		MaxInclusiveConstraintComponent that = (MaxInclusiveConstraintComponent) o;
+
+		return maxInclusive.equals(that.maxInclusive);
+	}
+
+	@Override
+	public int hashCode() {
+		return maxInclusive.hashCode() + "MaxInclusiveConstraintComponent".hashCode();
+	}
 }

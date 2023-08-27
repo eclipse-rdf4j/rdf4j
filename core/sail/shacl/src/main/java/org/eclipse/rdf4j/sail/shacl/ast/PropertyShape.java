@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -114,11 +115,14 @@ public class PropertyShape extends Shape {
 			}
 		}
 
-		model.add(getId(), SHACL.PATH, path.getId());
-		path.toModel(path.getId(), null, model, cycleDetection);
+//		if (cycleDetection.contains(getId())) {
+//			return;
+//		}
+//		cycleDetection.add(getId());
 
-		if (cycleDetection.contains(getId())) {
-			return;
+		if (!cycleDetection.contains(getId())) {
+			model.add(getId(), SHACL.PATH, path.getId());
+			path.toModel(path.getId(), null, model, cycleDetection);
 		}
 		cycleDetection.add(getId());
 
@@ -307,4 +311,43 @@ public class PropertyShape extends Shape {
 		return SourceConstraintComponent.PropertyConstraintComponent;
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+
+		PropertyShape that = (PropertyShape) o;
+
+		if (!Objects.equals(name, that.name)) {
+			return false;
+		}
+		if (!Objects.equals(description, that.description)) {
+			return false;
+		}
+		if (!Objects.equals(defaultValue, that.defaultValue)) {
+			return false;
+		}
+		if (!Objects.equals(group, that.group)) {
+			return false;
+		}
+		return Objects.equals(path, that.path);
+	}
+
+	@Override
+	public int hashCode() {
+		int result = super.hashCode();
+		result = 31 * result + (name != null ? name.hashCode() : 0);
+		result = 31 * result + (description != null ? description.hashCode() : 0);
+		result = 31 * result + (defaultValue != null ? defaultValue.hashCode() : 0);
+		result = 31 * result + (group != null ? group.hashCode() : 0);
+		result = 31 * result + (path != null ? path.hashCode() : 0);
+		return result;
+	}
 }

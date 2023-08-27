@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
+import java.util.HashSet;
 import java.util.Queue;
 import java.util.Set;
 
@@ -65,6 +66,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 	private static final String JOINVAR_PREFIX = "intermediate_join_";
 
+	private final Set<String> namedIntermediateJoins = new HashSet<>();
+
 	public PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
 			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings)
 			throws QueryEvaluationException {
@@ -103,10 +106,10 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 			while (currentIter != null && currentIter.hasNext()) {
 				BindingSet potentialNextElement = currentIter.next();
-				MutableBindingSet nextElement;
+				QueryBindingSet nextElement;
 				// if it is not a compatible type of BindingSet
 				if (potentialNextElement instanceof QueryBindingSet) {
-					nextElement = (MutableBindingSet) potentialNextElement;
+					nextElement = (QueryBindingSet) potentialNextElement;
 				} else {
 					nextElement = new QueryBindingSet(potentialNextElement);
 				}
@@ -120,22 +123,10 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 					}
 				}
 
-				Value v1, v2;
+				ValuePair vp = valuePairFromStartAndEnd(nextElement);
 
-				if (startVarFixed && endVarFixed && currentLength > 2) {
-					v1 = getVarValue(startVar, startVarFixed, nextElement);
-					v2 = nextElement.getValue("END_" + JOINVAR_PREFIX + this.hashCode());
-				} else if (startVarFixed && endVarFixed && currentLength == 2) {
-					v1 = getVarValue(startVar, startVarFixed, nextElement);
-					v2 = nextElement.getValue(JOINVAR_PREFIX + (currentLength - 1) + "_" + this.hashCode());
-				} else {
-					v1 = getVarValue(startVar, startVarFixed, nextElement);
-					v2 = getVarValue(endVar, endVarFixed, nextElement);
-				}
+				if (!isCyclicPath(vp)) {
 
-				if (!isCyclicPath(v1, v2)) {
-
-					ValuePair vp = new ValuePair(v1, v2);
 					if (reportedValues.contains(vp)) {
 						// new arbitrary-length path semantics: filter out
 						// duplicates
@@ -150,21 +141,21 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 					if (startVarFixed && endVarFixed) {
 						Value endValue = getVarValue(endVar, endVarFixed, nextElement);
-						if (endValue.equals(v2)) {
+						if (endValue.equals(vp.endValue)) {
 							add(reportedValues, vp);
-							if (!v1.equals(v2)) {
+							if (!vp.startValue.equals(vp.endValue)) {
 								addToQueue(valueQueue, vp);
 							}
 							if (!nextElement.hasBinding(startVar.getName())) {
-								addBinding(nextElement, startVar.getName(), v1);
+								addBinding(nextElement, startVar.getName(), vp.startValue);
 							}
 							if (!nextElement.hasBinding(endVar.getName())) {
-								addBinding(nextElement, endVar.getName(), v2);
+								addBinding(nextElement, endVar.getName(), vp.endValue);
 							}
-							return nextElement;
+							return removeIntermediateJoinVars(nextElement);
 						} else {
 							if (add(unreportedValues, vp)) {
-								if (!v1.equals(v2)) {
+								if (!vp.startValue.equals(vp.endValue)) {
 									addToQueue(valueQueue, vp);
 								}
 							}
@@ -172,16 +163,16 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 						}
 					} else {
 						add(reportedValues, vp);
-						if (!v1.equals(v2)) {
+						if (!vp.startValue.equals(vp.endValue)) {
 							addToQueue(valueQueue, vp);
 						}
 						if (!nextElement.hasBinding(startVar.getName())) {
-							addBinding(nextElement, startVar.getName(), v1);
+							addBinding(nextElement, startVar.getName(), vp.startValue);
 						}
 						if (!nextElement.hasBinding(endVar.getName())) {
-							addBinding(nextElement, endVar.getName(), v2);
+							addBinding(nextElement, endVar.getName(), vp.endValue);
 						}
-						return nextElement;
+						return removeIntermediateJoinVars(nextElement);
 					}
 				} else {
 					continue again;
@@ -195,6 +186,27 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			valueQueue.clear();
 			return null;
 		}
+	}
+
+	private BindingSet removeIntermediateJoinVars(QueryBindingSet nextElement) {
+		nextElement.removeAll(namedIntermediateJoins);
+		return nextElement;
+	}
+
+	private ValuePair valuePairFromStartAndEnd(MutableBindingSet nextElement) {
+		Value v1, v2;
+
+		if (startVarFixed && endVarFixed && currentLength > 2) {
+			v1 = getVarValue(startVar, startVarFixed, nextElement);
+			v2 = nextElement.getValue("END_" + JOINVAR_PREFIX + this.hashCode());
+		} else if (startVarFixed && endVarFixed && currentLength == 2) {
+			v1 = getVarValue(startVar, startVarFixed, nextElement);
+			v2 = nextElement.getValue(JOINVAR_PREFIX + (currentLength - 1) + "_" + this.hashCode());
+		} else {
+			v1 = getVarValue(startVar, startVarFixed, nextElement);
+			v2 = getVarValue(endVar, endVarFixed, nextElement);
+		}
+		return new ValuePair(v1, v2);
 	}
 
 	private void addBinding(MutableBindingSet bs, String name, Value value) {
@@ -243,12 +255,12 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		return v;
 	}
 
-	private boolean isCyclicPath(Value v1, Value v2) {
+	private boolean isCyclicPath(ValuePair vp) {
 		if (currentLength <= 2) {
 			return false;
 		}
 
-		return reportedValues.contains(new ValuePair(v1, v2));
+		return reportedValues.contains(vp);
 
 	}
 
@@ -267,7 +279,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 			if (startVarFixed && endVarFixed) {
 				String varName = JOINVAR_PREFIX + currentLength + "_" + this.hashCode();
-				Var replacement = new Var(varName, true);
+				Var replacement = createAnonVar(varName, null, true);
 
 				VarReplacer replacer = new VarReplacer(endVar, replacement, 0, false);
 				pathExprClone.visit(replacer);
@@ -285,9 +297,9 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 				if (startVarFixed && endVarFixed) {
 
 					Value v = currentVp.getEndValue();
-
-					Var startReplacement = new Var(JOINVAR_PREFIX + currentLength + "_" + this.hashCode(), v);
-					Var endReplacement = new Var("END_" + JOINVAR_PREFIX + this.hashCode());
+					Var startReplacement = createAnonVar(JOINVAR_PREFIX + currentLength + "_" + this.hashCode(), v,
+							false);
+					Var endReplacement = createAnonVar("END_" + JOINVAR_PREFIX + this.hashCode(), null, false);
 
 					VarReplacer replacer = new VarReplacer(startVar, startReplacement, 0, false);
 					pathExprClone.visit(replacer);
@@ -306,7 +318,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 					}
 
 					String varName = JOINVAR_PREFIX + currentLength + "-" + this.hashCode();
-					Var replacement = new Var(varName, v, true);
+					Var replacement = createAnonVar(varName, v, true);
 
 					VarReplacer replacer = new VarReplacer(toBeReplaced, replacement, 0, false);
 					pathExprClone.visit(replacer);
@@ -358,8 +370,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		public int hashCode() {
 			final int prime = 31;
 			int result = 1;
-			result = prime * result + (endValue == null ? 0 : endValue.hashCode());
-			result = prime * result + (startValue == null ? 0 : startValue.hashCode());
+			result = prime * result + ((endValue == null) ? 0 : endValue.hashCode());
+			result = prime * result + ((startValue == null) ? 0 : startValue.hashCode());
 			return result;
 		}
 
@@ -412,18 +424,23 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 		@Override
 		public void meet(Var var) {
-			if (toBeReplaced.equals(var) || toBeReplaced.isAnonymous() && var.isAnonymous()
-					&& toBeReplaced.hasValue() && toBeReplaced.getValue().equals(var.getValue())) {
+			if (toBeReplaced.equals(var) || (toBeReplaced.isAnonymous() && var.isAnonymous()
+					&& (toBeReplaced.hasValue() && toBeReplaced.getValue().equals(var.getValue())))) {
 				QueryModelNode parent = var.getParentNode();
 				parent.replaceChildNode(var, replacement.clone());
 			} else if (replaceAnons && var.isAnonymous() && !var.hasValue()) {
 				String varName = "anon-replace-" + var.getName() + index;
-				Var replacementVar = new Var(varName, true);
+				Var replacementVar = createAnonVar(varName, null, true);
 				QueryModelNode parent = var.getParentNode();
 				parent.replaceChildNode(var, replacementVar);
 			}
 		}
 
+	}
+
+	private Var createAnonVar(String varName, Value v, boolean anonymous) {
+		namedIntermediateJoins.add(varName);
+		return new Var(varName, v, anonymous, false);
 	}
 
 }
