@@ -1,0 +1,19 @@
+#
+# RDF4J configuration for a main-memory repository
+#
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix config: <tag:rdf4j.org,2023:config/>.
+
+[] a config:Repository ;
+   config:rep.id "test" ;
+   rdfs:label "test store" ;
+   config:rep.impl [
+      config:rep.type "openrdf:SailRepository" ;
+      config:sail.impl [
+         config:sail.type "openrdf:MemoryStore" ;
+         config:sail.iterationCacheSyncThreshold "10000";
+         config:mem.persist true ;
+         config:mem.syncDelay 0 ;
+         config:sail.defaultQueryEvaluationMode "STANDARD"
+      ]
+   ].

@@ -56,4 +56,5 @@ public class LocalRepositoryManagerTest extends RepositoryManagerTest {
 
 		assertThrows(RepositoryConfigException.class, () -> subject.addRepositoryConfig(config));
 	}
+
 }
