@@ -16,6 +16,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -45,10 +46,11 @@ import org.slf4j.LoggerFactory;
 public class PropertyShape extends Shape {
 	private static final Logger logger = LoggerFactory.getLogger(PropertyShape.class);
 
-	List<String> name;
-	List<String> description;
-	Object defaultValue;
-	Object group;
+	List<Literal> name;
+	List<Literal> description;
+	Value defaultValue;
+	Value group;
+	Value order;
 
 	Path path;
 
@@ -62,6 +64,7 @@ public class PropertyShape extends Shape {
 		this.defaultValue = propertyShape.defaultValue;
 		this.group = propertyShape.group;
 		this.path = propertyShape.path;
+		this.order = propertyShape.order;
 	}
 
 	public static PropertyShape getInstance(ShaclProperties properties, ShapeSource shapeSource,
@@ -93,6 +96,12 @@ public class PropertyShape extends Shape {
 			throw new IllegalStateException(properties.getId() + " is a sh:PropertyShape without a sh:path!");
 		}
 
+		this.name = properties.getName();
+		this.description = properties.getDescription();
+		this.defaultValue = properties.getDefaultValue();
+		this.order = properties.getOrder();
+		this.group = properties.getGroup();
+
 		constraintComponents = getConstraintComponents(properties, connection, parseSettings, cache);
 	}
 
@@ -106,6 +115,26 @@ public class PropertyShape extends Shape {
 
 		super.toModel(subject, predicate, model, cycleDetection);
 		model.add(getId(), RDF.TYPE, SHACL.PROPERTY_SHAPE);
+
+		for (Literal literal : name) {
+			model.add(getId(), SHACL.NAME, literal);
+		}
+
+		for (Literal literal : description) {
+			model.add(getId(), SHACL.DESCRIPTION, literal);
+		}
+
+		if (defaultValue != null) {
+			model.add(getId(), SHACL.DEFAULT_VALUE, defaultValue);
+		}
+
+		if (order != null) {
+			model.add(getId(), SHACL.ORDER, order);
+		}
+
+		if (group != null) {
+			model.add(getId(), SHACL.GROUP, group);
+		}
 
 		if (subject != null) {
 			if (predicate == null) {

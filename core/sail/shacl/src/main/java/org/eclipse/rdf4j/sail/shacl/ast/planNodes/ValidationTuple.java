@@ -335,6 +335,22 @@ public class ValidationTuple {
 		return new ValidationTuple(this.validationResults, chain, scope, true, compressedTuples, contexts);
 	}
 
+	public ValidationTuple shiftToPropertyShapeScope(Value value) {
+		assert scope == ConstraintComponent.Scope.nodeShape
+				: "Can't shift to property shape scope on a property shape scoped ValidationTuple.";
+
+		Value[] chain;
+
+		chain = Arrays.copyOf(this.chain, this.chain.length + 1);
+
+		chain[chain.length - 1] = value;
+
+		Set<ValidationTuple> compressedTuples = enrichCompressedTuples(t -> t.setValue(value));
+
+		return new ValidationTuple(this.validationResults, chain, ConstraintComponent.Scope.propertyShape, true,
+				compressedTuples, contexts);
+	}
+
 	private Set<ValidationTuple> enrichCompressedTuples(
 			Function<ValidationTuple, ValidationTuple> validationTupleValidationTupleFunction) {
 		if (compressedTuples.isEmpty()) {

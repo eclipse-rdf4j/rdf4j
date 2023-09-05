@@ -13,17 +13,13 @@
   sh:result [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:validPerson1;
-      sh:resultPath ex:knows;
+      sh:resultPath ex:age;
       sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:ClassConstraintComponent;
+      sh:sourceConstraintComponent sh:EqualsConstraintComponent;
       sh:sourceShape [ a sh:PropertyShape;
-          sh:class ex:Person;
-          sh:defaultValue ex:iri1;
-          sh:description "Dette er en beskrivelse"@no-nb, "This is a description";
-          sh:group ex:Group1;
-          sh:name "Person/SecondTarget ex:knows only ex:Person"@en, "Person/SecondTarget ex:knows only ex:Person";
-          sh:order 1;
-          sh:path ex:knows
+          sh:equals ex:age2;
+          sh:path ex:age;
+          sh:severity sh:Violation
         ];
-      sh:value ex:steve
+      sh:value 12
     ] .
