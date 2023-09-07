@@ -10,14 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
-import org.elasticsearch.client.Client;
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
 
 /**
  * @author Håvard Mikkelsen Ottestad
  */
 interface ClientProvider extends AutoCloseable {
 
-	Client getClient();
+	ElasticsearchClient getClient();
 
 	boolean isClosed();
 }

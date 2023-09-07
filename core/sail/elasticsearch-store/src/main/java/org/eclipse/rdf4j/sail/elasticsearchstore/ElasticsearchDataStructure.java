@@ -27,6 +27,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.http.HttpStatus;
+import org.apache.http.util.EntityUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.BNode;
@@ -37,26 +39,18 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.DataStructureInterface;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
-import org.elasticsearch.action.DocWriteRequest;
-import org.elasticsearch.action.admin.indices.create.CreateIndexRequest;
-import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequest;
-import org.elasticsearch.action.admin.indices.stats.IndicesStatsResponse;
-import org.elasticsearch.action.bulk.BulkItemResponse;
-import org.elasticsearch.action.bulk.BulkRequestBuilder;
-import org.elasticsearch.action.bulk.BulkResponse;
-import org.elasticsearch.client.Client;
-import org.elasticsearch.client.IndicesAdminClient;
-import org.elasticsearch.common.xcontent.XContentType;
-import org.elasticsearch.index.engine.VersionConflictEngineException;
-import org.elasticsearch.index.query.BoolQueryBuilder;
-import org.elasticsearch.index.query.QueryBuilder;
-import org.elasticsearch.index.query.QueryBuilders;
-import org.elasticsearch.index.reindex.BulkByScrollResponse;
-import org.elasticsearch.index.reindex.DeleteByQueryAction;
-import org.elasticsearch.index.reindex.DeleteByQueryRequestBuilder;
-import org.elasticsearch.search.SearchHit;
+import org.elasticsearch.client.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import co.elastic.clients.elasticsearch._types.Conflicts;
+import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
+import co.elastic.clients.elasticsearch._types.query_dsl.Query;
+import co.elastic.clients.elasticsearch._types.query_dsl.TermQuery;
+import co.elastic.clients.elasticsearch.core.BulkRequest;
+import co.elastic.clients.elasticsearch.core.BulkResponse;
+import co.elastic.clients.elasticsearch.core.DeleteByQueryRequest;
+import co.elastic.clients.elasticsearch.core.IndexRequest;
 
 /**
  * @author Håvard Mikkelsen Ottestad
@@ -146,14 +140,18 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	@Override
 	synchronized public void clear(boolean inferred, Resource[] contexts) {
 
-		BulkByScrollResponse response = new DeleteByQueryRequestBuilder(clientProvider.getClient(),
-				DeleteByQueryAction.INSTANCE)
-				.filter(getQueryBuilder(null, null, null, inferred, contexts))
-				.abortOnVersionConflict(false)
-				.source(index)
-				.get();
+		DeleteByQueryRequest.Builder builder = new DeleteByQueryRequest.Builder();
+		DeleteByQueryRequest build = builder.index(index)
+				.query(getQuery(null, null, null, inferred, contexts))
+				.conflicts(Conflicts.Proceed)
+				.build();
 
-		long deleted = response.getDeleted();
+		try {
+			Long deleted = clientProvider.getClient().deleteByQuery(build).deleted();
+		} catch (IOException e) {
+			throw new SailException(e);
+		}
+
 	}
 
 	@Override
@@ -166,7 +164,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 			IRI predicate,
 			Value object, boolean inferred, Resource... context) {
 
-		QueryBuilder queryBuilder = getQueryBuilder(subject, predicate, object, inferred, context);
+		Query queryBuilder = getQuery(subject, predicate, object, inferred, context);
 
 		return new LookAheadIteration<>() {
 
@@ -221,73 +219,64 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 	}
 
-	private QueryBuilder getQueryBuilder(Resource subject, IRI predicate, Value object, boolean inferred,
-			Resource[] contexts) {
+	private Query getQuery(Resource subject, IRI predicate, Value object, boolean inferred, Resource[] contexts) {
 
-		BoolQueryBuilder boolQueryBuilder = QueryBuilders.boolQuery();
+		BoolQuery.Builder mainQuery = new BoolQuery.Builder();
 
 		if (subject != null) {
-			boolQueryBuilder.must(QueryBuilders.termQuery("subject", subject.stringValue()));
+			mainQuery.must(b -> b.term(t -> t.field("subject").value(subject.stringValue())));
+
 			if (subject instanceof IRI) {
-				boolQueryBuilder.must(QueryBuilders.termQuery("subject_IRI", true));
+				mainQuery.must(b -> b.term(t -> t.field("subject_IRI").value(true)));
 			} else {
-				boolQueryBuilder.must(QueryBuilders.termQuery("subject_BNode", true));
+				mainQuery.must(b -> b.term(t -> t.field("subject_BNode").value(true)));
 			}
 		}
 
 		if (predicate != null) {
-			boolQueryBuilder.must(QueryBuilders.termQuery("predicate", predicate.stringValue()));
+			mainQuery.must(b -> b.term(t -> t.field("predicate").value(predicate.stringValue())));
 		}
 
 		if (object != null) {
-			boolQueryBuilder.must(QueryBuilders.termQuery("object_Hash", object.stringValue().hashCode()));
+			mainQuery.must(b -> b.term(t -> t.field("object_Hash").value(object.stringValue().hashCode())));
+
 			if (object instanceof IRI) {
-				boolQueryBuilder.must(QueryBuilders.termQuery("object_IRI", true));
+				mainQuery.must(b -> b.term(t -> t.field("object_IRI").value(true)));
 			} else if (object instanceof BNode) {
-				boolQueryBuilder.must(QueryBuilders.termQuery("object_BNode", true));
+				mainQuery.must(b -> b.term(t -> t.field("object_BNode").value(true)));
 			} else {
-				boolQueryBuilder.must(
-						QueryBuilders.termQuery("object_Datatype", ((Literal) object).getDatatype().stringValue()));
+				mainQuery.must(b -> b
+						.term(t -> t.field("object_Datatype").value(((Literal) object).getDatatype().stringValue())));
+
 				if (((Literal) object).getLanguage().isPresent()) {
-					boolQueryBuilder
-							.must(QueryBuilders.termQuery("object_Lang", ((Literal) object).getLanguage().get()));
+					mainQuery.must(
+							b -> b.term(t -> t.field("object_Lang").value(((Literal) object).getLanguage().get())));
 				}
 			}
 		}
 
 		if (contexts != null && contexts.length > 0) {
 
-			BoolQueryBuilder contextQueryBuilder = new BoolQueryBuilder();
-
 			for (Resource context : contexts) {
-
 				if (context == null) {
-
-					contextQueryBuilder.should(new BoolQueryBuilder().mustNot(QueryBuilders.existsQuery("context")));
-
+					mainQuery.should(b -> b.bool(bb -> bb.mustNot(mb -> mb.exists(a -> a.field("context")))));
 				} else if (context instanceof IRI) {
-
-					contextQueryBuilder.should(
-							new BoolQueryBuilder()
-									.must(QueryBuilders.termQuery("context", context.stringValue()))
-									.must(QueryBuilders.termQuery("context_IRI", true)));
-
+					mainQuery.should(b -> b.bool(bb -> {
+						bb.must(mb -> mb.term(t -> t.field("context").value(context.stringValue())));
+						bb.must(mb -> mb.term(t -> t.field("context_IRI").value(true)));
+					}));
 				} else { // BNode
-					contextQueryBuilder.should(
-							new BoolQueryBuilder()
-									.must(QueryBuilders.termQuery("context", context.stringValue()))
-									.must(QueryBuilders.termQuery("context_BNode", true)));
+					mainQuery.should(b -> b.bool(bb -> {
+						bb.must(mb -> mb.term(t -> t.field("context").value(context.stringValue())));
+						bb.must(mb -> mb.term(t -> t.field("context_BNode").value(true)));
+					}));
 				}
-
 			}
-
-			boolQueryBuilder.must(contextQueryBuilder);
-
 		}
 
-		boolQueryBuilder.must(QueryBuilders.termQuery("inferred", inferred));
+		mainQuery.must(b -> b.term(t -> t.field("inferred").value(inferred)));
 
-		return QueryBuilders.constantScoreQuery(boolQueryBuilder);
+		return mainQuery.build()._toQuery();
 	}
 
 	@Override
@@ -604,7 +593,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 		BulkByScrollResponse response = new DeleteByQueryRequestBuilder(clientProvider.getClient(),
 				DeleteByQueryAction.INSTANCE)
-				.filter(getQueryBuilder(subj, pred, obj, inferred, contexts))
+				.filter(getQuery(subj, pred, obj, inferred, contexts))
 				.source(index)
 				.abortOnVersionConflict(false)
 				.get();
