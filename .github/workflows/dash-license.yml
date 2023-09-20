@@ -15,12 +15,12 @@ jobs:
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
-          java-version: '20'
+          java-version: '21'
       - name: Cache local Maven repository
         uses: actions/cache@v3
         with:
           path: ~/.m2/repository
-          key: ${{ runner.os }}-jdk20-maven-${{ hashFiles('**/pom.xml') }}
+          key: ${{ runner.os }}-jdk21-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             ${{ runner.os }}-jdk20-maven-
       - name: Run license-check
