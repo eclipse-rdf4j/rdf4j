@@ -83,7 +83,7 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 		return super.getID();
 	}
 
-	protected void init() {
+	public void init() {
 		if (!initialized) {
 			synchronized (this) {
 				if (!initialized) {

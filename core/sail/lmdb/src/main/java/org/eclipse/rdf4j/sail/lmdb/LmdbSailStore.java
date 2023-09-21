@@ -12,16 +12,21 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.eclipse.rdf4j.collection.factory.mapdb.MapDbCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
@@ -68,6 +73,8 @@ class LmdbSailStore implements SailStore {
 	private volatile boolean nextTransactionAsync;
 
 	private final boolean enableMultiThreading = true;
+
+	private final Set<Long> unusedIds;
 
 	/**
 	 * A fast non-blocking circular buffer backed by an array.
@@ -134,6 +141,13 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void execute() throws IOException {
+			if (!unusedIds.isEmpty()) {
+				// these ids are used again
+				unusedIds.remove(s);
+				unusedIds.remove(p);
+				unusedIds.remove(o);
+				unusedIds.remove(c);
+			}
 			boolean wasNew = tripleStore.storeTriple(s, p, o, c, explicit);
 			if (wasNew && context != null) {
 				contextStore.increment(context);
@@ -168,6 +182,19 @@ class LmdbSailStore implements SailStore {
 	 * Creates a new {@link LmdbSailStore}.
 	 */
 	public LmdbSailStore(File dataDir, LmdbStoreConfig config) throws IOException, SailException {
+		this.unusedIds = new PersistentSet<>(dataDir) {
+			@Override
+			protected byte[] write(Long element) {
+				ByteBuffer bb = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+				bb.putLong(element);
+				return bb.array();
+			}
+
+			@Override
+			protected Long read(ByteBuffer buffer) {
+				return buffer.order(ByteOrder.BIG_ENDIAN).getLong();
+			}
+		};
 		boolean initialized = false;
 		try {
 			namespaceStore = new NamespaceStore(dataDir);
@@ -415,6 +442,19 @@ class LmdbSailStore implements SailStore {
 			// serializable is not supported at this level
 		}
 
+		protected void filterUsedIdsInTripleStore() throws IOException {
+			if (!unusedIds.isEmpty()) {
+				tripleStore.filterUsedIds(unusedIds);
+			}
+		}
+
+		protected void handleRemovedIdsInValueStore() throws IOException {
+			if (!unusedIds.isEmpty()) {
+				valueStore.gcIds(unusedIds);
+				unusedIds.clear();
+			}
+		}
+
 		@Override
 		public void flush() throws SailException {
 			sinkStoreAccessLock.lock();
@@ -446,6 +486,10 @@ class LmdbSailStore implements SailStore {
 						contextStore.sync();
 					} finally {
 						if (activeTxn) {
+							if (!multiThreadingActive) {
+								filterUsedIdsInTripleStore();
+							}
+							handleRemovedIdsInValueStore();
 							valueStore.commit();
 							if (!multiThreadingActive) {
 								tripleStore.commit();
@@ -548,6 +592,8 @@ class LmdbSailStore implements SailStore {
 												Operation op = opQueue.remove();
 												if (op != null) {
 													if (op == COMMIT_TRANSACTION) {
+														filterUsedIdsInTripleStore();
+
 														tripleStore.commit();
 														nextTransactionAsync = false;
 														asyncTransactionFinished = true;
@@ -642,9 +688,17 @@ class LmdbSailStore implements SailStore {
 				throws IOException {
 			long removeCount = 0;
 			for (long contextId : contexts) {
-				Map<Long, Long> result = tripleStore.removeTriplesByContext(subj, pred, obj, contextId, explicit);
+				final Map<Long, Long> perContextCounts = new HashMap<>();
+				tripleStore.removeTriplesByContext(subj, pred, obj, contextId, explicit, quad -> {
+					perContextCounts.merge(quad[3], 1L, (c, one) -> c + one);
+					for (long id : quad) {
+						if (id != 0L) {
+							unusedIds.add(id);
+						}
+					}
+				});
 
-				for (Entry<Long, Long> entry : result.entrySet()) {
+				for (Entry<Long, Long> entry : perContextCounts.entrySet()) {
 					Long entryContextId = entry.getKey();
 					if (entryContextId > 0) {
 						Resource modifiedContext = (Resource) valueStore.getValue(entryContextId);
@@ -809,5 +863,4 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 	}
-
 }
