@@ -13,7 +13,7 @@ In this chapter, we explain how you can install RDF4J Server (the actual databas
 RDF4J Server and RDF4J Workbench requires the following software:
 
 - Java 11 or newer
-- A Java Servlet Container that supports Java Servlet API 3.1 and Java Server Pages (JSP) 2.2, or newer.
+- A Java Servlet Container that supports Java Servlet API 4.0 and Java Server Pages (JSP) 2.3, or newer.
 
 We recommend using a recent, stable version of [Apache Tomcat](https://tomcat.apache.org/) ([version 9.0](https://tomcat.apache.org/download-90.cgi) at the time of writing).
 

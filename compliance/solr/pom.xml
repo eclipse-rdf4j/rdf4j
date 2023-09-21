@@ -10,6 +10,10 @@
 	<name>RDF4J: Solr Sail Tests</name>
 	<description>Tests for Solr Sail.</description>
 	<properties>
+		<!-- FIXME: Delete; Jetty 10.x requires Solr 9.x -->
+		<jetty.version>9.4.50.v20221201</jetty.version>
+		<!-- FIXME: Delete; Jetty 10.x requires Solr 9.x -->
+		<enforce-no-javax-dependencies.fail>false</enforce-no-javax-dependencies.fail>
 		<!-- used to set up embedded solr server in integration tests -->
 		<test.solr.home>${project.basedir}/solr</test.solr.home>
 	</properties>
@@ -62,6 +66,11 @@
 			<version>${solr.version}</version>
 			<scope>test</scope>
 			<exclusions>
+				<!-- FIXME: Uncomment; Jetty 10.x requires Solr 9.x -->
+				<!--exclusion>
+					<groupId>javax.servlet</groupId>
+					<artifactId>javax.servlet-api</artifactId>
+				</exclusion -->
 				<exclusion>
 					<groupId>org.apache.logging.log4j</groupId>
 					<artifactId>*</artifactId>
