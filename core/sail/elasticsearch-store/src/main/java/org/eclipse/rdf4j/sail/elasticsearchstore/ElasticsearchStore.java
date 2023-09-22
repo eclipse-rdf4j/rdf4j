@@ -25,12 +25,11 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStore;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
-import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest;
-import org.elasticsearch.action.admin.cluster.health.ClusterHealthResponse;
-import org.elasticsearch.client.Client;
-import org.elasticsearch.cluster.health.ClusterHealthStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.HealthStatus;
 
 /**
  * <p>
@@ -49,9 +48,8 @@ import org.slf4j.LoggerFactory;
  * There is no write-ahead logging, so a failure during a transaction may result in partially persisted changes.
  * </p>
  *
- * @see <a href="https://www.elastic.co/licensing/elastic-license/faq">Elastic License FAQ</a>
- *
  * @author Håvard Mikkelsen Ottestad
+ * @see <a href="https://www.elastic.co/licensing/elastic-license/faq">Elastic License FAQ</a>
  */
 @Experimental
 public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructure, ElasticsearchNamespaceStore> {
@@ -101,11 +99,11 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 
 	}
 
-	public ElasticsearchStore(Client client, String index) {
+	public ElasticsearchStore(ElasticsearchClient client, String index) {
 		this(client, index, Cache.EAGER);
 	}
 
-	public ElasticsearchStore(Client client, String index, Cache cache) {
+	public ElasticsearchStore(ElasticsearchClient client, String index, Cache cache) {
 		this(new UnclosableClientProvider(new UserProvidedClientProvider(client)), index, cache);
 	}
 
@@ -152,16 +150,10 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 
 			}
 			try {
-				Client client = clientProvider.getClient();
+				ElasticsearchClient client = clientProvider.getClient();
 
-				ClusterHealthResponse clusterHealthResponse = client.admin()
-						.cluster()
-						.health(new ClusterHealthRequest())
-						.actionGet();
-				ClusterHealthStatus status = clusterHealthResponse.getStatus();
-				logger.info("Cluster status: {}", status.name());
-
-				if (status.equals(ClusterHealthStatus.GREEN) || status.equals(ClusterHealthStatus.YELLOW)) {
+				HealthStatus status = client.cluster().health().status();
+				if (status.equals(HealthStatus.Green) || status.equals(HealthStatus.Yellow)) {
 					logger.info("Elasticsearch started!");
 
 					return;

@@ -373,7 +373,7 @@
 		<lwjgl.version>3.3.1</lwjgl.version>
 		<lucene.version>8.9.0</lucene.version>
 		<solr.version>8.9.0</solr.version>
-		<elasticsearch.version>7.15.2</elasticsearch.version>
+		<elasticsearch.version>8.9.1</elasticsearch.version>
 		<spring.version>5.3.23</spring.version>
 		<guava.version>30.1.1-jre</guava.version>
 		<jmhVersion>1.35</jmhVersion>
