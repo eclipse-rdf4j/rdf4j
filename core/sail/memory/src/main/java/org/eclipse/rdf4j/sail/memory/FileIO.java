@@ -82,7 +82,7 @@ class FileIO {
 
 	public static final int INF_QUAD_MARKER = 5;
 
-	public static final int URI_MARKER = 6;
+	public static final int IRI_MARKER = 6;
 
 	public static final int BNODE_MARKER = 7;
 
@@ -270,7 +270,7 @@ class FileIO {
 
 	private void writeValue(Value value, DataOutputStream dataOut) throws IOException {
 		if (value.isIRI()) {
-			dataOut.writeByte(URI_MARKER);
+			dataOut.writeByte(IRI_MARKER);
 			writeString(((IRI) value).stringValue(), dataOut);
 		} else if (value.isBNode()) {
 			dataOut.writeByte(BNODE_MARKER);
@@ -301,9 +301,9 @@ class FileIO {
 	private Value readValue(DataInputStream dataIn) throws IOException, ClassCastException {
 		int valueTypeMarker = dataIn.readByte();
 
-		if (valueTypeMarker == URI_MARKER) {
-			String uriString = readString(dataIn);
-			return vf.createIRI(uriString);
+		if (valueTypeMarker == IRI_MARKER) {
+			String iriString = readString(dataIn);
+			return vf.createIRI(iriString);
 		} else if (valueTypeMarker == BNODE_MARKER) {
 			String bnodeID = readString(dataIn);
 			return vf.createBNode(bnodeID);

@@ -18,12 +18,12 @@ import org.eclipse.rdf4j.model.Resource;
 public abstract class MemResource implements MemValue, Resource {
 
 	/**
-	 * The list of statements for which this MemURI is the subject.
+	 * The list of statements for which this MemIRI is the subject.
 	 */
 	transient final MemStatementList subjectStatements = new MemStatementList();
 
 	/**
-	 * The list of statements for which this MemURI represents the context.
+	 * The list of statements for which this MemIRI represents the context.
 	 */
 	transient final MemStatementList contextStatements = new MemStatementList();
 

@@ -55,7 +55,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
 //@Fork(value = 1, jvmArgs = {"-Xms4G", "-Xmx4G", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=60s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Fork(value = 1, jvmArgs = { "-Xms4G", "-Xmx4G" })
+@Fork(value = 3, jvmArgs = { "-Xms4G", "-Xmx4G" })
 @Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class LoadingBenchmark {
@@ -67,12 +67,20 @@ public class LoadingBenchmark {
 	private static final Model realData = getRealData();
 
 	public static void main(String[] args) throws RunnerException {
-		Options opt = new OptionsBuilder()
-				.include("LoadingBenchmark.*") // adapt to run other benchmark tests
-				.forks(1)
-				.build();
+//		Options opt = new OptionsBuilder()
+//				.include("LoadingBenchmark.*") // adapt to run other benchmark tests
+//				.forks(1)
+//				.build();
+//
+//		new Runner(opt).run();
 
-		new Runner(opt).run();
+		LoadingBenchmark loadingBenchmark = new LoadingBenchmark();
+		loadingBenchmark.isolationLevel = "NONE";
+		for (int i = 0; i < 500; i++) {
+			System.out.println(i);
+			loadingBenchmark.loadRealData();
+		}
+
 	}
 
 	@Benchmark

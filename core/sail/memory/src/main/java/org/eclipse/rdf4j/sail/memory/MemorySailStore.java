@@ -213,7 +213,7 @@ class MemorySailStore implements SailStore {
 			return EMPTY_ITERATION;
 		}
 
-		MemIRI memPred = valueFactory.getMemURI(pred);
+		MemIRI memPred = valueFactory.getMemIRI(pred);
 		if (pred != null && memPred == null) {
 			// non-existent predicate
 			return EMPTY_ITERATION;
@@ -345,7 +345,7 @@ class MemorySailStore implements SailStore {
 			return EMPTY_TRIPLE_ITERATION;
 		}
 
-		MemIRI memPred = valueFactory.getMemURI(pred);
+		MemIRI memPred = valueFactory.getMemIRI(pred);
 		if (pred != null && memPred == null) {
 			// non-existent predicate
 			return EMPTY_TRIPLE_ITERATION;
@@ -592,7 +592,7 @@ class MemorySailStore implements SailStore {
 			} else {
 				sb.append("inferred ");
 			}
-			if (txnLock) {
+			if ((boolean) TXN_LOCK.getAcquire(this)) {
 				sb.append("snapshot ").append(nextSnapshot);
 			} else {
 				sb.append(super.toString());
@@ -635,7 +635,7 @@ class MemorySailStore implements SailStore {
 
 		@Override
 		public synchronized void flush() throws SailException {
-			if (txnLock) {
+			if ((boolean) TXN_LOCK.getAcquire(this)) {
 				invalidateCache();
 				currentSnapshot = Math.max(currentSnapshot, nextSnapshot);
 				if (requireCleanup) {
@@ -653,8 +653,8 @@ class MemorySailStore implements SailStore {
 						reservedSnapshot.release();
 					}
 				} finally {
-					boolean toCloseTxnLock = txnLock;
-					txnLock = false;
+					boolean toCloseTxnLock = (boolean) TXN_LOCK.getAcquire(this);
+					TXN_LOCK.setRelease(this, false);
 					if (toCloseTxnLock) {
 						txnLockManager.unlock();
 					}
@@ -792,7 +792,7 @@ class MemorySailStore implements SailStore {
 		}
 
 		private void acquireExclusiveTransactionLock() throws SailException {
-			if (!txnLock) {
+			if (!(boolean) TXN_LOCK.getAcquire(this)) {
 				synchronized (this) {
 					if (!txnLock) {
 						txnLockManager.lock();
@@ -812,7 +812,7 @@ class MemorySailStore implements SailStore {
 
 			// Get or create MemValues for the operands
 			MemResource memSubj = valueFactory.getOrCreateMemResource(subj);
-			MemIRI memPred = valueFactory.getOrCreateMemURI(pred);
+			MemIRI memPred = valueFactory.getOrCreateMemIRI(pred);
 			MemValue memObj = valueFactory.getOrCreateMemValue(obj);
 			MemResource memContext = context == null ? null : valueFactory.getOrCreateMemResource(context);
 
@@ -1118,7 +1118,7 @@ class MemorySailStore implements SailStore {
 				}
 			}
 
-			LongAdder longAdder = activeSnapshots.computeIfAbsent(snapshot, (k) -> new LongAdder());
+			LongAdder longAdder = activeSnapshots.computeIfAbsent(snapshot, k -> new LongAdder());
 			longAdder.increment();
 
 			return new ReservedSnapshot(snapshot, reservedBy, debug, longAdder, activeSnapshots,
@@ -1162,7 +1162,7 @@ class MemorySailStore implements SailStore {
 				this.frequency = frequency;
 				this.highestEverReservedSnapshot = highestEverReservedSnapshot;
 				cleanable = cleaner.register(reservedBy, () -> {
-					int tempSnapshot = ((int) SNAPSHOT.getVolatile(this));
+					int tempSnapshot = (int) SNAPSHOT.getVolatile(this);
 					if (tempSnapshot != SNAPSHOT_RELEASED) {
 						String message = "Releasing MemorySailStore snapshot {} which was reserved and never released (possibly unclosed MemorySailDataset or MemorySailSink).";
 						if (stackTraceForDebugging != null) {
@@ -1201,4 +1201,17 @@ class MemorySailStore implements SailStore {
 
 		}
 	}
+
+	private static final VarHandle TXN_LOCK;
+
+	static {
+		try {
+			TXN_LOCK = MethodHandles.lookup()
+					.in(MemorySailSink.class)
+					.findVarHandle(MemorySailSink.class, "txnLock", boolean.class);
+		} catch (ReflectiveOperationException e) {
+			throw new Error(e);
+		}
+	}
+
 }

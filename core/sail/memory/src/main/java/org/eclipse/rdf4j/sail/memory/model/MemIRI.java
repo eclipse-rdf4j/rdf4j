@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 
 /**
- * A MemoryStore-specific implementation of URI that stores separated namespace and local name information to enable
+ * A MemoryStore-specific implementation of IRI that stores separated namespace and local name information to enable
  * reuse of namespace String objects (reducing memory usage) and that gives it node properties.
  */
 public class MemIRI extends MemResource implements IRI {
@@ -28,32 +28,32 @@ public class MemIRI extends MemResource implements IRI {
 	 *------------*/
 
 	/**
-	 * The URI's namespace.
+	 * The IRI's namespace.
 	 */
 	private final String namespace;
 
 	/**
-	 * The URI's local name.
+	 * The IRI's local name.
 	 */
 	private final String localName;
 
 	/**
-	 * The object that created this MemURI.
+	 * The object that created this MemIRI.
 	 */
 	transient private final Object creator;
 
 	/**
-	 * The MemURI's hash code, 0 if not yet initialized.
+	 * The MemIRI's hash code, 0 if not yet initialized.
 	 */
 	private volatile int hashCode = 0;
 
 	/**
-	 * The list of statements for which this MemURI is the predicate.
+	 * The list of statements for which this MemIRI is the predicate.
 	 */
 	transient private final MemStatementList predicateStatements = new MemStatementList();
 
 	/**
-	 * The list of statements for which this MemURI is the object.
+	 * The list of statements for which this MemIRI is the object.
 	 */
 	transient private final MemStatementList objectStatements = new MemStatementList();
 
@@ -62,11 +62,11 @@ public class MemIRI extends MemResource implements IRI {
 	 *--------------*/
 
 	/**
-	 * Creates a new MemURI for a URI.
+	 * Creates a new MemIRI for a IRI.
 	 *
-	 * @param creator   The object that is creating this MemURI.
-	 * @param namespace namespace part of URI.
-	 * @param localName localname part of URI.
+	 * @param creator   The object that is creating this MemIRI.
+	 * @param namespace namespace part of IRI.
+	 * @param localName localname part of IRI.
 	 */
 	public MemIRI(Object creator, String namespace, String localName) {
 		this.creator = creator;
@@ -127,10 +127,17 @@ public class MemIRI extends MemResource implements IRI {
 				// two different MemIRI from the same MemoryStore can not be equal.
 				return false;
 			}
-			return namespace.length() == oMemIRI.namespace.length() &&
-					localName.length() == oMemIRI.localName.length() &&
-					namespace.equals(oMemIRI.namespace) &&
-					localName.equals(oMemIRI.localName);
+			boolean equalLengtsh = namespace.length() == oMemIRI.namespace.length() &&
+					localName.length() == oMemIRI.localName.length();
+
+			if (equalLengtsh) {
+				if (namespace.equals(oMemIRI.namespace)) {
+					if (localName.equals(oMemIRI.localName)) {
+						return true;
+					}
+				}
+			}
+			return false;
 
 		}
 
@@ -142,7 +149,16 @@ public class MemIRI extends MemResource implements IRI {
 				if (toStringCache != null) {
 					String stringValue = toStringCache.get();
 					if (stringValue != null) {
-						return stringValue.equals(oStr);
+						if (oStr == stringValue) {
+							return true;
+						} else {
+							boolean equals = stringValue.equals(oStr);
+							if (equals) {
+								toStringCache = new SoftReference<>(oStr);
+							}
+							return equals;
+						}
+
 					}
 				}
 
@@ -176,7 +192,7 @@ public class MemIRI extends MemResource implements IRI {
 	}
 
 	/**
-	 * Gets the list of statements for which this MemURI is the predicate.
+	 * Gets the list of statements for which this MemIRI is the predicate.
 	 *
 	 * @return a MemStatementList containing the statements.
 	 */
@@ -185,7 +201,7 @@ public class MemIRI extends MemResource implements IRI {
 	}
 
 	/**
-	 * Gets the number of Statements for which this MemURI is the predicate.
+	 * Gets the number of Statements for which this MemIRI is the predicate.
 	 *
 	 * @return An integer larger than or equal to 0.
 	 */
@@ -194,7 +210,7 @@ public class MemIRI extends MemResource implements IRI {
 	}
 
 	/**
-	 * Adds a statement to this MemURI's list of statements for which it is the predicate.
+	 * Adds a statement to this MemIRI's list of statements for which it is the predicate.
 	 */
 	public void addPredicateStatement(MemStatement st) throws InterruptedException {
 		predicateStatements.add(st);

@@ -98,7 +98,7 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 			}
 
 			if (pred != null) {
-				MemIRI memPred = valueFactory.getMemURI((IRI) pred);
+				MemIRI memPred = valueFactory.getMemIRI((IRI) pred);
 				if (memPred != null) {
 					minListSizes = Math.min(minListSizes, memPred.getPredicateStatementCount());
 					if (minListSizes == 0) {
