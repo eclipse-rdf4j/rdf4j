@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.shacl.ast;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
-import org.eclipse.rdf4j.model.Resource;
 
 /**
  * An exception indicating that something went wrong when parsing the SHACL statements, but without a specific shape
