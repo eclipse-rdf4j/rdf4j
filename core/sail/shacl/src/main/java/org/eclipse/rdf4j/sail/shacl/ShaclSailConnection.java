@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UpdateContext;
+import org.eclipse.rdf4j.sail.helpers.AbstractSailConnection;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach;
@@ -737,6 +738,29 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	synchronized public void close() throws SailException {
 		if (closed) {
 			return;
+		}
+
+		if (getWrappedConnection() instanceof AbstractSailConnection) {
+			AbstractSailConnection abstractSailConnection = (AbstractSailConnection) getWrappedConnection();
+
+			if (Thread.currentThread() != abstractSailConnection.getOwner()) {
+				Thread owner = abstractSailConnection.getOwner();
+				logger.error(
+						"Closing connection from a different thread than the one that opened it. Connections should not be shared between threads. Opened by "
+								+ owner + " closed by " + Thread.currentThread(),
+						new Throwable("Throwable used for stacktrace"));
+				owner.interrupt();
+				try {
+					owner.join(1000);
+					if (owner.isAlive()) {
+						logger.error("Interrupted thread {} but thread is still alive after 1000 ms!", owner);
+					}
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new SailException(e);
+				}
+			}
+
 		}
 
 		try {

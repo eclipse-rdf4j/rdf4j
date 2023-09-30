@@ -222,6 +222,36 @@ public abstract class AbstractSail implements Sail {
 				activeConnectionsCopy = new IdentityHashMap<>(activeConnections);
 			}
 
+			// Interrupt any threads that are still using a connection, in case they are waiting for a lock
+			for (Map.Entry<SailConnection, Throwable> entry : activeConnectionsCopy.entrySet()) {
+				try {
+					SailConnection con = entry.getKey();
+
+					if (con instanceof AbstractSailConnection) {
+						AbstractSailConnection sailCon = (AbstractSailConnection) con;
+						if (sailCon.getOwner() != Thread.currentThread()) {
+							sailCon.getOwner().interrupt();
+							sailCon.getOwner().join(1000);
+							if (sailCon.getOwner().isAlive()) {
+								logger.error(
+										"Closing active connection due to shut down and interrupted the owning thread of the connection {} but thread is still alive after 1000 ms!",
+										sailCon.getOwner());
+							}
+						}
+					}
+
+				} catch (Throwable e) {
+					if (e instanceof InterruptedException) {
+						throw new SailException(e);
+					} else if (e instanceof AssertionError) {
+						// ignore assertions errors
+					} else if (e instanceof Error) {
+						throw (Error) e;
+					}
+					// ignore all other exceptions
+				}
+			}
+
 			// Forcefully close any connections that are still open
 			for (Map.Entry<SailConnection, Throwable> entry : activeConnectionsCopy.entrySet()) {
 				SailConnection con = entry.getKey();

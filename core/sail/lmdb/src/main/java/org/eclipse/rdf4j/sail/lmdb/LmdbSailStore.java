@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +21,7 @@ import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -236,7 +238,8 @@ class LmdbSailStore implements SailStore {
 							running.set(false);
 							tripleStoreExecutor.shutdown();
 							while (!tripleStoreExecutor.isTerminated()) {
-								Thread.yield();
+								tripleStoreExecutor.shutdownNow();
+								LockSupport.parkNanos(Duration.ofMillis(100).toNanos());
 							}
 							tripleStore.close();
 						}
@@ -561,6 +564,9 @@ class LmdbSailStore implements SailStore {
 														op.execute();
 													}
 												} else {
+													if (Thread.interrupted()) {
+														throw new InterruptedException();
+													}
 													Thread.yield();
 												}
 											}

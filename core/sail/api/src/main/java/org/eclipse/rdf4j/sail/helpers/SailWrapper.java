@@ -150,4 +150,5 @@ public class SailWrapper implements StackableSail, FederatedServiceResolverClien
 		verifyBaseSailSet();
 		return baseSail.getCollectionFactory();
 	}
+
 }

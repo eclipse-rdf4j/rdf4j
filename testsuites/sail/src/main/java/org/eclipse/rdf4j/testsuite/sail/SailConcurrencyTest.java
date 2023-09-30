@@ -17,15 +17,20 @@ import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.helpers.AbstractSail;
+import org.eclipse.rdf4j.sail.helpers.SailWrapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -305,6 +310,108 @@ public abstract class SailConcurrencyTest {
 		} else {
 			logger.info("Test succeeded");
 		}
+	}
+
+	@Test
+	public void testConcurrentConnectionsShutdown() throws InterruptedException {
+		if (store instanceof AbstractSail) {
+			((AbstractSail) store).setConnectionTimeOut(200);
+		} else if (store instanceof SailWrapper) {
+			Sail baseSail = ((SailWrapper) store).getBaseSail();
+			if (baseSail instanceof AbstractSail) {
+				((AbstractSail) baseSail).setConnectionTimeOut(200);
+			}
+		}
+
+		CountDownLatch countDownLatch = new CountDownLatch(1);
+		Thread thread = new Thread(() -> {
+			SailConnection connection = store.getConnection();
+			countDownLatch.countDown();
+			connection.begin(IsolationLevels.NONE);
+			connection.addStatement(RDF.FIRST, RDF.TYPE, RDF.PROPERTY);
+		});
+		thread.setName("Thread 1");
+		thread.start();
+
+		CountDownLatch countDownLatch2 = new CountDownLatch(1);
+		Thread thread2 = new Thread(() -> {
+			SailConnection connection = store.getConnection();
+			countDownLatch2.countDown();
+			connection.begin(IsolationLevels.NONE);
+			connection.addStatement(RDF.REST, RDF.TYPE, RDF.PROPERTY);
+
+		});
+		thread2.setName("Thread 2");
+		thread2.start();
+
+		countDownLatch.await();
+		countDownLatch2.await();
+
+		Thread.sleep(1000);
+
+		store.shutDown();
+
+	}
+
+	@Test
+	public void testConcurrentConnectionsShutdownAndClose() throws InterruptedException {
+		if (store instanceof AbstractSail) {
+			((AbstractSail) store).setConnectionTimeOut(200);
+		}
+
+		try (SailConnection connection = store.getConnection()) {
+			connection.begin();
+			connection.addStatement(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
+			connection.commit();
+		}
+
+		AtomicReference<SailConnection> connection1 = new AtomicReference<>();
+		AtomicReference<SailConnection> connection2 = new AtomicReference<>();
+
+		CountDownLatch countDownLatch = new CountDownLatch(1);
+		Thread thread = new Thread(() -> {
+			connection1.set(store.getConnection());
+			countDownLatch.countDown();
+			connection1.get().begin(IsolationLevels.NONE);
+			connection1.get().clear();
+		});
+		thread.setName("Thread 1");
+		thread.start();
+
+		CountDownLatch countDownLatch2 = new CountDownLatch(1);
+		Thread thread2 = new Thread(() -> {
+			connection2.set(store.getConnection());
+			countDownLatch2.countDown();
+			connection2.get().begin(IsolationLevels.NONE);
+			connection2.get().clear();
+
+		});
+		thread2.setName("Thread 2");
+		thread2.start();
+
+		countDownLatch.await();
+		countDownLatch2.await();
+
+		Thread.sleep(1000);
+
+		Thread thread3 = new Thread(() -> {
+
+		});
+		thread3.setName("Thread 3");
+		thread3.start();
+
+		try {
+			if (thread2.isAlive()) {
+				connection2.get().close();
+				connection1.get().close();
+			} else {
+				connection1.get().close();
+				connection2.get().close();
+			}
+		} catch (SailException ignored) {
+		}
+
+		store.shutDown();
 	}
 
 	protected synchronized void fail(String message, Throwable t) {
