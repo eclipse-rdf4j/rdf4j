@@ -230,11 +230,11 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 				if (currentDescribeExprIter != null)
 					currentDescribeExprIter.close();
 			} finally {
+				if (sourceIter instanceof CloseableIteration) {
+					((CloseableIteration<?, QueryEvaluationException>) sourceIter).close();
+				}
+			}
 
-			}
-			if (sourceIter instanceof CloseableIteration) {
-				((CloseableIteration<?, QueryEvaluationException>) sourceIter).close();
-			}
 		}
 	}
 }

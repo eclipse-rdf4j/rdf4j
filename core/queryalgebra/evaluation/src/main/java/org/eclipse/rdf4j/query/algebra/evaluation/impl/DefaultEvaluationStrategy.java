@@ -716,9 +716,18 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 			@Override
 			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-				return new DescribeIteration(child.evaluate(bs), DefaultEvaluationStrategy.this,
-						node.getBindingNames(),
-						bs);
+				CloseableIteration<BindingSet, QueryEvaluationException> evaluate = null;
+
+				try {
+					evaluate = child.evaluate(bs);
+					return new DescribeIteration(evaluate, DefaultEvaluationStrategy.this, node.getBindingNames(), bs);
+				} catch (Throwable t) {
+					if (evaluate != null) {
+						evaluate.close();
+					}
+					throw t;
+				}
+
 			}
 		};
 	}
