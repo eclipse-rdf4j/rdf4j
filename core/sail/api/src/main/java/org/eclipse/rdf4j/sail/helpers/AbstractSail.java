@@ -229,13 +229,15 @@ public abstract class AbstractSail implements Sail {
 
 					if (con instanceof AbstractSailConnection) {
 						AbstractSailConnection sailCon = (AbstractSailConnection) con;
-						if (sailCon.getOwner() != Thread.currentThread()) {
-							sailCon.getOwner().interrupt();
-							sailCon.getOwner().join(1000);
-							if (sailCon.getOwner().isAlive()) {
+						Thread owner = sailCon.getOwner();
+						if (owner != Thread.currentThread()) {
+							owner.interrupt();
+							// wait up to 1 second for the owner thread to die
+							owner.join(1000);
+							if (owner.isAlive()) {
 								logger.error(
 										"Closing active connection due to shut down and interrupted the owning thread of the connection {} but thread is still alive after 1000 ms!",
-										sailCon.getOwner());
+										owner);
 							}
 						}
 					}

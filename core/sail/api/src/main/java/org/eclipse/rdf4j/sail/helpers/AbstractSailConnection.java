@@ -265,7 +265,12 @@ public abstract class AbstractSailConnection implements SailConnection {
 				if (sumDone == sumBlocking) {
 					break;
 				} else {
-					LockSupport.parkNanos(Duration.ofMillis(10).toNanos());
+					if (Thread.currentThread().isInterrupted()) {
+						throw new SailException(
+								"Connection was interrupted while waiting on active operations before it could be closed.");
+					} else {
+						LockSupport.parkNanos(Duration.ofMillis(10).toNanos());
+					}
 				}
 			}
 
@@ -317,26 +322,35 @@ public abstract class AbstractSailConnection implements SailConnection {
 		Thread deadlockPreventionThread = null;
 
 		if (Thread.currentThread() != owner) {
+
 			if (logger.isInfoEnabled()) {
+				// use info level for this because FedX prevalently closes connections from different threads
 				logger.info(
-						"Closing connection from a different thread than the one that opened it. Connections should not be shared between threads. Opened by "
-								+ owner + " closed by " + Thread.currentThread(),
-						new Throwable("Throwable used for stacktrace"));
+						"Closing connection from a different thread than the one that opened it. Connections should not be shared between threads. Opened by {} closed by {}",
+						owner, Thread.currentThread(), new Throwable("Throwable used for stacktrace"));
 			}
+
 			deadlockPreventionThread = new Thread(() -> {
 				try {
+					// This thread should sleep for a while so that the callee has a chance to finish.
+					// The callee will interrupt this thread when it is finished, which means that there were no
+					// deadlocks and we can exit.
 					Thread.sleep(sailBase.connectionTimeOut / 2);
 
 					owner.interrupt();
+					// wait for up to 1 second for the owner thread to die
 					owner.join(1000);
 					if (owner.isAlive()) {
 						logger.error("Interrupted thread {} but thread is still alive after 1000 ms!", owner);
 					}
 
 				} catch (InterruptedException ignored) {
+					// this thread is interrupted as a signal that there were no deadlocks, so the exception can be
+					// ignored and we can simply exit
 				}
 
 			});
+
 			deadlockPreventionThread.setDaemon(true);
 			deadlockPreventionThread.start();
 

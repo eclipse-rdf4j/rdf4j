@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.io.IOException;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -20,8 +19,8 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -235,13 +234,21 @@ class LmdbSailStore implements SailStore {
 						}
 					} finally {
 						if (tripleStore != null) {
-							running.set(false);
-							tripleStoreExecutor.shutdown();
-							while (!tripleStoreExecutor.isTerminated()) {
-								tripleStoreExecutor.shutdownNow();
-								LockSupport.parkNanos(Duration.ofMillis(100).toNanos());
+							try {
+								running.set(false);
+								tripleStoreExecutor.shutdown();
+								try {
+									while (!tripleStoreExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
+										logger.warn("Waiting for triple store executor to terminate");
+									}
+								} catch (InterruptedException e) {
+									Thread.currentThread().interrupt();
+									throw new SailException(e);
+								}
+							} finally {
+								tripleStore.close();
 							}
-							tripleStore.close();
+
 						}
 					}
 				}
@@ -564,17 +571,28 @@ class LmdbSailStore implements SailStore {
 														op.execute();
 													}
 												} else {
-													if (Thread.interrupted()) {
+													if (!running.get()) {
+														logger.warn(
+																"LmdbSailStore was closed while active transaction was waiting for the next operation. Forcing a rollback!");
+														opQueue.add(ROLLBACK_TRANSACTION);
+													} else if (Thread.interrupted()) {
 														throw new InterruptedException();
+													} else {
+														Thread.yield();
 													}
-													Thread.yield();
 												}
 											}
 
 											// keep thread running for at least 2ms to lock-free wait for the next
 											// transaction
-											long start = System.currentTimeMillis();
+											long start = 0;
 											while (running.get() && !nextTransactionAsync) {
+												if (start == 0) {
+													// System.currentTimeMillis() is expensive, so only call it when we
+													// are sure we need to wait
+													start = System.currentTimeMillis();
+												}
+
 												if (System.currentTimeMillis() - start > 2) {
 													synchronized (storeTxnStarted) {
 														if (!nextTransactionAsync) {
