@@ -352,50 +352,58 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
 			throws QueryEvaluationException {
 
-		CloseableIteration<BindingSet, QueryEvaluationException> ret;
+		CloseableIteration<BindingSet, QueryEvaluationException> ret = null;
 
-		if (expr instanceof StatementPattern) {
-			ret = evaluate((StatementPattern) expr, bindings);
-		} else if (expr instanceof UnaryTupleOperator) {
-			ret = evaluate((UnaryTupleOperator) expr, bindings);
-		} else if (expr instanceof BinaryTupleOperator) {
-			ret = evaluate((BinaryTupleOperator) expr, bindings);
-		} else if (expr instanceof SingletonSet) {
-			ret = evaluate((SingletonSet) expr, bindings);
-		} else if (expr instanceof EmptySet) {
-			ret = evaluate((EmptySet) expr, bindings);
-		} else if (expr instanceof ZeroLengthPath) {
-			ret = evaluate((ZeroLengthPath) expr, bindings);
-		} else if (expr instanceof ArbitraryLengthPath) {
-			ret = evaluate((ArbitraryLengthPath) expr, bindings);
-		} else if (expr instanceof BindingSetAssignment) {
-			ret = evaluate((BindingSetAssignment) expr, bindings);
-		} else if (expr instanceof TripleRef) {
-			ret = evaluate((TripleRef) expr, bindings);
-		} else if (expr instanceof TupleFunctionCall) {
-			if (getQueryEvaluationMode().compareTo(QueryEvaluationMode.STANDARD) < 0) {
-				throw new QueryEvaluationException(
-						"Tuple function call not supported in query evaluation mode " + getQueryEvaluationMode());
+		try {
+			if (expr instanceof StatementPattern) {
+				ret = evaluate((StatementPattern) expr, bindings);
+			} else if (expr instanceof UnaryTupleOperator) {
+				ret = evaluate((UnaryTupleOperator) expr, bindings);
+			} else if (expr instanceof BinaryTupleOperator) {
+				ret = evaluate((BinaryTupleOperator) expr, bindings);
+			} else if (expr instanceof SingletonSet) {
+				ret = evaluate((SingletonSet) expr, bindings);
+			} else if (expr instanceof EmptySet) {
+				ret = evaluate((EmptySet) expr, bindings);
+			} else if (expr instanceof ZeroLengthPath) {
+				ret = evaluate((ZeroLengthPath) expr, bindings);
+			} else if (expr instanceof ArbitraryLengthPath) {
+				ret = evaluate((ArbitraryLengthPath) expr, bindings);
+			} else if (expr instanceof BindingSetAssignment) {
+				ret = evaluate((BindingSetAssignment) expr, bindings);
+			} else if (expr instanceof TripleRef) {
+				ret = evaluate((TripleRef) expr, bindings);
+			} else if (expr instanceof TupleFunctionCall) {
+				if (getQueryEvaluationMode().compareTo(QueryEvaluationMode.STANDARD) < 0) {
+					throw new QueryEvaluationException(
+							"Tuple function call not supported in query evaluation mode " + getQueryEvaluationMode());
+				}
+				return evaluate(expr, bindings);
+			} else if (expr == null) {
+				throw new IllegalArgumentException("expr must not be null");
+			} else {
+				throw new QueryEvaluationException("Unsupported tuple expr type: " + expr.getClass());
 			}
-			return evaluate((TupleFunctionCall) expr, bindings);
-		} else if (expr == null) {
-			throw new IllegalArgumentException("expr must not be null");
-		} else {
-			throw new QueryEvaluationException("Unsupported tuple expr type: " + expr.getClass());
-		}
 
-		if (trackTime) {
-			// set resultsSizeActual to at least be 0 so we can track iterations that don't procude anything
-			expr.setTotalTimeNanosActual(Math.max(0, expr.getTotalTimeNanosActual()));
-			ret = new TimedIterator(ret, expr);
-		}
+			if (trackTime) {
+				// set resultsSizeActual to at least be 0 so we can track iterations that don't procude anything
+				expr.setTotalTimeNanosActual(Math.max(0, expr.getTotalTimeNanosActual()));
+				ret = new TimedIterator(ret, expr);
+			}
 
-		if (trackResultSize) {
-			// set resultsSizeActual to at least be 0 so we can track iterations that don't procude anything
-			expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
-			ret = new ResultSizeCountingIterator(ret, expr);
+			if (trackResultSize) {
+				// set resultsSizeActual to at least be 0 so we can track iterations that don't procude anything
+				expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
+				ret = new ResultSizeCountingIterator(ret, expr);
+			}
+			return ret;
+
+		} catch (Throwable t) {
+			if (ret != null) {
+				ret.close();
+			}
+			throw t;
 		}
-		return ret;
 	}
 
 	@Override
@@ -708,9 +716,18 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 			@Override
 			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-				return new DescribeIteration(child.evaluate(bs), DefaultEvaluationStrategy.this,
-						node.getBindingNames(),
-						bs);
+				CloseableIteration<BindingSet, QueryEvaluationException> evaluate = null;
+
+				try {
+					evaluate = child.evaluate(bs);
+					return new DescribeIteration(evaluate, DefaultEvaluationStrategy.this, node.getBindingNames(), bs);
+				} catch (Throwable t) {
+					if (evaluate != null) {
+						evaluate.close();
+					}
+					throw t;
+				}
+
 			}
 		};
 	}

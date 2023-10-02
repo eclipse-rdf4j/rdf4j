@@ -13,14 +13,11 @@ package org.eclipse.rdf4j.sail.inferencer.fc;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
-import java.io.StringReader;
 
-import org.assertj.core.api.Assertions;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.repository.util.RDFLoader;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;

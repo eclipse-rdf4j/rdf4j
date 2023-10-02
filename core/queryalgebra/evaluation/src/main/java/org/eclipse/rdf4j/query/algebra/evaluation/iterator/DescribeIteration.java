@@ -220,4 +220,21 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 		return strategy.evaluate(pattern, parentBindings);
 	}
 
+	@Override
+	protected void handleClose() throws QueryEvaluationException {
+		try {
+			super.handleClose();
+
+		} finally {
+			try {
+				if (currentDescribeExprIter != null)
+					currentDescribeExprIter.close();
+			} finally {
+				if (sourceIter instanceof CloseableIteration) {
+					((CloseableIteration<?, QueryEvaluationException>) sourceIter).close();
+				}
+			}
+
+		}
+	}
 }

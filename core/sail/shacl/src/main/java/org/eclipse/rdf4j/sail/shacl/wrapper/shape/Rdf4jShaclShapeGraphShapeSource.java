@@ -15,7 +15,6 @@ import static org.eclipse.rdf4j.model.util.Values.iri;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 

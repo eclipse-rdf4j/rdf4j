@@ -359,9 +359,14 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 
 			logger.info("Shapes will be persisted in: " + path);
 
-			shapesRepo = new SailRepository(new MemoryStore(new File(path)));
+			MemoryStore sail = new MemoryStore(new File(path));
+			sail.setConnectionTimeOut(1000);
+			shapesRepo = new SailRepository(sail);
+
 		} else {
-			shapesRepo = new SailRepository(new MemoryStore());
+			MemoryStore sail = new MemoryStore();
+			sail.setConnectionTimeOut(1000);
+			shapesRepo = new SailRepository(sail);
 		}
 
 		shapesRepo.init();
