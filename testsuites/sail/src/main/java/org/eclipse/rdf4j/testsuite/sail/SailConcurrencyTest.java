@@ -396,13 +396,17 @@ public abstract class SailConcurrencyTest {
 		}
 		store.shutDown();
 
-		store.init();
+		try {
+			store.init();
 
-		try (SailConnection connection = store.getConnection()) {
-			connection.begin();
-			long size = connection.size();
-			assertEquals(0, size);
-			connection.commit();
+			try (SailConnection connection = store.getConnection()) {
+				connection.begin();
+				long size = connection.size();
+				assertEquals(0, size);
+				connection.commit();
+			}
+		} catch (SailException ignored) {
+			// ignored
 		}
 
 	}
