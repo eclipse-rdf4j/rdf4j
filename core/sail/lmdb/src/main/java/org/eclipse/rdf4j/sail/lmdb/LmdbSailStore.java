@@ -574,7 +574,7 @@ class LmdbSailStore implements SailStore {
 													if (!running.get()) {
 														logger.warn(
 																"LmdbSailStore was closed while active transaction was waiting for the next operation. Forcing a rollback!");
-														opQueue.add(ROLLBACK_TRANSACTION);
+														rollback();
 													} else if (Thread.interrupted()) {
 														throw new InterruptedException();
 													} else {
