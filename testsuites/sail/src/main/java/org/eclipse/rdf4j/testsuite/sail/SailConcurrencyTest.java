@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.sail;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
@@ -323,15 +324,15 @@ public abstract class SailConcurrencyTest {
 			}
 		}
 
-		CountDownLatch countDownLatch = new CountDownLatch(1);
-		Thread thread = new Thread(() -> {
+		CountDownLatch countDownLatch1 = new CountDownLatch(1);
+		Thread thread1 = new Thread(() -> {
 			SailConnection connection = store.getConnection();
-			countDownLatch.countDown();
+			countDownLatch1.countDown();
 			connection.begin(IsolationLevels.NONE);
 			connection.addStatement(RDF.FIRST, RDF.TYPE, RDF.PROPERTY);
 		});
-		thread.setName("Thread 1");
-		thread.start();
+		thread1.setName("Thread 1");
+		thread1.start();
 
 		CountDownLatch countDownLatch2 = new CountDownLatch(1);
 		Thread thread2 = new Thread(() -> {
@@ -344,12 +345,65 @@ public abstract class SailConcurrencyTest {
 		thread2.setName("Thread 2");
 		thread2.start();
 
-		countDownLatch.await();
+		countDownLatch1.await();
 		countDownLatch2.await();
 
-		Thread.sleep(1000);
+		while (thread1.isAlive() && thread2.isAlive()) {
+			Thread.yield();
+		}
 
 		store.shutDown();
+
+	}
+
+	@Test
+	public void testConcurrentConnectionsShutdownReadCommitted() throws InterruptedException {
+		if (store instanceof AbstractSail) {
+			((AbstractSail) store).setConnectionTimeOut(200);
+		} else if (store instanceof SailWrapper) {
+			Sail baseSail = ((SailWrapper) store).getBaseSail();
+			if (baseSail instanceof AbstractSail) {
+				((AbstractSail) baseSail).setConnectionTimeOut(200);
+			}
+		}
+
+		CountDownLatch countDownLatch1 = new CountDownLatch(1);
+		Thread thread1 = new Thread(() -> {
+			SailConnection connection = store.getConnection();
+			countDownLatch1.countDown();
+			connection.begin(IsolationLevels.READ_COMMITTED);
+			connection.addStatement(RDF.FIRST, RDF.TYPE, RDF.PROPERTY);
+		});
+		thread1.setName("Thread 1");
+		thread1.start();
+
+		CountDownLatch countDownLatch2 = new CountDownLatch(1);
+		Thread thread2 = new Thread(() -> {
+			SailConnection connection = store.getConnection();
+			countDownLatch2.countDown();
+			connection.begin(IsolationLevels.READ_COMMITTED);
+			connection.addStatement(RDF.REST, RDF.TYPE, RDF.PROPERTY);
+
+		});
+		thread2.setName("Thread 2");
+		thread2.start();
+
+		countDownLatch1.await();
+		countDownLatch2.await();
+
+		while (thread1.isAlive() && thread2.isAlive()) {
+			Thread.yield();
+		}
+		store.shutDown();
+
+		store.init();
+
+		try (SailConnection connection = store.getConnection()) {
+			connection.begin();
+			long size = connection.size();
+			assertEquals(0, size);
+			connection.commit();
+		}
 
 	}
 
@@ -368,15 +422,15 @@ public abstract class SailConcurrencyTest {
 		AtomicReference<SailConnection> connection1 = new AtomicReference<>();
 		AtomicReference<SailConnection> connection2 = new AtomicReference<>();
 
-		CountDownLatch countDownLatch = new CountDownLatch(1);
-		Thread thread = new Thread(() -> {
+		CountDownLatch countDownLatch1 = new CountDownLatch(1);
+		Thread thread1 = new Thread(() -> {
 			connection1.set(store.getConnection());
-			countDownLatch.countDown();
+			countDownLatch1.countDown();
 			connection1.get().begin(IsolationLevels.NONE);
 			connection1.get().clear();
 		});
-		thread.setName("Thread 1");
-		thread.start();
+		thread1.setName("Thread 1");
+		thread1.start();
 
 		CountDownLatch countDownLatch2 = new CountDownLatch(1);
 		Thread thread2 = new Thread(() -> {
@@ -389,16 +443,12 @@ public abstract class SailConcurrencyTest {
 		thread2.setName("Thread 2");
 		thread2.start();
 
-		countDownLatch.await();
+		countDownLatch1.await();
 		countDownLatch2.await();
 
-		Thread.sleep(1000);
-
-		Thread thread3 = new Thread(() -> {
-
-		});
-		thread3.setName("Thread 3");
-		thread3.start();
+		while (thread1.isAlive() && thread2.isAlive()) {
+			Thread.yield();
+		}
 
 		try {
 			if (thread2.isAlive()) {
@@ -409,6 +459,77 @@ public abstract class SailConcurrencyTest {
 				connection2.get().close();
 			}
 		} catch (SailException ignored) {
+		}
+
+		try (SailConnection connection = store.getConnection()) {
+			connection.begin();
+			long size = connection.size();
+			connection.commit();
+			assertThat(size).isLessThanOrEqualTo(1);
+		}
+
+		store.shutDown();
+	}
+
+	@Test
+	public void testConcurrentConnectionsShutdownAndCloseRollback() throws InterruptedException {
+		if (store instanceof AbstractSail) {
+			((AbstractSail) store).setConnectionTimeOut(200);
+		}
+
+		try (SailConnection connection = store.getConnection()) {
+			connection.begin();
+			connection.addStatement(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
+			connection.commit();
+		}
+
+		AtomicReference<SailConnection> connection1 = new AtomicReference<>();
+		AtomicReference<SailConnection> connection2 = new AtomicReference<>();
+
+		CountDownLatch countDownLatch1 = new CountDownLatch(1);
+		Thread thread1 = new Thread(() -> {
+			connection1.set(store.getConnection());
+			countDownLatch1.countDown();
+			connection1.get().begin(IsolationLevels.READ_UNCOMMITTED);
+			connection1.get().clear();
+		});
+		thread1.setName("Thread 1");
+		thread1.start();
+
+		CountDownLatch countDownLatch2 = new CountDownLatch(1);
+		Thread thread2 = new Thread(() -> {
+			connection2.set(store.getConnection());
+			countDownLatch2.countDown();
+			connection2.get().begin(IsolationLevels.READ_UNCOMMITTED);
+			connection2.get().clear();
+
+		});
+		thread2.setName("Thread 2");
+		thread2.start();
+
+		countDownLatch1.await();
+		countDownLatch2.await();
+
+		while (thread1.isAlive() && thread2.isAlive()) {
+			Thread.yield();
+		}
+
+		try {
+			if (thread2.isAlive()) {
+				connection2.get().close();
+				connection1.get().close();
+			} else {
+				connection1.get().close();
+				connection2.get().close();
+			}
+		} catch (SailException ignored) {
+		}
+
+		try (SailConnection connection = store.getConnection()) {
+			connection.begin();
+			long size = connection.size();
+			connection.commit();
+			assertThat(size).isEqualTo(1);
 		}
 
 		store.shutDown();
