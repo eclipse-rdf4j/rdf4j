@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.http.client.shacl;
 
+import java.io.InputStream;
 import java.io.StringReader;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -31,6 +32,10 @@ public class RemoteShaclValidationException extends RDF4JException implements Va
 	private final RemoteValidation remoteValidation;
 
 	public RemoteShaclValidationException(StringReader stringReader, String s, RDFFormat format) {
+		remoteValidation = new RemoteValidation(stringReader, s, format);
+	}
+
+	public RemoteShaclValidationException(InputStream stringReader, String s, RDFFormat format) {
 		remoteValidation = new RemoteValidation(stringReader, s, format);
 	}
 

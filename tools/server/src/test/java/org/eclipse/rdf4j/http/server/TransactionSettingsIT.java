@@ -67,11 +67,12 @@ public class TransactionSettingsIT {
 			"ex:PersonShape\n" +
 			"\ta sh:NodeShape  ;\n" +
 			"\tsh:targetClass rdfs:Resource ;\n" +
-			"\tsh:property ex:PersonShapeProperty  .\n" +
+			"\tsh:property _:bnode  .\n" +
 			"\n" +
 			"\n" +
-			"ex:PersonShapeProperty\n" +
+			"_:bnode\n" +
 			"        sh:path rdfs:label ;\n" +
+			"        rdfs:label \"abc\" ;\n" +
 			"        sh:minCount 1 .";
 
 	@BeforeEach
