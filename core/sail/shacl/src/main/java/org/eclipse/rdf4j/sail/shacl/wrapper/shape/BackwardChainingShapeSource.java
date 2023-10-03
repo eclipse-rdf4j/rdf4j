@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.wrapper.shape;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -22,13 +20,9 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.shacl.ast.ShaclParsingException;
-import org.eclipse.rdf4j.sail.shacl.ast.ShaclShapeParsingException;
 
 public class BackwardChainingShapeSource implements ShapeSource {
 

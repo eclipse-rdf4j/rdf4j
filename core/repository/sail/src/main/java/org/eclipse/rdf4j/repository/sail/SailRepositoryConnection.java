@@ -349,11 +349,19 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 			Resource... contexts) throws RepositoryException {
 		Objects.requireNonNull(contexts,
 				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
-
+		CloseableIteration<? extends Statement> statements = null;
 		try {
-			return createRepositoryResult(sailConnection.getStatements(subj, pred, obj, includeInferred, contexts));
-		} catch (SailException e) {
-			throw new RepositoryException("Unable to get statements from Sail", e);
+			statements = sailConnection.getStatements(subj, pred, obj, includeInferred, contexts);
+			return createRepositoryResult(statements);
+		} catch (Throwable t) {
+			if (statements != null) {
+				statements.close();
+			}
+			if (t instanceof SailException) {
+				throw new RepositoryException("Unable to get statements from Sail", t);
+			} else {
+				throw t;
+			}
 		}
 	}
 

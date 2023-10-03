@@ -14,7 +14,6 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.function.BiFunction;
-import java.util.function.Function;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
