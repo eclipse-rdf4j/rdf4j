@@ -18,7 +18,11 @@ import static org.mockito.Mockito.when;
 
 import java.util.stream.Stream;
 
-import org.eclipse.rdf4j.model.*;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 import org.junit.jupiter.api.extension.ExtendWith;

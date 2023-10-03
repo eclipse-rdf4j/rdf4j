@@ -715,9 +715,20 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(DescribeOperator node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		QueryEvaluationStep child = precompile(node.getArg(), context);
-		return bs -> new DescribeIteration(child.evaluate(bs), DefaultEvaluationStrategy.this,
-				node.getBindingNames(),
-				bs);
+		return bs -> {
+			CloseableIteration<BindingSet> evaluate = null;
+
+			try {
+				evaluate = child.evaluate(bs);
+				return new DescribeIteration(evaluate, DefaultEvaluationStrategy.this, node.getBindingNames(), bs);
+			} catch (Throwable t) {
+				if (evaluate != null) {
+					evaluate.close();
+				}
+				throw t;
+			}
+
+		};
 	}
 
 	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context)

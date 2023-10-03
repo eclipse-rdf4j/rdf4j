@@ -874,10 +874,19 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			throw new FedXRuntimeException(
 					"Expected a FedXDescribeOperator Node. Found " + operator.getClass() + " instead.");
 		}
-		CloseableIteration<BindingSet> iter = evaluate(operator.getArg(), bindings);
-		// Note: we need to evaluate the DESCRIBE over the entire federation
-		return new FederatedDescribeIteration(iter, this, operator.getBindingNames(), bindings,
-				((FederatedDescribeOperator) operator).getQueryInfo());
+		CloseableIteration<BindingSet> iter = null;
+		try {
+			iter = evaluate(operator.getArg(), bindings);
+			// Note: we need to evaluate the DESCRIBE over the entire federation
+			return new FederatedDescribeIteration(iter, this, operator.getBindingNames(), bindings,
+					((FederatedDescribeOperator) operator).getQueryInfo());
+		} catch (Throwable t) {
+			if (iter != null) {
+				iter.close();
+			}
+			throw t;
+		}
+
 	}
 
 	@Override
