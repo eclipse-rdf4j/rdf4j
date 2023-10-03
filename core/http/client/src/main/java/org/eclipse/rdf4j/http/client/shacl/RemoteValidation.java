@@ -16,8 +16,12 @@ import java.io.StringReader;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+import org.eclipse.rdf4j.rio.helpers.ParseErrorLogger;
 
 @InternalUseOnly
 class RemoteValidation {
@@ -37,7 +41,9 @@ class RemoteValidation {
 	Model asModel() {
 		if (model == null) {
 			try {
-				model = Rio.parse(stringReader, baseUri, format);
+				ParserConfig parserConfig = new ParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+				model = Rio.parse(stringReader, baseUri, format, parserConfig, SimpleValueFactory.getInstance(),
+						new ParseErrorLogger());
 			} catch (IOException e) {
 				throw new RuntimeException(e);
 			}
