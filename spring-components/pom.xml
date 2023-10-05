@@ -13,7 +13,7 @@
 		<module>rdf4j-spring-demo</module>
 	</modules>
 	<properties>
-		<spring.boot.version>2.7.7</spring.boot.version>
+		<spring.boot.version>2.7.16</spring.boot.version>
 	</properties>
 	<artifactId>rdf4j-spring-components</artifactId>
 	<name>RDF4J: Spring components</name>
