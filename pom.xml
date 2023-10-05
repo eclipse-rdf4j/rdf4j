@@ -362,24 +362,24 @@
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<enforce-javaee-provided.fail>true</enforce-javaee-provided.fail>
 		<slf4j.version>1.7.36</slf4j.version>
-		<logback.version>1.2.11</logback.version>
+		<logback.version>1.2.12</logback.version>
 		<log4j.version>2.17.2</log4j.version>
 		<httpclient.version>4.5.14</httpclient.version>
-		<jackson.version>2.13.4</jackson.version>
+		<jackson.version>2.13.5</jackson.version>
 		<httpcore.version>4.4.16</httpcore.version>
 		<jsonldjava.version>0.13.4</jsonldjava.version>
 		<last.japicmp.compare.version>4.0.0</last.japicmp.compare.version>
-		<jaxb.version>2.3.3</jaxb.version>
-		<lwjgl.version>3.3.1</lwjgl.version>
+		<jaxb.version>2.3.8</jaxb.version>
+		<lwjgl.version>3.3.3</lwjgl.version>
 		<lucene.version>8.9.0</lucene.version>
 		<solr.version>8.9.0</solr.version>
 		<elasticsearch.version>7.15.2</elasticsearch.version>
-		<spring.version>5.3.23</spring.version>
-		<guava.version>30.1.1-jre</guava.version>
-		<jmhVersion>1.35</jmhVersion>
+		<spring.version>5.3.30</spring.version>
+		<guava.version>32.1.2-jre</guava.version>
+		<jmhVersion>1.37</jmhVersion>
 		<servlet.version>3.1.0</servlet.version>
-		<junit.version>5.8.2</junit.version>
-		<jetty.version>9.4.50.v20221201</jetty.version>
+		<junit.version>5.9.2</junit.version>
+		<jetty.version>9.4.52.v20230823</jetty.version>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
@@ -387,7 +387,7 @@
 			<dependency>
 				<groupId>com.fasterxml.jackson</groupId>
 				<artifactId>jackson-bom</artifactId>
-				<version>2.13.4.20221013</version>
+				<version>${jackson.version}</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
@@ -488,7 +488,7 @@
 			<dependency>
 				<groupId>org.locationtech.jts</groupId>
 				<artifactId>jts-core</artifactId>
-				<version>1.18.1</version>
+				<version>1.18.2</version>
 			</dependency>
 			<dependency>
 				<groupId>com.google.guava</groupId>
@@ -575,12 +575,12 @@
 			<dependency>
 				<groupId>org.mockito</groupId>
 				<artifactId>mockito-core</artifactId>
-				<version>3.8.0</version>
+				<version>4.11.0</version>
 			</dependency>
 			<dependency>
 				<groupId>org.mockito</groupId>
 				<artifactId>mockito-junit-jupiter</artifactId>
-				<version>3.8.0</version>
+				<version>4.11.0</version>
 			</dependency>
 			<dependency>
 				<groupId>org.mock-server</groupId>
@@ -590,7 +590,7 @@
 			<dependency>
 				<groupId>org.assertj</groupId>
 				<artifactId>assertj-core</artifactId>
-				<version>3.19.0</version>
+				<version>3.24.2</version>
 			</dependency>
 			<dependency>
 				<groupId>com.github.jsonld-java</groupId>
@@ -623,7 +623,7 @@
 			<dependency>
 				<groupId>org.mapdb</groupId>
 				<artifactId>mapdb</artifactId>
-				<version>1.0.8</version>
+				<version>1.0.9</version>
 			</dependency>
 		</dependencies>
 	</dependencyManagement>
@@ -791,7 +791,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-surefire-plugin</artifactId>
-					<version>3.0.0-M7</version>
+					<version>3.1.2</version>
 					<configuration>
 						<encoding>UTF-8</encoding>
 						<argLine>-Xmx2048M</argLine>
@@ -800,7 +800,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-failsafe-plugin</artifactId>
-					<version>3.0.0-M7</version>
+					<version>3.1.2</version>
 					<configuration>
 						<encoding>UTF-8</encoding>
 						<forkCount>1</forkCount>
@@ -1010,6 +1010,8 @@
 											<ignoreClass>org.junit.*</ignoreClass>
 											<!-- mockserver-junit-jupiter-no-dependencies contains these classes -->
 											<ignoreClass>org.slf4j.*</ignoreClass>
+											<!-- mockserver-junit-jupiter-no-dependencies contains these classes -->
+											<ignoreClass>org.opentest4j.*</ignoreClass>
 										</ignoreClasses>
 										<ignoreWhenIdentical>true</ignoreWhenIdentical>
 									</banDuplicateClasses>
