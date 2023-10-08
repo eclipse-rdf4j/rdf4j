@@ -5,15 +5,15 @@ toc: true
 
 You can either retrieve RDF4J via Apache Maven, or download the SDK or onejar directly.
 
-## RDF4J 4.3.6 (latest)
+## RDF4J 4.3.7 (latest)
 
-RDF4J 4.3.6 is our latest stable release. It requires Java 11 minimally.
-For details on what’s new and how to upgrade, see the [release and upgrade notes](/release-notes/4.3.6).
+RDF4J 4.3.7 is our latest stable release. It requires Java 11 minimally.
+For details on what’s new and how to upgrade, see the [release and upgrade notes](/release-notes/4.3.7).
 
-- [RDF4J 4.3.6 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-4.3.6-sdk.zip)<br/>
+- [RDF4J 4.3.7 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-4.3.7-sdk.zip)<br/>
   Full Eclipse RDF4J SDK, containing all libraries, RDF4J Server, Workbench, and Console applications, and Javadoc API.
 
-- [RDF4J 4.3.6 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-4.3.6-onejar.jar)<br/>
+- [RDF4J 4.3.7 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-4.3.7-onejar.jar)<br/>
   Single jar file for easy inclusion of the full RDF4J toolkit in your Java project.
 
 - [RDF4J artifacts](https://search.maven.org/search?q=org.eclipse.rdf4j) on the [Maven Central Repository](http://search.maven.org/)
@@ -28,7 +28,7 @@ You can include RDF4J as a Maven dependency in your Java project by including th
         <dependency>
             <groupId>org.eclipse.rdf4j</groupId>
             <artifactId>rdf4j-bom</artifactId>
-            <version>4.3.6</version>
+            <version>4.3.7</version>
             <type>pom</type>
             <scope>import</scope>
         </dependency>
