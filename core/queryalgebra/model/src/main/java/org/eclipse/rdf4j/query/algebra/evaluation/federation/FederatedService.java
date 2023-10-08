@@ -63,7 +63,7 @@ public interface FederatedService {
 	 * @return an iteration over the results of the query
 	 * @throws QueryEvaluationException If there was an exception generated while evaluating the query.
 	 */
-	CloseableIteration<BindingSet, QueryEvaluationException> select(Service service, Set<String> projectionVars,
+	CloseableIteration<BindingSet> select(Service service, Set<String> projectionVars,
 			BindingSet bindings, String baseUri) throws QueryEvaluationException;
 
 	/**
@@ -86,8 +86,8 @@ public interface FederatedService {
 	 *         inserted into the results!
 	 * @throws QueryEvaluationException If there was an exception generated while evaluating the query.
 	 */
-	CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service,
-			CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
+	CloseableIteration<BindingSet> evaluate(Service service,
+			CloseableIteration<BindingSet> bindings, String baseUri)
 			throws QueryEvaluationException;
 
 	/**

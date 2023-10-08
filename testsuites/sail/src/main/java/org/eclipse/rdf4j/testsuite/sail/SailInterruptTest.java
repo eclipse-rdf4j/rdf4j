@@ -35,7 +35,7 @@ import org.junit.jupiter.api.Test;
 public abstract class SailInterruptTest {
 
 	@BeforeAll
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
@@ -49,7 +49,7 @@ public abstract class SailInterruptTest {
 	private ValueFactory vf;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		store = createSail();
 		store.init();
 		vf = store.getValueFactory();
@@ -58,7 +58,7 @@ public abstract class SailInterruptTest {
 	protected abstract Sail createSail() throws SailException;
 
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		store.shutDown();
 	}
 
@@ -118,7 +118,7 @@ public abstract class SailInterruptTest {
 
 	private void iterateStatements() throws SailException {
 		try (SailConnection con = store.getConnection();
-				CloseableIteration<?, SailException> iter = con.getStatements(null, null, null, true)) {
+				CloseableIteration<?> iter = con.getStatements(null, null, null, true)) {
 			while (iter.hasNext()) {
 				iter.next();
 			}

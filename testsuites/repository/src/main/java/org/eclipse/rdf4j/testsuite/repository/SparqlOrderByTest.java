@@ -37,7 +37,7 @@ import org.junit.jupiter.api.Test;
 public abstract class SparqlOrderByTest {
 
 	@BeforeAll
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
@@ -62,23 +62,23 @@ public abstract class SparqlOrderByTest {
 	private RepositoryConnection conn;
 
 	@Test
-	public void testQuery1() throws Exception {
+	public void testQuery1() {
 		assertTrue("James Leigh".compareTo("James Leigh Hunt") < 0);
 		assertResult(query1, Arrays.asList("James Leigh", "James Leigh", "James Leigh Hunt", "Megan Leigh"));
 	}
 
 	@Test
-	public void testQuery2() throws Exception {
+	public void testQuery2() {
 		assertResult(query2, Arrays.asList("Megan Leigh", "James Leigh", "James Leigh Hunt", "James Leigh"));
 	}
 
 	@Test
-	public void testQuery3() throws Exception {
+	public void testQuery3() {
 		assertResult(query3, Arrays.asList("James Leigh", "James Leigh", "James Leigh Hunt", "Megan Leigh"));
 	}
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		repository = createRepository();
 		createEmployee("james", "James Leigh", 123);
 		createEmployee("jim", "James Leigh", 244);
@@ -87,7 +87,7 @@ public abstract class SparqlOrderByTest {
 		conn = repository.getConnection();
 	}
 
-	protected Repository createRepository() throws Exception {
+	protected Repository createRepository() {
 		Repository repository = newRepository();
 		try (RepositoryConnection con = repository.getConnection()) {
 			con.clear();
@@ -96,10 +96,10 @@ public abstract class SparqlOrderByTest {
 		return repository;
 	}
 
-	protected abstract Repository newRepository() throws Exception;
+	protected abstract Repository newRepository();
 
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		conn.close();
 		conn = null;
 

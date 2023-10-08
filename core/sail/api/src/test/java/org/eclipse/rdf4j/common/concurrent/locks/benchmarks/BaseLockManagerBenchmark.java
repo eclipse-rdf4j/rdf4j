@@ -30,14 +30,14 @@ public class BaseLockManagerBenchmark {
 	ExecutorService executorService;
 
 	@Setup(Level.Trial)
-	public void setUp() throws InterruptedException {
+	public void setUp() {
 		Logger root = (Logger) LoggerFactory.getLogger(ReadPrefReadWriteLockManager.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.ERROR);
 		executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
 	}
 
 	@TearDown(Level.Trial)
-	public void tearDown() throws InterruptedException {
+	public void tearDown() {
 		executorService.shutdownNow();
 	}
 

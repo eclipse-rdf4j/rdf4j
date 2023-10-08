@@ -154,7 +154,7 @@ public abstract class SPARQLQueryTest extends TestCase {
 		}
 	}
 
-	protected final Repository createRepository() throws Exception {
+	protected final Repository createRepository() {
 		Repository repo = newRepository();
 		try (RepositoryConnection con = repo.getConnection()) {
 			con.clear();
@@ -163,10 +163,10 @@ public abstract class SPARQLQueryTest extends TestCase {
 		return repo;
 	}
 
-	protected abstract Repository newRepository() throws Exception;
+	protected abstract Repository newRepository();
 
 	@Override
-	protected void tearDown() throws Exception {
+	protected void tearDown() {
 		if (dataRep != null) {
 			dataRep.shutDown();
 			dataRep = null;
@@ -227,8 +227,7 @@ public abstract class SPARQLQueryTest extends TestCase {
 		}
 	}
 
-	protected final void compareTupleQueryResults(TupleQueryResult queryResult, TupleQueryResult expectedResult)
-			throws Exception {
+	protected final void compareTupleQueryResults(TupleQueryResult queryResult, TupleQueryResult expectedResult) {
 		// Create MutableTupleQueryResult to be able to re-iterate over the
 		// results
 		MutableTupleQueryResult queryResultTable = new MutableTupleQueryResult(queryResult);
@@ -367,7 +366,7 @@ public abstract class SPARQLQueryTest extends TestCase {
 		appendable.append("\n");
 	}
 
-	protected final void compareGraphs(Set<Statement> queryResult, Set<Statement> expectedResult) throws Exception {
+	protected final void compareGraphs(Set<Statement> queryResult, Set<Statement> expectedResult) {
 		if (!Models.isomorphic(expectedResult, queryResult)) {
 			// Don't use RepositoryUtil.difference, it reports incorrect diffs
 			/*

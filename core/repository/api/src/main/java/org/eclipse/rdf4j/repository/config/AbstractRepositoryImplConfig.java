@@ -27,9 +27,6 @@ import org.eclipse.rdf4j.model.vocabulary.CONFIG;
  */
 public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 
-	private static final boolean USE_CONFIG = "true"
-			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
-
 	private String type;
 
 	/**
@@ -66,15 +63,24 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 
 	@Override
 	public Resource export(Model model) {
+		if (Configurations.useLegacyConfig()) {
+			return exportLegacy(model);
+		}
+
 		BNode implNode = bnode();
 
 		if (type != null) {
-			if (USE_CONFIG) {
-				model.add(implNode, CONFIG.Rep.type, literal(type));
-			} else {
-				model.add(implNode, REPOSITORYTYPE, literal(type));
-			}
+			model.add(implNode, CONFIG.Rep.type, literal(type));
+		}
 
+		return implNode;
+	}
+
+	private Resource exportLegacy(Model model) {
+		BNode implNode = bnode();
+
+		if (type != null) {
+			model.add(implNode, REPOSITORYTYPE, literal(type));
 		}
 
 		return implNode;

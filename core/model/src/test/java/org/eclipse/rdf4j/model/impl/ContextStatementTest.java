@@ -40,11 +40,11 @@ public class ContextStatementTest {
 	private static final IRI g2 = vf.createIRI("urn:g2");
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 	}
 
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 	}
 
 	@Test

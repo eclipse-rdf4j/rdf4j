@@ -15,8 +15,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import java.io.IOException;
-
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -41,7 +39,7 @@ public class InferenceIT extends AbstractElasticsearchStoreIT {
 	private static SingletonClientProvider singletonClientProvider;
 
 	@BeforeAll
-	public static void beforeClass() throws IOException, InterruptedException {
+	public static void beforeClass() {
 		TestHelpers.openClient();
 		singletonClientProvider = new SingletonClientProvider("localhost", TestHelpers.PORT, TestHelpers.CLUSTER);
 	}

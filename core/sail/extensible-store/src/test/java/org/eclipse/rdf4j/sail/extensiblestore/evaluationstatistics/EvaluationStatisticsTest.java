@@ -129,28 +129,28 @@ public class EvaluationStatisticsTest {
 				new Var("b", RDF.TYPE),
 				new Var("c", bdbmProductType));
 
-		checkPattern(cardinalityCalculator, null_rdfType_bsbmProductType, 1);
+		checkPattern(cardinalityCalculator, null_rdfType_bsbmProductType, 5);
 
 		StatementPattern null_null_null = new StatementPattern(
 				new Var("a", null),
 				new Var("b", null),
 				new Var("c", null));
 
-		checkPattern(cardinalityCalculator, null_null_null, 1);
+		checkPattern(cardinalityCalculator, null_null_null, 5);
 
 		StatementPattern null_rdfType_null = new StatementPattern(
 				new Var("a", null),
 				new Var("b", RDF.TYPE),
 				new Var("c", null));
 
-		checkPattern(cardinalityCalculator, null_rdfType_null, 1);
+		checkPattern(cardinalityCalculator, null_rdfType_null, 5);
 
 		StatementPattern nonExistent = new StatementPattern(
 				new Var("a", null),
 				new Var("b", vf.createIRI("http://example.com/fhjerhf2uhfjkdsbf32o")),
 				new Var("c", null));
 
-		checkPattern(cardinalityCalculator, nonExistent, 1);
+		checkPattern(cardinalityCalculator, nonExistent, 5);
 
 		// this last pattern isn't very accurate, it's actually 46 statements, but the estimate is 100.4
 		StatementPattern bsbmProductType_null_null = new StatementPattern(

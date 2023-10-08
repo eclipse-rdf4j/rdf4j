@@ -91,7 +91,7 @@ public abstract class TupleQueryResultTest {
 		}
 	}
 
-	protected Repository createRepository() throws Exception {
+	protected Repository createRepository() {
 		Repository repository = newRepository();
 		try (RepositoryConnection con = repository.getConnection()) {
 			con.clear();
@@ -100,7 +100,7 @@ public abstract class TupleQueryResultTest {
 		return repository;
 	}
 
-	protected abstract Repository newRepository() throws Exception;
+	protected abstract Repository newRepository();
 
 	/*
 	 * build some simple SPARQL queries to use for testing the result set object.

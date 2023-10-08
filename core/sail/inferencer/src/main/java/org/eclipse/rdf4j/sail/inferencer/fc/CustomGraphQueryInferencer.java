@@ -272,7 +272,7 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 
 		private void evaluateIntoStatements(ParsedGraphQuery query, Collection<Statement> statements)
 				throws SailException, RDFHandlerException, QueryEvaluationException {
-			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = getWrappedConnection()
+			try (CloseableIteration<? extends BindingSet> bindingsIter = getWrappedConnection()
 					.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true)) {
 				ValueFactory factory = getValueFactory();
 				while (bindingsIter.hasNext()) {

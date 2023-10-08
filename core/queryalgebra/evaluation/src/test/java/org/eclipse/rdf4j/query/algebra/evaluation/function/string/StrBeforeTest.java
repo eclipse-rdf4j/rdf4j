@@ -34,18 +34,16 @@ public class StrBeforeTest {
 	private final ValueFactory f = SimpleValueFactory.getInstance();
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		strBeforeFunc = new StrBefore();
 	}
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 	}
 
 	@Test

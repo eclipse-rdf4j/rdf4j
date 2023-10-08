@@ -13,12 +13,11 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.xsd;
 import javax.xml.datatype.DatatypeConstants;
 import javax.xml.datatype.XMLGregorianCalendar;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
 /**
@@ -31,8 +30,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 public class DateTimeCast extends CastFunction {
 
 	@Override
-	protected IRI getXsdDatatype() {
-		return XSD.DATETIME;
+	protected CoreDatatype.XSD getCoreXsdDatatype() {
+		return CoreDatatype.XSD.DATETIME;
 	}
 
 	@Override
@@ -44,9 +43,9 @@ public class DateTimeCast extends CastFunction {
 	protected Literal convert(ValueFactory vf, Value value) throws ValueExprEvaluationException {
 		if (value instanceof Literal) {
 			Literal literal = (Literal) value;
-			IRI datatype = literal.getDatatype();
+			CoreDatatype datatype = literal.getCoreDatatype();
 
-			if (datatype.equals(XSD.DATE)) {
+			if (datatype == CoreDatatype.XSD.DATE) {
 				// If ST is xs:date, then let SYR be eg:convertYearToString(
 				// fn:year-from-date( SV )), let SMO be eg:convertTo2CharString(
 				// fn:month-from-date( SV )), let SDA be eg:convertTo2CharString(
@@ -79,7 +78,7 @@ public class DateTimeCast extends CastFunction {
 						if (DatatypeConstants.FIELD_UNDEFINED != timezoneOffset) {
 							int minutes = Math.abs(timezoneOffset);
 							int hours = minutes / 60;
-							minutes = minutes - (hours * 60);
+							minutes = minutes - hours * 60;
 							if (timezoneOffset > 0) {
 								dtBuilder.append("+");
 							} else {
@@ -96,7 +95,7 @@ public class DateTimeCast extends CastFunction {
 							dtBuilder.append(minutes);
 						}
 
-						return vf.createLiteral(dtBuilder.toString(), XSD.DATETIME);
+						return vf.createLiteral(dtBuilder.toString(), CoreDatatype.XSD.DATETIME);
 					} else {
 						throw typeError(literal, null);
 					}

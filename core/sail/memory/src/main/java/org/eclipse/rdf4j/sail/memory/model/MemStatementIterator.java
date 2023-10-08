@@ -14,14 +14,13 @@ import java.util.Arrays;
 import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * A StatementIterator that can iterate over a list of Statement objects. This iterator compares Resource and Literal
  * objects using the '==' operator, which is possible thanks to the extensive sharing of these objects in the
  * MemoryStore.
  */
-public class MemStatementIterator implements CloseableIteration<MemStatement, SailException> {
+public class MemStatementIterator implements CloseableIteration<MemStatement> {
 	public static final int MIN_SIZE_TO_CONSIDER_FOR_CACHE = 1000;
 
 	/*-----------*
@@ -127,7 +126,7 @@ public class MemStatementIterator implements CloseableIteration<MemStatement, Sa
 		this.statementIndex = 0;
 	}
 
-	public static CloseableIteration<MemStatement, SailException> cacheAwareInstance(MemStatementList smallestList,
+	public static CloseableIteration<MemStatement> cacheAwareInstance(MemStatementList smallestList,
 			MemResource subj, MemIRI pred, MemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts,
 			MemStatementIteratorCache iteratorCache) throws InterruptedException {
 

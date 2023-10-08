@@ -59,7 +59,7 @@ class ReadCommittedWrapper implements DataStructureInterface {
 	}
 
 	@Override
-	public CloseableIteration<? extends ExtensibleStatement, SailException> getStatements(Resource subject,
+	public CloseableIteration<? extends ExtensibleStatement> getStatements(Resource subject,
 			IRI predicate, Value object, boolean inferred, Resource... context) {
 
 		// must match single statement
@@ -116,7 +116,7 @@ class ReadCommittedWrapper implements DataStructureInterface {
 							})
 							.iterator();
 
-					final CloseableIteration<? extends ExtensibleStatement, SailException> right = dataStructure
+					final CloseableIteration<? extends ExtensibleStatement> right = dataStructure
 							.getStatements(
 									subject, predicate, object, inferred, context);
 

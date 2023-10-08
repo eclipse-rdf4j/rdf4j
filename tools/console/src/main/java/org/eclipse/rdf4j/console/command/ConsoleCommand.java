@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-import java.io.IOException;
 import java.util.Map;
 
 import org.eclipse.rdf4j.console.Command;
@@ -123,7 +122,7 @@ public abstract class ConsoleCommand implements Command, Help {
 	}
 
 	@Override
-	public void execute(String... parameters) throws IOException {
+	public void execute(String... parameters) {
 		throw new UnsupportedOperationException("Not supported yet.");
 	}
 
@@ -191,11 +190,6 @@ public abstract class ConsoleCommand implements Command, Help {
 	 * @return true
 	 */
 	protected boolean askProceed(String str, boolean defVal) {
-		try {
-			return consoleIO.askProceed(str, defVal);
-		} catch (IOException ex) {
-			writeError("Error reading answer", ex);
-		}
-		return defVal;
+		return consoleIO.askProceed(str, defVal);
 	}
 }

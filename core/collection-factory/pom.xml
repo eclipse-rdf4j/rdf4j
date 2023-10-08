@@ -11,6 +11,7 @@
 	<modules>
 		<module>api</module>
 		<module>mapdb</module>
+		<module>mapdb3</module>
 	</modules>
 	<name>RDF4J: Collection Factory that may be shared</name>
 	<description>Collection Factories that may be reused for RDF4J</description>

@@ -97,10 +97,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.DescribeIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer;
@@ -136,11 +138,11 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		super(new org.eclipse.rdf4j.query.algebra.evaluation.TripleSource() {
 
 			@Override
-			public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(
+			public CloseableIteration<? extends Statement> getStatements(
 					Resource subj, IRI pred, Value obj, Resource... contexts)
 					throws QueryEvaluationException {
 				throw new FedXRuntimeException(
-						"Federation Strategy does not support org.openrdf.query.algebra.evaluation.TripleSource#getStatements."
+						"Federation Strategy does not support org.eclipse.rdf4j.query.algebra.evaluation.TripleSource#getStatements."
 								+
 								" If you encounter this exception, please report it.");
 			}
@@ -314,8 +316,9 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		new ExclusiveTupleExprOptimizer().optimize(query);
 	}
 
+	@Deprecated(forRemoval = true)
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(
+	public CloseableIteration<BindingSet> evaluate(
 			TupleExpr expr, BindingSet bindings)
 			throws QueryEvaluationException {
 
@@ -425,7 +428,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
 	 */
-	public CloseableIteration<Statement, QueryEvaluationException> getStatements(QueryInfo queryInfo, Resource subj,
+	public CloseableIteration<Statement> getStatements(QueryInfo queryInfo, Resource subj,
 			IRI pred, Value obj, Resource... contexts)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 
@@ -472,7 +475,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		return union;
 	}
 
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateService(FedXService service,
+	public CloseableIteration<BindingSet> evaluateService(FedXService service,
 			BindingSet bindings) throws QueryEvaluationException {
 
 		ParallelServiceExecutor pe = new ParallelServiceExecutor(service, this, bindings, federationContext);
@@ -480,7 +483,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		return pe;
 	}
 
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateSingleSourceQuery(SingleSourceQuery query,
+	public CloseableIteration<BindingSet> evaluateSingleSourceQuery(SingleSourceQuery query,
 			BindingSet bindings) throws QueryEvaluationException {
 
 		try {
@@ -494,7 +497,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 	}
 
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateNJoin(NJoin join, BindingSet bindings)
+	public CloseableIteration<BindingSet> evaluateNJoin(NJoin join, BindingSet bindings)
 			throws QueryEvaluationException {
 
 		return precompile(join).evaluate(bindings);
@@ -508,8 +511,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		ControlledWorkerScheduler<BindingSet> joinScheduler = federationContext.getManager().getJoinScheduler();
 
 		return bindings -> {
-			boolean completed = false;
-			CloseableIteration<BindingSet, QueryEvaluationException> result = null;
+			CloseableIteration<BindingSet> result = null;
 			try {
 				result = resultProvider.evaluate(bindings);
 
@@ -517,11 +519,11 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 					result = executeJoin(joinScheduler, result, join.getArg(i), join.getJoinVariables(i), bindings,
 							join.getQueryInfo());
 				}
-				completed = true;
-			} finally {
-				if (!completed && result != null) {
+			} catch (Throwable t) {
+				if (result != null) {
 					result.close();
 				}
+				throw t;
 			}
 			return result;
 		};
@@ -537,7 +539,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	 * @throws QueryEvaluationException
 	 * @see StrictEvaluationStrategy#evaluate(org.eclipse.rdf4j.query.algebra.LeftJoin, BindingSet)
 	 */
-	protected CloseableIteration<BindingSet, QueryEvaluationException> evaluateLeftJoin(FedXLeftJoin leftJoin,
+	protected CloseableIteration<BindingSet> evaluateLeftJoin(FedXLeftJoin leftJoin,
 			final BindingSet bindings) throws QueryEvaluationException {
 
 		return precompile(leftJoin).evaluate(bindings);
@@ -558,7 +560,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 				final QueryEvaluationStep rightES = precompile(leftJoin.getRightArg(), context);
 
 				@Override
-				public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+				public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 					String[] hashJoinAttributeNames = HashJoinIteration.hashJoinAttributeNames(leftJoin);
 					return new HashJoinIteration(leftES, rightES, bindings, true, hashJoinAttributeNames, context);
 				}
@@ -620,7 +622,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		return problemVars;
 	}
 
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateNaryUnion(NUnion union, BindingSet bindings)
+	public CloseableIteration<BindingSet> evaluateNaryUnion(NUnion union, BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(union).evaluate(bindings);
 	}
@@ -666,12 +668,12 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	 * @return the result
 	 * @throws QueryEvaluationException
 	 */
-	protected abstract CloseableIteration<BindingSet, QueryEvaluationException> executeJoin(
+	protected abstract CloseableIteration<BindingSet> executeJoin(
 			ControlledWorkerScheduler<BindingSet> joinScheduler,
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter, TupleExpr rightArg,
+			CloseableIteration<BindingSet> leftIter, TupleExpr rightArg,
 			Set<String> joinVariables, BindingSet bindings, QueryInfo queryInfo) throws QueryEvaluationException;
 
-	public abstract CloseableIteration<BindingSet, QueryEvaluationException> evaluateExclusiveGroup(
+	public abstract CloseableIteration<BindingSet> evaluateExclusiveGroup(
 			ExclusiveGroup group, BindingSet bindings)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
 
@@ -686,7 +688,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
 	 */
-	protected CloseableIteration<BindingSet, QueryEvaluationException> evaluateExclusiveTupleExpr(
+	protected CloseableIteration<BindingSet> evaluateExclusiveTupleExpr(
 			ExclusiveTupleExpr expr,
 			BindingSet bindings) throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 
@@ -740,7 +742,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	 * @return the result iteration
 	 * @throws QueryEvaluationException
 	 */
-	public abstract CloseableIteration<BindingSet, QueryEvaluationException> evaluateBoundJoinStatementPattern(
+	public abstract CloseableIteration<BindingSet> evaluateBoundJoinStatementPattern(
 			StatementTupleExpr stmt, final List<BindingSet> bindings) throws QueryEvaluationException;
 
 	/**
@@ -752,7 +754,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	 * @return the result iteration
 	 * @throws QueryEvaluationException
 	 */
-	public abstract CloseableIteration<BindingSet, QueryEvaluationException> evaluateGroupedCheck(
+	public abstract CloseableIteration<BindingSet> evaluateGroupedCheck(
 			CheckStatementPattern stmt, final List<BindingSet> bindings) throws QueryEvaluationException;
 
 	/**
@@ -765,7 +767,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	 * @return the result iteration
 	 * @throws QueryEvaluationException
 	 */
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateService(FedXService service,
+	public CloseableIteration<BindingSet> evaluateService(FedXService service,
 			final List<BindingSet> bindings) throws QueryEvaluationException {
 
 		Var serviceRef = service.getService().getServiceRef();
@@ -787,6 +789,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 				service.getService().getBaseURI());
 	}
 
+	@Deprecated(forRemoval = true)
 	@Override
 	public Value evaluate(ValueExpr expr, BindingSet bindings)
 			throws ValueExprEvaluationException, QueryEvaluationException {
@@ -864,15 +867,14 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		};
 	}
 
-	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(DescribeOperator operator,
+	public CloseableIteration<BindingSet> evaluate(DescribeOperator operator,
 			final BindingSet bindings) throws QueryEvaluationException {
 
 		if (!(operator instanceof FederatedDescribeOperator)) {
 			throw new FedXRuntimeException(
 					"Expected a FedXDescribeOperator Node. Found " + operator.getClass() + " instead.");
 		}
-		CloseableIteration<BindingSet, QueryEvaluationException> iter = null;
+		CloseableIteration<BindingSet> iter = null;
 		try {
 			iter = evaluate(operator.getArg(), bindings);
 			// Note: we need to evaluate the DESCRIBE over the entire federation
@@ -887,7 +889,20 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 	}
 
-	protected CloseableIteration<BindingSet, QueryEvaluationException> evaluateAtStatementSources(Object preparedQuery,
+	@Override
+	protected QueryEvaluationStep prepare(DescribeOperator operator, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		if (!(operator instanceof FederatedDescribeOperator)) {
+			throw new FedXRuntimeException(
+					"Expected a FedXDescribeOperator Node. Found " + operator.getClass() + " instead.");
+		}
+
+		QueryEvaluationStep child = precompile(operator.getArg(), context);
+		return bs -> new FederatedDescribeIteration(child.evaluate(bs), this, operator.getBindingNames(), bs,
+				((FederatedDescribeOperator) operator).getQueryInfo());
+	}
+
+	protected CloseableIteration<BindingSet> evaluateAtStatementSources(Object preparedQuery,
 			List<StatementSource> statementSources, QueryInfo queryInfo) throws QueryEvaluationException {
 		if (preparedQuery instanceof String) {
 			return evaluateAtStatementSources((String) preparedQuery, statementSources, queryInfo);
@@ -899,11 +914,11 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 				"Unsupported type for prepared query: " + preparedQuery.getClass().getCanonicalName());
 	}
 
-	protected CloseableIteration<BindingSet, QueryEvaluationException> evaluateAtStatementSources(String preparedQuery,
+	protected CloseableIteration<BindingSet> evaluateAtStatementSources(String preparedQuery,
 			List<StatementSource> statementSources, QueryInfo queryInfo) throws QueryEvaluationException {
 
 		try {
-			CloseableIteration<BindingSet, QueryEvaluationException> result;
+			CloseableIteration<BindingSet> result;
 
 			if (statementSources.size() == 1) {
 				Endpoint ownedEndpoint = federationContext.getEndpointManager()
@@ -936,12 +951,12 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}
 	}
 
-	protected CloseableIteration<BindingSet, QueryEvaluationException> evaluateAtStatementSources(
+	protected CloseableIteration<BindingSet> evaluateAtStatementSources(
 			TupleExpr preparedQuery, List<StatementSource> statementSources, QueryInfo queryInfo)
 			throws QueryEvaluationException {
 
 		try {
-			CloseableIteration<BindingSet, QueryEvaluationException> result;
+			CloseableIteration<BindingSet> result;
 
 			if (statementSources.size() == 1) {
 				Endpoint ownedEndpoint = federationContext.getEndpointManager()

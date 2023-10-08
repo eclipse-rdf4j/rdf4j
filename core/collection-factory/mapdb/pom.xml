@@ -27,6 +27,7 @@
 		<dependency>
 			<groupId>org.mapdb</groupId>
 			<artifactId>mapdb</artifactId>
+			<version>1.0.8</version>
 		</dependency>
 		<dependency>
 			<groupId>org.openjdk.jmh</groupId>
@@ -45,10 +46,6 @@
 		<plugins>
 			<plugin>
 				<artifactId>maven-assembly-plugin</artifactId>
-			</plugin>
-			<plugin>
-				<groupId>com.github.siom79.japicmp</groupId>
-				<artifactId>japicmp-maven-plugin</artifactId>
 			</plugin>
 		</plugins>
 	</build>

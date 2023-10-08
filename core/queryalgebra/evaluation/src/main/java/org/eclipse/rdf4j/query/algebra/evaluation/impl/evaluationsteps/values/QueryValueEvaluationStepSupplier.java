@@ -77,11 +77,11 @@ public class QueryValueEvaluationStepSupplier {
 
 	public static QueryValueEvaluationStep prepareDatatype(QueryValueEvaluationStep arg,
 			QueryEvaluationContext context) {
-		return make(arg, "datatype called on constant that throws", (bs) -> datatype(arg, bs));
+		return make(arg, "datatype called on constant that throws", bs -> datatype(arg, bs));
 	}
 
 	public static QueryValueEvaluationStep prepareLabel(QueryValueEvaluationStep arg, ValueFactory vf) {
-		return make(arg, "label called on constant that throws", (bs) -> label(arg, bs, vf));
+		return make(arg, "label called on constant that throws", bs -> label(arg, bs, vf));
 	}
 
 	private static QueryValueEvaluationStep make(QueryValueEvaluationStep arg, String errorMessage,
@@ -200,13 +200,13 @@ public class QueryValueEvaluationStepSupplier {
 				if (nodeId instanceof Literal) {
 					String nodeLabel = nodeId.stringValue();
 					return new QueryValueEvaluationStep.ApplyFunctionForEachBinding(
-							(bs) -> vf.createBNode(nodeLabel + (bs.toString().hashCode())));
+							bs -> vf.createBNode(nodeLabel + bs.toString().hashCode()));
 				} else {
 					return new QueryValueEvaluationStep.Fail("BNODE function argument must be a literal");
 				}
 			} else {
 				return new QueryValueEvaluationStep.ApplyFunctionForEachBinding(
-						(bs) -> vf.createBNode(nodeVes.evaluate(bs).stringValue() + bs.toString().hashCode()));
+						bs -> vf.createBNode(nodeVes.evaluate(bs).stringValue() + bs.toString().hashCode()));
 			}
 		} catch (ValueExprEvaluationException e) {
 			return new QueryValueEvaluationStep.Fail("BNODE function argument must be a literal");
@@ -309,7 +309,7 @@ public class QueryValueEvaluationStepSupplier {
 			}
 			return result;
 		} else if (argValue instanceof IRI) {
-			return ((IRI) argValue);
+			return (IRI) argValue;
 		}
 
 		throw new ValueExprEvaluationException();

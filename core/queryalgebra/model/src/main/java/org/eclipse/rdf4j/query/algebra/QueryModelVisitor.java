@@ -109,9 +109,6 @@ public interface QueryModelVisitor<X extends Exception> {
 
 	void meet(LeftJoin node) throws X;
 
-	@Deprecated(forRemoval = true)
-	void meet(Like node) throws X;
-
 	void meet(Load load) throws X;
 
 	void meet(LocalName node) throws X;

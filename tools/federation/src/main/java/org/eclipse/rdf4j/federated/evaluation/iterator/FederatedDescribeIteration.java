@@ -16,7 +16,6 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
 import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
@@ -39,15 +38,13 @@ import com.google.common.collect.Lists;
  * @author Andreas Schwarte
  *
  */
-@Deprecated(since = "4.1.0")
 public class FederatedDescribeIteration extends DescribeIteration {
 
 	private final QueryInfo queryInfo;
 
 	private final List<StatementSource> allSources;
 
-	@Deprecated(since = "4.1.0", forRemoval = true)
-	public FederatedDescribeIteration(Iteration<BindingSet, QueryEvaluationException> sourceIter,
+	public FederatedDescribeIteration(CloseableIteration<BindingSet> sourceIter,
 			FederationEvalStrategy strategy, Set<String> describeExprNames, BindingSet parentBindings,
 			QueryInfo queryInfo) {
 		super(sourceIter, strategy, describeExprNames, parentBindings);
@@ -61,7 +58,7 @@ public class FederatedDescribeIteration extends DescribeIteration {
 	}
 
 	@Override
-	protected CloseableIteration<BindingSet, QueryEvaluationException> createNextIteration(Value subject, Value object)
+	protected CloseableIteration<BindingSet> createNextIteration(Value subject, Value object)
 			throws QueryEvaluationException {
 		if (subject == null && object == null) {
 			return new EmptyIteration<>();
@@ -71,15 +68,14 @@ public class FederatedDescribeIteration extends DescribeIteration {
 		Var predVar = new Var(VARNAME_PREDICATE);
 		Var objVar = new Var(VARNAME_OBJECT, object);
 
-		StatementPattern pattern = new StatementPattern(subjVar, predVar, objVar);
-
 		// associate all federation members as sources for this pattern
 		// Note: for DESCRIBE we currently do not perform any extra source selection,
 		// i.e. we assume all members to be relevant for describing the resource
-		StatementSourcePattern stmtSourcePattern = new StatementSourcePattern(pattern, queryInfo);
+		StatementSourcePattern stmtSourcePattern = new StatementSourcePattern(
+				new StatementPattern(subjVar, predVar, objVar), queryInfo);
 		allSources.forEach(stmtSourcePattern::addStatementSource);
 
-		CloseableIteration<BindingSet, QueryEvaluationException> res = stmtSourcePattern.evaluate(parentBindings);
+		CloseableIteration<BindingSet> res = stmtSourcePattern.evaluate(parentBindings);
 
 		// we need to make sure that subject or object are added to the binding set
 		// Note: FedX uses prepared SELECT queries to evaluate a statement pattern and

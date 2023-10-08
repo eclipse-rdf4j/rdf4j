@@ -96,7 +96,7 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 	}
 
 	@BeforeEach
-	public void beforeEachTest() throws Exception {
+	public void beforeEachTest() {
 		// reset operations counter and fail after
 		for (int i = 1; i <= MAX_ENDPOINTS; i++) {
 			RepositorySettings repoSettings = repoSettings(i);

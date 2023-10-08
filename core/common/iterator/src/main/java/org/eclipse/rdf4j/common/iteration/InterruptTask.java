@@ -18,17 +18,17 @@ import java.util.TimerTask;
  *
  * @author Jeen Broekstra
  */
-class InterruptTask<E, X extends Exception> extends TimerTask {
+class InterruptTask<E> extends TimerTask {
 
-	private final WeakReference<TimeLimitIteration<E, X>> iterationRef;
+	private final WeakReference<TimeLimitIteration<E>> iterationRef;
 
-	public InterruptTask(TimeLimitIteration<E, X> iteration) {
+	public InterruptTask(TimeLimitIteration<E> iteration) {
 		this.iterationRef = new WeakReference<>(iteration);
 	}
 
 	@Override
 	public void run() {
-		TimeLimitIteration<E, X> iteration = iterationRef.get();
+		TimeLimitIteration<E> iteration = iterationRef.get();
 		if (iteration != null) {
 			iteration.interrupt();
 		}

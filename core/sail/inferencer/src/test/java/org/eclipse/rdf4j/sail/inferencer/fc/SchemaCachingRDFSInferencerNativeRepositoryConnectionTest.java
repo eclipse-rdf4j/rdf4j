@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.inferencer.fc;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -31,7 +30,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest extends RDFSchemaRepositoryConnectionTest {
 	@Override
-	protected Repository createRepository(File dataDir) throws IOException {
+	protected Repository createRepository(File dataDir) {
 		SchemaCachingRDFSInferencer sail = new SchemaCachingRDFSInferencer(new NativeStore(dataDir, "spoc"),
 				true);
 		sail.setAddInferredStatementsToDefaultContext(false);
@@ -42,7 +41,7 @@ public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest extends R
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Disabled
-	public void testQueryDefaultGraph(IsolationLevel level) throws Exception {
+	public void testQueryDefaultGraph(IsolationLevel level) {
 		// ignore
 	}
 
@@ -50,7 +49,7 @@ public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest extends R
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Disabled
-	public void testDeleteDefaultGraph(IsolationLevel level) throws Exception {
+	public void testDeleteDefaultGraph(IsolationLevel level) {
 		// ignore
 	}
 
@@ -58,7 +57,7 @@ public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest extends R
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Disabled
-	public void testContextStatementsNotDuplicated(IsolationLevel level) throws Exception {
+	public void testContextStatementsNotDuplicated(IsolationLevel level) {
 		// ignore
 	}
 
@@ -66,7 +65,7 @@ public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest extends R
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Disabled
-	public void testContextStatementsNotDuplicated2(IsolationLevel level) throws Exception {
+	public void testContextStatementsNotDuplicated2(IsolationLevel level) {
 		// ignore
 	}
 

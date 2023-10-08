@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
-import java.io.IOException;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -24,7 +23,7 @@ public class LmdbStoreRepositoryTest extends RepositoryTest {
 	public File dataDir;
 
 	@Override
-	protected Repository createRepository() throws IOException {
+	protected Repository createRepository() {
 		return new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc")));
 	}
 }

@@ -55,7 +55,7 @@ public class LmdbSailStoreTest {
 			F.createLiteral("two"));
 
 	@BeforeEach
-	public void before(@TempDir File dataDir) throws Exception {
+	public void before(@TempDir File dataDir) {
 		repo = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")));
 		repo.init();
 
@@ -194,7 +194,7 @@ public class LmdbSailStoreTest {
 	}
 
 	@AfterEach
-	public void after() throws Exception {
+	public void after() {
 		repo.shutDown();
 	}
 }

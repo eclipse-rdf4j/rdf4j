@@ -113,7 +113,7 @@ public class TypeFilteringRepositoryManager extends RepositoryManager {
 			if (!isCorrectType(result)) {
 				logger.debug(
 						"Surpressing retrieval of repository {}: repository type {} did not match expected type {}",
-						new Object[] { result.getID(), result.getRepositoryImplConfig().getType(), type });
+						result.getID(), result.getRepositoryImplConfig().getType(), type);
 
 				result = null;
 			}

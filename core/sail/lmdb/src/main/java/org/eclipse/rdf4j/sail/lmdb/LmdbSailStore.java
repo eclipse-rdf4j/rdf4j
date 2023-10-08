@@ -12,17 +12,22 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.eclipse.rdf4j.collection.factory.mapdb.MapDbCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
@@ -69,6 +74,8 @@ class LmdbSailStore implements SailStore {
 	private volatile boolean nextTransactionAsync;
 
 	private final boolean enableMultiThreading = true;
+
+	private final Set<Long> unusedIds;
 
 	/**
 	 * A fast non-blocking circular buffer backed by an array.
@@ -135,6 +142,13 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void execute() throws IOException {
+			if (!unusedIds.isEmpty()) {
+				// these ids are used again
+				unusedIds.remove(s);
+				unusedIds.remove(p);
+				unusedIds.remove(o);
+				unusedIds.remove(c);
+			}
 			boolean wasNew = tripleStore.storeTriple(s, p, o, c, explicit);
 			if (wasNew && context != null) {
 				contextStore.increment(context);
@@ -169,6 +183,19 @@ class LmdbSailStore implements SailStore {
 	 * Creates a new {@link LmdbSailStore}.
 	 */
 	public LmdbSailStore(File dataDir, LmdbStoreConfig config) throws IOException, SailException {
+		this.unusedIds = new PersistentSet<>(dataDir) {
+			@Override
+			protected byte[] write(Long element) {
+				ByteBuffer bb = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+				bb.putLong(element);
+				return bb.array();
+			}
+
+			@Override
+			protected Long read(ByteBuffer buffer) {
+				return buffer.order(ByteOrder.BIG_ENDIAN).getLong();
+			}
+		};
 		boolean initialized = false;
 		try {
 			namespaceStore = new NamespaceStore(dataDir);
@@ -280,10 +307,10 @@ class LmdbSailStore implements SailStore {
 		return new LmdbSailSource(false);
 	}
 
-	CloseableIteration<Resource, SailException> getContexts() throws IOException {
+	CloseableIteration<Resource> getContexts() throws IOException {
 		Txn txn = tripleStore.getTxnManager().createReadTxn();
 		RecordIterator records = tripleStore.getAllTriplesSortedByContext(txn);
-		CloseableIteration<? extends Statement, SailException> stIter1;
+		CloseableIteration<? extends Statement> stIter1;
 		if (records == null) {
 			// Iterator over all statements
 			stIter1 = createStatementIterator(txn, null, null, null, true);
@@ -291,7 +318,7 @@ class LmdbSailStore implements SailStore {
 			stIter1 = new LmdbStatementIterator(records, valueStore);
 		}
 
-		FilterIteration<Statement, SailException> stIter2 = new FilterIteration<>(
+		FilterIteration<Statement> stIter2 = new FilterIteration<>(
 				stIter1) {
 			@Override
 			protected boolean accept(Statement st) {
@@ -324,7 +351,7 @@ class LmdbSailStore implements SailStore {
 	 *                 no contexts are supplied the method operates on the entire repository.
 	 * @return A StatementIterator that can be used to iterate over the statements that match the specified pattern.
 	 */
-	CloseableIteration<? extends Statement, SailException> createStatementIterator(
+	CloseableIteration<? extends Statement> createStatementIterator(
 			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
 		long subjID = LmdbValue.UNKNOWN_ID;
 		if (subj != null) {
@@ -425,6 +452,19 @@ class LmdbSailStore implements SailStore {
 			// serializable is not supported at this level
 		}
 
+		protected void filterUsedIdsInTripleStore() throws IOException {
+			if (!unusedIds.isEmpty()) {
+				tripleStore.filterUsedIds(unusedIds);
+			}
+		}
+
+		protected void handleRemovedIdsInValueStore() throws IOException {
+			if (!unusedIds.isEmpty()) {
+				valueStore.gcIds(unusedIds);
+				unusedIds.clear();
+			}
+		}
+
 		@Override
 		public void flush() throws SailException {
 			sinkStoreAccessLock.lock();
@@ -456,6 +496,10 @@ class LmdbSailStore implements SailStore {
 						contextStore.sync();
 					} finally {
 						if (activeTxn) {
+							if (!multiThreadingActive) {
+								filterUsedIdsInTripleStore();
+							}
+							handleRemovedIdsInValueStore();
 							valueStore.commit();
 							if (!multiThreadingActive) {
 								tripleStore.commit();
@@ -558,6 +602,8 @@ class LmdbSailStore implements SailStore {
 												Operation op = opQueue.remove();
 												if (op != null) {
 													if (op == COMMIT_TRANSACTION) {
+														filterUsedIdsInTripleStore();
+
 														tripleStore.commit();
 														nextTransactionAsync = false;
 														asyncTransactionFinished = true;
@@ -666,9 +712,17 @@ class LmdbSailStore implements SailStore {
 				throws IOException {
 			long removeCount = 0;
 			for (long contextId : contexts) {
-				Map<Long, Long> result = tripleStore.removeTriplesByContext(subj, pred, obj, contextId, explicit);
+				final Map<Long, Long> perContextCounts = new HashMap<>();
+				tripleStore.removeTriplesByContext(subj, pred, obj, contextId, explicit, quad -> {
+					perContextCounts.merge(quad[3], 1L, (c, one) -> c + one);
+					for (long id : quad) {
+						if (id != 0L) {
+							unusedIds.add(id);
+						}
+					}
+				});
 
-				for (Entry<Long, Long> entry : result.entrySet()) {
+				for (Entry<Long, Long> entry : perContextCounts.entrySet()) {
 					Long entryContextId = entry.getKey();
 					if (entryContextId > 0) {
 						Resource modifiedContext = (Resource) valueStore.getValue(entryContextId);
@@ -814,17 +868,17 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
-		public CloseableIteration<? extends Namespace, SailException> getNamespaces() {
-			return new CloseableIteratorIteration<Namespace, SailException>(namespaceStore.iterator());
+		public CloseableIteration<? extends Namespace> getNamespaces() {
+			return new CloseableIteratorIteration<Namespace>(namespaceStore.iterator());
 		}
 
 		@Override
-		public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
+		public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
 			return new CloseableIteratorIteration<>(contextStore.iterator());
 		}
 
 		@Override
-		public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) throws SailException {
 			try {
 				return createStatementIterator(txn, subj, pred, obj, explicit, contexts);
@@ -833,5 +887,4 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 	}
-
 }

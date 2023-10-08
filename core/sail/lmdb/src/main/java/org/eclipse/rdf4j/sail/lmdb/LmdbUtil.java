@@ -48,11 +48,6 @@ final class LmdbUtil {
 	 */
 	static final long MIN_FREE_SPACE = 524_288; // 512 KiB
 
-	/**
-	 * Minimum size an LMDB db is automatically grown.
-	 */
-	static final long MIN_AUTOGROW_SIZE = 1_048_576; // 1024 KiB
-
 	private LmdbUtil() {
 	}
 
@@ -160,7 +155,7 @@ final class LmdbUtil {
 	 */
 	static boolean requiresResize(long mapSize, long pageSize, long txn, long requiredSize) {
 		long nextPageNo = mdbTxnMtNextPgno(txn);
-		return mapSize - nextPageNo * pageSize < Math.max(requiredSize, LmdbUtil.MIN_FREE_SPACE);
+		return mapSize - nextPageNo * pageSize < Math.max(requiredSize, MIN_FREE_SPACE);
 	}
 
 	/**
@@ -172,7 +167,7 @@ final class LmdbUtil {
 	 * @return the new map size
 	 */
 	static long autoGrowMapSize(long mapSize, long pageSize, long requiredSize) {
-		mapSize = Math.max(mapSize * 2, Math.max(requiredSize, MIN_AUTOGROW_SIZE));
+		mapSize = Math.max(mapSize * 2, Math.max(requiredSize, MIN_FREE_SPACE));
 		// align map size to page size
 		return mapSize % pageSize == 0 ? mapSize : mapSize + (mapSize / pageSize + 1) * pageSize;
 	}

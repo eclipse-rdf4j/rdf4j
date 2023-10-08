@@ -51,7 +51,7 @@ public class LmdbStoreTest extends RDFNotifyingStoreTest {
 
 	// Test for SES-542
 	@Test
-	public void testGetNamespacePersistence() throws Exception {
+	public void testGetNamespacePersistence() {
 		con.begin();
 		con.setNamespace("rdf", RDF.NAMESPACE);
 		con.commit();
@@ -66,7 +66,7 @@ public class LmdbStoreTest extends RDFNotifyingStoreTest {
 	}
 
 	@Test
-	public void testContextCacheReconstruction() throws Exception {
+	public void testContextCacheReconstruction() {
 		con.begin();
 		con.addStatement(RDF.TYPE, RDF.TYPE, RDF.TYPE, RDF.ALT);
 		con.commit();

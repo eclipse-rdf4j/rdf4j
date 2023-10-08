@@ -47,7 +47,7 @@ public class SparqlQueryRenderer extends BaseTupleExprRenderer implements QueryR
 	}
 
 	@Override
-	public String render(ParsedQuery theQuery) throws Exception {
+	public String render(ParsedQuery theQuery) {
 		if (theQuery instanceof ParsedTupleQuery) {
 			ParsedQueryPreprocessor parserVisitor = new ParsedQueryPreprocessor();
 			PreprocessedQuerySerializer serializerVisitor = new PreprocessedQuerySerializer();
@@ -71,7 +71,7 @@ public class SparqlQueryRenderer extends BaseTupleExprRenderer implements QueryR
 		}
 	}
 
-	public String render(ParsedOperation theOperation) throws Exception {
+	public String render(ParsedOperation theOperation) {
 		if (theOperation instanceof ParsedQuery) {
 			return render((ParsedQuery) theOperation);
 		} else if (theOperation instanceof ParsedUpdate) {
@@ -81,7 +81,7 @@ public class SparqlQueryRenderer extends BaseTupleExprRenderer implements QueryR
 		throw new UnsupportedOperationException("Only ParsedQuery and ParsedUpdate operations are supported");
 	}
 
-	private String renderUpdate(ParsedUpdate theUpdate) throws Exception {
+	private String renderUpdate(ParsedUpdate theUpdate) {
 		StringBuilder exprBuilder = new StringBuilder();
 		boolean multipleExpressions = (theUpdate.getUpdateExprs().size() > 1);
 
@@ -99,7 +99,7 @@ public class SparqlQueryRenderer extends BaseTupleExprRenderer implements QueryR
 	}
 
 	@Override
-	public String render(TupleExpr theExpr) throws Exception {
+	public String render(TupleExpr theExpr) {
 		ParsedQueryPreprocessor parserVisitor = new ParsedQueryPreprocessor();
 		PreprocessedQuerySerializer serializerVisitor = new PreprocessedQuerySerializer();
 		SerializableParsedTupleQuery toSerialize = parserVisitor.transformToSerialize(theExpr);
@@ -107,7 +107,7 @@ public class SparqlQueryRenderer extends BaseTupleExprRenderer implements QueryR
 	}
 
 	@Override
-	public String renderValueExpr(ValueExpr theExpr) throws Exception {
+	public String renderValueExpr(ValueExpr theExpr) {
 		PreprocessedQuerySerializer serializerVisitor = new PreprocessedQuerySerializer();
 		theExpr.visit(serializerVisitor);
 		return serializerVisitor.builder.toString();

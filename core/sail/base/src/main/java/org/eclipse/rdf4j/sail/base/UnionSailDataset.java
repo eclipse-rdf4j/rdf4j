@@ -61,10 +61,10 @@ class UnionSailDataset implements SailDataset {
 	}
 
 	@Override
-	public CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException {
+	public CloseableIteration<? extends Namespace> getNamespaces() throws SailException {
 
-		CloseableIteration<? extends Namespace, SailException> iteration1 = null;
-		CloseableIteration<? extends Namespace, SailException> iteration2 = null;
+		CloseableIteration<? extends Namespace> iteration1 = null;
+		CloseableIteration<? extends Namespace> iteration2 = null;
 		try {
 			iteration1 = dataset1.getNamespaces();
 			iteration2 = dataset2.getNamespaces();
@@ -94,9 +94,9 @@ class UnionSailDataset implements SailDataset {
 	}
 
 	@Override
-	public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
-		CloseableIteration<? extends Resource, SailException> iteration1 = null;
-		CloseableIteration<? extends Resource, SailException> iteration2 = null;
+	public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
+		CloseableIteration<? extends Resource> iteration1 = null;
+		CloseableIteration<? extends Resource> iteration2 = null;
 		try {
 			iteration1 = dataset1.getContextIDs();
 			iteration2 = dataset2.getContextIDs();
@@ -116,11 +116,11 @@ class UnionSailDataset implements SailDataset {
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
+	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws SailException {
 
-		CloseableIteration<? extends Statement, SailException> iteration1 = null;
-		CloseableIteration<? extends Statement, SailException> iteration2 = null;
+		CloseableIteration<? extends Statement> iteration1 = null;
+		CloseableIteration<? extends Statement> iteration2 = null;
 		try {
 			iteration1 = dataset1.getStatements(subj, pred, obj, contexts);
 			iteration2 = dataset2.getStatements(subj, pred, obj, contexts);
@@ -141,11 +141,11 @@ class UnionSailDataset implements SailDataset {
 	}
 
 	@Override
-	public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
+	public CloseableIteration<? extends Triple> getTriples(Resource subj, IRI pred, Value obj)
 			throws SailException {
 
-		CloseableIteration<? extends Triple, SailException> iteration1 = null;
-		CloseableIteration<? extends Triple, SailException> iteration2 = null;
+		CloseableIteration<? extends Triple> iteration1 = null;
+		CloseableIteration<? extends Triple> iteration2 = null;
 		try {
 			iteration1 = dataset1.getTriples(subj, pred, obj);
 			iteration2 = dataset2.getTriples(subj, pred, obj);
@@ -165,9 +165,9 @@ class UnionSailDataset implements SailDataset {
 
 	}
 
-	private <T> CloseableIteration<? extends T, SailException> union(
-			CloseableIteration<? extends T, SailException> iteration1,
-			CloseableIteration<? extends T, SailException> iteration2) {
+	private <T> CloseableIteration<? extends T> union(
+			CloseableIteration<? extends T> iteration1,
+			CloseableIteration<? extends T> iteration2) {
 		return DualUnionIteration.getWildcardInstance(iteration1, iteration2);
 	}
 

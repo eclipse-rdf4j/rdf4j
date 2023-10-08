@@ -34,7 +34,7 @@ public class SourceSelectionMemoryCacheTest extends SPARQLBaseTest {
 	}
 
 	@Test
-	public void test_neverCacheUnbound() throws Exception {
+	public void test_neverCacheUnbound() {
 
 		// just execute for one kind of test environment
 		assumeSparqlEndpoint();
@@ -53,7 +53,7 @@ public class SourceSelectionMemoryCacheTest extends SPARQLBaseTest {
 	}
 
 	@Test
-	public void test_inferGeneralized() throws Exception {
+	public void test_inferGeneralized() {
 
 		// just execute for one kind of test environment
 		assumeSparqlEndpoint();
@@ -75,7 +75,7 @@ public class SourceSelectionMemoryCacheTest extends SPARQLBaseTest {
 	}
 
 	@Test
-	public void test_inferGeneralized2() throws Exception {
+	public void test_inferGeneralized2() {
 
 		// just execute for one kind of test environment
 		assumeSparqlEndpoint();
@@ -99,7 +99,7 @@ public class SourceSelectionMemoryCacheTest extends SPARQLBaseTest {
 	}
 
 	@Test
-	public void test_inferGeneralized3() throws Exception {
+	public void test_inferGeneralized3() {
 
 		// just execute for one kind of test environment
 		assumeSparqlEndpoint();

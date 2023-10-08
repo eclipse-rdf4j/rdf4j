@@ -74,7 +74,7 @@ public class ElasticsearchSailTest extends ESIntegTestCase {
 	}
 
 	@Test
-	public void testTriplesStored() throws Exception {
+	public void testTriplesStored() {
 		delegateTest.testTriplesStored();
 	}
 
@@ -133,17 +133,17 @@ public class ElasticsearchSailTest extends ESIntegTestCase {
 	}
 
 	@Test
-	public void testContextHandling() throws Exception {
+	public void testContextHandling() {
 		delegateTest.testContextHandling();
 	}
 
 	@Test
-	public void testConcurrentReadingAndWriting() throws Exception {
+	public void testConcurrentReadingAndWriting() {
 		delegateTest.testConcurrentReadingAndWriting();
 	}
 
 	@Test
-	public void testNullContextHandling() throws Exception {
+	public void testNullContextHandling() {
 		delegateTest.testNullContextHandling();
 	}
 
@@ -153,7 +153,7 @@ public class ElasticsearchSailTest extends ESIntegTestCase {
 	}
 
 	@Test
-	public void testReindexing() throws Exception {
+	public void testReindexing() {
 		delegateTest.testReindexing();
 	}
 

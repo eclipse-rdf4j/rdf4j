@@ -34,18 +34,16 @@ public class RoundTest {
 	private final ValueFactory f = SimpleValueFactory.getInstance();
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		round = new Round();
 	}
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 	}
 
 	@Test
@@ -56,7 +54,7 @@ public class RoundTest {
 
 			double roundValue = rounded.doubleValue();
 
-			assertEquals((double) 2.0, roundValue, 0.001d);
+			assertEquals(2.0, roundValue, 0.001d);
 		} catch (ValueExprEvaluationException e) {
 			e.printStackTrace();
 			fail(e.getMessage());

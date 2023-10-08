@@ -32,20 +32,13 @@ public class IntegerLiteral extends SimpleLiteral {
 	 * Creates an xsd:integer literal with the specified value.
 	 */
 	protected IntegerLiteral(BigInteger value) {
-		this(value, XSD.INTEGER);
+		this(value, CoreDatatype.XSD.INTEGER);
 	}
 
 	/**
 	 * Creates a literal with the specified value and datatype.
 	 */
 	protected IntegerLiteral(BigInteger value, IRI datatype) {
-		// TODO: maybe IntegerLiteralImpl should not extend LiteralImpl?
-		super(value.toString(), datatype);
-		this.value = value;
-	}
-
-	@Deprecated(since = "4.0.0", forRemoval = true)
-	protected IntegerLiteral(BigInteger value, XSD.Datatype datatype) {
 		// TODO: maybe IntegerLiteralImpl should not extend LiteralImpl?
 		super(value.toString(), datatype);
 		this.value = value;

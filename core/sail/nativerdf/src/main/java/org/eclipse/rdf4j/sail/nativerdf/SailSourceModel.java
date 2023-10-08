@@ -49,11 +49,11 @@ class SailSourceModel extends AbstractModel {
 
 	private final class StatementIterator implements Iterator<Statement> {
 
-		final CloseableIteration<? extends Statement, SailException> stmts;
+		final CloseableIteration<? extends Statement> stmts;
 
 		Statement last;
 
-		StatementIterator(CloseableIteration<? extends Statement, SailException> closeableIteration) {
+		StatementIterator(CloseableIteration<? extends Statement> closeableIteration) {
 			this.stmts = closeableIteration;
 		}
 
@@ -151,7 +151,7 @@ class SailSourceModel extends AbstractModel {
 	public synchronized int size() {
 		if (size < 0) {
 			try {
-				CloseableIteration<? extends Statement, SailException> iter;
+				CloseableIteration<? extends Statement> iter;
 				iter = dataset().getStatements(null, null, null);
 				try {
 					while (iter.hasNext()) {
@@ -176,7 +176,7 @@ class SailSourceModel extends AbstractModel {
 	public Set<Namespace> getNamespaces() {
 		Set<Namespace> set = new LinkedHashSet<>();
 		try {
-			CloseableIteration<? extends Namespace, SailException> spaces;
+			CloseableIteration<? extends Namespace> spaces;
 			spaces = dataset().getNamespaces();
 			try {
 				while (spaces.hasNext()) {
@@ -284,7 +284,7 @@ class SailSourceModel extends AbstractModel {
 		try {
 			if (contains(subj, pred, obj, contexts)) {
 				size = -1;
-				CloseableIteration<? extends Statement, SailException> stmts;
+				CloseableIteration<? extends Statement> stmts;
 				stmts = dataset().getStatements(subj, pred, obj, contexts);
 				try {
 					while (stmts.hasNext()) {
@@ -322,7 +322,7 @@ class SailSourceModel extends AbstractModel {
 			public int size() {
 				if (subj == null && pred == null && obj == null) {
 					try {
-						CloseableIteration<? extends Statement, SailException> iter;
+						CloseableIteration<? extends Statement> iter;
 						iter = dataset().getStatements(null, null, null);
 						try {
 							long size = 0;
@@ -364,7 +364,7 @@ class SailSourceModel extends AbstractModel {
 	public synchronized void removeTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
 			Resource... contexts) {
 		try {
-			CloseableIteration<? extends Statement, SailException> stmts;
+			CloseableIteration<? extends Statement> stmts;
 			stmts = dataset().getStatements(subj, pred, obj, contexts);
 			try {
 				while (stmts.hasNext()) {
@@ -411,7 +411,7 @@ class SailSourceModel extends AbstractModel {
 		if (dataset == null) {
 			return false;
 		}
-		CloseableIteration<? extends Statement, SailException> stmts;
+		CloseableIteration<? extends Statement> stmts;
 		stmts = dataset.getStatements(subj, pred, obj, contexts);
 		try {
 			return stmts.hasNext();

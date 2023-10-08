@@ -32,7 +32,7 @@ import org.junit.jupiter.api.Test;
 public class EvaluationStatisticsTest {
 
 	@Test
-	public void testGetCardinality_ParentReferences() throws Exception {
+	public void testGetCardinality_ParentReferences() {
 		ParsedTupleQuery query = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
 				"select * where {?a ?b ?c. ?c <http://a>* ?d}", null);
 

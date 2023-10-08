@@ -81,7 +81,7 @@ public class W3cComplianceTest {
 
 	@ParameterizedTest
 	@MethodSource("data")
-	public void test(URL testCasePath) throws IOException, InterruptedException {
+	public void test(URL testCasePath) throws IOException {
 		boolean testPassed = false;
 		try {
 			runTest(testCasePath);
@@ -217,7 +217,7 @@ public class W3cComplianceTest {
 
 	}
 
-	private void runTest(URL resourceName) throws IOException, InterruptedException {
+	private void runTest(URL resourceName) throws IOException {
 		W3C_shaclTestValidate expected = new W3C_shaclTestValidate(resourceName);
 
 		SailRepository data = new SailRepository(new MemoryStore());

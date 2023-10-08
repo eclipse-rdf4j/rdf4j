@@ -47,10 +47,10 @@ public class ExclusiveStatement extends FedXStatementPattern implements Exclusiv
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(
+	public CloseableIteration<BindingSet> evaluate(
 			BindingSet bindings) throws QueryEvaluationException {
 
-		CloseableIteration<BindingSet, QueryEvaluationException> res = null;
+		CloseableIteration<BindingSet> res = null;
 
 		try {
 

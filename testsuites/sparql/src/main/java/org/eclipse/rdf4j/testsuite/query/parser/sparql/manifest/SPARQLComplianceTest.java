@@ -196,7 +196,7 @@ public abstract class SPARQLComplianceTest {
 		this.ignoredTests = ignoredTests;
 	}
 
-	protected void compareGraphs(Iterable<Statement> queryResult, Iterable<Statement> expectedResult) throws Exception {
+	protected void compareGraphs(Iterable<Statement> queryResult, Iterable<Statement> expectedResult) {
 		if (!Models.isomorphic(expectedResult, queryResult)) {
 			StringBuilder message = new StringBuilder(128);
 			message.append("\n============ ");

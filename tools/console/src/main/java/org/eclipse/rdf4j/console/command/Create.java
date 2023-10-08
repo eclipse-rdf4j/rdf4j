@@ -92,7 +92,7 @@ public class Create extends ConsoleCommand {
 	}
 
 	@Override
-	public void execute(String... tokens) throws IOException {
+	public void execute(String... tokens) {
 		if (tokens.length < 2) {
 			writeln(getHelpLong());
 		} else {
@@ -164,9 +164,8 @@ public class Create extends ConsoleCommand {
 	 * Create a new repository based on a template
 	 *
 	 * @param templateName name of the template
-	 * @throws IOException
 	 */
-	private void createRepository(final String templateName) throws IOException {
+	private void createRepository(final String templateName) {
 		try {
 			// FIXME: remove assumption of .ttl extension
 			final String templateFileName = templateName + FILE_EXT;
@@ -240,10 +239,9 @@ public class Create extends ConsoleCommand {
 	 * @param variableMap
 	 * @param multilineInput
 	 * @return
-	 * @throws IOException
 	 */
 	private boolean inputParameters(final Map<String, String> valueMap, final Map<String, List<String>> variableMap,
-			Map<String, String> multilineInput) throws IOException {
+			Map<String, String> multilineInput) {
 		if (!variableMap.isEmpty()) {
 			writeln("Please specify values for the following variables:");
 		}

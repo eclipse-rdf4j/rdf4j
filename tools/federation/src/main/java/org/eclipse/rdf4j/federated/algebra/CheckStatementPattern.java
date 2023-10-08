@@ -178,7 +178,7 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings)
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings)
 			throws QueryEvaluationException {
 
 		StatementPattern st = (StatementPattern) stmt;

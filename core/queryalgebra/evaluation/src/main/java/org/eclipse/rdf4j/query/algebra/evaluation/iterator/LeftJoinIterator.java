@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 
-public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class LeftJoinIterator extends LookAheadIteration<BindingSet> {
 
 	/*-----------*
 	 * Variables *
@@ -42,9 +42,9 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	 */
 	private final Set<String> scopeBindingNames;
 
-	private final CloseableIteration<BindingSet, QueryEvaluationException> leftIter;
+	private final CloseableIteration<BindingSet> leftIter;
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
+	private CloseableIteration<BindingSet> rightIter;
 
 	private final QueryEvaluationStep prepareRightArg;
 
@@ -96,7 +96,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
 		try {
-			CloseableIteration<BindingSet, QueryEvaluationException> nextRightIter = rightIter;
+			CloseableIteration<BindingSet> nextRightIter = rightIter;
 			while (nextRightIter.hasNext() || leftIter.hasNext()) {
 				BindingSet leftBindings = null;
 

@@ -27,7 +27,6 @@ import java.util.stream.Stream;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
-import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
@@ -73,7 +72,7 @@ public class QueryResults extends Iterations {
 	 * @param iteration the source iteration to get the statements from.
 	 * @return a {@link Model} containing all statements obtained from the specified source iteration.
 	 */
-	public static Model asModel(CloseableIteration<? extends Statement, ? extends RDF4JException> iteration)
+	public static Model asModel(CloseableIteration<? extends Statement> iteration)
 			throws QueryEvaluationException {
 		return asModel(iteration, new DynamicModelFactory());
 	}
@@ -85,7 +84,7 @@ public class QueryResults extends Iterations {
 	 * @param modelFactory the ModelFactory used to instantiate the model that gets returned.
 	 * @return a {@link Model} containing all statements obtained from the specified source iteration.
 	 */
-	public static Model asModel(CloseableIteration<? extends Statement, ? extends RDF4JException> iteration,
+	public static Model asModel(CloseableIteration<? extends Statement> iteration,
 			ModelFactory modelFactory)
 			throws QueryEvaluationException {
 		Model model = modelFactory.createEmptyModel();
@@ -193,7 +192,7 @@ public class QueryResults extends Iterations {
 	 *         neither {@code limit} nor {@code offset} are applied, this returns the original {@code queryResult}.
 	 */
 	public static TupleQueryResult limitResults(TupleQueryResult queryResult, long limit, long offset) {
-		CloseableIteration<BindingSet, QueryEvaluationException> iter = queryResult;
+		CloseableIteration<BindingSet> iter = queryResult;
 		if (offset > 0) {
 			iter = new OffsetIteration<>(iter, offset);
 		}
@@ -219,7 +218,7 @@ public class QueryResults extends Iterations {
 	 *         neither {@code limit} nor {@code offset} are applied, this returns the original {@code queryResult}.
 	 */
 	public static GraphQueryResult limitResults(GraphQueryResult queryResult, long limit, long offset) {
-		CloseableIteration<Statement, QueryEvaluationException> iter = queryResult;
+		CloseableIteration<Statement> iter = queryResult;
 		if (offset > 0) {
 			iter = new OffsetIteration<>(iter, offset);
 		}
@@ -565,10 +564,10 @@ public class QueryResults extends Iterations {
 		return true;
 	}
 
-	private static class GraphQueryResultFilter extends AbstractCloseableIteration<Statement, QueryEvaluationException>
+	private static class GraphQueryResultFilter extends AbstractCloseableIteration<Statement>
 			implements GraphQueryResult {
 
-		private final DistinctIteration<Statement, QueryEvaluationException> filter;
+		private final DistinctIteration<Statement> filter;
 
 		private final GraphQueryResult unfiltered;
 
@@ -633,10 +632,10 @@ public class QueryResults extends Iterations {
 		}
 	}
 
-	private static class TupleQueryResultFilter extends AbstractCloseableIteration<BindingSet, QueryEvaluationException>
+	private static class TupleQueryResultFilter extends AbstractCloseableIteration<BindingSet>
 			implements TupleQueryResult {
 
-		private final DistinctIteration<BindingSet, QueryEvaluationException> filter;
+		private final DistinctIteration<BindingSet> filter;
 
 		private final TupleQueryResult unfiltered;
 

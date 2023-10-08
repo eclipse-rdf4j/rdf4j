@@ -37,7 +37,7 @@ import org.junit.jupiter.api.Timeout;
 public abstract class RepositoryTest {
 
 	@BeforeAll
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
@@ -108,7 +108,7 @@ public abstract class RepositoryTest {
 	}
 
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		testRepository.shutDown();
 	}
 
@@ -117,10 +117,10 @@ public abstract class RepositoryTest {
 	 *
 	 * @return an uninitialized repository.
 	 */
-	protected abstract Repository createRepository() throws Exception;
+	protected abstract Repository createRepository();
 
 	@Test
-	public void testShutdownFollowedByInit() throws Exception {
+	public void testShutdownFollowedByInit() {
 		testRepository.init();
 		RepositoryConnection conn = testRepository.getConnection();
 		try {
@@ -143,7 +143,7 @@ public abstract class RepositoryTest {
 	}
 
 	@Test
-	public void testAutoInit() throws Exception {
+	public void testAutoInit() {
 		try (RepositoryConnection conn = testRepository.getConnection()) {
 			conn.add(bob, mbox, mboxBob);
 			assertTrue(conn.hasStatement(bob, mbox, mboxBob, true));

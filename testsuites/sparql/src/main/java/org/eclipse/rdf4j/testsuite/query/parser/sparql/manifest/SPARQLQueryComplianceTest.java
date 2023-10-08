@@ -123,7 +123,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 	}
 
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		if (dataRepository != null) {
 			dataRepository.shutDown();
 			dataRepository = null;

@@ -70,7 +70,7 @@ public class SailModel extends AbstractModel {
 	public Set<Namespace> getNamespaces() {
 		Set<Namespace> namespaces;
 		try {
-			try (CloseableIteration<? extends Namespace, SailException> iter = conn.getNamespaces()) {
+			try (CloseableIteration<? extends Namespace> iter = conn.getNamespaces()) {
 				namespaces = Iterations.asSet(conn.getNamespaces());
 			}
 		} catch (SailException e) {
@@ -211,7 +211,7 @@ public class SailModel extends AbstractModel {
 
 	private Iterator<Statement> iterator(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		try {
-			CloseableIteration<? extends Statement, ?> iter = conn.getStatements(subj, pred, obj, includeInferred,
+			CloseableIteration<? extends Statement> iter = conn.getStatements(subj, pred, obj, includeInferred,
 					contexts);
 			return new CloseableIterationIterator<>(
 					new ExceptionConvertingIteration<Statement, ModelException>(iter) {
@@ -234,7 +234,7 @@ public class SailModel extends AbstractModel {
 						}
 
 						@Override
-						protected ModelException convert(Exception e) {
+						protected ModelException convert(RuntimeException e) {
 							throw new ModelException(e);
 						}
 					});
@@ -280,13 +280,4 @@ public class SailModel extends AbstractModel {
 		return (lsize < Integer.MAX_VALUE) ? (int) lsize : Integer.MAX_VALUE;
 	}
 
-	private void writeObject(ObjectOutputStream out) throws IOException {
-		this.connKey = NonSerializables.register(this.conn);
-		out.defaultWriteObject();
-	}
-
-	private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
-		in.defaultReadObject();
-		this.conn = SailConnection.class.cast(NonSerializables.get(this.connKey));
-	}
 }

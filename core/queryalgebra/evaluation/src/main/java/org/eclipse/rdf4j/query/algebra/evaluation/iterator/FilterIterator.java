@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 @Deprecated(since = "4.1.0")
-public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationException> {
+public class FilterIterator extends FilterIteration<BindingSet> {
 
 	private final QueryValueEvaluationStep condition;
 	private final EvaluationStrategy strategy;
@@ -40,7 +40,7 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 	 * Constructors *
 	 *--------------*/
 
-	public FilterIterator(Filter filter, CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public FilterIterator(Filter filter, CloseableIteration<BindingSet> iter,
 			QueryValueEvaluationStep condition, EvaluationStrategy strategy) throws QueryEvaluationException {
 		super(iter);
 		this.condition = condition;
@@ -55,20 +55,6 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 		} catch (ValueExprEvaluationException e) {
 			// failed to evaluate condition
 			return false;
-		}
-	}
-
-	@Deprecated(forRemoval = true, since = "4.2.1")
-	public static boolean isPartOfSubQuery(QueryModelNode node) {
-		if (node instanceof SubQueryValueOperator) {
-			return true;
-		}
-
-		QueryModelNode parent = node.getParentNode();
-		if (parent == null) {
-			return false;
-		} else {
-			return isPartOfSubQuery(parent);
 		}
 	}
 
@@ -100,7 +86,7 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 			if (isVariableInScope(variableName)) {
 				return context.hasBinding(variableName);
 			} else {
-				return (bs) -> false;
+				return bs -> false;
 			}
 		}
 
@@ -113,7 +99,7 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 			if (isVariableInScope(variableName)) {
 				return context.getBinding(variableName);
 			} else {
-				return (bs) -> null;
+				return bs -> null;
 			}
 		}
 
@@ -122,7 +108,7 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 			if (isVariableInScope(variableName)) {
 				return context.getValue(variableName);
 			} else {
-				return (bs) -> null;
+				return bs -> null;
 			}
 		}
 

@@ -29,22 +29,22 @@ public abstract class RioSettingTest<T> {
 	protected RioSetting<T> subject;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		subject = createRioSetting(TEST_KEY, TEST_DESCRIPTION, getDefaultValue());
 	}
 
 	@Test
-	public void testDefaultValue() throws Exception {
+	public void testDefaultValue() {
 		assertThat(subject.getDefaultValue()).isEqualTo(getDefaultValue());
 	}
 
 	@Test
-	public void testConvert() throws Exception {
+	public void testConvert() {
 		assertThat(subject.convert(getLegalStringValue())).isEqualTo(getConvertedStringValue());
 	}
 
 	@Test
-	public void testConvertIllegal() throws Exception {
+	public void testConvertIllegal() {
 		assertThatThrownBy(() -> subject.convert(getIllegalStringValue()))
 				.isInstanceOf(RioConfigurationException.class);
 	}

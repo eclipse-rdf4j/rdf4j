@@ -35,7 +35,7 @@ public abstract class BaseURIHandlingTest {
 	}
 
 	@Test
-	public void testParseWithoutBaseUri_Relative() throws Exception {
+	public void testParseWithoutBaseUri_Relative() {
 		StatementCollector collector = new StatementCollector();
 		RDFParser parser = getParserFactory().getParser();
 		parser.setRDFHandler(collector);

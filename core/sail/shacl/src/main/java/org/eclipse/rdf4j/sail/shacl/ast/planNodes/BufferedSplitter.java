@@ -56,7 +56,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 	private synchronized void init() {
 		if (tuplesBuffer == null) {
 			tuplesBuffer = new ArrayList<>();
-			try (CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator()) {
+			try (CloseableIteration<? extends ValidationTuple> iterator = parent.iterator()) {
 				while (iterator.hasNext()) {
 					ValidationTuple next = iterator.next();
 					tuplesBuffer.add(next);
@@ -106,7 +106,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 		}
 
 		@Override
-		public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+		public CloseableIteration<? extends ValidationTuple> iterator() {
 
 			return new CloseableIteration<>() {
 

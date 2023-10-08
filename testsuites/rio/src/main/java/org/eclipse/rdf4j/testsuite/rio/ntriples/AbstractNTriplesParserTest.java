@@ -73,7 +73,7 @@ public abstract class AbstractNTriplesParserTest {
 	}
 
 	private void parsePositiveNTriplesSyntaxTests(TestSuite suite, String fileBasePath, String testLocationBaseUri,
-			RepositoryConnection con) throws Exception {
+			RepositoryConnection con) {
 		StringBuilder positiveQuery = new StringBuilder();
 		positiveQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
 		positiveQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");
@@ -106,7 +106,7 @@ public abstract class AbstractNTriplesParserTest {
 	}
 
 	private void parseNegativeNTriplesSyntaxTests(TestSuite suite, String fileBasePath, String testLocationBaseUri,
-			RepositoryConnection con) throws Exception {
+			RepositoryConnection con) {
 		StringBuilder negativeQuery = new StringBuilder();
 		negativeQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
 		negativeQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");

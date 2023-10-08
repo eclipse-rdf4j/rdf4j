@@ -62,7 +62,7 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateBoundJoinStatementPattern(
+	public CloseableIteration<BindingSet> evaluateBoundJoinStatementPattern(
 			StatementTupleExpr stmt, List<BindingSet> bindings)
 			throws QueryEvaluationException {
 
@@ -80,7 +80,7 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 		String preparedQuery = QueryStringUtil.selectQueryStringBoundJoinVALUES((StatementPattern) stmt, bindings,
 				filterExpr, isEvaluated, stmt.getQueryInfo().getDataset());
 
-		CloseableIteration<BindingSet, QueryEvaluationException> result = null;
+		CloseableIteration<BindingSet> result = null;
 		try {
 			result = evaluateAtStatementSources(preparedQuery, stmt.getStatementSources(), stmt.getQueryInfo());
 
@@ -113,7 +113,7 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 	 *
 	 * @deprecated
 	 */
-	protected CloseableIteration<BindingSet, QueryEvaluationException> evaluateBoundJoinStatementPattern_UNION(
+	protected CloseableIteration<BindingSet> evaluateBoundJoinStatementPattern_UNION(
 			StatementTupleExpr stmt, List<BindingSet> bindings)
 			throws QueryEvaluationException {
 
@@ -131,7 +131,7 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 		String preparedQuery = QueryStringUtil.selectQueryStringBoundUnion((StatementPattern) stmt, bindings,
 				filterExpr, isEvaluated, stmt.getQueryInfo().getDataset());
 
-		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery,
+		CloseableIteration<BindingSet> result = evaluateAtStatementSources(preparedQuery,
 				stmt.getStatementSources(), stmt.getQueryInfo());
 
 		// apply filter and/or convert to original bindings
@@ -149,7 +149,7 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateGroupedCheck(
+	public CloseableIteration<BindingSet> evaluateGroupedCheck(
 			CheckStatementPattern stmt, List<BindingSet> bindings)
 			throws QueryEvaluationException {
 
@@ -160,16 +160,16 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 		String preparedQuery = QueryStringUtil.selectQueryStringBoundCheck(stmt.getStatementPattern(), bindings,
 				stmt.getQueryInfo().getDataset());
 
-		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery,
+		CloseableIteration<BindingSet> result = evaluateAtStatementSources(preparedQuery,
 				stmt.getStatementSources(), stmt.getQueryInfo());
 
 		return new GroupedCheckConversionIteration(result, bindings);
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> executeJoin(
+	public CloseableIteration<BindingSet> executeJoin(
 			ControlledWorkerScheduler<BindingSet> joinScheduler,
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
+			CloseableIteration<BindingSet> leftIter,
 			TupleExpr rightArg, Set<String> joinVars, BindingSet bindings, QueryInfo queryInfo)
 			throws QueryEvaluationException {
 
@@ -181,7 +181,7 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateExclusiveGroup(
+	public CloseableIteration<BindingSet> evaluateExclusiveGroup(
 			ExclusiveGroup group, BindingSet bindings) throws RepositoryException,
 			MalformedQueryException, QueryEvaluationException {
 
@@ -196,7 +196,7 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 		} catch (IllegalQueryException e) {
 			/* no projection vars, e.g. local vars only, can occur in joins */
 			if (tripleSource.hasStatements(group, bindings)) {
-				CloseableIteration<BindingSet, QueryEvaluationException> res = new SingleBindingSetIteration(bindings);
+				CloseableIteration<BindingSet> res = new SingleBindingSetIteration(bindings);
 				if (group.getBoundFilters() != null) {
 					// make sure to insert any values from FILTER expressions that are directly
 					// bound in this expression

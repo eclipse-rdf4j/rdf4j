@@ -39,13 +39,13 @@ public class SPARQLConnectionTest {
 	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		client = mock(SPARQLProtocolSession.class);
 		subject = new SPARQLConnection(null, client);
 	}
 
 	@Test
-	public void setParserConfigPassesToProtocolSession() throws Exception {
+	public void setParserConfigPassesToProtocolSession() {
 		ParserConfig config = new ParserConfig();
 
 		subject.setParserConfig(config);

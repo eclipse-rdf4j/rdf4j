@@ -80,22 +80,6 @@ public class ProjectionElem extends AbstractQueryModelNode {
 	}
 
 	/**
-	 * @deprecated since 4.1.1. Use {@link #getName()} instead.
-	 */
-	@Deprecated(since = "4.1.1", forRemoval = true)
-	public String getSourceName() {
-		return getName();
-	}
-
-	/**
-	 * @deprecated since 4.1.1. Use {@link #setName(String)} instead.
-	 */
-	@Deprecated(since = "4.1.1", forRemoval = true)
-	public void setSourceName(String sourceName) {
-		setName(sourceName);
-	}
-
-	/**
 	 * Set the name of the projection element (typically the name of the variable in the select expressions)
 	 *
 	 * @param name the projection variable name. May not be {@code null}.
@@ -124,22 +108,6 @@ public class ProjectionElem extends AbstractQueryModelNode {
 		this.projectionAlias = alias;
 	}
 
-	/**
-	 * @deprecated since 4.1.1. Use {@link #setProjectionAlias(String)} instead.
-	 */
-	@Deprecated(since = "4.1.1", forRemoval = true)
-	public void setTargetName(String targetName) {
-		setProjectionAlias(targetName);
-	}
-
-	/**
-	 * @deprecated since 4.1.1. Use {@link #getProjectionAlias()} instead.
-	 */
-	@Deprecated(since = "4.1.1", forRemoval = true)
-	public String getTargetName() {
-		return getProjectionAlias().orElse(null);
-	}
-
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
@@ -148,6 +116,11 @@ public class ProjectionElem extends AbstractQueryModelNode {
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		// no-op
+	}
+
+	@Override
+	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+		throw new IllegalArgumentException("Node is not a child node: " + current);
 	}
 
 	@Override

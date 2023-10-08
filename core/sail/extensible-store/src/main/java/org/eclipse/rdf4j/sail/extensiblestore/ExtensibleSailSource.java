@@ -147,15 +147,15 @@ class ExtensibleSailSource implements SailSource {
 			}
 
 			@Override
-			public CloseableIteration<? extends Namespace, SailException> getNamespaces() {
+			public CloseableIteration<? extends Namespace> getNamespaces() {
 				return new CloseableIteratorIteration<>(namespaceStore.iterator());
 //				return new EmptyIteration<>();
 			}
 
 			@Override
-			public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
+			public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
 				return new CloseableIteration<>() {
-					final CloseableIteration<? extends Statement, SailException> statements = getStatements(null, null,
+					final CloseableIteration<? extends Statement> statements = getStatements(null, null,
 							null);
 
 					final Set<Resource> contexts = new HashSet<>();
@@ -210,7 +210,7 @@ class ExtensibleSailSource implements SailSource {
 			}
 
 			@Override
-			public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
+			public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
 					Value obj, Resource... contexts) throws SailException {
 				return dataStructure.getStatements(subj, pred, obj, inferred, contexts);
 			}

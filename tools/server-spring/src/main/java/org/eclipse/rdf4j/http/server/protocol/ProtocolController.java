@@ -30,7 +30,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
 public class ProtocolController extends AbstractController {
 
 	public ProtocolController() throws ApplicationContextException {
-		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD });
+		setSupportedMethods(METHOD_GET, METHOD_HEAD);
 	}
 
 	@Override

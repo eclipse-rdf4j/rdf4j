@@ -99,7 +99,7 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(TupleExpr query,
+	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr query,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 
 		final TupleExpr originalQuery = query;
@@ -164,7 +164,7 @@ public class FedXConnection extends AbstractSailConnection {
 				queryBindings = actualQueryBindings;
 			}
 
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> res = null;
+			CloseableIteration<? extends BindingSet> res = null;
 			try {
 				res = strategy.evaluate(query, queryBindings);
 
@@ -174,8 +174,7 @@ public class FedXConnection extends AbstractSailConnection {
 				if (originalQuery instanceof PassThroughTupleExpr && res instanceof EmptyIteration) {
 					((PassThroughTupleExpr) originalQuery).setPassedThrough(true);
 				}
-				res = new StopRemainingExecutionsOnCloseIteration(res, queryInfo);
-				return res;
+				return new StopRemainingExecutionsOnCloseIteration(res, queryInfo);
 			} catch (Throwable t) {
 				if (res != null) {
 					res.close();
@@ -234,7 +233,7 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	protected CloseableIteration<? extends Resource, SailException> getContextIDsInternal() throws SailException {
+	protected CloseableIteration<? extends Resource> getContextIDsInternal() throws SailException {
 
 		FederationEvalStrategy strategy = federationContext.createStrategy(new SimpleDataset());
 		WorkerUnionBase<Resource> union = new SynchronousWorkerUnion<>(new QueryInfo("getContextIDsInternal", null,
@@ -244,7 +243,7 @@ public class FedXConnection extends AbstractSailConnection {
 		for (Endpoint e : federation.getMembers()) {
 			union.addTask(new ParallelTask<>() {
 				@Override
-				public CloseableIteration<Resource, QueryEvaluationException> performTask() throws Exception {
+				public CloseableIteration<Resource> performTask() {
 					try (RepositoryConnection conn = e.getConnection()) {
 						// we need to materialize the contexts as they are only accessible
 						// while the connection is open
@@ -268,7 +267,7 @@ public class FedXConnection extends AbstractSailConnection {
 
 		return new DistinctIteration<>(new ExceptionConvertingIteration<>(union) {
 			@Override
-			protected SailException convert(Exception e) {
+			protected SailException convert(RuntimeException e) {
 				return new SailException(e);
 			}
 		});
@@ -282,14 +281,14 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	protected CloseableIteration<? extends Namespace, SailException> getNamespacesInternal() throws SailException {
+	protected CloseableIteration<? extends Namespace> getNamespacesInternal() throws SailException {
 		// do not support this feature, but also do not throw an exception
 		// as this method is expected for the RDF4J workbench to work
 		return new EmptyIteration<>();
 	}
 
 	@Override
-	protected CloseableIteration<? extends Statement, SailException> getStatementsInternal(Resource subj, IRI pred,
+	protected CloseableIteration<? extends Statement> getStatementsInternal(Resource subj, IRI pred,
 			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
 
 		try {
@@ -298,12 +297,12 @@ public class FedXConnection extends AbstractSailConnection {
 			QueryInfo queryInfo = new QueryInfo(subj, pred, obj, 0, includeInferred, federationContext, strategy,
 					dataset);
 			federationContext.getMonitoringService().monitorQuery(queryInfo);
-			CloseableIteration<Statement, QueryEvaluationException> res = null;
+			CloseableIteration<Statement> res = null;
 			try {
 				res = strategy.getStatements(queryInfo, subj, pred, obj, contexts);
 				return new ExceptionConvertingIteration<>(res) {
 					@Override
-					protected SailException convert(Exception e) {
+					protected SailException convert(RuntimeException e) {
 						return new SailException(e);
 					}
 				};

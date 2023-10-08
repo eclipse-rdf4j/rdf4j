@@ -39,7 +39,6 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.SubQuery;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.slf4j.Logger;
@@ -258,7 +257,7 @@ public class SourceSelection {
 		}
 
 		@Override
-		public void addResult(CloseableIteration<BindingSet, QueryEvaluationException> res) {
+		public void addResult(CloseableIteration<BindingSet> res) {
 			latch.countDown();
 		}
 
@@ -318,7 +317,7 @@ public class SourceSelection {
 		}
 
 		@Override
-		protected CloseableIteration<BindingSet, QueryEvaluationException> performTaskInternal() throws Exception {
+		protected CloseableIteration<BindingSet> performTaskInternal() throws Exception {
 			try {
 				TripleSource t = endpoint.getTripleSource();
 				boolean hasResults = t.hasStatements(stmt, EmptyBindingSet.getInstance(), queryInfo,

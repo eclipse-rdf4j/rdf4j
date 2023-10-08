@@ -49,11 +49,6 @@ public class RegexAsStringFunctionOptimizer implements QueryOptimizer {
 	private static class RegexAsStringFunctionVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 		private final ValueFactory vf;
 
-		@Deprecated(forRemoval = true, since = "4.1.0")
-		protected RegexAsStringFunctionVisitor() {
-			vf = SimpleValueFactory.getInstance();
-		}
-
 		protected RegexAsStringFunctionVisitor(ValueFactory vf) {
 			super(false);
 			this.vf = vf;
@@ -112,7 +107,7 @@ public class RegexAsStringFunctionOptimizer implements QueryOptimizer {
 		}
 
 		private void strstartsCandidate(Regex node, String regex) {
-			final String potential = regex.substring(1, regex.length());
+			final String potential = regex.substring(1);
 			if (plain(potential)) {
 				ValueConstant vc = new ValueConstant(vf.createLiteral(potential));
 				node.replaceWith(new FunctionCall(FN.STARTS_WITH.stringValue(), node.getArg().clone(), vc));

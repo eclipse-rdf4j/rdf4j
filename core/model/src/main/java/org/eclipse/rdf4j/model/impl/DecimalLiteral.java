@@ -44,12 +44,6 @@ public class DecimalLiteral extends SimpleLiteral {
 		this.value = value;
 	}
 
-	@Deprecated(since = "4.0.0", forRemoval = true)
-	protected DecimalLiteral(BigDecimal value, XSD.Datatype datatype) {
-		super(value.toPlainString(), datatype);
-		this.value = value;
-	}
-
 	protected DecimalLiteral(BigDecimal value, CoreDatatype datatype) {
 		super(value.toPlainString(), datatype);
 		this.value = value;

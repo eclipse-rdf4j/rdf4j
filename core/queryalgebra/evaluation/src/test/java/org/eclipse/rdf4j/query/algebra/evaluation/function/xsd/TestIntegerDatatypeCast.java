@@ -35,7 +35,7 @@ public abstract class TestIntegerDatatypeCast<T extends IntegerCastFunction> {
 
 	@Test
 	public void testCastBelowMinValue() {
-		getMinValue().ifPresent((min) -> {
+		getMinValue().ifPresent(min -> {
 			BigInteger below = min.subtract(BigInteger.ONE);
 			try {
 				getCastFunction().evaluate(vf, vf.createLiteral(below));
@@ -48,7 +48,7 @@ public abstract class TestIntegerDatatypeCast<T extends IntegerCastFunction> {
 
 	@Test
 	public void testCastAboveMaxValue() {
-		getMaxValue().ifPresent((max) -> {
+		getMaxValue().ifPresent(max -> {
 			BigInteger above = max.add(BigInteger.ONE);
 			try {
 				getCastFunction().evaluate(vf, vf.createLiteral(above));
@@ -88,7 +88,7 @@ public abstract class TestIntegerDatatypeCast<T extends IntegerCastFunction> {
 		try {
 			Literal result = getCastFunction().evaluate(vf, dbl);
 			assertNotNull(result);
-			assertEquals(getCastFunction().getXsdDatatype(), result.getDatatype());
+			assertEquals(getCastFunction().getCoreXsdDatatype(), result.getCoreDatatype());
 			assertEquals(100, result.intValue());
 		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
@@ -104,7 +104,7 @@ public abstract class TestIntegerDatatypeCast<T extends IntegerCastFunction> {
 		try {
 			Literal result = getCastFunction().evaluate(vf, dbl);
 			assertNotNull(result);
-			assertEquals(getCastFunction().getXsdDatatype(), result.getDatatype());
+			assertEquals(getCastFunction().getCoreXsdDatatype(), result.getCoreDatatype());
 			assertEquals(100, result.intValue());
 		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());

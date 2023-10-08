@@ -28,7 +28,7 @@ public class FilteringInsertBindingsIteration extends FilteringIteration {
 	protected final BindingSet bindings;
 
 	public FilteringInsertBindingsIteration(FilterValueExpr filterExpr, BindingSet bindings,
-			CloseableIteration<BindingSet, QueryEvaluationException> iter, FederationEvalStrategy strategy)
+			CloseableIteration<BindingSet> iter, FederationEvalStrategy strategy)
 			throws QueryEvaluationException {
 		super(filterExpr, iter, strategy);
 		this.bindings = bindings;

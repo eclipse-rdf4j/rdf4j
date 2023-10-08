@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.monitoring;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -18,7 +17,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
-import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
@@ -44,11 +42,7 @@ public class MonitoringImpl implements MonitoringService {
 
 		this.config = config;
 		if (config.isLogQueries()) {
-			try {
-				queryLog = new QueryLog();
-			} catch (IOException e) {
-				throw new FedXRuntimeException("QueryLog cannot be initialized: " + e.getMessage());
-			}
+			queryLog = new QueryLog();
 		} else {
 			queryLog = null;
 		}

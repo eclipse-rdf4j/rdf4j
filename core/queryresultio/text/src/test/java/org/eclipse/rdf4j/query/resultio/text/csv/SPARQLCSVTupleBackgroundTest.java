@@ -59,7 +59,7 @@ public class SPARQLCSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 	}
 
 	@Test
-	public void testEndOfLine() throws Exception {
+	public void testEndOfLine() {
 		TupleQueryResultFormat format = getTupleFormat();
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
@@ -72,7 +72,7 @@ public class SPARQLCSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 	}
 
 	@Test
-	public void testEmptyResults() throws Exception {
+	public void testEmptyResults() {
 		TupleQueryResultFormat format = getTupleFormat();
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
@@ -85,7 +85,7 @@ public class SPARQLCSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 	}
 
 	@Test
-	public void testSingleVarResults() throws Exception {
+	public void testSingleVarResults() {
 		TupleQueryResultFormat format = getTupleFormat();
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
@@ -104,7 +104,7 @@ public class SPARQLCSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 	}
 
 	@Test
-	public void testmultipleVarResults() throws Exception {
+	public void testmultipleVarResults() {
 		TupleQueryResultFormat format = getTupleFormat();
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);

@@ -10,13 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.hdt;
 
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -88,8 +86,7 @@ public class HDTParser extends AbstractRDFParser {
 
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
-		Set<RioSetting<?>> result = new HashSet<>();
-		return result;
+		return Set.of();
 	}
 
 	@Override
@@ -99,9 +96,9 @@ public class HDTParser extends AbstractRDFParser {
 			throw new IllegalArgumentException("Input stream must not be 'null'");
 		}
 
-		if (in instanceof FileInputStream) {
-			// "TODO: use more optimized way to parse the file, eg. filechannel / membuffer"
-		}
+//		if (in instanceof FileInputStream) {
+//			 TODO: use more optimized way to parse the file, eg. filechannel / membuffer
+//		}
 
 		HDTDictionarySection shared = null;
 		HDTDictionarySection subjects = null;
@@ -165,9 +162,10 @@ public class HDTParser extends AbstractRDFParser {
 			rdfHandler.startRDF();
 		}
 
-		int cnt = 0;
+		assert shared != null;
 		int size = shared.size();
 
+		assert section != null;
 		while (section.hasNext()) {
 			int[] t = section.next();
 			byte[] s = getSO(t[0], size, shared, subjects);
@@ -190,7 +188,7 @@ public class HDTParser extends AbstractRDFParser {
 	 */
 	@Override
 	public synchronized void parse(Reader reader, String baseURI)
-			throws IOException, RDFParseException, RDFHandlerException {
+			throws RDFParseException, RDFHandlerException {
 		throw new UnsupportedOperationException("HDT is binary, text readers not supported.");
 	}
 

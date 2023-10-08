@@ -45,9 +45,9 @@ public class SailDatasetTripleSource implements RDFStarTripleSource {
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj, IRI pred,
+	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws QueryEvaluationException {
-		CloseableIteration<? extends Statement, SailException> statements = null;
+		CloseableIteration<? extends Statement> statements = null;
 		try {
 			statements = dataset.getStatements(subj, pred, obj, contexts);
 			return new TripleSourceIterationWrapper<>(statements);
@@ -68,9 +68,9 @@ public class SailDatasetTripleSource implements RDFStarTripleSource {
 	}
 
 	@Override
-	public CloseableIteration<? extends Triple, QueryEvaluationException> getRdfStarTriples(Resource subj, IRI pred,
+	public CloseableIteration<? extends Triple> getRdfStarTriples(Resource subj, IRI pred,
 			Value obj) throws QueryEvaluationException {
-		CloseableIteration<? extends Triple, SailException> triples = null;
+		CloseableIteration<? extends Triple> triples = null;
 		TripleSourceIterationWrapper<? extends Triple> iterationWrapper = null;
 		try {
 			// In contrast to statement retrieval (which gets de-duplicated later on when handling things like

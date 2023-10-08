@@ -15,8 +15,8 @@ import java.util.Optional;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.FN;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
@@ -50,8 +50,8 @@ public class UpperCase implements Function {
 
 				if (language.isPresent()) {
 					return valueFactory.createLiteral(lexicalValue, language.get());
-				} else if (XSD.STRING.equals(literal.getDatatype())) {
-					return valueFactory.createLiteral(lexicalValue, XSD.STRING);
+				} else if (QueryEvaluationUtility.isSimpleLiteral(literal)) {
+					return valueFactory.createLiteral(lexicalValue, CoreDatatype.XSD.STRING);
 				} else {
 					return valueFactory.createLiteral(lexicalValue);
 				}

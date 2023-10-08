@@ -43,7 +43,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 	public static final Resource[] DEFAULT_CONTEXT = { null };
 	public static final Resource[] ALL_CONTEXT = new Resource[0];
-	private static final Function<Value, Resource[]> RETURN_NULL_VALUE_RESOURCE_ARRAY = (v) -> null;
+	private static final Function<Value, Resource[]> RETURN_NULL_VALUE_RESOURCE_ARRAY = v -> null;
 
 	private final StatementPattern statementPattern;
 	private final TripleSource tripleSource;
@@ -188,7 +188,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			return UnboundTest.c(context, c);
 		}
 
-		return (b) -> false;
+		return b -> false;
 
 	}
 
@@ -197,14 +197,14 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			return null;
 		} else if (var.hasValue()) {
 			Value value = var.getValue();
-			return (b) -> value;
+			return b -> value;
 		} else {
 			return context.getValue(var.getName());
 		}
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		if (emptyGraph) {
 			return EMPTY_ITERATION;
 		} else if (bindings.isEmpty()) {
@@ -250,7 +250,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		Value object = getObjectVar != null ? getObjectVar.apply(bindings) : null;
 
-		CloseableIteration<? extends Statement, QueryEvaluationException> iteration = null;
+		CloseableIteration<? extends Statement> iteration = null;
 		try {
 			iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
 			if (iteration instanceof EmptyIteration) {
@@ -284,11 +284,11 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		Value predicate = statementPattern.getPredicateVar().getValue();
 		Value object = statementPattern.getObjectVar().getValue();
 
-		if ((subject != null && !subject.isResource()) || (predicate != null && !predicate.isIRI())) {
+		if (subject != null && !subject.isResource() || predicate != null && !predicate.isIRI()) {
 			return null;
 		}
 
-		CloseableIteration<? extends Statement, QueryEvaluationException> iteration = null;
+		CloseableIteration<? extends Statement> iteration = null;
 		try {
 			iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
 			if (iteration instanceof EmptyIteration) {
@@ -309,16 +309,16 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		}
 	}
 
-	private CloseableIteration<? extends Statement, QueryEvaluationException> handleFilter(Resource[] contexts,
+	private CloseableIteration<? extends Statement> handleFilter(Resource[] contexts,
 			Resource subject, IRI predicate, Value object,
-			CloseableIteration<? extends Statement, QueryEvaluationException> iteration) {
+			CloseableIteration<? extends Statement> iteration) {
 
 		Predicate<Statement> filter = filterContextOrEqualVariables(statementPattern, subject, predicate, object,
 				contexts);
 
 		if (filter != null) {
 			// Only if there is filter code to execute do we make this filter iteration.
-			return new FilterIteration<Statement, QueryEvaluationException>(iteration) {
+			return new FilterIteration<Statement>(iteration) {
 
 				@Override
 				protected boolean accept(Statement object) throws QueryEvaluationException {
@@ -339,7 +339,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			Value subjValue, Value predValue, Value objValue, Resource[] contexts) {
 		Predicate<Statement> filter = null;
 		if (contexts.length == 0 && statementPattern.getScope() == Scope.NAMED_CONTEXTS) {
-			filter = (st) -> st.getContext() != null;
+			filter = st -> st.getContext() != null;
 		}
 		return filterSameVariable(statementPattern, subjValue, predValue, objValue, filter);
 	}
@@ -376,7 +376,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		if (objVar != null && objValue == null) {
 			boolean objEqConVar = objVar.equals(conVar);
 			if (objEqConVar) {
-				filter = andThen(filter, (st) -> {
+				filter = andThen(filter, st -> {
 					Value obj = st.getObject();
 					Resource context = st.getContext();
 					return obj.equals(context);
@@ -390,10 +390,10 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private static Predicate<Statement> predicateVariableHasEquals(boolean predEqObjVar, boolean predEqConVar) {
 		Predicate<Statement> eq = null;
 		if (predEqObjVar) {
-			eq = (st) -> st.getPredicate().equals(st.getObject());
+			eq = st -> st.getPredicate().equals(st.getObject());
 		}
 		if (predEqConVar) {
-			eq = andThen(eq, (st) -> st.getPredicate().equals(st.getContext()));
+			eq = andThen(eq, st -> st.getPredicate().equals(st.getContext()));
 		}
 		return eq;
 	}
@@ -402,13 +402,13 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			boolean subEqConVar) {
 		Predicate<Statement> eq = null;
 		if (subEqPredVar) {
-			eq = (st) -> st.getSubject().equals(st.getPredicate());
+			eq = st -> st.getSubject().equals(st.getPredicate());
 		}
 		if (subEqObjVar) {
-			eq = andThen(eq, (st) -> st.getSubject().equals(st.getObject()));
+			eq = andThen(eq, st -> st.getSubject().equals(st.getObject()));
 		}
 		if (subEqConVar) {
-			eq = andThen(eq, (st) -> st.getSubject().equals(st.getContext()));
+			eq = andThen(eq, st -> st.getSubject().equals(st.getContext()));
 		}
 		return eq;
 	}
@@ -430,11 +430,11 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			Resource[] filled = fillContextsFromDatasSetGraphs(graphs);
 			// if contextVar is null contextValue must always be null;
 			if (contextVar == null) {
-				return (contextValue) -> filled;
+				return contextValue -> filled;
 			} else {
-				return (contextValue) -> {
+				return contextValue -> {
 					if (contextValue != null) {
-						if (contextValue.isIRI() && graphs.contains(((IRI) contextValue))) {
+						if (contextValue.isIRI() && graphs.contains((IRI) contextValue)) {
 							return new Resource[] { (Resource) contextValue };
 						} else {
 							// Statement pattern specifies a context that is not part of
@@ -488,15 +488,15 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	 * it of course is an unneeded expense.
 	 */
 	private static final class ConvertStatementToBindingSetIterator
-			implements CloseableIteration<BindingSet, QueryEvaluationException> {
+			implements CloseableIteration<BindingSet> {
 
 		private final BiConsumer<MutableBindingSet, Statement> action;
 		private final QueryEvaluationContext context;
-		private final CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iteration;
+		private final CloseableIteration<? extends Statement> iteration;
 		private boolean closed = false;
 
 		private ConvertStatementToBindingSetIterator(
-				CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iteration,
+				CloseableIteration<? extends Statement> iteration,
 				BiConsumer<MutableBindingSet, Statement> action, QueryEvaluationContext context) {
 			assert iteration != null;
 			this.iteration = iteration;
@@ -535,16 +535,16 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	private static final class JoinStatementWithBindingSetIterator
-			implements CloseableIteration<BindingSet, QueryEvaluationException> {
+			implements CloseableIteration<BindingSet> {
 
 		private final BiConsumer<MutableBindingSet, Statement> action;
 		private final QueryEvaluationContext context;
 		private final BindingSet bindings;
-		private final CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iteration;
+		private final CloseableIteration<? extends Statement> iteration;
 		private boolean closed = false;
 
 		private JoinStatementWithBindingSetIterator(
-				CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iteration,
+				CloseableIteration<? extends Statement> iteration,
 				BiConsumer<MutableBindingSet, Statement> action, BindingSet bindings, QueryEvaluationContext context) {
 			assert iteration != null;
 			this.iteration = iteration;

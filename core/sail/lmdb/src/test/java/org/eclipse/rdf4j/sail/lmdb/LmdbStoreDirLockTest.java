@@ -23,7 +23,7 @@ import org.junit.jupiter.api.io.TempDir;
 public class LmdbStoreDirLockTest {
 
 	@Test
-	public void testLocking(@TempDir File dataDir) throws Exception {
+	public void testLocking(@TempDir File dataDir) {
 		LmdbStore sail = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 		sail.init();
 

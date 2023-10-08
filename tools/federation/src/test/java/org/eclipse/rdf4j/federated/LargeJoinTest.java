@@ -46,14 +46,14 @@ public class LargeJoinTest extends FedXBaseTest {
 	private TestLocalRepositoryManager repoManager;
 
 	@BeforeEach
-	public void before() throws Exception {
+	public void before() {
 		File baseDir = new File(tempDir.toFile(), "data");
 		repoManager = new TestLocalRepositoryManager(baseDir);
 		repoManager.init();
 	}
 
 	@AfterEach
-	public void after() throws Exception {
+	public void after() {
 		repoManager.shutDown();
 	}
 
@@ -64,7 +64,7 @@ public class LargeJoinTest extends FedXBaseTest {
 
 	@Test
 	@Disabled
-	public void testWithLocalRepositoryManager() throws Exception {
+	public void testWithLocalRepositoryManager() {
 
 		addNativeStore("repo1");
 		addNativeStore("repo2");
@@ -122,7 +122,7 @@ public class LargeJoinTest extends FedXBaseTest {
 
 	}
 
-	protected void addNativeStore(String repoId) throws Exception {
+	protected void addNativeStore(String repoId) {
 
 		RepositoryImplConfig implConfig = new SailRepositoryConfig(new NativeStoreConfig());
 		RepositoryConfig config = new RepositoryConfig(repoId, implConfig);

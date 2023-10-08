@@ -41,7 +41,7 @@ public class SailRepositoryConnectionTest {
 	private SailRepository sailRepository;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		sailConnection = mock(SailConnection.class);
 		sailRepository = mock(SailRepository.class);
 
@@ -49,7 +49,7 @@ public class SailRepositoryConnectionTest {
 	}
 
 	@Test
-	public void testPrepareQuery_not_bypassed() throws Exception {
+	public void testPrepareQuery_not_bypassed() {
 		Optional<TupleExpr> response = Optional.empty();
 		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.TUPLE), any(), any())).thenReturn(response);
 		when(sailConnection.evaluate(any(), any(), any(), anyBoolean())).thenReturn(new EmptyIteration<>());
@@ -61,7 +61,7 @@ public class SailRepositoryConnectionTest {
 	}
 
 	@Test
-	public void testPrepareQuery_bypassed() throws Exception {
+	public void testPrepareQuery_bypassed() {
 		TupleExpr expr = mock(TupleExpr.class);
 		Optional<TupleExpr> response = Optional.of(expr);
 		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.GRAPH), any(), any())).thenReturn(response);
@@ -74,7 +74,7 @@ public class SailRepositoryConnectionTest {
 	}
 
 	@Test
-	public void testPrepareTupleQuery_not_bypassed() throws Exception {
+	public void testPrepareTupleQuery_not_bypassed() {
 		Optional<TupleExpr> response = Optional.empty();
 		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.TUPLE), any(), any())).thenReturn(response);
 		when(sailConnection.evaluate(any(), any(), any(), anyBoolean())).thenReturn(new EmptyIteration<>());
@@ -86,7 +86,7 @@ public class SailRepositoryConnectionTest {
 	}
 
 	@Test
-	public void testPrepareTupleQuery_bypassed() throws Exception {
+	public void testPrepareTupleQuery_bypassed() {
 		TupleExpr expr = mock(TupleExpr.class);
 		Optional<TupleExpr> response = Optional.of(expr);
 		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.TUPLE), any(), any())).thenReturn(response);
@@ -99,7 +99,7 @@ public class SailRepositoryConnectionTest {
 	}
 
 	@Test
-	public void testPrepareGraphQuery_not_bypassed() throws Exception {
+	public void testPrepareGraphQuery_not_bypassed() {
 		Optional<TupleExpr> response = Optional.empty();
 		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.GRAPH), any(), any())).thenReturn(response);
 		when(sailConnection.evaluate(any(), any(), any(), anyBoolean())).thenReturn(new EmptyIteration<>());
@@ -111,7 +111,7 @@ public class SailRepositoryConnectionTest {
 	}
 
 	@Test
-	public void testPrepareGraphQuery_bypassed() throws Exception {
+	public void testPrepareGraphQuery_bypassed() {
 		TupleExpr expr = mock(TupleExpr.class);
 		Optional<TupleExpr> response = Optional.of(expr);
 		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.GRAPH), any(), any())).thenReturn(response);
@@ -124,7 +124,7 @@ public class SailRepositoryConnectionTest {
 	}
 
 	@Test
-	public void testPrepareBooleanQuery_not_bypassed() throws Exception {
+	public void testPrepareBooleanQuery_not_bypassed() {
 		Optional<TupleExpr> response = Optional.empty();
 		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.BOOLEAN), any(), any())).thenReturn(response);
 		when(sailConnection.evaluate(any(), any(), any(), anyBoolean())).thenReturn(new EmptyIteration<>());
@@ -136,7 +136,7 @@ public class SailRepositoryConnectionTest {
 	}
 
 	@Test
-	public void testPrepareBooleanQuery_bypassed() throws Exception {
+	public void testPrepareBooleanQuery_bypassed() {
 		TupleExpr expr = mock(TupleExpr.class);
 		Optional<TupleExpr> response = Optional.of(expr);
 		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.BOOLEAN), any(), any())).thenReturn(response);

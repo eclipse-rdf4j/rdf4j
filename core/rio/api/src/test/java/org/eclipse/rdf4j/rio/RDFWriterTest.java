@@ -660,7 +660,7 @@ public abstract class RDFWriterTest {
 	}
 
 	@Test
-	public void testDefaultNamespace() throws Exception {
+	public void testDefaultNamespace() {
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
 		setupWriterConfig(rdfWriter.getWriterConfig());
@@ -1860,7 +1860,7 @@ public abstract class RDFWriterTest {
 	}
 
 	@Test
-	public void testGetSupportedSettings() throws Exception {
+	public void testGetSupportedSettings() {
 		RDFWriter writer = rdfWriterFactory.getWriter(System.out);
 
 		Collection<RioSetting<?>> supportedSettings = writer.getSupportedSettings();

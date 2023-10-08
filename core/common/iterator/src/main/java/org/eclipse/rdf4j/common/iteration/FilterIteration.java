@@ -18,7 +18,7 @@ import java.util.NoSuchElementException;
  * must implement the <var>accept</var> method to indicate which objects should be returned.
  */
 @Deprecated(since = "4.1.0")
-public abstract class FilterIteration<E, X extends Exception> extends IterationWrapper<E, X> {
+public abstract class FilterIteration<E> extends IterationWrapper<E> {
 
 	/*-----------*
 	 * Variables *
@@ -33,7 +33,7 @@ public abstract class FilterIteration<E, X extends Exception> extends IterationW
 	/**
 	 * @param iter
 	 */
-	protected FilterIteration(Iteration<? extends E, ? extends X> iter) {
+	protected FilterIteration(CloseableIteration<? extends E> iter) {
 		super(iter);
 	}
 
@@ -42,7 +42,7 @@ public abstract class FilterIteration<E, X extends Exception> extends IterationW
 	 *---------*/
 
 	@Override
-	public boolean hasNext() throws X {
+	public boolean hasNext() {
 		if (isClosed()) {
 			return false;
 		}
@@ -56,7 +56,7 @@ public abstract class FilterIteration<E, X extends Exception> extends IterationW
 	}
 
 	@Override
-	public E next() throws X {
+	public E next() {
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
@@ -73,7 +73,7 @@ public abstract class FilterIteration<E, X extends Exception> extends IterationW
 		}
 	}
 
-	private void findNextElement() throws X {
+	private void findNextElement() {
 		try {
 			while (!isClosed() && nextElement == null && super.hasNext()) {
 				E candidate = super.next();
@@ -97,10 +97,10 @@ public abstract class FilterIteration<E, X extends Exception> extends IterationW
 	 * @return <var>true</var> if the object should be returned, <var>false</var> otherwise.
 	 * @throws X
 	 */
-	protected abstract boolean accept(E object) throws X;
+	protected abstract boolean accept(E object);
 
 	@Override
-	protected void handleClose() throws X {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {

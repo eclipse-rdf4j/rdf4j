@@ -38,7 +38,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		String serviceUri;
 		if (serviceRef.hasValue()) {
 			serviceUri = serviceRef.getValue().stringValue();

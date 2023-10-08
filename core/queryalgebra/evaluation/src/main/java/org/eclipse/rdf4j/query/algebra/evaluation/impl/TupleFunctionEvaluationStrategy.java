@@ -77,7 +77,7 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 
 	@Deprecated(forRemoval = true)
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
+	public CloseableIteration<BindingSet> evaluate(TupleExpr expr, BindingSet bindings)
 			throws QueryEvaluationException {
 		if (expr instanceof TupleFunctionCall) {
 			return evaluate((TupleFunctionCall) expr, bindings);
@@ -97,7 +97,7 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleFunctionCall expr,
+	public CloseableIteration<BindingSet> evaluate(TupleFunctionCall expr,
 			BindingSet bindings) throws QueryEvaluationException {
 		return precompile(expr).evaluate(bindings);
 	}
@@ -116,7 +116,7 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 		return new QueryEvaluationStep() {
 
 			@Override
-			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+			public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 				Value[] argValues = new Value[args.size()];
 				for (int i = 0; i < args.size(); i++) {
 					argValues[i] = argEpresions[i].evaluate(bindings);
@@ -128,11 +128,11 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 		};
 	}
 
-	public static CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleFunction func,
+	public static CloseableIteration<BindingSet> evaluate(TupleFunction func,
 			final List<Var> resultVars, final BindingSet bindings, ValueFactory valueFactory, Value... argValues)
 			throws QueryEvaluationException {
 		return new LookAheadIteration<>() {
-			private final CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> iter = func
+			private final CloseableIteration<? extends List<? extends Value>> iter = func
 					.evaluate(valueFactory, argValues);
 
 			@Override

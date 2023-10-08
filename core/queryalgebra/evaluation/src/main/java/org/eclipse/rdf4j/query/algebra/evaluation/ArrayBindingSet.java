@@ -131,7 +131,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		if (index == -1) {
 			return null;
 		}
-		return (a) -> {
+		return a -> {
 			Value value = a.values[index];
 			if (value != null) {
 				return new SimpleBinding(bindingName, value);
@@ -147,7 +147,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		if (index == -1) {
 			return null;
 		}
-		return (a) -> a.values[index];
+		return a -> a.values[index];
 
 	}
 
@@ -156,7 +156,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		if (index == -1) {
 			return null;
 		}
-		return (a) -> a.whichBindingsHaveBeenSet[index];
+		return a -> a.whichBindingsHaveBeenSet[index];
 	}
 
 	private int getIndex(String bindingName) {

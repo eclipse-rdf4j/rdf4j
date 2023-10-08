@@ -62,7 +62,7 @@ class HDTBitmap extends HDTPart {
 						", but only bitmap v1 is supported");
 			}
 
-			long b = (int) VByte.decode(cis);
+			long b = VByte.decode(cis);
 			if (b > Integer.MAX_VALUE) {
 				throw new UnsupportedOperationException("Maximum number of entries in bitmap exceeded: " + b);
 			}

@@ -44,7 +44,7 @@ public class TriXParserTest {
 	private Locale platformLocale;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		platformLocale = Locale.getDefault();
 
 		Locale.setDefault(Locale.ENGLISH);
@@ -57,7 +57,7 @@ public class TriXParserTest {
 	}
 
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		Locale.setDefault(platformLocale);
 	}
 

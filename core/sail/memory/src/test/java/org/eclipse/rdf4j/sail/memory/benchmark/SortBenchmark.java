@@ -76,7 +76,7 @@ public class SortBenchmark {
 
 	List<Value> valuesList;
 
-	public static void main(String[] args) throws RunnerException, IOException, InterruptedException {
+	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
 				.include("SortBenchmark.*") // adapt to run other benchmark tests
 				.forks(1)
@@ -86,7 +86,7 @@ public class SortBenchmark {
 	}
 
 	@Setup(Level.Trial)
-	public void setup() throws IOException, InterruptedException {
+	public void setup() throws IOException {
 
 		repository = new SailRepository(new MemoryStore());
 

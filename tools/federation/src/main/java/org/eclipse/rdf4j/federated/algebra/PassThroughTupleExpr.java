@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
@@ -55,6 +56,11 @@ public class PassThroughTupleExpr extends AbstractQueryModelNode implements FedX
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		parsedQuery.visit(visitor);
 
+	}
+
+	@Override
+	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+		throw new UnsupportedOperationException();
 	}
 
 	public TupleQueryResultHandler getResultHandler() {

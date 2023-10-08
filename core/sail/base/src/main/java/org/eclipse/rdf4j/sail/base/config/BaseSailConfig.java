@@ -28,9 +28,6 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 
 public abstract class BaseSailConfig extends AbstractSailImplConfig {
 
-	private static final boolean USE_CONFIG = "true"
-			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
-
 	private String evalStratFactoryClassName;
 
 	private QueryEvaluationMode defaultQueryEvaluationMode;
@@ -65,22 +62,32 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 
 	@Override
 	public Resource export(Model graph) {
+		if (Configurations.useLegacyConfig()) {
+			return exportLegacy(graph);
+		}
+
 		Resource implNode = super.export(graph);
 
 		if (evalStratFactoryClassName != null) {
-			if (USE_CONFIG) {
-				graph.add(implNode, CONFIG.Sail.evaluationStrategyFactory, literal(evalStratFactoryClassName));
-			} else {
-				graph.add(implNode, EVALUATION_STRATEGY_FACTORY, literal(evalStratFactoryClassName));
-			}
+			graph.add(implNode, CONFIG.Sail.evaluationStrategyFactory, literal(evalStratFactoryClassName));
 
 		}
 		getDefaultQueryEvaluationMode().ifPresent(mode -> {
-			if (USE_CONFIG) {
-				graph.add(implNode, CONFIG.Sail.defaultQueryEvaluationMode, literal(mode.getValue()));
-			} else {
-				graph.add(implNode, DEFAULT_QUERY_EVALUATION_MODE, literal(mode.getValue()));
-			}
+			graph.add(implNode, CONFIG.Sail.defaultQueryEvaluationMode, literal(mode.getValue()));
+		});
+
+		return implNode;
+	}
+
+	private Resource exportLegacy(Model graph) {
+		Resource implNode = super.export(graph);
+
+		if (evalStratFactoryClassName != null) {
+			graph.add(implNode, EVALUATION_STRATEGY_FACTORY, literal(evalStratFactoryClassName));
+
+		}
+		getDefaultQueryEvaluationMode().ifPresent(mode -> {
+			graph.add(implNode, DEFAULT_QUERY_EVALUATION_MODE, literal(mode.getValue()));
 		});
 
 		return implNode;

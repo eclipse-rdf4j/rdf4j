@@ -13,9 +13,9 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.GEO;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
@@ -37,7 +37,7 @@ public class SRID implements Function {
 			throw new ValueExprEvaluationException(getURI() + " requires exactly 1 argument, got " + args.length);
 		}
 
-		Literal geom = FunctionArguments.getLiteral(this, args[0], GEO.WKT_LITERAL);
+		Literal geom = FunctionArguments.getLiteral(this, args[0], CoreDatatype.GEO.WKT_LITERAL);
 		String wkt = geom.getLabel();
 		String srid;
 		int sep = wkt.indexOf(' ');
@@ -47,6 +47,6 @@ public class SRID implements Function {
 			srid = GEO.DEFAULT_SRID;
 		}
 
-		return valueFactory.createLiteral(srid, XSD.ANYURI);
+		return valueFactory.createLiteral(srid, CoreDatatype.XSD.ANYURI);
 	}
 }

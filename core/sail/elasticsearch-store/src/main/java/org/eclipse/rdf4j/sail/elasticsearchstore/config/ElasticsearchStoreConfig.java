@@ -28,9 +28,6 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
  */
 public class ElasticsearchStoreConfig extends BaseSailConfig {
 
-	private static final boolean USE_CONFIG = "true"
-			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
-
 	private String hostname;
 	private int port = -1;
 	private String clusterName;
@@ -42,35 +39,42 @@ public class ElasticsearchStoreConfig extends BaseSailConfig {
 
 	@Override
 	public Resource export(Model m) {
+		if (Configurations.useLegacyConfig()) {
+			return exportLegacy(m);
+		}
+
 		Resource implNode = super.export(m);
 
 		if (hostname != null) {
-			if (USE_CONFIG) {
-				m.add(implNode, CONFIG.Ess.hostname, literal(hostname));
-			} else {
-				m.add(implNode, ElasticsearchStoreSchema.hostname, literal(hostname));
-			}
+			m.add(implNode, CONFIG.Ess.hostname, literal(hostname));
 		}
 		if (clusterName != null) {
-			if (USE_CONFIG) {
-				m.add(implNode, CONFIG.Ess.clusterName, literal(clusterName));
-			} else {
-				m.add(implNode, ElasticsearchStoreSchema.clusterName, literal(clusterName));
-			}
+			m.add(implNode, CONFIG.Ess.clusterName, literal(clusterName));
 		}
 		if (index != null) {
-			if (USE_CONFIG) {
-				m.add(implNode, CONFIG.Ess.index, literal(index));
-			} else {
-				m.add(implNode, ElasticsearchStoreSchema.index, literal(index));
-			}
+			m.add(implNode, CONFIG.Ess.index, literal(index));
 		}
 		if (port != -1) {
-			if (USE_CONFIG) {
-				m.add(implNode, CONFIG.Ess.port, literal(port));
-			} else {
-				m.add(implNode, ElasticsearchStoreSchema.port, literal(port));
-			}
+			m.add(implNode, CONFIG.Ess.port, literal(port));
+		}
+
+		return implNode;
+	}
+
+	private Resource exportLegacy(Model m) {
+		Resource implNode = super.export(m);
+
+		if (hostname != null) {
+			m.add(implNode, ElasticsearchStoreSchema.hostname, literal(hostname));
+		}
+		if (clusterName != null) {
+			m.add(implNode, ElasticsearchStoreSchema.clusterName, literal(clusterName));
+		}
+		if (index != null) {
+			m.add(implNode, ElasticsearchStoreSchema.index, literal(index));
+		}
+		if (port != -1) {
+			m.add(implNode, ElasticsearchStoreSchema.port, literal(port));
 		}
 
 		return implNode;

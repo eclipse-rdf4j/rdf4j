@@ -20,10 +20,9 @@ public class HashLeadingZeroTest extends HashFunctionTest {
 	 * Test if hash function adds multiple leading zeros (if needed). Test value and expected result provided by Vassil
 	 * Momtchev..
 	 *
-	 * @throws java.lang.Exception
 	 */
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		setHashFunction(new MD5());
 		setToHash("363");
 		setExpectedDigest("00411460f7c92d2124a67ea0f4cb5f85");

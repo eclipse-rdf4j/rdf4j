@@ -14,7 +14,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
-import java.lang.reflect.InvocationTargetException;
 
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.model.BNode;
@@ -93,7 +92,7 @@ public class MemInferencingTest extends InferencingTest {
 	}
 
 	@Test
-	public void testRollback() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+	public void testRollback() {
 		Repository sailRepository = new SailRepository(createSail());
 		ValueFactory vf = sailRepository.getValueFactory();
 
@@ -140,7 +139,7 @@ public class MemInferencingTest extends InferencingTest {
 	}
 
 	@Test
-	public void testFastInstantiate() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+	public void testFastInstantiate() {
 		Repository sailRepository = new SailRepository(createSail());
 		ValueFactory vf = sailRepository.getValueFactory();
 

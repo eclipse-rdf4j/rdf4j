@@ -20,13 +20,13 @@ import java.util.NoSuchElementException;
  * <var>createIteration</var> method, which is called once when the iteration is first needed.
  */
 @Deprecated(since = "4.1.0")
-public abstract class DelayedIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
+public abstract class DelayedIteration<E> extends AbstractCloseableIteration<E> {
 
 	/*-----------*
 	 * Variables *
 	 *-----------*/
 
-	private Iteration<? extends E, ? extends X> iter;
+	private CloseableIteration<? extends E> iter;
 
 	/*--------------*
 	 * Constructors *
@@ -47,17 +47,17 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 	 * Creates the iteration that should be iterated over. This method is called only once, when the iteration is first
 	 * needed.
 	 */
-	protected abstract Iteration<? extends E, ? extends X> createIteration() throws X;
+	protected abstract CloseableIteration<? extends E> createIteration();
 
 	/**
 	 * Calls the <var>hasNext</var> method of the underlying iteration.
 	 */
 	@Override
-	public boolean hasNext() throws X {
+	public boolean hasNext() {
 		if (isClosed()) {
 			return false;
 		}
-		Iteration<? extends E, ? extends X> resultIter = iter;
+		CloseableIteration<? extends E> resultIter = iter;
 		if (resultIter == null) {
 			// Underlying iterator has not yet been initialized
 			resultIter = iter;
@@ -73,11 +73,11 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 	 * Calls the <var>next</var> method of the underlying iteration.
 	 */
 	@Override
-	public E next() throws X {
+	public E next() {
 		if (isClosed()) {
 			throw new NoSuchElementException("Iteration has been closed");
 		}
-		Iteration<? extends E, ? extends X> resultIter = iter;
+		CloseableIteration<? extends E> resultIter = iter;
 		if (resultIter == null) {
 			// Underlying iterator has not yet been initialized
 			resultIter = iter;
@@ -93,11 +93,11 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 	 * Calls the <var>remove</var> method of the underlying iteration.
 	 */
 	@Override
-	public void remove() throws X {
+	public void remove() {
 		if (isClosed()) {
 			throw new IllegalStateException("The iteration has been closed.");
 		}
-		Iteration<? extends E, ? extends X> resultIter = iter;
+		CloseableIteration<? extends E> resultIter = iter;
 		if (resultIter == null) {
 			throw new IllegalStateException("Underlying iteration was null");
 		}
@@ -110,13 +110,12 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 	 * {@link CloseableIteration}.
 	 */
 	@Override
-	protected void handleClose() throws X {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {
-			Iteration<? extends E, ? extends X> toClose = iter;
-			if (toClose != null) {
-				Iterations.closeCloseable(toClose);
+			if (iter != null) {
+				iter.close();
 			}
 		}
 	}

@@ -73,7 +73,7 @@ public class HTTPStoreConnectionTest extends RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
-	public void testUpdateExecution(IsolationLevel level) throws Exception {
+	public void testUpdateExecution(IsolationLevel level) {
 		setupTest(level);
 
 		IRI foobar = vf.createIRI("foo:bar");
@@ -116,7 +116,7 @@ public class HTTPStoreConnectionTest extends RepositoryConnectionTest {
 	@MethodSource("parameters")
 	@Override
 	@Disabled("See SES-1833")
-	public void testAddMalformedLiteralsStrictConfig(IsolationLevel level) throws Exception {
+	public void testAddMalformedLiteralsStrictConfig(IsolationLevel level) {
 		System.err.println("SES-1833: temporarily disabled testAddMalformedLiteralsStrictConfig() for HTTPRepository");
 	}
 

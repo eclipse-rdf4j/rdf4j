@@ -75,7 +75,7 @@ public abstract class SailConcurrencyTest {
 	 *---------*/
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		store = createSail();
 		store.init();
 		vf = store.getValueFactory();
@@ -84,7 +84,7 @@ public abstract class SailConcurrencyTest {
 	protected abstract Sail createSail() throws SailException;
 
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		store.shutDown();
 	}
 
@@ -269,7 +269,7 @@ public abstract class SailConcurrencyTest {
 			try {
 				try (SailConnection connection = store.getConnection()) {
 					while (continueRunning) {
-						try (CloseableIteration<? extends Resource, SailException> contextIter = connection
+						try (CloseableIteration<? extends Resource> contextIter = connection
 								.getContextIDs()) {
 							while (contextIter.hasNext()) {
 								Resource context = contextIter.next();

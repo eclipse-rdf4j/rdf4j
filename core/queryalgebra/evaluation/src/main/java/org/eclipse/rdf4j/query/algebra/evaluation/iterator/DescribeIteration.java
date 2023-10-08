@@ -19,7 +19,6 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Value;
@@ -37,7 +36,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
  * @see <a href="http://www.w3.org/Submission/CBD/#alternatives">Concise Bounded Description - alternatives</a>
  */
 @Deprecated(since = "4.1.0")
-public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class DescribeIteration extends LookAheadIteration<BindingSet> {
 
 	protected final static String VARNAME_SUBJECT = "subject";
 
@@ -55,7 +54,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	private final Set<BNode> processedNodes = new HashSet<>();
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> currentDescribeExprIter;
+	private CloseableIteration<BindingSet> currentDescribeExprIter;
 
 	private enum Mode {
 		OUTGOING_LINKS,
@@ -64,9 +63,9 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	private Mode currentMode = Mode.OUTGOING_LINKS;
 
-	private final Iteration<BindingSet, QueryEvaluationException> sourceIter;
+	private final CloseableIteration<BindingSet> sourceIter;
 
-	public DescribeIteration(Iteration<BindingSet, QueryEvaluationException> sourceIter, EvaluationStrategy strategy,
+	public DescribeIteration(CloseableIteration<BindingSet> sourceIter, EvaluationStrategy strategy,
 			Set<String> describeExprNames, BindingSet parentBindings) {
 		this.strategy = strategy;
 		this.sourceIter = sourceIter;
@@ -206,7 +205,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 		return null;
 	}
 
-	protected CloseableIteration<BindingSet, QueryEvaluationException> createNextIteration(Value subject, Value object)
+	protected CloseableIteration<BindingSet> createNextIteration(Value subject, Value object)
 			throws QueryEvaluationException {
 		if (subject == null && object == null) {
 			return new EmptyIteration<>();
@@ -227,12 +226,11 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 		} finally {
 			try {
-				if (currentDescribeExprIter != null)
+				if (currentDescribeExprIter != null) {
 					currentDescribeExprIter.close();
-			} finally {
-				if (sourceIter instanceof CloseableIteration) {
-					((CloseableIteration<?, QueryEvaluationException>) sourceIter).close();
 				}
+			} finally {
+				sourceIter.close();
 			}
 
 		}

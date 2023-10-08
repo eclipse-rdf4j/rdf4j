@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  * @author Andreas Schwarte
  */
 public class GraphToBindingSetConversionIteration
-		extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
+		extends AbstractCloseableIteration<BindingSet> {
 
 	protected final GraphQueryResult graph;
 

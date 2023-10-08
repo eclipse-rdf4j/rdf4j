@@ -81,14 +81,6 @@ public class ProjectionElemList extends AbstractQueryModelNode {
 		pe.setParentNode(this);
 	}
 
-	/**
-	 * @deprecated since 4.1.1. Use {@link #getProjectedNames()} instead.
-	 */
-	@Deprecated(since = "4.1.1", forRemoval = true)
-	public Set<String> getTargetNames() {
-		return getProjectedNames();
-	}
-
 	public Set<String> getProjectedNames() {
 		Set<String> projectedNames = new LinkedHashSet<>(elementsList.size());
 
@@ -97,14 +89,6 @@ public class ProjectionElemList extends AbstractQueryModelNode {
 		}
 
 		return projectedNames;
-	}
-
-	/**
-	 * @deprecated since 4.1.1. Use {@link #getProjectedNamesFor(Collection)} instead.
-	 */
-	@Deprecated(since = "4.1.1", forRemoval = true)
-	public Set<String> getTargetNamesFor(Collection<String> sourceNames) {
-		return getProjectedNamesFor(sourceNames);
 	}
 
 	public Set<String> getProjectedNamesFor(Collection<String> sourceNames) {

@@ -57,27 +57,9 @@ public class Literals {
 		return v instanceof Literal ? getLabel((Literal) v, fallback) : fallback;
 	}
 
+	@Deprecated(since = "5.0.0", forRemoval = true)
 	public static String getLabel(Optional<Value> v, String fallback) {
 		return v != null ? getLabel(v.orElseGet(null), fallback) : fallback;
-	}
-
-	/**
-	 * Retrieves the {@link org.eclipse.rdf4j.model.vocabulary.XSD.Datatype} value for the supplied Literal, if it has
-	 * one.
-	 *
-	 * @param l a Literal
-	 * @return an Optional {@link org.eclipse.rdf4j.model.vocabulary.XSD.Datatype} enum, if one is available. Note that
-	 *         the absence of this enum does <i>not</i> indicate that the literal has no datatype, merely that it has no
-	 *         cached enum representation of that datatype.
-	 * @since 3.5.0
-	 * @deprecated Use {@link Literal#getCoreDatatype()} instead.
-	 */
-	@Deprecated(since = "4.0.0", forRemoval = true)
-	public static Optional<XSD.Datatype> getXsdDatatype(Literal l) {
-		if (l instanceof SimpleLiteral) {
-			return ((SimpleLiteral) l).getXsdDatatype();
-		}
-		return Optional.empty();
 	}
 
 	/**

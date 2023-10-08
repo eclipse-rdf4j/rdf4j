@@ -280,7 +280,7 @@ public class NTriplesParser extends AbstractRDFParser {
 		} else if (lineChars[currentIndex] == '@') {
 			parseLangLiteral(label);
 		} else {
-			object = createLiteral(label, null, null, lineNo, lineChars[currentIndex]);
+			object = createLiteral(label, null, ((IRI) null), lineNo, lineChars[currentIndex]);
 		}
 	}
 
@@ -329,7 +329,7 @@ public class NTriplesParser extends AbstractRDFParser {
 		if (currentIndex >= lineChars.length) {
 			throwEOFException();
 		}
-		object = createLiteral(label, new String(lineChars, startIndex, currentIndex - startIndex), null,
+		object = createLiteral(label, new String(lineChars, startIndex, currentIndex - startIndex), ((IRI) null),
 				lineNo, lineChars[currentIndex]);
 	}
 

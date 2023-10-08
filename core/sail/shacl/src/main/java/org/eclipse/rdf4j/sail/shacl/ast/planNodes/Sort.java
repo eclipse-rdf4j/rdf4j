@@ -20,7 +20,6 @@ import java.util.Objects;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
 
 public class Sort implements PlanNode {
 
@@ -33,7 +32,7 @@ public class Sort implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple> iterator() {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
@@ -46,7 +45,7 @@ public class Sort implements PlanNode {
 
 				boolean alreadySorted;
 
-				try (CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator()) {
+				try (CloseableIteration<? extends ValidationTuple> iterator = parent.iterator()) {
 					sortedTuples = new ArrayList<>(1);
 					alreadySorted = true;
 					ValidationTuple prev = null;

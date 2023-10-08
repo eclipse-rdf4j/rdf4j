@@ -35,7 +35,7 @@ import org.junit.jupiter.api.Test;
  */
 public class OrderIteratorTest {
 
-	class IterationStub extends CloseableIteratorIteration<BindingSet, QueryEvaluationException> {
+	class IterationStub extends CloseableIteratorIteration<BindingSet> {
 
 		int hasNextCount = 0;
 
@@ -139,7 +139,7 @@ public class OrderIteratorTest {
 	private SizeComparator cmp;
 
 	@Test
-	public void testFirstHasNext() throws Exception {
+	public void testFirstHasNext() {
 		order.hasNext();
 		assertEquals(list.size() + 1, iteration.hasNextCount);
 		assertEquals(list.size(), iteration.nextCount);
@@ -147,7 +147,7 @@ public class OrderIteratorTest {
 	}
 
 	@Test
-	public void testHasNext() throws Exception {
+	public void testHasNext() {
 		order.hasNext();
 		order.next();
 		order.hasNext();
@@ -157,7 +157,7 @@ public class OrderIteratorTest {
 	}
 
 	@Test
-	public void testFirstNext() throws Exception {
+	public void testFirstNext() {
 		order.next();
 		assertEquals(list.size() + 1, iteration.hasNextCount);
 		assertEquals(list.size(), iteration.nextCount);
@@ -165,7 +165,7 @@ public class OrderIteratorTest {
 	}
 
 	@Test
-	public void testNext() throws Exception {
+	public void testNext() {
 		order.next();
 		order.next();
 		assertEquals(list.size() + 1, iteration.hasNextCount);
@@ -174,7 +174,7 @@ public class OrderIteratorTest {
 	}
 
 	@Test
-	public void testRemove() throws Exception {
+	public void testRemove() {
 		try {
 			order.remove();
 			fail();
@@ -184,7 +184,7 @@ public class OrderIteratorTest {
 	}
 
 	@Test
-	public void testSorting() throws Exception {
+	public void testSorting() {
 		List<BindingSet> sorted = new ArrayList<>(list);
 		Collections.sort(sorted, cmp);
 		for (BindingSet b : sorted) {
@@ -194,7 +194,7 @@ public class OrderIteratorTest {
 	}
 
 	@BeforeEach
-	protected void setUp() throws Exception {
+	protected void setUp() {
 		list = Arrays.asList(b3, b5, b2, b1, b4, b2);
 		cmp = new SizeComparator();
 		iteration = new IterationStub(list.iterator());

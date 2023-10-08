@@ -14,6 +14,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -38,17 +39,17 @@ public class StringCast extends CastFunction {
 
 		if (args[0] instanceof Literal) {
 			Literal literal = (Literal) args[0];
-			IRI datatype = literal.getDatatype();
+			CoreDatatype datatype = literal.getCoreDatatype();
 
 			// we override because unlike most other cast functions, xsd:string should not accept a language-tagged
 			// string literal.
 			if (QueryEvaluationUtility.isSimpleLiteral(literal)) {
 				String lexicalValue = XMLDatatypeUtil.collapseWhiteSpace(literal.getLabel());
 				if (isValidForDatatype(lexicalValue)) {
-					return valueFactory.createLiteral(lexicalValue, getXsdDatatype());
+					return valueFactory.createLiteral(lexicalValue, getCoreXsdDatatype());
 				}
 			} else if (datatype != null) {
-				if (datatype.equals(getXsdDatatype())) {
+				if (datatype == getCoreXsdDatatype()) {
 					return literal;
 				}
 			}
@@ -64,13 +65,14 @@ public class StringCast extends CastFunction {
 			return valueFactory.createLiteral(value.toString(), XSD.STRING);
 		} else if (value instanceof Literal) {
 			Literal literal = (Literal) value;
-			IRI datatype = literal.getDatatype();
+			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
 
 			if (QueryEvaluationUtility.isSimpleLiteral(literal)) {
-				return valueFactory.createLiteral(literal.getLabel(), XSD.STRING);
+				return valueFactory.createLiteral(literal.getLabel(), CoreDatatype.XSD.STRING);
 			} else if (!Literals.isLanguageLiteral(literal)) {
-				if (XMLDatatypeUtil.isNumericDatatype(datatype) || datatype.equals(XSD.BOOLEAN)
-						|| datatype.equals(XSD.DATETIME) || datatype.equals(XSD.DATETIMESTAMP)) {
+				if (datatype != null && datatype.isNumericDatatype()
+						|| datatype == CoreDatatype.XSD.BOOLEAN
+						|| datatype == CoreDatatype.XSD.DATETIME || datatype == CoreDatatype.XSD.DATETIMESTAMP) {
 					// FIXME Slightly simplified wrt the spec, we just always use the
 					// canonical value of the
 					// source literal as the target lexical value. This is not 100%
@@ -80,14 +82,15 @@ public class StringCast extends CastFunction {
 					// See
 					// http://www.w3.org/TR/xpath-functions/#casting-from-primitive-to-primitive
 					if (XMLDatatypeUtil.isValidValue(literal.getLabel(), datatype)) {
-						String normalizedValue = XMLDatatypeUtil.normalize(literal.getLabel(), datatype);
-						return valueFactory.createLiteral(normalizedValue, XSD.STRING);
+						String normalizedValue = XMLDatatypeUtil.normalize(literal.getLabel(),
+								datatype);
+						return valueFactory.createLiteral(normalizedValue, CoreDatatype.XSD.STRING);
 					} else {
-						return valueFactory.createLiteral(literal.getLabel(), XSD.STRING);
+						return valueFactory.createLiteral(literal.getLabel(), CoreDatatype.XSD.STRING);
 					}
 				} else {
 					// for unknown datatypes, just use the lexical value.
-					return valueFactory.createLiteral(literal.getLabel(), XSD.STRING);
+					return valueFactory.createLiteral(literal.getLabel(), CoreDatatype.XSD.STRING);
 				}
 			}
 		}
@@ -96,8 +99,8 @@ public class StringCast extends CastFunction {
 	}
 
 	@Override
-	protected IRI getXsdDatatype() {
-		return XSD.STRING;
+	protected CoreDatatype.XSD getCoreXsdDatatype() {
+		return CoreDatatype.XSD.STRING;
 	}
 
 	@Override

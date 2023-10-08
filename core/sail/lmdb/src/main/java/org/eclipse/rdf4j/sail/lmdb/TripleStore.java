@@ -19,6 +19,7 @@ import static org.eclipse.rdf4j.sail.lmdb.Varint.writeListUnsigned;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
+import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
@@ -39,13 +40,13 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_mapsize;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxreaders;
 import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
-import static org.lwjgl.util.lmdb.LMDB.nmdb_env_set_maxreaders;
 
 import java.io.Closeable;
 import java.io.File;
@@ -57,15 +58,18 @@ import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.concurrent.locks.StampedLock;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
@@ -126,12 +130,10 @@ class TripleStore implements Closeable {
 	 * </ul>
 	 */
 	private static final int SCHEME_VERSION = 1;
-
 	/*-----------*
 	 * Variables *
 	 *-----------*/
 	private static final Logger logger = LoggerFactory.getLogger(TripleStore.class);
-
 	/**
 	 * The directory that is used to store the index files.
 	 */
@@ -191,8 +193,8 @@ class TripleStore implements Closeable {
 			env = pp.get(0);
 		}
 
-		mdb_env_set_maxdbs(env, 12);
-		nmdb_env_set_maxreaders(env, 256);
+		E(mdb_env_set_maxdbs(env, 12));
+		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
 		int flags = MDB_NOTLS;
@@ -504,6 +506,111 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	/**
+	 * Checks if any of <code>ids</code> is used and removes it from the collection.
+	 *
+	 * @param ids Collection with possibly removed IDs
+	 * @throws IOException
+	 */
+	protected void filterUsedIds(Collection<Long> ids) throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			MDBVal maxKey = MDBVal.malloc(stack);
+			ByteBuffer maxKeyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
+			MDBVal keyData = MDBVal.malloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
+
+			MDBVal valueData = MDBVal.mallocStack(stack);
+
+			PointerBuffer pp = stack.mallocPointer(1);
+
+			// TODO currently this does not test for contexts (component == 3)
+			// because in most cases context indexes do not exist
+			for (int component = 0; component <= 2; component++) {
+				int c = component;
+
+				TripleIndex index = getBestIndex(component == 0 ? 1 : -1, component == 1 ? 1 : -1,
+						component == 2 ? 1 : -1, component == 3 ? 1 : -1);
+
+				boolean fullScan = index.getPatternScore(component == 0 ? 1 : -1, component == 1 ? 1 : -1,
+						component == 2 ? 1 : -1, component == 3 ? 1 : -1) == 0;
+
+				for (boolean explicit : new boolean[] { true, false }) {
+					int dbi = index.getDB(explicit);
+
+					long cursor = 0;
+					try {
+						E(mdb_cursor_open(writeTxn, dbi, pp));
+						cursor = pp.get(0);
+
+						if (fullScan) {
+							long[] quad = new long[4];
+							int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_FIRST);
+							while (rc == 0 && !ids.isEmpty()) {
+								index.keyToQuad(keyData.mv_data(), quad);
+								ids.remove(quad[0]);
+								ids.remove(quad[1]);
+								ids.remove(quad[2]);
+								ids.remove(quad[3]);
+
+								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+							}
+						} else {
+							for (Iterator<Long> it = ids.iterator(); it.hasNext();) {
+								long id = it.next();
+								if (id < 0) {
+									it.remove();
+									continue;
+								}
+								if (component != 2 && (id & 1) == 1) {
+									// id is a literal and can only appear in object position
+									continue;
+								}
+
+								long subj = c == 0 ? id : -1, pred = c == 1 ? id : -1,
+										obj = c == 2 ? id : -1, context = c == 3 ? id : -1;
+
+								GroupMatcher matcher = index.createMatcher(subj, pred, obj, context);
+
+								maxKeyBuf.clear();
+								index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+								maxKeyBuf.flip();
+								maxKey.mv_data(maxKeyBuf);
+
+								keyBuf.clear();
+								index.getMinKey(keyBuf, subj, pred, obj, context);
+								keyBuf.flip();
+
+								// set cursor to min key
+								keyData.mv_data(keyBuf);
+								int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+								boolean exists = false;
+								while (!exists && rc == 0) {
+									if (mdb_cmp(writeTxn, dbi, keyData, maxKey) > 0) {
+										// id was not found
+										break;
+									} else if (!matcher.matches(keyData.mv_data())) {
+										// value doesn't match search key/mask, fetch next value
+										rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+									} else {
+										exists = true;
+									}
+								}
+
+								if (exists) {
+									it.remove();
+								}
+							}
+						}
+					} finally {
+						if (cursor != 0) {
+							mdb_cursor_close(cursor);
+						}
+					}
+				}
+			}
+		}
+	}
+
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 
@@ -712,6 +819,7 @@ class TripleStore implements Closeable {
 					if (requiresResize()) {
 						// map is full, resize required
 						recordCache = new TxnRecordCache(dir);
+						logger.debug("resize of map size {} required while adding - initialize record cache", mapSize);
 					}
 				}
 				if (recordCache != null) {
@@ -757,28 +865,28 @@ class TripleStore implements Closeable {
 	 * @param explicit Flag indicating whether explicit or inferred statements should be removed; <tt>true</tt> removes
 	 *                 explicit statements that match the pattern, <tt>false</tt> removes inferred statements that match
 	 *                 the pattern.
-	 * @return A mapping of each modified context to the number of statements removed in that context.
+	 * @param handler  Function that gets notified about each deleted quad
 	 * @throws IOException
 	 */
-	public Map<Long, Long> removeTriplesByContext(long subj, long pred, long obj, long context,
-			boolean explicit) throws IOException {
+	public void removeTriplesByContext(long subj, long pred, long obj, long context,
+			boolean explicit, Consumer<long[]> handler) throws IOException {
 		RecordIterator records = getTriples(txnManager.createTxn(writeTxn), subj, pred, obj, context, explicit);
-		return removeTriples(records, explicit);
+		removeTriples(records, explicit, handler);
 	}
 
-	private Map<Long, Long> removeTriples(RecordIterator iter, boolean explicit) throws IOException {
-		final Map<Long, Long> perContextCounts = new HashMap<>();
-
-		try (iter; MemoryStack stack = MemoryStack.stackPush()) {
+	public void removeTriples(RecordIterator it, boolean explicit, Consumer<long[]> handler) throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyValue = MDBVal.callocStack(stack);
 			ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
 
 			long[] quad;
-			while ((quad = iter.next()) != null) {
+			while ((quad = it.next()) != null) {
 				if (recordCache == null) {
 					if (requiresResize()) {
 						// map is full, resize required
 						recordCache = new TxnRecordCache(dir);
+						logger.debug("resize of map size {} required while removing - initialize record cache",
+								mapSize);
 					}
 				}
 				if (recordCache != null) {
@@ -796,11 +904,11 @@ class TripleStore implements Closeable {
 					E(mdb_del(writeTxn, index.getDB(explicit), keyValue, null));
 				}
 
-				perContextCounts.merge(quad[CONTEXT_IDX], 1L, Long::sum);
+				handler.accept(quad);
 			}
+		} finally {
+			it.close();
 		}
-
-		return perContextCounts;
 	}
 
 	protected void updateFromCache() throws IOException {
@@ -821,6 +929,7 @@ class TripleStore implements Closeable {
 						E(mdb_txn_commit(writeTxn));
 						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
 						E(mdb_env_set_mapsize(env, mapSize));
+						logger.debug("resized map to {}", mapSize);
 						E(mdb_txn_begin(env, NULL, 0, pp));
 						writeTxn = pp.get(0);
 					}
@@ -859,41 +968,59 @@ class TripleStore implements Closeable {
 	 */
 	void endTransaction(boolean commit) throws IOException {
 		if (writeTxn != 0) {
-			if (commit) {
-				E(mdb_txn_commit(writeTxn));
-				if (recordCache != null) {
-					StampedLock lock = txnManager.lock();
-					long stamp = lock.writeLock();
+			try {
+				if (commit) {
 					try {
-						txnManager.deactivate();
-						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
-						E(mdb_env_set_mapsize(env, mapSize));
-						// restart write transaction
-						try (MemoryStack stack = stackPush()) {
-							PointerBuffer pp = stack.mallocPointer(1);
-							mdb_txn_begin(env, NULL, 0, pp);
-							writeTxn = pp.get(0);
-						}
-						updateFromCache();
-						// finally, commit write transaction
 						E(mdb_txn_commit(writeTxn));
-					} finally {
-						recordCache = null;
-						try {
-							txnManager.activate();
-						} finally {
-							lock.unlockWrite(stamp);
+						if (recordCache != null) {
+							StampedLock lock = txnManager.lock();
+							long stamp = lock.writeLock();
+							try {
+								txnManager.deactivate();
+								mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
+								E(mdb_env_set_mapsize(env, mapSize));
+								logger.debug("resized map to {}", mapSize);
+								// restart write transaction
+								try (MemoryStack stack = stackPush()) {
+									PointerBuffer pp = stack.mallocPointer(1);
+									mdb_txn_begin(env, NULL, 0, pp);
+									writeTxn = pp.get(0);
+								}
+								updateFromCache();
+								// finally, commit write transaction
+								E(mdb_txn_commit(writeTxn));
+							} finally {
+								recordCache = null;
+								try {
+									txnManager.activate();
+								} finally {
+									lock.unlockWrite(stamp);
+								}
+							}
+						} else {
+							// invalidate open read transaction so that they are not re-used
+							// otherwise iterators won't see the updated data
+							txnManager.reset();
 						}
+					} catch (IOException e) {
+						// abort transaction if exception occurred while committing
+						mdb_txn_abort(writeTxn);
+						throw e;
 					}
 				} else {
-					// invalidate open read transaction so that they are not re-used
-					// otherwise iterators won't see the updated data
-					txnManager.reset();
+					mdb_txn_abort(writeTxn);
 				}
-			} else {
-				mdb_txn_abort(writeTxn);
+			} finally {
+				writeTxn = 0;
+				// ensure that record cache is always reset
+				if (recordCache != null) {
+					try {
+						recordCache.close();
+					} finally {
+						recordCache = null;
+					}
+				}
 			}
-			writeTxn = 0;
 		}
 	}
 
@@ -1093,12 +1220,12 @@ class TripleStore implements Closeable {
 			pool.close();
 		}
 
-		void clear(long txn) throws IOException {
+		void clear(long txn) {
 			mdb_drop(txn, dbiExplicit, false);
 			mdb_drop(txn, dbiInferred, false);
 		}
 
-		void destroy(long txn) throws IOException {
+		void destroy(long txn) {
 			mdb_drop(txn, dbiExplicit, true);
 			mdb_drop(txn, dbiInferred, true);
 		}

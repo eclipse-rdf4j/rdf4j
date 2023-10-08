@@ -44,11 +44,6 @@ public class NumericLiteral extends AbstractLiteral {
 		this.number = number;
 	}
 
-	@Deprecated(since = "4.0.0", forRemoval = true)
-	protected NumericLiteral(Number number, XSD.Datatype datatype) {
-		this(number, datatype.getCoreDatatype());
-	}
-
 	protected NumericLiteral(Number number, CoreDatatype datatype) {
 		this.datatype = datatype;
 		this.number = number;

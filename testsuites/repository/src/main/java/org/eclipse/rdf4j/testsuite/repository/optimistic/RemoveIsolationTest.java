@@ -38,12 +38,12 @@ import org.junit.Test;
 public class RemoveIsolationTest {
 
 	@BeforeClass
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
 	@AfterClass
-	public static void afterClass() throws Exception {
+	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
@@ -63,7 +63,7 @@ public class RemoveIsolationTest {
 	}
 
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		try {
 			con.close();
 		} finally {
@@ -72,7 +72,7 @@ public class RemoveIsolationTest {
 	}
 
 	@Test
-	public void testRemoveOptimisticIsolation() throws Exception {
+	public void testRemoveOptimisticIsolation() {
 		con.begin(level);
 
 		con.add(f.createIRI("http://example.org/people/alice"), f.createIRI("http://example.org/ontology/name"),
@@ -89,7 +89,7 @@ public class RemoveIsolationTest {
 	}
 
 	@Test
-	public void testRemoveIsolation() throws Exception {
+	public void testRemoveIsolation() {
 		con.begin(level);
 
 		con.add(f.createIRI("http://example.org/people/alice"), f.createIRI("http://example.org/ontology/name"),

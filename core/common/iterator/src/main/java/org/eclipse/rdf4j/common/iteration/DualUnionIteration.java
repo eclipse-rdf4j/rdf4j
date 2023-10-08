@@ -17,24 +17,24 @@ import java.util.NoSuchElementException;
  * Provides a bag union of the two provided iterations.
  */
 @Deprecated(since = "4.1.0")
-public class DualUnionIteration<E, X extends Exception> implements CloseableIteration<E, X> {
+public class DualUnionIteration<E> implements CloseableIteration<E> {
 
-	private CloseableIteration<? extends E, X> iteration1;
-	private CloseableIteration<? extends E, X> iteration2;
+	private CloseableIteration<? extends E> iteration1;
+	private CloseableIteration<? extends E> iteration2;
 	private E nextElement;
 	/**
 	 * Flag indicating whether this iteration has been closed.
 	 */
 	private boolean closed = false;
 
-	private DualUnionIteration(CloseableIteration<? extends E, X> iteration1,
-			CloseableIteration<? extends E, X> iteration2) {
+	private DualUnionIteration(CloseableIteration<? extends E> iteration1,
+			CloseableIteration<? extends E> iteration2) {
 		this.iteration1 = iteration1;
 		this.iteration2 = iteration2;
 	}
 
-	public static <E, X extends Exception> CloseableIteration<? extends E, X> getWildcardInstance(
-			CloseableIteration<? extends E, X> leftIteration, CloseableIteration<? extends E, X> rightIteration) {
+	public static <E, X extends Exception> CloseableIteration<? extends E> getWildcardInstance(
+			CloseableIteration<? extends E> leftIteration, CloseableIteration<? extends E> rightIteration) {
 
 		if (rightIteration instanceof EmptyIteration) {
 			return leftIteration;
@@ -45,8 +45,8 @@ public class DualUnionIteration<E, X extends Exception> implements CloseableIter
 		}
 	}
 
-	public static <E, X extends Exception> CloseableIteration<E, X> getInstance(CloseableIteration<E, X> leftIteration,
-			CloseableIteration<E, X> rightIteration) {
+	public static <E, X extends Exception> CloseableIteration<E> getInstance(CloseableIteration<E> leftIteration,
+			CloseableIteration<E> rightIteration) {
 
 		if (rightIteration instanceof EmptyIteration) {
 			return leftIteration;
@@ -57,7 +57,7 @@ public class DualUnionIteration<E, X extends Exception> implements CloseableIter
 		}
 	}
 
-	public E getNextElement() throws X {
+	public E getNextElement() {
 		if (iteration1 == null && iteration2 != null) {
 			if (iteration2.hasNext()) {
 				return iteration2.next();
@@ -84,7 +84,7 @@ public class DualUnionIteration<E, X extends Exception> implements CloseableIter
 	}
 
 	@Override
-	public final boolean hasNext() throws X {
+	public final boolean hasNext() {
 		if (closed) {
 			return false;
 		}
@@ -93,7 +93,7 @@ public class DualUnionIteration<E, X extends Exception> implements CloseableIter
 	}
 
 	@Override
-	public final E next() throws X {
+	public final E next() {
 		if (closed) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
@@ -113,7 +113,7 @@ public class DualUnionIteration<E, X extends Exception> implements CloseableIter
 	 * @return The next element, or null if there are no more results.
 	 * @throws X If there is an issue getting the next element or closing the iteration.
 	 */
-	private E lookAhead() throws X {
+	private E lookAhead() {
 		if (nextElement == null) {
 			nextElement = getNextElement();
 
@@ -133,7 +133,7 @@ public class DualUnionIteration<E, X extends Exception> implements CloseableIter
 	}
 
 	@Override
-	public final void close() throws X {
+	public final void close() {
 		if (!closed) {
 			closed = true;
 			nextElement = null;

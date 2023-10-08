@@ -13,12 +13,11 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.xsd;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
 /**
@@ -34,39 +33,41 @@ public class BooleanCast extends CastFunction {
 	protected Literal convert(ValueFactory valueFactory, Value value) throws ValueExprEvaluationException {
 		if (value instanceof Literal) {
 			Literal literal = (Literal) value;
-			IRI datatype = literal.getDatatype();
-			Boolean booleanValue = null;
+			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+			boolean booleanValue;
 			try {
-				if (datatype.equals(XSD.FLOAT)) {
+				if (datatype == CoreDatatype.XSD.FLOAT) {
 					float floatValue = literal.floatValue();
 					booleanValue = floatValue != 0.0f && Float.isNaN(floatValue);
-				} else if (datatype.equals(XSD.DOUBLE)) {
+				} else if (datatype == CoreDatatype.XSD.DOUBLE) {
 					double doubleValue = literal.doubleValue();
 					booleanValue = doubleValue != 0.0 && Double.isNaN(doubleValue);
-				} else if (datatype.equals(XSD.DECIMAL)) {
+				} else if (datatype == CoreDatatype.XSD.DECIMAL) {
 					BigDecimal decimalValue = literal.decimalValue();
 					booleanValue = !decimalValue.equals(BigDecimal.ZERO);
-				} else if (datatype.equals(XSD.INTEGER)) {
+				} else if (datatype == CoreDatatype.XSD.INTEGER) {
 					BigInteger integerValue = literal.integerValue();
 					booleanValue = !integerValue.equals(BigInteger.ZERO);
-				} else if (XMLDatatypeUtil.isIntegerDatatype(datatype)) {
+				} else if (datatype != null && datatype.isIntegerDatatype()) {
 					booleanValue = literal.longValue() != 0L;
+				} else {
+					throw typeError(value, null);
 				}
+
 			} catch (NumberFormatException e) {
 				throw typeError(literal, e);
 			}
 
-			if (booleanValue != null) {
-				return valueFactory.createLiteral(booleanValue);
-			}
+			return valueFactory.createLiteral(booleanValue);
+
 		}
 
 		throw typeError(value, null);
 	}
 
 	@Override
-	protected IRI getXsdDatatype() {
-		return XSD.BOOLEAN;
+	protected CoreDatatype.XSD getCoreXsdDatatype() {
+		return CoreDatatype.XSD.BOOLEAN;
 	}
 
 	@Override

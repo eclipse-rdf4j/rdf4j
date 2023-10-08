@@ -23,21 +23,21 @@ public abstract class IterationTest {
 
 	protected static final List<String> stringList2 = Arrays.asList("4", "5", "6", "7", "8");
 
-	protected static CloseableIteration<String, Exception> createStringList1Iteration() {
+	protected static CloseableIteration<String> createStringList1Iteration() {
 		return new CloseableIteratorIteration<>(stringList1.iterator());
 	}
 
-	protected static CloseableIteration<String, Exception> createStringList2Iteration() {
+	protected static CloseableIteration<String> createStringList2Iteration() {
 		return new CloseableIteratorIteration<>(stringList2.iterator());
 	}
 
-	protected abstract Iteration<String, Exception> createTestIteration() throws Exception;
+	protected abstract CloseableIteration<String> createTestIteration();
 
 	protected abstract int getTestIterationSize();
 
 	@Test
 	public void testFullIteration() throws Exception {
-		Iteration<String, Exception> iter = createTestIteration();
+		CloseableIteration<String> iter = createTestIteration();
 		int count = 0;
 
 		while (iter.hasNext()) {

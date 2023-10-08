@@ -50,18 +50,16 @@ public class RandTest {
 	private final ValueFactory f = SimpleValueFactory.getInstance();
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		rand = new Rand();
 	}
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 	}
 
 	@Test
@@ -92,7 +90,7 @@ public class RandTest {
 			}
 
 			@Override
-			public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj,
+			public CloseableIteration<? extends Statement> getStatements(Resource subj,
 					IRI pred, Value obj, Resource... contexts) throws QueryEvaluationException {
 				// TODO Auto-generated method stub
 				return null;

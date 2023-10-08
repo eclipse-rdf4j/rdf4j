@@ -102,8 +102,8 @@ import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
-import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateFunctionRegistry;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAbs;
@@ -938,7 +938,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 					if (subj.equals(left) || subj.equals(right)) {
 						if (obj.equals(left) || obj.equals(right)) {
-							sp.setObjectVar(subj.clone());
+							sp.replaceChildNode(sp.getObjectVar(), subj.clone());
 						}
 					}
 				}
@@ -2334,9 +2334,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Var visit(ASTVar node, Object data) throws VisitorException {
-		Var var = new Var(node.getName());
-		var.setAnonymous(node.isAnonymous());
-		return var;
+		return new Var(node.getName(), node.isAnonymous());
 	}
 
 	@Override

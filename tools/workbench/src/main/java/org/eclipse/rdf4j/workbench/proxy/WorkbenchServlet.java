@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.workbench.proxy;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLDecoder;
@@ -197,7 +196,7 @@ public class WorkbenchServlet extends AbstractServlet {
 		return manager;
 	}
 
-	private File asLocalFile(final URL rdf) throws UnsupportedEncodingException {
+	private File asLocalFile(final URL rdf) {
 		return new File(URLDecoder.decode(rdf.getFile(), StandardCharsets.UTF_8));
 	}
 

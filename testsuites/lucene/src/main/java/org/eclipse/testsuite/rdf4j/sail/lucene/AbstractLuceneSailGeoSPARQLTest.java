@@ -86,10 +86,10 @@ public abstract class AbstractLuceneSailGeoSPARQLTest {
 
 	protected Repository repository;
 
-	protected abstract void configure(LuceneSail sail) throws IOException;
+	protected abstract void configure(LuceneSail sail);
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp() {
 		// setup a LuceneSail
 		MemoryStore memoryStore = new MemoryStore();
 		// enable lock tracking
@@ -131,7 +131,7 @@ public abstract class AbstractLuceneSailGeoSPARQLTest {
 	}
 
 	@Test
-	public void testTriplesStored() throws Exception {
+	public void testTriplesStored() {
 		// are the triples stored in the underlying sail?
 		checkPoints();
 		checkPolygons();

@@ -123,16 +123,16 @@ public interface QueryEvaluationContext {
 	}
 
 	default Predicate<BindingSet> hasBinding(String variableName) {
-		return (bs) -> bs.hasBinding(variableName);
+		return bs -> bs.hasBinding(variableName);
 	}
 
 	default Function<BindingSet, Binding> getBinding(String variableName) {
-		return (bs) -> bs.getBinding(variableName);
+		return bs -> bs.getBinding(variableName);
 	}
 
 	default Function<BindingSet, Value> getValue(String variableName) {
 		Function<BindingSet, Binding> getBinding = getBinding(variableName);
-		return (bs) -> {
+		return bs -> {
 			Binding binding = getBinding.apply(bs);
 			if (binding == null) {
 				return null;

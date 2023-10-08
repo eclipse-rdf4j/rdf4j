@@ -14,7 +14,6 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * @author Jeen Broekstra
@@ -24,7 +23,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 public class TupleQueryResultImpl extends IteratingTupleQueryResult {
 
 	public TupleQueryResultImpl(List<String> bindingNames,
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSetIter) {
+			CloseableIteration<? extends BindingSet> bindingSetIter) {
 		super(bindingNames, bindingSetIter);
 	}
 

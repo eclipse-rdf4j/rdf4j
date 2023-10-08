@@ -230,7 +230,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Var var) {
 			if (var.getName().equals(varName)) {
-				var.setValue(value);
+				var.replaceWith(new Var(varName, value, var.isAnonymous(), var.isConstant()));
 			}
 		}
 	}

@@ -19,7 +19,7 @@ public class StringRioSettingTest extends RioSettingTest<String> {
 	@Test
 	@Override
 	@Disabled
-	public void testConvertIllegal() throws Exception {
+	public void testConvertIllegal() {
 	}
 
 	@Override

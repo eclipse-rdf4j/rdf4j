@@ -36,13 +36,13 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
  * @author Bart Hanssens
  */
 class HDTDictionary extends HDTPart {
-	protected final static byte[] DICT_FORMAT = "<http://purl.org/HDT/hdt#dictionaryFour>"
+	final static byte[] DICT_FORMAT = "<http://purl.org/HDT/hdt#dictionaryFour>"
 			.getBytes(StandardCharsets.US_ASCII);
-	protected final static String DICT_MAPPING = "mapping";
-	protected final static String DICT_ELEMENTS = "elements";
+	final static String DICT_MAPPING = "mapping";
+	final static String DICT_ELEMENTS = "elements";
 
 	@Override
-	protected void parse(InputStream is) throws IOException {
+	void parse(InputStream is) throws IOException {
 		// don't close CheckedInputStream, as it will close the underlying inputstream
 		try (UncloseableInputStream uis = new UncloseableInputStream(is);
 				CheckedInputStream cis = new CheckedInputStream(uis, new CRC16())) {

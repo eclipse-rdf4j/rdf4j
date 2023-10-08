@@ -29,9 +29,6 @@ import org.eclipse.rdf4j.sail.config.SailImplConfig;
 
 public abstract class AbstractLuceneSailConfig extends AbstractDelegatingSailImplConfig {
 
-	private static final boolean USE_CONFIG = "true"
-			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
-
 	private static final String PARAMETER_PREFIX = "lucene.";
 
 	private String indexDir;
@@ -85,19 +82,11 @@ public abstract class AbstractLuceneSailConfig extends AbstractDelegatingSailImp
 
 		m.setNamespace(CONFIG.NS);
 		if (indexDir != null) {
-			if (USE_CONFIG) {
-				m.add(implNode, CONFIG.Lucene.indexDir, literal(indexDir));
-			} else {
-				m.add(implNode, INDEX_DIR, literal(indexDir));
-			}
+			m.add(implNode, CONFIG.Lucene.indexDir, literal(indexDir));
 		}
 
 		for (String key : getParameterNames()) {
-			if (USE_CONFIG) {
-				m.add(implNode, iri(CONFIG.NAMESPACE, PARAMETER_PREFIX + key), literal(getParameter(key)));
-			} else {
-				m.add(implNode, iri(LuceneSailConfigSchema.NAMESPACE, key), literal(getParameter(key)));
-			}
+			m.add(implNode, iri(CONFIG.NAMESPACE, PARAMETER_PREFIX + key), literal(getParameter(key)));
 		}
 
 		return implNode;

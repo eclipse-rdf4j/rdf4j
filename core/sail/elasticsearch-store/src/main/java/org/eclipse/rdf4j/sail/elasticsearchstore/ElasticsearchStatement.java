@@ -22,8 +22,9 @@ class ElasticsearchStatement extends ExtensibleStatementImpl implements Elastics
 
 	private final String elasticsearchId;
 
-	ElasticsearchStatement(String elasticsearchId, Resource subject, IRI predicate, Value object, boolean inferred) {
-		super(subject, predicate, object, inferred);
+	ElasticsearchStatement(String elasticsearchId, Resource subject, IRI predicate, Value object,
+			Resource context, boolean inferred) {
+		super(subject, predicate, object, context, inferred);
 		this.elasticsearchId = elasticsearchId;
 	}
 

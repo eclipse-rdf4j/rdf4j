@@ -368,7 +368,7 @@
 		<jackson.version>2.13.5</jackson.version>
 		<httpcore.version>4.4.16</httpcore.version>
 		<jsonldjava.version>0.13.4</jsonldjava.version>
-		<last.japicmp.compare.version>4.0.0</last.japicmp.compare.version>
+		<last.japicmp.compare.version>5.0.0</last.japicmp.compare.version>
 		<jaxb.version>2.3.8</jaxb.version>
 		<lwjgl.version>3.3.3</lwjgl.version>
 		<lucene.version>8.9.0</lucene.version>
@@ -619,11 +619,6 @@
 						<artifactId>httpmime</artifactId>
 					</exclusion>
 				</exclusions>
-			</dependency>
-			<dependency>
-				<groupId>org.mapdb</groupId>
-				<artifactId>mapdb</artifactId>
-				<version>1.0.9</version>
 			</dependency>
 		</dependencies>
 	</dependencyManagement>
@@ -1059,6 +1054,10 @@
 				<inherited>true</inherited>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-enforcer-plugin</artifactId>
+			</plugin>
+			<plugin>
+				<groupId>com.github.siom79.japicmp</groupId>
+				<artifactId>japicmp-maven-plugin</artifactId>
 			</plugin>
 		</plugins>
 		<extensions>

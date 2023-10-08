@@ -126,7 +126,7 @@ public class ComplexTargetBenchmark {
 	}
 
 	@Benchmark
-	public void benchmark() throws Exception {
+	public void benchmark() {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : transactions) {

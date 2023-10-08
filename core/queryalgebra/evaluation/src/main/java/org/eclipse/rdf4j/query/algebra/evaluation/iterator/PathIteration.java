@@ -15,7 +15,6 @@ import java.util.Queue;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -30,7 +29,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
-public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class PathIteration extends LookAheadIteration<BindingSet> {
 
 	/**
 	 *
@@ -39,7 +38,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 	private long currentLength;
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> currentIter;
+	private CloseableIteration<BindingSet> currentIter;
 
 	private final BindingSet bindings;
 
@@ -97,7 +96,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 	protected BindingSet getNextElement() throws QueryEvaluationException {
 		again: while (true) {
 			while (currentIter != null && !currentIter.hasNext()) {
-				Iterations.closeCloseable(currentIter);
+				currentIter.close();
 				createIteration();
 				// stop condition: if the iter is an EmptyIteration
 				if (currentIter == null) {
@@ -219,7 +218,9 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 		try {
 			super.handleClose();
 		} finally {
-			Iterations.closeCloseable(currentIter);
+			if (currentIter != null) {
+				currentIter.close();
+			}
 		}
 
 	}
@@ -277,7 +278,8 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 			TupleExpr pathExprClone = pathExpression.clone();
 
 			if (startVarFixed && endVarFixed) {
-				Var replacement = createAnonVar(JOINVAR_PREFIX + currentLength + "_" + this.hashCode());
+				String varName = JOINVAR_PREFIX + currentLength + "_" + this.hashCode();
+				Var replacement = createAnonVar(varName, null, true);
 
 				VarReplacer replacer = new VarReplacer(endVar, replacement, 0, false);
 				pathExprClone.visit(replacer);
@@ -294,13 +296,10 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 				if (startVarFixed && endVarFixed) {
 
-					Var startReplacement = createAnonVar(JOINVAR_PREFIX + currentLength + "_" + this.hashCode());
-					Var endReplacement = createAnonVar("END_" + JOINVAR_PREFIX + this.hashCode());
-					startReplacement.setAnonymous(false);
-					endReplacement.setAnonymous(false);
-
 					Value v = currentVp.getEndValue();
-					startReplacement.setValue(v);
+					Var startReplacement = createAnonVar(JOINVAR_PREFIX + currentLength + "_" + this.hashCode(), v,
+							false);
+					Var endReplacement = createAnonVar("END_" + JOINVAR_PREFIX + this.hashCode(), null, false);
 
 					VarReplacer replacer = new VarReplacer(startVar, startReplacement, 0, false);
 					pathExprClone.visit(replacer);
@@ -318,8 +317,8 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 						v = currentVp.getStartValue();
 					}
 
-					Var replacement = createAnonVar(JOINVAR_PREFIX + currentLength + "-" + this.hashCode());
-					replacement.setValue(v);
+					String varName = JOINVAR_PREFIX + currentLength + "-" + this.hashCode();
+					Var replacement = createAnonVar(varName, v, true);
 
 					VarReplacer replacer = new VarReplacer(toBeReplaced, replacement, 0, false);
 					pathExprClone.visit(replacer);
@@ -430,7 +429,8 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 				QueryModelNode parent = var.getParentNode();
 				parent.replaceChildNode(var, replacement.clone());
 			} else if (replaceAnons && var.isAnonymous() && !var.hasValue()) {
-				Var replacementVar = createAnonVar("anon-replace-" + var.getName() + index);
+				String varName = "anon-replace-" + var.getName() + index;
+				Var replacementVar = createAnonVar(varName, null, true);
 				QueryModelNode parent = var.getParentNode();
 				parent.replaceChildNode(var, replacementVar);
 			}
@@ -440,10 +440,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 	private Var createAnonVar(String varName, Value v, boolean anonymous) {
 		namedIntermediateJoins.add(varName);
-		return new Var(varName, null, anonymous, false);
+		return new Var(varName, v, anonymous, false);
 	}
 
-	public Var createAnonVar(String varName) {
-		return createAnonVar(varName, null, true);
-	}
 }

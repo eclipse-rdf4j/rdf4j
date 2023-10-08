@@ -17,9 +17,9 @@ public class ConvertingIterationTest extends CloseableIterationTest {
 
 	private static final List<Integer> intList = Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
 
-	protected static CloseableIteration<String, Exception> createConvertingIteration() {
-		Iteration<Integer, Exception> intIteration = new CloseableIteratorIteration<>(intList.iterator());
-		return new ConvertingIteration<Integer, String, Exception>(intIteration) {
+	protected static CloseableIteration<String> createConvertingIteration() {
+		CloseableIteration<Integer> intIteration = new CloseableIteratorIteration<>(intList.iterator());
+		return new ConvertingIteration<Integer, String>(intIteration) {
 
 			@Override
 			protected String convert(Integer integer) {
@@ -29,7 +29,7 @@ public class ConvertingIterationTest extends CloseableIterationTest {
 	}
 
 	@Override
-	protected CloseableIteration<String, Exception> createTestIteration() {
+	protected CloseableIteration<String> createTestIteration() {
 		return createConvertingIteration();
 	}
 

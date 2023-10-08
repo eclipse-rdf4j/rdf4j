@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -31,7 +30,18 @@ public final class ProjectionQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
-		return new ProjectionIterator(projection, qes.evaluate(bindings), bindings, context);
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		CloseableIteration<BindingSet> evaluate = null;
+
+		try {
+			evaluate = qes.evaluate(bindings);
+			return new ProjectionIterator(projection, evaluate, bindings, context);
+		} catch (Throwable t) {
+			if (evaluate != null) {
+				evaluate.close();
+			}
+			throw t;
+		}
+
 	}
 }
