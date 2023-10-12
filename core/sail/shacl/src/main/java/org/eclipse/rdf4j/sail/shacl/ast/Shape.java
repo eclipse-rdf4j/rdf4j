@@ -97,7 +97,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 	private static final Logger logger = LoggerFactory.getLogger(Shape.class);
 	protected boolean produceValidationReports;
 
-	Resource id;
+	private Resource id;
 	TargetChain targetChain;
 
 	List<Target> target = new ArrayList<>();

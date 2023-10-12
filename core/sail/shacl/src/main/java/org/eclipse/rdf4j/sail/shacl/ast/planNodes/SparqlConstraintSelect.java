@@ -17,6 +17,7 @@ import java.util.Objects;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -28,8 +29,10 @@ import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+import org.eclipse.rdf4j.sail.shacl.ast.ShaclSparqlConstraintFailureException;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.SparqlConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,7 +50,7 @@ public class SparqlConstraintSelect implements PlanNode {
 	private final String query;
 	private final Resource[] dataGraph;
 	private final boolean produceValidationReports;
-	private final ConstraintComponent constraintComponent;
+	private final SparqlConstraintComponent constraintComponent;
 	private final Shape shape;
 	private final String[] variables;
 	private final ConstraintComponent.Scope scope;
@@ -58,7 +61,7 @@ public class SparqlConstraintSelect implements PlanNode {
 
 	public SparqlConstraintSelect(SailConnection connection, PlanNode targets, String query,
 			ConstraintComponent.Scope scope,
-			Resource[] dataGraph, boolean produceValidationReports, ConstraintComponent constraintComponent,
+			Resource[] dataGraph, boolean produceValidationReports, SparqlConstraintComponent constraintComponent,
 			Shape shape) {
 		this.connection = connection;
 		this.targets = targets;
@@ -113,6 +116,13 @@ public class SparqlConstraintSelect implements PlanNode {
 
 					if (results.hasNext()) {
 						BindingSet bindingSet = results.next();
+						if (bindingSet.hasBinding("failure")) {
+							if (bindingSet.getValue("failure").equals(BooleanLiteral.TRUE)) {
+								throw new ShaclSparqlConstraintFailureException(shape, query, bindingSet,
+										nextTarget.getActiveTarget(), dataGraph);
+							}
+						}
+
 						Value value = bindingSet.getValue("value");
 						Value path = bindingSet.getValue("path");
 
