@@ -106,10 +106,6 @@ public abstract class ConvertingIteration<S, T> extends AbstractCloseableIterati
 	 */
 	@Override
 	protected void handleClose() {
-		try {
-			super.handleClose();
-		} finally {
-			iter.close();
-		}
+		iter.close();
 	}
 }

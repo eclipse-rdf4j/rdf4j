@@ -136,12 +136,8 @@ public class ParallelLeftJoinTask extends ParallelTaskBase<BindingSet> {
 
 		@Override
 		protected void handleClose() throws QueryEvaluationException {
-			try {
-				super.handleClose();
-			} finally {
-				if (rightIter != null) {
-					rightIter.close();
-				}
+			if (rightIter != null) {
+				rightIter.close();
 			}
 		}
 

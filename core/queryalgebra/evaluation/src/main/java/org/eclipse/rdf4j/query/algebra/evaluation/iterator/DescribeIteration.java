@@ -27,6 +27,8 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 
 /**
  * Iteration that implements a simplified version of Symmetric Concise Bounded Description (omitting reified
@@ -208,7 +210,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet> {
 	protected CloseableIteration<BindingSet> createNextIteration(Value subject, Value object)
 			throws QueryEvaluationException {
 		if (subject == null && object == null) {
-			return new EmptyIteration<>();
+			return QueryEvaluationStep.EMPTY_ITERATION;
 		}
 
 		Var subjVar = new Var(VARNAME_SUBJECT, subject);
@@ -222,17 +224,11 @@ public class DescribeIteration extends LookAheadIteration<BindingSet> {
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
 		try {
-			super.handleClose();
-
-		} finally {
-			try {
-				if (currentDescribeExprIter != null) {
-					currentDescribeExprIter.close();
-				}
-			} finally {
-				sourceIter.close();
+			if (currentDescribeExprIter != null) {
+				currentDescribeExprIter.close();
 			}
-
+		} finally {
+			sourceIter.close();
 		}
 	}
 }

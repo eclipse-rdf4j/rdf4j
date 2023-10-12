@@ -121,10 +121,6 @@ public class IterationWrapper<E> extends AbstractCloseableIteration<E> {
 	 */
 	@Override
 	protected void handleClose() {
-		try {
-			super.handleClose();
-		} finally {
-			wrappedIter.close();
-		}
+		wrappedIter.close();
 	}
 }

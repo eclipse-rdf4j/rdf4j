@@ -66,4 +66,9 @@ public class OffsetIteration<E> extends FilterIteration<E> {
 			return true;
 		}
 	}
+
+	@Override
+	protected void handleClose() {
+
+	}
 }

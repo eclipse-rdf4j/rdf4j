@@ -51,4 +51,9 @@ public class FilteringIteration extends FilterIteration<BindingSet> {
 			return false;
 		}
 	}
+
+	@Override
+	protected final void handleClose() {
+
+	}
 }

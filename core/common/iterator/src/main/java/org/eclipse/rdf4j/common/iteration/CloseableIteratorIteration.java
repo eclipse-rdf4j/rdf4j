@@ -75,4 +75,9 @@ public class CloseableIteratorIteration<E> extends AbstractCloseableIteration<E>
 
 		iter.remove();
 	}
+
+	@Override
+	protected void handleClose() {
+
+	}
 }

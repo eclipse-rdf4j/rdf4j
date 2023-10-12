@@ -146,12 +146,8 @@ public class IntersectIteration<E> extends FilterIteration<E> {
 
 	@Override
 	protected void handleClose() {
-		try {
-			super.handleClose();
-		} finally {
-			if (arg2 != null) {
-				arg2.close();
-			}
+		if (arg2 != null) {
+			arg2.close();
 		}
 	}
 

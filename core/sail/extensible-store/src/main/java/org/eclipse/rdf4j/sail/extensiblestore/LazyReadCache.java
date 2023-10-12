@@ -129,6 +129,7 @@ public class LazyReadCache implements DataStructureInterface {
 		if (statements != null) {
 
 			return new LookAheadIteration<>() {
+
 				final Iterator<ExtensibleStatement> iterator = statements.iterator();
 
 				@Override
@@ -137,6 +138,11 @@ public class LazyReadCache implements DataStructureInterface {
 						return iterator.next();
 					}
 					return null;
+				}
+
+				@Override
+				protected void handleClose() {
+
 				}
 			};
 

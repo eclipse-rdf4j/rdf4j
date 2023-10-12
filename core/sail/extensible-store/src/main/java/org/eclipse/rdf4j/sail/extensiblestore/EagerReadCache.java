@@ -93,6 +93,12 @@ public class EagerReadCache implements DataStructureInterface {
 				}
 				return null;
 			}
+
+			@Override
+			protected void handleClose() {
+
+			}
+
 		}, subject, predicate, object, inferred, context);
 	}
 

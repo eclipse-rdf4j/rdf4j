@@ -72,6 +72,11 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 							&& bindingSet.getValue("object") instanceof Value
 							&& (context == null || context instanceof Resource);
 				}
+
+				@Override
+				protected void handleClose() {
+
+				}
 			};
 
 			bindingsIter3 = enforceMaxQueryTime(bindingsIter2);

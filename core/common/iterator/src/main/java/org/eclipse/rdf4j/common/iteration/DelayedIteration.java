@@ -111,12 +111,8 @@ public abstract class DelayedIteration<E> extends AbstractCloseableIteration<E> 
 	 */
 	@Override
 	protected void handleClose() {
-		try {
-			super.handleClose();
-		} finally {
-			if (iter != null) {
-				iter.close();
-			}
+		if (iter != null) {
+			iter.close();
 		}
 	}
 }

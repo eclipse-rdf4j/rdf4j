@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
@@ -40,6 +41,8 @@ public class SPARQLMinusIteration extends FilterIteration<BindingSet> {
 	private boolean initialized;
 
 	private Set<BindingSet> excludeSet;
+	private Set<String> excludeSetBindingNames;
+	private boolean excludeSetBindingNamesAreAllTheSame;
 
 	/*--------------*
 	 * Constructors *
@@ -71,18 +74,48 @@ public class SPARQLMinusIteration extends FilterIteration<BindingSet> {
 		if (!initialized) {
 			// Build set of elements-to-exclude from right argument
 			excludeSet = makeSet(getRightArg());
+			excludeSetBindingNames = excludeSet.stream()
+					.map(BindingSet::getBindingNames)
+					.flatMap(Set::stream)
+					.collect(Collectors.toSet());
+			excludeSetBindingNamesAreAllTheSame = excludeSet.stream().allMatch(b -> {
+				Set<String> bindingNames = b.getBindingNames();
+				if (bindingNames.size() == excludeSetBindingNames.size()) {
+					return bindingNames.containsAll(excludeSetBindingNames);
+				}
+				return false;
+			});
+
 			initialized = true;
 		}
 
-		for (BindingSet excluded : excludeSet) {
-			Set<String> bindingNames = bindingSet.getBindingNames();
-			boolean hasSharedBindings = false;
+		Set<String> bindingNames = bindingSet.getBindingNames();
+		boolean hasSharedBindings = false;
 
-			for (String bindingName : excluded.getBindingNames()) {
+		if (excludeSetBindingNamesAreAllTheSame) {
+			for (String bindingName : excludeSetBindingNames) {
 				if (bindingNames.contains(bindingName)) {
 					hasSharedBindings = true;
 					break;
 				}
+			}
+
+			if (!hasSharedBindings) {
+				return true;
+			}
+		}
+
+		for (BindingSet excluded : excludeSet) {
+
+			if (!excludeSetBindingNamesAreAllTheSame) {
+				hasSharedBindings = false;
+				for (String bindingName : excluded.getBindingNames()) {
+					if (bindingNames.contains(bindingName)) {
+						hasSharedBindings = true;
+						break;
+					}
+				}
+
 			}
 
 			// two bindingsets that share no variables are compatible by
@@ -117,12 +150,8 @@ public class SPARQLMinusIteration extends FilterIteration<BindingSet> {
 
 	@Override
 	protected void handleClose() {
-		try {
-			super.handleClose();
-		} finally {
-			if (rightArg != null) {
-				rightArg.close();
-			}
+		if (rightArg != null) {
+			rightArg.close();
 		}
 	}
 

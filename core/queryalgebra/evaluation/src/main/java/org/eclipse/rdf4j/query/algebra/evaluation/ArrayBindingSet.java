@@ -46,6 +46,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	// Creating a LinkedHashSet is expensive, so we should cache the binding names set
 	private Set<String> bindingNamesSetCache;
+	private boolean empty;
 
 	private final boolean[] whichBindingsHaveBeenSet;
 
@@ -62,6 +63,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		this.bindingNames = names;
 		this.values = new Value[names.length];
 		this.whichBindingsHaveBeenSet = new boolean[names.length];
+		this.empty = true;
 	}
 
 	public ArrayBindingSet(BindingSet toCopy, Set<String> names, String[] namesArray) {
@@ -77,14 +79,17 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 				this.whichBindingsHaveBeenSet[i] = true;
 			}
 		}
+		this.empty = toCopy.isEmpty();
 
 	}
 
 	public ArrayBindingSet(ArrayBindingSet toCopy, String... names) {
 		this.bindingNames = names;
+
 		this.values = Arrays.copyOf(toCopy.values, toCopy.values.length);
 		this.whichBindingsHaveBeenSet = Arrays.copyOf(toCopy.whichBindingsHaveBeenSet,
 				toCopy.whichBindingsHaveBeenSet.length);
+		this.empty = toCopy.empty;
 	}
 
 	/**
@@ -105,6 +110,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		return (v, a) -> {
 			a.values[index] = v;
 			a.whichBindingsHaveBeenSet[index] = true;
+			a.empty = false;
 			a.clearCache();
 		};
 	}
@@ -120,6 +126,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			assert !a.whichBindingsHaveBeenSet[index] : "variable already bound: " + bindingName;
 			a.values[index] = v;
 			a.whichBindingsHaveBeenSet[index] = true;
+			a.empty = false;
 			a.clearCache();
 		};
 
@@ -244,6 +251,9 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public int size() {
+		if (empty) {
+			return 0;
+		}
 		int size = 0;
 
 		for (boolean value : whichBindingsHaveBeenSet) {
@@ -364,20 +374,25 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 		this.values[index] = value;
 		this.whichBindingsHaveBeenSet[index] = value != null;
+		if (value == null) {
+			this.empty = true;
+			for (boolean b : whichBindingsHaveBeenSet) {
+				if (b) {
+					this.empty = false;
+					break;
+				}
+			}
+		}
 		clearCache();
 	}
 
 	@Override
 	public boolean isEmpty() {
-		for (int index = 0; index < values.length; index++) {
-			if (whichBindingsHaveBeenSet[index]) {
-				return false;
-			}
-		}
-		return true;
+		return empty;
 	}
 
 	private void clearCache() {
 		bindingNamesSetCache = null;
 	}
+
 }

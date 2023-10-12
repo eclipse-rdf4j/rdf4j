@@ -543,14 +543,13 @@ public class QueryResults extends Iterations {
 
 		Set<String> bs2BindingNames = bs2.getBindingNames();
 
-		for (String bindingName : bs1BindingNames) {
-
-			if (bs2BindingNames.contains(bindingName)) {
-				Value value1 = bs1.getValue(bindingName);
+		for (Binding binding : bs1) {
+			if (bs2BindingNames.contains(binding.getName())) {
+				Value value1 = binding.getValue();
 
 				// if a variable is unbound in one set it is compatible
 				if (value1 != null) {
-					Value value2 = bs2.getValue(bindingName);
+					Value value2 = bs2.getValue(binding.getName());
 
 					// if a variable is unbound in one set it is compatible
 					if (value2 != null && !value1.equals(value2)) {
@@ -559,6 +558,7 @@ public class QueryResults extends Iterations {
 				}
 
 			}
+
 		}
 
 		return true;
@@ -619,11 +619,7 @@ public class QueryResults extends Iterations {
 
 		@Override
 		public void handleClose() throws QueryEvaluationException {
-			try {
-				super.handleClose();
-			} finally {
-				filter.close();
-			}
+			filter.close();
 		}
 
 		@Override
@@ -687,11 +683,7 @@ public class QueryResults extends Iterations {
 
 		@Override
 		public void handleClose() throws QueryEvaluationException {
-			try {
-				super.handleClose();
-			} finally {
-				filter.close();
-			}
+			filter.close();
 		}
 
 		@Override

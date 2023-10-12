@@ -35,9 +35,9 @@ public class UnionQueryEvaluationStep implements QueryEvaluationStep {
 			evaluate = leftQes.evaluate(bindings);
 			evaluate1 = rightQes.evaluate(bindings);
 
-			if (evaluate instanceof EmptyIteration) {
+			if (evaluate == QueryEvaluationStep.EMPTY_ITERATION) {
 				return evaluate1;
-			} else if (evaluate1 instanceof EmptyIteration) {
+			} else if (evaluate1 == QueryEvaluationStep.EMPTY_ITERATION) {
 				return evaluate;
 			}
 

@@ -60,16 +60,11 @@ public class StopRemainingExecutionsOnCloseIteration
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
 		try {
-			super.handleClose();
+			inner.close();
 		} finally {
-			try {
-				inner.close();
-			} finally {
-				// make sure to close all scheduled / running parallel executions
-				// (e.g. if the query result is not fully consumed)
-				queryInfo.close();
-			}
-
+			// make sure to close all scheduled / running parallel executions
+			// (e.g. if the query result is not fully consumed)
+			queryInfo.close();
 		}
 	}
 

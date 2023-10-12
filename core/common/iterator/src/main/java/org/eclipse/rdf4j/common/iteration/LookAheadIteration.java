@@ -94,8 +94,4 @@ public abstract class LookAheadIteration<E> extends AbstractCloseableIteration<E
 		throw new UnsupportedOperationException();
 	}
 
-	@Override
-	protected void handleClose() {
-		nextElement = null;
-	}
 }

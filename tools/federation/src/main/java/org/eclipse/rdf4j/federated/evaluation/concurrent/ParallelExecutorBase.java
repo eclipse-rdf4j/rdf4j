@@ -178,25 +178,20 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T>
 	@Override
 	public void handleClose() throws QueryEvaluationException {
 		try {
-			try {
-				rightQueue.close();
-			} finally {
-				if (rightIter != null) {
-					try {
-						rightIter.close();
-						rightIter = null;
-					} catch (Throwable ignore) {
-						if (ignore instanceof InterruptedException) {
-							Thread.currentThread().interrupt();
-						}
-						log.trace("Failed to send interrupt signal:", ignore);
+			rightQueue.close();
+		} finally {
+			if (rightIter != null) {
+				try {
+					rightIter.close();
+					rightIter = null;
+				} catch (Throwable ignore) {
+					if (ignore instanceof InterruptedException) {
+						Thread.currentThread().interrupt();
 					}
+					log.trace("Failed to send interrupt signal:", ignore);
 				}
 			}
-		} finally {
-			super.handleClose();
 		}
-
 	}
 
 	/**

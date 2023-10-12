@@ -178,37 +178,33 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
 		try {
-			super.handleClose();
+			if (leftIter != null) {
+				leftIter.close();
+			}
 		} finally {
 			try {
-				if (leftIter != null) {
-					leftIter.close();
+				if (rightIter != null) {
+					rightIter.close();
 				}
 			} finally {
 				try {
-					if (rightIter != null) {
-						rightIter.close();
+					Iterator<BindingSet> toCloseHashTableValues = hashTableValues;
+					hashTableValues = null;
+					if (toCloseHashTableValues != null) {
+						closeHashValue(toCloseHashTableValues);
 					}
 				} finally {
 					try {
-						Iterator<BindingSet> toCloseHashTableValues = hashTableValues;
-						hashTableValues = null;
-						if (toCloseHashTableValues != null) {
-							closeHashValue(toCloseHashTableValues);
+						Iterator<BindingSet> toCloseScanList = scanList;
+						scanList = null;
+						if (toCloseScanList != null) {
+							disposeCache(toCloseScanList);
 						}
 					} finally {
-						try {
-							Iterator<BindingSet> toCloseScanList = scanList;
-							scanList = null;
-							if (toCloseScanList != null) {
-								disposeCache(toCloseScanList);
-							}
-						} finally {
-							Map<BindingSetHashKey, List<BindingSet>> toCloseHashTable = hashTable;
-							hashTable = null;
-							if (toCloseHashTable != null) {
-								disposeHashTable(toCloseHashTable);
-							}
+						Map<BindingSetHashKey, List<BindingSet>> toCloseHashTable = hashTable;
+						hashTable = null;
+						if (toCloseHashTable != null) {
+							disposeHashTable(toCloseHashTable);
 						}
 					}
 				}

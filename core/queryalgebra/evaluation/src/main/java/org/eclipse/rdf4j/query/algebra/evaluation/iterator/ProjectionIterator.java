@@ -43,6 +43,25 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	 * Constructors *
 	 *--------------*/
 
+	private static class BindingSetMapper {
+		Function<BindingSet, Value> valueWithSourceName;
+		BiConsumer<Value, MutableBindingSet> setTarget;
+
+		public BindingSetMapper(Function<BindingSet, Value> valueWithSourceName,
+				BiConsumer<Value, MutableBindingSet> setTarget) {
+			this.valueWithSourceName = valueWithSourceName;
+			this.setTarget = setTarget;
+		}
+
+		public Function<BindingSet, Value> getValueWithSourceName() {
+			return valueWithSourceName;
+		}
+
+		public BiConsumer<Value, MutableBindingSet> getSetTarget() {
+			return setTarget;
+		}
+	}
+
 	public ProjectionIterator(Projection projection, CloseableIteration<BindingSet> iter,
 			BindingSet parentBindings, QueryEvaluationContext context) throws QueryEvaluationException {
 		super(iter);
@@ -50,22 +69,39 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 		boolean isOuterProjection = determineOuterProjection(projection);
 		boolean includeAllParentBindings = !isOuterProjection;
 
-		BiConsumer<MutableBindingSet, BindingSet> consumer = null;
-		for (ProjectionElem pe : projectionElemList.getElements()) {
-			String projectionName = pe.getProjectionAlias().orElse(pe.getName());
-			Function<BindingSet, Value> valueWithSourceName = context.getValue(pe.getName());
-			BiConsumer<Value, MutableBindingSet> setTarget = context.setBinding(projectionName);
-			BiConsumer<MutableBindingSet, BindingSet> next = (resultBindings, sourceBindings) -> {
-				Value targetValue = valueWithSourceName.apply(sourceBindings);
-				if (!includeAllParentBindings && targetValue == null) {
-					targetValue = valueWithSourceName.apply(parentBindings);
-				}
-				if (targetValue != null) {
-					setTarget.accept(targetValue, resultBindings);
+		BindingSetMapper[] array = projectionElemList.getElements()
+				.stream()
+				.map(pe -> {
+					String projectionName = pe.getProjectionAlias().orElse(pe.getName());
+					return new BindingSetMapper(context.getValue(pe.getName()), context.setBinding(projectionName));
+				})
+				.toArray(BindingSetMapper[]::new);
+
+		BiConsumer<MutableBindingSet, BindingSet> consumer;
+
+		if (includeAllParentBindings) {
+			consumer = (resultBindings, sourceBindings) -> {
+				for (BindingSetMapper bindingSetMapper : array) {
+					Value targetValue = bindingSetMapper.valueWithSourceName.apply(sourceBindings);
+					if (targetValue != null) {
+						bindingSetMapper.setTarget.accept(targetValue, resultBindings);
+					}
 				}
 			};
-			consumer = andThen(consumer, next);
+		} else {
+			consumer = (resultBindings, sourceBindings) -> {
+				for (BindingSetMapper bindingSetMapper : array) {
+					Value targetValue = bindingSetMapper.valueWithSourceName.apply(sourceBindings);
+					if (targetValue == null) {
+						targetValue = bindingSetMapper.valueWithSourceName.apply(parentBindings);
+					}
+					if (targetValue != null) {
+						bindingSetMapper.setTarget.accept(targetValue, resultBindings);
+					}
+				}
+			};
 		}
+
 		if (projectionElemList.getElements().isEmpty()) {
 			consumer = (resultBindings, sourceBindings) -> {
 				// If there are no projection elements we do nothing.

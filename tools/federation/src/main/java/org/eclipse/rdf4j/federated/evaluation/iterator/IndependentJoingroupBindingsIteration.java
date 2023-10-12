@@ -98,10 +98,6 @@ public class IndependentJoingroupBindingsIteration extends LookAheadIteration<Bi
 
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
-		try {
-			super.handleClose();
-		} finally {
-			iter.close();
-		}
+		iter.close();
 	}
 }

@@ -124,11 +124,8 @@ public class MinusIteration<E> extends FilterIteration<E> {
 
 	@Override
 	protected void handleClose() {
-		try {
-			super.handleClose();
-		} finally {
-			if (rightArg != null)
-				rightArg.close();
+		if (rightArg != null) {
+			rightArg.close();
 		}
 	}
 }

@@ -128,13 +128,9 @@ public abstract class ExceptionConvertingIteration<E, X extends RuntimeException
 	@Override
 	protected void handleClose() {
 		try {
-			super.handleClose();
-		} finally {
-			try {
-				iter.close();
-			} catch (RuntimeException e) {
-				throw convert(e);
-			}
+			iter.close();
+		} catch (RuntimeException e) {
+			throw convert(e);
 		}
 	}
 }

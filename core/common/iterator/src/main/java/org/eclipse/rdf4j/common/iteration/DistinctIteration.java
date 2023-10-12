@@ -68,6 +68,11 @@ public class DistinctIteration<E> extends FilterIteration<E> {
 		}
 	}
 
+	@Override
+	protected void handleClose() {
+
+	}
+
 	/**
 	 * @param object
 	 * @return true if the object is in the excludeSet

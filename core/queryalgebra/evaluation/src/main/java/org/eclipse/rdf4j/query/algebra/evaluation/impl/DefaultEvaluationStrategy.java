@@ -250,11 +250,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 			@Override
 			protected void handleClose() throws QueryEvaluationException {
-				try {
-					super.handleClose();
-				} finally {
-					iter.close();
-				}
+				iter.close();
 			}
 		};
 	}
@@ -396,7 +392,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			} else if (expr instanceof SingletonSet) {
 				result = precompile(expr).evaluate(bindings);
 			} else if (expr instanceof EmptySet) {
-				result = new EmptyIteration<>();
+				result = QueryEvaluationStep.EMPTY_ITERATION;
 			} else if (expr instanceof ZeroLengthPath) {
 				result = precompile(expr).evaluate(bindings);
 			} else if (expr instanceof ArbitraryLengthPath) {
@@ -628,7 +624,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			// If we have a failed compilation we always return false.
 			// Which means empty. so let's short circuit that.
 //			ves = new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
-			return bs -> new EmptyIteration<>();
+			return bs -> QueryEvaluationStep.EMPTY_ITERATION;
 		}
 		return bs -> {
 			CloseableIteration<BindingSet> evaluate = null;
@@ -843,7 +839,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(EmptySet emptySet, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		return bindings -> new EmptyIteration<>();
+		return bindings -> QueryEvaluationStep.EMPTY_ITERATION;
 	}
 
 	@Override

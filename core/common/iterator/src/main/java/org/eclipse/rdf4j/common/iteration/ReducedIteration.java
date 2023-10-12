@@ -33,4 +33,9 @@ public class ReducedIteration<E> extends FilterIteration<E> {
 			return true;
 		}
 	}
+
+	@Override
+	protected void handleClose() {
+
+	}
 }

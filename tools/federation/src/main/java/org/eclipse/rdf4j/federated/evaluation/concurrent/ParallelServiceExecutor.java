@@ -152,6 +152,11 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet>
 		return null;
 	}
 
+	@Override
+	protected void handleClose() {
+
+	}
+
 	/**
 	 * Task for evaluating service requests
 	 *

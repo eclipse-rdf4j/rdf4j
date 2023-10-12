@@ -69,12 +69,8 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T> implement
 
 	@Override
 	protected void handleClose() throws RepositoryException {
-		try {
-			super.handleClose();
-		} finally {
-			if (wrappedIter != null) {
-				wrappedIter.close();
-			}
+		if (wrappedIter != null) {
+			wrappedIter.close();
 		}
 	}
 

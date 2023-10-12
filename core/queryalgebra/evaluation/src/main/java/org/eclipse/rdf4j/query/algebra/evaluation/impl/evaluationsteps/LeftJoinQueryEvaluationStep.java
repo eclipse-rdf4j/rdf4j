@@ -103,7 +103,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		if (containsNone) {
 			// left join is "well designed"
 			leftJoin.setAlgorithm(LeftJoinIterator.class.getSimpleName());
-			return new LeftJoinIterator(left, right, condition, bindings, leftJoin.getBindingNames());
+			return LeftJoinIterator.getInstance(left, right, condition, bindings, leftJoin.getBindingNames());
 		} else {
 			Set<String> problemVars = new HashSet<>(optionalVars);
 			problemVars.retainAll(bindings.getBindingNames());

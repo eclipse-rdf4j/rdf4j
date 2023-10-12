@@ -123,4 +123,9 @@ public class MemTripleIterator<X extends Exception> extends LookAheadIteration<M
 	private boolean isInSnapshot(MemStatement st) {
 		return snapshot < 0 || st.isInSnapshot(snapshot);
 	}
+
+	@Override
+	protected void handleClose() {
+
+	}
 }

@@ -59,6 +59,5 @@ public abstract class AbstractCloseableIteration<E> implements CloseableIteratio
 	 *
 	 * @throws X
 	 */
-	protected void handleClose() {
-	}
+	abstract protected void handleClose();
 }
