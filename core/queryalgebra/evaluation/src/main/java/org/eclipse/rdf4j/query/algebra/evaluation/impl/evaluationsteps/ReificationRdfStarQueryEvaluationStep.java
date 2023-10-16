@@ -66,9 +66,7 @@ public class ReificationRdfStarQueryEvaluationStep implements QueryEvaluationSte
 		// the expected values from TripleRef pattern and supplied bindings collection
 		return new LookAheadIteration<>() {
 			@Override
-			protected void handleClose()
-					throws QueryEvaluationException {
-				super.handleClose();
+			protected void handleClose() throws QueryEvaluationException {
 				iter.close();
 			}
 

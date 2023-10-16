@@ -76,12 +76,7 @@ public class FilteringIteration<E extends ExtensibleStatement, X extends Excepti
 
 	@Override
 	protected void handleClose() {
-		try {
-			super.handleClose();
-		} finally {
-			wrappedIteration.close();
-		}
-
+		wrappedIteration.close();
 	}
 
 	private static boolean containsContext(Resource[] haystack, Resource needle) {

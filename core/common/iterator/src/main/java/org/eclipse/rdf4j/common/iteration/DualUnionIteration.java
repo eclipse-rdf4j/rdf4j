@@ -16,7 +16,6 @@ import java.util.NoSuchElementException;
 /**
  * Provides a bag union of the two provided iterations.
  */
-@Deprecated(since = "4.1.0")
 public class DualUnionIteration<E> implements CloseableIteration<E> {
 
 	private CloseableIteration<? extends E> iteration1;
@@ -111,7 +110,6 @@ public class DualUnionIteration<E> implements CloseableIteration<E> {
 	 * Fetches the next element if it hasn't been fetched yet and stores it in {@link #nextElement}.
 	 *
 	 * @return The next element, or null if there are no more results.
-	 * @throws X If there is an issue getting the next element or closing the iteration.
 	 */
 	private E lookAhead() {
 		if (nextElement == null) {

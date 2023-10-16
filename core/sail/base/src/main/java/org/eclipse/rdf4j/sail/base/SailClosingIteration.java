@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.sail.SailException;
  *
  * @author James Leigh
  */
-abstract class SailClosingIteration<T, X extends RuntimeException> extends IterationWrapper<T> {
+abstract class SailClosingIteration<T> extends IterationWrapper<T> {
 
 	/**
 	 * Creates a new {@link CloseableIteration} that automatically closes the given {@link SailClosable}s.
@@ -35,7 +35,7 @@ abstract class SailClosingIteration<T, X extends RuntimeException> extends Itera
 	 * @param closes The {@link SailClosable}s to {@link SailClosable#close()} when the itererator is closed.
 	 * @return a {@link CloseableIteration} that closes the given {@link SailClosable}
 	 */
-	public static <E> SailClosingIteration<E, SailException> makeClosable(
+	public static <E> SailClosingIteration<E> makeClosable(
 			CloseableIteration<? extends E> iter, SailClosable... closes) {
 		return new SailClosingIteration<>(iter, closes) {
 
@@ -146,8 +146,6 @@ abstract class SailClosingIteration<T, X extends RuntimeException> extends Itera
 	 * This method is called after all of the {@link SailClosable} objects have had close called on them.
 	 *
 	 * @param e The {@link SailException} to handle.
-	 * @throws X Instances of this generic-typed exception in response to the given {@link SailException} if the handler
-	 *           decides to propagate the exception.
 	 */
-	protected abstract void handleSailException(SailException e) throws X;
+	protected abstract void handleSailException(SailException e);
 }

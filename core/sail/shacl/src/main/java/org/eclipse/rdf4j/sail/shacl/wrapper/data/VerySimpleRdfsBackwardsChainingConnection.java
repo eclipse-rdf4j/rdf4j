@@ -134,17 +134,8 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 					}
 
 					@Override
-					public void remove() throws SailException {
-						throw new IllegalStateException("Not implemented");
-					}
-
-					@Override
 					protected void handleClose() throws SailException {
-						try {
-							unionIteration.close();
-						} finally {
-							super.handleClose();
-						}
+						unionIteration.close();
 					}
 
 				};

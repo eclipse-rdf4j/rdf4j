@@ -18,7 +18,6 @@ import java.util.Objects;
  * A CloseableIteration that converts an iteration over objects of type <var>S</var> (the source type) to an iteration
  * over objects of type <var>T</var> (the target type).
  */
-@Deprecated(since = "4.1.0")
 public abstract class ConvertingIteration<S, T> extends AbstractCloseableIteration<T> {
 
 	/*-----------*
@@ -59,7 +58,7 @@ public abstract class ConvertingIteration<S, T> extends AbstractCloseableIterati
 	 *
 	 */
 	@Override
-	public boolean hasNext() {
+	public final boolean hasNext() {
 		if (isClosed()) {
 			return false;
 		}
@@ -78,7 +77,7 @@ public abstract class ConvertingIteration<S, T> extends AbstractCloseableIterati
 	 * @throws IllegalStateException            If the iteration has been closed.
 	 */
 	@Override
-	public T next() {
+	public final T next() {
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
@@ -94,7 +93,7 @@ public abstract class ConvertingIteration<S, T> extends AbstractCloseableIterati
 	 *                                       {@link #next}.
 	 */
 	@Override
-	public void remove() {
+	public final void remove() {
 		if (isClosed()) {
 			throw new IllegalStateException("The iteration has been closed.");
 		}
@@ -106,10 +105,6 @@ public abstract class ConvertingIteration<S, T> extends AbstractCloseableIterati
 	 */
 	@Override
 	protected void handleClose() {
-		try {
-			super.handleClose();
-		} finally {
-			iter.close();
-		}
+		iter.close();
 	}
 }

@@ -16,11 +16,16 @@ public class FilterIterationTest extends CloseableIterationTest {
 
 	@Override
 	protected CloseableIteration<String> createTestIteration() {
-		return new FilterIteration<String>(createStringList1Iteration()) {
+		return new FilterIteration<>(createStringList1Iteration()) {
 
 			@Override
 			protected boolean accept(String object) {
 				return "3".equals(object);
+			}
+
+			@Override
+			protected void handleClose() {
+
 			}
 
 		};

@@ -128,34 +128,6 @@ public class TupleExprs {
 	}
 
 	/**
-	 * Verifies if the supplied {@link TupleExpr} contains a {@link Projection}. If the supplied TupleExpr is a
-	 * {@link Join} or contains a {@link Join}, projections inside that Join's arguments will not be taken into account.
-	 *
-	 * @param t a tuple expression.
-	 * @return <code>true</code> if the TupleExpr contains a projection (outside of a Join), <code>false</code>
-	 *         otherwise.
-	 * @deprecated Use {@link #containsSubquery(TupleExpr)} instead.
-	 */
-	@Deprecated(since = "2.0")
-	public static boolean containsProjection(TupleExpr t) {
-		Deque<TupleExpr> queue = new ArrayDeque<>();
-		queue.add(t);
-		while (!queue.isEmpty()) {
-			TupleExpr n = queue.removeFirst();
-			if (n instanceof Projection) {
-				return true;
-			} else if (n instanceof Join) {
-				// projections already inside a Join need not be
-				// taken into account
-				return false;
-			} else {
-				queue.addAll(getChildren(n));
-			}
-		}
-		return false;
-	}
-
-	/**
 	 * Returns {@link TupleExpr} children of the given node.
 	 *
 	 * @param t a tuple expression.

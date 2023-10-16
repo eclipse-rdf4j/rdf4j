@@ -18,7 +18,6 @@ import java.util.function.Supplier;
 /**
  * An Iteration that filters any duplicate elements from an underlying iterator.
  */
-@Deprecated(since = "4.1.0")
 public class DistinctIteration<E> extends FilterIteration<E> {
 
 	/*-----------*
@@ -66,6 +65,11 @@ public class DistinctIteration<E> extends FilterIteration<E> {
 			add(object);
 			return true;
 		}
+	}
+
+	@Override
+	protected void handleClose() {
+
 	}
 
 	/**

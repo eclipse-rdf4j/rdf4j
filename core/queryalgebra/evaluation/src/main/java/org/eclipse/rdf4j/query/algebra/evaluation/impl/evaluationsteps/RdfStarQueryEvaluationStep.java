@@ -90,6 +90,11 @@ public class RdfStarQueryEvaluationStep implements QueryEvaluationStep {
 				}
 				return true;
 			}
+
+			@Override
+			protected void handleClose() {
+
+			}
 		};
 
 		return new ConvertingIteration<>(filterIter) {

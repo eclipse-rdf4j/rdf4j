@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.query;
 
 import java.io.InputStream;
 import java.lang.ref.Cleaner;
-import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -72,9 +71,10 @@ public class QueryResults extends Iterations {
 	 * @param iteration the source iteration to get the statements from.
 	 * @return a {@link Model} containing all statements obtained from the specified source iteration.
 	 */
-	public static Model asModel(CloseableIteration<? extends Statement> iteration)
-			throws QueryEvaluationException {
-		return asModel(iteration, new DynamicModelFactory());
+	public static Model asModel(CloseableIteration<? extends Statement> iteration) throws QueryEvaluationException {
+		try (iteration) {
+			return asModel(iteration, new DynamicModelFactory());
+		}
 	}
 
 	/**
@@ -84,12 +84,13 @@ public class QueryResults extends Iterations {
 	 * @param modelFactory the ModelFactory used to instantiate the model that gets returned.
 	 * @return a {@link Model} containing all statements obtained from the specified source iteration.
 	 */
-	public static Model asModel(CloseableIteration<? extends Statement> iteration,
-			ModelFactory modelFactory)
+	public static Model asModel(CloseableIteration<? extends Statement> iteration, ModelFactory modelFactory)
 			throws QueryEvaluationException {
-		Model model = modelFactory.createEmptyModel();
-		addAll(iteration, model);
-		return model;
+		try (iteration) {
+			Model model = modelFactory.createEmptyModel();
+			addAll(iteration, model);
+			return model;
+		}
 	}
 
 	/**
@@ -99,11 +100,13 @@ public class QueryResults extends Iterations {
 	 * @return a List containing all elements obtained from the specified query result.
 	 */
 	public static <T> List<T> asList(QueryResult<T> queryResult) throws QueryEvaluationException {
-		// stream.collect is slightly slower than addAll for lists
-		List<T> list = new ArrayList<>();
+		try (queryResult) {
+			// stream.collect is slightly slower than addAll for lists
+			List<T> list = new ArrayList<>();
 
-		// addAll closes the iteration
-		return addAll(queryResult, list);
+			// addAll closes the iteration
+			return addAll(queryResult, list);
+		}
 	}
 
 	/**
@@ -242,13 +245,10 @@ public class QueryResults extends Iterations {
 	 * @param baseURI The base URI for the RDF document.
 	 * @param format  The {@link RDFFormat} of the RDF document.
 	 * @return A {@link GraphQueryResult} that parses in the background, and must be closed to prevent resource leaks.
-	 * @deprecated WeakReference<?> callerReference argument will be removed
 	 */
-	@Deprecated(since = "4.1.2")
-	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFFormat format,
-			WeakReference<?> callerReference)
+	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFFormat format)
 			throws UnsupportedRDFormatException {
-		return parseGraphBackground(in, baseURI, Rio.createParser(format), callerReference);
+		return parseGraphBackground(in, baseURI, Rio.createParser(format));
 	}
 
 	/**
@@ -261,12 +261,8 @@ public class QueryResults extends Iterations {
 	 * @param baseURI The base URI for the RDF document.
 	 * @param parser  The {@link RDFParser}.
 	 * @return A {@link GraphQueryResult} that parses in the background, and must be closed to prevent resource leaks.
-	 * @deprecated WeakReference<?> callerReference argument will be removed
 	 */
-	@Deprecated(since = "4.1.2")
-	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFParser parser,
-			WeakReference<?> callerReference) {
-		assert callerReference == null;
+	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFParser parser) {
 		RDFFormat format = parser.getRDFFormat();
 		BackgroundGraphResult result = new BackgroundGraphResult(
 				new QueueCursor<>(new LinkedBlockingQueue<>(1)),
@@ -346,27 +342,32 @@ public class QueryResults extends Iterations {
 	 * @throws QueryEvaluationException
 	 */
 	public static boolean equals(TupleQueryResult tqr1, TupleQueryResult tqr2) throws QueryEvaluationException {
-		List<BindingSet> list1 = Iterations.asList(tqr1);
-		List<BindingSet> list2 = Iterations.asList(tqr2);
+		try (tqr1; tqr2) {
+			List<BindingSet> list1 = Iterations.asList(tqr1);
+			List<BindingSet> list2 = Iterations.asList(tqr2);
 
-		// Compare the number of statements in both sets
-		if (list1.size() != list2.size()) {
-			return false;
+			// Compare the number of statements in both sets
+			if (list1.size() != list2.size()) {
+				return false;
+			}
+
+			return matchBindingSets(list1, list2);
 		}
-
-		return matchBindingSets(list1, list2);
 	}
 
 	public static boolean isSubset(TupleQueryResult tqr1, TupleQueryResult tqr2) throws QueryEvaluationException {
-		List<BindingSet> list1 = Iterations.asList(tqr1);
-		List<BindingSet> list2 = Iterations.asList(tqr2);
+		try (tqr1; tqr2) {
 
-		// Compare the number of statements in both sets
-		if (list1.size() > list2.size()) {
-			return false;
+			List<BindingSet> list1 = Iterations.asList(tqr1);
+			List<BindingSet> list2 = Iterations.asList(tqr2);
+
+			// Compare the number of statements in both sets
+			if (list1.size() > list2.size()) {
+				return false;
+			}
+
+			return matchBindingSets(list1, list2);
 		}
-
-		return matchBindingSets(list1, list2);
 	}
 
 	/**
@@ -380,10 +381,12 @@ public class QueryResults extends Iterations {
 	 * @see Models#isomorphic(Iterable, Iterable)
 	 */
 	public static boolean equals(GraphQueryResult result1, GraphQueryResult result2) throws QueryEvaluationException {
-		Set<? extends Statement> graph1 = Iterations.asSet(result1);
-		Set<? extends Statement> graph2 = Iterations.asSet(result2);
+		try (result1; result2) {
+			Set<? extends Statement> graph1 = Iterations.asSet(result1);
+			Set<? extends Statement> graph2 = Iterations.asSet(result2);
 
-		return Models.isomorphic(graph1, graph2);
+			return Models.isomorphic(graph1, graph2);
+		}
 	}
 
 	private static boolean matchBindingSets(List<? extends BindingSet> queryResult1,
@@ -543,14 +546,13 @@ public class QueryResults extends Iterations {
 
 		Set<String> bs2BindingNames = bs2.getBindingNames();
 
-		for (String bindingName : bs1BindingNames) {
-
-			if (bs2BindingNames.contains(bindingName)) {
-				Value value1 = bs1.getValue(bindingName);
+		for (Binding binding : bs1) {
+			if (bs2BindingNames.contains(binding.getName())) {
+				Value value1 = binding.getValue();
 
 				// if a variable is unbound in one set it is compatible
 				if (value1 != null) {
-					Value value2 = bs2.getValue(bindingName);
+					Value value2 = bs2.getValue(binding.getName());
 
 					// if a variable is unbound in one set it is compatible
 					if (value2 != null && !value1.equals(value2)) {
@@ -559,6 +561,7 @@ public class QueryResults extends Iterations {
 				}
 
 			}
+
 		}
 
 		return true;
@@ -619,11 +622,7 @@ public class QueryResults extends Iterations {
 
 		@Override
 		public void handleClose() throws QueryEvaluationException {
-			try {
-				super.handleClose();
-			} finally {
-				filter.close();
-			}
+			filter.close();
 		}
 
 		@Override
@@ -687,11 +686,7 @@ public class QueryResults extends Iterations {
 
 		@Override
 		public void handleClose() throws QueryEvaluationException {
-			try {
-				super.handleClose();
-			} finally {
-				filter.close();
-			}
+			filter.close();
 		}
 
 		@Override

@@ -168,11 +168,7 @@ class SailDatasetImpl implements SailDataset {
 
 			@Override
 			public void handleClose() throws SailException {
-				try {
-					super.handleClose();
-				} finally {
-					namespaces.close();
-				}
+				namespaces.close();
 			}
 		};
 	}
@@ -250,11 +246,7 @@ class SailDatasetImpl implements SailDataset {
 
 			@Override
 			public void handleClose() throws SailException {
-				try {
-					super.handleClose();
-				} finally {
-					contextIDs.close();
-				}
+				contextIDs.close();
 			}
 		};
 	}
@@ -341,6 +333,11 @@ class SailDatasetImpl implements SailDataset {
 			protected boolean accept(Statement stmt) {
 				return !excluded.apply(stmt);
 			}
+
+			@Override
+			protected void handleClose() {
+
+			}
 		};
 	}
 
@@ -351,6 +348,11 @@ class SailDatasetImpl implements SailDataset {
 			@Override
 			protected boolean accept(Triple stmt) {
 				return !excluded.apply(stmt);
+			}
+
+			@Override
+			protected void handleClose() {
+
 			}
 		};
 	}

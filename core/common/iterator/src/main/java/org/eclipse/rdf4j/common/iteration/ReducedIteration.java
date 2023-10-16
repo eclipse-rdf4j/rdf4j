@@ -15,7 +15,6 @@ package org.eclipse.rdf4j.common.iteration;
  *
  * @author Arjohn Kampman
  */
-@Deprecated(since = "4.1.0")
 public class ReducedIteration<E> extends FilterIteration<E> {
 
 	private E previousObject;
@@ -32,5 +31,10 @@ public class ReducedIteration<E> extends FilterIteration<E> {
 			previousObject = nextObject;
 			return true;
 		}
+	}
+
+	@Override
+	protected void handleClose() {
+
 	}
 }

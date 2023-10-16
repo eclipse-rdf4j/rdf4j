@@ -214,11 +214,11 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 	}
 
 	private static String encodeString(String s) {
-		s = StringUtil.gsub("\\", "\\\\", s);
-		s = StringUtil.gsub("\t", "\\t", s);
-		s = StringUtil.gsub("\n", "\\n", s);
-		s = StringUtil.gsub("\r", "\\r", s);
-		s = StringUtil.gsub("\"", "\\\"", s);
+		s = s.replace("\\", "\\\\");
+		s = s.replace("\t", "\\t");
+		s = s.replace("\n", "\\n");
+		s = s.replace("\r", "\\r");
+		s = s.replace("\"", "\\\"");
 		return s;
 	}
 

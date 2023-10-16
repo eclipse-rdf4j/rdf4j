@@ -71,27 +71,6 @@ public class Util {
 	}
 
 	/**
-	 * Get path from file or URI
-	 *
-	 * @param file file name
-	 * @return path or null
-	 */
-	@Deprecated
-	public static Path getPath(String file) {
-		Path path = null;
-		try {
-			path = Paths.get(file);
-		} catch (InvalidPathException ipe) {
-			try {
-				path = Paths.get(new URI(file));
-			} catch (URISyntaxException ex) {
-				//
-			}
-		}
-		return path;
-	}
-
-	/**
 	 * Check if a string looks like a HTTP, HTTPS or file URI.
 	 *
 	 * @param str string

@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.base;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -50,6 +51,9 @@ public class SailDatasetTripleSource implements RDFStarTripleSource {
 		CloseableIteration<? extends Statement> statements = null;
 		try {
 			statements = dataset.getStatements(subj, pred, obj, contexts);
+			if (statements instanceof EmptyIteration) {
+				return statements;
+			}
 			return new TripleSourceIterationWrapper<>(statements);
 		} catch (Throwable t) {
 			if (statements != null) {
@@ -76,6 +80,9 @@ public class SailDatasetTripleSource implements RDFStarTripleSource {
 			// In contrast to statement retrieval (which gets de-duplicated later on when handling things like
 			// projections and conversions) we need to make sure we de-duplicate the RDF-star triples here.
 			triples = dataset.getTriples(subj, pred, obj);
+			if (triples instanceof EmptyIteration) {
+				return triples;
+			}
 			iterationWrapper = new TripleSourceIterationWrapper<>(triples);
 			return new DistinctIteration<>(iterationWrapper);
 		} catch (Throwable t) {

@@ -121,7 +121,7 @@ public class MemStatementIteratorCache {
 
 			boolean result = iter.hasNext();
 			if (!result) {
-				close();
+				iter = null;
 			}
 			return result;
 		}

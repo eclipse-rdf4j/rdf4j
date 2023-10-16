@@ -324,6 +324,11 @@ class LmdbSailStore implements SailStore {
 			protected boolean accept(Statement st) {
 				return st.getContext() != null;
 			}
+
+			@Override
+			protected void handleClose() {
+
+			}
 		};
 
 		return new ConvertingIteration<>(stIter2) {

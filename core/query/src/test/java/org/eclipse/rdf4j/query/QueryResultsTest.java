@@ -258,6 +258,10 @@ public class QueryResultsTest {
 			return null;
 		}
 
+		@Override
+		protected void handleClose() {
+
+		}
 	}
 
 	@Test

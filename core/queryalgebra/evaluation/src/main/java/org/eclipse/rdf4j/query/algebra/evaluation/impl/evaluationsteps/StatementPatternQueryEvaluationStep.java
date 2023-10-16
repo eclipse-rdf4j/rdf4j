@@ -41,6 +41,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
  */
 public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep {
 
+	public static final EmptyIteration<? extends Statement> EMPTY_ITERATION = new EmptyIteration<>();
+
 	public static final Resource[] DEFAULT_CONTEXT = { null };
 	public static final Resource[] ALL_CONTEXT = new Resource[0];
 	private static final Function<Value, Resource[]> RETURN_NULL_VALUE_RESOURCE_ARRAY = v -> null;
@@ -206,22 +208,22 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		if (emptyGraph) {
-			return EMPTY_ITERATION;
+			return QueryEvaluationStep.EMPTY_ITERATION;
 		} else if (bindings.isEmpty()) {
 			ConvertStatementToBindingSetIterator iteration = getIteration();
 			if (iteration == null) {
-				return EMPTY_ITERATION;
+				return QueryEvaluationStep.EMPTY_ITERATION;
 			}
 			return iteration;
 
 		} else if (unboundTest.test(bindings)) {
 			// the variable must remain unbound for this solution see
 			// https://www.w3.org/TR/sparql11-query/#assignment
-			return EMPTY_ITERATION;
+			return QueryEvaluationStep.EMPTY_ITERATION;
 		} else {
 			JoinStatementWithBindingSetIterator iteration = getIteration(bindings);
 			if (iteration == null) {
-				return EMPTY_ITERATION;
+				return QueryEvaluationStep.EMPTY_ITERATION;
 			}
 			return iteration;
 		}
@@ -281,12 +283,18 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		}
 
 		Value subject = statementPattern.getSubjectVar().getValue();
-		Value predicate = statementPattern.getPredicateVar().getValue();
-		Value object = statementPattern.getObjectVar().getValue();
 
-		if (subject != null && !subject.isResource() || predicate != null && !predicate.isIRI()) {
+		if (subject != null && !subject.isResource()) {
 			return null;
 		}
+
+		Value predicate = statementPattern.getPredicateVar().getValue();
+
+		if (predicate != null && !predicate.isIRI()) {
+			return null;
+		}
+
+		Value object = statementPattern.getObjectVar().getValue();
 
 		CloseableIteration<? extends Statement> iteration = null;
 		try {
@@ -323,6 +331,11 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 				@Override
 				protected boolean accept(Statement object) throws QueryEvaluationException {
 					return filter.test(object);
+				}
+
+				@Override
+				protected void handleClose() {
+
 				}
 			};
 		} else {

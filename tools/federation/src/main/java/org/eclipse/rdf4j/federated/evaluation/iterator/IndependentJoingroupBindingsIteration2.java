@@ -124,14 +124,10 @@ public class IndependentJoingroupBindingsIteration2 extends LookAheadIteration<B
 
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
-		try {
-			super.handleClose();
-		} finally {
-			iter.close();
-		}
+		iter.close();
 	}
 
-	protected class BindingInfo {
+	protected static class BindingInfo {
 		public final String name;
 		public final int bindingsIdx;
 		public final Value value;

@@ -70,7 +70,6 @@ public abstract class FilterIterator<E> implements Iterator<E> {
 	 *
 	 * @param object The object to be tested.
 	 * @return <var>true</var> if the object should be returned, <var>false</var> otherwise.
-	 * @throws X
 	 */
 	protected abstract boolean accept(E object);
 }

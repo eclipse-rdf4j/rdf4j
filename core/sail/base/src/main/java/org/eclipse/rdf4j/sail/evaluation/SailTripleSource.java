@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.evaluation;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -42,7 +43,10 @@ public class SailTripleSource implements TripleSource {
 		CloseableIteration<? extends Statement> iter = null;
 		try {
 			iter = conn.getStatements(subj, pred, obj, includeInferred, contexts);
-			return new TripleSourceIterationWrapper(iter);
+			if (iter instanceof EmptyIteration) {
+				return iter;
+			}
+			return new TripleSourceIterationWrapper<>(iter);
 		} catch (Throwable t) {
 			if (iter != null) {
 				iter.close();

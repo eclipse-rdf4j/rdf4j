@@ -44,7 +44,7 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 		// we need to verify that new binding assignments do not overwrite existing bindings
 		CloseableIteration<BindingSet> result;
 
-		result = new LookAheadIteration<BindingSet>() {
+		result = new LookAheadIteration<>() {
 
 			@Override
 			protected BindingSet getNextElement() throws QueryEvaluationException {
@@ -76,6 +76,11 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 					}
 				}
 				return nextResult;
+			}
+
+			@Override
+			protected void handleClose() {
+
 			}
 		};
 

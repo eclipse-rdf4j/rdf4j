@@ -21,7 +21,6 @@ import java.util.List;
  * An Iteration that returns the bag union of the results of a number of Iterations. 'Bag union' means that the
  * UnionIteration does not filter duplicate objects.
  */
-@Deprecated(since = "4.1.0")
 public class UnionIteration<E> extends LookAheadIteration<E> {
 
 	/*-----------*
@@ -92,30 +91,25 @@ public class UnionIteration<E> extends LookAheadIteration<E> {
 	@Override
 	protected void handleClose() {
 		try {
-			// Close this iteration, this will prevent lookAhead() from calling
-			// getNextElement() again
-			super.handleClose();
-		} finally {
-			try {
-				List<Throwable> collectedExceptions = new ArrayList<>();
-				while (argIter.hasNext()) {
-					try {
-						CloseableIteration<? extends E> next = argIter.next();
-						if (next != null) {
-							next.close();
-						}
-					} catch (Throwable e) {
-						collectedExceptions.add(e);
+			List<Throwable> collectedExceptions = new ArrayList<>();
+			while (argIter.hasNext()) {
+				try {
+					CloseableIteration<? extends E> next = argIter.next();
+					if (next != null) {
+						next.close();
 					}
-				}
-				if (!collectedExceptions.isEmpty()) {
-					throw new UndeclaredThrowableException(collectedExceptions.get(0));
-				}
-			} finally {
-				if (currentIter != null) {
-					currentIter.close();
+				} catch (Throwable e) {
+					collectedExceptions.add(e);
 				}
 			}
+			if (!collectedExceptions.isEmpty()) {
+				throw new UndeclaredThrowableException(collectedExceptions.get(0));
+			}
+		} finally {
+			if (currentIter != null) {
+				currentIter.close();
+			}
 		}
+
 	}
 }

@@ -18,7 +18,7 @@ import java.util.Set;
 /**
  * A call to a TupleFunction. This is an optional extension to the query model.
  */
-public class TupleFunctionCall extends QueryModelNodeBase implements TupleExpr {
+public class TupleFunctionCall extends AbstractQueryModelNode implements TupleExpr {
 
 	private String uri;
 

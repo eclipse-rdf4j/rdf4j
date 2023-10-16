@@ -25,13 +25,15 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  */
 @FunctionalInterface
 public interface QueryEvaluationStep {
+
+	EmptyIteration<BindingSet> EMPTY_ITERATION = new EmptyIteration<>();
+	QueryEvaluationStep EMPTY = bindings -> EMPTY_ITERATION;
+
 	/**
 	 * Utility class that removes code duplication and makes a precompiled QueryEvaluationStep available as an iteration
 	 * that may be created and used later.
 	 */
-	@Deprecated(since = "4.1.0", forRemoval = true)
-	class DelayedEvaluationIteration
-			extends DelayedIteration<BindingSet> {
+	class DelayedEvaluationIteration extends DelayedIteration<BindingSet> {
 		private final QueryEvaluationStep arg;
 		private final BindingSet bs;
 
@@ -47,9 +49,6 @@ public interface QueryEvaluationStep {
 		}
 	}
 
-	EmptyIteration<BindingSet> EMPTY_ITERATION = new EmptyIteration<>();
-	QueryEvaluationStep EMPTY = bindings -> EMPTY_ITERATION;
-
 	CloseableIteration<BindingSet> evaluate(BindingSet bindings);
 
 	/**
@@ -64,7 +63,7 @@ public interface QueryEvaluationStep {
 	}
 
 	static QueryEvaluationStep empty() {
-		return bs -> new EmptyIteration<>();
+		return EMPTY;
 	}
 
 	/**

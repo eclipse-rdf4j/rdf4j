@@ -67,7 +67,8 @@ public class EvaluationStrategyWithRDFStarTest {
 		public CloseableIteration<? extends Triple> getRdfStarTriples(Resource subj,
 				IRI pred, Value obj)
 				throws QueryEvaluationException {
-			return new AbstractCloseableIteration<Triple>() {
+			return new AbstractCloseableIteration<>() {
+
 				final Iterator<Triple> iter = triples.iterator();
 
 				@Override
@@ -85,6 +86,11 @@ public class EvaluationStrategyWithRDFStarTest {
 				@Override
 				public void remove()
 						throws QueryEvaluationException {
+				}
+
+				@Override
+				protected void handleClose() {
+
 				}
 			};
 		}

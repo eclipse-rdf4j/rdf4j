@@ -137,22 +137,18 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T> {
 	public void handleClose() throws QueryEvaluationException {
 		closed = true;
 		try {
-			super.handleClose();
+			rightQueue.close();
 		} finally {
 			try {
-				rightQueue.close();
+				CloseableIteration<T> toCloseRightIter = rightIter;
+				rightIter = null;
+				if (toCloseRightIter != null) {
+					toCloseRightIter.close();
+				}
 			} finally {
-				try {
-					CloseableIteration<T> toCloseRightIter = rightIter;
-					rightIter = null;
-					if (toCloseRightIter != null) {
-						toCloseRightIter.close();
-					}
-				} finally {
-					CloseableIteration<T> toCloseLeftIter = leftIter;
-					if (toCloseLeftIter != null) {
-						toCloseLeftIter.close();
-					}
+				CloseableIteration<T> toCloseLeftIter = leftIter;
+				if (toCloseLeftIter != null) {
+					toCloseLeftIter.close();
 				}
 			}
 		}

@@ -196,12 +196,34 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 
 		@Override
 		public Iterator<String> iterator() {
-			return Arrays.asList(values).iterator();
+			return new SmallStringSetIterator(values);
 		}
 
 		@Override
 		public int size() {
 			return values.length;
+		}
+	}
+
+	private static final class SmallStringSetIterator implements Iterator<String> {
+
+		private int index = 0;
+		private final String[] values;
+		private final int length;
+
+		public SmallStringSetIterator(String[] values) {
+			this.values = values;
+			this.length = values.length;
+		}
+
+		@Override
+		public boolean hasNext() {
+			return index < length;
+		}
+
+		@Override
+		public String next() {
+			return values[index++];
 		}
 	}
 

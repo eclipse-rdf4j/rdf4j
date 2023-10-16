@@ -18,7 +18,12 @@ public class LookAheadIterationTest extends CloseableIterationTest {
 	protected CloseableIteration<String> createTestIteration() {
 		final Iterator<String> iter = stringList1.iterator();
 
-		return new LookAheadIteration<String>() {
+		return new LookAheadIteration<>() {
+
+			@Override
+			protected void handleClose() {
+
+			}
 
 			@Override
 			protected String getNextElement() {

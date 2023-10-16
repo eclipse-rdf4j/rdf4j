@@ -877,33 +877,4 @@ public class LiteralsTest {
 
 	}
 
-	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#getLabel(Optional, String)}} .
-	 */
-	@Test
-	public void testGetLabelForOptional() {
-
-		Literal lit = vf.createLiteral(1.0);
-		model.add(foo, bar, lit);
-
-		Optional<Value> result = Models.object(model);
-		String label = Literals.getLabel(result, "fallback");
-		assertNotNull(label);
-		assertTrue(label.equals("1.0"));
-	}
-
-	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#getLabel(Optional, String)}} .
-	 */
-	@Test
-	public void testGetLabelForOptionalInFallback() {
-
-		Literal lit = vf.createLiteral(1.0);
-		model.add(foo, bar, lit);
-
-		Optional<Value> result = Models.object(model);
-		String label = Literals.getLabel((Optional<Value>) null, "fallback");
-		assertNotNull(label);
-		assertTrue(label.equals("fallback"));
-	}
 }

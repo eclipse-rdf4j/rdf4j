@@ -58,7 +58,6 @@ public abstract class ExceptionConvertingIteration<E, X extends RuntimeException
 	 * Checks whether the underlying Iteration contains more elements.
 	 *
 	 * @return <var>true</var> if the underlying Iteration contains more elements, <var>false</var> otherwise.
-	 * @throws X
 	 */
 	@Override
 	public boolean hasNext() {
@@ -79,7 +78,6 @@ public abstract class ExceptionConvertingIteration<E, X extends RuntimeException
 	/**
 	 * Returns the next element from the wrapped Iteration.
 	 *
-	 * @throws X
 	 * @throws java.util.NoSuchElementException If all elements have been returned.
 	 * @throws IllegalStateException            If the Iteration has been closed.
 	 */
@@ -128,13 +126,9 @@ public abstract class ExceptionConvertingIteration<E, X extends RuntimeException
 	@Override
 	protected void handleClose() {
 		try {
-			super.handleClose();
-		} finally {
-			try {
-				iter.close();
-			} catch (RuntimeException e) {
-				throw convert(e);
-			}
+			iter.close();
+		} catch (RuntimeException e) {
+			throw convert(e);
 		}
 	}
 }

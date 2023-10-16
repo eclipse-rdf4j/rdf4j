@@ -23,14 +23,11 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Filter;
-import org.eclipse.rdf4j.query.algebra.QueryModelNode;
-import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
-@Deprecated(since = "4.1.0")
 public class FilterIterator extends FilterIteration<BindingSet> {
 
 	private final QueryValueEvaluationStep condition;
@@ -40,8 +37,8 @@ public class FilterIterator extends FilterIteration<BindingSet> {
 	 * Constructors *
 	 *--------------*/
 
-	public FilterIterator(Filter filter, CloseableIteration<BindingSet> iter,
-			QueryValueEvaluationStep condition, EvaluationStrategy strategy) throws QueryEvaluationException {
+	public FilterIterator(CloseableIteration<BindingSet> iter, QueryValueEvaluationStep condition,
+			EvaluationStrategy strategy) throws QueryEvaluationException {
 		super(iter);
 		this.condition = condition;
 		this.strategy = strategy;
@@ -56,6 +53,11 @@ public class FilterIterator extends FilterIteration<BindingSet> {
 			// failed to evaluate condition
 			return false;
 		}
+	}
+
+	@Override
+	protected void handleClose() {
+
 	}
 
 	/**

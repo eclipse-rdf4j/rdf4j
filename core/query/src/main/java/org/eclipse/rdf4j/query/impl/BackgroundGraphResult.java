@@ -31,7 +31,6 @@ import org.eclipse.rdf4j.rio.RDFParser;
  *
  * @author James Leigh
  */
-@Deprecated(since = "4.1.0")
 public class BackgroundGraphResult extends IterationWrapper<Statement>
 		implements GraphQueryResult, Runnable, RDFHandler {
 

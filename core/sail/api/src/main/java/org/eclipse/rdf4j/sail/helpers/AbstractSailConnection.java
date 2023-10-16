@@ -546,7 +546,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public final void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-		if (pendingRemovals()) {
+		if (statementsRemoved) {
 			flushPendingUpdates();
 		}
 		addStatement(null, subj, pred, obj, contexts);
@@ -795,11 +795,6 @@ public abstract class AbstractSailConnection implements SailConnection {
 			unblockClose.increment();
 
 		}
-	}
-
-	@Override
-	public boolean pendingRemovals() {
-		return statementsRemoved;
 	}
 
 	protected boolean pendingAdds() {

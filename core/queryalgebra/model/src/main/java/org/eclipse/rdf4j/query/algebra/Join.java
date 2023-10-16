@@ -38,15 +38,6 @@ public class Join extends BinaryTupleOperator {
 	 * Methods *
 	 *---------*/
 
-	/**
-	 * @return <code>true</code> if the right argument of this Join contains a projection, <code>false</code> otherwise.
-	 * @deprecated Use {@link TupleExprs#containsProjection(TupleExpr)} instead.
-	 */
-	@Deprecated(since = "2.0")
-	public boolean hasSubSelectInRightArg() {
-		return TupleExprs.containsSubquery(rightArg);
-	}
-
 	@Override
 	public Set<String> getBindingNames() {
 		Set<String> bindingNames = new LinkedHashSet<>(16);

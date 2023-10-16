@@ -986,9 +986,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		}
 	}
 
-	private <T, X extends Exception> CloseableIteration<T> interlock(
+	private <T> CloseableIteration<T> interlock(
 			CloseableIteration<T> iter, SailClosable... closes) {
-		return new SailClosingIteration<T, QueryEvaluationException>(iter, closes) {
+		return new SailClosingIteration<>(iter, closes) {
 
 			@Override
 			protected void handleSailException(SailException e) throws QueryEvaluationException {

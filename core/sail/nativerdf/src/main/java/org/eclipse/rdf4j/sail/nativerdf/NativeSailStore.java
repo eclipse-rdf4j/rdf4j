@@ -190,15 +190,20 @@ class NativeSailStore implements SailStore {
 			stIter1 = new NativeStatementIterator(btreeIter, valueStore);
 		}
 
-		FilterIteration<Statement> stIter2 = new FilterIteration<Statement>(
+		FilterIteration<Statement> stIter2 = new FilterIteration<>(
 				stIter1) {
 			@Override
 			protected boolean accept(Statement st) {
 				return st.getContext() != null;
 			}
+
+			@Override
+			protected void handleClose() {
+
+			}
 		};
 
-		return new ConvertingIteration<Statement, Resource>(stIter2) {
+		return new ConvertingIteration<>(stIter2) {
 			@Override
 			protected Resource convert(Statement sourceObject) throws SailException {
 				return sourceObject.getContext();

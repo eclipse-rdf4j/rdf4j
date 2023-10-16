@@ -48,6 +48,11 @@ public class TripleSources {
 					protected boolean accept(Value v) throws QueryEvaluationException {
 						return v instanceof Resource;
 					}
+
+					@Override
+					protected void handleClose() {
+
+					}
 				}) {
 
 			@Override
@@ -157,6 +162,11 @@ public class TripleSources {
 					protected boolean accept(Statement stmt) throws QueryEvaluationException {
 						return stmt.getSubject() instanceof IRI;
 					}
+
+					@Override
+					protected void handleClose() {
+
+					}
 				}) {
 
 			@Override
@@ -175,6 +185,11 @@ public class TripleSources {
 					@Override
 					protected boolean accept(Statement stmt) throws QueryEvaluationException {
 						return stmt.getObject() instanceof Resource;
+					}
+
+					@Override
+					protected void handleClose() {
+
 					}
 				}) {
 
@@ -195,6 +210,11 @@ public class TripleSources {
 					protected boolean accept(Statement stmt) throws QueryEvaluationException {
 						return stmt.getObject() instanceof IRI;
 					}
+
+					@Override
+					protected void handleClose() {
+
+					}
 				}) {
 
 			@Override
@@ -213,6 +233,11 @@ public class TripleSources {
 					@Override
 					protected boolean accept(Statement stmt) throws QueryEvaluationException {
 						return stmt.getObject() instanceof Literal;
+					}
+
+					@Override
+					protected void handleClose() {
+
 					}
 				}) {
 
