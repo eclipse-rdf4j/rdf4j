@@ -30,12 +30,7 @@ import java.util.stream.Stream;
  * }
  * </pre>
  *
- * @deprecated In the future this interface will stop extending {@link CloseableIteration} and instead declare the same
- *             interface methods directly. The interface will also stop requiring implementations to automatically close
- *             when exhausted, instead making this an optional feature and requiring the user to always call close. This
- *             interface may also be removed.
  */
-@Deprecated(since = "4.1.0")
 public interface CloseableIteration<E> extends Iterator<E>, AutoCloseable {
 
 	/**

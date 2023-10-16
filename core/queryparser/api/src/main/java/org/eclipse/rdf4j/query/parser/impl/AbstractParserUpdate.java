@@ -15,7 +15,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.impl.AbstractUpdate;
-import org.eclipse.rdf4j.query.impl.DatasetImpl;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
 
 /**
@@ -53,7 +53,7 @@ public abstract class AbstractParserUpdate extends AbstractUpdate {
 			return sparqlDefinedDataset;
 		}
 
-		final DatasetImpl mergedDataset = new DatasetImpl();
+		final SimpleDataset mergedDataset = new SimpleDataset();
 
 		final boolean hasWithClause = sparqlDefinedDataset.getDefaultInsertGraph() != null;
 		final Set<IRI> sparqlDefaultGraphs = sparqlDefinedDataset.getDefaultGraphs();

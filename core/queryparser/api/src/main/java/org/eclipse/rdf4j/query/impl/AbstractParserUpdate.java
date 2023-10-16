@@ -51,7 +51,7 @@ public abstract class AbstractParserUpdate extends AbstractUpdate {
 			return sparqlDefinedDataset;
 		}
 
-		final DatasetImpl mergedDataset = new DatasetImpl();
+		final SimpleDataset mergedDataset = new SimpleDataset();
 
 		final boolean hasWithClause = sparqlDefinedDataset.getDefaultInsertGraph() != null;
 		final Set<IRI> sparqlDefaultGraphs = sparqlDefinedDataset.getDefaultGraphs();

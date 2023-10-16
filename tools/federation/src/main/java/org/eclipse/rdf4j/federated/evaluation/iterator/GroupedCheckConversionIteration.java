@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  *
  * @author Andreas Schwarte
  */
-@Deprecated(since = "4.1.0")
 public class GroupedCheckConversionIteration
 		extends ConvertingIteration<BindingSet, BindingSet> {
 

@@ -415,11 +415,11 @@ public class TurtleUtil {
 	 * @return encoded string
 	 */
 	public static String encodeString(String s) {
-		s = StringUtil.gsub("\\", "\\\\", s);
-		s = StringUtil.gsub("\t", "\\t", s);
-		s = StringUtil.gsub("\n", "\\n", s);
-		s = StringUtil.gsub("\r", "\\r", s);
-		s = StringUtil.gsub("\"", "\\\"", s);
+		s = s.replace("\\", "\\\\");
+		s = s.replace("\t", "\\t");
+		s = s.replace("\n", "\\n");
+		s = s.replace("\r", "\\r");
+		s = s.replace("\"", "\\\"");
 		return s;
 	}
 
@@ -433,8 +433,8 @@ public class TurtleUtil {
 		// TODO: not all double quotes need to be escaped. It suffices to encode
 		// the ones that form sequences of 3 or more double quotes, and the ones
 		// at the end of a string.
-		s = StringUtil.gsub("\\", "\\\\", s);
-		s = StringUtil.gsub("\"", "\\\"", s);
+		s = s.replace("\\", "\\\\");
+		s = s.replace("\"", "\\\"");
 		return s;
 	}
 
@@ -445,17 +445,17 @@ public class TurtleUtil {
 	 */
 	@Deprecated
 	public static String encodeURIString(String s) {
-		s = StringUtil.gsub("\\", "\\u005C", s);
-		s = StringUtil.gsub("\t", "\\u0009", s);
-		s = StringUtil.gsub("\n", "\\u000A", s);
-		s = StringUtil.gsub("\r", "\\u000D", s);
-		s = StringUtil.gsub("\"", "\\u0022", s);
-		s = StringUtil.gsub("`", "\\u0060", s);
-		s = StringUtil.gsub("^", "\\u005E", s);
-		s = StringUtil.gsub("|", "\\u007C", s);
-		s = StringUtil.gsub("<", "\\u003C", s);
-		s = StringUtil.gsub(">", "\\u003E", s);
-		s = StringUtil.gsub(" ", "\\u0020", s);
+		s = s.replace("\\", "\\u005C");
+		s = s.replace("\t", "\\u0009");
+		s = s.replace("\n", "\\u000A");
+		s = s.replace("\r", "\\u000D");
+		s = s.replace("\"", "\\u0022");
+		s = s.replace("`", "\\u0060");
+		s = s.replace("^", "\\u005E");
+		s = s.replace("|", "\\u007C");
+		s = s.replace("<", "\\u003C");
+		s = s.replace(">", "\\u003E");
+		s = s.replace(" ", "\\u0020");
 		return s;
 	}
 

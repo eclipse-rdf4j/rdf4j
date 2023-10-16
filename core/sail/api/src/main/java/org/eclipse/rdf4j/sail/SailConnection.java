@@ -408,17 +408,6 @@ public interface SailConnection extends AutoCloseable {
 	void clearNamespaces() throws SailException;
 
 	/**
-	 * Indicates if the Sail has any statement removal operations pending (not yet {@link #flush() flushed}) for the
-	 * current transaction.
-	 *
-	 * @return true if any statement removal operations have not yet been flushed, false otherwise.
-	 * @see #flush()
-	 * @deprecated
-	 */
-	@Deprecated
-	boolean pendingRemovals();
-
-	/**
 	 * <p>
 	 * Explain how the TupleExpr will be (or has been) executed/evaluated by returning a TupleExpr (which may or may not
 	 * be the provided TupleExpr) that has gone through zero or more of the stages prior to and also including execution

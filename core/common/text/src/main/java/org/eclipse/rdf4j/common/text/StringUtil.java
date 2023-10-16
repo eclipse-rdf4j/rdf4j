@@ -24,58 +24,6 @@ public class StringUtil {
 		Arrays.sort(IRI_DONT_ESCAPE);
 	}
 
-	/**
-	 * Substitute String "old" by String "new" in String "text" everywhere. This is a static util function that I could
-	 * not place anywhere more appropriate. The name of this function is from the good-old awk time.
-	 *
-	 * @param olds The String to be substituted.
-	 * @param news The String is the new content.
-	 * @param text The String in which the substitution is done.
-	 * @return The result String containing the substitutions; if no substitutions were made, the result is 'text'.
-	 * @deprecated use {@link String#replace(CharSequence, CharSequence) instead}.
-	 */
-	@Deprecated(since = "4.0.0")
-	public static String gsub(String olds, String news, String text) {
-		if (olds == null || olds.length() == 0) {
-			// Nothing to substitute.
-			return text;
-		}
-		if (text == null) {
-			return null;
-		}
-
-		// Search for any occurences of 'olds'.
-		int oldsIndex = text.indexOf(olds);
-		if (oldsIndex == -1) {
-			// Nothing to substitute.
-			return text;
-		}
-
-		// We're going to do some substitutions.
-		StringBuilder buf = new StringBuilder(text.length());
-		int prevIndex = 0;
-
-		while (oldsIndex >= 0) {
-			// First, add the text between the previous and the current
-			// occurence.
-			buf.append(text.substring(prevIndex, oldsIndex));
-
-			// Then add the substition pattern
-			buf.append(news);
-
-			// Remember the index for the next loop.
-			prevIndex = oldsIndex + olds.length();
-
-			// Search for the next occurence.
-			oldsIndex = text.indexOf(olds, prevIndex);
-		}
-
-		// Add the part after the last occurence.
-		buf.append(text.substring(prevIndex));
-
-		return buf.toString();
-	}
-
 	private static String hex(int c) {
 		return Integer.toHexString(c).toUpperCase(Locale.US);
 	}

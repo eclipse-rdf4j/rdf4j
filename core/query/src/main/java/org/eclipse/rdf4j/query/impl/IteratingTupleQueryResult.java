@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 /**
  * An iterating implementation of the {@link TupleQueryResult} interface.
  */
-@Deprecated(since = "4.1.0")
 public class IteratingTupleQueryResult extends IterationWrapper<BindingSet>
 		implements TupleQueryResult {
 

@@ -19,7 +19,6 @@ import java.util.NoSuchElementException;
  * or where a created iteration consumes scarce resources like JDBC-connections or memory. Subclasses must implement the
  * <var>createIteration</var> method, which is called once when the iteration is first needed.
  */
-@Deprecated(since = "4.1.0")
 public abstract class DelayedIteration<E> extends AbstractCloseableIteration<E> {
 
 	/*-----------*
@@ -60,10 +59,7 @@ public abstract class DelayedIteration<E> extends AbstractCloseableIteration<E> 
 		CloseableIteration<? extends E> resultIter = iter;
 		if (resultIter == null) {
 			// Underlying iterator has not yet been initialized
-			resultIter = iter;
-			if (resultIter == null) {
-				resultIter = iter = createIteration();
-			}
+			resultIter = iter = createIteration();
 		}
 
 		return resultIter.hasNext();
@@ -80,10 +76,8 @@ public abstract class DelayedIteration<E> extends AbstractCloseableIteration<E> 
 		CloseableIteration<? extends E> resultIter = iter;
 		if (resultIter == null) {
 			// Underlying iterator has not yet been initialized
-			resultIter = iter;
-			if (resultIter == null) {
-				resultIter = iter = createIteration();
-			}
+			resultIter = iter = createIteration();
+
 		}
 
 		return resultIter.next();

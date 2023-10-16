@@ -58,8 +58,6 @@ public abstract class AbstractCloseableIterator<E> implements Iterator<E>, Close
 	/**
 	 * Called by {@link #close} when it is called for the first time. This method is only called once on each iteration.
 	 * By default, this method does nothing.
-	 *
-	 * @throws X
 	 */
 	protected void handleClose() throws IOException {
 	}

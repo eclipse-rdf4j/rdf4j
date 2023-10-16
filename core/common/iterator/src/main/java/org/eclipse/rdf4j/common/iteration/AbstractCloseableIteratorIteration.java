@@ -12,37 +12,62 @@
 package org.eclipse.rdf4j.common.iteration;
 
 import java.util.Iterator;
+import java.util.NoSuchElementException;
+import java.util.Objects;
 
 /**
  * An Iteration that can convert an {@link Iterator} to a {@link CloseableIteration}.
  */
-@Deprecated(since = "4.1.0")
-public class IteratorIteration<E> implements CloseableIteration<E> {
+public abstract class AbstractCloseableIteratorIteration<E> extends AbstractCloseableIteration<E> {
 
-	private final Iterator<? extends E> iter;
+	private Iterator<? extends E> iter;
 
-	public IteratorIteration(Iterator<? extends E> iter) {
-		assert iter != null;
-		this.iter = iter;
+	public AbstractCloseableIteratorIteration() {
 	}
+
+	protected abstract Iterator<? extends E> getIterator();
 
 	@Override
 	public boolean hasNext() {
-		return iter.hasNext();
+		if (isClosed()) {
+			return false;
+		}
+
+		if (iter == null) {
+			iter = getIterator();
+		}
+
+		boolean result = iter.hasNext();
+		if (!result) {
+			close();
+		}
+		return result;
 	}
 
 	@Override
 	public E next() {
+		if (isClosed()) {
+			throw new NoSuchElementException("Iteration has been closed");
+		}
+
+		if (iter == null) {
+			iter = getIterator();
+		}
+
 		return iter.next();
 	}
 
 	@Override
 	public void remove() {
+		if (isClosed()) {
+			throw new IllegalStateException("Iteration has been closed");
+		}
+
+		if (iter == null) {
+			iter = getIterator();
+		}
+
 		iter.remove();
 	}
 
-	@Override
-	public void close() {
-
-	}
 }

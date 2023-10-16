@@ -14,7 +14,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -30,7 +29,7 @@ import org.eclipse.rdf4j.collection.factory.api.BindingSetEntry;
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteratorIteration;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -74,7 +73,7 @@ import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateFunctionRe
  * @author Jerven Bolleman
  * @author Tomas Kovachev
  */
-public class GroupIterator extends CloseableIteratorIteration<BindingSet> {
+public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet> {
 
 	/*-----------*
 	 * Constants *
@@ -130,30 +129,11 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet> {
 
 	@Override
 	public void handleClose() throws QueryEvaluationException {
-		try {
-			cf.close();
-		} finally {
-			super.handleClose();
-		}
+		cf.close();
 	}
 
 	@Override
-	public boolean hasNext() throws QueryEvaluationException {
-		if (!super.hasIterator()) {
-			super.setIterator(createIterator());
-		}
-		return super.hasNext();
-	}
-
-	@Override
-	public BindingSet next() throws QueryEvaluationException {
-		if (!super.hasIterator()) {
-			super.setIterator(createIterator());
-		}
-		return super.next();
-	}
-
-	private Iterator<BindingSet> createIterator() throws QueryEvaluationException {
+	protected Iterator<BindingSet> getIterator() throws QueryEvaluationException {
 		List<AggregatePredicateCollectorSupplier<?, ?>> aggregates = makeAggregates();
 
 		Supplier<MutableBindingSet> makeNewBindingSet;

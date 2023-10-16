@@ -488,11 +488,6 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	public boolean pendingRemovals() {
-		return false;
-	}
-
-	@Override
 	public Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,
 			boolean includeInferred, int timeoutSeconds) {
 		throw new UnsupportedOperationException();

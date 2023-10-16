@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
-import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.iteration.ReducedIteration;
@@ -630,7 +629,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			CloseableIteration<BindingSet> evaluate = null;
 			try {
 				evaluate = arg.evaluate(bs);
-				return new FilterIterator(node, evaluate, ves, DefaultEvaluationStrategy.this);
+				return new FilterIterator(evaluate, ves, DefaultEvaluationStrategy.this);
 			} catch (Throwable t) {
 				if (evaluate != null) {
 					evaluate.close();

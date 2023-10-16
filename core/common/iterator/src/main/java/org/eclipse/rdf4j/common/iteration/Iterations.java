@@ -23,34 +23,34 @@ import java.util.stream.StreamSupport;
 /**
  * This class consists exclusively of static methods that operate on or return Iterations. It is the
  * Iteration-equivalent of <var>java.util.Collections</var>.
+ *
  */
-@Deprecated(since = "4.1.0")
 public class Iterations {
 
 	/**
 	 * Get a List containing all elements obtained from the specified iteration.
 	 *
-	 * @param iter the {@link CloseableIteration} to get the elements from
+	 * @param iteration the {@link CloseableIteration} to get the elements from
 	 * @return a List containing all elements obtained from the specified iteration.
 	 */
-	public static <E, X extends Exception> List<E> asList(CloseableIteration<? extends E> iter) {
-		try (iter) {
+	public static <E> List<E> asList(CloseableIteration<? extends E> iteration) {
+		try (iteration) {
 			// stream.collect is slightly slower than addAll for lists
 			List<E> list = new ArrayList<>();
 
 			// addAll closes the iteration
-			return addAll(iter, list);
+			return addAll(iteration, list);
 		}
 	}
 
 	/**
 	 * Get a Set containing all elements obtained from the specified iteration.
 	 *
-	 * @param iter the {@link CloseableIteration} to get the elements from
+	 * @param iteration the {@link CloseableIteration} to get the elements from
 	 * @return a Set containing all elements obtained from the specified iteration.
 	 */
-	public static <E, X extends Exception> Set<E> asSet(CloseableIteration<? extends E> iter) {
-		try (Stream<? extends E> stream = iter.stream()) {
+	public static <E> Set<E> asSet(CloseableIteration<? extends E> iteration) {
+		try (Stream<? extends E> stream = iteration.stream()) {
 			return stream.collect(Collectors.toSet());
 		}
 	}
@@ -59,15 +59,14 @@ public class Iterations {
 	 * Adds all elements from the supplied {@link CloseableIteration} to the specified collection then closes the
 	 * {@link CloseableIteration}.
 	 *
-	 * @param iter       A {@link CloseableIteration} containing elements to add to the container.
+	 * @param iteration  A {@link CloseableIteration} containing elements to add to the container.
 	 * @param collection The collection to add the elements to.
 	 * @return The <var>collection</var> object that was supplied to this method.
 	 */
-	public static <E, X extends Exception, C extends Collection<E>> C addAll(CloseableIteration<? extends E> iter,
-			C collection) {
-		try (iter) {
-			while (iter.hasNext()) {
-				collection.add(iter.next());
+	public static <E, C extends Collection<E>> C addAll(CloseableIteration<? extends E> iteration, C collection) {
+		try (iteration) {
+			while (iteration.hasNext()) {
+				collection.add(iteration.next());
 			}
 		}
 
@@ -108,7 +107,7 @@ public class Iterations {
 	 * @param separator The separator to insert between the object strings.
 	 * @return A String representation of the objects provided by the supplied iteration.
 	 */
-	public static <X extends Exception> String toString(CloseableIteration<?> iteration, String separator) {
+	public static String toString(CloseableIteration<?> iteration, String separator) {
 		try (iteration) {
 			StringBuilder sb = new StringBuilder();
 			toString(iteration, separator, sb);
@@ -125,9 +124,7 @@ public class Iterations {
 	 * @param separator The separator to insert between the object strings.
 	 * @param sb        A StringBuilder to append the iteration string to.
 	 */
-	public static <X extends Exception> void toString(CloseableIteration<?> iteration, String separator,
-			StringBuilder sb)
-			throws X {
+	public static void toString(CloseableIteration<?> iteration, String separator, StringBuilder sb) {
 		try (iteration) {
 			while (iteration.hasNext()) {
 				sb.append(iteration.next());
@@ -147,13 +144,15 @@ public class Iterations {
 	 * @param setMaker  the Supplier that constructs a new set
 	 * @return a Set containing all elements obtained from the specified iteration.
 	 */
-	public static <E, X extends Exception> Set<E> asSet(CloseableIteration<? extends E> iteration,
+	public static <E> Set<E> asSet(CloseableIteration<? extends E> iteration,
 			Supplier<Set<E>> setMaker) {
-		Set<E> set = setMaker.get();
-		while (iteration.hasNext()) {
-			set.add(iteration.next());
+		try (iteration) {
+			Set<E> set = setMaker.get();
+			while (iteration.hasNext()) {
+				set.add(iteration.next());
+			}
+			return set;
 		}
-		return set;
 	}
 
 }

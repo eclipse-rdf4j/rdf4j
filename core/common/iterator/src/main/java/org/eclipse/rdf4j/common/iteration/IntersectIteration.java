@@ -22,7 +22,6 @@ import java.util.function.Supplier;
  * Note that duplicates can also be filtered by wrapping this Iteration in a {@link DistinctIteration}, but that has a
  * bit more overhead as it adds a second hash table lookup.
  */
-@Deprecated(since = "4.1.0")
 public class IntersectIteration<E> extends FilterIteration<E> {
 
 	/*-----------*
@@ -127,11 +126,6 @@ public class IntersectIteration<E> extends FilterIteration<E> {
 		return false;
 	}
 
-	// this method does not seem to "addSecondSet" since the second set seems to be ignored
-	public Set<E> addSecondSet(CloseableIteration<? extends E> arg2, Set<E> set) {
-		return Iterations.addAll(arg2, setMaker.get());
-	}
-
 	protected boolean removeFromIncludeSet(E object) {
 		return includeSet.remove(object);
 	}
@@ -149,12 +143,6 @@ public class IntersectIteration<E> extends FilterIteration<E> {
 		if (arg2 != null) {
 			arg2.close();
 		}
-	}
-
-	protected long clearIncludeSet() {
-		long size = includeSet.size();
-		includeSet.clear();
-		return size;
 	}
 
 }

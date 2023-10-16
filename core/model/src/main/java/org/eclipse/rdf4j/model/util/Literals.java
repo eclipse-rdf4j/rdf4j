@@ -57,11 +57,6 @@ public class Literals {
 		return v instanceof Literal ? getLabel((Literal) v, fallback) : fallback;
 	}
 
-	@Deprecated(since = "5.0.0", forRemoval = true)
-	public static String getLabel(Optional<Value> v, String fallback) {
-		return v != null ? getLabel(v.orElseGet(null), fallback) : fallback;
-	}
-
 	/**
 	 * Gets the byte value of the supplied literal. The fallback value is returned in case {@link Literal#byteValue()}
 	 * throws a {@link NumberFormatException}.

@@ -21,7 +21,6 @@ import java.util.List;
  * An Iteration that returns the bag union of the results of a number of Iterations. 'Bag union' means that the
  * UnionIteration does not filter duplicate objects.
  */
-@Deprecated(since = "4.1.0")
 public class UnionIteration<E> extends LookAheadIteration<E> {
 
 	/*-----------*

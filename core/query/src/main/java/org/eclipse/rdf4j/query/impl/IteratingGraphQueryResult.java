@@ -26,7 +26,6 @@ import org.eclipse.rdf4j.query.GraphQueryResult;
  * @author Arjohn Kampman
  * @author Jeen Broekstra
  */
-@Deprecated(since = "4.1.0")
 public class IteratingGraphQueryResult extends IterationWrapper<Statement>
 		implements GraphQueryResult {
 

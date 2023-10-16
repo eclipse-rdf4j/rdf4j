@@ -17,7 +17,6 @@
 		<module>sparql</module>
 		<module>repository</module>
 		<module>sail</module>
-		<module>shacl</module>
 		<module>lucene</module>
 		<module>geosparql</module>
 		<module>benchmark</module>

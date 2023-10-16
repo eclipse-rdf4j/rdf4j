@@ -21,7 +21,6 @@ import java.util.stream.Stream;
  * @implNote In the future this class will stop extending AbstractCloseableIteration and instead implement
  *           CloseableIteration directly.
  */
-@Deprecated(since = "4.1.0")
 public final class EmptyIteration<E> implements CloseableIteration<E> {
 
 	public EmptyIteration() {

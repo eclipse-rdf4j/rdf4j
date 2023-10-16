@@ -28,7 +28,6 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
-@Deprecated(since = "4.1.0")
 public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingSet> {
 
 	/*-----------*

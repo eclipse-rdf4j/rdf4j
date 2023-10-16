@@ -24,7 +24,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * @author James Leigh
  */
-@Deprecated(since = "4.1.0")
 public abstract class QueueIteration<E, T extends RuntimeException> extends LookAheadIteration<E> {
 
 	private final AtomicBoolean done = new AtomicBoolean(false);

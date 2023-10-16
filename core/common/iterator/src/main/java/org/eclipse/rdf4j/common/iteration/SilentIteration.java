@@ -21,7 +21,6 @@ import org.slf4j.LoggerFactory;
  *
  * @author Jeen Broekstra
  */
-@Deprecated(since = "4.1.0")
 public class SilentIteration<T> extends IterationWrapper<T> {
 
 	private static final Logger logger = LoggerFactory.getLogger(SilentIteration.class);

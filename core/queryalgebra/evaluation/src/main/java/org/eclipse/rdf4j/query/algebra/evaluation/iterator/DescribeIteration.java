@@ -37,7 +37,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
  * @author Jeen Broekstra
  * @see <a href="http://www.w3.org/Submission/CBD/#alternatives">Concise Bounded Description - alternatives</a>
  */
-@Deprecated(since = "4.1.0")
 public class DescribeIteration extends LookAheadIteration<BindingSet> {
 
 	protected final static String VARNAME_SUBJECT = "subject";

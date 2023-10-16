@@ -29,7 +29,6 @@ import org.eclipse.rdf4j.query.QueryResults;
  * @author Jeen
  * @see <a href="http://www.w3.org/TR/sparql11-query/#sparqlAlgebra">SPARQL Algebra Documentation</a>
  */
-@Deprecated(since = "4.1.0")
 public class SPARQLMinusIteration extends FilterIteration<BindingSet> {
 
 	/*-----------*

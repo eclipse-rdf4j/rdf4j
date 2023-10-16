@@ -65,8 +65,7 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 		return parsedQuery.toString();
 	}
 
-	@Deprecated(since = "4.1.0")
-	protected class QueryInterruptIteration extends TimeLimitIteration<BindingSet> {
+	private static class QueryInterruptIteration extends TimeLimitIteration<BindingSet> {
 
 		public QueryInterruptIteration(CloseableIteration<? extends BindingSet> iter,
 				long timeLimit) {
