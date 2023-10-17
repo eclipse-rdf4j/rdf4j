@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
@@ -308,6 +309,19 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 			}
 
 			@Override
+			public void meet(BindingSetAssignment node) throws QueryEvaluationException {
+				Set<String> bindingNames = node.getBindingNames();
+
+				Set<String> collect = bindingNames.stream()
+						.map(varName -> varNames.computeIfAbsent(varName, k -> k))
+						.collect(Collectors.toSet());
+
+				node.setBindingNames(collect);
+
+				super.meet(node);
+			}
+
+			@Override
 			public void meet(Group node) throws QueryEvaluationException {
 				List<String> collect = node.getGroupBindingNames()
 						.stream()
@@ -316,6 +330,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 				node.setGroupBindingNames(collect);
 				super.meet(node);
 			}
+
 		};
 		node.visit(queryModelVisitorBase);
 		return varNames.keySet().toArray(new String[0]);
