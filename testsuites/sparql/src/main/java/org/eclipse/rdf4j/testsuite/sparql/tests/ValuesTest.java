@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
 import org.junit.Test;
@@ -41,7 +42,6 @@ import org.junit.Test;
  * Tests on SPARQL VALUES clauses.
  *
  * @author Jeen Broekstra
- *
  */
 public class ValuesTest extends AbstractComplianceTest {
 
@@ -204,4 +204,21 @@ public class ValuesTest extends AbstractComplianceTest {
 		assertEquals("single result expected", 1, result.size());
 		assertEquals("http://subj1", result.get(0).getValue("s").stringValue());
 	}
+
+	@Test
+	public void testMultipleValuesClauses() {
+		Update update = conn.prepareUpdate("PREFIX ex: <http://example.org/>\n" +
+				"\n" +
+				"INSERT DATA { ex:sub ex:somePred \"value\" . };\n" +
+				"\n" +
+				"INSERT { ?s ?newPred ?newObj }\n" +
+				"WHERE {\n" +
+				"  # If one combines these into a single VALUES clause then it also works\n" +
+				"  VALUES ?newPred { ex:somePred2 }\n" +
+				"  VALUES ?newObj { \"value2\" }\n" +
+				"  ?s ex:somePred [] .\n" +
+				"}");
+		update.execute();
+	}
+
 }
