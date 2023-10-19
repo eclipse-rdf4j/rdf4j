@@ -11,7 +11,10 @@
 
 package org.eclipse.rdf4j.common.iteration;
 
+import java.util.Comparator;
 import java.util.NoSuchElementException;
+
+import org.eclipse.rdf4j.common.ordering.StatementOrder;
 
 /**
  * Provides a bag union of the two provided iterations.
@@ -32,6 +35,12 @@ public class DualUnionIteration<E> implements CloseableIteration<E> {
 		this.iteration2 = iteration2;
 	}
 
+	public <E> DualUnionIteration(Comparator<E> cmp, CloseableIteration<? extends E> leftIteration,
+			CloseableIteration<? extends E> rightIteration) {
+		throw new UnsupportedOperationException("Not implemented yet");
+
+	}
+
 	public static <E, X extends Exception> CloseableIteration<? extends E> getWildcardInstance(
 			CloseableIteration<? extends E> leftIteration, CloseableIteration<? extends E> rightIteration) {
 
@@ -41,6 +50,18 @@ public class DualUnionIteration<E> implements CloseableIteration<E> {
 			return rightIteration;
 		} else {
 			return new DualUnionIteration<>(leftIteration, rightIteration);
+		}
+	}
+
+	public static <E, X extends Exception> CloseableIteration<? extends E> getWildcardInstance(Comparator<E> cmp,
+			CloseableIteration<? extends E> leftIteration, CloseableIteration<? extends E> rightIteration) {
+
+		if (rightIteration instanceof EmptyIteration) {
+			return leftIteration;
+		} else if (leftIteration instanceof EmptyIteration) {
+			return rightIteration;
+		} else {
+			return new DualUnionIteration<>(cmp, leftIteration, rightIteration);
 		}
 	}
 

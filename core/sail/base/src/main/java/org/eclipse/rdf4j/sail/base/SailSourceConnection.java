@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.ordering.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
@@ -402,6 +403,16 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
 		return SailClosingIteration.makeClosable(snapshot.getStatements(subj, pred, obj, contexts), snapshot, branch);
+	}
+
+	@Override
+	protected CloseableIteration<? extends Statement> getStatementsInternal(StatementOrder order, Resource subj,
+			IRI pred,
+			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+		SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
+		SailDataset snapshot = branch.dataset(getIsolationLevel());
+		return SailClosingIteration.makeClosable(snapshot.getStatements(order, subj, pred, obj, contexts), snapshot,
+				branch);
 	}
 
 	@Override

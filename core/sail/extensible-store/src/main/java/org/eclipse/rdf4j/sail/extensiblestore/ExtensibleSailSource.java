@@ -10,12 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore;
 
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.ordering.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -27,6 +29,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
 
 /**
@@ -209,6 +212,20 @@ class ExtensibleSailSource implements SailSource {
 				return dataStructure.getStatements(subj, pred, obj, inferred, contexts);
 			}
 
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subj, IRI pred,
+					Value obj, Resource... contexts) throws SailException {
+				return dataStructure.getStatements(order, subj, pred, obj, inferred, contexts);
+			}
+
+			@Override
+			public Set<StatementOrder> getAvailableOrderings(Resource subj, IRI pred, Value obj, Resource... contexts) {
+				return dataStructure.getAvailableOrderings(subj, pred, obj, inferred, contexts);
+			}
+
+			public Comparator<? extends ExtensibleStatement> getComparator(StatementOrder statementOrder) {
+				return dataStructure.getComparator(statementOrder);
+			}
 		};
 	}
 

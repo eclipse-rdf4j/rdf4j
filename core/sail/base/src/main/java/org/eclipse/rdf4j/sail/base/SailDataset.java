@@ -10,7 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.Comparator;
+import java.util.Set;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.ordering.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -80,6 +84,26 @@ public interface SailDataset extends SailClosable {
 			Resource... contexts) throws SailException;
 
 	/**
+	 * Gets all statements that have a specific subject, predicate and/or object. All three parameters may be null to
+	 * indicate wildcards. Optionally a (set of) context(s) may be specified in which case the result will be restricted
+	 * to statements matching one or more of the specified contexts.
+	 *
+	 * @param statementOrder The order that the statements should be returned in.
+	 * @param subj           A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred           A IRI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj            A Value specifying the object, or <var>null</var> for a wildcard.
+	 * @param contexts       The context(s) to get the statements from. Note that this parameter is a vararg and as such
+	 *                       is optional. If no contexts are supplied the method operates on all contexts.
+	 * @return An iterator over the relevant statements.
+	 * @throws SailException If the triple source failed to get the statements.
+	 */
+	default CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj,
+			IRI pred, Value obj,
+			Resource... contexts) throws SailException {
+		throw new SailException("Statement ordering not supported by this store");
+	}
+
+	/**
 	 * Gets all RDF-star triples that have a specific subject, predicate and/or object. All three parameters may be null
 	 * to indicate wildcards.
 	 *
@@ -92,6 +116,14 @@ public interface SailDataset extends SailClosable {
 	default CloseableIteration<? extends Triple> getTriples(Resource subj, IRI pred, Value obj)
 			throws SailException {
 		throw new SailException("RDF-star triple retrieval not supported by this store");
+	}
+
+	default Set<StatementOrder> getAvailableOrderings(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		return Set.of();
+	}
+
+	default Comparator<? extends Statement> getComparator(StatementOrder statementOrder) {
+		throw new SailException("Statement ordering not supported by this store");
 	}
 
 }

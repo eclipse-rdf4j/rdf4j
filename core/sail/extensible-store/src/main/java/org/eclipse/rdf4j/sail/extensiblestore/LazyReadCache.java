@@ -11,11 +11,13 @@
 package org.eclipse.rdf4j.sail.extensiblestore;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.common.ordering.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -192,6 +194,11 @@ public class LazyReadCache implements DataStructureInterface {
 			cache.put(partialStatement, statements);
 		}
 
+	}
+
+	@Override
+	public Comparator<? extends ExtensibleStatement> getComparator(StatementOrder statementOrder) {
+		return delegate.getComparator(statementOrder);
 	}
 
 	@Override

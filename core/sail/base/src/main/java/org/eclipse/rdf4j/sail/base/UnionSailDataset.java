@@ -11,8 +11,13 @@
 
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.Comparator;
+import java.util.EnumSet;
+import java.util.Set;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
+import org.eclipse.rdf4j.common.ordering.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -171,4 +176,53 @@ class UnionSailDataset implements SailDataset {
 		return DualUnionIteration.getWildcardInstance(iteration1, iteration2);
 	}
 
+	private <T> CloseableIteration<? extends T> union(Comparator cmp,
+			CloseableIteration<? extends T> iteration1,
+			CloseableIteration<? extends T> iteration2) {
+		return DualUnionIteration.getWildcardInstance(cmp, iteration1, iteration2);
+	}
+
+	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj, IRI pred,
+			Value obj, Resource... contexts) throws SailException {
+
+		CloseableIteration<? extends Statement> iteration1 = null;
+		CloseableIteration<? extends Statement> iteration2 = null;
+		try {
+			iteration1 = dataset1.getStatements(statementOrder, subj, pred, obj, contexts);
+			iteration2 = dataset2.getStatements(statementOrder, subj, pred, obj, contexts);
+			return union(dataset1.getComparator(statementOrder), iteration1, iteration2);
+		} catch (Throwable t) {
+			try {
+				if (iteration1 != null) {
+					iteration1.close();
+				}
+			} finally {
+				if (iteration2 != null) {
+					iteration2.close();
+				}
+			}
+			throw t;
+		}
+
+	}
+
+	@Override
+	public Set<StatementOrder> getAvailableOrderings(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		Set<StatementOrder> availableOrderings1 = dataset1.getAvailableOrderings(subj, pred, obj, contexts);
+		if (availableOrderings1.isEmpty()) {
+			return Set.of();
+		}
+		Set<StatementOrder> availableOrderings2 = dataset2.getAvailableOrderings(subj, pred, obj, contexts);
+		if (availableOrderings2.isEmpty()) {
+			return Set.of();
+		}
+		if (availableOrderings1.equals(availableOrderings2)) {
+			return availableOrderings1;
+		}
+
+		EnumSet<StatementOrder> commonStatementOrderings = EnumSet.copyOf(availableOrderings1);
+		commonStatementOrderings.retainAll(availableOrderings2);
+		return commonStatementOrderings;
+	}
 }

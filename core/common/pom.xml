@@ -15,6 +15,7 @@
 		<module>exception</module>
 		<module>io</module>
 		<module>iterator</module>
+		<module>ordering</module>
 		<module>text</module>
 		<module>transaction</module>
 		<module>xml</module>

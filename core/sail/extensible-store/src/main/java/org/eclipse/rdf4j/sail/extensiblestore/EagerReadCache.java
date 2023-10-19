@@ -10,10 +10,12 @@
  ******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore;
 
+import java.util.Comparator;
 import java.util.Iterator;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.common.ordering.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -246,5 +248,10 @@ public class EagerReadCache implements DataStructureInterface {
 			return cache.size();
 		}
 		return delegate.getEstimatedSize();
+	}
+
+	@Override
+	public Comparator<? extends ExtensibleStatement> getComparator(StatementOrder statementOrder) {
+		throw new SailException("StatementOrder not supported");
 	}
 }

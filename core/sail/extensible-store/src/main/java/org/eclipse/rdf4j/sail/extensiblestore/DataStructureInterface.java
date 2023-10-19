@@ -11,12 +11,17 @@
 package org.eclipse.rdf4j.sail.extensiblestore;
 
 import java.util.Collection;
+import java.util.Comparator;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.ordering.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 
 /**
@@ -48,9 +53,15 @@ public interface DataStructureInterface {
 			IRI predicate,
 			Value object,
 			boolean inferred,
-			Resource... context);
+			Resource... contexts);
 
 	// flush this DataStructure to make added and removed data visible to read operations
+
+	default CloseableIteration<? extends ExtensibleStatement> getStatements(StatementOrder statementOrder,
+			Resource subject, IRI predicate, Value object, boolean inferred, Resource... contexts) {
+		throw new SailException("StatementOrder not supported");
+	}
+
 	void flushForReading();
 
 	void init();
@@ -89,4 +100,14 @@ public interface DataStructureInterface {
 		long explicit = getStatements(null, null, null, false).stream().count();
 		return inferred + explicit;
 	}
+
+	default Set<StatementOrder> getAvailableOrderings(Resource subj, IRI pred, Value obj, boolean inferred,
+			Resource... contexts) {
+		return Set.of();
+	}
+
+	default Comparator<? extends ExtensibleStatement> getComparator(StatementOrder statementOrder) {
+		throw new SailException("StatementOrder not supported");
+	}
+
 }
