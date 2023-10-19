@@ -103,7 +103,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl");
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				null, null)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -121,7 +121,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				null, null)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -139,7 +139,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				null, null)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -157,7 +157,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl");
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, null)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -175,7 +175,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, null)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -193,7 +193,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, null)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -211,7 +211,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl");
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, null, this.alice)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -229,7 +229,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, null, this.alice)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -247,7 +247,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, null, this.alice)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -265,7 +265,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl");
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, null, this.alice, this.bob)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -283,7 +283,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, null, this.alice, this.bob)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -301,7 +301,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, null, this.alice, this.bob)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -319,7 +319,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl");
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, OWL.THING, this.alice, this.bob)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -337,7 +337,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, OWL.THING, this.alice, this.bob)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -355,7 +355,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, OWL.THING, this.alice, this.bob)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -373,7 +373,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl");
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDF.TYPE, OWL.CLASS, this.alice, this.bob)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -391,7 +391,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDF.TYPE, OWL.CLASS, this.alice, this.bob)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -409,7 +409,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDF.TYPE, OWL.CLASS, this.alice, this.bob)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -427,7 +427,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl");
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDF.TYPE, OWL.CLASS)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -445,7 +445,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDF.TYPE, OWL.CLASS)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -463,7 +463,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDF.TYPE, OWL.CLASS)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -481,7 +481,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl");
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, f.createIRI(EX_NS, "A"))) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -499,7 +499,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, f.createIRI(EX_NS, "A"))) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -517,7 +517,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, f.createIRI(EX_NS, "A"))) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -535,7 +535,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl");
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, f.createIRI(EX_NS, "A"), this.alice)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -553,7 +553,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, f.createIRI(EX_NS, "A"), this.alice)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -571,7 +571,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, f.createIRI(EX_NS, "A"), this.alice)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -589,7 +589,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl");
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, f.createIRI(EX_NS, "A"), this.alice, this.bob)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -607,7 +607,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, f.createIRI(EX_NS, "A"), this.alice, this.bob)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -625,7 +625,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				RDFS.SUBCLASSOF, f.createIRI(EX_NS, "A"), this.alice, this.bob)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -751,7 +751,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob, this.mary);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				null, null)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -769,7 +769,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob, this.mary);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				null, null, this.alice)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -787,7 +787,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob, this.mary);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				null, null, this.alice, this.bob)) {
 			List<Statement> list = Iterations.asList(statements);
 
@@ -805,7 +805,7 @@ public class MemTripleSourceTest {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob, this.mary);
 		TripleSource source = getTripleSourceCommitted();
 
-		try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
+		try (CloseableIteration<? extends Statement> statements = source.getStatements(((Resource) null),
 				null, null, this.alice, this.bob, this.mary)) {
 			List<Statement> list = Iterations.asList(statements);
 

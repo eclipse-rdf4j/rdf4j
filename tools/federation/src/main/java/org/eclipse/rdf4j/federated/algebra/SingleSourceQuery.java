@@ -12,12 +12,14 @@ package org.eclipse.rdf4j.federated.algebra;
 
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
  * A query which has a single relevant source. These queries can be sent entirely to the endpoint as-is.
@@ -94,4 +96,18 @@ public class SingleSourceQuery extends AbstractQueryModelNode implements TupleEx
 		return (SingleSourceQuery) super.clone();
 	}
 
+	@Override
+	public Set<Var> getSupportedOrders(AvailableStatementOrder tripleSource) {
+		return parsedQuery.getSupportedOrders(tripleSource);
+	}
+
+	@Override
+	public void setOrder(Var var) {
+		parsedQuery.setOrder(var);
+	}
+
+	@Override
+	public Var getOrder() {
+		return parsedQuery.getOrder();
+	}
 }

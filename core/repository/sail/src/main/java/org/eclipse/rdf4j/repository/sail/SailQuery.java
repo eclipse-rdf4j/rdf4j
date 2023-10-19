@@ -41,7 +41,7 @@ public abstract class SailQuery extends AbstractParserQuery {
 			timeout = getMaxExecutionTime();
 		}
 
-		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
+		TupleExpr tupleExpr = getParsedQuery().getTupleExpr().clone();
 
 		// That query has a root does not add to the explanation.
 		if (tupleExpr instanceof QueryRoot) {

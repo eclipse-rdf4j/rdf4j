@@ -10,16 +10,27 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -30,6 +41,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternVisitor;
@@ -45,14 +57,24 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 	protected final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
+	private final TripleSource tripleSource;
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics) {
-		this(statistics, false);
+		this(statistics, false, new EmptyTripleSource());
+	}
+
+	public QueryJoinOptimizer(EvaluationStatistics statistics, TripleSource tripleSource) {
+		this(statistics, false, tripleSource);
 	}
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize) {
+		this(statistics, trackResultSize, new EmptyTripleSource());
+	}
+
+	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize, TripleSource tripleSource) {
 		this.statistics = statistics;
 		this.trackResultSize = trackResultSize;
+		this.tripleSource = tripleSource;
 	}
 
 	/**
@@ -62,17 +84,19 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	 */
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new JoinVisitor(statistics, trackResultSize));
+		tupleExpr.visit(new JoinVisitor(statistics, trackResultSize, tripleSource));
 	}
 
 	private static class JoinVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		private final EvaluationStatistics statistics;
+		private final TripleSource tripleSource;
 		Set<String> boundVars = new HashSet<>();
 
-		protected JoinVisitor(EvaluationStatistics statistics, boolean trackResultSize) {
+		private JoinVisitor(EvaluationStatistics statistics, boolean trackResultSize, TripleSource tripleSource) {
 			super(trackResultSize);
 			this.statistics = statistics;
+			this.tripleSource = tripleSource;
 		}
 
 		@Override
@@ -137,11 +161,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 
 				// Reorder the (recursive) join arguments to a more optimal sequence
-				List<TupleExpr> orderedJoinArgs = new ArrayList<>(joinArgs.size());
+				Deque<TupleExpr> orderedJoinArgs = new ArrayDeque<>(joinArgs.size());
 
 				// We order all remaining join arguments based on cardinality and
 				// variable frequency statistics
-				if (joinArgs.size() > 0) {
+				if (!joinArgs.isEmpty()) {
 					// Build maps of cardinalities and vars per tuple expression
 					Map<TupleExpr, Double> cardinalityMap = Collections.emptyMap();
 					Map<TupleExpr, List<Var>> varsMap = new HashMap<>();
@@ -180,7 +204,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						TupleExpr tupleExpr = selectNextTupleExpr(joinArgs, cardinalityMap, varsMap, varFreqMap);
 
 						joinArgs.remove(tupleExpr);
-						orderedJoinArgs.add(tupleExpr);
+						orderedJoinArgs.addLast(tupleExpr);
 
 						// Recursively optimize join arguments
 						tupleExpr.visit(this);
@@ -191,21 +215,50 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 				// Build new join hierarchy
 				TupleExpr priorityJoins = null;
-				if (priorityArgs.size() > 0) {
+				if (!priorityArgs.isEmpty()) {
 					priorityJoins = priorityArgs.get(0);
+
 					for (int i = 1; i < priorityArgs.size(); i++) {
 						priorityJoins = new Join(priorityJoins, priorityArgs.get(i));
 					}
 				}
 
-				if (orderedJoinArgs.size() > 0) {
+				if (priorityJoins == null && !orderedJoinArgs.isEmpty()) {
+
+					while (orderedJoinArgs.size() > 1) {
+
+						Set<Var> supportedOrders = orderedJoinArgs.peekFirst().getSupportedOrders(tripleSource);
+						if (supportedOrders.isEmpty()) {
+							break;
+						}
+
+						TupleExpr first = orderedJoinArgs.removeFirst();
+						TupleExpr second = orderedJoinArgs.removeFirst();
+						Set<Var> SupportedOrders = new HashSet<>(first.getSupportedOrders(tripleSource));
+						SupportedOrders.retainAll(second.getSupportedOrders(tripleSource));
+						if (SupportedOrders.isEmpty() || joinOnMultipleVars(first, second)) {
+							orderedJoinArgs.addFirst(second);
+							orderedJoinArgs.addFirst(first);
+							break;
+						} else {
+							Join join = new Join(first, second);
+							join.setOrder((Var) SupportedOrders.toArray()[0]);
+							join.setMergeJoin(true);
+							orderedJoinArgs.addFirst(join);
+						}
+
+					}
+
+				}
+
+				if (!orderedJoinArgs.isEmpty()) {
 					// Note: generated hierarchy is right-recursive to help the
 					// IterativeEvaluationOptimizer to factor out the left-most join
 					// argument
 					int i = orderedJoinArgs.size() - 1;
-					TupleExpr replacement = orderedJoinArgs.get(i);
-					for (i--; i >= 0; i--) {
-						replacement = new Join(orderedJoinArgs.get(i), replacement);
+					TupleExpr replacement = orderedJoinArgs.removeLast();
+					while (!orderedJoinArgs.isEmpty()) {
+						replacement = new Join(orderedJoinArgs.removeLast(), replacement);
 					}
 
 					if (priorityJoins != null) {
@@ -229,6 +282,29 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			} finally {
 				boundVars = origBoundVars;
 			}
+		}
+
+		private boolean joinOnMultipleVars(TupleExpr first, TupleExpr second) {
+			Set<String> firstBindingNames = first.getBindingNames();
+			if (firstBindingNames.size() == 1) {
+				return false;
+			}
+			Set<String> secondBindingNames = second.getBindingNames();
+			if (secondBindingNames.size() == 1) {
+				return false;
+			}
+			int overlap = 0;
+			for (String firstBindingName : firstBindingNames) {
+				if (secondBindingNames.contains(firstBindingName)) {
+					overlap++;
+				}
+				if (overlap > 1) {
+					return true;
+				}
+			}
+
+			return false;
+
 		}
 
 		protected <L extends List<TupleExpr>> L getJoinArgs(TupleExpr tupleExpr, L joinArgs) {
@@ -675,6 +751,31 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	private static boolean hasCachedCardinality(TupleExpr tupleExpr) {
 		return tupleExpr instanceof AbstractQueryModelNode
 				&& ((AbstractQueryModelNode) tupleExpr).isCardinalitySet();
+	}
+
+	private static final class EmptyTripleSource implements TripleSource {
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) throws QueryEvaluationException {
+			return TripleSource.EMPTY_ITERATION;
+		}
+
+		@Override
+		public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts)
+				throws QueryEvaluationException {
+			return Set.of();
+		}
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return null;
+		}
+
+		@Override
+		public Comparator<Value> getComparator() {
+			return null;
+		}
 	}
 
 }

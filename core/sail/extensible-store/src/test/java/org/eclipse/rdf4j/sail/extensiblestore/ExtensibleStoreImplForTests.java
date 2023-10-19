@@ -13,21 +13,23 @@ package org.eclipse.rdf4j.sail.extensiblestore;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.extensiblestore.ordered.OrderedDataStructure;
 
 public class ExtensibleStoreImplForTests
-		extends ExtensibleStore<NaiveHashSetDataStructure, SimpleMemoryNamespaceStore> {
+		extends ExtensibleStore<OrderedDataStructure, SimpleMemoryNamespaceStore> {
 
 	public ExtensibleStoreImplForTests() {
+		super(Cache.NONE);
 	}
 
 	public ExtensibleStoreImplForTests(Cache cache) {
-		super(cache);
+		super(Cache.NONE);
 	}
 
 	@Override
 	protected synchronized void initializeInternal() throws SailException {
 		namespaceStore = new SimpleMemoryNamespaceStore();
-		dataStructure = new NaiveHashSetDataStructure();
+		dataStructure = new OrderedDataStructure();
 		super.initializeInternal();
 	}
 

@@ -11,13 +11,19 @@
 
 package org.eclipse.rdf4j.common.iteration;
 
+import java.util.Comparator;
 import java.util.NoSuchElementException;
+
+import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.model.Value;
 
 /**
  * Provides a bag union of the two provided iterations.
  */
 public class DualUnionIteration<E> implements CloseableIteration<E> {
 
+	private final StatementOrder statementOrder;
+	private final Comparator<Value> cmp;
 	private CloseableIteration<? extends E> iteration1;
 	private CloseableIteration<? extends E> iteration2;
 	private E nextElement;
@@ -30,6 +36,17 @@ public class DualUnionIteration<E> implements CloseableIteration<E> {
 			CloseableIteration<? extends E> iteration2) {
 		this.iteration1 = iteration1;
 		this.iteration2 = iteration2;
+		this.statementOrder = null;
+		this.cmp = null;
+	}
+
+	public DualUnionIteration(StatementOrder statementOrder, Comparator<Value> cmp,
+			CloseableIteration<? extends E> iteration1, CloseableIteration<? extends E> iteration2) {
+		this.iteration1 = iteration1;
+		this.iteration2 = iteration2;
+		this.statementOrder = statementOrder;
+		this.cmp = cmp;
+		throw new UnsupportedOperationException("Not implemented yet");
 	}
 
 	public static <E, X extends Exception> CloseableIteration<? extends E> getWildcardInstance(
@@ -41,6 +58,27 @@ public class DualUnionIteration<E> implements CloseableIteration<E> {
 			return rightIteration;
 		} else {
 			return new DualUnionIteration<>(leftIteration, rightIteration);
+		}
+	}
+
+	public static <E, X extends Exception> CloseableIteration<? extends E> getWildcardInstance(StatementOrder order,
+			Comparator<Value> cmp,
+			CloseableIteration<? extends E> leftIteration, CloseableIteration<? extends E> rightIteration) {
+
+		if (rightIteration instanceof EmptyIteration) {
+			return leftIteration;
+		} else if (leftIteration instanceof EmptyIteration) {
+			return rightIteration;
+		} else {
+			if (!rightIteration.hasNext()) {
+				rightIteration.close();
+				return leftIteration;
+			}
+			if (!leftIteration.hasNext()) {
+				leftIteration.close();
+				return rightIteration;
+			}
+			return new DualUnionIteration<>(order, cmp, leftIteration, rightIteration);
 		}
 	}
 

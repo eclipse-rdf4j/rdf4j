@@ -10,12 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore;
 
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -209,6 +211,20 @@ class ExtensibleSailSource implements SailSource {
 				return dataStructure.getStatements(subj, pred, obj, inferred, contexts);
 			}
 
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subj, IRI pred,
+					Value obj, Resource... contexts) throws SailException {
+				return dataStructure.getStatements(order, subj, pred, obj, inferred, contexts);
+			}
+
+			@Override
+			public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+				return dataStructure.getSupportedOrders(subj, pred, obj, inferred, contexts);
+			}
+
+			public Comparator<Value> getComparator() {
+				return dataStructure.getComparator();
+			}
 		};
 	}
 

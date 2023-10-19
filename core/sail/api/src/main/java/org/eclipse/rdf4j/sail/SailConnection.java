@@ -10,10 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail;
 
+import java.util.Comparator;
 import java.util.Optional;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
@@ -117,6 +120,30 @@ public interface SailConnection extends AutoCloseable {
 	 */
 	CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts) throws SailException;
+
+	/**
+	 * Gets all statements from the specified contexts that have a specific subject, predicate and/or object. All three
+	 * parameters may be null to indicate wildcards. The <var>includeInferred</var> parameter can be used to control
+	 * which statements are fetched: all statements or only the statements that have been added explicitly.
+	 *
+	 * @param statementOrder  The order that the statements should be returned in.
+	 * @param subj            A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred            A URI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj             A Value specifying the object, or <var>null</var> for a wildcard.
+	 * @param includeInferred if false, no inferred statements are returned; if true, inferred statements are returned
+	 *                        if available
+	 * @param contexts        The context(s) to get the data from. Note that this parameter is a vararg and as such is
+	 *                        optional. If no contexts are specified the method operates on the entire repository. A
+	 *                        <var>null</var> value can be used to match context-less statements.
+	 * @return The statements matching the specified pattern.
+	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
+	 * @throws IllegalStateException If the connection has been closed.
+	 */
+	default CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj,
+			IRI pred, Value obj,
+			boolean includeInferred, Resource... contexts) throws SailException {
+		throw new SailException("Statement ordering is not supported by " + this.getClass().getSimpleName());
+	}
 
 	/**
 	 * Determines if the store contains any statements from the specified contexts that have a specific subject,
@@ -441,4 +468,11 @@ public interface SailConnection extends AutoCloseable {
 		throw new UnsupportedOperationException();
 	}
 
+	default Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		return Set.of();
+	}
+
+	default Comparator<Value> getComparator() {
+		return null;
+	}
 }

@@ -105,8 +105,8 @@ public class ParentReferenceChecker implements QueryOptimizer {
 		protected void meetNode(QueryModelNode node) throws RuntimeException {
 			QueryModelNode expectedParent = ancestors.peekLast();
 			if (node.getParentNode() != expectedParent) {
-				String message = "After " + previousOptimizer + " there was an unexpected parent for node " + node
-						+ ": " + node.getParentNode() + " (expected " + expectedParent + ")";
+				String message = "After " + previousOptimizer + " there was an unexpected parent for node \n" + node
+						+ "\nwith parent: \n" + node.getParentNode() + "\nexpected: \n" + expectedParent;
 				assert node.getParentNode() == expectedParent : message;
 			}
 

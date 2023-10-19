@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -17,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
@@ -402,6 +404,25 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
 		return SailClosingIteration.makeClosable(snapshot.getStatements(subj, pred, obj, contexts), snapshot, branch);
+	}
+
+	@Override
+	protected CloseableIteration<? extends Statement> getStatementsInternal(StatementOrder order, Resource subj,
+			IRI pred,
+			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+		SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
+		SailDataset snapshot = branch.dataset(getIsolationLevel());
+		return SailClosingIteration.makeClosable(snapshot.getStatements(order, subj, pred, obj, contexts), snapshot,
+				branch);
+	}
+
+	@Override
+	public Comparator<Value> getComparator() {
+		try (SailSource branch = branch(IncludeInferred.fromBoolean(false))) {
+			try (SailDataset snapshot = branch.dataset(getIsolationLevel())) {
+				return snapshot.getComparator();
+			}
+		}
 	}
 
 	@Override

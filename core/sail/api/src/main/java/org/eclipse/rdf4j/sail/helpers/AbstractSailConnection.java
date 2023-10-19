@@ -22,13 +22,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.BNode;
@@ -382,6 +382,29 @@ public abstract class AbstractSailConnection implements SailConnection {
 			CloseableIteration<? extends Statement> iteration = null;
 			try {
 				iteration = getStatementsInternal(subj, pred, obj, includeInferred, contexts);
+				return registerIteration(iteration);
+			} catch (Throwable t) {
+				if (iteration != null) {
+					iteration.close();
+				}
+				throw t;
+			}
+		} finally {
+			unblockClose.increment();
+		}
+	}
+
+	@Override
+	public final CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subj, IRI pred,
+			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+		flushPendingUpdates();
+
+		blockClose.increment();
+		try {
+			verifyIsOpen();
+			CloseableIteration<? extends Statement> iteration = null;
+			try {
+				iteration = getStatementsInternal(order, subj, pred, obj, includeInferred, contexts);
 				return registerIteration(iteration);
 			} catch (Throwable t) {
 				if (iteration != null) {
@@ -859,6 +882,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	protected abstract CloseableIteration<? extends Statement> getStatementsInternal(Resource subj,
 			IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException;
+
+	protected CloseableIteration<? extends Statement> getStatementsInternal(StatementOrder order, Resource subj,
+			IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+		throw new SailException("StatementOrder not supported");
+	}
 
 	protected abstract long sizeInternal(Resource... contexts) throws SailException;
 

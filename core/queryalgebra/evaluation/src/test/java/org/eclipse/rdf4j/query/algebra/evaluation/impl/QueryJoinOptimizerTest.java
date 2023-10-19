@@ -104,7 +104,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery q = parser.parseQuery(qb.toString(), null);
-		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics());
+		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
 		QueryRoot optRoot = new QueryRoot(q.getTupleExpr());
 		opt.optimize(optRoot, null, null);
 		TupleExpr leaf = findLeaf(optRoot);
@@ -118,7 +118,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery q = parser.parseQuery(query, null);
-		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics());
+		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
 		QueryRoot optRoot = new QueryRoot(q.getTupleExpr());
 		opt.optimize(optRoot, null, null);
 
@@ -174,7 +174,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery q = parser.parseQuery(query, null);
-		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics());
+		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
 		QueryRoot optRoot = new QueryRoot(q.getTupleExpr());
 		opt.optimize(optRoot, null, null);
 
@@ -194,7 +194,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 	@Override
 	public QueryJoinOptimizer getOptimizer() {
-		return new QueryJoinOptimizer(new EvaluationStatistics());
+		return new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
 	}
 
 	private TupleExpr findLeaf(TupleExpr expr) {

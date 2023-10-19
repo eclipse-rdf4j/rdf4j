@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.extensiblestore;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 
@@ -192,6 +193,11 @@ public class LazyReadCache implements DataStructureInterface {
 			cache.put(partialStatement, statements);
 		}
 
+	}
+
+	@Override
+	public Comparator<Value> getComparator() {
+		return delegate.getComparator();
 	}
 
 	@Override

@@ -33,7 +33,7 @@ public class QueryCostEstimatesTest {
 
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery q = parser.parseQuery(query, null);
-		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics());
+		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
 		opt.optimize(q.getTupleExpr(), null, null);
 
 		assertEquals("QueryRoot" + LINE_SEP +

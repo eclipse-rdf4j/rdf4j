@@ -11,8 +11,13 @@
 
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.Comparator;
+import java.util.EnumSet;
+import java.util.Set;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -171,4 +176,79 @@ class UnionSailDataset implements SailDataset {
 		return DualUnionIteration.getWildcardInstance(iteration1, iteration2);
 	}
 
+	private <T> CloseableIteration<? extends T> union(StatementOrder order, Comparator cmp,
+			CloseableIteration<? extends T> iteration1,
+			CloseableIteration<? extends T> iteration2) {
+		return DualUnionIteration.getWildcardInstance(order, cmp, iteration1, iteration2);
+	}
+
+	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj, IRI pred,
+			Value obj, Resource... contexts) throws SailException {
+
+		CloseableIteration<? extends Statement> iteration1 = null;
+		CloseableIteration<? extends Statement> iteration2 = null;
+		try {
+			iteration1 = dataset1.getStatements(statementOrder, subj, pred, obj, contexts);
+			iteration2 = dataset2.getStatements(statementOrder, subj, pred, obj, contexts);
+			return union(statementOrder, dataset1.getComparator(), iteration1, iteration2);
+		} catch (Throwable t) {
+			try {
+				if (iteration1 != null) {
+					iteration1.close();
+				}
+			} finally {
+				if (iteration2 != null) {
+					iteration2.close();
+				}
+			}
+			throw t;
+		}
+
+	}
+
+	@Override
+	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+//		try (CloseableIteration<? extends Statement> statements = dataset1.getStatements(null, null, null)) {
+//			if (!statements.hasNext()) {
+//				return dataset2.getSupportedOrders(subj, pred, obj, contexts);
+//			}
+//		}
+//
+//		if (supportedOrders1.isEmpty()) {
+//			return Set.of();
+//		}
+//
+//		try (CloseableIteration<? extends Statement> statements = dataset2.getStatements(null, null, null)) {
+//			if (!statements.hasNext()) {
+//				return supportedOrders1;
+//			}
+//		}
+
+		Set<StatementOrder> supportedOrders1 = dataset1.getSupportedOrders(subj, pred, obj, contexts);
+		if (supportedOrders1.isEmpty()) {
+			return Set.of();
+		}
+		Set<StatementOrder> supportedOrders2 = dataset2.getSupportedOrders(subj, pred, obj, contexts);
+		if (supportedOrders2.isEmpty()) {
+			return Set.of();
+		}
+		if (supportedOrders1.equals(supportedOrders2)) {
+			return supportedOrders1;
+		}
+
+		EnumSet<StatementOrder> commonStatementOrders = EnumSet.copyOf(supportedOrders1);
+		commonStatementOrders.retainAll(supportedOrders2);
+		return commonStatementOrders;
+	}
+
+	@Override
+	public Comparator<Value> getComparator() {
+		Comparator<Value> comparator1 = dataset1.getComparator();
+		Comparator<Value> comparator2 = dataset2.getComparator();
+
+		assert (comparator1 == null && comparator2 == null) || (comparator1 != null && comparator2 != null);
+
+		return comparator1;
+	}
 }

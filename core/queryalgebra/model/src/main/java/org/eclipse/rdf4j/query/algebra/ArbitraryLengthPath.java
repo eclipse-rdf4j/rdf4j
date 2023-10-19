@@ -14,6 +14,7 @@ import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 
 /**
@@ -263,6 +264,21 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 		}
 
 		return clone;
+	}
+
+	@Override
+	public Set<Var> getSupportedOrders(AvailableStatementOrder tripleSource) {
+		return Set.of();
+	}
+
+	@Override
+	public void setOrder(Var var) {
+		throw new UnsupportedOperationException("Not implemented yet");
+	}
+
+	@Override
+	public Var getOrder() {
+		throw new UnsupportedOperationException("Not implemented yet");
 	}
 
 }

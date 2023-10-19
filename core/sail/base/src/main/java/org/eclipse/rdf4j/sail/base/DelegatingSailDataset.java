@@ -10,7 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.Comparator;
+import java.util.Set;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -72,5 +76,21 @@ abstract class DelegatingSailDataset implements SailDataset {
 	public CloseableIteration<? extends Triple> getTriples(Resource subj, IRI pred,
 			Value obj) throws SailException {
 		return delegate.getTriples(subj, pred, obj);
+	}
+
+	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj, IRI pred,
+			Value obj, Resource... contexts) throws SailException {
+		return delegate.getStatements(statementOrder, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		return delegate.getSupportedOrders(subj, pred, obj, contexts);
+	}
+
+	@Override
+	public Comparator<Value> getComparator() {
+		return delegate.getComparator();
 	}
 }
