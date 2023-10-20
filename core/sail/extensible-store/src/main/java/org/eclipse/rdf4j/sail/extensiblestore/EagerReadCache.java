@@ -15,7 +15,6 @@ import java.util.Iterator;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
-import org.eclipse.rdf4j.common.ordering.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -251,7 +250,7 @@ public class EagerReadCache implements DataStructureInterface {
 	}
 
 	@Override
-	public Comparator<? extends ExtensibleStatement> getComparator(StatementOrder statementOrder) {
+	public Comparator<? extends Value> getComparator() {
 		throw new SailException("StatementOrder not supported");
 	}
 }

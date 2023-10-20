@@ -17,9 +17,18 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.ordering.StatementOrder;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -30,6 +39,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternVisitor;
@@ -45,14 +55,24 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 	protected final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
+	private final TripleSource tripleSource;
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics) {
-		this(statistics, false);
+		this(statistics, false, new EmptyTripleSource());
+	}
+
+	public QueryJoinOptimizer(EvaluationStatistics statistics, TripleSource tripleSource) {
+		this(statistics, false, tripleSource);
 	}
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize) {
+		this(statistics, trackResultSize, new EmptyTripleSource());
+	}
+
+	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize, TripleSource tripleSource) {
 		this.statistics = statistics;
 		this.trackResultSize = trackResultSize;
+		this.tripleSource = tripleSource;
 	}
 
 	/**
@@ -62,17 +82,19 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	 */
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new JoinVisitor(statistics, trackResultSize));
+		tupleExpr.visit(new JoinVisitor(statistics, trackResultSize, tripleSource));
 	}
 
 	private static class JoinVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		private final EvaluationStatistics statistics;
+		private final TripleSource tripleSource;
 		Set<String> boundVars = new HashSet<>();
 
-		protected JoinVisitor(EvaluationStatistics statistics, boolean trackResultSize) {
+		private JoinVisitor(EvaluationStatistics statistics, boolean trackResultSize, TripleSource tripleSource) {
 			super(trackResultSize);
 			this.statistics = statistics;
+			this.tripleSource = tripleSource;
 		}
 
 		@Override
@@ -189,12 +211,23 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					}
 				}
 
+				Set<Var> availableOrderings = null;
+
 				// Build new join hierarchy
 				TupleExpr priorityJoins = null;
 				if (priorityArgs.size() > 0) {
 					priorityJoins = priorityArgs.get(0);
+					if (availableOrderings == null) {
+						availableOrderings = new HashSet<>(priorityJoins.getAvailableOrderings(tripleSource));
+					}
 					for (int i = 1; i < priorityArgs.size(); i++) {
-						priorityJoins = new Join(priorityJoins, priorityArgs.get(i));
+						TupleExpr rightArg = priorityArgs.get(i);
+						Set<Var> availableOrderings1 = rightArg.getAvailableOrderings(tripleSource);
+						availableOrderings.retainAll(availableOrderings1);
+						availableOrderings = new HashSet<>(
+								availableOrderings.stream().limit(1).collect(Collectors.toSet()));
+						priorityJoins = new Join(priorityJoins, rightArg);
+						priorityJoins.setOrdering(availableOrderings.stream().findAny().orElse(null));
 					}
 				}
 
@@ -204,8 +237,22 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					// argument
 					int i = orderedJoinArgs.size() - 1;
 					TupleExpr replacement = orderedJoinArgs.get(i);
+					if (availableOrderings == null) {
+						availableOrderings = new HashSet<>(replacement.getAvailableOrderings(tripleSource));
+					} else {
+						Set<Var> availableOrderings1 = replacement.getAvailableOrderings(tripleSource);
+						availableOrderings.retainAll(availableOrderings1);
+						availableOrderings = new HashSet<>(
+								availableOrderings.stream().limit(1).collect(Collectors.toSet()));
+					}
 					for (i--; i >= 0; i--) {
-						replacement = new Join(orderedJoinArgs.get(i), replacement);
+						TupleExpr leftArg = orderedJoinArgs.get(i);
+						Set<Var> availableOrderings1 = leftArg.getAvailableOrderings(tripleSource);
+						availableOrderings.retainAll(availableOrderings1);
+						availableOrderings = new HashSet<>(
+								availableOrderings.stream().limit(1).collect(Collectors.toSet()));
+						replacement = new Join(leftArg, replacement);
+						replacement.setOrdering(availableOrderings.stream().findAny().orElse(null));
 					}
 
 					if (priorityJoins != null) {
@@ -675,6 +722,26 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	private static boolean hasCachedCardinality(TupleExpr tupleExpr) {
 		return tupleExpr instanceof AbstractQueryModelNode
 				&& ((AbstractQueryModelNode) tupleExpr).isCardinalitySet();
+	}
+
+	private static final class EmptyTripleSource implements TripleSource {
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) throws QueryEvaluationException {
+			return TripleSource.EMPTY_ITERATION;
+		}
+
+		@Override
+		public Set<StatementOrder> getAvailableOrderings(Resource subj, IRI pred, Value obj, Resource... contexts)
+				throws QueryEvaluationException {
+			return Set.of();
+		}
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return null;
+		}
 	}
 
 }

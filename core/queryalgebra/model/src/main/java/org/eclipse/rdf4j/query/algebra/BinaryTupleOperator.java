@@ -10,8 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.HashSet;
+import java.util.Set;
+
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.ordering.AvailableStatementOrder;
 
 /**
  * An abstract superclass for binary tuple operators which, by definition, has two arguments.
@@ -157,5 +161,25 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 	@Experimental
 	public String getAlgorithmName() {
 		return algorithmName;
+	}
+
+	@Override
+	public Set<Var> getAvailableOrderings(AvailableStatementOrder tripleSource) {
+		Set<Var> leftArgAvailableOrderings = leftArg.getAvailableOrderings(tripleSource);
+		Set<Var> rightArgAvailableOrderings = rightArg.getAvailableOrderings(tripleSource);
+		if (leftArgAvailableOrderings.equals(rightArgAvailableOrderings)) {
+			return leftArgAvailableOrderings;
+		} else {
+			HashSet<Var> intersection = new HashSet<>(leftArgAvailableOrderings);
+			intersection.retainAll(rightArgAvailableOrderings);
+			return intersection;
+		}
+
+	}
+
+	@Override
+	public void setOrdering(Var var) {
+		leftArg.setOrdering(var);
+		rightArg.setOrdering(var);
 	}
 }

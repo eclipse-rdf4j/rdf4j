@@ -9,7 +9,13 @@
 	<artifactId>rdf4j-common-ordering</artifactId>
 	<name>RDF4J: common ordering</name>
 	<description>RDF4J common ordering classes</description>
-	<dependencies/>
+	<dependencies>
+		<dependency>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-model-api</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+	</dependencies>
 	<build>
 		<plugins>
 			<plugin>

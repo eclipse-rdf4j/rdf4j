@@ -441,8 +441,9 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 
 		if (sail.getEvaluationMode() == TupleFunctionEvaluationMode.TRIPLE_SOURCE) {
 			ValueFactory vf = sail.getValueFactory();
+			SailTripleSource tripleSource = new SailTripleSource(this, includeInferred, vf);
 			EvaluationStrategy strategy = new TupleFunctionEvaluationStrategy(
-					new SailTripleSource(this, includeInferred, vf), dataset, sail.getFederatedServiceResolver(),
+					tripleSource, dataset, sail.getFederatedServiceResolver(),
 					sail.getTupleFunctionRegistry());
 
 			// do standard optimizations
@@ -453,7 +454,8 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 			new DisjunctiveConstraintOptimizer().optimize(tupleExpr, dataset, bindings);
 			new SameTermFilterOptimizer().optimize(tupleExpr, dataset, bindings);
 			new QueryModelNormalizerOptimizer().optimize(tupleExpr, dataset, bindings);
-			new QueryJoinOptimizer(new TupleFunctionEvaluationStatistics()).optimize(tupleExpr, dataset, bindings);
+			new QueryJoinOptimizer(new TupleFunctionEvaluationStatistics(), tripleSource).optimize(tupleExpr, dataset,
+					bindings);
 			// new SubSelectJoinOptimizer().optimize(tupleExpr, dataset,
 			// bindings);
 			new IterativeEvaluationOptimizer().optimize(tupleExpr, dataset, bindings);

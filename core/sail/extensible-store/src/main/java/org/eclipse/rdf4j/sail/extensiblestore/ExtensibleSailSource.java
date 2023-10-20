@@ -29,7 +29,6 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
-import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
 
 /**
@@ -223,8 +222,8 @@ class ExtensibleSailSource implements SailSource {
 				return dataStructure.getAvailableOrderings(subj, pred, obj, inferred, contexts);
 			}
 
-			public Comparator<? extends ExtensibleStatement> getComparator(StatementOrder statementOrder) {
-				return dataStructure.getComparator(statementOrder);
+			public Comparator<? extends Value> getComparator() {
+				return dataStructure.getComparator();
 			}
 		};
 	}

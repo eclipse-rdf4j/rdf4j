@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.ordering.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -41,6 +42,12 @@ public class EmptyTripleSource implements TripleSource {
 	@Override
 	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws QueryEvaluationException {
-		return new EmptyIteration<>();
+		return TripleSource.EMPTY_ITERATION;
+	}
+
+	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subj, IRI pred,
+			Value obj, Resource... contexts) throws QueryEvaluationException {
+		return TripleSource.EMPTY_ITERATION;
 	}
 }

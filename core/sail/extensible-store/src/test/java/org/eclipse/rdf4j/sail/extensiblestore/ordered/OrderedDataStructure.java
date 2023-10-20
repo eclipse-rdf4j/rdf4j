@@ -94,17 +94,7 @@ public class OrderedDataStructure implements DataStructureInterface {
 	}
 
 	@Override
-	public Comparator<? extends ExtensibleStatement> getComparator(StatementOrder statementOrder) {
-		if (statementOrder.equals(StatementOrder.S)) {
-			return Comparator.comparing(o -> o.getSubject().toString());
-		} else if (statementOrder.equals(StatementOrder.P)) {
-			return Comparator.comparing(o -> o.getPredicate().toString());
-		} else if (statementOrder.equals(StatementOrder.O)) {
-			return Comparator.comparing(o -> o.getObject().toString());
-		} else if (statementOrder.equals(StatementOrder.C)) {
-			return Comparator.comparing(o -> o.getContext().toString());
-		} else {
-			throw new IllegalArgumentException("Unknown StatementOrder: " + statementOrder);
-		}
+	public Comparator<? extends Value> getComparator() {
+		return Comparator.comparing(Value::stringValue);
 	}
 }

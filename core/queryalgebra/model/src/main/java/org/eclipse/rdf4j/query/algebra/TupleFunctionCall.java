@@ -15,6 +15,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.ordering.AvailableStatementOrder;
+
 /**
  * A call to a TupleFunction. This is an optional extension to the query model.
  */
@@ -166,5 +168,15 @@ public class TupleFunctionCall extends AbstractQueryModelNode implements TupleEx
 		}
 
 		return clone;
+	}
+
+	@Override
+	public Set<Var> getAvailableOrderings(AvailableStatementOrder tripleSource) {
+		throw new UnsupportedOperationException("Not implemented yet");
+	}
+
+	@Override
+	public void setOrdering(Var var) {
+		throw new UnsupportedOperationException("Not implemented yet");
 	}
 }

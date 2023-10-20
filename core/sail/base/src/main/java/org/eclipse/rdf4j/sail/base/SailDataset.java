@@ -100,7 +100,7 @@ public interface SailDataset extends SailClosable {
 	default CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj,
 			IRI pred, Value obj,
 			Resource... contexts) throws SailException {
-		throw new SailException("Statement ordering not supported by this store");
+		throw new SailException("Statement ordering not supported by " + this.getClass().getSimpleName());
 	}
 
 	/**
@@ -122,8 +122,8 @@ public interface SailDataset extends SailClosable {
 		return Set.of();
 	}
 
-	default Comparator<? extends Statement> getComparator(StatementOrder statementOrder) {
-		throw new SailException("Statement ordering not supported by this store");
+	default Comparator<? extends Value> getComparator() {
+		throw new SailException("Statement ordering not supported by " + this.getClass().getSimpleName());
 	}
 
 }

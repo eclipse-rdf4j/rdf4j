@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.ordering.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
@@ -59,7 +58,7 @@ public interface DataStructureInterface {
 
 	default CloseableIteration<? extends ExtensibleStatement> getStatements(StatementOrder statementOrder,
 			Resource subject, IRI predicate, Value object, boolean inferred, Resource... contexts) {
-		throw new SailException("StatementOrder not supported");
+		throw new SailException("StatementOrder not supported by: " + this.getClass().getSimpleName());
 	}
 
 	void flushForReading();
@@ -106,8 +105,8 @@ public interface DataStructureInterface {
 		return Set.of();
 	}
 
-	default Comparator<? extends ExtensibleStatement> getComparator(StatementOrder statementOrder) {
-		throw new SailException("StatementOrder not supported");
+	default Comparator<? extends Value> getComparator() {
+		throw new SailException("StatementOrder not supported by: " + this.getClass().getSimpleName());
 	}
 
 }

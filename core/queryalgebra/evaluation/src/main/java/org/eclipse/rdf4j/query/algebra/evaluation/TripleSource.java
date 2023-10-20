@@ -10,8 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
+import java.util.Set;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.ordering.AvailableStatementOrder;
+import org.eclipse.rdf4j.common.ordering.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -24,7 +28,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * A triple source that can be queried for (the existence of) certain triples in certain contexts. This interface
  * defines the methods that are needed by the Sail Query Model to be able to evaluate itself.
  */
-public interface TripleSource {
+public interface TripleSource extends AvailableStatementOrder {
 
 	EmptyIteration<? extends Statement> EMPTY_ITERATION = new EmptyIteration<>();
 	EmptyIteration<? extends Triple> EMPTY_TRIPLE_ITERATION = new EmptyIteration<>();
@@ -44,6 +48,30 @@ public interface TripleSource {
 	 */
 	CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws QueryEvaluationException;
+
+	/**
+	 * Gets all statements that have a specific subject, predicate and/or object. All three parameters may be null to
+	 * indicate wildcards. Optionally a (set of) context(s) may be specified in which case the result will be restricted
+	 * to statements matching one or more of the specified contexts.
+	 *
+	 * @param subj     A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred     A URI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj      A Value specifying the object, or <var>null</var> for a wildcard.
+	 * @param contexts The context(s) to get the statements from. Note that this parameter is a vararg and as such is
+	 *                 optional. If no contexts are supplied the method operates on the entire repository.
+	 * @return An iterator over the relevant statements.
+	 * @throws QueryEvaluationException If the triple source failed to get the statements.
+	 */
+	default CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subj, IRI pred,
+			Value obj, Resource... contexts) throws QueryEvaluationException {
+		throw new UnsupportedOperationException(
+				"StatementOrder is not supported by this TripleSource: " + this.getClass().getName());
+	}
+
+	default Set<StatementOrder> getAvailableOrderings(Resource subj, IRI pred,
+			Value obj, Resource... contexts) throws QueryEvaluationException {
+		return Set.of();
+	}
 
 	/**
 	 * Gets a ValueFactory object that can be used to create URI-, blank node- and literal objects.

@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.federated.algebra;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.ordering.AvailableStatementOrder;
 import org.eclipse.rdf4j.federated.structures.FedXTupleQuery;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
@@ -21,6 +22,7 @@ import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 
 import com.google.common.collect.Lists;
 
@@ -111,5 +113,15 @@ public class PassThroughTupleExpr extends AbstractQueryModelNode implements FedX
 	@Override
 	public QueryInfo getQueryInfo() {
 		throw new UnsupportedOperationException("Not supported to retrieve query info on this marker node");
+	}
+
+	@Override
+	public Set<Var> getAvailableOrderings(AvailableStatementOrder tripleSource) {
+		return parsedQuery.getAvailableOrderings(tripleSource);
+	}
+
+	@Override
+	public void setOrdering(Var var) {
+		parsedQuery.setOrdering(var);
 	}
 }

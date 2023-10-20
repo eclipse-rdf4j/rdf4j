@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.ordering.AvailableStatementOrder;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.model.Value;
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.slf4j.Logger;
@@ -233,5 +235,15 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 	@Override
 	public QueryInfo getQueryInfo() {
 		return this.queryInfo;
+	}
+
+	@Override
+	public Set<Var> getAvailableOrderings(AvailableStatementOrder tripleSource) {
+		throw new UnsupportedOperationException("Not implemented yet");
+	}
+
+	@Override
+	public void setOrdering(Var var) {
+		throw new UnsupportedOperationException("Not implemented yet");
 	}
 }

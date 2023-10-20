@@ -17,7 +17,6 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
-import org.eclipse.rdf4j.common.ordering.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -197,8 +196,8 @@ public class LazyReadCache implements DataStructureInterface {
 	}
 
 	@Override
-	public Comparator<? extends ExtensibleStatement> getComparator(StatementOrder statementOrder) {
-		return delegate.getComparator(statementOrder);
+	public Comparator<? extends Value> getComparator() {
+		return delegate.getComparator();
 	}
 
 	@Override

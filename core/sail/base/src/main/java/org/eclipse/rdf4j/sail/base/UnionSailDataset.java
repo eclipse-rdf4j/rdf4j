@@ -176,10 +176,10 @@ class UnionSailDataset implements SailDataset {
 		return DualUnionIteration.getWildcardInstance(iteration1, iteration2);
 	}
 
-	private <T> CloseableIteration<? extends T> union(Comparator cmp,
+	private <T> CloseableIteration<? extends T> union(StatementOrder order, Comparator cmp,
 			CloseableIteration<? extends T> iteration1,
 			CloseableIteration<? extends T> iteration2) {
-		return DualUnionIteration.getWildcardInstance(cmp, iteration1, iteration2);
+		return DualUnionIteration.getWildcardInstance(order, cmp, iteration1, iteration2);
 	}
 
 	@Override
@@ -191,7 +191,7 @@ class UnionSailDataset implements SailDataset {
 		try {
 			iteration1 = dataset1.getStatements(statementOrder, subj, pred, obj, contexts);
 			iteration2 = dataset2.getStatements(statementOrder, subj, pred, obj, contexts);
-			return union(dataset1.getComparator(statementOrder), iteration1, iteration2);
+			return union(statementOrder, dataset1.getComparator(), iteration1, iteration2);
 		} catch (Throwable t) {
 			try {
 				if (iteration1 != null) {

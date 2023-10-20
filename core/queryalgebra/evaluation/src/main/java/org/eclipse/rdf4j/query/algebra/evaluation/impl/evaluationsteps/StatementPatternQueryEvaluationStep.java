@@ -18,6 +18,7 @@ import java.util.function.Predicate;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
+import org.eclipse.rdf4j.common.ordering.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -53,6 +54,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private final Function<Value, Resource[]> contextSup;
 	private final BiConsumer<MutableBindingSet, Statement> converter;
 	private final QueryEvaluationContext context;
+	private final StatementOrder order;
 
 	private final Predicate<BindingSet> unboundTest;
 
@@ -67,6 +69,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			TripleSource tripleSource) {
 		super();
 		this.statementPattern = statementPattern;
+		this.order = statementPattern.getStatementOrder();
 		this.context = context;
 		this.tripleSource = tripleSource;
 		Set<IRI> graphs = null;
@@ -254,7 +257,12 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		CloseableIteration<? extends Statement> iteration = null;
 		try {
-			iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
+			if (order != null) {
+				iteration = tripleSource.getStatements(order, (Resource) subject, (IRI) predicate, object, contexts);
+
+			} else {
+				iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
+			}
 			if (iteration instanceof EmptyIteration) {
 				return null;
 			}
@@ -298,7 +306,11 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		CloseableIteration<? extends Statement> iteration = null;
 		try {
-			iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
+			if (order != null) {
+				iteration = tripleSource.getStatements(order, (Resource) subject, (IRI) predicate, object, contexts);
+			} else {
+				iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
+			}
 			if (iteration instanceof EmptyIteration) {
 				return null;
 			}
@@ -601,7 +613,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	/**
 	 * We need to test every binding with hasBinding etc. as these are not guaranteed to be equivalent between calls of
 	 * evaluate(bs).
-	 *
+	 * <p>
 	 * Each conversion kind is special cased in with a specific method.
 	 *
 	 * @return a converter from statement into MutableBindingSet

@@ -114,8 +114,8 @@ public class EvaluationStatisticsWrapper implements DataStructureInterface {
 	}
 
 	@Override
-	public Comparator<? extends ExtensibleStatement> getComparator(StatementOrder statementOrder) {
-		return delegate.getComparator(statementOrder);
+	public Comparator<? extends Value> getComparator() {
+		return delegate.getComparator();
 	}
 
 	public void setEvaluationStatistics(DynamicStatistics dynamicStatistics) {

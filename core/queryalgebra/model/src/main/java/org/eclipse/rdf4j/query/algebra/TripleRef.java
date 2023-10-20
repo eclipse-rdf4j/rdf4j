@@ -16,6 +16,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.ordering.AvailableStatementOrder;
+
 /**
  * Triple lookup reference. Allow retrieval of RDF-star triples
  **/
@@ -216,6 +218,16 @@ public class TripleRef extends AbstractQueryModelNode implements TupleExpr {
 		}
 
 		return clone;
+	}
+
+	@Override
+	public Set<Var> getAvailableOrderings(AvailableStatementOrder tripleSource) {
+		throw new UnsupportedOperationException("Not implemented yet");
+	}
+
+	@Override
+	public void setOrdering(Var var) {
+		throw new UnsupportedOperationException("This TupleExpr does not support ordering");
 	}
 
 	@Override

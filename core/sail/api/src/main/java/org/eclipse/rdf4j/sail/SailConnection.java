@@ -141,7 +141,7 @@ public interface SailConnection extends AutoCloseable {
 	default CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj,
 			IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts) throws SailException {
-		throw new SailException("Statement ordering is not supported by this SailConnection");
+		throw new SailException("Statement ordering is not supported by " + this.getClass().getSimpleName());
 	}
 
 	/**
