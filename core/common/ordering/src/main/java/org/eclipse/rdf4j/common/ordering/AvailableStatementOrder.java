@@ -19,5 +19,5 @@ import org.eclipse.rdf4j.model.Value;
 
 public interface AvailableStatementOrder {
 
-	public Set<StatementOrder> getAvailableOrderings(Resource subj, IRI pred, Value obj, Resource... contexts);
+	Set<StatementOrder> getAvailableOrderings(Resource subj, IRI pred, Value obj, Resource... contexts);
 }
