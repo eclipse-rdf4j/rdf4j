@@ -355,6 +355,8 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 
 		sb.append(super.getSignature());
 
+		sb.append(" [statementOrder: ").append(statementOrder).append("] ");
+
 		if (scope == Scope.NAMED_CONTEXTS) {
 			sb.append(" FROM NAMED CONTEXT");
 		}

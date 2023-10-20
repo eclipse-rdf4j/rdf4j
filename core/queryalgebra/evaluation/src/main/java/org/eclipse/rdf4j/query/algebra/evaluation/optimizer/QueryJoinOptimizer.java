@@ -226,8 +226,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						availableOrderings.retainAll(availableOrderings1);
 						availableOrderings = new HashSet<>(
 								availableOrderings.stream().limit(1).collect(Collectors.toSet()));
+						if (!availableOrderings.isEmpty()) {
+							priorityJoins.setOrdering(availableOrderings.stream().findAny().orElse(null));
+							rightArg.setOrdering(availableOrderings.stream().findAny().orElse(null));
+						}
 						priorityJoins = new Join(priorityJoins, rightArg);
-						priorityJoins.setOrdering(availableOrderings.stream().findAny().orElse(null));
 					}
 				}
 
@@ -251,8 +254,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						availableOrderings.retainAll(availableOrderings1);
 						availableOrderings = new HashSet<>(
 								availableOrderings.stream().limit(1).collect(Collectors.toSet()));
+						if (!availableOrderings.isEmpty()) {
+							replacement.setOrdering(availableOrderings.stream().findAny().orElse(null));
+							leftArg.setOrdering(availableOrderings.stream().findAny().orElse(null));
+						}
 						replacement = new Join(leftArg, replacement);
-						replacement.setOrdering(availableOrderings.stream().findAny().orElse(null));
 					}
 
 					if (priorityJoins != null) {

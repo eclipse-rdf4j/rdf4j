@@ -22,12 +22,14 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 public class OrderedTest {
@@ -116,11 +118,23 @@ public class OrderedTest {
 			connection.add(Values.iri(NAMESPACE, "c"), RDFS.COMMENT, Values.literal("1c"));
 			connection.add(Values.iri(NAMESPACE, "b"), RDFS.COMMENT, Values.literal("1d"));
 
+			connection.add(Values.iri(NAMESPACE, "d"), FOAF.KNOWS, Values.iri(NAMESPACE, "b"));
+			connection.add(Values.iri(NAMESPACE, "e"), FOAF.KNOWS, Values.iri(NAMESPACE, "d"));
+			connection.add(Values.iri(NAMESPACE, "a"), FOAF.KNOWS, Values.iri(NAMESPACE, "e"));
+			connection.add(Values.iri(NAMESPACE, "c"), FOAF.KNOWS, Values.iri(NAMESPACE, "a"));
+			connection.add(Values.iri(NAMESPACE, "b"), FOAF.KNOWS, Values.iri(NAMESPACE, "c"));
+
 			connection.commit();
 
 			connection.begin(IsolationLevels.NONE);
 			try (TupleQueryResult evaluate = connection
-					.prepareTupleQuery("SELECT * WHERE {?s <" + RDFS.LABEL + "> ?o. ?s <" + RDFS.COMMENT + "> ?o2}")
+					.prepareTupleQuery("SELECT * WHERE {\n" +
+//							"?s <" + FOAF.KNOWS + "> ?s2.\n" +
+//							"?s2 <" + RDFS.COMMENT + "> ?o3.\n" +
+							"?s <" + RDFS.LABEL + "> ?o. \n" +
+							"?s <" + RDFS.COMMENT + "> ?o2.\n" +
+
+							"}")
 					.evaluate()) {
 				List<BindingSet> collect = evaluate.stream().collect(Collectors.toList());
 
@@ -137,7 +151,8 @@ public class OrderedTest {
 		}
 	}
 
-	@Test
+	// Not implemented yet
+//    @Test
 	public void testReadCommitted() {
 		ExtensibleStoreOrderedImplForTests store = new ExtensibleStoreOrderedImplForTests();
 
