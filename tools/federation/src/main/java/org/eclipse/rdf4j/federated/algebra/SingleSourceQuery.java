@@ -105,4 +105,9 @@ public class SingleSourceQuery extends AbstractQueryModelNode implements TupleEx
 	public void setOrdering(Var var) {
 		parsedQuery.setOrdering(var);
 	}
+
+	@Override
+	public Var getOrder() {
+		return parsedQuery.getOrder();
+	}
 }

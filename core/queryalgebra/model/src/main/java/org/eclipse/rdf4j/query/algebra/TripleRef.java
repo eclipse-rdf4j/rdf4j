@@ -231,6 +231,11 @@ public class TripleRef extends AbstractQueryModelNode implements TupleExpr {
 	}
 
 	@Override
+	public Var getOrder() {
+		throw new UnsupportedOperationException("Not implemented yet");
+	}
+
+	@Override
 	protected boolean shouldCacheCardinality() {
 		return true;
 	}

@@ -264,4 +264,9 @@ public class ZeroLengthPath extends AbstractQueryModelNode implements TupleExpr 
 	public void setOrdering(Var var) {
 		throw new UnsupportedOperationException("Not implemented yet");
 	}
+
+	@Override
+	public Var getOrder() {
+		throw new UnsupportedOperationException("Not implemented yet");
+	}
 }

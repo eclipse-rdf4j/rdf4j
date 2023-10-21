@@ -115,4 +115,9 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 	public void setOrdering(Var var) {
 		arg.setOrdering(var);
 	}
+
+	@Override
+	public Var getOrder() {
+		return arg.getOrder();
+	}
 }

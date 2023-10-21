@@ -99,6 +99,11 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 		throw new UnsupportedOperationException("Not implemented yet");
 	}
 
+	@Override
+	public Var getOrder() {
+		throw new UnsupportedOperationException("Not implemented yet");
+	}
+
 	/**
 	 * @param bindingNames The bindingNames to set if known.
 	 */

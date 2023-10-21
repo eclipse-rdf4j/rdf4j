@@ -10,14 +10,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.ordering.StatementOrder;
@@ -159,11 +160,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 
 				// Reorder the (recursive) join arguments to a more optimal sequence
-				List<TupleExpr> orderedJoinArgs = new ArrayList<>(joinArgs.size());
+				Deque<TupleExpr> orderedJoinArgs = new ArrayDeque<>(joinArgs.size());
 
 				// We order all remaining join arguments based on cardinality and
 				// variable frequency statistics
-				if (joinArgs.size() > 0) {
+				if (!joinArgs.isEmpty()) {
 					// Build maps of cardinalities and vars per tuple expression
 					Map<TupleExpr, Double> cardinalityMap = Collections.emptyMap();
 					Map<TupleExpr, List<Var>> varsMap = new HashMap<>();
@@ -211,54 +212,49 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					}
 				}
 
-				Set<Var> availableOrderings = null;
-
 				// Build new join hierarchy
 				TupleExpr priorityJoins = null;
-				if (priorityArgs.size() > 0) {
+				if (!priorityArgs.isEmpty()) {
 					priorityJoins = priorityArgs.get(0);
-					if (availableOrderings == null) {
-						availableOrderings = new HashSet<>(priorityJoins.getAvailableOrderings(tripleSource));
-					}
+
 					for (int i = 1; i < priorityArgs.size(); i++) {
-						TupleExpr rightArg = priorityArgs.get(i);
-						Set<Var> availableOrderings1 = rightArg.getAvailableOrderings(tripleSource);
-						availableOrderings.retainAll(availableOrderings1);
-						availableOrderings = new HashSet<>(
-								availableOrderings.stream().limit(1).collect(Collectors.toSet()));
-						if (!availableOrderings.isEmpty()) {
-							priorityJoins.setOrdering(availableOrderings.stream().findAny().orElse(null));
-							rightArg.setOrdering(availableOrderings.stream().findAny().orElse(null));
-						}
-						priorityJoins = new Join(priorityJoins, rightArg);
+						priorityJoins = new Join(priorityJoins, priorityArgs.get(i));
 					}
 				}
 
-				if (orderedJoinArgs.size() > 0) {
+				if (priorityJoins == null && !orderedJoinArgs.isEmpty()) {
+
+					while (!orderedJoinArgs.isEmpty()) {
+						TupleExpr first = orderedJoinArgs.removeFirst();
+						if (orderedJoinArgs.isEmpty()) {
+							orderedJoinArgs.addFirst(first);
+						} else {
+							TupleExpr second = orderedJoinArgs.removeFirst();
+							Set<Var> availableOrderings = new HashSet<>(first.getAvailableOrderings(tripleSource));
+							availableOrderings.retainAll(second.getAvailableOrderings(tripleSource));
+							if (availableOrderings.isEmpty()) {
+								orderedJoinArgs.addFirst(second);
+								orderedJoinArgs.addFirst(first);
+								break;
+							} else {
+								Join join = new Join(first, second);
+								join.setOrdering((Var) availableOrderings.toArray()[0]);
+								join.setMergeJoin(true);
+								orderedJoinArgs.addFirst(join);
+							}
+						}
+					}
+
+				}
+
+				if (!orderedJoinArgs.isEmpty()) {
 					// Note: generated hierarchy is right-recursive to help the
 					// IterativeEvaluationOptimizer to factor out the left-most join
 					// argument
 					int i = orderedJoinArgs.size() - 1;
-					TupleExpr replacement = orderedJoinArgs.get(i);
-					if (availableOrderings == null) {
-						availableOrderings = new HashSet<>(replacement.getAvailableOrderings(tripleSource));
-					} else {
-						Set<Var> availableOrderings1 = replacement.getAvailableOrderings(tripleSource);
-						availableOrderings.retainAll(availableOrderings1);
-						availableOrderings = new HashSet<>(
-								availableOrderings.stream().limit(1).collect(Collectors.toSet()));
-					}
-					for (i--; i >= 0; i--) {
-						TupleExpr leftArg = orderedJoinArgs.get(i);
-						Set<Var> availableOrderings1 = leftArg.getAvailableOrderings(tripleSource);
-						availableOrderings.retainAll(availableOrderings1);
-						availableOrderings = new HashSet<>(
-								availableOrderings.stream().limit(1).collect(Collectors.toSet()));
-						if (!availableOrderings.isEmpty()) {
-							replacement.setOrdering(availableOrderings.stream().findAny().orElse(null));
-							leftArg.setOrdering(availableOrderings.stream().findAny().orElse(null));
-						}
-						replacement = new Join(leftArg, replacement);
+					TupleExpr replacement = orderedJoinArgs.removeLast();
+					while (!orderedJoinArgs.isEmpty()) {
+						replacement = new Join(orderedJoinArgs.removeLast(), replacement);
 					}
 
 					if (priorityJoins != null) {

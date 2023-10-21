@@ -276,4 +276,9 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 		throw new UnsupportedOperationException("Not implemented yet");
 	}
 
+	@Override
+	public Var getOrder() {
+		throw new UnsupportedOperationException("Not implemented yet");
+	}
+
 }

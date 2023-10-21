@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.InnerMergeJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
@@ -42,6 +43,9 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
 					joinAttributes, context);
 			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
+		} else if (join.isMergeJoin()) {
+			eval = bindings -> InnerMergeJoinIterator.getInstance(leftPrepared, rightPrepared, bindings);
+			join.setAlgorithm(InnerMergeJoinIterator.class.getSimpleName());
 		} else {
 			eval = bindings -> JoinIterator.getInstance(leftPrepared, rightPrepared, bindings);
 			join.setAlgorithm(JoinIterator.class.getSimpleName());

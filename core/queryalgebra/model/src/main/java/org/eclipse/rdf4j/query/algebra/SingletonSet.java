@@ -69,4 +69,9 @@ public class SingletonSet extends AbstractQueryModelNode implements TupleExpr {
 	public void setOrdering(Var var) {
 		throw new UnsupportedOperationException("This TupleExpr does not support ordering");
 	}
+
+	@Override
+	public Var getOrder() {
+		throw new UnsupportedOperationException("This TupleExpr does not support ordering");
+	}
 }

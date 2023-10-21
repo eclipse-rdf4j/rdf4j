@@ -179,4 +179,9 @@ public class TupleFunctionCall extends AbstractQueryModelNode implements TupleEx
 	public void setOrdering(Var var) {
 		throw new UnsupportedOperationException("Not implemented yet");
 	}
+
+	@Override
+	public Var getOrder() {
+		throw new UnsupportedOperationException("Not implemented yet");
+	}
 }

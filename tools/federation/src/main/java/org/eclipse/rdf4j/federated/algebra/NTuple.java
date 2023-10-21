@@ -125,4 +125,9 @@ public abstract class NTuple extends AbstractQueryModelNode implements TupleExpr
 		throw new UnsupportedOperationException("Not implemented yet");
 	}
 
+	@Override
+	public Var getOrder() {
+		throw new UnsupportedOperationException("Not implemented yet");
+	}
+
 }

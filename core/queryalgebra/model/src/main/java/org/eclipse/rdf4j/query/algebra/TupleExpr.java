@@ -40,4 +40,6 @@ public interface TupleExpr extends QueryModelNode {
 	Set<Var> getAvailableOrderings(AvailableStatementOrder tripleSource);
 
 	void setOrdering(Var var);
+
+	Var getOrder();
 }

@@ -355,7 +355,9 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 
 		sb.append(super.getSignature());
 
-		sb.append(" [statementOrder: ").append(statementOrder).append("] ");
+		if (statementOrder != null) {
+			sb.append(" [statementOrder: ").append(statementOrder).append("] ");
+		}
 
 		if (scope == Scope.NAMED_CONTEXTS) {
 			sb.append(" FROM NAMED CONTEXT");
@@ -492,4 +494,24 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 		return statementOrder;
 	}
 
+	@Override
+	public Var getOrder() {
+		if (statementOrder == null) {
+			return null;
+		}
+
+		switch (statementOrder) {
+
+		case S:
+			return subjectVar;
+		case P:
+			return predicateVar;
+		case O:
+			return objectVar;
+		case C:
+			return contextVar;
+		}
+
+		throw new IllegalStateException("Unknown StatementOrder: " + statementOrder);
+	}
 }

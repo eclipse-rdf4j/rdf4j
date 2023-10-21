@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.query.algebra;
 
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -181,5 +182,13 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 	public void setOrdering(Var var) {
 		leftArg.setOrdering(var);
 		rightArg.setOrdering(var);
+	}
+
+	@Override
+	public Var getOrder() {
+		Var leftArgOrder = leftArg.getOrder();
+		Var rightArgOrder = rightArg.getOrder();
+		assert Objects.equals(leftArgOrder, rightArgOrder);
+		return leftArgOrder;
 	}
 }

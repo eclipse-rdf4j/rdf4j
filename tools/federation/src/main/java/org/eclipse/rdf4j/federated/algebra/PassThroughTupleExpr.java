@@ -124,4 +124,9 @@ public class PassThroughTupleExpr extends AbstractQueryModelNode implements FedX
 	public void setOrdering(Var var) {
 		parsedQuery.setOrdering(var);
 	}
+
+	@Override
+	public Var getOrder() {
+		return parsedQuery.getOrder();
+	}
 }
