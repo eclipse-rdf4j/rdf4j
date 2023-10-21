@@ -221,7 +221,7 @@ public class TripleRef extends AbstractQueryModelNode implements TupleExpr {
 	}
 
 	@Override
-	public Set<Var> getAvailableOrders(AvailableStatementOrder tripleSource) {
+	public Set<Var> getSupportedOrders(AvailableStatementOrder tripleSource) {
 		throw new UnsupportedOperationException("Not implemented yet");
 	}
 

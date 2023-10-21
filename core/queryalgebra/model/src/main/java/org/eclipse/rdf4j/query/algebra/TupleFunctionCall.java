@@ -171,7 +171,7 @@ public class TupleFunctionCall extends AbstractQueryModelNode implements TupleEx
 	}
 
 	@Override
-	public Set<Var> getAvailableOrders(AvailableStatementOrder tripleSource) {
+	public Set<Var> getSupportedOrders(AvailableStatementOrder tripleSource) {
 		throw new UnsupportedOperationException("Not implemented yet");
 	}
 

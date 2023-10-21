@@ -468,7 +468,7 @@ public interface SailConnection extends AutoCloseable {
 		throw new UnsupportedOperationException();
 	}
 
-	default Set<StatementOrder> getAvailableOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+	default Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		return Set.of();
 	}
 

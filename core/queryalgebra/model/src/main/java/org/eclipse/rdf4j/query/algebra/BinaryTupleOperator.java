@@ -165,14 +165,14 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 	}
 
 	@Override
-	public Set<Var> getAvailableOrders(AvailableStatementOrder tripleSource) {
-		Set<Var> leftArgAvailableOrders = leftArg.getAvailableOrders(tripleSource);
-		Set<Var> rightArgAvailableOrders = rightArg.getAvailableOrders(tripleSource);
-		if (leftArgAvailableOrders.equals(rightArgAvailableOrders)) {
-			return leftArgAvailableOrders;
+	public Set<Var> getSupportedOrders(AvailableStatementOrder tripleSource) {
+		Set<Var> leftArgSupportedOrders = leftArg.getSupportedOrders(tripleSource);
+		Set<Var> rightArgSupportedOrders = rightArg.getSupportedOrders(tripleSource);
+		if (leftArgSupportedOrders.equals(rightArgSupportedOrders)) {
+			return leftArgSupportedOrders;
 		} else {
-			HashSet<Var> intersection = new HashSet<>(leftArgAvailableOrders);
-			intersection.retainAll(rightArgAvailableOrders);
+			HashSet<Var> intersection = new HashSet<>(leftArgSupportedOrders);
+			intersection.retainAll(rightArgSupportedOrders);
 			return intersection;
 		}
 

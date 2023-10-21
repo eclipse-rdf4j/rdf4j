@@ -208,21 +208,21 @@ class UnionSailDataset implements SailDataset {
 	}
 
 	@Override
-	public Set<StatementOrder> getAvailableOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
-		Set<StatementOrder> availableOrders1 = dataset1.getAvailableOrders(subj, pred, obj, contexts);
-		if (availableOrders1.isEmpty()) {
+	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		Set<StatementOrder> SupportedOrders1 = dataset1.getSupportedOrders(subj, pred, obj, contexts);
+		if (SupportedOrders1.isEmpty()) {
 			return Set.of();
 		}
-		Set<StatementOrder> availableOrders2 = dataset2.getAvailableOrders(subj, pred, obj, contexts);
-		if (availableOrders2.isEmpty()) {
+		Set<StatementOrder> SupportedOrders2 = dataset2.getSupportedOrders(subj, pred, obj, contexts);
+		if (SupportedOrders2.isEmpty()) {
 			return Set.of();
 		}
-		if (availableOrders1.equals(availableOrders2)) {
-			return availableOrders1;
+		if (SupportedOrders1.equals(SupportedOrders2)) {
+			return SupportedOrders1;
 		}
 
-		EnumSet<StatementOrder> commonStatementOrders = EnumSet.copyOf(availableOrders1);
-		commonStatementOrders.retainAll(availableOrders2);
+		EnumSet<StatementOrder> commonStatementOrders = EnumSet.copyOf(SupportedOrders1);
+		commonStatementOrders.retainAll(SupportedOrders2);
 		return commonStatementOrders;
 	}
 

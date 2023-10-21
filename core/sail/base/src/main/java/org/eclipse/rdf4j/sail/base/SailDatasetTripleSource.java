@@ -92,8 +92,8 @@ public class SailDatasetTripleSource implements RDFStarTripleSource {
 	}
 
 	@Override
-	public Set<StatementOrder> getAvailableOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
-		return dataset.getAvailableOrders(subj, pred, obj, contexts);
+	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		return dataset.getSupportedOrders(subj, pred, obj, contexts);
 	}
 
 	@Override

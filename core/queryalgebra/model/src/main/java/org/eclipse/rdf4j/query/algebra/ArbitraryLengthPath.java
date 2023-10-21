@@ -267,7 +267,7 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 	}
 
 	@Override
-	public Set<Var> getAvailableOrders(AvailableStatementOrder tripleSource) {
+	public Set<Var> getSupportedOrders(AvailableStatementOrder tripleSource) {
 		throw new UnsupportedOperationException("Not supported yet.");
 	}
 

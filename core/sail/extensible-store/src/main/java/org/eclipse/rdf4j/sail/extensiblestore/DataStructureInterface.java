@@ -100,7 +100,7 @@ public interface DataStructureInterface {
 		return inferred + explicit;
 	}
 
-	default Set<StatementOrder> getAvailableOrders(Resource subj, IRI pred, Value obj, boolean inferred,
+	default Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, boolean inferred,
 			Resource... contexts) {
 		return Set.of();
 	}

@@ -231,15 +231,15 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 							orderedJoinArgs.addFirst(first);
 						} else {
 							TupleExpr second = orderedJoinArgs.removeFirst();
-							Set<Var> availableOrders = new HashSet<>(first.getAvailableOrders(tripleSource));
-							availableOrders.retainAll(second.getAvailableOrders(tripleSource));
-							if (availableOrders.isEmpty()) {
+							Set<Var> SupportedOrders = new HashSet<>(first.getSupportedOrders(tripleSource));
+							SupportedOrders.retainAll(second.getSupportedOrders(tripleSource));
+							if (SupportedOrders.isEmpty()) {
 								orderedJoinArgs.addFirst(second);
 								orderedJoinArgs.addFirst(first);
 								break;
 							} else {
 								Join join = new Join(first, second);
-								join.setOrdering((Var) availableOrders.toArray()[0]);
+								join.setOrdering((Var) SupportedOrders.toArray()[0]);
 								join.setMergeJoin(true);
 								orderedJoinArgs.addFirst(join);
 							}
@@ -736,7 +736,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		@Override
-		public Set<StatementOrder> getAvailableOrders(Resource subj, IRI pred, Value obj, Resource... contexts)
+		public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts)
 				throws QueryEvaluationException {
 			return Set.of();
 		}

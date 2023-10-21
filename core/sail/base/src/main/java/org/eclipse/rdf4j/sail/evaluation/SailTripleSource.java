@@ -84,8 +84,8 @@ public class SailTripleSource implements TripleSource {
 	}
 
 	@Override
-	public Set<StatementOrder> getAvailableOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
-		return conn.getAvailableOrders(subj, pred, obj, contexts);
+	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		return conn.getSupportedOrders(subj, pred, obj, contexts);
 	}
 
 	@Override

@@ -37,7 +37,7 @@ public interface TupleExpr extends QueryModelNode {
 	@Override
 	TupleExpr clone();
 
-	Set<Var> getAvailableOrders(AvailableStatementOrder tripleSource);
+	Set<Var> getSupportedOrders(AvailableStatementOrder tripleSource);
 
 	void setOrdering(Var var);
 

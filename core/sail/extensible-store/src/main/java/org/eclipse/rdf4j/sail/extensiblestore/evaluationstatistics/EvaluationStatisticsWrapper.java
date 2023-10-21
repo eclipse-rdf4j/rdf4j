@@ -108,9 +108,9 @@ public class EvaluationStatisticsWrapper implements DataStructureInterface {
 	}
 
 	@Override
-	public Set<StatementOrder> getAvailableOrders(Resource subj, IRI pred, Value obj, boolean inferred,
+	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, boolean inferred,
 			Resource... contexts) {
-		return delegate.getAvailableOrders(subj, pred, obj, inferred, contexts);
+		return delegate.getSupportedOrders(subj, pred, obj, inferred, contexts);
 	}
 
 	@Override

@@ -69,7 +69,7 @@ public interface TripleSource extends AvailableStatementOrder {
 				"StatementOrder is not supported by this TripleSource: " + this.getClass().getName());
 	}
 
-	default Set<StatementOrder> getAvailableOrders(Resource subj, IRI pred,
+	default Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws QueryEvaluationException {
 		return Set.of();
 	}

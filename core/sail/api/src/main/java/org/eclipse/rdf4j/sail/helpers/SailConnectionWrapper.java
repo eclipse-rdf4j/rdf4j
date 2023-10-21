@@ -273,7 +273,7 @@ public class SailConnectionWrapper
 	}
 
 	@Override
-	public Set<StatementOrder> getAvailableOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
-		return wrappedCon.getAvailableOrders(subj, pred, obj, contexts);
+	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		return wrappedCon.getSupportedOrders(subj, pred, obj, contexts);
 	}
 }
