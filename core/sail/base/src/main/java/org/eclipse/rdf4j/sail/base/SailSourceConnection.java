@@ -417,7 +417,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	}
 
 	@Override
-	public Comparator<? extends Value> getComparator() {
+	public Comparator<Value> getComparator() {
 		try (SailSource branch = branch(IncludeInferred.fromBoolean(false))) {
 			try (SailDataset snapshot = branch.dataset(getIsolationLevel())) {
 				return snapshot.getComparator();

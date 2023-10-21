@@ -114,7 +114,7 @@ public class EvaluationStatisticsWrapper implements DataStructureInterface {
 	}
 
 	@Override
-	public Comparator<? extends Value> getComparator() {
+	public Comparator<Value> getComparator() {
 		return delegate.getComparator();
 	}
 

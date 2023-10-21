@@ -262,7 +262,7 @@ public class SailConnectionWrapper
 	}
 
 	@Override
-	public Comparator<? extends Value> getComparator() {
+	public Comparator<Value> getComparator() {
 		return wrappedCon.getComparator();
 	}
 

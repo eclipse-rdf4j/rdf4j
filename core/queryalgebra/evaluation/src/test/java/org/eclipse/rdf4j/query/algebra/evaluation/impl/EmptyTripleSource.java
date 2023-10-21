@@ -54,7 +54,7 @@ public class EmptyTripleSource implements TripleSource {
 	}
 
 	@Override
-	public Comparator<? extends Value> getComparator() {
+	public Comparator<Value> getComparator() {
 		return null;
 	}
 }

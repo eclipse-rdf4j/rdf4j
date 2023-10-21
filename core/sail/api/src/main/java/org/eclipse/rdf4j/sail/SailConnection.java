@@ -472,7 +472,7 @@ public interface SailConnection extends AutoCloseable {
 		return Set.of();
 	}
 
-	default Comparator<? extends Value> getComparator() {
+	default Comparator<Value> getComparator() {
 		return null;
 	}
 }

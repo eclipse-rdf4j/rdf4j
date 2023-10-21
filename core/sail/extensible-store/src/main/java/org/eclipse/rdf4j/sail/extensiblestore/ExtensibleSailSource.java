@@ -222,7 +222,7 @@ class ExtensibleSailSource implements SailSource {
 				return dataStructure.getSupportedOrders(subj, pred, obj, inferred, contexts);
 			}
 
-			public Comparator<? extends Value> getComparator() {
+			public Comparator<Value> getComparator() {
 				return dataStructure.getComparator();
 			}
 		};

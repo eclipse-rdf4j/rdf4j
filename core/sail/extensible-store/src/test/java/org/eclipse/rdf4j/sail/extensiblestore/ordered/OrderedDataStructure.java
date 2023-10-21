@@ -94,7 +94,7 @@ public class OrderedDataStructure implements DataStructureInterface {
 	}
 
 	@Override
-	public Comparator<? extends Value> getComparator() {
+	public Comparator<Value> getComparator() {
 		return Comparator.comparing(Value::stringValue);
 	}
 }

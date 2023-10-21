@@ -75,7 +75,7 @@ public class FilterIterator extends FilterIteration<BindingSet> {
 		}
 
 		@Override
-		public Comparator<? extends Value> getComparator() {
+		public Comparator<Value> getComparator() {
 			return null;
 		}
 

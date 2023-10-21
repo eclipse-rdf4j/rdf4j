@@ -97,7 +97,7 @@ public class SailDatasetTripleSource implements RDFStarTripleSource {
 	}
 
 	@Override
-	public Comparator<? extends Value> getComparator() {
+	public Comparator<Value> getComparator() {
 		return dataset.getComparator();
 	}
 

@@ -196,7 +196,7 @@ public class LazyReadCache implements DataStructureInterface {
 	}
 
 	@Override
-	public Comparator<? extends Value> getComparator() {
+	public Comparator<Value> getComparator() {
 		return delegate.getComparator();
 	}
 

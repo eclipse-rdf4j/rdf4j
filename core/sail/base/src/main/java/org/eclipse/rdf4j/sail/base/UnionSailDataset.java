@@ -227,9 +227,9 @@ class UnionSailDataset implements SailDataset {
 	}
 
 	@Override
-	public Comparator<? extends Value> getComparator() {
-		Comparator<? extends Value> comparator1 = dataset1.getComparator();
-		Comparator<? extends Value> comparator2 = dataset2.getComparator();
+	public Comparator<Value> getComparator() {
+		Comparator<Value> comparator1 = dataset1.getComparator();
+		Comparator<Value> comparator2 = dataset2.getComparator();
 
 		assert (comparator1 == null && comparator2 == null) || (comparator1 != null && comparator2 != null);
 

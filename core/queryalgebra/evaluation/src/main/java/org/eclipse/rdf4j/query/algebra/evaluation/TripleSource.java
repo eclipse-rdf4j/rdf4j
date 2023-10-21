@@ -81,7 +81,7 @@ public interface TripleSource extends AvailableStatementOrder {
 	 */
 	ValueFactory getValueFactory();
 
-	default Comparator<? extends Value> getComparator() {
+	default Comparator<Value> getComparator() {
 		return null;
 	}
 }

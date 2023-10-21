@@ -152,15 +152,17 @@ public class OrderedTest {
 					"?s <" + FOAF.KNOWS + "> ?s2.\n" +
 					"?s2 <" + RDFS.COMMENT + "> ?o3.\n" +
 					"}";
-			Explanation explain = connection
-					.prepareTupleQuery(query)
-					.explain(Explanation.Level.Executed);
-			System.out.println(explain);
+//			Explanation explain = connection
+//					.prepareTupleQuery(query)
+//					.explain(Explanation.Level.Executed);
+//			System.out.println(explain);
 
 			try (TupleQueryResult evaluate = connection
 					.prepareTupleQuery(query)
 					.evaluate()) {
-				List<BindingSet> collect = evaluate.stream().collect(Collectors.toList());
+				List<BindingSet> collect = evaluate.stream().peek(a -> {
+					System.out.println(a);
+				}).collect(Collectors.toList());
 
 				List<String> subjects = collect.stream()
 						.map(b -> b.getValue("s"))

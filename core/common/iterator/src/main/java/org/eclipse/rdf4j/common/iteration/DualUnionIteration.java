@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.Value;
 public class DualUnionIteration<E> implements CloseableIteration<E> {
 
 	private final StatementOrder statementOrder;
-	private final Comparator<? extends Value> cmp;
+	private final Comparator<Value> cmp;
 	private CloseableIteration<? extends E> iteration1;
 	private CloseableIteration<? extends E> iteration2;
 	private E nextElement;
@@ -40,7 +40,7 @@ public class DualUnionIteration<E> implements CloseableIteration<E> {
 		this.cmp = null;
 	}
 
-	public DualUnionIteration(StatementOrder statementOrder, Comparator<? extends Value> cmp,
+	public DualUnionIteration(StatementOrder statementOrder, Comparator<Value> cmp,
 			CloseableIteration<? extends E> iteration1, CloseableIteration<? extends E> iteration2) {
 		this.iteration1 = iteration1;
 		this.iteration2 = iteration2;
@@ -62,7 +62,7 @@ public class DualUnionIteration<E> implements CloseableIteration<E> {
 	}
 
 	public static <E, X extends Exception> CloseableIteration<? extends E> getWildcardInstance(StatementOrder order,
-			Comparator<? extends Value> cmp,
+			Comparator<Value> cmp,
 			CloseableIteration<? extends E> leftIteration, CloseableIteration<? extends E> rightIteration) {
 
 		if (rightIteration instanceof EmptyIteration) {

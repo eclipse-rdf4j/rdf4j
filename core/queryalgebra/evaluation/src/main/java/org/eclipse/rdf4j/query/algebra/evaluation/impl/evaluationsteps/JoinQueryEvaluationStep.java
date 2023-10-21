@@ -48,7 +48,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
 		} else if (join.isMergeJoin() && context.getComparator() != null) {
 			eval = bindings -> InnerMergeJoinIterator.getInstance(leftPrepared, rightPrepared, bindings,
-					context.getComparator());
+					context.getComparator(), context.getValue(join.getOrder().getName()), context);
 			join.setAlgorithm(InnerMergeJoinIterator.class.getSimpleName());
 		} else {
 			eval = bindings -> JoinIterator.getInstance(leftPrepared, rightPrepared, bindings);

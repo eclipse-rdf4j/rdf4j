@@ -36,7 +36,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  */
 public interface QueryEvaluationContext {
 
-	Comparator<? extends Value> getComparator();
+	Comparator<Value> getComparator();
 
 	class Minimal implements QueryEvaluationContext {
 
@@ -58,7 +58,7 @@ public interface QueryEvaluationContext {
 		private volatile Literal now;
 		private final Dataset dataset;
 		private final ValueFactory vf;
-		private final Comparator<? extends Value> comparator;
+		private final Comparator<Value> comparator;
 
 		/**
 		 * Set the shared now value to a preexisting object
@@ -66,7 +66,7 @@ public interface QueryEvaluationContext {
 		 * @param now     that is shared.
 		 * @param dataset that a query should use to evaluate
 		 */
-		public Minimal(Literal now, Dataset dataset, Comparator<? extends Value> comparator) {
+		public Minimal(Literal now, Dataset dataset, Comparator<Value> comparator) {
 			super();
 			this.now = now;
 			this.dataset = dataset;
@@ -100,7 +100,7 @@ public interface QueryEvaluationContext {
 		/**
 		 * @param dataset that a query should use to evaluate
 		 */
-		public Minimal(Dataset dataset, Comparator<? extends Value> comparator) {
+		public Minimal(Dataset dataset, Comparator<Value> comparator) {
 			this.dataset = dataset;
 			this.vf = SimpleValueFactory.getInstance();
 			this.comparator = comparator;
@@ -109,7 +109,7 @@ public interface QueryEvaluationContext {
 		/**
 		 * @param dataset that a query should use to the evaluate
 		 */
-		public Minimal(Dataset dataset, ValueFactory vf, Comparator<? extends Value> comparator) {
+		public Minimal(Dataset dataset, ValueFactory vf, Comparator<Value> comparator) {
 			this.dataset = dataset;
 			this.vf = vf;
 			this.comparator = comparator;
@@ -125,7 +125,7 @@ public interface QueryEvaluationContext {
 		}
 
 		@Override
-		public Comparator<? extends Value> getComparator() {
+		public Comparator<Value> getComparator() {
 			return comparator;
 		}
 

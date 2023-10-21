@@ -747,7 +747,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		@Override
-		public Comparator<? extends Value> getComparator() {
+		public Comparator<Value> getComparator() {
 			return null;
 		}
 	}

@@ -54,12 +54,12 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	private final Function<BindingSet, Value>[] getValue;
 	private final BiConsumer<Value, MutableBindingSet>[] setBinding;
 	private final BiConsumer<Value, MutableBindingSet>[] addBinding;
-	private final Comparator<? extends Value> comparator;
+	private final Comparator<Value> comparator;
 
 	boolean initialized;
 
 	ArrayBindingBasedQueryEvaluationContext(QueryEvaluationContext context, String[] allVariables,
-			Comparator<? extends Value> comparator) {
+			Comparator<Value> comparator) {
 		assert new HashSet<>(Arrays.asList(allVariables)).size() == allVariables.length;
 		this.context = context;
 		this.allVariables = allVariables;
@@ -86,7 +86,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	}
 
 	@Override
-	public Comparator<? extends Value> getComparator() {
+	public Comparator<Value> getComparator() {
 		return comparator;
 	}
 
