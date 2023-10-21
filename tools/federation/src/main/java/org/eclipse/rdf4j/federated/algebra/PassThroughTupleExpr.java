@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.federated.algebra;
 import java.util.List;
 import java.util.Set;
 
-import org.eclipse.rdf4j.common.ordering.AvailableStatementOrder;
+import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
 import org.eclipse.rdf4j.federated.structures.FedXTupleQuery;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
@@ -121,8 +121,8 @@ public class PassThroughTupleExpr extends AbstractQueryModelNode implements FedX
 	}
 
 	@Override
-	public void setOrdering(Var var) {
-		parsedQuery.setOrdering(var);
+	public void setOrder(Var var) {
+		parsedQuery.setOrder(var);
 	}
 
 	@Override

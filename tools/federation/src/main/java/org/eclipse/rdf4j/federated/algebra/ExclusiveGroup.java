@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.ordering.AvailableStatementOrder;
+import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.model.Value;
@@ -243,7 +243,7 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 	}
 
 	@Override
-	public void setOrdering(Var var) {
+	public void setOrder(Var var) {
 		throw new UnsupportedOperationException("Not implemented yet");
 	}
 

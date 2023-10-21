@@ -6,9 +6,9 @@
 		<artifactId>rdf4j-common</artifactId>
 		<version>5.0.0-SNAPSHOT</version>
 	</parent>
-	<artifactId>rdf4j-common-ordering</artifactId>
-	<name>RDF4J: common ordering</name>
-	<description>RDF4J common ordering classes</description>
+	<artifactId>rdf4j-common-order</artifactId>
+	<name>RDF4J: common order</name>
+	<description>Order of vars and statements</description>
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>

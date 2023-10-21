@@ -14,7 +14,7 @@ import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
-import org.eclipse.rdf4j.common.ordering.AvailableStatementOrder;
+import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
 import org.eclipse.rdf4j.query.BindingSet;
 
 /**
@@ -95,7 +95,7 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	}
 
 	@Override
-	public void setOrdering(Var var) {
+	public void setOrder(Var var) {
 		throw new UnsupportedOperationException("Not implemented yet");
 	}
 

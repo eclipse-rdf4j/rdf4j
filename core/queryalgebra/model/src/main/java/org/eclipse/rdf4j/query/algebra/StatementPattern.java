@@ -20,8 +20,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.eclipse.rdf4j.common.ordering.AvailableStatementOrder;
-import org.eclipse.rdf4j.common.ordering.StatementOrder;
+import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -456,7 +456,7 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 	}
 
 	@Override
-	public void setOrdering(Var var) {
+	public void setOrder(Var var) {
 		if (var == null) {
 			statementOrder = null;
 			return;

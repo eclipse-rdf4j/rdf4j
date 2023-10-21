@@ -9,7 +9,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  ******************************************************************************/
 
-package org.eclipse.rdf4j.common.ordering;
+package org.eclipse.rdf4j.common.order;
 
 import java.util.Set;
 

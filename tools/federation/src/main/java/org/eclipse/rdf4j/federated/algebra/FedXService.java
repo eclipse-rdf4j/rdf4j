@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.federated.algebra;
 import java.util.Collection;
 import java.util.Set;
 
-import org.eclipse.rdf4j.common.ordering.AvailableStatementOrder;
+import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -125,7 +125,7 @@ public class FedXService extends AbstractQueryModelNode implements TupleExpr, Bo
 	}
 
 	@Override
-	public void setOrdering(Var var) {
+	public void setOrder(Var var) {
 		throw new UnsupportedOperationException("Not implemented yet");
 	}
 

@@ -12,7 +12,7 @@ package org.eclipse.rdf4j.federated.algebra;
 
 import java.util.Set;
 
-import org.eclipse.rdf4j.common.ordering.AvailableStatementOrder;
+import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
@@ -102,8 +102,8 @@ public class SingleSourceQuery extends AbstractQueryModelNode implements TupleEx
 	}
 
 	@Override
-	public void setOrdering(Var var) {
-		parsedQuery.setOrdering(var);
+	public void setOrder(Var var) {
+		parsedQuery.setOrder(var);
 	}
 
 	@Override

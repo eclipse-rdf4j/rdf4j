@@ -16,7 +16,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.ordering.AvailableStatementOrder;
+import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
 
 /**
  * An abstract superclass for binary tuple operators which, by definition, has two arguments.
@@ -179,9 +179,9 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 	}
 
 	@Override
-	public void setOrdering(Var var) {
-		leftArg.setOrdering(var);
-		rightArg.setOrdering(var);
+	public void setOrder(Var var) {
+		leftArg.setOrder(var);
+		rightArg.setOrder(var);
 	}
 
 	@Override

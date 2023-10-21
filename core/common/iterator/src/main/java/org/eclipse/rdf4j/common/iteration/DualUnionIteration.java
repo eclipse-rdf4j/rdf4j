@@ -14,7 +14,7 @@ package org.eclipse.rdf4j.common.iteration;
 import java.util.Comparator;
 import java.util.NoSuchElementException;
 
-import org.eclipse.rdf4j.common.ordering.StatementOrder;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
 
 /**

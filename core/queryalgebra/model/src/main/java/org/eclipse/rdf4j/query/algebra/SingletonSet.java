@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.query.algebra;
 import java.util.Collections;
 import java.util.Set;
 
-import org.eclipse.rdf4j.common.ordering.AvailableStatementOrder;
+import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
 
 /**
  * A tuple expression that contains exactly one solution with zero bindings.
@@ -66,7 +66,7 @@ public class SingletonSet extends AbstractQueryModelNode implements TupleExpr {
 	}
 
 	@Override
-	public void setOrdering(Var var) {
+	public void setOrder(Var var) {
 		throw new UnsupportedOperationException("This TupleExpr does not support ordering");
 	}
 

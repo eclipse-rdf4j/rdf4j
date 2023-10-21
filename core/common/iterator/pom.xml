@@ -17,7 +17,7 @@
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-common-ordering</artifactId>
+			<artifactId>rdf4j-common-order</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>

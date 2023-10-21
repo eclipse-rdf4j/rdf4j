@@ -12,7 +12,7 @@ package org.eclipse.rdf4j.query.algebra;
 
 import java.util.Set;
 
-import org.eclipse.rdf4j.common.ordering.AvailableStatementOrder;
+import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
 
 /**
  * An expression that evaluates to RDF tuples.
@@ -39,7 +39,7 @@ public interface TupleExpr extends QueryModelNode {
 
 	Set<Var> getSupportedOrders(AvailableStatementOrder tripleSource);
 
-	void setOrdering(Var var);
+	void setOrder(Var var);
 
 	Var getOrder();
 }

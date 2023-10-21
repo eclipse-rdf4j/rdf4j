@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.ordering.StatementOrder;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -239,7 +239,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 								break;
 							} else {
 								Join join = new Join(first, second);
-								join.setOrdering((Var) SupportedOrders.toArray()[0]);
+								join.setOrder((Var) SupportedOrders.toArray()[0]);
 								join.setMergeJoin(true);
 								orderedJoinArgs.addFirst(join);
 							}
