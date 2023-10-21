@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.Comparator;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -91,8 +92,13 @@ public class SailDatasetTripleSource implements RDFStarTripleSource {
 	}
 
 	@Override
-	public Set<StatementOrder> getAvailableOrderings(Resource subj, IRI pred, Value obj, Resource... contexts) {
-		return dataset.getAvailableOrderings(subj, pred, obj, contexts);
+	public Set<StatementOrder> getAvailableOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		return dataset.getAvailableOrders(subj, pred, obj, contexts);
+	}
+
+	@Override
+	public Comparator<? extends Value> getComparator() {
+		return dataset.getComparator();
 	}
 
 	@Override

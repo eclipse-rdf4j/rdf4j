@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -53,15 +54,18 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	private final Function<BindingSet, Value>[] getValue;
 	private final BiConsumer<Value, MutableBindingSet>[] setBinding;
 	private final BiConsumer<Value, MutableBindingSet>[] addBinding;
+	private final Comparator<? extends Value> comparator;
 
 	boolean initialized;
 
-	ArrayBindingBasedQueryEvaluationContext(QueryEvaluationContext context, String[] allVariables) {
+	ArrayBindingBasedQueryEvaluationContext(QueryEvaluationContext context, String[] allVariables,
+			Comparator<? extends Value> comparator) {
 		assert new HashSet<>(Arrays.asList(allVariables)).size() == allVariables.length;
 		this.context = context;
 		this.allVariables = allVariables;
 		this.allVariablesSet = Set.of(allVariables);
 		this.defaultArrayBindingSet = new ArrayBindingSet(allVariables);
+		this.comparator = comparator;
 
 		hasBinding = new Predicate[allVariables.length];
 		getBinding = new Function[allVariables.length];
@@ -79,6 +83,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 		initialized = true;
 
+	}
+
+	@Override
+	public Comparator<? extends Value> getComparator() {
+		return comparator;
 	}
 
 	@Override

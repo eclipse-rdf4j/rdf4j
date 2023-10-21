@@ -11,8 +11,11 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
+import java.util.Comparator;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -20,31 +23,32 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 public class InnerMergeJoinIterator extends LookAheadIteration<BindingSet> {
 
 	private final CloseableIteration<BindingSet> leftIter;
+	private final Comparator<? extends Value> cmp;
 
 	private CloseableIteration<BindingSet> rightIter;
 
-	private final QueryEvaluationStep preparedRight;
-
-	public InnerMergeJoinIterator(QueryEvaluationStep leftPrepared,
-			QueryEvaluationStep preparedRight, BindingSet bindings) throws QueryEvaluationException {
-		leftIter = leftPrepared.evaluate(bindings);
-		this.preparedRight = preparedRight;
-	}
-
-	private InnerMergeJoinIterator(CloseableIteration<BindingSet> leftIter, QueryEvaluationStep preparedRight)
+	private InnerMergeJoinIterator(CloseableIteration<BindingSet> leftIter, CloseableIteration<BindingSet> rightIter,
+			Comparator<? extends Value> cmp)
 			throws QueryEvaluationException {
 		this.leftIter = leftIter;
-		this.preparedRight = preparedRight;
+		this.rightIter = rightIter;
+		this.cmp = cmp;
 	}
 
 	public static CloseableIteration<BindingSet> getInstance(QueryEvaluationStep leftPrepared,
-			QueryEvaluationStep preparedRight, BindingSet bindings) {
+			QueryEvaluationStep preparedRight, BindingSet bindings, Comparator<? extends Value> cmp) {
 		CloseableIteration<BindingSet> leftIter = leftPrepared.evaluate(bindings);
 		if (leftIter == QueryEvaluationStep.EMPTY_ITERATION) {
 			return leftIter;
 		}
 
-		return new InnerMergeJoinIterator(leftIter, preparedRight);
+		CloseableIteration<BindingSet> rightIter = preparedRight.evaluate(bindings);
+		if (rightIter == QueryEvaluationStep.EMPTY_ITERATION) {
+			leftIter.close();
+			return rightIter;
+		}
+
+		return new InnerMergeJoinIterator(leftIter, rightIter, cmp);
 	}
 
 	/*---------*
@@ -53,22 +57,6 @@ public class InnerMergeJoinIterator extends LookAheadIteration<BindingSet> {
 
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
-		if (rightIter != null) {
-			if (rightIter.hasNext()) {
-				return rightIter.next();
-			} else {
-				rightIter.close();
-			}
-		}
-
-		while (leftIter.hasNext()) {
-			rightIter = preparedRight.evaluate(leftIter.next());
-			if (rightIter.hasNext()) {
-				return rightIter.next();
-			} else {
-				rightIter.close();
-			}
-		}
 
 		return null;
 	}

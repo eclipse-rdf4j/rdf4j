@@ -88,7 +88,7 @@ public class OrderedDataStructure implements DataStructureInterface {
 	}
 
 	@Override
-	public Set<StatementOrder> getAvailableOrderings(Resource subj, IRI pred, Value obj, boolean inferred,
+	public Set<StatementOrder> getAvailableOrders(Resource subj, IRI pred, Value obj, boolean inferred,
 			Resource... contexts) {
 		return Set.of(StatementOrder.S, StatementOrder.P, StatementOrder.O, StatementOrder.C);
 	}

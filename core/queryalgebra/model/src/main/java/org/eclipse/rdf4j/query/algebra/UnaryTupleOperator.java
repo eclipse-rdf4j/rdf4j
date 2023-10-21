@@ -107,8 +107,8 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 	}
 
 	@Override
-	public Set<Var> getAvailableOrderings(AvailableStatementOrder tripleSource) {
-		return arg.getAvailableOrderings(tripleSource);
+	public Set<Var> getAvailableOrders(AvailableStatementOrder tripleSource) {
+		return arg.getAvailableOrders(tripleSource);
 	}
 
 	@Override

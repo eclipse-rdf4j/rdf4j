@@ -218,8 +218,8 @@ class ExtensibleSailSource implements SailSource {
 			}
 
 			@Override
-			public Set<StatementOrder> getAvailableOrderings(Resource subj, IRI pred, Value obj, Resource... contexts) {
-				return dataStructure.getAvailableOrderings(subj, pred, obj, inferred, contexts);
+			public Set<StatementOrder> getAvailableOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+				return dataStructure.getAvailableOrders(subj, pred, obj, inferred, contexts);
 			}
 
 			public Comparator<? extends Value> getComparator() {

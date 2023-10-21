@@ -118,7 +118,7 @@ public interface SailDataset extends SailClosable {
 		throw new SailException("RDF-star triple retrieval not supported by this store");
 	}
 
-	default Set<StatementOrder> getAvailableOrderings(Resource subj, IRI pred, Value obj, Resource... contexts) {
+	default Set<StatementOrder> getAvailableOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		return Set.of();
 	}
 

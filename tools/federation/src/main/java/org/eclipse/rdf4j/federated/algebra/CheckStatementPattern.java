@@ -210,7 +210,7 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 	}
 
 	@Override
-	public Set<Var> getAvailableOrderings(AvailableStatementOrder tripleSource) {
+	public Set<Var> getAvailableOrders(AvailableStatementOrder tripleSource) {
 		throw new UnsupportedOperationException("Not implemented yet");
 	}
 

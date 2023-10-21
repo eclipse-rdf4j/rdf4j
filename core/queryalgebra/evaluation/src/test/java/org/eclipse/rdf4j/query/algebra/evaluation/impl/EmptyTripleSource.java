@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import java.util.Comparator;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.ordering.StatementOrder;
@@ -49,5 +51,10 @@ public class EmptyTripleSource implements TripleSource {
 	public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws QueryEvaluationException {
 		return TripleSource.EMPTY_ITERATION;
+	}
+
+	@Override
+	public Comparator<? extends Value> getComparator() {
+		return null;
 	}
 }

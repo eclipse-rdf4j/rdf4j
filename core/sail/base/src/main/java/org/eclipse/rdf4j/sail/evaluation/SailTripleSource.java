@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.evaluation;
 
+import java.util.Comparator;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -83,12 +84,17 @@ public class SailTripleSource implements TripleSource {
 	}
 
 	@Override
-	public Set<StatementOrder> getAvailableOrderings(Resource subj, IRI pred, Value obj, Resource... contexts) {
-		return conn.getAvailableOrderings(subj, pred, obj, contexts);
+	public Set<StatementOrder> getAvailableOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		return conn.getAvailableOrders(subj, pred, obj, contexts);
 	}
 
 	@Override
 	public ValueFactory getValueFactory() {
 		return vf;
+	}
+
+	@Override
+	public Comparator<? extends Value> getComparator() {
+		return conn.getComparator();
 	}
 }

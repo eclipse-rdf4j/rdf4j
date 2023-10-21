@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -230,15 +231,15 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 							orderedJoinArgs.addFirst(first);
 						} else {
 							TupleExpr second = orderedJoinArgs.removeFirst();
-							Set<Var> availableOrderings = new HashSet<>(first.getAvailableOrderings(tripleSource));
-							availableOrderings.retainAll(second.getAvailableOrderings(tripleSource));
-							if (availableOrderings.isEmpty()) {
+							Set<Var> availableOrders = new HashSet<>(first.getAvailableOrders(tripleSource));
+							availableOrders.retainAll(second.getAvailableOrders(tripleSource));
+							if (availableOrders.isEmpty()) {
 								orderedJoinArgs.addFirst(second);
 								orderedJoinArgs.addFirst(first);
 								break;
 							} else {
 								Join join = new Join(first, second);
-								join.setOrdering((Var) availableOrderings.toArray()[0]);
+								join.setOrdering((Var) availableOrders.toArray()[0]);
 								join.setMergeJoin(true);
 								orderedJoinArgs.addFirst(join);
 							}
@@ -735,13 +736,18 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		@Override
-		public Set<StatementOrder> getAvailableOrderings(Resource subj, IRI pred, Value obj, Resource... contexts)
+		public Set<StatementOrder> getAvailableOrders(Resource subj, IRI pred, Value obj, Resource... contexts)
 				throws QueryEvaluationException {
 			return Set.of();
 		}
 
 		@Override
 		public ValueFactory getValueFactory() {
+			return null;
+		}
+
+		@Override
+		public Comparator<? extends Value> getComparator() {
 			return null;
 		}
 	}

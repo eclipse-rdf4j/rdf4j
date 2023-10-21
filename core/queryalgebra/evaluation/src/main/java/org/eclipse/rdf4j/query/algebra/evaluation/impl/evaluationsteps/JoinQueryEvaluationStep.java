@@ -10,7 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
+import java.util.Comparator;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -43,8 +46,9 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
 					joinAttributes, context);
 			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
-		} else if (join.isMergeJoin()) {
-			eval = bindings -> InnerMergeJoinIterator.getInstance(leftPrepared, rightPrepared, bindings);
+		} else if (join.isMergeJoin() && context.getComparator() != null) {
+			eval = bindings -> InnerMergeJoinIterator.getInstance(leftPrepared, rightPrepared, bindings,
+					context.getComparator());
 			join.setAlgorithm(InnerMergeJoinIterator.class.getSimpleName());
 		} else {
 			eval = bindings -> JoinIterator.getInstance(leftPrepared, rightPrepared, bindings);

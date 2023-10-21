@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
+import java.util.Comparator;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -68,7 +69,7 @@ public interface TripleSource extends AvailableStatementOrder {
 				"StatementOrder is not supported by this TripleSource: " + this.getClass().getName());
 	}
 
-	default Set<StatementOrder> getAvailableOrderings(Resource subj, IRI pred,
+	default Set<StatementOrder> getAvailableOrders(Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws QueryEvaluationException {
 		return Set.of();
 	}
@@ -79,4 +80,8 @@ public interface TripleSource extends AvailableStatementOrder {
 	 * @return a ValueFactory object for this TripleSource.
 	 */
 	ValueFactory getValueFactory();
+
+	default Comparator<? extends Value> getComparator() {
+		return null;
+	}
 }

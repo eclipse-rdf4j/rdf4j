@@ -116,8 +116,8 @@ public class PassThroughTupleExpr extends AbstractQueryModelNode implements FedX
 	}
 
 	@Override
-	public Set<Var> getAvailableOrderings(AvailableStatementOrder tripleSource) {
-		return parsedQuery.getAvailableOrderings(tripleSource);
+	public Set<Var> getAvailableOrders(AvailableStatementOrder tripleSource) {
+		return parsedQuery.getAvailableOrders(tripleSource);
 	}
 
 	@Override

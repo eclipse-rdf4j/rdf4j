@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail;
 
+import java.util.Comparator;
 import java.util.Optional;
 import java.util.Set;
 
@@ -467,8 +468,11 @@ public interface SailConnection extends AutoCloseable {
 		throw new UnsupportedOperationException();
 	}
 
-	default Set<StatementOrder> getAvailableOrderings(Resource subj, IRI pred, Value obj, Resource... contexts) {
+	default Set<StatementOrder> getAvailableOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		return Set.of();
 	}
 
+	default Comparator<? extends Value> getComparator() {
+		return null;
+	}
 }

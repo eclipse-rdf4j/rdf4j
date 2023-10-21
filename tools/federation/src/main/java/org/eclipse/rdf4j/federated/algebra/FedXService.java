@@ -120,7 +120,7 @@ public class FedXService extends AbstractQueryModelNode implements TupleExpr, Bo
 	}
 
 	@Override
-	public Set<Var> getAvailableOrderings(AvailableStatementOrder tripleSource) {
+	public Set<Var> getAvailableOrders(AvailableStatementOrder tripleSource) {
 		throw new UnsupportedOperationException("Not implemented yet");
 	}
 

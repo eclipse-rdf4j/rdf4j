@@ -208,21 +208,31 @@ class UnionSailDataset implements SailDataset {
 	}
 
 	@Override
-	public Set<StatementOrder> getAvailableOrderings(Resource subj, IRI pred, Value obj, Resource... contexts) {
-		Set<StatementOrder> availableOrderings1 = dataset1.getAvailableOrderings(subj, pred, obj, contexts);
-		if (availableOrderings1.isEmpty()) {
+	public Set<StatementOrder> getAvailableOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		Set<StatementOrder> availableOrders1 = dataset1.getAvailableOrders(subj, pred, obj, contexts);
+		if (availableOrders1.isEmpty()) {
 			return Set.of();
 		}
-		Set<StatementOrder> availableOrderings2 = dataset2.getAvailableOrderings(subj, pred, obj, contexts);
-		if (availableOrderings2.isEmpty()) {
+		Set<StatementOrder> availableOrders2 = dataset2.getAvailableOrders(subj, pred, obj, contexts);
+		if (availableOrders2.isEmpty()) {
 			return Set.of();
 		}
-		if (availableOrderings1.equals(availableOrderings2)) {
-			return availableOrderings1;
+		if (availableOrders1.equals(availableOrders2)) {
+			return availableOrders1;
 		}
 
-		EnumSet<StatementOrder> commonStatementOrderings = EnumSet.copyOf(availableOrderings1);
-		commonStatementOrderings.retainAll(availableOrderings2);
-		return commonStatementOrderings;
+		EnumSet<StatementOrder> commonStatementOrders = EnumSet.copyOf(availableOrders1);
+		commonStatementOrders.retainAll(availableOrders2);
+		return commonStatementOrders;
+	}
+
+	@Override
+	public Comparator<? extends Value> getComparator() {
+		Comparator<? extends Value> comparator1 = dataset1.getComparator();
+		Comparator<? extends Value> comparator2 = dataset2.getComparator();
+
+		assert (comparator1 == null && comparator2 == null) || (comparator1 != null && comparator2 != null);
+
+		return comparator1;
 	}
 }

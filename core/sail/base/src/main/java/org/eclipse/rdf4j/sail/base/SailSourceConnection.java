@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -413,6 +414,15 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
 		return SailClosingIteration.makeClosable(snapshot.getStatements(order, subj, pred, obj, contexts), snapshot,
 				branch);
+	}
+
+	@Override
+	public Comparator<? extends Value> getComparator() {
+		try (SailSource branch = branch(IncludeInferred.fromBoolean(false))) {
+			try (SailDataset snapshot = branch.dataset(getIsolationLevel())) {
+				return snapshot.getComparator();
+			}
+		}
 	}
 
 	@Override

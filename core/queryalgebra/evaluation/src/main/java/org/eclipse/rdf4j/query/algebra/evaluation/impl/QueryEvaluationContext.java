@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -35,6 +36,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  */
 public interface QueryEvaluationContext {
 
+	Comparator<? extends Value> getComparator();
+
 	class Minimal implements QueryEvaluationContext {
 
 		private static final VarHandle NOW;
@@ -55,6 +58,21 @@ public interface QueryEvaluationContext {
 		private volatile Literal now;
 		private final Dataset dataset;
 		private final ValueFactory vf;
+		private final Comparator<? extends Value> comparator;
+
+		/**
+		 * Set the shared now value to a preexisting object
+		 *
+		 * @param now     that is shared.
+		 * @param dataset that a query should use to evaluate
+		 */
+		public Minimal(Literal now, Dataset dataset, Comparator<? extends Value> comparator) {
+			super();
+			this.now = now;
+			this.dataset = dataset;
+			this.vf = SimpleValueFactory.getInstance();
+			this.comparator = comparator;
+		}
 
 		/**
 		 * Set the shared now value to a preexisting object
@@ -67,6 +85,7 @@ public interface QueryEvaluationContext {
 			this.now = now;
 			this.dataset = dataset;
 			this.vf = SimpleValueFactory.getInstance();
+			this.comparator = null;
 		}
 
 		/**
@@ -75,6 +94,25 @@ public interface QueryEvaluationContext {
 		public Minimal(Dataset dataset) {
 			this.dataset = dataset;
 			this.vf = SimpleValueFactory.getInstance();
+			this.comparator = null;
+		}
+
+		/**
+		 * @param dataset that a query should use to evaluate
+		 */
+		public Minimal(Dataset dataset, Comparator<? extends Value> comparator) {
+			this.dataset = dataset;
+			this.vf = SimpleValueFactory.getInstance();
+			this.comparator = comparator;
+		}
+
+		/**
+		 * @param dataset that a query should use to the evaluate
+		 */
+		public Minimal(Dataset dataset, ValueFactory vf, Comparator<? extends Value> comparator) {
+			this.dataset = dataset;
+			this.vf = vf;
+			this.comparator = comparator;
 		}
 
 		/**
@@ -83,6 +121,12 @@ public interface QueryEvaluationContext {
 		public Minimal(Dataset dataset, ValueFactory vf) {
 			this.dataset = dataset;
 			this.vf = vf;
+			this.comparator = null;
+		}
+
+		@Override
+		public Comparator<? extends Value> getComparator() {
+			return comparator;
 		}
 
 		@Override

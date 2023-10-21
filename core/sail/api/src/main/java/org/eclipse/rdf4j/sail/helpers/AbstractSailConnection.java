@@ -15,6 +15,7 @@ import java.lang.invoke.VarHandle;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.LinkedList;
 import java.util.Map;

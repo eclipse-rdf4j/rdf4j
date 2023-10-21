@@ -10,9 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.helpers;
 
+import java.util.Comparator;
 import java.util.Optional;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.ordering.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
@@ -256,5 +259,21 @@ public class SailConnectionWrapper
 			return ((ThreadSafetyAware) wrappedCon).supportsConcurrentReads();
 		}
 		return false;
+	}
+
+	@Override
+	public Comparator<? extends Value> getComparator() {
+		return wrappedCon.getComparator();
+	}
+
+	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj, IRI pred,
+			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+		return wrappedCon.getStatements(statementOrder, subj, pred, obj, includeInferred, contexts);
+	}
+
+	@Override
+	public Set<StatementOrder> getAvailableOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		return wrappedCon.getAvailableOrders(subj, pred, obj, contexts);
 	}
 }

@@ -61,7 +61,7 @@ public class EmptySet extends AbstractQueryModelNode implements TupleExpr {
 	}
 
 	@Override
-	public Set<Var> getAvailableOrderings(AvailableStatementOrder tripleSource) {
+	public Set<Var> getAvailableOrders(AvailableStatementOrder tripleSource) {
 		return Set.of();
 	}
 

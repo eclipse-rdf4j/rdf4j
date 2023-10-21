@@ -97,8 +97,8 @@ public class SingleSourceQuery extends AbstractQueryModelNode implements TupleEx
 	}
 
 	@Override
-	public Set<Var> getAvailableOrderings(AvailableStatementOrder tripleSource) {
-		return parsedQuery.getAvailableOrderings(tripleSource);
+	public Set<Var> getAvailableOrders(AvailableStatementOrder tripleSource) {
+		return parsedQuery.getAvailableOrders(tripleSource);
 	}
 
 	@Override

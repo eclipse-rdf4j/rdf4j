@@ -238,7 +238,7 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 	}
 
 	@Override
-	public Set<Var> getAvailableOrderings(AvailableStatementOrder tripleSource) {
+	public Set<Var> getAvailableOrders(AvailableStatementOrder tripleSource) {
 		throw new UnsupportedOperationException("Not implemented yet");
 	}
 

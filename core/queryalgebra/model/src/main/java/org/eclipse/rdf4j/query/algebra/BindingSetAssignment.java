@@ -88,7 +88,7 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	}
 
 	@Override
-	public Set<Var> getAvailableOrderings(AvailableStatementOrder tripleSource) {
+	public Set<Var> getAvailableOrders(AvailableStatementOrder tripleSource) {
 		// Todo, we should consider if we should sort the bindings, and also if there is only one then we don't have to
 		// sort anything.
 		throw new UnsupportedOperationException("Not implemented yet");
