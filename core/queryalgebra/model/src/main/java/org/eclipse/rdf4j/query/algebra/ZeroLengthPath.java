@@ -257,7 +257,7 @@ public class ZeroLengthPath extends AbstractQueryModelNode implements TupleExpr 
 
 	@Override
 	public Set<Var> getSupportedOrders(AvailableStatementOrder tripleSource) {
-		throw new UnsupportedOperationException("Not implemented yet");
+		return Set.of();
 	}
 
 	@Override

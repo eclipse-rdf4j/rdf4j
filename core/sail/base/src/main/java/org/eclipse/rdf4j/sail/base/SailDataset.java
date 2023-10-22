@@ -123,7 +123,7 @@ public interface SailDataset extends SailClosable {
 	}
 
 	default Comparator<Value> getComparator() {
-		throw new SailException("Statement ordering not supported by " + this.getClass().getSimpleName());
+		return null;
 	}
 
 }
