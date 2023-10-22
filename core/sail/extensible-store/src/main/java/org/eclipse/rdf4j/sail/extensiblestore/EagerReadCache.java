@@ -251,6 +251,6 @@ public class EagerReadCache implements DataStructureInterface {
 
 	@Override
 	public Comparator<Value> getComparator() {
-		throw new SailException("StatementOrder not supported");
+		return null;
 	}
 }

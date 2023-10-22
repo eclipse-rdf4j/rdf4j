@@ -106,7 +106,7 @@ public interface DataStructureInterface {
 	}
 
 	default Comparator<Value> getComparator() {
-		throw new SailException("StatementOrder not supported by: " + this.getClass().getSimpleName());
+		return null;
 	}
 
 }
