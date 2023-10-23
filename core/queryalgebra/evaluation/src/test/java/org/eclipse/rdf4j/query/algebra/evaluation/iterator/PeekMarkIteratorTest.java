@@ -108,16 +108,22 @@ public class PeekMarkIteratorTest {
 		stringPeekMarkIterator.next(); // a
 		stringPeekMarkIterator.next(); // b
 		stringPeekMarkIterator.next(); // c
+		assertTrue(stringPeekMarkIterator.isMarked());
+		assertTrue(stringPeekMarkIterator.isResettable());
 		stringPeekMarkIterator.next(); // d
 		stringPeekMarkIterator.next(); // e
 
 		stringPeekMarkIterator.reset();
-
+		assertFalse(stringPeekMarkIterator.isMarked());
+		assertTrue(stringPeekMarkIterator.isResettable());
 		stringPeekMarkIterator.next(); // a
 		stringPeekMarkIterator.next(); // b
+		assertTrue(stringPeekMarkIterator.isResettable());
 		stringPeekMarkIterator.mark();
+		assertTrue(stringPeekMarkIterator.isMarked());
 		stringPeekMarkIterator.next(); // c
 		stringPeekMarkIterator.peek(); // d
+		assertTrue(stringPeekMarkIterator.isMarked());
 
 		stringPeekMarkIterator.reset();
 
@@ -140,6 +146,7 @@ public class PeekMarkIteratorTest {
 		stringPeekMarkIterator.next(); // c
 		stringPeekMarkIterator.next(); // d
 
+		assertTrue(stringPeekMarkIterator.isResettable());
 		stringPeekMarkIterator.reset();
 
 		stringPeekMarkIterator.next(); // a
@@ -148,6 +155,7 @@ public class PeekMarkIteratorTest {
 		stringPeekMarkIterator.next(); // d
 		stringPeekMarkIterator.peek(); // e
 
+		assertTrue(stringPeekMarkIterator.isResettable());
 		stringPeekMarkIterator.reset();
 
 		assertEquals("a", stringPeekMarkIterator.next());
@@ -156,6 +164,7 @@ public class PeekMarkIteratorTest {
 		assertEquals("d", stringPeekMarkIterator.next());
 		assertEquals("e", stringPeekMarkIterator.next());
 		assertEquals("f", stringPeekMarkIterator.next());
+		assertFalse(stringPeekMarkIterator.isResettable());
 
 	}
 
@@ -294,6 +303,8 @@ public class PeekMarkIteratorTest {
 		stringPeekMarkIterator.next(); // a
 		stringPeekMarkIterator.next(); // b
 
+		assertFalse(stringPeekMarkIterator.isResettable());
+
 		Assertions.assertThrows(IllegalStateException.class, stringPeekMarkIterator::reset);
 
 	}
@@ -312,6 +323,7 @@ public class PeekMarkIteratorTest {
 		assertEquals("a", stringPeekMarkIterator.next());
 		assertEquals("b", stringPeekMarkIterator.next());
 		assertEquals("c", stringPeekMarkIterator.next());
+		assertFalse(stringPeekMarkIterator.isResettable());
 		Assertions.assertThrows(IllegalStateException.class, stringPeekMarkIterator::reset);
 	}
 
@@ -330,6 +342,7 @@ public class PeekMarkIteratorTest {
 		assertEquals("b", stringPeekMarkIterator.next());
 		assertEquals("c", stringPeekMarkIterator.peek());
 		assertEquals("c", stringPeekMarkIterator.next());
+		assertFalse(stringPeekMarkIterator.isResettable());
 		Assertions.assertThrows(IllegalStateException.class, stringPeekMarkIterator::reset);
 	}
 
@@ -348,6 +361,7 @@ public class PeekMarkIteratorTest {
 		assertEquals("b", stringPeekMarkIterator.next());
 		assertEquals("c", stringPeekMarkIterator.next());
 		assertEquals("d", stringPeekMarkIterator.next());
+		assertFalse(stringPeekMarkIterator.isResettable());
 		Assertions.assertThrows(IllegalStateException.class, stringPeekMarkIterator::reset);
 	}
 

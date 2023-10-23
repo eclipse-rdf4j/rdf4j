@@ -148,6 +148,14 @@ public class PeekMarkIterator<E> implements CloseableIteration<E> {
 		resetPossible = 1;
 	}
 
+	boolean isMarked() {
+		return !closed && mark;
+	}
+
+	boolean isResettable() {
+		return !closed && (mark || resetPossible >= 0);
+	}
+
 	@Override
 	public void close() {
 		this.closed = true;
