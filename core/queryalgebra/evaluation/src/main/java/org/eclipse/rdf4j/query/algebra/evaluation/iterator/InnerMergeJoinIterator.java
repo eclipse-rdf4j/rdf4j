@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import java.util.Comparator;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
@@ -24,6 +25,12 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
+/**
+ *
+ *
+ * @author Håvard M. Ottestad
+ */
+@Experimental
 public class InnerMergeJoinIterator extends LookAheadIteration<BindingSet> {
 
 	private final CloseableIteration<BindingSet> leftIterator;
