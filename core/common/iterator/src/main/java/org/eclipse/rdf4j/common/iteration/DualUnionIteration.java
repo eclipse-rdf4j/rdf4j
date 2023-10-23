@@ -70,6 +70,14 @@ public class DualUnionIteration<E> implements CloseableIteration<E> {
 		} else if (leftIteration instanceof EmptyIteration) {
 			return rightIteration;
 		} else {
+			if (!rightIteration.hasNext()) {
+				rightIteration.close();
+				return leftIteration;
+			}
+			if (!leftIteration.hasNext()) {
+				leftIteration.close();
+				return rightIteration;
+			}
 			return new DualUnionIteration<>(order, cmp, leftIteration, rightIteration);
 		}
 	}

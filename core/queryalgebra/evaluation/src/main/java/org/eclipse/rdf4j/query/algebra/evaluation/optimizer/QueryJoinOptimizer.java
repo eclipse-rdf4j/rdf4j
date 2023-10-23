@@ -225,25 +225,29 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 				if (priorityJoins == null && !orderedJoinArgs.isEmpty()) {
 
-					while (!orderedJoinArgs.isEmpty()) {
-						TupleExpr first = orderedJoinArgs.removeFirst();
-						if (orderedJoinArgs.isEmpty()) {
-							orderedJoinArgs.addFirst(first);
-						} else {
-							TupleExpr second = orderedJoinArgs.removeFirst();
-							Set<Var> SupportedOrders = new HashSet<>(first.getSupportedOrders(tripleSource));
-							SupportedOrders.retainAll(second.getSupportedOrders(tripleSource));
-							if (SupportedOrders.isEmpty()) {
-								orderedJoinArgs.addFirst(second);
-								orderedJoinArgs.addFirst(first);
-								break;
-							} else {
-								Join join = new Join(first, second);
-								join.setOrder((Var) SupportedOrders.toArray()[0]);
-								join.setMergeJoin(true);
-								orderedJoinArgs.addFirst(join);
-							}
+					while (orderedJoinArgs.size() > 1) {
+
+						Set<Var> supportedOrders = orderedJoinArgs.peekFirst().getSupportedOrders(tripleSource);
+						if (supportedOrders.isEmpty()) {
+							break;
 						}
+
+						TupleExpr first = orderedJoinArgs.removeFirst();
+
+						TupleExpr second = orderedJoinArgs.removeFirst();
+						Set<Var> SupportedOrders = new HashSet<>(first.getSupportedOrders(tripleSource));
+						SupportedOrders.retainAll(second.getSupportedOrders(tripleSource));
+						if (SupportedOrders.isEmpty()) {
+							orderedJoinArgs.addFirst(second);
+							orderedJoinArgs.addFirst(first);
+							break;
+						} else {
+							Join join = new Join(first, second);
+							join.setOrder((Var) SupportedOrders.toArray()[0]);
+							join.setMergeJoin(true);
+							orderedJoinArgs.addFirst(join);
+						}
+
 					}
 
 				}
