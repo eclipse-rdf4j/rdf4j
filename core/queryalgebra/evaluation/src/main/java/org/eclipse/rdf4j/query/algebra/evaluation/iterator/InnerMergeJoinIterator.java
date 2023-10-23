@@ -26,15 +26,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 /**
- *
- *
  * @author Håvard M. Ottestad
  */
 @Experimental
 public class InnerMergeJoinIterator extends LookAheadIteration<BindingSet> {
 
 	private final CloseableIteration<BindingSet> leftIterator;
-	private final CloseableIteration<BindingSet> rightIterator;
+	private final PeekMarkIterator<BindingSet> rightIterator;
 	private final Comparator<Value> cmp;
 	private final Function<BindingSet, Value> value;
 	private final QueryEvaluationContext context;
@@ -44,7 +42,7 @@ public class InnerMergeJoinIterator extends LookAheadIteration<BindingSet> {
 			Comparator<Value> cmp, Function<BindingSet, Value> value, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		this.leftIterator = leftIterator;
-		this.rightIterator = rightIterator;
+		this.rightIterator = new PeekMarkIterator<>(rightIterator);
 		this.cmp = cmp;
 		this.value = value;
 		this.context = context;
@@ -68,9 +66,7 @@ public class InnerMergeJoinIterator extends LookAheadIteration<BindingSet> {
 	}
 
 	BindingSet next;
-	BindingSet nextLeft;
-	BindingSet nextRight;
-	BindingSet joinedLeft;
+	BindingSet currentLeft;
 
 	BindingSet join(BindingSet left, BindingSet right) {
 		MutableBindingSet joined = context.createBindingSet(left);
@@ -87,61 +83,59 @@ public class InnerMergeJoinIterator extends LookAheadIteration<BindingSet> {
 			return;
 		}
 
-		BindingSet prevLeft = nextLeft;
-		if (nextLeft == null && leftIterator.hasNext()) {
-			nextLeft = leftIterator.next();
+		if (currentLeft == null && leftIterator.hasNext()) {
+			currentLeft = leftIterator.next();
 		}
 
-		if (nextRight == null && rightIterator.hasNext()) {
-			nextRight = rightIterator.next();
-		}
-
-		if (nextRight == null && prevLeft == null && nextLeft != null) {
-
-			nextLeft = null;
-
-			return;
-		}
-
-		if (nextLeft == null && nextRight != null) {
-			nextRight = null;
-
+		if (currentLeft == null) {
 			return;
 		}
 
 		while (next == null) {
-			if (nextRight != null) {
-				Value left = value.apply(nextLeft);
-				Value right = value.apply(nextRight);
+			if (rightIterator.hasNext()) {
+				BindingSet peekRight = rightIterator.peek();
+				Value left = value.apply(currentLeft);
+				Value right = value.apply(peekRight);
 				int compareTo = cmp.compare(left, right);
-
 				if (compareTo == 0) {
-					next = join(nextLeft, nextRight);
-					joinedLeft = nextLeft;
-					nextRight = null;
+					if (rightIterator.isResettable()) {
+						next = join(currentLeft, rightIterator.next());
+						return;
+					} else {
+						rightIterator.mark();
+						next = join(currentLeft, rightIterator.next());
+						return;
+					}
 				} else {
 					if (compareTo < 0) {
+						// leftIterator is behind, or in other words, rightIterator is ahead
 						if (leftIterator.hasNext()) {
-							nextLeft = leftIterator.next();
+							BindingSet prevLeft = currentLeft;
+							currentLeft = leftIterator.next();
+							if (cmp.compare(value.apply(prevLeft), value.apply(currentLeft)) == 0) {
+								// we have duplicate keys on the leftIterator and need to reset the rightIterator
+								rightIterator.reset();
+							}
 						} else {
-							nextLeft = null;
+							currentLeft = null;
 							break;
 						}
 					} else {
-						if (rightIterator.hasNext()) {
-							nextRight = rightIterator.next();
-						} else {
-							nextRight = null;
-							break;
-						}
+						// rightIterator is behind, skip forward
+						rightIterator.next();
+
 					}
 
 				}
-			} else {
-				assert !rightIterator.hasNext() : rightIterator.toString();
 
-				return;
+			} else if (rightIterator.isResettable() && leftIterator.hasNext()) {
+				rightIterator.reset();
+				currentLeft = leftIterator.next();
+			} else {
+				currentLeft = null;
+				break;
 			}
+
 		}
 
 	}

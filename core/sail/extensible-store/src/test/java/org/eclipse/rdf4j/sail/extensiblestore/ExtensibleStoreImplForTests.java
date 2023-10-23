@@ -19,10 +19,11 @@ public class ExtensibleStoreImplForTests
 		extends ExtensibleStore<OrderedDataStructure, SimpleMemoryNamespaceStore> {
 
 	public ExtensibleStoreImplForTests() {
+		super(Cache.NONE);
 	}
 
 	public ExtensibleStoreImplForTests(Cache cache) {
-		super(cache);
+		super(Cache.NONE);
 	}
 
 	@Override
