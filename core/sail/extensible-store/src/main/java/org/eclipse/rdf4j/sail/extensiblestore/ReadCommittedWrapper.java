@@ -17,12 +17,14 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -162,6 +164,144 @@ class ReadCommittedWrapper implements DataStructureInterface {
 
 	}
 
+	@Override
+	public CloseableIteration<? extends ExtensibleStatement> getStatements(StatementOrder statementOrder,
+			Resource subject,
+			IRI predicate, Value object, boolean inferred, Resource... context) {
+
+		// must match single statement
+		if (subject != null && predicate != null && object != null && context != null && context.length == 1) {
+			Statement statement = SimpleValueFactory.getInstance()
+					.createStatement(subject, predicate, object, context[0]);
+
+			statement = ExtensibleStatementHelper.getDefaultImpl().fromStatement(statement, inferred);
+
+			ExtensibleStatement extensibleStatement = internalAdded.get(statement);
+
+			if (extensibleStatement != null) {
+				return new SingletonIteration<>(extensibleStatement);
+			} else {
+				if (internalRemoved.containsKey(statement)) {
+					return new EmptyIteration<>();
+				} else {
+					synchronized (dataStructure) {
+						return dataStructure.getStatements(statementOrder, subject, predicate, object, inferred,
+								context);
+					}
+				}
+			}
+
+		} else {
+			synchronized (dataStructure) {
+
+				return new LookAheadIteration<>() {
+
+					Comparator<Statement> statementComparator = statementOrder
+							.getComparator(dataStructure.getComparator());
+
+					final TreeSet<ExtensibleStatement> internalAddedLocal = new TreeSet<>(statementComparator);
+
+					{
+						internalAddedLocal.addAll(internalAdded.values());
+					}
+
+					final Set<ExtensibleStatement> internalRemovedLocal = new HashSet<>(internalRemoved.values());
+
+					final Iterator<ExtensibleStatement> left = internalAddedLocal.stream()
+							.filter(statement -> {
+
+								if (subject != null && !statement.getSubject().equals(subject)) {
+									return false;
+								}
+								if (predicate != null && !statement.getPredicate().equals(predicate)) {
+									return false;
+								}
+								if (object != null && !statement.getObject().equals(object)) {
+									return false;
+								}
+								if (context != null && context.length > 0
+										&& !containsContext(context, statement.getContext())) {
+									return false;
+								}
+
+								if (!inferred && inferred != statement.isInferred()) {
+									return false;
+								}
+
+								return true;
+							})
+							.iterator();
+
+					final CloseableIteration<? extends ExtensibleStatement> right = dataStructure
+							.getStatements(statementOrder, subject, predicate, object, inferred, context);
+
+					ExtensibleStatement nextLeft = null;
+					ExtensibleStatement nextRight = null;
+
+					@Override
+					protected void handleClose() throws SailException {
+						right.close();
+					}
+
+					@Override
+					protected ExtensibleStatement getNextElement() throws SailException {
+
+						ExtensibleStatement next = null;
+
+						do {
+							ExtensibleStatement tempNext = null;
+
+							if (nextLeft == null && left.hasNext()) {
+								nextLeft = left.next();
+							}
+
+							if (nextRight == null && right.hasNext()) {
+								nextRight = right.next();
+							}
+
+							if (nextLeft != null && nextRight != null) {
+								int compare = statementComparator.compare(nextLeft, nextRight);
+
+								if (compare <= 0) {
+									tempNext = nextLeft;
+									nextLeft = null;
+								} else {
+									tempNext = nextRight;
+									nextRight = null;
+									if (!internalAddedLocal.isEmpty() && internalAddedLocal.contains(tempNext)) {
+										tempNext = null;
+									}
+								}
+							} else if (nextLeft != null) {
+								tempNext = nextLeft;
+								nextLeft = null;
+							} else if (nextRight != null) {
+								tempNext = nextRight;
+								nextRight = null;
+								if (!internalAddedLocal.isEmpty() && internalAddedLocal.contains(tempNext)) {
+									tempNext = null;
+								}
+							}
+
+							if (tempNext != null) {
+								if (internalRemovedLocal.isEmpty() || !internalRemovedLocal.contains(tempNext)) {
+									next = tempNext;
+								}
+							}
+
+						} while (next == null && (left.hasNext() || right.hasNext()));
+
+						return next;
+
+					}
+
+				};
+
+			}
+		}
+
+	}
+
 	private static boolean containsContext(Resource[] haystack, Resource needle) {
 		for (Resource resource : haystack) {
 			if (resource == null && needle == null) {
@@ -205,6 +345,12 @@ class ReadCommittedWrapper implements DataStructureInterface {
 	@Override
 	public Comparator<Value> getComparator() {
 		return dataStructure.getComparator();
+	}
+
+	@Override
+	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, boolean inferred,
+			Resource... contexts) {
+		return dataStructure.getSupportedOrders(subj, pred, obj, inferred, contexts);
 	}
 
 	@Override

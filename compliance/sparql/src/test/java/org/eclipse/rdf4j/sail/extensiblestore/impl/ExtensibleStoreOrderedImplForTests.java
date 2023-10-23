@@ -8,20 +8,22 @@
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.extensiblestore;
+package org.eclipse.rdf4j.sail.extensiblestore.impl;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.extensiblestore.ordered.OrderedDataStructure;
+import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStore;
+import org.eclipse.rdf4j.sail.extensiblestore.SimpleMemoryNamespaceStore;
 
-public class ExtensibleStoreImplForTests
+public class ExtensibleStoreOrderedImplForTests
 		extends ExtensibleStore<OrderedDataStructure, SimpleMemoryNamespaceStore> {
 
-	public ExtensibleStoreImplForTests() {
+	public ExtensibleStoreOrderedImplForTests() {
+		super(Cache.NONE);
 	}
 
-	public ExtensibleStoreImplForTests(Cache cache) {
+	public ExtensibleStoreOrderedImplForTests(Cache cache) {
 		super(cache);
 	}
 
@@ -34,7 +36,7 @@ public class ExtensibleStoreImplForTests
 
 	@Override
 	protected NotifyingSailConnection getConnectionInternal() throws SailException {
-		return new ExtensibleStoreConnectionImplForTests(this);
+		return new ExtensibleStoreConnectionOrderedImplForTests(this);
 	}
 
 	@Override

@@ -11,6 +11,11 @@
 
 package org.eclipse.rdf4j.common.order;
 
+import java.util.Comparator;
+
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+
 public enum StatementOrder {
 
 	S,
@@ -18,4 +23,18 @@ public enum StatementOrder {
 	O,
 	C;
 
+	public Comparator<Statement> getComparator(Comparator<Value> comparator) {
+		switch (this) {
+		case S:
+			return (a, b) -> comparator.compare(a.getSubject(), b.getSubject());
+		case P:
+			return (a, b) -> comparator.compare(a.getPredicate(), b.getPredicate());
+		case O:
+			return (a, b) -> comparator.compare(a.getObject(), b.getObject());
+		case C:
+			return (a, b) -> comparator.compare(a.getContext(), b.getContext());
+		}
+
+		throw new IllegalStateException("Unknown StatementOrder: " + this);
+	}
 }
