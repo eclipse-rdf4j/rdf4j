@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +35,7 @@ import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -890,6 +892,22 @@ class LmdbSailStore implements SailStore {
 			} catch (IOException e) {
 				throw new SailException("Unable to get statements", e);
 			}
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj,
+				IRI pred, Value obj, Resource... contexts) throws SailException {
+			throw new UnsupportedOperationException("Not implemented yet");
+		}
+
+		@Override
+		public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+			return Set.of();
+		}
+
+		@Override
+		public Comparator<Value> getComparator() {
+			throw new UnsupportedOperationException("Not implemented yet");
 		}
 	}
 }
