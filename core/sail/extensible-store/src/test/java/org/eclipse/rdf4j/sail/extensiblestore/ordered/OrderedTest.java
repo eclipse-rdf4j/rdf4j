@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
@@ -151,10 +152,10 @@ public class OrderedTest {
 					"?s <" + FOAF.KNOWS + "> ?s2.\n" +
 					"?s2 <" + RDFS.COMMENT + "> ?o3.\n" +
 					"}";
-//			Explanation explain = connection
-//					.prepareTupleQuery(query)
-//					.explain(Explanation.Level.Executed);
-//			System.out.println(explain);
+			Explanation explain = connection
+					.prepareTupleQuery(query)
+					.explain(Explanation.Level.Executed);
+			System.out.println(explain);
 
 			try (TupleQueryResult evaluate = connection
 					.prepareTupleQuery(query)
