@@ -84,7 +84,8 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource),
 				ITERATIVE_EVALUATION_OPTIMIZER,
 				FILTER_OPTIMIZER,
-				ORDER_LIMIT_OPTIMIZER);
+				ORDER_LIMIT_OPTIMIZER
+		);
 
 		if (assertsEnabled) {
 			List<QueryOptimizer> optimizersWithReferenceCleaner = new ArrayList<>();

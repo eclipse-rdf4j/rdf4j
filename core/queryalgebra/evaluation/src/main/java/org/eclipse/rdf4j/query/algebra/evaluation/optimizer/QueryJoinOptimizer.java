@@ -204,7 +204,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						TupleExpr tupleExpr = selectNextTupleExpr(joinArgs, cardinalityMap, varsMap, varFreqMap);
 
 						joinArgs.remove(tupleExpr);
-						orderedJoinArgs.add(tupleExpr);
+						orderedJoinArgs.addLast(tupleExpr);
 
 						// Recursively optimize join arguments
 						tupleExpr.visit(this);
@@ -233,11 +233,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						}
 
 						TupleExpr first = orderedJoinArgs.removeFirst();
-
 						TupleExpr second = orderedJoinArgs.removeFirst();
 						Set<Var> SupportedOrders = new HashSet<>(first.getSupportedOrders(tripleSource));
 						SupportedOrders.retainAll(second.getSupportedOrders(tripleSource));
-						if (SupportedOrders.isEmpty()) {
+						if (SupportedOrders.isEmpty() || joinOnMultipleVars(first, second)) {
 							orderedJoinArgs.addFirst(second);
 							orderedJoinArgs.addFirst(first);
 							break;
@@ -283,6 +282,29 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			} finally {
 				boundVars = origBoundVars;
 			}
+		}
+
+		private boolean joinOnMultipleVars(TupleExpr first, TupleExpr second) {
+			Set<String> firstBindingNames = first.getBindingNames();
+			if (firstBindingNames.size() == 1) {
+				return false;
+			}
+			Set<String> secondBindingNames = second.getBindingNames();
+			if (secondBindingNames.size() == 1) {
+				return false;
+			}
+			int overlap = 0;
+			for (String firstBindingName : firstBindingNames) {
+				if (secondBindingNames.contains(firstBindingName)) {
+					overlap++;
+				}
+				if (overlap > 1) {
+					return true;
+				}
+			}
+
+			return false;
+
 		}
 
 		protected <L extends List<TupleExpr>> L getJoinArgs(TupleExpr tupleExpr, L joinArgs) {

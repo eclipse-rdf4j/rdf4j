@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 @Experimental
 public class InnerMergeJoinIterator extends LookAheadIteration<BindingSet> {
 
-	private final CloseableIteration<BindingSet> leftIterator;
+	private final PeekMarkIterator<BindingSet> leftIterator;
 	private final PeekMarkIterator<BindingSet> rightIterator;
 	private final Comparator<Value> cmp;
 	private final Function<BindingSet, Value> value;
@@ -41,7 +41,7 @@ public class InnerMergeJoinIterator extends LookAheadIteration<BindingSet> {
 			CloseableIteration<BindingSet> rightIterator,
 			Comparator<Value> cmp, Function<BindingSet, Value> value, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		this.leftIterator = leftIterator;
+		this.leftIterator = new PeekMarkIterator<>(leftIterator);
 		this.rightIterator = new PeekMarkIterator<>(rightIterator);
 		this.cmp = cmp;
 		this.value = value;
@@ -68,8 +68,13 @@ public class InnerMergeJoinIterator extends LookAheadIteration<BindingSet> {
 	BindingSet next;
 	BindingSet currentLeft;
 
-	BindingSet join(BindingSet left, BindingSet right) {
-		MutableBindingSet joined = context.createBindingSet(left);
+	BindingSet join(BindingSet left, BindingSet right, boolean createNewBindingSet) {
+		MutableBindingSet joined;
+		if (!createNewBindingSet && left instanceof MutableBindingSet) {
+			joined = (MutableBindingSet) left;
+		} else {
+			joined = context.createBindingSet(left);
+		}
 		for (Binding binding : right) {
 			if (!joined.hasBinding(binding.getName())) {
 				joined.addBinding(binding);
@@ -96,14 +101,27 @@ public class InnerMergeJoinIterator extends LookAheadIteration<BindingSet> {
 				BindingSet peekRight = rightIterator.peek();
 				Value left = value.apply(currentLeft);
 				Value right = value.apply(peekRight);
+
 				int compareTo = cmp.compare(left, right);
 				if (compareTo == 0) {
 					if (rightIterator.isResettable()) {
-						next = join(currentLeft, rightIterator.next());
+						next = join(currentLeft, rightIterator.next(), true);
 						return;
 					} else {
-						rightIterator.mark();
-						next = join(currentLeft, rightIterator.next());
+						BindingSet leftPeek = leftIterator.peek();
+						if (leftPeek != null && left.equals(value.apply(leftPeek))) {
+							rightIterator.mark();
+							next = join(currentLeft, rightIterator.next(), true);
+						} else {
+							BindingSet nextRight = rightIterator.next();
+							BindingSet rightPeek = rightIterator.peek();
+							if (rightPeek != null && right.equals(value.apply(rightPeek))) {
+								next = join(currentLeft, nextRight, true);
+							} else {
+								next = join(currentLeft, nextRight, false);
+							}
+							return;
+						}
 						return;
 					}
 				} else {
