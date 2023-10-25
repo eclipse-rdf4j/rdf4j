@@ -70,7 +70,10 @@ import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -267,6 +270,24 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	Set<StatementOrder> getStatementOrders() {
+		Set<String> indexSpecs = getIndexSpecs();
+		return indexSpecs.stream().flatMap(s -> {
+			switch (s.charAt(0)) {
+			case 's':
+				return Stream.of(StatementOrder.S);
+			case 'p':
+				return Stream.of(StatementOrder.P);
+			case 'o':
+				return Stream.of(StatementOrder.O);
+			case 'c':
+				return Stream.of(StatementOrder.C);
+			}
+			return Stream.empty();
+		}
+		).collect(Collectors.toSet());
+	}
+
 	private Set<String> getIndexSpecs() throws SailException {
 		String indexesStr = properties.getProperty(INDEXES_KEY);
 
@@ -288,8 +309,8 @@ class TripleStore implements Closeable {
 	}
 
 	/**
-	 * Parses a comma/whitespace-separated list of index specifications. Index specifications are required to consists
-	 * of 4 characters: 's', 'p', 'o' and 'c'.
+	 * Parses a comma/whitespace-separated list of index specifications. Index specifications are required to consist of
+	 * 4 characters: 's', 'p', 'o' and 'c'.
 	 *
 	 * @param indexSpecStr A string like "spoc, pocs, cosp".
 	 * @return A Set containing the parsed index specifications.
@@ -473,7 +494,26 @@ class TripleStore implements Closeable {
 
 	public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit)
 			throws IOException {
-		TripleIndex index = getBestIndex(subj, pred, obj, context);
+		return getTriples(null, txn, subj, pred, obj, context, explicit);
+	}
+
+	public RecordIterator getTriples(StatementOrder statementOrder, Txn txn, long subj, long pred, long obj,
+			long context, boolean explicit)
+			throws IOException {
+		TripleIndex index = null;
+		if (statementOrder != null) {
+			char component = statementOrder.name().toLowerCase().charAt(0);
+			for (TripleIndex candidate : indexes) {
+				if (candidate.fieldSeq[0] == component) {
+					index = candidate;
+				}
+			}
+			if (index == null) {
+				throw new IOException("No index for statement order '" + statementOrder.name() + "' available.");
+			}
+		} else {
+			index = getBestIndex(subj, pred, obj, context);
+		}
 		// System.out.println("get triples: " + Arrays.asList(subj, pred, obj,context));
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
 		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch);
@@ -870,7 +910,7 @@ class TripleStore implements Closeable {
 	 */
 	public void removeTriplesByContext(long subj, long pred, long obj, long context,
 			boolean explicit, Consumer<long[]> handler) throws IOException {
-		RecordIterator records = getTriples(txnManager.createTxn(writeTxn), subj, pred, obj, context, explicit);
+		RecordIterator records = getTriples(null, txnManager.createTxn(writeTxn), subj, pred, obj, context, explicit);
 		removeTriples(records, explicit, handler);
 	}
 

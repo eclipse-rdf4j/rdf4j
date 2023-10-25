@@ -181,6 +181,8 @@ class LmdbSailStore implements SailStore {
 	 */
 	private final AtomicBoolean storeTxnStarted = new AtomicBoolean(false);
 
+	private final Set<StatementOrder> supportedOrders;
+
 	/**
 	 * Creates a new {@link LmdbSailStore}.
 	 */
@@ -203,6 +205,7 @@ class LmdbSailStore implements SailStore {
 			namespaceStore = new NamespaceStore(dataDir);
 			valueStore = new ValueStore(new File(dataDir, "values"), config);
 			tripleStore = new TripleStore(new File(dataDir, "triples"), config);
+			supportedOrders = tripleStore.getStatementOrders();
 			contextStore = new ContextStore(this, dataDir);
 			initialized = true;
 		} finally {
@@ -315,7 +318,7 @@ class LmdbSailStore implements SailStore {
 		CloseableIteration<? extends Statement> stIter1;
 		if (records == null) {
 			// Iterator over all statements
-			stIter1 = createStatementIterator(txn, null, null, null, true);
+			stIter1 = createStatementIterator(null, txn, null, null, null, true);
 		} else {
 			stIter1 = new LmdbStatementIterator(records, valueStore);
 		}
@@ -359,6 +362,7 @@ class LmdbSailStore implements SailStore {
 	 * @return A StatementIterator that can be used to iterate over the statements that match the specified pattern.
 	 */
 	CloseableIteration<? extends Statement> createStatementIterator(
+			StatementOrder statementOrder,
 			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
 		long subjID = LmdbValue.UNKNOWN_ID;
 		if (subj != null) {
@@ -405,7 +409,8 @@ class LmdbSailStore implements SailStore {
 		ArrayList<LmdbStatementIterator> perContextIterList = new ArrayList<>(contextIDList.size());
 
 		for (long contextID : contextIDList) {
-			RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
+			RecordIterator records = tripleStore.getTriples(statementOrder, txn, subjID, predID, objID, contextID,
+					explicit);
 			perContextIterList.add(new LmdbStatementIterator(records, valueStore));
 		}
 
@@ -888,7 +893,7 @@ class LmdbSailStore implements SailStore {
 		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) throws SailException {
 			try {
-				return createStatementIterator(txn, subj, pred, obj, explicit, contexts);
+				return createStatementIterator(null, txn, subj, pred, obj, explicit, contexts);
 			} catch (IOException e) {
 				throw new SailException("Unable to get statements", e);
 			}
@@ -897,17 +902,25 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj,
 				IRI pred, Value obj, Resource... contexts) throws SailException {
-			throw new UnsupportedOperationException("Not implemented yet");
+			try {
+				return createStatementIterator(statementOrder, txn, subj, pred, obj, explicit, contexts);
+			} catch (IOException e) {
+				throw new SailException("Unable to get statements", e);
+			}
 		}
 
 		@Override
 		public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
-			return Set.of();
+			return supportedOrders;
 		}
 
 		@Override
 		public Comparator<Value> getComparator() {
-			throw new UnsupportedOperationException("Not implemented yet");
+			return (a, b) -> {
+				long id1 = (a instanceof LmdbValue) ? ((LmdbValue) a).getInternalID() : 0;
+				long id2 = (b instanceof LmdbValue) ? ((LmdbValue) b).getInternalID() : 0;
+				return Long.compare(id1, id2);
+			};
 		}
 	}
 }
