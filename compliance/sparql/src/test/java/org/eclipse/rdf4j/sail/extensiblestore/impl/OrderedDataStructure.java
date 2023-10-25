@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.sail.extensiblestore.FilteringIteration;
 import org.eclipse.rdf4j.sail.extensiblestore.SortedIteration;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 
-public class OrderedDataStructure implements DataStructureInterface {
+class OrderedDataStructure implements DataStructureInterface {
 
 	private static final EmptyIteration<ExtensibleStatement> EMPTY_ITERATION = new EmptyIteration<>();
 

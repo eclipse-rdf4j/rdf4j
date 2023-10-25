@@ -10,12 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore.impl;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStore;
 import org.eclipse.rdf4j.sail.extensiblestore.SimpleMemoryNamespaceStore;
 
+@InternalUseOnly
 public class ExtensibleStoreOrderedImplForTests
 		extends ExtensibleStore<OrderedDataStructure, SimpleMemoryNamespaceStore> {
 

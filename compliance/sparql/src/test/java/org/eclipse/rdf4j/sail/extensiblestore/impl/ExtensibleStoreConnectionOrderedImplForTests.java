@@ -12,7 +12,7 @@ package org.eclipse.rdf4j.sail.extensiblestore.impl;
 
 import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStoreConnection;
 
-public class ExtensibleStoreConnectionOrderedImplForTests
+class ExtensibleStoreConnectionOrderedImplForTests
 		extends ExtensibleStoreConnection<ExtensibleStoreOrderedImplForTests> {
 	protected ExtensibleStoreConnectionOrderedImplForTests(ExtensibleStoreOrderedImplForTests sail) {
 		super(sail);

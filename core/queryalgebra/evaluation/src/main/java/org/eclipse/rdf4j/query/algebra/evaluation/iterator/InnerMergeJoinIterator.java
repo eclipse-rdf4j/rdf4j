@@ -106,7 +106,6 @@ public class InnerMergeJoinIterator extends LookAheadIteration<BindingSet> {
 				if (compareTo == 0) {
 					if (rightIterator.isResettable()) {
 						next = join(currentLeft, rightIterator.next(), true);
-						return;
 					} else {
 						BindingSet leftPeek = leftIterator.peek();
 						if (leftPeek != null && left.equals(value.apply(leftPeek))) {
@@ -120,10 +119,9 @@ public class InnerMergeJoinIterator extends LookAheadIteration<BindingSet> {
 							} else {
 								next = join(currentLeft, nextRight, false);
 							}
-							return;
 						}
-						return;
 					}
+					break;
 				} else {
 					if (compareTo < 0) {
 						// leftIterator is behind, or in other words, rightIterator is ahead

@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.query.algebra;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.junit.jupiter.api.Test;
 
 public class AbstractQueryModelNodeTest {
