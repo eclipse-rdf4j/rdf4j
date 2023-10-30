@@ -327,7 +327,8 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 			throws RepositoryException, E {
 		final IRI insertContext = getInsertContext();
 		if (isNilContext(contexts)) {
-			super.add(new ConvertingIteration<Statement, Statement, E>(statementIter) {
+			super.add((Iteration<? extends Statement, E>) new ConvertingIteration<Statement, Statement, E>(
+					statementIter) {
 
 				@Override
 				protected Statement convert(Statement st) {
