@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.vocabulary.SKOS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.repository.Repository;
@@ -116,6 +117,76 @@ public class LargeJoinTest extends FedXBaseTest {
 				Assertions.assertEquals(100, personsWithName.size());
 			}
 
+		} finally {
+			repo.shutDown();
+		}
+
+	}
+
+	@Test
+	public void testJoinWithNUnion() throws Exception {
+
+		int N_LEFT_SIZE = 20;
+
+		addNativeStore("repo1");
+		addNativeStore("repo2");
+
+		try (RepositoryConnection conn = repoManager.getRepository("repo1").getConnection()) {
+			for (int i = 0; i < N_LEFT_SIZE; i++) {
+				conn.add(Values.iri("http://example.com/p" + i), RDF.TYPE, FOAF.PERSON);
+			}
+		}
+
+		// add statements for the union
+		try (RepositoryConnection conn = repoManager.getRepository("repo1").getConnection()) {
+			for (int i = 0; i < N_LEFT_SIZE; i += 2) {
+				conn.add(Values.iri("http://example.com/p" + i), RDFS.LABEL, Values.literal("Person " + i));
+			}
+
+			// add dummy skos:prefLabel statement to avoid exclusive group
+			conn.add(Values.iri("http://example.com/subj1"), SKOS.PREF_LABEL, Values.literal("Subj1"));
+
+		}
+		try (RepositoryConnection conn = repoManager.getRepository("repo2").getConnection()) {
+			for (int i = 1; i < N_LEFT_SIZE; i += 2) {
+				conn.add(Values.iri("http://example.com/p" + i), SKOS.PREF_LABEL, Values.literal("Person " + i));
+			}
+
+			// add dummy rdfs:label statement to avoid exclusive group
+			conn.add(Values.iri("http://example.com/subj2"), RDFS.LABEL, Values.literal("Subj2"));
+		}
+
+		FedXConfig config = new FedXConfig();
+		config.withDebugQueryPlan(true);
+
+		FedXRepository repo = FedXFactory.newFederation()
+				.withResolvableEndpoint("repo1")
+				.withResolvableEndpoint("repo2")
+				.withRepositoryResolver(repoManager)
+				.withConfig(config)
+				.create();
+
+		try {
+			repo.init();
+			try (RepositoryConnection conn = repo.getConnection()) {
+				TupleQuery tq = conn
+						.prepareTupleQuery(
+								"PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
+										+ "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+										+ "PREFIX skos: <http://www.w3.org/2004/02/skos/core#>\n"
+										+ "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
+										+ "SELECT * WHERE { "
+										+ "  ?person a foaf:Person ."
+										+ "  ?person rdfs:label | skos:prefLabel ?label ."
+										+ " }"
+						);
+
+				tq.setMaxExecutionTime(2);
+
+				List<BindingSet> res = Iterations.asList(tq.evaluate());
+				Assertions.assertEquals(N_LEFT_SIZE, res.size());
+
+			}
 		} finally {
 			repo.shutDown();
 		}
