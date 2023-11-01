@@ -193,7 +193,7 @@
 					<httpPort>9200</httpPort>
 					<environmentVariables>
 						<ingest.geoip.downloader.enabled>false</ingest.geoip.downloader.enabled>
-						<ES_JAVA_OPTS>${java.sec.mgr}</ES_JAVA_OPTS>
+						<ES_JAVA_OPTS>${java.sec.mgr} -Xmx1g</ES_JAVA_OPTS>
 					</environmentVariables>
 					<instanceCount>1</instanceCount>
 					<instanceSettings>
