@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -28,9 +29,9 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
 import org.junit.jupiter.api.DynamicTest;
-import org.junit.jupiter.api.Test;
 
 /**
  * Tests on SPRQL UNION clauses.
@@ -40,96 +41,109 @@ import org.junit.jupiter.api.Test;
  */
 public class UnionTest extends AbstractComplianceTest {
 
-	public UnionTest(Repository repo) {
+	public UnionTest(Supplier<Repository> repo) {
 		super(repo);
 	}
 
 	private void testEmptyUnion() {
-		String query = "PREFIX : <http://example.org/> " + "SELECT ?visibility WHERE {"
-				+ "OPTIONAL { SELECT ?var WHERE { :s a :MyType . BIND (:s as ?var ) .} } ."
-				+ "BIND (IF(BOUND(?var), 'VISIBLE', 'HIDDEN') as ?visibility)" + "}";
-		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			assertNotNull(result);
-			assertFalse(result.hasNext());
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			String query = "PREFIX : <http://example.org/> " + "SELECT ?visibility WHERE {"
+					+ "OPTIONAL { SELECT ?var WHERE { :s a :MyType . BIND (:s as ?var ) .} } ."
+					+ "BIND (IF(BOUND(?var), 'VISIBLE', 'HIDDEN') as ?visibility)" + "}";
+			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+				assertNotNull(result);
+				assertFalse(result.hasNext());
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testSameTermRepeatInUnion() throws Exception {
-		loadTestData("/testdata-query/dataset-query.trig");
-		String query = "PREFIX foaf:<http://xmlns.com/foaf/0.1/>\n" + "SELECT * {\n" + "    {\n"
-				+ "        ?sameTerm foaf:mbox ?mbox\n" + "        FILTER sameTerm(?sameTerm,$william)\n"
-				+ "    } UNION {\n" + "        ?x foaf:knows ?sameTerm\n"
-				+ "        FILTER sameTerm(?sameTerm,$william)\n" + "    }\n" + "}";
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			loadTestData("/testdata-query/dataset-query.trig", conn);
+			String query = "PREFIX foaf:<http://xmlns.com/foaf/0.1/>\n" + "SELECT * {\n" + "    {\n"
+					+ "        ?sameTerm foaf:mbox ?mbox\n" + "        FILTER sameTerm(?sameTerm,$william)\n"
+					+ "    } UNION {\n" + "        ?x foaf:knows ?sameTerm\n"
+					+ "        FILTER sameTerm(?sameTerm,$william)\n" + "    }\n" + "}";
 
-		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
-		tq.setBinding("william", conn.getValueFactory().createIRI("http://example.org/william"));
+			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+			tq.setBinding("william", conn.getValueFactory().createIRI("http://example.org/william"));
 
-		try (TupleQueryResult result = tq.evaluate()) {
-			assertNotNull(result);
+			try (TupleQueryResult result = tq.evaluate()) {
+				assertNotNull(result);
 
-			int count = 0;
-			while (result.hasNext()) {
-				BindingSet bs = result.next();
-				count++;
-				assertNotNull(bs);
+				int count = 0;
+				while (result.hasNext()) {
+					BindingSet bs = result.next();
+					count++;
+					assertNotNull(bs);
 
-				// System.out.println(bs);
+					// System.out.println(bs);
 
-				Value mbox = bs.getValue("mbox");
-				Value x = bs.getValue("x");
+					Value mbox = bs.getValue("mbox");
+					Value x = bs.getValue("x");
 
-				assertTrue(mbox instanceof Literal || x instanceof IRI);
+					assertTrue(mbox instanceof Literal || x instanceof IRI);
+				}
+				assertEquals(3, count);
+			} catch (QueryEvaluationException e) {
+				e.printStackTrace();
+				fail(e.getMessage());
 			}
-			assertEquals(3, count);
-		} catch (QueryEvaluationException e) {
-			e.printStackTrace();
-			fail(e.getMessage());
+		} finally {
+			closeRepository(repo);
 		}
-
 	}
 
 	private void testSameTermRepeatInUnionAndOptional() throws Exception {
-		loadTestData("/testdata-query/dataset-query.trig");
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			loadTestData("/testdata-query/dataset-query.trig", conn);
 
-		String query = getNamespaceDeclarations() + "SELECT * {\n" + "    {\n" + "        ex:a ?p ?prop1\n"
-				+ "        FILTER (?p = ex:prop1)\n" + "    } UNION {\n" + "          ?s ex:p ex:A ; " + "          { "
-				+ "              { " + "                 ?s ?p ?l ." + "                 FILTER(?p = rdfs:label) "
-				+ "              } " + "              OPTIONAL { " + "                 ?s ?p ?opt1 . "
-				+ "                 FILTER (?p = ex:prop1) " + "              } " + "              OPTIONAL { "
-				+ "                 ?s ?p ?opt2 . " + "                 FILTER (?p = ex:prop2) " + "              } "
-				+ "          }" + "    }\n" + "}";
+			String query = getNamespaceDeclarations() + "SELECT * {\n" + "    {\n" + "        ex:a ?p ?prop1\n"
+					+ "        FILTER (?p = ex:prop1)\n" + "    } UNION {\n" + "          ?s ex:p ex:A ; "
+					+ "          { " + "              { " + "                 ?s ?p ?l ."
+					+ "                 FILTER(?p = rdfs:label) " + "              } " + "              OPTIONAL { "
+					+ "                 ?s ?p ?opt1 . " + "                 FILTER (?p = ex:prop1) "
+					+ "              } " + "              OPTIONAL { " + "                 ?s ?p ?opt2 . "
+					+ "                 FILTER (?p = ex:prop2) " + "              } " + "          }" + "    }\n" + "}";
 
-		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
-		try (TupleQueryResult result = tq.evaluate()) {
-			assertNotNull(result);
+			try (TupleQueryResult result = tq.evaluate()) {
+				assertNotNull(result);
 
-			int count = 0;
-			while (result.hasNext()) {
-				BindingSet bs = result.next();
-				count++;
-				assertNotNull(bs);
+				int count = 0;
+				while (result.hasNext()) {
+					BindingSet bs = result.next();
+					count++;
+					assertNotNull(bs);
 
-				// System.out.println(bs);
+					// System.out.println(bs);
 
-				Value prop1 = bs.getValue("prop1");
-				Value l = bs.getValue("l");
+					Value prop1 = bs.getValue("prop1");
+					Value l = bs.getValue("l");
 
-				assertTrue(prop1 instanceof Literal || l instanceof Literal);
-				if (l instanceof Literal) {
-					Value opt1 = bs.getValue("opt1");
-					assertNull(opt1);
+					assertTrue(prop1 instanceof Literal || l instanceof Literal);
+					if (l instanceof Literal) {
+						Value opt1 = bs.getValue("opt1");
+						assertNull(opt1);
 
-					Value opt2 = bs.getValue("opt2");
-					assertNull(opt2);
+						Value opt2 = bs.getValue("opt2");
+						assertNull(opt2);
+					}
 				}
+				assertEquals(2, count);
+			} catch (QueryEvaluationException e) {
+				e.printStackTrace();
+				fail(e.getMessage());
 			}
-			assertEquals(2, count);
-		} catch (QueryEvaluationException e) {
-			e.printStackTrace();
-			fail(e.getMessage());
+		} finally {
+			closeRepository(repo);
 		}
-
 	}
 
 	public Stream<DynamicTest> tests() {

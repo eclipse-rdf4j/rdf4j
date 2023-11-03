@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.net.URL;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -60,36 +61,36 @@ public abstract class AbstractComplianceTest {
 
 	protected DynamicTest makeTest(String name, Executable x) {
 		return DynamicTest.dynamicTest(name, () -> {
-			setUp();
 			x.execute();
-			tearDown();
 		});
+	}
+
+	protected Repository openRepository() {
+		Repository r = repo.get();
+		r.init();
+		return r;
+	}
+
+	protected RepositoryConnection openConnection(Repository r) {
+		return new RepositoryConnectionWrapper(r.getConnection());
+	}
+
+	protected void closeRepository(Repository r) {
+		try (RepositoryConnection conn = r.getConnection()) {
+			conn.clear();
+		}
+		r.shutDown();
 	}
 
 	protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
-	protected final Repository repo;
-	protected RepositoryConnection conn;
+	protected final Supplier<Repository> repo;
 
-	public AbstractComplianceTest(Repository repo) {
+	public AbstractComplianceTest(Supplier<Repository> repo) {
 		this.repo = repo;
 	}
 
-	public void setUp() {
-		repo.init();
-		conn = new RepositoryConnectionWrapper(repo.getConnection());
-	}
-
-	public void tearDown() {
-		try {
-			conn.clear();
-			conn.close();
-		} finally {
-			repo.shutDown();
-		}
-	}
-
-	protected void loadTestData(String dataFile, Resource... contexts)
+	protected void loadTestData(String dataFile, RepositoryConnection conn, Resource... contexts)
 			throws RDFParseException, RepositoryException, IOException {
 		logger.debug("loading dataset {}", dataFile);
 		try (InputStream dataset = this.getClass().getResourceAsStream(dataFile)) {

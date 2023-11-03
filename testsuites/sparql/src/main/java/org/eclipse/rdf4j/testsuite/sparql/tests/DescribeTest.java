@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.testsuite.sparql.tests;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.BNode;
@@ -28,9 +29,9 @@ import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
 import org.junit.jupiter.api.DynamicTest;
-import org.junit.jupiter.api.Test;
 
 /**
  * Tests on SPARQL DESCRIBE queries
@@ -39,263 +40,313 @@ import org.junit.jupiter.api.Test;
  */
 public class DescribeTest extends AbstractComplianceTest {
 
-	public DescribeTest(Repository repo) {
+	public DescribeTest(Supplier<Repository> repo) {
 		super(repo);
 	}
 
 	private void testDescribeA() throws Exception {
-		loadTestData("/testdata-query/dataset-describe.trig");
-		String query = getNamespaceDeclarations() + "DESCRIBE ex:a";
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			loadTestData("/testdata-query/dataset-describe.trig", conn);
+			String query = getNamespaceDeclarations() + "DESCRIBE ex:a";
 
-		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
+			GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
 
-		ValueFactory f = conn.getValueFactory();
-		IRI a = f.createIRI("http://example.org/a");
-		IRI p = f.createIRI("http://example.org/p");
-		try (GraphQueryResult evaluate = gq.evaluate()) {
-			Model result = QueryResults.asModel(evaluate);
-			Set<Value> objects = result.filter(a, p, null).objects();
-			assertThat(objects).isNotNull();
-			for (Value object : objects) {
-				if (object instanceof BNode) {
-					assertThat(result.contains((Resource) object, null, null)).isTrue();
-					assertThat(result.filter((Resource) object, null, null)).hasSize(2);
+			ValueFactory f = conn.getValueFactory();
+			IRI a = f.createIRI("http://example.org/a");
+			IRI p = f.createIRI("http://example.org/p");
+			try (GraphQueryResult evaluate = gq.evaluate()) {
+				Model result = QueryResults.asModel(evaluate);
+				Set<Value> objects = result.filter(a, p, null).objects();
+				assertThat(objects).isNotNull();
+				for (Value object : objects) {
+					if (object instanceof BNode) {
+						assertThat(result.contains((Resource) object, null, null)).isTrue();
+						assertThat(result.filter((Resource) object, null, null)).hasSize(2);
+					}
 				}
 			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testDescribeAWhere() throws Exception {
-		loadTestData("/testdata-query/dataset-describe.trig");
-		String query = getNamespaceDeclarations() + "DESCRIBE ?x WHERE {?x rdfs:label \"a\". } ";
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			loadTestData("/testdata-query/dataset-describe.trig", conn);
+			String query = getNamespaceDeclarations() + "DESCRIBE ?x WHERE {?x rdfs:label \"a\". } ";
 
-		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
+			GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
 
-		ValueFactory f = conn.getValueFactory();
-		IRI a = f.createIRI("http://example.org/a");
-		IRI p = f.createIRI("http://example.org/p");
-		try (GraphQueryResult evaluate = gq.evaluate()) {
-			Model result = QueryResults.asModel(evaluate);
-			Set<Value> objects = result.filter(a, p, null).objects();
-			assertThat(objects).isNotNull();
-			for (Value object : objects) {
-				if (object instanceof BNode) {
-					assertThat(result.contains((Resource) object, null, null)).isTrue();
-					assertThat(result.filter((Resource) object, null, null)).hasSize(2);
+			ValueFactory f = conn.getValueFactory();
+			IRI a = f.createIRI("http://example.org/a");
+			IRI p = f.createIRI("http://example.org/p");
+			try (GraphQueryResult evaluate = gq.evaluate()) {
+				Model result = QueryResults.asModel(evaluate);
+				Set<Value> objects = result.filter(a, p, null).objects();
+				assertThat(objects).isNotNull();
+				for (Value object : objects) {
+					if (object instanceof BNode) {
+						assertThat(result.contains((Resource) object, null, null)).isTrue();
+						assertThat(result.filter((Resource) object, null, null)).hasSize(2);
+					}
 				}
 			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testDescribeWhere() throws Exception {
-		loadTestData("/testdata-query/dataset-describe.trig");
-		String query = getNamespaceDeclarations() + "DESCRIBE ?x WHERE {?x rdfs:label ?y . } ";
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			loadTestData("/testdata-query/dataset-describe.trig", conn);
+			String query = getNamespaceDeclarations() + "DESCRIBE ?x WHERE {?x rdfs:label ?y . } ";
 
-		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
+			GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
 
-		ValueFactory vf = conn.getValueFactory();
-		IRI a = vf.createIRI("http://example.org/a");
-		IRI b = vf.createIRI("http://example.org/b");
-		IRI c = vf.createIRI("http://example.org/c");
-		IRI e = vf.createIRI("http://example.org/e");
-		IRI f = vf.createIRI("http://example.org/f");
-		IRI p = vf.createIRI("http://example.org/p");
+			ValueFactory vf = conn.getValueFactory();
+			IRI a = vf.createIRI("http://example.org/a");
+			IRI b = vf.createIRI("http://example.org/b");
+			IRI c = vf.createIRI("http://example.org/c");
+			IRI e = vf.createIRI("http://example.org/e");
+			IRI f = vf.createIRI("http://example.org/f");
+			IRI p = vf.createIRI("http://example.org/p");
 
-		try (GraphQueryResult evaluate = gq.evaluate()) {
-			Model result = QueryResults.asModel(evaluate);
-			assertThat(result.contains(a, p, null)).isTrue();
-			assertThat(result.contains(b, RDFS.LABEL, null)).isTrue();
-			assertThat(result.contains(c, RDFS.LABEL, null)).isTrue();
-			assertThat(result.contains(null, p, b)).isTrue();
-			assertThat(result.contains(e, RDFS.LABEL, null)).isTrue();
-			assertThat(result.contains(null, p, e)).isTrue();
-			assertThat(result.contains(f, null, null)).isFalse();
-			Set<Value> objects = result.filter(a, p, null).objects();
-			assertThat(objects).isNotNull();
-			for (Value object : objects) {
-				if (object instanceof BNode) {
-					assertThat(result.contains((Resource) object, null, null)).isTrue();
-					assertThat(result.filter((Resource) object, null, null)).hasSize(2);
+			try (GraphQueryResult evaluate = gq.evaluate()) {
+				Model result = QueryResults.asModel(evaluate);
+				assertThat(result.contains(a, p, null)).isTrue();
+				assertThat(result.contains(b, RDFS.LABEL, null)).isTrue();
+				assertThat(result.contains(c, RDFS.LABEL, null)).isTrue();
+				assertThat(result.contains(null, p, b)).isTrue();
+				assertThat(result.contains(e, RDFS.LABEL, null)).isTrue();
+				assertThat(result.contains(null, p, e)).isTrue();
+				assertThat(result.contains(f, null, null)).isFalse();
+				Set<Value> objects = result.filter(a, p, null).objects();
+				assertThat(objects).isNotNull();
+				for (Value object : objects) {
+					if (object instanceof BNode) {
+						assertThat(result.contains((Resource) object, null, null)).isTrue();
+						assertThat(result.filter((Resource) object, null, null)).hasSize(2);
+					}
 				}
 			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testDescribeB() throws Exception {
-		loadTestData("/testdata-query/dataset-describe.trig");
-		String query = getNamespaceDeclarations() + "DESCRIBE ex:b";
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			loadTestData("/testdata-query/dataset-describe.trig", conn);
+			String query = getNamespaceDeclarations() + "DESCRIBE ex:b";
 
-		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
+			GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
 
-		ValueFactory f = conn.getValueFactory();
-		IRI b = f.createIRI("http://example.org/b");
-		IRI p = f.createIRI("http://example.org/p");
-		try (GraphQueryResult evaluate = gq.evaluate()) {
-			Model result = QueryResults.asModel(evaluate);
-			Set<Resource> subjects = result.filter(null, p, b).subjects();
-			assertThat(subjects).isNotNull();
-			for (Value subject : subjects) {
-				if (subject instanceof BNode) {
-					assertThat(result.contains(null, null, subject)).isTrue();
+			ValueFactory f = conn.getValueFactory();
+			IRI b = f.createIRI("http://example.org/b");
+			IRI p = f.createIRI("http://example.org/p");
+			try (GraphQueryResult evaluate = gq.evaluate()) {
+				Model result = QueryResults.asModel(evaluate);
+				Set<Resource> subjects = result.filter(null, p, b).subjects();
+				assertThat(subjects).isNotNull();
+				for (Value subject : subjects) {
+					if (subject instanceof BNode) {
+						assertThat(result.contains(null, null, subject)).isTrue();
+					}
 				}
 			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testDescribeD() throws Exception {
-		loadTestData("/testdata-query/dataset-describe.trig");
-		String query = getNamespaceDeclarations() + "DESCRIBE ex:d";
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			loadTestData("/testdata-query/dataset-describe.trig", conn);
+			String query = getNamespaceDeclarations() + "DESCRIBE ex:d";
 
-		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
+			GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
 
-		ValueFactory f = conn.getValueFactory();
-		IRI d = f.createIRI("http://example.org/d");
-		IRI p = f.createIRI("http://example.org/p");
-		IRI e = f.createIRI("http://example.org/e");
-		try (GraphQueryResult evaluate = gq.evaluate()) {
-			Model result = QueryResults.asModel(evaluate);
+			ValueFactory f = conn.getValueFactory();
+			IRI d = f.createIRI("http://example.org/d");
+			IRI p = f.createIRI("http://example.org/p");
+			IRI e = f.createIRI("http://example.org/e");
+			try (GraphQueryResult evaluate = gq.evaluate()) {
+				Model result = QueryResults.asModel(evaluate);
 
-			assertThat(result.contains(null, p, e)).isTrue();
-			assertThat(result.contains(e, null, null)).isFalse();
+				assertThat(result.contains(null, p, e)).isTrue();
+				assertThat(result.contains(e, null, null)).isFalse();
 
-			Set<Value> objects = result.filter(d, p, null).objects();
-			assertThat(objects).isNotNull();
-			for (Value object : objects) {
-				if (object instanceof BNode) {
-					Set<Value> childObjects = result.filter((BNode) object, null, null).objects();
-					assertThat(childObjects).isNotEmpty();
-					for (Value childObject : childObjects) {
-						if (childObject instanceof BNode) {
-							assertThat(result.contains((BNode) childObject, null, null)).isTrue();
+				Set<Value> objects = result.filter(d, p, null).objects();
+				assertThat(objects).isNotNull();
+				for (Value object : objects) {
+					if (object instanceof BNode) {
+						Set<Value> childObjects = result.filter((BNode) object, null, null).objects();
+						assertThat(childObjects).isNotEmpty();
+						for (Value childObject : childObjects) {
+							if (childObject instanceof BNode) {
+								assertThat(result.contains((BNode) childObject, null, null)).isTrue();
+							}
 						}
 					}
 				}
 			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testDescribeF() throws Exception {
-		loadTestData("/testdata-query/dataset-describe.trig");
-		String query = getNamespaceDeclarations() + "DESCRIBE ex:f";
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			loadTestData("/testdata-query/dataset-describe.trig", conn);
+			String query = getNamespaceDeclarations() + "DESCRIBE ex:f";
 
-		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
+			GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
 
-		ValueFactory vf = conn.getValueFactory();
-		IRI f = vf.createIRI("http://example.org/f");
-		IRI p = vf.createIRI("http://example.org/p");
-		try (GraphQueryResult evaluate = gq.evaluate()) {
-			Model result = QueryResults.asModel(evaluate);
+			ValueFactory vf = conn.getValueFactory();
+			IRI f = vf.createIRI("http://example.org/f");
+			IRI p = vf.createIRI("http://example.org/p");
+			try (GraphQueryResult evaluate = gq.evaluate()) {
+				Model result = QueryResults.asModel(evaluate);
 
-			assertThat(result).isNotNull().hasSize(4);
+				assertThat(result).isNotNull().hasSize(4);
 
-			Set<Value> objects = result.filter(f, p, null).objects();
-			for (Value object : objects) {
-				if (object instanceof BNode) {
-					Set<Value> childObjects = result.filter((BNode) object, null, null).objects();
-					assertThat(childObjects).isNotEmpty();
-					for (Value childObject : childObjects) {
-						if (childObject instanceof BNode) {
-							assertThat(result.contains((BNode) childObject, null, null)).isTrue();
+				Set<Value> objects = result.filter(f, p, null).objects();
+				for (Value object : objects) {
+					if (object instanceof BNode) {
+						Set<Value> childObjects = result.filter((BNode) object, null, null).objects();
+						assertThat(childObjects).isNotEmpty();
+						for (Value childObject : childObjects) {
+							if (childObject instanceof BNode) {
+								assertThat(result.contains((BNode) childObject, null, null)).isTrue();
+							}
 						}
 					}
 				}
 			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testDescribeMultipleA() {
-		String update = "insert data { <urn:1> <urn:p1> <urn:v> . [] <urn:blank> <urn:1> . <urn:2> <urn:p2> <urn:3> . } ";
-		conn.prepareUpdate(QueryLanguage.SPARQL, update).execute();
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			String update = "insert data { <urn:1> <urn:p1> <urn:v> . [] <urn:blank> <urn:1> . <urn:2> <urn:p2> <urn:3> . } ";
+			conn.prepareUpdate(QueryLanguage.SPARQL, update).execute();
 
-		String query = getNamespaceDeclarations() + "DESCRIBE <urn:1> <urn:2> ";
+			String query = getNamespaceDeclarations() + "DESCRIBE <urn:1> <urn:2> ";
 
-		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
+			GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
 
-		ValueFactory vf = conn.getValueFactory();
-		IRI urn1 = vf.createIRI("urn:1");
-		IRI p1 = vf.createIRI("urn:p1");
-		IRI p2 = vf.createIRI("urn:p2");
-		IRI urn2 = vf.createIRI("urn:2");
-		IRI blank = vf.createIRI("urn:blank");
+			ValueFactory vf = conn.getValueFactory();
+			IRI urn1 = vf.createIRI("urn:1");
+			IRI p1 = vf.createIRI("urn:p1");
+			IRI p2 = vf.createIRI("urn:p2");
+			IRI urn2 = vf.createIRI("urn:2");
+			IRI blank = vf.createIRI("urn:blank");
 
-		try (GraphQueryResult evaluate = gq.evaluate()) {
-			Model result = QueryResults.asModel(evaluate);
-			assertThat(result.contains(urn1, p1, null)).isTrue();
-			assertThat(result.contains(null, blank, urn1)).isTrue();
-			assertThat(result.contains(urn2, p2, null)).isTrue();
+			try (GraphQueryResult evaluate = gq.evaluate()) {
+				Model result = QueryResults.asModel(evaluate);
+				assertThat(result.contains(urn1, p1, null)).isTrue();
+				assertThat(result.contains(null, blank, urn1)).isTrue();
+				assertThat(result.contains(urn2, p2, null)).isTrue();
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testDescribeMultipleB() {
-		String update = "insert data { <urn:1> <urn:p1> <urn:v> . <urn:1> <urn:blank> [] . <urn:2> <urn:p2> <urn:3> . } ";
-		conn.prepareUpdate(QueryLanguage.SPARQL, update).execute();
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			String update = "insert data { <urn:1> <urn:p1> <urn:v> . <urn:1> <urn:blank> [] . <urn:2> <urn:p2> <urn:3> . } ";
+			conn.prepareUpdate(QueryLanguage.SPARQL, update).execute();
 
-		String query = getNamespaceDeclarations() + "DESCRIBE <urn:1> <urn:2> ";
+			String query = getNamespaceDeclarations() + "DESCRIBE <urn:1> <urn:2> ";
 
-		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
+			GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
 
-		ValueFactory vf = conn.getValueFactory();
-		IRI urn1 = vf.createIRI("urn:1");
-		IRI p1 = vf.createIRI("urn:p1");
-		IRI p2 = vf.createIRI("urn:p2");
-		IRI urn2 = vf.createIRI("urn:2");
-		IRI blank = vf.createIRI("urn:blank");
-		try (GraphQueryResult evaluate = gq.evaluate()) {
-			Model result = QueryResults.asModel(evaluate);
+			ValueFactory vf = conn.getValueFactory();
+			IRI urn1 = vf.createIRI("urn:1");
+			IRI p1 = vf.createIRI("urn:p1");
+			IRI p2 = vf.createIRI("urn:p2");
+			IRI urn2 = vf.createIRI("urn:2");
+			IRI blank = vf.createIRI("urn:blank");
+			try (GraphQueryResult evaluate = gq.evaluate()) {
+				Model result = QueryResults.asModel(evaluate);
 
-			assertThat(result.contains(urn1, p1, null)).isTrue();
-			assertThat(result.contains(urn1, blank, null)).isTrue();
-			assertThat(result.contains(urn2, p2, null)).isTrue();
+				assertThat(result.contains(urn1, p1, null)).isTrue();
+				assertThat(result.contains(urn1, blank, null)).isTrue();
+				assertThat(result.contains(urn2, p2, null)).isTrue();
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testDescribeMultipleC() {
-		String update = "insert data { <urn:1> <urn:p1> <urn:v> . [] <urn:blank> <urn:1>. <urn:1> <urn:blank> [] . <urn:2> <urn:p2> <urn:3> . } ";
-		conn.prepareUpdate(QueryLanguage.SPARQL, update).execute();
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			String update = "insert data { <urn:1> <urn:p1> <urn:v> . [] <urn:blank> <urn:1>. <urn:1> <urn:blank> [] . <urn:2> <urn:p2> <urn:3> . } ";
+			conn.prepareUpdate(QueryLanguage.SPARQL, update).execute();
 
-		String query = getNamespaceDeclarations() + "DESCRIBE <urn:1> <urn:2> ";
+			String query = getNamespaceDeclarations() + "DESCRIBE <urn:1> <urn:2> ";
 
-		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
+			GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
 
-		ValueFactory vf = conn.getValueFactory();
-		IRI urn1 = vf.createIRI("urn:1");
-		IRI p1 = vf.createIRI("urn:p1");
-		IRI p2 = vf.createIRI("urn:p2");
-		IRI urn2 = vf.createIRI("urn:2");
-		IRI blank = vf.createIRI("urn:blank");
-		try (GraphQueryResult evaluate = gq.evaluate()) {
-			Model result = QueryResults.asModel(evaluate);
+			ValueFactory vf = conn.getValueFactory();
+			IRI urn1 = vf.createIRI("urn:1");
+			IRI p1 = vf.createIRI("urn:p1");
+			IRI p2 = vf.createIRI("urn:p2");
+			IRI urn2 = vf.createIRI("urn:2");
+			IRI blank = vf.createIRI("urn:blank");
+			try (GraphQueryResult evaluate = gq.evaluate()) {
+				Model result = QueryResults.asModel(evaluate);
 
-			assertThat(result.contains(urn1, p1, null)).isTrue();
-			assertThat(result.contains(urn1, blank, null)).isTrue();
-			assertThat(result.contains(null, blank, urn1)).isTrue();
-			assertThat(result.contains(urn2, p2, null)).isTrue();
+				assertThat(result.contains(urn1, p1, null)).isTrue();
+				assertThat(result.contains(urn1, blank, null)).isTrue();
+				assertThat(result.contains(null, blank, urn1)).isTrue();
+				assertThat(result.contains(urn2, p2, null)).isTrue();
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testDescribeMultipleD() {
-		String update = "insert data { <urn:1> <urn:p1> <urn:v> . [] <urn:blank> <urn:1>. <urn:2> <urn:p2> <urn:3> . [] <urn:blank> <urn:2> . <urn:4> <urn:p2> <urn:3> . <urn:4> <urn:blank> [] .} ";
-		conn.prepareUpdate(QueryLanguage.SPARQL, update).execute();
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			String update = "insert data { <urn:1> <urn:p1> <urn:v> . [] <urn:blank> <urn:1>. <urn:2> <urn:p2> <urn:3> . [] <urn:blank> <urn:2> . <urn:4> <urn:p2> <urn:3> . <urn:4> <urn:blank> [] .} ";
+			conn.prepareUpdate(QueryLanguage.SPARQL, update).execute();
 
-		String query = getNamespaceDeclarations() + "DESCRIBE <urn:1> <urn:2> <urn:4> ";
+			String query = getNamespaceDeclarations() + "DESCRIBE <urn:1> <urn:2> <urn:4> ";
 
-		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
+			GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
 
-		ValueFactory vf = conn.getValueFactory();
-		IRI urn1 = vf.createIRI("urn:1");
-		IRI p1 = vf.createIRI("urn:p1");
-		IRI p2 = vf.createIRI("urn:p2");
-		IRI urn2 = vf.createIRI("urn:2");
-		IRI urn4 = vf.createIRI("urn:4");
-		IRI blank = vf.createIRI("urn:blank");
-		try (GraphQueryResult evaluate = gq.evaluate()) {
-			Model result = QueryResults.asModel(evaluate);
+			ValueFactory vf = conn.getValueFactory();
+			IRI urn1 = vf.createIRI("urn:1");
+			IRI p1 = vf.createIRI("urn:p1");
+			IRI p2 = vf.createIRI("urn:p2");
+			IRI urn2 = vf.createIRI("urn:2");
+			IRI urn4 = vf.createIRI("urn:4");
+			IRI blank = vf.createIRI("urn:blank");
+			try (GraphQueryResult evaluate = gq.evaluate()) {
+				Model result = QueryResults.asModel(evaluate);
 
-			assertThat(result.contains(urn1, p1, null)).isTrue();
-			assertThat(result.contains(null, blank, urn1)).isTrue();
-			assertThat(result.contains(urn2, p2, null)).isTrue();
-			assertThat(result.contains(urn4, p2, null)).isTrue();
-			assertThat(result.contains(urn4, blank, null)).isTrue();
+				assertThat(result.contains(urn1, p1, null)).isTrue();
+				assertThat(result.contains(null, blank, urn1)).isTrue();
+				assertThat(result.contains(urn2, p2, null)).isTrue();
+				assertThat(result.contains(urn4, p2, null)).isTrue();
+				assertThat(result.contains(urn4, blank, null)).isTrue();
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 

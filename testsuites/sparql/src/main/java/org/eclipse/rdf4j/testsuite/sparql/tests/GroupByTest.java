@@ -13,14 +13,15 @@ package org.eclipse.rdf4j.testsuite.sparql.tests;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
 import org.junit.jupiter.api.DynamicTest;
-import org.junit.jupiter.api.Test;
 
 /**
  * Tests on SPARQL GROUP BY
@@ -29,18 +30,23 @@ import org.junit.jupiter.api.Test;
  */
 public class GroupByTest extends AbstractComplianceTest {
 
-	public GroupByTest(Repository repo) {
+	public GroupByTest(Supplier<Repository> repo) {
 		super(repo);
 	}
 
 	private void testGroupByEmpty() {
-		// see issue https://github.com/eclipse/rdf4j/issues/573
-		String query = "select ?x where {?x ?p ?o} group by ?x";
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			// see issue https://github.com/eclipse/rdf4j/issues/573
+			String query = "select ?x where {?x ?p ?o} group by ?x";
 
-		TupleQuery tq = conn.prepareTupleQuery(query);
-		try (TupleQueryResult result = tq.evaluate()) {
-			assertNotNull(result);
-			assertFalse(result.hasNext());
+			TupleQuery tq = conn.prepareTupleQuery(query);
+			try (TupleQueryResult result = tq.evaluate()) {
+				assertNotNull(result);
+				assertFalse(result.hasNext());
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
