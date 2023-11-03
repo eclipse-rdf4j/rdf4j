@@ -10,8 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.sparql;
 
+import static org.junit.jupiter.api.Assertions.fail;
+
 import java.io.File;
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -56,92 +59,92 @@ public abstract class RepositorySPARQLComplianceTestSuite {
 
 	@TestFactory
 	Stream<DynamicTest> aggregate() throws RDF4JException, IOException {
-		return new AggregateTest(getEmptyInitializedRepository()).tests();
+		return new AggregateTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory
 	Stream<DynamicTest> arbitraryLengthPath() throws RDF4JException, IOException {
-		return new ArbitraryLengthPathTest(getEmptyInitializedRepository()).tests();
+		return new ArbitraryLengthPathTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory
 	Stream<DynamicTest> basic() throws RDF4JException, IOException {
-		return new BasicTest(getEmptyInitializedRepository()).tests();
+		return new BasicTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory
 	Stream<DynamicTest> bind() throws RDF4JException, IOException {
-		return new BindTest(getEmptyInitializedRepository()).tests();
+		return new BindTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory
 	Stream<DynamicTest> builtinFunction() throws RDF4JException, IOException {
-		return new BuiltinFunctionTest(getEmptyInitializedRepository()).tests();
+		return new BuiltinFunctionTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory
 	Stream<DynamicTest> construct() throws RDF4JException, IOException {
-		return new ConstructTest(getEmptyInitializedRepository()).tests();
+		return new ConstructTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory
 	Stream<DynamicTest> defaultGraph() throws RDF4JException, IOException {
-		return new DefaultGraphTest(getEmptyInitializedRepository()).tests();
+		return new DefaultGraphTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory
 	Stream<DynamicTest> describe() throws RDF4JException, IOException {
-		return new DescribeTest(getEmptyInitializedRepository()).tests();
+		return new DescribeTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory
 	Stream<DynamicTest> groupBy() throws RDF4JException, IOException {
-		return new GroupByTest(getEmptyInitializedRepository()).tests();
+		return new GroupByTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory
 	Stream<DynamicTest> in() throws RDF4JException, IOException {
-		return new InTest(getEmptyInitializedRepository()).tests();
+		return new InTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory
 	Stream<DynamicTest> optional() throws RDF4JException, IOException {
-		return new OptionalTest(getEmptyInitializedRepository()).tests();
+		return new OptionalTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory
 	Stream<DynamicTest> propertyPath() throws RDF4JException, IOException {
-		return new PropertyPathTest(getEmptyInitializedRepository()).tests();
+		return new PropertyPathTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory
 	Stream<DynamicTest> subselect() throws RDF4JException, IOException {
-		return new SubselectTest(getEmptyInitializedRepository()).tests();
+		return new SubselectTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory
 	Stream<DynamicTest> union() throws RDF4JException, IOException {
-		return new UnionTest(getEmptyInitializedRepository()).tests();
+		return new UnionTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory
 	Stream<DynamicTest> values() throws RDF4JException, IOException {
-		return new ValuesTest(getEmptyInitializedRepository()).tests();
+		return new ValuesTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory
 	Stream<DynamicTest> orderBy() throws RDF4JException, IOException {
-		return new OrderByTest(getEmptyInitializedRepository()).tests();
+		return new OrderByTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory
 	Stream<DynamicTest> exists() throws RDF4JException, IOException {
-		return new ExistsTest(getEmptyInitializedRepository()).tests();
+		return new ExistsTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory
 	Stream<DynamicTest> minus() throws RDF4JException, IOException {
-		return new MinusTest(getEmptyInitializedRepository()).tests();
+		return new MinusTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@BeforeAll
@@ -157,6 +160,8 @@ public abstract class RepositorySPARQLComplianceTestSuite {
 	@TempDir
 	private File dataDir;
 
+	private static final AtomicInteger tempDirNameForRepoCounter = new AtomicInteger();
+
 	protected final RepositoryFactory factory;
 
 	public RepositorySPARQLComplianceTestSuite(RepositoryFactory factory) {
@@ -164,13 +169,24 @@ public abstract class RepositorySPARQLComplianceTestSuite {
 		this.factory = factory;
 	}
 
-	public Repository getEmptyInitializedRepository() throws RDF4JException, IOException {
-		Repository repository = factory.getRepository(factory.getConfig());
-		repository.setDataDir(dataDir);
-		try (RepositoryConnection con = repository.getConnection()) {
-			con.clear();
-			con.clearNamespaces();
+	public Repository getEmptyInitializedRepository() {
+		try {
+			Repository repository = factory.getRepository(factory.getConfig());
+			dataDir.mkdir();
+			File tmpDirPerRepo = new File(dataDir, "tmpDirPerRepo" + tempDirNameForRepoCounter.getAndIncrement());
+			if (!tmpDirPerRepo.mkdir()) {
+				fail("Could not create temporary directory for test");
+			}
+			repository.setDataDir(tmpDirPerRepo);
+			try (RepositoryConnection con = repository.getConnection()) {
+				con.clear();
+				con.clearNamespaces();
+			}
+			return repository;
+
+		} catch (RDF4JException e) {
+			fail(e);
+			return null;
 		}
-		return repository;
 	}
 }

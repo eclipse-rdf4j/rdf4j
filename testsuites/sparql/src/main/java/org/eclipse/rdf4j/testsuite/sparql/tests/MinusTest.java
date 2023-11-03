@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.testsuite.sparql.tests;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -22,6 +23,7 @@ import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
 import org.junit.jupiter.api.DynamicTest;
 
@@ -32,41 +34,44 @@ import org.junit.jupiter.api.DynamicTest;
  */
 public class MinusTest extends AbstractComplianceTest {
 
-	public MinusTest(Repository repo) {
+	public MinusTest(Supplier<Repository> repo) {
 		super(repo);
 	}
 
 	private void testScopingOfFilterInMinus() {
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			String ex = "http://example/";
+			IRI a1 = Values.iri(ex, "a1");
+			IRI a2 = Values.iri(ex, "a2");
 
-		String ex = "http://example/";
-		IRI a1 = Values.iri(ex, "a1");
-		IRI a2 = Values.iri(ex, "a2");
+			IRI both = Values.iri(ex, "both");
 
-		IRI both = Values.iri(ex, "both");
+			IRI predicate1 = Values.iri(ex, "predicate1");
+			IRI predicate2 = Values.iri(ex, "predicate2");
 
-		IRI predicate1 = Values.iri(ex, "predicate1");
-		IRI predicate2 = Values.iri(ex, "predicate2");
+			conn.add(a1, predicate1, both);
+			conn.add(a1, predicate2, both);
 
-		conn.add(a1, predicate1, both);
-		conn.add(a1, predicate2, both);
+			conn.add(a2, predicate1, both);
+			conn.add(a2, predicate2, Values.bnode());
 
-		conn.add(a2, predicate1, both);
-		conn.add(a2, predicate2, Values.bnode());
+			TupleQuery tupleQuery = conn.prepareTupleQuery(
+					"PREFIX : <http://example/>\n" + "SELECT * WHERE {\n" + "  ?a :predicate1 ?p1\n" + "  MINUS {\n"
+							+ "    ?a :predicate2 ?p2 .\n" + "    FILTER(?p2 = ?p1)\n" + "  }\n" + "} ORDER BY ?a\n");
 
-		TupleQuery tupleQuery = conn.prepareTupleQuery(
-				"PREFIX : <http://example/>\n" + "SELECT * WHERE {\n" + "  ?a :predicate1 ?p1\n" + "  MINUS {\n"
-						+ "    ?a :predicate2 ?p2 .\n" + "    FILTER(?p2 = ?p1)\n" + "  }\n" + "} ORDER BY ?a\n");
+			try (Stream<BindingSet> stream = tupleQuery.evaluate().stream()) {
+				List<BindingSet> collect = stream.collect(Collectors.toList());
+				assertEquals(2, collect.size());
 
-		try (Stream<BindingSet> stream = tupleQuery.evaluate().stream()) {
-			List<BindingSet> collect = stream.collect(Collectors.toList());
-			assertEquals(2, collect.size());
+				List<Value> expectedValues = List.of(a1, a2);
+				List<Value> actualValues = collect.stream().map(b -> b.getValue("a")).collect(Collectors.toList());
 
-			List<Value> expectedValues = List.of(a1, a2);
-			List<Value> actualValues = collect.stream().map(b -> b.getValue("a")).collect(Collectors.toList());
-
-			assertEquals(expectedValues, actualValues);
+				assertEquals(expectedValues, actualValues);
+			}
+		} finally {
+			closeRepository(repo);
 		}
-
 	}
 
 	public Stream<DynamicTest> tests() {

@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.StringReader;
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Literal;
@@ -30,10 +31,10 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
 import org.junit.jupiter.api.DynamicTest;
-import org.junit.jupiter.api.Test;
 
 /**
  * Tests on OPTIONAL clause behavior.
@@ -43,99 +44,112 @@ import org.junit.jupiter.api.Test;
  */
 public class OptionalTest extends AbstractComplianceTest {
 
-	public OptionalTest(Repository repo) {
+	public OptionalTest(Supplier<Repository> repo) {
 		super(repo);
 	}
 
 	private void testSES1898LeftJoinSemantics1() throws Exception {
-		loadTestData("/testdata-query/dataset-ses1898.trig");
-		String query = "  PREFIX : <http://example.org/> " + "  SELECT * WHERE { " + "    ?s :p1 ?v1 . "
-				+ "    OPTIONAL {?s :p2 ?v2 } ." + "     ?s :p3 ?v2 . " + "  } ";
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			loadTestData("/testdata-query/dataset-ses1898.trig", conn);
+			String query = "  PREFIX : <http://example.org/> " + "  SELECT * WHERE { " + "    ?s :p1 ?v1 . "
+					+ "    OPTIONAL {?s :p2 ?v2 } ." + "     ?s :p3 ?v2 . " + "  } ";
 
-		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
-		try (Stream<BindingSet> result = tq.evaluate().stream()) {
-			long count = result.count();
-			assertEquals(0, count);
+			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+			try (Stream<BindingSet> result = tq.evaluate().stream()) {
+				long count = result.count();
+				assertEquals(0, count);
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testSES1121VarNamesInOptionals() throws Exception {
 		// Verifying that variable names have no influence on order of optionals
 		// in query. See SES-1121.
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			loadTestData("/testdata-query/dataset-ses1121.trig", conn);
 
-		loadTestData("/testdata-query/dataset-ses1121.trig");
+			String query1 = getNamespaceDeclarations() + " SELECT DISTINCT *\n" + " WHERE { GRAPH ?g { \n"
+					+ "          OPTIONAL { ?var35 ex:p ?b . } \n " + "          OPTIONAL { ?b ex:q ?c . } \n "
+					+ "       } \n" + " } \n";
 
-		String query1 = getNamespaceDeclarations() + " SELECT DISTINCT *\n" + " WHERE { GRAPH ?g { \n"
-				+ "          OPTIONAL { ?var35 ex:p ?b . } \n " + "          OPTIONAL { ?b ex:q ?c . } \n "
-				+ "       } \n" + " } \n";
+			String query2 = getNamespaceDeclarations() + " SELECT DISTINCT *\n" + " WHERE { GRAPH ?g { \n"
+					+ "          OPTIONAL { ?var35 ex:p ?b . } \n " + "          OPTIONAL { ?b ex:q ?var2 . } \n "
+					+ "       } \n" + " } \n";
 
-		String query2 = getNamespaceDeclarations() + " SELECT DISTINCT *\n" + " WHERE { GRAPH ?g { \n"
-				+ "          OPTIONAL { ?var35 ex:p ?b . } \n " + "          OPTIONAL { ?b ex:q ?var2 . } \n "
-				+ "       } \n" + " } \n";
+			TupleQuery tq1 = conn.prepareTupleQuery(QueryLanguage.SPARQL, query1);
+			TupleQuery tq2 = conn.prepareTupleQuery(QueryLanguage.SPARQL, query2);
 
-		TupleQuery tq1 = conn.prepareTupleQuery(QueryLanguage.SPARQL, query1);
-		TupleQuery tq2 = conn.prepareTupleQuery(QueryLanguage.SPARQL, query2);
+			try (TupleQueryResult result1 = tq1.evaluate(); TupleQueryResult result2 = tq2.evaluate()) {
+				assertNotNull(result1);
+				assertNotNull(result2);
 
-		try (TupleQueryResult result1 = tq1.evaluate(); TupleQueryResult result2 = tq2.evaluate()) {
-			assertNotNull(result1);
-			assertNotNull(result2);
+				List<BindingSet> qr1 = QueryResults.asList(result1);
+				List<BindingSet> qr2 = QueryResults.asList(result2);
 
-			List<BindingSet> qr1 = QueryResults.asList(result1);
-			List<BindingSet> qr2 = QueryResults.asList(result2);
+				// System.out.println(qr1);
+				// System.out.println(qr2);
 
-			// System.out.println(qr1);
-			// System.out.println(qr2);
+				// if optionals are not kept in same order, query results will be
+				// different size.
+				assertEquals(qr1.size(), qr2.size());
 
-			// if optionals are not kept in same order, query results will be
-			// different size.
-			assertEquals(qr1.size(), qr2.size());
-
-		} catch (QueryEvaluationException e) {
-			e.printStackTrace();
-			fail(e.getMessage());
+			} catch (QueryEvaluationException e) {
+				e.printStackTrace();
+				fail(e.getMessage());
+			}
+		} finally {
+			closeRepository(repo);
 		}
 
 	}
 
 	private void testSameTermRepeatInOptional() throws Exception {
-		loadTestData("/testdata-query/dataset-query.trig");
-		String query = getNamespaceDeclarations() + " SELECT ?l ?opt1 ?opt2 " + " FROM ex:optional-sameterm-graph "
-				+ " WHERE { " + "          ?s ex:p ex:A ; " + "          { " + "              { "
-				+ "                 ?s ?p ?l ." + "                 FILTER(?p = rdfs:label) " + "              } "
-				+ "              OPTIONAL { " + "                 ?s ?p ?opt1 . "
-				+ "                 FILTER (?p = ex:prop1) " + "              } " + "              OPTIONAL { "
-				+ "                 ?s ?p ?opt2 . " + "                 FILTER (?p = ex:prop2) " + "              } "
-				+ "          }" + " } ";
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			loadTestData("/testdata-query/dataset-query.trig", conn);
+			String query = getNamespaceDeclarations() + " SELECT ?l ?opt1 ?opt2 " + " FROM ex:optional-sameterm-graph "
+					+ " WHERE { " + "          ?s ex:p ex:A ; " + "          { " + "              { "
+					+ "                 ?s ?p ?l ." + "                 FILTER(?p = rdfs:label) " + "              } "
+					+ "              OPTIONAL { " + "                 ?s ?p ?opt1 . "
+					+ "                 FILTER (?p = ex:prop1) " + "              } " + "              OPTIONAL { "
+					+ "                 ?s ?p ?opt2 . " + "                 FILTER (?p = ex:prop2) "
+					+ "              } " + "          }" + " } ";
 
-		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
-		try (TupleQueryResult result = tq.evaluate()) {
-			assertNotNull(result);
+			try (TupleQueryResult result = tq.evaluate()) {
+				assertNotNull(result);
 
-			int count = 0;
-			while (result.hasNext()) {
-				BindingSet bs = result.next();
-				count++;
-				assertNotNull(bs);
+				int count = 0;
+				while (result.hasNext()) {
+					BindingSet bs = result.next();
+					count++;
+					assertNotNull(bs);
 
-				// System.out.println(bs);
+					// System.out.println(bs);
 
-				Value l = bs.getValue("l");
-				assertTrue(l instanceof Literal);
-				assertEquals("label", ((Literal) l).getLabel());
+					Value l = bs.getValue("l");
+					assertTrue(l instanceof Literal);
+					assertEquals("label", ((Literal) l).getLabel());
 
-				Value opt1 = bs.getValue("opt1");
-				assertNull(opt1);
+					Value opt1 = bs.getValue("opt1");
+					assertNull(opt1);
 
-				Value opt2 = bs.getValue("opt2");
-				assertNull(opt2);
+					Value opt2 = bs.getValue("opt2");
+					assertNull(opt2);
+				}
+				assertEquals(1, count);
+			} catch (QueryEvaluationException e) {
+				e.printStackTrace();
+				fail(e.getMessage());
 			}
-			assertEquals(1, count);
-		} catch (QueryEvaluationException e) {
-			e.printStackTrace();
-			fail(e.getMessage());
+		} finally {
+			closeRepository(repo);
 		}
-
 	}
 
 	/**
@@ -143,17 +157,22 @@ public class OptionalTest extends AbstractComplianceTest {
 	 *
 	 */
 	private void testValuesAfterOptional() throws Exception {
-		String data = "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . \n" + "@prefix :     <urn:ex:> . \n"
-				+ ":r1 a rdfs:Resource . \n" + ":r2 a rdfs:Resource ; rdfs:label \"a label\" . \n";
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			String data = "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . \n" + "@prefix :     <urn:ex:> . \n"
+					+ ":r1 a rdfs:Resource . \n" + ":r2 a rdfs:Resource ; rdfs:label \"a label\" . \n";
 
-		String query = "" + "prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> \n" + "prefix :     <urn:ex:> \n"
-				+ "\n" + "select ?resource ?label where { \n" + "  ?resource a rdfs:Resource . \n"
-				+ "  optional { ?resource rdfs:label ?label } \n" + "  values ?label { undef } \n" + "}";
+			String query = "" + "prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> \n" + "prefix :     <urn:ex:> \n"
+					+ "\n" + "select ?resource ?label where { \n" + "  ?resource a rdfs:Resource . \n"
+					+ "  optional { ?resource rdfs:label ?label } \n" + "  values ?label { undef } \n" + "}";
 
-		conn.add(new StringReader(data), RDFFormat.TURTLE);
+			conn.add(new StringReader(data), RDFFormat.TURTLE);
 
-		List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
-		assertThat(result).hasSize(2);
+			List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+			assertThat(result).hasSize(2);
+		} finally {
+			closeRepository(repo);
+		}
 	}
 
 	public Stream<DynamicTest> tests() {

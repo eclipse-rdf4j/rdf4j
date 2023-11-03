@@ -21,6 +21,7 @@ import java.math.BigDecimal;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.BNode;
@@ -36,6 +37,7 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
 import org.junit.jupiter.api.DynamicTest;
 
@@ -46,13 +48,12 @@ import org.junit.jupiter.api.DynamicTest;
  */
 public class AggregateTest extends AbstractComplianceTest {
 
-	public AggregateTest(Repository repo) {
+	public AggregateTest(Supplier<Repository> repo) {
 		super(repo);
 	}
 
 	public Stream<DynamicTest> tests() {
-		return Stream.of(
-				makeTest("MaxAggregateWithGroupEmptyResult", this::testMaxAggregateWithGroupEmptyResult),
+		return Stream.of(makeTest("MaxAggregateWithGroupEmptyResult", this::testMaxAggregateWithGroupEmptyResult),
 				makeTest("MaxAggregateWithoutGroupEmptySolution", this::testMaxAggregateWithoutGroupEmptySolution),
 				makeTest("MinAggregateWithGroupEmptyResult", this::testMinAggregateWithGroupEmptyResult),
 				makeTest("MinAggregateWithoutGroupEmptySolution", this::testMinAggregateWithoutGroupEmptySolution),
@@ -61,12 +62,9 @@ public class AggregateTest extends AbstractComplianceTest {
 						this::testSampleAggregateWithoutGroupEmptySolution),
 				makeTest("SES2361UndefMin", this::testSES2361UndefMin),
 				makeTest("CountOrderBy_ImplicitGroup", this::testCountOrderBy_ImplicitGroup),
-				makeTest("DistinctMax", this::testDistinctMax),
-				makeTest("Max", this::testMax),
-				makeTest("DistinctAvg", this::testDistinctAvg),
-				makeTest("Avg", this::testAvg),
-				makeTest("DistinctSum", this::testDistinctSum),
-				makeTest("Sum", this::testSum),
+				makeTest("DistinctMax", this::testDistinctMax), makeTest("Max", this::testMax),
+				makeTest("DistinctAvg", this::testDistinctAvg), makeTest("Avg", this::testAvg),
+				makeTest("DistinctSum", this::testDistinctSum), makeTest("Sum", this::testSum),
 				makeTest("CountHaving", this::testCountHaving),
 				makeTest("SES1970CountDistinctWildcard", this::testSES1970CountDistinctWildcard),
 				makeTest("GroupConcatNonDistinct", this::testGroupConcatNonDistinct),
@@ -75,18 +73,22 @@ public class AggregateTest extends AbstractComplianceTest {
 				makeTest("SES2361UndefSum", this::testSES2361UndefSum),
 				makeTest("SES2361UndefCountWildcard", this::testSES2361UndefCountWildcard),
 				makeTest("SES2361UndefCount", this::testSES2361UndefCount),
-				makeTest("SES2361UndefMax", this::testSES2361UndefMax)
-		);
+				makeTest("SES2361UndefMax", this::testSES2361UndefMax));
 	}
 
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/1978
 	 */
 	private void testMaxAggregateWithGroupEmptyResult() {
-		String query = "select ?s (max(?o) as ?omax) {\n" + "   ?s ?p ?o .\n" + " }\n" + " group by ?s\n";
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			String query = "select ?s (max(?o) as ?omax) {\n" + "   ?s ?p ?o .\n" + " }\n" + " group by ?s\n";
 
-		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
-			assertThat(result.hasNext()).isFalse();
+			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+				assertThat(result.hasNext()).isFalse();
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
@@ -94,10 +96,15 @@ public class AggregateTest extends AbstractComplianceTest {
 	 * See https://github.com/eclipse/rdf4j/issues/1978
 	 */
 	private void testMaxAggregateWithoutGroupEmptySolution() {
-		String query = "select (max(?o) as ?omax) {\n" + "   ?s ?p ?o .\n" + " }\n";
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			String query = "select (max(?o) as ?omax) {\n" + "   ?s ?p ?o .\n" + " }\n";
 
-		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
-			assertThat(result.next()).isEmpty();
+			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+				assertThat(result.next()).isEmpty();
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
@@ -106,10 +113,15 @@ public class AggregateTest extends AbstractComplianceTest {
 	 */
 
 	private void testMinAggregateWithGroupEmptyResult() {
-		String query = "select ?s (min(?o) as ?omin) {\n" + "   ?s ?p ?o .\n" + " }\n" + " group by ?s\n";
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			String query = "select ?s (min(?o) as ?omin) {\n" + "   ?s ?p ?o .\n" + " }\n" + " group by ?s\n";
 
-		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
-			assertThat(result.hasNext()).isFalse();
+			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+				assertThat(result.hasNext()).isFalse();
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
@@ -117,10 +129,15 @@ public class AggregateTest extends AbstractComplianceTest {
 	 * See https://github.com/eclipse/rdf4j/issues/1978
 	 */
 	private void testMinAggregateWithoutGroupEmptySolution() {
-		String query = "select (min(?o) as ?omin) {\n" + "   ?s ?p ?o .\n" + " }\n";
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			String query = "select (min(?o) as ?omin) {\n" + "   ?s ?p ?o .\n" + " }\n";
 
-		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
-			assertThat(result.next()).isEmpty();
+			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+				assertThat(result.next()).isEmpty();
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
@@ -128,10 +145,15 @@ public class AggregateTest extends AbstractComplianceTest {
 	 * See https://github.com/eclipse/rdf4j/issues/1978
 	 */
 	private void testSampleAggregateWithGroupEmptyResult() {
-		String query = "select ?s (sample(?o) as ?osample) {\n" + "   ?s ?p ?o .\n" + " }\n" + " group by ?s\n";
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			String query = "select ?s (sample(?o) as ?osample) {\n" + "   ?s ?p ?o .\n" + " }\n" + " group by ?s\n";
 
-		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
-			assertThat(result.hasNext()).isFalse();
+			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+				assertThat(result.hasNext()).isFalse();
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
@@ -139,317 +161,405 @@ public class AggregateTest extends AbstractComplianceTest {
 	 * See https://github.com/eclipse/rdf4j/issues/1978
 	 */
 	private void testSampleAggregateWithoutGroupEmptySolution() {
-		String query = "select (sample(?o) as ?osample) {\n" + "   ?s ?p ?o .\n" + " }\n";
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			String query = "select (sample(?o) as ?osample) {\n" + "   ?s ?p ?o .\n" + " }\n";
 
-		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
-			assertThat(result.next()).isEmpty();
+			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+				assertThat(result.next()).isEmpty();
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testSES2361UndefMin() {
-		String query = "SELECT (MIN(?v) as ?min) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
-		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			assertThat((Iterable<?>) result).isNotNull();
-			assertThat(result.hasNext()).isTrue();
-			assertThat(result.next().getValue("min").stringValue()).isEqualTo("1");
-			assertThat(result.hasNext()).isFalse();
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			String query = "SELECT (MIN(?v) as ?min) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
+			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+				assertThat((Iterable<?>) result).isNotNull();
+				assertThat(result.hasNext()).isTrue();
+				assertThat(result.next().getValue("min").stringValue()).isEqualTo("1");
+				assertThat(result.hasNext()).isFalse();
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testSES2361UndefMax() {
-		String query = "SELECT (MAX(?v) as ?max) WHERE { VALUES ?v { 1 2 7 undef 3 4 }}";
-		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			assertThat((Iterable<?>) result).isNotNull();
-			assertThat(result.hasNext()).isTrue();
-			assertThat(result.next().getValue("max").stringValue()).isEqualTo("7");
-			assertThat((Iterable<?>) result).isEmpty();
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			String query = "SELECT (MAX(?v) as ?max) WHERE { VALUES ?v { 1 2 7 undef 3 4 }}";
+			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+				assertThat((Iterable<?>) result).isNotNull();
+				assertThat(result.hasNext()).isTrue();
+				assertThat(result.next().getValue("max").stringValue()).isEqualTo("7");
+				assertThat((Iterable<?>) result).isEmpty();
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testSES2361UndefCount() {
 		String query = "SELECT (COUNT(?v) as ?c) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
-		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			assertThat((Iterable<?>) result).isNotNull();
-			assertThat(result.hasNext()).isTrue();
-			assertThat(result.next().getValue("c").stringValue()).isEqualTo("4");
-			assertThat((Iterable<?>) result).isEmpty();
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+				assertThat((Iterable<?>) result).isNotNull();
+				assertThat(result.hasNext()).isTrue();
+				assertThat(result.next().getValue("c").stringValue()).isEqualTo("4");
+				assertThat((Iterable<?>) result).isEmpty();
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testSES2361UndefCountWildcard() {
 		String query = "SELECT (COUNT(*) as ?c) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
-		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			assertThat((Iterable<?>) result).isNotNull();
-			assertThat(result.hasNext()).isTrue();
-			assertThat(result.next().getValue("c").stringValue()).isEqualTo("4");
-			assertThat((Iterable<?>) result).isEmpty();
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+				assertThat((Iterable<?>) result).isNotNull();
+				assertThat(result.hasNext()).isTrue();
+				assertThat(result.next().getValue("c").stringValue()).isEqualTo("4");
+				assertThat((Iterable<?>) result).isEmpty();
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testSES2361UndefSum() {
-		String query = "SELECT (SUM(?v) as ?s) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
-		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			assertThat((Iterable<?>) result).isNotNull();
-			assertThat(result.hasNext()).isTrue();
-			assertThat(result.next().getValue("s").stringValue()).isEqualTo("10");
-			assertThat((Iterable<?>) result).isEmpty();
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			String query = "SELECT (SUM(?v) as ?s) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
+			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+				assertThat((Iterable<?>) result).isNotNull();
+				assertThat(result.hasNext()).isTrue();
+				assertThat(result.next().getValue("s").stringValue()).isEqualTo("10");
+				assertThat((Iterable<?>) result).isEmpty();
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testSES1979MinMaxInf() throws Exception {
-		loadTestData("/testdata-query/dataset-ses1979.trig");
-		String query = "prefix : <http://example.org/> select (min(?o) as ?min) (max(?o) as ?max) where { ?s :float ?o }";
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			loadTestData("/testdata-query/dataset-ses1979.trig", conn);
+			String query = "prefix : <http://example.org/> select (min(?o) as ?min) (max(?o) as ?max) where { ?s :float ?o }";
 
-		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
-		try (TupleQueryResult evaluate = tq.evaluate()) {
-			List<BindingSet> result = QueryResults.asList(evaluate);
-			assertThat((Iterable<?>) result).isNotNull().hasSize(1);
-			assertThat(result.get(0).getValue("min")).isEqualTo(literal(Float.NEGATIVE_INFINITY));
-			assertThat(result.get(0).getValue("max")).isEqualTo(literal(Float.POSITIVE_INFINITY));
-		} catch (QueryEvaluationException e) {
-			e.printStackTrace();
-			fail(e.getMessage());
+			try (TupleQueryResult evaluate = tq.evaluate()) {
+				List<BindingSet> result = QueryResults.asList(evaluate);
+				assertThat((Iterable<?>) result).isNotNull().hasSize(1);
+				assertThat(result.get(0).getValue("min")).isEqualTo(literal(Float.NEGATIVE_INFINITY));
+				assertThat(result.get(0).getValue("max")).isEqualTo(literal(Float.POSITIVE_INFINITY));
+			} catch (QueryEvaluationException e) {
+				e.printStackTrace();
+				fail(e.getMessage());
+			}
+		} finally {
+			closeRepository(repo);
 		}
 
 	}
 
 	private void testGroupConcatDistinct() throws Exception {
-		loadTestData("/testdata-query/dataset-query.trig");
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			loadTestData("/testdata-query/dataset-query.trig", conn);
 
-		String query = getNamespaceDeclarations() + "SELECT (GROUP_CONCAT(DISTINCT ?l) AS ?concat)"
-				+ "WHERE { ex:groupconcat-test ?p ?l . }";
+			String query = getNamespaceDeclarations() + "SELECT (GROUP_CONCAT(DISTINCT ?l) AS ?concat)"
+					+ "WHERE { ex:groupconcat-test ?p ?l . }";
 
-		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
-		try (TupleQueryResult result = tq.evaluate()) {
-			assertThat((Iterable<?>) result).isNotNull();
+			try (TupleQueryResult result = tq.evaluate()) {
+				assertThat((Iterable<?>) result).isNotNull();
 
-			while (result.hasNext()) {
-				BindingSet bs = result.next();
-				assertThat(bs).isNotNull();
+				while (result.hasNext()) {
+					BindingSet bs = result.next();
+					assertThat(bs).isNotNull();
 
-				Value concat = bs.getValue("concat");
+					Value concat = bs.getValue("concat");
 
-				assertThat(concat).isInstanceOf(Literal.class);
+					assertThat(concat).isInstanceOf(Literal.class);
 
-				String lexValue = ((Literal) concat).getLabel();
+					String lexValue = ((Literal) concat).getLabel();
 
-				int occ = countCharOccurrences(lexValue, 'a');
-				assertThat(occ).isEqualTo(1);
-				occ = countCharOccurrences(lexValue, 'b');
-				assertThat(occ).isEqualTo(1);
-				occ = countCharOccurrences(lexValue, 'c');
-				assertThat(occ).isEqualTo(1);
-				occ = countCharOccurrences(lexValue, 'd');
-				assertThat(occ).isEqualTo(1);
+					int occ = countCharOccurrences(lexValue, 'a');
+					assertThat(occ).isEqualTo(1);
+					occ = countCharOccurrences(lexValue, 'b');
+					assertThat(occ).isEqualTo(1);
+					occ = countCharOccurrences(lexValue, 'c');
+					assertThat(occ).isEqualTo(1);
+					occ = countCharOccurrences(lexValue, 'd');
+					assertThat(occ).isEqualTo(1);
+				}
+			} catch (QueryEvaluationException e) {
+				e.printStackTrace();
+				fail(e.getMessage());
 			}
-		} catch (QueryEvaluationException e) {
-			e.printStackTrace();
-			fail(e.getMessage());
+		} finally {
+			closeRepository(repo);
 		}
 
 	}
 
 	private void testGroupConcatNonDistinct() throws Exception {
-		loadTestData("/testdata-query/dataset-query.trig");
-		String query = getNamespaceDeclarations() + "SELECT (GROUP_CONCAT(?l) AS ?concat)"
-				+ "WHERE { ex:groupconcat-test ?p ?l . }";
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			loadTestData("/testdata-query/dataset-query.trig", conn);
+			String query = getNamespaceDeclarations() + "SELECT (GROUP_CONCAT(?l) AS ?concat)"
+					+ "WHERE { ex:groupconcat-test ?p ?l . }";
 
-		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
-		try (TupleQueryResult result = tq.evaluate()) {
-			assertThat((Iterable<?>) result).isNotNull();
+			try (TupleQueryResult result = tq.evaluate()) {
+				assertThat((Iterable<?>) result).isNotNull();
 
-			while (result.hasNext()) {
-				BindingSet bs = result.next();
-				assertThat(bs).isNotNull();
+				while (result.hasNext()) {
+					BindingSet bs = result.next();
+					assertThat(bs).isNotNull();
 
-				Value concat = bs.getValue("concat");
+					Value concat = bs.getValue("concat");
 
-				assertThat(concat).isInstanceOf(Literal.class);
+					assertThat(concat).isInstanceOf(Literal.class);
 
-				String lexValue = ((Literal) concat).getLabel();
+					String lexValue = ((Literal) concat).getLabel();
 
-				int occ = countCharOccurrences(lexValue, 'a');
-				assertThat(occ).isEqualTo(1);
-				occ = countCharOccurrences(lexValue, 'b');
-				assertThat(occ).isEqualTo(2);
-				occ = countCharOccurrences(lexValue, 'c');
-				assertThat(occ).isEqualTo(2);
-				occ = countCharOccurrences(lexValue, 'd');
-				assertThat(occ).isEqualTo(1);
+					int occ = countCharOccurrences(lexValue, 'a');
+					assertThat(occ).isEqualTo(1);
+					occ = countCharOccurrences(lexValue, 'b');
+					assertThat(occ).isEqualTo(2);
+					occ = countCharOccurrences(lexValue, 'c');
+					assertThat(occ).isEqualTo(2);
+					occ = countCharOccurrences(lexValue, 'd');
+					assertThat(occ).isEqualTo(1);
+				}
+			} catch (QueryEvaluationException e) {
+				e.printStackTrace();
+				fail(e.getMessage());
 			}
-		} catch (QueryEvaluationException e) {
-			e.printStackTrace();
-			fail(e.getMessage());
+		} finally {
+			closeRepository(repo);
 		}
 
 	}
 
 	private void testSES1970CountDistinctWildcard() throws Exception {
-		loadTestData("/testdata-query/dataset-ses1970.trig");
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			loadTestData("/testdata-query/dataset-ses1970.trig", conn);
 
-		String query = "SELECT (COUNT(DISTINCT *) AS ?c) {?s ?p ?o }";
+			String query = "SELECT (COUNT(DISTINCT *) AS ?c) {?s ?p ?o }";
 
-		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
-		try (TupleQueryResult result = tq.evaluate()) {
-			assertThat((Iterable<?>) result).isNotNull();
+			try (TupleQueryResult result = tq.evaluate()) {
+				assertThat((Iterable<?>) result).isNotNull();
 
-			assertThat(result.hasNext()).isTrue();
-			BindingSet s = result.next();
-			assertThat(getIntValue(s.getValue("c"), 0)).isEqualTo(3);
-		} catch (QueryEvaluationException e) {
-			e.printStackTrace();
-			fail(e.getMessage());
+				assertThat(result.hasNext()).isTrue();
+				BindingSet s = result.next();
+				assertThat(getIntValue(s.getValue("c"), 0)).isEqualTo(3);
+			} catch (QueryEvaluationException e) {
+				e.printStackTrace();
+				fail(e.getMessage());
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testCountHaving() {
-		BNode bnode1 = bnode();
-		BNode bnode2 = bnode();
-		BNode bnode3 = bnode();
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			BNode bnode1 = bnode();
+			BNode bnode2 = bnode();
+			BNode bnode3 = bnode();
 
-		conn.add(bnode3, FOAF.KNOWS, bnode());
-		conn.add(bnode1, FOAF.KNOWS, bnode());
-		conn.add(bnode1, FOAF.KNOWS, bnode());
-		conn.add(bnode2, FOAF.KNOWS, bnode());
-		conn.add(bnode3, FOAF.KNOWS, bnode());
-		conn.add(bnode3, FOAF.KNOWS, bnode());
-		conn.add(bnode1, FOAF.KNOWS, bnode());
+			conn.add(bnode3, FOAF.KNOWS, bnode());
+			conn.add(bnode1, FOAF.KNOWS, bnode());
+			conn.add(bnode1, FOAF.KNOWS, bnode());
+			conn.add(bnode2, FOAF.KNOWS, bnode());
+			conn.add(bnode3, FOAF.KNOWS, bnode());
+			conn.add(bnode3, FOAF.KNOWS, bnode());
+			conn.add(bnode1, FOAF.KNOWS, bnode());
 
-		String query = "SELECT ?a WHERE { ?a ?b ?c } GROUP BY ?a HAVING( (COUNT(?c) > 1 ) && ( COUNT(?c)  != 0 ) ) ";
-		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			List<BindingSet> collect = QueryResults.asList(result);
-			assertThat(collect).hasSize(2);
+			String query = "SELECT ?a WHERE { ?a ?b ?c } GROUP BY ?a HAVING( (COUNT(?c) > 1 ) && ( COUNT(?c)  != 0 ) ) ";
+			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+				List<BindingSet> collect = QueryResults.asList(result);
+				assertThat(collect).hasSize(2);
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testSum() {
-		mixedDataForNumericAggregates();
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			mixedDataForNumericAggregates(conn);
+			String query = "SELECT ?a (SUM(?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
+			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+				List<BindingSet> collect = QueryResults.asList(result);
+				int i = 0;
+				assertThat(collect.get(i++).getValue("aggregate")).isNull();
+				assertThat(collect.get(i++).getValue("aggregate")).isNull();
+				assertThat(collect.get(i++).getValue("aggregate")).isNull();
+				assertThat(collect.get(i++).getValue("aggregate")).isEqualTo(literal(30.11));
+				assertThat(collect.get(i++).getValue("aggregate"))
+						.isEqualTo(literal(new BigDecimal("89.4786576482391284723864721567342354783275234")));
 
-		String query = "SELECT ?a (SUM(?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
-		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			List<BindingSet> collect = QueryResults.asList(result);
-			int i = 0;
-			assertThat(collect.get(i++).getValue("aggregate")).isNull();
-			assertThat(collect.get(i++).getValue("aggregate")).isNull();
-			assertThat(collect.get(i++).getValue("aggregate")).isNull();
-			assertThat(collect.get(i++).getValue("aggregate")).isEqualTo(literal(30.11));
-			assertThat(collect.get(i++).getValue("aggregate"))
-					.isEqualTo(literal(new BigDecimal("89.4786576482391284723864721567342354783275234")));
+			}
 
+		} finally {
+			closeRepository(repo);
 		}
-
 	}
 
 	private void testDistinctSum() {
-		mixedDataForNumericAggregates();
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			mixedDataForNumericAggregates(conn);
 
-		String query = "SELECT ?a (SUM(DISTINCT ?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
-		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			List<BindingSet> collect = QueryResults.asList(result);
-			int i = 0;
-			assertThat(collect.get(i++).getValue("aggregate")).isNull();
-			assertThat(collect.get(i++).getValue("aggregate")).isNull();
-			assertThat(collect.get(i++).getValue("aggregate")).isNull();
-			assertThat(collect.get(i++).getValue("aggregate")).isEqualTo(literal(30.11));
-			assertThat(collect.get(i++).getValue("aggregate"))
-					.isEqualTo(literal(new BigDecimal("55.4786576482391284723864721567342354783275234")));
+			String query = "SELECT ?a (SUM(DISTINCT ?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
+			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+				List<BindingSet> collect = QueryResults.asList(result);
+				int i = 0;
+				assertThat(collect.get(i++).getValue("aggregate")).isNull();
+				assertThat(collect.get(i++).getValue("aggregate")).isNull();
+				assertThat(collect.get(i++).getValue("aggregate")).isNull();
+				assertThat(collect.get(i++).getValue("aggregate")).isEqualTo(literal(30.11));
+				assertThat(collect.get(i++).getValue("aggregate"))
+						.isEqualTo(literal(new BigDecimal("55.4786576482391284723864721567342354783275234")));
+			}
+		} finally {
+			closeRepository(repo);
 		}
 
 	}
 
 	private void testAvg() {
-		mixedDataForNumericAggregates();
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			mixedDataForNumericAggregates(conn);
 
-		String query = "SELECT ?a (AVG(?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
-		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			List<BindingSet> collect = QueryResults.asList(result);
-			int i = 0;
-			assertThat(collect.get(i++).getValue("aggregate")).isNull();
-			assertThat(collect.get(i++).getValue("aggregate")).isNull();
-			assertThat(collect.get(i++).getValue("aggregate")).isNull();
-			assertThat(collect.get(i++).getValue("aggregate")).isEqualTo(literal(15.055));
-			assertThat(collect.get(i++).getValue("aggregate"))
-					.isEqualTo(literal(new BigDecimal("17.89573152964782569447729443134684709566550468")));
+			String query = "SELECT ?a (AVG(?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
+			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+				List<BindingSet> collect = QueryResults.asList(result);
+				int i = 0;
+				assertThat(collect.get(i++).getValue("aggregate")).isNull();
+				assertThat(collect.get(i++).getValue("aggregate")).isNull();
+				assertThat(collect.get(i++).getValue("aggregate")).isNull();
+				assertThat(collect.get(i++).getValue("aggregate")).isEqualTo(literal(15.055));
+				assertThat(collect.get(i++).getValue("aggregate"))
+						.isEqualTo(literal(new BigDecimal("17.89573152964782569447729443134684709566550468")));
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testDistinctAvg() {
-		mixedDataForNumericAggregates();
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			mixedDataForNumericAggregates(conn);
 
-		String query = "SELECT ?a (AVG(DISTINCT ?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
-		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			List<BindingSet> collect = QueryResults.asList(result);
-			int i = 0;
-			assertThat(collect.get(i++).getValue("aggregate")).isNull();
-			assertThat(collect.get(i++).getValue("aggregate")).isNull();
-			assertThat(collect.get(i++).getValue("aggregate")).isNull();
+			String query = "SELECT ?a (AVG(DISTINCT ?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
+			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+				List<BindingSet> collect = QueryResults.asList(result);
+				int i = 0;
+				assertThat(collect.get(i++).getValue("aggregate")).isNull();
+				assertThat(collect.get(i++).getValue("aggregate")).isNull();
+				assertThat(collect.get(i++).getValue("aggregate")).isNull();
 
-			assertThat(collect.get(i++).getValue("aggregate")).isEqualTo(literal(15.055));
-			assertThat(collect.get(i++).getValue("aggregate"))
-					.isEqualTo(literal(new BigDecimal("18.492885882746376157462157")));
+				assertThat(collect.get(i++).getValue("aggregate")).isEqualTo(literal(15.055));
+				assertThat(collect.get(i++).getValue("aggregate"))
+						.isEqualTo(literal(new BigDecimal("18.492885882746376157462157")));
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	private void testMax() {
-		mixedDataForNumericAggregates();
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			mixedDataForNumericAggregates(conn);
 
-		String query = "SELECT ?a (MAX(?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
-		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			List<BindingSet> collect = QueryResults.asList(result);
-			int i = 0;
-			assertThat(collect.get(i++).getValue("aggregate"))
-					.isEqualTo(literal(new BigDecimal("19.4786576482391284723864721567342354783275234")));
-			assertThat(collect.get(i++).getValue("aggregate")).isEqualTo(literal(23));
-			assertThat(collect.get(i++).getValue("aggregate")).isEqualTo(literal(23));
-			assertThat(collect.get(i++).getValue("aggregate"))
-					.isEqualTo(literal("2022-01-01T01:01:01.000000001Z", CoreDatatype.XSD.DATETIME));
-			assertThat(collect.get(i++).getValue("aggregate")).isEqualTo(literal("3"));
+			String query = "SELECT ?a (MAX(?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
+			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+				List<BindingSet> collect = QueryResults.asList(result);
+				int i = 0;
+				assertThat(collect.get(i++).getValue("aggregate"))
+						.isEqualTo(literal(new BigDecimal("19.4786576482391284723864721567342354783275234")));
+				assertThat(collect.get(i++).getValue("aggregate")).isEqualTo(literal(23));
+				assertThat(collect.get(i++).getValue("aggregate")).isEqualTo(literal(23));
+				assertThat(collect.get(i++).getValue("aggregate"))
+						.isEqualTo(literal("2022-01-01T01:01:01.000000001Z", CoreDatatype.XSD.DATETIME));
+				assertThat(collect.get(i++).getValue("aggregate")).isEqualTo(literal("3"));
+			}
+		} finally {
+			closeRepository(repo);
 		}
-
 	}
 
 	private void testDistinctMax() {
-		mixedDataForNumericAggregates();
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			mixedDataForNumericAggregates(conn);
 
-		String query = "SELECT ?a (MAX(DISTINCT ?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
-		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			List<BindingSet> collect = QueryResults.asList(result);
-			int i = 0;
-			assertThat(collect.get(i++).getValue("aggregate"))
-					.isEqualTo(literal(new BigDecimal("19.4786576482391284723864721567342354783275234")));
-			assertThat(collect.get(i++).getValue("aggregate")).isEqualTo(literal(23));
-			assertThat(collect.get(i++).getValue("aggregate")).isEqualTo(literal(23));
-			assertThat(collect.get(i++).getValue("aggregate"))
-					.isEqualTo(literal("2022-01-01T01:01:01.000000001Z", CoreDatatype.XSD.DATETIME));
-			assertThat(collect.get(i++).getValue("aggregate")).isEqualTo(literal("3"));
+			String query = "SELECT ?a (MAX(DISTINCT ?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
+			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+				List<BindingSet> collect = QueryResults.asList(result);
+				int i = 0;
+				assertThat(collect.get(i++).getValue("aggregate"))
+						.isEqualTo(literal(new BigDecimal("19.4786576482391284723864721567342354783275234")));
+				assertThat(collect.get(i++).getValue("aggregate")).isEqualTo(literal(23));
+				assertThat(collect.get(i++).getValue("aggregate")).isEqualTo(literal(23));
+				assertThat(collect.get(i++).getValue("aggregate"))
+						.isEqualTo(literal("2022-01-01T01:01:01.000000001Z", CoreDatatype.XSD.DATETIME));
+				assertThat(collect.get(i++).getValue("aggregate")).isEqualTo(literal("3"));
+			}
+		} finally {
+			closeRepository(repo);
 		}
 	}
 
 	/**
-	 * @see <a href="https://github.com/eclipse/rdf4j/issues/4290">https://github.com/eclipse/rdf4j/issues/4290</a>
+	 * @see <a href= "https://github.com/eclipse/rdf4j/issues/4290">https://github.com/eclipse/rdf4j/issues/4290</a>
 	 */
 	private void testCountOrderBy_ImplicitGroup() {
-		mixedDataForNumericAggregates();
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			mixedDataForNumericAggregates(conn);
 
-		String query = "select (count(*) as ?c) where { \n" + "	?s ?p ?o .\n" + "} \n" + "order by (?s)";
+			String query = "select (count(*) as ?c) where { \n" + "	?s ?p ?o .\n" + "} \n" + "order by (?s)";
 
-		TupleQuery preparedQuery = conn.prepareTupleQuery(query);
+			TupleQuery preparedQuery = conn.prepareTupleQuery(query);
 
-		List<BindingSet> result = QueryResults.asList(preparedQuery.evaluate());
-		assertThat(result).hasSize(1);
+			List<BindingSet> result = QueryResults.asList(preparedQuery.evaluate());
+			assertThat(result).hasSize(1);
 
-		BindingSet bs = result.get(0);
-		assertThat(bs.size()).isEqualTo(1);
-		assertThat(getIntValue(bs.getValue("c"), 0)).isEqualTo(19);
+			BindingSet bs = result.get(0);
+			assertThat(bs.size()).isEqualTo(1);
+			assertThat(getIntValue(bs.getValue("c"), 0)).isEqualTo(19);
+		} finally {
+			closeRepository(repo);
+		}
 	}
 
 	// private methods
 
-	private void mixedDataForNumericAggregates() {
+	private void mixedDataForNumericAggregates(RepositoryConnection conn) {
 		IRI node1 = iri("http://example.com/1");
 		IRI node2 = iri("http://example.com/2");
 		IRI node3 = iri("http://example.com/3");

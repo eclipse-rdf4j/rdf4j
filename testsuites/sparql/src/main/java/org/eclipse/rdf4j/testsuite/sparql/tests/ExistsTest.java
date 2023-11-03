@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.testsuite.sparql.tests;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -21,9 +22,9 @@ import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
 import org.junit.jupiter.api.DynamicTest;
-import org.junit.jupiter.api.Test;
 
 /**
  * Test for queries using EXISTS
@@ -32,37 +33,40 @@ import org.junit.jupiter.api.Test;
  */
 public class ExistsTest extends AbstractComplianceTest {
 
-	public ExistsTest(Repository repo) {
+	public ExistsTest(Supplier<Repository> repo) {
 		super(repo);
 	}
 
 	private void testFilterNotExistsBindingToCurrentSolutionMapping() {
+		Repository repo = openRepository();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			String ex = "http://example/";
+			IRI a1 = Values.iri(ex, "a1");
+			IRI a2 = Values.iri(ex, "a2");
 
-		String ex = "http://example/";
-		IRI a1 = Values.iri(ex, "a1");
-		IRI a2 = Values.iri(ex, "a2");
+			IRI both = Values.iri(ex, "both");
 
-		IRI both = Values.iri(ex, "both");
+			IRI predicate1 = Values.iri(ex, "predicate1");
+			IRI predicate2 = Values.iri(ex, "predicate2");
 
-		IRI predicate1 = Values.iri(ex, "predicate1");
-		IRI predicate2 = Values.iri(ex, "predicate2");
+			conn.add(a1, predicate1, both);
+			conn.add(a1, predicate2, both);
 
-		conn.add(a1, predicate1, both);
-		conn.add(a1, predicate2, both);
+			conn.add(a2, predicate1, both);
+			conn.add(a2, predicate2, Values.bnode());
 
-		conn.add(a2, predicate1, both);
-		conn.add(a2, predicate2, Values.bnode());
+			TupleQuery tupleQuery = conn.prepareTupleQuery("PREFIX : <http://example/>\n" + "SELECT * WHERE {\n"
+					+ "  ?a :predicate1 ?p1\n" + "  FILTER NOT EXISTS {\n" + "    ?a :predicate2 ?p2 .\n"
+					+ "    FILTER(?p2 = ?p1)\n" + "  }\n" + "}\n");
 
-		TupleQuery tupleQuery = conn.prepareTupleQuery("PREFIX : <http://example/>\n" + "SELECT * WHERE {\n"
-				+ "  ?a :predicate1 ?p1\n" + "  FILTER NOT EXISTS {\n" + "    ?a :predicate2 ?p2 .\n"
-				+ "    FILTER(?p2 = ?p1)\n" + "  }\n" + "}\n");
-
-		try (Stream<BindingSet> stream = tupleQuery.evaluate().stream()) {
-			List<BindingSet> collect = stream.collect(Collectors.toList());
-			assertEquals(1, collect.size());
-			assertEquals(a2, collect.get(0).getValue("a"));
+			try (Stream<BindingSet> stream = tupleQuery.evaluate().stream()) {
+				List<BindingSet> collect = stream.collect(Collectors.toList());
+				assertEquals(1, collect.size());
+				assertEquals(a2, collect.get(0).getValue("a"));
+			}
+		} finally {
+			closeRepository(repo);
 		}
-
 	}
 
 	public Stream<DynamicTest> tests() {
