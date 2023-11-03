@@ -31,58 +31,46 @@ public class OrderByTest extends AbstractComplianceTest {
 		super(repo);
 	}
 
-	private void testDistinctOptionalOrderBy() throws Exception {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			conn.add(new StringReader("[] a <test:Class>.\n" + "[] a <test:Class>; <test:nr> 123 ."), "",
-					RDFFormat.TURTLE);
+	private void testDistinctOptionalOrderBy(RepositoryConnection conn) throws Exception {
 
-			String query = "select distinct ?o ?nr { ?o a <test:Class> optional { ?o <test:nr> ?nr } } order by ?nr";
+		conn.add(new StringReader("[] a <test:Class>.\n" +
+				"[] a <test:Class>; <test:nr> 123 ."), "", RDFFormat.TURTLE);
 
-			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
-			try (Stream<BindingSet> result = tq.evaluate().stream()) {
-				long count = result.count();
-				assertEquals(2, count);
-			}
-		} finally {
-			closeRepository(repo);
+		String query = "select distinct ?o ?nr { ?o a <test:Class> optional { ?o <test:nr> ?nr } } order by ?nr";
+
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+		try (Stream<BindingSet> result = tq.evaluate().stream()) {
+			long count = result.count();
+			assertEquals(2, count);
 		}
 	}
 
-	private void testOrderByVariableNotInUse() throws Exception {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			conn.add(new StringReader("_:bob1 a <foaf:Person> ; rdfs:label \"Bob1\" .\n"
-					+ "_:bob2 a <foaf:Person> ; rdfs:label \"Bob2\" ."), "", RDFFormat.TURTLE);
+	private void testOrderByVariableNotInUse(RepositoryConnection conn) throws Exception {
 
-			String query = "SELECT * WHERE { ?person a <foaf:Person> } ORDER BY ?score\n";
+		conn.add(new StringReader("_:bob1 a <foaf:Person> ; rdfs:label \"Bob1\" .\n" +
+				"_:bob2 a <foaf:Person> ; rdfs:label \"Bob2\" ."), "", RDFFormat.TURTLE);
 
-			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
-			try (Stream<BindingSet> result = tq.evaluate().stream()) {
-				// use distinct because the issue is that the query produces duplicates
-				long count = result.distinct().count();
-				assertEquals(2, count);
-			}
-		} finally {
-			closeRepository(repo);
+		String query = "SELECT * WHERE { ?person a <foaf:Person> } ORDER BY ?score\n";
+
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+		try (Stream<BindingSet> result = tq.evaluate().stream()) {
+			// use distinct because the issue is that the query produces duplicates
+			long count = result.distinct().count();
+			assertEquals(2, count);
 		}
 	}
 
-	private void testDistinctOptionalOrderByMath() throws Exception {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			conn.add(new StringReader("[] a <test:Class>.\n" + "[] a <test:Class>; <test:nr> 123 ."), "",
-					RDFFormat.TURTLE);
+	private void testDistinctOptionalOrderByMath(RepositoryConnection conn) throws Exception {
 
-			String query = "select distinct ?o ?nr { ?o a <test:Class> optional { ?o <test:nr> ?nr } } order by (?nr + STRLEN(?o))";
+		conn.add(new StringReader("[] a <test:Class>.\n" +
+				"[] a <test:Class>; <test:nr> 123 ."), "", RDFFormat.TURTLE);
 
-			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
-			try (Stream<BindingSet> result = tq.evaluate().stream()) {
-				long count = result.count();
-				assertEquals(2, count);
-			}
-		} finally {
-			closeRepository(repo);
+		String query = "select distinct ?o ?nr { ?o a <test:Class> optional { ?o <test:nr> ?nr } } order by (?nr + STRLEN(?o))";
+
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+		try (Stream<BindingSet> result = tq.evaluate().stream()) {
+			long count = result.count();
+			assertEquals(2, count);
 		}
 	}
 

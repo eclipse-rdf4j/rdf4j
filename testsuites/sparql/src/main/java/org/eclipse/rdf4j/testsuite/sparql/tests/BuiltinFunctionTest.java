@@ -52,364 +52,308 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 	 * See https://github.com/eclipse/rdf4j/issues/1267
 	 */
 
-	private void testSeconds() {
+	private void testSeconds(RepositoryConnection conn) {
 		String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
 				+ "SELECT (SECONDS(\"2011-01-10T14:45:13\"^^xsd:dateTime) AS ?sec) { }";
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, qry).evaluate()) {
-				assertNotNull(result);
-				assertTrue(result.hasNext());
-				assertEquals("13", result.next().getValue("sec").stringValue());
-				assertFalse(result.hasNext());
-			}
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, qry).evaluate()) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			assertEquals("13", result.next().getValue("sec").stringValue());
+			assertFalse(result.hasNext());
 		}
-		closeRepository(repo);
 	}
 
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/1267
 	 */
 
-	private void testSecondsMilliseconds() {
+	private void testSecondsMilliseconds(RepositoryConnection conn) {
 		String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
 				+ "SELECT (SECONDS(\"2011-01-10T14:45:13.815-05:00\"^^xsd:dateTime) AS ?sec) { }";
 
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, qry).evaluate()) {
-				assertNotNull(result);
-				assertTrue(result.hasNext());
-				assertEquals("13.815", result.next().getValue("sec").stringValue());
-				assertFalse(result.hasNext());
-			}
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, qry).evaluate()) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			assertEquals("13.815", result.next().getValue("sec").stringValue());
+			assertFalse(result.hasNext());
 		}
-		closeRepository(repo);
 	}
 
-	private void testSES1991NOWEvaluation() throws Exception {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			loadTestData("/testdata-query/defaultgraph.ttl", conn);
-			String query = "SELECT ?d WHERE {?s ?p ?o . BIND(NOW() as ?d) } LIMIT 2";
+	private void testSES1991NOWEvaluation(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/defaultgraph.ttl", conn);
+		String query = "SELECT ?d WHERE {?s ?p ?o . BIND(NOW() as ?d) } LIMIT 2";
 
-			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
-			try (TupleQueryResult result = tq.evaluate()) {
-				assertNotNull(result);
-				assertTrue(result.hasNext());
-				Literal d1 = (Literal) result.next().getValue("d");
-				assertTrue(result.hasNext());
-				Literal d2 = (Literal) result.next().getValue("d");
-				assertFalse(result.hasNext());
-				assertNotNull(d1);
-				assertEquals(d1, d2);
-			} catch (QueryEvaluationException e) {
-				e.printStackTrace();
-				fail(e.getMessage());
-			}
+		try (TupleQueryResult result = tq.evaluate()) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			Literal d1 = (Literal) result.next().getValue("d");
+			assertTrue(result.hasNext());
+			Literal d2 = (Literal) result.next().getValue("d");
+			assertFalse(result.hasNext());
+			assertNotNull(d1);
+			assertEquals(d1, d2);
+		} catch (QueryEvaluationException e) {
+			e.printStackTrace();
+			fail(e.getMessage());
 		}
-		closeRepository(repo);
 	}
 
-	private void testSES869ValueOfNow() {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL,
-					"SELECT ?p ( NOW() as ?n ) { BIND (NOW() as ?p ) }");
+	private void testSES869ValueOfNow(RepositoryConnection conn) {
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?p ( NOW() as ?n ) { BIND (NOW() as ?p ) }");
 
-			try (TupleQueryResult result = tq.evaluate()) {
-				assertNotNull(result);
-				assertTrue(result.hasNext());
+		try (TupleQueryResult result = tq.evaluate()) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
 
+			BindingSet bs = result.next();
+			Value p = bs.getValue("p");
+			Value n = bs.getValue("n");
+
+			assertNotNull(p);
+			assertNotNull(n);
+			assertEquals(p, n);
+			assertTrue(p == n);
+		}
+	}
+
+	private void testSES1991UUIDEvaluation(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/defaultgraph.ttl", conn);
+		String query = "SELECT ?uid WHERE {?s ?p ?o . BIND(UUID() as ?uid) } LIMIT 2";
+
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+
+		try (TupleQueryResult result = tq.evaluate()) {
+			assertNotNull(result);
+
+			IRI uuid1 = (IRI) result.next().getValue("uid");
+			IRI uuid2 = (IRI) result.next().getValue("uid");
+
+			assertNotNull(uuid1);
+			assertNotNull(uuid2);
+			assertNotEquals(uuid1, uuid2);
+		} catch (QueryEvaluationException e) {
+			e.printStackTrace();
+			fail(e.getMessage());
+		}
+	}
+
+	private void testSES1991STRUUIDEvaluation(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/defaultgraph.ttl", conn);
+		String query = "SELECT ?uid WHERE {?s ?p ?o . BIND(STRUUID() as ?uid) } LIMIT 2";
+
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+
+		try (TupleQueryResult result = tq.evaluate()) {
+			assertNotNull(result);
+
+			Literal uid1 = (Literal) result.next().getValue("uid");
+			Literal uid2 = (Literal) result.next().getValue("uid");
+
+			assertNotNull(uid1);
+			assertNotEquals(uid1, uid2);
+		} catch (QueryEvaluationException e) {
+			e.printStackTrace();
+			fail(e.getMessage());
+		}
+	}
+
+	private void testSES1991RANDEvaluation(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/defaultgraph.ttl", conn);
+		String query = "SELECT ?r WHERE {?s ?p ?o . BIND(RAND() as ?r) } LIMIT 3";
+
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+
+		try (TupleQueryResult result = tq.evaluate()) {
+			assertNotNull(result);
+
+			Literal r1 = (Literal) result.next().getValue("r");
+			Literal r2 = (Literal) result.next().getValue("r");
+			Literal r3 = (Literal) result.next().getValue("r");
+
+			assertNotNull(r1);
+
+			// there is a small chance that two successive calls to the random
+			// number generator will generate the exact same value, so we check
+			// for
+			// three successive calls (still theoretically possible to be
+			// identical, but phenomenally unlikely).
+			assertFalse(r1.equals(r2) && r1.equals(r3));
+		} catch (QueryEvaluationException e) {
+			e.printStackTrace();
+			fail(e.getMessage());
+		}
+	}
+
+	private void testSES2121URIFunction(RepositoryConnection conn) {
+		String query = "SELECT (URI(\"foo bar\") as ?uri) WHERE {}";
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+		try (TupleQueryResult result = tq.evaluate()) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			BindingSet bs = result.next();
+			IRI uri = (IRI) bs.getValue("uri");
+			assertNull(uri, "uri result for invalid URI should be unbound");
+		}
+
+		query = "BASE <http://example.org/> SELECT (URI(\"foo bar\") as ?uri) WHERE {}";
+		tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+		try (TupleQueryResult result = tq.evaluate()) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			BindingSet bs = result.next();
+			IRI uri = (IRI) bs.getValue("uri");
+			assertNotNull(uri, "uri result for valid URI reference should be bound");
+		}
+	}
+
+	private void test27NormalizeIRIFunction(RepositoryConnection conn) {
+
+		String query = "SELECT (IRI(\"../bar\") as ?Iri) WHERE {}";
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query, "http://example.com/foo/");
+		try (TupleQueryResult result = tq.evaluate()) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			BindingSet bs = result.next();
+			IRI actual = (IRI) bs.getValue("Iri");
+			IRI expected = iri("http://example.com/bar");
+			assertEquals(expected, actual, "IRI result for relative IRI should be normalized");
+		}
+	}
+
+	private void testSES2052If1(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-query.trig", conn);
+		String query = "SELECT ?p \n" +
+				"WHERE { \n" +
+				"         ?s ?p ?o . \n" +
+				"        FILTER(IF(BOUND(?p), ?p = <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>, false)) \n" +
+				"}";
+
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+		try (TupleQueryResult result = tq.evaluate()) {
+			assertNotNull(result);
+			while (result.hasNext()) {
 				BindingSet bs = result.next();
-				Value p = bs.getValue("p");
-				Value n = bs.getValue("n");
 
+				IRI p = (IRI) bs.getValue("p");
 				assertNotNull(p);
-				assertNotNull(n);
-				assertEquals(p, n);
-				assertTrue(p == n);
+				assertEquals(RDF.TYPE, p);
 			}
+		} catch (Exception e) {
+			e.printStackTrace();
+			fail(e.getMessage());
 		}
-		closeRepository(repo);
 	}
 
-	private void testSES1991UUIDEvaluation() throws Exception {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			loadTestData("/testdata-query/defaultgraph.ttl", conn);
-			String query = "SELECT ?uid WHERE {?s ?p ?o . BIND(UUID() as ?uid) } LIMIT 2";
+	private void testSES2052If2(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-query.trig", conn);
+		String query = "SELECT ?p \n" +
+				"WHERE { \n" +
+				"         ?s ?p ?o . \n" +
+				"        FILTER(IF(!BOUND(?p), false , ?p = <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>)) \n" +
+				"}";
 
-			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
-
-			try (TupleQueryResult result = tq.evaluate()) {
-				assertNotNull(result);
-
-				IRI uuid1 = (IRI) result.next().getValue("uid");
-				IRI uuid2 = (IRI) result.next().getValue("uid");
-
-				assertNotNull(uuid1);
-				assertNotNull(uuid2);
-				assertNotEquals(uuid1, uuid2);
-			} catch (QueryEvaluationException e) {
-				e.printStackTrace();
-				fail(e.getMessage());
-			}
-		}
-		closeRepository(repo);
-	}
-
-	private void testSES1991STRUUIDEvaluation() throws Exception {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			loadTestData("/testdata-query/defaultgraph.ttl", conn);
-			String query = "SELECT ?uid WHERE {?s ?p ?o . BIND(STRUUID() as ?uid) } LIMIT 2";
-
-			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
-
-			try (TupleQueryResult result = tq.evaluate()) {
-				assertNotNull(result);
-
-				Literal uid1 = (Literal) result.next().getValue("uid");
-				Literal uid2 = (Literal) result.next().getValue("uid");
-
-				assertNotNull(uid1);
-				assertNotEquals(uid1, uid2);
-			} catch (QueryEvaluationException e) {
-				e.printStackTrace();
-				fail(e.getMessage());
-			}
-		}
-		closeRepository(repo);
-	}
-
-	private void testSES1991RANDEvaluation() throws Exception {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			loadTestData("/testdata-query/defaultgraph.ttl", conn);
-			String query = "SELECT ?r WHERE {?s ?p ?o . BIND(RAND() as ?r) } LIMIT 3";
-
-			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
-
-			try (TupleQueryResult result = tq.evaluate()) {
-				assertNotNull(result);
-
-				Literal r1 = (Literal) result.next().getValue("r");
-				Literal r2 = (Literal) result.next().getValue("r");
-				Literal r3 = (Literal) result.next().getValue("r");
-
-				assertNotNull(r1);
-
-				// there is a small chance that two successive calls to the random
-				// number generator will generate the exact same value, so we check
-				// for
-				// three successive calls (still theoretically possible to be
-				// identical, but phenomenally unlikely).
-				assertFalse(r1.equals(r2) && r1.equals(r3));
-			} catch (QueryEvaluationException e) {
-				e.printStackTrace();
-				fail(e.getMessage());
-			}
-		}
-		closeRepository(repo);
-	}
-
-	private void testSES2121URIFunction() {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			String query = "SELECT (URI(\"foo bar\") as ?uri) WHERE {}";
-			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
-			try (TupleQueryResult result = tq.evaluate()) {
-				assertNotNull(result);
-				assertTrue(result.hasNext());
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+		try (TupleQueryResult result = tq.evaluate()) {
+			assertNotNull(result);
+			while (result.hasNext()) {
 				BindingSet bs = result.next();
-				IRI uri = (IRI) bs.getValue("uri");
-				assertNull(uri, "uri result for invalid URI should be unbound");
-			}
 
-			query = "BASE <http://example.org/> SELECT (URI(\"foo bar\") as ?uri) WHERE {}";
-			tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
-			try (TupleQueryResult result = tq.evaluate()) {
-				assertNotNull(result);
-				assertTrue(result.hasNext());
-				BindingSet bs = result.next();
-				IRI uri = (IRI) bs.getValue("uri");
-				assertNotNull(uri, "uri result for valid URI reference should be bound");
+				IRI p = (IRI) bs.getValue("p");
+				assertNotNull(p);
+				assertEquals(RDF.TYPE, p);
 			}
+		} catch (Exception e) {
+			e.printStackTrace();
+			fail(e.getMessage());
 		}
-		closeRepository(repo);
 	}
 
-	private void test27NormalizeIRIFunction() {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			String query = "SELECT (IRI(\"../bar\") as ?Iri) WHERE {}";
-			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query, "http://example.com/foo/");
-			try (TupleQueryResult result = tq.evaluate()) {
-				assertNotNull(result);
-				assertTrue(result.hasNext());
-				BindingSet bs = result.next();
-				IRI actual = (IRI) bs.getValue("Iri");
-				IRI expected = iri("http://example.com/bar");
-				assertEquals(expected, actual, "IRI result for relative IRI should be normalized");
-			}
-		}
-		closeRepository(repo);
+	private void testRegexCaseNonAscii(RepositoryConnection conn) {
+
+		String query = "ask {filter (regex(\"Валовой\", \"валовой\", \"i\")) }";
+
+		assertTrue(conn.prepareBooleanQuery(query).evaluate(), "case-insensitive match on Cyrillic should succeed");
+
+		query = "ask {filter (regex(\"Валовой\", \"валовой\")) }";
+
+		assertFalse(conn.prepareBooleanQuery(query).evaluate(), "case-sensitive match on Cyrillic should fail");
 	}
 
-	private void testSES2052If1() throws Exception {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			loadTestData("/testdata-query/dataset-query.trig", conn);
-			String query = "SELECT ?p \n" + "WHERE { \n" + "         ?s ?p ?o . \n"
-					+ "        FILTER(IF(BOUND(?p), ?p = <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>, false)) \n"
-					+ "}";
+	private void testFilterRegexBoolean(RepositoryConnection conn) throws Exception {
 
-			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
-			try (TupleQueryResult result = tq.evaluate()) {
-				assertNotNull(result);
-				while (result.hasNext()) {
-					BindingSet bs = result.next();
+		loadTestData("/testdata-query/dataset-query.trig", conn);
 
-					IRI p = (IRI) bs.getValue("p");
-					assertNotNull(p);
-					assertEquals(RDF.TYPE, p);
-				}
-			} catch (Exception e) {
-				e.printStackTrace();
-				fail(e.getMessage());
-			}
+		// test case for issue SES-1050
+		String query = getNamespaceDeclarations() +
+				" SELECT *" +
+				" WHERE { " +
+				"       ?x foaf:name ?name ; " +
+				"          foaf:mbox ?mbox . " +
+				"       FILTER(EXISTS { " +
+				"            FILTER(REGEX(?name, \"Bo\") && REGEX(?mbox, \"bob\")) " +
+				// query.append(" FILTER(REGEX(?mbox, \"bob\")) ");
+				"            } )" +
+				" } ";
+
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+
+		try (Stream<BindingSet> result = tq.evaluate().stream()) {
+			long count = result.count();
+			assertEquals(1, count);
 		}
-		closeRepository(repo);
-
 	}
 
-	private void testSES2052If2() throws Exception {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			loadTestData("/testdata-query/dataset-query.trig", conn);
-			String query = "SELECT ?p \n" + "WHERE { \n" + "         ?s ?p ?o . \n"
-					+ "        FILTER(IF(!BOUND(?p), false , ?p = <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>)) \n"
-					+ "}";
+	private void testDateCastFunction_date(RepositoryConnection conn) {
+		String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
+				+ "SELECT (xsd:date(\"2022-09-09\") AS ?date) { }";
 
-			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
-			try (TupleQueryResult result = tq.evaluate()) {
-				assertNotNull(result);
-				while (result.hasNext()) {
-					BindingSet bs = result.next();
-
-					IRI p = (IRI) bs.getValue("p");
-					assertNotNull(p);
-					assertEquals(RDF.TYPE, p);
-				}
-			} catch (Exception e) {
-				e.printStackTrace();
-				fail(e.getMessage());
-			}
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, qry).evaluate()) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			assertEquals("2022-09-09", result.next().getValue("date").stringValue());
+			assertFalse(result.hasNext());
 		}
-		closeRepository(repo);
 	}
 
-	private void testRegexCaseNonAscii() {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			String query = "ask {filter (regex(\"Валовой\", \"валовой\", \"i\")) }";
+	private void testDateCastFunction_date_withTimeZone_utc(RepositoryConnection conn) {
+		String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
+				+ "SELECT (xsd:date(\"2022-09-09Z\") AS ?date) { }";
 
-			assertTrue(conn.prepareBooleanQuery(query).evaluate(), "case-insensitive match on Cyrillic should succeed");
-
-			query = "ask {filter (regex(\"Валовой\", \"валовой\")) }";
-
-			assertFalse(conn.prepareBooleanQuery(query).evaluate(), "case-sensitive match on Cyrillic should fail");
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, qry).evaluate()) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			assertEquals("2022-09-09Z", result.next().getValue("date").stringValue());
+			assertFalse(result.hasNext());
 		}
-		closeRepository(repo);
 	}
 
-	private void testFilterRegexBoolean() throws Exception {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			loadTestData("/testdata-query/dataset-query.trig", conn);
+	private void testDateCastFunction_dateTime_withTimeZone_offset(RepositoryConnection conn) {
+		String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
+				+ "SELECT (xsd:date(\"2022-09-09T14:45:13+03:00\") AS ?date) { }";
 
-			// test case for issue SES-1050
-			String query = getNamespaceDeclarations() + " SELECT *" + " WHERE { " + "       ?x foaf:name ?name ; "
-					+ "          foaf:mbox ?mbox . " + "       FILTER(EXISTS { "
-					+ "            FILTER(REGEX(?name, \"Bo\") && REGEX(?mbox, \"bob\")) " +
-					// query.append(" FILTER(REGEX(?mbox, \"bob\")) ");
-					"            } )" + " } ";
-
-			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
-
-			try (Stream<BindingSet> result = tq.evaluate().stream()) {
-				long count = result.count();
-				assertEquals(1, count);
-			}
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, qry).evaluate()) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			assertEquals("2022-09-09+03:00", result.next().getValue("date").stringValue());
+			assertFalse(result.hasNext());
 		}
-		closeRepository(repo);
 	}
 
-	private void testDateCastFunction_date() {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
-					+ "SELECT (xsd:date(\"2022-09-09\") AS ?date) { }";
+	private void testDateCastFunction_invalidInput(RepositoryConnection conn) {
+		String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
+				+ "SELECT (xsd:date(\"2022-09-xx\") AS ?date) { }";
 
-			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, qry).evaluate()) {
-				assertNotNull(result);
-				assertTrue(result.hasNext());
-				assertEquals("2022-09-09", result.next().getValue("date").stringValue());
-				assertFalse(result.hasNext());
-			}
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, qry).evaluate()) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			assertFalse(result.next().hasBinding("date"),
+					"There should be no binding because the cast should have failed.");
+			assertFalse(result.hasNext());
 		}
-		closeRepository(repo);
-	}
-
-	private void testDateCastFunction_date_withTimeZone_utc() {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
-					+ "SELECT (xsd:date(\"2022-09-09Z\") AS ?date) { }";
-
-			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, qry).evaluate()) {
-				assertNotNull(result);
-				assertTrue(result.hasNext());
-				assertEquals("2022-09-09Z", result.next().getValue("date").stringValue());
-				assertFalse(result.hasNext());
-			}
-		}
-		closeRepository(repo);
-	}
-
-	private void testDateCastFunction_dateTime_withTimeZone_offset() {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
-					+ "SELECT (xsd:date(\"2022-09-09T14:45:13+03:00\") AS ?date) { }";
-
-			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, qry).evaluate()) {
-				assertNotNull(result);
-				assertTrue(result.hasNext());
-				assertEquals("2022-09-09+03:00", result.next().getValue("date").stringValue());
-				assertFalse(result.hasNext());
-			}
-		}
-		closeRepository(repo);
-	}
-
-	private void testDateCastFunction_invalidInput() {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
-					+ "SELECT (xsd:date(\"2022-09-xx\") AS ?date) { }";
-
-			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, qry).evaluate()) {
-				assertNotNull(result);
-				assertTrue(result.hasNext());
-				assertFalse(result.next().hasBinding("date"),
-						"There should be no binding because the cast should have failed.");
-				assertFalse(result.hasNext());
-			}
-		}
-		closeRepository(repo);
 	}
 
 	public Stream<DynamicTest> tests() {

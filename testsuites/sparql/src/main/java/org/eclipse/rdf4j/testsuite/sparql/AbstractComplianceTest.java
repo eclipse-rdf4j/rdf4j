@@ -49,6 +49,7 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.testsuite.sparql.vocabulary.EX;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.function.Executable;
+import org.junit.jupiter.api.function.ThrowingConsumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,10 +60,17 @@ import org.slf4j.LoggerFactory;
  */
 public abstract class AbstractComplianceTest {
 
-	protected DynamicTest makeTest(String name, Executable x) {
-		return DynamicTest.dynamicTest(name, () -> {
-			x.execute();
-		});
+	protected DynamicTest makeTest(String name, ThrowingConsumer<RepositoryConnection> x) {
+		Executable e = () -> {
+			Repository repo = openRepository();
+			try (RepositoryConnection conn = repo.getConnection();) {
+				x.accept(conn);
+			} finally {
+				closeRepository(repo);
+			}
+		};
+		return DynamicTest.dynamicTest(name, e);
+
 	}
 
 	protected Repository openRepository() {

@@ -30,7 +30,6 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
 import org.eclipse.rdf4j.testsuite.sparql.vocabulary.EX;
 import org.junit.jupiter.api.DynamicTest;
-import org.junit.jupiter.api.Test;
 
 /**
  * Basic SPARQL functionality tests
@@ -44,52 +43,50 @@ public class BasicTest extends AbstractComplianceTest {
 		super(repo);
 	}
 
-	private void testIdenticalVariablesInStatementPattern() {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			conn.add(EX.ALICE, DC.PUBLISHER, EX.BOB);
+	private void testIdenticalVariablesInStatementPattern(RepositoryConnection conn) {
+		conn.add(EX.ALICE, DC.PUBLISHER, EX.BOB);
 
-			String queryBuilder = "SELECT ?publisher "
-					+ "{ ?publisher <http://purl.org/dc/elements/1.1/publisher> ?publisher }";
+		String queryBuilder = "SELECT ?publisher " +
+				"{ ?publisher <http://purl.org/dc/elements/1.1/publisher> ?publisher }";
 
-			conn.prepareTupleQuery(QueryLanguage.SPARQL, queryBuilder).evaluate(new AbstractTupleQueryResultHandler() {
+		conn.prepareTupleQuery(QueryLanguage.SPARQL, queryBuilder)
+				.evaluate(new AbstractTupleQueryResultHandler() {
 
-				@Override
-				public void handleSolution(BindingSet bindingSet) {
-					fail("nobody is self published");
-				}
-			});
-		}
-		closeRepository(repo);
+					@Override
+					public void handleSolution(BindingSet bindingSet) {
+						fail("nobody is self published");
+					}
+				});
 	}
 
 	public Stream<DynamicTest> tests() {
 		return Stream.of(
-				makeTest("testIdenticalVariablesInStatementPattern", this::testIdenticalVariablesInStatementPattern));
+				makeTest("testIdenticalVariablesInStatementPattern", this::testIdenticalVariablesInStatementPattern),
+				makeTest("testIdenticalVariablesInStatementPattern",
+						this::testIdenticalVariablesSubjectContextInStatementPattern));
 	}
 
-	@Test
-	public void testIdenticalVariablesSubjectContextInStatementPattern() {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			conn.add(EX.ALICE, FOAF.KNOWS, EX.BOB, EX.ALICE);
-			conn.add(EX.ALICE, RDF.TYPE, FOAF.PERSON, EX.ALICE);
-			conn.add(EX.ALICE, FOAF.KNOWS, EX.A, EX.BOB);
-			conn.add(EX.ALICE, FOAF.KNOWS, EX.B, EX.BOB);
-			conn.add(EX.ALICE, FOAF.KNOWS, EX.C, EX.BOB);
-			conn.add(EX.ALICE, FOAF.KNOWS, EX.MARY, EX.BOB);
+	private void testIdenticalVariablesSubjectContextInStatementPattern(RepositoryConnection conn) {
+		conn.add(EX.ALICE, FOAF.KNOWS, EX.BOB, EX.ALICE);
+		conn.add(EX.ALICE, RDF.TYPE, FOAF.PERSON, EX.ALICE);
+		conn.add(EX.ALICE, FOAF.KNOWS, EX.A, EX.BOB);
+		conn.add(EX.ALICE, FOAF.KNOWS, EX.B, EX.BOB);
+		conn.add(EX.ALICE, FOAF.KNOWS, EX.C, EX.BOB);
+		conn.add(EX.ALICE, FOAF.KNOWS, EX.MARY, EX.BOB);
 
-			String queryBuilder = "SELECT ?knows { " + "	graph ?alice {" + "		?alice a <" + FOAF.PERSON + ">; "
-					+ "			<" + FOAF.KNOWS + "> ?knows ." + "		}" + "}";
+		String queryBuilder = "SELECT ?knows { " +
+				"	graph ?alice {" +
+				"		?alice a <" + FOAF.PERSON + ">; " +
+				"			<" + FOAF.KNOWS + "> ?knows ." +
+				"		}" +
+				"}";
 
-			try (Stream<BindingSet> stream = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryBuilder)
-					.evaluate()
-					.stream()) {
-				List<Value> knows = stream.map(b -> b.getValue("knows")).collect(Collectors.toList());
-				assertEquals(List.of(EX.BOB), knows);
-			}
+		try (Stream<BindingSet> stream = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryBuilder)
+				.evaluate()
+				.stream()) {
+			List<Value> knows = stream.map(b -> b.getValue("knows")).collect(Collectors.toList());
+			assertEquals(List.of(EX.BOB), knows);
 		}
-		closeRepository(repo);
 	}
 
 }
