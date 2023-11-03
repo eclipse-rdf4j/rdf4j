@@ -44,69 +44,54 @@ public class InTest extends AbstractComplianceTest {
 		super(repo);
 	}
 
-	private void testInComparison1() throws Exception {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			loadTestData("/testdata-query/dataset-ses1913.trig", conn);
-			String query = " PREFIX : <http://example.org/>\n"
-					+ " SELECT ?y WHERE { :a :p ?y. FILTER(?y in (:c, :d, 1/0 , 1)) } ";
+	private void testInComparison1(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-ses1913.trig", conn);
+		String query = " PREFIX : <http://example.org/>\n" +
+				" SELECT ?y WHERE { :a :p ?y. FILTER(?y in (:c, :d, 1/0 , 1)) } ";
 
-			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
-			try (TupleQueryResult result = tq.evaluate()) {
-				assertNotNull(result);
-				assertTrue(result.hasNext());
+		try (TupleQueryResult result = tq.evaluate()) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
 
-				BindingSet bs = result.next();
-				Value y = bs.getValue("y");
-				assertNotNull(y);
-				assertTrue(y instanceof Literal);
-				assertEquals(literal("1", CoreDatatype.XSD.INTEGER), y);
-			}
-		} finally {
-			closeRepository(repo);
+			BindingSet bs = result.next();
+			Value y = bs.getValue("y");
+			assertNotNull(y);
+			assertTrue(y instanceof Literal);
+			assertEquals(literal("1", CoreDatatype.XSD.INTEGER), y);
 		}
 	}
 
-	private void testInComparison2() throws Exception {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			loadTestData("/testdata-query/dataset-ses1913.trig", conn);
-			String query = " PREFIX : <http://example.org/>\n"
-					+ " SELECT ?y WHERE { :a :p ?y. FILTER(?y in (:c, :d, 1/0)) } ";
+	private void testInComparison2(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-ses1913.trig", conn);
+		String query = " PREFIX : <http://example.org/>\n" +
+				" SELECT ?y WHERE { :a :p ?y. FILTER(?y in (:c, :d, 1/0)) } ";
 
-			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
-			try (TupleQueryResult result = tq.evaluate()) {
-				assertNotNull(result);
-				assertFalse(result.hasNext());
-			}
-		} finally {
-			closeRepository(repo);
+		try (TupleQueryResult result = tq.evaluate()) {
+			assertNotNull(result);
+			assertFalse(result.hasNext());
 		}
 	}
 
-	private void testInComparison3() throws Exception {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			loadTestData("/testdata-query/dataset-ses1913.trig", conn);
-			String query = " PREFIX : <http://example.org/>\n"
-					+ " SELECT ?y WHERE { :a :p ?y. FILTER(?y in (:c, :d, 1, 1/0)) } ";
+	private void testInComparison3(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-ses1913.trig", conn);
+		String query = " PREFIX : <http://example.org/>\n" +
+				" SELECT ?y WHERE { :a :p ?y. FILTER(?y in (:c, :d, 1, 1/0)) } ";
 
-			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
-			try (TupleQueryResult result = tq.evaluate()) {
-				assertNotNull(result);
-				assertTrue(result.hasNext());
+		try (TupleQueryResult result = tq.evaluate()) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
 
-				BindingSet bs = result.next();
-				Value y = bs.getValue("y");
-				assertNotNull(y);
-				assertTrue(y instanceof Literal);
-				assertEquals(literal("1", XSD.INTEGER), y);
-			}
-		} finally {
-			closeRepository(repo);
+			BindingSet bs = result.next();
+			Value y = bs.getValue("y");
+			assertNotNull(y);
+			assertTrue(y instanceof Literal);
+			assertEquals(literal("1", XSD.INTEGER), y);
 		}
 	}
 

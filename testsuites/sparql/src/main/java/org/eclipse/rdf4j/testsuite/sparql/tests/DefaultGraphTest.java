@@ -44,100 +44,90 @@ public class DefaultGraphTest extends AbstractComplianceTest {
 		super(repo);
 	}
 
-	private void testNullContext1() throws Exception {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			loadTestData("/testdata-query/dataset-query.trig", conn);
-			String query = " SELECT * " + " FROM DEFAULT " + " WHERE { ?s ?p ?o } ";
+	private void testNullContext1(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-query.trig", conn);
+		String query = " SELECT * " +
+				" FROM DEFAULT " +
+				" WHERE { ?s ?p ?o } ";
 
-			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
-			try (TupleQueryResult result = tq.evaluate()) {
-				assertNotNull(result);
+		try (TupleQueryResult result = tq.evaluate()) {
+			assertNotNull(result);
 
-				while (result.hasNext()) {
-					BindingSet bs = result.next();
-					assertNotNull(bs);
+			while (result.hasNext()) {
+				BindingSet bs = result.next();
+				assertNotNull(bs);
 
-					Resource s = (Resource) bs.getValue("s");
+				Resource s = (Resource) bs.getValue("s");
 
-					assertNotNull(s);
-					assertNotEquals(EX.BOB, s); // should not be present in default
-					// graph
-					assertNotEquals(EX.ALICE, s); // should not be present in
-					// default
-					// graph
-				}
-			} catch (QueryEvaluationException e) {
-				e.printStackTrace();
-				fail(e.getMessage());
+				assertNotNull(s);
+				assertNotEquals(EX.BOB, s); // should not be present in default
+				// graph
+				assertNotEquals(EX.ALICE, s); // should not be present in
+				// default
+				// graph
 			}
-		}
-		closeRepository(repo);
-	}
-
-	private void testNullContext2() throws Exception {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			loadTestData("/testdata-query/dataset-query.trig", conn);
-			String query = " SELECT * " + " FROM rdf4j:nil " + " WHERE { ?s ?p ?o } ";
-
-			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
-
-			try (TupleQueryResult result = tq.evaluate()) {
-				assertNotNull(result);
-
-				while (result.hasNext()) {
-					BindingSet bs = result.next();
-					assertNotNull(bs);
-
-					Resource s = (Resource) bs.getValue("s");
-
-					assertNotNull(s);
-					assertNotEquals(EX.BOB, s); // should not be present in default
-					// graph
-					assertNotEquals(EX.ALICE, s); // should not be present in
-					// default
-					// graph
-				}
-			} catch (QueryEvaluationException e) {
-				e.printStackTrace();
-				fail(e.getMessage());
-			}
-		} finally {
-			closeRepository(repo);
+		} catch (QueryEvaluationException e) {
+			e.printStackTrace();
+			fail(e.getMessage());
 		}
 	}
 
-	private void testSesameNilAsGraph() throws Exception {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			loadTestData("/testdata-query/dataset-query.trig", conn);
-			String query = " SELECT * " + " WHERE { GRAPH rdf4j:nil { ?s ?p ?o } } ";
+	private void testNullContext2(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-query.trig", conn);
+		String query = " SELECT * " +
+				" FROM rdf4j:nil " +
+				" WHERE { ?s ?p ?o } ";
+
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+
+		try (TupleQueryResult result = tq.evaluate()) {
+			assertNotNull(result);
+
+			while (result.hasNext()) {
+				BindingSet bs = result.next();
+				assertNotNull(bs);
+
+				Resource s = (Resource) bs.getValue("s");
+
+				assertNotNull(s);
+				assertNotEquals(EX.BOB, s); // should not be present in default
+				// graph
+				assertNotEquals(EX.ALICE, s); // should not be present in
+				// default
+				// graph
+			}
+		} catch (QueryEvaluationException e) {
+			e.printStackTrace();
+			fail(e.getMessage());
+		}
+	}
+
+	private void testSesameNilAsGraph(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-query.trig", conn);
+		String query = " SELECT * " +
+				" WHERE { GRAPH rdf4j:nil { ?s ?p ?o } } ";
 //		query.append(" WHERE { ?s ?p ?o } ");
 
-			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
-			try {
-				List<BindingSet> result = QueryResults.asList(tq.evaluate());
+		try {
+			List<BindingSet> result = QueryResults.asList(tq.evaluate());
 
-				// nil graph should not be empty
-				assertThat(result.size()).isGreaterThan(1);
+			// nil graph should not be empty
+			assertThat(result.size()).isGreaterThan(1);
 
-				for (BindingSet bs : result) {
-					Resource s = (Resource) bs.getValue("s");
+			for (BindingSet bs : result) {
+				Resource s = (Resource) bs.getValue("s");
 
-					assertNotNull(s);
-					assertThat(s).withFailMessage("%s should not be present in nil graph", EX.BOB).isNotEqualTo(EX.BOB);
-					assertThat(s).withFailMessage("%s should not be present in nil graph", EX.ALICE)
-							.isNotEqualTo(EX.ALICE);
-				}
-			} catch (QueryEvaluationException e) {
-				e.printStackTrace();
-				fail(e.getMessage());
+				assertNotNull(s);
+				assertThat(s).withFailMessage("%s should not be present in nil graph", EX.BOB).isNotEqualTo(EX.BOB);
+				assertThat(s).withFailMessage("%s should not be present in nil graph", EX.ALICE).isNotEqualTo(EX.ALICE);
 			}
-		} finally {
-			closeRepository(repo);
+		} catch (QueryEvaluationException e) {
+			e.printStackTrace();
+			fail(e.getMessage());
 		}
 	}
 

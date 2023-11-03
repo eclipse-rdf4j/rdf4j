@@ -37,36 +37,39 @@ public class ExistsTest extends AbstractComplianceTest {
 		super(repo);
 	}
 
-	private void testFilterNotExistsBindingToCurrentSolutionMapping() {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			String ex = "http://example/";
-			IRI a1 = Values.iri(ex, "a1");
-			IRI a2 = Values.iri(ex, "a2");
+	private void testFilterNotExistsBindingToCurrentSolutionMapping(RepositoryConnection conn) {
 
-			IRI both = Values.iri(ex, "both");
+		String ex = "http://example/";
+		IRI a1 = Values.iri(ex, "a1");
+		IRI a2 = Values.iri(ex, "a2");
 
-			IRI predicate1 = Values.iri(ex, "predicate1");
-			IRI predicate2 = Values.iri(ex, "predicate2");
+		IRI both = Values.iri(ex, "both");
 
-			conn.add(a1, predicate1, both);
-			conn.add(a1, predicate2, both);
+		IRI predicate1 = Values.iri(ex, "predicate1");
+		IRI predicate2 = Values.iri(ex, "predicate2");
 
-			conn.add(a2, predicate1, both);
-			conn.add(a2, predicate2, Values.bnode());
+		conn.add(a1, predicate1, both);
+		conn.add(a1, predicate2, both);
 
-			TupleQuery tupleQuery = conn.prepareTupleQuery("PREFIX : <http://example/>\n" + "SELECT * WHERE {\n"
-					+ "  ?a :predicate1 ?p1\n" + "  FILTER NOT EXISTS {\n" + "    ?a :predicate2 ?p2 .\n"
-					+ "    FILTER(?p2 = ?p1)\n" + "  }\n" + "}\n");
+		conn.add(a2, predicate1, both);
+		conn.add(a2, predicate2, Values.bnode());
 
-			try (Stream<BindingSet> stream = tupleQuery.evaluate().stream()) {
-				List<BindingSet> collect = stream.collect(Collectors.toList());
-				assertEquals(1, collect.size());
-				assertEquals(a2, collect.get(0).getValue("a"));
-			}
-		} finally {
-			closeRepository(repo);
+		TupleQuery tupleQuery = conn.prepareTupleQuery(
+				"PREFIX : <http://example/>\n" +
+						"SELECT * WHERE {\n" +
+						"  ?a :predicate1 ?p1\n" +
+						"  FILTER NOT EXISTS {\n" +
+						"    ?a :predicate2 ?p2 .\n" +
+						"    FILTER(?p2 = ?p1)\n" +
+						"  }\n" +
+						"}\n");
+
+		try (Stream<BindingSet> stream = tupleQuery.evaluate().stream()) {
+			List<BindingSet> collect = stream.collect(Collectors.toList());
+			assertEquals(1, collect.size());
+			assertEquals(a2, collect.get(0).getValue("a"));
 		}
+
 	}
 
 	public Stream<DynamicTest> tests() {

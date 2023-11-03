@@ -34,19 +34,14 @@ public class GroupByTest extends AbstractComplianceTest {
 		super(repo);
 	}
 
-	private void testGroupByEmpty() {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			// see issue https://github.com/eclipse/rdf4j/issues/573
-			String query = "select ?x where {?x ?p ?o} group by ?x";
+	private void testGroupByEmpty(RepositoryConnection conn) {
+		// see issue https://github.com/eclipse/rdf4j/issues/573
+		String query = "select ?x where {?x ?p ?o} group by ?x";
 
-			TupleQuery tq = conn.prepareTupleQuery(query);
-			try (TupleQueryResult result = tq.evaluate()) {
-				assertNotNull(result);
-				assertFalse(result.hasNext());
-			}
-		} finally {
-			closeRepository(repo);
+		TupleQuery tq = conn.prepareTupleQuery(query);
+		try (TupleQueryResult result = tq.evaluate()) {
+			assertNotNull(result);
+			assertFalse(result.hasNext());
 		}
 	}
 

@@ -38,44 +38,50 @@ public class MinusTest extends AbstractComplianceTest {
 		super(repo);
 	}
 
-	private void testScopingOfFilterInMinus() {
-		Repository repo = openRepository();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			String ex = "http://example/";
-			IRI a1 = Values.iri(ex, "a1");
-			IRI a2 = Values.iri(ex, "a2");
+	private void testScopingOfFilterInMinus(RepositoryConnection conn) {
 
-			IRI both = Values.iri(ex, "both");
+		String ex = "http://example/";
+		IRI a1 = Values.iri(ex, "a1");
+		IRI a2 = Values.iri(ex, "a2");
 
-			IRI predicate1 = Values.iri(ex, "predicate1");
-			IRI predicate2 = Values.iri(ex, "predicate2");
+		IRI both = Values.iri(ex, "both");
 
-			conn.add(a1, predicate1, both);
-			conn.add(a1, predicate2, both);
+		IRI predicate1 = Values.iri(ex, "predicate1");
+		IRI predicate2 = Values.iri(ex, "predicate2");
 
-			conn.add(a2, predicate1, both);
-			conn.add(a2, predicate2, Values.bnode());
+		conn.add(a1, predicate1, both);
+		conn.add(a1, predicate2, both);
 
-			TupleQuery tupleQuery = conn.prepareTupleQuery(
-					"PREFIX : <http://example/>\n" + "SELECT * WHERE {\n" + "  ?a :predicate1 ?p1\n" + "  MINUS {\n"
-							+ "    ?a :predicate2 ?p2 .\n" + "    FILTER(?p2 = ?p1)\n" + "  }\n" + "} ORDER BY ?a\n");
+		conn.add(a2, predicate1, both);
+		conn.add(a2, predicate2, Values.bnode());
 
-			try (Stream<BindingSet> stream = tupleQuery.evaluate().stream()) {
-				List<BindingSet> collect = stream.collect(Collectors.toList());
-				assertEquals(2, collect.size());
+		TupleQuery tupleQuery = conn.prepareTupleQuery(
+				"PREFIX : <http://example/>\n" +
+						"SELECT * WHERE {\n" +
+						"  ?a :predicate1 ?p1\n" +
+						"  MINUS {\n" +
+						"    ?a :predicate2 ?p2 .\n" +
+						"    FILTER(?p2 = ?p1)\n" +
+						"  }\n" +
+						"} ORDER BY ?a\n"
+		);
 
-				List<Value> expectedValues = List.of(a1, a2);
-				List<Value> actualValues = collect.stream().map(b -> b.getValue("a")).collect(Collectors.toList());
+		try (Stream<BindingSet> stream = tupleQuery.evaluate().stream()) {
+			List<BindingSet> collect = stream.collect(Collectors.toList());
+			assertEquals(2, collect.size());
 
-				assertEquals(expectedValues, actualValues);
-			}
-		} finally {
-			closeRepository(repo);
+			List<Value> expectedValues = List.of(a1, a2);
+			List<Value> actualValues = collect
+					.stream()
+					.map(b -> b.getValue("a"))
+					.collect(Collectors.toList());
+
+			assertEquals(expectedValues, actualValues);
 		}
+
 	}
 
 	public Stream<DynamicTest> tests() {
 		return Stream.of(makeTest("ScopingOfFilterInMinus", this::testScopingOfFilterInMinus));
 	}
-
 }
