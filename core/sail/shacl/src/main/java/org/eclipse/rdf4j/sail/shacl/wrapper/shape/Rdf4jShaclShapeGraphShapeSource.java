@@ -18,6 +18,8 @@ import java.io.InputStream;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.exception.RDF4JException;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -82,48 +84,34 @@ public class Rdf4jShaclShapeGraphShapeSource implements ShapeSource {
 
 	private SailRepository forwardChain(RepositoryConnection shapesRepoConnection) {
 		try (var statements = shapesRepoConnection.getStatements(null, null, null, false, RDF4J.SHACL_SHAPE_GRAPH)) {
-			if (!statements.hasNext()) {
-				return new SailRepository(new MemoryStore());
-			}
-
-			SailRepository shapesRepoWithReasoning = new SailRepository(
-					SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore(), false));
-
-			try (var shapesRepoWithReasoningConnection = shapesRepoWithReasoning.getConnection()) {
-				shapesRepoWithReasoningConnection.begin(IsolationLevels.NONE);
-
-				shapesRepoWithReasoningConnection.add(statements);
-				enrichShapes(shapesRepoWithReasoningConnection);
-
-				shapesRepoWithReasoningConnection.commit();
-			}
-
-			return shapesRepoWithReasoning;
-
+			return forwardChain(statements);
 		}
 	}
 
 	private SailRepository forwardChain(SailConnection shapesSailConnection) {
 		try (var statements = shapesSailConnection.getStatements(null, null, null, false, RDF4J.SHACL_SHAPE_GRAPH)) {
-			if (!statements.hasNext()) {
-				return new SailRepository(new MemoryStore());
-			}
-
-			SailRepository shapesRepoWithReasoning = new SailRepository(
-					SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore(), false));
-
-			try (var shapesRepoWithReasoningConnection = shapesRepoWithReasoning.getConnection()) {
-				shapesRepoWithReasoningConnection.begin(IsolationLevels.NONE);
-
-				shapesRepoWithReasoningConnection.add(statements);
-				enrichShapes(shapesRepoWithReasoningConnection);
-
-				shapesRepoWithReasoningConnection.commit();
-			}
-
-			return shapesRepoWithReasoning;
-
+			return forwardChain(statements);
 		}
+	}
+
+	private SailRepository forwardChain(CloseableIteration<? extends Statement> statements) {
+		if (!statements.hasNext()) {
+			return new SailRepository(new MemoryStore());
+		}
+
+		SailRepository shapesRepoWithReasoning = new SailRepository(
+				SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore(), false));
+
+		try (var shapesRepoWithReasoningConnection = shapesRepoWithReasoning.getConnection()) {
+			shapesRepoWithReasoningConnection.begin(IsolationLevels.NONE);
+
+			shapesRepoWithReasoningConnection.add(statements);
+			enrichShapes(shapesRepoWithReasoningConnection);
+
+			shapesRepoWithReasoningConnection.commit();
+		}
+
+		return shapesRepoWithReasoning;
 	}
 
 	private static SchemaCachingRDFSInferencer createShaclVocabulary() {

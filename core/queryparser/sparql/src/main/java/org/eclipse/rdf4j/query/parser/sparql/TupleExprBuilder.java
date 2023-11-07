@@ -2376,6 +2376,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		// get a tupleExpr that represents the basic graph pattern, sofar.
 		TupleExpr arg = graphPattern.buildJoinFromRequiredTEs();
+		// apply optionals, if any
+		arg = graphPattern.buildOptionalTE(arg);
 
 		// check if alias is not previously used in the BGP
 		if (arg.getBindingNames().contains(alias)) {

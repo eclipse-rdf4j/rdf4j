@@ -266,6 +266,41 @@ public class TupleExprBuilderTest {
 
 	}
 
+	@Test
+	public void testOtionalBindCoalesce() throws Exception {
+		StringBuilder qb = new StringBuilder();
+		qb.append("SELECT ?result \n");
+		qb.append("WHERE { \n");
+		qb.append("OPTIONAL {\n" +
+				"        OPTIONAL {\n" +
+				"            BIND(\"value\" AS ?foo)\n" +
+				"        }\n" +
+				"        BIND(COALESCE(?foo, \"no value\") AS ?result)\n" +
+				"    }");
+		qb.append(" } ");
+
+		ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(qb.toString());
+		TupleExpr result = builder.visit(qc, null);
+		String expected = "Projection\n" +
+				"   ProjectionElemList\n" +
+				"      ProjectionElem \"result\"\n" +
+				"   LeftJoin\n" +
+				"      SingletonSet\n" +
+				"      Extension\n" +
+				"         LeftJoin\n" +
+				"            SingletonSet\n" +
+				"            Extension\n" +
+				"               SingletonSet\n" +
+				"               ExtensionElem (foo)\n" +
+				"                  ValueConstant (value=\"value\")\n" +
+				"         ExtensionElem (result)\n" +
+				"            Coalesce\n" +
+				"               Var (name=foo)\n" +
+				"               ValueConstant (value=\"no value\")\n";
+		assertEquals(expected.replace("\r\n", "\n"), result.toString().replace("\r\n", "\n"));
+//		System.out.println(result);
+	}
+
 	private class ServiceNodeFinder extends AbstractASTVisitor {
 
 		private final List<String> graphPatterns = new ArrayList<>();

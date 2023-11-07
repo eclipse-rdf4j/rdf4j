@@ -54,7 +54,7 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private final int dbi;
 
-	private boolean closed = false;
+	private volatile boolean closed = false;
 
 	private final MDBVal keyData;
 
@@ -71,6 +71,8 @@ class LmdbRecordIterator implements RecordIterator {
 	private boolean fetchNext = false;
 
 	private final StampedLock txnLock;
+
+	private final Thread ownerThread = Thread.currentThread();
 
 	LmdbRecordIterator(Pool pool, TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
@@ -140,7 +142,7 @@ class LmdbRecordIterator implements RecordIterator {
 						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 					}
 					if (lastResult != 0) {
-						close();
+						closeInternal(false);
 						return null;
 					}
 				}
@@ -177,30 +179,45 @@ class LmdbRecordIterator implements RecordIterator {
 					return quad;
 				}
 			}
-			close();
+			closeInternal(false);
 			return null;
 		} finally {
 			txnLock.unlockRead(stamp);
 		}
 	}
 
-	@Override
-	public void close() {
+	private void closeInternal(boolean maybeCalledAsync) {
 		if (!closed) {
+			long stamp;
+			if (maybeCalledAsync && ownerThread != Thread.currentThread()) {
+				stamp = txnLock.writeLock();
+			} else {
+				stamp = 0;
+			}
 			try {
-				mdb_cursor_close(cursor);
-				pool.free(keyData);
-				pool.free(valueData);
-				if (minKeyBuf != null) {
-					pool.free(minKeyBuf);
-				}
-				if (maxKey != null) {
-					pool.free(maxKeyBuf);
-					pool.free(maxKey);
+				if (!closed) {
+					mdb_cursor_close(cursor);
+					pool.free(keyData);
+					pool.free(valueData);
+					if (minKeyBuf != null) {
+						pool.free(minKeyBuf);
+					}
+					if (maxKey != null) {
+						pool.free(maxKeyBuf);
+						pool.free(maxKey);
+					}
 				}
 			} finally {
 				closed = true;
+				if (stamp != 0) {
+					txnLock.unlockWrite(stamp);
+				}
 			}
 		}
+	}
+
+	@Override
+	public void close() {
+		closeInternal(true);
 	}
 }

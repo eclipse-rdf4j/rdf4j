@@ -124,6 +124,37 @@ jobs:
           repo: eclipse/rdf4j
           workflow_id: ${{ github.run_id }}
           access_token: ${{ github.token }}
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up JDK
+        uses: actions/setup-java@v1
+        with:
+          java-version: 11
+      - name: Cache local Maven repository
+        uses: actions/cache@v2
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-jdk11-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-jdk11-maven-
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+      - name: Install Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      - name: Run end-to-end tests of RDF4J Server and Workbench
+        working-directory: ./e2e
+        run: ./run.sh
+      - name: Cancel workflow on failure
+        uses: vishnudxb/cancel-workflow@v1.2
+        if: failure()
+        with:
+          repo: eclipse/rdf4j
+          workflow_id: ${{ github.run_id }}
+          access_token: ${{ github.token }}
   copyright-check:
     runs-on: ubuntu-latest
     steps:
