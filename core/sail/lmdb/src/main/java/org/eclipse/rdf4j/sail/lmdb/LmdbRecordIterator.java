@@ -217,7 +217,7 @@ class LmdbRecordIterator implements RecordIterator {
 	}
 
 	@Override
-	public void close() throws IOException {
+	public void close() {
 		closeInternal(true);
 	}
 }

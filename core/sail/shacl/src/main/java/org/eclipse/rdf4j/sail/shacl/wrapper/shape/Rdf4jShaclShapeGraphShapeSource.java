@@ -94,7 +94,7 @@ public class Rdf4jShaclShapeGraphShapeSource implements ShapeSource {
 		}
 	}
 
-	private SailRepository forwardChain(CloseableIteration<? extends Statement, ? extends RDF4JException> statements) {
+	private SailRepository forwardChain(CloseableIteration<? extends Statement> statements) {
 		if (!statements.hasNext()) {
 			return new SailRepository(new MemoryStore());
 		}
