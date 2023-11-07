@@ -47,10 +47,6 @@ public interface ShapeSource extends AutoCloseable {
 	static Stream<ShapesGraph> getRsxDataAndShapesGraphLink(SailConnection connection, Resource[] context) {
 		Stream<ShapesGraph> rsxDataAndShapesGraphLink;
 
-		List<? extends Statement> collect1 = connection.getStatements(null, null, null, false)
-				.stream()
-				.collect(Collectors.toList());
-
 		try (var stream = connection.getStatements(null, RDF.TYPE, RSX.DataAndShapesGraphLink, false, context)
 				.stream()) {
 
@@ -108,9 +104,6 @@ public interface ShapeSource extends AutoCloseable {
 	}
 
 	static Stream<ShapesGraph> getRsxDataAndShapesGraphLink(RepositoryConnection connection, Resource[] context) {
-		List<? extends Statement> collect1 = connection.getStatements(null, null, null, false)
-				.stream()
-				.collect(Collectors.toList());
 
 		Stream<ShapesGraph> rsxDataAndShapesGraphLink;
 		try (var stream = connection.getStatements(null, RDF.TYPE, RSX.DataAndShapesGraphLink, false, context)
