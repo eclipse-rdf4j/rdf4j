@@ -103,6 +103,7 @@ public class GraphPattern {
 	 */
 	void clearRequiredTEs() {
 		requiredTEs.clear();
+		optionalTEs.clear();
 	}
 
 	public void addRequiredSP(Var subjVar, Var predVar, Var objVar) {
@@ -173,6 +174,18 @@ public class GraphPattern {
 	public TupleExpr buildTupleExpr() {
 		TupleExpr result = buildJoinFromRequiredTEs();
 
+		result = buildOptionalTE(result);
+
+		for (ValueExpr constraint : constraints) {
+			result = new Filter(result, constraint);
+		}
+		return result;
+	}
+
+	/**
+	 * Build optionals to the supplied TE
+	 */
+	public TupleExpr buildOptionalTE(TupleExpr result) {
 		for (Map.Entry<TupleExpr, List<ValueExpr>> entry : optionalTEs) {
 			List<ValueExpr> constraints = entry.getValue();
 			if (constraints != null && !constraints.isEmpty()) {
@@ -186,11 +199,6 @@ public class GraphPattern {
 				result = new LeftJoin(result, entry.getKey());
 			}
 		}
-
-		for (ValueExpr constraint : constraints) {
-			result = new Filter(result, constraint);
-		}
-
 		return result;
 	}
 
