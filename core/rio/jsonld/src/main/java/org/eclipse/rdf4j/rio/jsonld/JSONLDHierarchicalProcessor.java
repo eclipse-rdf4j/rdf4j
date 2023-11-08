@@ -10,13 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.jsonld;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -127,7 +121,16 @@ public class JSONLDHierarchicalProcessor {
 								if (graph.containsKey(objectsPredId) && !currentNode.get(ID).equals(objectsPredId)
 										&& !currentTreeNode.hasPassedThrough(objectsPredId)) {
 									children.add(objectsPredId);
-									objectsPredSubjPairs.set(i, (Map<String, Object>) graph.get(objectsPredId));
+									Map<String, Object> tuples = (Map<String, Object>) graph.get(objectsPredId);
+									Map<String, Object> copiedTuples = tuples.entrySet().stream().map(tuple -> {
+										Map.Entry<String, Object> entry = new AbstractMap.SimpleEntry<>(tuple);
+										if (tuple.getValue() instanceof List) {
+											List<Object> copy = new ArrayList<>((Collection<?>) tuple.getValue());
+											entry.setValue(copy);
+										}
+										return entry;
+									}).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+									objectsPredSubjPairs.set(i, copiedTuples);
 									frontier.add(new TreeNode(objectsPredSubjPairs.get(i), currentTreeNode));
 								}
 							}
