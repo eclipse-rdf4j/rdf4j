@@ -299,6 +299,35 @@ public class JSONLDHierarchicalWriterTest {
 		verifyOutput();
 	}
 
+	/**
+	 *
+	 * @throws IOException
+	 * @see <a href="https://github.com/eclipse-rdf4j/rdf4j/issues/4833s">GH-4833</a>
+	 */
+	@Test
+	public void testMultipleLoops() throws IOException {
+		addStatement(vf.createIRI("sch:node1"), vf.createIRI("sch:pred1"), vf.createIRI("sch:node2"));
+
+		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred2"), vf.createIRI("sch:node3"));
+		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred2"), vf.createIRI("sch:node4"));
+		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred2"), vf.createIRI("sch:node5"));
+
+		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred3"), vf.createIRI("sch:node1"));
+
+		addStatement(vf.createIRI("sch:node3"), vf.createIRI("sch:pred4"), vf.createIRI("sch:node2"));
+		addStatement(vf.createIRI("sch:node3"), vf.createIRI("sch:pred5"), vf.createIRI("sch:node6"));
+
+		addStatement(vf.createIRI("sch:node4"), vf.createIRI("sch:pred4"), vf.createIRI("sch:node2"));
+
+		addStatement(vf.createIRI("sch:node5"), vf.createIRI("sch:pred4"), vf.createIRI("sch:node2"));
+		addStatement(vf.createIRI("sch:node5"), vf.createIRI("sch:pred5"), vf.createIRI("sch:node6"));
+
+		addStatement(vf.createIRI("sch:node6"), vf.createIRI("sch:pred6"), vf.createIRI("sch:node3"));
+
+		verifyOutput();
+
+	}
+
 	private void addStatement(Resource subject, IRI predicate, Value object, Resource context) {
 		model.add(vf.createStatement(subject, predicate, object, context));
 	}
