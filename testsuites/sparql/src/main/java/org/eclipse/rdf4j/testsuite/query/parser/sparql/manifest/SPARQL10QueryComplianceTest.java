@@ -15,6 +15,7 @@ import java.util.Collection;
 import java.util.List;
 
 import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.TestFactory;
 
 /**
  * A test suite that runs the W3C Approved SPARQL 1.0 query tests.
@@ -51,6 +52,7 @@ public abstract class SPARQL10QueryComplianceTest extends SPARQLQueryComplianceT
 		}
 	}
 
+	@TestFactory
 	public Collection<DynamicTest> tests() {
 		return getTestData("testcases-sparql-1.0-w3c/data-r2/manifest-evaluation.ttl");
 	}
