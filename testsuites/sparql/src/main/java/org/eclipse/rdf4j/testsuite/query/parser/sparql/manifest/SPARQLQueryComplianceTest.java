@@ -17,7 +17,6 @@ import static org.assertj.core.api.Assertions.fail;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.StringWriter;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
@@ -28,7 +27,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.eclipse.rdf4j.common.io.IOUtil;
@@ -57,7 +55,6 @@ import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -518,14 +515,17 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 	public abstract Collection<DynamicTest> tests();
 
 	public Collection<DynamicTest> getTestData(String manifestResource) {
+		return getTestData(manifestResource, true);
+	}
+
+	public Collection<DynamicTest> getTestData(String manifestResource, boolean approvedOnly) {
 		List<DynamicTest> tests = new ArrayList<>();
 
 		Deque<String> manifests = new ArrayDeque<>();
-		manifests.add(
-				SPARQL11UpdateComplianceTest.class.getClassLoader().getResource(manifestResource).toExternalForm());
+		manifests.add(this.getClass().getClassLoader().getResource(manifestResource).toExternalForm());
 		while (!manifests.isEmpty()) {
 			String pop = manifests.pop();
-			SPARQLQueryTestManifest manifest = new SPARQLQueryTestManifest(pop, excludedSubdirs);
+			SPARQLQueryTestManifest manifest = new SPARQLQueryTestManifest(pop, excludedSubdirs, approvedOnly);
 			tests.addAll(manifest.tests);
 			manifests.addAll(manifest.subManifests);
 		}

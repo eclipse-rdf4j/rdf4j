@@ -14,10 +14,12 @@ import java.util.Collection;
 
 import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQLQueryComplianceTest;
 import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.TestFactory;
 
 public abstract class GeoSPARQLManifestTest extends SPARQLQueryComplianceTest {
 
+	@TestFactory
 	public Collection<DynamicTest> tests() {
-		return getTestData("testcases-geosparql/functions/manifest.ttl");
+		return getTestData("testcases-geosparql/manifest-all.ttl", false);
 	}
 }
