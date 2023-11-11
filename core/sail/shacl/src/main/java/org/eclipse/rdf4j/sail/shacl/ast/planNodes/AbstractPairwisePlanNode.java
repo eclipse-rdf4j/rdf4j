@@ -32,10 +32,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 
-import com.google.common.collect.Sets;
-
 /**
- *
  * @author Håvard Ottestad
  */
 abstract class AbstractPairwisePlanNode implements PlanNode {
@@ -114,7 +111,7 @@ abstract class AbstractPairwisePlanNode implements PlanNode {
 				parentIterator = parent.iterator();
 			}
 
-			private void populateNextIterato() {
+			private void populateNextIterator() {
 				if (nextIterator != null && nextIterator.hasNext()) {
 					return;
 				}
@@ -141,14 +138,14 @@ abstract class AbstractPairwisePlanNode implements PlanNode {
 
 			@Override
 			protected ValidationTuple loggingNext() {
-				populateNextIterato();
+				populateNextIterator();
 
 				return nextIterator.next();
 			}
 
 			@Override
 			protected boolean localHasNext() {
-				populateNextIterato();
+				populateNextIterator();
 				return nextIterator != null && nextIterator.hasNext();
 			}
 

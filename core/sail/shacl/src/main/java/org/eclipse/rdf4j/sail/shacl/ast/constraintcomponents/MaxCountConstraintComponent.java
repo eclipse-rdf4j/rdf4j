@@ -32,17 +32,14 @@ import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.GroupByCountFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ReduceTargets;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ShiftToPropertyShape;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.TrimToTarget;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
@@ -84,23 +81,8 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 					validationSettings.getDataGraph(), scope,
 					EffectiveTarget.Extend.right, false, null);
 		} else {
-
-			BufferedSplitter addedTargets = new BufferedSplitter(
-					effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(),
-							scope, false, null));
-
-			PlanNode addedByPath = path.get().getAllAdded(connectionsGroup, validationSettings.getDataGraph(), null);
-
-			addedByPath = Unique.getInstance(new TrimToTarget(addedByPath), false);
-
-			addedByPath = new ReduceTargets(addedByPath, addedTargets.getPlanNode());
-
-			addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, validationSettings.getDataGraph(),
-					scope, EffectiveTarget.Extend.left,
-					false,
-					null);
-
-			mergeNode = UnionNode.getInstance(addedTargets.getPlanNode(), addedByPath);
+			mergeNode = getAllTargetsIncludingThoseAddedByPath(connectionsGroup, validationSettings, scope,
+					effectiveTarget, path.get(), false);
 		}
 
 		mergeNode = Unique.getInstance(new TrimToTarget(mergeNode), false);

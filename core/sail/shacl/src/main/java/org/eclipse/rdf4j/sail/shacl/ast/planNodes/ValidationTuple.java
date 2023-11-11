@@ -214,13 +214,24 @@ public class ValidationTuple {
 
 	@Override
 	public String toString() {
-		return "ValidationTuple{" +
-				"chain=" + Arrays.toString(chain) +
-				", scope=" + scope +
-				", propertyShapeScopeWithValue=" + propertyShapeScopeWithValue +
-//			", validationResults=" + validationResults +
-				", compressedTuples=" + Arrays.toString(compressedTuples.toArray()) +
-				'}';
+		try {
+			return "ValidationTuple{" +
+					"activeTarget=" + getActiveTarget() +
+					"value=" + getValue() +
+					"chain=" + Arrays.toString(chain) +
+					", scope=" + scope +
+					", propertyShapeScopeWithValue=" + propertyShapeScopeWithValue +
+					", compressedTuples=" + Arrays.toString(compressedTuples.toArray()) +
+					'}';
+		} catch (Throwable t) {
+			return "ValidationTuple{" +
+					"chain=" + Arrays.toString(chain) +
+					", scope=" + scope +
+					", propertyShapeScopeWithValue=" + propertyShapeScopeWithValue +
+					", compressedTuples=" + Arrays.toString(compressedTuples.toArray()) +
+					'}';
+		}
+
 	}
 
 	public List<ValidationTuple> shiftToNodeShape() {
