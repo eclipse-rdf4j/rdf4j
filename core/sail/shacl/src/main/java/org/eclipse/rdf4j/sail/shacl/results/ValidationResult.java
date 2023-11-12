@@ -63,6 +63,7 @@ public class ValidationResult {
 	private final Resource[] dataGraphs;
 	private final Resource[] shapesGraphs;
 	private Path path;
+	private Path rsxPairwisePath;
 	private ValidationResult detail;
 	private Value pathIri;
 
@@ -100,6 +101,13 @@ public class ValidationResult {
 		this.severity = severity;
 		this.dataGraphs = dataGraphs;
 		this.shapesGraphs = shapesGraphs;
+	}
+
+	public ValidationResult(Value focusNode, Value value, Shape shape,
+			ConstraintComponent sourceConstraint, Severity severity, ConstraintComponent.Scope scope,
+			Resource[] dataGraphs, Resource[] shapesGraphs, Path rsxPairwisePath) {
+		this(focusNode, value, shape, sourceConstraint, severity, scope, dataGraphs, shapesGraphs);
+		this.rsxPairwisePath = rsxPairwisePath;
 	}
 
 	/**
@@ -155,6 +163,11 @@ public class ValidationResult {
 			model.add(getId(), SHACL.RESULT_PATH, path.getId());
 		} else if (pathIri != null) {
 			model.add(getId(), SHACL.RESULT_PATH, pathIri);
+		}
+
+		if (rsxPairwisePath != null) {
+			rsxPairwisePath.toModel(rsxPairwisePath.getId(), null, model, new HashSet<>());
+			model.add(getId(), RSX.actualPairwisePath, rsxPairwisePath.getId());
 		}
 
 		if (sourceConstraint instanceof SparqlConstraintComponent) {

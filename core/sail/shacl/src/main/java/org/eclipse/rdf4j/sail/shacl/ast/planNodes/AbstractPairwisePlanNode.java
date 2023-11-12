@@ -27,10 +27,15 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.shacl.ast.PropertyShape;
+import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.ast.paths.SimplePath;
+import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
 /**
  * @author Håvard Ottestad
@@ -45,11 +50,13 @@ abstract class AbstractPairwisePlanNode implements PlanNode {
 	private final Dataset dataset;
 	private final StatementMatcher.Variable<Value> object;
 	private final PlanNode parent;
+	private final Shape shape;
+	private final ConstraintComponent constraintComponent;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public AbstractPairwisePlanNode(SailConnection connection, Resource[] dataGraph, PlanNode parent,
 			IRI predicate, StatementMatcher.Variable<Resource> subject, StatementMatcher.Variable<Value> object,
-			SparqlFragment targetQueryFragment) {
+			SparqlFragment targetQueryFragment, Shape shape, ConstraintComponent constraintComponent) {
 		this.parent = parent;
 		this.connection = connection;
 		assert this.connection != null;
@@ -63,15 +70,17 @@ abstract class AbstractPairwisePlanNode implements PlanNode {
 			this.query = null;
 		}
 		this.dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
+		this.shape = shape;
+		this.constraintComponent = constraintComponent;
 
 	}
+
+	Set<Value> valuesByPath;
+	Set<Value> valuesByPredicate;
 
 	private Set<Value> getMismatchedValues(ValidationTuple t) {
 
 		Resource target = ((Resource) t.getActiveTarget());
-
-		Set<Value> valuesByPath;
-		Set<Value> valuesByPredicate;
 
 		if (this.query == null) {
 			valuesByPath = Set.of(target);
@@ -124,9 +133,29 @@ abstract class AbstractPairwisePlanNode implements PlanNode {
 								.sorted(valueComparator)
 								.map(value -> {
 									if (next.getScope() == ConstraintComponent.Scope.propertyShape) {
-										return next.setValue(value);
+										ValidationTuple validationTuple = next.setValue(value);
+										Path path;
+										if (!valuesByPath.contains(value)) {
+											path = new SimplePath(predicate);
+										} else {
+											path = ((PropertyShape) shape).getPath();
+										}
+										return validationTuple.addValidationResult(t -> new ValidationResult(
+												t.getActiveTarget(), t.getValue(), shape,
+												constraintComponent, shape.getSeverity(), t.getScope(), t.getContexts(),
+												shape.getContexts(), path));
 									} else {
-										return next.shiftToPropertyShapeScope(value);
+										ValidationTuple validationTuple = next.shiftToPropertyShapeScope(value);
+										Path path;
+										if (!valuesByPath.contains(value)) {
+											path = new SimplePath(predicate);
+										} else {
+											path = null;
+										}
+										return validationTuple.addValidationResult(t -> new ValidationResult(
+												t.getActiveTarget(), t.getValue(), shape,
+												constraintComponent, shape.getSeverity(), t.getScope(), t.getContexts(),
+												shape.getContexts(), path));
 									}
 								})
 								.iterator();

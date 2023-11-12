@@ -11,6 +11,7 @@
   rdf4j:truncated false;
   sh:conforms false;
   sh:result [ a sh:ValidationResult;
+      rsx:actualPairwisePath ex:age;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:validPerson1;
       sh:resultPath ex:age;

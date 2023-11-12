@@ -649,7 +649,7 @@ abstract public class AbstractShaclTest {
 						validationReport.remove(null, RDF4J.TRUNCATED, null);
 						validationReport.remove(null, RSX.dataGraph, null);
 						validationReport.remove(null, RSX.shapesGraph, null);
-						validationReport.remove(null, RDF4J.TRUNCATED, null);
+						validationReport.remove(null, RSX.actualPairwisePath, null);
 
 						// We don't have any default values for sh:resultMessage
 						validationReport.remove(null, SHACL.RESULT_MESSAGE, null);

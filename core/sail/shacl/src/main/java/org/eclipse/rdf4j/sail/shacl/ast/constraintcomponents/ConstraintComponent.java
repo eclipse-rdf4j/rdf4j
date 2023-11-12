@@ -73,6 +73,8 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 
 	List<Literal> getDefaultMessage();
 
+	boolean overrideValidationReport();
+
 	enum Scope {
 		none,
 		nodeShape,

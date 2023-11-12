@@ -11,24 +11,26 @@
   rdf4j:truncated false;
   sh:conforms false;
   sh:result [ a sh:ValidationResult;
+      rsx:actualPairwisePath ex:age;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:validPerson1;
       sh:resultPath ex:age;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:EqualsConstraintComponent;
-      sh:sourceShape _:e62956cb1f41482aa5580b72c014457962;
-      sh:value 13
-    ], [ a sh:ValidationResult;
-      rsx:shapesGraph rdf4j:SHACLShapeGraph;
-      sh:focusNode ex:validPerson1;
-      sh:resultPath ex:age;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:EqualsConstraintComponent;
-      sh:sourceShape _:e62956cb1f41482aa5580b72c014457962;
+      sh:sourceShape _:62b1feb77cc64903aa4d9e742bda52d320;
       sh:value 12
+    ], [ a sh:ValidationResult;
+      rsx:actualPairwisePath ex:age2;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:validPerson1;
+      sh:resultPath ex:age;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:EqualsConstraintComponent;
+      sh:sourceShape _:62b1feb77cc64903aa4d9e742bda52d320;
+      sh:value 13
     ] .
 
-_:e62956cb1f41482aa5580b72c014457962 a sh:PropertyShape;
+_:62b1feb77cc64903aa4d9e742bda52d320 a sh:PropertyShape;
   sh:equals ex:age2;
   sh:path ex:age;
   sh:severity sh:Violation .

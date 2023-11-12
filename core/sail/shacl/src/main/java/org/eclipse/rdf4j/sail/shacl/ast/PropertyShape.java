@@ -231,7 +231,7 @@ public class PropertyShape extends Shape {
 					.generateTransactionalValidationPlan(connectionsGroup, validationSettings, overrideTargetNode,
 							Scope.propertyShape);
 
-			if (!(constraintComponent instanceof PropertyShape)) {
+			if (!(constraintComponent instanceof PropertyShape) && !constraintComponent.overrideValidationReport()) {
 				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
 					return new ValidationResult(t.getActiveTarget(), t.getValue(), this,
 							constraintComponent, getSeverity(), t.getScope(), t.getContexts(),
@@ -313,6 +313,11 @@ public class PropertyShape extends Shape {
 				.collect(Collectors.toList());
 
 		return nodeShape;
+	}
+
+	@Override
+	public boolean overrideValidationReport() {
+		return false;
 	}
 
 	@Override

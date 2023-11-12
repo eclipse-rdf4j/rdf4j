@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
+import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
@@ -39,10 +40,12 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintComponent {
 
-	IRI predicate;
+	final Shape shape;
+	final IRI predicate;
 
-	public AbstractPairwiseConstraintComponent(IRI predicate) {
+	public AbstractPairwiseConstraintComponent(IRI predicate, Shape shape) {
 		this.predicate = predicate;
+		this.shape = shape;
 	}
 
 	abstract IRI getIRI();
@@ -228,5 +231,10 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 	@Override
 	public int hashCode() {
 		return predicate.hashCode() + "LessThanConstraintComponent".hashCode();
+	}
+
+	@Override
+	public boolean overrideValidationReport() {
+		return true;
 	}
 }

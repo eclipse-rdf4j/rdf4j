@@ -17,8 +17,10 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 
 import com.google.common.collect.Sets;
 
@@ -33,8 +35,9 @@ public class CheckDisjointValuesBasedOnPathAndPredicate extends AbstractPairwise
 
 	public CheckDisjointValuesBasedOnPathAndPredicate(SailConnection connection, Resource[] dataGraph, PlanNode parent,
 			IRI predicate, StatementMatcher.Variable<Resource> subject, StatementMatcher.Variable<Value> object,
-			SparqlFragment targetQueryFragment) {
-		super(connection, dataGraph, parent, predicate, subject, object, targetQueryFragment);
+			SparqlFragment targetQueryFragment, Shape shape, ConstraintComponent constraintComponent) {
+		super(connection, dataGraph, parent, predicate, subject, object, targetQueryFragment, shape,
+				constraintComponent);
 	}
 
 	Set<Value> getInvalidValues(Set<Value> valuesByPath, Set<Value> valuesByPredicate) {

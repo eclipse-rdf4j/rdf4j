@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
+import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.CheckDisjointValuesBasedOnPathAndPredicate;
@@ -28,8 +29,8 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 public class DisjointConstraintComponent extends AbstractPairwiseConstraintComponent {
 
-	public DisjointConstraintComponent(IRI predicate) {
-		super(predicate);
+	public DisjointConstraintComponent(IRI predicate, Shape shape) {
+		super(predicate, shape);
 	}
 
 	@Override
@@ -46,12 +47,13 @@ public class DisjointConstraintComponent extends AbstractPairwiseConstraintCompo
 			PlanNode allTargets, StatementMatcher.Variable<Resource> subject, StatementMatcher.Variable<Value> object,
 			SparqlFragment targetQueryFragment) {
 		return new CheckDisjointValuesBasedOnPathAndPredicate(connectionsGroup.getBaseConnection(),
-				validationSettings.getDataGraph(), allTargets, predicate, subject, object, targetQueryFragment);
+				validationSettings.getDataGraph(), allTargets, predicate, subject, object, targetQueryFragment, shape,
+				this);
 	}
 
 	@Override
 	public ConstraintComponent deepClone() {
-		return new DisjointConstraintComponent(predicate);
+		return new DisjointConstraintComponent(predicate, shape);
 	}
 
 	@Override

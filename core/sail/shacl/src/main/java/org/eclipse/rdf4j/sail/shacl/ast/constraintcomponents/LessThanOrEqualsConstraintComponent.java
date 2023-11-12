@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
+import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.CheckLessThanOrEqualValuesBasedOnPathAndPredicate;
@@ -28,8 +29,8 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 public class LessThanOrEqualsConstraintComponent extends AbstractPairwiseConstraintComponent {
 
-	public LessThanOrEqualsConstraintComponent(IRI predicate) {
-		super(predicate);
+	public LessThanOrEqualsConstraintComponent(IRI predicate, Shape shape) {
+		super(predicate, shape);
 	}
 
 	@Override
@@ -46,12 +47,13 @@ public class LessThanOrEqualsConstraintComponent extends AbstractPairwiseConstra
 			PlanNode allTargets, StatementMatcher.Variable<Resource> subject, StatementMatcher.Variable<Value> object,
 			SparqlFragment targetQueryFragment) {
 		return new CheckLessThanOrEqualValuesBasedOnPathAndPredicate(connectionsGroup.getBaseConnection(),
-				validationSettings.getDataGraph(), allTargets, predicate, subject, object, targetQueryFragment);
+				validationSettings.getDataGraph(), allTargets, predicate, subject, object, targetQueryFragment, shape,
+				this);
 	}
 
 	@Override
 	public ConstraintComponent deepClone() {
-		return new LessThanOrEqualsConstraintComponent(predicate);
+		return new LessThanOrEqualsConstraintComponent(predicate, shape);
 	}
 
 	@Override

@@ -68,10 +68,14 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 				for (ValidationTuple tuple : invalidTuples) {
 					List<ValidationResult> validationResults = tuple.getValidationResult();
 
-					ValidationResult validationResult1 = validationResults.get(validationResults.size() - 1);
-					validationResultsRet.add(validationResult1);
+					assert !validationResults.isEmpty();
 
-					counter++;
+					if (!validationResults.isEmpty()) {
+						ValidationResult validationResult1 = validationResults.get(validationResults.size() - 1);
+						validationResultsRet.add(validationResult1);
+
+						counter++;
+					}
 				}
 
 				next = validationResultsRet.iterator();
