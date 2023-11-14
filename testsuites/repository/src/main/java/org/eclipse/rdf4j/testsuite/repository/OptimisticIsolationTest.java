@@ -19,28 +19,13 @@ import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.config.RepositoryFactory;
-import org.eclipse.rdf4j.testsuite.repository.optimistic.DeadLockTest;
-import org.eclipse.rdf4j.testsuite.repository.optimistic.DeleteInsertTest;
-import org.eclipse.rdf4j.testsuite.repository.optimistic.IsolationLevelTest;
-import org.eclipse.rdf4j.testsuite.repository.optimistic.LinearTest;
-import org.eclipse.rdf4j.testsuite.repository.optimistic.ModificationTest;
-import org.eclipse.rdf4j.testsuite.repository.optimistic.MonotonicTest;
-import org.eclipse.rdf4j.testsuite.repository.optimistic.RemoveIsolationTest;
-import org.eclipse.rdf4j.testsuite.repository.optimistic.SerializableTest;
-import org.eclipse.rdf4j.testsuite.repository.optimistic.SnapshotTest;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
-import org.junit.runner.RunWith;
-import org.junit.runners.Suite;
-import org.junit.runners.Suite.SuiteClasses;
+import org.junit.jupiter.api.Nested;
 
 /**
  * @author James Leigh
  */
-@RunWith(Suite.class)
-@SuiteClasses({ DeadLockTest.class, DeleteInsertTest.class, LinearTest.class, ModificationTest.class,
-		RemoveIsolationTest.class, IsolationLevelTest.class, MonotonicTest.class, SnapshotTest.class,
-		SerializableTest.class })
 public abstract class OptimisticIsolationTest {
 
 	@BeforeClass
@@ -78,5 +63,41 @@ public abstract class OptimisticIsolationTest {
 			con.clearNamespaces();
 		}
 		return repository;
+	}
+
+	@Nested
+	class DeadLockTest extends org.eclipse.rdf4j.testsuite.repository.optimistic.DeadLockTest {
+	}
+
+	@Nested
+	class DeleteInsertTest extends org.eclipse.rdf4j.testsuite.repository.optimistic.DeleteInsertTest {
+	}
+
+	@Nested
+	class LinearTest extends org.eclipse.rdf4j.testsuite.repository.optimistic.LinearTest {
+	}
+
+	@Nested
+	class ModificationTest extends org.eclipse.rdf4j.testsuite.repository.optimistic.ModificationTest {
+	}
+
+	@Nested
+	class RemoveIsolationTest extends org.eclipse.rdf4j.testsuite.repository.optimistic.RemoveIsolationTest {
+	}
+
+	@Nested
+	class IsolationLevelTest extends org.eclipse.rdf4j.testsuite.repository.optimistic.IsolationLevelTest {
+	}
+
+	@Nested
+	class MonotonicTest extends org.eclipse.rdf4j.testsuite.repository.optimistic.MonotonicTest {
+	}
+
+	@Nested
+	class SnapshotTest extends org.eclipse.rdf4j.testsuite.repository.optimistic.SnapshotTest {
+	}
+
+	@Nested
+	class SerializableTest extends org.eclipse.rdf4j.testsuite.repository.optimistic.SerializableTest {
 	}
 }

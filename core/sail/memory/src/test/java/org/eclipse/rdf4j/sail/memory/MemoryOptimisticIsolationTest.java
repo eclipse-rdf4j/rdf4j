@@ -15,12 +15,12 @@ import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryFactory;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreFactory;
 import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 
 public class MemoryOptimisticIsolationTest extends OptimisticIsolationTest {
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 		setRepositoryFactory(new SailRepositoryFactory() {
@@ -31,7 +31,7 @@ public class MemoryOptimisticIsolationTest extends OptimisticIsolationTest {
 		});
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void tearDown() throws Exception {
 		setRepositoryFactory(null);
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");

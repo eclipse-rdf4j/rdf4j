@@ -20,29 +20,9 @@ import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.config.RepositoryFactory;
-import org.eclipse.rdf4j.testsuite.sparql.tests.AggregateTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.ArbitraryLengthPathTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.BasicTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.BindTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.BuiltinFunctionTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.ConstructTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.DefaultGraphTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.DescribeTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.ExistsTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.GroupByTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.InTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.MinusTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.OptionalTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.OrderByTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.PropertyPathTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.SubselectTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.UnionTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.ValuesTest;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.runner.RunWith;
-import org.junit.runners.Suite;
-import org.junit.runners.Suite.SuiteClasses;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Nested;
 
 /**
  * A suite of custom compliance tests on SPARQL query functionality for RDF4J Repositories.
@@ -52,7 +32,7 @@ import org.junit.runners.Suite.SuiteClasses;
  *
  * <pre>
  * <code>
- * 	&#64;BeforeClass
+ * 	&#64;BeforeAll
 	public static void setUpFactory() throws Exception {
 		setRepositoryFactory(new SailRepositoryFactory() {
 			&#64;Override
@@ -62,7 +42,7 @@ import org.junit.runners.Suite.SuiteClasses;
 		});
 	}
 
-	&#64;AfterClass
+	&#64;AfterAll
 	public static void tearDownFactory() throws Exception {
 		setRepositoryFactory(null);
 	}
@@ -74,19 +54,14 @@ import org.junit.runners.Suite.SuiteClasses;
  *           make further improvements to its setup (including migrating to JUnit 5 when its suite support matures) in
  *           future minor releases.
  */
-@RunWith(Suite.class)
-@SuiteClasses({ AggregateTest.class, ArbitraryLengthPathTest.class, BasicTest.class, BindTest.class,
-		BuiltinFunctionTest.class, ConstructTest.class, DefaultGraphTest.class, DescribeTest.class, GroupByTest.class,
-		InTest.class, OptionalTest.class, PropertyPathTest.class, SubselectTest.class, UnionTest.class,
-		ValuesTest.class, OrderByTest.class, ExistsTest.class, MinusTest.class })
 @Experimental
 public abstract class RepositorySPARQLComplianceTestSuite {
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void tearDownClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
@@ -116,5 +91,77 @@ public abstract class RepositorySPARQLComplianceTestSuite {
 			con.clearNamespaces();
 		}
 		return repository;
+	}
+
+	@Nested
+	class AggregateTest extends org.eclipse.rdf4j.testsuite.sparql.tests.AggregateTest {
+	}
+
+	@Nested
+	class ArbitraryLengthPathTest extends org.eclipse.rdf4j.testsuite.sparql.tests.ArbitraryLengthPathTest {
+	}
+
+	@Nested
+	class BasicTest extends org.eclipse.rdf4j.testsuite.sparql.tests.BasicTest {
+	}
+
+	@Nested
+	class BindTest extends org.eclipse.rdf4j.testsuite.sparql.tests.BindTest {
+	}
+
+	@Nested
+	class BuiltinFunctionTest extends org.eclipse.rdf4j.testsuite.sparql.tests.BuiltinFunctionTest {
+	}
+
+	@Nested
+	class ConstructTest extends org.eclipse.rdf4j.testsuite.sparql.tests.ConstructTest {
+	}
+
+	@Nested
+	class DefaultGraphTest extends org.eclipse.rdf4j.testsuite.sparql.tests.DefaultGraphTest {
+	}
+
+	@Nested
+	class DescribeTest extends org.eclipse.rdf4j.testsuite.sparql.tests.DescribeTest {
+	}
+
+	@Nested
+	class GroupByTest extends org.eclipse.rdf4j.testsuite.sparql.tests.GroupByTest {
+	}
+
+	@Nested
+	class InTest extends org.eclipse.rdf4j.testsuite.sparql.tests.InTest {
+	}
+
+	@Nested
+	class OptionalTest extends org.eclipse.rdf4j.testsuite.sparql.tests.OptionalTest {
+	}
+
+	@Nested
+	class PropertyPathTest extends org.eclipse.rdf4j.testsuite.sparql.tests.PropertyPathTest {
+	}
+
+	@Nested
+	class SubselectTest extends org.eclipse.rdf4j.testsuite.sparql.tests.SubselectTest {
+	}
+
+	@Nested
+	class UnionTest extends org.eclipse.rdf4j.testsuite.sparql.tests.UnionTest {
+	}
+
+	@Nested
+	class ValuesTest extends org.eclipse.rdf4j.testsuite.sparql.tests.ValuesTest {
+	}
+
+	@Nested
+	class OrderByTest extends org.eclipse.rdf4j.testsuite.sparql.tests.OrderByTest {
+	}
+
+	@Nested
+	class ExistsTest extends org.eclipse.rdf4j.testsuite.sparql.tests.ExistsTest {
+	}
+
+	@Nested
+	class MinusTest extends org.eclipse.rdf4j.testsuite.sparql.tests.MinusTest {
 	}
 }
