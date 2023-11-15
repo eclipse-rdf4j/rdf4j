@@ -625,21 +625,12 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(Filter node, QueryEvaluationContext context) throws QueryEvaluationException {
 
-		final FilterIterator.RetainedVariableFilteredQueryEvaluationContext context2 = new FilterIterator.RetainedVariableFilteredQueryEvaluationContext(
-				node, context);
-		QueryEvaluationStep arg = precompile(node.getArg(), context2);
+		QueryEvaluationStep arg = precompile(node.getArg(), context);
 		QueryValueEvaluationStep ves;
 		try {
-			var ves2 = precompile(node.getCondition(), context2);
-			ves = new QueryValueEvaluationStep() {
-
-				@Override
-				public Value evaluate(BindingSet bindings) throws QueryEvaluationException {
-					assert (node != null);
-					return ves2.evaluate(bindings);
-				}
-
-			};
+			final FilterIterator.RetainedVariableFilteredQueryEvaluationContext context2 = new FilterIterator.RetainedVariableFilteredQueryEvaluationContext(
+					node, context);
+			ves = precompile(node.getCondition(), context2);
 		} catch (QueryEvaluationException e) {
 			// If we have a failed compilation we always return false.
 			// Which means empty. so let's short circuit that.
