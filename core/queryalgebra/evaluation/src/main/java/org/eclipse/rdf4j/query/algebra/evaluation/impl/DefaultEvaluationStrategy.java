@@ -11,8 +11,10 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
@@ -165,7 +167,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.XMLDatatypeMathUtil;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 import org.eclipse.rdf4j.util.UUIDable;
 
 import com.google.common.base.Stopwatch;
@@ -621,20 +625,25 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(Filter node, QueryEvaluationContext context) throws QueryEvaluationException {
 
-		QueryEvaluationStep arg = precompile(node.getArg(), context);
+		final FilterIterator.RetainedVariableFilteredQueryEvaluationContext context2 = new FilterIterator.RetainedVariableFilteredQueryEvaluationContext(
+				node, context);
+		QueryEvaluationStep arg = precompile(node.getArg(), context2);
 		QueryValueEvaluationStep ves;
 		try {
-			ves = precompile(node.getCondition(), context);
+			var ves2 = precompile(node.getCondition(), context2);
+			ves = new QueryValueEvaluationStep() {
+
+				@Override
+				public Value evaluate(BindingSet bindings) throws QueryEvaluationException {
+					assert (node != null);
+					return ves2.evaluate(bindings);
+				}
+
+			};
 		} catch (QueryEvaluationException e) {
 			// If we have a failed compilation we always return false.
 			// Which means empty. so let's short circuit that.
-//			ves = new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
-			return new QueryEvaluationStep() {
-				@Override
-				public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-					return new EmptyIteration<>();
-				}
-			};
+			return QueryEvaluationStep.EMPTY;
 		}
 		return new QueryEvaluationStep() {
 
