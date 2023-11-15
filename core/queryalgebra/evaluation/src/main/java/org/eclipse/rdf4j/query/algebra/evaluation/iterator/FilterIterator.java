@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
+import java.util.HashSet;
+import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 
@@ -22,13 +24,17 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 @Deprecated(since = "4.1.0")
 public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationException> {
@@ -72,17 +78,49 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 		}
 	}
 
+	protected static class VarCollector extends AbstractQueryModelVisitor<QueryEvaluationException> {
+
+		private final Set<String> collectedVars = new HashSet<>();
+
+		@Override
+		public void meet(Var var) {
+			if (!var.isAnonymous()) {
+				collectedVars.add(var.getName());
+			}
+		}
+
+		@Override
+		public void meet(BindingSetAssignment node) throws QueryEvaluationException {
+			for (BindingSet bs : node.getBindingSets()) {
+				for (String name : bs.getBindingNames()) {
+					collectedVars.add(name);
+				}
+			}
+			super.meet(node);
+		}
+
+		/**
+		 * @return Returns the collectedVars.
+		 */
+		public Set<String> getCollectedVars() {
+			return collectedVars;
+		}
+
+	}
+
 	/**
 	 * This is used to make sure that no variable is seen by the filter that are not in scope. Historically important in
-	 * subquery cases.
+	 * subquery cases. See also GH-4769
 	 */
 	public static final class RetainedVariableFilteredQueryEvaluationContext implements QueryEvaluationContext {
-		private final Filter node;
 		private final QueryEvaluationContext context;
+		private final Set<String> inScopeVariableNames;
 
 		public RetainedVariableFilteredQueryEvaluationContext(Filter node, QueryEvaluationContext contextToFilter) {
-			this.node = node;
 			this.context = contextToFilter;
+			final VarCollector varCollector = new VarCollector();
+			node.getArg().visit(varCollector);
+			this.inScopeVariableNames = varCollector.getCollectedVars();
 		}
 
 		@Override
@@ -105,7 +143,7 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 		}
 
 		boolean isVariableInScope(String variableName) {
-			return node.getBindingNames().contains(variableName);
+			return inScopeVariableNames.contains(variableName);
 		}
 
 		@Override
