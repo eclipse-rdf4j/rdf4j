@@ -19,6 +19,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
@@ -633,24 +634,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(Filter node, QueryEvaluationContext context) throws QueryEvaluationException {
 
-		QueryEvaluationStep arg = precompile(node.getArg(), context);
-		QueryValueEvaluationStep ves;
-		try {
-			final FilterIterator.RetainedVariableFilteredQueryEvaluationContext context2 = new FilterIterator.RetainedVariableFilteredQueryEvaluationContext(
-					node, context);
-			ves = precompile(node.getCondition(), context2);
-		} catch (QueryEvaluationException e) {
-			// If we have a failed compilation we always return false.
-			// Which means empty. so let's short circuit that.
-			return QueryEvaluationStep.EMPTY;
-		}
-		return new QueryEvaluationStep() {
+		return FilterIterator.supply(node, DefaultEvaluationStrategy.this, context);
 
-			@Override
-			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-				return new FilterIterator(node, arg.evaluate(bs), ves, DefaultEvaluationStrategy.this);
-			}
-		};
 	}
 
 	protected QueryEvaluationStep prepare(Order node, QueryEvaluationContext context) throws QueryEvaluationException {
@@ -1157,16 +1142,18 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			return new ConstantQueryValueEvaluationStep(value);
 		} else {
 			java.util.function.Function<BindingSet, Value> getValue = context.getValue(var.getName());
+			Predicate<BindingSet> hasValue = context.hasBinding(var.getName());
 			return new QueryValueEvaluationStep() {
 
 				@Override
 				public Value evaluate(BindingSet bindings)
 						throws QueryEvaluationException {
-					Value value = getValue.apply(bindings);
-					if (value == null) {
+					if (hasValue.test(bindings)) {
+						Value value = getValue.apply(bindings);
+						return value;
+					} else {
 						throw new ValueExprEvaluationException();
 					}
-					return value;
 				}
 			};
 		}
