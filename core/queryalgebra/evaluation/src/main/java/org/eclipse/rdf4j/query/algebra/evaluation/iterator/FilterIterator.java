@@ -39,26 +39,25 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 	private final EvaluationStrategy strategy;
 	private final Function<BindingSet, BindingSet> retain;
 
-	public static QueryEvaluationStep supply(Filter node, EvaluationStrategy strategy,
+	public static QueryEvaluationStep supply(Filter filter, EvaluationStrategy strategy,
 			QueryEvaluationContext context) {
-		QueryEvaluationStep arg = strategy.precompile(node.getArg(), context);
+		QueryEvaluationStep arg = strategy.precompile(filter.getArg(), context);
 		QueryValueEvaluationStep ves;
 		try {
-//			final QueryEvaluationContext context2 = new FilterIterator.RetainedVariableFilteredQueryEvaluationContext(
-//					node, context);
-			ves = strategy.precompile(node.getCondition(), context);
+			ves = strategy.precompile(filter.getCondition(), context);
 		} catch (QueryEvaluationException e) {
 			// If we have a failed compilation we always return false.
 			// Which means empty. so let's short circuit that.
 			return QueryEvaluationStep.EMPTY;
 		}
-		return new QueryEvaluationStep() {
+		Function<BindingSet, BindingSet> retain;
+		if (!isPartOfSubQuery(filter)) {
+			retain = buildRetainFunction(filter, context);
+		} else {
+			retain = Function.identity();
+		}
 
-			@Override
-			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-				return new FilterIterator(node, arg.evaluate(bs), ves, strategy, context);
-			}
-		};
+		return (bs) -> new FilterIterator(arg.evaluate(bs), ves, strategy, retain);
 	}
 
 	/*--------------*
@@ -74,15 +73,15 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 			this.retain = (bs) -> {
 				QueryBindingSet nbs = new QueryBindingSet(bs);
 				nbs.retainAll(filter.getBindingNames());
-				return bs;
+				return nbs;
 			};
 		} else {
 			this.retain = Function.identity();
 		}
 	}
 
-	private FilterIterator(Filter filter, CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			QueryValueEvaluationStep condition, EvaluationStrategy strategy, QueryEvaluationContext context)
+	private FilterIterator(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+			QueryValueEvaluationStep condition, EvaluationStrategy strategy, Function<BindingSet, BindingSet> retain)
 			throws QueryEvaluationException {
 		super(iter);
 		this.condition = condition;
@@ -90,19 +89,11 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 		// FIXME Jeen Boekstra scopeBindingNames should include bindings from superquery
 		// if the filter is part of a subquery. This is a workaround: we should fix the
 		// settings of scopeBindingNames, rather than skipping the limiting of bindings.
-		if (!isPartOfSubQuery(filter)) {
-//			this.retain = (bs) -> {
-//				QueryBindingSet nbs = new QueryBindingSet(bs);
-//				nbs.retainAll(filter.getBindingNames());
-//				return bs;
-//			};
-			this.retain = buildRetainFunction(filter, context);
-		} else {
-			this.retain = Function.identity();
-		}
+		this.retain = retain;
+
 	}
 
-	private Function<BindingSet, BindingSet> buildRetainFunction(Filter filter, QueryEvaluationContext context) {
+	private static Function<BindingSet, BindingSet> buildRetainFunction(Filter filter, QueryEvaluationContext context) {
 		final Set<String> bindingNames = filter.getBindingNames();
 		@SuppressWarnings("unchecked")
 		final Predicate<BindingSet>[] hasBinding = new Predicate[bindingNames.size()];
@@ -111,7 +102,7 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 		Iterator<String> bi = bindingNames.iterator();
 		for (int i = 0; bi.hasNext(); i++) {
 			String bindingName = bi.next();
-			hasBinding[i] = (bs) -> bs.hasBinding(bindingName);
+			hasBinding[i] = context.hasBinding(bindingName);
 			final Function<BindingSet, Value> getValue = context.getValue(bindingName);
 //			Can't use this as there might be bindingNames that the filter expects that are not available.
 //			See line the meet(Var) in the ArrayBindingSet.findAllVariablesUsedInQuery(QueryRoot method)
@@ -142,7 +133,6 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 		}
 	}
 
-//	@Deprecated(forRemoval = true, since = "4.2.1")
 	public static boolean isPartOfSubQuery(QueryModelNode node) {
 		if (node instanceof SubQueryValueOperator) {
 			return true;
@@ -155,166 +145,5 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 			return isPartOfSubQuery(parent);
 		}
 	}
-
-//	protected static class InExistsVarCollector extends AbstractSimpleQueryModelVisitor<QueryEvaluationException> {
-//		private final VarCollector vc;
-//
-//		public InExistsVarCollector(VarCollector vc) {
-//			super();
-//			this.vc = vc;
-//		}
-//
-//		@Override
-//		public void meet(Exists ex) {
-//			ex.visit(vc);
-//		}
-//	}
-
-//	protected static class VarCollector extends AbstractSimpleQueryModelVisitor<QueryEvaluationException> {
-//
-//		private final Set<String> collectedVars = new HashSet<>();
-//
-//		public VarCollector() {
-//			super(true);
-//		}
-//
-//		@Override
-//		public void meet(Var var) {
-//			if (!var.isAnonymous()) {
-//				collectedVars.add(var.getName());
-//			}
-//		}
-//
-//		@Override
-//		public void meet(BindingSetAssignment node) throws QueryEvaluationException {
-//			for (BindingSet bs : node.getBindingSets()) {
-//				for (String name : bs.getBindingNames()) {
-//					collectedVars.add(name);
-//				}
-//			}
-//			super.meet(node);
-//		}
-//
-//		/**
-//		 * @return Returns the collectedVars.
-//		 */
-//		public Set<String> getCollectedVars() {
-//			return collectedVars;
-//		}
-//
-//		@Override
-//		public void meetUnaryTupleOperator(UnaryTupleOperator node) {
-//			if (!node.isVariableScopeChange()) {
-//				super.meetUnaryTupleOperator(node);
-//			}
-//		}
-//
-//		@Override
-//		public void meetBinaryTupleOperator(BinaryTupleOperator node) {
-//			if (!node.isVariableScopeChange()) {
-//				super.meetBinaryTupleOperator(node);
-//			}
-//		}
-//
-//		@Override
-//		protected void meetBinaryValueOperator(BinaryValueOperator node) throws RuntimeException {
-//			if (!node.isVariableScopeChange()) {
-//				super.meetBinaryValueOperator(node);
-//			}
-//		}
-//
-//		@Override
-//		protected void meetNAryValueOperator(NAryValueOperator node) throws RuntimeException {
-//			if (!node.isVariableScopeChange()) {
-//				super.meetNAryValueOperator(node);
-//			}
-//		}
-//
-//		@Override
-//		protected void meetSubQueryValueOperator(SubQueryValueOperator node) throws RuntimeException {
-//			if (!node.isVariableScopeChange()) {
-//				super.meetSubQueryValueOperator(node);
-//			}
-//		}
-//
-//		@Override
-//		protected void meetUnaryValueOperator(UnaryValueOperator node) throws RuntimeException {
-//			if (!node.isVariableScopeChange()) {
-//				super.meetUnaryValueOperator(node);
-//			}
-//		}
-//	}
-
-//	/**
-//	 * This is used to make sure that no variable is seen by the filter that are not in scope. Historically important in
-//	 * subquery cases. See also GH-4769
-//	 */
-//	public static final class RetainedVariableFilteredQueryEvaluationContext implements QueryEvaluationContext {
-//		private final QueryEvaluationContext context;
-//		private final Set<String> inScopeVariableNames;
-//
-////		private final Filter node;
-//		public RetainedVariableFilteredQueryEvaluationContext(Filter node, QueryEvaluationContext contextToFilter) {
-//			this.context = contextToFilter;
-//
-////			this.node = node;
-//		}
-//
-//		@Override
-//		public Literal getNow() {
-//			return context.getNow();
-//		}
-//
-//		@Override
-//		public Dataset getDataset() {
-//			return context.getDataset();
-//		}
-//
-//		@Override
-//		public Predicate<BindingSet> hasBinding(String variableName) {
-//			if (isVariableInScope(variableName)) {
-//				return context.hasBinding(variableName);
-//			} else {
-//				return (bs) -> false;
-//			}
-//		}
-//
-//		boolean isVariableInScope(String variableName) {
-//			return inScopeVariableNames.contains(variableName);
-//		}
-//
-//		@Override
-//		public java.util.function.Function<BindingSet, Binding> getBinding(String variableName) {
-//			if (isVariableInScope(variableName)) {
-//				return context.getBinding(variableName);
-//			} else {
-//				return (bs) -> null;
-//			}
-//		}
-//
-//		@Override
-//		public java.util.function.Function<BindingSet, Value> getValue(String variableName) {
-//			if (isVariableInScope(variableName)) {
-//				return context.getValue(variableName);
-//			} else {
-//				return (bs) -> null;
-//			}
-//		}
-//
-//		@Override
-//		public BiConsumer<Value, MutableBindingSet> setBinding(String variableName) {
-//			return context.setBinding(variableName);
-//		}
-//
-//		@Override
-//		public MutableBindingSet createBindingSet() {
-//			return context.createBindingSet();
-//		}
-//
-//		@Override
-//		public BiConsumer<Value, MutableBindingSet> addBinding(String variableName) {
-//			return context.addBinding(variableName);
-//		}
-//	}
 
 }
