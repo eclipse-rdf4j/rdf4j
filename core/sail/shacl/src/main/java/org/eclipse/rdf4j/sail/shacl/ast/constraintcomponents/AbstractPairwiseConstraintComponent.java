@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ShiftToPropertyShape;
@@ -135,53 +136,159 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 		return Unique.getInstance(UnionNode.getInstance(targetFilter1, targetFilter2), false);
 	}
 
+//	@Override
+//	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
+//			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+//		assert scope == Scope.propertyShape;
+//
+//		PlanNode allTargetsPlan = getTargetChain()
+//				.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+//						stableRandomVariableProvider)
+//				.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
+//
+//		allTargetsPlan = new ShiftToPropertyShape(allTargetsPlan);
+//
+//		// removed statements that match predicate could affect sh:or
+//		if (connectionsGroup.getStats().hasRemoved()) {
+//			PlanNode deletedPredicates = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, predicate,
+//					null, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.propertyShape));
+//			deletedPredicates = getTargetChain()
+//					.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+//							stableRandomVariableProvider)
+//					.getTargetFilter(connectionsGroup, dataGraph, deletedPredicates);
+//			deletedPredicates = getTargetChain()
+//					.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+//							stableRandomVariableProvider)
+//					.extend(deletedPredicates, connectionsGroup, dataGraph, Scope.propertyShape, EffectiveTarget.Extend.left,
+//							false,
+//							null);
+//			allTargetsPlan = UnionNode.getInstanceDedupe(allTargetsPlan, deletedPredicates);
+//		}
+//
+//		// added statements that match predicate could affect sh:not
+//		if (connectionsGroup.getStats().hasAdded()) {
+//			PlanNode addedPredicates = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, predicate,
+//					null, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.propertyShape));
+//			addedPredicates = getTargetChain()
+//					.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+//							stableRandomVariableProvider)
+//					.getTargetFilter(connectionsGroup, dataGraph, addedPredicates);
+//			addedPredicates = getTargetChain()
+//					.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+//							stableRandomVariableProvider)
+//					.extend(addedPredicates, connectionsGroup, dataGraph, Scope.propertyShape, EffectiveTarget.Extend.left,
+//							false,
+//							null);
+//			allTargetsPlan = UnionNode.getInstanceDedupe(allTargetsPlan, addedPredicates);
+//		}
+//
+//		return Unique.getInstance(new TrimToTarget(allTargetsPlan), false);
+//	}
+
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
-		assert scope == Scope.propertyShape;
-
-		PlanNode allTargetsPlan = getTargetChain()
-				.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
-						stableRandomVariableProvider)
-				.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
-
-		allTargetsPlan = new ShiftToPropertyShape(allTargetsPlan);
-
-		// removed statements that match predicate could affect sh:or
-		if (connectionsGroup.getStats().hasRemoved()) {
-			PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, predicate,
-					null, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.propertyShape));
-			deletedTypes = getTargetChain()
-					.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+		if (scope == Scope.propertyShape) {
+			PlanNode allTargetsPlan = getTargetChain()
+					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
 							stableRandomVariableProvider)
-					.getTargetFilter(connectionsGroup, dataGraph, deletedTypes);
-			deletedTypes = getTargetChain()
-					.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
-							stableRandomVariableProvider)
-					.extend(deletedTypes, connectionsGroup, dataGraph, Scope.propertyShape, EffectiveTarget.Extend.left,
-							false,
-							null);
-			allTargetsPlan = UnionNode.getInstanceDedupe(allTargetsPlan, deletedTypes);
+					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
+
+			allTargetsPlan = new ShiftToPropertyShape(allTargetsPlan);
+
+			// removed statements that match predicate could affect sh:or
+			if (connectionsGroup.getStats().hasRemoved()) {
+				PlanNode deletedPredicates = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null,
+						predicate,
+						null, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.propertyShape));
+				deletedPredicates = getTargetChain()
+						.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+								stableRandomVariableProvider)
+						.getTargetFilter(connectionsGroup, dataGraph, deletedPredicates);
+				deletedPredicates = getTargetChain()
+						.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+								stableRandomVariableProvider)
+						.extend(deletedPredicates, connectionsGroup, dataGraph, Scope.propertyShape,
+								EffectiveTarget.Extend.left,
+								false,
+								null);
+				allTargetsPlan = UnionNode.getInstanceDedupe(allTargetsPlan, deletedPredicates);
+			}
+
+			// added statements that match predicate could affect sh:not
+			if (connectionsGroup.getStats().hasAdded()) {
+				PlanNode addedPredicates = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, predicate,
+						null, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.propertyShape));
+				addedPredicates = getTargetChain()
+						.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+								stableRandomVariableProvider)
+						.getTargetFilter(connectionsGroup, dataGraph, addedPredicates);
+				addedPredicates = getTargetChain()
+						.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+								stableRandomVariableProvider)
+						.extend(addedPredicates, connectionsGroup, dataGraph, Scope.propertyShape,
+								EffectiveTarget.Extend.left,
+								false,
+								null);
+				allTargetsPlan = UnionNode.getInstanceDedupe(allTargetsPlan, addedPredicates);
+			}
+
+			return Unique.getInstance(new TrimToTarget(allTargetsPlan), false);
+		} else {
+			assert scope == Scope.nodeShape;
+
+			PlanNode allTargetsPlan = EmptyNode.getInstance();
+
+			// removed type statements that match clazz could affect sh:or
+			if (connectionsGroup.getStats().hasRemoved()) {
+				PlanNode deletedPredicates = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null,
+						predicate, null,
+						dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));
+				deletedPredicates = getTargetChain()
+						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+								stableRandomVariableProvider)
+						.getTargetFilter(connectionsGroup, dataGraph, deletedPredicates);
+				deletedPredicates = getTargetChain()
+						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+								stableRandomVariableProvider)
+						.extend(deletedPredicates, connectionsGroup, dataGraph, Scope.nodeShape,
+								EffectiveTarget.Extend.left,
+								false, null);
+				allTargetsPlan = UnionNode.getInstanceDedupe(allTargetsPlan, deletedPredicates);
+
+			}
+
+			// added type statements that match clazz could affect sh:not
+			if (connectionsGroup.getStats().hasAdded()) {
+				PlanNode addedPredicates = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, predicate,
+						null,
+						dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));
+				addedPredicates = getTargetChain()
+						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+								stableRandomVariableProvider)
+						.getTargetFilter(connectionsGroup, dataGraph, addedPredicates);
+				addedPredicates = getTargetChain()
+						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+								stableRandomVariableProvider)
+						.extend(addedPredicates, connectionsGroup, dataGraph, Scope.nodeShape,
+								EffectiveTarget.Extend.left,
+								false, null);
+				allTargetsPlan = UnionNode.getInstanceDedupe(allTargetsPlan, addedPredicates);
+
+			}
+
+			return Unique.getInstance(allTargetsPlan, false);
+
 		}
 
-		// added statements that match predicate could affect sh:not
-		if (connectionsGroup.getStats().hasAdded()) {
-			PlanNode addedTypes = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, predicate,
-					null, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.propertyShape));
-			addedTypes = getTargetChain()
-					.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
-							stableRandomVariableProvider)
-					.getTargetFilter(connectionsGroup, dataGraph, addedTypes);
-			addedTypes = getTargetChain()
-					.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
-							stableRandomVariableProvider)
-					.extend(addedTypes, connectionsGroup, dataGraph, Scope.propertyShape, EffectiveTarget.Extend.left,
-							false,
-							null);
-			allTargetsPlan = UnionNode.getInstanceDedupe(allTargetsPlan, addedTypes);
-		}
+	}
 
-		return Unique.getInstance(new TrimToTarget(allTargetsPlan), false);
+	@Override
+	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+		return super.requiresEvaluation(connectionsGroup, scope, dataGraph, stableRandomVariableProvider)
+				|| connectionsGroup.getRemovedStatements().hasStatement(null, predicate, null, true, dataGraph)
+				|| connectionsGroup.getAddedStatements().hasStatement(null, predicate, null, true, dataGraph);
 	}
 
 	@Override
@@ -192,16 +299,6 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 	@Override
 	public ValidationApproach getOptimalBulkValidationApproach() {
 		return ValidationApproach.Transactional;
-	}
-
-	@Override
-	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
-
-		// todo both consider the target chain with added and removed values (path), and also added and removed values
-		// for the predicate path
-
-		return true;
 	}
 
 	@Override

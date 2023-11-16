@@ -333,6 +333,8 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 				SHACL.NAMESPACE_PROP,
 				SHACL.SEVERITY_PROP,
 				SHACL.EQUALS,
+				SHACL.LESS_THAN,
+				SHACL.LESS_THAN_OR_EQUALS,
 				DASH.hasValueIn,
 				RSX.targetShape,
 				RSX.dataGraph,

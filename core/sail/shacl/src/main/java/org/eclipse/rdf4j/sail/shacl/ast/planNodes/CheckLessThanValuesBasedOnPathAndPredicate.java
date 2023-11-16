@@ -17,6 +17,8 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
@@ -47,11 +49,10 @@ public class CheckLessThanValuesBasedOnPathAndPredicate extends AbstractPairwise
 
 		for (Value value : valuesByPath) {
 			for (Value value1 : valuesByPredicate) {
-				int compare = valueComparator.compare(value1, value);
-				if (compare >= 0) {
+				boolean lessThan = QueryEvaluationUtility.compare(value, value1, Compare.CompareOp.LT).orElse(false);
+				if (!lessThan) {
 					ret.add(value);
 				}
-
 			}
 		}
 
