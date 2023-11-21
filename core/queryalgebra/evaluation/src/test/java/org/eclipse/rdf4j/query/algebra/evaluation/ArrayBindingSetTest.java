@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2021 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -10,13 +10,19 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
+import static org.assertj.core.api.Assertions.fail;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.Iterator;
+import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.BeforeEach;
@@ -77,4 +83,82 @@ public class ArrayBindingSetTest {
 		assertEquals(bs1.hashCode(), bs2.hashCode());
 	}
 
+	@Test
+	public void testEmptyIterator() {
+
+		ArrayBindingSet bs = new ArrayBindingSet("foo");
+		Iterator<Binding> iterator = bs.iterator();
+		assertNotNull(iterator);
+		assertFalse(iterator.hasNext());
+	}
+
+	@Test
+	public void testOneElementIterator() {
+		ArrayBindingSet bs = new ArrayBindingSet("foo");
+		bs.setBinding("foo", RDF.FIRST);
+		Iterator<Binding> iterator = bs.iterator();
+		assertNotNull(iterator);
+		assertTrue(iterator.hasNext());
+		assertTrue(iterator.hasNext());
+		assertTrue(iterator.hasNext());
+		assertNotNull(iterator.next());
+		assertFalse(iterator.hasNext());
+		try {
+			iterator.next();
+			fail("There are no more elements");
+		} catch (NoSuchElementException e) {
+			assertNotNull(e);
+		}
+	}
+
+	@Test
+	public void testThreeElementIterator() {
+		ArrayBindingSet bs = new ArrayBindingSet("first", "alt", "bag");
+		bs.setBinding("first", RDF.FIRST);
+		bs.setBinding("alt", RDF.ALT);
+		bs.setBinding("bag", RDF.BAG);
+		Iterator<Binding> iterator = bs.iterator();
+		assertNotNull(iterator);
+		assertTrue(iterator.hasNext());
+		Binding first = iterator.next();
+		assertNotNull(first);
+		assertTrue(iterator.hasNext());
+		Binding alt = iterator.next();
+		assertNotNull(alt);
+		assertEquals("alt", alt.getName());
+		assertTrue(iterator.hasNext());
+		Binding bag = iterator.next();
+		assertNotNull(bag);
+		assertEquals("bag", bag.getName());
+		assertFalse(iterator.hasNext());
+		try {
+			iterator.next();
+			fail("There are no more elements");
+		} catch (NoSuchElementException e) {
+			assertNotNull(e);
+		}
+	}
+
+	@Test
+	public void testThreeWithTwoElementsSetIterator() {
+		ArrayBindingSet bs = new ArrayBindingSet("first", "alt", "bag");
+		bs.setBinding("first", RDF.FIRST);
+		bs.setBinding("bag", RDF.BAG);
+		Iterator<Binding> iterator = bs.iterator();
+		assertNotNull(iterator);
+		assertTrue(iterator.hasNext());
+		Binding first = iterator.next();
+		assertNotNull(first);
+		assertTrue(iterator.hasNext());
+		Binding bag = iterator.next();
+		assertNotNull(bag);
+		assertEquals("bag", bag.getName());
+		assertFalse(iterator.hasNext());
+		try {
+			iterator.next();
+			fail("There are no more elements");
+		} catch (NoSuchElementException e) {
+			assertNotNull(e);
+		}
+	}
 }
