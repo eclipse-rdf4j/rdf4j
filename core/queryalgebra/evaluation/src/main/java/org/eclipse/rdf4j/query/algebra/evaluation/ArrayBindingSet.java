@@ -18,6 +18,7 @@ import java.util.Collections;
 import java.util.ConcurrentModificationException;
 import java.util.Iterator;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -346,12 +347,16 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 				}
 			}
 
-			String name = bindingNames[index];
-			Value value = values[index++];
-			if (value != null) {
-				return new SimpleBinding(name, value);
-			} else {
-				return null;
+			try {
+				String name = bindingNames[index];
+				Value value = values[index++];
+				if (value != null) {
+					return new SimpleBinding(name, value);
+				} else {
+					return null;
+				}
+			} catch (ArrayIndexOutOfBoundsException e) {
+				throw new NoSuchElementException();
 			}
 		}
 
