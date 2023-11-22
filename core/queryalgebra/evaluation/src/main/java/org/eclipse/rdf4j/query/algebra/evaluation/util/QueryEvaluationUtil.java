@@ -107,7 +107,7 @@ public class QueryEvaluationUtil {
 
 	public static boolean compare(Value leftVal, Value rightVal, CompareOp operator, boolean strict)
 			throws ValueExprEvaluationException {
-		if (leftVal.isLiteral() && rightVal.isLiteral()) {
+		if (leftVal != null && leftVal.isLiteral() && rightVal != null && rightVal.isLiteral()) {
 			// Both left and right argument is a Literal
 			return compareLiterals((Literal) leftVal, (Literal) rightVal, operator, strict);
 		} else {
