@@ -331,8 +331,9 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 		@Override
 		public boolean hasNext() {
-			for (int at = index; at < values.length; at++) {
-				if (whichBindingsHaveBeenSet[at] && values[at] != null) {
+			// If the current index is at at a set value then this wont advance again.
+			for (; index < values.length; index++) {
+				if (whichBindingsHaveBeenSet[index] && values[index] != null) {
 					return true;
 				}
 			}
