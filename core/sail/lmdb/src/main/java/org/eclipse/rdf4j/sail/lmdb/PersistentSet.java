@@ -121,7 +121,11 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 			mdb_txn_abort(writeTxn);
 			writeTxn = 0;
 		}
-		writeTxnPp.free();
+
+		// We don't need to free the pointer because it was allocated
+		// by java.nio.ByteBuffer, which will handle freeing for us.
+		// writeTxnPp.free();
+
 		mdb_env_close(env);
 		FileUtils.deleteDirectory(dbDir.toFile());
 	}

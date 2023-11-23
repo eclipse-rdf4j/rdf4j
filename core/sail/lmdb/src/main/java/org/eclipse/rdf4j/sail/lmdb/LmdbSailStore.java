@@ -77,7 +77,7 @@ class LmdbSailStore implements SailStore {
 
 	private final boolean enableMultiThreading = true;
 
-	private final Set<Long> unusedIds;
+	private final PersistentSet<Long> unusedIds;
 
 	/**
 	 * A fast non-blocking circular buffer backed by an array.
@@ -262,23 +262,31 @@ class LmdbSailStore implements SailStore {
 							valueStore.close();
 						}
 					} finally {
-						if (tripleStore != null) {
-							try {
-								running.set(false);
-								tripleStoreExecutor.shutdown();
+						try {
+							if (tripleStore != null) {
 								try {
-									while (!tripleStoreExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
-										logger.warn("Waiting for triple store executor to terminate");
+									running.set(false);
+									tripleStoreExecutor.shutdown();
+									try {
+										while (!tripleStoreExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
+											logger.warn("Waiting for triple store executor to terminate");
+										}
+									} catch (InterruptedException e) {
+										Thread.currentThread().interrupt();
+										throw new SailException(e);
 									}
-								} catch (InterruptedException e) {
-									Thread.currentThread().interrupt();
-									throw new SailException(e);
+								} finally {
+									tripleStore.close();
 								}
-							} finally {
-								tripleStore.close();
+
 							}
 
+						} finally {
+							if (unusedIds != null) {
+								unusedIds.close();
+							}
 						}
+
 					}
 				}
 

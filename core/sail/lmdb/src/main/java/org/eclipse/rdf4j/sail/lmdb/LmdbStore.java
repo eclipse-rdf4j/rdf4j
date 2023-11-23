@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
@@ -307,10 +308,13 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			File dataDir = getDataDir();
 			if (dataDir != null) {
 				try {
-					Files.walk(dataDir.toPath())
-							.map(Path::toFile)
-							.sorted(Comparator.reverseOrder()) // delete files before directory
-							.forEach(File::delete);
+					try (Stream<Path> walk = Files.walk(dataDir.toPath())) {
+						walk
+								.map(Path::toFile)
+								.sorted(Comparator.reverseOrder()) // delete files before directory
+								.forEach(File::delete);
+					}
+
 				} catch (IOException ioe) {
 					logger.error("Could not delete temp file " + dataDir);
 				}

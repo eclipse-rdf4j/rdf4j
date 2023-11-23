@@ -19,12 +19,6 @@ import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL11QueryCom
 
 public class ExtensibleStoreSPARQL11QueryComplianceTest extends SPARQL11QueryComplianceTest {
 
-	public ExtensibleStoreSPARQL11QueryComplianceTest(String displayName, String testURI, String name,
-			String queryFileURL,
-			String resultFileURL, Dataset dataset, boolean ordered, boolean laxCardinality) {
-		super(displayName, testURI, name, queryFileURL, resultFileURL, dataset, ordered, laxCardinality);
-	}
-
 	@Override
 	protected Repository newRepository() {
 		return new DatasetRepository(new SailRepository(new ExtensibleStoreOrderedImplForTests()));

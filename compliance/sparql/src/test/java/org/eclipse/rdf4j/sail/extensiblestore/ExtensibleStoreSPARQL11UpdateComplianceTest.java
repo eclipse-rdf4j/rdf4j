@@ -23,15 +23,6 @@ import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL11UpdateCo
  */
 public class ExtensibleStoreSPARQL11UpdateComplianceTest extends SPARQL11UpdateComplianceTest {
 
-	public ExtensibleStoreSPARQL11UpdateComplianceTest(String displayName, String testURI, String name,
-			String requestFile,
-			IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
-			Map<String, IRI> resultNamedGraphs) {
-		super(displayName, testURI, name, requestFile, defaultGraphURI, inputNamedGraphs, resultDefaultGraphURI,
-				resultNamedGraphs);
-		// TODO Auto-generated constructor stub
-	}
-
 	@Override
 	protected Repository newRepository() {
 		return new SailRepository(new ExtensibleStoreOrderedImplForTests());
