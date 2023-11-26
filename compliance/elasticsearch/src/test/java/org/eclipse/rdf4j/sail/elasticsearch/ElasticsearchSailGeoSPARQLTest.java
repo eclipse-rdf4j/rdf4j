@@ -23,17 +23,17 @@ import org.elasticsearch.index.reindex.ReindexPlugin;
 import org.elasticsearch.plugins.Plugin;
 import org.elasticsearch.test.ESIntegTestCase;
 import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 @ClusterScope(numDataNodes = 1)
 public class ElasticsearchSailGeoSPARQLTest extends ESIntegTestCase {
 
 	AbstractLuceneSailGeoSPARQLTest delegateTest;
 
-	@Before
+	@BeforeEach
 	@Override
 	public void setUp() throws Exception {
 		super.setUp();
@@ -64,7 +64,7 @@ public class ElasticsearchSailGeoSPARQLTest extends ESIntegTestCase {
 		return List.of(ReindexPlugin.class);
 	}
 
-	@After
+	@AfterEach
 	@Override
 	public void tearDown() throws Exception {
 		try {
@@ -75,30 +75,32 @@ public class ElasticsearchSailGeoSPARQLTest extends ESIntegTestCase {
 	}
 
 	@Test
-	public void testTriplesStored() {
+	void testTriplesStored() {
 		delegateTest.testTriplesStored();
 	}
 
 	@Test
-	public void testDistanceQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+	void testDistanceQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		delegateTest.testDistanceQuery();
 	}
 
 	@Test
-	public void testComplexDistanceQuery()
+	void testComplexDistanceQuery()
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		delegateTest.testComplexDistanceQuery();
 	}
 
+	// JTS is required
 	@Test
-	@Ignore // JTS is required
-	public void testIntersectionQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+	@Disabled
+	void testIntersectionQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		delegateTest.testIntersectionQuery();
 	}
 
+	// JTS is required
 	@Test
-	@Ignore // JTS is required
-	public void testComplexIntersectionQuery()
+	@Disabled
+	void testComplexIntersectionQuery()
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		delegateTest.testComplexIntersectionQuery();
 	}

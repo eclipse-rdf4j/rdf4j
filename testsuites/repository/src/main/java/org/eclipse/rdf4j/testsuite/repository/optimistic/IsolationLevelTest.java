@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.repository.optimistic;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -31,11 +31,12 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.UnknownTransactionStateException;
 import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,12 +47,12 @@ import org.slf4j.LoggerFactory;
  */
 public class IsolationLevelTest {
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
@@ -72,13 +73,13 @@ public class IsolationLevelTest {
 	 * Methods *
 	 *---------*/
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		store = OptimisticIsolationTest.getEmptyInitializedRepository(IsolationLevelTest.class);
 		failed = null;
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() {
 		store.shutDown();
 	}
@@ -97,25 +98,25 @@ public class IsolationLevelTest {
 	}
 
 	@Test
-	public void testNone() {
+	void testNone() {
 		readPending(IsolationLevels.NONE);
 	}
 
 	@Test
-	public void testReadUncommitted() {
+	void testReadUncommitted() {
 		rollbackTriple(IsolationLevels.READ_UNCOMMITTED);
 		readPending(IsolationLevels.READ_UNCOMMITTED);
 	}
 
 	@Test
-	public void testReadCommitted() throws Exception {
+	void testReadCommitted() throws Exception {
 		readCommitted(IsolationLevels.READ_COMMITTED);
 		rollbackTriple(IsolationLevels.READ_COMMITTED);
 		readPending(IsolationLevels.READ_COMMITTED);
 	}
 
 	@Test
-	public void testSnapshotRead() throws Exception {
+	void testSnapshotRead() throws Exception {
 		if (isSupported(IsolationLevels.SNAPSHOT_READ)) {
 			snapshotRead(IsolationLevels.SNAPSHOT_READ);
 			readCommitted(IsolationLevels.SNAPSHOT_READ);
@@ -127,7 +128,7 @@ public class IsolationLevelTest {
 	}
 
 	@Test
-	public void testSnapshot() throws Exception {
+	void testSnapshot() throws Exception {
 		if (isSupported(IsolationLevels.SNAPSHOT)) {
 			snapshot(IsolationLevels.SNAPSHOT);
 			snapshotRead(IsolationLevels.SNAPSHOT);
@@ -141,7 +142,7 @@ public class IsolationLevelTest {
 	}
 
 	@Test
-	public void testSerializable() throws Exception {
+	void testSerializable() throws Exception {
 
 		if (isSupported(IsolationLevels.SERIALIZABLE)) {
 			serializable(IsolationLevels.SERIALIZABLE);
@@ -480,7 +481,7 @@ public class IsolationLevelTest {
 			}
 			Value obj = stmts.next().getObject();
 			if (stmts.hasNext()) {
-				org.junit.Assert.fail("multiple literals: " + obj + " and " + stmts.next());
+				Assertions.fail("multiple literals: " + obj + " and " + stmts.next());
 			}
 			return (Literal) obj;
 		}

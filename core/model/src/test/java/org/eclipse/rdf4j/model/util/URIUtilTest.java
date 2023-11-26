@@ -10,8 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.util;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -48,35 +48,35 @@ public class URIUtilTest {
 	@Test
 	public void testIsValidURIReference() {
 		assertTrue(URIUtil.isValidURIReference("http://example.org/foo/bar/"));
-		assertTrue("whitespace should be allowed",
-				URIUtil.isValidURIReference("http://example.org/foo/bar with a lot of space/"));
-		assertTrue("unwise chars should be allowed",
-				URIUtil.isValidURIReference("http://example.org/foo/bar/unwise{<characters>}"));
-		assertTrue("query params in single quotes should be allowed",
-				URIUtil.isValidURIReference("http://example.org/foo/bar?query='blah'"));
-		assertTrue("query params in double quotes should be allowed",
-				URIUtil.isValidURIReference("http://example.org/foo/bar?query=\"blah\"&foo=bar"));
-		assertTrue("short simple urns should be allowed", URIUtil.isValidURIReference("urn:p1"));
-		assertTrue("Escaped special char should be allowed",
-				URIUtil.isValidURIReference("http://example.org/foo\\u00ea/bar/"));
-		assertTrue("fragment identifier should be allowed",
-				URIUtil.isValidURIReference("http://example.org/foo/bar#fragment1"));
-		assertTrue("Unescaped special char should be allowed",
-				URIUtil.isValidURIReference("http://example.org/foo®/bar/"));
-		assertFalse("control char should not be allowed",
-				URIUtil.isValidURIReference("http://example.org/foo\u0001/bar/"));
-		assertFalse("relative uri should fail", URIUtil.isValidURIReference("foo/bar/"));
-		assertFalse("single column is not a valid uri", URIUtil.isValidURIReference(":"));
-		assertTrue("reserved char is allowed in non-conflicting spot",
-				URIUtil.isValidURIReference("http://foo.com/b!ar/"));
-		assertFalse("reserved char should not be allowed in conflicting spot",
-				URIUtil.isValidURIReference("http;://foo.com/bar/"));
+		assertTrue(URIUtil.isValidURIReference("http://example.org/foo/bar with a lot of space/"),
+				"whitespace should be allowed");
+		assertTrue(URIUtil.isValidURIReference("http://example.org/foo/bar/unwise{<characters>}"),
+				"unwise chars should be allowed");
+		assertTrue(URIUtil.isValidURIReference("http://example.org/foo/bar?query='blah'"),
+				"query params in single quotes should be allowed");
+		assertTrue(URIUtil.isValidURIReference("http://example.org/foo/bar?query=\"blah\"&foo=bar"),
+				"query params in double quotes should be allowed");
+		assertTrue(URIUtil.isValidURIReference("urn:p1"), "short simple urns should be allowed");
+		assertTrue(URIUtil.isValidURIReference("http://example.org/foo\\u00ea/bar/"),
+				"Escaped special char should be allowed");
+		assertTrue(URIUtil.isValidURIReference("http://example.org/foo/bar#fragment1"),
+				"fragment identifier should be allowed");
+		assertTrue(URIUtil.isValidURIReference("http://example.org/foo®/bar/"),
+				"Unescaped special char should be allowed");
+		assertFalse(URIUtil.isValidURIReference("http://example.org/foo\u0001/bar/"),
+				"control char should not be allowed");
+		assertFalse(URIUtil.isValidURIReference("foo/bar/"), "relative uri should fail");
+		assertFalse(URIUtil.isValidURIReference(":"), "single column is not a valid uri");
+		assertTrue(URIUtil.isValidURIReference("http://foo.com/b!ar/"),
+				"reserved char is allowed in non-conflicting spot");
+		assertFalse(URIUtil.isValidURIReference("http;://foo.com/bar/"),
+				"reserved char should not be allowed in conflicting spot");
 	}
 
 	@Test
 	public void controlCharacterInURI() {
-		assertFalse("URI containing Unicode control char should be invalid",
-				URIUtil.isValidURIReference("http://example.org/foo\u001F/bar/"));
+		assertFalse(URIUtil.isValidURIReference("http://example.org/foo\u001F/bar/"),
+				"URI containing Unicode control char should be invalid");
 	}
 
 	@Test

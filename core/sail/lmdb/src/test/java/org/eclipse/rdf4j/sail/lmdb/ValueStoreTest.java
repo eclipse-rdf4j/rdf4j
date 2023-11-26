@@ -10,8 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import java.io.File;
 import java.io.IOException;
@@ -69,7 +69,7 @@ public class ValueStoreTest {
 
 		ValueStoreRevision revAfter = valueStore.getRevision();
 
-		assertNotEquals("revisions must change after gc of IDs", revBefore, revAfter);
+		assertNotEquals(revBefore, revAfter, "revisions must change after gc of IDs");
 
 		Arrays.fill(values, null);
 		// GC would collect revision at some point in time
@@ -90,7 +90,7 @@ public class ValueStoreTest {
 		}
 		valueStore.commit();
 
-		assertEquals("IDs should have been reused", Collections.emptySet(), ids);
+		assertEquals(Collections.emptySet(), ids, "IDs should have been reused");
 	}
 
 	@Test
@@ -126,7 +126,7 @@ public class ValueStoreTest {
 		}
 		valueStore.commit();
 
-		assertEquals("IDs should have been reused", Collections.emptySet(), ids);
+		assertEquals(Collections.emptySet(), ids, "IDs should have been reused");
 	}
 
 	@AfterEach

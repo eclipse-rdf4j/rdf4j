@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  *
@@ -39,7 +39,8 @@ public class QueryBenchmarkTest {
 
 	private static SailRepository repository;
 
-	public static TemporaryFolder tempDir = new TemporaryFolder();
+	@TempDir
+	public static File tempDir;
 
 	private static final String query1;
 	private static final String query2;
@@ -63,8 +64,7 @@ public class QueryBenchmarkTest {
 
 	@BeforeAll
 	public static void beforeClass() throws IOException {
-		tempDir.create();
-		File file = tempDir.newFolder();
+		File file = newFolder(tempDir, "junit");
 
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
 		repository = new SailRepository(new LmdbStore(file, config));
@@ -195,6 +195,15 @@ public class QueryBenchmarkTest {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return connection.hasStatement(RDF.TYPE, RDF.TYPE, RDF.TYPE, true);
 		}
+	}
+
+	private static File newFolder(File root, String... subDirs) throws IOException {
+		String subFolder = String.join("/", subDirs);
+		File result = new File(root, subFolder);
+		if (!result.mkdirs()) {
+			throw new IOException("Couldn't create folders " + root);
+		}
+		return result;
 	}
 
 }

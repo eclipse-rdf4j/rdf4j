@@ -10,8 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.repository.optimistic;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -22,20 +22,20 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public class ModificationTest {
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
@@ -52,7 +52,7 @@ public class ModificationTest {
 
 	private IRI PICASSO;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		repo = OptimisticIsolationTest.getEmptyInitializedRepository(ModificationTest.class);
 		ValueFactory uf = repo.getValueFactory();
@@ -61,7 +61,7 @@ public class ModificationTest {
 		con = repo.getConnection();
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() {
 		try {
 			con.close();
@@ -71,7 +71,7 @@ public class ModificationTest {
 	}
 
 	@Test
-	public void testAdd() {
+	void testAdd() {
 		con.begin(level);
 		con.add(PICASSO, RDF.TYPE, PAINTER);
 		con.commit();
@@ -79,7 +79,7 @@ public class ModificationTest {
 	}
 
 	@Test
-	public void testAutoCommit() {
+	void testAutoCommit() {
 		con.add(PICASSO, RDF.TYPE, PAINTER);
 		con.close();
 		con = repo.getConnection();
@@ -87,7 +87,7 @@ public class ModificationTest {
 	}
 
 	@Test
-	public void testInsertData() {
+	void testInsertData() {
 		con.begin(level);
 		con.prepareUpdate(QueryLanguage.SPARQL, "INSERT DATA { <picasso> a <Painter> }", NS).execute();
 		con.commit();
@@ -95,7 +95,7 @@ public class ModificationTest {
 	}
 
 	@Test
-	public void testInsertDataAutoCommit() {
+	void testInsertDataAutoCommit() {
 		con.prepareUpdate(QueryLanguage.SPARQL, "INSERT DATA { <picasso> a <Painter> }", NS).execute();
 		con.close();
 		con = repo.getConnection();
@@ -103,7 +103,7 @@ public class ModificationTest {
 	}
 
 	@Test
-	public void testRemove() {
+	void testRemove() {
 		con.begin(level);
 		con.add(PICASSO, RDF.TYPE, PAINTER);
 		con.commit();
@@ -114,7 +114,7 @@ public class ModificationTest {
 	}
 
 	@Test
-	public void testAddIn() {
+	void testAddIn() {
 		con.begin(level);
 		con.add(PICASSO, RDF.TYPE, PAINTER, PICASSO);
 		con.commit();
@@ -122,7 +122,7 @@ public class ModificationTest {
 	}
 
 	@Test
-	public void testRemoveFrom() {
+	void testRemoveFrom() {
 		con.begin(level);
 		con.add(PICASSO, RDF.TYPE, PAINTER, PICASSO);
 		con.commit();
@@ -133,7 +133,7 @@ public class ModificationTest {
 	}
 
 	@Test
-	public void testMove() {
+	void testMove() {
 		con.begin(level);
 		con.add(PICASSO, RDF.TYPE, PAINTER, PICASSO);
 		con.commit();
@@ -146,7 +146,7 @@ public class ModificationTest {
 	}
 
 	@Test
-	public void testMoveOut() {
+	void testMoveOut() {
 		con.begin(level);
 		con.add(PICASSO, RDF.TYPE, PAINTER, PICASSO);
 		con.commit();
@@ -159,7 +159,7 @@ public class ModificationTest {
 	}
 
 	@Test
-	public void testCancel() {
+	void testCancel() {
 		con.begin(level);
 		con.add(PICASSO, RDF.TYPE, PAINTER, PICASSO);
 		con.remove(PICASSO, RDF.TYPE, PAINTER, PICASSO);
@@ -168,7 +168,7 @@ public class ModificationTest {
 	}
 
 	@Test
-	public void testRemoveDuplicate() {
+	void testRemoveDuplicate() {
 		con.add(PICASSO, RDF.TYPE, PAINTER, PICASSO, PAINTER);
 		assertTrue(con.hasStatement(PICASSO, RDF.TYPE, PAINTER, false, PAINTER));
 		assertTrue(con.hasStatement(PICASSO, RDF.TYPE, PAINTER, false, PICASSO));

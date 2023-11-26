@@ -10,9 +10,9 @@
  *******************************************************************************/
 package org.eclipse.testsuite.rdf4j.sail.lucene;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -39,9 +39,9 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public abstract class AbstractLuceneSailGeoSPARQLTest {
 
@@ -88,7 +88,7 @@ public abstract class AbstractLuceneSailGeoSPARQLTest {
 
 	protected abstract void configure(LuceneSail sail);
 
-	@Before
+	@BeforeEach
 	public void setUp() {
 		// setup a LuceneSail
 		MemoryStore memoryStore = new MemoryStore();
@@ -121,7 +121,7 @@ public abstract class AbstractLuceneSailGeoSPARQLTest {
 		}
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() throws IOException, RepositoryException {
 		if (repository != null) {
 			repository.shutDown();
@@ -222,7 +222,7 @@ public abstract class AbstractLuceneSailGeoSPARQLTest {
 	}
 
 	@Test
-	public void testComplexDistanceQueryMathExpr()
+	void testComplexDistanceQueryMathExpr()
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			String queryStr = "prefix geo:  <" + GEO.NAMESPACE + ">" + "prefix geof: <" + GEOF.NAMESPACE + ">"
@@ -305,7 +305,7 @@ public abstract class AbstractLuceneSailGeoSPARQLTest {
 					IRI subj = (IRI) bindings.getValue("matchUri");
 
 					Literal location = expected.remove(subj);
-					assertNotNull("Expected subject: " + subj, location);
+					assertNotNull(location, "Expected subject: " + subj);
 					assertEquals(location.booleanValue(), ((Literal) bindings.getValue("intersects")).booleanValue());
 
 					assertNotNull(bindings.getValue("g"));

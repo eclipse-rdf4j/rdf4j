@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -68,11 +69,10 @@ import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TestName;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -99,8 +99,7 @@ public class SPARQLServiceEvaluationTest {
 
 	private List<HTTPRepository> remoteRepositories;
 
-	@Rule
-	public TestName name = new TestName();
+	public String name;
 
 	public SPARQLServiceEvaluationTest() {
 
@@ -109,8 +108,12 @@ public class SPARQLServiceEvaluationTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@Before
-	public void setUp() throws Exception {
+	@BeforeEach
+	public void setUp(TestInfo testInfo) throws Exception {
+		Optional<Method> testMethod = testInfo.getTestMethod();
+		if (testMethod.isPresent()) {
+			this.name = testMethod.get().getName();
+		}
 		// set up the server: the maximal number of endpoints must be known
 		List<String> repositoryIds = new ArrayList<>(MAX_ENDPOINTS);
 		for (int i = 1; i <= MAX_ENDPOINTS; i++) {
@@ -211,7 +214,7 @@ public class SPARQLServiceEvaluationTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		try {
 			localRepository.shutDown();
@@ -226,7 +229,7 @@ public class SPARQLServiceEvaluationTest {
 	 * @see <a href="https://github.com/eclipse/rdf4j/issues/646">#646</a>
 	 */
 	@Test
-	public void testValuesBindClauseHandling() {
+	void testValuesBindClauseHandling() {
 		String query = "select * { service <" + getRepositoryUrl(1) + "> { Bind(1 as ?val) . VALUES ?x {1 2} . } }";
 
 		try (RepositoryConnection conn = localRepository.getConnection()) {
@@ -255,7 +258,7 @@ public class SPARQLServiceEvaluationTest {
 	 * @see <a href="https://github.com/eclipse/rdf4j/issues/703">#703</a>
 	 */
 	@Test
-	public void testVariableNameHandling() throws Exception {
+	void testVariableNameHandling() throws Exception {
 		String query = "select * { service <" + getRepositoryUrl(1) + "> { ?s ?p ?o . Bind(str(?o) as ?val) .  } }";
 
 		// add some data to the remote endpoint (we don't care about the exact contents)
@@ -279,7 +282,7 @@ public class SPARQLServiceEvaluationTest {
 	}
 
 	@Test
-	public void testSimpleServiceQuery() throws RepositoryException {
+	void testSimpleServiceQuery() throws RepositoryException {
 		// test setup
 		String EX_NS = "http://example.org/";
 		ValueFactory f = localRepository.getValueFactory();
@@ -338,74 +341,74 @@ public class SPARQLServiceEvaluationTest {
 	}
 
 	@Test
-	public void test1() throws Exception {
+	void test1() throws Exception {
 		prepareTest("/testcases-service/data01.ttl", List.of("/testcases-service/data01endpoint.ttl"));
 		execute("/testcases-service/service01.rq", "/testcases-service/service01.srx", false);
 	}
 
 	@Test
-	public void test2() throws Exception {
+	void test2() throws Exception {
 		prepareTest(null,
 				Arrays.asList("/testcases-service/data02endpoint1.ttl", "/testcases-service/data02endpoint2.ttl"));
 		execute("/testcases-service/service02.rq", "/testcases-service/service02.srx", false);
 	}
 
 	@Test
-	public void test3() throws Exception {
+	void test3() throws Exception {
 		prepareTest(null,
 				Arrays.asList("/testcases-service/data03endpoint1.ttl", "/testcases-service/data03endpoint2.ttl"));
 		execute("/testcases-service/service03.rq", "/testcases-service/service03.srx", false);
 	}
 
 	@Test
-	public void test4() throws Exception {
+	void test4() throws Exception {
 		prepareTest("/testcases-service/data04.ttl", List.of("/testcases-service/data04endpoint.ttl"));
 		execute("/testcases-service/service04.rq", "/testcases-service/service04.srx", false);
 	}
 
 	@Test
-	public void test5() throws Exception {
+	void test5() throws Exception {
 		prepareTest("/testcases-service/data05.ttl",
 				Arrays.asList("/testcases-service/data05endpoint1.ttl", "/testcases-service/data05endpoint2.ttl"));
 		execute("/testcases-service/service05.rq", "/testcases-service/service05.srx", false);
 	}
 
 	@Test
-	public void test6() throws Exception {
+	void test6() throws Exception {
 		prepareTest(null, List.of("/testcases-service/data06endpoint1.ttl"));
 		execute("/testcases-service/service06.rq", "/testcases-service/service06.srx", false);
 	}
 
 	@Test
-	public void test7() throws Exception {
+	void test7() throws Exception {
 		// clears the repository and adds new data + execute
 		prepareTest("/testcases-service/data07.ttl", Collections.<String>emptyList());
 		execute("/testcases-service/service07.rq", "/testcases-service/service07.srx", false);
 	}
 
 	@Test
-	public void test8() throws Exception {
+	void test8() throws Exception {
 		/* test where the SERVICE expression is to be evaluated as ASK request */
 		prepareTest("/testcases-service/data08.ttl", List.of("/testcases-service/data08endpoint.ttl"));
 		execute("/testcases-service/service08.rq", "/testcases-service/service08.srx", false);
 	}
 
 	@Test
-	public void test9() throws Exception {
+	void test9() throws Exception {
 		/* test where the service endpoint is bound at runtime through BIND */
 		prepareTest(null, List.of("/testcases-service/data09endpoint.ttl"));
 		execute("/testcases-service/service09.rq", "/testcases-service/service09.srx", false);
 	}
 
 	@Test
-	public void test10() throws Exception {
+	void test10() throws Exception {
 		/* test how we deal with blank node */
 		prepareTest("/testcases-service/data10.ttl", List.of("/testcases-service/data10endpoint.ttl"));
 		execute("/testcases-service/service10.rq", "/testcases-service/service10.srx", false);
 	}
 
 	@Test
-	public void test11() throws Exception {
+	void test11() throws Exception {
 		/* test vectored join with more intermediate results */
 		// clears the repository and adds new data + execute
 		prepareTest("/testcases-service/data11.ttl", List.of("/testcases-service/data11endpoint.ttl"));
@@ -431,28 +434,28 @@ public class SPARQLServiceEvaluationTest {
 	// }
 
 	@Test
-	public void test13() throws Exception {
+	void test13() throws Exception {
 		/* test for bug SES-899: cross product is required */
 		prepareTest(null, List.of("/testcases-service/data13.ttl"));
 		execute("/testcases-service/service13.rq", "/testcases-service/service13.srx", false);
 	}
 
 	@Test
-	public void testEmptyServiceBlock() throws Exception {
+	void testEmptyServiceBlock() throws Exception {
 		/* test for bug SES-900: nullpointer for empty service block */
 		prepareTest(null, List.of("/testcases-service/data13.ttl"));
 		execute("/testcases-service/service14.rq", "/testcases-service/service14.srx", false);
 	}
 
 	@Test
-	public void testNotProjectedCount() throws Exception {
+	void testNotProjectedCount() throws Exception {
 		/* test projection of subqueries - SES-1000 */
 		prepareTest(null, List.of("/testcases-service/data17endpoint1.ttl"));
 		execute("/testcases-service/service17.rq", "/testcases-service/service17.srx", false);
 	}
 
 	@Test
-	public void testNonAsciiCharHandling() throws Exception {
+	void testNonAsciiCharHandling() throws Exception {
 		/* SES-1056 */
 		prepareTest(null, List.of("/testcases-service/data18endpoint1.rdf"));
 		execute("/testcases-service/service18.rq", "/testcases-service/service18.srx", false);
@@ -622,7 +625,7 @@ public class SPARQLServiceEvaluationTest {
 
 			StringBuilder message = new StringBuilder(128);
 			message.append("\n============ ");
-			message.append(name.getMethodName());
+			message.append(name);
 			message.append(" =======================\n");
 
 			if (!missingBindings.isEmpty()) {
@@ -634,7 +637,7 @@ public class SPARQLServiceEvaluationTest {
 				}
 
 				message.append("=============");
-				StringUtil.appendN('=', name.getMethodName().length(), message);
+				StringUtil.appendN('=', name.length(), message);
 				message.append("========================\n");
 			}
 
@@ -646,7 +649,7 @@ public class SPARQLServiceEvaluationTest {
 				}
 
 				message.append("=============");
-				StringUtil.appendN('=', name.getMethodName().length(), message);
+				StringUtil.appendN('=', name.length(), message);
 				message.append("========================\n");
 			}
 
@@ -708,7 +711,7 @@ public class SPARQLServiceEvaluationTest {
 			 */
 			StringBuilder message = new StringBuilder(128);
 			message.append("\n============ ");
-			message.append(name.getMethodName());
+			message.append(name);
 			message.append(" =======================\n");
 			message.append("Expected result: \n");
 			for (Statement st : expectedResult) {
@@ -716,7 +719,7 @@ public class SPARQLServiceEvaluationTest {
 				message.append("\n");
 			}
 			message.append("=============");
-			StringUtil.appendN('=', name.getMethodName().length(), message);
+			StringUtil.appendN('=', name.length(), message);
 			message.append("========================\n");
 
 			message.append("Query result: \n");
@@ -725,7 +728,7 @@ public class SPARQLServiceEvaluationTest {
 				message.append("\n");
 			}
 			message.append("=============");
-			StringUtil.appendN('=', name.getMethodName().length(), message);
+			StringUtil.appendN('=', name.length(), message);
 			message.append("========================\n");
 
 			logger.error(message.toString());
