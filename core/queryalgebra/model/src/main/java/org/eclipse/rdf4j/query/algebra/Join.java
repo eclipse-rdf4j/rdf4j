@@ -18,7 +18,16 @@ import java.util.Set;
  */
 public class Join extends BinaryTupleOperator {
 
+	/**
+	 * Indicates whether a join can use merge join.
+	 */
 	private boolean mergeJoin = false;
+
+	/**
+	 * Indicates whether a join can be cached. This also entails that no bindings from the parent node are actually used
+	 * in this join.
+	 */
+	private boolean cacheable;
 
 	public Join() {
 	}
@@ -69,5 +78,9 @@ public class Join extends BinaryTupleOperator {
 
 	public void setMergeJoin(boolean mergeJoin) {
 		this.mergeJoin = mergeJoin;
+	}
+
+	public void setCacheable(boolean cacheable) {
+		this.cacheable = cacheable;
 	}
 }

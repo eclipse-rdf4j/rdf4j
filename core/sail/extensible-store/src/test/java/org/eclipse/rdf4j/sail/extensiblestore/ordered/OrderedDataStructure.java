@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.extensiblestore.ordered;
 
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -90,7 +91,7 @@ public class OrderedDataStructure implements DataStructureInterface {
 	@Override
 	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, boolean inferred,
 			Resource... contexts) {
-		return Set.of(StatementOrder.S, StatementOrder.P, StatementOrder.O, StatementOrder.C);
+		return EnumSet.of(StatementOrder.S, StatementOrder.P, StatementOrder.O, StatementOrder.C);
 	}
 
 	@Override

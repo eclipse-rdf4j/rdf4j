@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.rio.turtle;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
-import org.eclipse.rdf4j.common.text.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

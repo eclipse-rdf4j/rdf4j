@@ -21,7 +21,6 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.IllformedLocaleException;
-import java.util.Optional;
 
 import javax.xml.datatype.DatatypeConfigurationException;
 import javax.xml.datatype.DatatypeFactory;
@@ -30,7 +29,6 @@ import javax.xml.datatype.Duration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;

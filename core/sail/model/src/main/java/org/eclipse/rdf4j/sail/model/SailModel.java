@@ -12,8 +12,6 @@ package org.eclipse.rdf4j.sail.model;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.util.Iterator;
 import java.util.Optional;
 import java.util.Set;

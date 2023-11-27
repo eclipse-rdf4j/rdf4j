@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.sail.memory.model;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
-import java.lang.reflect.Field;
 
 import org.eclipse.rdf4j.model.impl.GenericStatement;
 import org.slf4j.Logger;

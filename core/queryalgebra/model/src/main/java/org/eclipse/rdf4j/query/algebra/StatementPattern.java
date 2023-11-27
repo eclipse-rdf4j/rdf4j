@@ -20,6 +20,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
@@ -62,6 +63,8 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 	private Var contextVar;
 
 	private StatementOrder statementOrder;
+
+	private String indexName;
 
 	private Set<String> assuredBindingNames;
 	private List<Var> varList;
@@ -359,6 +362,10 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 			sb.append(" [statementOrder: ").append(statementOrder).append("] ");
 		}
 
+		if (indexName != null) {
+			sb.append(" [index: ").append(indexName).append("] ");
+		}
+
 		if (scope == Scope.NAMED_CONTEXTS) {
 			sb.append(" FROM NAMED CONTEXT");
 		}
@@ -426,16 +433,29 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 
 	@Override
 	public Set<Var> getSupportedOrders(AvailableStatementOrder tripleSource) {
-		Resource subject = subjectVar.hasValue() ? (Resource) subjectVar.getValue() : null;
-		IRI predicate = predicateVar.hasValue() ? (IRI) predicateVar.getValue() : null;
+		Value subject = subjectVar.hasValue() ? subjectVar.getValue() : null;
+		if (subject != null && !(subject instanceof Resource)) {
+			return Set.of();
+		}
+
+		Value predicate = predicateVar.hasValue() ? predicateVar.getValue() : null;
+		if (predicate != null && !(predicate instanceof IRI)) {
+			return Set.of();
+		}
+
+		Value context = contextVar != null && contextVar.hasValue() ? contextVar.getValue() : null;
+		if (context != null && !(context instanceof Resource)) {
+			return Set.of();
+		}
+
 		Value object = objectVar.hasValue() ? objectVar.getValue() : null;
-		Resource context = contextVar != null && contextVar.hasValue() ? (Resource) contextVar.getValue() : null;
+
 		Set<StatementOrder> supportedOrders;
 		if (contextVar == null) {
-
-			supportedOrders = tripleSource.getSupportedOrders(subject, predicate, object);
+			supportedOrders = tripleSource.getSupportedOrders((Resource) subject, (IRI) predicate, object);
 		} else {
-			supportedOrders = tripleSource.getSupportedOrders(subject, predicate, object, context);
+			supportedOrders = tripleSource.getSupportedOrders((Resource) subject, (IRI) predicate, object,
+					(Resource) context);
 		}
 		return supportedOrders.stream()
 				.map(statementOrder -> {
@@ -513,5 +533,15 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 		}
 
 		throw new IllegalStateException("Unknown StatementOrder: " + statementOrder);
+	}
+
+	@Experimental
+	public String getIndexName() {
+		return indexName;
+	}
+
+	@Experimental
+	public void setIndexName(String indexName) {
+		this.indexName = indexName;
 	}
 }

@@ -18,6 +18,7 @@ import java.util.function.Predicate;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
+import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -263,9 +264,15 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			} else {
 				iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
 			}
+
+			if (iteration instanceof IndexReportingIterator) {
+				statementPattern.setIndexName(((IndexReportingIterator) iteration).getIndexName());
+			}
+
 			if (iteration instanceof EmptyIteration) {
 				return null;
 			}
+
 			iteration = handleFilter(contexts, (Resource) subject, (IRI) predicate, object, iteration);
 
 			// Return an iterator that converts the statements to var bindings
@@ -311,6 +318,10 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			} else {
 				iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
 			}
+			if (iteration instanceof IndexReportingIterator) {
+				statementPattern.setIndexName(((IndexReportingIterator) iteration).getIndexName());
+			}
+
 			if (iteration instanceof EmptyIteration) {
 				return null;
 			}

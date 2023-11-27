@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.iteration;
 
-import java.lang.ref.WeakReference;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;

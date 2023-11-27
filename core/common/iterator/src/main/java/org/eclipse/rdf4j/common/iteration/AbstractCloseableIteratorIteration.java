@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.common.iteration;
 
 import java.util.Iterator;
 import java.util.NoSuchElementException;
-import java.util.Objects;
 
 /**
  * An Iteration that can convert an {@link Iterator} to a {@link CloseableIteration}.

@@ -209,30 +209,17 @@ class UnionSailDataset implements SailDataset {
 
 	@Override
 	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
-//		try (CloseableIteration<? extends Statement> statements = dataset1.getStatements(null, null, null)) {
-//			if (!statements.hasNext()) {
-//				return dataset2.getSupportedOrders(subj, pred, obj, contexts);
-//			}
-//		}
-//
-//		if (supportedOrders1.isEmpty()) {
-//			return Set.of();
-//		}
-//
-//		try (CloseableIteration<? extends Statement> statements = dataset2.getStatements(null, null, null)) {
-//			if (!statements.hasNext()) {
-//				return supportedOrders1;
-//			}
-//		}
 
 		Set<StatementOrder> supportedOrders1 = dataset1.getSupportedOrders(subj, pred, obj, contexts);
 		if (supportedOrders1.isEmpty()) {
 			return Set.of();
 		}
+
 		Set<StatementOrder> supportedOrders2 = dataset2.getSupportedOrders(subj, pred, obj, contexts);
 		if (supportedOrders2.isEmpty()) {
 			return Set.of();
 		}
+
 		if (supportedOrders1.equals(supportedOrders2)) {
 			return supportedOrders1;
 		}

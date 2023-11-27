@@ -161,4 +161,10 @@ public class PeekMarkIterator<E> implements CloseableIteration<E> {
 		this.closed = true;
 		iterator.close();
 	}
+
+	// What will happen if we are iterating over the buffer at this point, then unmark is called followed by mark?
+	public void unmark() {
+		mark = false;
+		resetPossible = -1;
+	}
 }

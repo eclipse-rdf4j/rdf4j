@@ -46,6 +46,8 @@ public class DualUnionIteration<E> implements CloseableIteration<E> {
 		this.iteration2 = iteration2;
 		this.statementOrder = statementOrder;
 		this.cmp = cmp;
+
+		// TODO
 		throw new UnsupportedOperationException("Not implemented yet");
 	}
 

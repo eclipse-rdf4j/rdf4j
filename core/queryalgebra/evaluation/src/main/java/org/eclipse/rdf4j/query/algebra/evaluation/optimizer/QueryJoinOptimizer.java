@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
@@ -54,6 +55,18 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
  * @author James Leigh
  */
 public class QueryJoinOptimizer implements QueryOptimizer {
+
+	/**
+	 * When deciding if merge join is the correct approach we will compare the cardinality of the two join arguments, if
+	 * one is bigger than the other by a factor of MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER then we will not use
+	 * merge join. As an example, if the limit is 10 and the left cardinality if 50 000 and the right cardinality is 500
+	 * 000 then we will use merge join, but if it is 500 001 then we will not.
+	 */
+	@Experimental
+	public static int MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER = 10;
+
+	@Experimental
+	public static boolean USE_MERGE_JOIN_FOR_LAST_STATEMENT_PATTERNS_WHEN_CROSS_JOIN = true;
 
 	protected final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
@@ -225,6 +238,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 				if (priorityJoins == null && !orderedJoinArgs.isEmpty()) {
 
+					double cardinality = 0;
+
 					while (orderedJoinArgs.size() > 1) {
 
 						Set<Var> supportedOrders = orderedJoinArgs.peekFirst().getSupportedOrders(tripleSource);
@@ -232,17 +247,24 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 							break;
 						}
 
-						TupleExpr first = orderedJoinArgs.removeFirst();
-						TupleExpr second = orderedJoinArgs.removeFirst();
-						Set<Var> SupportedOrders = new HashSet<>(first.getSupportedOrders(tripleSource));
-						SupportedOrders.retainAll(second.getSupportedOrders(tripleSource));
-						if (SupportedOrders.isEmpty() || joinOnMultipleVars(first, second)) {
-							orderedJoinArgs.addFirst(second);
-							orderedJoinArgs.addFirst(first);
+						TupleExpr left = orderedJoinArgs.removeFirst();
+						TupleExpr right = orderedJoinArgs.removeFirst();
+
+						supportedOrders = new HashSet<>(supportedOrders);
+						supportedOrders.retainAll(right.getSupportedOrders(tripleSource));
+
+						if (supportedOrders.isEmpty() || joinOnMultipleVars(left, right) || joinSizeIsTooDifferent(
+								Math.max(cardinality, left.getResultSizeEstimate()), right.getResultSizeEstimate())) {
+
+							orderedJoinArgs.addFirst(right);
+							orderedJoinArgs.addFirst(left);
 							break;
+
 						} else {
-							Join join = new Join(first, second);
-							join.setOrder((Var) SupportedOrders.toArray()[0]);
+							cardinality = Math.max(cardinality, left.getResultSizeEstimate());
+							cardinality = Math.max(cardinality, right.getResultSizeEstimate());
+							Join join = new Join(left, right);
+							join.setOrder((Var) supportedOrders.toArray()[0]);
 							join.setMergeJoin(true);
 							orderedJoinArgs.addFirst(join);
 						}
@@ -256,21 +278,36 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					// IterativeEvaluationOptimizer to factor out the left-most join
 					// argument
 					int i = orderedJoinArgs.size() - 1;
-					TupleExpr replacement = orderedJoinArgs.removeLast();
+					TupleExpr right = orderedJoinArgs.removeLast();
+					if (!orderedJoinArgs.isEmpty()) {
+						TupleExpr left = orderedJoinArgs.removeLast();
+
+						Set<Var> supportedOrders = new HashSet<>(left.getSupportedOrders(tripleSource));
+						supportedOrders.retainAll(right.getSupportedOrders(tripleSource));
+
+						Join join = new Join(left, right);
+
+						if (USE_MERGE_JOIN_FOR_LAST_STATEMENT_PATTERNS_WHEN_CROSS_JOIN) {
+							mergeJoinForCrossJoin(orderedJoinArgs, supportedOrders, left, right, join);
+						}
+
+						right = join;
+
+					}
 					while (!orderedJoinArgs.isEmpty()) {
-						replacement = new Join(orderedJoinArgs.removeLast(), replacement);
+						right = new Join(orderedJoinArgs.removeLast(), right);
 					}
 
 					if (priorityJoins != null) {
-						replacement = new Join(priorityJoins, replacement);
+						right = new Join(priorityJoins, right);
 					}
 
 					// Replace old join hierarchy
-					node.replaceWith(replacement);
+					node.replaceWith(right);
 
-					// we optimize after the replacement call above in case the optimize call below
+					// we optimize after the right call above in case the optimize call below
 					// recurses back into this function and we need all the node's parent/child pointers
-					// set up correctly for replacement to work on subsequent calls
+					// set up correctly for right to work on subsequent calls
 					if (priorityJoins != null) {
 						optimizePriorityJoin(origBoundVars, priorityJoins);
 					}
@@ -284,6 +321,15 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
+		private boolean joinSizeIsTooDifferent(double cardinality, double second) {
+			if (cardinality > second && cardinality / MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER > second) {
+				return true;
+			} else if (second > cardinality && second / MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER > cardinality) {
+				return true;
+			}
+			return false;
+		}
+
 		private boolean joinOnMultipleVars(TupleExpr first, TupleExpr second) {
 			Set<String> firstBindingNames = first.getBindingNames();
 			if (firstBindingNames.size() == 1) {
@@ -295,9 +341,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 			int overlap = 0;
 			for (String firstBindingName : firstBindingNames) {
-				if (secondBindingNames.contains(firstBindingName)) {
+				if (!firstBindingName.startsWith("_const_") && secondBindingNames.contains(firstBindingName)) {
 					overlap++;
 				}
+
 				if (overlap > 1) {
 					return true;
 				}
@@ -686,6 +733,41 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 				return result;
 
+			}
+		}
+
+		private void mergeJoinForCrossJoin(Deque<TupleExpr> orderedJoinArgs, Set<Var> supportedOrders, TupleExpr left,
+				TupleExpr right, Join join) {
+			if (!orderedJoinArgs.isEmpty()
+					&& !supportedOrders.isEmpty() && !joinOnMultipleVars(left, right)
+					&& !joinSizeIsTooDifferent(left.getResultSizeEstimate(), right.getResultSizeEstimate())
+					&& left instanceof StatementPattern && right instanceof StatementPattern) {
+
+				HashSet<String> allBindingNamesAbove = new HashSet<>();
+
+				for (TupleExpr orderedJoinArg : orderedJoinArgs) {
+					allBindingNamesAbove.addAll(orderedJoinArg.getBindingNames());
+				}
+
+				if (!allBindingNamesAbove.isEmpty()) {
+
+					// Check that none of the variables used in the join are used anywhere else, e.g. is this case that
+					// join is the right arg of an effective cross join
+					Set<String> joinBindingNames = join.getBindingNames();
+					boolean crossJoin = true;
+					for (String leftBindingName : joinBindingNames) {
+						if (!leftBindingName.startsWith("_const_")
+								&& allBindingNamesAbove.contains(leftBindingName)) {
+							crossJoin = false;
+							break;
+						}
+					}
+					if (crossJoin) {
+						join.setOrder((Var) supportedOrders.toArray()[0]);
+						join.setMergeJoin(true);
+						join.setCacheable(true);
+					}
+				}
 			}
 		}
 

@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;

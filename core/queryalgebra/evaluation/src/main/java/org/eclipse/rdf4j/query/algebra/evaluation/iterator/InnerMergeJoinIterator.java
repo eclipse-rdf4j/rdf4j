@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
@@ -75,6 +76,11 @@ public class InnerMergeJoinIterator extends LookAheadIteration<BindingSet> {
 		} else {
 			joined = context.createBindingSet(left);
 		}
+		if (joined instanceof ArrayBindingSet && right instanceof ArrayBindingSet) {
+			((ArrayBindingSet) joined).addAll((ArrayBindingSet) right);
+			return joined;
+		}
+
 		for (Binding binding : right) {
 			if (!joined.hasBinding(binding.getName())) {
 				joined.addBinding(binding);
@@ -104,20 +110,41 @@ public class InnerMergeJoinIterator extends LookAheadIteration<BindingSet> {
 				Value left = value.apply(currentLeft);
 				Value right = value.apply(peekRight);
 
+				/*
+				 * country1: http://www.wikidata.org/entity/Q467864 country2: http://www.wikidata.org/entity/Q222
+				 * currency: http://www.wikidata.org/entity/Q125999
+				 */
+//
+//				if (currentLeft.toString().contains("Q467864") && peekRight.toString().contains("Q222")) {
+//					System.out.println();
+//				}
+//				if (peekRight.toString().contains("Q467864") && currentLeft.toString().contains("Q222")) {
+//					System.out.println();
+//				}
+//
+//				System.out.println("Left: " + currentLeft);
+//				System.out.println("Right: " + peekRight);
+//				System.out.println();
+
 				int compareTo = cmp.compare(left, right);
 
 				// TODO add an assert block that checks that the left iterator is sequential
 
-//				BindingSet temp = leftIterator.peek();
-//				if (temp != null) {
-//					if (prevLeft != currentLeft) {
-//						prevLeft = currentLeft;
-//						int compare = cmp.compare(left, value.apply(temp));
-//						System.out.println(compare + "\tleft: " + left.toString() + "    next left:"
-//								+ value.apply(temp).toString());
+//				{
+//					BindingSet temp = leftIterator.peek();
+//					if (temp != null) {
+//						if (prevLeft != currentLeft) {
+//							prevLeft = currentLeft;
+//							int compare = cmp.compare(left, value.apply(temp));
+//							if (compare > 0) {
+//								System.out.println(compare + "\tleft: " + left.toString() + "    next left:"
+//										+ value.apply(temp).toString());
+//								assert false;
+//							}
+//
+//						}
 //
 //					}
-//
 //				}
 
 				if (compareTo == 0) {
@@ -151,6 +178,8 @@ public class InnerMergeJoinIterator extends LookAheadIteration<BindingSet> {
 								if (rightIterator.isResettable()) {
 									rightIterator.reset();
 								}
+							} else {
+								rightIterator.unmark();
 							}
 						} else {
 							currentLeft = null;
