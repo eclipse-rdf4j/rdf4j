@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2018 Eclipse RDF4J contributors.
+ * Copyright (c) 2023 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -7,10 +7,18 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
- *******************************************************************************/
-package org.eclipse.rdf4j.rio.jsonld;
+ ******************************************************************************/
+package org.eclipse.rdf4j.rio.jsonld.legacy;
 
-import java.util.*;
+import java.util.AbstractMap;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**

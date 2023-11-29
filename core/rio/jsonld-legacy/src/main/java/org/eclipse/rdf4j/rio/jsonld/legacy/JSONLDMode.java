@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -8,7 +8,7 @@
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
-package org.eclipse.rdf4j.rio.helpers;
+package org.eclipse.rdf4j.rio.jsonld.legacy;
 
 /**
  * Specifies constants to identify various modes that are relevant to JSONLD documents.
@@ -16,8 +16,8 @@ package org.eclipse.rdf4j.rio.helpers;
  * @author Peter Ansell
  * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#features">JSONLD Features</a>
  *
+ * @since 4.3.0
  */
-@Deprecated(since = "4.3.0", forRemoval = true)
 public enum JSONLDMode {
 
 	EXPAND("Expansion", "http://json-ld.org/spec/latest/json-ld-api/index.html#expansion"),

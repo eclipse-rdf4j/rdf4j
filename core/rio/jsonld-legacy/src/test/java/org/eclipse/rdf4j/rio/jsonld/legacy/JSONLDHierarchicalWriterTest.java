@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2018 Eclipse RDF4J contributors.
+ * Copyright (c) 2023 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -7,8 +7,8 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
- *******************************************************************************/
-package org.eclipse.rdf4j.rio.jsonld;
+ ******************************************************************************/
+package org.eclipse.rdf4j.rio.jsonld.legacy;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -34,14 +34,8 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
-<<<<<<< HEAD
-import org.junit.Before;
-import org.junit.Test;
-=======
-import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
->>>>>>> main
 
 /**
  * @author Yasen Marinov
@@ -304,6 +298,35 @@ public class JSONLDHierarchicalWriterTest {
 		verifyOutput();
 	}
 
+	/**
+	 *
+	 * @throws IOException
+	 * @see <a href="https://github.com/eclipse-rdf4j/rdf4j/issues/4833s">GH-4833</a>
+	 */
+	@Test
+	public void testMultipleLoops() throws IOException {
+		addStatement(vf.createIRI("sch:node1"), vf.createIRI("sch:pred1"), vf.createIRI("sch:node2"));
+
+		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred2"), vf.createIRI("sch:node3"));
+		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred2"), vf.createIRI("sch:node4"));
+		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred2"), vf.createIRI("sch:node5"));
+
+		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred3"), vf.createIRI("sch:node1"));
+
+		addStatement(vf.createIRI("sch:node3"), vf.createIRI("sch:pred4"), vf.createIRI("sch:node2"));
+		addStatement(vf.createIRI("sch:node3"), vf.createIRI("sch:pred5"), vf.createIRI("sch:node6"));
+
+		addStatement(vf.createIRI("sch:node4"), vf.createIRI("sch:pred4"), vf.createIRI("sch:node2"));
+
+		addStatement(vf.createIRI("sch:node5"), vf.createIRI("sch:pred4"), vf.createIRI("sch:node2"));
+		addStatement(vf.createIRI("sch:node5"), vf.createIRI("sch:pred5"), vf.createIRI("sch:node6"));
+
+		addStatement(vf.createIRI("sch:node6"), vf.createIRI("sch:pred6"), vf.createIRI("sch:node3"));
+
+		verifyOutput();
+
+	}
+
 	private void addStatement(Resource subject, IRI predicate, Value object, Resource context) {
 		model.add(vf.createStatement(subject, predicate, object, context));
 	}
@@ -332,7 +355,8 @@ public class JSONLDHierarchicalWriterTest {
 			expectedFile = new FileInputStream(file);
 			os = new ComparingOutputStream(expectedFile);
 		} else {
-			fail("The file with expected results is missing. Remove this fail clause if you want to generate new file.");
+			fail("File " + file
+					+ " with expected results is missing. Remove this fail clause if you want to generate new file.");
 			os = Files.newOutputStream(file.toPath());
 		}
 		RDFWriter writer = new JSONLDWriter(os);

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2021 Eclipse RDF4J contributors.
+ * Copyright (c) 2023 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -7,10 +7,8 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
- *******************************************************************************/
-package org.eclipse.rdf4j.rio.ndjsonld;
-
-import java.io.IOException;
+ ******************************************************************************/
+package org.eclipse.rdf4j.rio.ndjsonld.legacy;
 
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -20,17 +18,10 @@ import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
-<<<<<<< HEAD
-import org.eclipse.rdf4j.rio.jsonld.JSONLDMode;
-import org.eclipse.rdf4j.rio.jsonld.JSONLDSettings;
-import org.junit.Ignore;
-import org.junit.Test;
-=======
-import org.eclipse.rdf4j.rio.helpers.JSONLDMode;
-import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
+import org.eclipse.rdf4j.rio.jsonld.legacy.JSONLDMode;
+import org.eclipse.rdf4j.rio.jsonld.legacy.JSONLDSettings;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
->>>>>>> main
 
 public class NDJSONLDWriterTest extends RDFWriterTest {
 
@@ -41,7 +32,7 @@ public class NDJSONLDWriterTest extends RDFWriterTest {
 	@Test
 	@Override
 	@Disabled("TODO: See case for JSONLDWriterTest")
-	public void testIllegalPrefix() throws RDFHandlerException, RDFParseException, IOException {
+	public void testIllegalPrefix() throws RDFHandlerException, RDFParseException {
 	}
 
 	@Override
