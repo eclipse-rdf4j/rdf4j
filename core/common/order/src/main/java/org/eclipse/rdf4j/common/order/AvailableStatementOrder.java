@@ -13,11 +13,14 @@ package org.eclipse.rdf4j.common.order;
 
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 
+@Experimental
 public interface AvailableStatementOrder {
 
+	@Experimental
 	Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts);
 }

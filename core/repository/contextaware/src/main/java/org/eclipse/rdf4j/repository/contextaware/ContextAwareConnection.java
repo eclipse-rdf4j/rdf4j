@@ -458,7 +458,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	 * optionally restricted to the specified set of named contexts.
 	 *
 	 * @param subj A Resource specifying the subject, or <var>null</var> for a wildcard.
-	 * @param pred A URI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param pred A IRI specifying the predicate, or <var>null</var> for a wildcard.
 	 * @param obj  A Value specifying the object, or <var>null</var> for a wildcard.
 	 * @return The statements matching the specified pattern. The result object is a {@link RepositoryResult} object, a
 	 *         lazy Iterator-like object containing {@link Statement}s and optionally throwing a
@@ -511,7 +511,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	 * the specified contexts.
 	 *
 	 * @param subj A Resource specifying the subject, or <var>null</var> for a wildcard.
-	 * @param pred A URI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param pred A IRI specifying the predicate, or <var>null</var> for a wildcard.
 	 * @param obj  A Value specifying the object, or <var>null</var> for a wildcard.
 	 * @return true If a matching statement is in the repository in the specified context, false otherwise.
 	 * @see #getReadContexts()

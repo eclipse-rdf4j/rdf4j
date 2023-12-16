@@ -23,7 +23,7 @@ public interface RDFStarTripleSource extends TripleSource {
 	 * indicate wildcards.
 	 *
 	 * @param subj A Resource specifying the triple's subject, or <var>null</var> for a wildcard.
-	 * @param pred A URI specifying the triple's predicate, or <var>null</var> for a wildcard.
+	 * @param pred A IRI specifying the triple's predicate, or <var>null</var> for a wildcard.
 	 * @param obj  A Value specifying the triple's object, or <var>null</var> for a wildcard.
 	 * @return An iterator over the relevant triples.
 	 * @throws QueryEvaluationException If the rdf star triple source failed to get the statements.

@@ -125,6 +125,13 @@ public interface SailConnection extends AutoCloseable {
 	 * Gets all statements from the specified contexts that have a specific subject, predicate and/or object. All three
 	 * parameters may be null to indicate wildcards. The <var>includeInferred</var> parameter can be used to control
 	 * which statements are fetched: all statements or only the statements that have been added explicitly.
+	 * <p>
+	 * Statements are returned in the order specified by the <var>statementOrder</var> parameter. Use
+	 * {@link #getSupportedOrders(Resource, IRI, Value, Resource...)} to first retrieve the statement orders supported
+	 * by this store for this statement pattern.
+	 * <p>
+	 * Note that this method is experimental and may be changed or removed without notice.
+	 *
 	 *
 	 * @param statementOrder  The order that the statements should be returned in.
 	 * @param subj            A Resource specifying the subject, or <var>null</var> for a wildcard.
@@ -139,6 +146,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
+	@Experimental
 	default CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj,
 			IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts) throws SailException {
@@ -468,10 +476,39 @@ public interface SailConnection extends AutoCloseable {
 		throw new UnsupportedOperationException();
 	}
 
+	/**
+	 * The underlying store may support some, but not all, statement orders based on the statement pattern. This method
+	 * can be used to determine which orders are supported for a given statement pattern. The supported orders can be
+	 * used to retrieve statements in a specific order using
+	 * {@link #getStatements(StatementOrder, Resource, IRI, Value, boolean, Resource...)}.
+	 * <p>
+	 * Note that this method is experimental and may be changed or removed without notice.
+	 *
+	 * @param subj     A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred     A URI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj      A Value specifying the object, or <var>null</var> for a wildcard.
+	 * @param contexts The context(s) to get the data from. Note that this parameter is a vararg and as such is
+	 *                 optional. If no contexts are specified the method operates on the entire repository. A
+	 *                 <var>null</var> value can be used to match context-less statements.
+	 * @return a set of supported statement orders
+	 */
+	@Experimental
 	default Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		return Set.of();
 	}
 
+	/**
+	 * Different underlying datastructures may have different ways of ordering statements. On-disk stores typically use
+	 * a long to represent a value and only stores the actual value in a dictionary, in this case the order would be the
+	 * order that values where inserted into the dictionary. Stores that instead store values in SPARQL-order can return
+	 * an instance of {@link org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator} which may allow for
+	 * further optimizations.
+	 * <p>
+	 * Note that this method is experimental and may be changed or removed without notice.
+	 *
+	 * @return a comparator that matches the order of values in the store
+	 */
+	@Experimental
 	default Comparator<Value> getComparator() {
 		return null;
 	}

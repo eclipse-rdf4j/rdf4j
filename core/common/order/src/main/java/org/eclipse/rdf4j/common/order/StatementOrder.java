@@ -13,9 +13,11 @@ package org.eclipse.rdf4j.common.order;
 
 import java.util.Comparator;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 
+@Experimental
 public enum StatementOrder {
 
 	S,
@@ -23,6 +25,7 @@ public enum StatementOrder {
 	O,
 	C;
 
+	@Experimental
 	public Comparator<Statement> getComparator(Comparator<Value> comparator) {
 		switch (this) {
 		case S:

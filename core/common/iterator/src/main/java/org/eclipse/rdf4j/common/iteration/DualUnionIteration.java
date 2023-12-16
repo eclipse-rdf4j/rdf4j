@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.common.iteration;
 import java.util.Comparator;
 import java.util.NoSuchElementException;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
 
@@ -40,6 +41,7 @@ public class DualUnionIteration<E> implements CloseableIteration<E> {
 		this.cmp = null;
 	}
 
+	@Experimental
 	public DualUnionIteration(StatementOrder statementOrder, Comparator<Value> cmp,
 			CloseableIteration<? extends E> iteration1, CloseableIteration<? extends E> iteration2) {
 		this.iteration1 = iteration1;
@@ -51,7 +53,7 @@ public class DualUnionIteration<E> implements CloseableIteration<E> {
 		throw new UnsupportedOperationException("Not implemented yet");
 	}
 
-	public static <E, X extends Exception> CloseableIteration<? extends E> getWildcardInstance(
+	public static <E> CloseableIteration<? extends E> getWildcardInstance(
 			CloseableIteration<? extends E> leftIteration, CloseableIteration<? extends E> rightIteration) {
 
 		if (rightIteration instanceof EmptyIteration) {
@@ -63,7 +65,8 @@ public class DualUnionIteration<E> implements CloseableIteration<E> {
 		}
 	}
 
-	public static <E, X extends Exception> CloseableIteration<? extends E> getWildcardInstance(StatementOrder order,
+	@Experimental
+	public static <E> CloseableIteration<? extends E> getWildcardInstance(StatementOrder order,
 			Comparator<Value> cmp,
 			CloseableIteration<? extends E> leftIteration, CloseableIteration<? extends E> rightIteration) {
 
@@ -84,7 +87,7 @@ public class DualUnionIteration<E> implements CloseableIteration<E> {
 		}
 	}
 
-	public static <E, X extends Exception> CloseableIteration<E> getInstance(CloseableIteration<E> leftIteration,
+	public static <E> CloseableIteration<E> getInstance(CloseableIteration<E> leftIteration,
 			CloseableIteration<E> rightIteration) {
 
 		if (rightIteration instanceof EmptyIteration) {

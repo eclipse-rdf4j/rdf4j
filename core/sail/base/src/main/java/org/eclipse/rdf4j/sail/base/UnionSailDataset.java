@@ -176,7 +176,7 @@ class UnionSailDataset implements SailDataset {
 		return DualUnionIteration.getWildcardInstance(iteration1, iteration2);
 	}
 
-	private <T> CloseableIteration<? extends T> union(StatementOrder order, Comparator cmp,
+	private <T> CloseableIteration<? extends T> union(StatementOrder order, Comparator<Value> cmp,
 			CloseableIteration<? extends T> iteration1,
 			CloseableIteration<? extends T> iteration2) {
 		return DualUnionIteration.getWildcardInstance(order, cmp, iteration1, iteration2);

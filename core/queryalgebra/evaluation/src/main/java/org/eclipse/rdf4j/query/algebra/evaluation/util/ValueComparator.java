@@ -63,7 +63,7 @@ public class ValueComparator implements Comparator<Value> {
 		boolean iri1 = o1.isIRI();
 		boolean iri2 = o2.isIRI();
 		if (iri1 && iri2) {
-			return compareURIs((IRI) o1, (IRI) o2);
+			return compareIRIs((IRI) o1, (IRI) o2);
 		}
 		if (iri1) {
 			return -1;
@@ -101,8 +101,8 @@ public class ValueComparator implements Comparator<Value> {
 		return leftBNode.getID().compareTo(rightBNode.getID());
 	}
 
-	private int compareURIs(IRI leftURI, IRI rightURI) {
-		return leftURI.toString().compareTo(rightURI.toString());
+	private int compareIRIs(IRI leftIRI, IRI rightIRI) {
+		return leftIRI.toString().compareTo(rightIRI.toString());
 	}
 
 	private int compareLiterals(Literal leftLit, Literal rightLit) {
@@ -211,7 +211,7 @@ public class ValueComparator implements Comparator<Value> {
 		}
 
 		// incompatible or unordered datatype
-		return compareURIs(leftDatatypeIRI, rightDatatypeIRI);
+		return compareIRIs(leftDatatypeIRI, rightDatatypeIRI);
 
 	}
 

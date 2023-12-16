@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.query.algebra;
 
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
 
 /**
@@ -37,9 +38,12 @@ public interface TupleExpr extends QueryModelNode {
 	@Override
 	TupleExpr clone();
 
+	@Experimental
 	Set<Var> getSupportedOrders(AvailableStatementOrder tripleSource);
 
+	@Experimental
 	void setOrder(Var var);
 
+	@Experimental
 	Var getOrder();
 }
