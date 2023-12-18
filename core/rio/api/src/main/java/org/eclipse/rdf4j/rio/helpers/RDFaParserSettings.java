@@ -26,7 +26,6 @@ public class RDFaParserSettings {
 	 * <p>
 	 * Defaults to {@link RDFaVersion#RDFA_1_0}.
 	 */
-	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<RDFaVersion> RDFA_COMPATIBILITY = new RioSettingImpl<>(
 			"org.eclipse.rdf4j.rio.rdfa.version", "RDFa Version Compatibility", RDFaVersion.RDFA_1_0);
 
