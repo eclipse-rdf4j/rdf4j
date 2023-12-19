@@ -30,6 +30,8 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
+import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencerConnection;
 import org.junit.jupiter.api.Test;
 
 public class OrderedTest {
@@ -69,14 +71,15 @@ public class OrderedTest {
 	}
 
 	@Test
-	public void testObject() {
-		ExtensibleStoreOrderedImplForTests store = new ExtensibleStoreOrderedImplForTests();
+	public void testObjectWithInferencer() {
+		SchemaCachingRDFSInferencer schemaCachingRDFSInferencer = new SchemaCachingRDFSInferencer(
+				new ExtensibleStoreOrderedImplForTests());
 
-		try (NotifyingSailConnection connection = store.getConnection()) {
+		try (SchemaCachingRDFSInferencerConnection connection = schemaCachingRDFSInferencer.getConnection()) {
 			connection.begin();
 			connection.addStatement(Values.iri(NAMESPACE, "d"), RDFS.LABEL, Values.literal("b"));
-			connection.addStatement(Values.iri(NAMESPACE, "e"), RDFS.LABEL, Values.literal("a"));
-			connection.addStatement(Values.iri(NAMESPACE, "a"), RDFS.LABEL, Values.literal("e"));
+			connection.addInferredStatement(Values.iri(NAMESPACE, "e"), RDFS.LABEL, Values.literal("a"));
+			connection.addInferredStatement(Values.iri(NAMESPACE, "a"), RDFS.LABEL, Values.literal("e"));
 			connection.addStatement(Values.iri(NAMESPACE, "c"), RDFS.LABEL, Values.literal("c"));
 			connection.addStatement(Values.iri(NAMESPACE, "b"), RDFS.LABEL, Values.literal("d"));
 			connection.commit();
@@ -89,6 +92,7 @@ public class OrderedTest {
 				List<String> subjects = collect
 						.stream()
 						.map(Statement::getObject)
+						.filter(Literal.class::isInstance)
 						.map(i -> (Literal) i)
 						.map(Literal::getLabel)
 						.collect(Collectors.toList());

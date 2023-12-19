@@ -51,7 +51,6 @@ public class PeekMarkIterator<E> implements CloseableIteration<E> {
 
 		if (bufferIterator.hasNext()) {
 			next = bufferIterator.next();
-			assert resetPossible == 1;
 		} else {
 			if (!mark && resetPossible > -1) {
 				resetPossible--;
@@ -62,7 +61,7 @@ public class PeekMarkIterator<E> implements CloseableIteration<E> {
 		}
 
 		if (mark && next != null) {
-			assert resetPossible == 1;
+			assert resetPossible > 0;
 			buffer.add(next);
 		}
 
@@ -107,6 +106,10 @@ public class PeekMarkIterator<E> implements CloseableIteration<E> {
 		return next;
 	}
 
+	/**
+	 * Mark the current position so that the iterator can be reset to the current state. This will cause elements to be
+	 * stored in memory until one of {@link #reset()}, {@link #unmark()} or {@link #mark()} is called
+	 */
 	public void mark() {
 		if (closed) {
 			throw new IllegalStateException("The iteration has been closed.");
@@ -120,6 +123,10 @@ public class PeekMarkIterator<E> implements CloseableIteration<E> {
 
 	}
 
+	/**
+	 * Reset the iterator to the marked position. Resetting an iterator multiple times will always reset to the same
+	 * position. If the iterator was not marked, this will throw an exception.
+	 */
 	public void reset() {
 		if (closed) {
 			throw new IllegalStateException("The iteration has been closed.");
@@ -127,31 +134,40 @@ public class PeekMarkIterator<E> implements CloseableIteration<E> {
 		if (buffer == null) {
 			throw new IllegalStateException("Mark never set");
 		}
+		if (resetPossible < 0) {
+			throw new IllegalStateException("Reset not possible");
+		}
+
 		if (mark && bufferIterator.hasNext()) {
 			while (bufferIterator.hasNext()) {
 				buffer.add(bufferIterator.next());
 			}
 		}
 
-		mark = false;
-		if (resetPossible < 0) {
-			throw new IllegalStateException("Reset not possible");
-		} else if (resetPossible == 0) {
+		if (resetPossible == 0) {
+			assert !mark;
 			buffer.add(next);
 			next = null;
 			bufferIterator = buffer.iterator();
-		} else if (resetPossible == 1) {
+		} else if (resetPossible > 0) {
 			next = null;
 			bufferIterator = buffer.iterator();
 		}
 
+		mark = false;
 		resetPossible = 1;
 	}
 
+	/**
+	 * @return true if the iterator is marked
+	 */
 	boolean isMarked() {
 		return !closed && mark;
 	}
 
+	/**
+	 * @return true if {@link #reset()} can be called on this iterator
+	 */
 	boolean isResettable() {
 		return !closed && (mark || resetPossible >= 0);
 	}
@@ -160,11 +176,16 @@ public class PeekMarkIterator<E> implements CloseableIteration<E> {
 	public void close() {
 		this.closed = true;
 		iterator.close();
+		buffer = null;
 	}
 
-	// What will happen if we are iterating over the buffer at this point, then unmark is called followed by mark?
+	/**
+	 * Unmark the iterator. This will cause the iterator to stop buffering elements. If the iterator was recently reset
+	 * and there are still elements in the buffer, then these elements will still be returned by next().
+	 */
 	public void unmark() {
 		mark = false;
 		resetPossible = -1;
+		buffer = null;
 	}
 }

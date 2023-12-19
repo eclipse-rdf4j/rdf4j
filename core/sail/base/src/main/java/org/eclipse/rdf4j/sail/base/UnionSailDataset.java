@@ -73,7 +73,7 @@ class UnionSailDataset implements SailDataset {
 		try {
 			iteration1 = dataset1.getNamespaces();
 			iteration2 = dataset2.getNamespaces();
-			return union(iteration1, iteration2);
+			return DualUnionIteration.getWildcardInstance(iteration1, iteration2);
 		} catch (Throwable t) {
 			try {
 				if (iteration1 != null) {
@@ -105,7 +105,7 @@ class UnionSailDataset implements SailDataset {
 		try {
 			iteration1 = dataset1.getContextIDs();
 			iteration2 = dataset2.getContextIDs();
-			return union(iteration1, iteration2);
+			return DualUnionIteration.getWildcardInstance(iteration1, iteration2);
 		} catch (Throwable t) {
 			try {
 				if (iteration1 != null) {
@@ -129,7 +129,7 @@ class UnionSailDataset implements SailDataset {
 		try {
 			iteration1 = dataset1.getStatements(subj, pred, obj, contexts);
 			iteration2 = dataset2.getStatements(subj, pred, obj, contexts);
-			return union(iteration1, iteration2);
+			return DualUnionIteration.getWildcardInstance(iteration1, iteration2);
 		} catch (Throwable t) {
 			try {
 				if (iteration1 != null) {
@@ -154,7 +154,7 @@ class UnionSailDataset implements SailDataset {
 		try {
 			iteration1 = dataset1.getTriples(subj, pred, obj);
 			iteration2 = dataset2.getTriples(subj, pred, obj);
-			return union(iteration1, iteration2);
+			return DualUnionIteration.getWildcardInstance(iteration1, iteration2);
 		} catch (Throwable t) {
 			try {
 				if (iteration1 != null) {
@@ -170,18 +170,6 @@ class UnionSailDataset implements SailDataset {
 
 	}
 
-	private <T> CloseableIteration<? extends T> union(
-			CloseableIteration<? extends T> iteration1,
-			CloseableIteration<? extends T> iteration2) {
-		return DualUnionIteration.getWildcardInstance(iteration1, iteration2);
-	}
-
-	private <T> CloseableIteration<? extends T> union(StatementOrder order, Comparator<Value> cmp,
-			CloseableIteration<? extends T> iteration1,
-			CloseableIteration<? extends T> iteration2) {
-		return DualUnionIteration.getWildcardInstance(order, cmp, iteration1, iteration2);
-	}
-
 	@Override
 	public CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws SailException {
@@ -191,7 +179,8 @@ class UnionSailDataset implements SailDataset {
 		try {
 			iteration1 = dataset1.getStatements(statementOrder, subj, pred, obj, contexts);
 			iteration2 = dataset2.getStatements(statementOrder, subj, pred, obj, contexts);
-			return union(statementOrder, dataset1.getComparator(), iteration1, iteration2);
+			Comparator<Statement> cmp = statementOrder.getComparator(dataset1.getComparator());
+			return DualUnionIteration.getWildcardInstance(cmp, iteration1, iteration2);
 		} catch (Throwable t) {
 			try {
 				if (iteration1 != null) {

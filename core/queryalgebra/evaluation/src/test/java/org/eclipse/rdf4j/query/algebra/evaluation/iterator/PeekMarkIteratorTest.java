@@ -411,4 +411,193 @@ public class PeekMarkIteratorTest {
 		assertFalse(stringPeekMarkIterator.hasNext());
 	}
 
+	@Test
+	public void testUnmark() {
+
+		PeekMarkIterator<String> stringPeekMarkIterator = new PeekMarkIterator<>(
+				new CloseableIteratorIteration<>(List.of("a", "b", "c", "d", "e", "f").iterator()));
+
+		assertEquals("a", stringPeekMarkIterator.peek());
+		assertEquals("a", stringPeekMarkIterator.next());
+		stringPeekMarkIterator.mark();
+		stringPeekMarkIterator.next(); // b
+		stringPeekMarkIterator.next(); // c
+		stringPeekMarkIterator.next(); // d
+		stringPeekMarkIterator.reset();
+		assertEquals("b", stringPeekMarkIterator.next());
+		stringPeekMarkIterator.unmark();
+		assertEquals("c", stringPeekMarkIterator.next());
+		stringPeekMarkIterator.mark();
+		assertEquals("d", stringPeekMarkIterator.next());
+		assertEquals("e", stringPeekMarkIterator.next());
+		stringPeekMarkIterator.reset();
+		assertEquals("d", stringPeekMarkIterator.next());
+		assertEquals("e", stringPeekMarkIterator.next());
+	}
+
+	@Test
+	public void testUnmark2() {
+
+		PeekMarkIterator<String> stringPeekMarkIterator = new PeekMarkIterator<>(
+				new CloseableIteratorIteration<>(List.of("a", "b", "c", "d", "e", "f").iterator()));
+
+		assertEquals("a", stringPeekMarkIterator.peek());
+		assertEquals("a", stringPeekMarkIterator.next());
+		stringPeekMarkIterator.mark();
+		stringPeekMarkIterator.next(); // b
+		stringPeekMarkIterator.next(); // c
+		stringPeekMarkIterator.next(); // d
+		stringPeekMarkIterator.reset();
+		assertEquals("b", stringPeekMarkIterator.next());
+		stringPeekMarkIterator.unmark();
+		assertEquals("c", stringPeekMarkIterator.next());
+		assertEquals("d", stringPeekMarkIterator.next());
+		assertEquals("e", stringPeekMarkIterator.next());
+	}
+
+	@Test
+	public void testUnmark3() {
+
+		PeekMarkIterator<String> stringPeekMarkIterator = new PeekMarkIterator<>(
+				new CloseableIteratorIteration<>(List.of("a", "b", "c", "d", "e", "f").iterator()));
+
+		assertEquals("a", stringPeekMarkIterator.peek());
+		assertEquals("a", stringPeekMarkIterator.next());
+		stringPeekMarkIterator.mark();
+		stringPeekMarkIterator.next(); // b
+		stringPeekMarkIterator.next(); // c
+		stringPeekMarkIterator.next(); // d
+		stringPeekMarkIterator.unmark();
+		assertFalse(stringPeekMarkIterator.isResettable());
+
+		Assertions.assertThrows(IllegalStateException.class, stringPeekMarkIterator::reset);
+	}
+
+	@Test
+	public void testUnmark4() {
+
+		PeekMarkIterator<String> stringPeekMarkIterator = new PeekMarkIterator<>(
+				new CloseableIteratorIteration<>(List.of("a", "b", "c", "d", "e", "f").iterator()));
+
+		assertEquals("a", stringPeekMarkIterator.peek());
+		assertEquals("a", stringPeekMarkIterator.next());
+		stringPeekMarkIterator.mark();
+		stringPeekMarkIterator.next(); // b
+		stringPeekMarkIterator.next(); // c
+		stringPeekMarkIterator.next(); // d
+		stringPeekMarkIterator.reset();
+		assertEquals("b", stringPeekMarkIterator.peek());
+		stringPeekMarkIterator.unmark();
+		stringPeekMarkIterator.mark();
+		assertEquals("b", stringPeekMarkIterator.next());
+		stringPeekMarkIterator.reset();
+		assertEquals("b", stringPeekMarkIterator.peek());
+
+	}
+
+	@Test
+	public void testUnmark5() {
+
+		PeekMarkIterator<String> stringPeekMarkIterator = new PeekMarkIterator<>(
+				new CloseableIteratorIteration<>(List.of("a", "b", "c", "d", "e", "f").iterator()));
+
+		assertEquals("a", stringPeekMarkIterator.peek());
+		assertEquals("a", stringPeekMarkIterator.next());
+		stringPeekMarkIterator.mark();
+		stringPeekMarkIterator.next(); // b
+		stringPeekMarkIterator.next(); // c
+		stringPeekMarkIterator.next(); // d
+		stringPeekMarkIterator.reset();
+		stringPeekMarkIterator.unmark();
+		stringPeekMarkIterator.mark();
+		stringPeekMarkIterator.reset();
+		assertEquals("b", stringPeekMarkIterator.peek());
+
+	}
+
+	@Test
+	public void testUnmark6() {
+
+		PeekMarkIterator<String> stringPeekMarkIterator = new PeekMarkIterator<>(
+				new CloseableIteratorIteration<>(List.of("a", "b", "c", "d", "e", "f").iterator()));
+
+		assertEquals("a", stringPeekMarkIterator.peek());
+		assertEquals("a", stringPeekMarkIterator.next());
+		stringPeekMarkIterator.mark();
+		stringPeekMarkIterator.next(); // b
+		stringPeekMarkIterator.next(); // c
+		stringPeekMarkIterator.next(); // d
+		stringPeekMarkIterator.reset();
+		stringPeekMarkIterator.unmark();
+		stringPeekMarkIterator.peek();
+		stringPeekMarkIterator.mark();
+		assertEquals("b", stringPeekMarkIterator.next());
+		assertEquals("c", stringPeekMarkIterator.next());
+		assertEquals("d", stringPeekMarkIterator.next());
+		assertEquals("e", stringPeekMarkIterator.next());
+		stringPeekMarkIterator.reset();
+		assertEquals("b", stringPeekMarkIterator.next());
+		assertEquals("c", stringPeekMarkIterator.next());
+		assertEquals("d", stringPeekMarkIterator.next());
+		assertEquals("e", stringPeekMarkIterator.next());
+
+	}
+
+	@Test
+	public void testUnmark7() {
+
+		PeekMarkIterator<String> stringPeekMarkIterator = new PeekMarkIterator<>(
+				new CloseableIteratorIteration<>(List.of("a", "b", "c", "d", "e", "f").iterator()));
+
+		assertEquals("a", stringPeekMarkIterator.peek());
+		assertEquals("a", stringPeekMarkIterator.next());
+		stringPeekMarkIterator.mark();
+		stringPeekMarkIterator.next(); // b
+		stringPeekMarkIterator.next(); // c
+		stringPeekMarkIterator.next(); // d
+		stringPeekMarkIterator.unmark();
+		assertEquals("e", stringPeekMarkIterator.next());
+		assertEquals("f", stringPeekMarkIterator.next());
+	}
+
+	@Test
+	public void testUnmark8() {
+
+		PeekMarkIterator<String> stringPeekMarkIterator = new PeekMarkIterator<>(
+				new CloseableIteratorIteration<>(List.of("a", "b", "c", "d", "e", "f").iterator()));
+
+		assertEquals("a", stringPeekMarkIterator.peek());
+		assertEquals("a", stringPeekMarkIterator.next());
+		stringPeekMarkIterator.mark();
+		stringPeekMarkIterator.next(); // b
+		stringPeekMarkIterator.next(); // c
+		stringPeekMarkIterator.next(); // d
+		stringPeekMarkIterator.reset();
+		stringPeekMarkIterator.unmark();
+		assertEquals("b", stringPeekMarkIterator.next());
+		assertEquals("c", stringPeekMarkIterator.next());
+		assertEquals("d", stringPeekMarkIterator.next());
+		assertEquals("e", stringPeekMarkIterator.next());
+		assertEquals("f", stringPeekMarkIterator.next());
+
+	}
+
+	@Test
+	public void testUnmark9() {
+
+		PeekMarkIterator<String> stringPeekMarkIterator = new PeekMarkIterator<>(
+				new CloseableIteratorIteration<>(List.of("a", "b", "c", "d", "e", "f").iterator()));
+
+		assertEquals("a", stringPeekMarkIterator.peek());
+		assertEquals("a", stringPeekMarkIterator.next());
+		stringPeekMarkIterator.mark();
+		stringPeekMarkIterator.next(); // b
+		stringPeekMarkIterator.next(); // c
+		stringPeekMarkIterator.next(); // d
+		stringPeekMarkIterator.unmark();
+		assertEquals("e", stringPeekMarkIterator.next());
+		assertEquals("f", stringPeekMarkIterator.next());
+
+	}
+
 }

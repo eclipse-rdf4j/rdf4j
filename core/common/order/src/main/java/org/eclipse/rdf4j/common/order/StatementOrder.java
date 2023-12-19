@@ -40,4 +40,5 @@ public enum StatementOrder {
 
 		throw new IllegalStateException("Unknown StatementOrder: " + this);
 	}
+
 }
