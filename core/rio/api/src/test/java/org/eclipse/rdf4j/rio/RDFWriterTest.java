@@ -467,7 +467,7 @@ public abstract class RDFWriterTest {
 		}
 
 		if (rdfParser.getRDFFormat().supportsNamespaces()) {
-			assertTrue(model.getNamespaces().size() >= 1,
+			assertTrue(!model.getNamespaces().isEmpty(),
 					"Expected at least one namespace, found" + model.getNamespaces().size());
 			assertEquals(exNs, model.getNamespace("ex").get().getName());
 		}

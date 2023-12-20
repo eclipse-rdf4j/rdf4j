@@ -28,7 +28,7 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		if (bindings.size() > 0) {
+		if (!bindings.isEmpty()) {
 			tupleExpr.visit(new VarVisitor(bindings));
 		}
 	}

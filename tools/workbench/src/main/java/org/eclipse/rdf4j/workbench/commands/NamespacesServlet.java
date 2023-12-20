@@ -30,7 +30,7 @@ public class NamespacesServlet extends TransformationServlet {
 		try (RepositoryConnection con = repository.getConnection()) {
 			String prefix = req.getParameter("prefix");
 			String namespace = req.getParameter("namespace");
-			if (namespace.length() > 0) {
+			if (!namespace.isEmpty()) {
 				con.setNamespace(prefix, namespace);
 			} else {
 				con.removeNamespace(prefix);

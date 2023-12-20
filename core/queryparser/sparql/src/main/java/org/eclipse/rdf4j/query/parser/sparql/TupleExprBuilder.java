@@ -561,7 +561,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				AggregateCollector collector = new AggregateCollector();
 				valueExpr.visit(collector);
 
-				if (collector.getOperators().size() > 0) {
+				if (!collector.getOperators().isEmpty()) {
 					elem.setAggregateOperatorInExpression(true);
 					for (AggregateOperator operator : collector.getOperators()) {
 						// Apply implicit grouping if necessary
@@ -1150,7 +1150,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			extension.addElement(elem);
 		}
 
-		if (extension.getElements().size() > 0 && !(arg instanceof Extension)) {
+		if (!extension.getElements().isEmpty() && !(arg instanceof Extension)) {
 			extension.setArg(arg);
 			group.setArg(extension);
 		}

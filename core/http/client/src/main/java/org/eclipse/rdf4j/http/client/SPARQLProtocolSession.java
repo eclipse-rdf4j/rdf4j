@@ -606,7 +606,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		}
 
 		if (dataset != null) {
-			if (dataset.getDefaultRemoveGraphs().size() > 0) {
+			if (!dataset.getDefaultRemoveGraphs().isEmpty()) {
 				if (!(dataset.getDefaultRemoveGraphs().equals(dataset.getDefaultGraphs()))) {
 					logger.warn(
 							"ambiguous dataset spec for SPARQL endpoint: default graphs and default remove graphs both defined but not equal");
@@ -1091,7 +1091,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 						throw new RepositoryException(new RemoteShaclValidationException(
 								new StringReader(errInfo.toString()), "", format));
 
-					} else if (errInfo.toString().length() > 0) {
+					} else if (!errInfo.toString().isEmpty()) {
 						throw new RepositoryException(errInfo.toString());
 					} else {
 						throw new RepositoryException(response.getStatusLine().getReasonPhrase());

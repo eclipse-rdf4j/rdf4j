@@ -1069,7 +1069,7 @@ class MemorySailStore implements SailStore {
 			MemStatementList contextStatements = memResource.getContextStatementList();
 
 			// Filter resources that are not used as context identifier
-			if (contextStatements.size() == 0) {
+			if (contextStatements.isEmpty()) {
 				return false;
 			}
 

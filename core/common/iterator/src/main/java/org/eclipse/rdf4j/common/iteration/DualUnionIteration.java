@@ -63,13 +63,13 @@ public class DualUnionIteration<E> implements CloseableIteration<E> {
 	public static <E> CloseableIteration<? extends E> getWildcardInstance(Comparator<E> cmp,
 			CloseableIteration<? extends E> leftIteration, CloseableIteration<? extends E> rightIteration) {
 
-//        if (rightIteration instanceof EmptyIteration) {
-//            return leftIteration;
-//        } else if (leftIteration instanceof EmptyIteration) {
-//            return rightIteration;
-//        } else {
-		return new DualUnionIteration<>(cmp, leftIteration, rightIteration);
-//        }
+		if (rightIteration instanceof EmptyIteration) {
+			return leftIteration;
+		} else if (leftIteration instanceof EmptyIteration) {
+			return rightIteration;
+		} else {
+			return new DualUnionIteration<>(cmp, leftIteration, rightIteration);
+		}
 	}
 
 	public static <E> CloseableIteration<E> getInstance(CloseableIteration<E> leftIteration,

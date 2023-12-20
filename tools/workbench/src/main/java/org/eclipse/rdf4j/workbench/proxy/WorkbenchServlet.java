@@ -209,7 +209,7 @@ public class WorkbenchServlet extends AbstractServlet {
 		final int idx = path.indexOf(repoID) + repoID.length();
 		http.setServletPath(http.getServletPath() + path.substring(0, idx));
 		final String pathInfo = path.substring(idx);
-		http.setPathInfo(pathInfo.length() == 0 ? null : pathInfo);
+		http.setPathInfo(pathInfo.isEmpty() ? null : pathInfo);
 		if (repositories.containsKey(repoID)) {
 			repositories.get(repoID).service(http, resp);
 		} else {

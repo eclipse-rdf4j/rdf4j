@@ -97,7 +97,7 @@ public class URIUtil {
 		assert namespace != null : "namespace must not be null";
 		assert localName != null : "localName must not be null";
 
-		if (namespace.length() == 0) {
+		if (namespace.isEmpty()) {
 			return false;
 		}
 
@@ -213,7 +213,7 @@ public class URIUtil {
 	 */
 	public static boolean isValidLocalName(String name) {
 		// Empty names are legal
-		if (name.length() == 0) {
+		if (name.isEmpty()) {
 			return true;
 		}
 

@@ -510,7 +510,7 @@ public class SailUpdateExecutor {
 						// If so, merge.
 						Set<String> uniqueBindings = new HashSet<>(uc.getBindingSet().getBindingNames());
 						uniqueBindings.removeAll(sourceBinding.getBindingNames());
-						if (uniqueBindings.size() > 0) {
+						if (!uniqueBindings.isEmpty()) {
 							MapBindingSet mergedSet = new MapBindingSet();
 							for (String bindingName : sourceBinding.getBindingNames()) {
 								final Binding binding = sourceBinding.getBinding(bindingName);

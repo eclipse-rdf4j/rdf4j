@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.query.algebra;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * A natural join between two tuple expressions.
  */
@@ -72,14 +74,17 @@ public class Join extends BinaryTupleOperator {
 		return (Join) super.clone();
 	}
 
+	@Experimental
 	public boolean isMergeJoin() {
 		return mergeJoin;
 	}
 
+	@Experimental
 	public void setMergeJoin(boolean mergeJoin) {
 		this.mergeJoin = mergeJoin;
 	}
 
+	@Experimental
 	public void setCacheable(boolean cacheable) {
 		this.cacheable = cacheable;
 	}

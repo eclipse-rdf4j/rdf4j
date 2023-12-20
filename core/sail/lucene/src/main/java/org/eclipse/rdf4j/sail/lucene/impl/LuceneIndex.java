@@ -368,7 +368,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 				List<Throwable> exceptions = new ArrayList<>();
 				try {
 					synchronized (oldmonitors) {
-						if (oldmonitors.size() > 0) {
+						if (!oldmonitors.isEmpty()) {
 							logger.warn(
 									"LuceneSail: On shutdown {} IndexReaders were not closed. This is due to non-closed Query Iterators, which must be closed!",
 									oldmonitors.size());

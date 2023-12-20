@@ -36,7 +36,7 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		final Iterator<BindingSet> assignments = node.getBindingSets().iterator();
-		if (bindings.size() == 0) {
+		if (bindings.isEmpty()) {
 			// we can just return the assignments directly without checking existing bindings
 			return new CloseableIteratorIteration<>(assignments);
 		}

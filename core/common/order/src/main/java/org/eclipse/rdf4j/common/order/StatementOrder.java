@@ -17,13 +17,16 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 
+/**
+ * An enum for the different orders in which statements can be ordered.
+ */
 @Experimental
 public enum StatementOrder {
 
-	S,
-	P,
-	O,
-	C;
+	S, // Subject
+	P, // Predicate
+	O, // Object
+	C; // Context
 
 	@Experimental
 	public Comparator<Statement> getComparator(Comparator<Value> comparator) {

@@ -21,8 +21,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 
 /**
  * An iterator that allows to peek at the next element without consuming it. It also allows to mark the current position
- * and reset to that position. Reset can be called multiple times, as long as the underlying iterator has not been
- * advanced beyond peek.
+ * and reset to that position.
  *
  * @author Håvard M. Ottestad
  */
@@ -96,7 +95,7 @@ public class PeekMarkIterator<E> implements CloseableIteration<E> {
 
 	/**
 	 *
-	 * @return the next element without consuming it, or null if there are no more elements.
+	 * @return the next element without consuming it, or null if there are no more elements
 	 */
 	public E peek() {
 		if (closed) {
@@ -108,7 +107,7 @@ public class PeekMarkIterator<E> implements CloseableIteration<E> {
 
 	/**
 	 * Mark the current position so that the iterator can be reset to the current state. This will cause elements to be
-	 * stored in memory until one of {@link #reset()}, {@link #unmark()} or {@link #mark()} is called
+	 * stored in memory until one of {@link #reset()}, {@link #unmark()} or {@link #mark()} is called.
 	 */
 	public void mark() {
 		if (closed) {
@@ -125,7 +124,10 @@ public class PeekMarkIterator<E> implements CloseableIteration<E> {
 
 	/**
 	 * Reset the iterator to the marked position. Resetting an iterator multiple times will always reset to the same
-	 * position. If the iterator was not marked, this will throw an exception.
+	 * position. Resetting an iterator turns off marking. If the iterator was reset previously and the iterator has
+	 * advanced beyond the point where reset was initially called, then the iterator can no longer be reset because
+	 * there will be elements that were not stored while the iterator was marked and resetting will cause these elements
+	 * to be lost.
 	 */
 	public void reset() {
 		if (closed) {

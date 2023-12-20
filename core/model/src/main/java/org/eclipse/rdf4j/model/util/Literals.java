@@ -545,7 +545,7 @@ public class Literals {
 	public static boolean langMatches(String langTag, String langRange) {
 		boolean result = false;
 		if (langRange.equals("*")) {
-			result = langTag.length() > 0;
+			result = !langTag.isEmpty();
 		} else if (langTag.length() == langRange.length()) {
 			result = langTag.equalsIgnoreCase(langRange);
 		} else if (langTag.length() > langRange.length()) {

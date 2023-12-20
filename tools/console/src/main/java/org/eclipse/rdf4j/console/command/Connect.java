@@ -128,7 +128,7 @@ public class Connect extends ConsoleCommand {
 			manager.setUsernameAndPassword(user, pass);
 			result = installNewManager(manager, url);
 		} catch (UnauthorizedException e) {
-			if (user != null && pass.length() > 0) {
+			if (user != null && !pass.isEmpty()) {
 				writeError("Authentication for user '" + user + "' failed");
 			} else {
 				// Ask user for credentials

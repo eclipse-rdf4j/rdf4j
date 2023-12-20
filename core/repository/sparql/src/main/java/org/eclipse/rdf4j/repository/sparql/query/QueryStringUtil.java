@@ -55,7 +55,7 @@ public class QueryStringUtil {
 	 * @return the modified queryString
 	 */
 	public static String getTupleQueryString(String queryString, BindingSet bindings) {
-		if (bindings.size() == 0) {
+		if (bindings.isEmpty()) {
 			return queryString;
 		}
 
@@ -108,7 +108,7 @@ public class QueryStringUtil {
 	 * @return the modified queryString
 	 */
 	public static String getGraphQueryString(String queryString, BindingSet bindings) {
-		if (bindings.size() == 0) {
+		if (bindings.isEmpty()) {
 			return queryString;
 		}
 

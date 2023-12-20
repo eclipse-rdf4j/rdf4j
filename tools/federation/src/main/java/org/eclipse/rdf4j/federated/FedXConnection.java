@@ -375,7 +375,7 @@ public class FedXConnection extends AbstractSailConnection {
 				errorEndpoints.add(e.getId());
 			}
 		}
-		if (errorEndpoints.size() > 0) {
+		if (!errorEndpoints.isEmpty()) {
 			throw new SailException("Could not determine size for members " + errorEndpoints
 					+ "(Supported for NativeStore and RemoteRepository only). Computed size: " + size);
 		}

@@ -259,7 +259,7 @@ public class SPARQLParser implements QueryParser {
 
 		int emptyLineCount = 0;
 		while ((line = in.readLine()) != null) {
-			if (line.length() > 0) {
+			if (!line.isEmpty()) {
 				emptyLineCount = 0;
 				buf.append(' ').append(line).append('\n');
 			} else {
@@ -269,7 +269,7 @@ public class SPARQLParser implements QueryParser {
 			if (emptyLineCount == 2) {
 				emptyLineCount = 0;
 				String queryStr = buf.toString().trim();
-				if (queryStr.length() > 0) {
+				if (!queryStr.isEmpty()) {
 					try {
 						long start = System.currentTimeMillis();
 						ParsedOperation parsedQuery = QueryParserUtil.parseOperation(QueryLanguage.SPARQL, queryStr,

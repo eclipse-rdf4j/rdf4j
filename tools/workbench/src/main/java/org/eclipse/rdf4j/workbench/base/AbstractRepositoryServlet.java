@@ -94,7 +94,7 @@ public abstract class AbstractRepositoryServlet extends AbstractServlet implemen
 					info.setWritable(repository.isWritable());
 				}
 				String location = config.getInitParameter("location");
-				if (location != null && location.trim().length() > 0) {
+				if (location != null && !location.trim().isEmpty()) {
 					info.setLocation(new URL(location));
 				}
 			} catch (MalformedURLException | RepositoryException e) {

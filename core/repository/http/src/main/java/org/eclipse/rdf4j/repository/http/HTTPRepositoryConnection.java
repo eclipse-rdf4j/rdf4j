@@ -310,7 +310,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 
 		if (this.getRepository().useCompatibleMode()) {
 			synchronized (txn) {
-				if (txn.size() > 0) {
+				if (!txn.isEmpty()) {
 					try {
 						client.sendTransaction(txn);
 						txn.clear();

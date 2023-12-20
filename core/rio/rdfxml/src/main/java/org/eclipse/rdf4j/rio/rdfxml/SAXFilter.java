@@ -377,7 +377,7 @@ class SAXFilter implements ContentHandler {
 					String s = charBuf.toString();
 
 					// ignore whitespace-only nodes
-					if (s.trim().length() > 0) {
+					if (!s.trim().isEmpty()) {
 						rdfParser.text(s);
 					}
 				}
@@ -422,7 +422,7 @@ class SAXFilter implements ContentHandler {
 
 					// if the element is not empty we need to process it as such. Otherwise,
 					// we keep the start element deferred for now.
-					if (deferredElement != null && charBuf.toString().trim().length() > 0) {
+					if (deferredElement != null && !charBuf.toString().trim().isEmpty()) {
 						reportDeferredStartElement();
 					}
 				}

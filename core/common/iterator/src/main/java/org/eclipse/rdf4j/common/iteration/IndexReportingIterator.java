@@ -14,7 +14,7 @@ package org.eclipse.rdf4j.common.iteration;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
 /**
- * The index name of the underlying data structure, e.g. SPOC, POSC, etc.
+ * A way to signal which index is in use for a specific iterator (e.g. SPOC, POSC, etc.). Used in the query explanation.
  */
 @Experimental
 public interface IndexReportingIterator {

@@ -201,7 +201,7 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 			// Append the literal's datatype
 			writer.write("^^");
 			writeURI(datatype);
-		} else if (label.length() > 0 && encoded.equals(label) && label.charAt(0) != '<' && label.charAt(0) != '_'
+		} else if (!label.isEmpty() && encoded.equals(label) && label.charAt(0) != '<' && label.charAt(0) != '_'
 				&& !label.matches("^[\\+\\-]?[\\d\\.].*")) {
 			// no need to include double quotes
 			writer.write(encoded);

@@ -52,7 +52,7 @@ public class PrintingIteration extends AbstractCloseableIteration<BindingSet> {
 
 	@Override
 	public boolean hasNext() throws QueryEvaluationException {
-		return !done || copyQueue.size() > 0;
+		return !done || !copyQueue.isEmpty();
 	}
 
 	@Override

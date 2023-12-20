@@ -355,7 +355,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 				appendAscii(sb, userInfo);
 				sb.append('@');
 			}
-			if (host.length() > 0) {
+			if (!host.isEmpty()) {
 				sb.append(IDN.toASCII(host, IDN.ALLOW_UNASSIGNED));
 			}
 			if (port >= 0) {
@@ -516,7 +516,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 		boolean localhost = isScheme("file") && userInfo == null && -1 == port
 				&& ("".equals(host) || "localhost".equals(host));
 		String _host = localhost ? null
-				: host == null || host.length() == 0 ? host
+				: host == null || host.isEmpty() ? host
 						: IDN.toUnicode(pctEncodingNormalization(toLowerCase(host)),
 								IDN.USE_STD3_ASCII_RULES | IDN.ALLOW_UNASSIGNED);
 		String _path = _scheme != null && path == null ? "" : normalizePath(path);
@@ -581,14 +581,14 @@ public class ParsedIRI implements Cloneable, Serializable {
 		// relURI._scheme == null
 
 		// RFC, step 2:
-		if (relative.getHost() == null && relative.getQuery() == null && relative.getPath().length() == 0) {
+		if (relative.getHost() == null && relative.getQuery() == null && relative.getPath().isEmpty()) {
 
 			// Inherit any fragment identifier from relURI
 			String fragment = relative.getFragment();
 
 			return new ParsedIRI(this.getScheme(), this.getUserInfo(), this.getHost(), this.getPort(), this.getPath(),
 					this.getQuery(), fragment);
-		} else if (relative.getHost() == null && relative.getPath().length() == 0) {
+		} else if (relative.getHost() == null && relative.getPath().isEmpty()) {
 
 			// Inherit any query or fragment from relURI
 			String query = relative.getQuery();
@@ -636,7 +636,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 						path = path.substring(0, lastSlashIdx + 1);
 					}
 
-					if (path.length() == 0) {
+					if (path.isEmpty()) {
 						// No path means: start at root.
 						path = "/";
 					}
@@ -782,7 +782,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 			if (':' == peek()) {
 				advance(1);
 				String p = parseMember(DIGIT, '/');
-				if (p.length() > 0) {
+				if (!p.isEmpty()) {
 					port = Integer.parseInt(p);
 				} else {
 					port = -1;
@@ -1101,7 +1101,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	}
 
 	private String pctEncodingNormalization(String path) {
-		if (path == null || path.length() == 0 || path.indexOf('%') < 0) {
+		if (path == null || path.isEmpty() || path.indexOf('%') < 0) {
 			return path; // no pct encodings
 		}
 		String[] encodings = listPctEncodings(path);

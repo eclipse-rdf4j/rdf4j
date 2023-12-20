@@ -18,9 +18,22 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 
+/**
+ * An interface for {@link StatementOrder} implementations that can report which orders they support for a given
+ * subject, predicate, object and contexts.
+ */
 @Experimental
 public interface AvailableStatementOrder {
 
+	/**
+	 * Returns the supported orders for the given subject, predicate, object and contexts.
+	 *
+	 * @param subj
+	 * @param pred
+	 * @param obj
+	 * @param contexts
+	 * @return the supported orders for the given subject, predicate, object and contexts.
+	 */
 	@Experimental
 	Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts);
 }

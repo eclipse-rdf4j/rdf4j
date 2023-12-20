@@ -64,7 +64,7 @@ public class GroupIteratorTest {
 	private final static ValueFactory vf = SimpleValueFactory.getInstance();
 	private static final EvaluationStrategy evaluator = new StrictEvaluationStrategy(null, null);
 	private static final QueryEvaluationContext context = new QueryEvaluationContext.Minimal(
-			vf.createLiteral(Date.from(Instant.now())), null);
+			vf.createLiteral(Date.from(Instant.now())), null, null);
 	private static BindingSetAssignment EMPTY_ASSIGNMENT;
 	private static BindingSetAssignment NONEMPTY_ASSIGNMENT;
 	private static AggregateFunctionFactory aggregateFunctionFactory;

@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.base;
 import java.util.Comparator;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -97,6 +98,7 @@ public interface SailDataset extends SailClosable {
 	 * @return An iterator over the relevant statements.
 	 * @throws SailException If the triple source failed to get the statements.
 	 */
+	@Experimental
 	default CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj,
 			IRI pred, Value obj,
 			Resource... contexts) throws SailException {
@@ -118,10 +120,12 @@ public interface SailDataset extends SailClosable {
 		throw new SailException("RDF-star triple retrieval not supported by this store");
 	}
 
+	@Experimental
 	default Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		return Set.of();
 	}
 
+	@Experimental
 	default Comparator<Value> getComparator() {
 		return null;
 	}

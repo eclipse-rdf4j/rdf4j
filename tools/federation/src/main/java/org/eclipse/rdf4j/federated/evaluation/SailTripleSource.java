@@ -211,7 +211,7 @@ public class SailTripleSource extends TripleSourceBase {
 							null, EmptyBindingSet.getInstance(), queryInfo.getIncludeInferred());
 				}
 
-				if (bindings.size() > 0) {
+				if (!bindings.isEmpty()) {
 					res = new InsertBindingsIteration(res, bindings);
 				}
 

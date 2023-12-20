@@ -268,7 +268,7 @@ public class SPARQLServiceEvaluationTest {
 			assertTrue(tqr.hasNext());
 
 			List<BindingSet> result = QueryResults.asList(tqr);
-			assertTrue(result.size() > 0);
+			assertTrue(!result.isEmpty());
 			for (BindingSet bs : result) {
 				assertTrue(bs.hasBinding("val"));
 				assertTrue(bs.hasBinding("s"));

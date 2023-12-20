@@ -51,7 +51,7 @@ public class HeaderElement {
 					token = StringUtil.trimDoubleQuotes(token.trim());
 
 					// Ignore empty parameters
-					if (token.length() > 0) {
+					if (!token.isEmpty()) {
 						result.addParameter(token);
 					}
 				} else {

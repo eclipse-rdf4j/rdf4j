@@ -254,7 +254,7 @@ public class QueryManager {
 	 */
 	public Query prepareQuery(String queryString) throws MalformedQueryException {
 
-		if (prefixDeclarations.size() > 0) {
+		if (!prefixDeclarations.isEmpty()) {
 
 			/*
 			 * we have to check for prefixes in the query to not add duplicate entries. In case duplicates are present
@@ -289,7 +289,7 @@ public class QueryManager {
 	 */
 	public String getQueryPlan(String queryString) throws MalformedQueryException, FedXException {
 
-		if (prefixDeclarations.size() > 0) {
+		if (!prefixDeclarations.isEmpty()) {
 
 			/*
 			 * we have to check for prefixes in the query to not add duplicate entries. In case duplicates are present
