@@ -305,7 +305,7 @@ public class TupleQueryResultConverter {
 			return Stream.empty();
 		}
 		BindingSet first = result.next();
-		if (!result.hasNext() && first.size() == 0) {
+		if (!result.hasNext() && first.isEmpty()) {
 			return Stream.empty();
 		}
 		return Stream.concat(Stream.of(first), result.stream());

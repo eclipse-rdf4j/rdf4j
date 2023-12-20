@@ -2100,7 +2100,7 @@ public class XMLDatatypeUtil {
 	 * plus signs cannot be parsed by methods such as {@link Integer#parseInt(String)}.
 	 */
 	private static String trimPlusSign(String s) {
-		if (s.length() > 0 && s.charAt(0) == '+') {
+		if (!s.isEmpty() && s.charAt(0) == '+') {
 			return s.substring(1);
 		} else {
 			return s;

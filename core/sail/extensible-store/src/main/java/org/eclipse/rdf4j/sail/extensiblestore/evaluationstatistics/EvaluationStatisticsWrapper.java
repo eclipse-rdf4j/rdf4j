@@ -11,9 +11,12 @@
 package org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics;
 
 import java.util.Collection;
+import java.util.Comparator;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -53,6 +56,12 @@ public class EvaluationStatisticsWrapper implements DataStructureInterface {
 			IRI predicate,
 			Value object, boolean inferred, Resource... context) {
 		return delegate.getStatements(subject, predicate, object, inferred, context);
+	}
+
+	@Override
+	public CloseableIteration<? extends ExtensibleStatement> getStatements(StatementOrder statementOrder,
+			Resource subject, IRI predicate, Value object, boolean inferred, Resource... contexts) {
+		return delegate.getStatements(statementOrder, subject, predicate, object, inferred, contexts);
 	}
 
 	@Override
@@ -96,6 +105,17 @@ public class EvaluationStatisticsWrapper implements DataStructureInterface {
 	@Override
 	public long getEstimatedSize() {
 		return delegate.getEstimatedSize();
+	}
+
+	@Override
+	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, boolean inferred,
+			Resource... contexts) {
+		return delegate.getSupportedOrders(subj, pred, obj, inferred, contexts);
+	}
+
+	@Override
+	public Comparator<Value> getComparator() {
+		return delegate.getComparator();
 	}
 
 	public void setEvaluationStatistics(DynamicStatistics dynamicStatistics) {

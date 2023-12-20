@@ -227,7 +227,7 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 			}
 		}
 
-		if (errors.size() > 0) {
+		if (!errors.isEmpty()) {
 			throw new SailException("Federation could not be shut down. See logs for details.");
 		}
 	}

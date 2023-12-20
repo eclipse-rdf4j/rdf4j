@@ -110,7 +110,7 @@ public class JSONLDWriterBackgroundTest extends RDFWriterTest {
 		assertTrue(model.contains(st1), "missing namespaced statement");
 
 		if (rdfParser.getRDFFormat().supportsNamespaces()) {
-			assertTrue(model.getNamespaces().size() >= 1,
+			assertTrue(!model.getNamespaces().isEmpty(),
 					"Expected at least one namespace, found " + model.getNamespaces().size());
 			assertEquals(exNs, model.getNamespace("ex").get().getName());
 		}

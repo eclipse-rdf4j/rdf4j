@@ -29,7 +29,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
@@ -60,7 +59,7 @@ public class JoinIteratorTest {
 		}
 	}, null);
 	private final QueryEvaluationContext context = new QueryEvaluationContext.Minimal(
-			vf.createLiteral(Date.from(Instant.now())), null);
+			vf.createLiteral(Date.from(Instant.now())), null, null);
 
 	/**
 	 * Tests joins between two different BindingSetAssignments with the same BindingSets but ordered differently.

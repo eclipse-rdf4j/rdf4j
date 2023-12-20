@@ -434,11 +434,12 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr) {
-		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset, tripleSource.getValueFactory());
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset, tripleSource.getValueFactory(),
+				tripleSource.getComparator());
 		if (expr instanceof QueryRoot) {
 			String[] allVariables = ArrayBindingBasedQueryEvaluationContext
 					.findAllVariablesUsedInQuery((QueryRoot) expr);
-			context = new ArrayBindingBasedQueryEvaluationContext(context, allVariables);
+			context = new ArrayBindingBasedQueryEvaluationContext(context, allVariables, tripleSource.getComparator());
 		}
 		return precompile(expr, context);
 	}
@@ -924,7 +925,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	public Value evaluate(ValueExpr expr, BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(expr,
-				new QueryEvaluationContext.Minimal(DefaultEvaluationStrategy.this.sharedValueOfNow, dataset))
+				new QueryEvaluationContext.Minimal(DefaultEvaluationStrategy.this.sharedValueOfNow, dataset,
+						tripleSource.getComparator()))
 				.evaluate(bindings);
 	}
 
@@ -994,7 +996,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	public Value evaluate(Datatype node, BindingSet bindings) throws QueryEvaluationException {
-		return prepare(node, new QueryEvaluationContext.Minimal(dataset)).evaluate(bindings);
+		return prepare(node, new QueryEvaluationContext.Minimal(dataset, tripleSource.getComparator()))
+				.evaluate(bindings);
 	}
 
 	protected QueryValueEvaluationStep prepare(Datatype node, QueryEvaluationContext context) {
@@ -1061,7 +1064,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	@Deprecated(forRemoval = true)
 	public Value evaluate(Regex node, BindingSet bindings)
 			throws QueryEvaluationException {
-		return prepare(node, new QueryEvaluationContext.Minimal(sharedValueOfNow, dataset)).evaluate(bindings);
+		return prepare(node,
+				new QueryEvaluationContext.Minimal(sharedValueOfNow, dataset, tripleSource.getComparator()))
+				.evaluate(bindings);
 	}
 
 	/**
@@ -1457,14 +1462,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 		CloseableIteration<BindingSet> iterator;
 		QueryModelNode queryModelNode;
-
-		Stopwatch stopwatch = Stopwatch.createUnstarted();
+		Stopwatch stopwatch = Stopwatch.createStarted();
 
 		public TimedIterator(CloseableIteration<BindingSet> iterator,
 				QueryModelNode queryModelNode) {
 			super(iterator);
 			this.iterator = iterator;
 			this.queryModelNode = queryModelNode;
+			stopwatch.stop();
 		}
 
 		@Override
@@ -1486,8 +1491,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		@Override
 		protected void handleClose() throws QueryEvaluationException {
 			try {
-				queryModelNode.setTotalTimeNanosActual(
-						queryModelNode.getTotalTimeNanosActual() + stopwatch.elapsed(TimeUnit.NANOSECONDS));
+				long totalTimeNanosActual = queryModelNode.getTotalTimeNanosActual();
+				queryModelNode
+						.setTotalTimeNanosActual((totalTimeNanosActual + stopwatch.elapsed(TimeUnit.NANOSECONDS)));
 			} finally {
 				super.handleClose();
 

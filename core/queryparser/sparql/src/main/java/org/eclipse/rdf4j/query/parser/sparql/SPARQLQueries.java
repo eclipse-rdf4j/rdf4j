@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql;
 
-import org.eclipse.rdf4j.common.text.StringUtil;
 import org.eclipse.rdf4j.model.Namespace;
 
 /**

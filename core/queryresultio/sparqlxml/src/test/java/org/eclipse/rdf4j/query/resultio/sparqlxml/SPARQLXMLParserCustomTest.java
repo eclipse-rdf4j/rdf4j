@@ -182,6 +182,6 @@ public class SPARQLXMLParserCustomTest {
 
 	@Test
 	public void testSupportedSettings() {
-		assertTrue(QueryResultIO.createTupleParser(TupleQueryResultFormat.SPARQL).getSupportedSettings().size() > 0);
+		assertTrue(!QueryResultIO.createTupleParser(TupleQueryResultFormat.SPARQL).getSupportedSettings().isEmpty());
 	}
 }

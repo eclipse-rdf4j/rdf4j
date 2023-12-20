@@ -329,7 +329,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 			}
 
 			if (getParserConfig().get(BasicParserSettings.VERIFY_RELATIVE_URIS)) {
-				if (uriSpec.length() > 0 && !uriSpec.startsWith("#") && baseURI.isOpaque()) {
+				if (!uriSpec.isEmpty() && !uriSpec.startsWith("#") && baseURI.isOpaque()) {
 					reportError("Relative URI '" + uriSpec + "' cannot be resolved using the opaque base URI '"
 							+ baseURI + "'", BasicParserSettings.VERIFY_RELATIVE_URIS);
 				}
@@ -746,7 +746,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	private ParsedIRI getCachedSkolemOrigin() {
 		String origin = getParserConfig().get(BasicParserSettings.SKOLEMIZE_ORIGIN);
 
-		if (origin == null || origin.length() == 0) {
+		if (origin == null || origin.isEmpty()) {
 			if (skolemOrigin != null) {
 				skolemOrigin = null;
 				parsedSkolemOrigin = null;

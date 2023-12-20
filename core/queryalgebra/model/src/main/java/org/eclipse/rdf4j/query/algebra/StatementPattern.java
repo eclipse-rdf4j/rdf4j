@@ -18,6 +18,14 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
+
+import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
+import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 
 /**
  * A tuple expression that matches a statement pattern against an RDF graph. Statement patterns can be targeted at one
@@ -53,6 +61,10 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 	private Var objectVar;
 
 	private Var contextVar;
+
+	private StatementOrder statementOrder;
+
+	private String indexName;
 
 	private Set<String> assuredBindingNames;
 	private List<Var> varList;
@@ -346,6 +358,14 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 
 		sb.append(super.getSignature());
 
+		if (statementOrder != null) {
+			sb.append(" [statementOrder: ").append(statementOrder).append("] ");
+		}
+
+		if (indexName != null) {
+			sb.append(" [index: ").append(indexName).append("] ");
+		}
+
 		if (scope == Scope.NAMED_CONTEXTS) {
 			sb.append(" FROM NAMED CONTEXT");
 		}
@@ -406,8 +426,83 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 
 		clone.assuredBindingNames = assuredBindingNames;
 		clone.varList = null;
+		clone.statementOrder = statementOrder;
 
 		return clone;
+	}
+
+	@Override
+	public Set<Var> getSupportedOrders(AvailableStatementOrder tripleSource) {
+		Value subject = subjectVar.hasValue() ? subjectVar.getValue() : null;
+		if (subject != null && !(subject instanceof Resource)) {
+			return Set.of();
+		}
+
+		Value predicate = predicateVar.hasValue() ? predicateVar.getValue() : null;
+		if (predicate != null && !(predicate instanceof IRI)) {
+			return Set.of();
+		}
+
+		Value context = contextVar != null && contextVar.hasValue() ? contextVar.getValue() : null;
+		if (context != null && !(context instanceof Resource)) {
+			return Set.of();
+		}
+
+		Value object = objectVar.hasValue() ? objectVar.getValue() : null;
+
+		Set<StatementOrder> supportedOrders;
+		if (contextVar == null) {
+			supportedOrders = tripleSource.getSupportedOrders((Resource) subject, (IRI) predicate, object);
+		} else {
+			supportedOrders = tripleSource.getSupportedOrders((Resource) subject, (IRI) predicate, object,
+					(Resource) context);
+		}
+		return supportedOrders.stream()
+				.map(statementOrder -> {
+					switch (statementOrder) {
+					case S:
+						return subjectVar != null && !subjectVar.hasValue() ? subjectVar : null;
+					case P:
+						return predicateVar != null && !predicateVar.hasValue() ? predicateVar : null;
+					case O:
+						return objectVar != null && !objectVar.hasValue() ? objectVar : null;
+					case C:
+						return contextVar != null && !contextVar.hasValue() ? contextVar : null;
+					}
+					throw new IllegalStateException("Unknown StatementOrder: " + statementOrder);
+				})
+				.filter(Objects::nonNull)
+				.collect(Collectors.toSet());
+	}
+
+	@Override
+	public void setOrder(Var var) {
+		if (var == null) {
+			statementOrder = null;
+			return;
+		}
+
+		if (var == subjectVar) {
+			statementOrder = StatementOrder.S;
+		} else if (var == predicateVar) {
+			statementOrder = StatementOrder.P;
+		} else if (var == objectVar) {
+			statementOrder = StatementOrder.O;
+		} else if (var == contextVar) {
+			statementOrder = StatementOrder.C;
+		} else {
+			if (var.equals(subjectVar)) {
+				statementOrder = StatementOrder.S;
+			} else if (var.equals(predicateVar)) {
+				statementOrder = StatementOrder.P;
+			} else if (var.equals(objectVar)) {
+				statementOrder = StatementOrder.O;
+			} else if (var.equals(contextVar)) {
+				statementOrder = StatementOrder.C;
+			} else {
+				throw new IllegalArgumentException("Unknown variable: " + var);
+			}
+		}
 	}
 
 	@Override
@@ -415,4 +510,38 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 		return true;
 	}
 
+	public StatementOrder getStatementOrder() {
+		return statementOrder;
+	}
+
+	@Override
+	public Var getOrder() {
+		if (statementOrder == null) {
+			return null;
+		}
+
+		switch (statementOrder) {
+
+		case S:
+			return subjectVar;
+		case P:
+			return predicateVar;
+		case O:
+			return objectVar;
+		case C:
+			return contextVar;
+		}
+
+		throw new IllegalStateException("Unknown StatementOrder: " + statementOrder);
+	}
+
+	@Experimental
+	public String getIndexName() {
+		return indexName;
+	}
+
+	@Experimental
+	public void setIndexName(String indexName) {
+		this.indexName = indexName;
+	}
 }

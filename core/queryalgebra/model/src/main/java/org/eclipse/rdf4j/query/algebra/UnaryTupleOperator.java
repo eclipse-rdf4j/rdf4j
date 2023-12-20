@@ -12,6 +12,8 @@ package org.eclipse.rdf4j.query.algebra;
 
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
+
 /**
  * An abstract superclass for unary tuple operators which, by definition, has one argument.
  */
@@ -104,4 +106,18 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 		return clone;
 	}
 
+	@Override
+	public Set<Var> getSupportedOrders(AvailableStatementOrder tripleSource) {
+		return arg.getSupportedOrders(tripleSource);
+	}
+
+	@Override
+	public void setOrder(Var var) {
+		arg.setOrder(var);
+	}
+
+	@Override
+	public Var getOrder() {
+		return arg.getOrder();
+	}
 }

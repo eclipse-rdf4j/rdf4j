@@ -81,11 +81,15 @@ import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
 import org.lwjgl.util.lmdb.MDBStat;
 import org.lwjgl.util.lmdb.MDBVal;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * LMDB-based indexed storage and retrieval of RDF values. ValueStore maps RDF values to integer IDs and vice-versa.
  */
 class ValueStore extends AbstractValueFactory {
+
+	private final static Logger logger = LoggerFactory.getLogger(ValueStore.class);
 
 	private static final long VALUE_EVICTION_INTERVAL = 60000; // 60 seconds
 
@@ -251,6 +255,10 @@ class ValueStore extends AbstractValueFactory {
 			pageSize = stat.ms_psize();
 			// align map size with page size
 			long configMapSize = (mapSize / pageSize) * pageSize;
+			if (configMapSize < 6L * pageSize) {
+				logger.debug("configMapSize needs to be at least 6 pages");
+				configMapSize = 6L * pageSize;
+			}
 			if (isEmpty) {
 				// this is an empty db, use configured map size
 				mdb_env_set_mapsize(env, configMapSize);

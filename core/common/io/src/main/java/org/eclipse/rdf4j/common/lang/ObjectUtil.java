@@ -11,8 +11,6 @@
 
 package org.eclipse.rdf4j.common.lang;
 
-import java.util.Objects;
-
 /**
  * Generic utility methods related to objects.
  *

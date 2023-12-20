@@ -233,7 +233,7 @@ public abstract class SailIsolationLevelTest {
 						List<Statement> statements = Iterations
 								.asList(connection.getStatements(null, null, null, false));
 						connection.commit();
-						if (statements.size() != 0) {
+						if (!statements.isEmpty()) {
 							if (statements.size() != count) {
 								logger.error("Size was {}. Expected 0 or {}", statements.size(), count);
 								logger.error("\n[\n\t{}\n]",

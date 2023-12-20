@@ -86,7 +86,7 @@ public class MultiProjection extends UnaryTupleOperator {
 	public Set<String> getAssuredBindingNames() {
 		Set<String> bindingNames = new HashSet<>();
 
-		if (projections.size() >= 1) {
+		if (!projections.isEmpty()) {
 			Set<String> assuredSourceNames = getArg().getAssuredBindingNames();
 
 			bindingNames.addAll(projections.get(0).getProjectedNamesFor(assuredSourceNames));

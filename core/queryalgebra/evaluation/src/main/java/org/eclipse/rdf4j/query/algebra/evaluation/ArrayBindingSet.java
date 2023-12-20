@@ -395,4 +395,27 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		bindingNamesSetCache = null;
 	}
 
+	public void addAll(ArrayBindingSet other) {
+		if (other.bindingNames == bindingNames) {
+			for (int i = 0; i < bindingNames.length; i++) {
+				if (other.whichBindingsHaveBeenSet[i]) {
+					this.values[i] = other.values[i];
+					this.whichBindingsHaveBeenSet[i] = true;
+					this.empty = false;
+				}
+			}
+		} else {
+			for (int i = 0; i < bindingNames.length; i++) {
+				if (other.hasBinding(bindingNames[i])) {
+					this.values[i] = other.getValue(bindingNames[i]);
+					this.whichBindingsHaveBeenSet[i] = true;
+					this.empty = false;
+				}
+			}
+		}
+
+		clearCache();
+
+	}
+
 }

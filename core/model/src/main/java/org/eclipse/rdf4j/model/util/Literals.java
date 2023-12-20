@@ -15,7 +15,6 @@ import java.math.BigInteger;
 import java.util.Date;
 import java.util.IllformedLocaleException;
 import java.util.Locale;
-import java.util.Optional;
 
 import javax.xml.datatype.Duration;
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -25,7 +24,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.impl.SimpleLiteral;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
@@ -547,7 +545,7 @@ public class Literals {
 	public static boolean langMatches(String langTag, String langRange) {
 		boolean result = false;
 		if (langRange.equals("*")) {
-			result = langTag.length() > 0;
+			result = !langTag.isEmpty();
 		} else if (langTag.length() == langRange.length()) {
 			result = langTag.equalsIgnoreCase(langRange);
 		} else if (langTag.length() > langRange.length()) {

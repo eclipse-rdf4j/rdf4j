@@ -246,7 +246,7 @@ public class TurtleParser extends AbstractRDFParser {
 				unread(directive.substring(5));
 			}
 			parseBase();
-		} else if (directive.length() == 0) {
+		} else if (directive.isEmpty()) {
 			reportFatalError("Directive name is missing, expected @prefix or @base");
 		} else {
 			reportFatalError("Unknown directive \"" + directive + "\"");

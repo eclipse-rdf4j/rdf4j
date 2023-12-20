@@ -13,30 +13,30 @@ package org.eclipse.rdf4j.query.algebra;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 
 /**
  * A natural join between two tuple expressions.
  */
 public class Join extends BinaryTupleOperator {
 
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
+	/**
+	 * Indicates whether a join can use merge join.
+	 */
+	private boolean mergeJoin = false;
+
+	/**
+	 * Indicates whether a join can be cached. This also entails that no bindings from the parent node are actually used
+	 * in this join.
+	 */
+	private boolean cacheable;
 
 	public Join() {
 	}
 
-	/**
-	 * Creates a new natural join operator.
-	 */
 	public Join(TupleExpr leftArg, TupleExpr rightArg) {
 		super(leftArg, rightArg);
 	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
 
 	@Override
 	public Set<String> getBindingNames() {
@@ -74,4 +74,18 @@ public class Join extends BinaryTupleOperator {
 		return (Join) super.clone();
 	}
 
+	@Experimental
+	public boolean isMergeJoin() {
+		return mergeJoin;
+	}
+
+	@Experimental
+	public void setMergeJoin(boolean mergeJoin) {
+		this.mergeJoin = mergeJoin;
+	}
+
+	@Experimental
+	public void setCacheable(boolean cacheable) {
+		this.cacheable = cacheable;
+	}
 }

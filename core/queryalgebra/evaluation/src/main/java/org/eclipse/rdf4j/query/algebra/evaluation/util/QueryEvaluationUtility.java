@@ -59,7 +59,7 @@ public class QueryEvaluationUtility {
 			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
 
 			if (datatype == CoreDatatype.XSD.STRING) {
-				return Result.fromBoolean(label.length() > 0);
+				return Result.fromBoolean(!label.isEmpty());
 			} else if (datatype == CoreDatatype.XSD.BOOLEAN) {
 				// also false for illegal values
 				return Result.fromBoolean("true".equals(label) || "1".equals(label));

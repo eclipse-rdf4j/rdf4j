@@ -129,7 +129,7 @@ public class EvaluationStatistics {
 		@Override
 		public void meet(Service node) {
 			if (!node.getServiceRef().hasValue()) {
-				// the URI is not available, may be computed in the course of the
+				// the IRI is not available, may be computed in the course of the
 				// query
 				// => use high cost to order the SERVICE node late in the query plan
 				cardinality = UNBOUND_SERVICE_CARDINALITY;

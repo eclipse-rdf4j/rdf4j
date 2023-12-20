@@ -45,7 +45,7 @@ public class QueryJoinOptimizerEmptyStatisticsTest extends QueryJoinOptimizerTes
 					return value;
 				}
 			};
-		});
+		}, new EmptyTripleSource());
 	}
 
 }

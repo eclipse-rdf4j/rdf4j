@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.rio.turtle;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
-import org.eclipse.rdf4j.common.text.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -271,7 +270,7 @@ public class TurtleUtil {
 	 */
 	public static boolean isPN_PREFIX(String prefix) {
 		// Empty prefixes are not legal, they should always have a colon
-		if (prefix.length() == 0) {
+		if (prefix.isEmpty()) {
 			logger.debug("PN_PREFIX was not valid (empty)");
 			return false;
 		}
@@ -368,7 +367,7 @@ public class TurtleUtil {
 
 	public static boolean isPN_LOCAL(String name) {
 		// Empty names are legal
-		if (name.length() == 0) {
+		if (name.isEmpty()) {
 			return true;
 		}
 

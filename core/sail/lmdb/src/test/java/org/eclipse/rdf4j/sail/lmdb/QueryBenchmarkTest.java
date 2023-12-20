@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.stream.Stream;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -23,6 +24,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -86,8 +88,8 @@ public class QueryBenchmarkTest {
 
 	@AfterAll
 	public static void afterClass() {
-		tempDir.delete();
 		repository.shutDown();
+		tempDir.delete();
 		tempDir = null;
 		repository = null;
 		statementList = null;
@@ -96,11 +98,10 @@ public class QueryBenchmarkTest {
 	@Test
 	public void groupByQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			long count = connection
-					.prepareTupleQuery(query1)
-					.evaluate()
-					.stream()
-					.count();
+			long count;
+			try (var stream = connection.prepareTupleQuery(query1).evaluate().stream()) {
+				count = stream.count();
+			}
 			System.out.println(count);
 		}
 	}
@@ -108,11 +109,10 @@ public class QueryBenchmarkTest {
 	@Test
 	public void complexQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			long count = connection
-					.prepareTupleQuery(query4)
-					.evaluate()
-					.stream()
-					.count();
+			long count;
+			try (var stream = connection.prepareTupleQuery(query4).evaluate().stream()) {
+				count = stream.count();
+			}
 			System.out.println("count: " + count);
 		}
 	}
@@ -120,11 +120,10 @@ public class QueryBenchmarkTest {
 	@Test
 	public void distinctPredicatesQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			long count = connection
-					.prepareTupleQuery(query5)
-					.evaluate()
-					.stream()
-					.count();
+			long count;
+			try (var stream = connection.prepareTupleQuery(query5).evaluate().stream()) {
+				count = stream.count();
+			}
 			System.out.println(count);
 		}
 	}

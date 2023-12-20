@@ -276,7 +276,7 @@ public class Create extends ConsoleCommand {
 			}
 
 			value = value.trim();
-			if (value.length() == 0) {
+			if (value.isEmpty()) {
 				value = null; // NOPMD
 			}
 			valueMap.put(var, value);

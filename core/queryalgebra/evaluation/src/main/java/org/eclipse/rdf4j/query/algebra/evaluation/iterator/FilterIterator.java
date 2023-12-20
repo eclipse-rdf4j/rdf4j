@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
+import java.util.Comparator;
 import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 
@@ -71,6 +72,11 @@ public class FilterIterator extends FilterIteration<BindingSet> {
 		public RetainedVariableFilteredQueryEvaluationContext(Filter node, QueryEvaluationContext contextToFilter) {
 			this.node = node;
 			this.context = contextToFilter;
+		}
+
+		@Override
+		public Comparator<Value> getComparator() {
+			return null;
 		}
 
 		@Override

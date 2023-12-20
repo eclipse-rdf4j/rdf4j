@@ -27,7 +27,6 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
-import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
@@ -48,9 +47,9 @@ import org.junit.jupiter.api.Test;
 public class OrderComparatorTest {
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 	private final QueryEvaluationContext context = new QueryEvaluationContext.Minimal(
-			vf.createLiteral(Date.from(Instant.now())), null);
+			vf.createLiteral(Date.from(Instant.now())), null, null);
 
-	class EvaluationStrategyStub implements EvaluationStrategy {
+	static class EvaluationStrategyStub implements EvaluationStrategy {
 
 		@Override
 		public CloseableIteration<BindingSet> evaluate(TupleExpr expr, BindingSet bindings)
@@ -70,19 +69,19 @@ public class OrderComparatorTest {
 
 		@Override
 		public Value evaluate(ValueExpr expr, BindingSet bindings)
-				throws ValueExprEvaluationException, QueryEvaluationException {
+				throws QueryEvaluationException {
 			return null;
 		}
 
 		@Override
 		public boolean isTrue(ValueExpr expr, BindingSet bindings)
-				throws ValueExprEvaluationException, QueryEvaluationException {
+				throws QueryEvaluationException {
 			throw new UnsupportedOperationException();
 		}
 
 		@Override
 		public boolean isTrue(QueryValueEvaluationStep expr, BindingSet bindings)
-				throws ValueExprEvaluationException, QueryEvaluationException {
+				throws QueryEvaluationException {
 			throw new UnsupportedOperationException();
 		}
 

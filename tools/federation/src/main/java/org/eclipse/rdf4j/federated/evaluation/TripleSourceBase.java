@@ -163,7 +163,7 @@ public abstract class TripleSourceBase implements TripleSource {
 
 				// apply filter and/or insert original bindings
 				if (filterExpr != null) {
-					if (bindings.size() > 0) {
+					if (!bindings.isEmpty()) {
 						res = new FilteringInsertBindingsIteration(filterExpr, bindings, res,
 								queryInfo.getStrategy());
 					} else {
@@ -175,7 +175,7 @@ public abstract class TripleSourceBase implements TripleSource {
 						resultHolder.set(new EmptyIteration<>());
 						return;
 					}
-				} else if (bindings.size() > 0) {
+				} else if (!bindings.isEmpty()) {
 					res = new InsertBindingsIteration(res, bindings);
 				}
 

@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.evaluation;
 
+import java.util.Comparator;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -68,6 +70,11 @@ public class RepositoryTripleSource implements TripleSource {
 	@Override
 	public ValueFactory getValueFactory() {
 		return repo.getValueFactory();
+	}
+
+	@Override
+	public Comparator<Value> getComparator() {
+		return null;
 	}
 
 	static class QueryEvaluationCloseableIteration<E> implements CloseableIteration<E> {

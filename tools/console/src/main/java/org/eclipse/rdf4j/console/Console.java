@@ -365,7 +365,7 @@ public class Console {
 		boolean exit = false;
 
 		// only try to parse the command if non-empty.
-		if (0 < command.length()) {
+		if (!command.isEmpty()) {
 			final String[] tokens = parse(command);
 			final String operation = tokens[0].toLowerCase(Locale.ENGLISH);
 

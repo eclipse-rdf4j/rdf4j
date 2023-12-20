@@ -10,6 +10,7 @@
  ******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore;
 
+import java.util.Comparator;
 import java.util.Iterator;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -246,5 +247,10 @@ public class EagerReadCache implements DataStructureInterface {
 			return cache.size();
 		}
 		return delegate.getEstimatedSize();
+	}
+
+	@Override
+	public Comparator<Value> getComparator() {
+		return null;
 	}
 }

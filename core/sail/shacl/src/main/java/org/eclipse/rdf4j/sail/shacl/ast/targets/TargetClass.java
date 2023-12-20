@@ -87,7 +87,7 @@ public class TargetClass extends Target {
 					.collect(Collectors.toSet());
 		}
 
-		assert targets.size() >= 1;
+		assert !targets.isEmpty();
 
 		return targets.stream()
 				.map(r -> "<" + r + ">")

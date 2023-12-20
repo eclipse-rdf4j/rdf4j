@@ -19,7 +19,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.io.CharSink;
-import org.eclipse.rdf4j.common.text.StringUtil;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -202,7 +201,7 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 			// Append the literal's datatype
 			writer.write("^^");
 			writeURI(datatype);
-		} else if (label.length() > 0 && encoded.equals(label) && label.charAt(0) != '<' && label.charAt(0) != '_'
+		} else if (!label.isEmpty() && encoded.equals(label) && label.charAt(0) != '<' && label.charAt(0) != '_'
 				&& !label.matches("^[\\+\\-]?[\\d\\.].*")) {
 			// no need to include double quotes
 			writer.write(encoded);

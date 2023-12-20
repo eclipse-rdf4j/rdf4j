@@ -44,7 +44,7 @@ public abstract class AbstractHTTPQuery extends AbstractQuery {
 		// for legacy reasons we should support the empty string for baseURI
 		// this is used in the SPARQL repository in several places, e.g. in
 		// getStatements
-		this.baseURI = baseURI != null && baseURI.length() > 0 ? baseURI : null;
+		this.baseURI = baseURI != null && !baseURI.isEmpty() ? baseURI : null;
 	}
 
 	/**

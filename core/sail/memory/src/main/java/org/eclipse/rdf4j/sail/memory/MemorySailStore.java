@@ -40,7 +40,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementPatternQueryEvaluationStep;
 import org.eclipse.rdf4j.sail.SailConflictException;
@@ -1070,7 +1069,7 @@ class MemorySailStore implements SailStore {
 			MemStatementList contextStatements = memResource.getContextStatementList();
 
 			// Filter resources that are not used as context identifier
-			if (contextStatements.size() == 0) {
+			if (contextStatements.isEmpty()) {
 				return false;
 			}
 

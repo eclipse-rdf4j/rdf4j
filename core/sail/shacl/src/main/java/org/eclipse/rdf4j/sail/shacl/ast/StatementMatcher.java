@@ -171,7 +171,7 @@ public class StatementMatcher {
 
 	public static List<StatementMatcher> swap(List<StatementMatcher> statementMatchers, Variable<?> existingVariable,
 			Variable<?> newVariable) {
-		if (statementMatchers.size() == 0) {
+		if (statementMatchers.isEmpty()) {
 			return List.of();
 		}
 		if (statementMatchers.size() == 1) {

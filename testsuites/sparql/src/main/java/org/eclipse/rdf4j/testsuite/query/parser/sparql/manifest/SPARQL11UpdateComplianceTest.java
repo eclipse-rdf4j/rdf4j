@@ -115,7 +115,7 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 			ds.addDefaultRemoveGraph(null);
 			ds.setDefaultInsertGraph(null);
 
-			if (this.inputNamedGraphs.size() > 0) {
+			if (!this.inputNamedGraphs.isEmpty()) {
 				for (String ng : inputNamedGraphs.keySet()) {
 					IRI namedGraph = SimpleValueFactory.getInstance().createIRI(ng);
 					ds.addNamedGraph(namedGraph);

@@ -101,7 +101,7 @@ public class SparqlTest extends AbstractCommandTest {
 			m = Rio.parse(reader, "", RDFFormat.TURTLE);
 		}
 		assertNotNull(m);
-		assertTrue(m.size() > 0, "Empty model");
+		assertTrue(!m.isEmpty(), "Empty model");
 	}
 
 	@Test
@@ -120,7 +120,7 @@ public class SparqlTest extends AbstractCommandTest {
 			m = Rio.parse(reader, "", RDFFormat.TURTLE);
 		}
 		assertNotNull(m);
-		assertTrue(m.size() > 0, "Empty model");
+		assertTrue(!m.isEmpty(), "Empty model");
 	}
 
 	@Test

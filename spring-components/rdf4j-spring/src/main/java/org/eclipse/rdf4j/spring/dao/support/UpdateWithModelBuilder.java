@@ -159,7 +159,7 @@ public class UpdateWithModelBuilder {
 	public UpdateWithModelBuilder withSink(Consumer<Collection<Statement>> consumer) {
 		List<Statement> sink = new ArrayList<>();
 		consumer.accept(sink);
-		if (sink.size() > 0) {
+		if (!sink.isEmpty()) {
 			sink.stream()
 					.forEach(
 							s -> modelBuilder.add(s.getSubject(), s.getPredicate(), s.getObject()));

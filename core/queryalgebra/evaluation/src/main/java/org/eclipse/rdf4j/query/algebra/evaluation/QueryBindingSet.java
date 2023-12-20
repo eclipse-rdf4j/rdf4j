@@ -16,7 +16,6 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
-import org.eclipse.rdf4j.common.iterator.ConvertingIterator;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
@@ -131,18 +130,7 @@ public class QueryBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public Iterator<Binding> iterator() {
-		Iterator<Map.Entry<String, Value>> entries = bindings.entrySet()
-				.stream()
-				.filter(entry -> entry.getValue() != null)
-				.iterator();
-
-		return new ConvertingIterator<Map.Entry<String, Value>, Binding>(entries) {
-
-			@Override
-			protected Binding convert(Map.Entry<String, Value> entry) {
-				return new SimpleBinding(entry.getKey(), entry.getValue());
-			}
-		};
+		return new BindingIterator(bindings.entrySet().iterator());
 	}
 
 	@Override
@@ -156,6 +144,39 @@ public class QueryBindingSet extends AbstractBindingSet implements MutableBindin
 			return bindings.equals(((QueryBindingSet) other).bindings);
 		} else {
 			return super.equals(other);
+		}
+	}
+
+	private static class BindingIterator implements Iterator<Binding> {
+
+		private final Iterator<Map.Entry<String, Value>> iterator;
+		SimpleBinding next;
+
+		public BindingIterator(Iterator<Map.Entry<String, Value>> iterator) {
+			this.iterator = iterator;
+		}
+
+		private void calculateNext() {
+			while (next == null && iterator.hasNext()) {
+				Map.Entry<String, Value> next1 = iterator.next();
+				if (next1.getValue() != null) {
+					next = new SimpleBinding(next1.getKey(), next1.getValue());
+				}
+			}
+		}
+
+		@Override
+		public boolean hasNext() {
+			calculateNext();
+			return next != null;
+		}
+
+		@Override
+		public Binding next() {
+			calculateNext();
+			var temp = next;
+			next = null;
+			return temp;
 		}
 	}
 }

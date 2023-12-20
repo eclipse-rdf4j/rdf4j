@@ -192,12 +192,12 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 		}
 
 		// First try if we can use the base name without an appended index
-		if (baseName != null && baseName.length() > 0 && !hasRepositoryConfig(baseName)) {
+		if (baseName != null && !baseName.isEmpty() && !hasRepositoryConfig(baseName)) {
 			return baseName;
 		}
 
 		// When the base name is null or empty, generate one
-		if (baseName == null || baseName.length() == 0) {
+		if (baseName == null || baseName.isEmpty()) {
 			baseName = "repository-";
 		} else if (!baseName.endsWith("-")) {
 			baseName += "-";

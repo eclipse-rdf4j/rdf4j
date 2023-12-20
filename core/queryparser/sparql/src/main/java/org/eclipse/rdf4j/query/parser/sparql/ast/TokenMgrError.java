@@ -107,7 +107,7 @@ public class TokenMgrError extends Error {
 				errorLine + ", column " + //
 				errorColumn + ".  Encountered: " + //
 				(EOFSeen ? "<EOF>" : ("'" + addEscapes(String.valueOf(curChar)) + "' (" + (int) curChar + "),")) + //
-				(errorAfter == null || errorAfter.length() == 0 ? ""
+				(errorAfter == null || errorAfter.isEmpty() ? ""
 						: " after prefix \"" + addEscapes(errorAfter) + "\""))
 				+ //
 				(lexState == 0 ? "" : " (in lexical state " + lexState + ")");

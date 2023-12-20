@@ -10,10 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.Comparator;
+import java.util.Set;
+
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -64,6 +68,37 @@ public class SailDatasetTripleSource implements RDFStarTripleSource {
 			}
 			throw t;
 		}
+	}
+
+	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subj, IRI pred,
+			Value obj, Resource... contexts) throws QueryEvaluationException {
+		CloseableIteration<? extends Statement> statements = null;
+		try {
+			statements = dataset.getStatements(order, subj, pred, obj, contexts);
+			if (statements instanceof EmptyIteration) {
+				return statements;
+			}
+			return new TripleSourceIterationWrapper<>(statements);
+		} catch (Throwable t) {
+			if (statements != null) {
+				statements.close();
+			}
+			if (t instanceof SailException) {
+				throw new QueryEvaluationException(t);
+			}
+			throw t;
+		}
+	}
+
+	@Override
+	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		return dataset.getSupportedOrders(subj, pred, obj, contexts);
+	}
+
+	@Override
+	public Comparator<Value> getComparator() {
+		return dataset.getComparator();
 	}
 
 	@Override

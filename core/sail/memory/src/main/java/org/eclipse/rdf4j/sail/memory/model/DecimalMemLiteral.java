@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.memory.model;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 
 /**

@@ -132,7 +132,7 @@ public class PlatformFactory {
 
 		// check gnome desktop id
 		String gnomeDesktopSessionId = getSystemEnv("GNOME_DESKTOP_SESSION_ID");
-		if (gnomeDesktopSessionId != null && gnomeDesktopSessionId.trim().length() > 0) {
+		if (gnomeDesktopSessionId != null && !gnomeDesktopSessionId.trim().isEmpty()) {
 			return true;
 		}
 

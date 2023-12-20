@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * A lexical RDF Term Comparator, this class does not compare numerically and is therefore a bit faster than a SPARQL

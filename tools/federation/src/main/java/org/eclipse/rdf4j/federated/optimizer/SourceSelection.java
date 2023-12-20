@@ -113,7 +113,7 @@ public class SourceSelection {
 
 		// if remote checks are necessary, execute them using the concurrency
 		// infrastructure and block until everything is resolved
-		if (remoteCheckTasks.size() > 0) {
+		if (!remoteCheckTasks.isEmpty()) {
 			SourceSelectionExecutorWithLatch.run(this, remoteCheckTasks, cache);
 		}
 
@@ -230,13 +230,14 @@ public class SourceSelection {
 			finished = true;
 
 			// check for errors:
-			if (errors.size() > 0) {
+			if (!errors.isEmpty()) {
 				StringBuilder sb = new StringBuilder();
-				sb.append(
-						errors.size() + " errors were reported while optimizing query " + getQueryInfo().getQueryID());
+				sb.append(errors.size())
+						.append(" errors were reported while optimizing query ")
+						.append(getQueryInfo().getQueryID());
 
 				for (Exception e : errors) {
-					sb.append("\n" + ExceptionUtil.getExceptionString("Error occured", e));
+					sb.append("\n").append(ExceptionUtil.getExceptionString("Error occured", e));
 				}
 
 				log.debug(sb.toString());
