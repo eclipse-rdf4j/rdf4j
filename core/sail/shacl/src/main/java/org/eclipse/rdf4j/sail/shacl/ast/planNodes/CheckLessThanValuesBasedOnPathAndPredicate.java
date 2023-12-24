@@ -26,13 +26,6 @@ import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 
-/**
- * Used by sh:equals to return any targets and values where the target has values by path that are not values by the
- * predicate, or vice versa. It returns the targets and any symmetricDifference values when comparing the set of values
- * by path and by predicate.
- *
- * @author Håvard Ottestad
- */
 public class CheckLessThanValuesBasedOnPathAndPredicate extends AbstractPairwisePlanNode {
 
 	private final ValueComparator valueComparator = new ValueComparator();

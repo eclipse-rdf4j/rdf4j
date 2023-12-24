@@ -34,7 +34,7 @@ public class DisjointConstraintComponent extends AbstractPairwiseConstraintCompo
 	}
 
 	@Override
-	IRI getIRI() {
+	IRI getConstraintIri() {
 		return SHACL.DISJOINT;
 	}
 

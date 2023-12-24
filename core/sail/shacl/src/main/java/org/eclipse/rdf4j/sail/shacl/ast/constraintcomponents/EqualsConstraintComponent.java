@@ -34,7 +34,7 @@ public class EqualsConstraintComponent extends AbstractPairwiseConstraintCompone
 	}
 
 	@Override
-	IRI getIRI() {
+	IRI getConstraintIri() {
 		return SHACL.EQUALS;
 	}
 

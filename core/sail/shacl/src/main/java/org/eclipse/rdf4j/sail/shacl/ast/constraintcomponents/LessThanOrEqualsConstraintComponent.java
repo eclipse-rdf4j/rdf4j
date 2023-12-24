@@ -34,7 +34,7 @@ public class LessThanOrEqualsConstraintComponent extends AbstractPairwiseConstra
 	}
 
 	@Override
-	IRI getIRI() {
+	IRI getConstraintIri() {
 		return SHACL.LESS_THAN_OR_EQUALS;
 	}
 

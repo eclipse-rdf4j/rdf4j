@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2020 Eclipse RDF4J contributors.
+ * Copyright (c) 2023 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -7,7 +7,7 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
- *******************************************************************************/
+ ******************************************************************************/
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
@@ -49,11 +49,17 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 		this.shape = shape;
 	}
 
-	abstract IRI getIRI();
+	/**
+	 * The abstract method that is implemented by the subclasses to return the IRI of the constraint component, e.g.
+	 * sh:equals, sh:disjoint etc.
+	 *
+	 * @return The IRI of the constraint component
+	 */
+	abstract IRI getConstraintIri();
 
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
-		model.add(subject, getIRI(), this.predicate);
+		model.add(subject, getConstraintIri(), this.predicate);
 	}
 
 	@Override
@@ -112,6 +118,18 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 		return getPairwiseCheck(connectionsGroup, validationSettings, allTargets, subject, object, targetQueryFragment);
 	}
 
+	/**
+	 * The abstract method that is implemented by the subclasses to add the pairwise check as a PlanNode to the
+	 * validation plan.
+	 *
+	 * @param connectionsGroup
+	 * @param validationSettings
+	 * @param allTargets
+	 * @param subject
+	 * @param object
+	 * @param targetQueryFragment
+	 * @return The PlanNode that performs the pairwise check
+	 */
 	abstract PlanNode getPairwiseCheck(ConnectionsGroup connectionsGroup, ValidationSettings validationSettings,
 			PlanNode allTargets, StatementMatcher.Variable<Resource> subject, StatementMatcher.Variable<Value> object,
 			SparqlFragment targetQueryFragment);
@@ -135,55 +153,6 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 
 		return Unique.getInstance(UnionNode.getInstance(targetFilter1, targetFilter2), false);
 	}
-
-//	@Override
-//	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
-//			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
-//		assert scope == Scope.propertyShape;
-//
-//		PlanNode allTargetsPlan = getTargetChain()
-//				.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
-//						stableRandomVariableProvider)
-//				.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
-//
-//		allTargetsPlan = new ShiftToPropertyShape(allTargetsPlan);
-//
-//		// removed statements that match predicate could affect sh:or
-//		if (connectionsGroup.getStats().hasRemoved()) {
-//			PlanNode deletedPredicates = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, predicate,
-//					null, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.propertyShape));
-//			deletedPredicates = getTargetChain()
-//					.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
-//							stableRandomVariableProvider)
-//					.getTargetFilter(connectionsGroup, dataGraph, deletedPredicates);
-//			deletedPredicates = getTargetChain()
-//					.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
-//							stableRandomVariableProvider)
-//					.extend(deletedPredicates, connectionsGroup, dataGraph, Scope.propertyShape, EffectiveTarget.Extend.left,
-//							false,
-//							null);
-//			allTargetsPlan = UnionNode.getInstanceDedupe(allTargetsPlan, deletedPredicates);
-//		}
-//
-//		// added statements that match predicate could affect sh:not
-//		if (connectionsGroup.getStats().hasAdded()) {
-//			PlanNode addedPredicates = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, predicate,
-//					null, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.propertyShape));
-//			addedPredicates = getTargetChain()
-//					.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
-//							stableRandomVariableProvider)
-//					.getTargetFilter(connectionsGroup, dataGraph, addedPredicates);
-//			addedPredicates = getTargetChain()
-//					.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
-//							stableRandomVariableProvider)
-//					.extend(addedPredicates, connectionsGroup, dataGraph, Scope.propertyShape, EffectiveTarget.Extend.left,
-//							false,
-//							null);
-//			allTargetsPlan = UnionNode.getInstanceDedupe(allTargetsPlan, addedPredicates);
-//		}
-//
-//		return Unique.getInstance(new TrimToTarget(allTargetsPlan), false);
-//	}
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
@@ -292,26 +261,6 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 	}
 
 	@Override
-	public ValidationApproach getPreferredValidationApproach(ConnectionsGroup connectionsGroup) {
-		return ValidationApproach.Transactional;
-	}
-
-	@Override
-	public ValidationApproach getOptimalBulkValidationApproach() {
-		return ValidationApproach.Transactional;
-	}
-
-	@Override
-	public ConstraintComponent deepClone() {
-		throw new UnsupportedOperationException();
-	}
-
-	@Override
-	public List<Literal> getDefaultMessage() {
-		return List.of();
-	}
-
-	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
 			return true;
@@ -327,7 +276,7 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 
 	@Override
 	public int hashCode() {
-		return predicate.hashCode() + "LessThanConstraintComponent".hashCode();
+		return predicate.hashCode() + "AbstractPairwiseConstraintComponent".hashCode();
 	}
 
 	@Override
