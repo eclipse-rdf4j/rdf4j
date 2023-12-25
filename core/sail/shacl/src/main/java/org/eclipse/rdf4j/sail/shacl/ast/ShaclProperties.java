@@ -96,6 +96,13 @@ public class ShaclProperties {
 	private final List<Literal> message = new ArrayList<>();
 	private IRI severity;
 
+	private final List<Literal> name = new ArrayList<>();
+	private final List<Literal> description = new ArrayList<>();
+
+	private Value defaultValue;
+	private Value order;
+	private Value group;
+
 	private final List<Resource> sparql = new ArrayList<>();
 
 	public ShaclProperties(Resource id, ShapeSource connection) {
@@ -173,6 +180,21 @@ public class ShaclProperties {
 						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
 					}
 					break;
+				case "http://www.w3.org/ns/shacl#name":
+					try {
+						name.add((Literal) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					}
+					break;
+				case "http://www.w3.org/ns/shacl#description":
+					try {
+						description.add((Literal) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					}
+					break;
+
 				case "http://www.w3.org/ns/shacl#severity":
 					if (severity != null) {
 						throw getExceptionForAlreadyPopulated(id, predicate, severity, object);
@@ -182,6 +204,24 @@ public class ShaclProperties {
 					} catch (ClassCastException e) {
 						throw getExceptionForCastIssue(id, predicate, IRI.class, object);
 					}
+					break;
+				case "http://www.w3.org/ns/shacl#defaultValue":
+					if (defaultValue != null) {
+						throw getExceptionForAlreadyPopulated(id, predicate, defaultValue, object);
+					}
+					defaultValue = object;
+					break;
+				case "http://www.w3.org/ns/shacl#group":
+					if (group != null) {
+						throw getExceptionForAlreadyPopulated(id, predicate, group, object);
+					}
+					group = object;
+					break;
+				case "http://www.w3.org/ns/shacl#order":
+					if (order != null) {
+						throw getExceptionForAlreadyPopulated(id, predicate, order, object);
+					}
+					order = object;
 					break;
 				case "http://www.w3.org/ns/shacl#languageIn":
 					if (languageIn != null) {
@@ -592,8 +632,9 @@ public class ShaclProperties {
 	}
 
 	private static String getClassName(Value object) {
-		if (object == null)
+		if (object == null) {
 			return "null";
+		}
 		String actualClassName;
 		if (object.isIRI()) {
 			actualClassName = "IRI";
@@ -724,6 +765,26 @@ public class ShaclProperties {
 
 	public IRI getSeverity() {
 		return severity;
+	}
+
+	public List<Literal> getName() {
+		return name;
+	}
+
+	public List<Literal> getDescription() {
+		return description;
+	}
+
+	public Value getDefaultValue() {
+		return defaultValue;
+	}
+
+	public Value getOrder() {
+		return order;
+	}
+
+	public Value getGroup() {
+		return group;
 	}
 
 	public List<Resource> getProperty() {

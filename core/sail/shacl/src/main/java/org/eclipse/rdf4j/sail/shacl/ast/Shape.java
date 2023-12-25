@@ -309,23 +309,23 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		}
 
 		for (IRI iri : properties.getEquals()) {
-			var equalsConstraintComponent = new EqualsConstraintComponent(iri);
+			var equalsConstraintComponent = new EqualsConstraintComponent(iri, this);
 			constraintComponent.add(equalsConstraintComponent);
 		}
 
 		for (IRI iri : properties.getDisjoint()) {
-			var disjointConstraintComponent = new DisjointConstraintComponent(iri);
+			var disjointConstraintComponent = new DisjointConstraintComponent(iri, this);
 			constraintComponent.add(disjointConstraintComponent);
 		}
 
 		for (IRI iri : properties.getLessThan()) {
-			var lessThanConstraintComponent = new LessThanConstraintComponent(iri);
+			var lessThanConstraintComponent = new LessThanConstraintComponent(iri, this);
 			constraintComponent.add(lessThanConstraintComponent);
 		}
 
 		for (IRI iri : properties.getLessThanOrEquals()) {
 			var lessThanOrEqualsConstraintComponent = new LessThanOrEqualsConstraintComponent(
-					iri);
+					iri, this);
 			constraintComponent.add(lessThanOrEqualsConstraintComponent);
 		}
 

@@ -10,6 +10,11 @@ rdf4j:SHACLShapeGraph {
   ex:PersonShape a sh:NodeShape;
     sh:targetClass ex:Person, ex:SecondTarget;
     sh:property [
+        sh:name "Person/SecondTarget ex:knows only ex:Person", "Person/SecondTarget ex:knows only ex:Person"@en;
+        sh:description "This is a description", "Dette er en beskrivelse"@no-nb;
+        sh:defaultValue ex:iri1;
+        sh:group ex:Group1;
+        sh:order 1;
         sh:path ex:knows;
         sh:class ex:Person
       ] .

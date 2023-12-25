@@ -214,13 +214,24 @@ public class ValidationTuple {
 
 	@Override
 	public String toString() {
-		return "ValidationTuple{" +
-				"chain=" + Arrays.toString(chain) +
-				", scope=" + scope +
-				", propertyShapeScopeWithValue=" + propertyShapeScopeWithValue +
-//			", validationResults=" + validationResults +
-				", compressedTuples=" + Arrays.toString(compressedTuples.toArray()) +
-				'}';
+		try {
+			return "ValidationTuple{" +
+					"activeTarget=" + getActiveTarget() +
+					"value=" + getValue() +
+					"chain=" + Arrays.toString(chain) +
+					", scope=" + scope +
+					", propertyShapeScopeWithValue=" + propertyShapeScopeWithValue +
+					", compressedTuples=" + Arrays.toString(compressedTuples.toArray()) +
+					'}';
+		} catch (Throwable t) {
+			return "ValidationTuple{" +
+					"chain=" + Arrays.toString(chain) +
+					", scope=" + scope +
+					", propertyShapeScopeWithValue=" + propertyShapeScopeWithValue +
+					", compressedTuples=" + Arrays.toString(compressedTuples.toArray()) +
+					'}';
+		}
+
 	}
 
 	public List<ValidationTuple> shiftToNodeShape() {
@@ -333,6 +344,22 @@ public class ValidationTuple {
 		Set<ValidationTuple> compressedTuples = enrichCompressedTuples(t -> t.setValue(value));
 
 		return new ValidationTuple(this.validationResults, chain, scope, true, compressedTuples, contexts);
+	}
+
+	public ValidationTuple shiftToPropertyShapeScope(Value value) {
+		assert scope == ConstraintComponent.Scope.nodeShape
+				: "Can't shift to property shape scope on a property shape scoped ValidationTuple.";
+
+		Value[] chain;
+
+		chain = Arrays.copyOf(this.chain, this.chain.length + 1);
+
+		chain[chain.length - 1] = value;
+
+		Set<ValidationTuple> compressedTuples = enrichCompressedTuples(t -> t.setValue(value));
+
+		return new ValidationTuple(this.validationResults, chain, ConstraintComponent.Scope.propertyShape, true,
+				compressedTuples, contexts);
 	}
 
 	private Set<ValidationTuple> enrichCompressedTuples(

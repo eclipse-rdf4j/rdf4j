@@ -76,7 +76,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			PlanNodeProvider overrideTargetNode, Scope scope) {
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
-		EffectiveTarget target = getTargetChain().getEffectiveTarget(scope,
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(scope,
 				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);
 
 		if (scope == Scope.propertyShape) {
@@ -85,23 +85,25 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			PlanNode addedTargets;
 
 			if (overrideTargetNode != null) {
-				addedTargets = target.extend(overrideTargetNode.getPlanNode(), connectionsGroup,
+				addedTargets = effectiveTarget.extend(overrideTargetNode.getPlanNode(), connectionsGroup,
 						validationSettings.getDataGraph(), scope,
 						EffectiveTarget.Extend.right,
 						false, null);
 
 			} else {
 				BufferedSplitter addedTargetsBufferedSplitter = new BufferedSplitter(
-						target.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false, null));
+						effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false,
+								null));
 				addedTargets = addedTargetsBufferedSplitter.getPlanNode();
 				PlanNode addedByPath = path.getAllAdded(connectionsGroup, validationSettings.getDataGraph(), null);
 
-				addedByPath = target.getTargetFilter(connectionsGroup,
+				addedByPath = effectiveTarget.getTargetFilter(connectionsGroup,
 						validationSettings.getDataGraph(), Unique.getInstance(new TrimToTarget(addedByPath), false));
 
 				addedByPath = new ReduceTargets(addedByPath, addedTargetsBufferedSplitter.getPlanNode());
 
-				addedByPath = target.extend(addedByPath, connectionsGroup, validationSettings.getDataGraph(), scope,
+				addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, validationSettings.getDataGraph(),
+						scope,
 						EffectiveTarget.Extend.left, false,
 						null);
 
@@ -162,12 +164,13 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			PlanNode addedTargets;
 
 			if (overrideTargetNode != null) {
-				addedTargets = target.extend(overrideTargetNode.getPlanNode(), connectionsGroup,
+				addedTargets = effectiveTarget.extend(overrideTargetNode.getPlanNode(), connectionsGroup,
 						validationSettings.getDataGraph(), scope,
 						EffectiveTarget.Extend.right,
 						false, null);
 			} else {
-				addedTargets = target.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false,
+				addedTargets = effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope,
+						false,
 						null);
 
 				if (connectionsGroup.getStats().hasRemoved()) {
