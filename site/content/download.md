@@ -113,7 +113,7 @@ To include nightly snapshot builds in your project, add this repository to your 
 <repositories>
     <repository>
         <id>oss.sonatype.org-snapshot</id>
-        <url>http://oss.sonatype.org/content/repositories/snapshots</url>
+        <url>https://oss.sonatype.org/content/repositories/snapshots</url>
         <releases>
             <enabled>false</enabled>
         </releases>
