@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
@@ -20,6 +21,7 @@ import static org.mockito.Mockito.when;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.Query;
@@ -146,6 +148,13 @@ public class SailRepositoryConnectionTest {
 		query.evaluate();
 		// check that the TupleExpr implementation created by the underlying sail was passed to the evaluation
 		verify(sailConnection).evaluate(eq(expr), any(), any(), anyBoolean());
+	}
+
+	@Test
+	public void testIsolationLevelIsSet() throws Exception {
+		IsolationLevels isolationLevel = IsolationLevels.SERIALIZABLE;
+		subject.begin(isolationLevel);
+		assertThat(subject.getIsolationLevel()).isEqualTo(isolationLevel);
 	}
 
 }

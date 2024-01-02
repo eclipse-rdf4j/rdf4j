@@ -167,6 +167,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 
 	@Override
 	public void begin(IsolationLevel level) throws RepositoryException {
+		super.begin(level);
 		try {
 			// always call receiveTransactionSettings(...) before calling begin();
 			sailConnection.setTransactionSettings(new TransactionSetting[0]);
