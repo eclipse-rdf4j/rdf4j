@@ -41,7 +41,6 @@ import org.slf4j.LoggerFactory;
  * Base functionality for SPARQL compliance test suites using a W3C-style Manifest.
  *
  * @author Jeen Broekstra
- *
  */
 public abstract class SPARQLComplianceTest {
 

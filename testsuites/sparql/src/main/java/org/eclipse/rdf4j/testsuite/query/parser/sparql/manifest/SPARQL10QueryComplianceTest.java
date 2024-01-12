@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
@@ -21,28 +20,26 @@ import org.junit.jupiter.api.TestFactory;
  * A test suite that runs the W3C Approved SPARQL 1.0 query tests.
  *
  * @author Jeen Broekstra
- *
  * @see <a href="https://www.w3.org/2009/sparql/docs/tests/">sparql docs test</a>
  */
 public abstract class SPARQL10QueryComplianceTest extends SPARQLQueryComplianceTest {
 
-	private final List<String> defaultIgnoredTests = new ArrayList<>();
-	{
-		// incompatible with SPARQL 1.1 - syntax for decimals was modified
-		defaultIgnoredTests.add("Basic - Term 6");
-		// incompatible with SPARQL 1.1 - syntax for decimals was modified
-		defaultIgnoredTests.add("Basic - Term 7");
-		// Test is incorrect: assumes timezoned date is comparable with non-timezoned
-		defaultIgnoredTests.add("date-2");
-		// Incompatible with SPARQL 1.1 - string-typed literals and plain literals are
-		// identical
-		defaultIgnoredTests.add("Strings: Distinct");
-		// Incompatible with SPARQL 1.1 - string-typed literals and plain literals are
-		// identical
-		defaultIgnoredTests.add("All: Distinct");
-		// Incompatible with SPARQL 1.1 - string-typed literals and plain literals are
-		// identical
-		defaultIgnoredTests.add("SELECT REDUCED ?x with strings");
+	private static final String[] defaultIgnoredTests = {
+			// incompatible with SPARQL 1.1 - syntax for decimals was modified
+			"Basic - Term 6",
+			// incompatible with SPARQL 1.1 - syntax for decimals was modified
+			"Basic - Term 7",
+			// Test is incorrect: assumes timezoned date is comparable with non-timezoned
+			"date-2",
+			// Incompatible with SPARQL 1.1 - string-typed literals and plain literals are
+			// identical
+			"Strings: Distinct",
+			// Incompatible with SPARQL 1.1 - string-typed literals and plain literals are
+			// identical
+			"All: Distinct",
+			// Incompatible with SPARQL 1.1 - string-typed literals and plain literals are
+			// identical
+			"SELECT REDUCED ?x with strings"
 	};
 
 	public SPARQL10QueryComplianceTest() {

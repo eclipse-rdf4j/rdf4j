@@ -88,7 +88,20 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 
 	private static final Logger logger = LoggerFactory.getLogger(SPARQLQueryComplianceTest.class);
 
+	protected abstract Repository newRepository() throws Exception;
+
+	private Repository createRepository() throws Exception {
+		Repository repo = newRepository();
+		try (RepositoryConnection con = repo.getConnection()) {
+			con.clear();
+			con.clearNamespaces();
+		}
+		return repo;
+	}
+
 	/**
+	 * This can be overridden in order to read one or more of the test parameters.
+	 *
 	 * @param displayName
 	 * @param testURI
 	 * @param name
@@ -96,7 +109,159 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 	 * @param resultFileURL
 	 * @param dataset
 	 * @param ordered
+	 * @param laxCardinality
+	 * @return
 	 */
+	protected void testParameterListener(String displayName, String testURI, String name, String queryFileURL,
+			String resultFileURL, Dataset dataset, boolean ordered, boolean laxCardinality) {
+		// no-op
+	}
+
+	@TestFactory
+	public abstract Collection<DynamicTest> tests();
+
+	public Collection<DynamicTest> getTestData(String manifestResource) {
+		return getTestData(manifestResource, true);
+	}
+
+	public Collection<DynamicTest> getTestData(String manifestResource, boolean approvedOnly) {
+		List<DynamicTest> tests = new ArrayList<>();
+
+		Deque<String> manifests = new ArrayDeque<>();
+		manifests.add(this.getClass().getClassLoader().getResource(manifestResource).toExternalForm());
+		while (!manifests.isEmpty()) {
+			String pop = manifests.pop();
+			SPARQLQueryTestManifest manifest = new SPARQLQueryTestManifest(pop, excludedSubdirs, approvedOnly);
+			tests.addAll(manifest.tests);
+			manifests.addAll(manifest.subManifests);
+		}
+
+		return tests;
+	}
+
+	protected class SPARQLQueryTestManifest {
+		private final List<DynamicTest> tests = new ArrayList<>();
+		private final List<String> subManifests = new ArrayList<>();
+
+		public SPARQLQueryTestManifest(String filename, List<String> excludedSubdirs) {
+			this(filename, excludedSubdirs, true);
+		}
+
+		public SPARQLQueryTestManifest(String filename, List<String> excludedSubdirs, boolean approvedOnly) {
+			SailRepository sailRepository = new SailRepository(new MemoryStore());
+			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+				connection.add(new URL(filename), filename, RDFFormat.TURTLE);
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
+
+			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+
+				String manifestQuery = " PREFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> "
+						+ "PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> "
+						+ "SELECT DISTINCT ?manifestFile "
+						+ "WHERE { [] mf:include [ rdf:rest*/rdf:first ?manifestFile ] . }   ";
+
+				try (TupleQueryResult manifestResults = connection
+						.prepareTupleQuery(QueryLanguage.SPARQL, manifestQuery, filename)
+						.evaluate()) {
+					for (BindingSet bindingSet : manifestResults) {
+						String subManifestFile = bindingSet.getValue("manifestFile").stringValue();
+						if (SPARQLQueryComplianceTest.includeSubManifest(subManifestFile, excludedSubdirs)) {
+							getSubManifests().add(subManifestFile);
+						}
+					}
+				}
+
+				StringBuilder query = new StringBuilder(512);
+				query.append(" PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> \n");
+				query.append(" PREFIX dawgt: <http://www.w3.org/2001/sw/DataAccess/tests/test-dawg#> \n");
+				query.append(" PREFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> \n");
+				query.append(" PREFIX sd: <http://www.w3.org/ns/sparql-service-description#> \n");
+				query.append(" PREFIX ent: <http://www.w3.org/ns/entailment/> \n");
+				query.append(
+						" SELECT DISTINCT ?testURI ?testName ?resultFile ?action ?queryFile ?defaultGraph ?ordered ?laxCardinality \n");
+				query.append(" WHERE { [] rdf:first ?testURI . \n");
+				if (approvedOnly) {
+					query.append(" ?testURI dawgt:approval dawgt:Approved . \n");
+				}
+				query.append(" ?testURI mf:name ?testName; \n");
+				query.append("          mf:result ?resultFile . \n");
+				query.append(" OPTIONAL { ?testURI mf:checkOrder ?ordered } \n");
+				query.append(" OPTIONAL { ?testURI  mf:requires ?requirement } \n");
+				query.append(" ?testURI mf:action ?action. \n");
+				query.append(" ?action qt:query ?queryFile . \n");
+				query.append(" OPTIONAL { ?action qt:data ?defaultGraph } \n");
+				query.append(" OPTIONAL { ?action sd:entailmentRegime ?regime } \n");
+				query.append(" OPTIONAL { ?testURI mf:resultCardinality ?laxCardinality, mf:LaxCardinality } \n");
+				// skip tests involving CSV result files, these are not query tests
+				query.append(" FILTER(!STRENDS(STR(?resultFile), \"csv\")) \n");
+				// skip tests involving entailment regimes
+				query.append(" FILTER(!BOUND(?regime)) \n");
+				// skip test involving basic federation, these are tested separately.
+				query.append(" FILTER (!BOUND(?requirement) || (?requirement != mf:BasicFederation)) \n");
+				query.append(" }\n");
+
+				try (TupleQueryResult result = connection.prepareTupleQuery(query.toString()).evaluate()) {
+
+					query.setLength(0);
+					query.append(" PREFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> \n");
+					query.append(" SELECT ?graph \n");
+					query.append(" WHERE { ?action qt:graphData ?graph } \n");
+					TupleQuery namedGraphsQuery = connection.prepareTupleQuery(query.toString());
+
+					for (BindingSet bs : result) {
+						// FIXME I'm sure there's a neater way to do this
+						String testName = bs.getValue("testName").stringValue();
+						String displayName = filename.substring(0, filename.lastIndexOf('/'));
+						displayName = displayName.substring(displayName.lastIndexOf('/') + 1, displayName.length())
+								+ ": " + testName;
+
+						IRI defaultGraphURI = (IRI) bs.getValue("defaultGraph");
+						Value action = bs.getValue("action");
+						Value ordered = bs.getValue("ordered");
+
+						SimpleDataset dataset = null;
+
+						// Query named graphs
+						namedGraphsQuery.setBinding("action", action);
+						try (TupleQueryResult namedGraphs = namedGraphsQuery.evaluate()) {
+							if (defaultGraphURI != null || namedGraphs.hasNext()) {
+								dataset = new SimpleDataset();
+								if (defaultGraphURI != null) {
+									dataset.addDefaultGraph(defaultGraphURI);
+								}
+								while (namedGraphs.hasNext()) {
+									BindingSet graphBindings = namedGraphs.next();
+									IRI namedGraphURI = (IRI) graphBindings.getValue("graph");
+									dataset.addNamedGraph(namedGraphURI);
+								}
+							}
+						}
+
+						DynamicSPARQLQueryComplianceTest ds11ut = new DynamicSPARQLQueryComplianceTest(displayName,
+								bs.getValue("testURI").stringValue(), testName, bs.getValue("queryFile").stringValue(),
+								bs.getValue("resultFile").stringValue(), dataset,
+								Literals.getBooleanValue(ordered, false), bs.hasBinding("laxCardinality"));
+
+						if (!shouldIgnoredTest(testName)) {
+							tests.add(DynamicTest.dynamicTest(displayName, ds11ut::test));
+						}
+					}
+				}
+			}
+
+		}
+
+		/**
+		 * @return the subManifests
+		 */
+		public List<String> getSubManifests() {
+			return subManifests;
+		}
+
+	}
+
 	public class DynamicSPARQLQueryComplianceTest extends DynamicSparqlComplianceTest {
 
 		private final String queryFileURL;
@@ -158,6 +323,8 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 
 		@Override
 		public void setUp() throws Exception {
+			testParameterListener(getDisplayName(), getTestURI(), getName(), queryFileURL, resultFileURL, dataset,
+					ordered, laxCardinality);
 			dataRepository = createRepository();
 			if (dataset != null) {
 				try {
@@ -380,156 +547,4 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 		}
 	}
 
-	protected abstract Repository newRepository() throws Exception;
-
-	private Repository createRepository() throws Exception {
-		Repository repo = newRepository();
-		try (RepositoryConnection con = repo.getConnection()) {
-			con.clear();
-			con.clearNamespaces();
-		}
-		return repo;
-	}
-
-	protected class SPARQLQueryTestManifest {
-		private final List<DynamicTest> tests = new ArrayList<>();
-		private final List<String> subManifests = new ArrayList<>();
-
-		public SPARQLQueryTestManifest(String filename, List<String> excludedSubdirs) {
-			this(filename, excludedSubdirs, true);
-		}
-
-		public SPARQLQueryTestManifest(String filename, List<String> excludedSubdirs, boolean approvedOnly) {
-			SailRepository sailRepository = new SailRepository(new MemoryStore());
-			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-				connection.add(new URL(filename), filename, RDFFormat.TURTLE);
-			} catch (IOException e) {
-				throw new RuntimeException(e);
-			}
-
-			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-
-				String manifestQuery = " PREFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> "
-						+ "PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> "
-						+ "SELECT DISTINCT ?manifestFile "
-						+ "WHERE { [] mf:include [ rdf:rest*/rdf:first ?manifestFile ] . }   ";
-
-				try (TupleQueryResult manifestResults = connection
-						.prepareTupleQuery(QueryLanguage.SPARQL, manifestQuery, filename)
-						.evaluate()) {
-					for (BindingSet bindingSet : manifestResults) {
-						String subManifestFile = bindingSet.getValue("manifestFile").stringValue();
-						if (SPARQLQueryComplianceTest.includeSubManifest(subManifestFile, excludedSubdirs)) {
-							getSubManifests().add(subManifestFile);
-						}
-					}
-				}
-
-				StringBuilder query = new StringBuilder(512);
-				query.append(" PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> \n");
-				query.append(" PREFIX dawgt: <http://www.w3.org/2001/sw/DataAccess/tests/test-dawg#> \n");
-				query.append(" PREFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> \n");
-				query.append(" PREFIX sd: <http://www.w3.org/ns/sparql-service-description#> \n");
-				query.append(" PREFIX ent: <http://www.w3.org/ns/entailment/> \n");
-				query.append(
-						" SELECT DISTINCT ?testURI ?testName ?resultFile ?action ?queryFile ?defaultGraph ?ordered ?laxCardinality \n");
-				query.append(" WHERE { [] rdf:first ?testURI . \n");
-				if (approvedOnly) {
-					query.append(" ?testURI dawgt:approval dawgt:Approved . \n");
-				}
-				query.append(" ?testURI mf:name ?testName; \n");
-				query.append("          mf:result ?resultFile . \n");
-				query.append(" OPTIONAL { ?testURI mf:checkOrder ?ordered } \n");
-				query.append(" OPTIONAL { ?testURI  mf:requires ?requirement } \n");
-				query.append(" ?testURI mf:action ?action. \n");
-				query.append(" ?action qt:query ?queryFile . \n");
-				query.append(" OPTIONAL { ?action qt:data ?defaultGraph } \n");
-				query.append(" OPTIONAL { ?action sd:entailmentRegime ?regime } \n");
-				query.append(" OPTIONAL { ?testURI mf:resultCardinality ?laxCardinality, mf:LaxCardinality } \n");
-				// skip tests involving CSV result files, these are not query tests
-				query.append(" FILTER(!STRENDS(STR(?resultFile), \"csv\")) \n");
-				// skip tests involving entailment regimes
-				query.append(" FILTER(!BOUND(?regime)) \n");
-				// skip test involving basic federation, these are tested separately.
-				query.append(" FILTER (!BOUND(?requirement) || (?requirement != mf:BasicFederation)) \n");
-				query.append(" }\n");
-
-				try (TupleQueryResult result = connection.prepareTupleQuery(query.toString()).evaluate()) {
-
-					query.setLength(0);
-					query.append(" PREFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> \n");
-					query.append(" SELECT ?graph \n");
-					query.append(" WHERE { ?action qt:graphData ?graph } \n");
-					TupleQuery namedGraphsQuery = connection.prepareTupleQuery(query.toString());
-
-					for (BindingSet bs : result) {
-						// FIXME I'm sure there's a neater way to do this
-						String testName = bs.getValue("testName").stringValue();
-						String displayName = filename.substring(0, filename.lastIndexOf('/'));
-						displayName = displayName.substring(displayName.lastIndexOf('/') + 1, displayName.length())
-								+ ": " + testName;
-
-						IRI defaultGraphURI = (IRI) bs.getValue("defaultGraph");
-						Value action = bs.getValue("action");
-						Value ordered = bs.getValue("ordered");
-
-						SimpleDataset dataset = null;
-
-						// Query named graphs
-						namedGraphsQuery.setBinding("action", action);
-						try (TupleQueryResult namedGraphs = namedGraphsQuery.evaluate()) {
-							if (defaultGraphURI != null || namedGraphs.hasNext()) {
-								dataset = new SimpleDataset();
-								if (defaultGraphURI != null) {
-									dataset.addDefaultGraph(defaultGraphURI);
-								}
-								while (namedGraphs.hasNext()) {
-									BindingSet graphBindings = namedGraphs.next();
-									IRI namedGraphURI = (IRI) graphBindings.getValue("graph");
-									dataset.addNamedGraph(namedGraphURI);
-								}
-							}
-						}
-						DynamicSPARQLQueryComplianceTest ds11ut = new DynamicSPARQLQueryComplianceTest(displayName,
-								bs.getValue("testURI").stringValue(), testName, bs.getValue("queryFile").stringValue(),
-								bs.getValue("resultFile").stringValue(), dataset,
-								Literals.getBooleanValue(ordered, false), bs.hasBinding("laxCardinality"));
-						if (!shouldIgnoredTest(testName))
-							tests.add(DynamicTest.dynamicTest(displayName, ds11ut::test));
-					}
-				}
-			}
-
-		}
-
-		/**
-		 * @return the subManifests
-		 */
-		public List<String> getSubManifests() {
-			return subManifests;
-		}
-
-	}
-
-	@TestFactory
-	public abstract Collection<DynamicTest> tests();
-
-	public Collection<DynamicTest> getTestData(String manifestResource) {
-		return getTestData(manifestResource, true);
-	}
-
-	public Collection<DynamicTest> getTestData(String manifestResource, boolean approvedOnly) {
-		List<DynamicTest> tests = new ArrayList<>();
-
-		Deque<String> manifests = new ArrayDeque<>();
-		manifests.add(this.getClass().getClassLoader().getResource(manifestResource).toExternalForm());
-		while (!manifests.isEmpty()) {
-			String pop = manifests.pop();
-			SPARQLQueryTestManifest manifest = new SPARQLQueryTestManifest(pop, excludedSubdirs, approvedOnly);
-			tests.addAll(manifest.tests);
-			manifests.addAll(manifest.subManifests);
-		}
-
-		return tests;
-	}
 }

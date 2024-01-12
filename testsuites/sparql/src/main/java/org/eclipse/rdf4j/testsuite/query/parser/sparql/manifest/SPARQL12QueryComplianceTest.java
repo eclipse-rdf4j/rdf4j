@@ -20,7 +20,6 @@ import org.junit.jupiter.api.TestFactory;
  * A test suite that runs the SPARQL 1.2 community group's query tests.
  *
  * @author Jeen Broekstra
- *
  * @see <a href="https://github.com/w3c/sparql-12/">sparql 1.2</a>
  */
 public abstract class SPARQL12QueryComplianceTest extends SPARQLQueryComplianceTest {
@@ -31,8 +30,9 @@ public abstract class SPARQL12QueryComplianceTest extends SPARQLQueryComplianceT
 
 	public SPARQL12QueryComplianceTest() {
 		super(excludedSubdirs);
-		for (String ig : defaultIgnoredTests)
+		for (String ig : defaultIgnoredTests) {
 			addIgnoredTest(ig);
+		}
 	}
 
 	@TestFactory
