@@ -383,8 +383,9 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 						DynamicSPARQL11UpdateComplianceTest ds11ut = new DynamicSPARQL11UpdateComplianceTest(
 								displayName, testURI.stringValue(), testName, requestFile.stringValue(),
 								defaultGraphURI, inputNamedGraphs, resultDefaultGraphURI, resultNamedGraphs);
-						if (!shouldIgnoredTest(testName))
+						if (!shouldIgnoredTest(testName)) {
 							tests.add(DynamicTest.dynamicTest(displayName, ds11ut::test));
+						}
 					}
 				}
 			}

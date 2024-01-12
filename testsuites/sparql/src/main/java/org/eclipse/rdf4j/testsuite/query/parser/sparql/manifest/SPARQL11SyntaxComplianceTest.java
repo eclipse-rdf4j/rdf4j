@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.query.parser.ParsedOperation;
  * A test suite that runs the W3C Approved SPARQL 1.1 Syntax tests.
  *
  * @author Jeen Broekstra
- *
  * @see <a href="https://www.w3.org/2009/sparql/docs/tests/">sparql docs tests</a>
  */
 

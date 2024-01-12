@@ -233,8 +233,9 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 						DynamicSPARQLSyntaxComplianceTest ds11ut = new DynamicSPARQLSyntaxComplianceTest(displayName,
 								testURI.stringValue(), testName, action.stringValue(),
 								positiveTest);
-						if (!shouldIgnoredTest(testName))
+						if (!shouldIgnoredTest(testName)) {
 							tests.add(DynamicTest.dynamicTest(displayName, ds11ut::test));
+						}
 					}
 				}
 

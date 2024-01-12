@@ -20,15 +20,15 @@ import org.junit.jupiter.api.TestFactory;
  * A test suite that runs the W3C Approved SPARQL 1.1 query tests.
  *
  * @author Jeen Broekstra
- *
  * @see <a href="https://www.w3.org/2009/sparql/docs/tests/">sparql docs tests</a>
  */
 public abstract class SPARQL11QueryComplianceTest extends SPARQLQueryComplianceTest {
 
 	public SPARQL11QueryComplianceTest() {
 		super(List.of("service"));
-		for (String ig : defaultIgnoredTests)
+		for (String ig : defaultIgnoredTests) {
 			addIgnoredTest(ig);
+		}
 	}
 
 	private static final String[] defaultIgnoredTests = {
