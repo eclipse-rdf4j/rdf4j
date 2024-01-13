@@ -35,14 +35,19 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A ValidationReport that will defer calculating any ValidationResults until the user asks for them
  */
 @InternalUseOnly
 public class LazyValidationReport extends ValidationReport {
+
+	private static final Logger logger = LoggerFactory.getLogger(LazyValidationReport.class);
 
 	private List<ValidationResultIterator> validationResultIterators;
 	private final long limit;
@@ -55,44 +60,55 @@ public class LazyValidationReport extends ValidationReport {
 	}
 
 	private void evaluateLazyAspect() {
-		if (validationResultIterators != null) {
-			long counter = 0;
-			for (ValidationResultIterator validationResultIterator : validationResultIterators) {
-				while (validationResultIterator.hasNext()) {
-					if (limit >= 0 && counter >= limit) {
-						truncated = true;
-						break;
-					}
-					counter++;
+		try {
+			if (validationResultIterators != null) {
+				long counter = 0;
+				for (ValidationResultIterator validationResultIterator : validationResultIterators) {
+					while (validationResultIterator.hasNext()) {
+						if (limit >= 0 && counter >= limit) {
+							truncated = true;
+							break;
+						}
+						counter++;
 
-					validationResult.add(validationResultIterator.next());
+						validationResult.add(validationResultIterator.next());
+					}
+
+					this.conforms = conforms && validationResultIterator.conforms();
+					this.truncated = truncated || validationResultIterator.isTruncated();
 				}
 
-				this.conforms = conforms && validationResultIterator.conforms();
-				this.truncated = truncated || validationResultIterator.isTruncated();
+				validationResultIterators = null;
+
 			}
-
-			validationResultIterators = null;
-
+		} catch (Exception e) {
+			logger.warn("Error evaluating lazy validation report", e);
+			throw e;
 		}
 
 	}
 
 	public Model asModel(Model model) {
-		evaluateLazyAspect();
+		try {
+			evaluateLazyAspect();
 
-		model.add(getId(), SHACL.CONFORMS, literal(conforms));
-		model.add(getId(), RDF.TYPE, SHACL.VALIDATION_REPORT);
-		model.add(getId(), RDF4J.TRUNCATED, BooleanLiteral.valueOf(truncated));
+			model.add(getId(), SHACL.CONFORMS, literal(conforms));
+			model.add(getId(), RDF.TYPE, SHACL.VALIDATION_REPORT);
+			model.add(getId(), RDF4J.TRUNCATED, BooleanLiteral.valueOf(truncated));
 
-		HashSet<Resource> rdfListDedupe = new HashSet<>();
+			HashSet<Resource> rdfListDedupe = new HashSet<>();
 
-		for (ValidationResult result : validationResult) {
-			model.add(getId(), SHACL.RESULT, result.getId());
-			result.asModel(model, rdfListDedupe);
+			for (ValidationResult result : validationResult) {
+				model.add(getId(), SHACL.RESULT, result.getId());
+				result.asModel(model, rdfListDedupe);
+			}
+
+			return model;
+		} catch (Exception e) {
+			logger.warn("Error converting validation report to model", e);
+			throw e;
 		}
 
-		return model;
 	}
 
 	public Model asModel() {

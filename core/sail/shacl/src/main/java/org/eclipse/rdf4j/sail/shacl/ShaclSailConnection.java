@@ -1145,6 +1145,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						sail.getEffectiveValidationResultsLimitPerConstraint());
 				return validationResults;
 			} catch (Exception e) {
+				logger.warn("Error validating SHACL Shape {}", shape.getId(), e);
 				throw new SailException("Error validating SHACL Shape " + shape.getId() + "\n" + shape, e);
 			} finally {
 				handlePostLogging(before, validationResults);
