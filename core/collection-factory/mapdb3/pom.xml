@@ -28,6 +28,18 @@
 			<groupId>org.mapdb</groupId>
 			<artifactId>mapdb</artifactId>
 			<version>3.0.9</version>
+			<exclusions>
+				<exclusion>
+					<groupId>net.jpountz.lz4</groupId>
+					<artifactId>lz4</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+		<!--Update the lz4 dependency from the earlier net.jpountz.lz4, avoids duplicate classfiles downstream-->
+		<dependency>
+			<groupId>org.lz4</groupId>
+			<artifactId>lz4-java</artifactId>
+			<version>1.8.0</version>
 		</dependency>
 		<dependency>
 			<groupId>org.openjdk.jmh</groupId>

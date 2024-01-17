@@ -22,7 +22,7 @@ import java.util.stream.Stream;
 
 import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
-import org.eclipse.rdf4j.collection.factory.mapdb.MapDbCollectionFactory;
+import org.eclipse.rdf4j.collection.factory.mapdb.MapDb3CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockManager;
@@ -404,6 +404,6 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	@Override
 	public Supplier<CollectionFactory> getCollectionFactory() {
-		return () -> new MapDbCollectionFactory(getIterationCacheSyncThreshold());
+		return () -> new MapDb3CollectionFactory(getIterationCacheSyncThreshold());
 	}
 }
