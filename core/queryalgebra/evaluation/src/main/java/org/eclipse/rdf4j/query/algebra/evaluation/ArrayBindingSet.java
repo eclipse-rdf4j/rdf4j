@@ -185,6 +185,10 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public Set<String> getBindingNames() {
+		if (isEmpty()) {
+			return Collections.emptySet();
+		}
+
 		if (bindingNamesSetCache == null) {
 			int size = size();
 			if (size == 0) {
@@ -213,6 +217,10 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public Value getValue(String bindingName) {
+		if (isEmpty()) {
+			return null;
+		}
+
 		for (int i = 0; i < bindingNames.length; i++) {
 			if (bindingNames[i] == bindingName && whichBindingsHaveBeenSet[i]) {
 				return values[i];
@@ -229,6 +237,10 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public Binding getBinding(String bindingName) {
+		if (isEmpty()) {
+			return null;
+		}
+
 		Value value = getValue(bindingName);
 
 		if (value != null) {
@@ -240,6 +252,10 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public boolean hasBinding(String bindingName) {
+		if (isEmpty()) {
+			return false;
+		}
+
 		int index = getIndex(bindingName);
 		if (index == -1) {
 			return false;
@@ -249,6 +265,10 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public Iterator<Binding> iterator() {
+		if (isEmpty()) {
+			return Collections.emptyIterator();
+		}
+
 		return new ArrayBindingSetIterator();
 	}
 
@@ -257,6 +277,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		if (isEmpty()) {
 			return 0;
 		}
+
 		int size = 0;
 
 		for (boolean value : whichBindingsHaveBeenSet) {
@@ -271,6 +292,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	List<String> sortedBindingNames = null;
 
 	public List<String> getSortedBindingNames() {
+
 		if (sortedBindingNames == null) {
 			int size = size();
 
@@ -350,21 +372,6 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public boolean isEmpty() {
-		if (empty) {
-			for (boolean b : whichBindingsHaveBeenSet) {
-				if (b) {
-					assert false : "empty should be false";
-				}
-			}
-		} else {
-			var tempEmpty = true;
-			for (boolean b : whichBindingsHaveBeenSet) {
-				if (b) {
-					tempEmpty = false;
-				}
-			}
-			assert tempEmpty == empty;
-		}
 		return empty;
 	}
 
