@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
@@ -45,6 +46,7 @@ import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.memory.model.MemIRI;
 import org.eclipse.rdf4j.sail.memory.model.MemResource;
 import org.eclipse.rdf4j.sail.memory.model.MemValue;
+import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
 
 /**
  * Functionality to read and write MemoryStore to/from a file.
@@ -100,7 +102,7 @@ class FileIO {
 	 * Variables *
 	 *-----------*/
 
-	private final ValueFactory vf;
+	private final MemValueFactory vf;
 
 	private final CharsetEncoder charsetEncoder = StandardCharsets.UTF_8.newEncoder();
 
@@ -112,7 +114,7 @@ class FileIO {
 	 * Constructors *
 	 *--------------*/
 
-	public FileIO(ValueFactory vf) {
+	public FileIO(MemValueFactory vf) {
 		this.vf = vf;
 	}
 
@@ -320,7 +322,8 @@ class FileIO {
 			return vf.createLiteral(label, datatype);
 		} else if (valueTypeMarker == RDFSTAR_TRIPLE_MARKER) {
 			IRI rdfStarEncodedTriple = (IRI) readValue(dataIn);
-			return RDFStarUtil.fromRDFEncodedValue(rdfStarEncodedTriple);
+			Triple triple = (Triple) RDFStarUtil.fromRDFEncodedValue(rdfStarEncodedTriple, vf);
+			return vf.getOrCreateMemTriple(triple);
 		} else {
 			throw new IOException("Invalid value type marker: " + valueTypeMarker);
 		}

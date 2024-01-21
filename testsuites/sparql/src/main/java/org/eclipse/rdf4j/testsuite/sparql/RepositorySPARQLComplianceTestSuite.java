@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.testsuite.sparql.tests.ConstructTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.DefaultGraphTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.DescribeTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.ExistsTest;
+import org.eclipse.rdf4j.testsuite.sparql.tests.FilterScopeTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.GroupByTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.InTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.MinusTest;

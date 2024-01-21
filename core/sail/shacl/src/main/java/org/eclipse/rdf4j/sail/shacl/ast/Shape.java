@@ -448,9 +448,10 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 				}
 
 			} else {
-				throw new ShaclUnsupportedException("Unkown validation approach: " + validationApproach);
+				throw new ShaclUnsupportedException("Unknown validation approach: " + validationApproach);
 			}
 		} catch (RuntimeException e) {
+			logger.warn("Error processing SHACL Shape {}", id, e);
 			throw new SailException("Error processing SHACL Shape " + id + "\n" + this, e);
 		}
 
@@ -707,6 +708,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 							try {
 								return new ShaclProperties(r, shapeSourceWithContext);
 							} catch (Exception e) {
+								logger.warn("Error parsing shape {}", r, e);
 								throw new ShaclShapeParsingException(e, r);
 							}
 						})
@@ -719,6 +721,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 								}
 								throw new ShaclShapeParsingException("Unknown shape type", p.getId());
 							} catch (Exception e) {
+								logger.warn("Error parsing shape {}", p.getId(), e);
 								if (e instanceof ShaclShapeParsingException) {
 									throw e;
 								}

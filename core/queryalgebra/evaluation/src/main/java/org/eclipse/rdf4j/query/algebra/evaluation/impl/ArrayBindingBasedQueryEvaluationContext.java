@@ -57,7 +57,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	private final BiConsumer<Value, MutableBindingSet>[] addBinding;
 	private final Comparator<Value> comparator;
 
-	boolean initialized;
+	private final boolean initialized;
 
 	ArrayBindingBasedQueryEvaluationContext(QueryEvaluationContext context, String[] allVariables,
 			Comparator<Value> comparator) {
@@ -118,7 +118,12 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 		assert variableName != null && !variableName.isEmpty();
 		Function<ArrayBindingSet, Boolean> directHasVariable = defaultArrayBindingSet.getDirectHasBinding(variableName);
-		return new HasBinding(variableName, directHasVariable);
+		if (directHasVariable != null) {
+			return new HasBinding(variableName, directHasVariable);
+		} else {
+			// If the variable is not in the default set, it can never be part of this array binding
+			return (bs) -> false;
+		}
 	}
 
 	static private class HasBinding implements Predicate<BindingSet> {
@@ -156,16 +161,19 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 		Function<ArrayBindingSet, Binding> directAccessForVariable = defaultArrayBindingSet
 				.getDirectGetBinding(variableName);
-		return bs -> {
-			if (bs.isEmpty()) {
-				return null;
-			}
-			if (bs instanceof ArrayBindingSet) {
-				return directAccessForVariable.apply((ArrayBindingSet) bs);
-			} else {
-				return bs.getBinding(variableName);
-			}
-		};
+		if (directAccessForVariable != null) {
+			return (bs) -> {
+				if (bs.isEmpty()) {
+					return null;
+				} else if (bs instanceof ArrayBindingSet) {
+					return directAccessForVariable.apply((ArrayBindingSet) bs);
+				} else {
+					return bs.getBinding(variableName);
+				}
+			};
+		} else {
+			return (bs) -> null;
+		}
 	}
 
 	@Override
@@ -180,7 +188,12 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 		Function<ArrayBindingSet, Value> directAccessForVariable = defaultArrayBindingSet
 				.getDirectGetValue(variableName);
-		return new ValueGetter(variableName, directAccessForVariable);
+		if (directAccessForVariable != null) {
+			return new ValueGetter(variableName, directAccessForVariable);
+		} else {
+			// If the variable is not in the default set, it can never be part of this array binding
+			return (bs) -> null;
+		}
 	}
 
 	private static class ValueGetter implements Function<BindingSet, Value> {
@@ -219,13 +232,17 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 		BiConsumer<Value, ArrayBindingSet> directAccessForVariable = defaultArrayBindingSet
 				.getDirectSetBinding(variableName);
-		return (val, bs) -> {
-			if (bs instanceof ArrayBindingSet) {
-				directAccessForVariable.accept(val, (ArrayBindingSet) bs);
-			} else {
-				bs.setBinding(variableName, val);
-			}
-		};
+		if (directAccessForVariable != null) {
+			return (val, bs) -> {
+				if (bs instanceof ArrayBindingSet) {
+					directAccessForVariable.accept(val, (ArrayBindingSet) bs);
+				} else {
+					bs.setBinding(variableName, val);
+				}
+			};
+		} else {
+			return (val, bs) -> bs.setBinding(variableName, val);
+		}
 	}
 
 	@Override
@@ -240,13 +257,17 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 		BiConsumer<Value, ArrayBindingSet> wrapped = defaultArrayBindingSet
 				.getDirectAddBinding(variableName);
-		return (val, bs) -> {
-			if (bs instanceof ArrayBindingSet) {
-				wrapped.accept(val, (ArrayBindingSet) bs);
-			} else {
-				bs.addBinding(variableName, val);
-			}
-		};
+		if (wrapped != null) {
+			return (val, bs) -> {
+				if (bs instanceof ArrayBindingSet) {
+					wrapped.accept(val, (ArrayBindingSet) bs);
+				} else {
+					bs.addBinding(variableName, val);
+				}
+			};
+		} else {
+			return (val, bs) -> bs.addBinding(variableName, val);
+		}
 	}
 
 	@Override

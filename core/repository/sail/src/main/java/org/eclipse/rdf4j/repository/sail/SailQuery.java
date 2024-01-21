@@ -43,12 +43,12 @@ public abstract class SailQuery extends AbstractParserQuery {
 
 		TupleExpr tupleExpr = getParsedQuery().getTupleExpr().clone();
 
-		// That query has a root does not add to the explanation.
-		if (tupleExpr instanceof QueryRoot) {
-			tupleExpr = ((QueryRoot) tupleExpr).getArg();
+		if (!(tupleExpr instanceof QueryRoot)) {
+			// Add a dummy root node to the tuple expressions to allow optimizers to modify the actual root node
+			tupleExpr = new QueryRoot(tupleExpr);
 		}
-		SailConnection sailCon = getConnection().getSailConnection();
 
+		SailConnection sailCon = getConnection().getSailConnection();
 		return sailCon.explain(level, tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred(), timeout);
 
 	}

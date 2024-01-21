@@ -74,6 +74,30 @@ public class RDFStarUtil {
 	}
 
 	/**
+	 * Converts the supplied value from an RDF-compatible representation to an RDF-star value.
+	 * <p>
+	 * See {@link #toRDFEncodedValue(Value)}.
+	 *
+	 * @param encodedValue an RDF {@link Value} to convert to RDF-star.
+	 * @param valueFactory the {@link ValueFactory} to use for parsing the triple.
+	 * @param <T>
+	 * @return the decoded RDF-star triple, if a {@link Triple} encoded as {@link IRI} was supplied, or the supplied
+	 *         value otherwise.
+	 * @throws IllegalArgumentException if the supplied value looked like an RDF-star triple encoded as an IRI but it
+	 *                                  could not be decoded successfully.
+	 */
+	public static <T extends Value> T fromRDFEncodedValue(T encodedValue, ValueFactory valueFactory) {
+		try {
+			return isEncodedTriple(encodedValue)
+					? (T) NTriplesUtil.parseTriple(decode(
+							encodedValue.stringValue().substring(TRIPLE_PREFIX.length())), valueFactory)
+					: encodedValue;
+		} catch (IllegalArgumentException e) {
+			throw new IllegalArgumentException("Invalid RDF-star encoded triple: " + encodedValue);
+		}
+	}
+
+	/**
 	 * Checks if the supplied {@link Value} represents an RDF-star triple encoded as an IRI.
 	 *
 	 * @param value the value to check.

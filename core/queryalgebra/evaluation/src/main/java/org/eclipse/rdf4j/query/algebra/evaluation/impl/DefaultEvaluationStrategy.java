@@ -17,6 +17,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
@@ -616,29 +617,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(Filter node, QueryEvaluationContext context) throws QueryEvaluationException {
 
-		QueryEvaluationStep arg = precompile(node.getArg(), context);
-		QueryValueEvaluationStep ves;
-		try {
-			ves = precompile(node.getCondition(), context);
-		} catch (QueryEvaluationException e) {
-			// If we have a failed compilation we always return false.
-			// Which means empty. so let's short circuit that.
-//			ves = new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
-			return bs -> QueryEvaluationStep.EMPTY_ITERATION;
-		}
-		return bs -> {
-			CloseableIteration<BindingSet> evaluate = null;
-			try {
-				evaluate = arg.evaluate(bs);
-				return new FilterIterator(evaluate, ves, DefaultEvaluationStrategy.this);
-			} catch (Throwable t) {
-				if (evaluate != null) {
-					evaluate.close();
-				}
-				throw t;
-			}
+		return FilterIterator.supply(node, DefaultEvaluationStrategy.this, context);
 
-		};
 	}
 
 	protected QueryEvaluationStep prepare(Order node, QueryEvaluationContext context) throws QueryEvaluationException {
@@ -939,12 +919,13 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			return new ConstantQueryValueEvaluationStep(value);
 		} else {
 			java.util.function.Function<BindingSet, Value> getValue = context.getValue(var.getName());
+			Predicate<BindingSet> hasValue = context.hasBinding(var.getName());
 			return bindings -> {
-				Value value1 = getValue.apply(bindings);
-				if (value1 == null) {
+				if (hasValue.test(bindings)) {
+					return getValue.apply(bindings);
+				} else {
 					throw new ValueExprEvaluationException();
 				}
-				return value1;
 			};
 		}
 

@@ -21,8 +21,10 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -167,6 +169,37 @@ public class StoreSerializationTest {
 		iter.close();
 
 		con.close();
+		store.shutDown();
+	}
+
+	@Test
+	public void testMemTriple() {
+		MemoryStore store = new MemoryStore(dataDir);
+		store.init();
+
+		ValueFactory factory = store.getValueFactory();
+		Triple triple = factory.createTriple(RDF.TYPE, RDF.TYPE, RDF.TYPE);
+		Literal longLiteral = factory.createLiteral("a".repeat(4));
+
+		try (SailConnection con = store.getConnection()) {
+			con.begin();
+			con.addStatement(triple, RDFS.LABEL, longLiteral);
+			con.commit();
+
+		}
+		store.shutDown();
+
+		store = new MemoryStore(dataDir);
+		store.init();
+
+		try (SailConnection con = store.getConnection()) {
+			try (CloseableIteration<? extends Statement> iter = con.getStatements(null, RDFS.LABEL, null,
+					false)) {
+				assertTrue(iter.hasNext());
+				Statement next = iter.next();
+				assertEquals(next.getSubject(), triple);
+			}
+		}
 		store.shutDown();
 	}
 }
