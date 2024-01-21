@@ -378,7 +378,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	/**
 	 * See {@link #getOrCreateMemValue(Value)} for description.
 	 */
-	private MemTriple getOrCreateMemTriple(Triple triple) {
+	public MemTriple getOrCreateMemTriple(Triple triple) {
 		MemTriple memTriple = getMemTriple(triple);
 
 		if (memTriple == null) {
@@ -474,4 +474,8 @@ public class MemValueFactory extends AbstractValueFactory {
 		return literalRegistry.getOrAdd(newLiteral, () -> newLiteral);
 	}
 
+	@Override
+	public Triple createTriple(Resource subject, IRI predicate, Value object) {
+		return getOrCreateMemTriple(super.createTriple(subject, predicate, object));
+	}
 }
