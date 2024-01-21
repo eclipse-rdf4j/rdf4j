@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
+import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -286,7 +287,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 					SailSink explicit = store.getExplicitSailSource().sink(IsolationLevels.NONE);
 					SailSink inferred = store.getInferredSailSource().sink(IsolationLevels.NONE);
 					try {
-						new FileIO(store.getValueFactory()).read(dataFile, explicit, inferred);
+						new FileIO((MemValueFactory) store.getValueFactory()).read(dataFile, explicit, inferred);
 						logger.debug("Data file read successfully");
 					} catch (IOException e) {
 						logger.error("Failed to read data file", e);
@@ -317,7 +318,8 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 					logger.debug("Initializing data file...");
 					try (SailDataset explicit = store.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT);
 							SailDataset inferred = store.getInferredSailSource().dataset(IsolationLevels.SNAPSHOT)) {
-						new FileIO(store.getValueFactory()).write(explicit, inferred, syncFile, dataFile);
+						new FileIO((MemValueFactory) store.getValueFactory()).write(explicit, inferred, syncFile,
+								dataFile);
 					}
 					logger.debug("Data file initialized");
 				} catch (IOException | SailException e) {
@@ -452,7 +454,8 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 					IsolationLevels level = IsolationLevels.SNAPSHOT;
 					try (SailDataset explicit = store.getExplicitSailSource().dataset(level);
 							SailDataset inferred = store.getInferredSailSource().dataset(level)) {
-						new FileIO(store.getValueFactory()).write(explicit, inferred, syncFile, dataFile);
+						new FileIO((MemValueFactory) store.getValueFactory()).write(explicit, inferred, syncFile,
+								dataFile);
 					}
 					contentsChanged = false;
 					logger.debug("Data synced to file");
