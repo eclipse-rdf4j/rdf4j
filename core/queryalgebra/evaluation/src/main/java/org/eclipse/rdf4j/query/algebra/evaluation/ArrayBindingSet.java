@@ -10,13 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
-import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
-import java.util.ConcurrentModificationException;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Set;
@@ -83,6 +81,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			}
 		}
 		this.empty = toCopy.isEmpty();
+		assert !this.empty || size() == 0;
 
 	}
 
@@ -93,6 +92,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		this.whichBindingsHaveBeenSet = Arrays.copyOf(toCopy.whichBindingsHaveBeenSet,
 				toCopy.whichBindingsHaveBeenSet.length);
 		this.empty = toCopy.empty;
+		assert !this.empty || size() == 0;
 	}
 
 	/**
@@ -185,21 +185,30 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public Set<String> getBindingNames() {
-		final int size = ArrayBindingSet.this.size();
-		switch (size) {
-		case 0:
-			return Collections.emptySet();
-		case 1:
-			for (int i = 0; i < this.bindingNames.length; i++) {
-				if (whichBindingsHaveBeenSet[i]) {
-					return Collections.singleton(bindingNames[i]);
+		if (bindingNamesSetCache == null) {
+			int size = size();
+			if (size == 0) {
+				this.bindingNamesSetCache = Collections.emptySet();
+			} else if (size == 1) {
+				for (int i = 0; i < this.bindingNames.length; i++) {
+					if (whichBindingsHaveBeenSet[i]) {
+						this.bindingNamesSetCache = Collections.singleton(bindingNames[i]);
+						break;
+					}
 				}
+				assert this.bindingNamesSetCache != null;
+			} else {
+				LinkedHashSet<String> bindingNamesSetCache = new LinkedHashSet<>(size * 2);
+				for (int i = 0; i < this.bindingNames.length; i++) {
+					if (whichBindingsHaveBeenSet[i]) {
+						bindingNamesSetCache.add(bindingNames[i]);
+					}
+				}
+				this.bindingNamesSetCache = Collections.unmodifiableSet(bindingNamesSetCache);
 			}
-			throw new ConcurrentModificationException(
-					"An bindingset has been modified during the getBindingNames call");
-		default:
-			return new MinimallyAllocatingSet(size);
 		}
+
+		return bindingNamesSetCache;
 	}
 
 	@Override
@@ -245,7 +254,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public int size() {
-		if (empty) {
+		if (isEmpty()) {
 			return 0;
 		}
 		int size = 0;
@@ -286,102 +295,6 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		return sortedBindingNames;
 	}
 
-	/*------------------------------------*
-	 * Inner class ArrayBindingSetIterator *
-	 *------------------------------------*/
-	private static final class BindingToBindingNameIterator implements Iterator<String> {
-		private final Iterator<Binding> nested;
-
-		private BindingToBindingNameIterator(Iterator<Binding> nested) {
-			this.nested = nested;
-		}
-
-		@Override
-		public boolean hasNext() {
-			return nested.hasNext();
-		}
-
-		@Override
-		public String next() {
-			return nested.next().getName();
-		}
-	}
-
-	private final class MinimallyAllocatingSet extends AbstractSet<String> {
-
-		private final int size;
-
-		private MinimallyAllocatingSet(int size) {
-			this.size = size;
-		}
-
-		@Override
-		public int size() {
-			return size;
-		}
-
-		@Override
-		public Iterator<String> iterator() {
-			Iterator<Binding> nested = ArrayBindingSet.this.iterator();
-			return new BindingToBindingNameIterator(nested);
-		}
-
-		@Override
-		public boolean add(String e) {
-			throw new UnsupportedOperationException();
-		}
-
-		@Override
-		public boolean addAll(Collection<? extends String> c) {
-			throw new UnsupportedOperationException();
-		}
-	}
-
-	private class ArrayBindingSetIterator implements Iterator<Binding> {
-
-		private int index = 0;
-
-		public ArrayBindingSetIterator() {
-		}
-
-		@Override
-		public boolean hasNext() {
-			// If the current index is at at a set value then this wont advance again.
-			for (; index < values.length; index++) {
-				if (whichBindingsHaveBeenSet[index] && values[index] != null) {
-					return true;
-				}
-			}
-			return false;
-		}
-
-		@Override
-		public Binding next() {
-			for (; index < values.length; index++) {
-				if (whichBindingsHaveBeenSet[index] && values[index] != null) {
-					break;
-				}
-			}
-
-			try {
-				String name = bindingNames[index];
-				Value value = values[index++];
-				if (value != null) {
-					return new SimpleBinding(name, value);
-				} else {
-					return null;
-				}
-			} catch (ArrayIndexOutOfBoundsException e) {
-				throw new NoSuchElementException();
-			}
-		}
-
-		@Override
-		public void remove() {
-			throw new UnsupportedOperationException();
-		}
-	}
-
 	@Override
 	public void addBinding(Binding binding) {
 		int index = getIndex(binding.getName());
@@ -393,9 +306,11 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			return;
 		}
 
-		assert !this.whichBindingsHaveBeenSet[index] : "variable already bound: " + binding.getName();
+		assert !this.whichBindingsHaveBeenSet[index];
 		this.values[index] = binding.getValue();
 		this.whichBindingsHaveBeenSet[index] = true;
+		empty = false;
+		clearCache();
 	}
 
 	@Override
@@ -406,6 +321,8 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 		this.values[index] = binding.getValue();
 		this.whichBindingsHaveBeenSet[index] = true;
+		empty = false;
+		clearCache();
 	}
 
 	@Override
@@ -425,12 +342,29 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 					break;
 				}
 			}
+		} else {
+			this.empty = false;
 		}
 		clearCache();
 	}
 
 	@Override
 	public boolean isEmpty() {
+		if (empty) {
+			for (boolean b : whichBindingsHaveBeenSet) {
+				if (b) {
+					assert false : "empty should be false";
+				}
+			}
+		} else {
+			var tempEmpty = true;
+			for (boolean b : whichBindingsHaveBeenSet) {
+				if (b) {
+					tempEmpty = false;
+				}
+			}
+			assert tempEmpty == empty;
+		}
 		return empty;
 	}
 
@@ -459,6 +393,48 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 		clearCache();
 
+	}
+
+	private class ArrayBindingSetIterator implements Iterator<Binding> {
+
+		private int index = 0;
+
+		public ArrayBindingSetIterator() {
+		}
+
+		@Override
+		public boolean hasNext() {
+			while (index < values.length) {
+				if (whichBindingsHaveBeenSet[index]) {
+					return true;
+				}
+				index++;
+			}
+			return false;
+		}
+
+		@Override
+		public Binding next() {
+			while (index < values.length) {
+				if (whichBindingsHaveBeenSet[index]) {
+					String name = bindingNames[index];
+					Value value = values[index++];
+					if (value != null) {
+						return new SimpleBinding(name, value);
+					} else {
+						return null;
+					}
+				}
+				index++;
+			}
+
+			throw new NoSuchElementException();
+		}
+
+		@Override
+		public void remove() {
+			throw new UnsupportedOperationException();
+		}
 	}
 
 }
