@@ -77,6 +77,7 @@ class ShapeValidationContainer {
 			validationResults = new ValidationResultIterator(iterator, effectiveValidationResultsLimitPerConstraint);
 			return validationResults;
 		} catch (Exception e) {
+			logger.warn("Error validating SHACL Shape {}", shape.getId(), e);
 			throw new SailException("Error validating SHACL Shape " + shape.getId() + "\n" + shape, e);
 		} finally {
 			handlePostLogging(before, validationResults);

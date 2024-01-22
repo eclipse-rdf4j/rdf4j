@@ -19,14 +19,20 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.NAryValueOperator;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -62,76 +68,80 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 			super.meet(filter);
 
 			if (filter.getCondition() instanceof SameTerm) {
-				// SameTerm applies to the filter's argument
-				SameTerm sameTerm = (SameTerm) filter.getCondition();
-				TupleExpr filterArg = filter.getArg();
+				extracted(filter);
+			}
+		}
 
-				ValueExpr leftArg = sameTerm.getLeftArg();
-				ValueExpr rightArg = sameTerm.getRightArg();
+		private void extracted(Filter filter) {
+			// SameTerm applies to the filter's argument
+			SameTerm sameTerm = (SameTerm) filter.getCondition();
+			TupleExpr filterArg = filter.getArg();
 
-				// Verify that vars are (potentially) bound by filterArg
-				Set<String> bindingNames = filterArg.getBindingNames();
-				if (isUnboundVar(leftArg, bindingNames) || isUnboundVar(rightArg, bindingNames)) {
-					// One or both var(s) are unbound, this expression will never
-					// return any results
-					filter.replaceWith(new EmptySet());
-					return;
+			ValueExpr leftArg = sameTerm.getLeftArg();
+			ValueExpr rightArg = sameTerm.getRightArg();
+
+			// Verify that vars are (potentially) bound by filterArg
+			Set<String> bindingNames = filterArg.getBindingNames();
+			if (isUnboundVar(leftArg, bindingNames) || isUnboundVar(rightArg, bindingNames)) {
+				// One or both var(s) are unbound, this expression will never
+				// return any results
+				filter.replaceWith(new EmptySet());
+				return;
+			}
+
+			Set<String> assuredBindingNames = filterArg.getAssuredBindingNames();
+			if (isUnboundVar(leftArg, assuredBindingNames) || isUnboundVar(rightArg, assuredBindingNames)) {
+				// One or both var(s) are potentially unbound, inlining could
+				// invalidate the result e.g. in case of left joins
+				return;
+			}
+
+			if (leftArg instanceof Var || rightArg instanceof Var) {
+				if (filterArg instanceof ArbitraryLengthPath && leftArg instanceof Var && rightArg instanceof Var) {
+					final ArbitraryLengthPath alp = (ArbitraryLengthPath) filterArg;
+					final List<Var> sameTermArgs = Arrays.asList((Var) leftArg, (Var) rightArg);
+
+					if (sameTermArgs.contains(alp.getSubjectVar()) && sameTermArgs.contains(alp.getObjectVar())) {
+						// SameTerm provides a deferred mapping to allow arbitrary-length property path to produce
+						// cyclic paths. See SES-1685.
+						// we can not inline.
+						return;
+					}
 				}
 
-				Set<String> assuredBindingNames = filterArg.getAssuredBindingNames();
-				if (isUnboundVar(leftArg, assuredBindingNames) || isUnboundVar(rightArg, assuredBindingNames)) {
-					// One or both var(s) are potentially unbound, inlining could
-					// invalidate the result e.g. in case of left joins
-					return;
-				}
+				BindingSetAssignmentCollector collector = new BindingSetAssignmentCollector();
+				filterArg.visit(collector);
 
-				if (leftArg instanceof Var || rightArg instanceof Var) {
-					if (filterArg instanceof ArbitraryLengthPath && leftArg instanceof Var && rightArg instanceof Var) {
-						final ArbitraryLengthPath alp = (ArbitraryLengthPath) filterArg;
-						final List<Var> sameTermArgs = Arrays.asList((Var) leftArg, (Var) rightArg);
-
-						if (sameTermArgs.contains(alp.getSubjectVar()) && sameTermArgs.contains(alp.getObjectVar())) {
-							// SameTerm provides a deferred mapping to allow arbitrary-length property path to produce
-							// cyclic paths. See SES-1685.
-							// we can not inline.
+				for (BindingSetAssignment bsa : collector.getBindingSetAssignments()) {
+					// check if the VALUES clause / bindingsetassignment contains
+					// one of the arguments of the sameTerm.
+					// if so, we can not inline.
+					Set<String> names = bsa.getAssuredBindingNames();
+					if (leftArg instanceof Var) {
+						if (names.contains(((Var) leftArg).getName())) {
 							return;
 						}
 					}
-
-					BindingSetAssignmentCollector collector = new BindingSetAssignmentCollector();
-					filterArg.visit(collector);
-
-					for (BindingSetAssignment bsa : collector.getBindingSetAssignments()) {
-						// check if the VALUES clause / bindingsetassignment contains
-						// one of the arguments of the sameTerm.
-						// if so, we can not inline.
-						Set<String> names = bsa.getAssuredBindingNames();
-						if (leftArg instanceof Var) {
-							if (names.contains(((Var) leftArg).getName())) {
-								return;
-							}
-						}
-						if (rightArg instanceof Var) {
-							if (names.contains(((Var) rightArg).getName())) {
-								return;
-							}
+					if (rightArg instanceof Var) {
+						if (names.contains(((Var) rightArg).getName())) {
+							return;
 						}
 					}
 				}
+			}
 
-				Value leftValue = getValue(leftArg);
-				Value rightValue = getValue(rightArg);
+			Value leftValue = getValue(leftArg);
+			Value rightValue = getValue(rightArg);
 
-				if (leftValue != null && rightValue != null) {
-					// ConstantOptimizer should have taken care of this
-				} else if (leftValue != null && rightArg instanceof Var) {
-					bindVar((Var) rightArg, leftValue, filter);
-				} else if (rightValue != null && leftArg instanceof Var) {
-					bindVar((Var) leftArg, rightValue, filter);
-				} else if (leftArg instanceof Var && rightArg instanceof Var) {
-					// Two unbound variables, rename rightArg to leftArg
-					renameVar((Var) rightArg, (Var) leftArg, filter);
-				}
+			if (leftValue != null && rightValue != null) {
+				// ConstantOptimizer should have taken care of this
+			} else if (leftValue != null && rightArg instanceof Var) {
+				bindVar((Var) rightArg, leftValue, filter);
+			} else if (rightValue != null && leftArg instanceof Var) {
+				bindVar((Var) leftArg, rightValue, filter);
+			} else if (leftArg instanceof Var && rightArg instanceof Var) {
+				// Two unbound variables, rename rightArg to leftArg
+				renameVar((Var) rightArg, (Var) leftArg, filter);
 			}
 		}
 
@@ -170,7 +180,59 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 		}
 	}
 
-	private static class VarRenamer extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+	/**
+	 * If that variable is not in the same scope the optimization will be invalid. So we must stop here.
+	 */
+	private static class StopAtScopeChange extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+
+		public StopAtScopeChange(boolean meetStatementPatternChildren) {
+			super(meetStatementPatternChildren);
+		}
+
+		@Override
+		public void meetUnaryTupleOperator(UnaryTupleOperator node) {
+			if (!node.isVariableScopeChange()) {
+				super.meetUnaryTupleOperator(node);
+			}
+		}
+
+		@Override
+		public void meetBinaryTupleOperator(BinaryTupleOperator node) {
+			if (!node.isVariableScopeChange()) {
+				super.meetBinaryTupleOperator(node);
+			}
+		}
+
+		@Override
+		protected void meetBinaryValueOperator(BinaryValueOperator node) throws RuntimeException {
+			if (!node.isVariableScopeChange()) {
+				super.meetBinaryValueOperator(node);
+			}
+		}
+
+		@Override
+		protected void meetNAryValueOperator(NAryValueOperator node) throws RuntimeException {
+			if (!node.isVariableScopeChange()) {
+				super.meetNAryValueOperator(node);
+			}
+		}
+
+		@Override
+		protected void meetSubQueryValueOperator(SubQueryValueOperator node) throws RuntimeException {
+			if (!node.isVariableScopeChange()) {
+				super.meetSubQueryValueOperator(node);
+			}
+		}
+
+		@Override
+		protected void meetUnaryValueOperator(UnaryValueOperator node) throws RuntimeException {
+			if (!node.isVariableScopeChange()) {
+				super.meetUnaryValueOperator(node);
+			}
+		}
+	}
+
+	private static class VarRenamer extends StopAtScopeChange {
 
 		private final Var oldVar;
 
@@ -215,7 +277,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 		}
 	}
 
-	private static class VarBinder extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+	private static class VarBinder extends StopAtScopeChange {
 
 		private final String varName;
 

@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -80,6 +81,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			}
 		}
 		this.empty = toCopy.isEmpty();
+		assert !this.empty || size() == 0;
 
 	}
 
@@ -90,6 +92,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		this.whichBindingsHaveBeenSet = Arrays.copyOf(toCopy.whichBindingsHaveBeenSet,
 				toCopy.whichBindingsHaveBeenSet.length);
 		this.empty = toCopy.empty;
+		assert !this.empty || size() == 0;
 	}
 
 	/**
@@ -182,6 +185,10 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public Set<String> getBindingNames() {
+		if (isEmpty()) {
+			return Collections.emptySet();
+		}
+
 		if (bindingNamesSetCache == null) {
 			int size = size();
 			if (size == 0) {
@@ -210,6 +217,10 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public Value getValue(String bindingName) {
+		if (isEmpty()) {
+			return null;
+		}
+
 		for (int i = 0; i < bindingNames.length; i++) {
 			if (bindingNames[i] == bindingName && whichBindingsHaveBeenSet[i]) {
 				return values[i];
@@ -226,6 +237,10 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public Binding getBinding(String bindingName) {
+		if (isEmpty()) {
+			return null;
+		}
+
 		Value value = getValue(bindingName);
 
 		if (value != null) {
@@ -237,6 +252,10 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public boolean hasBinding(String bindingName) {
+		if (isEmpty()) {
+			return false;
+		}
+
 		int index = getIndex(bindingName);
 		if (index == -1) {
 			return false;
@@ -246,14 +265,19 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public Iterator<Binding> iterator() {
+		if (isEmpty()) {
+			return Collections.emptyIterator();
+		}
+
 		return new ArrayBindingSetIterator();
 	}
 
 	@Override
 	public int size() {
-		if (empty) {
+		if (isEmpty()) {
 			return 0;
 		}
+
 		int size = 0;
 
 		for (boolean value : whichBindingsHaveBeenSet) {
@@ -268,6 +292,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	List<String> sortedBindingNames = null;
 
 	public List<String> getSortedBindingNames() {
+
 		if (sortedBindingNames == null) {
 			int size = size();
 
@@ -292,50 +317,6 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		return sortedBindingNames;
 	}
 
-	/*------------------------------------*
-	 * Inner class ArrayBindingSetIterator *
-	 *------------------------------------*/
-
-	private class ArrayBindingSetIterator implements Iterator<Binding> {
-
-		private int index = 0;
-
-		public ArrayBindingSetIterator() {
-		}
-
-		@Override
-		public boolean hasNext() {
-			for (; index < values.length; index++) {
-				if (whichBindingsHaveBeenSet[index] && values[index] != null) {
-					return true;
-				}
-			}
-			return false;
-		}
-
-		@Override
-		public Binding next() {
-			for (; index < values.length; index++) {
-				if (whichBindingsHaveBeenSet[index] && values[index] != null) {
-					break;
-				}
-			}
-
-			String name = bindingNames[index];
-			Value value = values[index++];
-			if (value != null) {
-				return new SimpleBinding(name, value);
-			} else {
-				return null;
-			}
-		}
-
-		@Override
-		public void remove() {
-			throw new UnsupportedOperationException();
-		}
-	}
-
 	@Override
 	public void addBinding(Binding binding) {
 		int index = getIndex(binding.getName());
@@ -350,8 +331,8 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		assert !this.whichBindingsHaveBeenSet[index];
 		this.values[index] = binding.getValue();
 		this.whichBindingsHaveBeenSet[index] = true;
+		empty = false;
 		clearCache();
-
 	}
 
 	@Override
@@ -362,6 +343,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 		this.values[index] = binding.getValue();
 		this.whichBindingsHaveBeenSet[index] = true;
+		empty = false;
 		clearCache();
 	}
 
@@ -382,6 +364,8 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 					break;
 				}
 			}
+		} else {
+			this.empty = false;
 		}
 		clearCache();
 	}
@@ -416,6 +400,48 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 		clearCache();
 
+	}
+
+	private class ArrayBindingSetIterator implements Iterator<Binding> {
+
+		private int index = 0;
+
+		public ArrayBindingSetIterator() {
+		}
+
+		@Override
+		public boolean hasNext() {
+			while (index < values.length) {
+				if (whichBindingsHaveBeenSet[index]) {
+					return true;
+				}
+				index++;
+			}
+			return false;
+		}
+
+		@Override
+		public Binding next() {
+			while (index < values.length) {
+				if (whichBindingsHaveBeenSet[index]) {
+					String name = bindingNames[index];
+					Value value = values[index++];
+					if (value != null) {
+						return new SimpleBinding(name, value);
+					} else {
+						return null;
+					}
+				}
+				index++;
+			}
+
+			throw new NoSuchElementException();
+		}
+
+		@Override
+		public void remove() {
+			throw new UnsupportedOperationException();
+		}
 	}
 
 }
