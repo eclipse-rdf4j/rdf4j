@@ -22,11 +22,14 @@ import org.eclipse.rdf4j.rio.RioSetting;
 public class RDFaParserSettings {
 
 	/**
-	 * Boolean setting for parser to determine the RDFa version to use when processing the document.
-	 * <p>
-	 * Defaults to {@link RDFaVersion#RDFA_1_0}.
+	 * Boolean setting for parser to determine the RDFa version to use when processing the document. Note that although
+	 * these settings are not used within RDF4J, they are in use by external plugins.
+	 *
+	 * @see <a href=
+	 *      "https://github.com/eclipse-rdf4j/rdf4j/issues/4779">https://github.com/eclipse-rdf4j/rdf4j/issues/4779</a>
+	 *      <p>
+	 *      Defaults to {@link RDFaVersion#RDFA_1_0}.
 	 */
-	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<RDFaVersion> RDFA_COMPATIBILITY = new RioSettingImpl<>(
 			"org.eclipse.rdf4j.rio.rdfa.version", "RDFa Version Compatibility", RDFaVersion.RDFA_1_0);
 
