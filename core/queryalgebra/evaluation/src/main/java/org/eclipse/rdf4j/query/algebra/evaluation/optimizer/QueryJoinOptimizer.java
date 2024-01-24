@@ -34,7 +34,6 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -100,7 +99,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		tupleExpr.visit(new JoinVisitor(statistics, trackResultSize, tripleSource));
 	}
 
-	private static class JoinVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+	/**
+	 * This can be extended by subclasses to allow for adjustments to the optimization process.
+	 */
+	@SuppressWarnings("InnerClassMayBeStatic")
+	protected class JoinVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		private final EvaluationStatistics statistics;
 		private final TripleSource tripleSource;
@@ -405,16 +408,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
-		protected List<Extension> getExtensions(List<TupleExpr> expressions) {
-			List<Extension> extensions = new ArrayList<>();
-			for (TupleExpr expr : expressions) {
-				if (expr instanceof Extension) {
-					extensions.add((Extension) expr);
-				}
-			}
-			return extensions;
-		}
-
 		private List<TupleExpr> getExtensionTupleExprs(List<TupleExpr> expressions) {
 			if (expressions.isEmpty()) {
 				return List.of();
@@ -436,6 +429,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return extensions;
 		}
 
+		/**
+		 * This method returns all direct sub-selects in the given list of expressions.
+		 * <p>
+		 * This method is meant to be possible to override by subclasses.
+		 *
+		 * @param expressions
+		 * @return
+		 */
 		protected List<TupleExpr> getSubSelects(List<TupleExpr> expressions) {
 			if (expressions.isEmpty()) {
 				return List.of();
@@ -795,7 +796,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
-		private static class StatementPatternVarCollector extends StatementPatternVisitor {
+		private class StatementPatternVarCollector extends StatementPatternVisitor {
 
 			private final TupleExpr tupleExpr;
 			private List<Var> vars;
