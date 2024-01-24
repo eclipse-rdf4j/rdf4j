@@ -21,6 +21,7 @@ import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -67,6 +68,8 @@ public class QueryBenchmark {
 	private static final String query_distinct_predicates;
 	private static final String simple_filter_not;
 	private static final String wild_card_chain_with_common_ends;
+	private static final String sub_select;
+	private static final String multiple_sub_select;
 
 	static {
 		try {
@@ -95,6 +98,10 @@ public class QueryBenchmark {
 					StandardCharsets.UTF_8);
 			wild_card_chain_with_common_ends = IOUtils.toString(
 					getResourceAsStream("benchmarkFiles/wild-card-chain-with-common-ends.qr"), StandardCharsets.UTF_8);
+			sub_select = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/sub-select.qr"), StandardCharsets.UTF_8);
+			multiple_sub_select = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/multiple-sub-select.qr"), StandardCharsets.UTF_8);
 
 		} catch (IOException e) {
 			throw new RuntimeException(e);
@@ -362,6 +369,24 @@ public class QueryBenchmark {
 //				.count();
 //		}
 //	}
+
+	@Benchmark
+	public long subSelect() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(sub_select)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long multipleSubSelect() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(multiple_sub_select)
+					.evaluate());
+		}
+	}
 
 	private static InputStream getResourceAsStream(String filename) {
 		return QueryBenchmark.class.getClassLoader().getResourceAsStream(filename);
