@@ -107,6 +107,8 @@ public class QueryModelTreePrinter extends AbstractQueryModelVisitor<RuntimeExce
 			humanReadbleString = Math.round(number / 100_000) / 10.0 + "M";
 		} else if (number > 1_000) {
 			humanReadbleString = Math.round(number / 100) / 10.0 + "K";
+		} else if (number < 10 && number > 0) {
+			humanReadbleString = String.format("%.2f", number);
 		} else if (number >= 0) {
 			humanReadbleString = Math.round(number) + "";
 		} else {

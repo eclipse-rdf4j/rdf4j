@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
@@ -23,8 +24,6 @@ import org.junit.jupiter.api.Test;
  */
 public class QueryCostEstimatesTest {
 
-	private final String LINE_SEP = System.lineSeparator();
-
 	@Test
 	public void testBindingSetAssignmentOptimization() throws RDF4JException {
 		String query = "prefix ex: <ex:>" + "select ?s ?p ?o ?x where {" + " ex:s1 ex:pred ?v. "
@@ -36,31 +35,34 @@ public class QueryCostEstimatesTest {
 		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
 		opt.optimize(q.getTupleExpr(), null, null);
 
-		assertEquals("QueryRoot" + LINE_SEP +
-				"   Projection" + LINE_SEP +
-				"      ProjectionElemList" + LINE_SEP +
-				"         ProjectionElem \"s\"" + LINE_SEP +
-				"         ProjectionElem \"p\"" + LINE_SEP +
-				"         ProjectionElem \"o\"" + LINE_SEP +
-				"         ProjectionElem \"x\"" + LINE_SEP +
-				"      Join" + LINE_SEP +
-				"         StatementPattern (costEstimate=1, resultSizeEstimate=1)" + LINE_SEP +
-				"            Var (name=_const_5c6ba46_uri, value=ex:s2, anonymous)" + LINE_SEP +
-				"            Var (name=_const_af00e088_uri, value=ex:pred, anonymous)" + LINE_SEP +
-				"            Var (name=_const_17c09_lit_e2eec718, value=\"bah\", anonymous)" + LINE_SEP +
-				"         Join" + LINE_SEP +
-				"            StatementPattern (costEstimate=10, resultSizeEstimate=10)" + LINE_SEP +
-				"               Var (name=_const_5c6ba45_uri, value=ex:s1, anonymous)" + LINE_SEP +
-				"               Var (name=_const_af00e088_uri, value=ex:pred, anonymous)" + LINE_SEP +
-				"               Var (name=v)" + LINE_SEP +
-				"            LeftJoin (new scope) (costEstimate=1000, resultSizeEstimate=1000)" + LINE_SEP +
-				"               StatementPattern (resultSizeEstimate=1000)" + LINE_SEP +
-				"                  Var (name=s)" + LINE_SEP +
-				"                  Var (name=p)" + LINE_SEP +
-				"                  Var (name=o)" + LINE_SEP +
-				"               BindingSetAssignment ([[x=ex:a], [x=ex:b], [x=ex:c], [x=ex:d], [x=ex:e], [x=ex:f], [x=ex:g]])"
-				+ LINE_SEP,
-				q.getTupleExpr().toString());
+		String actual = q.getTupleExpr().toString();
+
+		assertThat(actual).contains(System.lineSeparator());
+
+		assertThat(actual).isEqualToNormalizingNewlines("QueryRoot\n" +
+				"   Projection\n" +
+				"      ProjectionElemList\n" +
+				"         ProjectionElem \"s\"\n" +
+				"         ProjectionElem \"p\"\n" +
+				"         ProjectionElem \"o\"\n" +
+				"         ProjectionElem \"x\"\n" +
+				"      Join\n" +
+				"         StatementPattern (costEstimate=6.00, resultSizeEstimate=1.00)\n" +
+				"            Var (name=_const_5c6ba46_uri, value=ex:s2, anonymous)\n" +
+				"            Var (name=_const_af00e088_uri, value=ex:pred, anonymous)\n" +
+				"            Var (name=_const_17c09_lit_e2eec718, value=\"bah\", anonymous)\n" +
+				"         Join\n" +
+				"            StatementPattern (costEstimate=90, resultSizeEstimate=10)\n" +
+				"               Var (name=_const_5c6ba45_uri, value=ex:s1, anonymous)\n" +
+				"               Var (name=_const_af00e088_uri, value=ex:pred, anonymous)\n" +
+				"               Var (name=v)\n" +
+				"            LeftJoin (new scope) (costEstimate=90.5K, resultSizeEstimate=1000)\n" +
+				"               StatementPattern (resultSizeEstimate=1000)\n" +
+				"                  Var (name=s)\n" +
+				"                  Var (name=p)\n" +
+				"                  Var (name=o)\n" +
+				"               BindingSetAssignment ([[x=ex:a], [x=ex:b], [x=ex:c], [x=ex:d], [x=ex:e], [x=ex:f], [x=ex:g]])\n"
+		);
 
 	}
 

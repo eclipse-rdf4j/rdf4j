@@ -170,7 +170,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	/**
 	 * @return Human readable number. Eg. 12.1M for 1212213.4 and UNKNOWN for -1.
 	 */
-	static String toHumanReadbleNumber(double number) {
+	static String toHumanReadableNumber(double number) {
 		String humanReadbleString;
 		if (number == Double.POSITIVE_INFINITY) {
 			humanReadbleString = "∞";
@@ -178,8 +178,8 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 			humanReadbleString = Math.round(number / 100_000) / 10.0 + "M";
 		} else if (number > 1_000) {
 			humanReadbleString = Math.round(number / 100) / 10.0 + "K";
-		} else if (number >= 0) {
-			humanReadbleString = Math.round(number) + "";
+		} else if (number < 10 && number > 0) {
+			humanReadbleString = String.format("%.2f", number);
 		} else {
 			humanReadbleString = "UNKNOWN";
 		}
