@@ -24,8 +24,6 @@ import org.junit.jupiter.api.Test;
  */
 public class QueryCostEstimatesTest {
 
-	private final String LINE_SEP = System.lineSeparator();
-
 	@Test
 	public void testBindingSetAssignmentOptimization() throws RDF4JException {
 		String query = "prefix ex: <ex:>" + "select ?s ?p ?o ?x where {" + " ex:s1 ex:pred ?v. "
@@ -37,7 +35,11 @@ public class QueryCostEstimatesTest {
 		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
 		opt.optimize(q.getTupleExpr(), null, null);
 
-		assertThat(q.getTupleExpr().toString()).isEqualToNormalizingNewlines("QueryRoot\n" +
+		String actual = q.getTupleExpr().toString();
+
+		assertThat(actual).contains(System.lineSeparator());
+
+		assertThat(actual).isEqualToNormalizingNewlines("QueryRoot\n" +
 				"   Projection\n" +
 				"      ProjectionElemList\n" +
 				"         ProjectionElem \"s\"\n" +
