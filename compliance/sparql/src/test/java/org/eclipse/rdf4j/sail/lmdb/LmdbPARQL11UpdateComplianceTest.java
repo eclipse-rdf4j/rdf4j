@@ -30,6 +30,6 @@ public class LmdbPARQL11UpdateComplianceTest extends SPARQL11UpdateComplianceTes
 	@Override
 	protected Repository newRepository() throws Exception {
 		return new DatasetRepository(
-				new SailRepository(new LmdbStore(folder, new LmdbStoreConfig("spoc"))));
+				new SailRepository(new LmdbStore(newTempDir(folder), new LmdbStoreConfig("spoc"))));
 	}
 }

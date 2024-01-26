@@ -10,9 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest;
 
-import static org.assertj.core.api.Assertions.fail;
 import static org.assertj.core.api.Assumptions.assumeThat;
+import static org.junit.jupiter.api.Assertions.fail;
 
+import java.io.File;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.ArrayList;
@@ -20,6 +21,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.text.StringUtil;
 import org.eclipse.rdf4j.model.IRI;
@@ -45,8 +47,16 @@ import org.slf4j.LoggerFactory;
 public abstract class SPARQLComplianceTest {
 
 	private static final Logger logger = LoggerFactory.getLogger(SPARQLComplianceTest.class);
-
+	private static final AtomicInteger tempDirNameForRepoCounter = new AtomicInteger();
 	private List<String> ignoredTests = new ArrayList<>();
+
+	protected File newTempDir(File folder) {
+		File tmpDirPerRepo = new File(folder, "tmpDirPerRepo" + tempDirNameForRepoCounter.getAndIncrement());
+		if (!tmpDirPerRepo.mkdir()) {
+			fail("Could not create temporary directory for test");
+		}
+		return tmpDirPerRepo;
+	}
 
 	public SPARQLComplianceTest() {
 	}
@@ -74,10 +84,12 @@ public abstract class SPARQLComplianceTest {
 				setUp();
 				runTest();
 			} catch (Exception e) {
+				fail("Exception", e);
+			} finally {
 				try {
 					tearDown();
 				} catch (Exception e2) {
-
+					fail("Failed during teardown", e2);
 				}
 			}
 		}

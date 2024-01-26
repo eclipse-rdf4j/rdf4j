@@ -30,6 +30,6 @@ public class NativeSPARQL11UpdateComplianceTest extends SPARQL11UpdateCompliance
 
 	@Override
 	protected Repository newRepository() throws Exception {
-		return new DatasetRepository(new SailRepository(new NativeStore(folder, "spoc")));
+		return new DatasetRepository(new SailRepository(new NativeStore(newTempDir(folder), "spoc")));
 	}
 }

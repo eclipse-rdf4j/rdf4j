@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.sail.federation;
 
 import java.io.File;
-import java.io.IOException;
 
 import org.eclipse.rdf4j.federated.FedXFactory;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
@@ -47,7 +46,7 @@ public class FedXSPARQL11QueryComplianceTest extends SPARQL11QueryComplianceTest
 
 	private void initManager() {
 		if (manager == null) {
-			manager = RepositoryProvider.getRepositoryManager(tempFolder);
+			manager = RepositoryProvider.getRepositoryManager(newTempDir(tempFolder));
 		}
 	}
 
