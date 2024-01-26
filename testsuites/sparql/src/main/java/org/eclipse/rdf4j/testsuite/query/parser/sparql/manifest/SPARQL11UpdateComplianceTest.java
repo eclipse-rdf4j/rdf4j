@@ -207,7 +207,7 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 				}
 			}
 
-			expectedResultRepo = createRepository();
+			expectedResultRepo = new SailRepository(new MemoryStore());
 
 			try (RepositoryConnection conn = expectedResultRepo.getConnection()) {
 				conn.clear();
