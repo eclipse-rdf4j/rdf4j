@@ -183,7 +183,7 @@
 			<plugin>
 				<groupId>com.github.alexcojocaru</groupId>
 				<artifactId>elasticsearch-maven-plugin</artifactId>
-				<version>6.26</version>
+				<version>6.28</version>
 				<configuration>
 					<skip>${skipITs}</skip>
 					<skip>${skipTests}</skip>
