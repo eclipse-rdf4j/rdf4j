@@ -643,7 +643,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-compiler-plugin</artifactId>
-					<version>3.11.0</version>
+					<version>3.12.1</version>
 					<configuration>
 						<fork>false</fork>
 						<encoding>utf8</encoding>
@@ -667,7 +667,7 @@
 				<plugin>
 					<groupId>au.com.acegi</groupId>
 					<artifactId>xml-format-maven-plugin</artifactId>
-					<version>3.2.2</version>
+					<version>3.3.1</version>
 					<configuration>
 						<tabIndent>true</tabIndent>
 						<excludes>eclipse-settings/**,**/target/**,**/site/themes/**,**/.*/**</excludes>
@@ -786,7 +786,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-surefire-plugin</artifactId>
-					<version>3.2.1</version>
+					<version>3.2.5</version>
 					<configuration>
 						<encoding>UTF-8</encoding>
 						<argLine>-Xmx2048M</argLine>
@@ -795,7 +795,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-failsafe-plugin</artifactId>
-					<version>3.2.1</version>
+					<version>3.2.5</version>
 					<configuration>
 						<encoding>UTF-8</encoding>
 						<forkCount>1</forkCount>
@@ -1031,7 +1031,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-site-plugin</artifactId>
-					<version>4.0.0-M11</version>
+					<version>4.0.0-M13</version>
 				</plugin>
 			</plugins>
 		</pluginManagement>
