@@ -242,9 +242,6 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 				assertNotNull(p);
 				assertEquals(RDF.TYPE, p);
 			}
-		} catch (Exception e) {
-			e.printStackTrace();
-			fail(e.getMessage());
 		}
 	}
 
@@ -266,9 +263,6 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 				assertNotNull(p);
 				assertEquals(RDF.TYPE, p);
 			}
-		} catch (Exception e) {
-			e.printStackTrace();
-			fail(e.getMessage());
 		}
 	}
 

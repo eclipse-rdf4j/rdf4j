@@ -162,7 +162,7 @@ class ExtensibleSailSource implements SailSource {
 
 						while (statements.hasNext()) {
 							Statement next = statements.next();
-							if (!contexts.contains(next.getContext())) {
+							if (next.getContext() != null && !contexts.contains(next.getContext())) {
 								contexts.add(next.getContext());
 								return next.getContext();
 							}

@@ -67,18 +67,14 @@ public abstract class SPARQLComplianceTest {
 			this.name = name;
 		}
 
-		public void test() {
+		public void test() throws Exception {
 			assumeThat(getIgnoredTests().contains(getName())).withFailMessage("test case '%s' is ignored", getName())
 					.isFalse();
 			try {
 				setUp();
 				runTest();
-			} catch (Exception e) {
-				try {
-					tearDown();
-				} catch (Exception e2) {
-
-				}
+			} finally {
+				tearDown();
 			}
 		}
 

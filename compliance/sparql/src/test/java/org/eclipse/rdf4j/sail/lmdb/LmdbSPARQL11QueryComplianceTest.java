@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
+import java.util.UUID;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
@@ -29,8 +30,10 @@ public class LmdbSPARQL11QueryComplianceTest extends SPARQL11QueryComplianceTest
 
 	@Override
 	protected Repository newRepository() throws Exception {
+		var temp = new File(folder, UUID.randomUUID().toString());
+		temp.mkdir();
 		return new DatasetRepository(
-				new SailRepository(new LmdbStore(folder, new LmdbStoreConfig("spoc"))));
+				new SailRepository(new LmdbStore(temp, new LmdbStoreConfig("spoc"))));
 	}
 
 }
