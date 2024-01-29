@@ -134,48 +134,41 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 
 			logger.debug("running {}", getName());
 
-			RepositoryConnection con = dataRep.getConnection();
-			RepositoryConnection erCon = expectedResultRepo.getConnection();
-			try {
-				String updateString = readUpdateString();
+			try (RepositoryConnection con = dataRep.getConnection()) {
+				try (RepositoryConnection erCon = expectedResultRepo.getConnection()) {
+					String updateString = readUpdateString();
 
-				con.begin();
+					con.begin();
 
-				Update update = con.prepareUpdate(QueryLanguage.SPARQL, updateString, requestFile);
+					Update update = con.prepareUpdate(QueryLanguage.SPARQL, updateString, requestFile);
 
-				assertThatNoException().isThrownBy(() -> {
-					int hashCode = update.hashCode();
-					if (hashCode == System.identityHashCode(update)) {
-						throw new UnsupportedOperationException(
-								"hashCode() result is the same as  the identityHashCode in "
-										+ update.getClass().getName());
+					assertThatNoException().isThrownBy(() -> {
+						int hashCode = update.hashCode();
+						if (hashCode == System.identityHashCode(update)) {
+							throw new UnsupportedOperationException(
+									"hashCode() result is the same as  the identityHashCode in "
+											+ update.getClass().getName());
+						}
+					});
+
+					update.setDataset(dataset);
+					update.execute();
+
+					con.commit();
+
+					// check default graph
+					logger.info("checking default graph");
+					compareGraphs(Iterations.asList(con.getStatements(null, null, null, true, (Resource) null)),
+							Iterations.asList(erCon.getStatements(null, null, null, true, (Resource) null)));
+
+					for (String namedGraph : inputNamedGraphs.keySet()) {
+						logger.info("checking named graph {}", namedGraph);
+						IRI contextURI = con.getValueFactory().createIRI(namedGraph.replaceAll("\"", ""));
+						compareGraphs(Iterations.asList(con.getStatements(null, null, null, true, contextURI)),
+								Iterations.asList(erCon.getStatements(null, null, null, true, contextURI)));
 					}
-				});
 
-				update.setDataset(dataset);
-				update.execute();
-
-				con.commit();
-
-				// check default graph
-				logger.info("checking default graph");
-				compareGraphs(Iterations.asList(con.getStatements(null, null, null, true, (Resource) null)),
-						Iterations.asList(erCon.getStatements(null, null, null, true, (Resource) null)));
-
-				for (String namedGraph : inputNamedGraphs.keySet()) {
-					logger.info("checking named graph {}", namedGraph);
-					IRI contextURI = con.getValueFactory().createIRI(namedGraph.replaceAll("\"", ""));
-					compareGraphs(Iterations.asList(con.getStatements(null, null, null, true, contextURI)),
-							Iterations.asList(erCon.getStatements(null, null, null, true, contextURI)));
 				}
-			} catch (Exception e) {
-				if (con.isActive()) {
-					con.rollback();
-				}
-				throw e;
-			} finally {
-				con.close();
-				erCon.close();
 			}
 		}
 
@@ -229,7 +222,7 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 		}
 
 		@Override
-		public void tearDown() throws Exception {
+		public void tearDown() {
 			if (dataRep != null) {
 				clear(dataRep);
 				dataRep.shutDown();
