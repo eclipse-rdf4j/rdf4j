@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.repository.optimistic;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,11 +31,11 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Various tests on linear execution of updates.
@@ -43,12 +43,12 @@ import org.junit.Test;
  */
 public class LinearTest {
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
@@ -95,7 +95,7 @@ public class LinearTest {
 
 	private IRI BELSHAZZAR;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		repo = OptimisticIsolationTest.getEmptyInitializedRepository(LinearTest.class);
 		lf = repo.getValueFactory();
@@ -119,7 +119,7 @@ public class LinearTest {
 		b = repo.getConnection();
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() {
 		try {
 			a.close();
@@ -133,7 +133,7 @@ public class LinearTest {
 	}
 
 	@Test
-	public void test_independentPattern() {
+	void test_independentPattern() {
 		a.begin(level);
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		assertEquals(1, size(a, PICASSO, RDF.TYPE, PAINTER, false));
@@ -147,7 +147,7 @@ public class LinearTest {
 	}
 
 	@Test
-	public void test_safePattern() {
+	void test_safePattern() {
 		a.begin(level);
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		assertEquals(1, size(a, null, RDF.TYPE, PAINTER, false));
@@ -158,7 +158,7 @@ public class LinearTest {
 	}
 
 	@Test
-	public void test_afterPattern() {
+	void test_afterPattern() {
 		a.begin(level);
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		assertEquals(1, size(a, null, RDF.TYPE, PAINTER, false));
@@ -170,7 +170,7 @@ public class LinearTest {
 	}
 
 	@Test
-	public void test_afterInsertDataPattern() {
+	void test_afterInsertDataPattern() {
 		a.begin(level);
 		a.prepareUpdate(QueryLanguage.SPARQL, "INSERT DATA { <picasso> a <Painter> }", NS).execute();
 		assertEquals(1, size(a, null, RDF.TYPE, PAINTER, false));
@@ -182,7 +182,7 @@ public class LinearTest {
 	}
 
 	@Test
-	public void test_changedPattern() {
+	void test_changedPattern() {
 		a.begin(level);
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		a.commit();
@@ -193,7 +193,7 @@ public class LinearTest {
 	}
 
 	@Test
-	public void test_safeQuery() {
+	void test_safeQuery() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		b.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -214,7 +214,7 @@ public class LinearTest {
 	}
 
 	@Test
-	public void test_safeInsert() {
+	void test_safeInsert() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		b.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -233,7 +233,7 @@ public class LinearTest {
 	}
 
 	@Test
-	public void test_safeOptionalQuery() {
+	void test_safeOptionalQuery() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		b.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -257,7 +257,7 @@ public class LinearTest {
 	}
 
 	@Test
-	public void test_safeOptionalInsert() {
+	void test_safeOptionalInsert() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		b.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -276,7 +276,7 @@ public class LinearTest {
 	}
 
 	@Test
-	public void test_safeFilterQuery() {
+	void test_safeFilterQuery() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		b.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -298,7 +298,7 @@ public class LinearTest {
 	}
 
 	@Test
-	public void test_safeFilterInsert() {
+	void test_safeFilterInsert() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		b.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -318,7 +318,7 @@ public class LinearTest {
 	}
 
 	@Test
-	public void test_safeRangeQuery() {
+	void test_safeRangeQuery() {
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, ARTEMISIA);
 		a.add(REMBRANDT, PAINTS, DANAE);
@@ -346,7 +346,7 @@ public class LinearTest {
 	}
 
 	@Test
-	public void test_safeRangeInsert() {
+	void test_safeRangeInsert() {
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, ARTEMISIA);
 		a.add(REMBRANDT, PAINTS, DANAE);

@@ -11,7 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import static org.junit.Assert.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
 import java.io.StringReader;

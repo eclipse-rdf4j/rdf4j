@@ -17,7 +17,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.util.Values;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class SparqlPathStringTest {
 
@@ -27,37 +27,37 @@ public class SparqlPathStringTest {
 	public static final IRI PREDICATE3 = Values.iri("http://example.com/predicate3");
 
 	@Test
-	public void simplePath() {
+	void simplePath() {
 		Path path = new SimplePath(PREDICATE);
 		assertEquals("<http://example.com/predicate>", path.toSparqlPathString());
 	}
 
 	@Test
-	public void inversePath() {
+	void inversePath() {
 		Path path = new InversePath(null, new SimplePath(PREDICATE));
 		assertEquals("^<http://example.com/predicate>", path.toSparqlPathString());
 	}
 
 	@Test
-	public void oneOrMorePath() {
+	void oneOrMorePath() {
 		Path path = new OneOrMorePath(null, new SimplePath(PREDICATE));
 		assertEquals("<http://example.com/predicate>+", path.toSparqlPathString());
 	}
 
 	@Test
-	public void zeroOrMore() {
+	void zeroOrMore() {
 		Path path = new ZeroOrMorePath(null, new SimplePath(PREDICATE));
 		assertEquals("<http://example.com/predicate>*", path.toSparqlPathString());
 	}
 
 	@Test
-	public void zeroOrOne() {
+	void zeroOrOne() {
 		Path path = new ZeroOrOnePath(null, new SimplePath(PREDICATE));
 		assertEquals("<http://example.com/predicate>?", path.toSparqlPathString());
 	}
 
 	@Test
-	public void sequencePath() {
+	void sequencePath() {
 		Path path = new SequencePath(null,
 				List.of(new SimplePath(PREDICATE1), new SimplePath(PREDICATE2), new SimplePath(PREDICATE3)));
 		assertEquals(
@@ -66,7 +66,7 @@ public class SparqlPathStringTest {
 	}
 
 	@Test
-	public void alternativePath() {
+	void alternativePath() {
 		Path path = new AlternativePath(null, null,
 				List.of(new SimplePath(PREDICATE1), new SimplePath(PREDICATE2), new SimplePath(PREDICATE3)));
 		assertEquals(
@@ -75,7 +75,7 @@ public class SparqlPathStringTest {
 	}
 
 	@Test
-	public void complexPath() {
+	void complexPath() {
 		Path path = new AlternativePath(null, null,
 				List.of(new SimplePath(PREDICATE1), new SimplePath(PREDICATE2), new SimplePath(PREDICATE3)));
 		path = new SequencePath(null,

@@ -10,12 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.solr;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.File;
 import java.io.IOException;
@@ -45,11 +45,11 @@ import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -95,7 +95,7 @@ public class SolrIndexTest {
 
 	private static String toRestoreSolrHome = null;
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() throws Exception {
 		toRestoreSolrHome = System.getProperty("solr.solr.home");
 		PropertiesReader reader = new PropertiesReader("maven-config.properties");
@@ -104,13 +104,13 @@ public class SolrIndexTest {
 		System.setProperty("solr.solr.home", testSolrHome);
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void tearDownClass() {
 		System.setProperty("solr.solr.home", toRestoreSolrHome == null ? "" : toRestoreSolrHome);
 		toRestoreSolrHome = null;
 	}
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		index = new SolrIndex();
 		Properties sailProperties = new Properties();
@@ -119,7 +119,7 @@ public class SolrIndexTest {
 		client = index.getClient();
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		index.shutDown();
 
@@ -129,7 +129,7 @@ public class SolrIndexTest {
 	}
 
 	@Test
-	public void testAddStatement() throws IOException, SolrServerException {
+	void testAddStatement() throws IOException, SolrServerException {
 		// add a statement to an index
 		index.begin();
 		index.addStatement(statement11);
@@ -221,7 +221,7 @@ public class SolrIndexTest {
 	}
 
 	@Test
-	public void testAddMultiple() throws Exception {
+	void testAddMultiple() throws Exception {
 		// add a statement to an index
 		HashSet<Statement> added = new HashSet<>();
 		HashSet<Statement> removed = new HashSet<>();
@@ -287,7 +287,7 @@ public class SolrIndexTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void testContexts() throws Exception {
+	void testContexts() throws Exception {
 		// add a sail
 		MemoryStore memoryStore = new MemoryStore();
 		// enable lock tracking
@@ -338,7 +338,7 @@ public class SolrIndexTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void testContextsRemoveContext2() throws Exception {
+	void testContextsRemoveContext2() throws Exception {
 		// add a sail
 		MemoryStore memoryStore = new MemoryStore();
 		// enable lock tracking
@@ -384,29 +384,29 @@ public class SolrIndexTest {
 	}
 
 	@Test
-	public void testRejectedDatatypes() {
+	void testRejectedDatatypes() {
 		Literal literal1 = fac.createLiteral("hi there");
 		Literal literal2 = fac.createLiteral("hi there, too", XSD.STRING);
 		Literal literal3 = fac.createLiteral("1.0");
 		Literal literal4 = fac.createLiteral("1.0", XSD.FLOAT);
 
-		assertEquals("Is the first literal accepted?", true, index.accept(literal1));
-		assertEquals("Is the second literal accepted?", true, index.accept(literal2));
-		assertEquals("Is the third literal accepted?", true, index.accept(literal3));
-		assertEquals("Is the fourth literal accepted?", false, index.accept(literal4));
+		assertEquals(true, index.accept(literal1), "Is the first literal accepted?");
+		assertEquals(true, index.accept(literal2), "Is the second literal accepted?");
+		assertEquals(true, index.accept(literal3), "Is the third literal accepted?");
+		assertEquals(false, index.accept(literal4), "Is the fourth literal accepted?");
 	}
 
 	@Test
-	public void testRejectedCoreDatatypes() {
+	void testRejectedCoreDatatypes() {
 		Literal literal1 = fac.createLiteral("hi there");
 		Literal literal2 = fac.createLiteral("hi there, too", CoreDatatype.XSD.STRING);
 		Literal literal3 = fac.createLiteral("1.0");
 		Literal literal4 = fac.createLiteral("1.0", CoreDatatype.XSD.FLOAT);
 
-		assertEquals("Is the first literal accepted?", true, index.accept(literal1));
-		assertEquals("Is the second literal accepted?", true, index.accept(literal2));
-		assertEquals("Is the third literal accepted?", true, index.accept(literal3));
-		assertEquals("Is the fourth literal accepted?", false, index.accept(literal4));
+		assertEquals(true, index.accept(literal1), "Is the first literal accepted?");
+		assertEquals(true, index.accept(literal2), "Is the second literal accepted?");
+		assertEquals(true, index.accept(literal3), "Is the third literal accepted?");
+		assertEquals(false, index.accept(literal4), "Is the fourth literal accepted?");
 	}
 
 	private void assertStatement(Statement statement) throws Exception {
@@ -431,7 +431,7 @@ public class SolrIndexTest {
 	 */
 	private void assertStatement(Statement statement, SearchDocument document) {
 		List<String> fields = document.getProperty(SearchFields.getPropertyField(statement.getPredicate()));
-		assertNotNull("field " + statement.getPredicate() + " not found in document " + document, fields);
+		assertNotNull(fields, "field " + statement.getPredicate() + " not found in document " + document);
 		for (String f : fields) {
 			if (((Literal) statement.getObject()).getLabel().equals(f)) {
 				return;

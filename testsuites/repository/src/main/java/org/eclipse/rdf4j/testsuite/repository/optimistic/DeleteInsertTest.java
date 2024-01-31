@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.repository.optimistic;
 
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -19,11 +19,11 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Test that a complex delete-insert SPARQL query gets correctly executed.
@@ -31,12 +31,12 @@ import org.junit.Test;
  */
 public class DeleteInsertTest {
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
@@ -51,13 +51,13 @@ public class DeleteInsertTest {
 
 	private final ClassLoader cl = getClass().getClassLoader();
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		repo = OptimisticIsolationTest.getEmptyInitializedRepository(DeleteInsertTest.class);
 		con = repo.getConnection();
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() {
 		try {
 			con.close();
@@ -67,7 +67,7 @@ public class DeleteInsertTest {
 	}
 
 	@Test
-	public void test() throws Exception {
+	void test() throws Exception {
 		String load = IOUtil.readString(cl.getResource("test/insert-data.ru"));
 		con.prepareUpdate(QueryLanguage.SPARQL, load, NS).execute();
 		con.begin(level);

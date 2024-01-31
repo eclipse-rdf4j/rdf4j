@@ -18,8 +18,8 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.solr.SolrIndexTest.PropertiesReader;
 import org.eclipse.testsuite.rdf4j.sail.lucene.AbstractLuceneSailIndexedPropertiesTest;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 
 public class SolrSailIndexedPropertiesTest extends AbstractLuceneSailIndexedPropertiesTest {
 
@@ -27,7 +27,7 @@ public class SolrSailIndexedPropertiesTest extends AbstractLuceneSailIndexedProp
 
 	private static String toRestoreSolrHome = null;
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() throws Exception {
 		toRestoreSolrHome = System.getProperty("solr.solr.home");
 		PropertiesReader reader = new PropertiesReader("maven-config.properties");
@@ -35,7 +35,7 @@ public class SolrSailIndexedPropertiesTest extends AbstractLuceneSailIndexedProp
 		System.setProperty("solr.solr.home", testSolrHome);
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void tearDownClass() {
 		System.setProperty("solr.solr.home", toRestoreSolrHome == null ? "" : toRestoreSolrHome);
 		toRestoreSolrHome = null;

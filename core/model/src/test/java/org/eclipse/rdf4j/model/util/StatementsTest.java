@@ -12,10 +12,10 @@ package org.eclipse.rdf4j.model.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -92,19 +92,19 @@ public class StatementsTest {
 
 		Model convertedModel1 = new LinkedHashModel();
 		rdfStarModel.forEach((s) -> Statements.convertRDFStarToReification(s, convertedModel1::add));
-		assertTrue("RDF-star conversion to reification with implicit VF",
-				Models.isomorphic(reifiedModel, convertedModel1));
+		assertTrue(Models.isomorphic(reifiedModel, convertedModel1),
+				"RDF-star conversion to reification with implicit VF");
 
 		Model convertedModel2 = new LinkedHashModel();
 		rdfStarModel.forEach((s) -> Statements.convertRDFStarToReification(vf, s, convertedModel2::add));
-		assertTrue("RDF-star conversion to reification with explicit VF",
-				Models.isomorphic(reifiedModel, convertedModel2));
+		assertTrue(Models.isomorphic(reifiedModel, convertedModel2),
+				"RDF-star conversion to reification with explicit VF");
 
 		Model convertedModel3 = new LinkedHashModel();
 		rdfStarModel.forEach((s) -> Statements.convertRDFStarToReification(vf, (t) -> vf.createBNode(t.stringValue()),
 				s, convertedModel3::add));
-		assertTrue("RDF-star conversion to reification with explicit VF and custom BNode mapping",
-				Models.isomorphic(reifiedModel, convertedModel3));
+		assertTrue(Models.isomorphic(reifiedModel, convertedModel3),
+				"RDF-star conversion to reification with explicit VF and custom BNode mapping");
 	}
 
 	@Test
@@ -113,8 +113,8 @@ public class StatementsTest {
 				vf.createLiteral("data"));
 		Triple t2 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
 				vf.createLiteral("data"));
-		assertEquals("Identical triples must produce the same blank node",
-				Statements.TRIPLE_BNODE_MAPPER.apply(t1), Statements.TRIPLE_BNODE_MAPPER.apply(t2));
+		assertEquals(Statements.TRIPLE_BNODE_MAPPER.apply(t1), Statements.TRIPLE_BNODE_MAPPER.apply(t2),
+				"Identical triples must produce the same blank node");
 	}
 
 	@Test

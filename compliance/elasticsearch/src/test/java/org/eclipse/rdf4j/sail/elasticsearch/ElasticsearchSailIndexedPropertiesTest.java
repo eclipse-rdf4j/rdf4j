@@ -23,16 +23,16 @@ import org.elasticsearch.index.reindex.ReindexPlugin;
 import org.elasticsearch.plugins.Plugin;
 import org.elasticsearch.test.ESIntegTestCase;
 import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 @ClusterScope(numDataNodes = 1)
 public class ElasticsearchSailIndexedPropertiesTest extends ESIntegTestCase {
 
 	AbstractLuceneSailIndexedPropertiesTest delegateTest;
 
-	@Before
+	@BeforeEach
 	@Override
 	public void setUp() throws Exception {
 		super.setUp();
@@ -63,7 +63,7 @@ public class ElasticsearchSailIndexedPropertiesTest extends ESIntegTestCase {
 		return List.of(ReindexPlugin.class);
 	}
 
-	@After
+	@AfterEach
 	@Override
 	public void tearDown() throws Exception {
 		try {
@@ -74,12 +74,12 @@ public class ElasticsearchSailIndexedPropertiesTest extends ESIntegTestCase {
 	}
 
 	@Test
-	public void testTriplesStored() {
+	void testTriplesStored() {
 		delegateTest.testTriplesStored();
 	}
 
 	@Test
-	public void testRegularQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+	void testRegularQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		delegateTest.testRegularQuery();
 	}
 

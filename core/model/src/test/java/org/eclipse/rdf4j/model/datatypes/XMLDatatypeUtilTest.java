@@ -10,9 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.datatypes;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -260,15 +260,15 @@ public class XMLDatatypeUtilTest {
 	public void testCompareDateTimeStamp() {
 		int sameOffset = XMLDatatypeUtil.compare("2019-12-06T00:00:00Z", "2019-12-06T00:00:00+00:00",
 				XSD.DATETIMESTAMP);
-		assertTrue("Not the same", sameOffset == 0);
+		assertTrue(sameOffset == 0, "Not the same");
 
 		int offset1 = XMLDatatypeUtil.compare("2019-12-06T14:00:00+02:00", "2019-12-06T13:00:00+02:00",
 				XSD.DATETIMESTAMP);
-		assertTrue("Wrong order", offset1 > 0);
+		assertTrue(offset1 > 0, "Wrong order");
 
 		int offset2 = XMLDatatypeUtil.compare("2019-12-06T12:00:00+02:00", "2019-12-06T13:00:00-04:00",
 				XSD.DATETIMESTAMP);
-		assertTrue("Wrong order", offset2 < 0);
+		assertTrue(offset2 < 0, "Wrong order");
 	}
 
 	@Test

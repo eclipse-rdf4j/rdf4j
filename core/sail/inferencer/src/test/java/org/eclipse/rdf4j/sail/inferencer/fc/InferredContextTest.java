@@ -10,9 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.inferencer.fc;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.BNode;
@@ -64,7 +64,7 @@ public class InferredContextTest {
 					RDF.TYPE, RDFS.RESOURCE, true)) {
 				while (statements.hasNext()) {
 					Statement next = statements.next();
-					assertEquals("Context should be equal", context, next.getContext());
+					assertEquals(context, next.getContext(), "Context should be equal");
 				}
 			}
 		}
@@ -75,8 +75,8 @@ public class InferredContextTest {
 	public void testDefaultBehaviour() {
 		SchemaCachingRDFSInferencer sail = new SchemaCachingRDFSInferencer(new MemoryStore());
 
-		assertFalse("Current default behaviour should be to add all statements to default context",
-				sail.isAddInferredStatementsToDefaultContext());
+		assertFalse(sail.isAddInferredStatementsToDefaultContext(),
+				"Current default behaviour should be to add all statements to default context");
 
 	}
 

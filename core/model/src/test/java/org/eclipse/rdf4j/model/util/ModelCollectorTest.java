@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.util;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -41,12 +41,12 @@ public class ModelCollectorTest {
 	@Test
 	public void testCollector() {
 		Model m = stmts.stream().collect(ModelCollector.toModel());
-		assertEquals("Number of statements does not match", m.size(), nrStmts);
+		assertEquals(m.size(), nrStmts, "Number of statements does not match");
 	}
 
 	@Test
 	public void testCollectorParallel() {
 		Model m = stmts.parallelStream().collect(ModelCollector.toModel());
-		assertEquals("Number of statements does not match", m.size(), nrStmts);
+		assertEquals(m.size(), nrStmts, "Number of statements does not match");
 	}
 }

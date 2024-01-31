@@ -20,17 +20,17 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.solr.SolrIndexTest.PropertiesReader;
 import org.eclipse.testsuite.rdf4j.sail.lucene.AbstractLuceneSailGeoSPARQLTest;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 public class SolrSailGeoSPARQLTest extends AbstractLuceneSailGeoSPARQLTest {
 
 	private static final String DATA_DIR = "target/test-data";
 	private static String toRestoreSolrHome = null;
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() throws Exception {
 		toRestoreSolrHome = System.getProperty("solr.solr.home");
 		PropertiesReader reader = new PropertiesReader("maven-config.properties");
@@ -38,7 +38,7 @@ public class SolrSailGeoSPARQLTest extends AbstractLuceneSailGeoSPARQLTest {
 		System.setProperty("solr.solr.home", testSolrHome);
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void tearDownClass() {
 		System.setProperty("solr.solr.home", toRestoreSolrHome == null ? "" : toRestoreSolrHome);
 		toRestoreSolrHome = null;
@@ -61,14 +61,14 @@ public class SolrSailGeoSPARQLTest extends AbstractLuceneSailGeoSPARQLTest {
 	}
 
 	@Test
-	@Ignore // JTS is required
+	@Disabled // JTS is required
 	@Override
 	public void testIntersectionQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		super.testIntersectionQuery();
 	}
 
 	@Test
-	@Ignore // JTS is required
+	@Disabled // JTS is required
 	@Override
 	public void testComplexIntersectionQuery()
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException {

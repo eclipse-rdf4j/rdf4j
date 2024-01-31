@@ -10,11 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.util;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -269,7 +269,7 @@ public class NamespacesTest {
 		Map<String, String> testMap = Namespaces.wrap(testSet);
 
 		String put1 = testMap.put(testPrefix1, testName1);
-		assertNull("Should have returned null from put on an empty backing set", put1);
+		assertNull(put1, "Should have returned null from put on an empty backing set");
 		assertEquals(1, testSet.size());
 		assertTrue(testSet.contains(new SimpleNamespace(testPrefix1, testName1)));
 		assertTrue(testMap.containsKey(testPrefix1));
@@ -293,7 +293,7 @@ public class NamespacesTest {
 		assertFalse(testMap.containsValue(testName2));
 
 		String put3 = testMap.put(testPrefix1, testName1);
-		assertNull("Should have returned null from put on an empty backing set", put3);
+		assertNull(put3, "Should have returned null from put on an empty backing set");
 		assertEquals(1, testSet.size());
 		assertTrue(testSet.contains(new SimpleNamespace(testPrefix1, testName1)));
 		assertTrue(testMap.containsKey(testPrefix1));

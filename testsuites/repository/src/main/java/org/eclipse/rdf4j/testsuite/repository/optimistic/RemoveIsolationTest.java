@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.repository.optimistic;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.Collections;
 
@@ -23,11 +23,11 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Test isolation behavior on removal operations
@@ -37,12 +37,12 @@ import org.junit.Test;
  */
 public class RemoveIsolationTest {
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
@@ -55,14 +55,14 @@ public class RemoveIsolationTest {
 
 	private final IsolationLevel level = IsolationLevels.SNAPSHOT_READ;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		repo = OptimisticIsolationTest.getEmptyInitializedRepository(RemoveIsolationTest.class);
 		con = repo.getConnection();
 		f = con.getValueFactory();
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() {
 		try {
 			con.close();
@@ -72,7 +72,7 @@ public class RemoveIsolationTest {
 	}
 
 	@Test
-	public void testRemoveOptimisticIsolation() {
+	void testRemoveOptimisticIsolation() {
 		con.begin(level);
 
 		con.add(f.createIRI("http://example.org/people/alice"), f.createIRI("http://example.org/ontology/name"),
@@ -89,7 +89,7 @@ public class RemoveIsolationTest {
 	}
 
 	@Test
-	public void testRemoveIsolation() {
+	void testRemoveIsolation() {
 		con.begin(level);
 
 		con.add(f.createIRI("http://example.org/people/alice"), f.createIRI("http://example.org/ontology/name"),
