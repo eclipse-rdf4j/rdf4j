@@ -27,6 +27,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -76,7 +77,8 @@ class LmdbSailStore implements SailStore {
 
 	private final boolean enableMultiThreading = true;
 
-	private final PersistentSet<Long> unusedIds;
+	private PersistentSetFactory<Long> setFactory;
+	private PersistentSet<Long> unusedIds, nextUnusedIds;
 
 	/**
 	 * A fast non-blocking circular buffer backed by an array.
@@ -179,19 +181,15 @@ class LmdbSailStore implements SailStore {
 	 * Creates a new {@link LmdbSailStore}.
 	 */
 	public LmdbSailStore(File dataDir, LmdbStoreConfig config) throws IOException, SailException {
-		this.unusedIds = new PersistentSet<>(dataDir) {
-			@Override
-			protected byte[] write(Long element) {
-				ByteBuffer bb = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
-				bb.putLong(element);
-				return bb.array();
-			}
-
-			@Override
-			protected Long read(ByteBuffer buffer) {
-				return buffer.order(ByteOrder.BIG_ENDIAN).getLong();
-			}
+		this.setFactory = new PersistentSetFactory<>(dataDir);
+		Function<Long, byte[]> encode = element -> {
+			ByteBuffer bb = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+			bb.putLong(element);
+			return bb.array();
 		};
+		Function<ByteBuffer, Long> decode = buffer -> buffer.order(ByteOrder.BIG_ENDIAN).getLong();
+		this.unusedIds = setFactory.createSet("unusedIds", encode, decode);
+		this.nextUnusedIds = setFactory.createSet("nextUnusedIds", encode, decode);
 		boolean initialized = false;
 		try {
 			namespaceStore = new NamespaceStore(dataDir);
@@ -266,12 +264,11 @@ class LmdbSailStore implements SailStore {
 							} finally {
 								tripleStore.close();
 							}
-
 						}
-
 					} finally {
-						if (unusedIds != null) {
-							unusedIds.close();
+						if (setFactory != null) {
+							setFactory.close();
+							setFactory = null;
 						}
 					}
 				}
@@ -460,8 +457,17 @@ class LmdbSailStore implements SailStore {
 
 		protected void handleRemovedIdsInValueStore() throws IOException {
 			if (!unusedIds.isEmpty()) {
-				valueStore.gcIds(unusedIds);
-				unusedIds.clear();
+				do {
+					valueStore.gcIds(unusedIds, nextUnusedIds);
+					unusedIds.clear();
+					if (!nextUnusedIds.isEmpty()) {
+						// swap sets
+						PersistentSet<Long> ids = unusedIds;
+						unusedIds = nextUnusedIds;
+						nextUnusedIds = ids;
+						filterUsedIdsInTripleStore();
+					}
+				} while (!unusedIds.isEmpty());
 			}
 		}
 

@@ -57,7 +57,7 @@ class LmdbContextIterator extends LookAheadIteration<Resource> {
 		contextIdIt.close();
 	}
 
-	protected SailException causeIOException(IOException e) {
+	private SailException causeIOException(IOException e) {
 		return new SailException(e);
 	}
 }

@@ -778,6 +778,9 @@ class ValueStore extends AbstractValueFactory {
 					// store mapping of ID -> data
 					E(mdb_put(txn, dbi, idVal, dataVal, MDB_RESERVE));
 					dataVal.mv_data().put(data);
+
+					// update ref count if necessary
+					incrementRefCount(stack2, writeTxn, data);
 					return null;
 				});
 				return newId;
@@ -895,49 +898,41 @@ class ValueStore extends AbstractValueFactory {
 		return LmdbValue.UNKNOWN_ID;
 	}
 
-	public void gcIds(Collection<Long> ids) throws IOException {
+	public void gcIds(Collection<Long> ids, Collection<Long> nextIds) throws IOException {
 		if (!ids.isEmpty()) {
 			// contains IDs for data types and namespaces which are freed by garbage collecting literals and URIs
-			Collection<Long> nextIds = new ArrayList<>();
-			do {
-				if (!nextIds.isEmpty()) {
-					ids = nextIds;
-					nextIds = new ArrayList<>();
+			resizeMap(writeTxn, 2 * ids.size() * (1 + Long.BYTES + 2 + Long.BYTES));
+
+			final Collection<Long> finalIds = ids;
+			final Collection<Long> finalNextIds = nextIds;
+			writeTransaction((stack, writeTxn) -> {
+				MDBVal revIdVal = MDBVal.calloc(stack);
+				MDBVal idVal = MDBVal.calloc(stack);
+				MDBVal dataVal = MDBVal.calloc(stack);
+
+				ByteBuffer revIdBb = stack.malloc(1 + Long.BYTES + 2 + Long.BYTES);
+				Varint.writeUnsigned(revIdBb, revision.getRevisionId());
+				int revLength = revIdBb.position();
+				for (Long id : finalIds) {
+					revIdBb.position(revLength).limit(revIdBb.capacity());
+					revIdVal.mv_data(id2data(revIdBb, id).flip());
+					// check if id has internal references and therefore cannot be deleted
+					idVal.mv_data(revIdBb.slice().position(revLength));
+					if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == 0) {
+						continue;
+					}
+					// mark id as unused
+					E(mdb_put(writeTxn, unusedDbi, revIdVal, dataVal, 0));
 				}
 
-				resizeMap(writeTxn, 2 * ids.size() * (1 + Long.BYTES + 2 + Long.BYTES));
+				deleteValueToIdMappings(stack, writeTxn, finalIds, finalNextIds);
 
-				final Collection<Long> finalIds = ids;
-				final Collection<Long> finalNextIds = nextIds;
-				writeTransaction((stack, writeTxn) -> {
-					MDBVal revIdVal = MDBVal.calloc(stack);
-					MDBVal idVal = MDBVal.calloc(stack);
-					MDBVal dataVal = MDBVal.calloc(stack);
-
-					ByteBuffer revIdBb = stack.malloc(1 + Long.BYTES + 2 + Long.BYTES);
-					Varint.writeUnsigned(revIdBb, revision.getRevisionId());
-					int revLength = revIdBb.position();
-					for (Long id : finalIds) {
-						revIdBb.position(revLength).limit(revIdBb.capacity());
-						revIdVal.mv_data(id2data(revIdBb, id).flip());
-						// check if id has internal references and therefore cannot be deleted
-						idVal.mv_data(revIdBb.slice().position(revLength));
-						if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == 0) {
-							continue;
-						}
-						// mark id as unused
-						E(mdb_put(writeTxn, unusedDbi, revIdVal, dataVal, 0));
-					}
-
-					deleteValueToIdMappings(stack, writeTxn, finalIds, finalNextIds);
-
-					invalidateRevisionOnCommit = true;
-					if (nextValueEvictionTime < 0) {
-						nextValueEvictionTime = System.currentTimeMillis() + VALUE_EVICTION_INTERVAL;
-					}
-					return null;
-				});
-			} while (!nextIds.isEmpty());
+				invalidateRevisionOnCommit = true;
+				if (nextValueEvictionTime < 0) {
+					nextValueEvictionTime = System.currentTimeMillis() + VALUE_EVICTION_INTERVAL;
+				}
+				return null;
+			});
 		}
 	}
 
@@ -971,7 +966,6 @@ class ValueStore extends AbstractValueFactory {
 										.limit(1 + Varint.firstToLength(dataBuffer.get(1))))
 								.flip();
 						if (decrementRefCount(stack, txn, refIdBb)) {
-							// add ID for GC
 							newGcIds.add(Varint.readUnsigned(refIdBb, 1));
 						}
 					}

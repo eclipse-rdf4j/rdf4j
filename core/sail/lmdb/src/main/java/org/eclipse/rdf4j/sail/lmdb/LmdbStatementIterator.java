@@ -83,7 +83,7 @@ class LmdbStatementIterator extends LookAheadIteration<Statement> {
 		recordIt.close();
 	}
 
-	protected SailException causeIOException(IOException e) {
+	private SailException causeIOException(IOException e) {
 		return new SailException(e);
 	}
 }
