@@ -70,24 +70,28 @@ public interface ValueStoreRevision {
 		private static final long serialVersionUID = -2434063125560285009L;
 
 		private final ValueStoreRevision revision;
+		private final long revisionId;
+		private final ValueStore valueStore;
 
 		public Lazy(ValueStoreRevision revision) {
 			this.revision = revision;
+			this.revisionId = revision.getRevisionId();
+			this.valueStore = revision.getValueStore();
 		}
 
 		@Override
 		public long getRevisionId() {
-			return revision.getRevisionId();
+			return revisionId;
 		}
 
 		@Override
 		public ValueStore getValueStore() {
-			return revision.getValueStore();
+			return valueStore;
 		}
 
 		@Override
 		public boolean resolveValue(long id, LmdbValue value) {
-			if (revision.resolveValue(id, value)) {
+			if (valueStore.resolveValue(id, value)) {
 				// set unwrapped version of revision
 				value.setInternalID(id, revision);
 				return true;
