@@ -184,9 +184,9 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
 			Serializer<T> serializer = createAnySerializer();
-			MemoryTillSizeXSet<T> set = new MemoryTillSizeXSet<T>(colectionId++, delegate.createSet(), serializer,
+			MemoryTillSizeXSet<T> set = new MemoryTillSizeXSet<>(colectionId++, delegate.createSet(), serializer,
 					DEFAULT_SWITCH_TO_DISK_BASED_SET_AT_SIZE);
-			return new CommitingSet<T>(set, iterationCacheSyncThreshold, db);
+			return new CommitingSet<>(set, iterationCacheSyncThreshold, db);
 		} else {
 			return delegate.createSet();
 		}
@@ -199,7 +199,7 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 			Serializer<Value> serializer = createValueSerializer();
 			Set<Value> set = new MemoryTillSizeXSet<>(colectionId++, delegate.createValueSet(), serializer,
 					DEFAULT_SWITCH_TO_DISK_BASED_SET_AT_SIZE);
-			return new CommitingSet<Value>(set, iterationCacheSyncThreshold, db);
+			return new CommitingSet<>(set, iterationCacheSyncThreshold, db);
 		} else {
 			return delegate.createValueSet();
 		}
