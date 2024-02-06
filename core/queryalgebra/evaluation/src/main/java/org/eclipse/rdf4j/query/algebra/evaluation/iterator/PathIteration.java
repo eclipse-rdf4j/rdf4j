@@ -14,6 +14,7 @@ import java.util.HashSet;
 import java.util.Queue;
 import java.util.Set;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
@@ -68,6 +69,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 	private final Set<String> namedIntermediateJoins = new HashSet<>();
 
+	private final CollectionFactory collectionFactory;
+
 	public PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
 			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings)
 			throws QueryEvaluationException {
@@ -85,9 +88,10 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		this.currentLength = minLength;
 		this.bindings = bindings;
 
-		this.reportedValues = strategy.makeSet();
-		this.unreportedValues = strategy.makeSet();
-		this.valueQueue = strategy.makeQueue();
+		collectionFactory = strategy.getCollectionFactory().get();
+		this.reportedValues = collectionFactory.createSet();
+		this.unreportedValues = collectionFactory.createSet();
+		this.valueQueue = collectionFactory.createQueue();
 
 		createIteration();
 	}
@@ -218,7 +222,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		if (currentIter != null) {
 			currentIter.close();
 		}
-
+		collectionFactory.close();
 	}
 
 	/**
