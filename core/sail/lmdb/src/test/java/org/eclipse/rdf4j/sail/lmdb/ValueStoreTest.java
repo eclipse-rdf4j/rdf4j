@@ -12,16 +12,26 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Random;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -64,7 +74,7 @@ public class ValueStoreTest {
 		for (int i = 0; i < 30; i++) {
 			ids.add(values[i].getInternalID());
 		}
-		valueStore.gcIds(ids);
+		valueStore.gcIds(ids, new HashSet<>());
 		valueStore.commit();
 
 		ValueStoreRevision revAfter = valueStore.getRevision();
@@ -109,7 +119,7 @@ public class ValueStoreTest {
 		for (int i = 0; i < 30; i++) {
 			ids.add(values[i].getInternalID());
 		}
-		valueStore.gcIds(ids);
+		valueStore.gcIds(ids, new HashSet<>());
 		valueStore.commit();
 
 		// close and recreate store
@@ -127,6 +137,88 @@ public class ValueStoreTest {
 		valueStore.commit();
 
 		assertEquals("IDs should have been reused", Collections.emptySet(), ids);
+	}
+
+	@Test
+	public void testGcDatatypes() throws Exception {
+		IRI[] types = new IRI[] { XSD.STRING, XSD.INTEGER, XSD.DOUBLE, XSD.DECIMAL, XSD.FLOAT };
+		LmdbValue values[] = new LmdbValue[types.length];
+		valueStore.startTransaction();
+		for (int i = 0; i < values.length; i++) {
+			values[i] = valueStore.createLiteral("123", types[i]);
+			valueStore.storeValue(values[i]);
+		}
+		valueStore.commit();
+
+		valueStore.startTransaction();
+		List<Long> datatypeIds = new LinkedList<>();
+		for (int i = 1; i < types.length; i++) {
+			datatypeIds.add(valueStore.storeValue(types[i]));
+		}
+		valueStore.commit();
+
+		valueStore.startTransaction();
+		valueStore.gcIds(Collections.singleton(values[0].getInternalID()), new HashSet<>());
+		valueStore.gcIds(datatypeIds, new HashSet<>());
+		valueStore.commit();
+
+		// close and recreate store
+		valueStore.close();
+		valueStore = createValueStore();
+
+		assertNull(valueStore.getValue(values[0].getInternalID()));
+		// the first datatype is not directly garbage collected and must not be
+		// removed from the store if the related literal is removed
+		assertNotNull(valueStore.getValue(datatypeIds.remove(0)));
+
+		for (int i = 1; i < values.length; i++) {
+			Value v = valueStore.getValue(values[i].getInternalID());
+			IRI datatype = ((Literal) v).getDatatype();
+			assertEquals(types[i], datatype);
+			assertNotNull(valueStore.getValue(((LmdbValue) datatype).getInternalID()));
+			datatypeIds.remove(((LmdbValue) datatype).getInternalID());
+		}
+
+		assertTrue("Datatype IDs should not have been deleted", datatypeIds.isEmpty());
+	}
+
+	@Test
+	public void testGcURIs() throws Exception {
+		for (boolean storeAndGcUri : List.of(false, true)) {
+			valueStore.startTransaction();
+			LmdbLiteral literal = valueStore.createLiteral("123", XSD.STRING);
+			valueStore.storeValue(literal);
+			if (storeAndGcUri) {
+				valueStore.storeValue(XSD.STRING);
+			}
+			valueStore.commit();
+
+			long typeId = valueStore.getId(XSD.STRING);
+			assertTrue(typeId != 0);
+
+			Set<Long> nextGcIds = new HashSet<>();
+			valueStore.startTransaction();
+			valueStore.gcIds(Collections.singleton(literal.getInternalID()), nextGcIds);
+			assertEquals(1, nextGcIds.size());
+			assertTrue(nextGcIds.contains(typeId));
+
+			if (storeAndGcUri) {
+				valueStore.gcIds(nextGcIds, new HashSet<>());
+			}
+
+			valueStore.commit();
+
+			// close and recreate store
+			valueStore.close();
+			valueStore = createValueStore();
+
+			assertNull(valueStore.getValue(literal.getInternalID()));
+			if (!storeAndGcUri) {
+				assertNotNull(valueStore.getValue(typeId));
+			} else {
+				assertNull(valueStore.getValue(typeId));
+			}
+		}
 	}
 
 	@AfterEach

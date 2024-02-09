@@ -24,6 +24,7 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
@@ -32,6 +33,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_close;
+import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
@@ -43,6 +45,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxreaders;
 import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
+import static org.lwjgl.util.lmdb.LMDB.mdb_set_compare;
 import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
@@ -56,6 +59,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -80,6 +84,7 @@ import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.util.lmdb.MDBCmpFuncI;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
 import org.lwjgl.util.lmdb.MDBStat;
 import org.lwjgl.util.lmdb.MDBVal;
@@ -148,6 +153,7 @@ class TripleStore implements Closeable {
 	private final List<TripleIndex> indexes = new ArrayList<>();
 
 	private long env;
+	private int contextsDbi;
 	private int pageSize;
 	private final boolean forceSync;
 	private final boolean autoGrow;
@@ -202,6 +208,15 @@ class TripleStore implements Closeable {
 			flags |= MDB_NOSYNC | MDB_NOMETASYNC;
 		}
 		E(mdb_env_open(env, this.dir.getAbsolutePath(), flags, 0664));
+		// open contexts database
+		contextsDbi = transaction(env, (stack, txn) -> {
+			String name = "contexts";
+			IntBuffer ip = stack.mallocInt(1);
+			if (mdb_dbi_open(txn, name, 0, ip) == MDB_NOTFOUND) {
+				E(mdb_dbi_open(txn, name, MDB_CREATE, ip));
+			}
+			return ip.get(0);
+		});
 
 		txnManager = new TxnManager(env, Mode.RESET);
 
@@ -456,6 +471,17 @@ class TripleStore implements Closeable {
 	}
 
 	/**
+	 * Returns an iterator of all registered contexts.
+	 *
+	 * @param txn Active transaction
+	 * @return All registered contexts
+	 * @throws IOException
+	 */
+	public LmdbContextIdIterator getContexts(Txn txn) throws IOException {
+		return new LmdbContextIdIterator(this.pool, this.contextsDbi, txn);
+	}
+
+	/**
 	 * If an index exists by context - use it, otherwise return null.
 	 *
 	 * @return All triples sorted by context or null if no context index exists
@@ -522,6 +548,21 @@ class TripleStore implements Closeable {
 			MDBVal valueData = MDBVal.mallocStack(stack);
 
 			PointerBuffer pp = stack.mallocPointer(1);
+
+			// test contexts list if it contains the id
+			for (Iterator<Long> it = ids.iterator(); it.hasNext();) {
+				long id = it.next();
+				if (id < 0) {
+					it.remove();
+					continue;
+				}
+				keyBuf.clear();
+				Varint.writeUnsigned(keyBuf, id);
+				keyData.mv_data(keyBuf.flip());
+				if (mdb_get(writeTxn, contextsDbi, keyData, valueData) == 0) {
+					it.remove();
+				}
+			}
 
 			// TODO currently this does not test for contexts (component == 3)
 			// because in most cases context indexes do not exist
@@ -851,9 +892,68 @@ class TripleStore implements Closeable {
 					}
 					E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
 				}
+
+				if (stAdded) {
+					incrementContext(stack, context);
+				}
 			}
 
 			return stAdded;
+		}
+	}
+
+	private void incrementContext(MemoryStack stack, long context) throws IOException {
+		try {
+			stack.push();
+
+			MDBVal idVal = MDBVal.calloc(stack);
+			ByteBuffer bb = stack.malloc(1 + Long.BYTES);
+			Varint.writeUnsigned(bb, context);
+			bb.flip();
+			idVal.mv_data(bb);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			long newCount = 1;
+			if (mdb_get(writeTxn, contextsDbi, idVal, dataVal) == 0) {
+				// update count
+				newCount = Varint.readUnsigned(dataVal.mv_data()) + 1;
+			}
+			// write count
+			ByteBuffer countBb = stack.malloc(Varint.calcLengthUnsigned(newCount));
+			Varint.writeUnsigned(countBb, newCount);
+			dataVal.mv_data(countBb.flip());
+			E(mdb_put(writeTxn, contextsDbi, idVal, dataVal, 0));
+		} finally {
+			stack.pop();
+		}
+	}
+
+	private boolean decrementContext(MemoryStack stack, long context) throws IOException {
+		try {
+			stack.push();
+
+			MDBVal idVal = MDBVal.calloc(stack);
+			ByteBuffer bb = stack.malloc(1 + Long.BYTES);
+			Varint.writeUnsigned(bb, context);
+			bb.flip();
+			idVal.mv_data(bb);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			if (mdb_get(writeTxn, contextsDbi, idVal, dataVal) == 0) {
+				// update count
+				long newCount = Varint.readUnsigned(dataVal.mv_data()) - 1;
+				if (newCount <= 0) {
+					E(mdb_del(writeTxn, contextsDbi, idVal, null));
+					return true;
+				} else {
+					// write count
+					ByteBuffer countBb = stack.malloc(Varint.calcLengthUnsigned(newCount));
+					Varint.writeUnsigned(countBb, newCount);
+					dataVal.mv_data(countBb.flip());
+					mdb_put(writeTxn, contextsDbi, idVal, dataVal, 0);
+				}
+			}
+			return false;
+		} finally {
+			stack.pop();
 		}
 	}
 
@@ -904,7 +1004,7 @@ class TripleStore implements Closeable {
 					E(mdb_del(writeTxn, index.getDB(explicit), keyValue, null));
 				}
 
-				handler.accept(quad);
+				decrementContext(stack, quad[CONTEXT_IDX]);
 			}
 		} finally {
 			it.close();

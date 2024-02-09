@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2023 Eclipse RDF4J contributors.
+ * Copyright (c) 2024 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -11,16 +11,9 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
-import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
-import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
-import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
-import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
-import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOOVERWRITE;
-import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
-import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
@@ -30,38 +23,25 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
-import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
-import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
-import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
-import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_mapsize;
-import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
-import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
-import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.nio.ByteBuffer;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.AbstractSet;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.concurrent.locks.StampedLock;
 
-import org.apache.commons.io.FileUtils;
-import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.util.lmdb.MDBStat;
 import org.lwjgl.util.lmdb.MDBVal;
 
 /**
@@ -69,75 +49,26 @@ import org.lwjgl.util.lmdb.MDBVal;
  */
 class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 
-	private final Path dbDir;
-	private final long env;
+	private PersistentSetFactory<T> factory;
 	private final int dbi;
-	private TxnManager txnManager;
-	private long writeTxn;
-	private PointerBuffer writeTxnPp = PointerBuffer.allocateDirect(1);
-	private long mapSize = 1048576; // 1 MiB
-	private long pageSize;
-
 	private int size;
 
-	public PersistentSet(File cacheDir) throws IOException {
-		try (MemoryStack stack = stackPush()) {
-			PointerBuffer pp = stack.mallocPointer(1);
-			E(mdb_env_create(pp));
-			env = pp.get(0);
-
-			txnManager = new TxnManager(env, Mode.ABORT);
-
-			E(mdb_env_set_maxdbs(env, 2));
-			E(mdb_env_set_mapsize(env, mapSize));
-
-			int flags = MDB_NOTLS | MDB_NOSYNC | MDB_NOMETASYNC;
-
-			dbDir = Files.createTempDirectory(cacheDir.toPath(), "set");
-			E(mdb_env_open(env, dbDir.toAbsolutePath().toString(), flags, 0664));
-			dbi = openDatabase(env, "elements", MDB_CREATE, null);
-
-			MDBStat stat = MDBStat.malloc(stack);
-			readTransaction(env, (stack2, txn) -> {
-				E(mdb_stat(txn, dbi, stat));
-				pageSize = stat.ms_psize();
-				return null;
-			});
-		}
-	}
-
-	public synchronized void close() throws IOException {
-		if (writeTxn != 0) {
-			mdb_txn_abort(writeTxn);
-			writeTxn = 0;
-		}
-
-		// We don't need to free the pointer because it was allocated
-		// by java.nio.ByteBuffer, which will handle freeing for us.
-		// writeTxnPp.free();
-
-		mdb_env_close(env);
-		FileUtils.deleteDirectory(dbDir.toFile());
-	}
-
-	protected synchronized void commit() throws IOException {
-		if (writeTxn != 0) {
-			E(mdb_txn_commit(writeTxn));
-			writeTxn = 0;
-		}
+	public PersistentSet(PersistentSetFactory<T> factory, int dbi) {
+		this.factory = factory;
+		this.dbi = dbi;
 	}
 
 	public synchronized void clear() {
-		if (writeTxn != 0) {
-			mdb_txn_abort(writeTxn);
-			writeTxn = 0;
+		if (factory.writeTxn != 0) {
+			mdb_txn_abort(factory.writeTxn);
+			factory.writeTxn = 0;
 		}
 		try {
 			// start a write transaction
-			E(mdb_txn_begin(env, NULL, 0, writeTxnPp));
-			writeTxn = writeTxnPp.get(0);
-			mdb_drop(writeTxn, dbi, false);
-			commit();
+			E(mdb_txn_begin(factory.env, NULL, 0, factory.writeTxnPp));
+			factory.writeTxn = factory.writeTxnPp.get(0);
+			mdb_drop(factory.writeTxn, dbi, false);
+			factory.commit();
 		} catch (Exception e) {
 			throw new RuntimeException(e);
 		}
@@ -147,7 +78,7 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 	@Override
 	public Iterator<T> iterator() {
 		try {
-			commit();
+			factory.commit();
 		} catch (Exception e) {
 			throw new RuntimeException(e);
 		}
@@ -175,34 +106,14 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 		}
 	}
 
-	protected synchronized boolean update(Object element, boolean add) throws IOException {
+	private synchronized boolean update(Object element, boolean add) throws IOException {
 		try (MemoryStack stack = MemoryStack.stackPush()) {
-			if (writeTxn == 0) {
+			if (factory.writeTxn == 0) {
 				// start a write transaction
-				E(mdb_txn_begin(env, NULL, 0, writeTxnPp));
-				writeTxn = writeTxnPp.get(0);
+				E(mdb_txn_begin(factory.env, NULL, 0, factory.writeTxnPp));
+				factory.writeTxn = factory.writeTxnPp.get(0);
 			}
-			if (LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0)) {
-				StampedLock lock = txnManager.lock();
-				long stamp = lock.writeLock();
-				try {
-					txnManager.deactivate();
-
-					// resize map
-					E(mdb_txn_commit(writeTxn));
-					mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
-					E(mdb_env_set_mapsize(env, mapSize));
-
-					E(mdb_txn_begin(env, NULL, 0, writeTxnPp));
-					writeTxn = writeTxnPp.get(0);
-				} finally {
-					try {
-						txnManager.activate();
-					} finally {
-						lock.unlockWrite(stamp);
-					}
-				}
-			}
+			factory.ensureResize();
 
 			MDBVal keyVal = MDBVal.malloc(stack);
 			// use calloc to get an empty data value
@@ -215,13 +126,13 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 			keyVal.mv_data(keyBuf);
 
 			if (add) {
-				if (mdb_put(writeTxn, dbi, keyVal, dataVal, MDB_NOOVERWRITE) == MDB_SUCCESS) {
+				if (mdb_put(factory.writeTxn, dbi, keyVal, dataVal, MDB_NOOVERWRITE) == MDB_SUCCESS) {
 					size++;
 					return true;
 				}
 			} else {
 				// delete element
-				if (mdb_del(writeTxn, dbi, keyVal, dataVal) == MDB_SUCCESS) {
+				if (mdb_del(factory.writeTxn, dbi, keyVal, dataVal) == MDB_SUCCESS) {
 					size--;
 					return true;
 				}
@@ -246,7 +157,7 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 		}
 	}
 
-	protected class ElementIterator implements Iterator<T> {
+	private class ElementIterator implements Iterator<T> {
 
 		private final MDBVal keyData = MDBVal.malloc();
 		private final MDBVal valueData = MDBVal.malloc();
@@ -259,9 +170,9 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 		private T next;
 		private T current;
 
-		protected ElementIterator(int dbi) {
+		private ElementIterator(int dbi) {
 			try {
-				this.txnRef = txnManager.createReadTxn();
+				this.txnRef = factory.txnManager.createReadTxn();
 				this.txnLock = txnRef.lock();
 
 				long stamp = txnLock.readLock();
@@ -306,7 +217,7 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 			return current;
 		}
 
-		public T computeNext() throws IOException {
+		private T computeNext() throws IOException {
 			long stamp = txnLock.readLock();
 			try {
 				if (txnRefVersion != txnRef.version()) {

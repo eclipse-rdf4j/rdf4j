@@ -10,15 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 
-import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -64,23 +60,4 @@ public class LmdbStoreTest extends RDFNotifyingStoreTest {
 
 		assertEquals(RDF.NAMESPACE, con.getNamespace("rdf"));
 	}
-
-	@Test
-	public void testContextCacheReconstruction() {
-		con.begin();
-		con.addStatement(RDF.TYPE, RDF.TYPE, RDF.TYPE, RDF.ALT);
-		con.commit();
-		con.close();
-		sail.shutDown();
-
-		File contextFile = new File(dataDir, "/contexts.dat");
-		Files.delete(contextFile);
-
-		sail.init();
-		con = sail.getConnection();
-
-		assertTrue(contextFile.exists());
-		assertThat(QueryResults.asList(con.getContextIDs()).size()).isEqualTo(1);
-	}
-
 }
