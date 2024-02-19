@@ -69,7 +69,7 @@ The [MarkLogic RDF4J API](https://github.com/marklogic/marklogic-rdf4j) is a ful
 
 #### Strabon
 
-[Strabon](http://www.strabon.di.uoa.gr/) is a spatiotemporal RDF store based on RDF4J. You can use it to store linked geospatial data that changes over time and pose queries using two popular extensions of SPARQL. Strabon supports spatial datatypes enabling the serialization of geometric objects in OGC standards WKT and GML. It also offers spatial and temporal selections, spatial and temporal joins, a rich set of spatial functions similar to those offered by geospatial relational database systems and support for multiple Coordinate Reference Systems. Strabon can be used to model temporal domains and concepts such as events, facts that change over time etc. through its support for valid time of triples, and a rich set of temporal functions.
+[Strabon](http://strabon.di.uoa.gr/) is a spatiotemporal RDF store based on RDF4J. You can use it to store linked geospatial data that changes over time and pose queries using two popular extensions of SPARQL. Strabon supports spatial datatypes enabling the serialization of geometric objects in OGC standards WKT and GML. It also offers spatial and temporal selections, spatial and temporal joins, a rich set of spatial functions similar to those offered by geospatial relational database systems and support for multiple Coordinate Reference Systems. Strabon can be used to model temporal domains and concepts such as events, facts that change over time etc. through its support for valid time of triples, and a rich set of temporal functions.
 
 #### Openlink Virtuoso RDF4J Provider
 
