@@ -48,7 +48,7 @@ public class GenericStatement<R extends Resource, I extends IRI, V extends Value
 	 * @param object    The statement's object, must not be <var>null</var>.
 	 * @param context   The statement's context, <var>null</var> to indicate no context is associated.
 	 */
-	protected GenericStatement(R subject, I predicate, V object, R context) {
+	public GenericStatement(R subject, I predicate, V object, R context) {
 		this.subject = Objects.requireNonNull(subject, "subject must not be null");
 		this.predicate = Objects.requireNonNull(predicate, "predicate must not be null");
 		this.object = Objects.requireNonNull(object, "object must not be null");

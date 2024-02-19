@@ -212,7 +212,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	private Supplier<CollectionFactory> collectionFactory = DefaultCollectionFactory::new;
 
-	static CloseableIteration<BindingSet> evaluate(TupleFunction func,
+	protected static CloseableIteration<BindingSet> evaluate(TupleFunction func,
 			final List<Var> resultVars, final BindingSet bindings, ValueFactory valueFactory, Value... argValues)
 			throws QueryEvaluationException {
 		final CloseableIteration<? extends List<? extends Value>> iter = func

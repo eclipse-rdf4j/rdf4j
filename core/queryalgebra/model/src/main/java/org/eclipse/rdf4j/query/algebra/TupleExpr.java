@@ -39,11 +39,17 @@ public interface TupleExpr extends QueryModelNode {
 	TupleExpr clone();
 
 	@Experimental
-	Set<Var> getSupportedOrders(AvailableStatementOrder tripleSource);
+	default Set<Var> getSupportedOrders(AvailableStatementOrder tripleSource) {
+		return Set.of();
+	}
 
 	@Experimental
-	void setOrder(Var var);
+	default void setOrder(Var var) {
+		throw new UnsupportedOperationException("Ordering is not supported for this TupleExpr");
+	}
 
 	@Experimental
-	Var getOrder();
+	default Var getOrder() {
+		throw new UnsupportedOperationException("Ordering is not supported for this TupleExpr");
+	}
 }

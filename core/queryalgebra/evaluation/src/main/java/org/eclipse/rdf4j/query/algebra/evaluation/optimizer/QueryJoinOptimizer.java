@@ -96,7 +96,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	 */
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new JoinVisitor(statistics, trackResultSize, tripleSource));
+		tupleExpr.visit(new JoinVisitor());
 	}
 
 	/**
@@ -105,17 +105,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	@SuppressWarnings("InnerClassMayBeStatic")
 	protected class JoinVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
-		private final EvaluationStatistics statistics;
-		private final TripleSource tripleSource;
-		private final boolean trackResultSize;
-		Set<String> boundVars = new HashSet<>();
+		private Set<String> boundVars = new HashSet<>();
 		private double currentHighestCost = 1;
 
-		private JoinVisitor(EvaluationStatistics statistics, boolean trackResultSize, TripleSource tripleSource) {
+		protected JoinVisitor() {
 			super(trackResultSize);
-			this.statistics = statistics;
-			this.tripleSource = tripleSource;
-			this.trackResultSize = trackResultSize;
+
 		}
 
 		@Override
@@ -332,7 +327,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		private void optimizeInNewScope(List<TupleExpr> subSelects) {
 			for (TupleExpr subSelect : subSelects) {
-				subSelect.visit(new JoinVisitor(statistics, trackResultSize, tripleSource));
+				subSelect.visit(new JoinVisitor());
 			}
 		}
 
