@@ -77,7 +77,7 @@ public class ShaclValidator {
 
 			}
 			shapesConnection.commit();
-		} catch (Exception e) {
+		} catch (Throwable e) {
 			logger.warn("Failed to read shapes", e);
 			throw e;
 		}
@@ -98,7 +98,7 @@ public class ShaclValidator {
 			return performValidation(shapes, new ConnectionsGroup(verySimpleRdfsBackwardsChainingConnection, null,
 					null, null, new Stats(), () -> reasoner,
 					new ShaclSailConnection.Settings(true, true, true, IsolationLevels.NONE), true));
-		} catch (Exception e) {
+		} catch (Throwable e) {
 			logger.warn("Failed to validate shapes", e);
 			throw e;
 		}

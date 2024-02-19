@@ -81,7 +81,7 @@ public class LazyValidationReport extends ValidationReport {
 				validationResultIterators = null;
 
 			}
-		} catch (Exception e) {
+		} catch (Throwable e) {
 			logger.warn("Error evaluating lazy validation report", e);
 			throw e;
 		}
@@ -104,7 +104,7 @@ public class LazyValidationReport extends ValidationReport {
 			}
 
 			return model;
-		} catch (Exception e) {
+		} catch (Throwable e) {
 			logger.warn("Error converting validation report to model", e);
 			throw e;
 		}
