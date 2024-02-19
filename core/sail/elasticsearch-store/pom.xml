@@ -183,7 +183,7 @@
 			<plugin>
 				<groupId>com.github.alexcojocaru</groupId>
 				<artifactId>elasticsearch-maven-plugin</artifactId>
-				<version>6.26</version>
+				<version>6.28</version>
 				<configuration>
 					<skip>${skipITs}</skip>
 					<skip>${skipTests}</skip>
@@ -193,7 +193,7 @@
 					<httpPort>9200</httpPort>
 					<environmentVariables>
 						<ingest.geoip.downloader.enabled>false</ingest.geoip.downloader.enabled>
-						<ES_JAVA_OPTS>${java.sec.mgr} -Xmx1g</ES_JAVA_OPTS>
+						<ES_JAVA_OPTS>${java.sec.mgr} -Xmx1G -Xms1G</ES_JAVA_OPTS>
 					</environmentVariables>
 					<instanceCount>1</instanceCount>
 					<instanceSettings>
