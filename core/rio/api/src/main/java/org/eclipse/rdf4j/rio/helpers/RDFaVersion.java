@@ -11,11 +11,14 @@
 package org.eclipse.rdf4j.rio.helpers;
 
 /**
- * Enumeration for tracking versions of the RDFa specification to specify processing capabilities of RDFa modules.
+ * Enumeration for tracking versions of the RDFa specification to specify processing capabilities of RDFa modules. Note
+ * that although these settings are not used within RDF4J, they are in use by external plugins.
+ *
+ * @see <a href=
+ *      "https://github.com/eclipse-rdf4j/rdf4j/issues/4779">https://github.com/eclipse-rdf4j/rdf4j/issues/4779</a>
  *
  * @author Peter Ansell
  */
-@Deprecated(since = "4.3.0", forRemoval = true)
 public enum RDFaVersion {
 
 	/**

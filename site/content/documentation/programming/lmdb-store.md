@@ -125,7 +125,7 @@ Please note that the actual footprint also depends largely on the size of IRIs a
 Some basic information about LMDB database and RAM sizes can be found in the
 [OpenLDAP & LMDB Sizing Guide](https://3bmahv3xwn6030jbn72hlx3j-wpengine.netdna-ssl.com/wp-content/uploads/2018/08/OpenLDAP-LMDB-Sizing-Guide.pdf).
 
-The bottom line is thatt more RAM is better. The best is to have enough RAM to accommodate the
+The bottom line is that more RAM is better. The best is to have enough RAM to accommodate the
 
 entire database or at least the database's working set.
 

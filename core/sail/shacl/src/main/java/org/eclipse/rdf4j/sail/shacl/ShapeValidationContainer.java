@@ -53,7 +53,12 @@ class ShapeValidationContainer {
 			} else {
 				this.planNode = planNode;
 			}
-		} catch (Exception e) {
+		} catch (Throwable e) {
+			logger.warn("Error processing SHACL Shape {}", shape.getId(), e);
+			logger.warn("Error processing SHACL Shape\n{}", shape, e);
+			if (e instanceof Error) {
+				throw e;
+			}
 			throw new SailException("Error processing SHACL Shape " + shape.getId() + "\n" + shape, e);
 		}
 
@@ -76,8 +81,12 @@ class ShapeValidationContainer {
 		try (CloseableIteration<? extends ValidationTuple> iterator = planNode.iterator()) {
 			validationResults = new ValidationResultIterator(iterator, effectiveValidationResultsLimitPerConstraint);
 			return validationResults;
-		} catch (Exception e) {
+		} catch (Throwable e) {
 			logger.warn("Error validating SHACL Shape {}", shape.getId(), e);
+			logger.warn("Error validating SHACL Shape\n{}", shape, e);
+			if (e instanceof Error) {
+				throw e;
+			}
 			throw new SailException("Error validating SHACL Shape " + shape.getId() + "\n" + shape, e);
 		} finally {
 			handlePostLogging(before, validationResults);

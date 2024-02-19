@@ -450,8 +450,9 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 			} else {
 				throw new ShaclUnsupportedException("Unknown validation approach: " + validationApproach);
 			}
-		} catch (RuntimeException e) {
+		} catch (Throwable e) {
 			logger.warn("Error processing SHACL Shape {}", id, e);
+			logger.warn("Error processing SHACL Shape\n{}", this, e);
 			throw new SailException("Error processing SHACL Shape " + id + "\n" + this, e);
 		}
 
@@ -707,7 +708,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 						.map(r -> {
 							try {
 								return new ShaclProperties(r, shapeSourceWithContext);
-							} catch (Exception e) {
+							} catch (Throwable e) {
 								logger.warn("Error parsing shape {}", r, e);
 								throw new ShaclShapeParsingException(e, r);
 							}
@@ -720,7 +721,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 									return PropertyShape.getInstance(p, shapeSourceWithContext, parseSettings, cache);
 								}
 								throw new ShaclShapeParsingException("Unknown shape type", p.getId());
-							} catch (Exception e) {
+							} catch (Throwable e) {
 								logger.warn("Error parsing shape {}", p.getId(), e);
 								if (e instanceof ShaclShapeParsingException) {
 									throw e;
@@ -746,6 +747,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		statements.setNamespace(RSX.NS);
 		statements.setNamespace(RDFS.NS);
 		statements.setNamespace(RDF.NS);
+		statements.setNamespace(DASH.NS);
 		WriterConfig writerConfig = new WriterConfig()
 				.set(BasicWriterSettings.PRETTY_PRINT, true)
 				.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
