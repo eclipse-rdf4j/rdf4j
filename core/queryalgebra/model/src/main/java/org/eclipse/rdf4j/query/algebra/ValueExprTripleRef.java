@@ -20,13 +20,9 @@ public class ValueExprTripleRef extends AbstractQueryModelNode implements ValueE
 
 	public ValueExprTripleRef(String extName, Var s, Var p, Var o) {
 		this.exprVarName = extName;
-		subjectVar = s;
-		predicateVar = p;
-		objectVar = o;
-
-		subjectVar.setParentNode(this);
-		predicateVar.setParentNode(this);
-		objectVar.setParentNode(this);
+		setSubjectVar(s);
+		setPredicateVar(p);
+		setObjectVar(o);
 	}
 
 	public String getExtVarName() {
@@ -43,6 +39,21 @@ public class ValueExprTripleRef extends AbstractQueryModelNode implements ValueE
 
 	public Var getObjectVar() {
 		return objectVar;
+	}
+
+	private void setSubjectVar(Var s) {
+		subjectVar = s;
+		subjectVar.setParentNode(this);
+	}
+
+	private void setPredicateVar(Var p) {
+		predicateVar = p;
+		predicateVar.setParentNode(this);
+	}
+
+	private void setObjectVar(Var o) {
+		objectVar = o;
+		objectVar.setParentNode(this);
 	}
 
 	@Override
@@ -84,17 +95,16 @@ public class ValueExprTripleRef extends AbstractQueryModelNode implements ValueE
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meetOther(this);
-		// visitChildren(visitor);
 	}
 
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (subjectVar == current) {
-			subjectVar = (Var) replacement;
+			setSubjectVar((Var) replacement);
 		} else if (predicateVar == current) {
-			predicateVar = (Var) replacement;
+			setPredicateVar((Var) replacement);
 		} else if (objectVar == current) {
-			objectVar = (Var) replacement;
+			setObjectVar((Var) replacement);
 		} else {
 			super.replaceChildNode(current, replacement);
 		}
