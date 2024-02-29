@@ -459,6 +459,17 @@ public class TurtleUtil {
 		return s;
 	}
 
+	public static boolean isValidPrefixedName(String s) {
+		final int numberOfCodePoints = s.codePointCount(0, s.length());
+		for (int i = 1; i < numberOfCodePoints; i++) {
+			final int codePoint = s.codePointAt(i);
+			if (!isPN_CHARS(codePoint)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	/**
 	 * Decodes an encoded Turtle string. Any \-escape sequences are substituted with their decoded value.
 	 *

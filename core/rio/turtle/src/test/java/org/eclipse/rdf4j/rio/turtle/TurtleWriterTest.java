@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.StringReader;
@@ -17,6 +18,7 @@ import java.io.StringWriter;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
@@ -670,6 +672,20 @@ public class TurtleWriterTest extends AbstractTurtleWriterTest {
 //
 		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
 		assertTrue(Models.isomorphic(expected, actual));
+	}
+
+	@Test
+	public void testIriNamespace() throws Exception {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		String prefix = "foo-bar";
+		String ns = "foo:this.is.my.bar.";
+		model.setNamespace(prefix, ns);
+		model.add(vf.createIRI(ns, "lala"), vf.createIRI(ns, "lulu"), vf.createIRI(ns, "lolo"));
+
+		StringWriter stringWriter = new StringWriter();
+		Rio.write(model, stringWriter, RDFFormat.TURTLE);
+
+		assertThat(stringWriter.toString()).contains("foo-bar:lala foo-bar:lulu foo-bar:lolo .");
 	}
 
 	@Test

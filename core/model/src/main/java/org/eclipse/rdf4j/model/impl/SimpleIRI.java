@@ -67,9 +67,27 @@ public class SimpleIRI extends AbstractIRI {
 		setIRIString(iriString);
 	}
 
+	protected SimpleIRI(String namespace, String localname) {
+		setIRIString(namespace, localname);
+	}
+
 	/*---------*
 	 * Methods *
 	 *---------*/
+
+	protected void setIRIString(String namespace, String localname) {
+		Objects.requireNonNull(namespace, "namespace must not be null");
+		Objects.requireNonNull(localname, "localname must not be null");
+
+		String joinedIriString = namespace + localname;
+
+		if (joinedIriString.indexOf(':') < 0) {
+			throw new IllegalArgumentException("Not a valid (absolute) IRI: " + joinedIriString);
+		}
+
+		this.iriString = joinedIriString;
+		this.localNameIdx = namespace.length();
+	}
 
 	protected void setIRIString(String iriString) {
 		Objects.requireNonNull(iriString, "iriString must not be null");
