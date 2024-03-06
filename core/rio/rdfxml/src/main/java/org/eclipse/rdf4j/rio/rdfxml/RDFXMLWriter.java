@@ -106,6 +106,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 		return writer;
 	}
 
+	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
 		final Collection<RioSetting<?>> settings = new HashSet<>(super.getSupportedSettings());
 		settings.add(BasicWriterSettings.BASE_DIRECTIVE);

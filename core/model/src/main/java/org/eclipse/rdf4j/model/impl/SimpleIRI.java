@@ -79,7 +79,7 @@ public class SimpleIRI extends AbstractIRI {
 		Objects.requireNonNull(namespace, "namespace must not be null");
 		Objects.requireNonNull(localname, "localname must not be null");
 
-		String joinedIriString = namespace + localname;
+		var joinedIriString = namespace + localname;
 
 		if (joinedIriString.indexOf(':') < 0) {
 			throw new IllegalArgumentException("Not a valid (absolute) IRI: " + joinedIriString);
