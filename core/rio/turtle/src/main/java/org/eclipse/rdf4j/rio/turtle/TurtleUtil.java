@@ -460,14 +460,17 @@ public class TurtleUtil {
 	}
 
 	public static boolean isValidPrefixedName(String s) {
-		final int numberOfCodePoints = s.codePointCount(0, s.length());
-		for (int i = 1; i < numberOfCodePoints; i++) {
-			final int codePoint = s.codePointAt(i);
-			if (!isPN_CHARS(codePoint)) {
-				return false;
-			}
+		if (s == null || s.isEmpty()) {
+			return false;
 		}
-		return true;
+
+		if (!isPN_CHARS_BASE(s.codePointAt(0))) {
+			return false;
+		}
+
+		return s.codePoints() //
+				.skip(1) // Skip the first code point
+				.allMatch(TurtleUtil::isPN_CHARS);
 	}
 
 	/**

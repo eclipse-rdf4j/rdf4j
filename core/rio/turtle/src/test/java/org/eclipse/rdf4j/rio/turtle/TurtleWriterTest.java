@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
@@ -97,7 +98,6 @@ public class TurtleWriterTest extends AbstractTurtleWriterTest {
 		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
 
 		assertTrue(Models.isomorphic(expected, actual));
-
 	}
 
 	@Test
@@ -192,6 +192,54 @@ public class TurtleWriterTest extends AbstractTurtleWriterTest {
 
 		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
 		assertTrue(Models.isomorphic(expected, actual));
+	}
+
+	@Test
+	public void testUnusualIrisAndPrefixesParseWriteCompare() throws Exception {
+		String data = "@prefix server-news: <news:comp.infosystems.www.servers.> .\n" +
+				"@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n" +
+				"server-news:unix rdfs:label \"News on Unix\" .\n" +
+				"server-news:windows rdfs:label \"News on Windows\" .\n";
+
+		var expected = Rio.parse(new StringReader(data), "", RDFFormat.TURTLE);
+
+		var stringWriter = new StringWriter();
+		var config = new WriterConfig();
+		config.set(BasicWriterSettings.INLINE_BLANK_NODES, false);
+		config.set(BasicWriterSettings.PRETTY_PRINT, false);
+		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
+
+		var actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
+		assertThat(Models.isomorphic(expected, actual)).as("isomorphic").isTrue();
+
+		assertThat(stringWriter.toString()).isEqualTo(data);
+	}
+
+	@Test
+	public void testUnusualIrisAndPrefixesWriteParserWriteCompare() throws Exception {
+		var prefix = "server-news";
+		var ns = "news:comp.infosystems.www.servers.";
+
+		var config = new WriterConfig();
+		config.set(BasicWriterSettings.INLINE_BLANK_NODES, false);
+		config.set(BasicWriterSettings.PRETTY_PRINT, false);
+
+		var expectedModel = new DynamicModelFactory().createEmptyModel();
+		expectedModel.setNamespace(prefix, ns);
+		expectedModel.setNamespace(RDFS.PREFIX, RDFS.NAMESPACE);
+		expectedModel.add(vf.createIRI(ns, "unix"), RDFS.LABEL, vf.createLiteral("News on Unix"));
+		expectedModel.add(vf.createIRI(ns, "windows"), RDFS.LABEL, vf.createLiteral("News on Windows"));
+
+		var turtle1 = new StringWriter();
+		Rio.write(expectedModel, turtle1, RDFFormat.TURTLE, config);
+
+		var actualModel = Rio.parse(new StringReader(turtle1.toString()), "", RDFFormat.TURTLE);
+		assertThat(Models.isomorphic(expectedModel, actualModel)).as("isomorphic").isTrue();
+
+		var turtle2 = new StringWriter();
+		Rio.write(actualModel, turtle2, RDFFormat.TURTLE, config);
+
+		assertThat(turtle2.toString()).isEqualTo(turtle1.toString());
 	}
 
 	@Test
