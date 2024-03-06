@@ -24,6 +24,6 @@ public class ZeroOrOnePath implements PropertyPath {
 
 	@Override
 	public String getQueryString() {
-		return path.getQueryString() + " ?";
+		return path.getQueryString() + "?";
 	}
 }

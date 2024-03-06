@@ -30,12 +30,12 @@ public class NegatedPropertySet implements PropertyPath {
 	@Override
 	public String getQueryString() {
 		if (properties.length == 1) {
-			return "! " + properties[0].getQueryString();
+			return "!" + properties[0].getQueryString();
 		} else {
 			return Arrays
 					.stream(properties)
 					.map(QueryElement::getQueryString)
-					.collect(Collectors.joining(" | ", "! ( ", " )"));
+					.collect(Collectors.joining(" | ", "!( ", " )"));
 		}
 	}
 }
