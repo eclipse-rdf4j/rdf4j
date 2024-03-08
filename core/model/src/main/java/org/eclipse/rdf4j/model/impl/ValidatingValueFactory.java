@@ -69,7 +69,7 @@ public class ValidatingValueFactory implements ValueFactory {
 	public IRI createIRI(String iri) {
 		try {
 			if (!new ParsedIRI(iri).isAbsolute()) {
-				throw new IllegalArgumentException("IRI must be absolute");
+				throw new IllegalArgumentException("IRI must be absolute: " + iri);
 			}
 			return delegate.createIRI(iri);
 		} catch (URISyntaxException e) {
