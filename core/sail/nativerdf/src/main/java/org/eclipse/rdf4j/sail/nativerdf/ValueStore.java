@@ -534,7 +534,7 @@ public class ValueStore extends SimpleValueFactory {
 		case LITERAL_VALUE:
 			return data2literal(id, data);
 		default:
-			throw new IllegalArgumentException("Namespaces cannot be converted into values: " + data2namespace(data));
+			throw new IllegalArgumentException("Invalid type " + data[0] + " for value with id " + id);
 		}
 	}
 
