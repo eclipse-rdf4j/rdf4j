@@ -33,6 +33,6 @@ public class InversePredicatePath implements PredicatePathOrInversePredicatePath
 
 	@Override
 	public String getQueryString() {
-		return "^ " + predicate.getQueryString();
+		return "^" + predicate.getQueryString();
 	}
 }

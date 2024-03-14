@@ -122,7 +122,7 @@ public class PropertyPathTest {
 				.path(iri(RDFS.COMMENT))
 				.inv()
 				.build();
-		assertEquals("^ ( <" + RDFS.COMMENT + "> )", p.getQueryString());
+		assertEquals("^( <" + RDFS.COMMENT + "> )", p.getQueryString());
 	}
 
 	@Test
@@ -131,7 +131,7 @@ public class PropertyPathTest {
 				.path(iri(RDFS.COMMENT))
 				.oneOrMore()
 				.build();
-		assertEquals("<" + RDFS.COMMENT + "> +", p.getQueryString());
+		assertEquals("<" + RDFS.COMMENT + ">+", p.getQueryString());
 	}
 
 	@Test
@@ -140,7 +140,7 @@ public class PropertyPathTest {
 				.path(iri(RDFS.COMMENT))
 				.zeroOrMore()
 				.build();
-		assertEquals("<" + RDFS.COMMENT + "> *", p.getQueryString());
+		assertEquals("<" + RDFS.COMMENT + ">*", p.getQueryString());
 	}
 
 	@Test
@@ -149,7 +149,7 @@ public class PropertyPathTest {
 				.path(iri(RDFS.COMMENT))
 				.zeroOrOne()
 				.build();
-		assertEquals("<" + RDFS.COMMENT + "> ?", p.getQueryString());
+		assertEquals("<" + RDFS.COMMENT + ">?", p.getQueryString());
 	}
 
 	@Test
@@ -159,7 +159,7 @@ public class PropertyPathTest {
 				.negProp()
 				.pred(iri(RDFS.COMMENT))
 				.build();
-		assertEquals("! <" + RDFS.COMMENT + ">", p.getQueryString());
+		assertEquals("!<" + RDFS.COMMENT + ">", p.getQueryString());
 	}
 
 	@Test
@@ -169,7 +169,7 @@ public class PropertyPathTest {
 				.negProp()
 				.invPred(iri(RDFS.COMMENT))
 				.build();
-		assertEquals("! ^ <" + RDFS.COMMENT + ">", p.getQueryString());
+		assertEquals("!^<" + RDFS.COMMENT + ">", p.getQueryString());
 	}
 
 	@Test
@@ -180,7 +180,7 @@ public class PropertyPathTest {
 				.invPred(iri(RDFS.COMMENT))
 				.invPred(iri(RDFS.LABEL))
 				.build();
-		assertEquals("! ( ^ <" + RDFS.COMMENT + "> | ^ <" + RDFS.LABEL + "> )", p.getQueryString());
+		assertEquals("!( ^<" + RDFS.COMMENT + "> | ^<" + RDFS.LABEL + "> )", p.getQueryString());
 	}
 
 	@Test
@@ -193,7 +193,7 @@ public class PropertyPathTest {
 				.invPred(iri(RDFS.SUBPROPERTYOF))
 				.pred(iri(RDFS.COMMENT))
 				.build();
-		assertEquals("! ( ^ <" + RDFS.SUBCLASSOF + "> | <" + RDFS.LABEL + "> | ^ <" + RDFS.SUBPROPERTYOF
+		assertEquals("!( ^<" + RDFS.SUBCLASSOF + "> | <" + RDFS.LABEL + "> | ^<" + RDFS.SUBPROPERTYOF
 				+ "> | <" + RDFS.COMMENT + "> )", p.getQueryString());
 	}
 
