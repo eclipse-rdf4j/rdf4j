@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,7 +43,6 @@ public class Configurations {
 	 *
 	 * @return <code>true</code> if <code>org.eclipse.rdf4j.model.vocabulary.useLegacyConfig</code> system property is
 	 *         set to <code>true</code>, <code>false</code> otherwise.
-	 *
 	 * @since 5.0.0
 	 */
 	public static boolean useLegacyConfig() {
@@ -178,6 +178,30 @@ public class Configurations {
 		if (preferredResult.isPresent()) {
 			return preferredResult;
 		}
+		return fallbackResult;
+	}
+
+	/**
+	 * Retrieve the subject of the supplied type, falling back to a supplied legacy type.
+	 *
+	 * @param model      the model to retrieve property values from.
+	 * @param type       the type to retrieve the value of.
+	 * @param legacyType legacy type to use if the supplied type has no value in the model.
+	 * @return The subject of the supplied type (or the legacy type), if present.
+	 */
+	@InternalUseOnly
+	public static Optional<Resource> getSubjectByType(Model model, IRI type, IRI legacyType) {
+		var preferredType = useLegacyConfig() ? legacyType : type;
+		var fallbackType = useLegacyConfig() ? type : legacyType;
+
+		var preferredResult = Models.subject(model.getStatements(null, RDF.TYPE, preferredType));
+		var fallbackResult = Models.subject(model.getStatements(null, RDF.TYPE, fallbackType));
+
+		logDiscrepancyWarning(preferredResult, fallbackResult);
+		if (preferredResult.isPresent()) {
+			return preferredResult;
+		}
+
 		return fallbackResult;
 	}
 
