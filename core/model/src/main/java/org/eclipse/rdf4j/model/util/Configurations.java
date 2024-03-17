@@ -118,6 +118,33 @@ public class Configurations {
 	}
 
 	/**
+	 * Retrieve a property value for the supplied subject as a {@link Value} if present, falling back to a supplied
+	 * legacy property .
+	 * <p>
+	 * This method allows querying repository config models with a mix of old and new namespaces.
+	 *
+	 * @param model          the model to retrieve property values from.
+	 * @param subject        the subject of the property.
+	 * @param property       the property to retrieve the value of.
+	 * @param legacyProperty legacy property to use if the supplied property has no value in the model.
+	 * @return the literal value for supplied subject and property (or the legacy property ), if present.
+	 */
+	@InternalUseOnly
+	public static Optional<Value> getValue(Model model, Resource subject, IRI property, IRI legacyProperty) {
+		var preferredProperty = useLegacyConfig() ? legacyProperty : property;
+		var fallbackProperty = useLegacyConfig() ? property : legacyProperty;
+
+		var preferredResult = Models.object(model.getStatements(subject, preferredProperty, null));
+		var fallbackResult = Models.object(model.getStatements(subject, fallbackProperty, null));
+
+		logDiscrepancyWarning(preferredResult, fallbackResult);
+		if (preferredResult.isPresent()) {
+			return preferredResult;
+		}
+		return fallbackResult;
+	}
+
+	/**
 	 * Retrieve all property values for the supplied subject as a Set of values and include all values for any legacy
 	 * property.
 	 * <p>
