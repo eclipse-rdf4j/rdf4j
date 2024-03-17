@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,7 +43,6 @@ public class Configurations {
 	 *
 	 * @return <code>true</code> if <code>org.eclipse.rdf4j.model.vocabulary.useLegacyConfig</code> system property is
 	 *         set to <code>true</code>, <code>false</code> otherwise.
-	 *
 	 * @since 5.0.0
 	 */
 	public static boolean useLegacyConfig() {
@@ -118,6 +118,33 @@ public class Configurations {
 	}
 
 	/**
+	 * Retrieve a property value for the supplied subject as a {@link Value} if present, falling back to a supplied
+	 * legacy property .
+	 * <p>
+	 * This method allows querying repository config models with a mix of old and new namespaces.
+	 *
+	 * @param model          the model to retrieve property values from.
+	 * @param subject        the subject of the property.
+	 * @param property       the property to retrieve the value of.
+	 * @param legacyProperty legacy property to use if the supplied property has no value in the model.
+	 * @return the literal value for supplied subject and property (or the legacy property ), if present.
+	 */
+	@InternalUseOnly
+	public static Optional<Value> getValue(Model model, Resource subject, IRI property, IRI legacyProperty) {
+		var preferredProperty = useLegacyConfig() ? legacyProperty : property;
+		var fallbackProperty = useLegacyConfig() ? property : legacyProperty;
+
+		var preferredResult = Models.object(model.getStatements(subject, preferredProperty, null));
+		var fallbackResult = Models.object(model.getStatements(subject, fallbackProperty, null));
+
+		logDiscrepancyWarning(preferredResult, fallbackResult);
+		if (preferredResult.isPresent()) {
+			return preferredResult;
+		}
+		return fallbackResult;
+	}
+
+	/**
 	 * Retrieve all property values for the supplied subject as a Set of values and include all values for any legacy
 	 * property.
 	 * <p>
@@ -178,6 +205,30 @@ public class Configurations {
 		if (preferredResult.isPresent()) {
 			return preferredResult;
 		}
+		return fallbackResult;
+	}
+
+	/**
+	 * Retrieve the subject of the supplied type, falling back to a supplied legacy type.
+	 *
+	 * @param model      the model to retrieve property values from.
+	 * @param type       the type to retrieve the value of.
+	 * @param legacyType legacy type to use if the supplied type has no value in the model.
+	 * @return The subject of the supplied type (or the legacy type), if present.
+	 */
+	@InternalUseOnly
+	public static Optional<Resource> getSubjectByType(Model model, IRI type, IRI legacyType) {
+		var preferredType = useLegacyConfig() ? legacyType : type;
+		var fallbackType = useLegacyConfig() ? type : legacyType;
+
+		var preferredResult = Models.subject(model.getStatements(null, RDF.TYPE, preferredType));
+		var fallbackResult = Models.subject(model.getStatements(null, RDF.TYPE, fallbackType));
+
+		logDiscrepancyWarning(preferredResult, fallbackResult);
+		if (preferredResult.isPresent()) {
+			return preferredResult;
+		}
+
 		return fallbackResult;
 	}
 
