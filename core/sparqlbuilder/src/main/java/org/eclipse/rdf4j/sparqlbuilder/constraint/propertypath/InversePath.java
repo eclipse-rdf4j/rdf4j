@@ -22,7 +22,8 @@ public class InversePath implements PropertyPath {
 		this.path = path;
 	}
 
+	@Override
 	public String getQueryString() {
-		return "^ " + path.getQueryString();
+		return "^" + path.getQueryString();
 	}
 }
