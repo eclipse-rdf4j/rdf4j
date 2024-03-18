@@ -16,6 +16,7 @@
 		<module>datatypes</module>
 		<module>binary</module>
 		<module>hdt</module>
+		<module>jsonld-legacy</module>
 		<module>jsonld</module>
 		<module>n3</module>
 		<module>nquads</module>

@@ -34,8 +34,6 @@ import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
-import org.eclipse.rdf4j.rio.helpers.JSONLDMode;
-import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -122,11 +120,10 @@ public class JSONLDWriterBackgroundTest extends RDFWriterTest {
 				BasicWriterSettings.BASE_DIRECTIVE,
 				BasicWriterSettings.PRETTY_PRINT,
 				JSONLDSettings.COMPACT_ARRAYS,
-				JSONLDSettings.HIERARCHICAL_VIEW,
 				JSONLDSettings.JSONLD_MODE,
-				JSONLDSettings.PRODUCE_GENERALIZED_RDF,
 				JSONLDSettings.USE_RDF_TYPE,
-				JSONLDSettings.USE_NATIVE_TYPES
+				JSONLDSettings.USE_NATIVE_TYPES,
+				JSONLDSettings.EXCEPTION_ON_WARNING
 		};
 	}
 }

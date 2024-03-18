@@ -1,0 +1,30 @@
+[ {
+  "@id" : "sch:node3",
+  "sch:pred3" : [ {
+    "@value" : "literal1"
+  } ],
+  "sch:pred4" : [ {
+    "@value" : "literal1"
+  } ],
+  "sch:pred5" : [ {
+    "@value" : "literal1"
+  } ]
+}, {
+  "@id" : "sch:node4",
+  "sch:pred7" : [ {
+    "@value" : "literal1"
+  } ],
+  "sch:pred8" : [ {
+    "@value" : "literal1"
+  } ]
+}, {
+  "@id" : "sch:node1",
+  "sch:pred1" : [ {
+    "@value" : "literal1"
+  } ]
+}, {
+  "@id" : "sch:node2",
+  "sch:pred2" : [ {
+    "@value" : "literal1"
+  } ]
+} ]
