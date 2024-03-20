@@ -537,11 +537,20 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 	}
 
 	protected void writeURI(IRI uri) throws IOException {
-		String uriString = uri.toString();
+		String prefix = null;
+		if (TurtleUtil.isValidPrefixedName(uri.getLocalName())) {
+			prefix = namespaceTable.get(uri.getNamespace());
+			if (prefix != null) {
+				// Namespace is mapped to a prefix; write abbreviated URI
+				writer.write(prefix);
+				writer.write(":");
+				writer.write(uri.getLocalName());
+				return;
+			}
+		}
 
 		// Try to find a prefix for the URI's namespace
-		String prefix = null;
-
+		String uriString = uri.toString();
 		int splitIdx = TurtleUtil.findURISplitIndex(uriString);
 		if (splitIdx > 0) {
 			String namespace = uriString.substring(0, splitIdx);

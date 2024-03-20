@@ -459,6 +459,20 @@ public class TurtleUtil {
 		return s;
 	}
 
+	public static boolean isValidPrefixedName(String s) {
+		if (s == null || s.isEmpty()) {
+			return false;
+		}
+
+		if (!isPN_CHARS_BASE(s.codePointAt(0))) {
+			return false;
+		}
+
+		return s.codePoints() //
+				.skip(1) // Skip the first code point
+				.allMatch(TurtleUtil::isPN_CHARS);
+	}
+
 	/**
 	 * Decodes an encoded Turtle string. Any \-escape sequences are substituted with their decoded value.
 	 *
