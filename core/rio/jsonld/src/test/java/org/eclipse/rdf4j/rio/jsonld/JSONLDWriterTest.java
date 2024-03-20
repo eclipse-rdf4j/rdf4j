@@ -245,6 +245,7 @@ public class JSONLDWriterTest extends RDFWriterTest {
 				BasicWriterSettings.PRETTY_PRINT,
 				JSONLDSettings.COMPACT_ARRAYS,
 				JSONLDSettings.JSONLD_MODE,
+				JSONLDSettings.PRODUCE_GENERALIZED_RDF,
 				JSONLDSettings.USE_RDF_TYPE,
 				JSONLDSettings.USE_NATIVE_TYPES,
 				JSONLDSettings.EXCEPTION_ON_WARNING

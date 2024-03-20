@@ -113,6 +113,21 @@ public class JSONLDSettings {
 			"org.eclipse.rdf4j.rio.jsonld.hierarchical_view", "Hierarchical representation of the JSON", Boolean.FALSE);
 
 	/**
+	 * If set to true, the JSON-LD processor may emit blank nodes for triple predicates, otherwise they will be omitted.
+	 * <p>
+	 * Note: the use of blank node identifiers to label properties is obsolete, and may be removed in a future version
+	 * of JSON-LD,
+	 * <p>
+	 * Defaults to false.
+	 * <p>
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.jsonld.produce_generalized_rdf}.
+	 *
+	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
+	 */
+	public static final RioSetting<Boolean> PRODUCE_GENERALIZED_RDF = new BooleanRioSetting(
+			"org.eclipse.rdf4j.rio.jsonld.produce_generalized_rdf", "Produce generalized RDF", Boolean.FALSE);
+
+	/**
 	 * Private default constructor.
 	 */
 	private JSONLDSettings() {

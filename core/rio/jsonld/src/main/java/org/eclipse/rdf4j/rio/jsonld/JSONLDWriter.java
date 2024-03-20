@@ -156,6 +156,7 @@ public class JSONLDWriter extends AbstractRDFWriter implements CharSink {
 			opts.setCompactArrays(writerConfig.get(JSONLDSettings.COMPACT_ARRAYS));
 			opts.setUseRdfType(writerConfig.get(JSONLDSettings.USE_RDF_TYPE));
 			opts.setUseNativeTypes(writerConfig.get(JSONLDSettings.USE_NATIVE_TYPES));
+			opts.setProduceGeneralizedRdf(writerConfig.get(JSONLDSettings.PRODUCE_GENERALIZED_RDF));
 			opts.setUriValidation(false);
 			opts.setExceptionOnWarning(writerConfig.get(JSONLDSettings.EXCEPTION_ON_WARNING));
 
@@ -393,6 +394,7 @@ public class JSONLDWriter extends AbstractRDFWriter implements CharSink {
 		result.add(JSONLDSettings.JSONLD_MODE);
 		result.add(JSONLDSettings.USE_RDF_TYPE);
 		result.add(JSONLDSettings.USE_NATIVE_TYPES);
+		result.add(JSONLDSettings.PRODUCE_GENERALIZED_RDF);
 		result.add(JSONLDSettings.EXCEPTION_ON_WARNING);
 
 		return result;

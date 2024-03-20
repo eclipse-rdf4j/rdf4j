@@ -14,6 +14,7 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.io.StringWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -126,14 +127,6 @@ public class NDJSONLDWriter extends AbstractRDFWriter {
 
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
-		Collection<RioSetting<?>> result = new HashSet<>(Arrays.asList(
-				BasicWriterSettings.BASE_DIRECTIVE,
-				JSONLDSettings.COMPACT_ARRAYS,
-				JSONLDSettings.HIERARCHICAL_VIEW,
-				JSONLDSettings.JSONLD_MODE,
-				JSONLDSettings.USE_RDF_TYPE,
-				JSONLDSettings.USE_NATIVE_TYPES
-		));
-		return result;
+		return new JSONLDWriter(new StringWriter()).getSupportedSettings();
 	}
 }

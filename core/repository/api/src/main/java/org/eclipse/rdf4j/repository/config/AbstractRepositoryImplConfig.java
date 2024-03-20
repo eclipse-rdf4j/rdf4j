@@ -14,6 +14,9 @@ import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORYTYPE;
 
+import java.util.Arrays;
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -112,7 +115,8 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 				RepositoryFactory factory = RepositoryRegistry.getInstance()
 						.get(typeLit.getLabel())
 						.orElseThrow(() -> new RepositoryConfigException(
-								"Unsupported repository type: " + typeLit.getLabel()));
+								"Unsupported repository type: '" + typeLit.getLabel() + "' supported types are: "
+										+ Arrays.toString(RepositoryRegistry.getInstance().getKeys().toArray())));
 
 				RepositoryImplConfig implConfig = factory.getConfig();
 				implConfig.parse(model, resource);
