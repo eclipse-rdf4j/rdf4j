@@ -276,9 +276,9 @@ public class LocalRepositoryManager extends RepositoryManager {
 					throw new RepositoryConfigException("Wrong repository ID in configuration: " + configFile);
 				}
 				var config = RepositoryConfigUtil.getRepositoryConfig(model, repositoryID);
-				if (Configurations.hasLegacyConfiguration(model) && !Configurations.useLegacyConfig()) {
-					logger.warn("configuration for {} uses legacy vocabulary, converting.", id);
-					addRepositoryConfig(config);
+				if (Configurations.hasLegacyConfiguration(model) && !Configurations.useLegacyConfig()
+						&& config != null) {
+					migrateToNewConfigVocabulary(config);
 				}
 				return config;
 			} catch (IOException e) {
@@ -286,6 +286,19 @@ public class LocalRepositoryManager extends RepositoryManager {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * Migrate a repository configuration from the legacy vocabulary to the new vocabulary in
+	 * {@link org.eclipse.rdf4j.model.vocabulary.CONFIG}.
+	 * <p>
+	 * Override this method to provide custom migration logic.
+	 *
+	 * @param config
+	 */
+	protected void migrateToNewConfigVocabulary(RepositoryConfig config) {
+		logger.warn("Configuration for {} uses legacy vocabulary, converting.", config.getID());
+		addRepositoryConfig(config);
 	}
 
 	@Override
