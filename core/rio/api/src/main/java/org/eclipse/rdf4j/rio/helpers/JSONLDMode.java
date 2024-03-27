@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2022 Eclipse RDF4J contributors.
+ * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -8,7 +8,7 @@
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
-package org.eclipse.rdf4j.rio.jsonld.legacy;
+package org.eclipse.rdf4j.rio.helpers;
 
 /**
  * Specifies constants to identify various modes that are relevant to JSONLD documents.
@@ -16,7 +16,6 @@ package org.eclipse.rdf4j.rio.jsonld.legacy;
  * @author Peter Ansell
  * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#features">JSONLD Features</a>
  *
- * @since 4.3.0
  */
 public enum JSONLDMode {
 
@@ -25,6 +24,8 @@ public enum JSONLDMode {
 	COMPACT("Compaction", "http://json-ld.org/spec/latest/json-ld-api/index.html#compaction"),
 
 	FLATTEN("Flattening", "http://json-ld.org/spec/latest/json-ld-api/index.html#flattening"),
+
+	FRAME("Framing", "https://www.w3.org/TR/json-ld11-framing/"),
 
 	;
 

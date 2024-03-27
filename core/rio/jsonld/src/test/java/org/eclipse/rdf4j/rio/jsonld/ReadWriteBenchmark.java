@@ -11,7 +11,6 @@
 
 package org.eclipse.rdf4j.rio.jsonld;
 
-import java.io.BufferedWriter;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
