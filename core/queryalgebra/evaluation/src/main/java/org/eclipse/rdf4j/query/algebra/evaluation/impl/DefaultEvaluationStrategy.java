@@ -976,11 +976,6 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return QueryValueEvaluationStepSupplier.prepareLang(arg, tripleSource.getValueFactory());
 	}
 
-	public Value evaluate(Datatype node, BindingSet bindings) throws QueryEvaluationException {
-		return prepare(node, new QueryEvaluationContext.Minimal(dataset, tripleSource.getComparator()))
-				.evaluate(bindings);
-	}
-
 	protected QueryValueEvaluationStep prepare(Datatype node, QueryEvaluationContext context) {
 		QueryValueEvaluationStep arg = precompile(node.getArg(), context);
 		return QueryValueEvaluationStepSupplier.prepareDatatype(arg, context);

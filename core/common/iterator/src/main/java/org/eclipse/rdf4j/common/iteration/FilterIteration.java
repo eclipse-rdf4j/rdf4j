@@ -101,7 +101,12 @@ public abstract class FilterIteration<E> implements CloseableIteration<E> {
 					}
 				}
 			}
-			while (nextElement == null && wrappedIter.hasNext()) {
+
+			// We know that nextElement has to be null and that wrappedIter.hasNext() must be true, based on the code
+			// above. To be sure that these invariants don't change we also assert them below.
+			assert nextElement == null && wrappedIter.hasNext();
+
+			do {
 				E result;
 				if (Thread.currentThread().isInterrupted()) {
 					close();
@@ -118,7 +123,8 @@ public abstract class FilterIteration<E> implements CloseableIteration<E> {
 				if (accept(candidate)) {
 					nextElement = candidate;
 				}
-			}
+			} while (nextElement == null && wrappedIter.hasNext());
+
 		} finally {
 			if (isClosed()) {
 				nextElement = null;
