@@ -48,7 +48,7 @@ public class EqualsConstraintComponent extends AbstractPairwiseConstraintCompone
 			StatementMatcher.Variable<Value> object, SparqlFragment targetQueryFragment) {
 		return new CheckEqualsValuesBasedOnPathAndPredicate(connectionsGroup.getBaseConnection(),
 				validationSettings.getDataGraph(), allTargets, predicate, subject, object, targetQueryFragment, shape,
-				this);
+				this, producesValidationReport);
 	}
 
 	@Override

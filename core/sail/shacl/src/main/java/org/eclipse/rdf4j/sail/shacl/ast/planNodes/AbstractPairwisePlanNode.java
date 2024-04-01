@@ -53,10 +53,12 @@ abstract class AbstractPairwisePlanNode implements PlanNode {
 	private final Shape shape;
 	private final ConstraintComponent constraintComponent;
 	private ValidationExecutionLogger validationExecutionLogger;
+	private boolean produceValidationReports;
 
 	public AbstractPairwisePlanNode(SailConnection connection, Resource[] dataGraph, PlanNode parent,
 			IRI predicate, StatementMatcher.Variable<Resource> subject, StatementMatcher.Variable<Value> object,
-			SparqlFragment targetQueryFragment, Shape shape, ConstraintComponent constraintComponent) {
+			SparqlFragment targetQueryFragment, Shape shape, ConstraintComponent constraintComponent,
+			boolean produceValidationReports) {
 		this.parent = parent;
 		this.connection = connection;
 		assert this.connection != null;
@@ -72,6 +74,7 @@ abstract class AbstractPairwisePlanNode implements PlanNode {
 		this.dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
 		this.shape = shape;
 		this.constraintComponent = constraintComponent;
+		this.produceValidationReports = produceValidationReports;
 
 	}
 
@@ -140,10 +143,16 @@ abstract class AbstractPairwisePlanNode implements PlanNode {
 										} else {
 											path = ((PropertyShape) shape).getPath();
 										}
-										return validationTuple.addValidationResult(t -> new ValidationResult(
-												t.getActiveTarget(), t.getValue(), shape,
-												constraintComponent, shape.getSeverity(), t.getScope(), t.getContexts(),
-												shape.getContexts(), path));
+										if (produceValidationReports) {
+											return validationTuple.addValidationResult(t -> new ValidationResult(
+													t.getActiveTarget(), t.getValue(), shape,
+													constraintComponent, shape.getSeverity(), t.getScope(),
+													t.getContexts(),
+													shape.getContexts(), path));
+										} else {
+											return validationTuple;
+										}
+
 									} else {
 										ValidationTuple validationTuple = next.shiftToPropertyShapeScope(value);
 										Path path;
@@ -152,10 +161,15 @@ abstract class AbstractPairwisePlanNode implements PlanNode {
 										} else {
 											path = null;
 										}
-										return validationTuple.addValidationResult(t -> new ValidationResult(
-												t.getActiveTarget(), t.getValue(), shape,
-												constraintComponent, shape.getSeverity(), t.getScope(), t.getContexts(),
-												shape.getContexts(), path));
+										if (produceValidationReports) {
+											return validationTuple.addValidationResult(t -> new ValidationResult(
+													t.getActiveTarget(), t.getValue(), shape,
+													constraintComponent, shape.getSeverity(), t.getScope(),
+													t.getContexts(),
+													shape.getContexts(), path));
+										} else {
+											return validationTuple;
+										}
 									}
 								})
 								.iterator();

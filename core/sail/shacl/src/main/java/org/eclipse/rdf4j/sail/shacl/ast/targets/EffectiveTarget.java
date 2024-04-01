@@ -50,6 +50,7 @@ public class EffectiveTarget {
 	public static final String TARGET_VAR_PREFIX = "target_";
 	public static final String[] TARGET_NAMES = IntStream.range(0, 1000)
 			.mapToObj(i -> TARGET_VAR_PREFIX + String.format("%010d", i))
+			.map(String::intern)
 			.toArray(String[]::new);
 	private final ArrayDeque<EffectiveTargetFragment> chain;
 	private final EffectiveTargetFragment optional;
@@ -344,7 +345,7 @@ public class EffectiveTarget {
 		// TODO: this is a slow way to solve this problem! We should use bulk operations.
 		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), dataGraph, parent, sparqlFragment,
 				last.var,
-				ValidationTuple::getActiveTarget)
+				ValidationTuple::getActiveTarget, null)
 				.getTrueNode(UnBufferedPlanNode.class);
 	}
 
@@ -394,6 +395,10 @@ public class EffectiveTarget {
 		return chain.stream()
 				.map(c -> c.var)
 				.collect(Collectors.toCollection(ArrayList::new));
+	}
+
+	public Variable<Value> getOptionalVar() {
+		return Objects.requireNonNull(optional, "Optional was null").var;
 	}
 
 	public enum Extend {

@@ -12,10 +12,12 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.Objects;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -40,39 +42,60 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 	private final StatementMatcher.Variable queryVariable;
 	private final Function<ValidationTuple, Value> filterOn;
 	private final String queryString;
+	private final BiFunction<ValidationTuple, BindingSet, ValidationTuple> map;
 
 	public ExternalFilterByQuery(SailConnection connection, Resource[] dataGraph, PlanNode parent,
 			SparqlFragment queryFragment,
 			StatementMatcher.Variable queryVariable,
-			Function<ValidationTuple, Value> filterOn) {
+			Function<ValidationTuple, Value> filterOn, BiFunction<ValidationTuple, BindingSet, ValidationTuple> map) {
 		super(parent);
 		this.connection = connection;
 		assert this.connection != null;
 		this.queryVariable = queryVariable;
 		this.filterOn = filterOn;
 
-		this.queryString = queryFragment.getNamespacesForSparql()
-				+ StatementMatcher.StableRandomVariableProvider.normalize("SELECT " + queryVariable.asSparqlVariable()
-						+ " WHERE {\n" + queryFragment.getFragment() + "\n}");
+		if (map != null) {
+			this.queryString = queryFragment.getNamespacesForSparql()
+					+ StatementMatcher.StableRandomVariableProvider.normalize("SELECT * "
+							+ " WHERE {\n" + queryFragment.getFragment() + "\n}");
+
+		} else {
+			this.queryString = queryFragment.getNamespacesForSparql()
+					+ StatementMatcher.StableRandomVariableProvider
+							.normalize("SELECT " + queryVariable.asSparqlVariable()
+									+ " WHERE {\n" + queryFragment.getFragment() + "\n}");
+		}
+
 		try {
 			this.query = SparqlQueryParserCache.get(queryString);
 		} catch (MalformedQueryException e) {
 			logger.error("Malformed query:\n{}", queryString);
 			throw e;
 		}
+
 		dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
+		this.map = map;
 
 	}
 
 	@Override
-	boolean checkTuple(ValidationTuple t) {
+	boolean checkTuple(Reference t) {
 
-		Value value = filterOn.apply(t);
+		Value value = filterOn.apply(t.get());
 		SingletonBindingSet bindings = new SingletonBindingSet(queryVariable.getName(), value);
 
 		try (var bindingSet = connection.evaluate(query, dataset, bindings, false)) {
-			return bindingSet.hasNext();
+			if (bindingSet.hasNext()) {
+				if (map != null) {
+					do {
+						t.set(map.apply(t.get(), bindingSet.next()));
+					} while (bindingSet.hasNext());
+				}
+				return true;
+			}
 		}
+
+		return false;
 
 	}
 

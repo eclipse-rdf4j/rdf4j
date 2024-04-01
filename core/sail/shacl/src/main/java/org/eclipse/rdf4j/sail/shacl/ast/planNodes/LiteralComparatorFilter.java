@@ -35,8 +35,8 @@ public class LiteralComparatorFilter extends FilterPlanNode {
 	}
 
 	@Override
-	boolean checkTuple(ValidationTuple t) {
-		Value literal = t.getValue();
+	boolean checkTuple(Reference t) {
+		Value literal = t.get().getValue();
 		return QueryEvaluationUtility.compare(compareTo, literal, this.compareOp).orElse(false);
 	}
 

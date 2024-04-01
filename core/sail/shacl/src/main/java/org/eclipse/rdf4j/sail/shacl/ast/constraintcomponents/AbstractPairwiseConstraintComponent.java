@@ -11,20 +11,18 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
+import org.eclipse.rdf4j.sail.shacl.ast.CanProduceValidationReport;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
-import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -39,10 +37,12 @@ import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetChain;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
-abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintComponent {
+abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintComponent
+		implements CanProduceValidationReport {
 
 	final Shape shape;
 	final IRI predicate;
+	boolean producesValidationReport;
 
 	public AbstractPairwiseConstraintComponent(IRI predicate, Shape shape) {
 		this.predicate = predicate;
@@ -139,12 +139,12 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 		PlanNode addedByPredicate = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, predicate, null,
 				validationSettings.getDataGraph(), (s, d) -> {
 					return new ValidationTuple(s.getSubject(), Scope.propertyShape, false, d);
-				});
+				}, null);
 
 		PlanNode removedByPredicate = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, predicate,
 				null, validationSettings.getDataGraph(), (s, d) -> {
 					return new ValidationTuple(s.getSubject(), Scope.propertyShape, false, d);
-				});
+				}, null);
 
 		PlanNode targetFilter1 = effectiveTarget.getTargetFilter(connectionsGroup, validationSettings.getDataGraph(),
 				addedByPredicate);
@@ -168,8 +168,8 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 			// removed statements that match predicate could affect sh:or
 			if (connectionsGroup.getStats().hasRemoved()) {
 				PlanNode deletedPredicates = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null,
-						predicate,
-						null, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.propertyShape));
+						predicate, null, dataGraph,
+						UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.propertyShape), null);
 				deletedPredicates = getTargetChain()
 						.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
 								stableRandomVariableProvider)
@@ -187,7 +187,8 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 			// added statements that match predicate could affect sh:not
 			if (connectionsGroup.getStats().hasAdded()) {
 				PlanNode addedPredicates = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, predicate,
-						null, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.propertyShape));
+						null, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.propertyShape),
+						null);
 				addedPredicates = getTargetChain()
 						.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
 								stableRandomVariableProvider)
@@ -212,7 +213,7 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 			if (connectionsGroup.getStats().hasRemoved()) {
 				PlanNode deletedPredicates = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null,
 						predicate, null,
-						dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));
+						dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape), null);
 				deletedPredicates = getTargetChain()
 						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
 								stableRandomVariableProvider)
@@ -231,7 +232,7 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 			if (connectionsGroup.getStats().hasAdded()) {
 				PlanNode addedPredicates = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, predicate,
 						null,
-						dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));
+						dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape), null);
 				addedPredicates = getTargetChain()
 						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
 								stableRandomVariableProvider)
@@ -280,7 +281,12 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 	}
 
 	@Override
-	public boolean overrideValidationReport() {
-		return true;
+	public void setProducesValidationReport(boolean producesValidationReport) {
+		this.producesValidationReport = producesValidationReport;
+	}
+
+	@Override
+	public boolean producesValidationReport() {
+		return producesValidationReport;
 	}
 }

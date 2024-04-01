@@ -48,7 +48,7 @@ public class DisjointConstraintComponent extends AbstractPairwiseConstraintCompo
 			SparqlFragment targetQueryFragment) {
 		return new CheckDisjointValuesBasedOnPathAndPredicate(connectionsGroup.getBaseConnection(),
 				validationSettings.getDataGraph(), allTargets, predicate, subject, object, targetQueryFragment, shape,
-				this);
+				this, producesValidationReport);
 	}
 
 	@Override

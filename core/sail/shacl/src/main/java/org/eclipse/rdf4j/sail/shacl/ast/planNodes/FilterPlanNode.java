@@ -35,7 +35,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 	private boolean closed;
 
-	abstract boolean checkTuple(ValidationTuple t);
+	abstract boolean checkTuple(Reference t);
 
 	public FilterPlanNode(PlanNode parent) {
 		this.parent = PlanNodeHelper.handleSorting(this, parent);
@@ -93,31 +93,33 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 				}
 
 				while (parentIterator.hasNext() && next == null) {
-					ValidationTuple temp = parentIterator.next();
+					Reference reference = Reference.of(parentIterator.next());
 
-					if (checkTuple(temp)) {
+					if (checkTuple(reference)) {
 						if (trueNode != null) {
-							trueNode.push(temp);
+							trueNode.push(reference.get());
 						} else {
 							if (validationExecutionLogger.isEnabled()) {
 								validationExecutionLogger.log(FilterPlanNode.this.depth(),
-										FilterPlanNode.this.getClass().getSimpleName() + ":IgnoredAsTrue.next()", temp,
+										FilterPlanNode.this.getClass().getSimpleName() + ":IgnoredAsTrue.next()",
+										reference.get(),
 										FilterPlanNode.this, getId(), null);
 							}
 						}
 					} else {
 						if (falseNode != null) {
-							falseNode.push(temp);
+							falseNode.push(reference.get());
 						} else {
 							if (validationExecutionLogger.isEnabled()) {
 								validationExecutionLogger.log(FilterPlanNode.this.depth(),
-										FilterPlanNode.this.getClass().getSimpleName() + ":IgnoredAsFalse.next()", temp,
+										FilterPlanNode.this.getClass().getSimpleName() + ":IgnoredAsFalse.next()",
+										reference.get(),
 										FilterPlanNode.this, getId(), null);
 							}
 						}
 					}
 
-					next = temp;
+					next = reference.get();
 
 				}
 
@@ -257,6 +259,26 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	@Override
 	public int hashCode() {
 		return Objects.hash(parent);
+	}
+
+	static class Reference {
+		private ValidationTuple t;
+
+		private Reference(ValidationTuple t) {
+			this.t = t;
+		}
+
+		public static Reference of(ValidationTuple t) {
+			return new Reference(t);
+		}
+
+		public ValidationTuple get() {
+			return t;
+		}
+
+		public void set(ValidationTuple t) {
+			this.t = t;
+		}
 	}
 
 }

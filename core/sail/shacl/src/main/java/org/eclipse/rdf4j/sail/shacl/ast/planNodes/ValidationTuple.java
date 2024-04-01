@@ -215,21 +215,21 @@ public class ValidationTuple {
 	@Override
 	public String toString() {
 		try {
-			return "ValidationTuple{" +
-					"activeTarget=" + getActiveTarget() +
-					"value=" + getValue() +
-					"chain=" + Arrays.toString(chain) +
-					", scope=" + scope +
-					", propertyShapeScopeWithValue=" + propertyShapeScopeWithValue +
-					", compressedTuples=" + Arrays.toString(compressedTuples.toArray()) +
-					'}';
+			return "ValidationTuple(" + scope + ") [ " + Arrays.stream(chain).map(v -> {
+				if (v == getActiveTarget()) {
+					return "T–" + v;
+				} else if (v == getValue()) {
+					return "V–" + v + "";
+				}
+				return v.stringValue();
+			}).collect(Collectors.joining(" -> ")) + " }, propertyShapeScopeWithValue=" + propertyShapeScopeWithValue +
+					", compressedTuples=" + Arrays.toString(compressedTuples.toArray());
+
 		} catch (Throwable t) {
-			return "ValidationTuple{" +
-					"chain=" + Arrays.toString(chain) +
-					", scope=" + scope +
-					", propertyShapeScopeWithValue=" + propertyShapeScopeWithValue +
-					", compressedTuples=" + Arrays.toString(compressedTuples.toArray()) +
-					'}';
+			return "ValidationTuple(" + scope + ") { "
+					+ Arrays.stream(chain).map(Value::stringValue).collect(Collectors.joining(" -> "))
+					+ " }, propertyShapeScopeWithValue=" + propertyShapeScopeWithValue +
+					", compressedTuples=" + Arrays.toString(compressedTuples.toArray());
 		}
 
 	}
@@ -495,6 +495,11 @@ public class ValidationTuple {
 		if (scope == ConstraintComponent.Scope.propertyShape) {
 			validationTuple = validationTuple.setValue(right.getValue());
 		}
+
+		for (ValidationResult validationResult : right.getValidationResult()) {
+			validationTuple = validationTuple.addValidationResult(t -> validationResult);
+		}
+
 		return validationTuple;
 	}
 

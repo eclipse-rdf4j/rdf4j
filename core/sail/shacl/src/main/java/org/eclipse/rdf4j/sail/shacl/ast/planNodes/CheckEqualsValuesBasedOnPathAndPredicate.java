@@ -35,9 +35,10 @@ public class CheckEqualsValuesBasedOnPathAndPredicate extends AbstractPairwisePl
 
 	public CheckEqualsValuesBasedOnPathAndPredicate(SailConnection connection, Resource[] dataGraph, PlanNode parent,
 			IRI predicate, StatementMatcher.Variable<Resource> subject, StatementMatcher.Variable<Value> object,
-			SparqlFragment targetQueryFragment, Shape shape, ConstraintComponent constraintComponent) {
+			SparqlFragment targetQueryFragment, Shape shape, ConstraintComponent constraintComponent,
+			boolean produceValidationReports) {
 		super(connection, dataGraph, parent, predicate, subject, object, targetQueryFragment, shape,
-				constraintComponent);
+				constraintComponent, produceValidationReports);
 	}
 
 	Set<Value> getInvalidValues(Set<Value> valuesByPath, Set<Value> valuesByPredicate) {

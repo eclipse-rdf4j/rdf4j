@@ -58,7 +58,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 			SparqlFragment query,
 			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
 			Function<BindingSet, ValidationTuple> mapper) {
-
+		super();
 		assert !skipBasedOnPreviousConnection || previousStateConnection != null;
 
 		this.leftNode = PlanNodeHelper.handleSorting(this, leftNode);

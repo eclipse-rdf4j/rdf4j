@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
+import org.eclipse.rdf4j.sail.shacl.ast.CanProduceValidationReport;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclPrefixParser;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
@@ -46,7 +47,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
-public class SparqlConstraintComponent extends AbstractConstraintComponent {
+public class SparqlConstraintComponent extends AbstractConstraintComponent implements CanProduceValidationReport {
 
 	private final Shape shape;
 	public boolean produceValidationReports;
@@ -168,8 +169,8 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent {
 			allTargets = effectiveTarget.getAllTargets(connectionsGroup, validationSettings.getDataGraph(), scope);
 		}
 
-		return new SparqlConstraintSelect(connectionsGroup.getBaseConnection(),
-				allTargets, select, scope, validationSettings.getDataGraph(), produceValidationReports, this, shape);
+		return new SparqlConstraintSelect(connectionsGroup.getBaseConnection(), allTargets, select, scope,
+				validationSettings.getDataGraph(), produceValidationReports, this, shape);
 
 	}
 
@@ -252,7 +253,6 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent {
 	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
 			ValidationSettings validationSettings, boolean negatePlan, boolean negateChildren, Scope scope) {
 		return null;
-
 	}
 
 	@Override
@@ -300,4 +300,15 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent {
 		result = 31 * result + (deactivated != null ? deactivated.hashCode() : 0);
 		return result + "SparqlConstraintComponent".hashCode();
 	}
+
+	@Override
+	public void setProducesValidationReport(boolean producesValidationReport) {
+		this.produceValidationReports = producesValidationReport;
+	}
+
+	@Override
+	public boolean producesValidationReport() {
+		return produceValidationReports;
+	}
+
 }

@@ -1,0 +1,37 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dash: <http://datashapes.org/dash#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+
+rdf4j:SHACLShapeGraph {
+
+    ex:Person
+        a rdfs:Class, sh:NodeShape ;
+	    sh:closed true;
+	    sh:ignoredProperties ( ex:thisPropertyIsIgnored ex:thisPropertyIsAlsoIgnored ) ;
+        sh:property
+            [
+                sh:path ex:name ;
+                sh:minCount 1 ;
+                sh:maxCount 1 ;
+            ],
+            [
+                sh:path ex:age ;
+                sh:minCount 1 ;
+                sh:minInclusive 18 ;
+            ],
+            [
+                sh:path [ sh:alternativePath ( ex:father ex:mother  ) ] ;
+                sh:maxCount 1 ;
+            ],
+	        [
+                sh:path rdf:type;
+            ]
+        ;
+    .
+
+}
