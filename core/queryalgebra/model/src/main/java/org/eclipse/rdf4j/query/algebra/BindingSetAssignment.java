@@ -111,4 +111,5 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	protected boolean shouldCacheCardinality() {
 		return true;
 	}
+
 }

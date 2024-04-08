@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -91,10 +92,10 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Filter filter) {
-			if (filter.getCondition() instanceof And) {
+			if (filter.getCondition() instanceof And && !filter.isVariableScopeChange()) {
 				And and = (And) filter.getCondition();
-				filter.setCondition(and.getLeftArg().clone());
-				Filter newFilter = new Filter(filter.getArg().clone(), and.getRightArg().clone());
+				filter.setCondition(and.getLeftArg());
+				Filter newFilter = new Filter(filter.getArg(), and.getRightArg());
 				filter.replaceChildNode(filter.getArg(), newFilter);
 			}
 			super.meet(filter);
@@ -113,11 +114,13 @@ public class FilterOptimizer implements QueryOptimizer {
 			if (filter.getArg() instanceof Filter && filter.getParentNode() != null) {
 
 				Filter childFilter = (Filter) filter.getArg();
-				QueryModelNode parent = filter.getParentNode();
-				And merge = new And(childFilter.getCondition().clone(), filter.getCondition().clone());
+				if (!childFilter.isVariableScopeChange()) {
+					QueryModelNode parent = filter.getParentNode();
+					And merge = new And(childFilter.getCondition().clone(), filter.getCondition().clone());
 
-				Filter newFilter = new Filter(childFilter.getArg().clone(), merge);
-				parent.replaceChildNode(filter, newFilter);
+					Filter newFilter = new Filter(childFilter.getArg().clone(), merge);
+					parent.replaceChildNode(filter, newFilter);
+				}
 			}
 		}
 	}
@@ -266,7 +269,7 @@ public class FilterOptimizer implements QueryOptimizer {
 		}
 
 		private void relocate(Filter filter, TupleExpr newFilterArg) {
-			if (filter.getArg() != newFilterArg) {
+			if (filter.getArg() != newFilterArg && !isVariableScopeChange(newFilterArg)) {
 				if (filter.getParentNode() != null) {
 					// Remove filter from its original location
 					filter.replaceWith(filter.getArg());
@@ -276,6 +279,11 @@ public class FilterOptimizer implements QueryOptimizer {
 				newFilterArg.replaceWith(filter);
 				filter.setArg(newFilterArg);
 			}
+		}
+
+		private boolean isVariableScopeChange(TupleExpr newFilterArg) {
+			return newFilterArg instanceof VariableScopeChange
+					&& ((VariableScopeChange) newFilterArg).isVariableScopeChange();
 		}
 	}
 

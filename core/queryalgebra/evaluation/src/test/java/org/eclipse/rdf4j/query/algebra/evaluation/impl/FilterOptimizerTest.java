@@ -12,25 +12,33 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.util.List;
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
@@ -95,6 +103,37 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 
 		String query = "SELECT * WHERE {?s ?p ?o . ?s ?p ?o2  . FILTER(?o2 != '2'^^xsd:int && ?o2 > '1'^^xsd:int && ?o < '5'^^xsd:int && ?o > '2'^^xsd:int && ?o2 < '4'^^xsd:int) }";
 
+		testOptimizer(expected, query);
+	}
+
+	@Test
+	public void dontMoveAcrossVariableScopeChange() {
+		String query = "PREFIX : <http://example/> SELECT ?s ?o WHERE { VALUES ?s { :S } { { VALUES ?o { :O } } { FILTER(BOUND(?s) && !BOUND(?o)) }}}";
+
+		Var s = new Var("s");
+		Var o = new Var("o");
+		BindingSetAssignment valuesS = new BindingSetAssignment();
+		{
+			valuesS.setBindingNames(Set.of("s"));
+			ListBindingSet anValueOfS = new ListBindingSet(List.of("s"),
+					List.of(SimpleValueFactory.getInstance().createIRI("http://example/S")));
+			valuesS.setBindingSets(List.of(anValueOfS));
+		}
+		BindingSetAssignment valuesO = new BindingSetAssignment();
+		{
+			valuesO.setBindingNames(Set.of("o"));
+			ListBindingSet anValueOfO = new ListBindingSet(List.of("o"),
+					List.of(SimpleValueFactory.getInstance().createIRI("http://example/O")));
+			valuesO.setBindingSets(List.of(anValueOfO));
+			valuesO.setVariableScopeChange(true);
+		}
+		Filter filterBound = new Filter(new SingletonSet(), new And(new Bound(s), new Not(new Bound(o))));
+		filterBound.setVariableScopeChange(true);
+		Join rightArg = new Join(valuesO, filterBound);
+		rightArg.setVariableScopeChange(true);
+		TupleExpr expected = new QueryRoot(
+				new Projection(new Join(valuesS, rightArg), new ProjectionElemList(new ProjectionElem("s"),
+						new ProjectionElem("o"))));
 		testOptimizer(expected, query);
 	}
 
