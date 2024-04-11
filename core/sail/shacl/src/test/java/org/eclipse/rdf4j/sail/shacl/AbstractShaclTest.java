@@ -588,6 +588,12 @@ abstract public class AbstractShaclTest {
 			return;
 		}
 
+		// the TopBraid SHACL API doesn't agree with other implementations on how sh:closed should work in a property
+		// shape
+		if (testCase.testCasePath.startsWith("test-cases/closed/notPropertyShape/")) {
+			return;
+		}
+
 		printTestCase(testCase);
 
 		Dataset shaclDataset = DatasetFactory.create();

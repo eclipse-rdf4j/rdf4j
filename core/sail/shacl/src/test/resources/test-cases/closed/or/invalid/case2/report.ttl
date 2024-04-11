@@ -1,0 +1,44 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+
+[] a sh:ValidationReport;
+  rdf4j:truncated false;
+  sh:conforms false;
+  sh:result [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:validPerson1;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:OrConstraintComponent;
+      sh:sourceShape ex:Person;
+      sh:value ex:validPerson1
+    ] .
+
+ex:Person a sh:NodeShape;
+  sh:or ([ a sh:NodeShape;
+        sh:closed true;
+        sh:ignoredProperties (ex:thisPropertyIsIgnored ex:thisPropertyIsAlsoIgnored);
+        sh:property [ a sh:PropertyShape;
+            sh:path ex:name
+          ], [ a sh:PropertyShape;
+            sh:path ex:age
+          ], [ a sh:PropertyShape;
+            sh:path rdf:type
+          ]
+      ] [ a sh:NodeShape;
+        sh:closed true;
+        sh:ignoredProperties (ex:thisPropertyIsIgnored_or ex:thisPropertyIsAlsoIgnored);
+        sh:property [ a sh:PropertyShape;
+            sh:path ex:name_or
+          ], [ a sh:PropertyShape;
+            sh:path ex:age_or
+          ], [ a sh:PropertyShape;
+            sh:path rdf:type
+          ]
+      ]);
+  sh:targetClass ex:Person .

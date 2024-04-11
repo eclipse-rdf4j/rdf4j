@@ -100,10 +100,14 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
-		if (!ignoredProperties.isEmpty() && !model.contains(getId(), SHACL.IGNORED_PROPERTIES, null)) {
+
+		if (!ignoredProperties.isEmpty()) {
 			model.add(subject, SHACL.IGNORED_PROPERTIES, ignoredPropertiesHead);
-			ShaclAstLists.listToRdf(ignoredProperties, ignoredPropertiesHead, model);
+			if (!model.contains(ignoredPropertiesHead, null, null)) {
+				ShaclAstLists.listToRdf(ignoredProperties, ignoredPropertiesHead, model);
+			}
 		}
+
 		model.add(subject, SHACL.CLOSED, literal(true));
 	}
 
@@ -233,7 +237,12 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 			PlanNode targetNodePlanNode;
 
 			if (overrideTargetNode != null) {
-				targetNodePlanNode = overrideTargetNode.getPlanNode();
+				targetNodePlanNode = getTargetChain()
+						.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
+								stableRandomVariableProvider)
+						.extend(overrideTargetNode.getPlanNode(), connectionsGroup, validationSettings.getDataGraph(),
+								scope, EffectiveTarget.Extend.right,
+								false, null);
 			} else {
 				PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(),
 						scope, false, null);
@@ -313,6 +322,106 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(scope,
+				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);
+
+		switch (scope) {
+		case none:
+			throw new IllegalStateException();
+		case nodeShape:
+
+			PlanNode targets = effectiveTarget.getPlanNode(connectionsGroup, dataGraph,
+					scope, true, null);
+
+			// get all subjects of all triples where the predicate is not in the allAllowedPredicates set
+			PlanNode unorderedSelectAdded = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, null,
+					null, dataGraph,
+					UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope),
+					(statement -> !allAllowedPredicates.contains(statement.getPredicate())));
+
+			// get all subjects of all triples where the predicate is not in the allAllowedPredicates set
+			PlanNode unorderedSelectRemoved = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, null,
+					null, dataGraph,
+					UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope),
+					(statement -> !allAllowedPredicates.contains(statement.getPredicate())));
+
+			// then remove any that are in the targets node
+			unorderedSelectAdded = new TrimToTarget(new NotValuesIn(unorderedSelectAdded, targets));
+			unorderedSelectRemoved = new TrimToTarget(new NotValuesIn(unorderedSelectRemoved, targets));
+
+			// union and remove duplicates
+			PlanNode unique = Unique.getInstance(UnionNode.getInstance(unorderedSelectAdded, unorderedSelectRemoved),
+					false);
+
+			// then check that the rest are actually targets
+			PlanNode targetFilter = effectiveTarget.getTargetFilter(connectionsGroup,
+					dataGraph,
+					unique);
+
+			// this should now be targets that are not valid
+			PlanNode extend = effectiveTarget.extend(targetFilter, connectionsGroup,
+					dataGraph,
+					scope, EffectiveTarget.Extend.left, false, null);
+
+			return UnionNode.getInstance(extend, effectiveTarget.getPlanNode(connectionsGroup,
+					dataGraph, scope, true, null));
+
+		case propertyShape:
+			Path path = getTargetChain().getPath().get();
+
+			BufferedSplitter addedTargetsBufferedSplitter = new BufferedSplitter(
+					effectiveTarget.getPlanNode(connectionsGroup, dataGraph, scope, false,
+							null));
+			PlanNode addedTargets = addedTargetsBufferedSplitter.getPlanNode();
+			PlanNode addedByPath = path.getAllAdded(connectionsGroup, dataGraph, null);
+
+			addedByPath = effectiveTarget.getTargetFilter(connectionsGroup,
+					dataGraph, Unique.getInstance(new TrimToTarget(addedByPath), false));
+
+			addedByPath = new ReduceTargets(addedByPath, addedTargetsBufferedSplitter.getPlanNode());
+
+			addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, dataGraph,
+					scope,
+					EffectiveTarget.Extend.left, false,
+					null);
+
+			PlanNode addedByValue = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, null,
+					null, dataGraph,
+					UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope), (statement -> {
+						return !allAllowedPredicates.contains(statement.getPredicate());
+					}));
+
+			PlanNode removedByValue = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, null,
+					null, dataGraph,
+					UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope), (statement -> {
+						return !allAllowedPredicates.contains(statement.getPredicate());
+					}));
+
+			addedByValue = UnionNode.getInstance(addedByValue, removedByValue);
+
+			addedByValue = getTargetChain()
+					.getEffectiveTarget(Scope.nodeShape,
+							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)
+					.extend(addedByValue, connectionsGroup, dataGraph, Scope.nodeShape,
+							EffectiveTarget.Extend.left,
+							false, null);
+
+			addedByValue = getTargetChain()
+					.getEffectiveTarget(Scope.nodeShape,
+							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)
+					.getTargetFilter(connectionsGroup, dataGraph, addedByValue);
+
+			addedTargets = UnionNode.getInstance(addedTargets,
+					new TrimToTarget(new ShiftToPropertyShape(addedByValue)));
+
+			addedTargets = UnionNode.getInstance(addedByPath, addedTargets);
+			addedTargets = Unique.getInstance(addedTargets, false);
+
+			return addedTargets;
+
+		}
+
 		throw new UnsupportedOperationException();
 	}
 
