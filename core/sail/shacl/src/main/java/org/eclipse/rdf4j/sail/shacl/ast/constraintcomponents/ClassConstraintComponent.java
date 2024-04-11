@@ -186,7 +186,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 									stableRandomVariableProvider)
 							.extend(deletedTypes, connectionsGroup, validationSettings.getDataGraph(), scope,
 									EffectiveTarget.Extend.left, false, null);
-					addedTargets = UnionNode.getInstance(addedTargets, new TrimToTarget(deletedTypes));
+					addedTargets = UnionNode.getInstance(addedTargets, deletedTypes);
 				}
 			}
 

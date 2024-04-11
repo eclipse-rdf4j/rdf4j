@@ -39,7 +39,6 @@ import org.eclipse.rdf4j.sail.shacl.ast.paths.SimplePath;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalFilterByQuery;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.NotValuesIn;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ReduceTargets;
@@ -233,6 +232,7 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 			return falseNode1;
 
 		} else {
+			assert scope == Scope.nodeShape;
 
 			PlanNode targetNodePlanNode;
 
@@ -248,18 +248,17 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 						scope, false, null);
 
 				// get all subjects of all triples where the predicate is not in the allAllowedPredicates set
-				UnorderedSelect unorderedSelect = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, null,
+				PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, null,
 						null, validationSettings.getDataGraph(),
 						UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope), (statement -> {
 							return !allAllowedPredicates.contains(statement.getPredicate());
 						}));
 
 				// then remove any that are in the addedTargets node
-				NotValuesIn notValuesIn = new NotValuesIn(unorderedSelect, addedTargets);
+				PlanNode notValuesIn = new ReduceTargets(unorderedSelect, addedTargets);
 
-				// trim to target and remove duplicates
-				TrimToTarget trimToTarget = new TrimToTarget(notValuesIn);
-				PlanNode unique = Unique.getInstance(trimToTarget, false);
+				// remove duplicates
+				PlanNode unique = Unique.getInstance(notValuesIn, false);
 
 				// then check that the rest are actually targets
 				PlanNode targetFilter = effectiveTarget.getTargetFilter(connectionsGroup,
@@ -286,7 +285,7 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 			SparqlFragment sparqlFragment = SparqlFragment.join(List.of(bgp, sparqlFragmentFilter));
 
 			BulkedExternalInnerJoin bulkedExternalInnerJoin = new BulkedExternalInnerJoin(
-					Unique.getInstance(new TrimToTarget(targetNodePlanNode), false),
+					Unique.getInstance(targetNodePlanNode, false),
 					connectionsGroup.getBaseConnection(),
 					validationSettings.getDataGraph(),
 					sparqlFragment,
@@ -331,41 +330,51 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 			throw new IllegalStateException();
 		case nodeShape:
 
-			PlanNode targets = effectiveTarget.getPlanNode(connectionsGroup, dataGraph,
-					scope, true, null);
-
+			BufferedSplitter targets = new BufferedSplitter(
+					effectiveTarget.getPlanNode(connectionsGroup, dataGraph, scope, false,
+							null));
 			// get all subjects of all triples where the predicate is not in the allAllowedPredicates set
-			PlanNode unorderedSelectAdded = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, null,
-					null, dataGraph,
-					UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope),
-					(statement -> !allAllowedPredicates.contains(statement.getPredicate())));
-
-			// get all subjects of all triples where the predicate is not in the allAllowedPredicates set
-			PlanNode unorderedSelectRemoved = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, null,
+			PlanNode statementsNotMatchingPredicateList = new UnorderedSelect(connectionsGroup.getAddedStatements(),
+					null, null,
 					null, dataGraph,
 					UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope),
 					(statement -> !allAllowedPredicates.contains(statement.getPredicate())));
 
 			// then remove any that are in the targets node
-			unorderedSelectAdded = new TrimToTarget(new NotValuesIn(unorderedSelectAdded, targets));
-			unorderedSelectRemoved = new TrimToTarget(new NotValuesIn(unorderedSelectRemoved, targets));
-
-			// union and remove duplicates
-			PlanNode unique = Unique.getInstance(UnionNode.getInstance(unorderedSelectAdded, unorderedSelectRemoved),
-					false);
+			statementsNotMatchingPredicateList = new ReduceTargets(statementsNotMatchingPredicateList,
+					targets.getPlanNode());
 
 			// then check that the rest are actually targets
-			PlanNode targetFilter = effectiveTarget.getTargetFilter(connectionsGroup,
+			statementsNotMatchingPredicateList = effectiveTarget.getTargetFilter(connectionsGroup,
 					dataGraph,
-					unique);
+					statementsNotMatchingPredicateList);
+
+			if (connectionsGroup.getStats().hasRemoved()) {
+
+				// get all subjects of all triples where the predicate is not in the allAllowedPredicates set
+				PlanNode removed = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, null,
+						null, dataGraph,
+						UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope),
+						(statement -> !allAllowedPredicates.contains(statement.getPredicate())));
+
+				removed = new ReduceTargets(removed, targets.getPlanNode());
+
+				// then check that the rest are actually targets
+				removed = effectiveTarget.getTargetFilter(connectionsGroup, dataGraph, removed);
+
+				statementsNotMatchingPredicateList = UnionNode.getInstance(statementsNotMatchingPredicateList, removed);
+
+			}
+
+			// union and remove duplicates
+			PlanNode unique = Unique.getInstance(statementsNotMatchingPredicateList, false);
 
 			// this should now be targets that are not valid
-			PlanNode extend = effectiveTarget.extend(targetFilter, connectionsGroup,
+			PlanNode extend = effectiveTarget.extend(unique, connectionsGroup,
 					dataGraph,
 					scope, EffectiveTarget.Extend.left, false, null);
 
-			return UnionNode.getInstance(extend, effectiveTarget.getPlanNode(connectionsGroup,
-					dataGraph, scope, true, null));
+			return extend;
 
 		case propertyShape:
 			Path path = getTargetChain().getPath().get();
