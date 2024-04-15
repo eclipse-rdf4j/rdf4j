@@ -112,7 +112,7 @@ public class RSXTargetShape extends Target {
 		// TODO: this is a slow way to solve this problem! We should use bulk operations.
 		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), dataGraph, parent, sparqlFragment,
 				variable,
-				ValidationTuple::getActiveTarget).getTrueNode(UnBufferedPlanNode.class);
+				ValidationTuple::getActiveTarget, null).getTrueNode(UnBufferedPlanNode.class);
 	}
 
 	@Override

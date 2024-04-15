@@ -35,12 +35,12 @@ public class DatatypeFilter extends FilterPlanNode {
 	}
 
 	@Override
-	boolean checkTuple(ValidationTuple t) {
-		if (!(t.getValue().isLiteral())) {
+	boolean checkTuple(Reference t) {
+		if (!(t.get().getValue().isLiteral())) {
 			return false;
 		}
 
-		Literal literal = (Literal) t.getValue();
+		Literal literal = (Literal) t.get().getValue();
 		if (xsdDatatype != null) {
 			if (literal.getCoreDatatype() == xsdDatatype) {
 				return XMLDatatypeUtil.isValidValue(literal.stringValue(), xsdDatatype);

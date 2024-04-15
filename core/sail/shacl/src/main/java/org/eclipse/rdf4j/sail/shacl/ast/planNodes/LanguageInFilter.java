@@ -35,12 +35,12 @@ public class LanguageInFilter extends FilterPlanNode {
 	}
 
 	@Override
-	boolean checkTuple(ValidationTuple t) {
-		if (!(t.getValue().isLiteral())) {
+	boolean checkTuple(Reference t) {
+		if (!(t.get().getValue().isLiteral())) {
 			return false;
 		}
 
-		Optional<String> language = ((Literal) t.getValue()).getLanguage();
+		Optional<String> language = ((Literal) t.get().getValue()).getLanguage();
 		if (!language.isPresent()) {
 			return false;
 		}

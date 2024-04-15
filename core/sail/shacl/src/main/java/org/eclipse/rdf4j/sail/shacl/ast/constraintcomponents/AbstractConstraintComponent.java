@@ -174,8 +174,4 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 		return allTargets;
 	}
 
-	@Override
-	public boolean overrideValidationReport() {
-		return false;
-	}
 }

@@ -14,9 +14,11 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -41,12 +43,14 @@ public class UnorderedSelect implements PlanNode {
 	private final Value object;
 	private final Resource[] dataGraph;
 	private final BiFunction<Statement, Resource[], ValidationTuple> mapper;
+	private final Function<Statement, Boolean> filter;
 
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public UnorderedSelect(SailConnection connection, Resource subject, IRI predicate, Value object,
-			Resource[] dataGraph, BiFunction<Statement, Resource[], ValidationTuple> mapper) {
+			Resource[] dataGraph, BiFunction<Statement, Resource[], ValidationTuple> mapper,
+			Function<Statement, Boolean> filter) {
 		this.connection = connection;
 		assert this.connection != null;
 		this.subject = subject;
@@ -54,6 +58,7 @@ public class UnorderedSelect implements PlanNode {
 		this.object = object;
 		this.dataGraph = dataGraph;
 		this.mapper = mapper;
+		this.filter = filter;
 	}
 
 	@Override
@@ -65,7 +70,22 @@ public class UnorderedSelect implements PlanNode {
 			@Override
 			protected void init() {
 				assert statements == null;
-				statements = connection.getStatements(subject, predicate, object, true, dataGraph);
+				if (filter != null) {
+					statements = new FilterIteration<Statement>(
+							connection.getStatements(subject, predicate, object, true, dataGraph)) {
+						@Override
+						protected boolean accept(Statement st) {
+							return filter.apply(st);
+						}
+
+						@Override
+						protected void handleClose() {
+
+						}
+					};
+				} else {
+					statements = connection.getStatements(subject, predicate, object, true, dataGraph);
+				}
 			}
 
 			@Override
@@ -162,14 +182,16 @@ public class UnorderedSelect implements PlanNode {
 					Objects.equals(predicate, that.predicate) &&
 					Objects.equals(object, that.object) &&
 					Arrays.equals(dataGraph, that.dataGraph) &&
-					mapper.equals(that.mapper);
+					mapper.equals(that.mapper) &&
+					Objects.equals(filter, that.filter);
 		} else {
 			return Objects.equals(connection, that.connection) &&
 					Objects.equals(subject, that.subject) &&
 					Objects.equals(predicate, that.predicate) &&
 					Objects.equals(object, that.object) &&
 					Arrays.equals(dataGraph, that.dataGraph) &&
-					mapper.equals(that.mapper);
+					mapper.equals(that.mapper) &&
+					Objects.equals(filter, that.filter);
 		}
 
 	}

@@ -54,8 +54,6 @@ import org.junit.jupiter.params.provider.MethodSource;
 public class W3cComplianceTest {
 
 	private final static Set<String> TESTS_FAILING_DUE_TO_MISSING_FEATURES_FROM_THE_SPEC = Set.of(
-			"/core/node/closed-001.ttl",
-			"/core/node/closed-002.ttl",
 			"/core/node/xone-001.ttl",
 			"/core/node/xone-duplicate.ttl",
 			"/core/path/path-complex-001.ttl",

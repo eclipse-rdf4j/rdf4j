@@ -110,7 +110,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				if (connectionsGroup.getStats().hasRemoved()) {
 					PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
 							clazz, validationSettings.getDataGraph(),
-							UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));
+							UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape), null);
 
 					deletedTypes = getTargetChain()
 							.getEffectiveTarget(Scope.nodeShape,
@@ -176,7 +176,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				if (connectionsGroup.getStats().hasRemoved()) {
 					PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
 							clazz, validationSettings.getDataGraph(),
-							UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope));
+							UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope), null);
 					deletedTypes = getTargetChain()
 							.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
 									stableRandomVariableProvider)
@@ -186,7 +186,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 									stableRandomVariableProvider)
 							.extend(deletedTypes, connectionsGroup, validationSettings.getDataGraph(), scope,
 									EffectiveTarget.Extend.left, false, null);
-					addedTargets = UnionNode.getInstance(addedTargets, new TrimToTarget(deletedTypes));
+					addedTargets = UnionNode.getInstance(addedTargets, deletedTypes);
 				}
 			}
 
@@ -216,7 +216,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			// removed type statements that match clazz could affect sh:or
 			if (connectionsGroup.getStats().hasRemoved()) {
 				PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
-						clazz, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));
+						clazz, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape),
+						null);
 				deletedTypes = getTargetChain()
 						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
 								stableRandomVariableProvider)
@@ -233,7 +234,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			// added type statements that match clazz could affect sh:not
 			if (connectionsGroup.getStats().hasAdded()) {
 				PlanNode addedTypes = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, RDF.TYPE,
-						clazz, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));
+						clazz, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape),
+						null);
 				addedTypes = getTargetChain()
 						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
 								stableRandomVariableProvider)
@@ -254,7 +256,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 		// removed type statements that match clazz could affect sh:or
 		if (connectionsGroup.getStats().hasRemoved()) {
 			PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE, clazz,
-					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));
+					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape), null);
 			deletedTypes = getTargetChain()
 					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
 							stableRandomVariableProvider)
@@ -271,7 +273,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 		// added type statements that match clazz could affect sh:not
 		if (connectionsGroup.getStats().hasAdded()) {
 			PlanNode addedTypes = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, RDF.TYPE, clazz,
-					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));
+					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape), null);
 			addedTypes = getTargetChain()
 					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
 							stableRandomVariableProvider)

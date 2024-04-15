@@ -1,0 +1,42 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+
+[] a sh:ValidationReport;
+  rdf4j:truncated false;
+  sh:conforms false;
+  sh:result [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:validPerson1;
+      sh:resultPath ex:notAllowedProperty;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:ClosedConstraintComponent;
+      sh:sourceShape ex:Person;
+      sh:value "This property is not allowed"
+    ] .
+
+ex:Person a sh:NodeShape;
+  sh:closed true;
+  sh:ignoredProperties (ex:thisPropertyIsIgnored ex:thisPropertyIsAlsoIgnored);
+  sh:property [ a sh:PropertyShape;
+      sh:maxCount 1;
+      sh:minCount 1;
+      sh:path ex:name
+    ], [ a sh:PropertyShape;
+      sh:minCount 1;
+      sh:minInclusive 18;
+      sh:path ex:age
+    ], [ a sh:PropertyShape;
+      sh:maxCount 1;
+      sh:path [
+          sh:alternativePath (ex:father ex:mother)
+        ]
+    ], [ a sh:PropertyShape;
+      sh:path rdf:type
+    ];
+  sh:targetClass ex:Person .

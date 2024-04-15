@@ -240,11 +240,6 @@ public class NodeShape extends Shape {
 	}
 
 	@Override
-	public boolean overrideValidationReport() {
-		return false;
-	}
-
-	@Override
 	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(Variable<Value> subject,
 			Variable<Value> object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,

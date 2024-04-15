@@ -582,6 +582,18 @@ abstract public class AbstractShaclTest {
 			return;
 		}
 
+		// the TopBraid SHACL API doesn't agree with other implementations on how sh:closed should work in a property
+		// shape
+		if (testCase.testCasePath.startsWith("test-cases/closed/propertyShape/")) {
+			return;
+		}
+
+		// the TopBraid SHACL API doesn't agree with other implementations on how sh:closed should work in a property
+		// shape
+		if (testCase.testCasePath.startsWith("test-cases/closed/notPropertyShape/")) {
+			return;
+		}
+
 		printTestCase(testCase);
 
 		Dataset shaclDataset = DatasetFactory.create();
@@ -622,66 +634,62 @@ abstract public class AbstractShaclTest {
 
 		}
 
-		org.apache.jena.rdf.model.Resource report = ValidationUtil.validateModel(data, shacl, true);
+		org.apache.jena.rdf.model.Resource report = ValidationUtil.validateModel(data, shacl, false);
 
 		org.apache.jena.rdf.model.Model model = report.getModel();
 		model.setNsPrefix("sh", "http://www.w3.org/ns/shacl#");
 
 		boolean conforms = report.getProperty(SH.conforms).getBoolean();
 
-		if (testCase.expectedResult == ExpectedResult.valid) {
-			Assertions.assertTrue(conforms, "Expected test case to conform");
-		} else {
-			Assertions.assertFalse(conforms, "Expected test case to not conform");
+		try {
+			InputStream resourceAsStream = getResourceAsStream(testCase.getTestCasePath() + "report.ttl");
+			Model validationReportActual = extractValidationReport(getModel(resourceAsStream));
 
-			try {
-				Model validationReportExpected = Rio.parse(new StringReader(ModelPrinter.get().print(model)),
-						RDFFormat.TRIG);
+			Model validationReportExpected = Rio.parse(new StringReader(ModelPrinter.get().print(model)),
+					RDFFormat.TRIG);
 
-				try {
+			validationReportExpected = extractValidationReport(validationReportExpected);
 
-					InputStream resourceAsStream = getResourceAsStream(testCase.getTestCasePath() + "report.ttl");
-					Model validationReportActual = extractValidationReport(getModel(resourceAsStream));
-
-					validationReportExpected = extractValidationReport(validationReportExpected);
-
-					for (Model validationReport : Arrays.asList(validationReportActual, validationReportExpected)) {
-						validationReport.remove(null, RDF4J.TRUNCATED, null);
-						validationReport.remove(null, RSX.dataGraph, null);
-						validationReport.remove(null, RSX.shapesGraph, null);
-						validationReport.remove(null, RSX.actualPairwisePath, null);
-
-						// We don't have any default values for sh:resultMessage
-						validationReport.remove(null, SHACL.RESULT_MESSAGE, null);
-
-						// Remove the contents fo the SPARQL constraint since the reference implementation only seems to
-						// add the Resource of the SPARQL constraint.
-						ArrayList<Statement> sparqlConstraints = Lists
-								.newArrayList(validationReport.getStatements(null, RDF.TYPE, SHACL.SPARQL_CONSTRAINT));
-						for (Statement sparqlConstraint : sparqlConstraints) {
-							validationReport.remove(sparqlConstraint.getSubject(), null, null);
-						}
-
-					}
-
-					validationReportActual = new ValidationReportBnodeDuplicator(validationReportActual).getModel();
-					validationReportExpected = new ValidationReportBnodeDuplicator(validationReportExpected).getModel();
-
-					if (!Models.isomorphic(validationReportActual, validationReportExpected)) {
-
-						String validationReportExpectedString = modelToString(validationReportExpected,
-								RDFFormat.TURTLE);
-						String validationReportActualString = modelToString(validationReportActual, RDFFormat.TURTLE);
-						Assertions.assertEquals(validationReportExpectedString, validationReportActualString);
-					}
-				} catch (IOException e) {
-					throw new RuntimeException(e);
-				}
-
-			} catch (IOException e) {
-				throw new IllegalStateException();
+			if (testCase.expectedResult == ExpectedResult.valid) {
+				Assertions.assertTrue(conforms,
+						"Expected test case to conform\n" + modelToString(validationReportExpected, RDFFormat.TURTLE));
+			} else {
+				Assertions.assertFalse(conforms, "Expected test case to not conform\n"
+						+ modelToString(validationReportExpected, RDFFormat.TURTLE));
 			}
 
+			for (Model validationReport : Arrays.asList(validationReportActual, validationReportExpected)) {
+				validationReport.remove(null, RDF4J.TRUNCATED, null);
+				validationReport.remove(null, RSX.dataGraph, null);
+				validationReport.remove(null, RSX.shapesGraph, null);
+				validationReport.remove(null, RSX.actualPairwisePath, null);
+
+				// We don't have any default values for sh:resultMessage
+				validationReport.remove(null, SHACL.RESULT_MESSAGE, null);
+
+				// Remove the contents fo the SPARQL constraint since the reference implementation only seems to
+				// add the Resource of the SPARQL constraint.
+				ArrayList<Statement> sparqlConstraints = Lists
+						.newArrayList(validationReport.getStatements(null, RDF.TYPE, SHACL.SPARQL_CONSTRAINT));
+				for (Statement sparqlConstraint : sparqlConstraints) {
+					validationReport.remove(sparqlConstraint.getSubject(), null, null);
+				}
+
+			}
+
+			validationReportActual = new ValidationReportBnodeDuplicator(validationReportActual).getModel();
+			validationReportExpected = new ValidationReportBnodeDuplicator(validationReportExpected).getModel();
+
+			if (!Models.isomorphic(validationReportActual, validationReportExpected)) {
+
+				String validationReportExpectedString = modelToString(validationReportExpected,
+						RDFFormat.TURTLE);
+				String validationReportActualString = modelToString(validationReportActual, RDFFormat.TURTLE);
+				Assertions.assertEquals(validationReportExpectedString, validationReportActualString);
+			}
+
+		} catch (IOException e) {
+			throw new IllegalStateException();
 		}
 
 	}
@@ -707,7 +715,7 @@ abstract public class AbstractShaclTest {
 			throw new IllegalStateException(e);
 		}
 
-		org.apache.jena.rdf.model.Resource report = ValidationUtil.validateModel(shacl, w3cShacl, true);
+		org.apache.jena.rdf.model.Resource report = ValidationUtil.validateModel(shacl, w3cShacl, false);
 
 		boolean conforms = report.getProperty(SH.conforms).getBoolean();
 

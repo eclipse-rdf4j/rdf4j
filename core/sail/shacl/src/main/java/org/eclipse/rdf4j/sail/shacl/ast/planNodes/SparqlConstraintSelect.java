@@ -124,7 +124,7 @@ public class SparqlConstraintSelect implements PlanNode {
 						Value value = bindingSet.getValue("value");
 						Value path = bindingSet.getValue("path");
 
-						if (scope == ConstraintComponent.Scope.nodeShape && produceValidationReports) {
+						if (scope == ConstraintComponent.Scope.nodeShape) {
 							next = nextTarget.addValidationResult(t -> {
 								ValidationResult validationResult = new ValidationResult(t.getActiveTarget(), value,
 										shape,
@@ -137,7 +137,15 @@ public class SparqlConstraintSelect implements PlanNode {
 						} else {
 							ValidationTuple validationTuple = new ValidationTuple(nextTarget.getActiveTarget(), value,
 									scope, true, nextTarget.getContexts());
-							next = ValidationTupleHelper.join(nextTarget, validationTuple);
+							next = ValidationTupleHelper.join(nextTarget, validationTuple).addValidationResult(t -> {
+								ValidationResult validationResult = new ValidationResult(t.getActiveTarget(), value,
+										shape,
+										constraintComponent, shape.getSeverity(),
+										ConstraintComponent.Scope.propertyShape, t.getContexts(),
+										shape.getContexts());
+								validationResult.setPathIri(path);
+								return validationResult;
+							});
 						}
 					} else {
 						results.close();

@@ -70,12 +70,9 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 
 					assert !validationResults.isEmpty();
 
-					if (!validationResults.isEmpty()) {
-						ValidationResult validationResult1 = validationResults.get(validationResults.size() - 1);
-						validationResultsRet.add(validationResult1);
+					validationResultsRet.addAll(validationResults);
 
-						counter++;
-					}
+					counter++;
 				}
 
 				next = validationResultsRet.iterator();

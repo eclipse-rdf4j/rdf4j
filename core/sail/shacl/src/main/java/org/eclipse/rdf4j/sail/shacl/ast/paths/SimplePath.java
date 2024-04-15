@@ -49,7 +49,7 @@ public class SimplePath extends Path {
 	public PlanNode getAllAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			PlanNodeWrapper planNodeWrapper) {
 		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, predicate, null,
-				dataGraph, UnorderedSelect.Mapper.SubjectObjectPropertyShapeMapper.getFunction());
+				dataGraph, UnorderedSelect.Mapper.SubjectObjectPropertyShapeMapper.getFunction(), null);
 
 		if (planNodeWrapper != null) {
 			unorderedSelect = planNodeWrapper.apply(unorderedSelect);
