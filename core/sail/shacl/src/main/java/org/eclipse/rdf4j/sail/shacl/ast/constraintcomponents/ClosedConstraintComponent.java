@@ -18,6 +18,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -34,6 +35,8 @@ import org.eclipse.rdf4j.sail.shacl.ast.ShaclAstLists;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
+import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.SimplePath;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedSplitter;
@@ -432,6 +435,103 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 		}
 
 		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
+			ValidationSettings validationSettings, boolean negatePlan, boolean negateChildren, Scope scope) {
+		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
+
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(scope,
+				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);
+		String query = effectiveTarget.getQuery(false);
+
+		StatementMatcher.Variable<Value> predicateVariable = stableRandomVariableProvider.next();
+		StatementMatcher.Variable<Value> objectVariable = stableRandomVariableProvider.next();
+
+		StatementMatcher.Variable<Value> value;
+
+		if (scope == Scope.nodeShape) {
+
+			value = null;
+
+			var target = effectiveTarget.getTargetVar();
+
+			query += "\n" + getFilter(target, predicateVariable, objectVariable);
+
+		} else {
+			value = new StatementMatcher.Variable<>("value");
+
+			SparqlFragment sparqlFragment = getTargetChain().getPath()
+					.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
+							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()))
+					.orElseThrow(IllegalStateException::new);
+
+			String pathQuery = sparqlFragment.getFragment();
+
+			query += "\n" + pathQuery;
+			query += "\n" + getFilter(value, predicateVariable, objectVariable);
+		}
+
+		var allTargetVariables = effectiveTarget.getAllTargetVariables();
+
+		ValidationQuery validationQuery = new ValidationQuery(getTargetChain().getNamespaces(), query,
+				allTargetVariables, value, scope, this,
+				null, null);
+
+		if (produceValidationReports) {
+			validationQuery = validationQuery
+					.withShape(shape)
+					.withSeverity(shape.getSeverity());
+
+			validationQuery.makeCurrentStateValidationReport();
+
+			validationQuery.setValidationResultGenerator(List.of(predicateVariable, objectVariable),
+					new ValidationQuery.ValidationResultGenerator() {
+						@Override
+						public Function<ValidationTuple, ValidationResult> getValidationTupleValidationResultFunction(
+								ValidationQuery validationQuery, Resource[] shapesGraphs, BindingSet bindings) {
+							Function<ValidationTuple, ValidationResult> validationResultFunction = t -> {
+								ValidationResult validationResult = new ValidationResult(t.getActiveTarget(),
+										bindings.getValue(objectVariable.getName()), validationQuery.getShape(),
+										validationQuery.getConstraintComponent_validationReport(),
+										validationQuery.getSeverity(), t.getScope(), t.getContexts(), shapesGraphs);
+								validationResult.setPathIri(bindings.getValue(predicateVariable.getName()));
+								return validationResult;
+							};
+							return validationResultFunction;
+						}
+					});
+
+		}
+
+		return validationQuery;
+	}
+
+	private String getFilter(StatementMatcher.Variable<Value> target,
+			StatementMatcher.Variable<Value> predicateVariable, StatementMatcher.Variable<Value> objectVariable) {
+
+		SparqlFragment bgp = SparqlFragment.bgp(List.of(),
+				target.asSparqlVariable() + " " + predicateVariable.asSparqlVariable() + " "
+						+ objectVariable.asSparqlVariable() + ".",
+				List.of());
+		String notInSparqlFilter = "FILTER( " + predicateVariable.asSparqlVariable() + " NOT IN( "
+				+ allAllowedPredicates.stream().map(p -> "<" + p.toString() + ">").collect(Collectors.joining(", "))
+				+ " ) )";
+		SparqlFragment sparqlFragmentFilter = SparqlFragment.bgp(List.of(), notInSparqlFilter, List.of());
+		SparqlFragment sparqlFragment = SparqlFragment.join(List.of(bgp, sparqlFragmentFilter));
+
+		return sparqlFragment.getFragment();
+	}
+
+	@Override
+	public ValidationApproach getPreferredValidationApproach(ConnectionsGroup connectionsGroup) {
+		return super.getPreferredValidationApproach(connectionsGroup);
+	}
+
+	@Override
+	public ValidationApproach getOptimalBulkValidationApproach() {
+		return ValidationApproach.SPARQL;
 	}
 
 	@Override
