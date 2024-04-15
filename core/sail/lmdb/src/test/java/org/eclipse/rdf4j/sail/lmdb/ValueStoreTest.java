@@ -152,22 +152,23 @@ public class ValueStoreTest {
 
 		valueStore.startTransaction();
 		List<Long> datatypeIds = new LinkedList<>();
-		for (int i = 1; i < types.length; i++) {
+		for (int i = 0; i < types.length; i++) {
 			datatypeIds.add(valueStore.storeValue(types[i]));
 		}
 		valueStore.commit();
 
 		valueStore.startTransaction();
 		valueStore.gcIds(Collections.singleton(values[0].getInternalID()), new HashSet<>());
-		valueStore.gcIds(datatypeIds, new HashSet<>());
+		valueStore.gcIds(datatypeIds.subList(1, datatypeIds.size() - 1), new HashSet<>());
 		valueStore.commit();
 
 		// close and recreate store
 		valueStore.close();
 		valueStore = createValueStore();
 
+		// the first value is directly GCed
 		assertNull(valueStore.getValue(values[0].getInternalID()));
-		// the first datatype is not directly garbage collected and must not be
+		// the first datatype is not directly GCed and must not be
 		// removed from the store if the related literal is removed
 		assertNotNull(valueStore.getValue(datatypeIds.remove(0)));
 
