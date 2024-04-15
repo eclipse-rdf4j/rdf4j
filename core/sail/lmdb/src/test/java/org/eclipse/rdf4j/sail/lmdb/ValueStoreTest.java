@@ -87,6 +87,7 @@ public class ValueStoreTest {
 
 		for (int i = 0; i < values.length; i++) {
 			Assert.assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(values[i]));
+			// access to value must be ensured as long as revision is not invalidated
 			Assert.assertTrue(valueStore.getValue(ids[i]) != null);
 		}
 
@@ -99,7 +100,8 @@ public class ValueStoreTest {
 
 		for (int i = 0; i < values.length; i++) {
 			Assert.assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(values[i]));
-			Assert.assertTrue(valueStore.getValue(ids[i]) != null);
+			// value should be removed after invalidating the revision
+			Assert.assertTrue(valueStore.getValue(ids[i]) == null);
 		}
 
 		valueStore.startTransaction(true);
@@ -161,22 +163,23 @@ public class ValueStoreTest {
 
 		valueStore.startTransaction(true);
 		List<Long> datatypeIds = new LinkedList<>();
-		for (int i = 1; i < types.length; i++) {
+		for (int i = 0; i < types.length; i++) {
 			datatypeIds.add(valueStore.storeValue(types[i]));
 		}
 		valueStore.commit();
 
 		valueStore.startTransaction(true);
 		valueStore.gcIds(Collections.singleton(values[0].getInternalID()), new HashSet<>());
-		valueStore.gcIds(datatypeIds, new HashSet<>());
+		valueStore.gcIds(datatypeIds.subList(1, datatypeIds.size() - 1), new HashSet<>());
 		valueStore.commit();
 
 		// close and recreate store
 		valueStore.close();
 		valueStore = createValueStore();
 
+		// the first value is directly GCed
 		assertNull(valueStore.getValue(values[0].getInternalID()));
-		// the first datatype is not directly garbage collected and must not be
+		// the first datatype is not directly GCed and must not be
 		// removed from the store if the related literal is removed
 		assertNotNull(valueStore.getValue(datatypeIds.remove(0)));
 
