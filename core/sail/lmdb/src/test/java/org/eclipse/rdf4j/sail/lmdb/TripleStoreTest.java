@@ -11,8 +11,13 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.io.File;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -63,6 +68,25 @@ public class TripleStoreTest {
 			assertEquals("Store should have 1 explicit statements", 1,
 					count(tripleStore.getTriples(txn, 1, 2, 3, 1, true)));
 		}
+	}
+
+	@Test
+	public void testGc() throws Exception {
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(1, 2, 3, 1, true);
+		tripleStore.storeTriple(1, 2, 4, 1, true);
+		tripleStore.storeTriple(1, 2, 5, 1, true);
+		tripleStore.storeTriple(1, 6, 7, 1, true);
+		tripleStore.storeTriple(1, 6, 7, 8, true);
+		Set<Long> removed = new HashSet<>();
+		tripleStore.removeTriplesByContext(1, 6, -1, -1, true, quad -> {
+			for (Long c : quad) {
+				removed.add(c);
+			}
+		});
+		tripleStore.commit();
+		tripleStore.filterUsedIds(removed);
+		assertEquals(Arrays.asList(6L, 7L, 8L), removed.stream().sorted().collect(Collectors.toList()));
 	}
 
 	@AfterEach

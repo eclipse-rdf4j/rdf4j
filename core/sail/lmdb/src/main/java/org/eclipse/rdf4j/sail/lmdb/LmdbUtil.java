@@ -51,10 +51,11 @@ final class LmdbUtil {
 	private LmdbUtil() {
 	}
 
-	static void E(int rc) throws IOException {
+	static int E(int rc) throws IOException {
 		if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
 			throw new IOException(mdb_strerror(rc));
 		}
+		return rc;
 	}
 
 	static <T> T readTransaction(long env, Transaction<T> transaction) throws IOException {
