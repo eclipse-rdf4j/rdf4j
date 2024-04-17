@@ -60,6 +60,12 @@ import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
  *   # optionally define data config
  *   #fedx:fedxConfig "fedxConfig.prop" ;
  *   fedx:dataConfig "dataConfig.ttl" ;
+ *
+ *   # optionally define FedXConfig overrides
+ *   fedx:config [
+ *      fedx:sourceSelectionCacheSpec "maximumSize=0" ;
+ *      fedx:enforceMaxQueryTime 30 ;
+ *   ]
  * ];
  * rep:repositoryID "fedx" ;
  * rdfs:label "FedX Federation" .
@@ -86,6 +92,11 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 	 * IRI of the property pointing to the FedX data config
 	 */
 	public static final IRI DATA_CONFIG = vf.createIRI(NAMESPACE, "dataConfig");
+
+	/**
+	 * IRI of the property pointing to the {@link FedXConfig}
+	 */
+	public static final IRI FEDX_CONFIG = vf.createIRI(NAMESPACE, "config");
 
 	/**
 	 * IRI of the property pointing to a federation member node
@@ -152,6 +163,11 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 			m.add(implNode, DATA_CONFIG, vf.createLiteral(getDataConfig()));
 		}
 
+		if (getConfig() != null) {
+			Resource confNode = FedXConfigParser.export(getConfig(), m);
+			m.add(implNode, FEDX_CONFIG, confNode);
+		}
+
 		if (getMembers() != null) {
 
 			Model members = getMembers();
@@ -186,6 +202,14 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 		try {
 			Models.objectLiteral(m.getStatements(implNode, DATA_CONFIG, null))
 					.ifPresent(value -> setDataConfig(value.stringValue()));
+
+			Models.objectResource(m.getStatements(implNode, FEDX_CONFIG, null))
+					.ifPresent(res -> {
+						if (getConfig() == null) {
+							setConfig(new FedXConfig());
+						}
+						setConfig(FedXConfigParser.parse(getConfig(), m, res));
+					});
 
 			Set<Value> memberNodes = m.filter(implNode, MEMBER, null).objects();
 			if (!memberNodes.isEmpty()) {

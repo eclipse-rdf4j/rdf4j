@@ -1,0 +1,17 @@
+#
+# RDF4J configuration template for a FedX Repository with FedXConfig overrides
+#
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix rep: <http://www.openrdf.org/config/repository#>.
+@prefix fedx: <http://rdf4j.org/config/federation#>.
+
+[] a rep:Repository ;
+   rep:repositoryImpl [
+      rep:repositoryType "fedx:FedXRepository" ;
+      fedx:config [
+         fedx:enforceMaxQueryTime 42 ;
+         fedx:enableMonitoring true ;
+      ];
+   ];
+   rep:repositoryID "my-federation" ;
+   rdfs:label "FedX Federation" .
