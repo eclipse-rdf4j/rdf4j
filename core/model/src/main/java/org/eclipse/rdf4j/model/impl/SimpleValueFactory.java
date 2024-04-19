@@ -85,7 +85,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 
 	@Override
 	public IRI createIRI(String namespace, String localName) {
-		return createIRI(namespace + localName);
+		return new SimpleIRI(namespace, localName);
 	}
 
 	@Override
