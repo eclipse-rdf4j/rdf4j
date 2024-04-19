@@ -725,10 +725,7 @@ public class TurtleWriterTest extends AbstractTurtleWriterTest {
 	}
 
 	@Test
-<<<<<<< HEAD
-	public void testIgnoreAbbreviateNumbers() {
-=======
-	public void testIriNamespace() throws Exception {
+	public void testIriNamespace() {
 		Model model = new DynamicModelFactory().createEmptyModel();
 		String prefix = "foo-bar";
 		String ns = "foo:this.is.my.bar.";
@@ -742,8 +739,7 @@ public class TurtleWriterTest extends AbstractTurtleWriterTest {
 	}
 
 	@Test
-	public void testIgnoreAbbreviateNumbers() throws Exception {
->>>>>>> main
+	public void testIgnoreAbbreviateNumbers() {
 		StringWriter sw = new StringWriter();
 
 		WriterConfig config = new WriterConfig();
