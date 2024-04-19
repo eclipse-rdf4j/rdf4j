@@ -157,17 +157,47 @@ public class JSONLDSettings {
 			"org.eclipse.rdf4j.rio.jsonld.hierarchical_view", "Hierarchical representation of the JSON", Boolean.FALSE);
 
 	/**
-	 *
+	 * Whitelist of remote/local resources that the JSON-LD parser can retrieve. Set of URIs as strings.
+	 * <p>
+	 * Default:
+	 * {@code Set.of("http://www.w3.org/ns/anno.jsonld", "http://www.w3.org/ns/activitystreams.jsonld", "http://www.w3.org/ns/ldp.jsonld", "http://www.w3.org/ns/oa.jsonld", "http://www.w3.org/ns/hydra/context.jsonld", "http://schema.org/", "https://w3id.org/security/v1", "https://w3c.github.io/json-ld-rc/context.jsonld", "https://www.w3.org/2018/credentials/v1", "https://health-lifesci.schema.org/", "https://auto.schema.org/", "https://bib.schema.org/", "http://xmlns.com/foaf/spec/index.jsonld", "https://pending.schema.org/", "https://schema.org/", "https://schema.org/docs/jsonldcontext.jsonld", "https://schema.org/version/latest/schemaorg-current-https.jsonld", "https://schema.org/version/latest/schemaorg-all-http.jsonld", "https://schema.org/version/latest/schemaorg-all-https.jsonld", "https://schema.org/version/latest/schemaorg-current-http.jsonld", "https://schema.org/version/latest/schemaorg-all.jsonld", "https://schema.org/version/latest/schemaorg-current.jsonld", "https://project-open-data.cio.gov/v1.1/schema/catalog.jsonld", "https://geojson.org/geojson-ld/geojson-context.jsonld", "https://www.w3.org/2019/wot/td/v1");
 	 *
 	 */
 	public static final RioSetting<Set<String>> WHITELIST = new RioSettingImpl<>(
 			"org.eclipse.rdf4j.rio.jsonld_whitelist",
 			"Whitelist of remote/local resources that the JSON-LD parser can retrieve. Set of URIs as strings.",
-			Set.of());
+			Set.of(
+					"http://www.w3.org/ns/anno.jsonld",
+					"http://www.w3.org/ns/activitystreams.jsonld",
+					"http://www.w3.org/ns/ldp.jsonld",
+					"http://www.w3.org/ns/oa.jsonld",
+					"http://www.w3.org/ns/hydra/context.jsonld",
+					"http://schema.org/",
+					"https://w3id.org/security/v1",
+					"https://w3c.github.io/json-ld-rc/context.jsonld",
+					"https://www.w3.org/2018/credentials/v1",
+					"https://health-lifesci.schema.org/",
+					"https://auto.schema.org/",
+					"https://bib.schema.org/",
+					"http://xmlns.com/foaf/spec/index.jsonld",
+					"https://pending.schema.org/",
+					"https://schema.org/",
+					"https://schema.org/docs/jsonldcontext.jsonld",
+					"https://schema.org/version/latest/schemaorg-current-https.jsonld",
+					"https://schema.org/version/latest/schemaorg-all-http.jsonld",
+					"https://schema.org/version/latest/schemaorg-all-https.jsonld",
+					"https://schema.org/version/latest/schemaorg-current-http.jsonld",
+					"https://schema.org/version/latest/schemaorg-all.jsonld",
+					"https://schema.org/version/latest/schemaorg-current.jsonld",
+					"https://project-open-data.cio.gov/v1.1/schema/catalog.jsonld",
+					"https://geojson.org/geojson-ld/geojson-context.jsonld",
+					"https://www.w3.org/2019/wot/td/v1"
+			));
 
 	/**
-	 *
-	 *
+	 * Secure mode only allows loading remote/local resources (ex. context from url) that are whitelisted.
+	 * <p>
+	 * Default: true
 	 */
 	public static final RioSetting<Boolean> SECURE_MODE = new RioSettingImpl<>(
 			"org.eclipse.rdf4j.rio.jsonld_secure_mode",
@@ -175,8 +205,11 @@ public class JSONLDSettings {
 			Boolean.TRUE);
 
 	/**
-	 *
-	 *
+	 * The document loader cache is enabled by default. All loaded documents, such as remote contexts, are cached for 1
+	 * hour, or until the cache is full. The cache holds up to 1000 documents. The cache is shared between all
+	 * JSONLDParsers. The cache can be disabled by setting this value to false.
+	 * <p>
+	 * Default: true
 	 */
 	public static final RioSetting<Boolean> DOCUMENT_LOADER_CACHE = new RioSettingImpl<>(
 			"org.eclipse.rdf4j.rio.jsonld_document_loader_cache",
