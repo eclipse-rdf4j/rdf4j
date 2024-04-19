@@ -10,6 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
+import java.util.List;
+import java.util.Set;
+
 import org.eclipse.rdf4j.rio.RioSetting;
 
 import com.github.jsonldjava.core.DocumentLoader;
@@ -152,6 +155,33 @@ public class JSONLDSettings {
 	 */
 	public static final RioSetting<Boolean> HIERARCHICAL_VIEW = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.jsonld.hierarchical_view", "Hierarchical representation of the JSON", Boolean.FALSE);
+
+	/**
+	 *
+	 *
+	 */
+	public static final RioSetting<Set<String>> WHITELIST = new RioSettingImpl<>(
+			"org.eclipse.rdf4j.rio.jsonld_whitelist",
+			"Whitelist of remote/local resources that the JSON-LD parser can retrieve. Set of URIs as strings.",
+			Set.of());
+
+	/**
+	 *
+	 *
+	 */
+	public static final RioSetting<Boolean> SECURE_MODE = new RioSettingImpl<>(
+			"org.eclipse.rdf4j.rio.jsonld_secure_mode",
+			"Secure mode only allows loading remote/local resources (ex. context from url) that are whitelisted.",
+			Boolean.TRUE);
+
+	/**
+	 *
+	 *
+	 */
+	public static final RioSetting<Boolean> DOCUMENT_LOADER_CACHE = new RioSettingImpl<>(
+			"org.eclipse.rdf4j.rio.jsonld_document_loader_cache",
+			"The document loader cache is enabled by default. All loaded documents, such as remote contexts, are cached for 1 hour, or until the cache is full. The cache holds up to 1000 documents. The cache is shared between all JSONLDParsers. The cache can be disabled by setting this value to false.",
+			Boolean.TRUE);
 
 	/**
 	 * Private default constructor.

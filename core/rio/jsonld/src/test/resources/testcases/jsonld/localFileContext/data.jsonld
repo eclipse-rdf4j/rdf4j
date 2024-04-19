@@ -1,0 +1,9 @@
+{
+  "@context":  "file:./context.jsonld",
+
+    "@id":"http://example/peter",
+    "@type":"Person"
+
+
+
+}

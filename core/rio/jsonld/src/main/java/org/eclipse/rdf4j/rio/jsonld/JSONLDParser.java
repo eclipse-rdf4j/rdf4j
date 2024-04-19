@@ -10,13 +10,19 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.jsonld;
 
+import static org.eclipse.rdf4j.rio.helpers.JSONLDSettings.DOCUMENT_LOADER_CACHE;
+import static org.eclipse.rdf4j.rio.helpers.JSONLDSettings.SECURE_MODE;
+import static org.eclipse.rdf4j.rio.helpers.JSONLDSettings.WHITELIST;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.BiConsumer;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -126,11 +132,20 @@ public class JSONLDParser extends AbstractRDFParser {
 						BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES);
 			}
 
+			boolean secureMode = getParserConfig().get(SECURE_MODE);
+			boolean documentLoaderCache = getParserConfig().get(DOCUMENT_LOADER_CACHE);
+
+			Set<String> whitelist = getParserConfig().get(WHITELIST);
+
 			JsonLdOptions opts = new JsonLdOptions();
 			opts.setUriValidation(false);
 			opts.setExceptionOnWarning(getParserConfig().get(JSONLDSettings.EXCEPTION_ON_WARNING));
 
 			Document context = getParserConfig().get(JSONLDSettings.EXPAND_CONTEXT);
+
+			DocumentLoader defaultDocumentLoader = opts.getDocumentLoader();
+			CachingDocumentLoader cachingDocumentLoader = new CachingDocumentLoader(secureMode, whitelist,
+					documentLoaderCache);
 
 			if (context != null) {
 
@@ -142,20 +157,19 @@ public class JSONLDParser extends AbstractRDFParser {
 						throw new RDFParseException("Expand context is not a valid JSON document");
 					}
 					opts.getContextCache().put(context.getDocumentUrl().toString(), jsonContent.get());
-					opts.setDocumentLoader(new DocumentLoader() {
-
-						private final DocumentLoader defaultDocumentLoader = SchemeRouter.defaultInstance();
-
-						@Override
-						public Document loadDocument(URI url, DocumentLoaderOptions options) throws JsonLdError {
-							if (url.equals(context.getDocumentUrl())) {
-								return context;
-							}
-							return defaultDocumentLoader.loadDocument(url, options);
+					opts.setDocumentLoader((uri, options) -> {
+						if (uri.equals(context.getDocumentUrl())) {
+							return context;
 						}
+
+						return cachingDocumentLoader.loadDocument(uri, options);
 					});
 				}
 
+			}
+
+			if (secureMode && opts.getDocumentLoader() == defaultDocumentLoader) {
+				opts.setDocumentLoader(cachingDocumentLoader);
 			}
 
 			if (baseURI != null && !baseURI.isEmpty()) {
