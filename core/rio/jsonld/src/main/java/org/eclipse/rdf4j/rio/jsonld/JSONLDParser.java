@@ -20,7 +20,6 @@ import java.io.Reader;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Collection;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -54,8 +53,6 @@ import no.hasmac.jsonld.document.Document;
 import no.hasmac.jsonld.document.JsonDocument;
 import no.hasmac.jsonld.lang.Keywords;
 import no.hasmac.jsonld.loader.DocumentLoader;
-import no.hasmac.jsonld.loader.DocumentLoaderOptions;
-import no.hasmac.jsonld.loader.SchemeRouter;
 import no.hasmac.rdf.RdfConsumer;
 import no.hasmac.rdf.RdfValueFactory;
 
