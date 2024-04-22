@@ -16,6 +16,7 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.transaction;
 import static org.eclipse.rdf4j.sail.lmdb.Varint.readListUnsigned;
 import static org.eclipse.rdf4j.sail.lmdb.Varint.writeListUnsigned;
+import static org.eclipse.rdf4j.sail.lmdb.Varint.writeUnsigned;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
@@ -1293,24 +1294,22 @@ class TripleStore implements Closeable {
 		}
 
 		void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
-			long[] values = new long[4];
 			for (int i = 0; i < fieldSeq.length; i++) {
 				switch (fieldSeq[i]) {
 				case 's':
-					values[i] = subj;
+					writeUnsigned(bb, subj);
 					break;
 				case 'p':
-					values[i] = pred;
+					writeUnsigned(bb, pred);
 					break;
 				case 'o':
-					values[i] = obj;
+					writeUnsigned(bb, obj);
 					break;
 				case 'c':
-					values[i] = context;
+					writeUnsigned(bb, context);
 					break;
 				}
 			}
-			writeListUnsigned(bb, values);
 		}
 
 		void keyToQuad(ByteBuffer key, long[] quad) {
