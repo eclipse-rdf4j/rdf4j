@@ -148,6 +148,19 @@ public class SourceSelectionMemoryCacheTest extends SPARQLBaseTest {
 		// source selection is cached, only from fetching data
 		Assertions.assertEquals(1, requestsForEndpoint(endpoints.get(0)));
 		Assertions.assertEquals(0, requestsForEndpoint(endpoints.get(1)));
+
+		// invalidate source selection cache
+		federationContext().getSourceSelectionCache().invalidate();
+
+		// re-run requests
+		monitoring().resetMonitoringInformation();
+		try (TupleQueryResult tqr = federationContext().getQueryManager().prepareTupleQuery(query).evaluate()) {
+			Assertions.assertEquals(2, Iterations.asList(tqr).size());
+		}
+
+		// source selection is non longer cached,
+		Assertions.assertEquals(2, requestsForEndpoint(endpoints.get(0)));
+		Assertions.assertEquals(1, requestsForEndpoint(endpoints.get(1)));
 	}
 
 	@Test
