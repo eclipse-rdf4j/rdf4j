@@ -260,6 +260,22 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 	}
 
 	@Override
+	public Queue<BindingSet> createBindingSetQueue(Supplier<MutableBindingSet> create,
+			Function<String, Predicate<BindingSet>> getHas, Function<String, Function<BindingSet, Value>> getget,
+			Function<String, BiConsumer<Value, MutableBindingSet>> getSet) {
+		if (iterationCacheSyncThreshold > 0) {
+			init();
+			Serializer<BindingSet> s = createBindingSetSerializer(create, getHas, getget, getSet);
+			Map<Long, BindingSet> m = db.hashMap(Long.toHexString(colectionId++), new SerializerLong(), s).create();
+			return new MemoryTillSizeXQueue<>(delegate.createBindingSetQueue(create, getHas, getget, getSet), 128,
+					() -> new MapDb3BackedQueue<>(m));
+
+		} else {
+			return delegate.createBindingSetQueue();
+		}
+	}
+
+	@Override
 	public void close() throws RDF4JException {
 		if (db != null) {
 			db.close();
