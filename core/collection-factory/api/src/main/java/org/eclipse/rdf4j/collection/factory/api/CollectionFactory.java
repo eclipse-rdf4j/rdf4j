@@ -84,7 +84,7 @@ public interface CollectionFactory extends AutoCloseable {
 	 * @return a set that may be optimised and/or disk based
 	 */
 	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> create,
-			Function<String, Predicate<BindingSet>> getHas, Function<String, Function<BindingSet, Value>> getget,
+			Function<String, Predicate<BindingSet>> getHas, Function<String, Function<BindingSet, Value>> getGet,
 			Function<String, BiConsumer<Value, MutableBindingSet>> getSet);
 
 	/**
@@ -115,6 +115,25 @@ public interface CollectionFactory extends AutoCloseable {
 	 * @return a new queue
 	 */
 	public Queue<Value> createValueQueue();
+
+	/**
+	 * @return a new queue that may be optimized and may use the functions passed in.
+	 */
+	public default Queue<BindingSet> createBindingSetQueue(Supplier<MutableBindingSet> create,
+			Function<String, Predicate<BindingSet>> getHas, Function<String, Function<BindingSet, Value>> getget,
+			Function<String, BiConsumer<Value, MutableBindingSet>> getSet) {
+		return createQueue();
+	}
+
+	/**
+	 * @return a new queue optimized for bindingsets
+	 */
+	public default Queue<BindingSet> createBindingSetQueue() {
+		Function<String, Predicate<BindingSet>> gethas = (n) -> (b) -> b.hasBinding(n);
+		Function<String, Function<BindingSet, Value>> getget = (n) -> (b) -> b.getValue(n);
+		Function<String, BiConsumer<Value, MutableBindingSet>> getSet = (n) -> (v, b) -> b.setBinding(n, v);
+		return createBindingSetQueue(MapBindingSet::new, gethas, getget, getSet);
+	}
 
 	@InternalUseOnly
 	public <E> Map<BindingSetKey, E> createGroupByMap();
