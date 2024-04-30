@@ -14,6 +14,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.util.Vocabulary.FEDX;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -23,6 +24,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.repository.config.AbstractRepositoryImplConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
@@ -104,6 +106,36 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 	public static final IRI MEMBER = vf.createIRI(NAMESPACE, "member");
 
 	/**
+	 * IRI of the property populating {@link FedXConfig#getEnforceMaxQueryTime()}
+	 */
+	public static final IRI CONFIG_ENFORCE_MAX_QUERY_TIME = vf.createIRI(NAMESPACE, "enforceMaxQueryTime");
+
+	/**
+	 * IRI of the property populating {@link FedXConfig#isEnableMonitoring()}
+	 */
+	public static final IRI CONFIG_ENABLE_MONITORING = vf.createIRI(NAMESPACE, "enableMonitoring");
+
+	/**
+	 * IRI of the property populating {@link FedXConfig#isLogQueryPlan()}
+	 */
+	public static final IRI CONFIG_LOG_QUERY_PLAN = vf.createIRI(NAMESPACE, "logQueryPlan");
+
+	/**
+	 * IRI of the property populating {@link FedXConfig#isDebugQueryPlan()}
+	 */
+	public static final IRI CONFIG_DEBUG_QUERY_PLAN = vf.createIRI(NAMESPACE, "debugQueryPlan");
+
+	/**
+	 * IRI of the property populating {@link FedXConfig#isLogQueries()}
+	 */
+	public static final IRI CONFIG_LOG_QUERIES = vf.createIRI(NAMESPACE, "logQueries");
+
+	/**
+	 * IRI of the property populating {@link FedXConfig#getSourceSelectionCacheSpec()}
+	 */
+	public static final IRI CONFIG_SOURCE_SELECTION_CACHE_SPEC = vf.createIRI(NAMESPACE, "sourceSelectionCacheSpec");
+
+	/**
 	 * the location of the data configuration
 	 */
 	private String dataConfig;
@@ -163,10 +195,7 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 			m.add(implNode, DATA_CONFIG, vf.createLiteral(getDataConfig()));
 		}
 
-		if (getConfig() != null) {
-			Resource confNode = FedXConfigParser.export(getConfig(), m);
-			m.add(implNode, FEDX_CONFIG, confNode);
-		}
+		exportFedXConfig(m, implNode);
 
 		if (getMembers() != null) {
 
@@ -203,13 +232,7 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 			Models.objectLiteral(m.getStatements(implNode, DATA_CONFIG, null))
 					.ifPresent(value -> setDataConfig(value.stringValue()));
 
-			Models.objectResource(m.getStatements(implNode, FEDX_CONFIG, null))
-					.ifPresent(res -> {
-						if (getConfig() == null) {
-							setConfig(new FedXConfig());
-						}
-						setConfig(FedXConfigParser.parse(getConfig(), m, res));
-					});
+			parseFedXConfig(m, implNode);
 
 			Set<Value> memberNodes = m.filter(implNode, MEMBER, null).objects();
 			if (!memberNodes.isEmpty()) {
@@ -228,5 +251,76 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 		} catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);
 		}
+	}
+
+	/**
+	 * Updates the container {@link FedXConfig} instance with properties from the supplied model. It is up to the caller
+	 * to retrieve configuration from {@link #FEDX_CONFIG} as well as to initialise the parsed configuration (via
+	 * {@link #setConfig(FedXConfig)}) since it can be null.
+	 *
+	 * @param m        the model from which to read configuration properties
+	 * @param implNode the subject against which to expect the {@link #FEDX_CONFIG} property.
+	 *
+	 * @throws RepositoryConfigException if any of the overridden fields are deemed to be invalid
+	 */
+	protected void parseFedXConfig(Model m, Resource implNode) throws RepositoryConfigException {
+		Models.objectResource(m.getStatements(implNode, FEDX_CONFIG, null))
+				.ifPresent(res -> parseFedXConfigInternal(m, res));
+	}
+
+	private void parseFedXConfigInternal(Model m, Resource confNode) throws RepositoryConfigException {
+		if (getConfig() == null) {
+			setConfig(new FedXConfig());
+		}
+
+		Models.objectLiteral(m.getStatements(confNode, CONFIG_ENFORCE_MAX_QUERY_TIME, null))
+				.ifPresent(value -> config.withEnforceMaxQueryTime(value.intValue()));
+
+		Models.objectLiteral(m.getStatements(confNode, CONFIG_ENABLE_MONITORING, null))
+				.ifPresent(value -> config.withEnableMonitoring(value.booleanValue()));
+
+		Models.objectLiteral(m.getStatements(confNode, CONFIG_LOG_QUERY_PLAN, null))
+				.ifPresent(value -> config.withLogQueryPlan(value.booleanValue()));
+
+		Models.objectLiteral(m.getStatements(confNode, CONFIG_DEBUG_QUERY_PLAN, null))
+				.ifPresent(value -> config.withDebugQueryPlan(value.booleanValue()));
+
+		Models.objectLiteral(m.getStatements(confNode, CONFIG_LOG_QUERIES, null))
+				.ifPresent(value -> config.withLogQueries(value.booleanValue()));
+
+		Models.objectLiteral(m.getStatements(confNode, CONFIG_SOURCE_SELECTION_CACHE_SPEC, null))
+				.ifPresent(value -> config.withSourceSelectionCacheSpec(value.stringValue()));
+	}
+
+	/**
+	 * Export the provided {@link FedXConfig} to its RDF representation. Note that {@link #getConfig()} could be null if
+	 * configuration has not been set yet.
+	 *
+	 * @param config   the configuration to export
+	 * @param implNode the node to which to write the config reference (i.e. {@link #FEDX_CONFIG}) to
+	 */
+	protected void exportFedXConfig(Model model, Resource implNode) {
+		if (getConfig() == null) {
+			return;
+		}
+
+		BNode confNode = Values.bnode();
+
+		model.add(confNode, CONFIG_ENFORCE_MAX_QUERY_TIME, vf.createLiteral(config.getEnforceMaxQueryTime()));
+
+		model.add(confNode, CONFIG_ENABLE_MONITORING, vf.createLiteral(config.isEnableMonitoring()));
+
+		model.add(confNode, CONFIG_LOG_QUERY_PLAN, vf.createLiteral(config.isLogQueryPlan()));
+
+		model.add(confNode, CONFIG_DEBUG_QUERY_PLAN, vf.createLiteral(config.isDebugQueryPlan()));
+
+		model.add(confNode, CONFIG_LOG_QUERIES, vf.createLiteral(config.isLogQueries()));
+
+		if (config.getSourceSelectionCacheSpec() != null) {
+			model.add(confNode, CONFIG_SOURCE_SELECTION_CACHE_SPEC,
+					vf.createLiteral(config.getSourceSelectionCacheSpec()));
+		}
+
+		model.add(implNode, FEDX_CONFIG, confNode);
 	}
 }

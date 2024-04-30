@@ -9,8 +9,12 @@
    rep:repositoryImpl [
       rep:repositoryType "fedx:FedXRepository" ;
       fedx:config [
-         fedx:enforceMaxQueryTime 42 ;
+         fedx:enforceMaxQueryTime 1234 ;
          fedx:enableMonitoring true ;
+         fedx:logQueryPlan true ;
+         fedx:debugQueryPlan true ;
+         fedx:logQueries true ;
+         fedx:sourceSelectionCacheSpec "spec-goes-here" ;
       ];
    ];
    rep:repositoryID "my-federation" ;
