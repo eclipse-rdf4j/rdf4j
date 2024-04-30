@@ -8,13 +8,22 @@
 [] a rep:Repository ;
    rep:repositoryImpl [
       rep:repositoryType "fedx:FedXRepository" ;
+      # All options herein should be set to non-default values
       fedx:config [
-         fedx:enforceMaxQueryTime 1234 ;
+         fedx:joinWorkerThreads 101 ;
+         fedx:unionWorkerThreads 102 ;
+         fedx:leftJoinWorkerThreads 103 ;
+         fedx:boundJoinBlockSize 104 ;
+         fedx:enforceMaxQueryTime 105 ;
+         fedx:enableServiceAsBoundJoin false ;
          fedx:enableMonitoring true ;
          fedx:logQueryPlan true ;
-         fedx:debugQueryPlan true ;
          fedx:logQueries true ;
+         fedx:debugQueryPlan true ;
+         fedx:includeInferredDefault false ;
          fedx:sourceSelectionCacheSpec "spec-goes-here" ;
+         fedx:prefixDeclarations "prefixes-go-here" ;
+         fedx:consumingIterationMax 106 ;
       ];
    ];
    rep:repositoryID "my-federation" ;

@@ -106,9 +106,34 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 	public static final IRI MEMBER = vf.createIRI(NAMESPACE, "member");
 
 	/**
+	 * IRI of the property populating {@link FedXConfig#getJoinWorkerThreads()}
+	 */
+	public static final IRI CONFIG_JOIN_WORKER_THREADS = vf.createIRI(NAMESPACE, "joinWorkerThreads");
+
+	/**
+	 * IRI of the property populating {@link FedXConfig#getUnionWorkerThreads()}
+	 */
+	public static final IRI CONFIG_UNION_WORKER_THREADS = vf.createIRI(NAMESPACE, "unionWorkerThreads");
+
+	/**
+	 * IRI of the property populating {@link FedXConfig#getLeftJoinWorkerThreads()}
+	 */
+	public static final IRI CONFIG_LEFT_JOIN_WORKER_THREADS = vf.createIRI(NAMESPACE, "leftJoinWorkerThreads");
+
+	/**
+	 * IRI of the property populating {@link FedXConfig#getBoundJoinBlockSize()}
+	 */
+	public static final IRI CONFIG_BOUND_JOIN_BLOCK_SIZE = vf.createIRI(NAMESPACE, "boundJoinBlockSize");
+
+	/**
 	 * IRI of the property populating {@link FedXConfig#getEnforceMaxQueryTime()}
 	 */
 	public static final IRI CONFIG_ENFORCE_MAX_QUERY_TIME = vf.createIRI(NAMESPACE, "enforceMaxQueryTime");
+
+	/**
+	 * IRI of the property populating {@link FedXConfig#getEnableServiceAsBoundJoin()}
+	 */
+	public static final IRI CONFIG_ENABLE_SERVICE_AS_BOUND_JOIN = vf.createIRI(NAMESPACE, "enableServiceAsBoundJoin");
 
 	/**
 	 * IRI of the property populating {@link FedXConfig#isEnableMonitoring()}
@@ -121,19 +146,34 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 	public static final IRI CONFIG_LOG_QUERY_PLAN = vf.createIRI(NAMESPACE, "logQueryPlan");
 
 	/**
-	 * IRI of the property populating {@link FedXConfig#isDebugQueryPlan()}
-	 */
-	public static final IRI CONFIG_DEBUG_QUERY_PLAN = vf.createIRI(NAMESPACE, "debugQueryPlan");
-
-	/**
 	 * IRI of the property populating {@link FedXConfig#isLogQueries()}
 	 */
 	public static final IRI CONFIG_LOG_QUERIES = vf.createIRI(NAMESPACE, "logQueries");
 
 	/**
+	 * IRI of the property populating {@link FedXConfig#isDebugQueryPlan()}
+	 */
+	public static final IRI CONFIG_DEBUG_QUERY_PLAN = vf.createIRI(NAMESPACE, "debugQueryPlan");
+
+	/**
+	 * IRI of the property populating {@link FedXConfig#getIncludeInferredDefault()}
+	 */
+	public static final IRI CONFIG_INCLUDE_INFERRED_DEFAULT = vf.createIRI(NAMESPACE, "includeInferredDefault");
+
+	/**
 	 * IRI of the property populating {@link FedXConfig#getSourceSelectionCacheSpec()}
 	 */
 	public static final IRI CONFIG_SOURCE_SELECTION_CACHE_SPEC = vf.createIRI(NAMESPACE, "sourceSelectionCacheSpec");
+
+	/**
+	 * IRI of the property populating {@link FedXConfig#getPrefixDeclarations()}
+	 */
+	public static final IRI CONFIG_PREFIX_DECLARATIONS = vf.createIRI(NAMESPACE, "prefixDeclarations");
+
+	/**
+	 * IRI of the property populating {@link FedXConfig#getConsumingIterationMax()}
+	 */
+	public static final IRI CONFIG_CONSUMING_ITERATION_MAX = vf.createIRI(NAMESPACE, "consumingIterationMax");
 
 	/**
 	 * the location of the data configuration
@@ -273,8 +313,23 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 			setConfig(new FedXConfig());
 		}
 
+		Models.objectLiteral(m.getStatements(confNode, CONFIG_JOIN_WORKER_THREADS, null))
+				.ifPresent(value -> config.withJoinWorkerThreads(value.intValue()));
+
+		Models.objectLiteral(m.getStatements(confNode, CONFIG_UNION_WORKER_THREADS, null))
+				.ifPresent(value -> config.withUnionWorkerThreads(value.intValue()));
+
+		Models.objectLiteral(m.getStatements(confNode, CONFIG_LEFT_JOIN_WORKER_THREADS, null))
+				.ifPresent(value -> config.withLeftJoinWorkerThreads(value.intValue()));
+
+		Models.objectLiteral(m.getStatements(confNode, CONFIG_BOUND_JOIN_BLOCK_SIZE, null))
+				.ifPresent(value -> config.withBoundJoinBlockSize(value.intValue()));
+
 		Models.objectLiteral(m.getStatements(confNode, CONFIG_ENFORCE_MAX_QUERY_TIME, null))
 				.ifPresent(value -> config.withEnforceMaxQueryTime(value.intValue()));
+
+		Models.objectLiteral(m.getStatements(confNode, CONFIG_ENABLE_SERVICE_AS_BOUND_JOIN, null))
+				.ifPresent(value -> config.withEnableServiceAsBoundJoin(value.booleanValue()));
 
 		Models.objectLiteral(m.getStatements(confNode, CONFIG_ENABLE_MONITORING, null))
 				.ifPresent(value -> config.withEnableMonitoring(value.booleanValue()));
@@ -282,14 +337,24 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 		Models.objectLiteral(m.getStatements(confNode, CONFIG_LOG_QUERY_PLAN, null))
 				.ifPresent(value -> config.withLogQueryPlan(value.booleanValue()));
 
-		Models.objectLiteral(m.getStatements(confNode, CONFIG_DEBUG_QUERY_PLAN, null))
-				.ifPresent(value -> config.withDebugQueryPlan(value.booleanValue()));
-
 		Models.objectLiteral(m.getStatements(confNode, CONFIG_LOG_QUERIES, null))
 				.ifPresent(value -> config.withLogQueries(value.booleanValue()));
 
+		Models.objectLiteral(m.getStatements(confNode, CONFIG_DEBUG_QUERY_PLAN, null))
+				.ifPresent(value -> config.withDebugQueryPlan(value.booleanValue()));
+
+		Models.objectLiteral(m.getStatements(confNode, CONFIG_INCLUDE_INFERRED_DEFAULT, null))
+				.ifPresent(value -> config.withIncludeInferredDefault(value.booleanValue()));
+
 		Models.objectLiteral(m.getStatements(confNode, CONFIG_SOURCE_SELECTION_CACHE_SPEC, null))
 				.ifPresent(value -> config.withSourceSelectionCacheSpec(value.stringValue()));
+
+		Models.objectLiteral(m.getStatements(confNode, CONFIG_PREFIX_DECLARATIONS, null))
+				.ifPresent(value -> config.withPrefixDeclarations(value.stringValue()));
+
+		Models.objectLiteral(m.getStatements(confNode, CONFIG_CONSUMING_ITERATION_MAX, null))
+				.ifPresent(value -> config.withConsumingIterationMax(value.intValue()));
+
 	}
 
 	/**
@@ -306,20 +371,40 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 
 		BNode confNode = Values.bnode();
 
+		model.add(confNode, CONFIG_JOIN_WORKER_THREADS, vf.createLiteral(config.getJoinWorkerThreads()));
+
+		model.add(confNode, CONFIG_UNION_WORKER_THREADS, vf.createLiteral(config.getUnionWorkerThreads()));
+
+		model.add(confNode, CONFIG_LEFT_JOIN_WORKER_THREADS, vf.createLiteral(config.getLeftJoinWorkerThreads()));
+
+		model.add(confNode, CONFIG_BOUND_JOIN_BLOCK_SIZE, vf.createLiteral(config.getBoundJoinBlockSize()));
+
 		model.add(confNode, CONFIG_ENFORCE_MAX_QUERY_TIME, vf.createLiteral(config.getEnforceMaxQueryTime()));
+
+		model.add(confNode, CONFIG_ENABLE_SERVICE_AS_BOUND_JOIN,
+				vf.createLiteral(config.getEnableServiceAsBoundJoin()));
 
 		model.add(confNode, CONFIG_ENABLE_MONITORING, vf.createLiteral(config.isEnableMonitoring()));
 
 		model.add(confNode, CONFIG_LOG_QUERY_PLAN, vf.createLiteral(config.isLogQueryPlan()));
 
+		model.add(confNode, CONFIG_LOG_QUERIES, vf.createLiteral(config.isLogQueries()));
+
 		model.add(confNode, CONFIG_DEBUG_QUERY_PLAN, vf.createLiteral(config.isDebugQueryPlan()));
 
-		model.add(confNode, CONFIG_LOG_QUERIES, vf.createLiteral(config.isLogQueries()));
+		model.add(confNode, CONFIG_INCLUDE_INFERRED_DEFAULT, vf.createLiteral(config.getIncludeInferredDefault()));
 
 		if (config.getSourceSelectionCacheSpec() != null) {
 			model.add(confNode, CONFIG_SOURCE_SELECTION_CACHE_SPEC,
 					vf.createLiteral(config.getSourceSelectionCacheSpec()));
 		}
+
+		if (config.getPrefixDeclarations() != null) {
+			model.add(confNode, CONFIG_PREFIX_DECLARATIONS,
+					vf.createLiteral(config.getPrefixDeclarations()));
+		}
+
+		model.add(confNode, CONFIG_CONSUMING_ITERATION_MAX, vf.createLiteral(config.getConsumingIterationMax()));
 
 		model.add(implNode, FEDX_CONFIG, confNode);
 	}
