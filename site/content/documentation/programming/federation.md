@@ -306,6 +306,8 @@ FedX provides various means for configuration. Configuration settings can be def
 |boundJoinBlockSize | Block size for bound joins, default _15_ |
 |enforceMaxQueryTime | Max query time in seconds, 0 to disable, default _30_ |
 |enableServiceAsBoundJoin | Flag for evaluating a SERVICE expression (contacting non-federation members) using vectored evaluation, default _true_. For today's endpoints it is more efficient to disable vectored evaluation of SERVICE |
+|includeInferredDefault | whether include inferred statements should be considered, default _true_ |
+|consumingIterationMax | the max number of results to be consumed by `ConsumingIteration`, default _1000_ |
 |debugQueryPlan | Print the optimized query execution plan to stdout, default _false_ |
 |enableMonitoring | Flag to enable/disable monitoring features, default _false_ |
 |logQueryPlan | Flag to enable/disable query plan logging via Java class _QueryPlanLog_, default _false_ |
