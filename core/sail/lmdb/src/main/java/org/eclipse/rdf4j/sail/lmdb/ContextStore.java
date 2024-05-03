@@ -131,9 +131,11 @@ class ContextStore implements Iterable<Resource> {
 	 * @param context the context identifier.
 	 * @param amount  the number by which to decrease the size
 	 */
-	void decrementBy(Resource context, long amount) {
-		contextInfoMap.computeIfPresent(context, (c, size) -> size <= amount ? null : size - amount);
+	boolean decrementBy(Resource context, long amount) {
+		boolean removed = contextInfoMap.computeIfPresent(context,
+				(c, size) -> size <= amount ? null : size - amount) == null;
 		contentsChanged = true;
+		return removed;
 	}
 
 	@Override

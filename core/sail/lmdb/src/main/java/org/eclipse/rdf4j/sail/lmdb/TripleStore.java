@@ -783,6 +783,7 @@ class TripleStore implements Closeable {
 				}
 				if (recordCache != null) {
 					recordCache.removeRecord(quad, explicit);
+					handler.accept(quad);
 					continue;
 				}
 

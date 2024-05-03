@@ -672,7 +672,11 @@ class LmdbSailStore implements SailStore {
 					Long entryContextId = entry.getKey();
 					if (entryContextId > 0) {
 						Resource modifiedContext = (Resource) valueStore.getValue(entryContextId);
-						contextStore.decrementBy(modifiedContext, entry.getValue());
+						boolean contextRemoved = contextStore.decrementBy(modifiedContext, entry.getValue());
+						if (contextRemoved) {
+							unusedIds.add(entryContextId);
+						}
+
 					}
 					removeCount += entry.getValue();
 				}
