@@ -1,14 +1,16 @@
 openapi: "3.0.1"
 info:
   title: RDF4J REST API
-  version: "10"
+  version: "14"
   description: |
     The RDF4J REST API is an HTTP protocol that covers a fully compliant implementation of the [SPARQL 1.1 Protocol W3C Recommendation](https://www.w3.org/TR/sparql11-protocol/). This ensures that RDF4J Server functions as a fully standard-compliant [SPARQL](https://www.w3.org/TR/sparql11-query/) endpoint.
 
     The RDF4J REST API additionally supports the [SPARQL 1.1 Graph Store HTTP Protocol W3C Recommendation](https://www.w3.org/TR/sparql11-http-rdf-update/). The RDF4J REST API extends the W3C standards in several aspects, the most important of which is database transaction management.
 
+    Version 13 was released as part of RDF4J 4.3.0. See the [REST API Changelog](/documentation/reference/rest-api/changelog) for details.
+
 externalDocs:
-  url: https://rdf4j.org/documentation/reference/rest-api/
+  url: https://rdf4j.org/documentation/reference/rest-api/changelog.md
 
 servers:
   - url: http://localhost:8080/rdf4j-server/
