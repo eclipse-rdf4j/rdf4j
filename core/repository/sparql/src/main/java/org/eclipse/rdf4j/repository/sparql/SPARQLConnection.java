@@ -17,7 +17,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.net.URL;
+import java.util.Arrays;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -79,6 +81,8 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
  * @author James Leigh
  */
 public class SPARQLConnection extends AbstractRepositoryConnection implements HttpClientDependent {
+
+	private static final String COUNT_EVERYTHING = "SELECT (COUNT(*) AS ?count) WHERE { ?s ?p ?o }";
 
 	private static final String EVERYTHING = "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }";
 
@@ -288,14 +292,40 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	@Override
 	public long size(Resource... contexts) throws RepositoryException {
-		try (RepositoryResult<Statement> stmts = getStatements(null, null, null, true, contexts)) {
-			long i = 0;
-			while (stmts.hasNext()) {
-				stmts.next();
-				i++;
+		String query = sizeAsTupleQuery(contexts);
+		TupleQuery tq = prepareTupleQuery(SPARQL, query);
+		try (TupleQueryResult res = tq.evaluate()) {
+			if (res.hasNext()) {
+
+				Value value = res.next().getBinding("count").getValue();
+				if (value instanceof Literal) {
+					return ((Literal) value).longValue();
+				} else {
+					return 0;
+				}
 			}
-			return i;
+		} catch (QueryEvaluationException e) {
+			throw new RepositoryException(e);
 		}
+		return 0;
+	}
+
+	String sizeAsTupleQuery(Resource... contexts) {
+		String query = COUNT_EVERYTHING;
+		if (contexts != null && isQuadMode()) {
+			if (contexts.length == 1 && contexts[0].isIRI()) {
+				query = "SELECT (COUNT(*) AS ?count) WHERE { GRAPH <" + ((IRI) contexts[0]).stringValue()
+						+ "> { ?s ?p ?o}}";
+			} else if (contexts.length > 0) {
+				String graphs = Arrays.stream(contexts)
+						.filter(Resource::isIRI)
+						.map(Resource::stringValue)
+						.map(s -> "FROM <" + s + ">")
+						.collect(Collectors.joining(" "));
+				query = "SELECT (COUNT(*) AS ?count) " + graphs + "WHERE { ?s ?p ?o}";
+			}
+		}
+		return query;
 	}
 
 	@Override
