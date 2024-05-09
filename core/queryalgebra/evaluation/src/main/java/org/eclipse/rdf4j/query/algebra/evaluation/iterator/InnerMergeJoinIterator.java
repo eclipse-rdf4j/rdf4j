@@ -16,7 +16,6 @@ import java.util.NoSuchElementException;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
@@ -38,8 +37,12 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 	private final Comparator<Value> cmp;
 	private final Function<BindingSet, Value> value;
 	private final QueryEvaluationContext context;
-	private BindingSet nextElement;
-	private boolean closed;
+	private BindingSet next;
+	private BindingSet currentLeft;
+	private Value currentLeftValue;
+	private Value leftPeekValue;
+
+	private boolean closed = false;
 
 	private InnerMergeJoinIterator(CloseableIteration<BindingSet> leftIterator,
 			CloseableIteration<BindingSet> rightIterator,
@@ -69,10 +72,7 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 		return new InnerMergeJoinIterator(leftIter, rightIter, cmp, value, context);
 	}
 
-	BindingSet next;
-	BindingSet currentLeft;
-
-	BindingSet join(BindingSet left, BindingSet right, boolean createNewBindingSet) {
+	private BindingSet join(BindingSet left, BindingSet right, boolean createNewBindingSet) {
 		MutableBindingSet joined;
 		if (!createNewBindingSet && left instanceof MutableBindingSet) {
 			joined = (MutableBindingSet) left;
@@ -92,15 +92,15 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 		return joined;
 	}
 
-	BindingSet prevLeft;
-
-	void calculateNext() {
+	private void calculateNext() {
 		if (next != null) {
 			return;
 		}
 
 		if (currentLeft == null && leftIterator.hasNext()) {
 			currentLeft = leftIterator.next();
+			currentLeftValue = null;
+			leftPeekValue = null;
 		}
 
 		if (currentLeft == null) {
@@ -110,21 +110,29 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 		while (next == null) {
 			if (rightIterator.hasNext()) {
 				BindingSet peekRight = rightIterator.peek();
-				Value left = value.apply(currentLeft);
+
+				if (currentLeftValue == null) {
+					currentLeftValue = value.apply(currentLeft);
+					leftPeekValue = null;
+				}
+
+				Value left = currentLeftValue;
 				Value right = value.apply(peekRight);
 
-				int compareTo = cmp.compare(left, right);
+				int compare = compare(left, right);
 
-				if (compareTo == 0) {
+				if (compare == 0) {
 					equal(left, right);
 					break;
 				} else {
-					if (compareTo < 0) {
+					if (compare < 0) {
 						// leftIterator is behind, or in other words, rightIterator is ahead
 						if (leftIterator.hasNext()) {
-							lessThan();
+							lessThan(left);
 						} else {
 							currentLeft = null;
+							currentLeftValue = null;
+							leftPeekValue = null;
 							break;
 						}
 					} else {
@@ -138,19 +146,33 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 			} else if (rightIterator.isResettable() && leftIterator.hasNext()) {
 				rightIterator.reset();
 				currentLeft = leftIterator.next();
+				currentLeftValue = null;
+				leftPeekValue = null;
 			} else {
-				currentLeft = null;
-				break;
+				close();
+				return;
 			}
 
 		}
 
 	}
 
-	private void lessThan() {
-		BindingSet prevLeft = currentLeft;
+	private int compare(Value left, Value right) {
+		int compareTo;
+
+		if (left == right) {
+			compareTo = 0;
+		} else {
+			compareTo = cmp.compare(left, right);
+		}
+		return compareTo;
+	}
+
+	private void lessThan(Value oldLeft) {
 		currentLeft = leftIterator.next();
-		if (cmp.compare(value.apply(prevLeft), value.apply(currentLeft)) == 0) {
+		currentLeftValue = value.apply(currentLeft);
+		leftPeekValue = null;
+		if (oldLeft == currentLeftValue || oldLeft.equals(currentLeftValue)) {
 			// we have duplicate keys on the leftIterator and need to reset the rightIterator (if it
 			// is resettable)
 			if (rightIterator.isResettable()) {
@@ -165,18 +187,16 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 		if (rightIterator.isResettable()) {
 			next = join(currentLeft, rightIterator.next(), true);
 		} else {
-			BindingSet leftPeek = leftIterator.peek();
-			if (leftPeek != null && left.equals(value.apply(leftPeek))) {
+			if (leftPeekValue == null) {
+				BindingSet leftPeek = leftIterator.peek();
+				leftPeekValue = leftPeek != null ? value.apply(leftPeek) : null;
+			}
+
+			if (left.equals(leftPeekValue)) {
 				rightIterator.mark();
 				next = join(currentLeft, rightIterator.next(), true);
 			} else {
-				BindingSet nextRight = rightIterator.next();
-				BindingSet rightPeek = rightIterator.peek();
-				if (rightPeek != null && right.equals(value.apply(rightPeek))) {
-					next = join(currentLeft, nextRight, true);
-				} else {
-					next = join(currentLeft, nextRight, false);
-				}
+				next = join(rightIterator.next(), currentLeft, false);
 			}
 		}
 	}
