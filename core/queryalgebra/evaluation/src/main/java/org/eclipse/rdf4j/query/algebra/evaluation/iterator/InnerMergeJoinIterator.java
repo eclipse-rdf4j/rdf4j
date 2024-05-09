@@ -107,6 +107,11 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 			return;
 		}
 
+		loop();
+
+	}
+
+	private void loop() {
 		while (next == null) {
 			if (rightIterator.hasNext()) {
 				BindingSet peekRight = rightIterator.peek();
@@ -123,23 +128,18 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 
 				if (compare == 0) {
 					equal(left, right);
-					break;
-				} else {
-					if (compare < 0) {
-						// leftIterator is behind, or in other words, rightIterator is ahead
-						if (leftIterator.hasNext()) {
-							lessThan(left);
-						} else {
-							currentLeft = null;
-							currentLeftValue = null;
-							leftPeekValue = null;
-							break;
-						}
+					return;
+				} else if (compare < 0) {
+					// leftIterator is behind, or in other words, rightIterator is ahead
+					if (leftIterator.hasNext()) {
+						lessThan(left);
 					} else {
-						// rightIterator is behind, skip forward
-						rightIterator.next();
-
+						close();
+						return;
 					}
+				} else {
+					// rightIterator is behind, skip forward
+					rightIterator.next();
 
 				}
 
@@ -154,7 +154,6 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 			}
 
 		}
-
 	}
 
 	private int compare(Value left, Value right) {
@@ -208,10 +207,6 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 		}
 
 		calculateNext();
-
-		if (next == null) {
-			close();
-		}
 
 		return next != null;
 	}
