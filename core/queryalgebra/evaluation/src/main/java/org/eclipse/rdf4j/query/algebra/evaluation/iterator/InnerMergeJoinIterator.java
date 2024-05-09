@@ -12,11 +12,12 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.Comparator;
+import java.util.NoSuchElementException;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -30,13 +31,15 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
  * @author Håvard M. Ottestad
  */
 @Experimental
-public class InnerMergeJoinIterator extends LookAheadIteration<BindingSet> {
+public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 
 	private final PeekMarkIterator<BindingSet> leftIterator;
 	private final PeekMarkIterator<BindingSet> rightIterator;
 	private final Comparator<Value> cmp;
 	private final Function<BindingSet, Value> value;
 	private final QueryEvaluationContext context;
+	private BindingSet nextElement;
+	private boolean closed;
 
 	private InnerMergeJoinIterator(CloseableIteration<BindingSet> leftIterator,
 			CloseableIteration<BindingSet> rightIterator,
@@ -110,77 +113,16 @@ public class InnerMergeJoinIterator extends LookAheadIteration<BindingSet> {
 				Value left = value.apply(currentLeft);
 				Value right = value.apply(peekRight);
 
-				/*
-				 * country1: http://www.wikidata.org/entity/Q467864 country2: http://www.wikidata.org/entity/Q222
-				 * currency: http://www.wikidata.org/entity/Q125999
-				 */
-//
-//				if (currentLeft.toString().contains("Q467864") && peekRight.toString().contains("Q222")) {
-//					System.out.println();
-//				}
-//				if (peekRight.toString().contains("Q467864") && currentLeft.toString().contains("Q222")) {
-//					System.out.println();
-//				}
-//
-//				System.out.println("Left: " + currentLeft);
-//				System.out.println("Right: " + peekRight);
-//				System.out.println();
-
 				int compareTo = cmp.compare(left, right);
 
-				// TODO add an assert block that checks that the left iterator is sequential
-
-//				{
-//					BindingSet temp = leftIterator.peek();
-//					if (temp != null) {
-//						if (prevLeft != currentLeft) {
-//							prevLeft = currentLeft;
-//							int compare = cmp.compare(left, value.apply(temp));
-//							if (compare > 0) {
-//								System.out.println(compare + "\tleft: " + left.toString() + "    next left:"
-//										+ value.apply(temp).toString());
-//								assert false;
-//							}
-//
-//						}
-//
-//					}
-//				}
-
 				if (compareTo == 0) {
-					if (rightIterator.isResettable()) {
-						next = join(currentLeft, rightIterator.next(), true);
-					} else {
-						BindingSet leftPeek = leftIterator.peek();
-						if (leftPeek != null && left.equals(value.apply(leftPeek))) {
-							rightIterator.mark();
-							next = join(currentLeft, rightIterator.next(), true);
-						} else {
-							BindingSet nextRight = rightIterator.next();
-							BindingSet rightPeek = rightIterator.peek();
-							if (rightPeek != null && right.equals(value.apply(rightPeek))) {
-								next = join(currentLeft, nextRight, true);
-							} else {
-								next = join(currentLeft, nextRight, false);
-							}
-						}
-					}
+					equal(left, right);
 					break;
 				} else {
 					if (compareTo < 0) {
 						// leftIterator is behind, or in other words, rightIterator is ahead
 						if (leftIterator.hasNext()) {
-							BindingSet prevLeft = currentLeft;
-							currentLeft = leftIterator.next();
-							if (cmp.compare(value.apply(prevLeft), value.apply(currentLeft)) == 0) {
-								// we have duplicate keys on the leftIterator and need to reset the rightIterator (if it
-								// is resettable)
-								if (rightIterator.isResettable()) {
-									rightIterator.reset();
-								}
-							} else {
-								rightIterator.unmark();
-							}
+							lessThan();
 						} else {
 							currentLeft = null;
 							break;
@@ -205,23 +147,102 @@ public class InnerMergeJoinIterator extends LookAheadIteration<BindingSet> {
 
 	}
 
-	@Override
-	protected BindingSet getNextElement() throws QueryEvaluationException {
-		calculateNext();
-		BindingSet temp = next;
-		next = null;
-		return temp;
+	private void lessThan() {
+		BindingSet prevLeft = currentLeft;
+		currentLeft = leftIterator.next();
+		if (cmp.compare(value.apply(prevLeft), value.apply(currentLeft)) == 0) {
+			// we have duplicate keys on the leftIterator and need to reset the rightIterator (if it
+			// is resettable)
+			if (rightIterator.isResettable()) {
+				rightIterator.reset();
+			}
+		} else {
+			rightIterator.unmark();
+		}
 	}
 
-	@Override
-	protected void handleClose() throws QueryEvaluationException {
-		try {
-			leftIterator.close();
-		} finally {
-			if (rightIterator != null) {
-				rightIterator.close();
+	private void equal(Value left, Value right) {
+		if (rightIterator.isResettable()) {
+			next = join(currentLeft, rightIterator.next(), true);
+		} else {
+			BindingSet leftPeek = leftIterator.peek();
+			if (leftPeek != null && left.equals(value.apply(leftPeek))) {
+				rightIterator.mark();
+				next = join(currentLeft, rightIterator.next(), true);
+			} else {
+				BindingSet nextRight = rightIterator.next();
+				BindingSet rightPeek = rightIterator.peek();
+				if (rightPeek != null && right.equals(value.apply(rightPeek))) {
+					next = join(currentLeft, nextRight, true);
+				} else {
+					next = join(currentLeft, nextRight, false);
+				}
 			}
 		}
 	}
 
+	@Override
+	public final boolean hasNext() {
+		if (isClosed()) {
+			return false;
+		}
+
+		calculateNext();
+
+		if (next == null) {
+			close();
+		}
+
+		return next != null;
+	}
+
+	@Override
+	public final BindingSet next() {
+		if (isClosed()) {
+			throw new NoSuchElementException("The iteration has been closed.");
+		}
+		calculateNext();
+
+		if (next == null) {
+			close();
+		}
+
+		BindingSet result = next;
+
+		if (result != null) {
+			next = null;
+			return result;
+		} else {
+			throw new NoSuchElementException();
+		}
+	}
+
+	/**
+	 * Throws an {@link UnsupportedOperationException}.
+	 */
+	@Override
+	public void remove() {
+		throw new UnsupportedOperationException();
+	}
+
+	/**
+	 * Checks whether this CloseableIteration has been closed.
+	 *
+	 * @return <var>true</var> if the CloseableIteration has been closed, <var>false</var> otherwise.
+	 */
+	public final boolean isClosed() {
+		return closed;
+	}
+
+	@Override
+	public final void close() {
+		if (!closed) {
+			closed = true;
+			try {
+				leftIterator.close();
+			} finally {
+				rightIterator.close();
+			}
+		}
+	}
 }
