@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.repository.sparql;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.model.util.Values.iri;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -32,6 +33,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
@@ -131,6 +133,16 @@ public class SPARQLConnectionTest {
 
 		sizeAsTupleQuery = subject.sizeAsTupleQuery(vf.createIRI("urn:g1"), vf.createBNode());
 		query = new SPARQLParserFactory().getParser().parseQuery(sizeAsTupleQuery, "http://example.org/");
+		assertNotNull(query);
+
+		sizeAsTupleQuery = subject.sizeAsTupleQuery(RDF4J.NIL);
+		query = new SPARQLParserFactory().getParser().parseQuery(sizeAsTupleQuery, "http://example.org/");
+		assertNotNull(query);
+		assertFalse(sizeAsTupleQuery.contains("nil"));
+
+		sizeAsTupleQuery = subject.sizeAsTupleQuery(null);
+		query = new SPARQLParserFactory().getParser().parseQuery(sizeAsTupleQuery, "http://example.org/");
+
 		assertNotNull(query);
 	}
 

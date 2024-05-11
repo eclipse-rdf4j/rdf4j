@@ -42,6 +42,8 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
@@ -313,12 +315,13 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	String sizeAsTupleQuery(Resource... contexts) {
 		String query = COUNT_EVERYTHING;
 		if (contexts != null && isQuadMode()) {
-			if (contexts.length == 1 && contexts[0].isIRI()) {
-				query = "SELECT (COUNT(*) AS ?count) WHERE { GRAPH <" + ((IRI) contexts[0]).stringValue()
+			if (contexts.length == 1 && isExposableGraphIri(contexts[0])) { // in case the context is null we want the
+																			// default graph.
+				query = "SELECT (COUNT(*) AS ?count) WHERE { GRAPH <" + contexts[0].stringValue()
 						+ "> { ?s ?p ?o}}";
 			} else if (contexts.length > 0) {
 				String graphs = Arrays.stream(contexts)
-						.filter(Resource::isIRI)
+						.filter(SPARQLConnection::isExposableGraphIri)
 						.map(Resource::stringValue)
 						.map(s -> "FROM <" + s + ">")
 						.collect(Collectors.joining(" "));
@@ -326,6 +329,17 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			}
 		}
 		return query;
+	}
+
+	/**
+	 * For the sparql protocol a context must be an IRI However we can't send out the RDF4j intenral default graph IRIs
+	 *
+	 * @param resource to test if it can be the IRI for a named graph
+	 * @return true if it the input can be a foreign named graph.
+	 */
+	private static boolean isExposableGraphIri(Resource resource) {
+		// We use the instanceof test to avoid any issue with a null pointer.
+		return resource instanceof IRI && RDF4J.NIL != resource && SESAME.NIL != resource;
 	}
 
 	@Override
