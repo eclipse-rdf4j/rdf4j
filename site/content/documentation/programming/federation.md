@@ -299,16 +299,49 @@ FedX provides various means for configuration. Configuration settings can be def
 |Property | Description |
 |---------|-------------|
 |prefixDeclarations | Path to prefix declarations file, see [PREFIX Declarations](#prefix-declarations) |
-|cacheLocation | Location where the memory cache gets persisted at shutdown, default _cache.db_ |
+|sourceSelectionCacheSpec | Cache specification for the `SourceSelectionMemoryCache`, default _maximumSize=1000,expireAfterWrite=6h_ |
 |joinWorkerThreads | The number of join worker threads for parallelization, default _20_ |
 |unionWorkerThreads | The number of union worker threads for parallelization, default _20_ |
+|leftJoinWorkerThreads | The number of left join worker threads for parallelization, default _10_ |
 |boundJoinBlockSize | Block size for bound joins, default _15_ |
 |enforceMaxQueryTime | Max query time in seconds, 0 to disable, default _30_ |
 |enableServiceAsBoundJoin | Flag for evaluating a SERVICE expression (contacting non-federation members) using vectored evaluation, default _true_. For today's endpoints it is more efficient to disable vectored evaluation of SERVICE |
+|includeInferredDefault | whether include inferred statements should be considered, default _true_ |
+|consumingIterationMax | the max number of results to be consumed by `ConsumingIteration`, default _1000_ |
 |debugQueryPlan | Print the optimized query execution plan to stdout, default _false_ |
 |enableMonitoring | Flag to enable/disable monitoring features, default _false_ |
 |logQueryPlan | Flag to enable/disable query plan logging via Java class _QueryPlanLog_, default _false_ |
 |logQueries | Flag to enable/disable query logging via _QueryLog_, default _false_. The _QueryLog_ facility allows to log all queries to a file |
+
+#### Overriding via configuration template
+
+The aforementioned properties can also be set using a configuration template, via the `fedx:config` property, e.g.:
+
+```turtle
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix rep: <http://www.openrdf.org/config/repository#>.
+@prefix config: <tag:rdf4j.org,2023:config/>.
+@prefix fedx: <http://rdf4j.org/config/federation#>.
+
+[] a rep:Repository ;
+ rep:repositoryImpl [
+   rep:repositoryType "fedx:FedXRepository" ;
+   fedx:member [
+      fedx:store "ResolvableRepository" ;
+      fedx:repositoryName "endpoint1"
+   ],
+   [
+      fedx:store "ResolvableRepository" ;
+      fedx:repositoryName "endpoint2"
+   ]
+   fedx:config [
+      fedx:sourceSelectionCacheSpec "maximumSize=0" ;
+      fedx:enforceMaxQueryTime 30 ;
+   ]
+ ];
+ rep:repositoryID "fedx" ;
+ rdfs:label "FedX Federation" .
+```
 
 ### Query timeouts
 

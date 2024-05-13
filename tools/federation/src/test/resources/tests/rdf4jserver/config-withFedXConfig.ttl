@@ -1,0 +1,30 @@
+#
+# RDF4J configuration template for a FedX Repository with FedXConfig overrides
+#
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix rep: <http://www.openrdf.org/config/repository#>.
+@prefix fedx: <http://rdf4j.org/config/federation#>.
+
+[] a rep:Repository ;
+   rep:repositoryImpl [
+      rep:repositoryType "fedx:FedXRepository" ;
+      # All options herein should be set to non-default values
+      fedx:config [
+         fedx:joinWorkerThreads 101 ;
+         fedx:unionWorkerThreads 102 ;
+         fedx:leftJoinWorkerThreads 103 ;
+         fedx:boundJoinBlockSize 104 ;
+         fedx:enforceMaxQueryTime 105 ;
+         fedx:enableServiceAsBoundJoin false ;
+         fedx:enableMonitoring true ;
+         fedx:logQueryPlan true ;
+         fedx:logQueries true ;
+         fedx:debugQueryPlan true ;
+         fedx:includeInferredDefault false ;
+         fedx:sourceSelectionCacheSpec "spec-goes-here" ;
+         fedx:prefixDeclarations "prefixes-go-here" ;
+         fedx:consumingIterationMax 106 ;
+      ];
+   ];
+   rep:repositoryID "my-federation" ;
+   rdfs:label "FedX Federation" .
