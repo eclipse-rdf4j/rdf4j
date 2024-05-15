@@ -22,6 +22,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
@@ -59,7 +60,8 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 	private final boolean initialized;
 
-	ArrayBindingBasedQueryEvaluationContext(QueryEvaluationContext context, String[] allVariables,
+	@InternalUseOnly
+	public ArrayBindingBasedQueryEvaluationContext(QueryEvaluationContext context, String[] allVariables,
 			Comparator<Value> comparator) {
 		assert new HashSet<>(Arrays.asList(allVariables)).size() == allVariables.length;
 		this.context = context;
