@@ -500,13 +500,11 @@ class LmdbSailStore implements SailStore {
 					}
 					if (activeTxn) {
 						if (!multiThreadingActive) {
+							tripleStore.commit();
 							filterUsedIdsInTripleStore();
 						}
 						handleRemovedIdsInValueStore();
 						valueStore.commit();
-						if (!multiThreadingActive) {
-							tripleStore.commit();
-						}
 						// do not set flag to false until _after_ commit is successfully completed.
 						storeTxnStarted.set(false);
 					}
@@ -604,9 +602,9 @@ class LmdbSailStore implements SailStore {
 												Operation op = opQueue.remove();
 												if (op != null) {
 													if (op == COMMIT_TRANSACTION) {
+														tripleStore.commit();
 														filterUsedIdsInTripleStore();
 
-														tripleStore.commit();
 														nextTransactionAsync = false;
 														asyncTransactionFinished = true;
 														break;
@@ -712,23 +710,18 @@ class LmdbSailStore implements SailStore {
 
 		private long removeStatements(long subj, long pred, long obj, boolean explicit, long[] contexts)
 				throws IOException {
-			long removeCount = 0;
+			long[] removeCount = { 0 };
 			for (long contextId : contexts) {
-				final Map<Long, Long> perContextCounts = new HashMap<>();
 				tripleStore.removeTriplesByContext(subj, pred, obj, contextId, explicit, quad -> {
-					perContextCounts.merge(quad[3], 1L, (c, one) -> c + one);
+					removeCount[0]++;
 					for (long id : quad) {
 						if (id != 0L) {
 							unusedIds.add(id);
 						}
 					}
 				});
-
-				for (Entry<Long, Long> entry : perContextCounts.entrySet()) {
-					removeCount += entry.getValue();
-				}
 			}
-			return removeCount;
+			return removeCount[0];
 		}
 
 		private long removeStatements(Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)

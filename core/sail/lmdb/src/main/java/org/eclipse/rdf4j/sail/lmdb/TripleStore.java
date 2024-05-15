@@ -16,18 +16,22 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.transaction;
 import static org.eclipse.rdf4j.sail.lmdb.Varint.readListUnsigned;
 import static org.eclipse.rdf4j.sail.lmdb.Varint.writeListUnsigned;
+import static org.eclipse.rdf4j.sail.lmdb.Varint.writeUnsigned;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
+import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NOOVERWRITE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
+import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
@@ -47,6 +51,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_set_compare;
 import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
+import static org.lwjgl.util.lmdb.LMDB.mdb_strerror;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
@@ -92,7 +97,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * LMDB-based indexed storage and retrieval of RDF statements. TripleStore stores statements in the form of four integer
+ * LMDB-based indexed storage and retrieval of RDF statements. TripleStore stores statements in the form of four long
  * IDs. Each ID represent an RDF value that is stored in a {@link ValueStore}. The four IDs refer to the statement's
  * subject, predicate, object and context. The ID <tt>0</tt> is used to represent the "null" context and doesn't map to
  * an actual RDF value.
@@ -539,7 +544,7 @@ class TripleStore implements Closeable {
 	 * @throws IOException
 	 */
 	protected void filterUsedIds(Collection<Long> ids) throws IOException {
-		try (MemoryStack stack = stackPush()) {
+		readTransaction(env, (stack, txn) -> {
 			MDBVal maxKey = MDBVal.malloc(stack);
 			ByteBuffer maxKeyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
 			MDBVal keyData = MDBVal.malloc(stack);
@@ -559,7 +564,7 @@ class TripleStore implements Closeable {
 				keyBuf.clear();
 				Varint.writeUnsigned(keyBuf, id);
 				keyData.mv_data(keyBuf.flip());
-				if (mdb_get(writeTxn, contextsDbi, keyData, valueData) == 0) {
+				if (mdb_get(txn, contextsDbi, keyData, valueData) == 0) {
 					it.remove();
 				}
 			}
@@ -580,7 +585,7 @@ class TripleStore implements Closeable {
 
 					long cursor = 0;
 					try {
-						E(mdb_cursor_open(writeTxn, dbi, pp));
+						E(mdb_cursor_open(txn, dbi, pp));
 						cursor = pp.get(0);
 
 						if (fullScan) {
@@ -626,7 +631,7 @@ class TripleStore implements Closeable {
 								int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 								boolean exists = false;
 								while (!exists && rc == 0) {
-									if (mdb_cmp(writeTxn, dbi, keyData, maxKey) > 0) {
+									if (mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
 										// id was not found
 										break;
 									} else if (!matcher.matches(keyData.mv_data())) {
@@ -649,7 +654,8 @@ class TripleStore implements Closeable {
 					}
 				}
 			}
-		}
+			return null;
+		});
 	}
 
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
@@ -842,6 +848,7 @@ class TripleStore implements Closeable {
 
 	public boolean storeTriple(long subj, long pred, long obj, long context, boolean explicit) throws IOException {
 		TripleIndex mainIndex = indexes.get(0);
+		boolean stAdded;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyVal = MDBVal.malloc(stack);
 			// use calloc to get an empty data value
@@ -851,33 +858,34 @@ class TripleStore implements Closeable {
 			keyBuf.flip();
 			keyVal.mv_data(keyBuf);
 
-			boolean foundExplicit = mdb_get(writeTxn, mainIndex.getDB(true), keyVal, dataVal) == 0;
-			boolean foundImplicit = !foundExplicit && mdb_get(writeTxn, mainIndex.getDB(false), keyVal, dataVal) == 0;
-
-			boolean stAdded = !(foundExplicit || foundImplicit);
-			if (stAdded || explicit && foundImplicit) {
-				if (recordCache == null) {
-					if (requiresResize()) {
-						// map is full, resize required
-						recordCache = new TxnRecordCache(dir);
-						logger.debug("resize of map size {} required while adding - initialize record cache", mapSize);
-					}
+			if (recordCache == null) {
+				if (requiresResize()) {
+					// map is full, resize required
+					recordCache = new TxnRecordCache(dir);
+					logger.debug("resize of map size {} required while adding - initialize record cache", mapSize);
 				}
-				if (recordCache != null) {
-					long quad[] = new long[] { subj, pred, obj, context };
-					if (explicit && foundImplicit) {
-						// remove implicit statement
-						recordCache.removeRecord(quad, false);
-					}
-					// put record in cache and return immediately
-					return recordCache.storeRecord(quad, explicit);
+			}
+			if (recordCache != null) {
+				long quad[] = new long[] { subj, pred, obj, context };
+				if (explicit) {
+					// remove implicit statement
+					recordCache.removeRecord(quad, false);
 				}
+				// put record in cache and return immediately
+				return recordCache.storeRecord(quad, explicit);
+			}
 
-				if (explicit && foundImplicit) {
-					E(mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal));
-				}
-				E(mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, 0));
+			int rc = mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, MDB_NOOVERWRITE);
+			if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST) {
+				throw new IOException(mdb_strerror(rc));
+			}
+			stAdded = rc == MDB_SUCCESS;
+			boolean foundImplicit = false;
+			if (explicit && stAdded) {
+				foundImplicit = E(mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal)) == MDB_SUCCESS;
+			}
 
+			if (stAdded) {
 				for (int i = 1; i < indexes.size(); i++) {
 					TripleIndex index = indexes.get(i);
 					keyBuf.clear();
@@ -887,7 +895,7 @@ class TripleStore implements Closeable {
 					// update buffer positions in MDBVal
 					keyVal.mv_data(keyBuf);
 
-					if (explicit && foundImplicit) {
+					if (foundImplicit) {
 						E(mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal));
 					}
 					E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
@@ -897,9 +905,9 @@ class TripleStore implements Closeable {
 					incrementContext(stack, context);
 				}
 			}
-
-			return stAdded;
 		}
+
+		return stAdded;
 	}
 
 	private void incrementContext(MemoryStack stack, long context) throws IOException {
@@ -991,6 +999,7 @@ class TripleStore implements Closeable {
 				}
 				if (recordCache != null) {
 					recordCache.removeRecord(quad, explicit);
+					handler.accept(quad);
 					continue;
 				}
 
@@ -1005,6 +1014,7 @@ class TripleStore implements Closeable {
 				}
 
 				decrementContext(stack, quad[CONTEXT_IDX]);
+				handler.accept(quad);
 			}
 		} finally {
 			it.close();
@@ -1284,24 +1294,22 @@ class TripleStore implements Closeable {
 		}
 
 		void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
-			long[] values = new long[4];
 			for (int i = 0; i < fieldSeq.length; i++) {
 				switch (fieldSeq[i]) {
 				case 's':
-					values[i] = subj;
+					writeUnsigned(bb, subj);
 					break;
 				case 'p':
-					values[i] = pred;
+					writeUnsigned(bb, pred);
 					break;
 				case 'o':
-					values[i] = obj;
+					writeUnsigned(bb, obj);
 					break;
 				case 'c':
-					values[i] = context;
+					writeUnsigned(bb, context);
 					break;
 				}
 			}
-			writeListUnsigned(bb, values);
 		}
 
 		void keyToQuad(ByteBuffer key, long[] quad) {
