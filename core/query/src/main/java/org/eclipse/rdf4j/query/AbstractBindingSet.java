@@ -78,7 +78,8 @@ public abstract class AbstractBindingSet implements BindingSet {
 
 		Iterator<Binding> iter = iterator();
 		while (iter.hasNext()) {
-			sb.append(iter.next().toString());
+			Binding next = iter.next();
+			sb.append(next != null ? next.toString() : "null");
 			if (iter.hasNext()) {
 				sb.append(';');
 			}
