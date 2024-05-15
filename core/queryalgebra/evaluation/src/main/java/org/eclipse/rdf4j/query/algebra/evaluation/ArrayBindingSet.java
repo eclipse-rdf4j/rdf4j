@@ -52,8 +52,6 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	private Set<String> bindingNamesSetCache;
 	private boolean empty;
 
-//    private final boolean[] whichBindingsHaveBeenSet;
-
 	private final Value[] values;
 
 	/**
@@ -66,7 +64,6 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	public ArrayBindingSet(String... names) {
 		this.bindingNames = names;
 		this.values = new Value[names.length];
-//		this.whichBindingsHaveBeenSet = new boolean[names.length];
 		this.empty = true;
 	}
 
@@ -117,7 +114,6 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 		return (v, a) -> {
 			a.values[index] = v == null ? NULL_VALUE : v;
-//			a.whichBindingsHaveBeenSet[index] = true;
 			a.empty = false;
 			a.clearCache();
 		};
@@ -127,14 +123,11 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		int index = getIndex(bindingName);
 		if (index == -1) {
 			logger.error("Variable not known to ArrayBindingSet : " + bindingName);
-			throw new IllegalArgumentException("Variable not known to ArrayBindingSet : " + bindingName);
-//			assert false : "Variable not known to ArrayBindingSet : " + bindingName;
-//			return null;
+			assert false : "Variable not known to ArrayBindingSet : " + bindingName;
+			return null;
 		}
 		return (v, a) -> {
-//			assert !a.whichBindingsHaveBeenSet[index] : "variable already bound: " + bindingName;
 			a.values[index] = v == null ? NULL_VALUE : v;
-//			a.whichBindingsHaveBeenSet[index] = true;
 			a.empty = false;
 			a.clearCache();
 		};
@@ -367,7 +360,6 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 
 		this.values[index] = value;
-//		this.whichBindingsHaveBeenSet[index] = value != null;
 		if (value == null) {
 			this.empty = true;
 			for (Value value1 : this.values) {
