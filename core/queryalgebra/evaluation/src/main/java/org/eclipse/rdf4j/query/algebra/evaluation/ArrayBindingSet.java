@@ -74,14 +74,12 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		assert !(toCopy instanceof ArrayBindingSet);
 
 		this.bindingNames = namesArray;
-//		this.whichBindingsHaveBeenSet = new boolean[this.bindingNames.length];
 		this.values = new Value[this.bindingNames.length];
 		for (int i = 0; i < this.bindingNames.length; i++) {
 			Binding binding = toCopy.getBinding(this.bindingNames[i]);
 
 			if (binding != null) {
 				this.values[i] = binding.getValue();
-//                this.whichBindingsHaveBeenSet[i] = true;
 				if (this.values[i] == null) {
 					this.values[i] = NULL_VALUE;
 				}
@@ -98,8 +96,6 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		this.bindingNames = names;
 
 		this.values = Arrays.copyOf(toCopy.values, toCopy.values.length);
-//		this.whichBindingsHaveBeenSet = Arrays.copyOf(toCopy.whichBindingsHaveBeenSet,
-//				toCopy.whichBindingsHaveBeenSet.length);
 		this.empty = toCopy.empty;
 		assert !this.empty || size() == 0;
 	}
@@ -179,18 +175,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		if (index == -1) {
 			return null;
 		}
-		return a -> {
-			return a.values[index] != null;
-//            if(a.values[index] == NULL_VALUE) {
-//                return true;
-////                System.out.println();
-//            }
-//
-//            if(a.values[index] == null && a.whichBindingsHaveBeenSet[index]) {
-//                System.out.println();
-//            }
-//            return a.whichBindingsHaveBeenSet[index];
-		};
+		return a -> a.values[index] != null;
 	}
 
 	private int getIndex(String bindingName) {
