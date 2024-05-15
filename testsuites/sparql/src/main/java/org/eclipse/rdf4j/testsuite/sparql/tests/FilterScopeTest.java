@@ -236,7 +236,7 @@ public class FilterScopeTest extends AbstractComplianceTest {
 		conn.add(bnode4, FOAF.KNOWS, bnode5);
 	}
 
-	public Stream<DynamicTest> tests(RepositoryConnection conn) {
+	public Stream<DynamicTest> tests() {
 		return Stream.of(
 				makeTest("testScope1", this::testScope1),
 				makeTest("testScope1WithoutScopingIssue", this::testScope1WithoutScopingIssue),
