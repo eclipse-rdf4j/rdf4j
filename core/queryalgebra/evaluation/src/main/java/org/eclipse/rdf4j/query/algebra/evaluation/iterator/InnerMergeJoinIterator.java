@@ -101,6 +101,8 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 			currentLeft = leftIterator.next();
 			currentLeftValue = null;
 			leftPeekValue = null;
+			currentLeftValueAndPeekEquals = -1;
+
 		}
 
 		if (currentLeft == null) {
@@ -119,20 +121,18 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 				if (currentLeftValue == null) {
 					currentLeftValue = value.apply(currentLeft);
 					leftPeekValue = null;
+					currentLeftValueAndPeekEquals = -1;
 				}
 
-				Value left = currentLeftValue;
-				Value right = value.apply(peekRight);
-
-				int compare = compare(left, right);
+				int compare = compare(currentLeftValue, value.apply(peekRight));
 
 				if (compare == 0) {
-					equal(left, right);
+					equal();
 					return;
 				} else if (compare < 0) {
 					// leftIterator is behind, or in other words, rightIterator is ahead
 					if (leftIterator.hasNext()) {
-						lessThan(left);
+						lessThan();
 					} else {
 						close();
 						return;
@@ -148,6 +148,7 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 				currentLeft = leftIterator.next();
 				currentLeftValue = null;
 				leftPeekValue = null;
+				currentLeftValueAndPeekEquals = -1;
 			} else {
 				close();
 				return;
@@ -167,11 +168,19 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 		return compareTo;
 	}
 
-	private void lessThan(Value oldLeft) {
+	private void lessThan() {
+		Value oldLeftValue = currentLeftValue;
 		currentLeft = leftIterator.next();
-		currentLeftValue = value.apply(currentLeft);
+		if (leftPeekValue != null) {
+			currentLeftValue = leftPeekValue;
+		} else {
+			currentLeftValue = value.apply(currentLeft);
+		}
+
 		leftPeekValue = null;
-		if (oldLeft == currentLeftValue || oldLeft.equals(currentLeftValue)) {
+		currentLeftValueAndPeekEquals = -1;
+
+		if (oldLeftValue.equals(currentLeftValue)) {
 			// we have duplicate keys on the leftIterator and need to reset the rightIterator (if it
 			// is resettable)
 			if (rightIterator.isResettable()) {
@@ -182,16 +191,30 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 		}
 	}
 
-	private void equal(Value left, Value right) {
+	// -1 for unset, 0 for equal, 1 for different
+	int currentLeftValueAndPeekEquals = -1;
+
+	private void equal() {
 		if (rightIterator.isResettable()) {
 			next = join(currentLeft, rightIterator.next(), true);
 		} else {
 			if (leftPeekValue == null) {
 				BindingSet leftPeek = leftIterator.peek();
 				leftPeekValue = leftPeek != null ? value.apply(leftPeek) : null;
+				currentLeftValueAndPeekEquals = -1;
 			}
 
-			if (left.equals(leftPeekValue)) {
+			if (currentLeftValueAndPeekEquals == -1) {
+				boolean equals = currentLeftValue.equals(leftPeekValue);
+				if (equals) {
+					currentLeftValue = leftPeekValue;
+					currentLeftValueAndPeekEquals = 0;
+				} else {
+					currentLeftValueAndPeekEquals = 1;
+				}
+			}
+
+			if (currentLeftValueAndPeekEquals == 0) {
 				rightIterator.mark();
 				next = join(currentLeft, rightIterator.next(), true);
 			} else {

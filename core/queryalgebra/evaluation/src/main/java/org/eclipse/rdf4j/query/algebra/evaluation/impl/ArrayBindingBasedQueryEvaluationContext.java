@@ -255,8 +255,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 			}
 		}
 
-		BiConsumer<Value, ArrayBindingSet> wrapped = defaultArrayBindingSet
-				.getDirectAddBinding(variableName);
+		BiConsumer<Value, ArrayBindingSet> wrapped = defaultArrayBindingSet.getDirectAddBinding(variableName);
 		if (wrapped != null) {
 			return (val, bs) -> {
 				if (bs instanceof ArrayBindingSet) {
