@@ -60,7 +60,7 @@ public class PeekMarkIterator<E> implements CloseableIteration<E> {
 		}
 
 		if (mark && next != null) {
-//			assert resetPossible > 0;
+			assert resetPossible > 0;
 			buffer.add(next);
 		}
 

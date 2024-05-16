@@ -35,29 +35,34 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 	private final PeekMarkIterator<BindingSet> leftIterator;
 	private final PeekMarkIterator<BindingSet> rightIterator;
 	private final Comparator<Value> cmp;
-	private final Function<BindingSet, Value> value;
+	private final Function<BindingSet, Value> valueFunction;
 	private final QueryEvaluationContext context;
+
 	private BindingSet next;
 	private BindingSet currentLeft;
 	private Value currentLeftValue;
 	private Value leftPeekValue;
 
+	// -1 for unset, 0 for equal, 1 for different
+	int currentLeftValueAndPeekEquals = -1;
+
 	private boolean closed = false;
 
-	InnerMergeJoinIterator(CloseableIteration<BindingSet> leftIterator,
-			CloseableIteration<BindingSet> rightIterator,
-			Comparator<Value> cmp, Function<BindingSet, Value> value, QueryEvaluationContext context)
+	InnerMergeJoinIterator(CloseableIteration<BindingSet> leftIterator, CloseableIteration<BindingSet> rightIterator,
+			Comparator<Value> cmp, Function<BindingSet, Value> valueFunction, QueryEvaluationContext context)
 			throws QueryEvaluationException {
+
 		this.leftIterator = new PeekMarkIterator<>(leftIterator);
 		this.rightIterator = new PeekMarkIterator<>(rightIterator);
 		this.cmp = cmp;
-		this.value = value;
+		this.valueFunction = valueFunction;
 		this.context = context;
 	}
 
 	public static CloseableIteration<BindingSet> getInstance(QueryEvaluationStep leftPrepared,
 			QueryEvaluationStep preparedRight, BindingSet bindings, Comparator<Value> cmp,
 			Function<BindingSet, Value> value, QueryEvaluationContext context) {
+
 		CloseableIteration<BindingSet> leftIter = leftPrepared.evaluate(bindings);
 		if (leftIter == QueryEvaluationStep.EMPTY_ITERATION) {
 			return leftIter;
@@ -119,12 +124,12 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 				BindingSet peekRight = rightIterator.peek();
 
 				if (currentLeftValue == null) {
-					currentLeftValue = value.apply(currentLeft);
+					currentLeftValue = valueFunction.apply(currentLeft);
 					leftPeekValue = null;
 					currentLeftValueAndPeekEquals = -1;
 				}
 
-				int compare = compare(currentLeftValue, value.apply(peekRight));
+				int compare = compare(currentLeftValue, valueFunction.apply(peekRight));
 
 				if (compare == 0) {
 					equal();
@@ -174,7 +179,7 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 		if (leftPeekValue != null) {
 			currentLeftValue = leftPeekValue;
 		} else {
-			currentLeftValue = value.apply(currentLeft);
+			currentLeftValue = valueFunction.apply(currentLeft);
 		}
 
 		leftPeekValue = null;
@@ -190,9 +195,6 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 			rightIterator.unmark();
 		}
 	}
-
-	// -1 for unset, 0 for equal, 1 for different
-	int currentLeftValueAndPeekEquals = -1;
 
 	private void equal() {
 		if (rightIterator.isResettable()) {
@@ -212,7 +214,7 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 	private void doLeftPeek() {
 		if (leftPeekValue == null) {
 			BindingSet leftPeek = leftIterator.peek();
-			leftPeekValue = leftPeek != null ? value.apply(leftPeek) : null;
+			leftPeekValue = leftPeek != null ? valueFunction.apply(leftPeek) : null;
 			currentLeftValueAndPeekEquals = -1;
 		}
 

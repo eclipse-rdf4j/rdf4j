@@ -49,9 +49,14 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvaluationContext {
+
 	public static final Predicate<BindingSet> HAS_BINDING_FALSE = (bs) -> false;
 	public static final Function<BindingSet, Binding> GET_BINDING_NULL = (bs) -> null;
 	public static final Function<BindingSet, Value> GET_VALUE_NULL = (bs) -> null;
+	public static final BiConsumer<Value, MutableBindingSet> SET_BINDING_NO_OP = (val, bs) -> {
+	};
+	public static final BiConsumer<Value, MutableBindingSet> ADD_BINDING_NO_OP = SET_BINDING_NO_OP;
+
 	private final QueryEvaluationContext context;
 	private final String[] allVariables;
 	private final Set<String> allVariablesSet;
@@ -121,21 +126,27 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 					return hasBinding[i];
 				}
 			}
+
 			for (int i = 0; i < allVariables.length; i++) {
 				if (allVariables[i].equals(variableName)) {
 					return hasBinding[i];
 				}
 			}
+
+			return HAS_BINDING_FALSE;
 		}
 
 		assert variableName != null && !variableName.isEmpty();
+
 		Function<ArrayBindingSet, Boolean> directHasVariable = defaultArrayBindingSet.getDirectHasBinding(variableName);
+
 		if (directHasVariable != null) {
 			return new HasBinding(variableName, directHasVariable);
 		} else {
 			// If the variable is not in the default set, it can never be part of this array binding
 			return HAS_BINDING_FALSE;
 		}
+
 	}
 
 	static private class HasBinding implements Predicate<BindingSet> {
@@ -169,15 +180,19 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 					return getBinding[i];
 				}
 			}
+
 			for (int i = 0; i < allVariables.length; i++) {
 				if (allVariables[i].equals(variableName)) {
 					return getBinding[i];
 				}
 			}
+
+			return GET_BINDING_NULL;
 		}
 
 		Function<ArrayBindingSet, Binding> directAccessForVariable = defaultArrayBindingSet
 				.getDirectGetBinding(variableName);
+
 		if (directAccessForVariable != null) {
 			return (bs) -> {
 				if (bs.isEmpty()) {
@@ -201,21 +216,26 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 					return getValue[i];
 				}
 			}
+
 			for (int i = 0; i < allVariables.length; i++) {
 				if (allVariables[i].equals(variableName)) {
 					return getValue[i];
 				}
 			}
+
+			return GET_VALUE_NULL;
 		}
 
 		Function<ArrayBindingSet, Value> directAccessForVariable = defaultArrayBindingSet
 				.getDirectGetValue(variableName);
+
 		if (directAccessForVariable != null) {
 			return new ValueGetter(variableName, directAccessForVariable);
 		} else {
 			// If the variable is not in the default set, it can never be part of this array binding
 			return GET_VALUE_NULL;
 		}
+
 	}
 
 	private static class ValueGetter implements Function<BindingSet, Value> {
@@ -250,11 +270,14 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 					return setBinding[i];
 				}
 			}
+
 			for (int i = 0; i < allVariables.length; i++) {
 				if (allVariables[i].equals(variableName)) {
 					return setBinding[i];
 				}
 			}
+
+			return SET_BINDING_NO_OP;
 		}
 
 		BiConsumer<Value, ArrayBindingSet> directAccessForVariable = defaultArrayBindingSet
@@ -268,7 +291,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 				}
 			};
 		} else {
-			return (val, bs) -> bs.setBinding(variableName, val);
+			return SET_BINDING_NO_OP;
 		}
 	}
 
@@ -285,6 +308,8 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 					return addBinding[i];
 				}
 			}
+
+			return ADD_BINDING_NO_OP;
 		}
 
 		BiConsumer<Value, ArrayBindingSet> wrapped = defaultArrayBindingSet.getDirectAddBinding(variableName);
@@ -297,7 +322,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 				}
 			};
 		} else {
-			return (val, bs) -> bs.addBinding(variableName, val);
+			return ADD_BINDING_NO_OP;
 		}
 	}
 
