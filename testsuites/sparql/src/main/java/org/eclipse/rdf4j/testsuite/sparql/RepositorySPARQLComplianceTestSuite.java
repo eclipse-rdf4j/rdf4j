@@ -69,6 +69,11 @@ public abstract class RepositorySPARQLComplianceTestSuite {
 	}
 
 	@TestFactory
+	Stream<DynamicTest> filterScopeTests() throws RDF4JException, IOException {
+		return new FilterScopeTest(this::getEmptyInitializedRepository).tests();
+	}
+
+	@TestFactory
 	Stream<DynamicTest> basic() throws RDF4JException, IOException {
 		return new BasicTest(this::getEmptyInitializedRepository).tests();
 	}

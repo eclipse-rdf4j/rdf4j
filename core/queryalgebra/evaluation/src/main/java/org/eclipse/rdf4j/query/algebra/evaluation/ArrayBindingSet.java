@@ -23,6 +23,7 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -42,14 +43,14 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	private static final long serialVersionUID = -1L;
 
 	private static final Logger logger = LoggerFactory.getLogger(ArrayBindingSet.class);
+	private static final Value NULL_VALUE = Values
+			.iri("urn:null:d57c56f3-41a9-468e-8dce-5706ebdef84c_e88d9e52-27cb-4056-a889-1ea353fa6f0c");
 
 	private final String[] bindingNames;
 
 	// Creating a LinkedHashSet is expensive, so we should cache the binding names set
 	private Set<String> bindingNamesSetCache;
 	private boolean empty;
-
-	private final boolean[] whichBindingsHaveBeenSet;
 
 	private final Value[] values;
 
@@ -63,7 +64,6 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	public ArrayBindingSet(String... names) {
 		this.bindingNames = names;
 		this.values = new Value[names.length];
-		this.whichBindingsHaveBeenSet = new boolean[names.length];
 		this.empty = true;
 	}
 
@@ -71,13 +71,17 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		assert !(toCopy instanceof ArrayBindingSet);
 
 		this.bindingNames = namesArray;
-		this.whichBindingsHaveBeenSet = new boolean[this.bindingNames.length];
 		this.values = new Value[this.bindingNames.length];
 		for (int i = 0; i < this.bindingNames.length; i++) {
 			Binding binding = toCopy.getBinding(this.bindingNames[i]);
+
 			if (binding != null) {
 				this.values[i] = binding.getValue();
-				this.whichBindingsHaveBeenSet[i] = true;
+				if (this.values[i] == null) {
+					this.values[i] = NULL_VALUE;
+				}
+			} else if (hasBinding(this.bindingNames[i])) {
+				this.values[i] = NULL_VALUE;
 			}
 		}
 		this.empty = toCopy.isEmpty();
@@ -89,8 +93,6 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		this.bindingNames = names;
 
 		this.values = Arrays.copyOf(toCopy.values, toCopy.values.length);
-		this.whichBindingsHaveBeenSet = Arrays.copyOf(toCopy.whichBindingsHaveBeenSet,
-				toCopy.whichBindingsHaveBeenSet.length);
 		this.empty = toCopy.empty;
 		assert !this.empty || size() == 0;
 	}
@@ -111,8 +113,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			return null;
 		}
 		return (v, a) -> {
-			a.values[index] = v;
-			a.whichBindingsHaveBeenSet[index] = true;
+			a.values[index] = v == null ? NULL_VALUE : v;
 			a.empty = false;
 			a.clearCache();
 		};
@@ -126,9 +127,8 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			return null;
 		}
 		return (v, a) -> {
-			assert !a.whichBindingsHaveBeenSet[index] : "variable already bound: " + bindingName;
-			a.values[index] = v;
-			a.whichBindingsHaveBeenSet[index] = true;
+			assert a.values[index] == null;
+			a.values[index] = v == null ? NULL_VALUE : v;
 			a.empty = false;
 			a.clearCache();
 		};
@@ -143,6 +143,9 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 		return a -> {
 			Value value = a.values[index];
+			if (value == NULL_VALUE) {
+				value = null;
+			}
 			if (value != null) {
 				return new SimpleBinding(bindingName, value);
 			} else {
@@ -157,7 +160,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		if (index == -1) {
 			return null;
 		}
-		return a -> a.values[index];
+		return a -> a.values[index] == NULL_VALUE ? null : a.values[index];
 
 	}
 
@@ -166,7 +169,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		if (index == -1) {
 			return null;
 		}
-		return a -> a.whichBindingsHaveBeenSet[index];
+		return a -> a.values[index] != null;
 	}
 
 	private int getIndex(String bindingName) {
@@ -195,7 +198,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 				this.bindingNamesSetCache = Collections.emptySet();
 			} else if (size == 1) {
 				for (int i = 0; i < this.bindingNames.length; i++) {
-					if (whichBindingsHaveBeenSet[i]) {
+					if (values[i] != null) {
 						this.bindingNamesSetCache = Collections.singleton(bindingNames[i]);
 						break;
 					}
@@ -204,7 +207,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			} else {
 				LinkedHashSet<String> bindingNamesSetCache = new LinkedHashSet<>(size * 2);
 				for (int i = 0; i < this.bindingNames.length; i++) {
-					if (whichBindingsHaveBeenSet[i]) {
+					if (values[i] != null) {
 						bindingNamesSetCache.add(bindingNames[i]);
 					}
 				}
@@ -222,14 +225,14 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 
 		for (int i = 0; i < bindingNames.length; i++) {
-			if (bindingNames[i] == bindingName && whichBindingsHaveBeenSet[i]) {
-				return values[i];
+			if (bindingNames[i] == bindingName && values[i] != null) {
+				return values[i] == NULL_VALUE ? null : values[i];
 			}
 		}
 
 		for (int i = 0; i < bindingNames.length; i++) {
-			if (bindingNames[i].equals(bindingName) && whichBindingsHaveBeenSet[i]) {
-				return values[i];
+			if (bindingNames[i].equals(bindingName) && values[i] != null) {
+				return values[i] == NULL_VALUE ? null : values[i];
 			}
 		}
 		return null;
@@ -242,6 +245,9 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 
 		Value value = getValue(bindingName);
+		if (value == NULL_VALUE) {
+			value = null;
+		}
 
 		if (value != null) {
 			return new SimpleBinding(bindingName, value);
@@ -260,7 +266,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		if (index == -1) {
 			return false;
 		}
-		return whichBindingsHaveBeenSet[index];
+		return values[index] != null;
 	}
 
 	@Override
@@ -280,8 +286,8 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 		int size = 0;
 
-		for (boolean value : whichBindingsHaveBeenSet) {
-			if (value) {
+		for (Value value : values) {
+			if (value != null) {
 				size++;
 			}
 		}
@@ -298,14 +304,14 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 			if (size == 1) {
 				for (int i = 0; i < bindingNames.length; i++) {
-					if (whichBindingsHaveBeenSet[i]) {
+					if (values[i] != null) {
 						sortedBindingNames = Collections.singletonList(bindingNames[i]);
 					}
 				}
 			} else {
 				ArrayList<String> names = new ArrayList<>(size);
 				for (int i = 0; i < bindingNames.length; i++) {
-					if (whichBindingsHaveBeenSet[i]) {
+					if (values[i] != null) {
 						names.add(bindingNames[i]);
 					}
 				}
@@ -320,17 +326,17 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	@Override
 	public void addBinding(Binding binding) {
 		int index = getIndex(binding.getName());
+		Value value = binding.getValue();
 		if (index == -1) {
 			logger.error(
-					"We don't actually support adding a binding. " + binding.getName() + " : " + binding.getValue());
+					"We don't actually support adding a binding. " + binding.getName() + " : " + value);
 			assert false
-					: "We don't actually support adding a binding. " + binding.getName() + " : " + binding.getValue();
+					: "We don't actually support adding a binding. " + binding.getName() + " : " + value;
 			return;
 		}
 
-		assert !this.whichBindingsHaveBeenSet[index];
-		this.values[index] = binding.getValue();
-		this.whichBindingsHaveBeenSet[index] = true;
+		assert this.values[index] == null;
+		this.values[index] = value == null ? NULL_VALUE : value;
 		empty = false;
 		clearCache();
 	}
@@ -341,8 +347,8 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		if (index == -1) {
 			return;
 		}
-		this.values[index] = binding.getValue();
-		this.whichBindingsHaveBeenSet[index] = true;
+		Value value = binding.getValue();
+		this.values[index] = value == null ? NULL_VALUE : value;
 		empty = false;
 		clearCache();
 	}
@@ -355,11 +361,10 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 
 		this.values[index] = value;
-		this.whichBindingsHaveBeenSet[index] = value != null;
 		if (value == null) {
 			this.empty = true;
-			for (boolean b : whichBindingsHaveBeenSet) {
-				if (b) {
+			for (Value value1 : this.values) {
+				if (value1 != null) {
 					this.empty = false;
 					break;
 				}
@@ -382,17 +387,16 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	public void addAll(ArrayBindingSet other) {
 		if (other.bindingNames == bindingNames) {
 			for (int i = 0; i < bindingNames.length; i++) {
-				if (other.whichBindingsHaveBeenSet[i]) {
+				if (other.values[i] != null) {
 					this.values[i] = other.values[i];
-					this.whichBindingsHaveBeenSet[i] = true;
 					this.empty = false;
 				}
 			}
 		} else {
 			for (int i = 0; i < bindingNames.length; i++) {
 				if (other.hasBinding(bindingNames[i])) {
-					this.values[i] = other.getValue(bindingNames[i]);
-					this.whichBindingsHaveBeenSet[i] = true;
+					Value value = other.getValue(bindingNames[i]);
+					this.values[i] = value == null ? NULL_VALUE : value;
 					this.empty = false;
 				}
 			}
@@ -412,7 +416,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		@Override
 		public boolean hasNext() {
 			while (index < values.length) {
-				if (whichBindingsHaveBeenSet[index]) {
+				if (values[index] != null) {
 					return true;
 				}
 				index++;
@@ -423,9 +427,12 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		@Override
 		public Binding next() {
 			while (index < values.length) {
-				if (whichBindingsHaveBeenSet[index]) {
+				if (values[index] != null) {
 					String name = bindingNames[index];
 					Value value = values[index++];
+					if (value == NULL_VALUE) {
+						value = null;
+					}
 					if (value != null) {
 						return new SimpleBinding(name, value);
 					} else {

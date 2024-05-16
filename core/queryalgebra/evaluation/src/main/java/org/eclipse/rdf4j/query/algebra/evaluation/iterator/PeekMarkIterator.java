@@ -94,7 +94,6 @@ public class PeekMarkIterator<E> implements CloseableIteration<E> {
 	}
 
 	/**
-	 *
 	 * @return the next element without consuming it, or null if there are no more elements
 	 */
 	public E peek() {
@@ -115,7 +114,14 @@ public class PeekMarkIterator<E> implements CloseableIteration<E> {
 		}
 		mark = true;
 		resetPossible = 1;
-		buffer = new ArrayList<>();
+
+		if (buffer != null && !bufferIterator.hasNext()) {
+			buffer.clear();
+			bufferIterator = Collections.emptyIterator();
+		} else {
+			buffer = new ArrayList<>();
+		}
+
 		if (next != null) {
 			buffer.add(next);
 		}
@@ -188,6 +194,12 @@ public class PeekMarkIterator<E> implements CloseableIteration<E> {
 	public void unmark() {
 		mark = false;
 		resetPossible = -1;
-		buffer = null;
+		if (bufferIterator.hasNext()) {
+			buffer = null;
+		} else if (buffer != null) {
+
+			buffer.clear();
+			bufferIterator = Collections.emptyIterator();
+		}
 	}
 }
