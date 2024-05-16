@@ -33,9 +33,11 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
@@ -47,6 +49,9 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvaluationContext {
+	public static final Predicate<BindingSet> HAS_BINDING_FALSE = (bs) -> false;
+	public static final Function<BindingSet, Binding> GET_BINDING_NULL = (bs) -> null;
+	public static final Function<BindingSet, Value> GET_VALUE_NULL = (bs) -> null;
 	private final QueryEvaluationContext context;
 	private final String[] allVariables;
 	private final Set<String> allVariablesSet;
@@ -116,6 +121,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 					return hasBinding[i];
 				}
 			}
+			for (int i = 0; i < allVariables.length; i++) {
+				if (allVariables[i].equals(variableName)) {
+					return hasBinding[i];
+				}
+			}
 		}
 
 		assert variableName != null && !variableName.isEmpty();
@@ -124,7 +134,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 			return new HasBinding(variableName, directHasVariable);
 		} else {
 			// If the variable is not in the default set, it can never be part of this array binding
-			return (bs) -> false;
+			return HAS_BINDING_FALSE;
 		}
 	}
 
@@ -159,6 +169,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 					return getBinding[i];
 				}
 			}
+			for (int i = 0; i < allVariables.length; i++) {
+				if (allVariables[i].equals(variableName)) {
+					return getBinding[i];
+				}
+			}
 		}
 
 		Function<ArrayBindingSet, Binding> directAccessForVariable = defaultArrayBindingSet
@@ -174,7 +189,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 				}
 			};
 		} else {
-			return (bs) -> null;
+			return GET_BINDING_NULL;
 		}
 	}
 
@@ -186,6 +201,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 					return getValue[i];
 				}
 			}
+			for (int i = 0; i < allVariables.length; i++) {
+				if (allVariables[i].equals(variableName)) {
+					return getValue[i];
+				}
+			}
 		}
 
 		Function<ArrayBindingSet, Value> directAccessForVariable = defaultArrayBindingSet
@@ -194,7 +214,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 			return new ValueGetter(variableName, directAccessForVariable);
 		} else {
 			// If the variable is not in the default set, it can never be part of this array binding
-			return (bs) -> null;
+			return GET_VALUE_NULL;
 		}
 	}
 
@@ -230,6 +250,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 					return setBinding[i];
 				}
 			}
+			for (int i = 0; i < allVariables.length; i++) {
+				if (allVariables[i].equals(variableName)) {
+					return setBinding[i];
+				}
+			}
 		}
 
 		BiConsumer<Value, ArrayBindingSet> directAccessForVariable = defaultArrayBindingSet
@@ -252,6 +277,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 		if (initialized) {
 			for (int i = 0; i < allVariables.length; i++) {
 				if (allVariables[i] == variableName) {
+					return addBinding[i];
+				}
+			}
+			for (int i = 0; i < allVariables.length; i++) {
+				if (allVariables[i].equals(variableName)) {
 					return addBinding[i];
 				}
 			}
@@ -286,6 +316,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 		HashMap<String, String> varNames = new LinkedHashMap<>();
 		AbstractSimpleQueryModelVisitor<QueryEvaluationException> queryModelVisitorBase = new AbstractSimpleQueryModelVisitor<>(
 				true) {
+
+			@Override
+			public void meetOther(QueryModelNode node) throws QueryEvaluationException {
+				super.meetOther(node);
+			}
 
 			@Override
 			public void meet(Var node) throws QueryEvaluationException {
@@ -335,6 +370,12 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 			@Override
 			public void meet(ExtensionElem node) throws QueryEvaluationException {
+				node.setName(varNames.computeIfAbsent(node.getName(), k -> k));
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(GroupElem node) throws QueryEvaluationException {
 				node.setName(varNames.computeIfAbsent(node.getName(), k -> k));
 				super.meet(node);
 			}

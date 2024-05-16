@@ -146,7 +146,7 @@ public abstract class AbstractSimpleQueryModelVisitor<X extends Exception> imple
 
 	@Override
 	public void meet(BNodeGenerator node) throws X {
-
+		node.visitChildren(this);
 	}
 
 	@Override

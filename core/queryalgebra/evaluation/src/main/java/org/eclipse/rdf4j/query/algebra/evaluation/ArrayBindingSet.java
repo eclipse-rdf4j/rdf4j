@@ -18,7 +18,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Set;
-import java.util.UUID;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
@@ -44,7 +43,8 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	private static final long serialVersionUID = -1L;
 
 	private static final Logger logger = LoggerFactory.getLogger(ArrayBindingSet.class);
-	private static final Value NULL_VALUE = Values.iri("urn:null:" + UUID.randomUUID() + UUID.randomUUID());
+	private static final Value NULL_VALUE = Values
+			.iri("urn:null:d57c56f3-41a9-468e-8dce-5706ebdef84c_e88d9e52-27cb-4056-a889-1ea353fa6f0c");
 
 	private final String[] bindingNames;
 
@@ -202,7 +202,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 						break;
 					}
 				}
-//				assert this.bindingNamesSetCache != null;
+				assert this.bindingNamesSetCache != null;
 			} else {
 				LinkedHashSet<String> bindingNamesSetCache = new LinkedHashSet<>(size * 2);
 				for (int i = 0; i < this.bindingNames.length; i++) {
