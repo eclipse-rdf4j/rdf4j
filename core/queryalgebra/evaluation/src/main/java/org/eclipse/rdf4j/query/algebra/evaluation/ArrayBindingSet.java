@@ -127,6 +127,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			return null;
 		}
 		return (v, a) -> {
+			assert a.values[index] == null;
 			a.values[index] = v == null ? NULL_VALUE : v;
 			a.empty = false;
 			a.clearCache();
