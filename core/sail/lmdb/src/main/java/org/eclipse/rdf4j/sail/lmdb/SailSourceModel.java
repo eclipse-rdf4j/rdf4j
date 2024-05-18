@@ -11,6 +11,8 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -44,6 +46,13 @@ import org.slf4j.LoggerFactory;
 class SailSourceModel extends AbstractModel {
 
 	private static final Logger logger = LoggerFactory.getLogger(SailSourceModel.class);
+
+	public SailSourceModel(SailStore store, Model bulk) {
+		this(store);
+		sink().approveAll(bulk, bulk.contexts());
+		size = bulk.size();
+		sink.flush();
+	}
 
 	private final class StatementIterator implements Iterator<Statement> {
 
@@ -261,6 +270,52 @@ class SailSourceModel extends AbstractModel {
 		} catch (SailException e) {
 			throw new ModelException(e);
 		}
+	}
+
+	@Override
+	public boolean addAll(Collection<? extends Statement> statements) {
+		if (statements.isEmpty()) {
+			return false;
+		}
+
+		if (statements.size() == 1) {
+			Statement st = statements.iterator().next();
+			return add(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
+		}
+
+		boolean added = false;
+
+		HashSet<Statement> tempSet = new HashSet<>();
+		HashSet<Resource> contexts = new HashSet<>();
+		SailSink sink = sink();
+
+		for (Statement statement : statements) {
+			if (tempSet.size() >= 1024) {
+				sink.approveAll(tempSet, contexts);
+				if (size >= 0) {
+					size += tempSet.size();
+				}
+				tempSet.clear();
+				contexts.clear();
+				added = true;
+			}
+			if (!contains(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+					statement.getContext())) {
+				contexts.add(statement.getContext());
+				tempSet.add(statement);
+			}
+		}
+
+		if (!tempSet.isEmpty()) {
+			sink.approveAll(tempSet, contexts);
+			if (size >= 0) {
+				size += tempSet.size();
+			}
+			added = true;
+		}
+
+		return added;
+
 	}
 
 	@Override
