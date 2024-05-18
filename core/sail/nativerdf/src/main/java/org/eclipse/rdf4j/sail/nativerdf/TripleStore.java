@@ -506,6 +506,10 @@ class TripleStore implements Closeable {
 		return btreeIter;
 	}
 
+	public void disableTxnStatus() {
+		txnStatusFile.disable();
+	}
+
 	/*-------------------------------------*
 	 * Inner class ExplicitStatementFilter *
 	 *-------------------------------------*/

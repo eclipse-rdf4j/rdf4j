@@ -316,6 +316,10 @@ class NativeSailStore implements SailStore {
 		return tripleStore.cardinality(subjID, predID, objID, contextID);
 	}
 
+	public void disableTxnStatus() {
+		this.tripleStore.disableTxnStatus();
+	}
+
 	private final class NativeSailSource extends BackingSailSource {
 
 		private final boolean explicit;
@@ -442,6 +446,44 @@ class NativeSailStore implements SailStore {
 		@Override
 		public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
 			addStatement(subj, pred, obj, explicit, ctx);
+		}
+
+		@Override
+		public void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
+			sinkStoreAccessLock.lock();
+			startTriplestoreTransaction();
+
+			try {
+				for (Statement statement : approved) {
+					Resource subj = statement.getSubject();
+					IRI pred = statement.getPredicate();
+					Value obj = statement.getObject();
+					Resource context = statement.getContext();
+
+					int subjID = valueStore.storeValue(subj);
+					int predID = valueStore.storeValue(pred);
+					int objID = valueStore.storeValue(obj);
+
+					int contextID = 0;
+					if (context != null) {
+						contextID = valueStore.storeValue(context);
+					}
+
+					boolean wasNew = tripleStore.storeTriple(subjID, predID, objID, contextID, explicit);
+					if (wasNew && context != null) {
+						contextStore.increment(context);
+					}
+
+				}
+			} catch (IOException e) {
+				throw new SailException(e);
+			} catch (RuntimeException e) {
+				logger.error("Encountered an unexpected problem while trying to add a statement", e);
+				throw e;
+			} finally {
+				sinkStoreAccessLock.unlock();
+			}
+
 		}
 
 		@Override

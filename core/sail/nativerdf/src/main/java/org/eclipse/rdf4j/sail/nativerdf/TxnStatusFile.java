@@ -22,6 +22,12 @@ import org.eclipse.rdf4j.common.io.NioFile;
  */
 class TxnStatusFile {
 
+	boolean disabled = false;
+
+	public void disable() {
+		this.disabled = true;
+	}
+
 	public enum TxnStatus {
 
 		/**
@@ -100,6 +106,9 @@ class TxnStatusFile {
 	 * @throws IOException If the transaction status could not be written to file.
 	 */
 	public void setTxnStatus(TxnStatus txnStatus) throws IOException {
+		if (disabled) {
+			return;
+		}
 		if (txnStatus == TxnStatus.NONE) {
 			nioFile.truncate(0);
 		} else {
@@ -115,6 +124,10 @@ class TxnStatusFile {
 	 * @throws IOException If the transaction status file could not be read.
 	 */
 	public TxnStatus getTxnStatus() throws IOException {
+		if (disabled) {
+			return TxnStatus.NONE;
+		}
+
 		byte[] bytes = nioFile.readBytes(0, 1);
 
 		TxnStatus status;
@@ -147,6 +160,10 @@ class TxnStatusFile {
 	}
 
 	private TxnStatus getTxnStatusDeprecated() throws IOException {
+		if (disabled) {
+			return TxnStatus.NONE;
+		}
+
 		byte[] bytes = nioFile.readBytes(0, (int) nioFile.size());
 
 		String s = new String(bytes, US_ASCII);
