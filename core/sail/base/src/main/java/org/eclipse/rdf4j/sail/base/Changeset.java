@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.ConcurrentModificationException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -806,6 +807,25 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	void removeApproved(Statement next) {
 		assert !closed;
+
+		try {
+			Model localApproved = approved;
+			if (localApproved != null && !readWriteLock.writeLock.isWriteLocked() && !localApproved.contains(next)) {
+				boolean readLock = readWriteLock.readLock();
+				try {
+					if (approved != null && !approvedEmpty) {
+						if (!approved.contains(next)) {
+							return;
+						}
+					}
+				} finally {
+					readWriteLock.unlockReader(readLock);
+				}
+			}
+
+		} catch (ConcurrentModificationException ignored) {
+		}
+
 		long writeLock = readWriteLock.writeLock();
 		try {
 			if (approved != null) {
