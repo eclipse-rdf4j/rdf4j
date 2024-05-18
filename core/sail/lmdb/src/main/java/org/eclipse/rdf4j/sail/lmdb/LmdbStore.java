@@ -253,9 +253,11 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			backingStore = new LmdbSailStore(dataDir, config);
 			this.store = new SnapshotSailStore(backingStore, () -> new MemoryOverflowModel() {
 				@Override
-				protected SailStore createSailStore(File dataDir) throws IOException, SailException {
+				protected LmdbSailStore createSailStore(File dataDir) throws IOException, SailException {
 					// Model can't fit into memory, use another LmdbSailStore to store delta
-					return new LmdbSailStore(dataDir, config);
+					LmdbSailStore lmdbSailStore = new LmdbSailStore(dataDir, config);
+					lmdbSailStore.enableMultiThreading = false;
+					return lmdbSailStore;
 				}
 			}) {
 
@@ -406,4 +408,5 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	public Supplier<CollectionFactory> getCollectionFactory() {
 		return () -> new MapDb3CollectionFactory(getIterationCacheSyncThreshold());
 	}
+
 }
