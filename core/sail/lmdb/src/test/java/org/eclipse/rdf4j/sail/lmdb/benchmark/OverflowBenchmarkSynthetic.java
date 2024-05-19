@@ -50,10 +50,10 @@ import ch.qos.logback.classic.Logger;
  * Benchmarks transaction isolation and overflow performance with synthetic data.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 0)
+@Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms64M", "-Xmx64M", "-XX:+UseG1GC" })
-@Measurement(iterations = 10, batchSize = 1, time = 1, timeUnit = TimeUnit.MILLISECONDS)
+@Measurement(iterations = 5, batchSize = 1, time = 1, timeUnit = TimeUnit.MILLISECONDS)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class OverflowBenchmarkSynthetic {
 
