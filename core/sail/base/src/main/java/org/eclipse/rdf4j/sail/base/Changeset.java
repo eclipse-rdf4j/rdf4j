@@ -852,12 +852,12 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 
 		try {
-			Model localApproved = approved;
-			if (localApproved != null && !readWriteLock.writeLock.isWriteLocked() && !localApproved.contains(next)) {
+			CountedReference<Model> localApproved = approved;
+			if (localApproved != null && !readWriteLock.writeLock.isWriteLocked() && !localApproved.get().contains(next)) {
 				boolean readLock = readWriteLock.readLock();
 				try {
 					if (approved != null && !approvedEmpty) {
-						if (!approved.contains(next)) {
+						if (!approved.get().contains(next)) {
 							return;
 						}
 					}
