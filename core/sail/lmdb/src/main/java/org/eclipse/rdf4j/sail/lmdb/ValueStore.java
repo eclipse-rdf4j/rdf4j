@@ -899,37 +899,41 @@ class ValueStore extends AbstractValueFactory {
 
 	public void gcIds(Collection<Long> ids, Collection<Long> nextIds) throws IOException {
 		if (!ids.isEmpty()) {
-			// contains IDs for data types and namespaces which are freed by garbage collecting literals and URIs
-			resizeMap(writeTxn, 2 * ids.size() * (1 + Long.BYTES + 2 + Long.BYTES));
+			// wrap into read txn as resizeMap expects an active surrounding read txn
+			readTransaction(env, (stack1, txn1) -> {
+				// contains IDs for data types and namespaces which are freed by garbage collecting literals and URIs
+				resizeMap(writeTxn, 2 * ids.size() * (1 + Long.BYTES + 2 + Long.BYTES));
 
-			final Collection<Long> finalIds = ids;
-			final Collection<Long> finalNextIds = nextIds;
-			writeTransaction((stack, writeTxn) -> {
-				MDBVal revIdVal = MDBVal.calloc(stack);
-				MDBVal idVal = MDBVal.calloc(stack);
-				MDBVal dataVal = MDBVal.calloc(stack);
+				final Collection<Long> finalIds = ids;
+				final Collection<Long> finalNextIds = nextIds;
+				writeTransaction((stack, writeTxn) -> {
+					MDBVal revIdVal = MDBVal.calloc(stack);
+					MDBVal idVal = MDBVal.calloc(stack);
+					MDBVal dataVal = MDBVal.calloc(stack);
 
-				ByteBuffer revIdBb = stack.malloc(1 + Long.BYTES + 2 + Long.BYTES);
-				Varint.writeUnsigned(revIdBb, revision.getRevisionId());
-				int revLength = revIdBb.position();
-				for (Long id : finalIds) {
-					revIdBb.position(revLength).limit(revIdBb.capacity());
-					revIdVal.mv_data(id2data(revIdBb, id).flip());
-					// check if id has internal references and therefore cannot be deleted
-					idVal.mv_data(revIdBb.slice().position(revLength));
-					if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == 0) {
-						continue;
+					ByteBuffer revIdBb = stack.malloc(1 + Long.BYTES + 2 + Long.BYTES);
+					Varint.writeUnsigned(revIdBb, revision.getRevisionId());
+					int revLength = revIdBb.position();
+					for (Long id : finalIds) {
+						revIdBb.position(revLength).limit(revIdBb.capacity());
+						revIdVal.mv_data(id2data(revIdBb, id).flip());
+						// check if id has internal references and therefore cannot be deleted
+						idVal.mv_data(revIdBb.slice().position(revLength));
+						if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == 0) {
+							continue;
+						}
+						// mark id as unused
+						E(mdb_put(writeTxn, unusedDbi, revIdVal, dataVal, 0));
 					}
-					// mark id as unused
-					E(mdb_put(writeTxn, unusedDbi, revIdVal, dataVal, 0));
-				}
 
-				deleteValueToIdMappings(stack, writeTxn, finalIds, finalNextIds);
+					deleteValueToIdMappings(stack, writeTxn, finalIds, finalNextIds);
 
-				invalidateRevisionOnCommit = true;
-				if (nextValueEvictionTime < 0) {
-					nextValueEvictionTime = System.currentTimeMillis() + VALUE_EVICTION_INTERVAL;
-				}
+					invalidateRevisionOnCommit = true;
+					if (nextValueEvictionTime < 0) {
+						nextValueEvictionTime = System.currentTimeMillis() + VALUE_EVICTION_INTERVAL;
+					}
+					return null;
+				});
 				return null;
 			});
 		}
