@@ -60,7 +60,7 @@ abstract class MemoryOverflowModel extends AbstractModel implements AutoCloseabl
 	// To reduce the chance of OOM we will always overflow once we get close to running out of memory even if we think
 	// we have space for one more block. The limit is currently set at 32 MB for small heaps and 128 MB for large heaps.
 	private static final int MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = RUNTIME.maxMemory() >= 1024 ? 128 * 1024 * 1024
-		: 32 * 1024 * 1024;
+			: 32 * 1024 * 1024;
 
 	final Logger logger = LoggerFactory.getLogger(MemoryOverflowModel.class);
 
@@ -201,7 +201,7 @@ abstract class MemoryOverflowModel extends AbstractModel implements AutoCloseabl
 
 			@Override
 			protected void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
-				Resource... contexts) {
+					Resource... contexts) {
 				MemoryOverflowModel.this.removeTermIteration(iter, subj, pred, obj, contexts);
 			}
 		};
@@ -209,7 +209,7 @@ abstract class MemoryOverflowModel extends AbstractModel implements AutoCloseabl
 
 	@Override
 	public synchronized void removeTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
-		Resource... contexts) {
+			Resource... contexts) {
 		if (disk == null) {
 			memory.removeTermIteration(iter, subj, pred, obj, contexts);
 		} else {

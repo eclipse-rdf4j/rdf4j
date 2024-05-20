@@ -292,7 +292,7 @@ class SailSourceModel extends AbstractModel {
 				added = true;
 			}
 			if (!contains(statement.getSubject(), statement.getPredicate(), statement.getObject(),
-				statement.getContext())) {
+					statement.getContext())) {
 				contexts.add(statement.getContext());
 				tempSet.add(statement);
 			}
@@ -325,7 +325,7 @@ class SailSourceModel extends AbstractModel {
 		boolean removed = false;
 		try {
 			CloseableIteration<? extends Statement> stmts = dataset.getStatements(subj, pred, obj,
-				contexts);
+					contexts);
 			try {
 				while (stmts.hasNext()) {
 					Statement st = stmts.next();
@@ -393,7 +393,7 @@ class SailSourceModel extends AbstractModel {
 
 			@Override
 			protected void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
-				Resource... contexts) {
+					Resource... contexts) {
 				SailSourceModel.this.removeTermIteration(iter, subj, pred, obj, contexts);
 			}
 		};
@@ -401,7 +401,7 @@ class SailSourceModel extends AbstractModel {
 
 	@Override
 	public synchronized void removeTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
-		Resource... contexts) {
+			Resource... contexts) {
 		try {
 			CloseableIteration<? extends Statement> stmts;
 			stmts = dataset().getStatements(subj, pred, obj, contexts);
@@ -460,7 +460,7 @@ class SailSourceModel extends AbstractModel {
 	}
 
 	private boolean contains(SailDataset dataset, Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException {
+			throws SailException {
 		if (dataset == null) {
 			return false;
 		}
