@@ -63,7 +63,7 @@ public class OverflowBenchmarkSynthetic {
 	@Setup(Level.Trial)
 	public void setup() {
 		((Logger) (LoggerFactory
-				.getLogger("org.eclipse.rdf4j.sail.lmdbrdf.MemoryOverflowModel")))
+				.getLogger("org.eclipse.rdf4j.sail.lmdb.MemoryOverflowModel")))
 				.setLevel(ch.qos.logback.classic.Level.DEBUG);
 	}
 

@@ -403,6 +403,10 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	public void setTransactionIsolation(boolean transactionIsolation) {
+		this.tripleStore.setTransactionIsolation(transactionIsolation);
+	}
+
 	private final class LmdbSailSource extends BackingSailSource {
 
 		private final boolean explicit;

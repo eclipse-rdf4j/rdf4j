@@ -166,6 +166,8 @@ class TripleStore implements Closeable {
 
 	private TxnRecordCache recordCache = null;
 
+	private boolean transactionIsolation = true;
+
 	static final Comparator<ByteBuffer> COMPARATOR = new Comparator<ByteBuffer>() {
 		@Override
 		public int compare(ByteBuffer b1, ByteBuffer b2) {
@@ -835,9 +837,35 @@ class TripleStore implements Closeable {
 		return bestIndex;
 	}
 
-	private boolean requiresResize() {
-		if (autoGrow) {
-			return LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0);
+	private boolean requiresResize() throws IOException {
+		if (autoGrow && LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0)) {
+			if (transactionIsolation) {
+				// caller has to handle resizing
+				return true;
+			} else {
+				// directly resize if isolation is not required
+				E(mdb_txn_commit(writeTxn));
+				StampedLock lock = txnManager.lock();
+				long stamp = lock.writeLock();
+				try {
+					txnManager.deactivate();
+					mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
+					E(mdb_env_set_mapsize(env, mapSize));
+					// restart write transaction
+					try (MemoryStack stack = stackPush()) {
+						PointerBuffer pp = stack.mallocPointer(1);
+						mdb_txn_begin(env, NULL, 0, pp);
+						writeTxn = pp.get(0);
+					}
+				} finally {
+					try {
+						txnManager.activate();
+					} finally {
+						lock.unlockWrite(stamp);
+					}
+				}
+				return false;
+			}
 		} else {
 			return false;
 		}
@@ -1151,6 +1179,10 @@ class TripleStore implements Closeable {
 		try (OutputStream out = new FileOutputStream(propFile)) {
 			properties.store(out, "triple indexes meta-data, DO NOT EDIT!");
 		}
+	}
+
+	public void setTransactionIsolation(boolean transactionIsolation) {
+		this.transactionIsolation = transactionIsolation;
 	}
 
 	class TripleIndex {

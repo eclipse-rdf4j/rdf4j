@@ -51,7 +51,7 @@ public class SailSourceModelTest extends ModelTest {
 		try {
 			NativeSailStore store = new NativeSailStore(Files.createTempDirectory("SailSourceModelTest-").toFile(),
 					"spoc");
-			return new SailSourceModel(store);
+			return new SailSourceModel(store, false);
 		} catch (Exception e) {
 			throw new RuntimeException(e);
 		}
