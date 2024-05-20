@@ -558,7 +558,10 @@ class ValueStore extends AbstractValueFactory {
 		if (autoGrow) {
 			if (LmdbUtil.requiresResize(mapSize, pageSize, txn, requiredSize)) {
 				// map is full, resize
-				txnLock.readLock().unlock();
+				boolean suspendReadTxn = txn != writeTxn;
+				if (suspendReadTxn) {
+					txnLock.readLock().unlock();
+				}
 				txnLock.writeLock().lock();
 				try {
 					boolean activeWriteTxn = writeTxn != 0;
@@ -579,7 +582,9 @@ class ValueStore extends AbstractValueFactory {
 					}
 				} finally {
 					txnLock.writeLock().unlock();
-					txnLock.readLock().lock();
+					if (suspendReadTxn) {
+						txnLock.readLock().lock();
+					}
 				}
 			}
 		}
