@@ -59,8 +59,7 @@ abstract class MemoryOverflowModel extends AbstractModel implements AutoCloseabl
 
 	// To reduce the chance of OOM we will always overflow once we get close to running out of memory even if we think
 	// we have space for one more block. The limit is currently set at 32 MB for small heaps and 128 MB for large heaps.
-	private static final int MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = RUNTIME.maxMemory() >= 1024 ? 128 * 1024 * 1024
-			: 32 * 1024 * 1024;
+	private static final int MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = 32 * 1024 * 1024;
 
 	final Logger logger = LoggerFactory.getLogger(MemoryOverflowModel.class);
 
@@ -315,7 +314,7 @@ abstract class MemoryOverflowModel extends AbstractModel implements AutoCloseabl
 		int size = size() + 1;
 		if (size >= LARGE_BLOCK && size % LARGE_BLOCK == 0) {
 			if (highGcLoad()) {
-				logger.debug("syncing at {} triples.", size);
+				logger.debug("syncing at {} triples due to high gc load.", size);
 				overflowToDisk();
 			} else {
 				innerCheckMemoryOverflow();
@@ -325,32 +324,26 @@ abstract class MemoryOverflowModel extends AbstractModel implements AutoCloseabl
 
 	private synchronized void innerCheckMemoryOverflow() {
 		if (disk == null) {
-			int size = size();
-			if (size >= LARGE_BLOCK && size % LARGE_BLOCK == 0) {
-				boolean overflow = highGcLoad();
-				if (!overflow) {
-					// maximum heap size the JVM can allocate
-					long maxMemory = RUNTIME.maxMemory();
+			// maximum heap size the JVM can allocate
+			long maxMemory = RUNTIME.maxMemory();
 
-					// total currently allocated JVM memory
-					long totalMemory = RUNTIME.totalMemory();
+			// total currently allocated JVM memory
+			long totalMemory = RUNTIME.totalMemory();
 
-					// amount of memory free in the currently allocated JVM memory
-					long freeMemory = RUNTIME.freeMemory();
+			// amount of memory free in the currently allocated JVM memory
+			long freeMemory = RUNTIME.freeMemory();
 
-					// estimated memory used
-					long used = totalMemory - freeMemory;
+			// estimated memory used
+			long used = totalMemory - freeMemory;
 
-					// amount of memory the JVM can still allocate from the OS (upper boundary is the max heap)
-					long freeToAllocateMemory = maxMemory - used;
+			// amount of memory the JVM can still allocate from the OS (upper boundary is the max heap)
+			long freeToAllocateMemory = maxMemory - used;
 
-					// try to prevent OOM
-					overflow = freeToAllocateMemory < MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
-				}
-				if (overflow) {
-					logger.debug("syncing at {} triples.", size);
-					overflowToDisk();
-				}
+			// try to prevent OOM
+			overflow = freeToAllocateMemory < MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
+			if (overflow) {
+				logger.debug("syncing at {} triples.", size());
+				overflowToDisk();
 			}
 		}
 	}

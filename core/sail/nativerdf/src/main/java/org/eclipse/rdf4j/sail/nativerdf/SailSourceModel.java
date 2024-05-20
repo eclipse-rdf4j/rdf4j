@@ -158,7 +158,7 @@ class SailSourceModel extends AbstractModel {
 	public synchronized int size() {
 		long size = 0;
 		try {
-			CloseableIteration<? extends Statement> iter = dataset.getStatements(null, null, null);
+			CloseableIteration<? extends Statement> iter = dataset().getStatements(null, null, null);
 			try {
 				while (iter.hasNext()) {
 					iter.next();
@@ -324,7 +324,7 @@ class SailSourceModel extends AbstractModel {
 	public synchronized boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		boolean removed = false;
 		try {
-			CloseableIteration<? extends Statement> stmts = dataset.getStatements(subj, pred, obj,
+			CloseableIteration<? extends Statement> stmts = dataset().getStatements(subj, pred, obj,
 					contexts);
 			try {
 				while (stmts.hasNext()) {
