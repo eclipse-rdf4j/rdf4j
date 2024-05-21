@@ -303,7 +303,7 @@ FedX provides various means for configuration. Configuration settings can be def
 |joinWorkerThreads | The number of join worker threads for parallelization, default _20_ |
 |unionWorkerThreads | The number of union worker threads for parallelization, default _20_ |
 |leftJoinWorkerThreads | The number of left join worker threads for parallelization, default _10_ |
-|boundJoinBlockSize | Block size for bound joins, default _15_ |
+|boundJoinBlockSize | Block size for bound joins, default _25_ |
 |enforceMaxQueryTime | Max query time in seconds, 0 to disable, default _30_ |
 |enableServiceAsBoundJoin | Flag for evaluating a SERVICE expression (contacting non-federation members) using vectored evaluation, default _true_. For today's endpoints it is more efficient to disable vectored evaluation of SERVICE |
 |includeInferredDefault | whether include inferred statements should be considered, default _true_ |

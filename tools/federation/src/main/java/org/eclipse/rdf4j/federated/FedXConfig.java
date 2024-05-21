@@ -40,7 +40,7 @@ public class FedXConfig {
 
 	private int leftJoinWorkerThreads = 10;
 
-	private int boundJoinBlockSize = 15;
+	private int boundJoinBlockSize = 25;
 
 	private int enforceMaxQueryTime = 30;
 
