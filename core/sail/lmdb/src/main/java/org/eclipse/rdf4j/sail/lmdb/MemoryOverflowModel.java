@@ -17,6 +17,7 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
+import java.lang.management.RuntimeMXBean;
 import java.nio.file.Files;
 import java.util.Collection;
 import java.util.HashSet;
@@ -88,11 +89,13 @@ abstract class MemoryOverflowModel extends AbstractModel implements AutoCloseabl
 	private static volatile List<GcInfo> gcInfos = new CopyOnWriteArrayList<>();
 	static {
 		List<GarbageCollectorMXBean> gcBeans = ManagementFactory.getGarbageCollectorMXBeans();
+		RuntimeMXBean runtimeMXBean = ManagementFactory.getRuntimeMXBean();
 		for (GarbageCollectorMXBean gcBean : gcBeans) {
 			NotificationEmitter emitter = (NotificationEmitter) gcBean;
 			emitter.addNotificationListener((notification, o) -> {
+				long uptimeInMillis = runtimeMXBean.getUptime();
 				while (! gcInfos.isEmpty()) {
-					if (System.currentTimeMillis() - gcInfos.get(0).getEndTime() > 5000) {
+					if (uptimeInMillis - gcInfos.get(0).getEndTime() > 5000) {
 						gcSum -= gcInfos.remove(0).getDuration();
 					} else {
 						break;
@@ -104,8 +107,8 @@ abstract class MemoryOverflowModel extends AbstractModel implements AutoCloseabl
 				GcInfo gcInfo = gcNotificationInfo.getGcInfo();
 				gcInfos.add(gcInfo);
 				gcSum += gcInfo.getDuration();
-				System.out.println("gcSum: " + gcSum);
-				if (gcSum > 1000 || gcInfos.size() > 4) {
+				if (gcSum > 2500) {
+					System.out.println("high gc load: sum=" + gcSum + " count=" + gcInfos.size());
 					highGcLoad = true;
 					lastGcUpdate = System.currentTimeMillis();
 				} else if (System.currentTimeMillis() - lastGcUpdate > 10000) {

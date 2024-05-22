@@ -258,6 +258,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 					LmdbStoreConfig overflowConfig = new LmdbStoreConfig();
 					LmdbSailStore store = new LmdbSailStore(dataDir, overflowConfig);
 					store.enableMultiThreading = false;
+					store.enableGc = false;
 					// does not need to isolate transactions and therefore can optimize autogrow and others
 					store.setTransactionIsolation(false);
 					return store;

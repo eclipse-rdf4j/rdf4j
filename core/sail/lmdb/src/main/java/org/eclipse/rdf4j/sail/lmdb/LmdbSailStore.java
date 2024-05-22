@@ -73,6 +73,7 @@ class LmdbSailStore implements SailStore {
 	private volatile boolean nextTransactionAsync;
 
 	boolean enableMultiThreading = true;
+	boolean enableGc = true;
 
 	private PersistentSetFactory<Long> setFactory;
 	private PersistentSet<Long> unusedIds, nextUnusedIds;
@@ -760,9 +761,11 @@ class LmdbSailStore implements SailStore {
 			for (long contextId : contexts) {
 				tripleStore.removeTriplesByContext(subj, pred, obj, contextId, explicit, quad -> {
 					removeCount[0]++;
-					for (long id : quad) {
-						if (id != 0L) {
-							unusedIds.add(id);
+					if (enableGc) {
+						for (long id : quad) {
+							if (id != 0L) {
+								unusedIds.add(id);
+							}
 						}
 					}
 				});
