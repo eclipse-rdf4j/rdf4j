@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import javax.management.NotificationEmitter;
@@ -86,7 +87,7 @@ abstract class MemoryOverflowModel extends AbstractModel implements AutoCloseabl
 	private static volatile boolean highGcLoad = false;
 	private static volatile long lastGcUpdate;
 	private static volatile long gcSum;
-	private static volatile List<GcInfo> gcInfos = new CopyOnWriteArrayList<>();
+	private static volatile ConcurrentLinkedQueue<GcInfo> gcInfos = new ConcurrentLinkedQueue<>();
 	static {
 		List<GarbageCollectorMXBean> gcBeans = ManagementFactory.getGarbageCollectorMXBeans();
 		RuntimeMXBean runtimeMXBean = ManagementFactory.getRuntimeMXBean();
@@ -95,8 +96,8 @@ abstract class MemoryOverflowModel extends AbstractModel implements AutoCloseabl
 			emitter.addNotificationListener((notification, o) -> {
 				long uptimeInMillis = runtimeMXBean.getUptime();
 				while (! gcInfos.isEmpty()) {
-					if (uptimeInMillis - gcInfos.get(0).getEndTime() > 5000) {
-						gcSum -= gcInfos.remove(0).getDuration();
+					if (uptimeInMillis - gcInfos.peek().getEndTime() > 5000) {
+						gcSum -= gcInfos.poll().getDuration();
 					} else {
 						break;
 					}
