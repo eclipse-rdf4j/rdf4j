@@ -23,12 +23,9 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 import javax.management.NotificationEmitter;
 import javax.management.openmbean.CompositeData;
@@ -64,11 +61,9 @@ abstract class MemoryOverflowModel extends AbstractModel implements AutoCloseabl
 
 	private static final int LARGE_BLOCK = 5 * 1024;
 
-	private static volatile boolean overflow;
-
 	// To reduce the chance of OOM we will always overflow once we get close to running out of memory even if we think
 	// we have space for one more block. The limit is currently set at 32 MB for small heaps and 128 MB for large heaps.
-	private static final int MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = 32 * 1024 * 1024;
+	private static final long MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = Math.max(32 * 1024 * 1024, (int) (RUNTIME.maxMemory() * 0.15));
 
 	final Logger logger = LoggerFactory.getLogger(MemoryOverflowModel.class);
 
@@ -84,7 +79,7 @@ abstract class MemoryOverflowModel extends AbstractModel implements AutoCloseabl
 
 	private final SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
-	private static volatile boolean highGcLoad = false;
+	private static volatile boolean overflow = false;
 	private static volatile long lastGcUpdate;
 	private static volatile long gcSum;
 	private static volatile ConcurrentLinkedQueue<GcInfo> gcInfos = new ConcurrentLinkedQueue<>();
@@ -109,11 +104,31 @@ abstract class MemoryOverflowModel extends AbstractModel implements AutoCloseabl
 				gcInfos.add(gcInfo);
 				gcSum += gcInfo.getDuration();
 				if (gcSum > 2500) {
-					System.out.println("high gc load: sum=" + gcSum + " count=" + gcInfos.size());
-					highGcLoad = true;
+					if (! overflow) {
+						// maximum heap size the JVM can allocate
+						long maxMemory = RUNTIME.maxMemory();
+
+						// total currently allocated JVM memory
+						long totalMemory = RUNTIME.totalMemory();
+						// amount of memory free in the currently allocated JVM memory
+						long freeMemory = RUNTIME.freeMemory();
+
+						// estimated memory used
+						long used = totalMemory - freeMemory;
+
+						// amount of memory the JVM can still allocate from the OS (upper boundary is the max heap)
+						long freeToAllocateMemory = maxMemory - used;
+
+						// try to prevent OOM
+						overflow = freeToAllocateMemory < MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
+
+						if (overflow) {
+							System.out.println("overflow due to high gc load and mem consumption: sum=" + gcSum + " count=" + gcInfos.size());
+						}
+					}
 					lastGcUpdate = System.currentTimeMillis();
 				} else if (System.currentTimeMillis() - lastGcUpdate > 10000) {
-					highGcLoad = false;
+					overflow = false;
 				}
 			}, null, null);
 		}
@@ -315,8 +330,8 @@ abstract class MemoryOverflowModel extends AbstractModel implements AutoCloseabl
 			return;
 		}
 
-		if (highGcLoad) {
-			logger.debug("syncing at {} triples due to gc load");
+		if (overflow) {
+			logger.debug("syncing at {} triples due to gc load", size());
 			overflowToDisk();
 			System.gc();
 		}
