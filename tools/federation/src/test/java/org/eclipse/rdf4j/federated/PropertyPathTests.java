@@ -14,12 +14,17 @@ import java.util.Arrays;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SKOS;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -105,19 +110,11 @@ public class PropertyPathTests extends SPARQLBaseTest {
 	}
 
 	@Test
-	public void testPropertyPath_ExclusivePath() throws Exception {
+	public void testPropertyPath_Combination() throws Exception {
 
 		prepareTest(Arrays.asList("/tests/propertypath/data1.ttl", "/tests/propertypath/data2.ttl"));
 
 		String query = "SELECT * WHERE { ?x rdf:type/rdfs:subClassOf* foaf:Agent . ?x rdfs:label ?label}";
-
-		String actualQueryPlan = federationContext().getQueryManager().getQueryPlan(query);
-
-		// Note: we currently cannot compare the query plan, because the queryplan contains generated
-		// variable name identifiers for anonymous nodes.
-//		assertQueryPlanEquals(readResourceAsString("/tests/propertypath/query_path_exclusivePath.qp"),
-//				actualQueryPlan);
-		Assertions.assertTrue(actualQueryPlan.contains("ExclusiveArbitraryLengthPath"));
 
 		try (TupleQueryResult tqr = federationContext().getQueryManager().prepareTupleQuery(query).evaluate()) {
 
@@ -139,6 +136,167 @@ public class PropertyPathTests extends SPARQLBaseTest {
 			List<BindingSet> res = Iterations.asList(tqr);
 			assertContainsAll(res, "subClass", Sets.newHashSet(FOAF.PERSON));
 			assertContainsAll(res, "label", Sets.newHashSet(l("Person")));
+		}
+
+	}
+
+	@Test
+	public void testZeroLengthPath_length1() throws Exception {
+
+		prepareTest(Arrays.asList("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl"));
+
+		Repository repo1 = getRepository(1);
+		Repository repo2 = getRepository(2);
+
+		try (RepositoryConnection con = repo1.getConnection()) {
+			con.add(Values.iri("http://example.org/A"), RDFS.SUBCLASSOF, Values.iri("http://example.org/B"));
+		}
+
+		try (RepositoryConnection con = repo2.getConnection()) {
+			con.add(Values.iri("http://example.org/X"), RDFS.SUBCLASSOF, Values.iri("http://example.org/Y"));
+		}
+
+		Repository fedxRepo = fedxRule.getRepository();
+
+		// 1: variable subject & object
+		try (RepositoryConnection con = fedxRepo.getConnection()) {
+			TupleQuery tupleQuery = con.prepareTupleQuery(
+					"PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
+							+ "SELECT * WHERE { "
+							+ "   ?subClass (rdfs:subClassOf*) ?myClass. "
+							+ " } "
+			);
+
+			Assertions.assertEquals(6, QueryResults.asSet(tupleQuery.evaluate()).size());
+		}
+
+		// 2: bound (matching) object
+		try (RepositoryConnection con = fedxRepo.getConnection()) {
+			TupleQuery tupleQuery = con.prepareTupleQuery(
+					"PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
+							+ "SELECT * WHERE { "
+							+ "   ?subClass (rdfs:subClassOf*) ?myClass. "
+							+ " } "
+			);
+			tupleQuery.setBinding("myClass", Values.iri("http://example.org/B"));
+
+			Assertions.assertEquals(2, QueryResults.asSet(tupleQuery.evaluate()).size());
+		}
+
+		// 3: bound (non-matching) object
+		try (RepositoryConnection con = fedxRepo.getConnection()) {
+			TupleQuery tupleQuery = con.prepareTupleQuery(
+					"PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
+							+ "PREFIX ex: <http://example.com/> "
+							+ "SELECT * WHERE { "
+							+ "   ?subClass (ex:something*) ?myClass. "
+							+ " } "
+			);
+			tupleQuery.setBinding("myClass", Values.iri("http://example.org/B"));
+
+			Assertions.assertEquals(1, QueryResults.asSet(tupleQuery.evaluate()).size());
+		}
+	}
+
+	@Test
+	public void testZeroLengthPath_length2() throws Exception {
+
+		prepareTest(Arrays.asList("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl"));
+
+		Repository repo1 = getRepository(1);
+		Repository repo2 = getRepository(2);
+
+		try (RepositoryConnection con = repo1.getConnection()) {
+			con.add(Values.iri("http://example.org/A"), RDFS.SUBCLASSOF, Values.iri("http://example.org/B"));
+			con.add(Values.iri("http://example.org/B"), RDFS.SUBCLASSOF, Values.iri("http://example.org/C"));
+		}
+
+		try (RepositoryConnection con = repo2.getConnection()) {
+			con.add(Values.iri("http://example.org/X"), RDFS.SUBCLASSOF, Values.iri("http://example.org/Y"));
+		}
+
+		Repository fedxRepo = fedxRule.getRepository();
+
+		// 1: variable subject & object
+		try (RepositoryConnection con = fedxRepo.getConnection()) {
+			TupleQuery tupleQuery = con.prepareTupleQuery(
+					"PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
+							+ "SELECT * WHERE { "
+							+ "   ?subClass (rdfs:subClassOf*) ?myClass. "
+							+ " } "
+			);
+
+			Assertions.assertEquals(9, QueryResults.asSet(tupleQuery.evaluate()).size());
+		}
+
+		// 2: bound (matching) object
+		try (RepositoryConnection con = fedxRepo.getConnection()) {
+			TupleQuery tupleQuery = con.prepareTupleQuery(
+					"PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
+							+ "SELECT * WHERE { "
+							+ "   ?subClass (rdfs:subClassOf*) ?myClass. "
+							+ " } "
+			);
+			tupleQuery.setBinding("myClass", Values.iri("http://example.org/C"));
+
+			Assertions.assertEquals(3, QueryResults.asSet(tupleQuery.evaluate()).size());
+		}
+
+		// 2a: bound (matching) object
+		try (RepositoryConnection con = fedxRepo.getConnection()) {
+			TupleQuery tupleQuery = con.prepareTupleQuery(
+					"PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
+							+ "SELECT * WHERE { "
+							+ "   ?subClass (rdfs:subClassOf*) <http://example.org/C> . "
+							+ " } "
+			);
+
+			Assertions.assertEquals(3, QueryResults.asSet(tupleQuery.evaluate()).size());
+		}
+
+		// 3: bound (non-matching) object
+		try (RepositoryConnection con = fedxRepo.getConnection()) {
+			TupleQuery tupleQuery = con.prepareTupleQuery(
+					"PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
+							+ "PREFIX ex: <http://example.com/> "
+							+ "SELECT * WHERE { "
+							+ "   ?subClass (ex:something*) ?myClass. "
+							+ " } "
+			);
+			tupleQuery.setBinding("myClass", Values.iri("http://example.org/C"));
+
+			Assertions.assertEquals(1, QueryResults.asSet(tupleQuery.evaluate()).size());
+		}
+	}
+
+	@Test
+	public void testZeroLengthPath_length2_crossRepository() throws Exception {
+
+		prepareTest(Arrays.asList("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl"));
+
+		Repository repo1 = getRepository(1);
+		Repository repo2 = getRepository(2);
+
+		try (RepositoryConnection con = repo1.getConnection()) {
+			con.add(Values.iri("http://example.org/A"), RDFS.SUBCLASSOF, Values.iri("http://example.org/B"));
+		}
+
+		try (RepositoryConnection con = repo2.getConnection()) {
+			con.add(Values.iri("http://example.org/B"), RDFS.SUBCLASSOF, Values.iri("http://example.org/C"));
+		}
+
+		Repository fedxRepo = fedxRule.getRepository();
+
+		// 2a: bound (matching) object
+		try (RepositoryConnection con = fedxRepo.getConnection()) {
+			TupleQuery tupleQuery = con.prepareTupleQuery(
+					"PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
+							+ "SELECT * WHERE { "
+							+ "   ?subClass (rdfs:subClassOf*) <http://example.org/C> . "
+							+ " } "
+			);
+
+			Assertions.assertEquals(3, QueryResults.asSet(tupleQuery.evaluate()).size());
 		}
 
 	}

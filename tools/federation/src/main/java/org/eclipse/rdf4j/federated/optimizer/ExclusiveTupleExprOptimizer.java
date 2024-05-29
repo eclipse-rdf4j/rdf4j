@@ -13,8 +13,10 @@ package org.eclipse.rdf4j.federated.optimizer;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveArbitraryLengthPath;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
+import org.eclipse.rdf4j.federated.algebra.FedXArbitraryLengthPath;
 import org.eclipse.rdf4j.federated.exception.OptimizationException;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -38,6 +40,14 @@ public class ExclusiveTupleExprOptimizer extends AbstractSimpleQueryModelVisitor
 	}
 
 	@Override
+	public void meetOther(QueryModelNode node) throws OptimizationException {
+		if (node instanceof FedXArbitraryLengthPath) {
+			meet((FedXArbitraryLengthPath) node);
+		}
+		super.meetOther(node);
+	}
+
+	@Override
 	public void meet(ArbitraryLengthPath node) throws OptimizationException {
 
 		if (node.getPathExpression() instanceof ExclusiveStatement) {
@@ -48,6 +58,16 @@ public class ExclusiveTupleExprOptimizer extends AbstractSimpleQueryModelVisitor
 			return;
 		}
 		super.meet(node);
+	}
+
+	protected void meet(FedXArbitraryLengthPath node) {
+		if (node.getPathExpression() instanceof ExclusiveStatement) {
+			ExclusiveStatement st = (ExclusiveStatement) node.getPathExpression();
+			ExclusiveArbitraryLengthPath eNode = new ExclusiveArbitraryLengthPath(node, st.getOwner(),
+					st.getQueryInfo());
+			node.replaceWith(eNode);
+			return;
+		}
 	}
 
 	@Override
