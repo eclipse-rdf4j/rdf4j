@@ -92,7 +92,8 @@ public class RSXTargetShape extends Target {
 				dataGraph,
 				statementMatchers,
 				statementMatchers,
-				null, sparqlFragment,
+				null,
+				sparqlFragment,
 				vars,
 				scope,
 				false), false);
