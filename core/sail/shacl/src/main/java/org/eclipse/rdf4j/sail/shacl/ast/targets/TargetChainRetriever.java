@@ -204,7 +204,7 @@ public class TargetChainRetriever implements PlanNode {
 					this.currentVarNames = currentStatementMatcher.getVarNames(varNames, removedStatement,
 							varNamesInQueryFragment);
 
-					assert !currentVarNames.isEmpty();
+					assert !currentVarNames.isEmpty() : "currentVarNames is empty!";
 
 					statements = connection.getStatements(
 							currentStatementMatcher.getSubjectValue(),
@@ -289,7 +289,7 @@ public class TargetChainRetriever implements PlanNode {
 					Statement next = statements.next();
 					Stream<EffectiveTarget.StatementsAndMatcher> rootStatements = Stream
 							.of(new EffectiveTarget.StatementsAndMatcher(List.of(next), currentStatementMatcher));
-					if (removedStatement) {
+					if (removedStatement && removedStatementTarget != null) {
 						Stream<EffectiveTarget.StatementsAndMatcher> root = removedStatementTarget.getRoot(
 								connectionsGroup,
 								dataGraph, currentStatementMatcher,
