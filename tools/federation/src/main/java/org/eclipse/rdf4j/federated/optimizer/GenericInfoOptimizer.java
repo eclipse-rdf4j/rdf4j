@@ -14,11 +14,13 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import org.eclipse.rdf4j.federated.algebra.FedXArbitraryLengthPath;
 import org.eclipse.rdf4j.federated.algebra.FedXLeftJoin;
 import org.eclipse.rdf4j.federated.algebra.FederatedDescribeOperator;
 import org.eclipse.rdf4j.federated.algebra.NJoin;
 import org.eclipse.rdf4j.federated.exception.OptimizationException;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.DescribeOperator;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -45,6 +47,7 @@ public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<Optimi
 
 	protected boolean hasFilter = false;
 	protected boolean hasUnion = false;
+	protected boolean hasPathExpr = false;
 	protected List<Service> services = null;
 	protected long limit = -1; // set to a positive number if the main query has a limit
 	protected List<StatementPattern> stmts = new ArrayList<>();
@@ -65,6 +68,10 @@ public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<Optimi
 
 	public boolean hasUnion() {
 		return hasUnion;
+	}
+
+	public boolean hasPathExpression() {
+		return hasPathExpr;
 	}
 
 	public List<StatementPattern> getStatements() {
@@ -139,6 +146,16 @@ public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<Optimi
 		join.visitChildren(this);
 
 		node.replaceWith(join);
+	}
+
+	@Override
+	public void meet(ArbitraryLengthPath node) throws OptimizationException {
+
+		FedXArbitraryLengthPath falp = new FedXArbitraryLengthPath(node, queryInfo);
+		falp.visitChildren(this);
+
+		node.replaceWith(falp);
+		hasPathExpr = true;
 	}
 
 	@Override
