@@ -44,7 +44,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	private static final String START = "$start_from_path_iteration";
 
 	/**
-	 *
+	 * Required as we can't prepare the queries yet.
 	 */
 	private final EvaluationStrategy strategy;
 
@@ -81,8 +81,16 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	private final Set<String> namedIntermediateJoins = new HashSet<>();
 
 	private final CollectionFactory collectionFactory;
+	/**
+	 * Instead of depending on hash codes not colliding we instead make sure that each element is unique per iteration.
+	 * Which is why this is a static volatile field. As more than one path iteration can be present in the same query.
+	 */
 	private static volatile int PATH_ITERATOR_ID_GENERATOR = 0;
 
+	/**
+	 * Using the ++ to increment the volatile shared id generator, the id in this iterator must remain constant during
+	 * execution.
+	 */
 	private final int pathIteratorId = PATH_ITERATOR_ID_GENERATOR++;
 	private final String endVarName = "END_" + JOINVAR_PREFIX + pathIteratorId;
 
@@ -117,6 +125,12 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		createIteration();
 	}
 
+	/**
+	 * Used to turn a method call into a direct field access
+	 *
+	 * @param s the name of the variable to see if it is in the bindingset
+	 * @return the value of the start or end or if asked for a different field a null.
+	 */
 	private static final BiConsumer<Value, MutableBindingSet> getSet(String s) {
 		switch (s) {
 		case START:
@@ -125,10 +139,17 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			return (v, vp) -> ((ValuePair) vp).endValue = v;
 		default:
 			return (v, vp) -> {
+				throw new IllegalStateException("A value is being asked to be set where we never expected one");
 			};
 		}
 	}
 
+	/**
+	 * Used to turn a method call into a direct field access
+	 *
+	 * @param s the name of the variable to see if it is in the bindingset
+	 * @return the value of the start or end, if asked for a different field throw an illegalstate exception
+	 */
 	private static final Function<BindingSet, Value> getGet(String s) {
 		switch (s) {
 		case START:
@@ -136,10 +157,18 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		case END:
 			return (vp) -> ((ValuePair) vp).endValue;
 		default:
-			return (vp) -> null;
+			return (vp) -> {
+				throw new IllegalStateException("A value is being asked to be set where we never expected one");
+			};
 		}
 	};
 
+	/**
+	 * Used to turn a method call into a direct field access
+	 *
+	 * @param s the name of the variable to see if it is in the bindingset
+	 * @return true if start or end is not null, if asked for a different field throw an illegalstate exception
+	 */
 	private static final Predicate<BindingSet> getHas(String s) {
 		switch (s) {
 		case START:
@@ -147,7 +176,9 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		case END:
 			return (vp) -> ((ValuePair) vp).endValue != null;
 		default:
-			return (vp) -> false;
+			return (vp) -> {
+				throw new IllegalStateException("A value is being asked to be set where we never expected one");
+			};
 		}
 	};
 
@@ -397,6 +428,10 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		}
 	}
 
+	/**
+	 * A specialized BingingSet that can only hold the start and end values of a Path. Minimizing unneeded memory use,
+	 * and allows specialization in the sets required to answer this part of a query.
+	 */
 	protected static class ValuePair implements MutableBindingSet {
 		private static final long serialVersionUID = 1L;
 
@@ -556,7 +591,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		}
 	}
 
-	class VarReplacer extends AbstractQueryModelVisitor<QueryEvaluationException> {
+	private class VarReplacer extends AbstractQueryModelVisitor<QueryEvaluationException> {
 
 		private final Var toBeReplaced;
 
