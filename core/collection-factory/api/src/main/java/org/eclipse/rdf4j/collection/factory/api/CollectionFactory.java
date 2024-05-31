@@ -119,6 +119,7 @@ public interface CollectionFactory extends AutoCloseable {
 	/**
 	 * @return a new queue that may be optimized and may use the functions passed in.
 	 */
+	@Experimental
 	public default Queue<BindingSet> createBindingSetQueue(Supplier<MutableBindingSet> create,
 			Function<String, Predicate<BindingSet>> getHas, Function<String, Function<BindingSet, Value>> getget,
 			Function<String, BiConsumer<Value, MutableBindingSet>> getSet) {
@@ -128,6 +129,7 @@ public interface CollectionFactory extends AutoCloseable {
 	/**
 	 * @return a new queue optimized for bindingsets
 	 */
+	@Experimental
 	public default Queue<BindingSet> createBindingSetQueue() {
 		Function<String, Predicate<BindingSet>> gethas = (n) -> (b) -> b.hasBinding(n);
 		Function<String, Function<BindingSet, Value>> getget = (n) -> (b) -> b.getValue(n);

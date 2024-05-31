@@ -31,6 +31,7 @@ import java.util.function.ToIntFunction;
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -260,6 +261,7 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 	}
 
 	@Override
+	@Experimental
 	public Queue<BindingSet> createBindingSetQueue(Supplier<MutableBindingSet> create,
 			Function<String, Predicate<BindingSet>> getHas, Function<String, Function<BindingSet, Value>> getget,
 			Function<String, BiConsumer<Value, MutableBindingSet>> getSet) {
