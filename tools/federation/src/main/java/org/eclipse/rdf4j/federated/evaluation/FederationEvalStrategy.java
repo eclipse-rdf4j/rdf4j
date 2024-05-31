@@ -333,7 +333,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			identifiedMembers = new HashSet<>(members);
 		} else {
 			StatementPattern checkStmt = new StatementPattern(stmt.getScope(), new Var("subject"),
-					stmt.getPredicateVar().clone(), new Var("object"), stmt.getContextVar());
+					clone(stmt.getPredicateVar()), new Var("object"), clone(stmt.getContextVar()));
 			@SuppressWarnings("unused") // only used as artificial parent
 			HolderNode holderParent = new HolderNode(checkStmt);
 
@@ -362,6 +362,13 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}
 
 		return identifiedMembers;
+	}
+
+	private Var clone(Var var) {
+		if (var == null) {
+			return null;
+		}
+		return var.clone();
 	}
 
 	protected void optimizeJoinOrder(TupleExpr query, QueryInfo queryInfo, GenericInfoOptimizer info) {

@@ -301,4 +301,52 @@ public class PropertyPathTests extends SPARQLBaseTest {
 
 	}
 
+	@Test
+	public void testPropertyPath_sourceSelection_crossRepository() throws Exception {
+
+		prepareTest(Arrays.asList("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl"));
+
+		Repository repo1 = getRepository(1);
+		Repository repo2 = getRepository(2);
+
+		try (RepositoryConnection con = repo1.getConnection()) {
+			con.add(Values.iri("http://example.org/A"), RDFS.SUBCLASSOF, Values.iri("http://example.org/B"),
+					Values.iri("http://example.org/graph1"));
+		}
+
+		try (RepositoryConnection con = repo2.getConnection()) {
+			con.add(Values.iri("http://example.org/B"), RDFS.SUBCLASSOF, Values.iri("http://example.org/C"),
+					Values.iri("http://example.org/graph2"));
+		}
+
+		Repository fedxRepo = fedxRule.getRepository();
+
+		// 1a: bound (matching) object
+		try (RepositoryConnection con = fedxRepo.getConnection()) {
+			TupleQuery tupleQuery = con.prepareTupleQuery(
+					"PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
+							+ "SELECT * WHERE { "
+							+ "   ?subClass (rdfs:subClassOf+) <http://example.org/C> . "
+							+ " } "
+			);
+
+			Assertions.assertEquals(2, QueryResults.asSet(tupleQuery.evaluate()).size());
+		}
+
+		// 1b: with named graph
+		try (RepositoryConnection con = fedxRepo.getConnection()) {
+			TupleQuery tupleQuery = con.prepareTupleQuery(
+					"PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
+							+ "SELECT * WHERE { "
+							+ " GRAPH <http://example.org/graph2> {"
+							+ "   ?subClass (rdfs:subClassOf+) <http://example.org/C> . "
+							+ " }"
+							+ "} "
+			);
+
+			Assertions.assertEquals(1, QueryResults.asSet(tupleQuery.evaluate()).size());
+		}
+
+	}
+
 }
