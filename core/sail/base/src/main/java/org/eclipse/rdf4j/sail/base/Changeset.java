@@ -11,10 +11,12 @@
 package org.eclipse.rdf4j.sail.base;
 
 import java.lang.invoke.VarHandle;
+import java.lang.ref.Reference;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.ConcurrentModificationException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -23,6 +25,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.StampedLock;
 import java.util.stream.Collectors;
@@ -51,9 +54,31 @@ import org.eclipse.rdf4j.sail.SailException;
 @InternalUseOnly
 public abstract class Changeset implements SailSink, ModelFactory {
 
-	AdderBasedReadWriteLock readWriteLock = new AdderBasedReadWriteLock();
-	AdderBasedReadWriteLock refBacksReadWriteLock = new AdderBasedReadWriteLock();
-	Semaphore prependLock = new Semaphore(1);
+	static class CountedReference<T> {
+		final T referent;
+		final AtomicInteger count = new AtomicInteger(1);
+
+		CountedReference(T referent) {
+			this.referent = referent;
+		}
+
+		CountedReference<T> retain() {
+			count.incrementAndGet();
+			return this;
+		}
+
+		boolean release() {
+			return count.decrementAndGet() == 0;
+		}
+
+		T get() {
+			return referent;
+		}
+	}
+
+	final AdderBasedReadWriteLock readWriteLock = new AdderBasedReadWriteLock();
+	final AdderBasedReadWriteLock refBacksReadWriteLock = new AdderBasedReadWriteLock();
+	final Semaphore prependLock = new Semaphore(1);
 
 	/**
 	 * Set of {@link SailDataset}s that are currently using this {@link Changeset} to derive the state of the
@@ -78,7 +103,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	 * <p>
 	 * DO NOT EXPOSE THE MODEL OUTSIDE OF THIS CLASS BECAUSE IT IS NOT THREAD-SAFE
 	 */
-	private volatile Model approved;
+	private volatile CountedReference<Model> approved;
 	private volatile boolean approvedEmpty = true;
 
 	/**
@@ -86,7 +111,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	 * <p>
 	 * DO NOT EXPOSE THE MODEL OUTSIDE OF THIS CLASS BECAUSE IT IS NOT THREAD-SAFE
 	 */
-	private volatile Model deprecated;
+	private volatile CountedReference<Model> deprecated;
 	private volatile boolean deprecatedEmpty = true;
 
 	/**
@@ -127,12 +152,28 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		refbacks = null;
 		prepend = null;
 		observed = null;
-		approved = null;
-		deprecated = null;
 		approvedContexts = null;
 		deprecatedContexts = null;
 		addedNamespaces = null;
 		removedPrefixes = null;
+		try {
+			if (approved != null && approved.release() && approved.get() instanceof AutoCloseable) {
+				((AutoCloseable) approved.get()).close();
+			}
+		} catch (Exception e) {
+			throw new SailException(e);
+		} finally {
+			approved = null;
+			if (deprecated != null && deprecated.release() && deprecated.get() instanceof AutoCloseable) {
+				try {
+					((AutoCloseable) deprecated.get()).close();
+				} catch (Exception e) {
+					throw new SailException(e);
+				} finally {
+					deprecated = null;
+				}
+			}
+		}
 	}
 
 	@Override
@@ -168,7 +209,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 		boolean readLock = readWriteLock.readLock();
 		try {
-			return approved.contains(subj, pred, obj, contexts);
+			return approved.get().contains(subj, pred, obj, contexts);
 		} finally {
 			readWriteLock.unlockReader(readLock);
 		}
@@ -190,7 +231,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				}
 			}
 
-			return deprecated.contains(subj, pred, obj, contexts);
+			return deprecated.get().contains(subj, pred, obj, contexts);
 		} finally {
 			readWriteLock.unlockReader(readLock);
 		}
@@ -211,16 +252,17 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public void removeRefback(SailDatasetImpl dataset) {
-		assert !closed;
-		long writeLock = refBacksReadWriteLock.writeLock();
-		try {
-			if (refbacks != null) {
-				refbacks.removeIf(d -> d == dataset);
+		if (refbacks != null) {
+			// assert !closed;
+			long writeLock = refBacksReadWriteLock.writeLock();
+			try {
+				if (refbacks != null) {
+					refbacks.removeIf(d -> d == dataset);
+				}
+			} finally {
+				refBacksReadWriteLock.unlockWriter(writeLock);
 			}
-		} finally {
-			refBacksReadWriteLock.unlockWriter(writeLock);
 		}
-
 	}
 
 	public boolean isRefback() {
@@ -373,7 +415,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				statementCleared = true;
 
 				if (approved != null) {
-					approved.clear();
+					approved.get().clear();
 				}
 				if (approvedContexts != null) {
 					approvedContexts.clear();
@@ -383,7 +425,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 					deprecatedContexts = new HashSet<>();
 				}
 				if (approved != null) {
-					approved.remove(null, null, null, contexts);
+					approved.get().remove(null, null, null, contexts);
 				}
 				if (approvedContexts != null && contexts != null) {
 					for (Resource resource : contexts) {
@@ -394,7 +436,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 					deprecatedContexts.addAll(Arrays.asList(contexts));
 				}
 			}
-			approvedEmpty = approved == null || approved.isEmpty();
+			approvedEmpty = approved == null || approved.get().isEmpty();
 		} finally {
 			readWriteLock.unlockWriter(writeLock);
 		}
@@ -409,14 +451,14 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		try {
 
 			if (deprecated != null) {
-				deprecated.remove(statement);
-				deprecatedEmpty = deprecated == null || deprecated.isEmpty();
+				deprecated.get().remove(statement);
+				deprecatedEmpty = deprecated == null || deprecated.get().isEmpty();
 			}
 			if (approved == null) {
-				approved = createEmptyModel();
+				approved = new CountedReference<>(createEmptyModel());
 			}
-			approved.add(statement);
-			approvedEmpty = approved == null || approved.isEmpty();
+			approved.get().add(statement);
+			approvedEmpty = false;
 			if (statement.getContext() != null) {
 				if (approvedContexts == null) {
 					approvedContexts = new HashSet<>();
@@ -440,17 +482,17 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		long writeLock = readWriteLock.writeLock();
 		try {
 			if (approved != null) {
-				approved.remove(statement);
-				approvedEmpty = approved == null || approved.isEmpty();
+				approved.get().remove(statement);
+				approvedEmpty = approved == null || approved.get().isEmpty();
 			}
 			if (deprecated == null) {
-				deprecated = createEmptyModel();
+				deprecated = new CountedReference<>(createEmptyModel());
 			}
-			deprecated.add(statement);
-			deprecatedEmpty = deprecated == null || deprecated.isEmpty();
+			deprecated.get().add(statement);
+			deprecatedEmpty = false;
 			Resource ctx = statement.getContext();
 			if (approvedContexts != null && approvedContexts.contains(ctx)
-					&& !approved.contains(null, null, null, ctx)) {
+					&& !approved.get().contains(null, null, null, ctx)) {
 				approvedContexts.remove(ctx);
 			}
 		} finally {
@@ -485,11 +527,11 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			sb.append(" deprecatedContexts, ");
 		}
 		if (deprecated != null) {
-			sb.append(deprecated.size());
+			sb.append(deprecated.get().size());
 			sb.append(" deprecated, ");
 		}
 		if (approved != null) {
-			sb.append(approved.size());
+			sb.append(approved.get().size());
 			sb.append(" approved, ");
 		}
 		if (sb.length() > 0) {
@@ -504,9 +546,9 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !from.closed;
 
 		this.observed = from.observed;
-		this.approved = from.approved;
+		this.approved = from.approved != null ? from.approved.retain() : null;
 		this.approvedEmpty = from.approvedEmpty;
-		this.deprecated = from.deprecated;
+		this.deprecated = from.deprecated != null ? from.deprecated.retain() : null;
 		this.deprecatedEmpty = from.deprecatedEmpty;
 		this.approvedContexts = from.approvedContexts;
 		this.deprecatedContexts = from.deprecatedContexts;
@@ -673,7 +715,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 		boolean readLock = readWriteLock.readLock();
 		try {
-			return new ArrayList<>(deprecated);
+			return new ArrayList<>(deprecated.get());
 		} finally {
 			readWriteLock.unlockReader(readLock);
 		}
@@ -688,7 +730,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 		boolean readLock = readWriteLock.readLock();
 		try {
-			return new ArrayList<>(approved);
+			return new ArrayList<>(approved.get());
 		} finally {
 			readWriteLock.unlockReader(readLock);
 		}
@@ -709,7 +751,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				}
 			}
 			if (deprecated != null) {
-				return deprecated.contains(statement);
+				return deprecated.get().contains(statement);
 			} else {
 				return false;
 			}
@@ -735,7 +777,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		boolean readLock = readWriteLock.readLock();
 		try {
 
-			Iterable<Statement> statements = approved.getStatements(subj, pred, obj, contexts);
+			Iterable<Statement> statements = approved.get().getStatements(subj, pred, obj, contexts);
 
 			// This is a synchronized context, users of this method will be allowed to use the results at their leisure.
 			// We
@@ -772,7 +814,8 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		try {
 			// TODO none of this is particularly well thought-out in terms of performance, but we are aiming
 			// for functionally complete first.
-			Stream<Triple> approvedSubjectTriples = approved.parallelStream()
+			Stream<Triple> approvedSubjectTriples = approved.get()
+					.parallelStream()
 					.filter(st -> st.getSubject().isTriple())
 					.map(st -> (Triple) st.getSubject())
 					.filter(t -> {
@@ -785,7 +828,8 @@ public abstract class Changeset implements SailSink, ModelFactory {
 						return obj == null || obj.equals(t.getObject());
 					});
 
-			Stream<Triple> approvedObjectTriples = approved.parallelStream()
+			Stream<Triple> approvedObjectTriples = approved.get()
+					.parallelStream()
 					.filter(st -> st.getObject().isTriple())
 					.map(st -> (Triple) st.getObject())
 					.filter(t -> {
@@ -806,11 +850,31 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	void removeApproved(Statement next) {
 		assert !closed;
+
+		try {
+			CountedReference<Model> localApproved = approved;
+			if (localApproved != null && !readWriteLock.writeLock.isWriteLocked()
+					&& !localApproved.get().contains(next)) {
+				boolean readLock = readWriteLock.readLock();
+				try {
+					if (approved != null && !approvedEmpty) {
+						if (!approved.get().contains(next)) {
+							return;
+						}
+					}
+				} finally {
+					readWriteLock.unlockReader(readLock);
+				}
+			}
+
+		} catch (ConcurrentModificationException ignored) {
+		}
+
 		long writeLock = readWriteLock.writeLock();
 		try {
 			if (approved != null) {
-				approved.remove(next);
-				approvedEmpty = approved == null || approved.isEmpty();
+				approved.get().remove(next);
+				approvedEmpty = approved == null || approved.get().isEmpty();
 			}
 		} finally {
 			readWriteLock.unlockWriter(writeLock);
@@ -834,7 +898,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		boolean readLock = readWriteLock.readLock();
 		try {
 			if (approved != null) {
-				sink.approveAll(approved, approvedContexts);
+				sink.approveAll(approved.get(), approvedContexts);
 			}
 		} finally {
 			readWriteLock.unlockReader(readLock);
@@ -849,7 +913,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		boolean readLock = readWriteLock.readLock();
 		try {
 			if (deprecated != null) {
-				sink.deprecateAll(deprecated);
+				sink.deprecateAll(deprecated.get());
 			}
 		} finally {
 			readWriteLock.unlockReader(readLock);
@@ -879,13 +943,13 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		try {
 
 			if (deprecated != null) {
-				deprecated.removeAll(approve);
+				deprecated.get().removeAll(approve);
 			}
 			if (approved == null) {
-				approved = createEmptyModel();
+				approved = new CountedReference<>(createEmptyModel());
 			}
-			approved.addAll(approve);
-			approvedEmpty = approved == null || approved.isEmpty();
+			approved.get().addAll(approve);
+			approvedEmpty = approvedEmpty && approve.isEmpty();
 
 			if (approveContexts != null) {
 				if (approvedContexts == null) {
@@ -905,19 +969,19 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		try {
 
 			if (approved != null) {
-				approved.removeAll(deprecate);
-				approvedEmpty = approved == null || approved.isEmpty();
+				approved.get().removeAll(deprecate);
+				approvedEmpty = approved == null || approved.get().isEmpty();
 			}
 			if (deprecated == null) {
-				deprecated = createEmptyModel();
+				deprecated = new CountedReference<>(createEmptyModel());
 			}
-			deprecated.addAll(deprecate);
-			deprecatedEmpty = deprecated == null || deprecated.isEmpty();
+			deprecated.get().addAll(deprecate);
+			deprecatedEmpty = deprecatedEmpty && deprecate.isEmpty();
 
 			for (Statement statement : deprecate) {
 				Resource ctx = statement.getContext();
 				if (approvedContexts != null && approvedContexts.contains(ctx)
-						&& !approved.contains(null, null, null, ctx)) {
+						&& !approved.get().contains(null, null, null, ctx)) {
 					approvedContexts.remove(ctx);
 				}
 			}

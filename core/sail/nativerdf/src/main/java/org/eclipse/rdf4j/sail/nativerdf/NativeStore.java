@@ -72,6 +72,10 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	final static class MemoryOverflowIntoNativeStore extends MemoryOverflowModel {
 		private static final long serialVersionUID = 1L;
 
+		public MemoryOverflowIntoNativeStore() {
+			super(false);
+		}
+
 		/**
 		 * The class is static to avoid taking a pointer which might make it hard to get a phantom reference.
 		 */
@@ -81,6 +85,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 			private OverFlowStoreCleaner(NativeSailStore nativeSailStore, File dataDir) {
 				this.nativeSailStore = nativeSailStore;
+				nativeSailStore.disableTxnStatus();
 				this.dataDir = dataDir;
 			}
 
@@ -99,7 +104,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 		}
 
 		@Override
-		protected SailStore createSailStore(File dataDir) throws IOException, SailException {
+		protected NativeSailStore createSailStore(File dataDir) throws IOException, SailException {
 			// Model can't fit into memory, use another NativeSailStore to store delta
 			NativeSailStore nativeSailStore = new NativeSailStore(dataDir, "spoc");
 			// Once the model is no longer reachable (i.e. phantom reference we can close the
