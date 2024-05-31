@@ -262,7 +262,7 @@ public class FedXRepositoryConfigTest {
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_BOUND_JOIN_BLOCK_SIZE, null)))
-					.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(15));
+					.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(25));
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_ENFORCE_MAX_QUERY_TIME, null)))
