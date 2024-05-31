@@ -3,6 +3,25 @@ name: PR verify
 on: pull_request
 
 jobs:
+  formatting:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up JDK
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: 17
+        cache: 'maven'
+    - name: Check formatting
+      run: mvn -B formatter:validate impsort:check xml-format:xml-check
+    - name: Cancel workflow on failure
+      uses: vishnudxb/cancel-workflow@v1.2
+      if: failure()
+      with:
+        repo: eclipse/rdf4j
+        workflow_id: ${{ github.run_id }}
+        access_token: ${{ github.token }}
   build:
     runs-on: ubuntu-latest
     strategy:
@@ -11,18 +30,11 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Set up JDK
-      uses: actions/setup-java@v1
+      uses: actions/setup-java@v3
       with:
+        distribution: 'temurin'
         java-version: ${{ matrix.jdk }}
-    - name: Cache local Maven repository
-      uses: actions/cache@v2
-      with:
-        path: ~/.m2/repository
-        key: ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-${{ hashFiles('**/pom.xml') }}
-        restore-keys: |
-          ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
-    - name: Check formatting
-      run: mvn -B formatter:validate impsort:check xml-format:xml-check
+        cache: 'maven'
     - name: Build
       run: mvn -B -U -T 2 clean install -Pquick,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
     - name: Test
@@ -44,18 +56,11 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Set up JDK
-      uses: actions/setup-java@v1
+      uses: actions/setup-java@v3
       with:
+        distribution: 'temurin'
         java-version: 11
-    - name: Cache local Maven repository
-      uses: actions/cache@v2
-      with:
-        path: ~/.m2/repository
-        key: ${{ runner.os }}-jdk11-maven-${{ hashFiles('**/pom.xml') }}
-        restore-keys: |
-          ${{ runner.os }}-jdk11-maven-
-    - name: Check formatting
-      run: mvn -B formatter:validate impsort:check xml-format:xml-check
+        cache: 'maven'
     - name: Build
       run: mvn -B -U -T 2 clean install -Pquick,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
     - name: Verify
@@ -77,18 +82,11 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Set up JDK
-      uses: actions/setup-java@v1
+      uses: actions/setup-java@v3
       with:
+        distribution: 'temurin'
         java-version: 11
-    - name: Cache local Maven repository
-      uses: actions/cache@v2
-      with:
-        path: ~/.m2/repository
-        key: ${{ runner.os }}-jdk11-maven-${{ hashFiles('**/pom.xml') }}
-        restore-keys: |
-          ${{ runner.os }}-jdk11-maven-
-    - name: Check formatting
-      run: mvn -B formatter:validate impsort:check xml-format:xml-check
+        cache: 'maven'
     - name: Build
       run: mvn -B -U -T 2 clean install -Pquick,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
     - name: Verify
