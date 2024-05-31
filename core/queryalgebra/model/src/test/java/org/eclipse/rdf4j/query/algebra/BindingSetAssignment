@@ -1,0 +1,34 @@
+package org.eclipse.rdf4j.query.algebra;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import java.util.List;
+import java.util.Set;
+
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
+import org.junit.jupiter.api.Test;
+
+public class BindingSetAssignmentTest {
+
+	@Test
+	public void simpleEquals() {
+		BindingSetAssignment valuesA = new BindingSetAssignment();
+		{
+			valuesA.setBindingNames(Set.of("s"));
+			ListBindingSet anValueOfS = new ListBindingSet(List.of("s"),
+					List.of(SimpleValueFactory.getInstance().createIRI("http://example/S")));
+			valuesA.setBindingSets(Set.of(anValueOfS));
+		}
+		BindingSetAssignment valuesB = new BindingSetAssignment();
+		{
+			valuesB.setBindingNames(Set.of("s"));
+			ListBindingSet anValueOfO = new ListBindingSet(List.of("s"),
+					List.of(SimpleValueFactory.getInstance().createIRI("http://example/S")));
+			valuesB.setBindingSets(List.of(anValueOfO));
+			valuesB.setVariableScopeChange(true);
+		}
+		assertEquals(valuesA, valuesB);
+	}
+
+}

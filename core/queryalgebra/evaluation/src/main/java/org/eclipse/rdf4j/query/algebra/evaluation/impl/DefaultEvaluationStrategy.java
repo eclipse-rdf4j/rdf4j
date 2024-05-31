@@ -97,6 +97,7 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+import org.eclipse.rdf4j.query.algebra.StopableTupleExpr;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -469,6 +470,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			ret = prepare((TripleRef) expr, context);
 		} else if (expr instanceof TupleFunctionCall) {
 			ret = prepare((TupleFunctionCall) expr, context);
+		} else if (expr instanceof StopableTupleExpr) {
+			ret = prepare((StopableTupleExpr) expr, context);
 		} else if (expr == null) {
 			throw new IllegalArgumentException("expr must not be null");
 		} else {
@@ -486,6 +489,18 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		} else {
 			return QueryEvaluationStep.minimal(this, expr);
 		}
+	}
+
+	private QueryEvaluationStep prepare(StopableTupleExpr expr, QueryEvaluationContext context) {
+		QueryEvaluationStep child = precompile(expr.getChild(), context);
+		return new QueryEvaluationStep() {
+
+			@Override
+			public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+				return new StopableIteration<BindingSet>(child.evaluate(bindings), expr.getAreWeStopped());
+			}
+
+		};
 	}
 
 	private QueryEvaluationStep trackResultSize(TupleExpr expr, QueryEvaluationStep qes) {

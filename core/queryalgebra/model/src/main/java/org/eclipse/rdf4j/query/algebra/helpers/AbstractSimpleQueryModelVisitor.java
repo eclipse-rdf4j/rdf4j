@@ -87,6 +87,7 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.StopableTupleExpr;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Sum;
@@ -512,6 +513,11 @@ public abstract class AbstractSimpleQueryModelVisitor<X extends Exception> imple
 
 	@Override
 	public void meet(ValueExprTripleRef node) throws X {
+		node.visitChildren(this);
+	}
+
+	@Override
+	public void meet(StopableTupleExpr node) throws X {
 		node.visitChildren(this);
 	}
 

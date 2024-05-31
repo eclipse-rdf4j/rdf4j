@@ -165,6 +165,8 @@ public interface QueryModelVisitor<X extends Exception> {
 
 	void meet(ValueConstant node) throws X;
 
+	void meet(StopableTupleExpr node) throws X;
+
 	/**
 	 *
 	 */
