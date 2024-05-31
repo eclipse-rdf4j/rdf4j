@@ -313,33 +313,40 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	}
 
 	String sizeAsTupleQuery(Resource... contexts) {
-		String query = COUNT_EVERYTHING;
-		if (contexts != null && isQuadMode()) {
-			if (contexts.length == 1 && isExposableGraphIri(contexts[0])) { // in case the context is null we want the
-																			// default graph.
-				query = "SELECT (COUNT(*) AS ?count) WHERE { GRAPH <" + contexts[0].stringValue()
+
+		// in case the context is null we want the
+		// default graph of the remote store i.e. ask without graph/from.
+		if (contexts != null && isQuadMode() && contexts.length > 0) {
+			// this is an optimization for the case that we can use a GRAPH instead of a FROM.
+			if (contexts.length == 1 && isExposableGraphIri(contexts[0])) {
+				return "SELECT (COUNT(*) AS ?count) WHERE { GRAPH <" + contexts[0].stringValue()
 						+ "> { ?s ?p ?o}}";
-			} else if (contexts.length > 0) {
+			} else {
+				// If we had an default graph setting that is sesame/rdf4j specific
+				// we must drop it before sending it over the wire. Otherwise
+				// gather up the given contexts and send them as a from clauses
+				// to make the matching dataset.
 				String graphs = Arrays.stream(contexts)
 						.filter(SPARQLConnection::isExposableGraphIri)
 						.map(Resource::stringValue)
 						.map(s -> "FROM <" + s + ">")
 						.collect(Collectors.joining(" "));
-				query = "SELECT (COUNT(*) AS ?count) " + graphs + "WHERE { ?s ?p ?o}";
+				return "SELECT (COUNT(*) AS ?count) " + graphs + "WHERE { ?s ?p ?o}";
 			}
+		} else {
+			return COUNT_EVERYTHING;
 		}
-		return query;
 	}
 
 	/**
-	 * For the sparql protocol a context must be an IRI However we can't send out the RDF4j intenral default graph IRIs
+	 * For the sparql protocol a context must be an IRI However we can't send out the RDF4j internal default graph IRIs
 	 *
 	 * @param resource to test if it can be the IRI for a named graph
 	 * @return true if it the input can be a foreign named graph.
 	 */
 	private static boolean isExposableGraphIri(Resource resource) {
 		// We use the instanceof test to avoid any issue with a null pointer.
-		return resource instanceof IRI && RDF4J.NIL != resource && SESAME.NIL != resource;
+		return resource instanceof IRI && !RDF4J.NIL.equals(resource) && !SESAME.NIL.equals(resource);
 	}
 
 	@Override
