@@ -174,7 +174,12 @@ public class LuceneDocument implements SearchDocument {
 					doc.add(f);
 				}
 			} else if (shape instanceof double[]) { // WKT:POINT
-				double point[] = (double[]) shape;
+				double[] point = (double[]) shape;
+
+				for (Field f : LatLonShape.createIndexableFields(GEO_FIELD_PREFIX + field, point[1],
+						point[0])) {
+					doc.add(f);
+				}
 				doc.add(new LatLonPoint(POINT_FIELD_PREFIX + field, point[1], point[0]));
 			} else if (shape instanceof Rectangle) { // WKT:ENVELOPE / RECTANGLE
 				Rectangle box = (Rectangle) shape;
