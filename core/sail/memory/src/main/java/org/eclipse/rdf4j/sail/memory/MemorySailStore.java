@@ -689,6 +689,8 @@ class MemorySailStore implements SailStore {
 						txnLock = null;
 					}
 				} catch (IllegalMonitorStateException t) {
+					logger.error("Failed to release lock from thread " + Thread.currentThread()
+							+ " because it was locked by another thread.", t);
 					throw new SailException("Failed to release lock from thread " + Thread.currentThread()
 							+ " because it was locked by another thread.", t);
 				}

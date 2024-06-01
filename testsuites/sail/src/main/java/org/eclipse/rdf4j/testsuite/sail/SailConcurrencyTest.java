@@ -553,6 +553,17 @@ public abstract class SailConcurrencyTest {
 			assertThat(size).isLessThanOrEqualTo(1);
 		}
 
+		try (SailConnection connection = store.getConnection()) {
+			connection.begin();
+			connection.addStatement(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
+			connection.commit();
+		}
+		try (SailConnection connection = store.getConnection()) {
+			connection.begin();
+			connection.clear();
+			connection.commit();
+		}
+
 		store.shutDown();
 	}
 
