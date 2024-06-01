@@ -21,10 +21,12 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
-import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.commons.lang3.time.StopWatch;
+import org.eclipse.rdf4j.common.concurrent.locks.ExclusiveLockManager;
+import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -134,7 +136,11 @@ class MemorySailStore implements SailStore {
 	/**
 	 * Lock manager used to prevent concurrent writes.
 	 */
-	private final ReentrantLock txnLockManager = new ReentrantLock();
+	private final ExclusiveLockManager txnLockManagerExplicit = new ExclusiveLockManager();
+	private final ExclusiveLockManager txnLockManagerInferred = new ExclusiveLockManager();
+
+	private final AtomicReference<Thread> txnLockManagerExplicitThread = new AtomicReference<>();
+	private final AtomicReference<Thread> txnLockManagerInferredThread = new AtomicReference<>();
 
 	/**
 	 * Cleanup thread that removes deprecated statements when no other threads are accessing this list. Seee
@@ -568,8 +574,7 @@ class MemorySailStore implements SailStore {
 		private int nextSnapshot;
 
 		private Set<StatementPattern> observations;
-
-		private volatile boolean txnLock;
+		private volatile Lock txnLock;
 
 		private boolean requireCleanup;
 
@@ -582,6 +587,7 @@ class MemorySailStore implements SailStore {
 				this.serializable = Integer.MAX_VALUE;
 				this.reservedSnapshot = null;
 			}
+
 		}
 
 		@Override
@@ -592,7 +598,7 @@ class MemorySailStore implements SailStore {
 			} else {
 				sb.append("inferred ");
 			}
-			if (txnLock) {
+			if (txnLock != null) {
 				sb.append("snapshot ").append(nextSnapshot);
 			} else {
 				sb.append(super.toString());
@@ -631,18 +637,17 @@ class MemorySailStore implements SailStore {
 					}
 				}
 			}
-			assert txnLock && txnLockManager.isHeldByCurrentThread() : "Should still be holding lock";
+
 		}
 
 		@Override
 		public synchronized void flush() throws SailException {
-			if (txnLock) {
+			if (txnLock != null && txnLock.isActive()) {
 				invalidateCache();
 				currentSnapshot = Math.max(currentSnapshot, nextSnapshot);
 				if (requireCleanup) {
 					scheduleSnapshotCleanup();
 				}
-				assert txnLock && txnLockManager.isHeldByCurrentThread() : "Should still be holding lock";
 			}
 		}
 
@@ -667,12 +672,23 @@ class MemorySailStore implements SailStore {
 		}
 
 		synchronized private void releaseLock() {
-			if (txnLock) {
+			if (txnLock != null) {
 				try {
-					txnLock = false;
-					txnLockManager.unlock();
+
+					// reverse order from acquire
+					// unset the thread and then release the lock
+					try {
+						if (explicit) {
+							txnLockManagerExplicitThread.set(null);
+						} else {
+							txnLockManagerInferredThread.set(null);
+						}
+					} finally {
+						assert txnLock.isActive();
+						txnLock.release();
+						txnLock = null;
+					}
 				} catch (IllegalMonitorStateException t) {
-					txnLock = true;
 					throw new SailException("Failed to release lock from thread " + Thread.currentThread()
 							+ " because it was locked by another thread.", t);
 				}
@@ -684,21 +700,21 @@ class MemorySailStore implements SailStore {
 		public synchronized void setNamespace(String prefix, String name) {
 			acquireExclusiveTransactionLock();
 			namespaceStore.setNamespace(prefix, name);
-			assert txnLock && txnLockManager.isHeldByCurrentThread() : "Should still be holding lock";
+
 		}
 
 		@Override
 		public synchronized void removeNamespace(String prefix) {
 			acquireExclusiveTransactionLock();
 			namespaceStore.removeNamespace(prefix);
-			assert txnLock && txnLockManager.isHeldByCurrentThread() : "Should still be holding lock";
+
 		}
 
 		@Override
 		public synchronized void clearNamespaces() {
 			acquireExclusiveTransactionLock();
 			namespaceStore.clear();
-			assert txnLock && txnLockManager.isHeldByCurrentThread() : "Should still be holding lock";
+
 		}
 
 		@Override
@@ -734,7 +750,7 @@ class MemorySailStore implements SailStore {
 			} catch (InterruptedException e) {
 				throw convertToSailException(e);
 			}
-			assert txnLock && txnLockManager.isHeldByCurrentThread() : "Should still be holding lock";
+
 		}
 
 		@Override
@@ -746,7 +762,7 @@ class MemorySailStore implements SailStore {
 			} catch (InterruptedException e) {
 				throw convertToSailException(e);
 			}
-			assert txnLock && txnLockManager.isHeldByCurrentThread() : "Should still be holding lock";
+
 		}
 
 		@Override
@@ -761,7 +777,7 @@ class MemorySailStore implements SailStore {
 			} catch (InterruptedException e) {
 				throw convertToSailException(e);
 			}
-			assert txnLock && txnLockManager.isHeldByCurrentThread() : "Should still be holding lock";
+
 		}
 
 		@Override
@@ -773,7 +789,7 @@ class MemorySailStore implements SailStore {
 			for (Statement statement : deprecated) {
 				innerDeprecate(statement, nextSnapshot);
 			}
-			assert txnLock && txnLockManager.isHeldByCurrentThread() : "Should still be holding lock";
+
 		}
 
 		@Override
@@ -782,7 +798,7 @@ class MemorySailStore implements SailStore {
 			invalidateCache();
 			requireCleanup = true;
 			innerDeprecate(statement, nextSnapshot);
-			assert txnLock && txnLockManager.isHeldByCurrentThread() : "Should still be holding lock";
+
 		}
 
 		private void innerDeprecate(Statement statement, int nextSnapshot) {
@@ -816,19 +832,109 @@ class MemorySailStore implements SailStore {
 		}
 
 		private void acquireExclusiveTransactionLock() throws SailException {
-			if (!txnLock) {
-				synchronized (this) {
-					if (!txnLock) {
-						try {
-							txnLockManager.lockInterruptibly();
-						} catch (InterruptedException e) {
-							throw convertToSailException(e);
-						}
-						nextSnapshot = currentSnapshot + 1;
-						txnLock = true;
-					}
-				}
 
+			if (txnLock == null) {
+				try {
+					synchronized (this) {
+						while (txnLock == null) {
+							if (Thread.interrupted()) {
+								throw new InterruptedException();
+							}
+
+							if (explicit) {
+
+								txnLock = txnLockManagerExplicit.getExclusiveLock();
+								try {
+									boolean wasNull = txnLockManagerExplicitThread.compareAndSet(null,
+											Thread.currentThread());
+									if (!wasNull) {
+										// should really be null already, so this should never happen
+										txnLock.release();
+										txnLock = null;
+										break;
+									} else {
+										Thread inferredThread = txnLockManagerInferredThread.get();
+										if (inferredThread != null && inferredThread != Thread.currentThread()) {
+											txnLockManagerExplicitThread.set(null);
+											txnLock.release();
+											txnLock = null;
+											break;
+										}
+
+										// we have acquired the lock, we have set the explicit thread and we have
+										// checked that we match the inferred thread
+										// all is good
+									}
+								} catch (Throwable t) {
+									try {
+										txnLockManagerExplicitThread.compareAndSet(Thread.currentThread(), null);
+									} finally {
+										if (txnLock != null && txnLock.isActive()) {
+											txnLock.release();
+										}
+										txnLock = null;
+									}
+									throw t;
+								}
+
+							} else {
+
+								txnLock = txnLockManagerInferred.getExclusiveLock();
+								try {
+
+									boolean wasNull = txnLockManagerInferredThread.compareAndSet(null,
+											Thread.currentThread());
+									if (!wasNull) {
+										// should really be null already, so this should never happen
+										logger.warn("txnLockManagerInferredThread was not null");
+										txnLock.release();
+										txnLock = null;
+										break;
+									} else {
+										Thread explicitThread = txnLockManagerExplicitThread.get();
+										if (explicitThread != null && explicitThread != Thread.currentThread()) {
+											txnLockManagerInferredThread.set(null);
+											txnLock.release();
+											txnLock = null;
+											break;
+										}
+
+										// we have acquired the lock, we have set the inferred thread and we have
+										// checked that we match the explicit thread
+										// all is good
+
+									}
+								} catch (Throwable t) {
+									try {
+										txnLockManagerInferredThread.compareAndSet(Thread.currentThread(), null);
+									} finally {
+										if (txnLock != null && txnLock.isActive()) {
+											txnLock.release();
+										}
+										txnLock = null;
+									}
+									throw t;
+								}
+
+							}
+
+							if (txnLock == null) {
+								// acquire and release the lock from the opposite lock manager will effectively cause us
+								// to wait for that lock to be released
+								if (explicit) {
+									txnLockManagerInferred.getExclusiveLock().release();
+								} else {
+									txnLockManagerExplicit.getExclusiveLock().release();
+								}
+							}
+
+						}
+					}
+				} catch (InterruptedException e) {
+					logger.error("Thread interrupted while attempting to acquire transaction lock", e);
+					Thread.currentThread().interrupt();
+					throw new SailException(e);
+				}
 			}
 		}
 
@@ -928,7 +1034,6 @@ class MemorySailStore implements SailStore {
 				throw convertToSailException(e);
 			}
 			invalidateCache();
-			assert txnLock && txnLockManager.isHeldByCurrentThread() : "Should still be holding lock";
 
 			return deprecated;
 		}
