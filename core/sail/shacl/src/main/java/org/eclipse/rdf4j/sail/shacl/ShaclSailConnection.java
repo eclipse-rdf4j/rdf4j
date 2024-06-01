@@ -743,24 +743,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		if (getWrappedConnection() instanceof AbstractSailConnection) {
 			AbstractSailConnection abstractSailConnection = (AbstractSailConnection) getWrappedConnection();
 
-			if (Thread.currentThread() != abstractSailConnection.getOwner()) {
-				Thread owner = abstractSailConnection.getOwner();
-				logger.error(
-						"Closing connection from a different thread than the one that opened it. Connections should not be shared between threads. Opened by "
-								+ owner + " closed by " + Thread.currentThread(),
-						new Throwable("Throwable used for stacktrace"));
-				owner.interrupt();
-				try {
-					owner.join(1000);
-					if (owner.isAlive()) {
-						logger.error("Interrupted thread {} but thread is still alive after 1000 ms!", owner);
-					}
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-					throw new SailException(e);
-				}
-			}
-
+			abstractSailConnection.waitForOtherOperations(true);
 		}
 
 		try {
