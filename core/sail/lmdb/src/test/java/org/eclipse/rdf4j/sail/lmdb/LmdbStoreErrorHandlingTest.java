@@ -32,8 +32,8 @@ public class LmdbStoreErrorHandlingTest {
 	public void testMapFullError(@TempDir File dataDir) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,psoc");
 		// set small db size
-		config.setValueDBSize(50000);
-		config.setTripleDBSize(50000);
+		config.setValueDBSize(500000);
+		config.setTripleDBSize(500000);
 		config.setAutoGrow(false);
 		Repository repo = new SailRepository(new LmdbStore(dataDir, config));
 
