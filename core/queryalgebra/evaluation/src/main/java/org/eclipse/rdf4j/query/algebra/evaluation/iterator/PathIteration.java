@@ -20,6 +20,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
@@ -130,7 +131,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	 * @param s the name of the variable to see if it is in the bindingset
 	 * @return the value of the start or end or if asked for a different field a null.
 	 */
-	private static final BiConsumer<Value, MutableBindingSet> getSet(String s) {
+	@InternalUseOnly
+	public static final BiConsumer<Value, MutableBindingSet> getSet(String s) {
 		switch (s) {
 		case START:
 			return (v, vp) -> ((ValuePair) vp).startValue = v;
@@ -149,7 +151,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	 * @param s the name of the variable to see if it is in the bindingset
 	 * @return the value of the start or end, if asked for a different field throw an illegalstate exception
 	 */
-	private static final Function<BindingSet, Value> getGet(String s) {
+	public static final Function<BindingSet, Value> getGet(String s) {
 		switch (s) {
 		case START:
 			return (vp) -> ((ValuePair) vp).startValue;
@@ -168,7 +170,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	 * @param s the name of the variable to see if it is in the bindingset
 	 * @return true if start or end is not null, if asked for a different field throw an illegalstate exception
 	 */
-	private static final Predicate<BindingSet> getHas(String s) {
+	public static final Predicate<BindingSet> getHas(String s) {
 		switch (s) {
 		case START:
 			return (vp) -> ((ValuePair) vp).startValue != null;
@@ -431,7 +433,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	 * A specialized BingingSet that can only hold the start and end values of a Path. Minimizing unneeded memory use,
 	 * and allows specialization in the sets required to answer this part of a query.
 	 */
-	protected static class ValuePair implements MutableBindingSet {
+	public static class ValuePair implements MutableBindingSet {
 		private static final long serialVersionUID = 1L;
 
 		private Value startValue;

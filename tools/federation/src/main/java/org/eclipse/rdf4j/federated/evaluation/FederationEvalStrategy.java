@@ -641,7 +641,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 	}
 
-	protected CloseableIteration<BindingSet, QueryEvaluationException> evaluateArbitrayLengthPath(
+	protected CloseableIteration<BindingSet> evaluateArbitrayLengthPath(
 			FedXArbitraryLengthPath alp, BindingSet bindings)
 			throws QueryEvaluationException {
 
@@ -655,7 +655,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 				alp.getQueryInfo());
 	}
 
-	protected CloseableIteration<BindingSet, QueryEvaluationException> evaluateZeroLengthPath(FedXZeroLengthPath zlp,
+	protected CloseableIteration<BindingSet> evaluateZeroLengthPath(FedXZeroLengthPath zlp,
 			BindingSet bindings)
 			throws QueryEvaluationException {
 
