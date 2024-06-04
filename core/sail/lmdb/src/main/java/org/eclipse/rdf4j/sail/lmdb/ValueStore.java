@@ -56,6 +56,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.locks.StampedLock;
@@ -845,6 +846,8 @@ class ValueStore extends AbstractValueFactory {
 		return getId(value, false);
 	}
 
+	private final ConcurrentHashMap<Value, Long> commonVocabulary = new ConcurrentHashMap<>();
+
 	/**
 	 * Gets the ID for the specified value.
 	 *
@@ -872,6 +875,9 @@ class ValueStore extends AbstractValueFactory {
 		try {
 			// Check cache
 			Long cachedID = valueIDCache.get(value);
+			if (cachedID == null) {
+				cachedID = commonVocabulary.get(value);
+			}
 
 			if (cachedID != null) {
 				long id = cachedID;
@@ -903,6 +909,11 @@ class ValueStore extends AbstractValueFactory {
 						// Store id in cache
 						LmdbValue nv = getLmdbValue(value);
 						nv.setInternalID(id, revision);
+
+						if (nv.isIRI() && isCommonVocabulary(((IRI) nv))) {
+							commonVocabulary.put(value, id);
+						}
+
 						valueIDCache.put(nv, id);
 					}
 				}
@@ -914,6 +925,14 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		return LmdbValue.UNKNOWN_ID;
+	}
+
+	private static boolean isCommonVocabulary(IRI nv) {
+		String string = nv.toString();
+		return string.startsWith("http://www.w3.org/") ||
+				string.startsWith("http://purl.org/") ||
+				string.startsWith("http://publications.europa.eu/resource/authority") ||
+				string.startsWith("http://xmlns.com/");
 	}
 
 	public void gcIds(Collection<Long> ids, Collection<Long> nextIds) throws IOException {
