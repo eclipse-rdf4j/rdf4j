@@ -16,6 +16,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
+import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
@@ -30,6 +31,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.util.Comparator;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -48,11 +50,17 @@ final class LmdbUtil {
 	 */
 	static final long MIN_FREE_SPACE = 524_288; // 512 KiB
 
+	/**
+	 * Percentage free space in an LMDB db before automatically resizing the map. Default is 80%.
+	 */
+	@SuppressWarnings("StaticNonFinalField")
+    public static int PERCENTAGE_FULL_TRIGGERS_RESIZE = 80;
+
 	private LmdbUtil() {
 	}
 
 	static int E(int rc) throws IOException {
-		if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+		if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND && rc != MDB_KEYEXIST) {
 			throw new IOException(mdb_strerror(rc));
 		}
 		return rc;
@@ -97,7 +105,7 @@ final class LmdbUtil {
 			int err;
 			try {
 				ret = transaction.exec(stack, txn);
-				err = mdb_txn_commit(txn);
+				err = E(mdb_txn_commit(txn));
 			} catch (Throwable t) {
 				mdb_txn_abort(txn);
 				throw t;
@@ -156,6 +164,11 @@ final class LmdbUtil {
 	 */
 	static boolean requiresResize(long mapSize, long pageSize, long txn, long requiredSize) {
 		long nextPageNo = mdbTxnMtNextPgno(txn);
+		double percentageUsed = (100.0 / mapSize) * (nextPageNo * pageSize);
+		if (percentageUsed > PERCENTAGE_FULL_TRIGGERS_RESIZE) {
+			return true;
+		}
+
 		return mapSize - nextPageNo * pageSize < Math.max(requiredSize, MIN_FREE_SPACE);
 	}
 
@@ -171,6 +184,11 @@ final class LmdbUtil {
 		mapSize = Math.max(mapSize * 2, Math.max(requiredSize, MIN_FREE_SPACE));
 		// align map size to page size
 		return mapSize % pageSize == 0 ? mapSize : mapSize + (mapSize / pageSize + 1) * pageSize;
+	}
+
+	public static long getNewSize(int pageSize, long txn, long requiredSize) {
+		long nextPgno = mdbTxnMtNextPgno(txn);
+		return (nextPgno * pageSize) + requiredSize;
 	}
 
 	@FunctionalInterface
