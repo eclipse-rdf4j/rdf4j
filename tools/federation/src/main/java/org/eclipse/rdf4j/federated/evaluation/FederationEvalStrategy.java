@@ -28,24 +28,32 @@ import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.CheckStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.ConjunctiveFilterExpr;
 import org.eclipse.rdf4j.federated.algebra.EmptyResult;
+import org.eclipse.rdf4j.federated.algebra.EmptyStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExprRenderer;
+import org.eclipse.rdf4j.federated.algebra.FedXArbitraryLengthPath;
 import org.eclipse.rdf4j.federated.algebra.FedXLeftJoin;
 import org.eclipse.rdf4j.federated.algebra.FedXService;
+import org.eclipse.rdf4j.federated.algebra.FedXZeroLengthPath;
 import org.eclipse.rdf4j.federated.algebra.FederatedDescribeOperator;
 import org.eclipse.rdf4j.federated.algebra.FilterExpr;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
+import org.eclipse.rdf4j.federated.algebra.HolderNode;
 import org.eclipse.rdf4j.federated.algebra.NJoin;
 import org.eclipse.rdf4j.federated.algebra.NUnion;
 import org.eclipse.rdf4j.federated.algebra.SingleSourceQuery;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
+import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
+import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
 import org.eclipse.rdf4j.federated.cache.CacheUtils;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelServiceExecutor;
+import org.eclipse.rdf4j.federated.evaluation.iterator.FedXPathIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.FederatedDescribeIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBoundJoin;
@@ -91,6 +99,7 @@ import org.eclipse.rdf4j.query.algebra.DescribeOperator;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -275,11 +284,95 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			QueryInfo queryInfo,
 			GenericInfoOptimizer info) {
 
+		Set<Endpoint> relevantMembers = new HashSet<>();
+		var stmtPatterns = new HashSet<>(info.getStatements());
+
+		if (info.hasPathExpression()) {
+			var handled = new HashSet<>();
+			for (StatementPattern stmt : stmtPatterns) {
+				if (stmt.getParentNode() instanceof FedXArbitraryLengthPath) {
+					var pathExpr = (FedXArbitraryLengthPath) stmt.getParentNode();
+					var identifiedMembers = performSourceSelection(pathExpr, stmt, members, cache, queryInfo);
+					relevantMembers.addAll(identifiedMembers);
+
+					handled.add(stmt);
+				}
+			}
+			stmtPatterns.removeAll(handled);
+		}
+
 		// Source Selection: all nodes are annotated with their source
 		SourceSelection sourceSelection = new SourceSelection(members, cache, queryInfo);
 		sourceSelection.doSourceSelection(info.getStatements());
 
-		return sourceSelection.getRelevantSources();
+		relevantMembers.addAll(sourceSelection.getRelevantSources());
+
+		return relevantMembers;
+	}
+
+	/**
+	 * Perform source selection on the statement pattern representing the path expression. Source selection must be a
+	 * subset of the provided members.
+	 *
+	 * The implementation expects to replace the statement, e.g. with {@link StatementSourcePattern},
+	 * {@link ExclusiveStatement} or {@link EmptyStatementPattern}
+	 *
+	 * @param pathExpr
+	 * @param stmt
+	 * @param members
+	 * @param cache
+	 * @param queryInfo
+	 * @return identified relevant members
+	 */
+	protected Set<Endpoint> performSourceSelection(FedXArbitraryLengthPath pathExpr, StatementPattern stmt,
+			List<Endpoint> members, SourceSelectionCache cache,
+			QueryInfo queryInfo) {
+
+		// for now the strategy is to do source selection on a statement pattern containing the predicate
+		// of the original path expression.
+		// Note: for zero-length path we add all members (as there does not have to exist a path with the
+		// predicate)
+		Set<Endpoint> identifiedMembers;
+		if (pathExpr.getMinLength() == 0) {
+			identifiedMembers = new HashSet<>(members);
+		} else {
+			StatementPattern checkStmt = new StatementPattern(stmt.getScope(), new Var("subject"),
+					clone(stmt.getPredicateVar()), new Var("object"), clone(stmt.getContextVar()));
+			@SuppressWarnings("unused") // only used as artificial parent
+			HolderNode holderParent = new HolderNode(checkStmt);
+
+			SourceSelection sourceSelection = new SourceSelection(members, cache, queryInfo);
+			sourceSelection.doSourceSelection(List.of(checkStmt));
+
+			identifiedMembers = sourceSelection.getRelevantSources();
+		}
+
+		var statementSources = identifiedMembers.stream()
+				.map(e -> new StatementSource(e.getId(), StatementSourceType.REMOTE))
+				.collect(Collectors.toList());
+
+		if (statementSources.size() == 1) {
+			var replacement = new ExclusiveStatement(stmt, statementSources.iterator().next(), queryInfo);
+			stmt.replaceWith(replacement);
+		} else if (statementSources.size() > 1) {
+			var replacement = new StatementSourcePattern(stmt, queryInfo);
+			for (var stmtSource : statementSources) {
+				((StatementSourcePattern) replacement).addStatementSource(stmtSource);
+			}
+			stmt.replaceWith(replacement);
+		} else {
+			var replacement = new EmptyStatementPattern(stmt);
+			stmt.replaceWith(replacement);
+		}
+
+		return identifiedMembers;
+	}
+
+	private Var clone(Var var) {
+		if (var == null) {
+			return null;
+		}
+		return var.clone();
 	}
 
 	protected void optimizeJoinOrder(TupleExpr query, QueryInfo queryInfo, GenericInfoOptimizer info) {
@@ -356,6 +449,14 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			return evaluateService((FedXService) expr, bindings);
 		}
 
+		if (expr instanceof FedXArbitraryLengthPath) {
+			return evaluateArbitrayLengthPath((FedXArbitraryLengthPath) expr, bindings);
+		}
+
+		if (expr instanceof FedXZeroLengthPath) {
+			return evaluateZeroLengthPath((FedXZeroLengthPath) expr, bindings);
+		}
+
 		if (expr instanceof EmptyResult) {
 			return new EmptyIteration<>();
 		}
@@ -400,6 +501,14 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		if (expr instanceof FedXService) {
 			return QueryEvaluationStep.minimal(this, expr);
+		}
+
+		if (expr instanceof FedXArbitraryLengthPath) {
+			return prepare((FedXArbitraryLengthPath) expr, context);
+		}
+
+		if (expr instanceof FedXZeroLengthPath) {
+			return prepare((FedXZeroLengthPath) expr, context);
 		}
 
 		if (expr instanceof EmptyResult) {
@@ -530,6 +639,40 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			return result;
 		};
 
+	}
+
+	protected CloseableIteration<BindingSet> evaluateArbitrayLengthPath(
+			FedXArbitraryLengthPath alp, BindingSet bindings)
+			throws QueryEvaluationException {
+
+		return precompile(alp).evaluate(bindings);
+	}
+
+	protected QueryEvaluationStep prepare(FedXArbitraryLengthPath alp, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		return (bindings) -> new FedXPathIteration(FederationEvalStrategy.this, alp.getScope(), alp.getSubjectVar(),
+				alp.getPathExpression(), alp.getObjectVar(), alp.getContextVar(), alp.getMinLength(), bindings,
+				alp.getQueryInfo());
+	}
+
+	protected CloseableIteration<BindingSet> evaluateZeroLengthPath(FedXZeroLengthPath zlp,
+			BindingSet bindings)
+			throws QueryEvaluationException {
+
+		return precompile(zlp).evaluate(bindings);
+	}
+
+	protected QueryEvaluationStep prepare(FedXZeroLengthPath zlp, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+
+		final Var subjectVar = zlp.getSubjectVar();
+		final Var objVar = zlp.getObjectVar();
+		final Var contextVar = zlp.getContextVar();
+		QueryValueEvaluationStep subPrep = precompile(subjectVar, context);
+		QueryValueEvaluationStep objPrep = precompile(objVar, context);
+
+		return new FedXZeroLengthPathEvaluationStep(subjectVar, objVar, contextVar, subPrep, objPrep, this, context,
+				() -> zlp.getStatementSources(), () -> zlp.getQueryInfo());
 	}
 
 	/**

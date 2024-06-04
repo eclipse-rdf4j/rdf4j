@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2024 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -8,7 +8,7 @@
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
-package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
+package org.eclipse.rdf4j.federated.evaluation.iterator;
 
 import java.util.Arrays;
 import java.util.List;
@@ -18,6 +18,12 @@ import java.util.function.BiConsumer;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.federated.algebra.EmptyStatementPattern;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
+import org.eclipse.rdf4j.federated.algebra.FedXZeroLengthPath;
+import org.eclipse.rdf4j.federated.algebra.StatementSource;
+import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
+import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -26,25 +32,48 @@ import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.CrossProductIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration;
 
-public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
+/**
+ * An iteration to evaluated {@link FedXZeroLengthPath}
+ *
+ * @see ZeroLengthPathIteration
+ */
+public class FedXZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
+
+	/*
+	 * IMPL NOTE:
+	 *
+	 * This is technically almost a 1:1 copy of
+	 * org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration Reusing or extending
+	 * ZeroLengthPathIteration requires refactoring in its constructor initialization.
+	 *
+	 * The main difference is in keeping track of QueryInfo and statement sources to be used in the precompiled
+	 * statement. Additionally the variable names for anon vars are renamed
+	 */
 
 	private static final Literal OBJECT = SimpleValueFactory.getInstance().createLiteral("object");
 
 	private static final Literal SUBJECT = SimpleValueFactory.getInstance().createLiteral("subject");
 
-	public static final String ANON_SUBJECT_VAR = "zero_length_internal_start";
+	// Note: in contrast to the original zero length path iteration we use "_" instead of "-"
+	// as we need variable names valid in SELECT queries
 
-	public static final String ANON_PREDICATE_VAR = "zero_length_internal_pred";
+	private static final String ANON_SUBJECT_VAR = "zero_length_internal_start";
 
-	public static final String ANON_OBJECT_VAR = "zero_length_internal_end";
+	private static final String ANON_PREDICATE_VAR = "zero_length_internal_pred";
 
-	public static final String ANON_SEQUENCE_VAR = "zero_length_internal_seq";
+	private static final String ANON_OBJECT_VAR = "zero_length_internal_end";
+
+	private static final String ANON_SEQUENCE_VAR = "zero_length_internal_seq";
+	private final CollectionFactory cf;
 
 	private QueryBindingSet result;
 
@@ -72,10 +101,9 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 
 	private final BiConsumer<Value, MutableBindingSet> setContext;
 
-	private final CollectionFactory cf;
-
-	public ZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar, Var objVar, Value subj,
-			Value obj, Var contextVar, BindingSet bindings, QueryEvaluationContext context) {
+	public FedXZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar, Var objVar,
+			Value subj, Value obj, Var contextVar, BindingSet bindings, QueryEvaluationContext context,
+			QueryInfo queryInfo, List<StatementSource> statementSources) {
 		this.evaluationStrategy = evaluationStrategyImpl;
 		this.context = context;
 		this.result = new QueryBindingSet(bindings);
@@ -94,7 +122,21 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 			subjects = new StatementPattern(startVar, predicate, endVar);
 		}
 
-		precompile = evaluationStrategy.precompile(subjects, context);
+		// specialization for federation: we need to attach statement sources
+		// to the precompiled expr
+		TupleExpr expr;
+		if (statementSources.size() == 1) {
+			expr = new ExclusiveStatement(subjects, statementSources.get(0), queryInfo);
+		} else if (statementSources.size() > 1) {
+			expr = new StatementSourcePattern(subjects, queryInfo);
+			for (var stmtSource : statementSources) {
+				((StatementSourcePattern) expr).addStatementSource(stmtSource);
+			}
+		} else {
+			expr = new EmptyStatementPattern(subjects);
+		}
+		precompile = evaluationStrategy.precompile(expr, context);
+
 		setSubject = context.addBinding(subjectVar.getName());
 		setObject = context.addBinding(objVar.getName());
 		if (contextVar != null) {
@@ -102,7 +144,9 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 		} else {
 			setContext = null;
 		}
+
 		this.cf = evaluationStrategy.getCollectionFactory().get();
+
 	}
 
 	@Override
@@ -167,17 +211,20 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 		}
 	}
 
-	private CloseableIteration<BindingSet> createIteration() throws QueryEvaluationException {
+	private CloseableIteration<BindingSet> createIteration() {
 		CloseableIteration<BindingSet> iter = precompile.evaluate(bindings);
 		return iter;
 	}
 
 	public Var createAnonVar(String varName) {
-		return new Var(varName, true);
+		Var var = new Var(varName, true);
+		return var;
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
-		cf.close();
+	protected void handleClose() {
+		if (iter != null) {
+			iter.close();
+		}
 	}
 }

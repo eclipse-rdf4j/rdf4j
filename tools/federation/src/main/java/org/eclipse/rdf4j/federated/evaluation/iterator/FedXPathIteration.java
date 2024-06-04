@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2024 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -8,8 +8,9 @@
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
-package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
+package org.eclipse.rdf4j.federated.evaluation.iterator;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -23,6 +24,10 @@ import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.federated.algebra.FedXZeroLengthPath;
+import org.eclipse.rdf4j.federated.algebra.StatementSource;
+import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
+import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -32,13 +37,12 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
-public class PathIteration extends LookAheadIteration<BindingSet> {
+public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 
 	// Should never be seen by code outside of this iterator
 	private static final String END = "$end_from_path_iteration";
@@ -48,6 +52,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	 * Required as we can't prepare the queries yet.
 	 */
 	private final EvaluationStrategy strategy;
+	private final QueryInfo queryInfo;
 
 	private long currentLength;
 
@@ -95,8 +100,9 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	private final int pathIteratorId = PATH_ITERATOR_ID_GENERATOR++;
 	private final String endVarName = "END_" + JOINVAR_PREFIX + pathIteratorId;
 
-	public PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
-			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings)
+	public FedXPathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
+			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings,
+			QueryInfo queryInfo)
 			throws QueryEvaluationException {
 		this.strategy = strategy;
 		this.scope = scope;
@@ -114,14 +120,16 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 		this.collectionFactory = strategy.getCollectionFactory().get();
 
+		this.queryInfo = queryInfo;
+
 		// This is all necessary for optimized collections to be usable. This only becomes important on very large
 		// stores with large intermediary results.
-		this.reportedValues = collectionFactory.createSetOfBindingSets(ValuePair::new, PathIteration::getHas,
-				PathIteration::getGet, PathIteration::getSet);
-		this.unreportedValues = collectionFactory.createSetOfBindingSets(ValuePair::new, PathIteration::getHas,
-				PathIteration::getGet, PathIteration::getSet);
-		this.valueQueue = collectionFactory.createBindingSetQueue(ValuePair::new, PathIteration::getHas,
-				PathIteration::getGet, PathIteration::getSet);
+		this.reportedValues = collectionFactory.createSetOfBindingSets(ValuePair::new, FedXPathIteration::getHas,
+				FedXPathIteration::getGet, FedXPathIteration::getSet);
+		this.unreportedValues = collectionFactory.createSetOfBindingSets(ValuePair::new, FedXPathIteration::getHas,
+				FedXPathIteration::getGet, FedXPathIteration::getSet);
+		this.valueQueue = collectionFactory.createBindingSetQueue(ValuePair::new, FedXPathIteration::getHas,
+				FedXPathIteration::getGet, FedXPathIteration::getSet);
 		createIteration();
 	}
 
@@ -354,8 +362,17 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			// the variable must remain unbound for this solution see https://www.w3.org/TR/sparql11-query/#assignment
 			currentIter = null;
 		} else if (currentLength == 0L) {
-			ZeroLengthPath zlp = new ZeroLengthPath(scope, startVar.clone(), endVar.clone(),
-					contextVar != null ? contextVar.clone() : null);
+			// For the federation we need to path through statement sources and query info
+
+			// determine statement sources relevant in the current path scope
+			var statementSources = new ArrayList<StatementSource>();
+			if (pathExpression instanceof StatementTupleExpr) {
+				statementSources.addAll(((StatementTupleExpr) pathExpression).getStatementSources());
+			}
+
+			FedXZeroLengthPath zlp = new FedXZeroLengthPath(scope, startVar.clone(), endVar.clone(),
+					contextVar != null ? contextVar.clone() : null, queryInfo, statementSources);
+
 			currentIter = this.strategy.evaluate(zlp, bindings);
 			currentLength++;
 		} else if (currentLength == 1) {
