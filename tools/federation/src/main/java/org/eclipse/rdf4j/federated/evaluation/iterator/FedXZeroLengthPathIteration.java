@@ -223,6 +223,8 @@ public class FedXZeroLengthPathIteration extends LookAheadIteration<BindingSet> 
 
 	@Override
 	protected void handleClose() {
-
+		if (iter != null) {
+			iter.close();
+		}
 	}
 }
