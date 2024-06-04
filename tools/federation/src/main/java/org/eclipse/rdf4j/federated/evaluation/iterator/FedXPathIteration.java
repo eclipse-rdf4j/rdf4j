@@ -7,30 +7,23 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
- ******************************************************************************/
-
+ *******************************************************************************/
 package org.eclipse.rdf4j.federated.evaluation.iterator;
 
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
 import java.util.Queue;
 import java.util.Set;
-import java.util.function.BiConsumer;
-import java.util.function.Function;
-import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
-import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.federated.algebra.FedXZeroLengthPath;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -42,7 +35,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
 /**
  * A iteration to evaluate property path expressions.
@@ -61,15 +53,10 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 	 * zero length path expressions.
 	 */
 
-	// Should never be seen by code outside of this iterator
-	private static final String END = "$end_from_path_iteration";
-	private static final String START = "$start_from_path_iteration";
-
 	/**
-	 * Required as we can't prepare the queries yet.
+	 *
 	 */
 	private final EvaluationStrategy strategy;
-	private final QueryInfo queryInfo;
 
 	private long currentLength;
 
@@ -87,11 +74,11 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 
 	private final boolean endVarFixed;
 
-	private final Queue<BindingSet> valueQueue;
+	private final Queue<ValuePair> valueQueue;
 
-	private final Set<BindingSet> reportedValues;
+	private final Set<ValuePair> reportedValues;
 
-	private final Set<BindingSet> unreportedValues;
+	private final Set<ValuePair> unreportedValues;
 
 	private final TupleExpr pathExpression;
 
@@ -103,23 +90,12 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 
 	private final Set<String> namedIntermediateJoins = new HashSet<>();
 
-	private final CollectionFactory collectionFactory;
-	/**
-	 * Instead of depending on hash codes not colliding we instead make sure that each element is unique per iteration.
-	 * Which is why this is a static volatile field. As more than one path iteration can be present in the same query.
-	 */
-	private static volatile int PATH_ITERATOR_ID_GENERATOR = 0;
+	private final QueryInfo queryInfo;
 
-	/**
-	 * Using the ++ to increment the volatile shared id generator, the id in this iterator must remain constant during
-	 * execution.
-	 */
-	private final int pathIteratorId = PATH_ITERATOR_ID_GENERATOR++;
-	private final String endVarName = "END_" + JOINVAR_PREFIX + pathIteratorId;
+	public FedXPathIteration(EvaluationStrategy strategy, Scope scope, Var startVar, TupleExpr pathExpression,
+			Var endVar, Var contextVar, long minLength, BindingSet bindings, QueryInfo queryInfo)
+			throws QueryEvaluationException {
 
-	public FedXPathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
-			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings,
-			QueryInfo queryInfo) {
 		this.strategy = strategy;
 		this.scope = scope;
 		this.startVar = startVar;
@@ -134,77 +110,16 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 		this.currentLength = minLength;
 		this.bindings = bindings;
 
-		this.collectionFactory = strategy.getCollectionFactory().get();
+		CollectionFactory collectionFactory = strategy.getCollectionFactory().get();
+		this.reportedValues = collectionFactory.createSet();
+		this.unreportedValues = collectionFactory.createSet();
+		this.valueQueue = collectionFactory.createQueue();
 
-		// This is all necessary for optimized collections to be usable. This only becomes important on very large
-		// stores with large intermediary results.
-		this.reportedValues = collectionFactory.createSetOfBindingSets(ValuePair::new, FedXPathIteration::getHas,
-				FedXPathIteration::getGet, FedXPathIteration::getSet);
-		this.unreportedValues = collectionFactory.createSetOfBindingSets(ValuePair::new, FedXPathIteration::getHas,
-				FedXPathIteration::getGet, FedXPathIteration::getSet);
-		this.valueQueue = collectionFactory.createBindingSetQueue(ValuePair::new, FedXPathIteration::getHas,
-				FedXPathIteration::getGet, FedXPathIteration::getSet);
-		createIteration();
 		this.queryInfo = queryInfo;
+
+		createIteration();
+
 	}
-
-	/**
-	 * Used to turn a method call into a direct field access
-	 *
-	 * @param s the name of the variable to see if it is in the bindingset
-	 * @return the value of the start or end or if asked for a different field a null.
-	 */
-	@InternalUseOnly
-	public static final BiConsumer<Value, MutableBindingSet> getSet(String s) {
-		switch (s) {
-		case START:
-			return (v, vp) -> ((ValuePair) vp).startValue = v;
-		case END:
-			return (v, vp) -> ((ValuePair) vp).endValue = v;
-		default:
-			return (v, vp) -> {
-				throw new IllegalStateException("A value is being asked to be set where we never expected one");
-			};
-		}
-	}
-
-	/**
-	 * Used to turn a method call into a direct field access
-	 *
-	 * @param s the name of the variable to see if it is in the bindingset
-	 * @return the value of the start or end, if asked for a different field throw an illegalstate exception
-	 */
-	public static final Function<BindingSet, Value> getGet(String s) {
-		switch (s) {
-		case START:
-			return (vp) -> ((ValuePair) vp).startValue;
-		case END:
-			return (vp) -> ((ValuePair) vp).endValue;
-		default:
-			return (vp) -> {
-				throw new IllegalStateException("A value is being asked to be set where we never expected one");
-			};
-		}
-	};
-
-	/**
-	 * Used to turn a method call into a direct field access
-	 *
-	 * @param s the name of the variable to see if it is in the bindingset
-	 * @return true if start or end is not null, if asked for a different field throw an illegalstate exception
-	 */
-	public static final Predicate<BindingSet> getHas(String s) {
-		switch (s) {
-		case START:
-			return (vp) -> ((ValuePair) vp).startValue != null;
-		case END:
-			return (vp) -> ((ValuePair) vp).endValue != null;
-		default:
-			return (vp) -> {
-				throw new IllegalStateException("A value is being asked to be set where we never expected one");
-			};
-		}
-	};
 
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
@@ -293,8 +208,11 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 				}
 			}
 
-			// We are done but let the close deal with clearing up resources.
-			// That method knows how to do it in the cheapest way possible.
+			// if we're done, throw away the cached lists of values to avoid
+			// hogging resources
+			reportedValues.clear();
+			unreportedValues.clear();
+			valueQueue.clear();
 			return null;
 		}
 	}
@@ -309,10 +227,10 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 
 		if (startVarFixed && endVarFixed && currentLength > 2) {
 			v1 = getVarValue(startVar, startVarFixed, nextElement);
-			v2 = nextElement.getValue(endVarName);
+			v2 = nextElement.getValue("END_" + JOINVAR_PREFIX + this.hashCode());
 		} else if (startVarFixed && endVarFixed && currentLength == 2) {
 			v1 = getVarValue(startVar, startVarFixed, nextElement);
-			v2 = nextElement.getValue(varNameAtPathLengthOf(currentLength - 1));
+			v2 = nextElement.getValue(JOINVAR_PREFIX + (currentLength - 1) + "_" + this.hashCode());
 		} else {
 			v1 = getVarValue(startVar, startVarFixed, nextElement);
 			v2 = getVarValue(endVar, endVarFixed, nextElement);
@@ -326,17 +244,16 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
-		if (currentIter != null) {
+		if (currentIter != null)
 			currentIter.close();
-		}
-		collectionFactory.close();
+
 	}
 
 	/**
 	 * @param valueQueue2
 	 * @param vp
 	 */
-	protected boolean addToQueue(Queue<BindingSet> valueQueue2, ValuePair vp) throws QueryEvaluationException {
+	protected boolean addToQueue(Queue<ValuePair> valueQueue2, ValuePair vp) throws QueryEvaluationException {
 		return valueQueue2.add(vp);
 	}
 
@@ -344,7 +261,7 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 	 * @param valueSet
 	 * @param vp
 	 */
-	protected boolean add(Set<BindingSet> valueSet, ValuePair vp) throws QueryEvaluationException {
+	protected boolean add(Set<ValuePair> valueSet, ValuePair vp) throws QueryEvaluationException {
 		return valueSet.add(vp);
 	}
 
@@ -395,33 +312,27 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 			TupleExpr pathExprClone = pathExpression.clone();
 
 			if (startVarFixed && endVarFixed) {
-				Value v = currentVp.getEndValue();
-				Var startReplacement = createAnonVar(varNameAtPathLengthOf(currentLength), v,
-						false);
-				Var endReplacement = createAnonVar(endVarName, null, false);
+				Var replacement = createAnonVar(JOINVAR_PREFIX + currentLength + "_" + this.hashCode());
 
-				VarReplacer replacer = new VarReplacer(startVar, startReplacement, 0, false);
-				pathExprClone.visit(replacer);
-
-				replacer = new VarReplacer(endVar, endReplacement, 0, false);
+				VarReplacer replacer = new VarReplacer(endVar, replacement, 0, false);
 				pathExprClone.visit(replacer);
 			}
 			currentIter = this.strategy.evaluate(pathExprClone, bindings);
 			currentLength++;
 		} else {
 
-			currentVp = (ValuePair) valueQueue.poll();
+			currentVp = valueQueue.poll();
 
 			if (currentVp != null) {
 
 				TupleExpr pathExprClone = pathExpression.clone();
 
 				if (startVarFixed && endVarFixed) {
-
 					Value v = currentVp.getEndValue();
-					Var startReplacement = createAnonVar(varNameAtPathLengthOf(currentLength), v,
+
+					Var startReplacement = createAnonVar(JOINVAR_PREFIX + currentLength + "_" + this.hashCode(), v,
 							false);
-					Var endReplacement = createAnonVar(endVarName, null, false);
+					Var endReplacement = createAnonVar("END_" + JOINVAR_PREFIX + this.hashCode(), null, false);
 
 					VarReplacer replacer = new VarReplacer(startVar, startReplacement, 0, false);
 					pathExprClone.visit(replacer);
@@ -439,8 +350,7 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 						v = currentVp.getStartValue();
 					}
 
-					String varName = varNameAtPathLengthOf(currentLength);
-					Var replacement = createAnonVar(varName, v, true);
+					Var replacement = createAnonVar(JOINVAR_PREFIX + currentLength + "_" + this.hashCode(), v, false);
 
 					VarReplacer replacer = new VarReplacer(toBeReplaced, replacement, 0, false);
 					pathExprClone.visit(replacer);
@@ -455,10 +365,6 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 		}
 	}
 
-	private String varNameAtPathLengthOf(long atLength) {
-		return JOINVAR_PREFIX + atLength + "_" + pathIteratorId;
-	}
-
 	protected boolean isUnbound(Var var, BindingSet bindings) {
 		if (var == null) {
 			return false;
@@ -467,20 +373,11 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 		}
 	}
 
-	/**
-	 * A specialized BingingSet that can only hold the start and end values of a Path. Minimizing unneeded memory use,
-	 * and allows specialization in the sets required to answer this part of a query.
-	 */
-	public static class ValuePair implements MutableBindingSet {
-		private static final long serialVersionUID = 1L;
+	protected static class ValuePair {
 
-		private Value startValue;
+		private final Value startValue;
 
-		private Value endValue;
-
-		public ValuePair() {
-
-		}
+		private final Value endValue;
 
 		public ValuePair(Value startValue, Value endValue) {
 			this.startValue = startValue;
@@ -538,99 +435,9 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 			}
 			return true;
 		}
-
-		@Override
-		public Iterator<Binding> iterator() {
-			Binding sb = new SimpleBinding(START, startValue);
-			Binding eb = new SimpleBinding(END, endValue);
-			return List.of(sb, eb).iterator();
-		}
-
-		@Override
-		public Set<String> getBindingNames() {
-			return Set.of(START, END);
-		}
-
-		@Override
-		public Binding getBinding(String bindingName) {
-			switch (bindingName) {
-			case START:
-				return new SimpleBinding(START, startValue);
-			case END:
-				return new SimpleBinding(END, endValue);
-			default:
-				return null;
-			}
-		}
-
-		@Override
-		public boolean hasBinding(String bindingName) {
-			switch (bindingName) {
-			case START:
-				return true;
-			case END:
-				return false;
-			default:
-				return false;
-			}
-		}
-
-		@Override
-		public Value getValue(String bindingName) {
-			switch (bindingName) {
-			case START:
-				return startValue;
-			case END:
-				return endValue;
-			default:
-				return null;
-			}
-		}
-
-		@Override
-		public int size() {
-			return 2;
-		}
-
-		@Override
-		public void addBinding(Binding binding) {
-			switch (binding.getName()) {
-			case START:
-				startValue = binding.getValue();
-				break;
-			case END:
-				endValue = binding.getValue();
-				break;
-			}
-		}
-
-		@Override
-		public void setBinding(String name, Value value) {
-			switch (name) {
-			case START:
-				startValue = value;
-				break;
-			case END:
-				endValue = value;
-				break;
-			}
-
-		}
-
-		@Override
-		public void setBinding(Binding binding) {
-			switch (binding.getName()) {
-			case START:
-				startValue = binding.getValue();
-				break;
-			case END:
-				endValue = binding.getValue();
-				break;
-			}
-		}
 	}
 
-	private class VarReplacer extends AbstractQueryModelVisitor<QueryEvaluationException> {
+	class VarReplacer extends AbstractQueryModelVisitor<QueryEvaluationException> {
 
 		private final Var toBeReplaced;
 
@@ -654,8 +461,7 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 				QueryModelNode parent = var.getParentNode();
 				parent.replaceChildNode(var, replacement.clone());
 			} else if (replaceAnons && var.isAnonymous() && !var.hasValue()) {
-				String varName = "anon_replace_" + var.getName() + index;
-				Var replacementVar = createAnonVar(varName, null, true);
+				Var replacementVar = createAnonVar("anon_replace_" + var.getName() + index);
 				QueryModelNode parent = var.getParentNode();
 				parent.replaceChildNode(var, replacementVar);
 			}
@@ -665,7 +471,11 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 
 	private Var createAnonVar(String varName, Value v, boolean anonymous) {
 		namedIntermediateJoins.add(varName);
-		return new Var(varName, v, anonymous, false);
+		return new Var(varName, null, anonymous, false);
+	}
+
+	public Var createAnonVar(String varName) {
+		return createAnonVar(varName, null, true);
 	}
 
 }
