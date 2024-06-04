@@ -29,6 +29,7 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
+import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
@@ -56,6 +57,7 @@ import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
+import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
@@ -71,8 +73,8 @@ import ch.qos.logback.classic.Logger;
 @State(Scope.Benchmark)
 @Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G", "-XX:+UseParallelGC" })
-@Measurement(iterations = 5, batchSize = 1, time = 1, timeUnit = TimeUnit.MILLISECONDS)
+@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G", "-XX:+UseG1GC" })
+@Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class OverflowBenchmarkConcurrent {
 
@@ -81,14 +83,24 @@ public class OverflowBenchmarkConcurrent {
 		((Logger) (LoggerFactory
 				.getLogger("org.eclipse.rdf4j.sail.lmdb.MemoryOverflowModel")))
 				.setLevel(ch.qos.logback.classic.Level.DEBUG);
+
+		((Logger) (LoggerFactory
+				.getLogger("org.eclipse.rdf4j.model.impl.AbstractMemoryOverflowModel")))
+				.setLevel(ch.qos.logback.classic.Level.DEBUG);
 	}
 
-	public static void main(String[] args) throws RunnerException {
-		Options opt = new OptionsBuilder()
-				.include("OverflowBenchmarkConcurrent") // adapt to run other benchmark tests
-				.build();
+	@TearDown(Level.Trial)
+	public void tearDown() throws InterruptedException {
+		System.out.println("HERE");
+//		Thread.sleep(1000*60*60*60);
+	}
 
-		new Runner(opt).run();
+	public static void main(String[] args) throws RunnerException, IOException {
+		OverflowBenchmarkConcurrent overflowBenchmarkConcurrent = new OverflowBenchmarkConcurrent();
+		overflowBenchmarkConcurrent.setup();
+		while (true) {
+			overflowBenchmarkConcurrent.manyConcurrentTransactions();
+		}
 	}
 
 	@Benchmark
@@ -166,7 +178,11 @@ public class OverflowBenchmarkConcurrent {
 							try (RepositoryResult<Statement> statements = connection.getStatements(null, null, null)) {
 								statements.stream().limit(10_000).forEach(connection::remove);
 							}
-							connection.commit();
+							try {
+								connection.commit();
+							} catch (Exception e) {
+								connection.rollback();
+							}
 
 							System.out.println("Removed");
 						}
@@ -194,7 +210,7 @@ public class OverflowBenchmarkConcurrent {
 				try {
 					sailRepository.shutDown();
 				} finally {
-					FileUtils.deleteDirectory(temporaryFolder);
+					FileUtil.deleteDir(temporaryFolder);
 				}
 			}
 		}

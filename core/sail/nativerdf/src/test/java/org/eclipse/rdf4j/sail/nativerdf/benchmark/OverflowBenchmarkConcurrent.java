@@ -69,10 +69,10 @@ import ch.qos.logback.classic.Logger;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 0)
+@Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G", "-XX:+UseParallelGC" })
-@Measurement(iterations = 10, batchSize = 1, time = 1, timeUnit = TimeUnit.MILLISECONDS)
+@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G", "-XX:+UseG1GC" })
+@Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class OverflowBenchmarkConcurrent {
 
@@ -80,6 +80,10 @@ public class OverflowBenchmarkConcurrent {
 	public void setup() {
 		((Logger) (LoggerFactory
 				.getLogger("org.eclipse.rdf4j.sail.nativerdf.MemoryOverflowModel")))
+				.setLevel(ch.qos.logback.classic.Level.DEBUG);
+
+		((Logger) (LoggerFactory
+				.getLogger("org.eclipse.rdf4j.model.impl.AbstractMemoryOverflowModel")))
 				.setLevel(ch.qos.logback.classic.Level.DEBUG);
 	}
 

@@ -12,25 +12,11 @@ package org.eclipse.rdf4j.sail.nativerdf;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.nio.file.Files;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.Optional;
-import java.util.Set;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.AbstractModel;
-import org.eclipse.rdf4j.model.impl.FilteredModel;
+import org.eclipse.rdf4j.model.impl.AbstractMemoryOverflowModel;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.slf4j.Logger;
@@ -43,20 +29,9 @@ import org.slf4j.LoggerFactory;
  *
  * @author James Leigh
  */
-abstract class MemoryOverflowModel extends AbstractModel {
+abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourceModel> {
 
 	private static final long serialVersionUID = 4119844228099208169L;
-
-	private static final Runtime RUNTIME = Runtime.getRuntime();
-
-	private static final int LARGE_BLOCK = 1024 * 5;
-
-	private static volatile boolean overflow;
-
-	// To reduce the chance of OOM we will always overflow once we get close to running out of memory even if we think
-	// we have space for one more block. The limit is currently set at 32 MB for small heaps and 128 MB for large heaps.
-	private static final int MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = RUNTIME.maxMemory() >= 1024 ? 128 * 1024 * 1024
-			: 32 * 1024 * 1024;
 
 	final Logger logger = LoggerFactory.getLogger(MemoryOverflowModel.class);
 
@@ -66,287 +41,11 @@ abstract class MemoryOverflowModel extends AbstractModel {
 
 	private transient SailStore store;
 
-	private transient volatile SailSourceModel disk;
-
-	private long baseline = 0;
-
-	private long maxBlockSize = 0;
-
-	SimpleValueFactory vf = SimpleValueFactory.getInstance();
-
-	public MemoryOverflowModel() {
-		memory = new LinkedHashModel(LARGE_BLOCK * 2);
-	}
-
-	public MemoryOverflowModel(Model model) {
-		this(model.getNamespaces());
-		addAll(model);
-	}
-
-	public MemoryOverflowModel(Set<Namespace> namespaces, Collection<? extends Statement> c) {
-		this(namespaces);
-		addAll(c);
-	}
-
-	public MemoryOverflowModel(Set<Namespace> namespaces) {
-		memory = new LinkedHashModel(namespaces, LARGE_BLOCK);
-	}
-
-	@Override
-	public synchronized void closeIterator(Iterator<?> iter) {
-		super.closeIterator(iter);
-		if (disk != null) {
-			disk.closeIterator(iter);
-		}
-	}
-
-	@Override
-	public synchronized Set<Namespace> getNamespaces() {
-		return memory.getNamespaces();
-	}
-
-	@Override
-	public synchronized Optional<Namespace> getNamespace(String prefix) {
-		return memory.getNamespace(prefix);
-	}
-
-	@Override
-	public synchronized Namespace setNamespace(String prefix, String name) {
-		return memory.setNamespace(prefix, name);
-	}
-
-	@Override
-	public void setNamespace(Namespace namespace) {
-		memory.setNamespace(namespace);
-	}
-
-	@Override
-	public synchronized Optional<Namespace> removeNamespace(String prefix) {
-		return memory.removeNamespace(prefix);
-	}
-
-	@Override
-	public boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts) {
-		return getDelegate().contains(subj, pred, obj, contexts);
-	}
-
-	@Override
-	public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
-		checkMemoryOverflow();
-		return getDelegate().add(subj, pred, obj, contexts);
-	}
-
-	@Override
-	public boolean add(Statement st) {
-		checkMemoryOverflow();
-		return getDelegate().add(st);
-	}
-
-	@Override
-	public boolean addAll(Collection<? extends Statement> c) {
-		checkMemoryOverflow();
-		if (disk != null || c.size() <= 1024) {
-			return getDelegate().addAll(c);
-		} else {
-			boolean ret = false;
-			HashSet<Statement> buffer = new HashSet<>();
-			for (Statement st : c) {
-				buffer.add(st);
-				if (buffer.size() >= 1024) {
-					ret |= getDelegate().addAll(buffer);
-					buffer.clear();
-					innerCheckMemoryOverflow();
-				}
-			}
-			if (!buffer.isEmpty()) {
-				ret |= getDelegate().addAll(buffer);
-				buffer.clear();
-			}
-
-			return ret;
-
-		}
-
-	}
-
-	@Override
-	public boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts) {
-		return getDelegate().remove(subj, pred, obj, contexts);
-	}
-
-	@Override
-	public int size() {
-		return getDelegate().size();
-	}
-
-	@Override
-	public Iterator<Statement> iterator() {
-		return getDelegate().iterator();
-	}
-
-	@Override
-	public boolean clear(Resource... contexts) {
-		return getDelegate().clear(contexts);
-	}
-
-	@Override
-	public Model filter(final Resource subj, final IRI pred, final Value obj, final Resource... contexts) {
-		return new FilteredModel(this, subj, pred, obj, contexts) {
-
-			private static final long serialVersionUID = -475666402618133101L;
-
-			@Override
-			public int size() {
-				return getDelegate().filter(subj, pred, obj, contexts).size();
-			}
-
-			@Override
-			public Iterator<Statement> iterator() {
-				return getDelegate().filter(subj, pred, obj, contexts).iterator();
-			}
-
-			@Override
-			protected void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
-					Resource... contexts) {
-				MemoryOverflowModel.this.removeTermIteration(iter, subj, pred, obj, contexts);
-			}
-		};
-	}
-
-	@Override
-	public synchronized void removeTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
-			Resource... contexts) {
-		if (disk == null) {
-			memory.removeTermIteration(iter, subj, pred, obj, contexts);
-		} else {
-			disk.removeTermIteration(iter, subj, pred, obj, contexts);
-		}
-	}
-
 	protected abstract SailStore createSailStore(File dataDir) throws IOException, SailException;
 
-	private Model getDelegate() {
-		var memory = this.memory;
-		if (memory != null) {
-			return memory;
-		} else {
-			var disk = this.disk;
-			if (disk != null) {
-				return disk;
-			}
-			synchronized (this) {
-				if (this.memory != null) {
-					return this.memory;
-				}
-				if (this.disk != null) {
-					return this.disk;
-				}
-				throw new IllegalStateException("MemoryOverflowModel is in an inconsistent state");
-			}
-		}
-	}
-
-	private void writeObject(ObjectOutputStream s) throws IOException {
-		// Write out any hidden serialization magic
-		s.defaultWriteObject();
-		// Write in size
-		Model delegate = getDelegate();
-		s.writeInt(delegate.size());
-		// Write in all elements
-		for (Statement st : delegate) {
-			Resource subj = st.getSubject();
-			IRI pred = st.getPredicate();
-			Value obj = st.getObject();
-			Resource ctx = st.getContext();
-			s.writeObject(vf.createStatement(subj, pred, obj, ctx));
-		}
-	}
-
-	private void readObject(ObjectInputStream s) throws IOException, ClassNotFoundException {
-		// Read in any hidden serialization magic
-		s.defaultReadObject();
-		// Read in size
-		int size = s.readInt();
-		// Read in all elements
-		for (int i = 0; i < size; i++) {
-			add((Statement) s.readObject());
-		}
-	}
-
-	private void checkMemoryOverflow() {
-		if (disk == getDelegate()) {
-			return;
-		}
-
-		if (overflow) {
-			innerCheckMemoryOverflow();
-		}
-		int size = size() + 1;
-		if (size >= LARGE_BLOCK && size % LARGE_BLOCK == 0) {
-			innerCheckMemoryOverflow();
-		}
-
-	}
-
-	private void innerCheckMemoryOverflow() {
-		if (disk == getDelegate()) {
-			return;
-		}
-
-		// maximum heap size the JVM can allocate
-		long maxMemory = RUNTIME.maxMemory();
-
-		// total currently allocated JVM memory
-		long totalMemory = RUNTIME.totalMemory();
-
-		// amount of memory free in the currently allocated JVM memory
-		long freeMemory = RUNTIME.freeMemory();
-
-		// estimated memory used
-		long used = totalMemory - freeMemory;
-
-		// amount of memory the JVM can still allocate from the OS (upper boundary is the max heap)
-		long freeToAllocateMemory = maxMemory - used;
-
-		if (baseline > 0) {
-			long blockSize = used - baseline;
-			if (blockSize > maxBlockSize) {
-				maxBlockSize = blockSize;
-			}
-			if (overflow && freeToAllocateMemory < MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING * 2) {
-				// stricter memory requirements to not overflow if other models are overflowing
-				logger.debug("syncing at {} triples. max block size: {}", size(), maxBlockSize);
-				overflowToDisk();
-				System.gc();
-			} else if (freeToAllocateMemory < MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING ||
-					freeToAllocateMemory < Math.min(0.15 * maxMemory, maxBlockSize)) {
-				// Sync if either the estimated size of the next block is larger than remaining memory, or
-				// if less than 15% of the heap is still free (this last condition to avoid GC overhead limit)
-
-				logger.debug("syncing at {} triples. max block size: {}", size(), maxBlockSize);
-				overflowToDisk();
-				System.gc();
-			} else {
-				if (overflow) {
-					overflow = false;
-				}
-			}
-		}
-		baseline = used;
-	}
-
-	private synchronized void overflowToDisk() {
-		overflow = true;
-
-		if (memory == null) {
-			assert disk != null;
-			return;
-		}
-
+	@Override
+	protected void overflowToDiskInner(Model memory) {
 		try {
-			LinkedHashModel memory = this.memory;
-			this.memory = null;
-
 			assert disk == null;
 			dataDir = Files.createTempDirectory("model").toFile();
 			logger.debug("memory overflow using temp directory {}", dataDir);
