@@ -343,7 +343,7 @@ class ValueStore extends AbstractValueFactory {
 			mdb_stat(txn, unusedDbi, stat);
 			if (stat.ms_entries() > 0) {
 				// free unused IDs
-				resizeMap(txn, stat.ms_entries() * (2 + Long.BYTES));
+				resizeMap(txn, stat.ms_entries() * (2L + Long.BYTES));
 
 				writeTransaction((stack2, txn2) -> {
 					freeUnusedIdsAndValues(stack2, txn2, null);
@@ -671,7 +671,7 @@ class ValueStore extends AbstractValueFactory {
 					return null;
 				}
 				// id was not found, create a new one
-				resizeMap(txn, 2L * data.length + 4L);
+				resizeMap(txn, 2L * data.length + 2L * (2L + Long.BYTES));
 
 				long newId = nextId(data[0]);
 				writeTransaction((stack2, writeTxn) -> {
@@ -714,7 +714,7 @@ class ValueStore extends AbstractValueFactory {
 						return null;
 					}
 
-					resizeMap(txn, 2L * data.length + 2L * 2L);
+					resizeMap(txn, 2L * data.length + 2L * (2L + Long.BYTES));
 
 					long newId = nextId(data[0]);
 					writeTransaction((stack2, writeTxn) -> {
@@ -773,7 +773,7 @@ class ValueStore extends AbstractValueFactory {
 				}
 
 				// id was not found, create a new one
-				resizeMap(txn, 1 + Long.BYTES + maxHashKeyLength + 2 * data.length);
+				resizeMap(txn, 1 + Long.BYTES + maxHashKeyLength + 2L * data.length);
 
 				long newId = nextId(data[0]);
 				writeTransaction((stack2, writeTxn) -> {
@@ -1155,7 +1155,7 @@ class ValueStore extends AbstractValueFactory {
 					mdb_stat(writeTxn, unusedDbi, stat);
 
 					if (resize) {
-						resizeMap(writeTxn, stat.ms_entries() * (2 + Long.BYTES));
+						resizeMap(writeTxn, stat.ms_entries() * (2L + Long.BYTES));
 					}
 
 					freeUnusedIdsAndValues(stack, writeTxn, unusedRevisionIds);
