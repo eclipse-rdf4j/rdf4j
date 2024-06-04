@@ -420,6 +420,13 @@ public class LinkedHashModel extends AbstractModel {
 			if (this == other) {
 				return true;
 			}
+			if (other == null) {
+				return false;
+			}
+			if (other == statement) {
+				return true;
+			}
+
 			if (!super.equals(other)) {
 				return false;
 			}

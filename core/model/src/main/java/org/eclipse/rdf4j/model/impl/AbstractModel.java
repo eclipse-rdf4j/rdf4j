@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.model.Value;
 public abstract class AbstractModel extends AbstractSet<Statement> implements Model {
 
 	private static final long serialVersionUID = 4254119331281455614L;
+	public static final Resource[] NULL_CONTEXT = { null };
 
 	@Override
 	public Model unmodifiable() {
@@ -179,6 +180,9 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 	public boolean contains(Object o) {
 		if (o instanceof Statement) {
 			Statement st = (Statement) o;
+			if (st.getContext() == null) {
+				return contains(st.getSubject(), st.getPredicate(), st.getObject(), NULL_CONTEXT);
+			}
 			return contains(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
 		}
 		return false;
