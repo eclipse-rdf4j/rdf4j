@@ -616,7 +616,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 				QueryModelNode parent = var.getParentNode();
 				parent.replaceChildNode(var, replacement.clone());
 			} else if (replaceAnons && var.isAnonymous() && !var.hasValue()) {
-				String varName = "anon-replace-" + var.getName() + index;
+				String varName = "anon_replace_" + var.getName() + index;
 				Var replacementVar = createAnonVar(varName, null, true);
 				QueryModelNode parent = var.getParentNode();
 				parent.replaceChildNode(var, replacementVar);

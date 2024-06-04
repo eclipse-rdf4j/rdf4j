@@ -1,17 +1,16 @@
+/*******************************************************************************
+ * Copyright (c) 2024 Eclipse RDF4J contributors.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ ******************************************************************************/
+
 package org.eclipse.rdf4j.federated.evaluation.iterator;
 
-/**
- * ****************************************************************************
- *  Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
- *
- *  All rights reserved. This program and the accompanying materials
- *  are made available under the terms of the Eclipse Distribution License v1.0
- *  which accompanies this distribution, and is available at
- *  http://www.eclipse.org/org/documents/edl-v10.php.
- *
- *  SPDX-License-Identifier: BSD-3-Clause
- * *****************************************************************************
- */
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -39,14 +38,28 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
+/**
+ * A iteration to evaluate property path expressions.
+ *
+ * @see PathIteration
+ */
 public class FedXPathIteration extends LookAheadIteration<BindingSet> {
+
+	/*
+	 * IMPL NOTE:
+	 *
+	 * This is technically almost a 1:1 copy of org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration.
+	 * Reusing or extending PathIteration requires refactoring in its constructor initialization.
+	 *
+	 * The main difference is in keeping track of QueryInfo and creating a FedXZeroLengthPath in #createIteration for
+	 * zero length path expressions.
+	 */
 
 	// Should never be seen by code outside of this iterator
 	private static final String END = "$end_from_path_iteration";
