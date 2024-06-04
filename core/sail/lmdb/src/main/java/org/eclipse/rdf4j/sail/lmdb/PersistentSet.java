@@ -126,7 +126,7 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 			keyVal.mv_data(keyBuf);
 
 			if (add) {
-				if (mdb_put(factory.writeTxn, dbi, keyVal, dataVal, MDB_NOOVERWRITE) == MDB_SUCCESS) {
+				if (E(mdb_put(factory.writeTxn, dbi, keyVal, dataVal, MDB_NOOVERWRITE)) == MDB_SUCCESS) {
 					size++;
 					return true;
 				}
@@ -226,16 +226,16 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 
 					try (MemoryStack stack = MemoryStack.stackPush()) {
 						keyData.mv_data(stack.bytes(write(current)));
-						if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET) != 0) {
+						if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET) != MDB_SUCCESS) {
 							// use MDB_SET_RANGE if key was deleted
-							if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) == 0) {
+							if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) == MDB_SUCCESS) {
 								return read(keyData.mv_data());
 							}
 						}
 					}
 				}
 
-				if (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == 0) {
+				if (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == MDB_SUCCESS) {
 					return read(keyData.mv_data());
 				}
 				close();

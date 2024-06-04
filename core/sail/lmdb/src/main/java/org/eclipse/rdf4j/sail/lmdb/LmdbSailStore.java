@@ -596,6 +596,7 @@ class LmdbSailStore implements SailStore {
 							if (tripleStoreException != null) {
 								throw wrapTripleStoreException();
 							}
+							Thread.yield();
 						}
 
 					} else {
@@ -704,7 +705,7 @@ class LmdbSailStore implements SailStore {
 						} else {
 							tripleStore.startTransaction();
 						}
-						valueStore.startTransaction();
+						valueStore.startTransaction(true);
 					} catch (Exception e) {
 						storeTxnStarted.set(false);
 						throw new SailException(e);

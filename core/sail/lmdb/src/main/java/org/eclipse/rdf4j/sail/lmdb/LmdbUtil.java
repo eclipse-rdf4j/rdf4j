@@ -54,7 +54,7 @@ final class LmdbUtil {
 	 * Percentage free space in an LMDB db before automatically resizing the map. Default is 80%.
 	 */
 	@SuppressWarnings("StaticNonFinalField")
-    public static int PERCENTAGE_FULL_TRIGGERS_RESIZE = 80;
+	public static int PERCENTAGE_FULL_TRIGGERS_RESIZE = 80;
 
 	private LmdbUtil() {
 	}

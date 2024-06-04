@@ -14,6 +14,7 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
+import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
@@ -24,6 +25,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.locks.StampedLock;
 
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -92,7 +94,7 @@ class LmdbContextIdIterator implements Closeable {
 		try {
 			if (txnRefVersion != txnRef.version()) {
 				// cursor must be renewed
-				mdb_cursor_renew(txn, cursor);
+				E(mdb_cursor_renew(txn, cursor));
 				if (fetchNext) {
 					// cursor must be positioned on last item, reuse minKeyBuf if available
 					if (minKeyBuf == null) {
@@ -102,10 +104,10 @@ class LmdbContextIdIterator implements Closeable {
 					Varint.writeUnsigned(minKeyBuf, record[0]);
 					minKeyBuf.flip();
 					keyData.mv_data(minKeyBuf);
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET);
+					lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_SET));
 					if (lastResult != 0) {
 						// use MDB_SET_RANGE if key was deleted
-						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+						lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE));
 					}
 					if (lastResult != 0) {
 						closeInternal(false);
@@ -117,20 +119,20 @@ class LmdbContextIdIterator implements Closeable {
 			}
 
 			if (fetchNext) {
-				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+				lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT));
 				fetchNext = false;
 			} else {
 				if (minKeyBuf != null) {
 					// set cursor to min key
 					keyData.mv_data(minKeyBuf);
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+					lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE));
 				} else {
 					// set cursor to first item
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+					lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT));
 				}
 			}
 
-			while (lastResult == 0) {
+			while (lastResult == MDB_SUCCESS) {
 				record[0] = Varint.readUnsigned(keyData.mv_data());
 				// fetch next value
 				fetchNext = true;
@@ -138,6 +140,8 @@ class LmdbContextIdIterator implements Closeable {
 			}
 			closeInternal(false);
 			return null;
+		} catch (IOException e) {
+			throw new SailException(e);
 		} finally {
 			txnLock.unlockRead(stamp);
 		}
