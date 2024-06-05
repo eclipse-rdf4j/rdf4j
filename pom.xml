@@ -359,7 +359,7 @@
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<enforce-javaee-provided.fail>true</enforce-javaee-provided.fail>
 		<slf4j.version>1.7.36</slf4j.version>
-		<logback.version>1.2.12</logback.version>
+		<logback.version>1.2.13</logback.version>
 		<log4j.version>2.17.2</log4j.version>
 		<httpclient.version>4.5.14</httpclient.version>
 		<jackson.version>2.13.5</jackson.version>
@@ -376,7 +376,7 @@
 		<jmhVersion>1.37</jmhVersion>
 		<servlet.version>3.1.0</servlet.version>
 		<junit.version>5.9.3</junit.version>
-		<jetty.version>9.4.53.v20231009</jetty.version>
+		<jetty.version>9.4.54.v20240208</jetty.version>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
