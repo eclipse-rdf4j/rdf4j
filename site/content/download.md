@@ -51,20 +51,20 @@ See the [Setup instructions](/documentation/programming/setup) in the
 which artifacts RDF4J provides.
 
 
-## RDF4J 5.0.0-M2
+## RDF4J 5.0.0-M3
 
-RDF4J 5.0.0-M2 is our latest milestone build of the upcoming 5.0.0 release. It requires Java 11 minimally.
+RDF4J 5.0.0-M3 is our latest milestone build of the upcoming 5.0.0 release. It requires Java 11 minimally.
 For details on what’s new and how to upgrade, see the [release and upgrade notes](/news/rdf4j-500-M2.md).
 
-- [RDF4J 5.0.0-M2 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-5.0.0-M2-sdk.zip)<br/>
+- [RDF4J 5.0.0-M3 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-5.0.0-M3-sdk.zip)<br/>
   Full Eclipse RDF4J SDK, containing all libraries, RDF4J Server, Workbench, and Console applications, and Javadoc API.
 
-- [RDF4J 5.0.0-M2 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-5.0.0-M2-onejar.jar)<br/>
+- [RDF4J 5.0.0-M3 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-5.0.0-M3-onejar.jar)<br/>
   Single jar file for easy inclusion of the full RDF4J toolkit in your Java project.
 
 - [RDF4J artifacts](https://search.maven.org/search?q=org.eclipse.rdf4j) on the [Maven Central Repository](http://search.maven.org/)
 
-RDF4J 5.0.0-M2 is also available through maven. 
+RDF4J 5.0.0-M3 is also available through maven. 
 
 
 ## Older releases
@@ -73,7 +73,6 @@ RDF4J 5.0.0-M2 is also available through maven.
 
 - [RDF4J 4.2.4 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-4.2.4-sdk.zip)
 - [RDF4J 4.2.4 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-4.2.4-onejar.jar)
-
 
 
 ### RDF4J 4.1
