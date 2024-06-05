@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.model.base.AbstractLiteral;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * A simple default implementation of the {@link Literal} interface.
@@ -78,7 +77,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	 */
 	protected SimpleLiteral(String label) {
 		setLabel(label);
-		setDatatype(org.eclipse.rdf4j.model.vocabulary.XSD.STRING);
+		setDatatype(CoreDatatype.XSD.STRING);
 		optionalLanguageCache = Optional.empty();
 	}
 
@@ -130,19 +129,6 @@ public class SimpleLiteral extends AbstractLiteral {
 		setLabel(label);
 		setDatatype(datatype, coreDatatype);
 		optionalLanguageCache = Optional.empty();
-	}
-
-	@Deprecated(since = "4.0.0", forRemoval = true)
-	protected SimpleLiteral(String label, XSD.Datatype datatype) {
-		setLabel(label);
-		if (org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING.equals(datatype.getIri())) {
-			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
-		} else if (datatype == null) {
-			setDatatype(CoreDatatype.XSD.STRING);
-		} else {
-			setDatatype(datatype.getCoreDatatype());
-		}
-
 	}
 
 	protected SimpleLiteral(String label, CoreDatatype datatype) {
@@ -203,12 +189,6 @@ public class SimpleLiteral extends AbstractLiteral {
 
 	}
 
-	@Deprecated(since = "4.0.0", forRemoval = true)
-	protected void setDatatype(XSD.Datatype datatype) {
-		this.datatype = datatype.getIri();
-		coreDatatype = datatype.getCoreDatatype();
-	}
-
 	protected void setDatatype(CoreDatatype datatype) {
 		Objects.requireNonNull(datatype);
 		this.datatype = datatype.getIri();
@@ -218,17 +198,6 @@ public class SimpleLiteral extends AbstractLiteral {
 	@Override
 	public IRI getDatatype() {
 		return datatype;
-	}
-
-	/**
-	 * @return
-	 * @deprecated Use {@link #getCoreDatatype()} instead.
-	 */
-	@Deprecated(since = "4.0.0", forRemoval = true)
-	public Optional<XSD.Datatype> getXsdDatatype() {
-		CoreDatatype coreDatatype = getCoreDatatype();
-
-		return org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.from(coreDatatype.asXSDDatatype().orElse(null));
 	}
 
 	// Overrides Object.equals(Object), implements Literal.equals(Object)

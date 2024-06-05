@@ -10,9 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
-import java.util.Map;
-
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL11UpdateComplianceTest;
@@ -24,16 +21,8 @@ import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL11UpdateCo
  */
 public class MemorySPARQL11UpdateComplianceTest extends SPARQL11UpdateComplianceTest {
 
-	public MemorySPARQL11UpdateComplianceTest(String displayName, String testURI, String name, String requestFile,
-			IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
-			Map<String, IRI> resultNamedGraphs) {
-		super(displayName, testURI, name, requestFile, defaultGraphURI, inputNamedGraphs, resultDefaultGraphURI,
-				resultNamedGraphs);
-		// TODO Auto-generated constructor stub
-	}
-
 	@Override
-	protected Repository newRepository() throws Exception {
+	protected Repository newRepository() {
 		return new SailRepository(new MemoryStore());
 	}
 

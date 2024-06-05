@@ -31,13 +31,8 @@ public interface ExtensibleStatementHelper {
 				return (ExtensibleStatement) statement;
 			}
 
-			if (statement.getContext() != null) {
-				return new ExtensibleContextStatement(statement.getSubject(), statement.getPredicate(),
-						statement.getObject(), statement.getContext(), inferred);
-			}
-
 			return new ExtensibleStatementImpl(statement.getSubject(), statement.getPredicate(), statement.getObject(),
-					inferred);
+					statement.getContext(), inferred);
 
 		}
 	}

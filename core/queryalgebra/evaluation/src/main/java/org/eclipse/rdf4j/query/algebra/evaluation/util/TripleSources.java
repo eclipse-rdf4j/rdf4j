@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.util;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -31,7 +30,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
  */
 // TODO this duplicates a lot of functionality already found in classes like Models and RDFCollections.
 // Closer integration and/or rewriting of these utilities may be required.
-@Deprecated(since = "4.1.0", forRemoval = true)
+@Deprecated(since = "4.1.0", forRemoval = true) // there is still a decent amount of work left before this class can be
+												// removed
 public class TripleSources {
 
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
@@ -39,14 +39,19 @@ public class TripleSources {
 	TripleSources() {
 	}
 
-	public static Iteration<Resource, QueryEvaluationException> listResources(final Resource subj,
+	public static CloseableIteration<Resource> listResources(final Resource subj,
 			final TripleSource store) throws QueryEvaluationException {
-		return new ConvertingIteration<Value, Resource, QueryEvaluationException>(
-				new FilterIteration<Value, QueryEvaluationException>(list(subj, store)) {
+		return new ConvertingIteration<>(
+				new FilterIteration<Value>(list(subj, store)) {
 
 					@Override
 					protected boolean accept(Value v) throws QueryEvaluationException {
-						return (v instanceof Resource);
+						return v instanceof Resource;
+					}
+
+					@Override
+					protected void handleClose() {
+
 					}
 				}) {
 
@@ -57,12 +62,12 @@ public class TripleSources {
 		};
 	}
 
-	public static Iteration<Value, QueryEvaluationException> list(final Resource subj,
+	public static CloseableIteration<Value> list(final Resource subj,
 			final TripleSource store) throws QueryEvaluationException {
 		if (subj == null) {
 			throw new NullPointerException("RDF list subject cannot be null");
 		}
-		return new Iteration<Value, QueryEvaluationException>() {
+		return new CloseableIteration<>() {
 
 			Resource list = subj;
 
@@ -89,6 +94,11 @@ public class TripleSources {
 			public void remove() throws QueryEvaluationException {
 				throw new UnsupportedOperationException();
 			}
+
+			@Override
+			public void close() {
+				// no-op
+			}
 		};
 	}
 
@@ -110,7 +120,7 @@ public class TripleSources {
 
 	public static Value singleValue(Resource subj, IRI pred, TripleSource store) throws QueryEvaluationException {
 		Statement stmt = single(subj, pred, null, store);
-		return (stmt != null) ? stmt.getObject() : null;
+		return stmt != null ? stmt.getObject() : null;
 	}
 
 	/**
@@ -125,7 +135,7 @@ public class TripleSources {
 	public static Statement single(Resource subj, IRI pred, Value obj, TripleSource store)
 			throws QueryEvaluationException {
 		Statement stmt;
-		try (CloseableIteration<? extends Statement, QueryEvaluationException> stmts = store.getStatements(subj, pred,
+		try (CloseableIteration<? extends Statement> stmts = store.getStatements(subj, pred,
 				obj)) {
 			if (stmts.hasNext()) {
 				stmt = stmts.next();
@@ -143,14 +153,19 @@ public class TripleSources {
 		return stmt;
 	}
 
-	public static CloseableIteration<IRI, QueryEvaluationException> getSubjectURIs(IRI predicate,
+	public static CloseableIteration<IRI> getSubjectURIs(IRI predicate,
 			Value object, TripleSource store) throws QueryEvaluationException {
-		return new ConvertingIteration<Statement, IRI, QueryEvaluationException>(
-				new FilterIteration<Statement, QueryEvaluationException>(store.getStatements(null, predicate, object)) {
+		return new ConvertingIteration<>(
+				new FilterIteration<Statement>(store.getStatements(null, predicate, object)) {
 
 					@Override
 					protected boolean accept(Statement stmt) throws QueryEvaluationException {
-						return (stmt.getSubject() instanceof IRI);
+						return stmt.getSubject() instanceof IRI;
+					}
+
+					@Override
+					protected void handleClose() {
+
 					}
 				}) {
 
@@ -161,15 +176,20 @@ public class TripleSources {
 		};
 	}
 
-	public static CloseableIteration<Resource, QueryEvaluationException> getObjectResources(Resource subject,
+	public static CloseableIteration<Resource> getObjectResources(Resource subject,
 			IRI predicate, TripleSource store) throws QueryEvaluationException {
-		return new ConvertingIteration<Statement, Resource, QueryEvaluationException>(
-				new FilterIteration<Statement, QueryEvaluationException>(
+		return new ConvertingIteration<>(
+				new FilterIteration<Statement>(
 						store.getStatements(subject, predicate, null)) {
 
 					@Override
 					protected boolean accept(Statement stmt) throws QueryEvaluationException {
-						return (stmt.getObject() instanceof Resource);
+						return stmt.getObject() instanceof Resource;
+					}
+
+					@Override
+					protected void handleClose() {
+
 					}
 				}) {
 
@@ -180,15 +200,20 @@ public class TripleSources {
 		};
 	}
 
-	public static CloseableIteration<IRI, QueryEvaluationException> getObjectURIs(Resource subject,
+	public static CloseableIteration<IRI> getObjectURIs(Resource subject,
 			IRI predicate, TripleSource store) throws QueryEvaluationException {
-		return new ConvertingIteration<Statement, IRI, QueryEvaluationException>(
-				new FilterIteration<Statement, QueryEvaluationException>(
+		return new ConvertingIteration<>(
+				new FilterIteration<Statement>(
 						store.getStatements(subject, predicate, null)) {
 
 					@Override
 					protected boolean accept(Statement stmt) throws QueryEvaluationException {
-						return (stmt.getObject() instanceof IRI);
+						return stmt.getObject() instanceof IRI;
+					}
+
+					@Override
+					protected void handleClose() {
+
 					}
 				}) {
 
@@ -199,15 +224,20 @@ public class TripleSources {
 		};
 	}
 
-	public static CloseableIteration<Literal, QueryEvaluationException> getObjectLiterals(Resource subject,
+	public static CloseableIteration<Literal> getObjectLiterals(Resource subject,
 			IRI predicate, TripleSource store) throws QueryEvaluationException {
-		return new ConvertingIteration<Statement, Literal, QueryEvaluationException>(
-				new FilterIteration<Statement, QueryEvaluationException>(
+		return new ConvertingIteration<>(
+				new FilterIteration<Statement>(
 						store.getStatements(subject, predicate, null)) {
 
 					@Override
 					protected boolean accept(Statement stmt) throws QueryEvaluationException {
-						return (stmt.getObject() instanceof Literal);
+						return stmt.getObject() instanceof Literal;
+					}
+
+					@Override
+					protected void handleClose() {
+
 					}
 				}) {
 

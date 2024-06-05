@@ -45,14 +45,14 @@ public class BackgroundResultExecutor implements AutoCloseable {
 	}
 
 	public TupleQueryResult parse(TupleQueryResultParser parser, InputStream in, WeakReference<?> callerReference) {
-		BackgroundTupleResult result = new BackgroundTupleResult(parser, in, callerReference);
+		BackgroundTupleResult result = new BackgroundTupleResult(parser, in);
 		autoCloseRunnable(result, result);
 		return new CleanerTupleQueryResult(result, cleaner);
 	}
 
 	public GraphQueryResult parse(RDFParser parser, InputStream in, Charset charset, String baseURI,
 			WeakReference<?> callerReference) {
-		BackgroundGraphResult result = new BackgroundGraphResult(parser, in, charset, baseURI, callerReference);
+		BackgroundGraphResult result = new BackgroundGraphResult(parser, in, charset, baseURI);
 		autoCloseRunnable(result, result);
 		return new CleanerGraphQueryResult(result, cleaner);
 	}

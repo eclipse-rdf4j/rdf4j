@@ -25,15 +25,14 @@ import org.slf4j.LoggerFactory;
  *
  * @author Andreas Schwarte
  */
-@Deprecated(since = "4.1.0")
-public class FilteringIteration extends FilterIteration<BindingSet, QueryEvaluationException> {
+public class FilteringIteration extends FilterIteration<BindingSet> {
 
 	private static final Logger log = LoggerFactory.getLogger(FilteringIteration.class);
 
 	protected final FilterValueExpr filterExpr;
 	protected final FederationEvalStrategy strategy;
 
-	public FilteringIteration(FilterValueExpr filterExpr, CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public FilteringIteration(FilterValueExpr filterExpr, CloseableIteration<BindingSet> iter,
 			FederationEvalStrategy strategy)
 			throws QueryEvaluationException {
 		super(iter);
@@ -50,5 +49,10 @@ public class FilteringIteration extends FilterIteration<BindingSet, QueryEvaluat
 			// failed to evaluate condition
 			return false;
 		}
+	}
+
+	@Override
+	protected final void handleClose() {
+
 	}
 }

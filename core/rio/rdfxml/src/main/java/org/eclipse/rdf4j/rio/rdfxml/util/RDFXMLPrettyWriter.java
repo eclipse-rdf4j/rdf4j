@@ -324,7 +324,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 
 				writeNodeEndTag(nextElement);
 
-				if (predicateStack.size() > 0) {
+				if (!predicateStack.isEmpty()) {
 					IRI nextPredicate = predicateStack.pop();
 					var nextPredicateQName = new QName(nextPredicate);
 

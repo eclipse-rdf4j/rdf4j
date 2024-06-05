@@ -51,14 +51,14 @@ public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements Sail
 	protected abstract NotifyingSail createSail() throws SailException;
 
 	@BeforeEach
-	public void addSailChangedListener() throws Exception {
+	public void addSailChangedListener() {
 		// set self as listener
 		((NotifyingSail) sail).addSailChangedListener(this);
 
 	}
 
 	@Test
-	public void testNotifyingRemoveAndClear() throws Exception {
+	public void testNotifyingRemoveAndClear() {
 		// Add some data to the repository
 		con.begin();
 		con.addStatement(painter, RDF.TYPE, RDFS.CLASS);

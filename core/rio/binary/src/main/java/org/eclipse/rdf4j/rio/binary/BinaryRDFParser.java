@@ -244,13 +244,13 @@ public class BinaryRDFParser extends AbstractRDFParser {
 
 	private Literal readPlainLiteral() throws IOException, RDFParseException {
 		String label = readString();
-		return createLiteral(label, null, null, -1, -1);
+		return createLiteral(label, null, ((IRI) null), -1, -1);
 	}
 
 	private Literal readLangLiteral() throws IOException, RDFParseException {
 		String label = readString();
 		String language = readString();
-		return createLiteral(label, language, null, -1, -1);
+		return createLiteral(label, language, ((IRI) null), -1, -1);
 	}
 
 	private Literal readDatatypeLiteral() throws IOException, RDFParseException {

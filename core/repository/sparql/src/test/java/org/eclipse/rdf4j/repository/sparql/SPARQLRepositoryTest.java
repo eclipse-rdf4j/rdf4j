@@ -28,7 +28,7 @@ public class SPARQLRepositoryTest {
 	TupleQueryResultFormat customPreferred = TupleQueryResultFormat.CSV;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 	}
 
 	@Test
@@ -67,7 +67,7 @@ public class SPARQLRepositoryTest {
 		assertThat(rep.createSPARQLProtocolSession().getPreferredTupleQueryResultFormat()).isEqualTo(customPreferred);
 	}
 
-	public void testPassThroughEnabled() throws Exception {
+	public void testPassThroughEnabled() {
 		SPARQLRepository rep = new SPARQLRepository(endpointUrl);
 		assertThat(rep.getPassThroughEnabled()).isNull();
 		assertThat(rep.createSPARQLProtocolSession()).isNotNull();

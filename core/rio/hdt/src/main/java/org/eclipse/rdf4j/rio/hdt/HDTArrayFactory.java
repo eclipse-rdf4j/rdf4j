@@ -20,7 +20,7 @@ import java.io.InputStream;
  */
 class HDTArrayFactory {
 
-	protected static HDTArray parse(InputStream is) throws IOException {
+	static HDTArray parse(InputStream is) throws IOException {
 		int dtype = is.read();
 		if (dtype != HDTArray.Type.LOG64.getValue()) {
 			throw new UnsupportedOperationException("Array section: encoding " + Long.toHexString(dtype) +

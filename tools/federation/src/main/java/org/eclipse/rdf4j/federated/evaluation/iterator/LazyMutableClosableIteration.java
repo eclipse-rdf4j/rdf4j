@@ -27,9 +27,9 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @author Andreas Schwarte
  *
  */
-public class LazyMutableClosableIteration implements CloseableIteration<BindingSet, QueryEvaluationException> {
+public class LazyMutableClosableIteration implements CloseableIteration<BindingSet> {
 
-	protected final CloseableIteration<BindingSet, QueryEvaluationException> inner;
+	protected final CloseableIteration<BindingSet> inner;
 
 	protected List<BindingSet> consumed = new ArrayList<>();
 
@@ -38,7 +38,7 @@ public class LazyMutableClosableIteration implements CloseableIteration<BindingS
 	 */
 	protected volatile int cursorIdx = -1;
 
-	public LazyMutableClosableIteration(CloseableIteration<BindingSet, QueryEvaluationException> inner) {
+	public LazyMutableClosableIteration(CloseableIteration<BindingSet> inner) {
 		super();
 		this.inner = inner;
 	}

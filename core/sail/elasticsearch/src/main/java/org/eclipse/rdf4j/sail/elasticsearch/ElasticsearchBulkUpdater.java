@@ -30,14 +30,14 @@ public class ElasticsearchBulkUpdater implements BulkUpdater {
 	}
 
 	@Override
-	public void add(SearchDocument doc) throws IOException {
+	public void add(SearchDocument doc) {
 		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
 		bulkRequest.add(
 				client.prepareIndex(esDoc.getIndex(), esDoc.getType(), esDoc.getId()).setSource(esDoc.getSource()));
 	}
 
 	@Override
-	public void update(SearchDocument doc) throws IOException {
+	public void update(SearchDocument doc) {
 		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
 		bulkRequest.add(client.prepareUpdate(esDoc.getIndex(), esDoc.getType(), esDoc.getId())
 				.setIfSeqNo(esDoc.getSeqNo())
@@ -46,7 +46,7 @@ public class ElasticsearchBulkUpdater implements BulkUpdater {
 	}
 
 	@Override
-	public void delete(SearchDocument doc) throws IOException {
+	public void delete(SearchDocument doc) {
 		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
 		bulkRequest.add(
 				client.prepareDelete(esDoc.getIndex(), esDoc.getType(), esDoc.getId())

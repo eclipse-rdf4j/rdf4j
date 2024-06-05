@@ -25,7 +25,7 @@ public class PatternFilter extends FilterPlanNode {
 
 	public PatternFilter(PlanNode parent, String pattern, String flags) {
 		super(parent);
-		if (flags != null && flags.length() > 0) {
+		if (flags != null && !flags.isEmpty()) {
 
 			int flag = 0b0;
 
@@ -67,8 +67,8 @@ public class PatternFilter extends FilterPlanNode {
 	}
 
 	@Override
-	boolean checkTuple(ValidationTuple t) {
-		Value literal = t.getValue();
+	boolean checkTuple(Reference t) {
+		Value literal = t.get().getValue();
 
 		return pattern.matcher(literal.stringValue()).matches();
 	}

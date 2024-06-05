@@ -11,6 +11,8 @@
 
 package org.eclipse.rdf4j.http.server.repository.transaction;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -84,16 +86,19 @@ public class TestTransactionControllerErrorHandling {
 
 		response = new MockHttpServletResponse();
 
-		try {
-			transactionController.handleRequestInternal(request, response);
-			Assertions.fail("Exception must be thrown.");
-		} catch (ClientHTTPException e) {
-			Assertions.assertNotNull(e);
-			Assertions.assertEquals("MALFORMED QUERY: org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException: " +
-					"QName 'ex:data' uses an undefined prefix", e.getMessage());
-		} finally {
-			txn.close();
-			ActiveTransactionRegistry.INSTANCE.deregister(txn);
-		}
+		assertThrows(ClientHTTPException.class, () -> {
+			try {
+				transactionController.handleRequestInternal(request, response);
+			} catch (ClientHTTPException e) {
+				Assertions
+						.assertEquals("MALFORMED QUERY: org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException: " +
+								"QName 'ex:data' uses an undefined prefix", e.getMessage());
+				throw e;
+			} finally {
+				txn.close();
+				ActiveTransactionRegistry.INSTANCE.deregister(txn);
+			}
+		});
+
 	}
 }

@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 
 public class Demo2 {
 
-	public static void main(String[] args) throws Exception {
+	public static void main(String[] args) {
 
 		if (System.getProperty("log4j.configuration") == null) {
 			System.setProperty("log4j.configuration", "file:local/log4j.properties");

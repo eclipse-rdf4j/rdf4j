@@ -34,7 +34,7 @@ import java.util.zip.CheckedInputStream;
  * @author Bart Hanssens
  */
 abstract class HDTPart {
-	protected enum Type {
+	enum Type {
 		GLOBAL((byte) 1),
 		HEADER((byte) 2),
 		DICTIONARY((byte) 3),
@@ -47,7 +47,7 @@ abstract class HDTPart {
 		 *
 		 * @return value 1,2 or 3
 		 */
-		protected byte getValue() {
+		byte getValue() {
 			return value;
 		}
 
@@ -56,14 +56,14 @@ abstract class HDTPart {
 		}
 	}
 
-	protected final static byte[] COOKIE = "$HDT".getBytes(StandardCharsets.US_ASCII);
+	final static byte[] COOKIE = "$HDT".getBytes(StandardCharsets.US_ASCII);
 
 	// TODO: make configurable, buffer for reading object values
 	private final static int BUFLEN = 1 * 1024 * 1024;
 	// for debugging purposes
-	protected final String name;
-	protected final long pos;
-	protected Map<String, String> properties;
+	final String name;
+	final long pos;
+	Map<String, String> properties;
 
 	/**
 	 * Parse from input stream
@@ -71,14 +71,14 @@ abstract class HDTPart {
 	 * @param is
 	 * @throws IOException
 	 */
-	protected abstract void parse(InputStream is) throws IOException;
+	abstract void parse(InputStream is) throws IOException;
 
 	/**
 	 * Get properties, if any.
 	 *
 	 * @return key, value map
 	 */
-	protected Map<String, String> getProperties() {
+	Map<String, String> getProperties() {
 		return properties;
 	}
 
@@ -88,7 +88,7 @@ abstract class HDTPart {
 	 * @param name part name
 	 * @param pos  starting position in input stream
 	 */
-	protected HDTPart(String name, long pos) {
+	HDTPart(String name, long pos) {
 		this.name = name;
 		this.pos = pos;
 	}
@@ -96,7 +96,7 @@ abstract class HDTPart {
 	/**
 	 * Constructor
 	 */
-	protected HDTPart() {
+	HDTPart() {
 		this("", -1);
 	}
 
@@ -105,7 +105,7 @@ abstract class HDTPart {
 	 *
 	 * @return string
 	 */
-	protected String getDebugPartStr() {
+	String getDebugPartStr() {
 		if (name == null || name.isEmpty()) {
 			return "";
 		}
@@ -119,7 +119,7 @@ abstract class HDTPart {
 	 * @param ctype control type
 	 * @throws IOException
 	 */
-	protected static void checkControl(InputStream is, HDTPart.Type ctype) throws IOException {
+	static void checkControl(InputStream is, HDTPart.Type ctype) throws IOException {
 		byte[] cookie = new byte[COOKIE.length];
 		is.read(cookie);
 		if (!Arrays.equals(cookie, COOKIE)) {
@@ -139,7 +139,7 @@ abstract class HDTPart {
 	 * @param format
 	 * @throws IOException
 	 */
-	protected static void checkFormat(InputStream is, byte[] format) throws IOException {
+	static void checkFormat(InputStream is, byte[] format) throws IOException {
 		byte[] b = new byte[format.length];
 		is.read(b);
 		if (!Arrays.equals(b, format)) {
@@ -155,7 +155,7 @@ abstract class HDTPart {
 	 * @return
 	 * @throws IOException
 	 */
-	protected static byte[] readToNull(InputStream is) throws IOException {
+	static byte[] readToNull(InputStream is) throws IOException {
 		byte[] buf = new byte[BUFLEN];
 		int len = 0;
 
@@ -176,7 +176,7 @@ abstract class HDTPart {
 	 * @param start position to start from
 	 * @return position of first NULL byte
 	 */
-	protected static int countToNull(byte[] b, int start) throws IOException {
+	static int countToNull(byte[] b, int start) throws IOException {
 		for (int i = start; i < b.length; i++) {
 			if (b[i] == 0b00) {
 				return i;
@@ -193,7 +193,7 @@ abstract class HDTPart {
 	 * @return key, value map
 	 * @throws IOException
 	 */
-	protected static Map<String, String> getProperties(InputStream is) throws IOException {
+	static Map<String, String> getProperties(InputStream is) throws IOException {
 		return mapProperties(readToNull(is));
 	}
 
@@ -203,15 +203,15 @@ abstract class HDTPart {
 	 * @param props
 	 * @return
 	 */
-	protected static Map<String, String> mapProperties(byte[] props) {
+	static Map<String, String> mapProperties(byte[] props) {
 		Map<String, String> map = new HashMap<>();
 		if (props == null || props.length == 0) {
 			return map;
 		}
 
-		String strs[] = new String(props, 0, props.length, StandardCharsets.US_ASCII).split(";");
-		for (String str : strs) {
-			String prop[] = str.split("=");
+		String[] strings = new String(props, StandardCharsets.US_ASCII).split(";");
+		for (String string : strings) {
+			String[] prop = string.split("=");
 			if (prop.length == 2) {
 				map.put(prop[0], prop[1]);
 			}
@@ -229,7 +229,7 @@ abstract class HDTPart {
 	 * @return positive integer
 	 * @throws IOException
 	 */
-	protected int getIntegerProperty(Map<String, String> props, String prop, String name) throws IOException {
+	int getIntegerProperty(Map<String, String> props, String prop, String name) throws IOException {
 		int len;
 
 		String str = props.getOrDefault(prop, "0");
@@ -252,7 +252,7 @@ abstract class HDTPart {
 	 * @param len number of bytes of the checksum
 	 * @throws IOException
 	 */
-	protected static void checkCRC(CheckedInputStream cis, InputStream is, int len) throws IOException {
+	static void checkCRC(CheckedInputStream cis, InputStream is, int len) throws IOException {
 		long calc = cis.getChecksum().getValue();
 
 		byte[] checksum = new byte[len];

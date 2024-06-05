@@ -28,7 +28,7 @@ class HDTDictionarySectionFactory {
 	 * @return dictionary section
 	 * @throws IOException
 	 */
-	protected static HDTDictionarySection parse(InputStream is, String name, long pos) throws IOException {
+	static HDTDictionarySection parse(InputStream is, String name, long pos) throws IOException {
 		int dtype = is.read();
 		if (dtype != HDTDictionarySection.Type.FRONT.getValue()) {
 			throw new UnsupportedOperationException("Dictionary " + name + ": encoding "

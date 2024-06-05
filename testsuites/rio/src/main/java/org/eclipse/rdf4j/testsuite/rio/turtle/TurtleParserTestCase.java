@@ -102,7 +102,7 @@ public abstract class TurtleParserTestCase {
 	}
 
 	private void parsePositiveTurtleSyntaxTests(TestSuite suite, String fileBasePath, String testBaseUrl,
-			String testLocationBaseUri, RepositoryConnection con) throws Exception {
+			String testLocationBaseUri, RepositoryConnection con) {
 		StringBuilder positiveQuery = new StringBuilder();
 		positiveQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
 		positiveQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");
@@ -135,7 +135,7 @@ public abstract class TurtleParserTestCase {
 	}
 
 	private void parseNegativeTurtleSyntaxTests(TestSuite suite, String fileBasePath, String testBaseUrl,
-			String manifestBaseUrl, RepositoryConnection con) throws Exception {
+			String manifestBaseUrl, RepositoryConnection con) {
 		StringBuilder negativeQuery = new StringBuilder();
 		negativeQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
 		negativeQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");
@@ -168,7 +168,7 @@ public abstract class TurtleParserTestCase {
 	}
 
 	private void parsePositiveTurtleEvalTests(TestSuite suite, String fileBasePath, String testBaseUrl,
-			String manifestBaseUrl, RepositoryConnection con) throws Exception {
+			String manifestBaseUrl, RepositoryConnection con) {
 		StringBuilder positiveEvalQuery = new StringBuilder();
 		positiveEvalQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
 		positiveEvalQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");
@@ -211,7 +211,7 @@ public abstract class TurtleParserTestCase {
 	}
 
 	private void parseNegativeTurtleEvalTests(TestSuite suite, String fileBasePath, String testBaseUrl,
-			String manifestBaseUrl, RepositoryConnection con) throws Exception {
+			String manifestBaseUrl, RepositoryConnection con) {
 		StringBuilder negativeEvalQuery = new StringBuilder();
 		negativeEvalQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
 		negativeEvalQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");
@@ -244,7 +244,7 @@ public abstract class TurtleParserTestCase {
 	}
 
 	private void parsePositiveNTriplesSyntaxTests(TestSuite suite, String fileBasePath, String testBaseUrl,
-			String manifestBaseUrl, RepositoryConnection con) throws Exception {
+			String manifestBaseUrl, RepositoryConnection con) {
 		StringBuilder positiveQuery = new StringBuilder();
 		positiveQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
 		positiveQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");
@@ -277,7 +277,7 @@ public abstract class TurtleParserTestCase {
 	}
 
 	private void parseNegativeNTriplesSyntaxTests(TestSuite suite, String fileBasePath, String testBaseUrl,
-			String manifestBaseUrl, RepositoryConnection con) throws Exception {
+			String manifestBaseUrl, RepositoryConnection con) {
 		StringBuilder negativeQuery = new StringBuilder();
 		negativeQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
 		negativeQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");

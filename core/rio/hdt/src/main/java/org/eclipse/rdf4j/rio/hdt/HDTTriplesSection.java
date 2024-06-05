@@ -27,5 +27,5 @@ abstract class HDTTriplesSection extends HDTPart implements Iterator<int[]> {
 	 * @param order
 	 * @throws IOException
 	 */
-	protected abstract void parse(InputStream is, HDTTriples.Order order) throws IOException;
+	abstract void parse(InputStream is, HDTTriples.Order order) throws IOException;
 }

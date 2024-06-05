@@ -27,10 +27,9 @@ public class SimpleValueFactoryTest extends ValueFactoryTest {
 	}
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		f = SimpleValueFactory.getInstance();
 	}
 

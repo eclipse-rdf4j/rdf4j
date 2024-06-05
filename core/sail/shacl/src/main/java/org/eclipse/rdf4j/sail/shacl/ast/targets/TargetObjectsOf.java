@@ -67,7 +67,7 @@ public class TargetObjectsOf extends Target {
 
 		PlanNode planNode = targetObjectsOf.stream()
 				.map(predicate -> (PlanNode) new UnorderedSelect(connection, null,
-						predicate, null, dataGraph, UnorderedSelect.Mapper.ObjectScopedMapper.getFunction(scope)))
+						predicate, null, dataGraph, UnorderedSelect.Mapper.ObjectScopedMapper.getFunction(scope), null))
 				.reduce(UnionNode::getInstance)
 				.orElse(EmptyNode.getInstance());
 

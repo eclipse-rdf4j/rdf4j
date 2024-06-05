@@ -66,7 +66,6 @@ import org.eclipse.rdf4j.model.vocabulary.SP;
 import org.eclipse.rdf4j.model.vocabulary.SPIN;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
-import org.eclipse.rdf4j.rio.helpers.JSONLDMode;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -467,7 +466,7 @@ public abstract class RDFWriterTest {
 		}
 
 		if (rdfParser.getRDFFormat().supportsNamespaces()) {
-			assertTrue(model.getNamespaces().size() >= 1,
+			assertTrue(!model.getNamespaces().isEmpty(),
 					"Expected at least one namespace, found" + model.getNamespaces().size());
 			assertEquals(exNs, model.getNamespace("ex").get().getName());
 		}
@@ -660,7 +659,7 @@ public abstract class RDFWriterTest {
 	}
 
 	@Test
-	public void testDefaultNamespace() throws Exception {
+	public void testDefaultNamespace() {
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
 		setupWriterConfig(rdfWriter.getWriterConfig());
@@ -1860,7 +1859,7 @@ public abstract class RDFWriterTest {
 	}
 
 	@Test
-	public void testGetSupportedSettings() throws Exception {
+	public void testGetSupportedSettings() {
 		RDFWriter writer = rdfWriterFactory.getWriter(System.out);
 
 		Collection<RioSetting<?>> supportedSettings = writer.getSupportedSettings();

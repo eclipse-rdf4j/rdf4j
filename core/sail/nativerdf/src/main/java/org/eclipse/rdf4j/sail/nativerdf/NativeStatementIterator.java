@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
  * A statement iterator that wraps a RecordIterator containing statement records and translates these records to
  * {@link Statement} objects.
  */
-class NativeStatementIterator extends LookAheadIteration<Statement, SailException> {
+class NativeStatementIterator extends LookAheadIteration<Statement> {
 
 	/*-----------*
 	 * Variables *
@@ -42,7 +42,7 @@ class NativeStatementIterator extends LookAheadIteration<Statement, SailExceptio
 	/**
 	 * Creates a new NativeStatementIterator.
 	 */
-	public NativeStatementIterator(RecordIterator btreeIter, ValueStore valueStore) throws IOException {
+	public NativeStatementIterator(RecordIterator btreeIter, ValueStore valueStore) {
 		this.btreeIter = btreeIter;
 		this.valueStore = valueStore;
 	}
@@ -84,13 +84,9 @@ class NativeStatementIterator extends LookAheadIteration<Statement, SailExceptio
 	@Override
 	protected void handleClose() throws SailException {
 		try {
-			super.handleClose();
-		} finally {
-			try {
-				btreeIter.close();
-			} catch (IOException e) {
-				throw causeIOException(e);
-			}
+			btreeIter.close();
+		} catch (IOException e) {
+			throw causeIOException(e);
 		}
 	}
 

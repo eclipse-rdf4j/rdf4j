@@ -14,11 +14,10 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.io.StringWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 
 import org.eclipse.rdf4j.model.Resource;
@@ -29,7 +28,6 @@ import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.BufferedGroupingRDFHandler;
-import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 import org.eclipse.rdf4j.rio.jsonld.JSONLDWriter;
 
 public class NDJSONLDWriter extends AbstractRDFWriter {
@@ -126,15 +124,6 @@ public class NDJSONLDWriter extends AbstractRDFWriter {
 
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
-		Collection<RioSetting<?>> result = new HashSet<>(Arrays.asList(
-				BasicWriterSettings.BASE_DIRECTIVE,
-				JSONLDSettings.COMPACT_ARRAYS,
-				JSONLDSettings.HIERARCHICAL_VIEW,
-				JSONLDSettings.JSONLD_MODE,
-				JSONLDSettings.PRODUCE_GENERALIZED_RDF,
-				JSONLDSettings.USE_RDF_TYPE,
-				JSONLDSettings.USE_NATIVE_TYPES
-		));
-		return result;
+		return new JSONLDWriter(new StringWriter()).getSupportedSettings();
 	}
 }

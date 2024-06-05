@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 
 /**
@@ -59,7 +58,7 @@ public class ParallelGetStatementsTask extends ParallelTaskBase<Statement> {
 	}
 
 	@Override
-	protected CloseableIteration<Statement, QueryEvaluationException> performTaskInternal() throws Exception {
+	protected CloseableIteration<Statement> performTaskInternal() throws Exception {
 		TripleSource tripleSource = endpoint.getTripleSource();
 		return tripleSource.getStatements(subj, pred, obj, queryInfo, contexts);
 	}

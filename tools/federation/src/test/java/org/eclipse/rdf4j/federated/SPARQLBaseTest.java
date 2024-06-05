@@ -44,7 +44,7 @@ public abstract class SPARQLBaseTest extends SPARQLServerBaseTest {
 
 	}
 
-	protected Set<Statement> getStatements(Resource subj, IRI pred, Value obj) throws Exception {
+	protected Set<Statement> getStatements(Resource subj, IRI pred, Value obj) {
 
 		Set<Statement> res = new HashSet<>();
 		try (RepositoryConnection conn = fedxRule.getRepository()

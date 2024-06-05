@@ -202,7 +202,7 @@ class FileIO {
 	}
 
 	private void writeNamespaces(SailDataset store, DataOutputStream dataOut) throws IOException, SailException {
-		try (CloseableIteration<? extends Namespace, SailException> iter = store.getNamespaces()) {
+		try (CloseableIteration<? extends Namespace> iter = store.getNamespaces()) {
 			while (iter.hasNext()) {
 				Namespace ns = iter.next();
 				dataOut.writeByte(NAMESPACE_MARKER);
@@ -232,7 +232,7 @@ class FileIO {
 		writeStatement(inferred.getStatements(null, null, null), INF_TRIPLE_MARKER, INF_QUAD_MARKER, dataOut);
 	}
 
-	public void writeStatement(CloseableIteration<? extends Statement, SailException> stIter, int tripleMarker,
+	public void writeStatement(CloseableIteration<? extends Statement> stIter, int tripleMarker,
 			int quadMarker, DataOutputStream dataOut) throws IOException, SailException {
 		try (stIter) {
 			while (stIter.hasNext()) {

@@ -45,7 +45,7 @@ public class RdfStarQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		final Value subjValue = StrictEvaluationStrategy.getVarValue(subjVar, bindings);
 		final Value predValue = StrictEvaluationStrategy.getVarValue(predVar, bindings);
 		final Value objValue = StrictEvaluationStrategy.getVarValue(objVar, bindings);
@@ -69,10 +69,10 @@ public class RdfStarQueryEvaluationStep implements QueryEvaluationStep {
 		}
 
 		// in case the
-		CloseableIteration<? extends Triple, QueryEvaluationException> sourceIter = tripleSource
+		CloseableIteration<? extends Triple> sourceIter = tripleSource
 				.getRdfStarTriples((Resource) subjValue, (IRI) predValue, objValue);
 
-		FilterIteration<Triple, QueryEvaluationException> filterIter = new FilterIteration<Triple, QueryEvaluationException>(
+		FilterIteration<Triple> filterIter = new FilterIteration<>(
 				sourceIter) {
 			@Override
 			protected boolean accept(Triple triple) throws QueryEvaluationException {
@@ -89,6 +89,11 @@ public class RdfStarQueryEvaluationStep implements QueryEvaluationStep {
 					return false;
 				}
 				return true;
+			}
+
+			@Override
+			protected void handleClose() {
+
 			}
 		};
 

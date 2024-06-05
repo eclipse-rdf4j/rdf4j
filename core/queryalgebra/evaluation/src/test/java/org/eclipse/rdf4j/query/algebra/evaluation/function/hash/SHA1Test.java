@@ -18,10 +18,9 @@ import org.junit.jupiter.api.BeforeEach;
 public class SHA1Test extends HashFunctionTest {
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		setHashFunction(new SHA1());
 		setToHash("abc");
 		setExpectedDigest("a9993e364706816aba3e25717850c26c9cd0d89d");

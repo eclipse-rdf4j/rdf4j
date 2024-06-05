@@ -86,14 +86,14 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 			newUnion.setVariableScopeChange(union.isVariableScopeChange());
 			join.replaceWith(newUnion);
 			newUnion.visit(this);
-		} else if (leftArg instanceof LeftJoin && isWellDesigned(((LeftJoin) leftArg))) {
+		} else if (leftArg instanceof LeftJoin && isWellDesigned((LeftJoin) leftArg)) {
 			// sort left join above normal joins
 			LeftJoin leftJoin = (LeftJoin) leftArg;
 			join.replaceWith(leftJoin);
 			join.setLeftArg(leftJoin.getLeftArg());
 			leftJoin.setLeftArg(join);
 			leftJoin.visit(this);
-		} else if (rightArg instanceof LeftJoin && isWellDesigned(((LeftJoin) rightArg))) {
+		} else if (rightArg instanceof LeftJoin && isWellDesigned((LeftJoin) rightArg)) {
 			// sort left join above normal joins
 			LeftJoin leftJoin = (LeftJoin) rightArg;
 			join.replaceWith(leftJoin);

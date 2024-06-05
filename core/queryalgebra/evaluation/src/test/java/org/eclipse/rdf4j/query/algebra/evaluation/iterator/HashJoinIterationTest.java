@@ -47,7 +47,7 @@ public class HashJoinIterationTest {
 		}
 
 		@Override
-		public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj, IRI pred,
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
 				Value obj, Resource... contexts) throws QueryEvaluationException {
 			// TODO Auto-generated method stub
 			return null;
@@ -70,7 +70,9 @@ public class HashJoinIterationTest {
 			right.setBindingSets(List.<BindingSet>of(rightb));
 		}
 
-		HashJoinIteration iter = new HashJoinIteration(evaluator, left, right, EmptyBindingSet.getInstance(), false);
+		HashJoinIteration iter = new HashJoinIteration(evaluator.evaluate(left, EmptyBindingSet.getInstance()),
+				left.getBindingNames(), evaluator.evaluate(right, EmptyBindingSet.getInstance()),
+				right.getBindingNames(), false);
 		BindingSet actual = iter.next();
 
 		assertEquals("1", actual.getValue("a").stringValue());
@@ -95,7 +97,9 @@ public class HashJoinIterationTest {
 			right.setBindingSets(List.<BindingSet>of(rightb));
 		}
 
-		HashJoinIteration iter = new HashJoinIteration(evaluator, left, right, EmptyBindingSet.getInstance(), false);
+		HashJoinIteration iter = new HashJoinIteration(evaluator.evaluate(left, EmptyBindingSet.getInstance()),
+				left.getBindingNames(), evaluator.evaluate(right, EmptyBindingSet.getInstance()),
+				right.getBindingNames(), false);
 		BindingSet actual = iter.next();
 
 		assertEquals("1", actual.getValue("a").stringValue());
@@ -121,7 +125,9 @@ public class HashJoinIterationTest {
 			right.setBindingSets(List.<BindingSet>of(rightb));
 		}
 
-		HashJoinIteration iter = new HashJoinIteration(evaluator, left, right, EmptyBindingSet.getInstance(), true);
+		HashJoinIteration iter = new HashJoinIteration(evaluator.evaluate(left, EmptyBindingSet.getInstance()),
+				left.getBindingNames(), evaluator.evaluate(right, EmptyBindingSet.getInstance()),
+				right.getBindingNames(), true);
 		BindingSet actual = iter.next();
 
 		assertEquals("1", actual.getValue("a").stringValue());

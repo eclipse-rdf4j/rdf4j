@@ -49,10 +49,10 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 	public GraphQueryResult evaluate() throws QueryEvaluationException {
 		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter1 = null;
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter2 = null;
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter3 = null;
-		CloseableIteration<Statement, QueryEvaluationException> stIter = null;
+		CloseableIteration<? extends BindingSet> bindingsIter1 = null;
+		CloseableIteration<? extends BindingSet> bindingsIter2 = null;
+		CloseableIteration<? extends BindingSet> bindingsIter3 = null;
+		CloseableIteration<Statement> stIter = null;
 		IteratingGraphQueryResult result = null;
 		boolean allGood = false;
 		try {
@@ -61,7 +61,7 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 			bindingsIter1 = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
 
 			// Filters out all partial and invalid matches
-			bindingsIter2 = new FilterIteration<BindingSet, QueryEvaluationException>(bindingsIter1) {
+			bindingsIter2 = new FilterIteration<BindingSet>(bindingsIter1) {
 
 				@Override
 				protected boolean accept(BindingSet bindingSet) {
@@ -72,13 +72,18 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 							&& bindingSet.getValue("object") instanceof Value
 							&& (context == null || context instanceof Resource);
 				}
+
+				@Override
+				protected void handleClose() {
+
+				}
 			};
 
 			bindingsIter3 = enforceMaxQueryTime(bindingsIter2);
 
 			// Convert the BindingSet objects to actual RDF statements
 			final ValueFactory vf = getConnection().getRepository().getValueFactory();
-			stIter = new ConvertingIteration<BindingSet, Statement, QueryEvaluationException>(bindingsIter3) {
+			stIter = new ConvertingIteration<BindingSet, Statement>(bindingsIter3) {
 
 				@Override
 				protected Statement convert(BindingSet bindingSet) {

@@ -18,8 +18,7 @@ import java.util.NoSuchElementException;
  * super class for Iterations that have no easy way to tell if there are any more results, but still should implement
  * the <var>java.util.Iteration</var> interface.
  */
-@Deprecated(since = "4.1.0")
-public abstract class LookAheadIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
+public abstract class LookAheadIteration<E> extends AbstractCloseableIteration<E> {
 
 	/*-----------*
 	 * Variables *
@@ -43,10 +42,10 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 	 *
 	 * @return The next element, or <var>null</var> if no more elements are available.
 	 */
-	protected abstract E getNextElement() throws X;
+	protected abstract E getNextElement();
 
 	@Override
-	public final boolean hasNext() throws X {
+	public final boolean hasNext() {
 		if (isClosed()) {
 			return false;
 		}
@@ -55,7 +54,7 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 	}
 
 	@Override
-	public final E next() throws X {
+	public final E next() {
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
@@ -73,9 +72,8 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 	 * Fetches the next element if it hasn't been fetched yet and stores it in {@link #nextElement}.
 	 *
 	 * @return The next element, or null if there are no more results.
-	 * @throws X If there is an issue getting the next element or closing the iteration.
 	 */
-	private E lookAhead() throws X {
+	private E lookAhead() {
 		if (nextElement == null) {
 			nextElement = getNextElement();
 
@@ -94,8 +92,4 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 		throw new UnsupportedOperationException();
 	}
 
-	@Override
-	protected void handleClose() throws X {
-		nextElement = null;
-	}
 }

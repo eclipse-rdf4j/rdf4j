@@ -58,7 +58,7 @@ public class LanguageInBenchmarkEmpty {
 	private final Random random = new Random(849075897);
 
 	@Setup(Level.Trial)
-	public void setUp() throws InterruptedException {
+	public void setUp() {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
 

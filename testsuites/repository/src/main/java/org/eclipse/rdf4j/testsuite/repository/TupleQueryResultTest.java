@@ -48,6 +48,8 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import ch.qos.logback.classic.Level;
+
 public abstract class TupleQueryResultTest {
 
 	private final Logger logger = LoggerFactory.getLogger(TupleQueryResultTest.class);
@@ -67,6 +69,10 @@ public abstract class TupleQueryResultTest {
 	@BeforeEach
 	public void setUp() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+		ch.qos.logback.classic.Logger root = (ch.qos.logback.classic.Logger) LoggerFactory
+				.getLogger("org.eclipse.rdf4j.sail.helpers.AbstractSailConnection");
+		root.setLevel(Level.ERROR);
+
 		rep = createRepository();
 		con = rep.getConnection();
 
@@ -79,7 +85,9 @@ public abstract class TupleQueryResultTest {
 	@AfterEach
 	public void tearDown() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
-
+		ch.qos.logback.classic.Logger root = (ch.qos.logback.classic.Logger) LoggerFactory
+				.getLogger("org.eclipse.rdf4j.sail.helpers.AbstractSailConnection");
+		root.setLevel(Level.WARN);
 		try {
 			con.close();
 			con = null;
@@ -91,7 +99,7 @@ public abstract class TupleQueryResultTest {
 		}
 	}
 
-	protected Repository createRepository() throws Exception {
+	protected Repository createRepository() {
 		Repository repository = newRepository();
 		try (RepositoryConnection con = repository.getConnection()) {
 			con.clear();
@@ -100,7 +108,7 @@ public abstract class TupleQueryResultTest {
 		return repository;
 	}
 
-	protected abstract Repository newRepository() throws Exception;
+	protected abstract Repository newRepository();
 
 	/*
 	 * build some simple SPARQL queries to use for testing the result set object.

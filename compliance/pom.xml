@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j</artifactId>
-		<version>4.3.13-SNAPSHOT</version>
+		<version>5.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-compliance</artifactId>
 	<packaging>pom</packaging>
@@ -13,7 +13,6 @@
 		<module>rio</module>
 		<module>model</module>
 		<module>sparql</module>
-		<module>shacl</module>
 		<module>lucene</module>
 		<module>solr</module>
 		<module>elasticsearch</module>
@@ -171,6 +170,13 @@
 						<include>**/*IT.java</include>
 						<include>**/*Test.java</include>
 					</includes>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>com.github.siom79.japicmp</groupId>
+				<artifactId>japicmp-maven-plugin</artifactId>
+				<configuration>
+					<skip>true</skip>
 				</configuration>
 			</plugin>
 		</plugins>

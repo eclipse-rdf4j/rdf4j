@@ -17,7 +17,6 @@ package org.eclipse.rdf4j.rio.helpers;
  * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#features">JSONLD Features</a>
  *
  */
-@Deprecated(since = "4.3.0", forRemoval = true)
 public enum JSONLDMode {
 
 	EXPAND("Expansion", "http://json-ld.org/spec/latest/json-ld-api/index.html#expansion"),
@@ -25,6 +24,8 @@ public enum JSONLDMode {
 	COMPACT("Compaction", "http://json-ld.org/spec/latest/json-ld-api/index.html#compaction"),
 
 	FLATTEN("Flattening", "http://json-ld.org/spec/latest/json-ld-api/index.html#flattening"),
+
+	FRAME("Framing", "https://www.w3.org/TR/json-ld11-framing/"),
 
 	;
 

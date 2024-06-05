@@ -126,7 +126,7 @@ public class NamespaceController extends AbstractController {
 	}
 
 	private void validateUpdateNamespaceData(String prefix, String namespace) throws ClientHTTPException {
-		if (namespace.length() == 0) {
+		if (namespace.isEmpty()) {
 			throw new ClientHTTPException(SC_BAD_REQUEST, "No namespace name found in request body");
 		}
 
@@ -148,7 +148,7 @@ public class NamespaceController extends AbstractController {
 	private static Pattern PREFIX_PATTERN = Pattern.compile(PN_PREFIX);
 
 	private static boolean isValidPrefix(String value) {
-		if (value.length() == 0)
+		if (value.isEmpty())
 			return true;
 		Matcher matcher = PREFIX_PATTERN.matcher(value);
 		return (matcher.find() && matcher.start() == 0 && matcher.end() == value.length());

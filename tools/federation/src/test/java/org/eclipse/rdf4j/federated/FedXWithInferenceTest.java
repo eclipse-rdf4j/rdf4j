@@ -51,19 +51,19 @@ public class FedXWithInferenceTest extends FedXBaseTest {
 	private LocalRepositoryManager repoManager;
 
 	@BeforeEach
-	public void before() throws Exception {
+	public void before() {
 		File baseDir = new File(tempDir.toFile(), "data");
 		repoManager = new LocalRepositoryManager(baseDir);
 		repoManager.init();
 	}
 
 	@AfterEach
-	public void after() throws Exception {
+	public void after() {
 		repoManager.shutDown();
 	}
 
 	@Test
-	public void testFederationWithRDFSInference() throws Exception {
+	public void testFederationWithRDFSInference() {
 
 		addMemoryStoreWithRDFS("repo1");
 		addMemoryStore("repo2");
@@ -143,14 +143,14 @@ public class FedXWithInferenceTest extends FedXBaseTest {
 
 	}
 
-	protected void addMemoryStore(String repoId) throws Exception {
+	protected void addMemoryStore(String repoId) {
 
 		RepositoryImplConfig implConfig = new SailRepositoryConfig(new MemoryStoreConfig());
 		RepositoryConfig config = new RepositoryConfig(repoId, implConfig);
 		repoManager.addRepositoryConfig(config);
 	}
 
-	protected void addMemoryStoreWithRDFS(String repoId) throws Exception {
+	protected void addMemoryStoreWithRDFS(String repoId) {
 
 		RepositoryImplConfig implConfig = new SailRepositoryConfig(
 				new SchemaCachingRDFSInferencerConfig(new MemoryStoreConfig()));

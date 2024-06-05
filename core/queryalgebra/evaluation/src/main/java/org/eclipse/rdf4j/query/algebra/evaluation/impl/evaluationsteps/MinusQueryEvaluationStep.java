@@ -14,7 +14,6 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.SPARQLMinusIteration;
 
@@ -28,7 +27,7 @@ public class MinusQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
-		return new SPARQLMinusIteration<>(leftQes.evaluate(bindings), rightQes.apply(bindings));
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		return new SPARQLMinusIteration(leftQes.evaluate(bindings), rightQes.apply(bindings));
 	}
 }

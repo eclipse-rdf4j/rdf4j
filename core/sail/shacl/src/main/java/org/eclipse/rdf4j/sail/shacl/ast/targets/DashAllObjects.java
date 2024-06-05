@@ -64,7 +64,7 @@ public class DashAllObjects extends Target {
 			ConstraintComponent.Scope scope) {
 
 		return Unique.getInstance(new UnorderedSelect(connection, null,
-				null, null, dataGraph, UnorderedSelect.Mapper.ObjectScopedMapper.getFunction(scope)), false);
+				null, null, dataGraph, UnorderedSelect.Mapper.ObjectScopedMapper.getFunction(scope), null), false);
 
 	}
 

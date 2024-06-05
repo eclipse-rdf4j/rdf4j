@@ -17,11 +17,9 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -307,9 +305,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		assertStatement(statement22, document);
 
 		// check if the text field stores all added string values
-		Set<String> texts = new HashSet<>();
-		texts.add("cats");
-		texts.add("dogs");
+		HashSet<String> texts = new HashSet<>(List.of("cats", "dogs"));
 		// FIXME
 		// assertTexts(texts, document);
 
@@ -377,7 +373,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 
 			// delete context 1
 			connection.begin();
-			connection.clear(new Resource[] { CONTEXT_1 });
+			connection.clear(CONTEXT_1);
 			connection.commit();
 			assertNoStatement(statementContext111);
 			assertNoStatement(statementContext121);
@@ -428,7 +424,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 
 			// delete context 2
 			connection.begin();
-			connection.clear(new Resource[] { CONTEXT_2 });
+			connection.clear(CONTEXT_2);
 			connection.commit();
 			assertStatement(statementContext111);
 			assertStatement(statementContext121);
@@ -449,10 +445,10 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		Literal literal2 = vf.createLiteral("hi there, too", STRING);
 		Literal literal3 = vf.createLiteral("1.0");
 		Literal literal4 = vf.createLiteral("1.0", FLOAT);
-		assertEquals("Is the first literal accepted?", true, index.accept(literal1));
-		assertEquals("Is the second literal accepted?", true, index.accept(literal2));
-		assertEquals("Is the third literal accepted?", true, index.accept(literal3));
-		assertEquals("Is the fourth literal accepted?", false, index.accept(literal4));
+		assertTrue("Is the first literal accepted?", index.accept(literal1));
+		assertTrue("Is the second literal accepted?", index.accept(literal2));
+		assertTrue("Is the third literal accepted?", index.accept(literal3));
+		assertFalse("Is the fourth literal accepted?", index.accept(literal4));
 	}
 
 	private void assertStatement(Statement statement) throws Exception {
@@ -471,10 +467,6 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		assertNoStatement(statement, document);
 	}
 
-	/**
-	 * @param statement112
-	 * @param document
-	 */
 	private void assertStatement(Statement statement, SearchDocument document) {
 		List<String> fields = document.getProperty(SearchFields.getPropertyField(statement.getPredicate()));
 		assertNotNull("field " + statement.getPredicate() + " not found in document " + document, fields);
@@ -486,10 +478,6 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		fail("Statement not found in document " + statement);
 	}
 
-	/**
-	 * @param statement112
-	 * @param document
-	 */
 	private void assertNoStatement(Statement statement, SearchDocument document) {
 		List<String> fields = document.getProperty(SearchFields.getPropertyField(statement.getPredicate()));
 		if (fields == null) {

@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTaskBase;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 
 /**
@@ -42,7 +41,7 @@ public class ParallelUnionOperatorTask extends ParallelTaskBase<BindingSet> {
 	}
 
 	@Override
-	protected CloseableIteration<BindingSet, QueryEvaluationException> performTaskInternal() throws Exception {
+	protected CloseableIteration<BindingSet> performTaskInternal() throws Exception {
 		return expr.evaluate(bindings);
 	}
 }

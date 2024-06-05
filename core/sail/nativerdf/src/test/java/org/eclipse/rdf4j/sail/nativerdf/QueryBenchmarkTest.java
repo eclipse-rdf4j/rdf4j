@@ -83,7 +83,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@AfterAll
-	public static void afterClass() throws IOException {
+	public static void afterClass() {
 		repository.shutDown();
 		repository = null;
 		statementList = null;

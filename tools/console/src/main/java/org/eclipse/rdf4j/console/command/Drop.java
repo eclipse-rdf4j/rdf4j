@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-import java.io.IOException;
-
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -52,7 +50,7 @@ public class Drop extends ConsoleCommand {
 	}
 
 	@Override
-	public void execute(String... tokens) throws IOException {
+	public void execute(String... tokens) {
 		if (tokens.length < 2) {
 			writeln(getHelpLong());
 		} else {
@@ -77,12 +75,11 @@ public class Drop extends ConsoleCommand {
 	 * Try to drop a repository after confirmation from user
 	 *
 	 * @param repoID repository ID
-	 * @throws IOException
 	 * @throws RepositoryException
 	 * @throws RepositoryConfigException
 	 */
 	private void dropRepository(final String repoID)
-			throws IOException, RepositoryException, RepositoryConfigException {
+			throws RepositoryException, RepositoryConfigException {
 		boolean proceed = askProceed("WARNING: you are about to drop repository '" + repoID + "'.", true);
 		if (proceed && !state.getManager().isSafeToRemove(repoID)) {
 			proceed = askProceed("WARNING: dropping this repository may break another that is proxying it.",

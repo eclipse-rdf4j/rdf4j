@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.trig;
 
-import java.io.IOException;
 import java.io.InputStream;
 
 import org.eclipse.rdf4j.model.Model;
@@ -38,10 +37,10 @@ public class TriGPrettyWriterBackgroundTest extends AbstractTriGWriterTest {
 
 	@Override
 	protected Model parse(InputStream reader, String baseURI)
-			throws RDFParseException, RDFHandlerException, IOException {
+			throws RDFParseException, RDFHandlerException {
 		return QueryResults
-				.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat(),
-						null));
+				.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()
+				));
 	}
 
 }

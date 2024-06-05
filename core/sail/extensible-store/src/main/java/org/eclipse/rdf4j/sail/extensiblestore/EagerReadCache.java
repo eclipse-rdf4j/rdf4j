@@ -10,6 +10,7 @@
  ******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore;
 
+import java.util.Comparator;
 import java.util.Iterator;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -60,7 +61,7 @@ public class EagerReadCache implements DataStructureInterface {
 	}
 
 	@Override
-	public CloseableIteration<? extends ExtensibleStatement, SailException> getStatements(Resource subject,
+	public CloseableIteration<? extends ExtensibleStatement> getStatements(Resource subject,
 			IRI predicate, Value object, boolean inferred, Resource... context) {
 		Model cache = this.cache;
 
@@ -93,6 +94,12 @@ public class EagerReadCache implements DataStructureInterface {
 				}
 				return null;
 			}
+
+			@Override
+			protected void handleClose() {
+
+			}
+
 		}, subject, predicate, object, inferred, context);
 	}
 
@@ -240,5 +247,10 @@ public class EagerReadCache implements DataStructureInterface {
 			return cache.size();
 		}
 		return delegate.getEstimatedSize();
+	}
+
+	@Override
+	public Comparator<Value> getComparator() {
+		return null;
 	}
 }

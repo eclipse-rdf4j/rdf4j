@@ -46,6 +46,7 @@ public class RSX {
 	public final static IRI valueConformsToXsdDatatypeFunction = create("valueConformsToXsdDatatypeFunction");
 
 	public final static IRI DataAndShapesGraphLink = create("DataAndShapesGraphLink");
+	public final static IRI actualPairwisePath = create("actualPairwisePath");
 
 	private static IRI create(String localName) {
 		return Vocabularies.createIRI(RSX.NAMESPACE, localName);

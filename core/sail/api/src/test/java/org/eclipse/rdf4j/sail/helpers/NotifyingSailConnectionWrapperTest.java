@@ -33,12 +33,12 @@ import org.mockito.Mockito;
 public class NotifyingSailConnectionWrapperTest {
 
 	@BeforeAll
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
 	@AfterAll
-	public static void afterAll() throws Exception {
+	public static void afterAll() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 

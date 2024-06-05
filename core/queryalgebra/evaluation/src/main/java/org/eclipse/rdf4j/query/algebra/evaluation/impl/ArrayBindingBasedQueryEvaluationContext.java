@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -21,6 +22,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
@@ -31,9 +33,11 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
@@ -45,6 +49,14 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvaluationContext {
+
+	public static final Predicate<BindingSet> HAS_BINDING_FALSE = (bs) -> false;
+	public static final Function<BindingSet, Binding> GET_BINDING_NULL = (bs) -> null;
+	public static final Function<BindingSet, Value> GET_VALUE_NULL = (bs) -> null;
+	public static final BiConsumer<Value, MutableBindingSet> SET_BINDING_NO_OP = (val, bs) -> {
+	};
+	public static final BiConsumer<Value, MutableBindingSet> ADD_BINDING_NO_OP = SET_BINDING_NO_OP;
+
 	private final QueryEvaluationContext context;
 	private final String[] allVariables;
 	private final Set<String> allVariablesSet;
@@ -54,15 +66,19 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	private final Function<BindingSet, Value>[] getValue;
 	private final BiConsumer<Value, MutableBindingSet>[] setBinding;
 	private final BiConsumer<Value, MutableBindingSet>[] addBinding;
+	private final Comparator<Value> comparator;
 
 	private final boolean initialized;
 
-	ArrayBindingBasedQueryEvaluationContext(QueryEvaluationContext context, String[] allVariables) {
+	@InternalUseOnly
+	public ArrayBindingBasedQueryEvaluationContext(QueryEvaluationContext context, String[] allVariables,
+			Comparator<Value> comparator) {
 		assert new HashSet<>(Arrays.asList(allVariables)).size() == allVariables.length;
 		this.context = context;
 		this.allVariables = allVariables;
 		this.allVariablesSet = Set.of(allVariables);
 		this.defaultArrayBindingSet = new ArrayBindingSet(allVariables);
+		this.comparator = comparator;
 
 		hasBinding = new Predicate[allVariables.length];
 		getBinding = new Function[allVariables.length];
@@ -80,6 +96,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 		initialized = true;
 
+	}
+
+	@Override
+	public Comparator<Value> getComparator() {
+		return comparator;
 	}
 
 	@Override
@@ -105,16 +126,27 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 					return hasBinding[i];
 				}
 			}
+
+			for (int i = 0; i < allVariables.length; i++) {
+				if (allVariables[i].equals(variableName)) {
+					return hasBinding[i];
+				}
+			}
+
+			return HAS_BINDING_FALSE;
 		}
 
 		assert variableName != null && !variableName.isEmpty();
+
 		Function<ArrayBindingSet, Boolean> directHasVariable = defaultArrayBindingSet.getDirectHasBinding(variableName);
+
 		if (directHasVariable != null) {
 			return new HasBinding(variableName, directHasVariable);
 		} else {
 			// If the variable is not in the default set, it can never be part of this array binding
-			return (bs) -> false;
+			return HAS_BINDING_FALSE;
 		}
+
 	}
 
 	static private class HasBinding implements Predicate<BindingSet> {
@@ -148,22 +180,31 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 					return getBinding[i];
 				}
 			}
+
+			for (int i = 0; i < allVariables.length; i++) {
+				if (allVariables[i].equals(variableName)) {
+					return getBinding[i];
+				}
+			}
+
+			return GET_BINDING_NULL;
 		}
 
 		Function<ArrayBindingSet, Binding> directAccessForVariable = defaultArrayBindingSet
 				.getDirectGetBinding(variableName);
+
 		if (directAccessForVariable != null) {
 			return (bs) -> {
-				if (bs instanceof ArrayBindingSet) {
-					return directAccessForVariable.apply((ArrayBindingSet) bs);
-				} else if (bs.isEmpty()) {
+				if (bs.isEmpty()) {
 					return null;
+				} else if (bs instanceof ArrayBindingSet) {
+					return directAccessForVariable.apply((ArrayBindingSet) bs);
 				} else {
 					return bs.getBinding(variableName);
 				}
 			};
 		} else {
-			return (bs) -> null;
+			return GET_BINDING_NULL;
 		}
 	}
 
@@ -175,16 +216,26 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 					return getValue[i];
 				}
 			}
+
+			for (int i = 0; i < allVariables.length; i++) {
+				if (allVariables[i].equals(variableName)) {
+					return getValue[i];
+				}
+			}
+
+			return GET_VALUE_NULL;
 		}
 
 		Function<ArrayBindingSet, Value> directAccessForVariable = defaultArrayBindingSet
 				.getDirectGetValue(variableName);
+
 		if (directAccessForVariable != null) {
 			return new ValueGetter(variableName, directAccessForVariable);
 		} else {
 			// If the variable is not in the default set, it can never be part of this array binding
-			return (bs) -> null;
+			return GET_VALUE_NULL;
 		}
+
 	}
 
 	private static class ValueGetter implements Function<BindingSet, Value> {
@@ -219,6 +270,14 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 					return setBinding[i];
 				}
 			}
+
+			for (int i = 0; i < allVariables.length; i++) {
+				if (allVariables[i].equals(variableName)) {
+					return setBinding[i];
+				}
+			}
+
+			return SET_BINDING_NO_OP;
 		}
 
 		BiConsumer<Value, ArrayBindingSet> directAccessForVariable = defaultArrayBindingSet
@@ -232,7 +291,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 				}
 			};
 		} else {
-			return (val, bs) -> bs.setBinding(variableName, val);
+			return SET_BINDING_NO_OP;
 		}
 	}
 
@@ -244,10 +303,16 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 					return addBinding[i];
 				}
 			}
+			for (int i = 0; i < allVariables.length; i++) {
+				if (allVariables[i].equals(variableName)) {
+					return addBinding[i];
+				}
+			}
+
+			return ADD_BINDING_NO_OP;
 		}
 
-		BiConsumer<Value, ArrayBindingSet> wrapped = defaultArrayBindingSet
-				.getDirectAddBinding(variableName);
+		BiConsumer<Value, ArrayBindingSet> wrapped = defaultArrayBindingSet.getDirectAddBinding(variableName);
 		if (wrapped != null) {
 			return (val, bs) -> {
 				if (bs instanceof ArrayBindingSet) {
@@ -257,14 +322,14 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 				}
 			};
 		} else {
-			return (val, bs) -> bs.addBinding(variableName, val);
+			return ADD_BINDING_NO_OP;
 		}
 	}
 
 	@Override
 	public ArrayBindingSet createBindingSet(BindingSet bindings) {
 		if (bindings instanceof ArrayBindingSet) {
-			return new ArrayBindingSet(((ArrayBindingSet) bindings), allVariables);
+			return new ArrayBindingSet((ArrayBindingSet) bindings, allVariables);
 		} else if (bindings == EmptyBindingSet.getInstance()) {
 			return createBindingSet();
 		} else {
@@ -276,6 +341,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 		HashMap<String, String> varNames = new LinkedHashMap<>();
 		AbstractSimpleQueryModelVisitor<QueryEvaluationException> queryModelVisitorBase = new AbstractSimpleQueryModelVisitor<>(
 				true) {
+
+			@Override
+			public void meetOther(QueryModelNode node) throws QueryEvaluationException {
+				super.meetOther(node);
+			}
 
 			@Override
 			public void meet(Var node) throws QueryEvaluationException {
@@ -325,6 +395,12 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 			@Override
 			public void meet(ExtensionElem node) throws QueryEvaluationException {
+				node.setName(varNames.computeIfAbsent(node.getName(), k -> k));
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(GroupElem node) throws QueryEvaluationException {
 				node.setName(varNames.computeIfAbsent(node.getName(), k -> k));
 				super.meet(node);
 			}

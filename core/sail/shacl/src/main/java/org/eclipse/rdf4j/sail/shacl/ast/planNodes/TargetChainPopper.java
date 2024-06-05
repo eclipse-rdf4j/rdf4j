@@ -18,7 +18,6 @@ import java.util.Objects;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * Pops the last target off of the target chain and into the value.
@@ -41,11 +40,11 @@ public class TargetChainPopper implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple> iterator() {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			private CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
+			private CloseableIteration<? extends ValidationTuple> parentIterator;
 			Iterator<ValidationTuple> iterator = Collections.emptyIterator();
 
 			@Override

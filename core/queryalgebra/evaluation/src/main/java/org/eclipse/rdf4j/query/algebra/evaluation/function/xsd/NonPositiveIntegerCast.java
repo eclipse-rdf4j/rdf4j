@@ -13,11 +13,10 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.xsd;
 import java.math.BigInteger;
 import java.util.Optional;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * A {@link org.eclipse.rdf4j.query.algebra.evaluation.function.Function} that tries to cast its argument to an
@@ -28,8 +27,8 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 public class NonPositiveIntegerCast extends IntegerCastFunction {
 
 	@Override
-	protected IRI getXsdDatatype() {
-		return XSD.NON_POSITIVE_INTEGER;
+	protected CoreDatatype.XSD getCoreXsdDatatype() {
+		return CoreDatatype.XSD.NON_POSITIVE_INTEGER;
 	}
 
 	@Override
@@ -40,7 +39,7 @@ public class NonPositiveIntegerCast extends IntegerCastFunction {
 	@Override
 	protected Optional<Literal> createTypedLiteral(ValueFactory vf, BigInteger integerValue) {
 		if (integerValue.compareTo(BigInteger.ZERO) <= 0) {
-			return Optional.of(vf.createLiteral(integerValue.toString(), getXsdDatatype()));
+			return Optional.of(vf.createLiteral(integerValue.toString(), getCoreXsdDatatype()));
 		}
 		return Optional.empty();
 	}
@@ -49,7 +48,7 @@ public class NonPositiveIntegerCast extends IntegerCastFunction {
 	protected Optional<Literal> createTypedLiteral(ValueFactory vf, boolean booleanValue) {
 		Literal result = null;
 		if (!booleanValue) {
-			result = vf.createLiteral("0", getXsdDatatype());
+			result = vf.createLiteral("0", getCoreXsdDatatype());
 		}
 		return Optional.ofNullable(result);
 	}

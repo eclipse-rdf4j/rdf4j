@@ -22,19 +22,15 @@ import org.eclipse.rdf4j.model.Value;
  */
 public class Var extends AbstractQueryModelNode implements ValueExpr {
 
-	private String name;
+	private final String name;
 
 	private Value value;
 
-	private boolean anonymous = false;
+	private final boolean anonymous;
 
 	private boolean constant = false;
 
 	private int cachedHashCode = 0;
-
-	@Deprecated(forRemoval = true, since = "4.1.0")
-	public Var() {
-	}
 
 	public Var(String name, Value value, boolean anonymous, boolean constant) {
 		this.name = name;
@@ -56,10 +52,8 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 		this(name, value, false, false);
 	}
 
-	@Deprecated(forRemoval = true, since = "4.1.0")
-	public void setAnonymous(boolean anonymous) {
-		this.cachedHashCode = 0;
-		this.anonymous = anonymous;
+	public Var(String name, Value value, boolean anonymous) {
+		this(name, value, anonymous, false);
 	}
 
 	public boolean isAnonymous() {
@@ -68,18 +62,6 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 
 	public String getName() {
 		return name;
-	}
-
-	@Deprecated(forRemoval = true, since = "4.1.0")
-	public void setName(String name) {
-		this.cachedHashCode = 0;
-		this.name = name;
-	}
-
-	@Deprecated(forRemoval = true, since = "4.1.0")
-	public void setValue(Value value) {
-		this.cachedHashCode = 0;
-		this.value = value;
 	}
 
 	public boolean hasValue() {
@@ -109,15 +91,6 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 
-	}
-
-	@Override
-	public void replaceWith(QueryModelNode replacement) {
-		if (getParentNode() == null) {
-			throw new IllegalStateException("Node has no parent");
-		}
-
-		getParentNode().replaceChildNode(this, replacement);
 	}
 
 	@Override
@@ -183,11 +156,4 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 		return constant;
 	}
 
-	/**
-	 * @param constant The constant to set.
-	 */
-	@Deprecated(forRemoval = true, since = "4.1.0")
-	public void setConstant(boolean constant) {
-		this.constant = constant;
-	}
 }

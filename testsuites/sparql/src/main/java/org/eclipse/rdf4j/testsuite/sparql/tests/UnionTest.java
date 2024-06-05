@@ -10,12 +10,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.sparql.tests;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -25,8 +28,10 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
 
 /**
  * Tests on SPRQL UNION clauses.
@@ -36,8 +41,11 @@ import org.junit.Test;
  */
 public class UnionTest extends AbstractComplianceTest {
 
-	@Test
-	public void testEmptyUnion() {
+	public UnionTest(Supplier<Repository> repo) {
+		super(repo);
+	}
+
+	private void testEmptyUnion(RepositoryConnection conn) {
 		String query = "PREFIX : <http://example.org/> "
 				+ "SELECT ?visibility WHERE {"
 				+ "OPTIONAL { SELECT ?var WHERE { :s a :MyType . BIND (:s as ?var ) .} } ."
@@ -49,9 +57,8 @@ public class UnionTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testSameTermRepeatInUnion() throws Exception {
-		loadTestData("/testdata-query/dataset-query.trig");
+	private void testSameTermRepeatInUnion(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-query.trig", conn);
 		String query = "PREFIX foaf:<http://xmlns.com/foaf/0.1/>\n" +
 				"SELECT * {\n" +
 				"    {\n" +
@@ -87,12 +94,10 @@ public class UnionTest extends AbstractComplianceTest {
 			e.printStackTrace();
 			fail(e.getMessage());
 		}
-
 	}
 
-	@Test
-	public void testSameTermRepeatInUnionAndOptional() throws Exception {
-		loadTestData("/testdata-query/dataset-query.trig");
+	private void testSameTermRepeatInUnionAndOptional(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-query.trig", conn);
 
 		String query = getNamespaceDeclarations() +
 				"SELECT * {\n" +
@@ -149,6 +154,12 @@ public class UnionTest extends AbstractComplianceTest {
 			fail(e.getMessage());
 		}
 
+	}
+
+	public Stream<DynamicTest> tests() {
+		return Stream.of(makeTest("EmptyUnion", this::testEmptyUnion),
+				makeTest("SameTermRepeatInUnion", this::testSameTermRepeatInUnion),
+				makeTest("SameTermRepeatInUnionAndOptional", this::testSameTermRepeatInUnionAndOptional));
 	}
 
 }

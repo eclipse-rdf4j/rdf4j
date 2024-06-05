@@ -46,14 +46,14 @@ public class ReificationRdfStarQueryEvaluationStep implements QueryEvaluationSte
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		final Value subjValue = StrictEvaluationStrategy.getVarValue(subjVar, bindings);
 		final Value predValue = StrictEvaluationStrategy.getVarValue(predVar, bindings);
 		final Value objValue = StrictEvaluationStrategy.getVarValue(objVar, bindings);
 		final Value extValue = StrictEvaluationStrategy.getVarValue(extVar, bindings);
 		// standard reification iteration
 		// 1. walk over resources used as subjects of (x rdf:type rdf:Statement)
-		final CloseableIteration<? extends Resource, QueryEvaluationException> iter = new ConvertingIteration<Statement, Resource, QueryEvaluationException>(
+		final CloseableIteration<? extends Resource> iter = new ConvertingIteration<Statement, Resource>(
 				tripleSource.getStatements((Resource) extValue, RDF.TYPE, RDF.STATEMENT)) {
 
 			@Override
@@ -66,9 +66,7 @@ public class ReificationRdfStarQueryEvaluationStep implements QueryEvaluationSte
 		// the expected values from TripleRef pattern and supplied bindings collection
 		return new LookAheadIteration<>() {
 			@Override
-			protected void handleClose()
-					throws QueryEvaluationException {
-				super.handleClose();
+			protected void handleClose() throws QueryEvaluationException {
 				iter.close();
 			}
 
@@ -107,7 +105,7 @@ public class ReificationRdfStarQueryEvaluationStep implements QueryEvaluationSte
 			//
 			private boolean matchValue(Resource theNode, Value value, Var var, MutableBindingSet result,
 					IRI predicate) {
-				try (CloseableIteration<? extends Statement, QueryEvaluationException> valueIter = tripleSource
+				try (CloseableIteration<? extends Statement> valueIter = tripleSource
 						.getStatements(theNode, predicate, null)) {
 
 					while (valueIter.hasNext()) {

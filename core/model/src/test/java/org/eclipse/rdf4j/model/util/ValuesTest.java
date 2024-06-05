@@ -570,14 +570,14 @@ public class ValuesTest {
 	}
 
 	@Test()
-	public void testLiteralObjectNull() throws Exception {
+	public void testLiteralObjectNull() {
 		Object obj = null;
 		assertThatThrownBy(() -> literal(obj)).isInstanceOf(NullPointerException.class)
 				.hasMessageContaining("object may not be null");
 	}
 
 	@Test
-	public void testLiteralObjectBoolean() throws Exception {
+	public void testLiteralObjectBoolean() {
 		Object obj = Boolean.TRUE;
 		Literal l = literal(obj);
 		assertThat(l).isNotNull();
@@ -586,7 +586,7 @@ public class ValuesTest {
 	}
 
 	@Test
-	public void testLiteralObjectByte() throws Exception {
+	public void testLiteralObjectByte() {
 		Object obj = Integer.valueOf(42).byteValue();
 		Literal l = literal(obj);
 		assertThat(l).isNotNull();
@@ -595,7 +595,7 @@ public class ValuesTest {
 	}
 
 	@Test
-	public void testLiteralObjectDouble() throws Exception {
+	public void testLiteralObjectDouble() {
 		Object obj = Double.valueOf(42.0);
 		Literal l = literal(obj);
 		assertThat(l).isNotNull();
@@ -604,7 +604,7 @@ public class ValuesTest {
 	}
 
 	@Test
-	public void testLiteralObjectFloat() throws Exception {
+	public void testLiteralObjectFloat() {
 		Object obj = Float.valueOf(42);
 		Literal l = literal(obj);
 		assertThat(l).isNotNull();
@@ -613,7 +613,7 @@ public class ValuesTest {
 	}
 
 	@Test
-	public void testLiteralObjectBigDecimal() throws Exception {
+	public void testLiteralObjectBigDecimal() {
 		Object obj = BigDecimal.valueOf(42.1);
 		Literal l = literal(obj);
 		assertThat(l).isNotNull();
@@ -622,7 +622,7 @@ public class ValuesTest {
 	}
 
 	@Test
-	public void testLiteralObjectInteger() throws Exception {
+	public void testLiteralObjectInteger() {
 		Object obj = Integer.valueOf(42);
 		Literal l = literal(obj);
 		assertThat(l).isNotNull();
@@ -631,7 +631,7 @@ public class ValuesTest {
 	}
 
 	@Test
-	public void testLiteralObjectBigInteger() throws Exception {
+	public void testLiteralObjectBigInteger() {
 		Object obj = BigInteger.valueOf(42l);
 		Literal l = literal(obj);
 		assertThat(l).isNotNull();
@@ -640,7 +640,7 @@ public class ValuesTest {
 	}
 
 	@Test
-	public void testLiteralObjectShort() throws Exception {
+	public void testLiteralObjectShort() {
 		Object obj = Short.parseShort("42");
 		Literal l = literal(obj);
 		assertThat(l).isNotNull();
@@ -649,7 +649,7 @@ public class ValuesTest {
 	}
 
 	@Test
-	public void testLiteralObjectXMLGregorianCalendar() throws Exception {
+	public void testLiteralObjectXMLGregorianCalendar() {
 		GregorianCalendar c = new GregorianCalendar();
 		c.setTime(new Date());
 		try {
@@ -663,7 +663,7 @@ public class ValuesTest {
 	}
 
 	@Test
-	public void testLiteralObjectDate() throws Exception {
+	public void testLiteralObjectDate() {
 		Object obj = new Date();
 		Literal l = literal(obj);
 		assertThat(l).isNotNull();
@@ -671,7 +671,7 @@ public class ValuesTest {
 	}
 
 	@Test
-	public void testLiteralTemporalPeriod() throws Exception {
+	public void testLiteralTemporalPeriod() {
 		Object obj = Period.ofWeeks(42);
 		Literal l = literal(obj);
 		assertThat(l).isNotNull();
@@ -680,7 +680,7 @@ public class ValuesTest {
 	}
 
 	@Test
-	public void testLiteralObjectString() throws Exception {
+	public void testLiteralObjectString() {
 		Object obj = "random unique string";
 		Literal l = literal(obj);
 		assertThat(l).isNotNull();
@@ -689,7 +689,7 @@ public class ValuesTest {
 	}
 
 	@Test
-	public void testLiteralObjectObject() throws Exception {
+	public void testLiteralObjectObject() {
 		Object obj = new Object();
 		Literal l = literal(obj);
 		assertThat(l).isNotNull();

@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
  * @author Arjohn Kampman
  * @author James Leigh
  */
-public class MultiProjectionIterator extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class MultiProjectionIterator extends LookAheadIteration<BindingSet> {
 
 	/*------------*
 	 * Attributes *
@@ -32,7 +32,7 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet, Quer
 
 	private final List<ProjectionElemList> projections;
 
-	private final CloseableIteration<BindingSet, QueryEvaluationException> iter;
+	private final CloseableIteration<BindingSet> iter;
 
 	private final BindingSet parentBindings;
 
@@ -47,7 +47,7 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet, Quer
 	 *--------------*/
 
 	public MultiProjectionIterator(MultiProjection multiProjection,
-			CloseableIteration<BindingSet, QueryEvaluationException> iter, BindingSet bindings) {
+			CloseableIteration<BindingSet> iter, BindingSet bindings) {
 		this.projections = multiProjection.getProjections();
 		this.iter = iter;
 		this.parentBindings = bindings;
@@ -97,14 +97,10 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet, Quer
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
 		try {
-			super.handleClose();
+			iter.close();
 		} finally {
-			try {
-				iter.close();
-			} finally {
-				nextProjectionIdx = -1;
-				Arrays.fill(previousBindings, null);
-			}
+			nextProjectionIdx = -1;
+			Arrays.fill(previousBindings, null);
 		}
 	}
 }

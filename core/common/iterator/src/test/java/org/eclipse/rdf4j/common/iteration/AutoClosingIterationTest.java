@@ -57,7 +57,7 @@ public class AutoClosingIterationTest {
 	}
 
 	@Test
-	public void testClosingStreamWithAssertionErrorFinally() throws Exception {
+	public void testClosingStreamWithAssertionErrorFinally() {
 
 		CloseableIterationForTesting iterator = getIterator(Arrays.asList("a", "b", "c"));
 
@@ -81,7 +81,7 @@ public class AutoClosingIterationTest {
 		return new CloseableIterationForTesting(list);
 	}
 
-	static class CloseableIterationForTesting implements CloseableIteration<String, Exception> {
+	static class CloseableIterationForTesting implements CloseableIteration<String> {
 
 		public boolean closed = false;
 		Iterator<String> iterator;
@@ -91,22 +91,22 @@ public class AutoClosingIterationTest {
 		}
 
 		@Override
-		public void close() throws Exception {
+		public void close() {
 			closed = true;
 		}
 
 		@Override
-		public boolean hasNext() throws Exception {
+		public boolean hasNext() {
 			return iterator.hasNext();
 		}
 
 		@Override
-		public String next() throws Exception {
+		public String next() {
 			return iterator.next();
 		}
 
 		@Override
-		public void remove() throws Exception {
+		public void remove() {
 
 		}
 	}

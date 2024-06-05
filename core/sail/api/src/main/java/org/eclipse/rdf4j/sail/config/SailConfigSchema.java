@@ -30,7 +30,7 @@ public class SailConfigSchema {
 	public static final String NAMESPACE = "http://www.openrdf.org/config/sail#";
 
 	/**
-	 * @deprecated use {@link CONFIG#type} instead.
+	 * @deprecated use {@link CONFIG.Sail#type} instead.
 	 */
 	public final static IRI SAILTYPE = iri(NAMESPACE, "sailType");
 
@@ -40,13 +40,12 @@ public class SailConfigSchema {
 	public final static IRI DELEGATE = iri(NAMESPACE, "delegate");
 
 	/**
-	 * @deprecated use {@link CONFIG#iterationCacheSyncThreshold} instead.
+	 * @deprecated use {@link CONFIG.Sail#iterationCacheSyncThreshold} instead.
 	 */
 	public final static IRI ITERATION_CACHE_SYNC_THRESHOLD = iri(NAMESPACE, "iterationCacheSyncThreshold");
 
 	/**
-	 * @deprecated use {@link CONFIG#connectionTimeOut} instead.
+	 * @deprecated use {@link CONFIG.Sail#connectionTimeOut} instead.
 	 */
 	public final static IRI CONNECTION_TIME_OUT = iri(NAMESPACE, "connectionTimeOut");
-
 }

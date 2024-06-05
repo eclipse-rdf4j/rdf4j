@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory;
  * @param <T>
  * @author Andreas Schwarte
  */
-public class FedXQueueCursor<T> extends QueueCursor<CloseableIteration<T, QueryEvaluationException>> {
+public class FedXQueueCursor<T> extends QueueCursor<CloseableIteration<T>> {
 
 	private static final Logger log = LoggerFactory.getLogger(FedXQueueCursor.class);
 
@@ -38,7 +38,7 @@ public class FedXQueueCursor<T> extends QueueCursor<CloseableIteration<T, QueryE
 	}
 
 	public static <T> FedXQueueCursor<T> create(int capacity) {
-		BlockingQueue<CloseableIteration<T, QueryEvaluationException>> queue = new ArrayBlockingQueue<>(capacity,
+		BlockingQueue<CloseableIteration<T>> queue = new ArrayBlockingQueue<>(capacity,
 				false);
 		return new FedXQueueCursor<>(queue);
 	}
@@ -48,9 +48,9 @@ public class FedXQueueCursor<T> extends QueueCursor<CloseableIteration<T, QueryE
 	 * we can close the non-consumed iterations from the queue. Note that the private queue of the super class is not
 	 * accessible.
 	 */
-	private final BlockingQueue<CloseableIteration<T, QueryEvaluationException>> queueRef;
+	private final BlockingQueue<CloseableIteration<T>> queueRef;
 
-	private FedXQueueCursor(BlockingQueue<CloseableIteration<T, QueryEvaluationException>> queue) {
+	private FedXQueueCursor(BlockingQueue<CloseableIteration<T>> queue) {
 		super(queue);
 		this.queueRef = queue;
 	}
@@ -80,7 +80,7 @@ public class FedXQueueCursor<T> extends QueueCursor<CloseableIteration<T, QueryE
 				try {
 					Object take = queueRef.poll();
 					if (take instanceof CloseableIteration) {
-						((CloseableIteration<?, ?>) take).close();
+						((CloseableIteration<?>) take).close();
 					}
 				} catch (Throwable t) {
 					if (t instanceof InterruptedException) {

@@ -44,6 +44,11 @@ public class BoundFiltersNode extends AbstractQueryModelNode {
 	}
 
 	@Override
+	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+		throw new IllegalArgumentException("Node is not a child node: " + current);
+	}
+
+	@Override
 	public String getSignature() {
 		StringBuilder sb = new StringBuilder(64);
 		sb.append("BoundFilters (");

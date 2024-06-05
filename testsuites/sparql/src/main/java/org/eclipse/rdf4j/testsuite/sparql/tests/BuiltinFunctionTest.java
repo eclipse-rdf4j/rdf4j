@@ -11,14 +11,15 @@
 package org.eclipse.rdf4j.testsuite.sparql.tests;
 
 import static org.eclipse.rdf4j.model.util.Values.iri;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -30,8 +31,10 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
 
 /**
  * Tests on various SPARQL built-in functions.
@@ -41,11 +44,15 @@ import org.junit.Test;
  */
 public class BuiltinFunctionTest extends AbstractComplianceTest {
 
+	public BuiltinFunctionTest(Supplier<Repository> repo) {
+		super(repo);
+	}
+
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/1267
 	 */
-	@Test
-	public void testSeconds() {
+
+	private void testSeconds(RepositoryConnection conn) {
 		String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
 				+ "SELECT (SECONDS(\"2011-01-10T14:45:13\"^^xsd:dateTime) AS ?sec) { }";
 
@@ -60,8 +67,8 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/1267
 	 */
-	@Test
-	public void testSecondsMilliseconds() {
+
+	private void testSecondsMilliseconds(RepositoryConnection conn) {
 		String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
 				+ "SELECT (SECONDS(\"2011-01-10T14:45:13.815-05:00\"^^xsd:dateTime) AS ?sec) { }";
 
@@ -73,9 +80,8 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testSES1991NOWEvaluation() throws Exception {
-		loadTestData("/testdata-query/defaultgraph.ttl");
+	private void testSES1991NOWEvaluation(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/defaultgraph.ttl", conn);
 		String query = "SELECT ?d WHERE {?s ?p ?o . BIND(NOW() as ?d) } LIMIT 2";
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
@@ -95,8 +101,7 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testSES869ValueOfNow() {
+	private void testSES869ValueOfNow(RepositoryConnection conn) {
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL,
 				"SELECT ?p ( NOW() as ?n ) { BIND (NOW() as ?p ) }");
 
@@ -115,9 +120,8 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testSES1991UUIDEvaluation() throws Exception {
-		loadTestData("/testdata-query/defaultgraph.ttl");
+	private void testSES1991UUIDEvaluation(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/defaultgraph.ttl", conn);
 		String query = "SELECT ?uid WHERE {?s ?p ?o . BIND(UUID() as ?uid) } LIMIT 2";
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
@@ -137,9 +141,8 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testSES1991STRUUIDEvaluation() throws Exception {
-		loadTestData("/testdata-query/defaultgraph.ttl");
+	private void testSES1991STRUUIDEvaluation(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/defaultgraph.ttl", conn);
 		String query = "SELECT ?uid WHERE {?s ?p ?o . BIND(STRUUID() as ?uid) } LIMIT 2";
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
@@ -158,9 +161,8 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testSES1991RANDEvaluation() throws Exception {
-		loadTestData("/testdata-query/defaultgraph.ttl");
+	private void testSES1991RANDEvaluation(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/defaultgraph.ttl", conn);
 		String query = "SELECT ?r WHERE {?s ?p ?o . BIND(RAND() as ?r) } LIMIT 3";
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
@@ -186,8 +188,7 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testSES2121URIFunction() {
+	private void testSES2121URIFunction(RepositoryConnection conn) {
 		String query = "SELECT (URI(\"foo bar\") as ?uri) WHERE {}";
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 		try (TupleQueryResult result = tq.evaluate()) {
@@ -195,7 +196,7 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 			assertTrue(result.hasNext());
 			BindingSet bs = result.next();
 			IRI uri = (IRI) bs.getValue("uri");
-			assertNull("uri result for invalid URI should be unbound", uri);
+			assertNull(uri, "uri result for invalid URI should be unbound");
 		}
 
 		query = "BASE <http://example.org/> SELECT (URI(\"foo bar\") as ?uri) WHERE {}";
@@ -205,12 +206,12 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 			assertTrue(result.hasNext());
 			BindingSet bs = result.next();
 			IRI uri = (IRI) bs.getValue("uri");
-			assertNotNull("uri result for valid URI reference should be bound", uri);
+			assertNotNull(uri, "uri result for valid URI reference should be bound");
 		}
 	}
 
-	@Test
-	public void test27NormalizeIRIFunction() {
+	private void test27NormalizeIRIFunction(RepositoryConnection conn) {
+
 		String query = "SELECT (IRI(\"../bar\") as ?Iri) WHERE {}";
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query, "http://example.com/foo/");
 		try (TupleQueryResult result = tq.evaluate()) {
@@ -219,13 +220,12 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 			BindingSet bs = result.next();
 			IRI actual = (IRI) bs.getValue("Iri");
 			IRI expected = iri("http://example.com/bar");
-			assertEquals("IRI result for relative IRI should be normalized", expected, actual);
+			assertEquals(expected, actual, "IRI result for relative IRI should be normalized");
 		}
 	}
 
-	@Test
-	public void testSES2052If1() throws Exception {
-		loadTestData("/testdata-query/dataset-query.trig");
+	private void testSES2052If1(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-query.trig", conn);
 		String query = "SELECT ?p \n" +
 				"WHERE { \n" +
 				"         ?s ?p ?o . \n" +
@@ -242,16 +242,11 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 				assertNotNull(p);
 				assertEquals(RDF.TYPE, p);
 			}
-		} catch (Exception e) {
-			e.printStackTrace();
-			fail(e.getMessage());
 		}
-
 	}
 
-	@Test
-	public void testSES2052If2() throws Exception {
-		loadTestData("/testdata-query/dataset-query.trig");
+	private void testSES2052If2(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-query.trig", conn);
 		String query = "SELECT ?p \n" +
 				"WHERE { \n" +
 				"         ?s ?p ?o . \n" +
@@ -268,27 +263,23 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 				assertNotNull(p);
 				assertEquals(RDF.TYPE, p);
 			}
-		} catch (Exception e) {
-			e.printStackTrace();
-			fail(e.getMessage());
 		}
-
 	}
 
-	@Test
-	public void testRegexCaseNonAscii() {
+	private void testRegexCaseNonAscii(RepositoryConnection conn) {
+
 		String query = "ask {filter (regex(\"Валовой\", \"валовой\", \"i\")) }";
 
-		assertTrue("case-insensitive match on Cyrillic should succeed", conn.prepareBooleanQuery(query).evaluate());
+		assertTrue(conn.prepareBooleanQuery(query).evaluate(), "case-insensitive match on Cyrillic should succeed");
 
 		query = "ask {filter (regex(\"Валовой\", \"валовой\")) }";
 
-		assertFalse("case-sensitive match on Cyrillic should fail", conn.prepareBooleanQuery(query).evaluate());
+		assertFalse(conn.prepareBooleanQuery(query).evaluate(), "case-sensitive match on Cyrillic should fail");
 	}
 
-	@Test
-	public void testFilterRegexBoolean() throws Exception {
-		loadTestData("/testdata-query/dataset-query.trig");
+	private void testFilterRegexBoolean(RepositoryConnection conn) throws Exception {
+
+		loadTestData("/testdata-query/dataset-query.trig", conn);
 
 		// test case for issue SES-1050
 		String query = getNamespaceDeclarations() +
@@ -310,8 +301,7 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testDateCastFunction_date() {
+	private void testDateCastFunction_date(RepositoryConnection conn) {
 		String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
 				+ "SELECT (xsd:date(\"2022-09-09\") AS ?date) { }";
 
@@ -323,8 +313,7 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testDateCastFunction_date_withTimeZone_utc() {
+	private void testDateCastFunction_date_withTimeZone_utc(RepositoryConnection conn) {
 		String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
 				+ "SELECT (xsd:date(\"2022-09-09Z\") AS ?date) { }";
 
@@ -336,8 +325,7 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testDateCastFunction_dateTime_withTimeZone_offset() {
+	private void testDateCastFunction_dateTime_withTimeZone_offset(RepositoryConnection conn) {
 		String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
 				+ "SELECT (xsd:date(\"2022-09-09T14:45:13+03:00\") AS ?date) { }";
 
@@ -349,17 +337,36 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testDateCastFunction_invalidInput() {
+	private void testDateCastFunction_invalidInput(RepositoryConnection conn) {
 		String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
 				+ "SELECT (xsd:date(\"2022-09-xx\") AS ?date) { }";
 
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, qry).evaluate()) {
 			assertNotNull(result);
 			assertTrue(result.hasNext());
-			assertFalse("There should be no binding because the cast should have failed.",
-					result.next().hasBinding("date"));
+			assertFalse(result.next().hasBinding("date"),
+					"There should be no binding because the cast should have failed.");
 			assertFalse(result.hasNext());
 		}
+	}
+
+	public Stream<DynamicTest> tests() {
+		return Stream.of(makeTest("Seconds", this::testSeconds),
+				makeTest("SecondsMilliseconds", this::testSecondsMilliseconds),
+				makeTest("DateCastFunction_invalidInput", this::testDateCastFunction_invalidInput),
+				makeTest("DateCastFunction_dateTime_withTimeZone_offset",
+						this::testDateCastFunction_dateTime_withTimeZone_offset),
+				makeTest("DateCastFunction_date_withTimeZone_utc", this::testDateCastFunction_date_withTimeZone_utc),
+				makeTest("DateCastFunction_date", this::testDateCastFunction_date),
+				makeTest("FilterRegexBoolean", this::testFilterRegexBoolean),
+				makeTest("RegexCaseNonAscii", this::testRegexCaseNonAscii),
+				makeTest("SES2052If2", this::testSES2052If2), makeTest("SES2052If1", this::testSES2052If1),
+				makeTest("27NormalizeIRIFunction", this::test27NormalizeIRIFunction),
+				makeTest("SES2121URIFunction", this::testSES2121URIFunction),
+				makeTest("SES1991RANDEvaluation", this::testSES1991RANDEvaluation),
+				makeTest("SES1991STRUUIDEvaluation", this::testSES1991STRUUIDEvaluation),
+				makeTest("SES1991UUIDEvaluation", this::testSES1991UUIDEvaluation),
+				makeTest("SES869ValueOfNow", this::testSES869ValueOfNow),
+				makeTest("SES1991NOWEvaluation", this::testSES1991NOWEvaluation));
 	}
 }

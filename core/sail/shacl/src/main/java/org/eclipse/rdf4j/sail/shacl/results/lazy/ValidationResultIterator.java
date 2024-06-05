@@ -21,7 +21,6 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
@@ -34,9 +33,9 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 	private boolean truncated = false;
 
 	private Iterator<ValidationResult> next = Collections.emptyIterator();
-	private CloseableIteration<? extends ValidationTuple, SailException> tupleIterator;
+	private CloseableIteration<? extends ValidationTuple> tupleIterator;
 
-	public ValidationResultIterator(CloseableIteration<? extends ValidationTuple, SailException> tupleIterator,
+	public ValidationResultIterator(CloseableIteration<? extends ValidationTuple> tupleIterator,
 			long limit) {
 		this.limit = limit;
 		this.tupleIterator = tupleIterator;
@@ -69,8 +68,9 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 				for (ValidationTuple tuple : invalidTuples) {
 					List<ValidationResult> validationResults = tuple.getValidationResult();
 
-					ValidationResult validationResult1 = validationResults.get(validationResults.size() - 1);
-					validationResultsRet.add(validationResult1);
+					assert !validationResults.isEmpty();
+
+					validationResultsRet.addAll(validationResults);
 
 					counter++;
 				}

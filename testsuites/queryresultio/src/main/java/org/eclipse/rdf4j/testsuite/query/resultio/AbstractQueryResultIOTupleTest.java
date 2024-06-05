@@ -193,13 +193,13 @@ public abstract class AbstractQueryResultIOTupleTest extends AbstractQueryResult
 	}
 
 	@Test
-	public final void testNoResultsExceptionHandleSolutionBeforeStartQueryResult() throws Exception {
+	public final void testNoResultsExceptionHandleSolutionBeforeStartQueryResult() {
 		doTupleMissingStartQueryResult(getTupleFormat(), createTupleNoBindingSets(), createTupleNoBindingSets(),
 				Arrays.asList("info", "alternate", "other", "another"), "test.xsl");
 	}
 
 	@Test
-	public final void testMultipleExceptionHandleSolutionBeforeStartQueryResult() throws Exception {
+	public final void testMultipleExceptionHandleSolutionBeforeStartQueryResult() {
 		doTupleMissingStartQueryResult(getTupleFormat(), createTupleMultipleBindingSets(),
 				createTupleMultipleBindingSets(), Arrays.asList("info", "alternate", "other", "another"), "test.xsl");
 	}

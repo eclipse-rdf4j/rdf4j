@@ -10,22 +10,28 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.sparql.tests;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.StringReader;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
 
 public class OrderByTest extends AbstractComplianceTest {
 
-	@Test
-	public void testDistinctOptionalOrderBy() throws Exception {
+	public OrderByTest(Supplier<Repository> repo) {
+		super(repo);
+	}
+
+	private void testDistinctOptionalOrderBy(RepositoryConnection conn) throws Exception {
 
 		conn.add(new StringReader("[] a <test:Class>.\n" +
 				"[] a <test:Class>; <test:nr> 123 ."), "", RDFFormat.TURTLE);
@@ -39,8 +45,7 @@ public class OrderByTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testOrderByVariableNotInUse() throws Exception {
+	private void testOrderByVariableNotInUse(RepositoryConnection conn) throws Exception {
 
 		conn.add(new StringReader("_:bob1 a <foaf:Person> ; rdfs:label \"Bob1\" .\n" +
 				"_:bob2 a <foaf:Person> ; rdfs:label \"Bob2\" ."), "", RDFFormat.TURTLE);
@@ -55,8 +60,7 @@ public class OrderByTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testDistinctOptionalOrderByMath() throws Exception {
+	private void testDistinctOptionalOrderByMath(RepositoryConnection conn) throws Exception {
 
 		conn.add(new StringReader("[] a <test:Class>.\n" +
 				"[] a <test:Class>; <test:nr> 123 ."), "", RDFFormat.TURTLE);
@@ -68,6 +72,12 @@ public class OrderByTest extends AbstractComplianceTest {
 			long count = result.count();
 			assertEquals(2, count);
 		}
+	}
+
+	public Stream<DynamicTest> tests() {
+		return Stream.of(makeTest("DistinctOptionalOrderBy", this::testDistinctOptionalOrderBy),
+				makeTest("OrderByVariableNotInUse", this::testOrderByVariableNotInUse),
+				makeTest("DistinctOptionalOrderByMath", this::testDistinctOptionalOrderByMath));
 	}
 
 }

@@ -142,7 +142,7 @@ public class RemoteRepositoryManagerTest extends RepositoryManagerTest {
 	}
 
 	@Test
-	public void testGetRepositoryConfig(MockServerClient client) throws Exception {
+	public void testGetRepositoryConfig(MockServerClient client) {
 		client.when(
 				request()
 						.withMethod("GET")

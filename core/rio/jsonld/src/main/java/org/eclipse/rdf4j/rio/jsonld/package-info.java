@@ -9,6 +9,6 @@
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
 /**
- * Parser/writer for the <a href="https://www.w3.org/TR/json-ld/">JSON-L format</a>.
+ * Parser/writer for the <a href="https://www.w3.org/TR/json-ld/">JSON-LD 1.1 format</a>.
  */
 package org.eclipse.rdf4j.rio.jsonld;

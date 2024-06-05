@@ -224,7 +224,7 @@ public class QueryResultsTest {
 		}
 	}
 
-	private class StubGraphQueryResult extends AbstractCloseableIteration<Statement, QueryEvaluationException>
+	private class StubGraphQueryResult extends AbstractCloseableIteration<Statement>
 			implements GraphQueryResult {
 
 		private final List<Statement> statements = new ArrayList<>();
@@ -258,6 +258,10 @@ public class QueryResultsTest {
 			return null;
 		}
 
+		@Override
+		protected void handleClose() {
+
+		}
 	}
 
 	@Test

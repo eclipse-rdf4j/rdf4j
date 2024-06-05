@@ -307,7 +307,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 					// not inside the update statement, searching with the connection
 					for (IRI predicate : mapping.keySet()) {
 						Set<IRI> objects = mapping.get(predicate);
-						try (CloseableIteration<? extends Statement, SailException> statements = getStatements(
+						try (CloseableIteration<? extends Statement> statements = getStatements(
 								stmt.getSubject(),
 								predicate,
 								null,
@@ -337,7 +337,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 			for (Map.Entry<Resource, Boolean> e : typeAdd.entrySet()) {
 				if (e.getValue()) {
 					Resource subject = e.getKey();
-					try (CloseableIteration<? extends Statement, SailException> statements = getStatements(
+					try (CloseableIteration<? extends Statement> statements = getStatements(
 							subject, null, null, false
 					)) {
 						while (statements.hasNext()) {
@@ -359,7 +359,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		// backtrace previous insert of property and delete them from the index
 		if (backtraceMode.shouldBackTraceDelete()) {
 			for (Resource subject : typeRemove) {
-				try (CloseableIteration<? extends Statement, SailException> statements = getStatements(
+				try (CloseableIteration<? extends Statement> statements = getStatements(
 						subject, null, null, false
 				)) {
 					while (statements.hasNext()) {
@@ -395,12 +395,12 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	// //////////////////////////////// Methods related to querying
 
 	@Override
-	public synchronized CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
+	public synchronized CloseableIteration<? extends BindingSet> evaluate(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 		QueryContext qctx = new QueryContext();
 		SearchIndexQueryContextInitializer.init(qctx, luceneIndex);
 
-		final CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
+		final CloseableIteration<? extends BindingSet> iter;
 		qctx.begin();
 		try {
 			iter = evaluateInternal(tupleExpr, dataset, bindings, includeInferred);
@@ -413,7 +413,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		return new QueryContextIteration(iter, qctx);
 	}
 
-	private CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(TupleExpr tupleExpr,
+	private CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 		// Don't modify the original tuple expression
 		tupleExpr = tupleExpr.clone();
@@ -441,8 +441,9 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 
 		if (sail.getEvaluationMode() == TupleFunctionEvaluationMode.TRIPLE_SOURCE) {
 			ValueFactory vf = sail.getValueFactory();
+			SailTripleSource tripleSource = new SailTripleSource(this, includeInferred, vf);
 			EvaluationStrategy strategy = new TupleFunctionEvaluationStrategy(
-					new SailTripleSource(this, includeInferred, vf), dataset, sail.getFederatedServiceResolver(),
+					tripleSource, dataset, sail.getFederatedServiceResolver(),
 					sail.getTupleFunctionRegistry());
 
 			// do standard optimizations
@@ -453,7 +454,8 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 			new DisjunctiveConstraintOptimizer().optimize(tupleExpr, dataset, bindings);
 			new SameTermFilterOptimizer().optimize(tupleExpr, dataset, bindings);
 			new QueryModelNormalizerOptimizer().optimize(tupleExpr, dataset, bindings);
-			new QueryJoinOptimizer(new TupleFunctionEvaluationStatistics()).optimize(tupleExpr, dataset, bindings);
+			new QueryJoinOptimizer(new TupleFunctionEvaluationStatistics(), tripleSource).optimize(tupleExpr, dataset,
+					bindings);
 			// new SubSelectJoinOptimizer().optimize(tupleExpr, dataset,
 			// bindings);
 			new IterativeEvaluationOptimizer().optimize(tupleExpr, dataset, bindings);

@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.lucene;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Statement;
@@ -74,7 +73,7 @@ public class TypeSpecTest {
 	File dataDir;
 
 	@BeforeEach
-	public void setup() throws IOException {
+	public void setup() {
 		memoryStore = new MemoryStore();
 		// enable lock tracking
 		sail = new LuceneSail();

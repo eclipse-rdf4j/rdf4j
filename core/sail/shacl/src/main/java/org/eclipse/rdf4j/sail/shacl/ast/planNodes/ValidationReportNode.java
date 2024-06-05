@@ -16,7 +16,6 @@ import java.util.function.Function;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
 public class ValidationReportNode implements PlanNode {
@@ -32,11 +31,11 @@ public class ValidationReportNode implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple> iterator() {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			private CloseableIteration<? extends ValidationTuple, SailException> iterator;
+			private CloseableIteration<? extends ValidationTuple> iterator;
 
 			@Override
 			protected void init() {

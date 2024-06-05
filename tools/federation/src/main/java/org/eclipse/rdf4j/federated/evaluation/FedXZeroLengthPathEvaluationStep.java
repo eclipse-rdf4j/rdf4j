@@ -62,7 +62,7 @@ public final class FedXZeroLengthPathEvaluationStep implements QueryEvaluationSt
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		Value subj = null;
 		try {
 			subj = subPrep.evaluate(bindings);

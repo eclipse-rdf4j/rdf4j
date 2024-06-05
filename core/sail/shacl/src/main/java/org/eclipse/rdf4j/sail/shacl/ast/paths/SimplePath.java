@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.QueryResults;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -50,7 +49,7 @@ public class SimplePath extends Path {
 	public PlanNode getAllAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			PlanNodeWrapper planNodeWrapper) {
 		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, predicate, null,
-				dataGraph, UnorderedSelect.Mapper.SubjectObjectPropertyShapeMapper.getFunction());
+				dataGraph, UnorderedSelect.Mapper.SubjectObjectPropertyShapeMapper.getFunction(), null);
 
 		if (planNodeWrapper != null) {
 			unorderedSelect = planNodeWrapper.apply(unorderedSelect);
@@ -92,7 +91,7 @@ public class SimplePath extends Path {
 						if (currentStatementMatcher.hasSubject(object)) {
 							List<Statement> newStatements = currentStatements.stream()
 									.map(currentStatement -> {
-										try (CloseableIteration<? extends Statement, SailException> statements = connectionsGroup
+										try (CloseableIteration<? extends Statement> statements = connectionsGroup
 												.getBaseConnection()
 												.getStatements(null, predicate, currentStatement.getSubject(), true,
 														dataGraph)) {
@@ -105,7 +104,7 @@ public class SimplePath extends Path {
 						} else if (currentStatementMatcher.hasObject(object)) {
 							List<Statement> newStatements = currentStatements.stream()
 									.map(currentStatement -> {
-										try (CloseableIteration<? extends Statement, SailException> statements = connectionsGroup
+										try (CloseableIteration<? extends Statement> statements = connectionsGroup
 												.getBaseConnection()
 												.getStatements(null, predicate, currentStatement.getObject(), true,
 														dataGraph)) {

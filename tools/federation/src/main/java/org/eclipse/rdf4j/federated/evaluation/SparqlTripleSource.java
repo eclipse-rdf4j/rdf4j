@@ -67,7 +67,7 @@ public class SparqlTripleSource extends TripleSourceBase {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
+	public CloseableIteration<BindingSet> getStatements(
 			StatementPattern stmt, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
@@ -171,7 +171,7 @@ public class SparqlTripleSource extends TripleSourceBase {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
+	public CloseableIteration<BindingSet> getStatements(
 			TupleExpr preparedQuery, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
@@ -180,7 +180,7 @@ public class SparqlTripleSource extends TripleSourceBase {
 	}
 
 	@Override
-	public CloseableIteration<Statement, QueryEvaluationException> getStatements(
+	public CloseableIteration<Statement> getStatements(
 			Resource subj, IRI pred, Value obj, QueryInfo queryInfo,
 			Resource... contexts) throws RepositoryException,
 			MalformedQueryException, QueryEvaluationException {
@@ -193,7 +193,7 @@ public class SparqlTripleSource extends TripleSourceBase {
 						queryInfo.getIncludeInferred(), contexts);
 				resultHolder.set(new ExceptionConvertingIteration<>(repoResult) {
 					@Override
-					protected QueryEvaluationException convert(Exception ex) {
+					protected QueryEvaluationException convert(RuntimeException ex) {
 						if (ex instanceof QueryEvaluationException) {
 							return (QueryEvaluationException) ex;
 						}

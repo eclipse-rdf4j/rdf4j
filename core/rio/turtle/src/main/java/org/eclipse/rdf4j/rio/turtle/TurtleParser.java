@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -245,7 +246,7 @@ public class TurtleParser extends AbstractRDFParser {
 				unread(directive.substring(5));
 			}
 			parseBase();
-		} else if (directive.length() == 0) {
+		} else if (directive.isEmpty()) {
 			reportFatalError("Directive name is missing, expected @prefix or @base");
 		} else {
 			reportFatalError("Unknown directive \"" + directive + "\"");
@@ -638,7 +639,7 @@ public class TurtleParser extends AbstractRDFParser {
 
 			unread(c);
 
-			return createLiteral(label, lang.toString(), null, getLineNumber(), -1);
+			return createLiteral(label, lang.toString(), ((IRI) null), getLineNumber(), -1);
 		} else if (c == '^') {
 			readCodePoint();
 
@@ -659,7 +660,7 @@ public class TurtleParser extends AbstractRDFParser {
 			}
 			return createLiteral(label, null, (IRI) datatype, getLineNumber(), -1);
 		} else {
-			return createLiteral(label, null, null, getLineNumber(), -1);
+			return createLiteral(label, null, ((IRI) null), getLineNumber(), -1);
 		}
 	}
 
@@ -991,10 +992,10 @@ public class TurtleParser extends AbstractRDFParser {
 
 				if (value.equals("true")) {
 					unread(c);
-					return createLiteral("true", null, XSD.BOOLEAN, getLineNumber(), -1);
+					return createLiteral("true", null, CoreDatatype.XSD.BOOLEAN, getLineNumber(), -1);
 				} else if (value.equals("false")) {
 					unread(c);
-					return createLiteral("false", null, XSD.BOOLEAN, getLineNumber(), -1);
+					return createLiteral("false", null, CoreDatatype.XSD.BOOLEAN, getLineNumber(), -1);
 				}
 			}
 

@@ -76,7 +76,7 @@ public class FederateTest extends AbstractCommandTest {
 		when(mockConsoleIO.readln("Federation Description (optional): ")).thenReturn(FED_DESCRIPTION);
 	}
 
-	private void execute(String... args) throws Exception {
+	private void execute(String... args) {
 		List<String> execArgs = new ArrayList<>(args.length + 1);
 		execArgs.add("federate");
 		Collections.addAll(execArgs, args);
@@ -84,93 +84,93 @@ public class FederateTest extends AbstractCommandTest {
 	}
 
 	@Test
-	public void testNoArgumentsPrintsHelp() throws Exception {
+	public void testNoArgumentsPrintsHelp() {
 		execute();
 		verify(mockConsoleIO).writeln(federate.getHelpLong());
 	}
 
 	@Test
-	public void testOneArgumentPrintsHelp() throws Exception {
+	public void testOneArgumentPrintsHelp() {
 		execute(FED_ID);
 		verify(mockConsoleIO).writeln(federate.getHelpLong());
 	}
 
 	@Test
-	public void testTwoArgumentsPrintsHelp() throws Exception {
+	public void testTwoArgumentsPrintsHelp() {
 		execute(FED_ID, MEMORY_MEMBER_ID1);
 		verify(mockConsoleIO).writeln(federate.getHelpLong());
 	}
 
 	@Test
-	public void testInvalidArgumentPrintsError() throws Exception {
+	public void testInvalidArgumentPrintsError() {
 		execute("type=memory", FED_ID, MEMORY_MEMBER_ID1, MEMORY_MEMBER_ID2);
 		verifyFailure();
 	}
 
 	@Test
-	public void testDuplicateMembersPrintsError() throws Exception {
+	public void testDuplicateMembersPrintsError() {
 		execute(FED_ID, MEMORY_MEMBER_ID1, MEMORY_MEMBER_ID1);
 		verifyFailure();
 	}
 
 	@Test
-	public void testFedSameAsMemberPrintsError() throws Exception {
+	public void testFedSameAsMemberPrintsError() {
 		execute(FED_ID, MEMORY_MEMBER_ID1, FED_ID, MEMORY_MEMBER_ID1);
 		verifyFailure();
 	}
 
 	@Test
-	public void testFedAlreadyExistsPrintsSpecificError() throws Exception {
+	public void testFedAlreadyExistsPrintsSpecificError() {
 		execute(MEMORY_MEMBER_ID1, FED_ID, MEMORY_MEMBER_ID2);
 		verifyFailure(MEMORY_MEMBER_ID1 + " already exists.");
 	}
 
 	@Test
-	public void testNonexistentMemberPrintsSpecificError() throws Exception {
+	public void testNonexistentMemberPrintsSpecificError() {
 		execute(FED_ID, MEMORY_MEMBER_ID1, "FreeLunch");
 		verifyFailure("FreeLunch does not exist.");
 	}
 
 	@Test
-	public void testFederateMemoryMembersSuccess() throws Exception {
+	public void testFederateMemoryMembersSuccess() {
 		execute(FED_ID, MEMORY_MEMBER_ID1, MEMORY_MEMBER_ID2);
 		verifySuccess(ProxyRepositoryFactory.REPOSITORY_TYPE, ProxyRepositoryFactory.REPOSITORY_TYPE);
 		long expectedSize = getSize(MEMORY_MEMBER_ID1) + getSize(MEMORY_MEMBER_ID2);
 		assertThat(getSize(FED_ID)).isEqualTo(expectedSize);
 	}
 
-	private long getSize(String memberID) throws Exception {
+	private long getSize(String memberID) {
 		try (RepositoryConnection connection = manager.getRepository(memberID).getConnection()) {
 			return connection.size();
 		}
 	}
 
 	@Test
-	public void testFederateSucceedsWithHTTPandSPARQLmembers() throws Exception {
+	public void testFederateSucceedsWithHTTPandSPARQLmembers() {
 		execute(FED_ID, HTTP_MEMBER_ID, SPARQL_MEMBER_ID);
 		verifySuccess(HTTPRepositoryFactory.REPOSITORY_TYPE, SPARQLRepositoryFactory.REPOSITORY_TYPE);
 	}
 
 	@Test
-	public void testFederateHTTPtypeSucceeds() throws Exception {
+	public void testFederateHTTPtypeSucceeds() {
 		execute(FED_ID, HTTP_MEMBER_ID, HTTP2_MEMBER_ID);
 		verifySuccess(HTTPRepositoryFactory.REPOSITORY_TYPE, HTTPRepositoryFactory.REPOSITORY_TYPE);
 	}
 
 	@Test
-	public void testFederateSPARQLtypeSucceeds() throws Exception {
+	public void testFederateSPARQLtypeSucceeds() {
 		execute(FED_ID, SPARQL_MEMBER_ID, SPARQL2_MEMBER_ID);
 		verifySuccess(SPARQLRepositoryFactory.REPOSITORY_TYPE, SPARQLRepositoryFactory.REPOSITORY_TYPE);
 	}
 
 	@Test
-	public void testFullyHeterogeneousSuccess() throws Exception {
+	public void testFullyHeterogeneousSuccess() {
 		execute(FED_ID, SPARQL_MEMBER_ID, MEMORY_MEMBER_ID1, HTTP_MEMBER_ID);
 		verifySuccess(SPARQLRepositoryFactory.REPOSITORY_TYPE, ProxyRepositoryFactory.REPOSITORY_TYPE,
 				HTTPRepositoryFactory.REPOSITORY_TYPE);
 	}
 
-	private void verifySuccess(String... memberTypes) throws Exception {
+	private void verifySuccess(String... memberTypes) {
 		assertThat(manager.hasRepositoryConfig(FED_ID)).isTrue();
 		verify(mockConsoleIO, times(1)).readln("Federation Description (optional): ");
 		verify(mockConsoleIO, times(1)).writeln("Federation created.");
@@ -183,7 +183,7 @@ public class FederateTest extends AbstractCommandTest {
 		assertThat(members.filter(null, FEDX.REPOSITORY_NAME, null).objects()).hasSameSizeAs(memberTypes);
 	}
 
-	private void verifyFailure(String... error) throws Exception {
+	private void verifyFailure(String... error) {
 		if (error.length > 0) {
 			verify(mockConsoleIO).writeError(error[0]);
 		} else {

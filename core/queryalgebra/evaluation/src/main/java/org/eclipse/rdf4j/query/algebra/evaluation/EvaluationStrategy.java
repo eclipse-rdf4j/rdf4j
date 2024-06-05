@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
-import java.util.Queue;
-import java.util.Set;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
@@ -22,7 +20,6 @@ import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
@@ -77,23 +74,11 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * Evaluates the tuple expression against the supplied triple source with the specified set of variable bindings as
 	 * input.
 	 *
-	 * @param expr       The Service Expression to evaluate
-	 * @param serviceUri TODO
-	 * @param bindings   The variables bindings iterator to use for evaluating the expression, if applicable.
-	 * @return A closeable iterator over all of variable binding sets that match the tuple expression.
-	 */
-	CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service expr, String serviceUri,
-			CloseableIteration<BindingSet, QueryEvaluationException> bindings) throws QueryEvaluationException;
-
-	/**
-	 * Evaluates the tuple expression against the supplied triple source with the specified set of variable bindings as
-	 * input.
-	 *
 	 * @param expr     The Tuple Expression to evaluate
 	 * @param bindings The variables bindings to use for evaluating the expression, if applicable.
 	 * @return A closeable iterator over the variable binding sets that match the tuple expression.
 	 */
-	CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
+	CloseableIteration<BindingSet> evaluate(TupleExpr expr, BindingSet bindings)
 			throws QueryEvaluationException;
 
 	/**
@@ -103,13 +88,9 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @param expr that is to be evaluated later
 	 * @return a QueryEvaluationStep that may avoid doing repeating the same work over and over.
 	 */
-	default QueryEvaluationStep precompile(TupleExpr expr) {
-		return QueryEvaluationStep.minimal(this, expr);
-	}
+	QueryEvaluationStep precompile(TupleExpr expr);
 
-	default QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
-		return QueryEvaluationStep.minimal(this, expr);
-	}
+	QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context);
 
 	/**
 	 * Gets the value of this expression.
@@ -175,26 +156,18 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 		return new QueryValueEvaluationStep.Minimal(this, arg);
 	}
 
-	default <T> Set<T> makeSet() {
-		return new DefaultCollectionFactory().createSet();
-	}
-
-	default <T> Queue<T> makeQueue() {
-		return new DefaultCollectionFactory().createQueue();
-	}
-
 	/**
 	 * Set the collection factory that will create the collections to use during query evaluaton.
 	 *
-	 * @param a CollectionFactory that should be used during future query evaluations
+	 * @param collectionFactory CollectionFactory that should be used during future query evaluations
 	 **/
 	@Experimental
-	public default void setCollectionFactory(Supplier<CollectionFactory> collectionFactory) {
+	default void setCollectionFactory(Supplier<CollectionFactory> collectionFactory) {
 		// Do nothing per default. Implementations should take this value and use it
 	}
 
 	@Experimental
-	public default Supplier<CollectionFactory> getCollectionFactory() {
+	default Supplier<CollectionFactory> getCollectionFactory() {
 		return DefaultCollectionFactory::new;
 	}
 }

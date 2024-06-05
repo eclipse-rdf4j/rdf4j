@@ -35,8 +35,8 @@ public class FilterTargetIsObject extends FilterPlanNode {
 	}
 
 	@Override
-	boolean checkTuple(ValidationTuple t) {
-		Value target = t.getActiveTarget();
+	boolean checkTuple(Reference t) {
+		Value target = t.get().getActiveTarget();
 		return connection.hasStatement(null, null, target, true, dataGraph);
 	}
 

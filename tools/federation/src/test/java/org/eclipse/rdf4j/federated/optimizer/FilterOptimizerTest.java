@@ -14,7 +14,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -287,7 +286,7 @@ public class FilterOptimizerTest {
 	}
 
 	@BeforeEach
-	public void setup(@TempDir File baseDir) throws IOException {
+	public void setup(@TempDir File baseDir) {
 		RepositoryManager manager = new LocalRepositoryManager(baseDir);
 		federatedRepository = createFedXRepo(manager);
 		addRepoConfig(manager, "standard");

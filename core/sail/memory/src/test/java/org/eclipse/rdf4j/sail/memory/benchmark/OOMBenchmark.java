@@ -91,7 +91,7 @@ public class OOMBenchmark {
 	}
 
 	@Setup(Level.Trial)
-	public void setup() throws IOException, InterruptedException {
+	public void setup() throws IOException {
 
 		repository = new SailRepository(new MemoryStore());
 

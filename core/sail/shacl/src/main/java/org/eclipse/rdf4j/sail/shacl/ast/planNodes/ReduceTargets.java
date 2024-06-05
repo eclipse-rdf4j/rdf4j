@@ -17,7 +17,6 @@ import java.util.Set;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * Takes a parentToReduce and filters away any tuples that have an active target that exists in reductionSource
@@ -36,11 +35,11 @@ public class ReduceTargets implements PlanNode {
 
 	@Override
 
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple> iterator() {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			private CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
+			private CloseableIteration<? extends ValidationTuple> parentIterator;
 			Set<Value> reductionSourceSet;
 			ValidationTuple next;
 
@@ -57,7 +56,7 @@ public class ReduceTargets implements PlanNode {
 
 					reductionSourceSet = new HashSet<>();
 
-					try (CloseableIteration<? extends ValidationTuple, SailException> iterator = reductionSource
+					try (CloseableIteration<? extends ValidationTuple> iterator = reductionSource
 							.iterator()) {
 						while (iterator.hasNext()) {
 							reductionSourceSet.add(iterator.next().getActiveTarget());

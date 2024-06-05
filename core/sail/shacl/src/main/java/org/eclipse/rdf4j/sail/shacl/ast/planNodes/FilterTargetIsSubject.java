@@ -35,9 +35,9 @@ public class FilterTargetIsSubject extends FilterPlanNode {
 	}
 
 	@Override
-	boolean checkTuple(ValidationTuple t) {
+	boolean checkTuple(Reference t) {
 
-		Value target = t.getActiveTarget();
+		Value target = t.get().getActiveTarget();
 
 		if (target.isResource()) {
 			return connection.hasStatement((Resource) target, null, null, true, dataGraph);

@@ -18,8 +18,10 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -177,13 +179,16 @@ public abstract class FedXStatementPattern extends StatementPattern
 
 		// visit Var nodes and set value for matching var names
 		if (getSubjectVar().getName().equals(varName)) {
-			getSubjectVar().setValue(value);
+			Var var = getSubjectVar();
+			var.replaceWith(new Var(var.getName(), value, var.isAnonymous(), var.isConstant()));
 		}
 		if (getPredicateVar().getName().equals(varName)) {
-			getPredicateVar().setValue(value);
+			Var var = getPredicateVar();
+			var.replaceWith(new Var(var.getName(), value, var.isAnonymous(), var.isConstant()));
 		}
 		if (getObjectVar().getName().equals(varName)) {
-			getObjectVar().setValue(value);
+			Var var = getObjectVar();
+			var.replaceWith(new Var(var.getName(), value, var.isAnonymous(), var.isConstant()));
 		}
 
 		boundFilters.addBinding(varName, value);
@@ -243,6 +248,11 @@ public abstract class FedXStatementPattern extends StatementPattern
 		@Override
 		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 			// no-op
+		}
+
+		@Override
+		public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+			throw new IllegalArgumentException("Node is not a child node: " + current);
 		}
 	}
 }

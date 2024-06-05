@@ -19,9 +19,9 @@ import java.util.function.Consumer;
 /**
  * A {@link Spliterator} implementation that wraps a {@link CloseableIteration}.
  */
-class CloseableIterationSpliterator<T, E extends Exception> extends Spliterators.AbstractSpliterator<T> {
+class CloseableIterationSpliterator<T> extends Spliterators.AbstractSpliterator<T> {
 
-	private final CloseableIteration<T, E> iteration;
+	private final CloseableIteration<T> iteration;
 
 	/**
 	 * Creates a {@link Spliterator} implementation that wraps the supplied {@link CloseableIteration}. It handles
@@ -30,7 +30,7 @@ class CloseableIterationSpliterator<T, E extends Exception> extends Spliterators
 	 *
 	 * @param iteration the iteration to wrap
 	 */
-	public CloseableIterationSpliterator(CloseableIteration<T, E> iteration) {
+	public CloseableIterationSpliterator(CloseableIteration<T> iteration) {
 		super(Long.MAX_VALUE, Spliterator.IMMUTABLE | Spliterator.NONNULL);
 		this.iteration = iteration;
 	}

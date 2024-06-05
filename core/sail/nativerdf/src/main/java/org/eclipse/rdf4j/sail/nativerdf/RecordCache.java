@@ -59,9 +59,8 @@ interface RecordCache {
 	 * longer {@link #isValid() valid}.
 	 *
 	 * @return An iterator over all records.
-	 * @throws IllegalStateException If the cache is not/no longer {@link #isValid() valid}.
 	 */
-	RecordIterator getRecords() throws IOException;
+	RecordIterator getRecords();
 
 	/**
 	 * Checks whether the cache is still valid. Caches are valid if the number of stored records is smaller than or

@@ -14,7 +14,6 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLDecoder;
@@ -115,7 +114,7 @@ class ServerValidator {
 		return success;
 	}
 
-	private File asLocalFile(final URL rdf) throws UnsupportedEncodingException {
+	private File asLocalFile(final URL rdf) {
 		return new File(URLDecoder.decode(rdf.getFile(), StandardCharsets.UTF_8));
 	}
 }

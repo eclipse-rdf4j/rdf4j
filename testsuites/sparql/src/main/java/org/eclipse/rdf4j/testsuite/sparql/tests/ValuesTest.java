@@ -12,15 +12,17 @@ package org.eclipse.rdf4j.testsuite.sparql.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.model.util.Values.iri;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.StringReader;
 import java.util.List;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -34,9 +36,11 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.Update;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
 
 /**
  * Tests on SPARQL VALUES clauses.
@@ -45,9 +49,12 @@ import org.junit.Test;
  */
 public class ValuesTest extends AbstractComplianceTest {
 
-	@Test
-	public void testValuesInOptional() throws Exception {
-		loadTestData("/testdata-query/dataset-ses1692.trig");
+	public ValuesTest(Supplier<Repository> repo) {
+		super(repo);
+	}
+
+	private void testValuesInOptional(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-ses1692.trig", conn);
 		String query = " PREFIX : <http://example.org/>\n" +
 				" SELECT DISTINCT ?a ?name ?isX WHERE { ?b :p1 ?a . ?a :name ?name. OPTIONAL { ?a a :X . VALUES(?isX) { (:X) } } } ";
 
@@ -75,10 +82,11 @@ public class ValuesTest extends AbstractComplianceTest {
 			}
 			assertEquals(2, count);
 		}
+
 	}
 
-	@Test
-	public void testValuesClauseNamedGraph() throws Exception {
+	private void testValuesClauseNamedGraph(RepositoryConnection conn) throws Exception {
+
 		String ex = "http://example.org/";
 		String data = "@prefix foaf: <" + FOAF.NAMESPACE + "> .\n"
 				+ "@prefix ex: <" + ex + "> .\n"
@@ -104,8 +112,7 @@ public class ValuesTest extends AbstractComplianceTest {
 		assertThat(result).hasSize(2);
 	}
 
-	@Test
-	public void testValuesCartesianProduct() {
+	private void testValuesCartesianProduct(RepositoryConnection conn) {
 		final String queryString = ""
 				+ "select ?x ?y where { "
 				+ "  values ?x { undef 67 } "
@@ -117,9 +124,9 @@ public class ValuesTest extends AbstractComplianceTest {
 		assertThat(bindingSets).hasSize(4);
 	}
 
-	@Test
-	public void testSES1081SameTermWithValues() throws Exception {
-		loadTestData("/testdata-query/dataset-ses1081.trig");
+	private void testSES1081SameTermWithValues(RepositoryConnection conn) throws Exception {
+
+		loadTestData("/testdata-query/dataset-ses1081.trig", conn);
 		String query = "PREFIX ex: <http://example.org/>\n" +
 				" SELECT * \n" +
 				" WHERE { \n " +
@@ -155,9 +162,9 @@ public class ValuesTest extends AbstractComplianceTest {
 
 	}
 
-	@Test
-	public void testSES2136() throws Exception {
-		loadTestData("/testcases-sparql-1.1-w3c/bindings/data02.ttl");
+	private void testSES2136(RepositoryConnection conn) throws Exception {
+
+		loadTestData("/testcases-sparql-1.1-w3c/bindings/data02.ttl", conn);
 		String query = "PREFIX : <http://example.org/>\n" +
 				"SELECT ?s ?o { \n" +
 				" { SELECT * WHERE { ?s ?p ?o . } }\n" +
@@ -174,17 +181,18 @@ public class ValuesTest extends AbstractComplianceTest {
 			assertNotNull(result);
 			assertTrue(result.hasNext());
 			BindingSet bs = result.next();
-			assertFalse("only one result expected", result.hasNext());
+			assertFalse(result.hasNext(), "only one result expected");
 			assertEquals(a, bs.getValue("s"));
 			assertEquals(b, bs.getValue("o"));
 		}
+
 	}
 
 	/**
 	 * https://github.com/eclipse/rdf4j/issues/1026
 	 */
-	@Test
-	public void testFilterExistsExternalValuesClause() {
+
+	private void testFilterExistsExternalValuesClause(RepositoryConnection conn) {
 		String ub = "insert data {\n" +
 				"  <http://subj1> a <http://type> .\n" +
 				"  <http://subj2> a <http://type> .\n" +
@@ -201,12 +209,11 @@ public class ValuesTest extends AbstractComplianceTest {
 		TupleQuery tq = conn.prepareTupleQuery(query);
 
 		List<BindingSet> result = QueryResults.asList(tq.evaluate());
-		assertEquals("single result expected", 1, result.size());
+		assertEquals(1, result.size(), "single result expected");
 		assertEquals("http://subj1", result.get(0).getValue("s").stringValue());
 	}
 
-	@Test
-	public void testMultipleValuesClauses() {
+	public void testMultipleValuesClauses(RepositoryConnection conn) {
 		Update update = conn.prepareUpdate("PREFIX ex: <http://example.org/>\n" +
 				"\n" +
 				"INSERT DATA { ex:sub ex:somePred \"value\" . };\n" +
@@ -221,4 +228,13 @@ public class ValuesTest extends AbstractComplianceTest {
 		update.execute();
 	}
 
+	public Stream<DynamicTest> tests() {
+		return Stream.of(makeTest("ValuesInOptional", this::testValuesInOptional),
+				makeTest("ValuesClauseNamedGraph", this::testValuesClauseNamedGraph),
+				makeTest("ValuesCartesianProduct", this::testValuesCartesianProduct),
+				makeTest("SES1081SameTermWithValues", this::testSES1081SameTermWithValues),
+				makeTest("SES2136", this::testSES2136),
+				makeTest("FilterExistsExternalValuesClause", this::testFilterExistsExternalValuesClause),
+				makeTest("MultipleValuesClauses", this::testMultipleValuesClauses));
+	}
 }

@@ -286,7 +286,7 @@ public class DataFile implements Closeable {
 
 		private long position = HEADER_LENGTH;
 
-		public boolean hasNext() throws IOException {
+		public boolean hasNext() {
 			return position < nioFileSize;
 		}
 

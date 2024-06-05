@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Literal;
@@ -31,19 +32,19 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
-public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 
 	private static final Literal OBJECT = SimpleValueFactory.getInstance().createLiteral("object");
 
 	private static final Literal SUBJECT = SimpleValueFactory.getInstance().createLiteral("subject");
 
-	public static final String ANON_SUBJECT_VAR = "zero-length-internal-start";
+	public static final String ANON_SUBJECT_VAR = "zero_length_internal_start";
 
-	public static final String ANON_PREDICATE_VAR = "zero-length-internal-pred";
+	public static final String ANON_PREDICATE_VAR = "zero_length_internal_pred";
 
-	public static final String ANON_OBJECT_VAR = "zero-length-internal-end";
+	public static final String ANON_OBJECT_VAR = "zero_length_internal_end";
 
-	public static final String ANON_SEQUENCE_VAR = "zero-length-internal-seq";
+	public static final String ANON_SEQUENCE_VAR = "zero_length_internal_seq";
 
 	private QueryBindingSet result;
 
@@ -53,7 +54,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 
 	private final BindingSet bindings;
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> iter;
+	private CloseableIteration<BindingSet> iter;
 
 	private Set<Value> reportedValues;
 
@@ -70,6 +71,8 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 	private final BiConsumer<Value, MutableBindingSet> setObject;
 
 	private final BiConsumer<Value, MutableBindingSet> setContext;
+
+	private final CollectionFactory cf;
 
 	public ZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar, Var objVar, Value subj,
 			Value obj, Var contextVar, BindingSet bindings, QueryEvaluationContext context) {
@@ -99,14 +102,14 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 		} else {
 			setContext = null;
 		}
-
+		this.cf = evaluationStrategy.getCollectionFactory().get();
 	}
 
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
 		if (subj == null && obj == null) {
 			if (this.reportedValues == null) {
-				reportedValues = evaluationStrategy.makeSet();
+				reportedValues = cf.createValueSet();
 			}
 			if (this.iter == null) {
 				// join with a sequence so we iterate over every entry twice
@@ -164,14 +167,17 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 		}
 	}
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> createIteration() throws QueryEvaluationException {
-		CloseableIteration<BindingSet, QueryEvaluationException> iter = precompile.evaluate(bindings);
+	private CloseableIteration<BindingSet> createIteration() throws QueryEvaluationException {
+		CloseableIteration<BindingSet> iter = precompile.evaluate(bindings);
 		return iter;
 	}
 
 	public Var createAnonVar(String varName) {
-		Var var = new Var(varName);
-		var.setAnonymous(true);
-		return var;
+		return new Var(varName, true);
+	}
+
+	@Override
+	protected void handleClose() throws QueryEvaluationException {
+		cf.close();
 	}
 }

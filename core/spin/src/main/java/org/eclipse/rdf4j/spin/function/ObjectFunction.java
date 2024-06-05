@@ -45,7 +45,7 @@ public class ObjectFunction extends AbstractSpinFunction implements Function {
 		}
 
 		try {
-			try (CloseableIteration<? extends Statement, QueryEvaluationException> stmts = qp.getTripleSource()
+			try (CloseableIteration<? extends Statement> stmts = qp.getTripleSource()
 					.getStatements((Resource) subj, (IRI) pred, null)) {
 				if (stmts.hasNext()) {
 					return stmts.next().getObject();

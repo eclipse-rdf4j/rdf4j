@@ -11,14 +11,15 @@
 package org.eclipse.rdf4j.testsuite.sparql.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.StringReader;
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Literal;
@@ -29,9 +30,11 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
 
 /**
  * Tests on OPTIONAL clause behavior.
@@ -41,9 +44,12 @@ import org.junit.Test;
  */
 public class OptionalTest extends AbstractComplianceTest {
 
-	@Test
-	public void testSES1898LeftJoinSemantics1() throws Exception {
-		loadTestData("/testdata-query/dataset-ses1898.trig");
+	public OptionalTest(Supplier<Repository> repo) {
+		super(repo);
+	}
+
+	private void testSES1898LeftJoinSemantics1(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-ses1898.trig", conn);
 		String query = "  PREFIX : <http://example.org/> " +
 				"  SELECT * WHERE { " +
 				"    ?s :p1 ?v1 . " +
@@ -58,12 +64,11 @@ public class OptionalTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testSES1121VarNamesInOptionals() throws Exception {
+	private void testSES1121VarNamesInOptionals(RepositoryConnection conn) throws Exception {
 		// Verifying that variable names have no influence on order of optionals
 		// in query. See SES-1121.
 
-		loadTestData("/testdata-query/dataset-ses1121.trig");
+		loadTestData("/testdata-query/dataset-ses1121.trig", conn);
 
 		String query1 = getNamespaceDeclarations() +
 				" SELECT DISTINCT *\n" +
@@ -105,9 +110,8 @@ public class OptionalTest extends AbstractComplianceTest {
 
 	}
 
-	@Test
-	public void testSameTermRepeatInOptional() throws Exception {
-		loadTestData("/testdata-query/dataset-query.trig");
+	private void testSameTermRepeatInOptional(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-query.trig", conn);
 		String query = getNamespaceDeclarations() +
 				" SELECT ?l ?opt1 ?opt2 " +
 				" FROM ex:optional-sameterm-graph " +
@@ -164,8 +168,7 @@ public class OptionalTest extends AbstractComplianceTest {
 	 * See https://github.com/eclipse/rdf4j/issues/3072
 	 *
 	 */
-	@Test
-	public void testValuesAfterOptional() throws Exception {
+	private void testValuesAfterOptional(RepositoryConnection conn) throws Exception {
 		String data = "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . \n"
 				+ "@prefix :     <urn:ex:> . \n"
 				+ ":r1 a rdfs:Resource . \n"
@@ -185,5 +188,12 @@ public class OptionalTest extends AbstractComplianceTest {
 
 		List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
 		assertThat(result).hasSize(2);
+	}
+
+	public Stream<DynamicTest> tests() {
+		return Stream.of(makeTest("SameTermRepeatInOptional", this::testSameTermRepeatInOptional),
+				makeTest("ValuesAfterOptional", this::testValuesAfterOptional),
+				makeTest("SES1121VarNamesInOptionals", this::testSES1121VarNamesInOptionals),
+				makeTest("SES1898LeftJoinSemantics1", this::testSES1898LeftJoinSemantics1));
 	}
 }

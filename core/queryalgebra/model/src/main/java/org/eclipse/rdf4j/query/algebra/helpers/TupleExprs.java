@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
-import org.eclipse.rdf4j.query.algebra.GraphPatternGroupable;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -124,50 +123,6 @@ public class TupleExprs {
 	public static boolean isVariableScopeChange(TupleExpr expr) {
 		if (expr instanceof VariableScopeChange) {
 			return ((VariableScopeChange) expr).isVariableScopeChange();
-		}
-		return false;
-	}
-
-	/**
-	 * Verifies if the supplied {@link TupleExpr} represents a group graph pattern.
-	 *
-	 * @param expr a {@link TupleExpr}
-	 * @return <code>true</code> if the {@link TupleExpr} is {@link GraphPatternGroupable} and has its graph pattern
-	 *         group flag set to <code>true</code>, <code>false</code> otherwise.
-	 * @deprecated Use {@link #isVariableScopeChange(TupleExpr)} instead.
-	 */
-	@Deprecated(since = "3.2")
-	public static boolean isGraphPatternGroup(TupleExpr expr) {
-		if (expr instanceof GraphPatternGroupable) {
-			return ((GraphPatternGroupable) expr).isGraphPatternGroup();
-		}
-		return false;
-	}
-
-	/**
-	 * Verifies if the supplied {@link TupleExpr} contains a {@link Projection}. If the supplied TupleExpr is a
-	 * {@link Join} or contains a {@link Join}, projections inside that Join's arguments will not be taken into account.
-	 *
-	 * @param t a tuple expression.
-	 * @return <code>true</code> if the TupleExpr contains a projection (outside of a Join), <code>false</code>
-	 *         otherwise.
-	 * @deprecated Use {@link #containsSubquery(TupleExpr)} instead.
-	 */
-	@Deprecated(since = "2.0")
-	public static boolean containsProjection(TupleExpr t) {
-		Deque<TupleExpr> queue = new ArrayDeque<>();
-		queue.add(t);
-		while (!queue.isEmpty()) {
-			TupleExpr n = queue.removeFirst();
-			if (n instanceof Projection) {
-				return true;
-			} else if (n instanceof Join) {
-				// projections already inside a Join need not be
-				// taken into account
-				return false;
-			} else {
-				queue.addAll(getChildren(n));
-			}
 		}
 		return false;
 	}

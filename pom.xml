@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.eclipse.rdf4j</groupId>
 	<artifactId>rdf4j</artifactId>
-	<version>4.3.13-SNAPSHOT</version>
+	<version>5.0.0-SNAPSHOT</version>
 	<packaging>pom</packaging>
 	<name>Eclipse RDF4J</name>
 	<description>An extensible Java framework for RDF and SPARQL</description>
@@ -365,7 +365,7 @@
 		<jackson.version>2.13.5</jackson.version>
 		<httpcore.version>4.4.16</httpcore.version>
 		<jsonldjava.version>0.13.4</jsonldjava.version>
-		<last.japicmp.compare.version>4.0.0</last.japicmp.compare.version>
+		<last.japicmp.compare.version>5.0.0</last.japicmp.compare.version>
 		<jaxb.version>2.3.8</jaxb.version>
 		<lwjgl.version>3.3.3</lwjgl.version>
 		<lucene.version>8.9.0</lucene.version>
@@ -485,7 +485,7 @@
 			<dependency>
 				<groupId>org.locationtech.jts</groupId>
 				<artifactId>jts-core</artifactId>
-				<version>1.18.2</version>
+				<version>1.19.0</version>
 			</dependency>
 			<dependency>
 				<groupId>com.google.guava</groupId>
@@ -618,9 +618,9 @@
 				</exclusions>
 			</dependency>
 			<dependency>
-				<groupId>org.mapdb</groupId>
-				<artifactId>mapdb</artifactId>
-				<version>1.0.9</version>
+				<groupId>no.hasmac</groupId>
+				<artifactId>hasmac-json-ld</artifactId>
+				<version>0.9.0</version>
 			</dependency>
 		</dependencies>
 	</dependencyManagement>
@@ -669,7 +669,7 @@
 				<plugin>
 					<groupId>au.com.acegi</groupId>
 					<artifactId>xml-format-maven-plugin</artifactId>
-					<version>3.2.2</version>
+					<version>3.3.1</version>
 					<configuration>
 						<tabIndent>true</tabIndent>
 						<excludes>eclipse-settings/**,**/target/**,**/site/themes/**,**/.*/**</excludes>
@@ -1033,7 +1033,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-site-plugin</artifactId>
-					<version>4.0.0-M11</version>
+					<version>4.0.0-M13</version>
 				</plugin>
 			</plugins>
 		</pluginManagement>
@@ -1056,6 +1056,10 @@
 				<inherited>true</inherited>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-enforcer-plugin</artifactId>
+			</plugin>
+			<plugin>
+				<groupId>com.github.siom79.japicmp</groupId>
+				<artifactId>japicmp-maven-plugin</artifactId>
 			</plugin>
 		</plugins>
 		<extensions>

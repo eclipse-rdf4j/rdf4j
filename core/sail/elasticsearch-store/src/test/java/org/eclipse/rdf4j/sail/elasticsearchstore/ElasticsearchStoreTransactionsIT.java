@@ -14,7 +14,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 
 import java.io.IOException;
-import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Date;
@@ -57,7 +56,7 @@ public class ElasticsearchStoreTransactionsIT extends AbstractElasticsearchStore
 	private static ElasticsearchStore elasticsearchStore;
 
 	@BeforeEach
-	public void before() throws UnknownHostException {
+	public void before() {
 		elasticsearchStore = new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER, "testindex");
 		elasticsearchStore.setElasticsearchScrollTimeout(60000);
 
@@ -590,7 +589,7 @@ public class ElasticsearchStoreTransactionsIT extends AbstractElasticsearchStore
 	// RepositoryException or something like that
 	@Disabled("slow test")
 	@Test
-	public void testScrollTimeout() throws InterruptedException {
+	public void testScrollTimeout() {
 		assertThrows(RepositoryException.class, () -> {
 			SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
 			this.elasticsearchStore.setElasticsearchScrollTimeout(1);

@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
-import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -23,13 +22,8 @@ import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL11QueryCom
  */
 public class MemorySPARQL11QueryComplianceTest extends SPARQL11QueryComplianceTest {
 
-	public MemorySPARQL11QueryComplianceTest(String displayName, String testURI, String name, String queryFileURL,
-			String resultFileURL, Dataset dataset, boolean ordered, boolean laxCardinality) {
-		super(displayName, testURI, name, queryFileURL, resultFileURL, dataset, ordered, laxCardinality);
-	}
-
 	@Override
-	protected Repository newRepository() throws Exception {
+	protected Repository newRepository() {
 		return new DatasetRepository(new SailRepository(new MemoryStore()));
 	}
 }

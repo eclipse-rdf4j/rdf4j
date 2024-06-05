@@ -88,7 +88,6 @@ public class QueryAlgebraUtil {
 	 *
 	 * @param var
 	 * @param bindings the bindings, must not be null, use {@link EmptyBindingSet} instead
-	 *
 	 * @return the value or null
 	 */
 	public static Value getVarValue(Var var, BindingSet bindings) {
@@ -153,7 +152,6 @@ public class QueryAlgebraUtil {
 	 * @param filterExpr
 	 * @param evaluated  parameter can be used outside this method to check whether FILTER has been evaluated, false in
 	 *                   beginning
-	 *
 	 * @return the SELECT query
 	 * @throws IllegalQueryException
 	 */
@@ -196,7 +194,6 @@ public class QueryAlgebraUtil {
 	 * @param filterExpr a filter expression or null
 	 * @param evaluated  parameter can be used outside this method to check whether FILTER has been evaluated, false in
 	 *                   beginning
-	 *
 	 * @return the SELECT query
 	 */
 	public static TupleExpr selectQuery(ExclusiveGroup group, BindingSet bindings, FilterValueExpr filterExpr,
@@ -248,11 +245,11 @@ public class QueryAlgebraUtil {
 
 	/**
 	 * Construct a SELECT query expression for a bound union.
-	 *
+	 * <p>
 	 * Pattern:
-	 *
+	 * <p>
 	 * SELECT ?v_1 ?v_2 ?v_N WHERE { { ?v_1 p o } UNION { ?v_2 p o } UNION ... }
-	 *
+	 * <p>
 	 * Note that the filterExpr is not evaluated at the moment.
 	 *
 	 * @param stmt
@@ -260,7 +257,6 @@ public class QueryAlgebraUtil {
 	 * @param filterExpr
 	 * @param evaluated     parameter can be used outside this method to check whether FILTER has been evaluated, false
 	 *                      in beginning
-	 *
 	 * @return the SELECT query
 	 */
 	public static TupleExpr selectQueryBoundUnion(StatementPattern stmt, List<BindingSet> unionBindings,
@@ -294,9 +290,9 @@ public class QueryAlgebraUtil {
 
 	/**
 	 * Construct a SELECT query for a grouped bound check.
-	 *
+	 * <p>
 	 * Pattern:
-	 *
+	 * <p>
 	 * SELECT DISTINCT ?o_1 .. ?o_N WHERE { { s1 p1 ?o_1 FILTER ?o_1=o1 } UNION ... UNION { sN pN ?o_N FILTER ?o_N=oN }}
 	 *
 	 * @param stmt
@@ -381,7 +377,6 @@ public class QueryAlgebraUtil {
 	 * @param stmt
 	 * @param varNames
 	 * @param bindings
-	 *
 	 * @return the {@link StatementPattern}
 	 */
 	protected static StatementPattern constructStatement(StatementPattern stmt, Set<String> varNames,
@@ -402,7 +397,6 @@ public class QueryAlgebraUtil {
 	 * @param stmt
 	 * @param varNames
 	 * @param bindings
-	 *
 	 * @return the {@link StatementPattern}
 	 */
 	protected static StatementPattern constructStatementId(StatementPattern stmt, String varID, Set<String> varNames,
@@ -458,20 +452,17 @@ public class QueryAlgebraUtil {
 	 * @param var
 	 * @param varNames
 	 * @param bindings
-	 *
 	 * @return the variable
-	 *
 	 */
 	protected static Var appendVar(Var var, Set<String> varNames, BindingSet bindings) {
-		Var res = var.clone();
 		if (!var.hasValue()) {
 			if (bindings.hasBinding(var.getName())) {
-				res.setValue(bindings.getValue(var.getName()));
+				return new Var(var.getName(), bindings.getValue(var.getName()), var.isAnonymous(), var.isConstant());
 			} else {
 				varNames.add(var.getName());
 			}
 		}
-		return res;
+		return var.clone();
 	}
 
 	/**
@@ -481,28 +472,25 @@ public class QueryAlgebraUtil {
 	 * @param varID
 	 * @param varNames
 	 * @param bindings
-	 *
 	 * @return the variable
 	 */
 	protected static Var appendVarId(Var var, String varID, Set<String> varNames, BindingSet bindings) {
-		Var res = var.clone();
 		if (!var.hasValue()) {
 			if (bindings.hasBinding(var.getName())) {
-				res.setValue(bindings.getValue(var.getName()));
+				return new Var(var.getName(), bindings.getValue(var.getName()), var.isAnonymous(), var.isConstant());
 			} else {
-				String newName = var.getName() + "_" + varID;
-				varNames.add(newName);
-				res.setName(newName);
+				Var res = new Var(var.getName() + "_" + varID);
+				varNames.add(res.getName());
+				return res;
 			}
 		}
-		return res;
+		return var.clone();
 	}
 
 	/**
 	 * A helper class to insert bindings in the {@link Var} nodes of the given {@link TupleExpr}.
 	 *
 	 * @author Andreas Schwarte
-	 *
 	 */
 	private static class InsertBindingsVisitor extends AbstractQueryModelVisitor<QueryEvaluationException> {
 
@@ -519,12 +507,12 @@ public class QueryAlgebraUtil {
 		public void meet(Var node) throws QueryEvaluationException {
 			if (node.hasValue()) {
 				if (bindings.hasBinding(node.getName())) {
-					node.setValue(bindings.getValue(node.getName()));
+					node.replaceWith(new Var(node.getName(), bindings.getValue(node.getName()), node.isAnonymous(),
+							node.isConstant()));
 				}
 			} else {
 				freeVars.add(node.getName());
 			}
-			super.meet(node);
 		}
 	}
 

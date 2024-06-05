@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.base.AbstractLiteral;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * An extension of {@link AbstractLiteral} that stores a numeric value to avoid parsing.
@@ -42,11 +41,6 @@ public class NumericLiteral extends AbstractLiteral {
 		assert Objects.nonNull(datatype);
 		this.datatype = CoreDatatype.from(datatype);
 		this.number = number;
-	}
-
-	@Deprecated(since = "4.0.0", forRemoval = true)
-	protected NumericLiteral(Number number, XSD.Datatype datatype) {
-		this(number, datatype.getCoreDatatype());
 	}
 
 	protected NumericLiteral(Number number, CoreDatatype datatype) {

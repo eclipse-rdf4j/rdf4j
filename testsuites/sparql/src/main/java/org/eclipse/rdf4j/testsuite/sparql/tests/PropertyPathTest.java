@@ -12,15 +12,16 @@ package org.eclipse.rdf4j.testsuite.sparql.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.model.util.Values.iri;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.StringReader;
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -41,10 +42,12 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
 import org.eclipse.rdf4j.testsuite.sparql.vocabulary.EX;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
 
 /**
  * Tests on SPARQL property paths.
@@ -55,8 +58,11 @@ import org.junit.Test;
  */
 public class PropertyPathTest extends AbstractComplianceTest {
 
-	@Test
-	public void testSES2147PropertyPathsWithIdenticalSubsPreds() throws Exception {
+	public PropertyPathTest(Supplier<Repository> repo) {
+		super(repo);
+	}
+
+	private void testSES2147PropertyPathsWithIdenticalSubsPreds(RepositoryConnection conn) throws Exception {
 
 		String data = "<urn:s1> <urn:p> <urn:s2> .\n" +
 				"<urn:s2> <urn:p> <urn:s3> .\n" +
@@ -91,9 +97,8 @@ public class PropertyPathTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testSES2024PropertyPathAnonVarSharing() throws Exception {
-		loadTestData("/testdata-query/dataset-ses2024.trig");
+	private void testSES2024PropertyPathAnonVarSharing(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-ses2024.trig", conn);
 		String query = "PREFIX : <http://example.org/> SELECT * WHERE { ?x1 :p/:lit ?l1 . ?x1 :diff ?x2 . ?x2 :p/:lit ?l2 . }";
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
@@ -113,11 +118,8 @@ public class PropertyPathTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testPropertyPathNegationInversion() throws Exception {
-		String data = "@prefix : <http://example.org/>.\n"
-				+ ":Mary :parentOf :Jim.\n"
-				+ ":Jim :knows :Jane.\n"
+	private void testPropertyPathNegationInversion(RepositoryConnection conn) throws Exception {
+		String data = "@prefix : <http://example.org/>.\n" + ":Mary :parentOf :Jim.\n" + ":Jim :knows :Jane.\n"
 				+ ":Jane :worksFor :IBM.";
 
 		conn.add(new StringReader(data), "", RDFFormat.TURTLE);
@@ -133,9 +135,8 @@ public class PropertyPathTest extends AbstractComplianceTest {
 
 	}
 
-	@Test
-	public void testSES2336NegatedPropertyPathMod() throws Exception {
-		loadTestData("/testdata-query/dataset-ses2336.trig");
+	private void testSES2336NegatedPropertyPathMod(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-ses2336.trig", conn);
 		String query = "prefix : <http://example.org/> select * where { ?s a :Test ; !:p? ?o . }";
 
 		ValueFactory vf = conn.getValueFactory();
@@ -168,8 +169,7 @@ public class PropertyPathTest extends AbstractComplianceTest {
 
 	}
 
-	@Test
-	public void testSES1685propPathSameVar() throws Exception {
+	private void testSES1685propPathSameVar(RepositoryConnection conn) throws Exception {
 		final String queryStr = "PREFIX : <urn:> SELECT ?x WHERE {?x :p+ ?x}";
 
 		conn.add(new StringReader("@prefix : <urn:> . :a :p :b . :b :p :a ."), "", RDFFormat.TURTLE);
@@ -182,8 +182,7 @@ public class PropertyPathTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testSES1073InverseSymmetricPattern() {
+	private void testSES1073InverseSymmetricPattern(RepositoryConnection conn) {
 		IRI a = iri("http://example.org/a");
 		IRI b1 = iri("http://example.org/b1");
 		IRI b2 = iri("http://example.org/b2");
@@ -210,8 +209,8 @@ public class PropertyPathTest extends AbstractComplianceTest {
 	/**
 	 * @see <a href="https://github.com/eclipse/rdf4j/issues/2727">GH-2727</a>
 	 */
-	@Test
-	public void testNestedInversePropertyPathWithZeroLength() {
+
+	private void testNestedInversePropertyPathWithZeroLength(RepositoryConnection conn) {
 		String insert = "insert data {\n"
 				+ "    <urn:1> <urn:prop> <urn:object> .\n"
 				+ "    <urn:2> <urn:prop> <urn:mid:1> .\n"
@@ -229,12 +228,13 @@ public class PropertyPathTest extends AbstractComplianceTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(query);
 
-		List<BindingSet> result = QueryResults.asList(tq.evaluate());
-		assertThat(result).hasSize(4);
+		try (final TupleQueryResult evaluate = tq.evaluate()) {
+			List<BindingSet> result = QueryResults.asList(evaluate);
+			assertThat(result).hasSize(4);
+		}
 	}
 
-	@Test
-	public void testComplexPath() {
+	private void testComplexPath(RepositoryConnection conn) {
 		conn.add(Values.bnode(), SKOS.BROADER, Values.bnode());
 		conn.add(Values.bnode(), SKOS.TOP_CONCEPT_OF, Values.bnode());
 
@@ -249,8 +249,7 @@ public class PropertyPathTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testInversePath() {
+	private void testInversePath(RepositoryConnection conn) {
 		BNode bnode1 = Values.bnode("bnode1");
 
 		conn.add(Values.bnode(), FOAF.KNOWS, bnode1);
@@ -274,5 +273,18 @@ public class PropertyPathTest extends AbstractComplianceTest {
 			bs.addBinding(b);
 		}
 		return result.contains(bs);
+	}
+
+	public Stream<DynamicTest> tests() {
+		return Stream.of(
+				makeTest("SES2147PropertyPathsWithIdenticalSubsPreds",
+						this::testSES2147PropertyPathsWithIdenticalSubsPreds),
+				makeTest("InversePath", this::testInversePath), makeTest("ComplexPath", this::testComplexPath),
+				makeTest("NestedInversePropertyPathWithZeroLength", this::testNestedInversePropertyPathWithZeroLength),
+				makeTest("SES1073InverseSymmetricPattern", this::testSES1073InverseSymmetricPattern),
+				makeTest("SES1685propPathSameVar", this::testSES1685propPathSameVar),
+				makeTest("SES2336NegatedPropertyPathMod", this::testSES2336NegatedPropertyPathMod),
+				makeTest("PropertyPathNegationInversion", this::testPropertyPathNegationInversion),
+				makeTest("SES2024PropertyPathAnonVarSharing", this::testSES2024PropertyPathAnonVarSharing));
 	}
 }

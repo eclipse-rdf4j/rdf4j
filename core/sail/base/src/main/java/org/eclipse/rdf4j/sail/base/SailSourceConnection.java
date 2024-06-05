@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -17,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
@@ -213,7 +215,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	}
 
 	@Override
-	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(TupleExpr tupleExpr,
+	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
@@ -230,7 +232,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 		SailSource branch = null;
 		SailDataset rdfDataset = null;
-		CloseableIteration<BindingSet, QueryEvaluationException> iteration = null;
+		CloseableIteration<BindingSet> iteration = null;
 		boolean allGood = false;
 		try {
 			branch = branch(IncludeInferred.fromBoolean(includeInferred));
@@ -351,7 +353,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		try {
 			selfInterruptOnTimeoutThread.start();
 
-			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = evaluate(tupleExpr,
+			try (CloseableIteration<? extends BindingSet> evaluate = evaluate(tupleExpr,
 					dataset, bindings, includeInferred)) {
 				while (evaluate.hasNext()) {
 					if (Thread.interrupted()) {
@@ -390,18 +392,37 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	}
 
 	@Override
-	protected CloseableIteration<? extends Resource, SailException> getContextIDsInternal() throws SailException {
+	protected CloseableIteration<? extends Resource> getContextIDsInternal() throws SailException {
 		SailSource branch = branch(IncludeInferred.explicitOnly);
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
 		return SailClosingIteration.makeClosable(snapshot.getContextIDs(), snapshot, branch);
 	}
 
 	@Override
-	protected CloseableIteration<? extends Statement, SailException> getStatementsInternal(Resource subj, IRI pred,
+	protected CloseableIteration<? extends Statement> getStatementsInternal(Resource subj, IRI pred,
 			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
 		SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
 		return SailClosingIteration.makeClosable(snapshot.getStatements(subj, pred, obj, contexts), snapshot, branch);
+	}
+
+	@Override
+	protected CloseableIteration<? extends Statement> getStatementsInternal(StatementOrder order, Resource subj,
+			IRI pred,
+			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+		SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
+		SailDataset snapshot = branch.dataset(getIsolationLevel());
+		return SailClosingIteration.makeClosable(snapshot.getStatements(order, subj, pred, obj, contexts), snapshot,
+				branch);
+	}
+
+	@Override
+	public Comparator<Value> getComparator() {
+		try (SailSource branch = branch(IncludeInferred.fromBoolean(false))) {
+			try (SailDataset snapshot = branch.dataset(getIsolationLevel())) {
+				return snapshot.getComparator();
+			}
+		}
 	}
 
 	@Override
@@ -412,7 +433,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	}
 
 	@Override
-	protected CloseableIteration<? extends Namespace, SailException> getNamespacesInternal() throws SailException {
+	protected CloseableIteration<? extends Namespace> getNamespacesInternal() throws SailException {
 		SailSource branch = branch(IncludeInferred.explicitOnly);
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
 		return SailClosingIteration.makeClosable(snapshot.getNamespaces(), snapshot, branch);
@@ -804,7 +825,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 		boolean statementsRemoved = false;
 
-		try (CloseableIteration<? extends Statement, SailException> iter = dataset.getStatements(subj, pred, obj,
+		try (CloseableIteration<? extends Statement> iter = dataset.getStatements(subj, pred, obj,
 				contexts)) {
 			while (iter.hasNext()) {
 				Statement st = iter.next();
@@ -986,9 +1007,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		}
 	}
 
-	private <T, X extends Exception> CloseableIteration<T, QueryEvaluationException> interlock(
-			CloseableIteration<T, QueryEvaluationException> iter, SailClosable... closes) {
-		return new SailClosingIteration<T, QueryEvaluationException>(iter, closes) {
+	private <T> CloseableIteration<T> interlock(
+			CloseableIteration<T> iter, SailClosable... closes) {
+		return new SailClosingIteration<>(iter, closes) {
 
 			@Override
 			protected void handleSailException(SailException e) throws QueryEvaluationException {
@@ -999,7 +1020,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	private boolean hasStatement(SailDataset dataset, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
-		try (CloseableIteration<? extends Statement, SailException> iter = dataset.getStatements(subj, pred, obj,
+		try (CloseableIteration<? extends Statement> iter = dataset.getStatements(subj, pred, obj,
 				contexts)) {
 			return iter.hasNext();
 		}

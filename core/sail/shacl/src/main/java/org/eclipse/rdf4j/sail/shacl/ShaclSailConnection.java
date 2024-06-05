@@ -49,11 +49,6 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShape;
-import org.eclipse.rdf4j.sail.shacl.ast.Shape;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.SingleCloseablePlanNode;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationExecutionLogger;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.eclipse.rdf4j.sail.shacl.results.lazy.LazyValidationReport;
 import org.eclipse.rdf4j.sail.shacl.results.lazy.ValidationResultIterator;
@@ -1060,7 +1055,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
+	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts) throws SailException {
 		if (useDefaultShapesGraph && contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			return ConnectionHelper
@@ -1106,98 +1101,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		return 0;
 	}
 
-	@Deprecated(forRemoval = true)
-	public class ValidationContainer {
-		private final Shape shape;
-		private final PlanNode planNode;
-		private final ValidationExecutionLogger validationExecutionLogger;
-
-		public ValidationContainer(Shape shape, PlanNode planNode) {
-			this.shape = shape;
-			this.validationExecutionLogger = ValidationExecutionLogger
-					.getInstance(sail.isGlobalLogValidationExecution());
-			if (!(planNode.isGuaranteedEmpty())) {
-				assert planNode instanceof SingleCloseablePlanNode;
-				planNode.receiveLogger(validationExecutionLogger);
-				this.planNode = planNode;
-			} else {
-				this.planNode = planNode;
-			}
-		}
-
-		public Shape getShape() {
-			return shape;
-		}
-
-		public boolean hasPlanNode() {
-			return !(planNode.isGuaranteedEmpty());
-		}
-
-		public ValidationResultIterator performValidation() {
-			long before = getTimeStamp();
-
-			handlePreLogging();
-
-			ValidationResultIterator validationResults = null;
-
-			try (CloseableIteration<? extends ValidationTuple, SailException> iterator = planNode.iterator()) {
-				validationResults = new ValidationResultIterator(iterator,
-						sail.getEffectiveValidationResultsLimitPerConstraint());
-				return validationResults;
-			} catch (Exception e) {
-				logger.warn("Error validating SHACL Shape {}", shape.getId(), e);
-				throw new SailException("Error validating SHACL Shape " + shape.getId() + "\n" + shape, e);
-			} finally {
-				handlePostLogging(before, validationResults);
-			}
-		}
-
-		private void handlePreLogging() {
-			if (validationExecutionLogger.isEnabled()) {
-				logger.info("Start execution of plan:\n{}\n", getShape().toString());
-			}
-		}
-
-		private void handlePostLogging(long before, ValidationResultIterator validationResults) {
-			if (validationExecutionLogger.isEnabled()) {
-				validationExecutionLogger.flush();
-			}
-
-			if (validationResults != null) {
-
-				if (sail.isPerformanceLogging()) {
-					long after = System.currentTimeMillis();
-					logger.info("Execution of plan took {} ms for:\n{}\n",
-							(after - before),
-							getShape().toString());
-				}
-
-				if (validationExecutionLogger.isEnabled()) {
-					logger.info("Finished execution of plan:\n{}\n",
-							getShape().toString());
-				}
-
-				if (sail.isLogValidationViolations()) {
-					if (!validationResults.conforms()) {
-						List<ValidationTuple> tuples = validationResults.getTuples();
-
-						logger.info(
-								"SHACL not valid. The following experimental debug results were produced:\n\t\t{}\n\n{}\n",
-								tuples.stream()
-										.map(ValidationTuple::toString)
-										.collect(Collectors.joining("\n\t\t")),
-								getShape().toString()
-
-						);
-					}
-				}
-
-			}
-
-		}
-
-	}
-
 	public static class Settings {
 
 		private ValidationApproach validationApproach;
@@ -1205,10 +1108,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		private Boolean parallelValidation;
 		private IsolationLevel isolationLevel;
 		transient private Settings previous = null;
-
-		@Deprecated(since = "4.0.0", forRemoval = true)
-		public Settings() {
-		}
 
 		public Settings(boolean cacheSelectNodes, boolean validationEnabled, boolean parallelValidation,
 				IsolationLevel isolationLevel) {

@@ -12,26 +12,30 @@
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
 import java.util.List;
-import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
+import org.eclipse.rdf4j.sail.shacl.ast.Shape;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
+import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.CheckEqualsValuesBasedOnPathAndPredicate;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
-public class EqualsConstraintComponent extends AbstractConstraintComponent {
+public class EqualsConstraintComponent extends AbstractPairwiseConstraintComponent {
 
-	private final IRI predicate;
-
-	public EqualsConstraintComponent(IRI predicate) {
-		this.predicate = predicate;
+	public EqualsConstraintComponent(IRI predicate, Shape shape) {
+		super(predicate, shape);
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
-		model.add(subject, SHACL.EQUALS, this.predicate);
+	IRI getConstraintIri() {
+		return SHACL.EQUALS;
 	}
 
 	@Override
@@ -39,9 +43,17 @@ public class EqualsConstraintComponent extends AbstractConstraintComponent {
 		return SourceConstraintComponent.EqualsConstraintComponent;
 	}
 
+	CheckEqualsValuesBasedOnPathAndPredicate getPairwiseCheck(ConnectionsGroup connectionsGroup,
+			ValidationSettings validationSettings, PlanNode allTargets, StatementMatcher.Variable<Resource> subject,
+			StatementMatcher.Variable<Value> object, SparqlFragment targetQueryFragment) {
+		return new CheckEqualsValuesBasedOnPathAndPredicate(connectionsGroup.getBaseConnection(),
+				validationSettings.getDataGraph(), allTargets, predicate, subject, object, targetQueryFragment, shape,
+				this, producesValidationReport);
+	}
+
 	@Override
 	public ConstraintComponent deepClone() {
-		return new EqualsConstraintComponent(predicate);
+		return new EqualsConstraintComponent(predicate, shape);
 	}
 
 	@Override

@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
@@ -46,17 +45,16 @@ public class MemoryStoreTest extends RDFNotifyingStoreTest {
 	/**
 	 * reproduces GH-3053
 	 *
-	 * @throws Exception
 	 */
 	@Test
-	public void testZeroOrOnePropPathNonExisting() throws Exception {
+	public void testZeroOrOnePropPathNonExisting() {
 		ParsedTupleQuery tupleQuery = (ParsedTupleQuery) QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
 				"SELECT ?resource WHERE {\n" +
 						"    <http://unexisting_resource> (^(<http://predicate_a>)*) / <http://predicate_b>? ?resource\n"
 						+
 						"}",
 				"http://example.org/");
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> res = con.evaluate(tupleQuery.getTupleExpr(),
+		CloseableIteration<? extends BindingSet> res = con.evaluate(tupleQuery.getTupleExpr(),
 				null, EmptyBindingSet.getInstance(), false);
 		assertTrue(res.hasNext(), "expect a result");
 		int count = 0;

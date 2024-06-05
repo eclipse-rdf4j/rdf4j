@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
-import java.io.IOException;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Statement;
@@ -31,7 +30,7 @@ import org.junit.jupiter.api.io.TempDir;
 public class TestLmdbStoreUpgrade {
 
 	@Test
-	public void testDevel(@TempDir File dataDir) throws IOException, SailException {
+	public void testDevel(@TempDir File dataDir) throws SailException {
 		LmdbStore store = new LmdbStore(dataDir);
 		try {
 			store.init();
@@ -55,7 +54,7 @@ public class TestLmdbStoreUpgrade {
 			store.init();
 			try (NotifyingSailConnection con = store.getConnection()) {
 				ValueFactory vf = store.getValueFactory();
-				CloseableIteration<? extends Statement, SailException> iter;
+				CloseableIteration<? extends Statement> iter;
 				iter = con.getStatements(RDF.VALUE, RDFS.LABEL, vf.createLiteral("value"), false);
 				try {
 					assertTrue(iter.hasNext());

@@ -11,20 +11,56 @@
 package org.eclipse.rdf4j.repository.sail;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * @author Herko ter Horst
  */
-class SailCloseableIteration<E> extends ExceptionConvertingIteration<E, RepositoryException> {
+class SailCloseableIteration<E> implements CloseableIteration<E> {
 
-	public SailCloseableIteration(CloseableIteration<? extends E, ? extends SailException> iter) {
-		super(iter);
+	private final CloseableIteration<? extends E> iter;
+
+	public SailCloseableIteration(CloseableIteration<? extends E> iter) {
+		this.iter = iter;
 	}
 
 	@Override
+	public void close() {
+		try {
+			iter.close();
+		} catch (Exception e) {
+			throw convert(e);
+		}
+	}
+
+	@Override
+	public boolean hasNext() {
+		try {
+			return iter.hasNext();
+		} catch (Exception e) {
+			throw convert(e);
+		}
+	}
+
+	@Override
+	public E next() {
+		try {
+			return iter.next();
+		} catch (Exception e) {
+			throw convert(e);
+		}
+	}
+
+	@Override
+	public void remove() {
+		try {
+			iter.remove();
+		} catch (Exception e) {
+			throw convert(e);
+		}
+	}
+
 	protected RepositoryException convert(Exception e) {
 		if (e instanceof SailException) {
 			return new RepositoryException(e);

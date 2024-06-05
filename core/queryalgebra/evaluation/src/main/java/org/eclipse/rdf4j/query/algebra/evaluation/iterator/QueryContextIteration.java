@@ -21,13 +21,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryContext;
 /**
  * Makes a {@link QueryContext} available during iteration.
  */
-public class QueryContextIteration extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
+public class QueryContextIteration extends AbstractCloseableIteration<BindingSet> {
 
-	private final CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
+	private final CloseableIteration<? extends BindingSet> iter;
 
 	private final QueryContext queryContext;
 
-	public QueryContextIteration(CloseableIteration<? extends BindingSet, QueryEvaluationException> iter,
+	public QueryContextIteration(CloseableIteration<? extends BindingSet> iter,
 			QueryContext queryContext) {
 		this.iter = iter;
 		this.queryContext = queryContext;
@@ -74,15 +74,11 @@ public class QueryContextIteration extends AbstractCloseableIteration<BindingSet
 
 	@Override
 	public void handleClose() throws QueryEvaluationException {
+		queryContext.begin();
 		try {
-			super.handleClose();
+			iter.close();
 		} finally {
-			queryContext.begin();
-			try {
-				iter.close();
-			} finally {
-				queryContext.end();
-			}
+			queryContext.end();
 		}
 	}
 }

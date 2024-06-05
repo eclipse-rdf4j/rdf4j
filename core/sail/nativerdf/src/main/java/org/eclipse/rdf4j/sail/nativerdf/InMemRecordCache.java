@@ -11,7 +11,6 @@
 
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -35,29 +34,29 @@ public class InMemRecordCache implements RecordCache {
 	}
 
 	@Override
-	public void storeRecord(byte[] data) throws IOException {
+	public void storeRecord(byte[] data) {
 		records.add(data);
 	}
 
 	@Override
-	public void storeRecords(RecordCache otherCache) throws IOException {
+	public void storeRecords(RecordCache otherCache) {
 		throw new UnsupportedOperationException();
 	}
 
 	@Override
-	public void clear() throws IOException {
+	public void clear() {
 		records = new ArrayList<>(1);
 	}
 
 	@Override
-	public RecordIterator getRecords() throws IOException {
+	public RecordIterator getRecords() {
 
 		return new RecordIterator() {
 
 			private int index = 0;
 
 			@Override
-			public byte[] next() throws IOException {
+			public byte[] next() {
 				if (index < records.size()) {
 					return records.get(index++);
 				}
@@ -65,12 +64,12 @@ public class InMemRecordCache implements RecordCache {
 			}
 
 			@Override
-			public void set(byte[] record) throws IOException {
+			public void set(byte[] record) {
 				records.set(index - 1, record);
 			}
 
 			@Override
-			public void close() throws IOException {
+			public void close() {
 
 			}
 		};
@@ -82,7 +81,7 @@ public class InMemRecordCache implements RecordCache {
 	}
 
 	@Override
-	public void discard() throws IOException {
+	public void discard() {
 
 	}
 }

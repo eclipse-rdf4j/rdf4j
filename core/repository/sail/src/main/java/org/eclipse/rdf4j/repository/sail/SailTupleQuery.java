@@ -44,27 +44,23 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 	public TupleQueryResult evaluate() throws QueryEvaluationException {
 		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = null;
+		CloseableIteration<? extends BindingSet> bindingsIter = null;
 
-		boolean allGood = false;
 		try {
 			SailConnection sailCon = getConnection().getSailConnection();
 
 			bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
 			bindingsIter = enforceMaxQueryTime(bindingsIter);
 
-			IteratingTupleQueryResult result = new IteratingTupleQueryResult(
-					new ArrayList<>(tupleExpr.getBindingNames()), bindingsIter);
-			allGood = true;
-			return result;
-		} catch (SailException e) {
-			throw new QueryEvaluationException(e.getMessage(), e);
-		} finally {
-			if (!allGood) {
-				if (bindingsIter != null) {
-					bindingsIter.close();
-				}
+			return new IteratingTupleQueryResult(new ArrayList<>(tupleExpr.getBindingNames()), bindingsIter);
+		} catch (Throwable e) {
+			if (bindingsIter != null) {
+				bindingsIter.close();
 			}
+			if (e instanceof SailException) {
+				throw new QueryEvaluationException(e.getMessage(), e);
+			}
+			throw e;
 		}
 	}
 

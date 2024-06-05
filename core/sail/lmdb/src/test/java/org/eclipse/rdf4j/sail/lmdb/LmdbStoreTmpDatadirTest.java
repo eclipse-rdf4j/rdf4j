@@ -14,7 +14,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
-import java.io.IOException;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -22,7 +21,7 @@ import org.junit.jupiter.api.io.TempDir;
 public class LmdbStoreTmpDatadirTest {
 
 	@Test
-	public void testNoTmpDatadir(@TempDir File dataDir) throws IOException {
+	public void testNoTmpDatadir(@TempDir File dataDir) {
 		LmdbStore store = new LmdbStore(dataDir);
 
 		store.init();
@@ -33,7 +32,7 @@ public class LmdbStoreTmpDatadirTest {
 	}
 
 	@Test
-	public void testTmpDatadir() throws IOException {
+	public void testTmpDatadir() {
 		LmdbStore store = new LmdbStore();
 		store.init();
 		File dataDir = store.getDataDir();
@@ -44,7 +43,7 @@ public class LmdbStoreTmpDatadirTest {
 	}
 
 	@Test
-	public void testTmpDatadirReinit() throws IOException {
+	public void testTmpDatadirReinit() {
 		LmdbStore store = new LmdbStore();
 		store.init();
 		File dataDir1 = store.getDataDir();
@@ -57,7 +56,7 @@ public class LmdbStoreTmpDatadirTest {
 	}
 
 	@Test
-	public void testDatadirMix(@TempDir File dataDir) throws IOException {
+	public void testDatadirMix(@TempDir File dataDir) {
 		LmdbStore store = new LmdbStore(dataDir);
 
 		store.init();

@@ -15,8 +15,8 @@ import java.util.HashSet;
 public class DistinctIterationTest extends CloseableIterationTest {
 
 	@Override
-	protected CloseableIteration<String, Exception> createTestIteration() {
-		return new DistinctIteration<>(createStringList1Iteration());
+	protected CloseableIteration<String> createTestIteration() {
+		return new DistinctIteration<>(createStringList1Iteration(), HashSet::new);
 	}
 
 	@Override

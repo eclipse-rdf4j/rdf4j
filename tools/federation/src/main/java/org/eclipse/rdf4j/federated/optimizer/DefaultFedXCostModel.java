@@ -85,7 +85,7 @@ public class DefaultFedXCostModel implements FedXCostModel {
 
 		// special heuristic: if not ordered at first place (i.e. there is a join var)
 		// use the same counting technique as for others
-		if (joinVars.size() > 0) {
+		if (!joinVars.isEmpty()) {
 			int count = 0;
 			for (String var : group.getFreeVars()) {
 				if (!joinVars.contains(var)) {

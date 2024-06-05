@@ -15,7 +15,6 @@ import java.util.function.Consumer;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
@@ -33,8 +32,8 @@ public final class ExtensionQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-		CloseableIteration<BindingSet, QueryEvaluationException> result;
+	public CloseableIteration<BindingSet> evaluate(BindingSet bs) {
+		CloseableIteration<BindingSet> result;
 		try {
 			result = arg.evaluate(bs);
 		} catch (ValueExprEvaluationException e) {

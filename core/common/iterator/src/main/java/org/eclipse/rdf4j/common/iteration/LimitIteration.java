@@ -17,8 +17,7 @@ import java.util.NoSuchElementException;
  * An Iteration that limits the amount of elements that it returns from an underlying Iteration to a fixed amount. This
  * class returns the first <var>limit</var> elements from the underlying Iteration and drops the rest.
  */
-@Deprecated(since = "4.1.0")
-public class LimitIteration<E, X extends Exception> extends IterationWrapper<E, X> {
+public class LimitIteration<E> extends IterationWrapper<E> {
 
 	/*-----------*
 	 * Variables *
@@ -44,10 +43,9 @@ public class LimitIteration<E, X extends Exception> extends IterationWrapper<E, 
 	 * @param iter  The underlying Iteration, must not be <var>null</var>.
 	 * @param limit The number of query answers to return, must be &gt;= 0.
 	 */
-	public LimitIteration(Iteration<? extends E, X> iter, long limit) {
+	public LimitIteration(CloseableIteration<? extends E> iter, long limit) {
 		super(iter);
 
-		assert iter != null;
 		assert limit >= 0;
 
 		this.limit = limit;
@@ -59,7 +57,7 @@ public class LimitIteration<E, X extends Exception> extends IterationWrapper<E, 
 	 *---------*/
 
 	@Override
-	public boolean hasNext() throws X {
+	public boolean hasNext() {
 		if (isClosed()) {
 			return false;
 		}
@@ -72,7 +70,7 @@ public class LimitIteration<E, X extends Exception> extends IterationWrapper<E, 
 	}
 
 	@Override
-	public E next() throws X {
+	public E next() {
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}

@@ -32,9 +32,6 @@ import org.eclipse.rdf4j.sail.config.SailRegistry;
  */
 public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 
-	private static final boolean USE_CONFIG = "true"
-			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
-
 	private SailImplConfig sailImplConfig;
 
 	public SailRepositoryConfig() {
@@ -70,16 +67,26 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 
 	@Override
 	public Resource export(Model model) {
-		Resource repImplNode = super.export(model);
+		if (Configurations.useLegacyConfig()) {
+			return exportLegacy(model);
+		}
 
+		Resource repImplNode = super.export(model);
 		if (sailImplConfig != null) {
 			model.setNamespace(CONFIG.NS);
 			Resource sailImplNode = sailImplConfig.export(model);
-			if (USE_CONFIG) {
-				model.add(repImplNode, CONFIG.Sail.impl, sailImplNode);
-			} else {
-				model.add(repImplNode, SAILIMPL, sailImplNode);
-			}
+			model.add(repImplNode, CONFIG.Sail.impl, sailImplNode);
+		}
+
+		return repImplNode;
+	}
+
+	private Resource exportLegacy(Model model) {
+		Resource repImplNode = super.export(model);
+		if (sailImplConfig != null) {
+			model.setNamespace("sr", SailRepositorySchema.NAMESPACE);
+			Resource sailImplNode = sailImplConfig.export(model);
+			model.add(repImplNode, SAILIMPL, sailImplNode);
 		}
 
 		return repImplNode;

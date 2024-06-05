@@ -46,9 +46,6 @@ import org.eclipse.rdf4j.sail.config.SailImplConfig;
  */
 public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSailImplConfig {
 
-	private static final boolean USE_CONFIG = "true"
-			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
-
 	public static final Pattern SPARQL_PATTERN;
 
 	static {
@@ -164,23 +161,10 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
 		if (null != language) {
-			if (USE_CONFIG) {
-				m.add(implNode, CONFIG.Cgqi.queryLanguage, literal(language.getName()));
-			} else {
-				m.add(implNode, QUERY_LANGUAGE, literal(language.getName()));
-			}
+			m.add(implNode, CONFIG.Cgqi.queryLanguage, literal(language.getName()));
 		}
-		if (USE_CONFIG) {
-			addQueryNode(m, implNode, CONFIG.Cgqi.ruleQuery, ruleQuery);
-		} else {
-			addQueryNode(m, implNode, RULE_QUERY, ruleQuery);
-		}
-
-		if (USE_CONFIG) {
-			addQueryNode(m, implNode, CONFIG.Cgqi.matcherQuery, matcherQuery);
-		} else {
-			addQueryNode(m, implNode, MATCHER_QUERY, matcherQuery);
-		}
+		addQueryNode(m, implNode, CONFIG.Cgqi.ruleQuery, ruleQuery);
+		addQueryNode(m, implNode, CONFIG.Cgqi.matcherQuery, matcherQuery);
 
 		return implNode;
 	}

@@ -12,6 +12,9 @@ package org.eclipse.rdf4j.query.algebra;
 
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
+
 /**
  * An expression that evaluates to RDF tuples.
  */
@@ -34,4 +37,19 @@ public interface TupleExpr extends QueryModelNode {
 
 	@Override
 	TupleExpr clone();
+
+	@Experimental
+	default Set<Var> getSupportedOrders(AvailableStatementOrder tripleSource) {
+		return Set.of();
+	}
+
+	@Experimental
+	default void setOrder(Var var) {
+		throw new UnsupportedOperationException("Ordering is not supported for this TupleExpr");
+	}
+
+	@Experimental
+	default Var getOrder() {
+		throw new UnsupportedOperationException("Ordering is not supported for this TupleExpr");
+	}
 }

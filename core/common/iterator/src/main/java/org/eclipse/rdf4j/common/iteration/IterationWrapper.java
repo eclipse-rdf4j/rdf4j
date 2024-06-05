@@ -19,7 +19,7 @@ import java.util.NoSuchElementException;
  * <var>IterationWrapper</var> should override some of these methods and may also provide additional methods and fields.
  */
 @Deprecated(since = "4.1.0")
-public class IterationWrapper<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
+public class IterationWrapper<E> extends AbstractCloseableIteration<E> {
 
 	/*-----------*
 	 * Variables *
@@ -31,7 +31,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	 * @deprecated This will be changed to private, possibly with an accessor in future. Do not rely on it.
 	 */
 	@Deprecated(since = "4.1.0")
-	protected final Iteration<? extends E, ? extends X> wrappedIter;
+	protected final CloseableIteration<? extends E> wrappedIter;
 
 	/*--------------*
 	 * Constructors *
@@ -42,7 +42,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	 *
 	 * @param iter The wrapped Iteration for this <var>IterationWrapper</var>, must not be <var>null</var>.
 	 */
-	protected IterationWrapper(Iteration<? extends E, ? extends X> iter) {
+	protected IterationWrapper(CloseableIteration<? extends E> iter) {
 		assert iter != null;
 		wrappedIter = iter;
 	}
@@ -57,7 +57,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	 * @return <var>true</var> if the wrapped Iteration contains more elements, <var>false</var> otherwise.
 	 */
 	@Override
-	public boolean hasNext() throws X {
+	public boolean hasNext() {
 		if (isClosed()) {
 			return false;
 		} else if (Thread.currentThread().isInterrupted()) {
@@ -77,7 +77,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	 * @throws java.util.NoSuchElementException If all elements have been returned or it has been closed.
 	 */
 	@Override
-	public E next() throws X {
+	public E next() {
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		} else if (Thread.currentThread().isInterrupted()) {
@@ -101,7 +101,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	 *                                       {@link #next}.
 	 */
 	@Override
-	public void remove() throws X {
+	public void remove() {
 		if (isClosed()) {
 			throw new IllegalStateException("The iteration has been closed.");
 		} else if (Thread.currentThread().isInterrupted()) {
@@ -120,11 +120,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	 * Closes this Iteration and also closes the wrapped Iteration if it is a {@link CloseableIteration}.
 	 */
 	@Override
-	protected void handleClose() throws X {
-		try {
-			super.handleClose();
-		} finally {
-			Iterations.closeCloseable(wrappedIter);
-		}
+	protected void handleClose() {
+		wrappedIter.close();
 	}
 }

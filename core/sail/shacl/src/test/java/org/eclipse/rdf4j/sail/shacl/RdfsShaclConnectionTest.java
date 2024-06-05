@@ -11,7 +11,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -80,24 +79,21 @@ public class RdfsShaclConnectionTest {
 			try (Stream<? extends Statement> stream = connection2.getStatements(aSubSub, RDF.TYPE, sup, true)
 					.stream()) {
 				Set<? extends Statement> collect = stream.collect(Collectors.toSet());
-				HashSet<Statement> expected = new HashSet<>(
-						Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, sup)));
+				Set<Statement> expected = Set.of(vf.createStatement(aSubSub, RDF.TYPE, sup));
 				Assertions.assertEquals(expected, collect);
 			}
 
 			try (Stream<? extends Statement> stream = connection2.getStatements(aSubSub, RDF.TYPE, sub, true)
 					.stream()) {
 				Set<? extends Statement> collect = stream.collect(Collectors.toSet());
-				HashSet<Statement> expected = new HashSet<>(
-						Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, sub)));
+				Set<Statement> expected = Set.of(vf.createStatement(aSubSub, RDF.TYPE, sub));
 				Assertions.assertEquals(expected, collect);
 			}
 
 			try (Stream<? extends Statement> stream = connection2.getStatements(aSubSub, RDF.TYPE, subSub, true)
 					.stream()) {
 				Set<? extends Statement> collect = stream.collect(Collectors.toSet());
-				HashSet<Statement> expected = new HashSet<>(
-						Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, subSub)));
+				Set<Statement> expected = Set.of(vf.createStatement(aSubSub, RDF.TYPE, subSub));
 				Assertions.assertEquals(expected, collect);
 			}
 		}

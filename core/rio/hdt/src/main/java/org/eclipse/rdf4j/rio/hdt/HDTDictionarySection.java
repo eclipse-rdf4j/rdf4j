@@ -18,7 +18,7 @@ import java.io.IOException;
  * @author Bart Hanssens
  */
 abstract class HDTDictionarySection extends HDTPart {
-	protected enum Type {
+	enum Type {
 		PLAIN(1),
 		FRONT(2),
 		HTFC(3),
@@ -28,7 +28,7 @@ abstract class HDTDictionarySection extends HDTPart {
 
 		private final int value;
 
-		protected int getValue() {
+		int getValue() {
 			return value;
 		}
 
@@ -42,7 +42,7 @@ abstract class HDTDictionarySection extends HDTPart {
 	 *
 	 * @return
 	 */
-	protected abstract int size();
+	abstract int size();
 
 	/**
 	 * Get the entry
@@ -50,7 +50,7 @@ abstract class HDTDictionarySection extends HDTPart {
 	 * @param i zero-based index
 	 * @return
 	 */
-	protected abstract byte[] get(int i) throws IOException;
+	abstract byte[] get(int i) throws IOException;
 
 	/**
 	 * Constructor
@@ -58,7 +58,7 @@ abstract class HDTDictionarySection extends HDTPart {
 	 * @param pos  position
 	 * @param name name
 	 */
-	protected HDTDictionarySection(String name, long pos) {
+	HDTDictionarySection(String name, long pos) {
 		super(name, pos);
 	}
 }

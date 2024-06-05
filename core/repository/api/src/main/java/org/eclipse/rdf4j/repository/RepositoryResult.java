@@ -12,13 +12,13 @@ package org.eclipse.rdf4j.repository;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iterator.CloseableIterationIterator;
 import org.eclipse.rdf4j.model.IRI;
@@ -44,11 +44,11 @@ import org.eclipse.rdf4j.model.Value;
  * @see RepositoryConnection#getNamespaces()
  * @see RepositoryConnection#getContextIDs()
  */
-public class RepositoryResult<T> extends AbstractCloseableIteration<T, RepositoryException> implements Iterable<T> {
+public class RepositoryResult<T> extends AbstractCloseableIteration<T> implements Iterable<T> {
 
-	private CloseableIteration<? extends T, RepositoryException> wrappedIter;
+	private CloseableIteration<? extends T> wrappedIter;
 
-	public RepositoryResult(CloseableIteration<? extends T, RepositoryException> iter) {
+	public RepositoryResult(CloseableIteration<? extends T> iter) {
 		assert iter != null;
 		wrappedIter = iter;
 	}
@@ -70,10 +70,8 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 
 	@Override
 	protected void handleClose() throws RepositoryException {
-		try {
-			super.handleClose();
-		} finally {
-			Iterations.closeCloseable(wrappedIter);
+		if (wrappedIter != null) {
+			wrappedIter.close();
 		}
 	}
 
@@ -91,7 +89,7 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 			return;
 		}
 
-		wrappedIter = new DistinctIteration<T, RepositoryException>(wrappedIter);
+		wrappedIter = new DistinctIteration<T>(wrappedIter, new HashSet<>());
 	}
 
 	/**
@@ -104,7 +102,7 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 	 * @return a List containing all objects of this RepositoryResult.
 	 * @throws RepositoryException if a problem occurred during retrieval of the results.
 	 * @see #addTo(Collection)
-	 * @deprecated Use {@link Iterations#asList(Iteration)} instead.
+	 * @deprecated Use {@link Iterations#asList(CloseableIteration)} instead.
 	 */
 	@Deprecated
 	public List<T> asList() throws RepositoryException {
@@ -117,7 +115,7 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 	 *
 	 * @return A reference to the collection that was supplied.
 	 * @throws RepositoryException if a problem occurred during retrieval of the results.
-	 * @deprecated Use {@link Iterations#addAll(Iteration, Collection)} instead.
+	 * @deprecated Use {@link Iterations#addAll(CloseableIteration, Collection)} instead.
 	 */
 	@Deprecated
 	public <C extends Collection<T>> C addTo(C collection) throws RepositoryException {

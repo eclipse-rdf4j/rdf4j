@@ -190,7 +190,7 @@ public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<Optimi
 	}
 
 	public boolean hasService() {
-		return services != null && services.size() > 0;
+		return services != null && !services.isEmpty();
 	}
 
 	public List<Service> getServices() {

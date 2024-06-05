@@ -1,0 +1,35 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+
+[] a sh:ValidationReport;
+  rdf4j:truncated false;
+  sh:conforms false;
+  sh:result [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:validPerson1;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeConstraintComponent;
+      sh:sourceShape ex:PersonShape;
+      sh:value ex:validPerson1
+    ] .
+
+ex:PersonShape a sh:NodeShape;
+  sh:node ex:personShapeOr;
+  sh:targetClass ex:Person .
+
+ex:altLabel a sh:PropertyShape;
+  sh:equals <http://www.w3.org/2004/02/skos/core#altLabel>;
+  sh:path rdfs:label .
+
+ex:personShapeOr a sh:NodeShape;
+  sh:or (ex:prefLabel ex:altLabel) .
+
+ex:prefLabel a sh:PropertyShape;
+  sh:equals <http://www.w3.org/2004/02/skos/core#prefLabel>;
+  sh:path rdfs:label .

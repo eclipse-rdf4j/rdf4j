@@ -11,6 +11,8 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -45,13 +47,20 @@ class SailSourceModel extends AbstractModel {
 
 	private static final Logger logger = LoggerFactory.getLogger(SailSourceModel.class);
 
+	public SailSourceModel(SailStore store, Model bulk) {
+		this(store);
+		sink().approveAll(bulk, bulk.contexts());
+		size = bulk.size();
+		sink.flush();
+	}
+
 	private final class StatementIterator implements Iterator<Statement> {
 
-		final CloseableIteration<? extends Statement, SailException> stmts;
+		final CloseableIteration<? extends Statement> stmts;
 
 		Statement last;
 
-		StatementIterator(CloseableIteration<? extends Statement, SailException> closeableIteration) {
+		StatementIterator(CloseableIteration<? extends Statement> closeableIteration) {
 			this.stmts = closeableIteration;
 		}
 
@@ -149,7 +158,7 @@ class SailSourceModel extends AbstractModel {
 	public synchronized int size() {
 		if (size < 0) {
 			try {
-				CloseableIteration<? extends Statement, SailException> iter;
+				CloseableIteration<? extends Statement> iter;
 				iter = dataset().getStatements(null, null, null);
 				try {
 					while (iter.hasNext()) {
@@ -174,7 +183,7 @@ class SailSourceModel extends AbstractModel {
 	public Set<Namespace> getNamespaces() {
 		Set<Namespace> set = new LinkedHashSet<>();
 		try {
-			CloseableIteration<? extends Namespace, SailException> spaces;
+			CloseableIteration<? extends Namespace> spaces;
 			spaces = dataset().getNamespaces();
 			try {
 				while (spaces.hasNext()) {
@@ -264,6 +273,52 @@ class SailSourceModel extends AbstractModel {
 	}
 
 	@Override
+	public boolean addAll(Collection<? extends Statement> statements) {
+		if (statements.isEmpty()) {
+			return false;
+		}
+
+		if (statements.size() == 1) {
+			Statement st = statements.iterator().next();
+			return add(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
+		}
+
+		boolean added = false;
+
+		HashSet<Statement> tempSet = new HashSet<>();
+		HashSet<Resource> contexts = new HashSet<>();
+		SailSink sink = sink();
+
+		for (Statement statement : statements) {
+			if (tempSet.size() >= 1024) {
+				sink.approveAll(tempSet, contexts);
+				if (size >= 0) {
+					size += tempSet.size();
+				}
+				tempSet.clear();
+				contexts.clear();
+				added = true;
+			}
+			if (!contains(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+					statement.getContext())) {
+				contexts.add(statement.getContext());
+				tempSet.add(statement);
+			}
+		}
+
+		if (!tempSet.isEmpty()) {
+			sink.approveAll(tempSet, contexts);
+			if (size >= 0) {
+				size += tempSet.size();
+			}
+			added = true;
+		}
+
+		return added;
+
+	}
+
+	@Override
 	public synchronized boolean clear(Resource... contexts) {
 		try {
 			if (contains(null, null, null, contexts)) {
@@ -282,7 +337,7 @@ class SailSourceModel extends AbstractModel {
 		try {
 			if (contains(subj, pred, obj, contexts)) {
 				size = -1;
-				CloseableIteration<? extends Statement, SailException> stmts;
+				CloseableIteration<? extends Statement> stmts;
 				stmts = dataset().getStatements(subj, pred, obj, contexts);
 				try {
 					while (stmts.hasNext()) {
@@ -320,7 +375,7 @@ class SailSourceModel extends AbstractModel {
 			public int size() {
 				if (subj == null && pred == null && obj == null) {
 					try {
-						CloseableIteration<? extends Statement, SailException> iter;
+						CloseableIteration<? extends Statement> iter;
 						iter = dataset().getStatements(null, null, null);
 						try {
 							long size = 0;
@@ -362,7 +417,7 @@ class SailSourceModel extends AbstractModel {
 	public synchronized void removeTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
 			Resource... contexts) {
 		try {
-			CloseableIteration<? extends Statement, SailException> stmts;
+			CloseableIteration<? extends Statement> stmts;
 			stmts = dataset().getStatements(subj, pred, obj, contexts);
 			try {
 				while (stmts.hasNext()) {
@@ -409,7 +464,7 @@ class SailSourceModel extends AbstractModel {
 		if (dataset == null) {
 			return false;
 		}
-		CloseableIteration<? extends Statement, SailException> stmts;
+		CloseableIteration<? extends Statement> stmts;
 		stmts = dataset.getStatements(subj, pred, obj, contexts);
 		try {
 			return stmts.hasNext();

@@ -102,7 +102,7 @@ public class EvaluationStatistics {
 		public void meet(ZeroLengthPath node) {
 			Var subjVar = node.getSubjectVar();
 			Var objVar = node.getObjectVar();
-			if ((subjVar != null && subjVar.hasValue()) || (objVar != null && objVar.hasValue())) {
+			if (subjVar != null && subjVar.hasValue() || objVar != null && objVar.hasValue()) {
 				// subj = obj
 				cardinality = 1.0;
 			} else {
@@ -129,7 +129,7 @@ public class EvaluationStatistics {
 		@Override
 		public void meet(Service node) {
 			if (!node.getServiceRef().hasValue()) {
-				// the URI is not available, may be computed in the course of the
+				// the IRI is not available, may be computed in the course of the
 				// query
 				// => use high cost to order the SERVICE node late in the query plan
 				cardinality = UNBOUND_SERVICE_CARDINALITY;
@@ -148,7 +148,7 @@ public class EvaluationStatistics {
 				} else {
 					// only very selective statements should be better than this
 					// => evaluate service expressions first
-					cardinality = 1 + (node.getServiceVars().size() * 0.1);
+					cardinality = 1 + node.getServiceVars().size() * 0.1;
 				}
 			}
 		}
@@ -251,7 +251,7 @@ public class EvaluationStatistics {
 		}
 
 		protected double getCardinality(double varCardinality, Var var) {
-			return (var == null || var.hasValue()) ? 1.0 : varCardinality;
+			return var == null || var.hasValue() ? 1.0 : varCardinality;
 		}
 
 		protected double getCardinality(double varCardinality, Collection<Var> vars) {

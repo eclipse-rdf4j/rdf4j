@@ -162,7 +162,7 @@ public class HttpServerUtil {
 			for (String subValue : subValues) {
 				// Ignore any empty header elements
 				subValue = subValue.trim();
-				if (subValue.length() > 0) {
+				if (!subValue.isEmpty()) {
 					elemList.add(HeaderElement.parse(subValue));
 				}
 			}

@@ -23,7 +23,7 @@ import java.util.function.Supplier;
 
 import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
-import org.eclipse.rdf4j.collection.factory.mapdb.MapDbCollectionFactory;
+import org.eclipse.rdf4j.collection.factory.mapdb.MapDb3CollectionFactory;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockManager;
 import org.eclipse.rdf4j.common.io.MavenUtil;
@@ -81,6 +81,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 			private OverFlowStoreCleaner(NativeSailStore nativeSailStore, File dataDir) {
 				this.nativeSailStore = nativeSailStore;
+				nativeSailStore.disableTxnStatus();
 				this.dataDir = dataDir;
 			}
 
@@ -420,11 +421,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 	@Override
 	protected NotifyingSailConnection getConnectionInternal() throws SailException {
-		try {
-			return new NativeStoreConnection(this);
-		} catch (IOException e) {
-			throw new SailException(e);
-		}
+		return new NativeStoreConnection(this);
 	}
 
 	@Override
@@ -504,6 +501,6 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 	@Override
 	public Supplier<CollectionFactory> getCollectionFactory() {
-		return () -> new MapDbCollectionFactory(getIterationCacheSyncThreshold());
+		return () -> new MapDb3CollectionFactory(getIterationCacheSyncThreshold());
 	}
 }

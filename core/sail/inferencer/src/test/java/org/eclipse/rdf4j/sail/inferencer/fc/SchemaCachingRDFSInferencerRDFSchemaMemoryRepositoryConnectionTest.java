@@ -46,7 +46,7 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Disabled
-	public void testQueryDefaultGraph(IsolationLevel level) throws Exception {
+	public void testQueryDefaultGraph(IsolationLevel level) {
 		// ignore
 	}
 
@@ -54,7 +54,7 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Disabled
-	public void testDeleteDefaultGraph(IsolationLevel level) throws Exception {
+	public void testDeleteDefaultGraph(IsolationLevel level) {
 		// ignore
 	}
 
@@ -62,7 +62,7 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Disabled
-	public void testContextStatementsNotDuplicated(IsolationLevel level) throws Exception {
+	public void testContextStatementsNotDuplicated(IsolationLevel level) {
 		// ignore
 	}
 
@@ -70,7 +70,7 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Disabled
-	public void testContextStatementsNotDuplicated2(IsolationLevel level) throws Exception {
+	public void testContextStatementsNotDuplicated2(IsolationLevel level) {
 		// ignore
 	}
 

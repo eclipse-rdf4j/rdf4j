@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql.manifest;
 
-import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -23,20 +22,6 @@ import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL10QueryCom
  * @author Jeen Broekstra
  */
 public class W3CApprovedSPARQL10QueryTest extends SPARQL10QueryComplianceTest {
-
-	/**
-	 * @param displayName
-	 * @param testURI
-	 * @param name
-	 * @param queryFileURL
-	 * @param resultFileURL
-	 * @param dataset
-	 * @param ordered
-	 */
-	public W3CApprovedSPARQL10QueryTest(String displayName, String testURI, String name, String queryFileURL,
-			String resultFileURL, Dataset dataset, boolean ordered, boolean laxCardinality) {
-		super(displayName, testURI, name, queryFileURL, resultFileURL, dataset, ordered, laxCardinality);
-	}
 
 	@Override
 	protected Repository newRepository() {

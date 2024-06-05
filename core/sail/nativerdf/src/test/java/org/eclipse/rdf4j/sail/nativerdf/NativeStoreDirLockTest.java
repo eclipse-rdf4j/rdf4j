@@ -25,7 +25,7 @@ public class NativeStoreDirLockTest {
 	File dataDir;
 
 	@Test
-	public void testLocking() throws Exception {
+	public void testLocking() {
 		NativeStore sail = new NativeStore(dataDir, "spoc,posc");
 		sail.init();
 

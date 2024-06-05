@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTaskBase;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
 
 /**
@@ -44,7 +43,7 @@ public class ParallelServiceJoinTask extends ParallelTaskBase<BindingSet> {
 	}
 
 	@Override
-	protected CloseableIteration<BindingSet, QueryEvaluationException> performTaskInternal() throws Exception {
+	protected CloseableIteration<BindingSet> performTaskInternal() throws Exception {
 
 		// Note: in order two avoid deadlocks we consume the SERVICE result.
 		// This is basically required to avoid processing background tuple

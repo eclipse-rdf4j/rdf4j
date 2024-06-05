@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 
 public class Demo5 {
 
-	public static void main(String[] args) throws Exception {
+	public static void main(String[] args) {
 
 		FedXRepository repo = FedXFactory.createSparqlFederation(Arrays.asList(
 				"http://dbpedia.org/sparql",

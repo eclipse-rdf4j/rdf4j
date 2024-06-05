@@ -88,7 +88,7 @@ public abstract class Path implements Identifiable, Exportable, Targetable {
 			Resource[] dataGraph, PlanNodeWrapper planNodeWrapper);
 
 	/**
-	 * Get values added in this transaction. Validation performance may improve if more value are retrieved. Validation
+	 * Get values added in this transaction. Validation performance may improve if more values are retrieved. Validation
 	 * correctness and completeness will not be affected if fewer values are retrieved, or if no items are retrieved.
 	 */
 	public abstract PlanNode getAnyAdded(ConnectionsGroup connectionsGroup,

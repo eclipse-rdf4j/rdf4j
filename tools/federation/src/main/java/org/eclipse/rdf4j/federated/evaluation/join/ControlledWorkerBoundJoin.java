@@ -34,7 +34,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Execute the nested loop join in an asynchronous fashion, using grouped requests, i.e. group bindings into one SPARQL
- * request using the UNION operator.
+ * request using a VALUES clause.
  *
  * The number of concurrent threads is controlled by a {@link ControlledWorkerScheduler} which works according to the
  * FIFO principle and uses worker threads.
@@ -49,11 +49,20 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 
 	private static final Logger log = LoggerFactory.getLogger(ControlledWorkerBoundJoin.class);
 
+	/**
+	 * Whether to submit the first intermediate result immediately in a non-bound way
+	 */
+	private boolean submitFirstResultImmediately = false;
+
 	public ControlledWorkerBoundJoin(ControlledWorkerScheduler<BindingSet> scheduler, FederationEvalStrategy strategy,
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
+			CloseableIteration<BindingSet> leftIter,
 			TupleExpr rightArg, BindingSet bindings, QueryInfo queryInfo)
 			throws QueryEvaluationException {
 		super(scheduler, strategy, leftIter, rightArg, bindings, queryInfo);
+	}
+
+	protected void setSubmitFirstResultImmediately(boolean flag) {
+		this.submitFirstResultImmediately = flag;
 	}
 
 	@Override
@@ -73,27 +82,17 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 		TaskCreator taskCreator = null;
 		Phaser currentPhaser = phaser;
 
-		// first item is always sent in a non-bound way
-		if (!isClosed() && leftIter.hasNext()) {
-			BindingSet b = leftIter.next();
-			totalBindings++;
-			if (expr instanceof StatementTupleExpr) {
-				StatementTupleExpr stmt = (StatementTupleExpr) expr;
-				if (stmt.hasFreeVarsFor(b)) {
-					taskCreator = new BoundJoinTaskCreator(strategy, stmt);
-				} else {
-					expr = new CheckStatementPattern(stmt, queryInfo);
-					taskCreator = new CheckJoinTaskCreator(strategy, (CheckStatementPattern) expr);
-				}
-			} else if (expr instanceof FedXService) {
-				taskCreator = new FedXServiceJoinTaskCreator(strategy, (FedXService) expr);
-			} else {
-				throw new RuntimeException("Expr is of unexpected type: " + expr.getClass().getCanonicalName()
-						+ ". Please report this problem.");
+		if (submitFirstResultImmediately) {
+			// first item is always sent in a non-bound way
+			if (!isClosed() && leftIter.hasNext()) {
+				BindingSet b = leftIter.next();
+				totalBindings++;
+				taskCreator = determineTaskCreator(expr, b);
+				currentPhaser.register();
+				scheduler.schedule(
+						new ParallelJoinTask(new PhaserHandlingParallelExecutor(this, currentPhaser), strategy, expr,
+								b));
 			}
-			currentPhaser.register();
-			scheduler.schedule(
-					new ParallelJoinTask(new PhaserHandlingParallelExecutor(this, currentPhaser), strategy, expr, b));
 		}
 
 		int nBindings;
@@ -106,27 +105,18 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 				currentPhaser = new Phaser(currentPhaser);
 			}
 
-			/*
-			 * XXX idea:
-			 *
-			 * make nBindings dependent on the number of intermediate results of the left argument.
-			 *
-			 * If many intermediate results, increase the number of bindings. This will result in less remote SPARQL
-			 * requests.
-			 *
-			 */
-
-			if (totalBindings > 10) {
-				nBindings = nBindingsCfg;
-			} else {
-				nBindings = 3;
-			}
+			// determine the bind join block size
+			nBindings = getNextBindJoinSize(nBindingsCfg, totalBindings);
 
 			bindings = new ArrayList<>(nBindings);
 
 			int count = 0;
 			while (!isClosed() && count < nBindings && leftIter.hasNext()) {
-				bindings.add(leftIter.next());
+				var bs = leftIter.next();
+				if (taskCreator == null) {
+					taskCreator = determineTaskCreator(expr, bs);
+				}
+				bindings.add(bs);
 				count++;
 			}
 
@@ -155,6 +145,47 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 			// signal the phaser to close (if currently being blocked)
 			phaser.forceTermination();
 		}
+	}
+
+	protected TaskCreator determineTaskCreator(TupleExpr expr, BindingSet bs) {
+		final TaskCreator taskCreator;
+		if (expr instanceof StatementTupleExpr) {
+			StatementTupleExpr stmt = (StatementTupleExpr) expr;
+			if (stmt.hasFreeVarsFor(bs)) {
+				taskCreator = new BoundJoinTaskCreator(strategy, stmt);
+			} else {
+				expr = new CheckStatementPattern(stmt, queryInfo);
+				taskCreator = new CheckJoinTaskCreator(strategy, (CheckStatementPattern) expr);
+			}
+		} else if (expr instanceof FedXService) {
+			taskCreator = new FedXServiceJoinTaskCreator(strategy, (FedXService) expr);
+		} else {
+			throw new RuntimeException("Expr is of unexpected type: " + expr.getClass().getCanonicalName()
+					+ ". Please report this problem.");
+		}
+		return taskCreator;
+	}
+
+	/**
+	 * Return the size of the next bind join block.
+	 *
+	 * @param configuredBindJoinSize the configured bind join size
+	 * @param totalBindings          the current process bindings from the intermediate result set
+	 * @return
+	 */
+	protected int getNextBindJoinSize(int configuredBindJoinSize, int totalBindings) {
+
+		/*
+		 * XXX idea:
+		 *
+		 * make nBindings dependent on the number of intermediate results of the left argument.
+		 *
+		 * If many intermediate results, increase the number of bindings. This will result in less remote SPARQL
+		 * requests.
+		 *
+		 */
+
+		return configuredBindJoinSize;
 	}
 
 	/**

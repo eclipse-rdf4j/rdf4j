@@ -10,9 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 
@@ -54,7 +54,7 @@ public class HTTPSparqlUpdateTest extends SPARQLUpdateTest {
 	}
 
 	@Override
-	protected Repository newRepository() throws Exception {
+	protected Repository newRepository() {
 		return new HTTPRepository(server.getRepositoryUrl(repositoryId));
 	}
 
@@ -68,7 +68,7 @@ public class HTTPSparqlUpdateTest extends SPARQLUpdateTest {
 	}
 
 	@Test
-	public void testBindingsInUpdateTransaction() throws Exception {
+	public void testBindingsInUpdateTransaction() {
 		// See issue SES-1889
 		logger.debug("executing test testBindingsInUpdateTransaction");
 

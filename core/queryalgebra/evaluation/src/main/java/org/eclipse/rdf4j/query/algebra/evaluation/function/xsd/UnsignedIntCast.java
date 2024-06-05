@@ -13,9 +13,9 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.xsd;
 import java.math.BigInteger;
 import java.util.Optional;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
@@ -27,8 +27,8 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 public class UnsignedIntCast extends IntegerCastFunction {
 
 	@Override
-	protected IRI getXsdDatatype() {
-		return XSD.UNSIGNED_INT;
+	protected CoreDatatype.XSD getCoreXsdDatatype() {
+		return CoreDatatype.XSD.UNSIGNED_INT;
 	}
 
 	@Override

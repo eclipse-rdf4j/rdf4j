@@ -46,7 +46,7 @@ public final class CompareAnyValueEvaluationStep implements QueryValueEvaluation
 		// Result is false until a match has been found
 		boolean result = false;
 
-		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = subquery.evaluate(bindings)) {
+		try (CloseableIteration<BindingSet> iter = subquery.evaluate(bindings)) {
 			while (!result && iter.hasNext()) {
 				BindingSet bindingSet = iter.next();
 				Value rightValue = getValue.apply(bindingSet);

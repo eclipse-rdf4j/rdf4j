@@ -73,7 +73,7 @@ public class QueryOrderBenchmark {
 	public int syncThreshold = 10;
 
 	@Setup
-	public void setup() throws Exception {
+	public void setup() {
 		dataDir = Files.newTemporaryFolder();
 		NativeStore sail = new NativeStore(dataDir, "spoc,posc");
 		sail.setIterationCacheSyncThreshold(syncThreshold);
@@ -105,7 +105,7 @@ public class QueryOrderBenchmark {
 	}
 
 	@Benchmark
-	public void selectAll() throws Exception {
+	public void selectAll() {
 		StringBuilder rq = new StringBuilder("SELECT * { ?s ?p ?o } ORDER BY ?o");
 		if (limit > 0) {
 			rq = rq.append(" LIMIT ").append(limit);
@@ -130,7 +130,7 @@ public class QueryOrderBenchmark {
 	}
 
 	@Benchmark
-	public void selectDistinct() throws Exception {
+	public void selectDistinct() {
 		StringBuilder rq = new StringBuilder("SELECT DISTINCT ?s ?o { ?s ?p ?o } ORDER BY ?o");
 		if (limit > 0) {
 			rq = rq.append(" LIMIT ").append(limit);

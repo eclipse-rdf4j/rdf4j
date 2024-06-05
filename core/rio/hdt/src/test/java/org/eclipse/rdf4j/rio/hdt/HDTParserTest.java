@@ -31,7 +31,7 @@ public class HDTParserTest {
 	private RDFParser parser;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		parser = Rio.createParser(RDFFormat.HDT);
 		parser.setParseLocationListener((line, col) -> System.err.println("byte " + line));
 	}

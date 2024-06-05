@@ -21,13 +21,11 @@ import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclSparqlConstraintFailureException;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
@@ -89,12 +87,12 @@ public class SparqlConstraintSelect implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> results;
+			CloseableIteration<? extends BindingSet> results;
 
-			CloseableIteration<? extends ValidationTuple, SailException> targetIterator;
+			CloseableIteration<? extends ValidationTuple> targetIterator;
 
 			ValidationTuple next;
 			ValidationTuple nextTarget;
@@ -126,7 +124,7 @@ public class SparqlConstraintSelect implements PlanNode {
 						Value value = bindingSet.getValue("value");
 						Value path = bindingSet.getValue("path");
 
-						if (scope == ConstraintComponent.Scope.nodeShape && produceValidationReports) {
+						if (scope == ConstraintComponent.Scope.nodeShape) {
 							next = nextTarget.addValidationResult(t -> {
 								ValidationResult validationResult = new ValidationResult(t.getActiveTarget(), value,
 										shape,
@@ -139,7 +137,15 @@ public class SparqlConstraintSelect implements PlanNode {
 						} else {
 							ValidationTuple validationTuple = new ValidationTuple(nextTarget.getActiveTarget(), value,
 									scope, true, nextTarget.getContexts());
-							next = ValidationTupleHelper.join(nextTarget, validationTuple);
+							next = ValidationTupleHelper.join(nextTarget, validationTuple).addValidationResult(t -> {
+								ValidationResult validationResult = new ValidationResult(t.getActiveTarget(), value,
+										shape,
+										constraintComponent, shape.getSeverity(),
+										ConstraintComponent.Scope.propertyShape, t.getContexts(),
+										shape.getContexts());
+								validationResult.setPathIri(path);
+								return validationResult;
+							});
 						}
 					} else {
 						results.close();

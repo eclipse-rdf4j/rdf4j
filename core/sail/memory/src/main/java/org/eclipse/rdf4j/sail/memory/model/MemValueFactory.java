@@ -10,9 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.model;
 
-import java.util.Collections;
-import java.util.Set;
-
 import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.model.BNode;
@@ -200,45 +197,6 @@ public class MemValueFactory extends AbstractValueFactory {
 
 	private boolean isOwnMemIRI(IRI value) {
 		return value instanceof MemIRI && ((MemIRI) value).getCreator() == this;
-	}
-
-	/**
-	 * Gets all URIs that are managed by this value factory.
-	 * <p>
-	 * <b>Warning:</b> This method is not synchronized.
-	 *
-	 * @return An unmodifiable Set of MemURI objects.
-	 * @deprecated Use getMemIRIsIterator() instead.
-	 */
-	@Deprecated(forRemoval = true, since = "4.0.0")
-	public Set<MemIRI> getMemURIs() {
-		return Collections.unmodifiableSet(iriRegistry);
-	}
-
-	/**
-	 * Gets all bnodes that are managed by this value factory.
-	 * <p>
-	 * <b>Warning:</b> This method is not synchronized.
-	 *
-	 * @return An unmodifiable Set of MemBNode objects.
-	 * @deprecated Use getMemBNodesIterator() instead.
-	 */
-	@Deprecated(forRemoval = true, since = "4.0.0")
-	public Set<MemBNode> getMemBNodes() {
-		return Collections.unmodifiableSet(bnodeRegistry);
-	}
-
-	/**
-	 * Gets all literals that are managed by this value factory.
-	 * <p>
-	 * <b>Warning:</b> This method is not synchronized.
-	 *
-	 * @return An unmodifiable Set of MemURI objects.
-	 * @deprecated Use getMemLiteralsIterator() instead.
-	 */
-	@Deprecated(forRemoval = true, since = "4.0.0")
-	public Set<MemLiteral> getMemLiterals() {
-		return Collections.unmodifiableSet(literalRegistry);
 	}
 
 	/**

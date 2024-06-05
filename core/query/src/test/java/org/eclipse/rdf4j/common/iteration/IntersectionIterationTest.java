@@ -16,7 +16,7 @@ import java.util.List;
 public class IntersectionIterationTest extends CloseableIterationTest {
 
 	@Override
-	protected CloseableIteration<String, Exception> createTestIteration() {
+	protected CloseableIteration<String> createTestIteration() {
 		return new IntersectIteration<>(createStringList1Iteration(), createStringList2Iteration());
 	}
 

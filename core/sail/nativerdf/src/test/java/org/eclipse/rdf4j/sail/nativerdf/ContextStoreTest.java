@@ -55,26 +55,26 @@ public class ContextStoreTest {
 	}
 
 	@Test
-	public void testIncrementNew() throws Exception {
+	public void testIncrementNew() {
 		subject.increment(g1);
 		assertThat(countContexts(subject)).isEqualTo(1);
 	}
 
 	@Test
-	public void testIncrementNewBNode() throws Exception {
+	public void testIncrementNewBNode() {
 		subject.increment(g2);
 		assertThat(countContexts(subject)).isEqualTo(1);
 	}
 
 	@Test
-	public void testIncrementExisting() throws Exception {
+	public void testIncrementExisting() {
 		subject.increment(g1);
 		subject.increment(g1);
 		assertThat(countContexts(subject)).isEqualTo(1);
 	}
 
 	@Test
-	public void testDecrementExisting() throws Exception {
+	public void testDecrementExisting() {
 		subject.increment(g1);
 		subject.increment(g1);
 
@@ -86,7 +86,7 @@ public class ContextStoreTest {
 	}
 
 	@Test
-	public void testDecrementExistingBySeveral() throws Exception {
+	public void testDecrementExistingBySeveral() {
 		subject.increment(g1);
 		subject.increment(g1);
 
@@ -95,7 +95,7 @@ public class ContextStoreTest {
 	}
 
 	@Test
-	public void testDecrementExistingBNode() throws Exception {
+	public void testDecrementExistingBNode() {
 		subject.increment(g2);
 		subject.increment(g2);
 
@@ -107,7 +107,7 @@ public class ContextStoreTest {
 	}
 
 	@Test
-	public void testDecrementNonExisting() throws Exception {
+	public void testDecrementNonExisting() {
 		subject.decrementBy(g1, 1);
 		assertThat(countContexts(subject)).isEqualTo(0);
 	}

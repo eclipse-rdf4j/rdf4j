@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.extensiblestore;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 
@@ -62,12 +63,12 @@ public class LazyReadCache implements DataStructureInterface {
 	}
 
 	@Override
-	public CloseableIteration<? extends ExtensibleStatement, SailException> getStatements(Resource subject,
+	public CloseableIteration<? extends ExtensibleStatement> getStatements(Resource subject,
 			IRI predicate,
 			Value object, boolean inferred, Resource... context) {
 
 		PartialStatement partialStatement = new PartialStatement(subject, predicate, object, inferred, context);
-		CloseableIteration<? extends ExtensibleStatement, SailException> cached = getCached(partialStatement);
+		CloseableIteration<? extends ExtensibleStatement> cached = getCached(partialStatement);
 		if (cached != null) {
 			logger.trace("cache hit");
 			return cached;
@@ -77,7 +78,7 @@ public class LazyReadCache implements DataStructureInterface {
 
 		return new CloseableIteration<>() {
 
-			final CloseableIteration<? extends ExtensibleStatement, SailException> statements = delegate.getStatements(
+			final CloseableIteration<? extends ExtensibleStatement> statements = delegate.getStatements(
 					subject,
 					predicate, object, inferred, context);
 			List<ExtensibleStatement> cache = new ArrayList<>();
@@ -122,13 +123,14 @@ public class LazyReadCache implements DataStructureInterface {
 
 	}
 
-	synchronized private CloseableIteration<? extends ExtensibleStatement, SailException> getCached(
+	synchronized private CloseableIteration<? extends ExtensibleStatement> getCached(
 			PartialStatement partialStatement) {
 		List<ExtensibleStatement> statements = cache.getIfPresent(partialStatement);
 
 		if (statements != null) {
 
 			return new LookAheadIteration<>() {
+
 				final Iterator<ExtensibleStatement> iterator = statements.iterator();
 
 				@Override
@@ -137,6 +139,11 @@ public class LazyReadCache implements DataStructureInterface {
 						return iterator.next();
 					}
 					return null;
+				}
+
+				@Override
+				protected void handleClose() {
+
 				}
 			};
 
@@ -186,6 +193,11 @@ public class LazyReadCache implements DataStructureInterface {
 			cache.put(partialStatement, statements);
 		}
 
+	}
+
+	@Override
+	public Comparator<Value> getComparator() {
+		return delegate.getComparator();
 	}
 
 	@Override

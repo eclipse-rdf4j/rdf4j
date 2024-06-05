@@ -54,21 +54,12 @@ import org.junit.jupiter.params.provider.MethodSource;
 public class W3cComplianceTest {
 
 	private final static Set<String> TESTS_FAILING_DUE_TO_MISSING_FEATURES_FROM_THE_SPEC = Set.of(
-			"/core/node/closed-001.ttl",
-			"/core/node/closed-002.ttl",
-			"/core/node/disjoint-001.ttl",
-			"/core/node/equals-001.ttl",
 			"/core/node/xone-001.ttl",
 			"/core/node/xone-duplicate.ttl",
 			"/core/path/path-complex-001.ttl",
 			"/core/path/path-oneOrMore-001.ttl",
 			"/core/path/path-zeroOrMore-001.ttl",
 			"/core/path/path-zeroOrOne-001.ttl",
-			"/core/property/disjoint-001.ttl",
-			"/core/property/equals-001.ttl",
-			"/core/property/lessThan-001.ttl",
-			"/core/property/lessThan-002.ttl",
-			"/core/property/lessThanOrEquals-001.ttl",
 			"/core/property/qualifiedMinCountDisjoint-001.ttl",
 			"/core/property/qualifiedValueShapesDisjoint-001.ttl",
 			"/core/property/uniqueLang-002.ttl");
@@ -81,7 +72,7 @@ public class W3cComplianceTest {
 
 	@ParameterizedTest
 	@MethodSource("data")
-	public void test(URL testCasePath) throws IOException, InterruptedException {
+	public void test(URL testCasePath) throws IOException {
 		boolean testPassed = false;
 		try {
 			runTest(testCasePath);
@@ -217,7 +208,7 @@ public class W3cComplianceTest {
 
 	}
 
-	private void runTest(URL resourceName) throws IOException, InterruptedException {
+	private void runTest(URL resourceName) throws IOException {
 		W3C_shaclTestValidate expected = new W3C_shaclTestValidate(resourceName);
 
 		SailRepository data = new SailRepository(new MemoryStore());

@@ -241,6 +241,8 @@ public class ServiceTests extends SPARQLBaseTest {
 		repo.setFederatedServiceResolver(serviceResolver);
 		repo.init();
 
+		fedxRule.getFederationContext().getConfig().withBoundJoinBlockSize(5);
+
 		/*
 		 * test select query retrieving all persons from endpoint 1 (SERVICE), endpoint not part of federation =>
 		 * evaluate using externally provided service resolver endpoint1 is reachable as
@@ -271,12 +273,11 @@ public class ServiceTests extends SPARQLBaseTest {
 			Assertions.assertEquals(expected, res.stream().map(b -> b.getValue("output")).collect(Collectors.toSet()));
 		}
 
-		// first binding is evaluated using regular service, then we have groups of 4 groups of three bindings and 3
-		// groups with 15
+		// all requests are executed in bind-join with constant size
+		// for this test bind join size is set to 5, hence we see 10 bind join requests
 		TestSparqlFederatedService tfs = ((TestSparqlFederatedService) serviceResolver
 				.getService("http://localhost:18080/repositories/endpoint1"));
-		Assertions.assertEquals(1, tfs.serviceRequestCount.get());
-		Assertions.assertEquals(7, tfs.boundJoinRequestCount.get());
+		Assertions.assertEquals(10, tfs.boundJoinRequestCount.get());
 	}
 
 	@Test
@@ -424,15 +425,15 @@ public class ServiceTests extends SPARQLBaseTest {
 		}
 
 		@Override
-		public CloseableIteration<BindingSet, QueryEvaluationException> select(Service service,
+		public CloseableIteration<BindingSet> select(Service service,
 				Set<String> projectionVars, BindingSet bindings, String baseUri) throws QueryEvaluationException {
 			serviceRequestCount.incrementAndGet();
 			return super.select(service, projectionVars, bindings, baseUri);
 		}
 
 		@Override
-		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service,
-				CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
+		public CloseableIteration<BindingSet> evaluate(Service service,
+				CloseableIteration<BindingSet> bindings, String baseUri)
 				throws QueryEvaluationException {
 			boundJoinRequestCount.incrementAndGet();
 			return super.evaluate(service, bindings, baseUri);

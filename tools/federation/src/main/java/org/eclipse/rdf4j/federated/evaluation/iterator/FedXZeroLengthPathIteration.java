@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.federated.algebra.EmptyStatementPattern;
@@ -45,7 +46,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIterati
  *
  * @see ZeroLengthPathIteration
  */
-public class FedXZeroLengthPathIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class FedXZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 
 	/*
 	 * IMPL NOTE:
@@ -72,6 +73,7 @@ public class FedXZeroLengthPathIteration extends LookAheadIteration<BindingSet, 
 	private static final String ANON_OBJECT_VAR = "zero_length_internal_end";
 
 	private static final String ANON_SEQUENCE_VAR = "zero_length_internal_seq";
+	private final CollectionFactory cf;
 
 	private QueryBindingSet result;
 
@@ -81,7 +83,7 @@ public class FedXZeroLengthPathIteration extends LookAheadIteration<BindingSet, 
 
 	private final BindingSet bindings;
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> iter;
+	private CloseableIteration<BindingSet> iter;
 
 	private Set<Value> reportedValues;
 
@@ -143,13 +145,15 @@ public class FedXZeroLengthPathIteration extends LookAheadIteration<BindingSet, 
 			setContext = null;
 		}
 
+		this.cf = evaluationStrategy.getCollectionFactory().get();
+
 	}
 
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
 		if (subj == null && obj == null) {
 			if (this.reportedValues == null) {
-				reportedValues = evaluationStrategy.makeSet();
+				reportedValues = cf.createValueSet();
 			}
 			if (this.iter == null) {
 				// join with a sequence so we iterate over every entry twice
@@ -207,14 +211,20 @@ public class FedXZeroLengthPathIteration extends LookAheadIteration<BindingSet, 
 		}
 	}
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> createIteration() throws QueryEvaluationException {
-		CloseableIteration<BindingSet, QueryEvaluationException> iter = precompile.evaluate(bindings);
+	private CloseableIteration<BindingSet> createIteration() {
+		CloseableIteration<BindingSet> iter = precompile.evaluate(bindings);
 		return iter;
 	}
 
 	public Var createAnonVar(String varName) {
-		Var var = new Var(varName);
-		var.setAnonymous(true);
+		Var var = new Var(varName, true);
 		return var;
+	}
+
+	@Override
+	protected void handleClose() {
+		if (iter != null) {
+			iter.close();
+		}
 	}
 }

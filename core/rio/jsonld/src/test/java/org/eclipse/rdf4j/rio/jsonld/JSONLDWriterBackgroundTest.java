@@ -15,7 +15,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -65,16 +64,16 @@ public class JSONLDWriterBackgroundTest extends RDFWriterTest {
 
 	@Override
 	protected Model parse(InputStream reader, String baseURI)
-			throws RDFParseException, RDFHandlerException, IOException {
+			throws RDFParseException, RDFHandlerException {
 		return QueryResults
-				.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat(),
-						null));
+				.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()
+				));
 	}
 
 	@Test
 	@Override
 	@Disabled("TODO: Determine why this test is breaking")
-	public void testIllegalPrefix() throws RDFHandlerException, RDFParseException, IOException {
+	public void testIllegalPrefix() throws RDFHandlerException, RDFParseException {
 	}
 
 	@Test
@@ -111,7 +110,7 @@ public class JSONLDWriterBackgroundTest extends RDFWriterTest {
 		assertTrue(model.contains(st1), "missing namespaced statement");
 
 		if (rdfParser.getRDFFormat().supportsNamespaces()) {
-			assertTrue(model.getNamespaces().size() >= 1,
+			assertTrue(!model.getNamespaces().isEmpty(),
 					"Expected at least one namespace, found " + model.getNamespaces().size());
 			assertEquals(exNs, model.getNamespace("ex").get().getName());
 		}
@@ -123,11 +122,11 @@ public class JSONLDWriterBackgroundTest extends RDFWriterTest {
 				BasicWriterSettings.BASE_DIRECTIVE,
 				BasicWriterSettings.PRETTY_PRINT,
 				JSONLDSettings.COMPACT_ARRAYS,
-				JSONLDSettings.HIERARCHICAL_VIEW,
 				JSONLDSettings.JSONLD_MODE,
 				JSONLDSettings.PRODUCE_GENERALIZED_RDF,
 				JSONLDSettings.USE_RDF_TYPE,
-				JSONLDSettings.USE_NATIVE_TYPES
+				JSONLDSettings.USE_NATIVE_TYPES,
+				JSONLDSettings.EXCEPTION_ON_WARNING
 		};
 	}
 }

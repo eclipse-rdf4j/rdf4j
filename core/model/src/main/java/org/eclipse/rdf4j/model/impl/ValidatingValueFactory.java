@@ -94,7 +94,7 @@ public class ValidatingValueFactory implements ValueFactory {
 
 	@Override
 	public BNode createBNode(String nodeID) {
-		if (nodeID.length() < 1) {
+		if (nodeID.isEmpty()) {
 			throw new IllegalArgumentException("Blank node ID cannot be empty");
 		}
 		if (!isMember(PN_CHARS_U, nodeID.codePointAt(0))) {

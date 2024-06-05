@@ -29,17 +29,17 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  *
  * @author Andreas Schwarte
  */
-public class IndependentJoingroupBindingsIteration3 extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+public class IndependentJoingroupBindingsIteration3 extends LookAheadIteration<BindingSet> {
 
 	// a pattern matcher for the binding resolver, pattern: myVar_%outerID%#bindingId, e.g. name_0#0
 	protected static final Pattern pattern = Pattern.compile("(.*)_(.*)_(.*)");
 
 	protected final List<BindingSet> bindings;
-	protected final CloseableIteration<BindingSet, QueryEvaluationException> iter;
+	protected final CloseableIteration<BindingSet> iter;
 	protected ArrayList<BindingSet> result = null;
 	protected int currentIdx = 0;
 
-	public IndependentJoingroupBindingsIteration3(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public IndependentJoingroupBindingsIteration3(CloseableIteration<BindingSet> iter,
 			List<BindingSet> bindings) {
 		this.bindings = bindings;
 		this.iter = iter;
@@ -135,14 +135,10 @@ public class IndependentJoingroupBindingsIteration3 extends LookAheadIteration<B
 
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
-		try {
-			super.handleClose();
-		} finally {
-			iter.close();
-		}
+		iter.close();
 	}
 
-	protected class BindingInfo {
+	protected static class BindingInfo {
 		public final String name;
 		public final int bindingsIdx;
 		public final Value value;

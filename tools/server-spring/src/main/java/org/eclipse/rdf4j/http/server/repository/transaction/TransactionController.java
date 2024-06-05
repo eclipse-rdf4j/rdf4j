@@ -104,7 +104,7 @@ public class TransactionController extends AbstractController implements Disposa
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	public TransactionController() throws ApplicationContextException {
-		setSupportedMethods(new String[] { METHOD_POST, "PUT", "DELETE" });
+		setSupportedMethods(METHOD_POST, "PUT", "DELETE");
 	}
 
 	@Override

@@ -21,11 +21,11 @@ public class BooleanRioSettingTest extends RioSettingTest<Boolean> {
 	@Test
 	@Override
 	@Disabled
-	public void testConvertIllegal() throws Exception {
+	public void testConvertIllegal() {
 	}
 
 	@Test
-	public void testConvertLegalStringVariants() throws Exception {
+	public void testConvertLegalStringVariants() {
 		assertThat(subject.convert("True")).isTrue();
 		assertThat(subject.convert("Foo")).isFalse();
 		assertThat(subject.convert("false")).isFalse();

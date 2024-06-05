@@ -97,12 +97,17 @@ public class FederationContext {
 	}
 
 	/**
-	 * Create the {@link SourceSelectionCache}
+	 * Create the {@link SourceSelectionCache}.
 	 *
 	 * @return the {@link SourceSelectionCache}
 	 * @see FedXConfig#getSourceSelectionCacheSpec()
+	 * @see FedXConfig#getSourceSelectionCacheFactory()
 	 */
 	private SourceSelectionCache createSourceSelectionCache() {
+		var factory = getConfig().getSourceSelectionCacheFactory();
+		if (factory != null) {
+			return factory.create();
+		}
 		String cacheSpec = getConfig().getSourceSelectionCacheSpec();
 		return new SourceSelectionMemoryCache(cacheSpec);
 	}

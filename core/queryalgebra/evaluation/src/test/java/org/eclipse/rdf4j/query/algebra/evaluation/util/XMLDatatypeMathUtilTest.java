@@ -28,7 +28,7 @@ public class XMLDatatypeMathUtilTest {
 	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	@Test
-	public void testCompute() throws Exception {
+	public void testCompute() {
 		Literal float1 = vf.createLiteral("12", XSD.INTEGER);
 		Literal float2 = vf.createLiteral("2", CoreDatatype.XSD.INTEGER);
 		Literal duration1 = vf.createLiteral("P1Y1M", XSD.YEARMONTHDURATION);
@@ -54,7 +54,7 @@ public class XMLDatatypeMathUtilTest {
 		assertComputeEquals(vf.createLiteral("2013-11", XSD.GYEARMONTH), duration1, yearMonth1, MathOp.PLUS);
 	}
 
-	private void assertComputeEquals(Literal result, Literal lit1, Literal lit2, MathOp op) throws Exception {
+	private void assertComputeEquals(Literal result, Literal lit1, Literal lit2, MathOp op) {
 		assertEquals(result, XMLDatatypeMathUtil.compute(lit1, lit2, op));
 	}
 }

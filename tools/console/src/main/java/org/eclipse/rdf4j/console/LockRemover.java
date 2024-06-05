@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
-import java.io.IOException;
-
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryLockedException;
@@ -29,11 +27,10 @@ public class LockRemover {
 	 * @param repo
 	 * @param consoleIO
 	 * @return true if lock was removed
-	 * @throws IOException
 	 * @throws RepositoryException
 	 */
 	public static boolean tryToRemoveLock(Repository repo, ConsoleIO consoleIO)
-			throws IOException, RepositoryException {
+			throws RepositoryException {
 		boolean lockRemoved = false;
 
 		LockManager lockManager = new DirectoryLockManager(repo.getDataDir());
@@ -52,9 +49,8 @@ public class LockRemover {
 	 * @param rle
 	 * @param consoleIO
 	 * @return true if lock was removed
-	 * @throws IOException
 	 */
-	public static boolean tryToRemoveLock(RepositoryLockedException rle, ConsoleIO consoleIO) throws IOException {
+	public static boolean tryToRemoveLock(RepositoryLockedException rle, ConsoleIO consoleIO) {
 		boolean lockRemoved = false;
 
 		if (rle.getCause() instanceof SailLockedException) {

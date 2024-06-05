@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleContextStatement;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementImpl;
@@ -47,22 +46,22 @@ class ElasticsearchValueFactory extends SimpleValueFactory implements Extensible
 	}
 
 	ExtensibleStatement createStatement(Resource subject, IRI predicate, Value object, boolean inferred) {
-		return new ExtensibleStatementImpl(subject, predicate, object, inferred);
+		return new ExtensibleStatementImpl(subject, predicate, object, null, inferred);
 	}
 
 	ExtensibleStatement createStatement(Resource subject, IRI predicate, Value object,
 			Resource context, boolean inferred) {
-		return new ExtensibleContextStatement(subject, predicate, object, context, inferred);
+		return new ExtensibleStatementImpl(subject, predicate, object, context, inferred);
 	}
 
 	ElasticsearchStatement createStatement(String elasticsearchID, Resource subject, IRI predicate, Value object,
 			boolean inferred) {
-		return new ElasticsearchStatement(elasticsearchID, subject, predicate, object, inferred);
+		return new ElasticsearchStatement(elasticsearchID, subject, predicate, object, null, inferred);
 	}
 
-	ElasticsearchContextStatement createStatement(String elasticsearchID, Resource subject, IRI predicate, Value object,
+	ElasticsearchStatement createStatement(String elasticsearchID, Resource subject, IRI predicate, Value object,
 			Resource context, boolean inferred) {
-		return new ElasticsearchContextStatement(elasticsearchID, subject, predicate, object, context, inferred);
+		return new ElasticsearchStatement(elasticsearchID, subject, predicate, object, context, inferred);
 	}
 
 	@Override

@@ -24,8 +24,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 /**
  * An iterating implementation of the {@link TupleQueryResult} interface.
  */
-@Deprecated(since = "4.1.0")
-public class IteratingTupleQueryResult extends IterationWrapper<BindingSet, QueryEvaluationException>
+public class IteratingTupleQueryResult extends IterationWrapper<BindingSet>
 		implements TupleQueryResult {
 
 	/*-----------*
@@ -50,7 +49,7 @@ public class IteratingTupleQueryResult extends IterationWrapper<BindingSet, Quer
 	}
 
 	public IteratingTupleQueryResult(List<String> bindingNames, Iterator<? extends BindingSet> bindingSetIter) {
-		this(bindingNames, new CloseableIteratorIteration<BindingSet, QueryEvaluationException>(bindingSetIter));
+		this(bindingNames, new CloseableIteratorIteration<BindingSet>(bindingSetIter));
 	}
 
 	/**
@@ -61,7 +60,7 @@ public class IteratingTupleQueryResult extends IterationWrapper<BindingSet, Quer
 	 * @param bindingNames The binding names, in order of projection.
 	 */
 	public IteratingTupleQueryResult(List<String> bindingNames,
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSetIter) {
+			CloseableIteration<? extends BindingSet> bindingSetIter) {
 		super(bindingSetIter);
 		// Don't allow modifications to the binding names when it is accessed
 		// through getBindingNames:

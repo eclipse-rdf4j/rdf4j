@@ -1,0 +1,43 @@
+[ {
+  "@id" : "sch:node2",
+  "sch:pred2" : [ {
+    "@id" : "sch:node3",
+    "sch:pred4" : [ {
+      "@id" : "sch:node2"
+    } ],
+    "sch:pred5" : [ {
+      "@id" : "sch:node6",
+      "sch:pred6" : [ {
+        "@id" : "sch:node3"
+      } ]
+    } ]
+  }, {
+    "@id" : "sch:node4",
+    "sch:pred4" : [ {
+      "@id" : "sch:node2"
+    } ]
+  }, {
+    "@id" : "sch:node5",
+    "sch:pred4" : [ {
+      "@id" : "sch:node2"
+    } ],
+    "sch:pred5" : [ {
+      "@id" : "sch:node6",
+      "sch:pred6" : [ {
+        "@id" : "sch:node3",
+        "sch:pred4" : [ {
+          "@id" : "sch:node2"
+        } ],
+        "sch:pred5" : [ {
+          "@id" : "sch:node6"
+        } ]
+      } ]
+    } ]
+  } ],
+  "sch:pred3" : [ {
+    "@id" : "sch:node1",
+    "sch:pred1" : [ {
+      "@id" : "sch:node2"
+    } ]
+  } ]
+} ]

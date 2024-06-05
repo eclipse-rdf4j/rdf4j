@@ -39,6 +39,7 @@ public class BNodeGenerator extends AbstractQueryModelNode implements ValueExpr 
 
 	public void setNodeIdExpr(ValueExpr nodeIdExpr) {
 		this.nodeIdExpr = nodeIdExpr;
+		this.nodeIdExpr.setParentNode(this);
 	}
 
 	@Override
@@ -48,7 +49,17 @@ public class BNodeGenerator extends AbstractQueryModelNode implements ValueExpr 
 
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
-		// no-op
+		if (nodeIdExpr != null) {
+			nodeIdExpr.visit(visitor);
+		}
+	}
+
+	@Override
+	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+		if (current == nodeIdExpr) {
+			setNodeIdExpr((ValueExpr) replacement);
+		}
+
 	}
 
 	@Override
@@ -63,6 +74,10 @@ public class BNodeGenerator extends AbstractQueryModelNode implements ValueExpr 
 
 	@Override
 	public BNodeGenerator clone() {
-		return (BNodeGenerator) super.clone();
+		BNodeGenerator clone = (BNodeGenerator) super.clone();
+		if (nodeIdExpr != null) {
+			clone.setNodeIdExpr(nodeIdExpr.clone());
+		}
+		return clone;
 	}
 }

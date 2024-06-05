@@ -58,18 +58,16 @@ public class TestSparqlStarParser {
 	private SPARQLParser parser;
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		parser = new SPARQLParser();
 	}
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		parser = null;
 	}
 
@@ -89,7 +87,7 @@ public class TestSparqlStarParser {
 	 * @throws Exception
 	 */
 	@Test
-	public void testUseInProjection() throws Exception {
+	public void testUseInProjection() {
 		String simpleSparqlQuery = "SELECT (<<<urn:A> <urn:B> 1>> as ?ref) WHERE {}";
 
 		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
@@ -134,7 +132,7 @@ public class TestSparqlStarParser {
 	 * @throws Exception
 	 */
 	@Test
-	public void testUseInValues() throws Exception {
+	public void testUseInValues() {
 		String simpleSparqlQuery = "SELECT ?ref WHERE { values ?ref {<<<urn:A> <urn:B> 1>>} }";
 
 		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
@@ -185,7 +183,7 @@ public class TestSparqlStarParser {
 	 * @throws Exception
 	 */
 	@Test
-	public void testUseInBind() throws Exception {
+	public void testUseInBind() {
 		String simpleSparqlQuery = "SELECT ?ref WHERE { bind(<<<urn:A> <urn:B> 1>> as ?ref)}";
 
 		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
@@ -236,7 +234,7 @@ public class TestSparqlStarParser {
 	 * @throws Exception
 	 */
 	@Test
-	public void testUseInBindWithVars() throws Exception {
+	public void testUseInBindWithVars() {
 		String simpleSparqlQuery = "SELECT * WHERE { bind(<<?s ?p ?o>> as ?ref)}";
 
 		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
@@ -298,7 +296,7 @@ public class TestSparqlStarParser {
 	 * @throws Exception
 	 */
 	@Test
-	public void testUseInStatementPatternWithVars() throws Exception {
+	public void testUseInStatementPatternWithVars() {
 		String simpleSparqlQuery = "SELECT * WHERE { <<?s ?p ?o>> <urn:pred> ?val}";
 
 		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
@@ -367,7 +365,7 @@ public class TestSparqlStarParser {
 	 * @throws Exception
 	 */
 	@Test
-	public void testUseNestedInStatementPatternWithVars() throws Exception {
+	public void testUseNestedInStatementPatternWithVars() {
 		String simpleSparqlQuery = "SELECT * WHERE { <<<<?s ?p ?o>> ?q ?r>> <urn:pred> ?val}";
 
 		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
@@ -443,7 +441,7 @@ public class TestSparqlStarParser {
 	 * @throws Exception
 	 */
 	@Test
-	public void testUseInConstructFromStatementPattern() throws Exception {
+	public void testUseInConstructFromStatementPattern() {
 		String simpleSparqlQuery = "CONSTRUCT {<<?s ?p ?o>> <urn:pred> <urn:value>} WHERE {?s ?p ?o}";
 
 		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
@@ -526,7 +524,7 @@ public class TestSparqlStarParser {
 	 * @throws Exception
 	 */
 	@Test
-	public void testUseInInsertFromStatementPattern() throws Exception {
+	public void testUseInInsertFromStatementPattern() {
 		String simpleSparqlQuery = "Insert {<<?s ?p ?o>> <urn:pred> <urn:value>} WHERE {?s ?p ?o}";
 
 		ParsedUpdate q = parser.parseUpdate(simpleSparqlQuery, null);
@@ -596,7 +594,7 @@ public class TestSparqlStarParser {
 	 * @throws Exception
 	 */
 	@Test
-	public void testUseInDeleteFromStatementPattern() throws Exception {
+	public void testUseInDeleteFromStatementPattern() {
 		String simpleSparqlQuery = "DELETE {<<?s ?p ?o>> <urn:pred> <urn:value>} WHERE {?s ?p ?o}";
 
 		ParsedUpdate q = parser.parseUpdate(simpleSparqlQuery, null);
@@ -666,7 +664,7 @@ public class TestSparqlStarParser {
 	 * @throws Exception
 	 */
 	@Test
-	public void testUseInGroupByFromBindWithVars() throws Exception {
+	public void testUseInGroupByFromBindWithVars() {
 		String simpleSparqlQuery = "SELECT ?ref (count( distinct ?p) as ?count) WHERE { bind(<<?s ?p ?o>> as ?ref)} group by ?ref";
 
 		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
@@ -750,7 +748,7 @@ public class TestSparqlStarParser {
 	 * @throws Exception
 	 */
 	@Test
-	public void testUseInExists() throws Exception {
+	public void testUseInExists() {
 		String simpleSparqlQuery = "SELECT * WHERE { ?s ?p ?o . filter exists {<<?s ?p <urn:value>>> <urn:pred> ?q}} ";
 
 		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
@@ -816,7 +814,7 @@ public class TestSparqlStarParser {
 	 * @throws Exception
 	 */
 	@Test
-	public void testUseInSTR() throws Exception {
+	public void testUseInSTR() {
 		String simpleSparqlQuery = "SELECT (str(<<<urn:a> <urn:b> <urn:c>>>) as ?str) WHERE { } ";
 
 		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
@@ -871,7 +869,7 @@ public class TestSparqlStarParser {
 	 * @throws Exception
 	 */
 	@Test
-	public void testUpdateWithTripleRefEmptyHead() throws Exception {
+	public void testUpdateWithTripleRefEmptyHead() {
 		String simpleSparqlUpdate = "insert {} where {<<<urn:a> <urn:b> <urn:c>>> <urn:p> 1}";
 
 		ParsedUpdate q = parser.parseUpdate(simpleSparqlUpdate, null);
@@ -923,7 +921,7 @@ public class TestSparqlStarParser {
 	 * @throws Exception
 	 */
 	@Test
-	public void testUpdateWithTripleRefNonEmptyHead() throws Exception {
+	public void testUpdateWithTripleRefNonEmptyHead() {
 		String simpleSparqlUpdate = "insert {<<<urn:a> <urn:b> <urn:c>>> <urn:p> 1} where {<<<urn:a> <urn:b> <urn:c>>> <urn:p> 1}";
 
 		ParsedUpdate q = parser.parseUpdate(simpleSparqlUpdate, null);

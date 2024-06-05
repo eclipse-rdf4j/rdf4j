@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -458,7 +459,7 @@ public class ValueStore extends SimpleValueFactory {
 		return uriData;
 	}
 
-	private byte[] bnode2data(BNode bNode, boolean create) throws IOException {
+	private byte[] bnode2data(BNode bNode, boolean create) {
 		byte[] idData = bNode.getID().getBytes(StandardCharsets.UTF_8);
 
 		byte[] bNodeData = new byte[1 + idData.length];
@@ -546,7 +547,7 @@ public class ValueStore extends SimpleValueFactory {
 		return new NativeIRI(revision, namespace, localName, id);
 	}
 
-	private NativeBNode data2bnode(int id, byte[] data) throws IOException {
+	private NativeBNode data2bnode(int id, byte[] data) {
 		String nodeID = new String(data, 1, data.length - 1, StandardCharsets.UTF_8);
 		return new NativeBNode(revision, nodeID, id);
 	}
@@ -574,11 +575,11 @@ public class ValueStore extends SimpleValueFactory {
 		} else if (datatype != null) {
 			return new NativeLiteral(revision, label, datatype, id);
 		} else {
-			return new NativeLiteral(revision, label, XSD.STRING, id);
+			return new NativeLiteral(revision, label, CoreDatatype.XSD.STRING, id);
 		}
 	}
 
-	private String data2namespace(byte[] data) throws UnsupportedEncodingException {
+	private String data2namespace(byte[] data) {
 		return new String(data, StandardCharsets.UTF_8);
 	}
 
@@ -639,7 +640,7 @@ public class ValueStore extends SimpleValueFactory {
 
 	@Override
 	public NativeLiteral createLiteral(String value) {
-		return new NativeLiteral(revision, value, XSD.STRING);
+		return new NativeLiteral(revision, value, CoreDatatype.XSD.STRING);
 	}
 
 	@Override

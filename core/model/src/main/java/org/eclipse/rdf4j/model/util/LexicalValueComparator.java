@@ -19,8 +19,8 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * A lexical RDF Term Comparator, this class does not compare numerically and is therefore a bit faster than a SPARQL
@@ -112,11 +112,12 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 		if (leftDatatype != null) {
 			if (rightDatatype != null) {
 				// Both literals have datatypes
-				Optional<XSD.Datatype> leftXmlDatatype = Literals.getXsdDatatype(leftLit);
-				Optional<XSD.Datatype> rightXmlDatatype = Literals.getXsdDatatype(rightLit);
+				CoreDatatype leftXmlDatatype = leftLit.getCoreDatatype();
+				CoreDatatype rightXmlDatatype = rightLit.getCoreDatatype();
 
-				if (leftXmlDatatype.isPresent() && rightXmlDatatype.isPresent()) {
-					result = compareDatatypes(leftXmlDatatype.get(), rightXmlDatatype.get());
+				if (leftXmlDatatype.isXSDDatatype() && rightXmlDatatype.isXSDDatatype()) {
+					result = compareDatatypes(((CoreDatatype.XSD) leftXmlDatatype),
+							((CoreDatatype.XSD) rightXmlDatatype));
 				} else {
 					result = compareDatatypes(leftDatatype, rightDatatype);
 				}
@@ -184,7 +185,7 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 		}
 	}
 
-	private int compareDatatypes(XSD.Datatype leftDatatype, XSD.Datatype rightDatatype) {
+	private int compareDatatypes(CoreDatatype.XSD leftDatatype, CoreDatatype.XSD rightDatatype) {
 		if (leftDatatype.isNumericDatatype()) {
 			if (rightDatatype.isNumericDatatype()) {
 				// both are numeric datatypes

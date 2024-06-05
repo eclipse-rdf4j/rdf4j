@@ -16,24 +16,27 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Select;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationReportNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
 public class ValidationQuery {
 
 	private final Set<Namespace> namespaces = new HashSet<>();
+	private ValidationResultGenerator validationResultGenerator;
 	private String query;
 	private ConstraintComponent.Scope scope;
 	private ConstraintComponent.Scope scope_validationReport;
@@ -54,6 +57,7 @@ public class ValidationQuery {
 
 	private Severity severity;
 	private Shape shape;
+	private List<Variable<?>> extraVariables = List.of();
 
 	public ValidationQuery(Collection<Namespace> namespaces, String query, List<Variable<Value>> targets,
 			Variable<Value> value,
@@ -90,6 +94,8 @@ public class ValidationQuery {
 		this.constraintComponent = constraintComponent;
 		this.severity = severity;
 		this.shape = shape;
+		this.validationResultGenerator = new ValidationResultGenerator();
+
 	}
 
 	public ValidationQuery(Set<Namespace> namespaces, String query, ConstraintComponent.Scope scope,
@@ -101,6 +107,7 @@ public class ValidationQuery {
 		this.variables = Collections.unmodifiableList(variables);
 		this.targetIndex = targetIndex;
 		this.valueIndex = valueIndex;
+		this.validationResultGenerator = new ValidationResultGenerator();
 	}
 
 	/**
@@ -169,41 +176,78 @@ public class ValidationQuery {
 
 		Select select = new Select(baseConnection, fullQueryString, bindings -> {
 
+			var validationResultFunction = validationResultGenerator.getValidationTupleValidationResultFunction(this,
+					shapesGraphs, bindings);
+
+			ValidationTuple validationTuple;
+
 			if (scope_validationReport == ConstraintComponent.Scope.propertyShape) {
 				if (propertyShapeWithValue_validationReport) {
-					return new ValidationTuple(bindings.getValue(getTargetVariable(true)),
+					validationTuple = new ValidationTuple(bindings.getValue(getTargetVariable(true)),
 							bindings.getValue(getValueVariable(true)),
 							scope_validationReport, true, dataGraph);
 				} else {
-					return new ValidationTuple(bindings.getValue(getTargetVariable(true)),
+					validationTuple = new ValidationTuple(bindings.getValue(getTargetVariable(true)),
 							scope_validationReport, false, dataGraph);
 				}
 
 			} else {
-				return new ValidationTuple(bindings.getValue(getTargetVariable(true)),
+				validationTuple = new ValidationTuple(bindings.getValue(getTargetVariable(true)),
 						scope_validationReport, true, dataGraph);
 			}
 
+			return validationTuple.addValidationResult(validationResultFunction);
+
 		}, dataGraph);
 
-		return new ValidationReportNode(select, t -> {
-			return new ValidationResult(t.getActiveTarget(), t.getValue(), shape,
-					constraintComponent_validationReport, severity, t.getScope(), t.getContexts(), shapesGraphs);
-		});
+		return select;
 
 	}
 
+	public static class ValidationResultGenerator {
+
+		public Function<ValidationTuple, ValidationResult> getValidationTupleValidationResultFunction(
+				ValidationQuery validationQuery, Resource[] shapesGraphs, BindingSet bindings) {
+			return t -> new ValidationResult(t.getActiveTarget(), t.getValue(), validationQuery.shape,
+					validationQuery.constraintComponent_validationReport, validationQuery.severity, t.getScope(),
+					t.getContexts(), shapesGraphs);
+		}
+
+	}
+
+	public void setValidationResultGenerator(List<Variable<?>> extraVariables,
+			ValidationResultGenerator validationResultGenerator) {
+		this.validationResultGenerator = validationResultGenerator;
+		this.extraVariables = extraVariables;
+	}
+
 	private String getFullQueryString() {
+		String extraVariablesString;
+		if (!extraVariables.isEmpty()) {
+			Optional<String> reduce = extraVariables.stream()
+					.map(Variable::asSparqlVariable)
+					.reduce((a, b) -> a + " " + b);
+			if (reduce.isPresent()) {
+				extraVariablesString = reduce.get() + " ";
+			} else {
+				extraVariablesString = "";
+			}
+		} else
+			extraVariablesString = "";
+
 		if (scope_validationReport == ConstraintComponent.Scope.propertyShape
 				&& propertyShapeWithValue_validationReport) {
+
 			return ShaclPrefixParser.toSparqlPrefixes(namespaces) + "\nSELECT DISTINCT " +
 					"?" + getTargetVariable(true) + " " +
 					"?" + getValueVariable(true) + " " +
+					extraVariablesString +
 					"WHERE {\n" + query + "\n}";
 
 		} else {
 			return ShaclPrefixParser.toSparqlPrefixes(namespaces) + "\nSELECT DISTINCT " +
 					"?" + getTargetVariable(true) + " " +
+					extraVariablesString +
 					"WHERE {\n" + query + "\n}";
 		}
 	}
@@ -265,6 +309,18 @@ public class ValidationQuery {
 		scope_validationReport = scope;
 		constraintComponent_validationReport = constraintComponent;
 		propertyShapeWithValue_validationReport = propertyShapeWithValue;
+	}
+
+	public Shape getShape() {
+		return shape;
+	}
+
+	public Severity getSeverity() {
+		return severity;
+	}
+
+	public ConstraintComponent getConstraintComponent_validationReport() {
+		return constraintComponent_validationReport;
 	}
 
 	// used for sh:deactivated

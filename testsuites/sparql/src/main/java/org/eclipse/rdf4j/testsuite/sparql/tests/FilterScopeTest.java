@@ -14,7 +14,9 @@ package org.eclipse.rdf4j.testsuite.sparql.tests;
 import static org.junit.Assert.assertEquals;
 
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.util.Values;
@@ -22,9 +24,10 @@ import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
-import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
 
 /**
  * Tests for variable scoping issues with SPARQL FILTER clauses.
@@ -33,9 +36,12 @@ import org.junit.Test;
  */
 public class FilterScopeTest extends AbstractComplianceTest {
 
-	@Test
-	public void testScope1() {
-		loadData();
+	public FilterScopeTest(Supplier<Repository> repo) {
+		super(repo);
+	}
+
+	public void testScope1(RepositoryConnection conn) {
+		loadData(conn);
 
 		String query = String.join("\n", "",
 				"PREFIX foaf: <" + FOAF.NAMESPACE + ">",
@@ -51,10 +57,6 @@ public class FilterScopeTest extends AbstractComplianceTest {
 				"} "
 		);
 
-		// TODO: Remove the query explanation printing before merging
-		String string = conn.prepareTupleQuery(query).explain(Explanation.Level.Executed).toString();
-		System.out.println(string);
-
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			List<BindingSet> collect = result.stream().collect(Collectors.toList());
 			assertEquals(List.of(), collect);
@@ -62,9 +64,8 @@ public class FilterScopeTest extends AbstractComplianceTest {
 
 	}
 
-	@Test
-	public void testScope1WithoutScopingIssue() {
-		loadData();
+	public void testScope1WithoutScopingIssue(RepositoryConnection conn) {
+		loadData(conn);
 
 		String query = String.join("\n", "",
 				"PREFIX foaf: <" + FOAF.NAMESPACE + ">",
@@ -80,10 +81,6 @@ public class FilterScopeTest extends AbstractComplianceTest {
 				"} "
 		);
 
-		// TODO: Remove the query explanation printing before merging
-		String string = conn.prepareTupleQuery(query).explain(Explanation.Level.Executed).toString();
-		System.out.println(string);
-
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			List<BindingSet> collect = result.stream().collect(Collectors.toList());
 			assertEquals(4, collect.size());
@@ -91,9 +88,8 @@ public class FilterScopeTest extends AbstractComplianceTest {
 
 	}
 
-	@Test
-	public void testScope1WithCorrectScope() {
-		loadData();
+	public void testScope1WithCorrectScope(RepositoryConnection conn) {
+		loadData(conn);
 
 		String query = String.join("\n", "",
 				"PREFIX foaf: <" + FOAF.NAMESPACE + ">",
@@ -109,10 +105,6 @@ public class FilterScopeTest extends AbstractComplianceTest {
 				"} "
 		);
 
-		// TODO: Remove the query explanation printing before merging
-		String string = conn.prepareTupleQuery(query).explain(Explanation.Level.Executed).toString();
-		System.out.println(string);
-
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			List<BindingSet> collect = result.stream().collect(Collectors.toList());
 			assertEquals(4, collect.size());
@@ -120,9 +112,8 @@ public class FilterScopeTest extends AbstractComplianceTest {
 
 	}
 
-	@Test
-	public void testScope2() {
-		loadData();
+	public void testScope2(RepositoryConnection conn) {
+		loadData(conn);
 
 		String query = String.join("\n", "",
 				"PREFIX foaf: <" + FOAF.NAMESPACE + ">",
@@ -137,10 +128,6 @@ public class FilterScopeTest extends AbstractComplianceTest {
 				"} "
 		);
 
-		// TODO: Remove the query explanation printing before merging
-		String string = conn.prepareTupleQuery(query).explain(Explanation.Level.Executed).toString();
-		System.out.println(string);
-
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			List<BindingSet> collect = result.stream().collect(Collectors.toList());
 			assertEquals(List.of(), collect);
@@ -148,9 +135,8 @@ public class FilterScopeTest extends AbstractComplianceTest {
 
 	}
 
-	@Test
-	public void testScope3() {
-		loadData();
+	public void testScope3(RepositoryConnection conn) {
+		loadData(conn);
 
 		String query = String.join("\n", "",
 				"PREFIX foaf: <" + FOAF.NAMESPACE + ">",
@@ -166,10 +152,6 @@ public class FilterScopeTest extends AbstractComplianceTest {
 				"} "
 		);
 
-		// TODO: Remove the query explanation printing before merging
-		String string = conn.prepareTupleQuery(query).explain(Explanation.Level.Executed).toString();
-		System.out.println(string);
-
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			List<BindingSet> collect = result.stream().collect(Collectors.toList());
 			assertEquals(List.of(), collect);
@@ -177,9 +159,8 @@ public class FilterScopeTest extends AbstractComplianceTest {
 
 	}
 
-	@Test
-	public void testScope3WithoutScopingIssue() {
-		loadData();
+	public void testScope3WithoutScopingIssue(RepositoryConnection conn) {
+		loadData(conn);
 
 		String query = String.join("\n", "",
 				"PREFIX foaf: <" + FOAF.NAMESPACE + ">",
@@ -195,10 +176,6 @@ public class FilterScopeTest extends AbstractComplianceTest {
 				"} "
 		);
 
-		// TODO: Remove the query explanation printing before merging
-		String string = conn.prepareTupleQuery(query).explain(Explanation.Level.Executed).toString();
-		System.out.println(string);
-
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			List<BindingSet> collect = result.stream().collect(Collectors.toList());
 			assertEquals(4, collect.size());
@@ -206,9 +183,8 @@ public class FilterScopeTest extends AbstractComplianceTest {
 
 	}
 
-	@Test
-	public void testScope4() {
-		loadData();
+	public void testScope4(RepositoryConnection conn) {
+		loadData(conn);
 
 		String query = String.join("\n", "",
 				"PREFIX foaf: <" + FOAF.NAMESPACE + ">",
@@ -224,10 +200,6 @@ public class FilterScopeTest extends AbstractComplianceTest {
 				"} "
 		);
 
-		// TODO: Remove the query explanation printing before merging
-		String string = conn.prepareTupleQuery(query).explain(Explanation.Level.Executed).toString();
-		System.out.println(string);
-
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			List<BindingSet> collect = result.stream().collect(Collectors.toList());
 			assertEquals(List.of(), collect);
@@ -235,7 +207,7 @@ public class FilterScopeTest extends AbstractComplianceTest {
 
 	}
 
-	private void loadData() {
+	private void loadData(RepositoryConnection conn) {
 		BNode bnode1 = Values.bnode("1");
 		BNode bnode2 = Values.bnode("2");
 		BNode bnode3 = Values.bnode("3");
@@ -262,6 +234,18 @@ public class FilterScopeTest extends AbstractComplianceTest {
 		conn.add(bnode2, FOAF.KNOWS, bnode3);
 		conn.add(bnode3, FOAF.KNOWS, bnode4);
 		conn.add(bnode4, FOAF.KNOWS, bnode5);
+	}
+
+	public Stream<DynamicTest> tests() {
+		return Stream.of(
+				makeTest("testScope1", this::testScope1),
+				makeTest("testScope1WithoutScopingIssue", this::testScope1WithoutScopingIssue),
+				makeTest("testScope1WithCorrectScope", this::testScope1WithCorrectScope),
+				makeTest("testScope2", this::testScope2),
+				makeTest("testScope3", this::testScope3),
+				makeTest("testScope3WithoutScopingIssue", this::testScope3WithoutScopingIssue),
+				makeTest("testScope4", this::testScope4)
+		);
 	}
 
 }
