@@ -75,10 +75,10 @@ if  ! [[ $(git status --porcelain -u no  --branch) == "## main...origin/main" ]]
 fi
 
 ORIGINAL_BRANCH=""
-if  git status --porcelain -u no  --branch == "## main...origin/main"; then
+if  [[ $(git status --porcelain -u no  --branch) == "## main...origin/main" ]]; then
   ORIGINAL_BRANCH="main";
 fi
-if git status --porcelain -u no  --branch == "## develop...origin/develop"; then
+if [[ $(git status --porcelain -u no  --branch) == "## develop...origin/develop" ]]; then
   ORIGINAL_BRANCH="develop";
 fi
 
