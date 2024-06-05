@@ -45,9 +45,23 @@ public abstract class AbstractIRI implements IRI {
 		return false;
 	}
 
+	private int cachedHashCode = 0;
+
 	@Override
 	public int hashCode() {
-		return stringValue().hashCode();
+		int cached = cachedHashCode;
+		if (cached == 0) {
+			synchronized (this) {
+				cached = cachedHashCode;
+				if (cached == 0) {
+					cached = stringValue().hashCode();
+					cachedHashCode = cached;
+				}
+			}
+			cached = stringValue().hashCode();
+			cachedHashCode = cached;
+		}
+		return cached;
 	}
 
 	@Override

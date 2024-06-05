@@ -60,7 +60,7 @@ public class ValueStoreTest {
 	public void testGcValues() throws Exception {
 		Random random = new Random(1337);
 		LmdbValue values[] = new LmdbValue[1000];
-		valueStore.startTransaction();
+		valueStore.startTransaction(true);
 		for (int i = 0; i < values.length; i++) {
 			values[i] = valueStore.createLiteral("This is a random literal:" + random.nextLong());
 			valueStore.storeValue(values[i]);
@@ -69,7 +69,7 @@ public class ValueStoreTest {
 
 		ValueStoreRevision revBefore = valueStore.getRevision();
 
-		valueStore.startTransaction();
+		valueStore.startTransaction(true);
 		Set<Long> ids = new HashSet<>();
 		for (int i = 0; i < 30; i++) {
 			ids.add(values[i].getInternalID());
@@ -87,10 +87,10 @@ public class ValueStoreTest {
 		valueStore.unusedRevisionIds.add(revBefore.getRevisionId());
 
 		valueStore.forceEvictionOfValues();
-		valueStore.startTransaction();
+		valueStore.startTransaction(true);
 		valueStore.commit();
 
-		valueStore.startTransaction();
+		valueStore.startTransaction(true);
 		for (int i = 0; i < 30; i++) {
 			LmdbValue value = valueStore.createLiteral("This is a random literal:" + random.nextLong());
 			values[i] = value;
@@ -107,14 +107,14 @@ public class ValueStoreTest {
 	public void testGcValuesAfterRestart() throws Exception {
 		Random random = new Random(1337);
 		LmdbValue values[] = new LmdbValue[1000];
-		valueStore.startTransaction();
+		valueStore.startTransaction(true);
 		for (int i = 0; i < values.length; i++) {
 			values[i] = valueStore.createLiteral("This is a random literal:" + random.nextLong());
 			valueStore.storeValue(values[i]);
 		}
 		valueStore.commit();
 
-		valueStore.startTransaction();
+		valueStore.startTransaction(true);
 		Set<Long> ids = new HashSet<>();
 		for (int i = 0; i < 30; i++) {
 			ids.add(values[i].getInternalID());
@@ -126,7 +126,7 @@ public class ValueStoreTest {
 		valueStore.close();
 		valueStore = createValueStore();
 
-		valueStore.startTransaction();
+		valueStore.startTransaction(true);
 		for (int i = 0; i < 30; i++) {
 			LmdbValue value = valueStore.createLiteral("This is a random literal:" + random.nextLong());
 			values[i] = value;
@@ -143,21 +143,21 @@ public class ValueStoreTest {
 	public void testGcDatatypes() throws Exception {
 		IRI[] types = new IRI[] { XSD.STRING, XSD.INTEGER, XSD.DOUBLE, XSD.DECIMAL, XSD.FLOAT };
 		LmdbValue values[] = new LmdbValue[types.length];
-		valueStore.startTransaction();
+		valueStore.startTransaction(true);
 		for (int i = 0; i < values.length; i++) {
 			values[i] = valueStore.createLiteral("123", types[i]);
 			valueStore.storeValue(values[i]);
 		}
 		valueStore.commit();
 
-		valueStore.startTransaction();
+		valueStore.startTransaction(true);
 		List<Long> datatypeIds = new LinkedList<>();
 		for (int i = 1; i < types.length; i++) {
 			datatypeIds.add(valueStore.storeValue(types[i]));
 		}
 		valueStore.commit();
 
-		valueStore.startTransaction();
+		valueStore.startTransaction(true);
 		valueStore.gcIds(Collections.singleton(values[0].getInternalID()), new HashSet<>());
 		valueStore.gcIds(datatypeIds, new HashSet<>());
 		valueStore.commit();
@@ -185,7 +185,7 @@ public class ValueStoreTest {
 	@Test
 	public void testGcURIs() throws Exception {
 		for (boolean storeAndGcUri : List.of(false, true)) {
-			valueStore.startTransaction();
+			valueStore.startTransaction(true);
 			LmdbLiteral literal = valueStore.createLiteral("123", XSD.STRING);
 			valueStore.storeValue(literal);
 			if (storeAndGcUri) {
@@ -197,7 +197,7 @@ public class ValueStoreTest {
 			assertTrue(typeId != 0);
 
 			Set<Long> nextGcIds = new HashSet<>();
-			valueStore.startTransaction();
+			valueStore.startTransaction(true);
 			valueStore.gcIds(Collections.singleton(literal.getInternalID()), nextGcIds);
 			assertEquals(1, nextGcIds.size());
 			assertTrue(nextGcIds.contains(typeId));

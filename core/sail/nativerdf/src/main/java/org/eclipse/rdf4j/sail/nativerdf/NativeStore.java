@@ -81,6 +81,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 			private OverFlowStoreCleaner(NativeSailStore nativeSailStore, File dataDir) {
 				this.nativeSailStore = nativeSailStore;
+				nativeSailStore.disableTxnStatus();
 				this.dataDir = dataDir;
 			}
 

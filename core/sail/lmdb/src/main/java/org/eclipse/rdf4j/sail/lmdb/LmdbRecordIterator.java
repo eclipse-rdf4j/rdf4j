@@ -15,6 +15,7 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
+import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
@@ -25,6 +26,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.locks.StampedLock;
 
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TripleStore.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
@@ -136,10 +138,10 @@ class LmdbRecordIterator implements RecordIterator {
 					index.toKey(minKeyBuf, quad[0], quad[1], quad[2], quad[3]);
 					minKeyBuf.flip();
 					keyData.mv_data(minKeyBuf);
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET);
+					lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_SET));
 					if (lastResult != 0) {
 						// use MDB_SET_RANGE if key was deleted
-						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+						lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE));
 					}
 					if (lastResult != 0) {
 						closeInternal(false);
@@ -151,26 +153,26 @@ class LmdbRecordIterator implements RecordIterator {
 			}
 
 			if (fetchNext) {
-				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+				lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT));
 				fetchNext = false;
 			} else {
 				if (minKeyBuf != null) {
 					// set cursor to min key
 					keyData.mv_data(minKeyBuf);
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+					lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE));
 				} else {
 					// set cursor to first item
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+					lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT));
 				}
 			}
 
-			while (lastResult == 0) {
+			while (lastResult == MDB_SUCCESS) {
 				// if (maxKey != null && TripleStore.COMPARATOR.compare(keyData.mv_data(), maxKey.mv_data()) > 0) {
 				if (maxKey != null && mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
 					lastResult = MDB_NOTFOUND;
 				} else if (groupMatcher != null && !groupMatcher.matches(keyData.mv_data())) {
 					// value doesn't match search key/mask, fetch next value
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+					lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT));
 				} else {
 					// Matching value found
 					index.keyToQuad(keyData.mv_data(), quad);
@@ -181,6 +183,8 @@ class LmdbRecordIterator implements RecordIterator {
 			}
 			closeInternal(false);
 			return null;
+		} catch (IOException e) {
+			throw new SailException(e);
 		} finally {
 			txnLock.unlockRead(stamp);
 		}

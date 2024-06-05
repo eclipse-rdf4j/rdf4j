@@ -341,13 +341,13 @@ public class LinkedHashModel extends AbstractModel {
 
 		private static final long serialVersionUID = -1205676084606998540L;
 
-		Set<ModelStatement> subjects = new LinkedHashSet<>();
+		Set<ModelStatement> subjects = new LinkedHashSet<>(1);
 
-		Set<ModelStatement> predicates = new LinkedHashSet<>();
+		Set<ModelStatement> predicates = new LinkedHashSet<>(1);
 
-		Set<ModelStatement> objects = new LinkedHashSet<>();
+		Set<ModelStatement> objects = new LinkedHashSet<>(1);
 
-		Set<ModelStatement> contexts = new LinkedHashSet<>();
+		Set<ModelStatement> contexts = new LinkedHashSet<>(1);
 
 		private final V value;
 
@@ -420,6 +420,13 @@ public class LinkedHashModel extends AbstractModel {
 			if (this == other) {
 				return true;
 			}
+			if (other == null) {
+				return false;
+			}
+			if (other == statement) {
+				return true;
+			}
+
 			if (!super.equals(other)) {
 				return false;
 			}
