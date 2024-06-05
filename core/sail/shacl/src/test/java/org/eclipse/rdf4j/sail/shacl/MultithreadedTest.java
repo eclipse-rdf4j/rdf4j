@@ -356,6 +356,9 @@ public abstract class MultithreadedTest {
 	@Test
 	public void testLotsOfValidationFailuresSerializableValidation() throws IOException {
 		System.out.println("testLotsOfValidationFailuresSerializableValidation");
+		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailBaseConfiguration.class.getName());
+		root.setLevel(Level.ERROR);
+
 		ShaclSail sail = new ShaclSail(getBaseSail());
 
 		sail.setParallelValidation(true);

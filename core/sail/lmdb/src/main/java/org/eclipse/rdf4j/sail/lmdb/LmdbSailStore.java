@@ -920,7 +920,14 @@ class LmdbSailStore implements SailStore {
 			try {
 				return createStatementIterator(txn, subj, pred, obj, explicit, contexts);
 			} catch (IOException e) {
-				throw new SailException("Unable to get statements", e);
+				try {
+					logger.warn("Failed to get statements, retrying", e);
+					// try once more before giving up
+					Thread.yield();
+					return createStatementIterator(txn, subj, pred, obj, explicit, contexts);
+				} catch (IOException e2) {
+					throw new SailException("Unable to get statements", e);
+				}
 			}
 		}
 
