@@ -315,7 +315,9 @@ public class RDF4JTemplate {
 			Variable p2 = SparqlBuilder.var("p2_" + i);
 			Variable s2 = SparqlBuilder.var("s2_" + i);
 			q.delete(target.has(p1, o1), s2.has(p2, target))
-					.where(toIri(start).has(p, target).optional(), target.has(p1, o1).optional(),
+					.where(
+							toIri(start).has(p, target),
+							target.has(p1, o1).optional(),
 							s2.has(p2, target).optional());
 		}
 		update(q.getQueryString()).execute();

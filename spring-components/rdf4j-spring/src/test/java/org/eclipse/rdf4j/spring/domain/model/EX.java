@@ -34,6 +34,7 @@ public class EX {
 	public static final IRI sunflowers = SimpleValueFactory.getInstance().createIRI(base, "sunflowers");
 	public static final IRI potatoEaters = SimpleValueFactory.getInstance().createIRI(base, "potatoEaters");
 	public static final IRI guernica = SimpleValueFactory.getInstance().createIRI(base, "guernica");
+	public static final IRI homeAddress = SimpleValueFactory.getInstance().createIRI(base, "homeAddress");
 
 	public static IRI of(String localName) {
 		return SimpleValueFactory.getInstance().createIRI(base, localName);
