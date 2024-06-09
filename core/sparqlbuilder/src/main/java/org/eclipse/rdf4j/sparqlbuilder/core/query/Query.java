@@ -12,8 +12,10 @@
 package org.eclipse.rdf4j.sparqlbuilder.core.query;
 
 import java.util.Optional;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.Values;
 import org.eclipse.rdf4j.sparqlbuilder.core.Dataset;
 import org.eclipse.rdf4j.sparqlbuilder.core.From;
 import org.eclipse.rdf4j.sparqlbuilder.core.GroupBy;
@@ -45,6 +47,7 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	protected Optional<GroupBy> groupBy = Optional.empty();
 	protected Optional<OrderBy> orderBy = Optional.empty();
 	protected Optional<Having> having = Optional.empty();
+	protected Optional<Values> values = Optional.empty();
 	protected int limit = -1, offset = -1, varCount = -1, bnodeCount = -1;
 
 	/**
@@ -201,6 +204,13 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 		return (T) this;
 	}
 
+	public T values(Consumer<Values.VariablesBuilder> valuesConfigurer) {
+		Values.Builder builder = (Values.Builder) Values.builder();
+		valuesConfigurer.accept(builder);
+		this.values = Optional.of(builder.build());
+		return (T) this;
+	}
+
 	/**
 	 * A shortcut. Each call to this method returns a new {@link Variable} that is unique (i.e., has a unique alias) to
 	 * this query instance.
@@ -246,7 +256,7 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 		if (offset >= 0) {
 			query.append(OFFSET + " ").append(offset).append("\n");
 		}
-
+		SparqlBuilderUtils.appendAndNewlineIfPresent(values, query);
 		return query.toString();
 	}
 }
