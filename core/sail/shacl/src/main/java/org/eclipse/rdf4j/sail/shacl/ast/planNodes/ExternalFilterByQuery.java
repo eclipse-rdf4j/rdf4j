@@ -91,10 +91,13 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 						t.set(map.apply(t.get(), bindingSet.next()));
 					} while (bindingSet.hasNext());
 				}
+				logger.trace("Tuple accepted because it matches the external query. Value: {}, Query: {}, Tuple: {}",
+						value, queryString, t);
 				return true;
 			}
 		}
-
+		logger.debug("Tuple rejected because it does not match the external query. Value: {}, Query: {}, Tuple: {}",
+				value, queryString, t);
 		return false;
 
 	}
