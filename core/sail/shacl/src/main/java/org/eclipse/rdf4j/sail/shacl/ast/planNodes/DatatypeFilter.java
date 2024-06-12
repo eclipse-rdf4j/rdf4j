@@ -17,11 +17,15 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * @author Håvard Ottestad
  */
 public class DatatypeFilter extends FilterPlanNode {
+
+	private static final Logger logger = LoggerFactory.getLogger(DatatypeFilter.class);
 
 	private final IRI datatype;
 	private final CoreDatatype.XSD xsdDatatype;
@@ -37,17 +41,41 @@ public class DatatypeFilter extends FilterPlanNode {
 	@Override
 	boolean checkTuple(Reference t) {
 		if (!(t.get().getValue().isLiteral())) {
+			logger.debug("Tuple rejected because it's not a literal. Tuple: {}", t);
 			return false;
 		}
 
 		Literal literal = (Literal) t.get().getValue();
 		if (xsdDatatype != null) {
 			if (literal.getCoreDatatype() == xsdDatatype) {
-				return XMLDatatypeUtil.isValidValue(literal.stringValue(), xsdDatatype);
+				boolean isValid = XMLDatatypeUtil.isValidValue(literal.stringValue(), xsdDatatype);
+				if (isValid) {
+					logger.trace(
+							"Tuple accepted because its literal value is valid according to the rules for the datatype in the XSD spec. Actual datatype: {}, Expected datatype: {}, Tuple: {}",
+							literal.getDatatype(), xsdDatatype, t);
+				} else {
+					logger.debug(
+							"Tuple rejected because its literal value is invalid according to the rules for the datatype in the XSD spec. Actual datatype: {}, Expected datatype: {}, Tuple: {}",
+							literal.getDatatype(), xsdDatatype, t);
+				}
+				return isValid;
 			}
+			logger.debug(
+					"Tuple rejected because literal's core datatype is not the expected datatype. Actual datatype: {}, Expected datatype: {}, Tuple: {}",
+					literal.getDatatype(), xsdDatatype, t);
 			return false;
 		} else {
-			return literal.getDatatype() == datatype || literal.getDatatype().equals(datatype);
+			boolean isEqual = literal.getDatatype() == datatype || literal.getDatatype().equals(datatype);
+			if (isEqual) {
+				logger.trace(
+						"Tuple accepted because literal's datatype is equal to the expected datatype. Actual datatype: {}, Expected datatype: {}, Tuple: {}",
+						literal.getDatatype(), datatype, t);
+			} else {
+				logger.debug(
+						"Tuple rejected because literal's datatype is not equal to the expected datatype. Actual datatype: {}, Expected datatype: {}, Tuple: {}",
+						literal.getDatatype(), datatype, t);
+			}
+			return isEqual;
 		}
 	}
 

@@ -19,11 +19,15 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * @author Håvard Ottestad
  */
 public class LanguageInFilter extends FilterPlanNode {
+
+	private static final Logger logger = LoggerFactory.getLogger(LanguageInFilter.class);
 
 	private final List<String> languageRanges;
 	private final Set<String> lowerCaseLanguageIn;
@@ -37,17 +41,22 @@ public class LanguageInFilter extends FilterPlanNode {
 	@Override
 	boolean checkTuple(Reference t) {
 		if (!(t.get().getValue().isLiteral())) {
+			logger.debug("Tuple rejected because it's not a literal. Tuple: {}", t);
 			return false;
 		}
 
 		Optional<String> language = ((Literal) t.get().getValue()).getLanguage();
-		if (!language.isPresent()) {
+		if (language.isEmpty()) {
+			logger.debug("Tuple rejected because it does not have a language tag. Tuple: {}", t);
 			return false;
 		}
 
 		// early matching
 		boolean languageMatches = language.map(String::toLowerCase).filter(lowerCaseLanguageIn::contains).isPresent();
 		if (languageMatches) {
+			logger.trace(
+					"Tuple accepted because its language tag (toLowerCase()) is in the language set. Actual language: {}, Language set: {}, Tuple: {}",
+					language.get(), lowerCaseLanguageIn, t);
 			return true;
 		}
 
@@ -56,6 +65,9 @@ public class LanguageInFilter extends FilterPlanNode {
 
 		for (String languageRange : languageRanges) {
 			if (Literals.langMatches(langTag, languageRange)) {
+				logger.trace(
+						"Tuple accepted because its language tag matches the language range (BCP47). Actual language: {}, Language range: {}, Tuple: {}",
+						langTag, languageRange, t);
 				return true;
 			}
 		}
