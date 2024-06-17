@@ -146,12 +146,15 @@ public class RelationMapBuilder {
 
 	private TupleQueryEvaluationBuilder makeTupleQueryBuilder() {
 		return rdf4JTemplate
-				.tupleQuery(
-						Queries.SELECT(getProjection())
-								.where(getWhereClause())
-								.distinct()
-								.getQueryString())
+				.tupleQuery(makeQueryString())
 				.withBindings(bindingsBuilder.build());
+	}
+
+	String makeQueryString() {
+		return Queries.SELECT(getProjection())
+				.where(getWhereClause())
+				.distinct()
+				.getQueryString();
 	}
 
 	private Projectable[] getProjection() {
@@ -168,14 +171,14 @@ public class RelationMapBuilder {
 
 	private GraphPattern[] getWhereClause() {
 		TriplePattern tp = _relSubject.has(predicate, _relObject);
+		GraphPattern[] ret = new GraphPattern[constraints.length + 1];
 		if (this.isRelationOptional) {
-			GraphPattern[] ret = new GraphPattern[constraints.length + 1];
-			ret[0] = tp.optional();
-			System.arraycopy(constraints, 0, ret, 1, constraints.length);
-			return ret;
+			ret[constraints.length] = tp.optional();
 		} else {
-			return new GraphPattern[] { tp.and(constraints) };
+			ret[constraints.length] = tp;
 		}
+		System.arraycopy(constraints, 0, ret, 0, constraints.length);
+		return ret;
 	}
 
 	public RelationMapBuilder withBinding(Variable key, Value value) {
