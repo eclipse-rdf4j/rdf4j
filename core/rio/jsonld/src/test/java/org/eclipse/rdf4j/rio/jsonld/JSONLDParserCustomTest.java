@@ -257,7 +257,7 @@ public class JSONLDParserCustomTest {
 		});
 
 		Assertions.assertEquals("Could not load document from " + contextUri
-				+ " because it is not whitelisted. See: JSONLDSettings.WHITELIST and JSONLDSettings.SECURE_MODE",
+				+ " because it is not whitelisted. See: JSONLDSettings.WHITELIST and JSONLDSettings.SECURE_MODE which can also be set as system properties.",
 				rdfParseException.getMessage());
 	}
 
@@ -293,6 +293,26 @@ public class JSONLDParserCustomTest {
 		assertTrue(model.objects().contains(FOAF.PERSON));
 	}
 
+	@Test
+	public void testLocalFileSecurityDisableSecuritySystemProperty() throws Exception {
+		String jsonld = FileUtils.readFileToString(new File(JSONLDParserCustomTest.class.getClassLoader()
+				.getResource("testcases/jsonld/localFileContext/data.jsonld")
+				.getFile()), StandardCharsets.UTF_8);
+		jsonld = jsonld.replace("file:./context.jsonld",
+				JSONLDParserCustomTest.class.getClassLoader()
+						.getResource("testcases/jsonld/localFileContext/context.jsonld")
+						.toString());
+
+		try {
+			System.setProperty(SECURE_MODE.getKey(), "false");
+			parser.parse(new StringReader(jsonld), "");
+			assertTrue(model.objects().contains(FOAF.PERSON));
+		} finally {
+			System.clearProperty(SECURE_MODE.getKey());
+		}
+
+	}
+
 	@RepeatedTest(10)
 	public void testRemoteContext() throws Exception {
 		String jsonld = FileUtils.readFileToString(new File(JSONLDParserCustomTest.class.getClassLoader()
@@ -302,6 +322,22 @@ public class JSONLDParserCustomTest {
 		parser.getParserConfig().set(WHITELIST, Set.of("https://schema.org"));
 		parser.parse(new StringReader(jsonld), "");
 		assertEquals(59, model.size());
+	}
+
+	@Test
+	public void testRemoteContextSystemProperty() throws Exception {
+		String jsonld = FileUtils.readFileToString(new File(JSONLDParserCustomTest.class.getClassLoader()
+				.getResource("testcases/jsonld/remoteContext/data.jsonld")
+				.getFile()), StandardCharsets.UTF_8);
+
+		try {
+			System.setProperty(WHITELIST.getKey(), "[\"https://schema.org\"]");
+			parser.parse(new StringReader(jsonld), "");
+			assertEquals(59, model.size());
+		} finally {
+			System.clearProperty(WHITELIST.getKey());
+		}
+
 	}
 
 	@Test
