@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
-import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.rio.RioSetting;
@@ -38,7 +37,7 @@ public class JSONLDSettings {
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 *
 	 */
-	public static final RioSetting<Boolean> COMPACT_ARRAYS = new BooleanRioSetting(
+	public static final BooleanRioSetting COMPACT_ARRAYS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.jsonld.compact_arrays", "Compact arrays", Boolean.TRUE);
 
 	/**
@@ -69,7 +68,7 @@ public class JSONLDSettings {
 	 * The JSON-LD processor will throw an exception if a warning is encountered during processing.
 	 *
 	 */
-	public static final RioSetting<Boolean> EXCEPTION_ON_WARNING = new ClassRioSetting<>(
+	public static final BooleanRioSetting EXCEPTION_ON_WARNING = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.jsonld.exception_on_warning",
 			"Throw an exception when logging a warning.",
 			Boolean.FALSE);
@@ -86,7 +85,7 @@ public class JSONLDSettings {
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 *
 	 */
-	public static final RioSetting<Boolean> OPTIMIZE = new BooleanRioSetting("org.eclipse.rdf4j.rio.jsonld.optimize",
+	public static final BooleanRioSetting OPTIMIZE = new BooleanRioSetting("org.eclipse.rdf4j.rio.jsonld.optimize",
 			"Optimize output", Boolean.FALSE);
 
 	/**
@@ -102,7 +101,7 @@ public class JSONLDSettings {
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 *
 	 */
-	public static final RioSetting<Boolean> PRODUCE_GENERALIZED_RDF = new BooleanRioSetting(
+	public static final BooleanRioSetting PRODUCE_GENERALIZED_RDF = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.jsonld.produce_generalized_rdf", "Produce generalized RDF", Boolean.FALSE);
 
 	/**
@@ -117,7 +116,7 @@ public class JSONLDSettings {
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 *
 	 */
-	public static final RioSetting<Boolean> USE_NATIVE_TYPES = new BooleanRioSetting(
+	public static final BooleanRioSetting USE_NATIVE_TYPES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.jsonld.use_native_types", "Use Native JSON Types", Boolean.FALSE);
 
 	/**
@@ -131,7 +130,7 @@ public class JSONLDSettings {
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 *
 	 */
-	public static final RioSetting<Boolean> USE_RDF_TYPE = new BooleanRioSetting(
+	public static final BooleanRioSetting USE_RDF_TYPE = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.jsonld.use_rdf_type", "Use RDF Type", Boolean.FALSE);
 
 	/**
@@ -153,17 +152,19 @@ public class JSONLDSettings {
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.jsonld.hierarchical_view}.
 	 *
 	 */
-	public static final RioSetting<Boolean> HIERARCHICAL_VIEW = new BooleanRioSetting(
+	public static final BooleanRioSetting HIERARCHICAL_VIEW = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.jsonld.hierarchical_view", "Hierarchical representation of the JSON", Boolean.FALSE);
 
 	/**
-	 * Whitelist of remote/local resources that the JSON-LD parser can retrieve. Set of URIs as strings.
+	 * Whitelist of remote/local resources that the JSON-LD parser can retrieve. Set of URIs as strings. This can be
+	 * overridden by setting a system property with the key {@code org.eclipse.rdf4j.rio.jsonld_whitelist} and a JSON
+	 * array of the desired values.
 	 * <p>
 	 * Default:
 	 * {@code Set.of("http://www.w3.org/ns/anno.jsonld", "http://www.w3.org/ns/activitystreams.jsonld", "http://www.w3.org/ns/ldp.jsonld", "http://www.w3.org/ns/oa.jsonld", "http://www.w3.org/ns/hydra/context.jsonld", "http://schema.org/", "https://w3id.org/security/v1", "https://w3c.github.io/json-ld-rc/context.jsonld", "https://www.w3.org/2018/credentials/v1", "https://health-lifesci.schema.org/", "https://auto.schema.org/", "https://bib.schema.org/", "http://xmlns.com/foaf/spec/index.jsonld", "https://pending.schema.org/", "https://schema.org/", "https://schema.org/docs/jsonldcontext.jsonld", "https://schema.org/version/latest/schemaorg-current-https.jsonld", "https://schema.org/version/latest/schemaorg-all-http.jsonld", "https://schema.org/version/latest/schemaorg-all-https.jsonld", "https://schema.org/version/latest/schemaorg-current-http.jsonld", "https://schema.org/version/latest/schemaorg-all.jsonld", "https://schema.org/version/latest/schemaorg-current.jsonld", "https://project-open-data.cio.gov/v1.1/schema/catalog.jsonld", "https://geojson.org/geojson-ld/geojson-context.jsonld", "https://www.w3.org/2019/wot/td/v1");
 	 *
 	 */
-	public static final RioSetting<Set<String>> WHITELIST = new RioSettingImpl<>(
+	public static final SetRioSetting<String> WHITELIST = new SetRioSetting<>(
 			"org.eclipse.rdf4j.rio.jsonld_whitelist",
 			"Whitelist of remote/local resources that the JSON-LD parser can retrieve. Set of URIs as strings.",
 			Set.of(
@@ -195,11 +196,13 @@ public class JSONLDSettings {
 			));
 
 	/**
-	 * Secure mode only allows loading remote/local resources (ex. context from url) that are whitelisted.
+	 * Secure mode only allows loading remote/local resources (ex. context from url) that are whitelisted. This can be
+	 * overridden by setting a system property with the key {@code org.eclipse.rdf4j.rio.jsonld_secure_mode} and a
+	 * boolean value.
 	 * <p>
 	 * Default: true
 	 */
-	public static final RioSetting<Boolean> SECURE_MODE = new RioSettingImpl<>(
+	public static final BooleanRioSetting SECURE_MODE = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.jsonld_secure_mode",
 			"Secure mode only allows loading remote/local resources (ex. context from url) that are whitelisted.",
 			Boolean.TRUE);
@@ -211,7 +214,7 @@ public class JSONLDSettings {
 	 * <p>
 	 * Default: true
 	 */
-	public static final RioSetting<Boolean> DOCUMENT_LOADER_CACHE = new RioSettingImpl<>(
+	public static final BooleanRioSetting DOCUMENT_LOADER_CACHE = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.jsonld_document_loader_cache",
 			"The document loader cache is enabled by default. All loaded documents, such as remote contexts, are cached for 1 hour, or until the cache is full. The cache holds up to 1000 documents. The cache is shared between all JSONLDParsers. The cache can be disabled by setting this value to false.",
 			Boolean.TRUE);

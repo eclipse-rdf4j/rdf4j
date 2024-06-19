@@ -17,7 +17,7 @@ MAINTAINER Bart Hanssens (bart.hanssens@bosa.fgov.be)
 RUN apt-get clean && apt-get update && apt-get upgrade -y && apt-get clean
 
 ENV JAVA_OPTS="-Xmx2g"
-ENV CATALINA_OPTS="-Dorg.eclipse.rdf4j.appdata.basedir=/var/rdf4j"
+ENV CATALINA_OPTS="-Dorg.eclipse.rdf4j.appdata.basedir=/var/rdf4j -Dorg.eclipse.rdf4j.rio.jsonld_secure_mode=false"
 
 RUN adduser --system tomcat
 
