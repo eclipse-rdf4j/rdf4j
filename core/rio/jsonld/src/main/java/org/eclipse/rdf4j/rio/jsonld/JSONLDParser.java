@@ -20,6 +20,8 @@ import java.io.Reader;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -41,6 +43,9 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.json.JsonObject;
 import jakarta.json.JsonString;
@@ -130,9 +135,8 @@ public class JSONLDParser extends AbstractRDFParser {
 			}
 
 			boolean secureMode = getParserConfig().get(SECURE_MODE);
-			boolean documentLoaderCache = getParserConfig().get(DOCUMENT_LOADER_CACHE);
-
 			Set<String> whitelist = getParserConfig().get(WHITELIST);
+			boolean documentLoaderCache = getParserConfig().get(DOCUMENT_LOADER_CACHE);
 
 			JsonLdOptions opts = new JsonLdOptions();
 			opts.setUriValidation(false);

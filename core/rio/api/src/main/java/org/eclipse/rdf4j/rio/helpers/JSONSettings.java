@@ -29,7 +29,7 @@ public class JSONSettings {
 	 * Can be overridden by setting system property
 	 * {@code org.eclipse.rdf4j.rio.json.allow_backslash_escaping_any_character}.
 	 */
-	public static final RioSetting<Boolean> ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER = new BooleanRioSetting(
+	public static final BooleanRioSetting ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_backslash_escaping_any_character",
 			"Allow backslash escaping any character", Boolean.FALSE);
 
@@ -40,7 +40,7 @@ public class JSONSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.allow_comments}.
 	 */
-	public static final RioSetting<Boolean> ALLOW_COMMENTS = new BooleanRioSetting(
+	public static final BooleanRioSetting ALLOW_COMMENTS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_comments", "Allow comments", Boolean.FALSE);
 
 	/**
@@ -50,7 +50,7 @@ public class JSONSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.allow_non_numeric_numbers}.
 	 */
-	public static final RioSetting<Boolean> ALLOW_NON_NUMERIC_NUMBERS = new BooleanRioSetting(
+	public static final BooleanRioSetting ALLOW_NON_NUMERIC_NUMBERS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_non_numeric_numbers", "Allow non-numeric numbers", Boolean.FALSE);
 
 	/**
@@ -60,7 +60,7 @@ public class JSONSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.allow_numeric_leading_zeros}.
 	 */
-	public static final RioSetting<Boolean> ALLOW_NUMERIC_LEADING_ZEROS = new BooleanRioSetting(
+	public static final BooleanRioSetting ALLOW_NUMERIC_LEADING_ZEROS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_numeric_leading_zeros", "Allow numeric leading zeros", Boolean.FALSE);
 
 	/**
@@ -70,7 +70,7 @@ public class JSONSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.allow_single_quotes}.
 	 */
-	public static final RioSetting<Boolean> ALLOW_SINGLE_QUOTES = new BooleanRioSetting(
+	public static final BooleanRioSetting ALLOW_SINGLE_QUOTES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_single_quotes", "Allow single quotes", Boolean.FALSE);
 
 	/**
@@ -80,7 +80,7 @@ public class JSONSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.allow_unquoted_control_chars}.
 	 */
-	public static final RioSetting<Boolean> ALLOW_UNQUOTED_CONTROL_CHARS = new BooleanRioSetting(
+	public static final BooleanRioSetting ALLOW_UNQUOTED_CONTROL_CHARS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_unquoted_control_chars", "Allow unquoted control chars", Boolean.FALSE);
 
 	/**
@@ -90,7 +90,7 @@ public class JSONSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.allow_unquoted_field_names}.
 	 */
-	public static final RioSetting<Boolean> ALLOW_UNQUOTED_FIELD_NAMES = new BooleanRioSetting(
+	public static final BooleanRioSetting ALLOW_UNQUOTED_FIELD_NAMES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_unquoted_field_names", "Allow unquoted field names", Boolean.FALSE);
 
 	/**
@@ -100,7 +100,7 @@ public class JSONSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.allow_yaml_comments}.
 	 */
-	public static final RioSetting<Boolean> ALLOW_YAML_COMMENTS = new BooleanRioSetting(
+	public static final BooleanRioSetting ALLOW_YAML_COMMENTS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_yaml_comments", "Allow YAML comments", Boolean.FALSE);
 
 	/**
@@ -110,7 +110,7 @@ public class JSONSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.allow_trailing_comma}.
 	 */
-	public static final RioSetting<Boolean> ALLOW_TRAILING_COMMA = new BooleanRioSetting(
+	public static final BooleanRioSetting ALLOW_TRAILING_COMMA = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_trailing_comma", "Allow trailing comma", Boolean.FALSE);
 
 	/**
@@ -120,7 +120,7 @@ public class JSONSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.include_source_in_location}.
 	 */
-	public static final RioSetting<Boolean> INCLUDE_SOURCE_IN_LOCATION = new BooleanRioSetting(
+	public static final BooleanRioSetting INCLUDE_SOURCE_IN_LOCATION = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.include_source_in_location", "Include Source in Location", Boolean.TRUE);
 
 	/**
@@ -131,7 +131,7 @@ public class JSONSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.strict_duplicate_detection}.
 	 */
-	public static final RioSetting<Boolean> STRICT_DUPLICATE_DETECTION = new BooleanRioSetting(
+	public static final BooleanRioSetting STRICT_DUPLICATE_DETECTION = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.strict_duplicate_detection", "Strict duplicate detection", Boolean.FALSE);
 
 	/**

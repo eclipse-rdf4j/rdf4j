@@ -78,7 +78,7 @@ public class CachingDocumentLoader implements DocumentLoader {
 				}
 			} else {
 				throw new RDFParseException("Could not load document from " + uri
-						+ " because it is not whitelisted. See: JSONLDSettings.WHITELIST and JSONLDSettings.SECURE_MODE");
+						+ " because it is not whitelisted. See: JSONLDSettings.WHITELIST and JSONLDSettings.SECURE_MODE which can also be set as system properties.");
 			}
 		} catch (RDFParseException e) {
 			logger.error(e.getMessage(), e);
