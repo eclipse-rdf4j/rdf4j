@@ -257,7 +257,7 @@ public class JSONLDParserCustomTest {
 		});
 
 		Assertions.assertEquals("Could not load document from " + contextUri
-				+ " because it is not whitelisted. See: JSONLDSettings.WHITELIST and JSONLDSettings.SECURE_MODE",
+				+ " because it is not whitelisted. See: JSONLDSettings.WHITELIST and JSONLDSettings.SECURE_MODE which can also be set as system properties.",
 				rdfParseException.getMessage());
 	}
 
