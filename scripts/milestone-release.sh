@@ -208,11 +208,11 @@ mvn clean -Dmaven.clean.failOnError=false
 # temporarily disable exiting on error
 set +e
 mvn clean
-mvn install -DskipTests;
-mvn package -Passembly -DskipTests
+mvn install -DskipTests -Djapicmp.skip
+mvn package -Passembly -DskipTests -Djapicmp.skip
 set -e
 
-mvn package -Passembly -DskipTests
+mvn package -Passembly -DskipTests -Djapicmp.skip
 
 git checkout main
 RELEASE_NOTES_BRANCH="${MVN_VERSION_RELEASE}-release-notes"

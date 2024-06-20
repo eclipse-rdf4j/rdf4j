@@ -139,12 +139,12 @@ git checkout main;
 cd scripts
 rm -rf temp
 mkdir temp
-echo "MVN_CURRENT_SNAPSHOT_VERSION=\"${MVN_CURRENT_SNAPSHOT_VERSION}\"" > temp/constants.txt
-echo "MVN_VERSION_RELEASE=\"${MVN_VERSION_RELEASE}\"" > temp/constants.txt
-echo "MVN_NEXT_SNAPSHOT_VERSION=\"${MVN_NEXT_SNAPSHOT_VERSION}\"" > temp/constants.txt
-echo "BRANCH=\"${BRANCH}\"" > temp/constants.txt
-echo "RELEASE_NOTES_BRANCH=\"${RELEASE_NOTES_BRANCH}\"" > temp/constants.txt
-echo "MVN_VERSION_DEVELOP=\"${MVN_VERSION_DEVELOP}\"" > temp/constants.txt
+echo "MVN_CURRENT_SNAPSHOT_VERSION=\"${MVN_CURRENT_SNAPSHOT_VERSION}\"" >> temp/constants.txt
+echo "MVN_VERSION_RELEASE=\"${MVN_VERSION_RELEASE}\"" >> temp/constants.txt
+echo "MVN_NEXT_SNAPSHOT_VERSION=\"${MVN_NEXT_SNAPSHOT_VERSION}\"" >> temp/constants.txt
+echo "BRANCH=\"${BRANCH}\"" >> temp/constants.txt
+echo "RELEASE_NOTES_BRANCH=\"${RELEASE_NOTES_BRANCH}\"" >> temp/constants.txt
+echo "MVN_VERSION_DEVELOP=\"${MVN_VERSION_DEVELOP}\"" >> temp/constants.txt
 cd ..
 
 echo "Running maven clean and install -DskipTests";
@@ -262,11 +262,11 @@ git checkout "${MVN_VERSION_RELEASE}"
 # temporarily disable exiting on error
 set +e
 mvn clean
-mvn install -DskipTests
-mvn package -Passembly -DskipTests
+mvn install -DskipTests -Djapicmp.skip
+mvn package -Passembly -DskipTests -Djapicmp.skip
 set -e
 
-mvn package -Passembly -DskipTests
+mvn package -Passembly -DskipTests -Djapicmp.skip
 
 
 git checkout main
