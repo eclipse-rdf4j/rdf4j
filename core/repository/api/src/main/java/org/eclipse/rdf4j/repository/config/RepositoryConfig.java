@@ -156,6 +156,7 @@ public class RepositoryConfig {
 		model.setNamespace(RDFS.NS);
 		model.setNamespace(XSD.NS);
 		model.setNamespace("rep", RepositoryConfigSchema.NAMESPACE);
+		model.add(repositoryNode, RDF.TYPE, RepositoryConfigSchema.REPOSITORY);
 
 		if (id != null) {
 			model.add(repositoryNode, RepositoryConfigSchema.REPOSITORYID, literal(id));

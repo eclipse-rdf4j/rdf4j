@@ -121,6 +121,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.FallbackDataset;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
 import org.eclipse.rdf4j.repository.sparql.federation.RepositoryFederatedService;
@@ -179,19 +180,8 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		FederationEvaluationStatistics stats = (FederationEvaluationStatistics) evaluationStatistics;
 		QueryInfo queryInfo = stats.getQueryInfo();
-		Dataset dataset = stats.getDataset();
 
-		FederationContext federationContext = queryInfo.getFederationContext();
-		List<Endpoint> members;
-		if (dataset instanceof FedXDataset) {
-			// run the query against a selected set of endpoints
-			FedXDataset ds = (FedXDataset) dataset;
-			members = federationContext.getEndpointManager().getEndpoints(ds.getEndpoints());
-		} else {
-			// evaluate against entire federation
-			FedX fed = federationContext.getFederation();
-			members = fed.getMembers();
-		}
+		List<Endpoint> members = getMembersFromContext(stats);
 
 		// Clone the tuple expression to allow for more aggressive optimizations
 		TupleExpr clone = expr.clone();
@@ -268,6 +258,34 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}
 
 		return query;
+	}
+
+	/**
+	 * Returns the federation members that are active in the current federation. By default it is all federation
+	 * members. If the passed {@link Dataset} is a {@link FedXDataset}, the defined {@link FedXDataset#getEndpoints()}
+	 * are used.
+	 *
+	 * @param evaluationStatisticss to keep the current query context
+	 * @return
+	 */
+	protected List<Endpoint> getMembersFromContext(FederationEvaluationStatistics evaluationStatisticss) {
+		Dataset queryDataset = evaluationStatisticss.getDataset();
+
+		// if the query uses a FROM clause, the external dataset
+		// is wrapped as primary dataset in FallbackDataset
+		if (queryDataset instanceof FallbackDataset) {
+			queryDataset = ((FallbackDataset) queryDataset).getPrimary();
+		}
+
+		if (queryDataset instanceof FedXDataset) {
+			// run the query against a selected set of endpoints
+			FedXDataset ds = (FedXDataset) queryDataset;
+			return federationContext.getEndpointManager().getEndpoints(ds.getEndpoints());
+		} else {
+			// evaluate against entire federation
+			FedX fed = federationContext.getFederation();
+			return fed.getMembers();
+		}
 	}
 
 	/**

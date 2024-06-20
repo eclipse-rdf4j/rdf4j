@@ -16,11 +16,15 @@ import java.util.function.Function;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * @author Håvard Ottestad
  */
 public class GroupByCountFilter implements PlanNode {
+
+	private static final Logger logger = LoggerFactory.getLogger(GroupByCountFilter.class);
 
 	private final Function<Long, Boolean> filter;
 	PlanNode parent;
@@ -74,7 +78,13 @@ public class GroupByCountFilter implements PlanNode {
 					}
 
 					if (!filter.apply(count)) {
+						logger.debug(
+								"Tuple rejected because its count does not pass the filter. Actual count: {}, Tuple: {}",
+								count, this.next);
 						this.next = null;
+					} else {
+						logger.trace("Tuple accepted because its count passes the filter. Actual count: {}, Tuple: {}",
+								count, this.next);
 					}
 				}
 

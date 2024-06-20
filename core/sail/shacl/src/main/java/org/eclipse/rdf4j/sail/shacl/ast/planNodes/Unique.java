@@ -61,6 +61,11 @@ public class Unique implements PlanNode {
 		if (parent.isGuaranteedEmpty()) {
 			return parent;
 		}
+
+		if (parent instanceof Unique && (!compress || ((Unique) parent).compress == compress)) {
+			return parent;
+		}
+
 		return new Unique(parent, compress);
 	}
 

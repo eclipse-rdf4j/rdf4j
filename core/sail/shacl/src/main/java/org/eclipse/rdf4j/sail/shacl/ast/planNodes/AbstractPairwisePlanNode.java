@@ -36,11 +36,15 @@ import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.SimplePath;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * @author Håvard Ottestad
  */
 abstract class AbstractPairwisePlanNode implements PlanNode {
+
+	private static final Logger logger = LoggerFactory.getLogger(AbstractPairwisePlanNode.class);
 
 	private final SailConnection connection;
 	private final Resource[] dataGraph;

@@ -30,7 +30,7 @@ public class TurtleParserSettings {
 	 * @deprecated Use {@link org.eclipse.rdf4j.rio.turtle.TurtleParserSettings#CASE_INSENSITIVE_DIRECTIVES} instead.
 	 */
 	@Deprecated(since = "4.3.0", forRemoval = true)
-	public static final RioSetting<Boolean> CASE_INSENSITIVE_DIRECTIVES = new BooleanRioSetting(
+	public static final BooleanRioSetting CASE_INSENSITIVE_DIRECTIVES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.turtle.case_insensitive_directives",
 			"Allows case-insensitive directives to be recognised", Boolean.FALSE);
 
@@ -46,7 +46,7 @@ public class TurtleParserSettings {
 	 * @deprecated Use {@link org.eclipse.rdf4j.rio.turtle.TurtleParserSettings#ACCEPT_TURTLESTAR} instead.
 	 */
 	@Deprecated(since = "4.3.0", forRemoval = true)
-	public static final RioSetting<Boolean> ACCEPT_TURTLESTAR = new BooleanRioSetting(
+	public static final BooleanRioSetting ACCEPT_TURTLESTAR = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.turtle.accept_turtlestar",
 			"Allow processing of Turtle-star data by the standard Turtle parser",
 			Boolean.TRUE);
