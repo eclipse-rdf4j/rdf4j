@@ -14,13 +14,17 @@ import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.eclipse.rdf4j.rio.helpers.JSONLDSettings.SECURE_MODE;
 import static org.eclipse.rdf4j.rio.helpers.JSONLDSettings.WHITELIST;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.StringReader;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.ServiceLoader;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.model.IRI;
@@ -44,6 +48,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 
+import jakarta.json.spi.JsonProvider;
 import no.hasmac.jsonld.document.Document;
 import no.hasmac.jsonld.document.JsonDocument;
 
@@ -352,6 +357,17 @@ public class JSONLDParserCustomTest {
 		});
 
 		assertEquals("Could not load document from https://example.org/context.jsonld", rdfParseException.getMessage());
+	}
+
+	@Test
+	public void testSPI() {
+		ServiceLoader<JsonProvider> load = ServiceLoader.load(JsonProvider.class);
+		List<String> collect = load.stream()
+				.map(ServiceLoader.Provider::get)
+				.map(t -> t.getClass().getName())
+				.collect(Collectors.toList());
+		assertFalse(collect.isEmpty());
+		assertEquals("org.glassfish.json.JsonProviderImpl", collect.stream().findFirst().orElse(""));
 	}
 
 }
