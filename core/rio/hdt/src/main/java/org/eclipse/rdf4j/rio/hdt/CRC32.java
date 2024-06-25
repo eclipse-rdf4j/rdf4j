@@ -82,6 +82,6 @@ class CRC32 implements Checksum {
 
 	@Override
 	public void reset() {
-		value = 0xFFFFFFFF;
+		value = 0;
 	}
 }

@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.rio.ParseErrorListener;
 import org.eclipse.rdf4j.rio.ParseLocationListener;
@@ -328,7 +329,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 			}
 
 			if (getParserConfig().get(BasicParserSettings.VERIFY_RELATIVE_URIS)) {
-				if (uriSpec.length() > 0 && !uriSpec.startsWith("#") && baseURI.isOpaque()) {
+				if (!uriSpec.isEmpty() && !uriSpec.startsWith("#") && baseURI.isOpaque()) {
 					reportError("Relative URI '" + uriSpec + "' cannot be resolved using the opaque base URI '"
 							+ baseURI + "'", BasicParserSettings.VERIFY_RELATIVE_URIS);
 				}
@@ -487,6 +488,21 @@ public abstract class AbstractRDFParser implements RDFParser {
 			throws RDFParseException {
 		return RDFParserHelper.createLiteral(label, lang, datatype, getParserConfig(), getParseErrorListener(),
 				valueFactory, lineNo, columnNo);
+	}
+
+	/**
+	 * Creates a {@link Literal} object with the supplied parameters, using the lineNo and columnNo to enhance error
+	 * messages or exceptions that may be generated during the creation of the literal.
+	 *
+	 * @see org.eclipse.rdf4j.rio.helpers.RDFParserHelper#createLiteral(String, String, IRI, ParserConfig,
+	 *      ParseErrorListener, ValueFactory, long, long)
+	 */
+	protected Literal createLiteral(String label, String lang, CoreDatatype datatype, long lineNo, long columnNo)
+			throws RDFParseException {
+
+		return RDFParserHelper.createLiteral(label, lang, datatype.getIri(), getParserConfig(), getParseErrorListener(),
+				valueFactory, lineNo, columnNo);
+
 	}
 
 	/**
@@ -730,7 +746,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	private ParsedIRI getCachedSkolemOrigin() {
 		String origin = getParserConfig().get(BasicParserSettings.SKOLEMIZE_ORIGIN);
 
-		if (origin == null || origin.length() == 0) {
+		if (origin == null || origin.isEmpty()) {
 			if (skolemOrigin != null) {
 				skolemOrigin = null;
 				parsedSkolemOrigin = null;

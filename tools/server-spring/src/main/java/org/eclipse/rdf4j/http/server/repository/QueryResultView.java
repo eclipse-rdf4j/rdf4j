@@ -91,7 +91,7 @@ public abstract class QueryResultView implements View {
 		// Report as attachment to make use in browser more convenient
 		String filename = (String) model.get(FILENAME_HINT_KEY);
 
-		if (filename == null || filename.length() == 0) {
+		if (filename == null || filename.isEmpty()) {
 			filename = "result";
 		}
 

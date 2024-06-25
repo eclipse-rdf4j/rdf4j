@@ -99,7 +99,7 @@ public class LmdbIRI extends SimpleIRI implements LmdbResource {
 		return super.stringValue();
 	}
 
-	protected void init() {
+	public void init() {
 		if (!initialized) {
 			synchronized (this) {
 				if (!initialized) {

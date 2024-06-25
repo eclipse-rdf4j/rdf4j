@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore.compliance;
 
-import java.io.IOException;
-
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
@@ -27,7 +25,7 @@ public class ElasticsearchStoreRepositoryIT extends RepositoryTest {
 	private static SingletonClientProvider clientPool;
 
 	@BeforeAll
-	public static void beforeClass() throws IOException, InterruptedException {
+	public static void beforeClass() {
 		TestHelpers.openClient();
 		clientPool = new SingletonClientProvider("localhost", TestHelpers.PORT, TestHelpers.CLUSTER);
 	}
@@ -47,7 +45,7 @@ public class ElasticsearchStoreRepositoryIT extends RepositoryTest {
 
 	@Disabled
 	@Override
-	public void testShutdownFollowedByInit() throws Exception {
+	public void testShutdownFollowedByInit() {
 		// ignore test
 	}
 }

@@ -24,12 +24,14 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
 
 /**
@@ -118,15 +120,19 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptim
 		}
 
 		@Override
-		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service expr, String serviceUri,
-				CloseableIteration<BindingSet, QueryEvaluationException> bindings) throws QueryEvaluationException {
-			return delegate.evaluate(expr, serviceUri, bindings);
+		public CloseableIteration<BindingSet> evaluate(TupleExpr expr, BindingSet bindings)
+				throws QueryEvaluationException {
+			return delegate.evaluate(expr, bindings);
 		}
 
 		@Override
-		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
-				throws QueryEvaluationException {
-			return delegate.evaluate(expr, bindings);
+		public QueryEvaluationStep precompile(TupleExpr expr) {
+			return delegate.precompile(expr);
+		}
+
+		@Override
+		public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
+			return delegate.precompile(expr, context);
 		}
 
 		@Override

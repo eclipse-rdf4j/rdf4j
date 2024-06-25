@@ -28,7 +28,7 @@ import org.junit.jupiter.api.io.TempDir;
 public class NativeStoreTest {
 
 	@Test
-	public void testEmpty(@TempDir File file) throws IOException {
+	public void testEmpty(@TempDir File file) {
 		SailRepository shaclSail = new SailRepository(new ShaclSail(new NativeStore(file)));
 		shaclSail.init();
 		shaclSail.shutDown();

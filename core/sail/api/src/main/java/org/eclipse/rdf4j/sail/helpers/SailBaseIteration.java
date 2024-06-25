@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.common.iteration.IterationWrapper;
  *
  * @author Jeen Broekstra
  */
-class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T, E> {
+class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> {
 
 	private final AbstractSailConnection connection;
 
@@ -29,13 +29,13 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T, E> {
 	 * @param iter       the wrapped iteration over sail objects.
 	 * @param connection the connection from which this iteration originates.
 	 */
-	public SailBaseIteration(CloseableIteration<? extends T, ? extends E> iter, AbstractSailConnection connection) {
+	public SailBaseIteration(CloseableIteration<? extends T> iter, AbstractSailConnection connection) {
 		super(iter);
 		this.connection = connection;
 	}
 
 	@Override
-	public boolean hasNext() throws E {
+	public boolean hasNext() {
 		if (isClosed()) {
 			return false;
 		}
@@ -50,7 +50,7 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T, E> {
 	}
 
 	@Override
-	protected void handleClose() throws E {
+	protected void handleClose() {
 		try {
 			super.handleClose();
 		} finally {

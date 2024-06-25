@@ -80,7 +80,7 @@ public class SparqlOverheadBenchmark {
 	}
 
 	@Setup(Level.Trial)
-	public void beforeClass() throws IOException, InterruptedException {
+	public void beforeClass() throws IOException {
 
 		repository = new SailRepository(new MemoryStore());
 

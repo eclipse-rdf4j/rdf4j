@@ -35,7 +35,7 @@ public abstract class AbstractElasticsearchStoreIT {
 	private static final Logger logger = LoggerFactory.getLogger(AbstractElasticsearchStoreIT.class);
 
 	@BeforeAll
-	public static void beforeClass() throws IOException, InterruptedException {
+	public static void beforeClass() {
 		TestHelpers.openClient();
 	}
 

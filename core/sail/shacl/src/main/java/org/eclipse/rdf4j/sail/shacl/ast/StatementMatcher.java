@@ -171,7 +171,7 @@ public class StatementMatcher {
 
 	public static List<StatementMatcher> swap(List<StatementMatcher> statementMatchers, Variable<?> existingVariable,
 			Variable<?> newVariable) {
-		if (statementMatchers.size() == 0) {
+		if (statementMatchers.isEmpty()) {
 			return List.of();
 		}
 		if (statementMatchers.size() == 1) {
@@ -322,8 +322,22 @@ public class StatementMatcher {
 		return Objects.hash(subject, predicate, object);
 	}
 
+	private final static String VALUES_TARGET_0 = "VALUES ( ?target_0000000000 ){}\n";
+	private final static String VALUES_TARGET_0_AND_1 = "VALUES ( ?target_0000000000 ?target_0000000001 ){}\n";
+
 	public String getSparqlValuesDecl(Set<String> varNamesRestriction, boolean addInheritedVarNames,
 			Set<String> varNamesInQueryFragment) {
+
+		// EffectiveTarget interns all the first 1000 variable names, so we can use == to compare them
+		if (subject.name == "target_0000000000" && predicate.name == null && object.name == null
+				&& varNamesRestriction.contains(subject.name) && varNamesInQueryFragment.contains(subject.name)) {
+			return VALUES_TARGET_0;
+		} else if (subject.name == "target_0000000000" && predicate.name == null && object.name == "target_0000000001"
+				&& varNamesRestriction.contains(subject.name) && varNamesInQueryFragment.contains(subject.name)
+				&& varNamesRestriction.contains(object.name) && varNamesInQueryFragment.contains(object.name)) {
+			return VALUES_TARGET_0_AND_1;
+		}
+
 		StringBuilder sb = new StringBuilder("VALUES ( ");
 		if (subject.name != null && varNamesRestriction.contains(subject.name) ||
 				subject.baseName != null && varNamesRestriction.contains(subject.baseName)) {

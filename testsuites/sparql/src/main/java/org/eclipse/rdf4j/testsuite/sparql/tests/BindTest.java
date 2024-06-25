@@ -12,11 +12,13 @@ package org.eclipse.rdf4j.testsuite.sparql.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.model.util.Values.literal;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.util.List;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -31,8 +33,10 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
 
 /**
  * Test on SPARQL BIND function.
@@ -42,11 +46,15 @@ import org.junit.Test;
  */
 public class BindTest extends AbstractComplianceTest {
 
+	public BindTest(Supplier<Repository> repo) {
+		super(repo);
+	}
+
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/1018
 	 */
-	@Test
-	public void testBindError() {
+
+	private void testBindError(RepositoryConnection conn) {
 
 		conn.prepareUpdate(QueryLanguage.SPARQL, "insert data { <urn:test:subj> <urn:test:pred> _:blank }").execute();
 
@@ -59,14 +67,14 @@ public class BindTest extends AbstractComplianceTest {
 
 		List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(qb).evaluate());
 
-		assertEquals("query should return 2 solutions", 2, result.size());
+		assertEquals(2, result.size(), "query should return 2 solutions");
 	}
 
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/1405
 	 */
-	@Test
-	public void testBindScope() {
+
+	private void testBindScope(RepositoryConnection conn) {
 		String query = "SELECT * {\n" +
 				"  { BIND (\"a\" AS ?a) }\n" +
 				"  { BIND (?a AS ?b) } \n" +
@@ -84,8 +92,8 @@ public class BindTest extends AbstractComplianceTest {
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/1642
 	 */
-	@Test
-	public void testBindScopeUnion() {
+
+	private void testBindScopeUnion(RepositoryConnection conn) {
 
 		ValueFactory f = conn.getValueFactory();
 		String query = "prefix ex: <http://example.org/> \n" +
@@ -114,8 +122,7 @@ public class BindTest extends AbstractComplianceTest {
 
 	}
 
-	@Test
-	public void testSES2250BindErrors() {
+	private void testSES2250BindErrors(RepositoryConnection conn) {
 
 		conn.prepareUpdate(QueryLanguage.SPARQL, "insert data { <urn:test:subj> <urn:test:pred> _:blank }").execute();
 
@@ -128,12 +135,11 @@ public class BindTest extends AbstractComplianceTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb);
 		try (TupleQueryResult evaluate = tq.evaluate()) {
-			assertFalse("The query should not return a result", evaluate.hasNext());
+			assertFalse(evaluate.hasNext(), "The query should not return a result");
 		}
 	}
 
-	@Test
-	public void testSES2250BindErrorsInPath() {
+	private void testSES2250BindErrorsInPath(RepositoryConnection conn) {
 
 		conn.prepareUpdate(QueryLanguage.SPARQL, "insert data { <urn:test:subj> <urn:test:pred> _:blank }").execute();
 
@@ -146,12 +152,12 @@ public class BindTest extends AbstractComplianceTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb);
 		try (TupleQueryResult evaluate = tq.evaluate()) {
-			assertFalse("The query should not return a result", evaluate.hasNext());
+			assertFalse(evaluate.hasNext(), "The query should not return a result");
 		}
+
 	}
 
-	@Test
-	public void testSelectBindOnly() {
+	public void testSelectBindOnly(RepositoryConnection conn) {
 		String query = "select ?b1 ?b2 ?b3\n"
 				+ "where {\n"
 				+ "  bind(1 as ?b1)\n"
@@ -167,8 +173,8 @@ public class BindTest extends AbstractComplianceTest {
 		assertThat(solution.getValue("b3")).isNull();
 	}
 
-	@Test
-	public void testGH3696Bind() {
+	private void testGH3696Bind(RepositoryConnection conn) {
+
 		Model testData = new ModelBuilder().setNamespace("ex", "http://example.org/")
 				.subject("ex:unit1")
 				.add(RDF.TYPE, "ex:Unit")
@@ -194,8 +200,7 @@ public class BindTest extends AbstractComplianceTest {
 		assertThat(result).isEmpty();
 	}
 
-	@Test
-	public void testGH4499BindFilterNotExist1() {
+	private void testGH4499BindFilterNotExist1(RepositoryConnection conn) {
 		Model testData = new ModelBuilder().setNamespace("ex", "http://example.org/")
 				.subject("ex:a")
 				.add("ex:p", "ex:c1")
@@ -230,8 +235,7 @@ public class BindTest extends AbstractComplianceTest {
 		assertThat(bs.getValue("d")).isNull();
 	}
 
-	@Test
-	public void testGH4499BindFilterNotExist2() {
+	private void testGH4499BindFilterNotExist2(RepositoryConnection conn) {
 		Model testData = new ModelBuilder().setNamespace("ex", "http://example.org/")
 				.subject("ex:a")
 				.add("ex:p", "ex:c1")
@@ -265,5 +269,15 @@ public class BindTest extends AbstractComplianceTest {
 		assertThat(bs.getValue("c").stringValue()).isEqualTo("http://example.org/c2");
 		assertThat(bs.getValue("d")).isNull();
 
+	}
+
+	public Stream<DynamicTest> tests() {
+		return Stream.of(makeTest("GH4499BindFilterNotExist2", this::testGH4499BindFilterNotExist2),
+				makeTest("GH4499BindFilterNotExist1", this::testGH4499BindFilterNotExist1),
+				makeTest("GH3696Bind", this::testGH3696Bind), makeTest("SelectBindOnly", this::testSelectBindOnly),
+				makeTest("SES2250BindErrorsInPath", this::testSES2250BindErrorsInPath),
+				makeTest("SES2250BindErrors", this::testSES2250BindErrors),
+				makeTest("BindScopeUnion", this::testBindScopeUnion), makeTest("BindScope", this::testBindScope),
+				makeTest("BindError", this::testBindError));
 	}
 }

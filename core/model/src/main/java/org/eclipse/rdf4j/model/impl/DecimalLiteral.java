@@ -15,7 +15,6 @@ import java.math.BigInteger;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * An extension of {@link SimpleLiteral} that stores an integer value using a {@link BigDecimal} object.
@@ -40,12 +39,6 @@ public class DecimalLiteral extends SimpleLiteral {
 	 */
 	protected DecimalLiteral(BigDecimal value, IRI datatype) {
 		// TODO: maybe DecimalLiteral should not extend SimpleLiteral?
-		super(value.toPlainString(), datatype);
-		this.value = value;
-	}
-
-	@Deprecated(since = "4.0.0", forRemoval = true)
-	protected DecimalLiteral(BigDecimal value, XSD.Datatype datatype) {
 		super(value.toPlainString(), datatype);
 		this.value = value;
 	}

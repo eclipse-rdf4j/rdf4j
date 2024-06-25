@@ -26,14 +26,12 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.SailException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -75,7 +73,7 @@ public class StoreSerializationTest {
 
 		con = store.getConnection();
 
-		CloseableIteration<? extends Statement, SailException> iter = con.getStatements(foo, RDF.VALUE, null, false);
+		CloseableIteration<? extends Statement> iter = con.getStatements(foo, RDF.VALUE, null, false);
 		assertTrue(iter.hasNext());
 		iter.next();
 		iter.close();
@@ -103,7 +101,7 @@ public class StoreSerializationTest {
 				null);
 		TupleExpr tupleExpr = query.getTupleExpr();
 
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> iter = con.evaluate(tupleExpr, null,
+		CloseableIteration<? extends BindingSet> iter = con.evaluate(tupleExpr, null,
 				EmptyBindingSet.getInstance(), false);
 
 		BindingSet bindingSet = iter.next();
@@ -165,7 +163,7 @@ public class StoreSerializationTest {
 
 		con = store.getConnection();
 
-		CloseableIteration<? extends Statement, SailException> iter = con.getStatements(foo, RDF.VALUE, null, false);
+		CloseableIteration<? extends Statement> iter = con.getStatements(foo, RDF.VALUE, null, false);
 		assertTrue(iter.hasNext());
 		iter.next();
 		iter.close();
@@ -195,7 +193,7 @@ public class StoreSerializationTest {
 		store.init();
 
 		try (SailConnection con = store.getConnection()) {
-			try (CloseableIteration<? extends Statement, SailException> iter = con.getStatements(null, RDFS.LABEL, null,
+			try (CloseableIteration<? extends Statement> iter = con.getStatements(null, RDFS.LABEL, null,
 					false)) {
 				assertTrue(iter.hasNext());
 				Statement next = iter.next();

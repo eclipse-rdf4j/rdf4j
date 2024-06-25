@@ -10,16 +10,22 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
-import java.io.IOException;
-
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
  * Connection to an {@link LmdbStore}.
@@ -47,11 +53,10 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	 * Constructors *
 	 *--------------*/
 
-	protected LmdbStoreConnection(LmdbStore sail) throws IOException {
+	protected LmdbStoreConnection(LmdbStore sail) {
 		super(sail, sail.getSailStore(), sail.getEvaluationStrategyFactory());
 		this.lmdbStore = sail;
 		sailChangedEvent = new DefaultSailChangedEvent(sail);
-		useConnectionLock = false;
 	}
 
 	/*---------*
@@ -121,6 +126,52 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		// assume the triple is not yet present in the triple store
 		sailChangedEvent.setStatementsAdded(true);
 		return ret;
+	}
+
+	@Override
+	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
+			Dataset dataset,
+			BindingSet bindings, boolean includeInferred) throws SailException {
+		// ensure that all elements of the binding set are initialized (lazy values are resolved)
+		return new IterationWrapper<BindingSet>(
+				super.evaluateInternal(tupleExpr, dataset, bindings, includeInferred)) {
+			@Override
+			public BindingSet next() throws QueryEvaluationException {
+				BindingSet bs = super.next();
+				bs.forEach(b -> initValue(b.getValue()));
+				return bs;
+			}
+		};
+	}
+
+	@Override
+	protected CloseableIteration<? extends Statement> getStatementsInternal(Resource subj, IRI pred,
+			Value obj,
+			boolean includeInferred, Resource... contexts) throws SailException {
+		return new IterationWrapper<Statement>(
+				super.getStatementsInternal(subj, pred, obj, includeInferred, contexts)) {
+			@Override
+			public Statement next() throws SailException {
+				// ensure that all elements of the statement are initialized (lazy values are resolved)
+				Statement stmt = super.next();
+				initValue(stmt.getSubject());
+				initValue(stmt.getPredicate());
+				initValue(stmt.getObject());
+				initValue(stmt.getContext());
+				return stmt;
+			}
+		};
+	}
+
+	/**
+	 * Ensures that all components of the value are initialized from the underlying database.
+	 *
+	 * @param value The value that should be initialized
+	 */
+	protected void initValue(Value value) {
+		if (value instanceof LmdbValue) {
+			((LmdbValue) value).init();
+		}
 	}
 
 	@Override

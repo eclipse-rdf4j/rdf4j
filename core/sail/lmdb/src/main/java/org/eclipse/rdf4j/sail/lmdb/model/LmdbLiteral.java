@@ -192,7 +192,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		this.language = language;
 	}
 
-	protected void init() {
+	public void init() {
 		if (!initialized) {
 			synchronized (this) {
 				if (!initialized) {

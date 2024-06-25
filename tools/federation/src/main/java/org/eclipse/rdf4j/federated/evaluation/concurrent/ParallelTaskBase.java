@@ -23,7 +23,7 @@ public abstract class ParallelTaskBase<T> implements ParallelTask<T> {
 	private static final Logger logger = LoggerFactory.getLogger(ParallelExecutorBase.class);
 
 	protected Future<?> scheduledFuture;
-	private CloseableIteration<T, QueryEvaluationException> closableIter;
+	private CloseableIteration<T> closableIter;
 	private volatile boolean cancelled = false;
 	private volatile boolean closed = false;
 
@@ -34,7 +34,7 @@ public abstract class ParallelTaskBase<T> implements ParallelTask<T> {
 	}
 
 	@Override
-	public CloseableIteration<T, QueryEvaluationException> performTask() throws Exception {
+	public CloseableIteration<T> performTask() throws Exception {
 		if (closed) {
 			return new EmptyIteration<>();
 		}
@@ -81,7 +81,7 @@ public abstract class ParallelTaskBase<T> implements ParallelTask<T> {
 		return closableIter;
 	}
 
-	protected abstract CloseableIteration<T, QueryEvaluationException> performTaskInternal() throws Exception;
+	protected abstract CloseableIteration<T> performTaskInternal() throws Exception;
 
 	public void setScheduledFuture(Future<?> future) {
 		this.scheduledFuture = future;

@@ -27,12 +27,12 @@ import org.junit.jupiter.api.Test;
 public abstract class CascadeValueExceptionTest {
 
 	@BeforeAll
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
 	@AfterAll
-	public static void afterClass() throws Exception {
+	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
@@ -65,7 +65,7 @@ public abstract class CascadeValueExceptionTest {
 	private Repository repository;
 
 	@Test
-	public void testValueExceptionLessThanPlain() throws Exception {
+	public void testValueExceptionLessThanPlain() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryStrLT);
 		try (TupleQueryResult evaluate = query.evaluate()) {
 			assertFalse(evaluate.hasNext());
@@ -73,7 +73,7 @@ public abstract class CascadeValueExceptionTest {
 	}
 
 	@Test
-	public void testValueExceptionLessThanOrEqualPlain() throws Exception {
+	public void testValueExceptionLessThanOrEqualPlain() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryStrLE);
 		try (TupleQueryResult evaluate = query.evaluate()) {
 			assertFalse(evaluate.hasNext());
@@ -81,7 +81,7 @@ public abstract class CascadeValueExceptionTest {
 	}
 
 	@Test
-	public void testValueExceptionEqualPlain() throws Exception {
+	public void testValueExceptionEqualPlain() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryStrEQ);
 		try (TupleQueryResult evaluate = query.evaluate()) {
 			assertFalse(evaluate.hasNext());
@@ -89,7 +89,7 @@ public abstract class CascadeValueExceptionTest {
 	}
 
 	@Test
-	public void testValueExceptionNotEqualPlain() throws Exception {
+	public void testValueExceptionNotEqualPlain() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryStrNE);
 		try (TupleQueryResult evaluate = query.evaluate()) {
 			assertFalse(evaluate.hasNext());
@@ -97,7 +97,7 @@ public abstract class CascadeValueExceptionTest {
 	}
 
 	@Test
-	public void testValueExceptionGreaterThanOrEqualPlain() throws Exception {
+	public void testValueExceptionGreaterThanOrEqualPlain() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryStrGE);
 		try (TupleQueryResult evaluate = query.evaluate()) {
 			assertFalse(evaluate.hasNext());
@@ -105,7 +105,7 @@ public abstract class CascadeValueExceptionTest {
 	}
 
 	@Test
-	public void testValueExceptionGreaterThanPlain() throws Exception {
+	public void testValueExceptionGreaterThanPlain() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryStrGT);
 		try (TupleQueryResult evaluate = query.evaluate()) {
 			assertFalse(evaluate.hasNext());
@@ -113,7 +113,7 @@ public abstract class CascadeValueExceptionTest {
 	}
 
 	@Test
-	public void testValueExceptionLessThanTyped() throws Exception {
+	public void testValueExceptionLessThanTyped() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryStrAltLT);
 		try (TupleQueryResult evaluate = query.evaluate()) {
 			assertFalse(evaluate.hasNext());
@@ -121,7 +121,7 @@ public abstract class CascadeValueExceptionTest {
 	}
 
 	@Test
-	public void testValueExceptionLessThanOrEqualTyped() throws Exception {
+	public void testValueExceptionLessThanOrEqualTyped() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryStrAltLE);
 		try (TupleQueryResult evaluate = query.evaluate()) {
 			assertFalse(evaluate.hasNext());
@@ -129,7 +129,7 @@ public abstract class CascadeValueExceptionTest {
 	}
 
 	@Test
-	public void testValueExceptionEqualTyped() throws Exception {
+	public void testValueExceptionEqualTyped() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryStrAltEQ);
 		try (TupleQueryResult evaluate = query.evaluate()) {
 			assertFalse(evaluate.hasNext());
@@ -137,7 +137,7 @@ public abstract class CascadeValueExceptionTest {
 	}
 
 	@Test
-	public void testValueExceptionNotEqualTyped() throws Exception {
+	public void testValueExceptionNotEqualTyped() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryStrAltNE);
 		try (TupleQueryResult evaluate = query.evaluate()) {
 			assertFalse(evaluate.hasNext());
@@ -145,7 +145,7 @@ public abstract class CascadeValueExceptionTest {
 	}
 
 	@Test
-	public void testValueExceptionGreaterThanOrEqualTyped() throws Exception {
+	public void testValueExceptionGreaterThanOrEqualTyped() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryStrAltGE);
 		try (TupleQueryResult evaluate = query.evaluate()) {
 			assertFalse(evaluate.hasNext());
@@ -153,7 +153,7 @@ public abstract class CascadeValueExceptionTest {
 	}
 
 	@Test
-	public void testValueExceptionGreaterThanTyped() throws Exception {
+	public void testValueExceptionGreaterThanTyped() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryStrAltGT);
 		try (TupleQueryResult evaluate = query.evaluate()) {
 			assertFalse(evaluate.hasNext());
@@ -161,13 +161,13 @@ public abstract class CascadeValueExceptionTest {
 	}
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		repository = createRepository();
 		conn = repository.getConnection();
 		conn.add(RDF.NIL, RDF.TYPE, RDF.LIST);
 	}
 
-	protected Repository createRepository() throws Exception {
+	protected Repository createRepository() {
 		Repository repository = newRepository();
 		try (RepositoryConnection con = repository.getConnection()) {
 			con.clear();
@@ -176,10 +176,10 @@ public abstract class CascadeValueExceptionTest {
 		return repository;
 	}
 
-	protected abstract Repository newRepository() throws Exception;
+	protected abstract Repository newRepository();
 
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		conn.close();
 		conn = null;
 

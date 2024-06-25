@@ -94,7 +94,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void testSES2116JoinBind() throws Exception {
+	public void testSES2116JoinBind() {
 
 		StringBuilder qb = new StringBuilder();
 		qb.append("SELECT ?subject ?name ?row {\n" + "  ?subject <http://localhost/table_1> ?uri .\n"
@@ -104,7 +104,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery q = parser.parseQuery(qb.toString(), null);
-		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics());
+		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
 		QueryRoot optRoot = new QueryRoot(q.getTupleExpr());
 		opt.optimize(optRoot, null, null);
 		TupleExpr leaf = findLeaf(optRoot);
@@ -112,13 +112,13 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void bindSubselectJoinOrder() throws Exception {
+	public void bindSubselectJoinOrder() {
 		String query = "SELECT * WHERE {\n" + "    BIND (bnode() as ?ct01) \n" + "    { SELECT ?s WHERE {\n"
 				+ "            ?s ?p ?o .\n" + "      }\n" + "      LIMIT 10\n" + "    }\n" + "}";
 
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery q = parser.parseQuery(query, null);
-		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics());
+		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
 		QueryRoot optRoot = new QueryRoot(q.getTupleExpr());
 		opt.optimize(optRoot, null, null);
 
@@ -174,7 +174,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery q = parser.parseQuery(query, null);
-		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics());
+		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
 		QueryRoot optRoot = new QueryRoot(q.getTupleExpr());
 		opt.optimize(optRoot, null, null);
 
@@ -194,7 +194,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 	@Override
 	public QueryJoinOptimizer getOptimizer() {
-		return new QueryJoinOptimizer(new EvaluationStatistics());
+		return new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
 	}
 
 	private TupleExpr findLeaf(TupleExpr expr) {

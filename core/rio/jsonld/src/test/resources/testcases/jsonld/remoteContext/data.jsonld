@@ -1,0 +1,83 @@
+{
+"@context": "https://schema.org",
+  "@type": ["ItemList", "CreativeWork"],
+  "name": "Top 5 covers of Bob Dylan Songs",
+  "author": "John Doe",
+  "about": {
+    "@type": "MusicRecording",
+    "byArtist": {
+      "@type": "MusicGroup",
+      "name": "Bob Dylan"
+    }
+  },
+  "itemListOrder": "https://schema.org/ItemListOrderAscending",
+  "numberOfItems": 5,
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 5,
+      "item": {
+        "@type": "MusicRecording",
+        "name": "If Not For You",
+        "byArtist": {
+          "@type": "MusicGroup",
+          "name": "George Harrison"
+        }
+      }
+    },
+    {
+      "@type": "ListItem",
+      "position": 4,
+      "item": {
+        "@type": "MusicRecording",
+        "name": "The Times They Are A-Changin'",
+        "byArtist": {
+          "@type": "MusicGroup",
+          "name": "Tracy Chapman"
+        }
+      }
+    },
+    {
+      "@type": "ListItem",
+      "position": 3,
+      "item": {
+        "@type": "MusicRecording",
+        "name": "It Ain't Me Babe",
+        "byArtist": [
+          {
+            "@type": "MusicGroup",
+            "name": "Johnny Cash"
+          },
+          {
+            "@type": "MusicGroup",
+            "name": "June Carter Cash"
+          }
+        ]
+      }
+    },
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "item": {
+        "@type": "MusicRecording",
+        "name": "Don't Think Twice It's Alright",
+        "byArtist": {
+          "@type": "MusicGroup",
+          "name": "Waylon Jennings"
+        }
+      }
+    },
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "item": {
+        "@type": "MusicRecording",
+        "name": "All Along the Watchtower",
+        "byArtist": {
+          "@type": "MusicGroup",
+          "name": "Jimi Hendrix"
+        }
+      }
+    }
+  ]
+}

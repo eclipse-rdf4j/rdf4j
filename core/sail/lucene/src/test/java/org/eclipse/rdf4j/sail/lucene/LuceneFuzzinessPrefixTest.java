@@ -15,7 +15,6 @@ import static org.eclipse.rdf4j.query.QueryLanguage.SPARQL;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSail.FUZZY_PREFIX_LENGTH_KEY;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -56,7 +55,7 @@ public class LuceneFuzzinessPrefixTest {
 	private File dataDir;
 
 	@BeforeEach
-	public void setup() throws IOException {
+	public void setup() {
 		memoryStore = new MemoryStore();
 		sail = new LuceneSail();
 		sail.setParameter(LuceneSail.LUCENE_DIR_KEY, "lucene-index");

@@ -100,7 +100,7 @@ abstract class DatasetQuery implements Query {
 
 	@Override
 	public Explanation explain(Explanation.Level level) {
-		throw new UnsupportedOperationException();
+		return sailQuery.explain(level);
 	}
 
 	@Override

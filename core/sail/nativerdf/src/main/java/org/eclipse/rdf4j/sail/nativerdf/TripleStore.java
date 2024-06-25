@@ -445,13 +445,12 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	public RecordIterator getTriples(int subj, int pred, int obj, int context) throws IOException {
+	public RecordIterator getTriples(int subj, int pred, int obj, int context) {
 		// Return all triples except those that were added but not yet committed
 		return getTriples(subj, pred, obj, context, 0, ADDED_FLAG);
 	}
 
-	public RecordIterator getTriples(int subj, int pred, int obj, int context, boolean readTransaction)
-			throws IOException {
+	public RecordIterator getTriples(int subj, int pred, int obj, int context, boolean readTransaction) {
 		if (readTransaction) {
 			// Don't read removed statements
 			return getTriples(subj, pred, obj, context, 0, TripleStore.REMOVED_FLAG);
@@ -466,9 +465,8 @@ class TripleStore implements Closeable {
 	 *
 	 * @param readTransaction
 	 * @return All triples sorted by context or null if no context index exists
-	 * @throws IOException
 	 */
-	public RecordIterator getAllTriplesSortedByContext(boolean readTransaction) throws IOException {
+	public RecordIterator getAllTriplesSortedByContext(boolean readTransaction) {
 		if (readTransaction) {
 			// Don't read removed statements
 			return getAllTriplesSortedByContext(0, TripleStore.REMOVED_FLAG);
@@ -479,7 +477,7 @@ class TripleStore implements Closeable {
 	}
 
 	public RecordIterator getTriples(int subj, int pred, int obj, int context, boolean explicit,
-			boolean readTransaction) throws IOException {
+			boolean readTransaction) {
 		int flags = 0;
 		int flagsMask = 0;
 
@@ -506,6 +504,10 @@ class TripleStore implements Closeable {
 		}
 
 		return btreeIter;
+	}
+
+	public void disableTxnStatus() {
+		txnStatusFile.disable();
 	}
 
 	/*-------------------------------------*
@@ -586,14 +588,13 @@ class TripleStore implements Closeable {
 		}
 	} // end inner class ImplicitStatementFilter
 
-	private RecordIterator getTriples(int subj, int pred, int obj, int context, int flags, int flagsMask)
-			throws IOException {
+	private RecordIterator getTriples(int subj, int pred, int obj, int context, int flags, int flagsMask) {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
 		return getTriplesUsingIndex(subj, pred, obj, context, flags, flagsMask, index, doRangeSearch);
 	}
 
-	private RecordIterator getAllTriplesSortedByContext(int flags, int flagsMask) throws IOException {
+	private RecordIterator getAllTriplesSortedByContext(int flags, int flagsMask) {
 		for (TripleIndex index : indexes) {
 			if (index.getFieldSeq()[0] == 'c') {
 				// found a context-first index

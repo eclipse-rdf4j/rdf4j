@@ -41,12 +41,12 @@ public abstract class InferencingTest {
 	private static final Logger logger = LoggerFactory.getLogger(InferencingTest.class);
 
 	@BeforeAll
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
 	@AfterAll
-	public static void afterClass() throws Exception {
+	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 	/*-----------*

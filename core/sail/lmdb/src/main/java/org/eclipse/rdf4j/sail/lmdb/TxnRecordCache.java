@@ -21,6 +21,7 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
+import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
@@ -44,6 +45,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.apache.commons.io.FileUtils;
+import org.eclipse.rdf4j.sail.SailException;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBStat;
@@ -133,9 +135,10 @@ final class TxnRecordCache {
 			keyBuf.flip();
 			keyVal.mv_data(keyBuf);
 
-			boolean foundExplicit = mdb_get(writeTxn, dbiExplicit, keyVal, dataVal) == 0 &&
+			boolean foundExplicit = E(mdb_get(writeTxn, dbiExplicit, keyVal, dataVal)) == MDB_SUCCESS &&
 					(dataVal.mv_data().get(0) & 0b1) != 0;
-			boolean foundImplicit = !foundExplicit && mdb_get(writeTxn, dbiInferred, keyVal, dataVal) == 0 &&
+			boolean foundImplicit = !foundExplicit && E(mdb_get(writeTxn, dbiInferred, keyVal, dataVal)) == MDB_SUCCESS
+					&&
 					(dataVal.mv_data().get(0) & 0b1) != 0;
 
 			boolean found = foundExplicit || foundImplicit;
@@ -193,14 +196,18 @@ final class TxnRecordCache {
 			}
 		}
 
-		public Record next() throws IOException {
-			if (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == 0) {
-				Varint.readListUnsigned(keyData.mv_data(), quad);
-				byte op = valueData.mv_data().get(0);
-				Record r = new Record();
-				r.quad = quad;
-				r.add = op == 1;
-				return r;
+		public Record next() {
+			try {
+				if (E(mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT)) == MDB_SUCCESS) {
+					Varint.readListUnsigned(keyData.mv_data(), quad);
+					byte op = valueData.mv_data().get(0);
+					Record r = new Record();
+					r.quad = quad;
+					r.add = op == 1;
+					return r;
+				}
+			} catch (IOException e) {
+				throw new SailException(e);
 			}
 			close();
 			return null;

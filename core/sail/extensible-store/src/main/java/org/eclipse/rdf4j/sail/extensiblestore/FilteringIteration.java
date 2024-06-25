@@ -24,16 +24,16 @@ import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
  * IRI predicate, Value object, Resource... context).
  */
 @Experimental
-public class FilteringIteration<E extends ExtensibleStatement, X extends Exception> extends LookAheadIteration<E, X> {
+public class FilteringIteration<E extends ExtensibleStatement, X extends Exception> extends LookAheadIteration<E> {
 
-	private final CloseableIteration<E, X> wrappedIteration;
+	private final CloseableIteration<E> wrappedIteration;
 	private final Resource subject;
 	private final IRI predicate;
 	private final Value object;
 	private final boolean inferred;
 	private final Resource[] context;
 
-	public FilteringIteration(CloseableIteration<E, X> wrappedIteration, Resource subject, IRI predicate, Value object,
+	public FilteringIteration(CloseableIteration<E> wrappedIteration, Resource subject, IRI predicate, Value object,
 			boolean inferred, Resource... context) {
 		this.wrappedIteration = wrappedIteration;
 		this.subject = subject;
@@ -44,7 +44,7 @@ public class FilteringIteration<E extends ExtensibleStatement, X extends Excepti
 	}
 
 	@Override
-	protected E getNextElement() throws X {
+	protected E getNextElement() {
 
 		while (wrappedIteration.hasNext()) {
 			E next = wrappedIteration.next();
@@ -75,13 +75,8 @@ public class FilteringIteration<E extends ExtensibleStatement, X extends Excepti
 	}
 
 	@Override
-	protected void handleClose() throws X {
-		try {
-			super.handleClose();
-		} finally {
-			wrappedIteration.close();
-		}
-
+	protected void handleClose() {
+		wrappedIteration.close();
 	}
 
 	private static boolean containsContext(Resource[] haystack, Resource needle) {

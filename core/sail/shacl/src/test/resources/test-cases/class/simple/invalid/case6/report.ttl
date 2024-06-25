@@ -18,6 +18,11 @@
       sh:sourceConstraintComponent sh:ClassConstraintComponent;
       sh:sourceShape [ a sh:PropertyShape;
           sh:class ex:Person;
+          sh:defaultValue ex:iri1;
+          sh:description "Dette er en beskrivelse"@no-nb, "This is a description";
+          sh:group ex:Group1;
+          sh:name "Person/SecondTarget ex:knows only ex:Person"@en, "Person/SecondTarget ex:knows only ex:Person";
+          sh:order 1;
           sh:path ex:knows
         ];
       sh:value []

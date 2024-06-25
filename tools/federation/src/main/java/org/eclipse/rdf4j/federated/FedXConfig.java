@@ -12,7 +12,10 @@ package org.eclipse.rdf4j.federated;
 
 import java.util.Optional;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
+import org.eclipse.rdf4j.federated.cache.SourceSelectionCacheFactory;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionMemoryCache;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.TaskWrapper;
@@ -39,7 +42,7 @@ public class FedXConfig {
 
 	private int leftJoinWorkerThreads = 10;
 
-	private int boundJoinBlockSize = 15;
+	private int boundJoinBlockSize = 25;
 
 	private int enforceMaxQueryTime = 30;
 
@@ -57,12 +60,15 @@ public class FedXConfig {
 
 	private String sourceSelectionCacheSpec = null;
 
+	private SourceSelectionCacheFactory sourceSelectionCacheFactory = null;
+
 	private TaskWrapper taskWrapper = null;
 
 	private String prefixDeclarations = null;
 
 	private int consumingIterationMax = 1000;
 
+	private CollectionFactory cf = new DefaultCollectionFactory();
 	/* factory like setters */
 
 	/**
@@ -252,6 +258,18 @@ public class FedXConfig {
 	}
 
 	/**
+	 * The {@link SourceSelectionCacheFactory} to be used. If not set explicitly, the default in memory implementation
+	 * is used with the configued {@link #getSourceSelectionCacheSpec()}.
+	 *
+	 * @param factory the {@link SourceSelectionCacheFactory}
+	 * @return the current config
+	 */
+	public FedXConfig withSourceSelectionCacheFactory(SourceSelectionCacheFactory factory) {
+		this.sourceSelectionCacheFactory = factory;
+		return this;
+	}
+
+	/**
 	 * Sets a {@link TaskWrapper} which may be used for wrapping any background {@link Runnable}s. If no such wrapper is
 	 * explicitly configured, the unmodified task is returned. See {@link TaskWrapper} for more information.
 	 *
@@ -398,10 +416,22 @@ public class FedXConfig {
 	 * Returns the configured {@link CacheBuilderSpec} (if any) for the {@link SourceSelectionMemoryCache}. If not
 	 * defined, the {@link SourceSelectionMemoryCache#DEFAULT_CACHE_SPEC} is used.
 	 *
+	 * If {@link #getSourceSelectionCacheFactory()} is configured, this setting is ignored.
+	 *
 	 * @return the {@link CacheBuilderSpec} or <code>null</code>
 	 */
 	public String getSourceSelectionCacheSpec() {
 		return this.sourceSelectionCacheSpec;
+	}
+
+	/**
+	 * Returns the {@link SourceSelectionCacheFactory} (if any). If not defined, the {@link SourceSelectionCache} is
+	 * instantiated using the default implementation and respects {@link #getSourceSelectionCacheSpec()}.
+	 *
+	 * @return {@link SourceSelectionCacheFactory}
+	 */
+	public SourceSelectionCacheFactory getSourceSelectionCacheFactory() {
+		return this.sourceSelectionCacheFactory;
 	}
 
 	/**
@@ -444,5 +474,20 @@ public class FedXConfig {
 	 */
 	public int getConsumingIterationMax() {
 		return consumingIterationMax;
+	}
+
+	/**
+	 * Set the CollectionFactory to be used by the federation
+	 *
+	 * <p>
+	 * Can only be set before federation initialization.
+	 * </p>
+	 *
+	 * @param cf
+	 * @return the current config
+	 */
+	public FedXConfig withCollectionFactory(CollectionFactory cf) {
+		this.cf = cf;
+		return this;
 	}
 }

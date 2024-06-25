@@ -33,7 +33,7 @@ public class EndpointEntry implements Serializable {
 		return doesProvideStatements;
 	}
 
-	public CloseableIteration<? extends Statement, Exception> getStatements() {
+	public CloseableIteration<? extends Statement> getStatements() {
 		throw new UnsupportedOperationException("This operation is not yet supported.");
 	}
 

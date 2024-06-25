@@ -40,13 +40,13 @@ import org.eclipse.rdf4j.sail.SailException;
  * There is no overflow to disk for this cache.
  * </p>
  **/
-public class DistinctModelReducingUnionIteration extends LookAheadIteration<Statement, SailException> {
+public class DistinctModelReducingUnionIteration extends LookAheadIteration<Statement> {
 
-	private final CloseableIteration<? extends Statement, SailException> iterator;
+	private final CloseableIteration<? extends Statement> iterator;
 	private final Consumer<Statement> approvedRemover;
 	private final Supplier<Iterable<Statement>> approvedSupplier;
 
-	DistinctModelReducingUnionIteration(CloseableIteration<? extends Statement, SailException> iterator,
+	DistinctModelReducingUnionIteration(CloseableIteration<? extends Statement> iterator,
 			Consumer<Statement> approvedRemover,
 			Supplier<Iterable<Statement>> approvedSupplier) {
 		this.iterator = iterator;
@@ -84,11 +84,7 @@ public class DistinctModelReducingUnionIteration extends LookAheadIteration<Stat
 
 	@Override
 	protected void handleClose() throws SailException {
-		try {
-			iterator.close();
-		} finally {
-			super.handleClose();
-		}
+		iterator.close();
 	}
 
 }

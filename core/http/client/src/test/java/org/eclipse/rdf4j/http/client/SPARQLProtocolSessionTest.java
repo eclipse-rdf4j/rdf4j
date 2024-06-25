@@ -72,7 +72,7 @@ public class SPARQLProtocolSessionTest {
 	}
 
 	@BeforeEach
-	public void setUp(MockServerClient client) throws Exception {
+	public void setUp(MockServerClient client) {
 		serverURL = "http://localhost:" + client.getPort() + "/rdf4j-server";
 		sparqlSession = createProtocolSession();
 	}

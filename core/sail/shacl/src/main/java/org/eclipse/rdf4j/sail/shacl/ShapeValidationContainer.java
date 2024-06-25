@@ -78,7 +78,7 @@ class ShapeValidationContainer {
 
 		ValidationResultIterator validationResults = null;
 
-		try (CloseableIteration<? extends ValidationTuple, SailException> iterator = planNode.iterator()) {
+		try (CloseableIteration<? extends ValidationTuple> iterator = planNode.iterator()) {
 			validationResults = new ValidationResultIterator(iterator, effectiveValidationResultsLimitPerConstraint);
 			return validationResults;
 		} catch (Throwable e) {

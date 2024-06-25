@@ -15,27 +15,19 @@ import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryFactory;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreFactory;
 import org.eclipse.rdf4j.testsuite.sparql.RepositorySPARQLComplianceTestSuite;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
 
 /**
  * Test additional SPARQL functionality on LMDB store.
  */
 public class LmdbSPARQLComplianceTest extends RepositorySPARQLComplianceTestSuite {
 
-	@BeforeClass
-	public static void setUpFactory() throws Exception {
-		setRepositoryFactory(new SailRepositoryFactory() {
+	public LmdbSPARQLComplianceTest() {
+		super(new SailRepositoryFactory() {
 			@Override
 			public RepositoryImplConfig getConfig() {
 
 				return new SailRepositoryConfig(new LmdbStoreFactory().getConfig());
 			}
 		});
-	}
-
-	@AfterClass
-	public static void tearDownFactory() throws Exception {
-		setRepositoryFactory(null);
 	}
 }

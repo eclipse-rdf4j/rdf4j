@@ -4,13 +4,14 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-core</artifactId>
-		<version>4.3.12-SNAPSHOT</version>
+		<version>5.0.1-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-collection-factory</artifactId>
 	<packaging>pom</packaging>
 	<modules>
 		<module>api</module>
 		<module>mapdb</module>
+		<module>mapdb3</module>
 	</modules>
 	<name>RDF4J: Collection Factory that may be shared</name>
 	<description>Collection Factories that may be reused for RDF4J</description>

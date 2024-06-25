@@ -507,7 +507,7 @@ public class HashFile implements Closeable {
 		}
 
 		@Override
-		public int next() throws IOException {
+		public int next() {
 			return -1;
 		}
 	};

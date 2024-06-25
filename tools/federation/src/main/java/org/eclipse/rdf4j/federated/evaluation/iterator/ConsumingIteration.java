@@ -30,11 +30,11 @@ import com.google.common.collect.Lists;
  * @author Andreas Schwarte
  *
  */
-public class ConsumingIteration implements CloseableIteration<BindingSet, QueryEvaluationException> {
+public class ConsumingIteration implements CloseableIteration<BindingSet> {
 
 	private final List<BindingSet> consumed = Lists.newArrayList();
 
-	private final CloseableIteration<BindingSet, QueryEvaluationException> innerIter;
+	private final CloseableIteration<BindingSet> innerIter;
 
 	/**
 	 * The index of the next element that will be returned by a call to {@link #next()}.
@@ -46,7 +46,7 @@ public class ConsumingIteration implements CloseableIteration<BindingSet, QueryE
 	 * @param max  the number of results to be consumed.
 	 * @throws QueryEvaluationException
 	 */
-	public ConsumingIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter, int max)
+	public ConsumingIteration(CloseableIteration<BindingSet> iter, int max)
 			throws QueryEvaluationException {
 
 		innerIter = iter;

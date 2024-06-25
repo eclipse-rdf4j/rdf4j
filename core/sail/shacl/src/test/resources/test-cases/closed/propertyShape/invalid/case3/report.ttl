@@ -1,0 +1,60 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+
+[] a sh:ValidationReport;
+  rdf4j:truncated false;
+  sh:conforms false;
+  sh:result [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:person2;
+      sh:resultPath _:9cdd6656b21b4cd488804bc6bf90f6834007;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:MaxCountConstraintComponent;
+      sh:sourceShape _:9cdd6656b21b4cd488804bc6bf90f6834006
+    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:validPerson1;
+      sh:resultPath ex:mother;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:ClosedConstraintComponent;
+      sh:sourceShape _:9cdd6656b21b4cd488804bc6bf90f6833996;
+      sh:value ex:Shelly
+    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:validPerson1;
+      sh:resultPath ex:father;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:ClosedConstraintComponent;
+      sh:sourceShape _:9cdd6656b21b4cd488804bc6bf90f6833996;
+      sh:value ex:Hubert
+    ] .
+
+_:9cdd6656b21b4cd488804bc6bf90f6833996 a sh:PropertyShape;
+  sh:closed true;
+  sh:ignoredProperties (ex:thisPropertyIsIgnored ex:thisPropertyIsAlsoIgnored);
+  sh:path [
+      sh:alternativePath (ex:knows (ex:knows1 ex:knows2))
+    ];
+  sh:property [ a sh:PropertyShape;
+      sh:maxCount 1;
+      sh:minCount 1;
+      sh:path ex:name
+    ], [ a sh:PropertyShape;
+      sh:minCount 1;
+      sh:minInclusive 18;
+      sh:path ex:age
+    ], _:9cdd6656b21b4cd488804bc6bf90f6834006, [ a sh:PropertyShape;
+      sh:path rdf:type
+    ] .
+
+_:9cdd6656b21b4cd488804bc6bf90f6834006 a sh:PropertyShape;
+  sh:maxCount 1;
+  sh:path _:9cdd6656b21b4cd488804bc6bf90f6834007 .
+
+_:9cdd6656b21b4cd488804bc6bf90f6834007 sh:alternativePath (ex:father ex:mother) .

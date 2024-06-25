@@ -65,10 +65,10 @@ public class QueryEvaluationUtil {
 		if (value.isLiteral()) {
 			Literal literal = (Literal) value;
 			String label = literal.getLabel();
-			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatype().orElse(null);
+			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
 
 			if (datatype == CoreDatatype.XSD.STRING) {
-				return label.length() > 0;
+				return !label.isEmpty();
 			} else if (datatype == CoreDatatype.XSD.BOOLEAN) {
 				// also false for illegal values
 				return "true".equals(label) || "1".equals(label);
@@ -162,8 +162,8 @@ public class QueryEvaluationUtil {
 		// - CoreDatatype.XSD:string
 		// - RDF term (equal and unequal only)
 
-		CoreDatatype.XSD leftCoreDatatype = leftLit.getCoreDatatype().asXSDDatatype().orElse(null);
-		CoreDatatype.XSD rightCoreDatatype = rightLit.getCoreDatatype().asXSDDatatype().orElse(null);
+		CoreDatatype.XSD leftCoreDatatype = leftLit.getCoreDatatype().asXSDDatatypeOrNull();
+		CoreDatatype.XSD rightCoreDatatype = rightLit.getCoreDatatype().asXSDDatatypeOrNull();
 
 		boolean leftLangLit = Literals.isLanguageLiteral(leftLit);
 		boolean rightLangLit = Literals.isLanguageLiteral(rightLit);
@@ -432,13 +432,13 @@ public class QueryEvaluationUtil {
 	 */
 	public static boolean isPlainLiteral(Value v) {
 		if (v.isLiteral()) {
-			return isPlainLiteral(((Literal) v));
+			return isPlainLiteral((Literal) v);
 		}
 		return false;
 	}
 
 	public static boolean isPlainLiteral(Literal l) {
-		assert l.getLanguage().isEmpty() || (l.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING);
+		assert l.getLanguage().isEmpty() || l.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING;
 		return l.getCoreDatatype() == CoreDatatype.XSD.STRING || l.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING;
 	}
 
@@ -510,10 +510,10 @@ public class QueryEvaluationUtil {
 		// 3. The first argument is a language literal and the second
 		// argument is a literal typed as CoreDatatype.XSD:string
 
-		return (isSimpleLiteral(arg1) && isSimpleLiteral(arg2))
-				|| (Literals.isLanguageLiteral(arg1) && Literals.isLanguageLiteral(arg2)
-						&& arg1.getLanguage().equals(arg2.getLanguage()))
-				|| (Literals.isLanguageLiteral(arg1) && isSimpleLiteral(arg2));
+		return isSimpleLiteral(arg1) && isSimpleLiteral(arg2)
+				|| Literals.isLanguageLiteral(arg1) && Literals.isLanguageLiteral(arg2)
+						&& arg1.getLanguage().equals(arg2.getLanguage())
+				|| Literals.isLanguageLiteral(arg1) && isSimpleLiteral(arg2);
 	}
 
 	/**

@@ -43,7 +43,7 @@ public class RepositoryListController extends AbstractController {
 	private RepositoryManager repositoryManager;
 
 	public RepositoryListController() throws ApplicationContextException {
-		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD });
+		setSupportedMethods(METHOD_GET, METHOD_HEAD);
 	}
 
 	public void setRepositoryManager(RepositoryManager repMan) {

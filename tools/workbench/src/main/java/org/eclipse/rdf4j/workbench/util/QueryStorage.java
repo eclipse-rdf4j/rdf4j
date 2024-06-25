@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.workbench.util;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.UUID;
 
 import org.eclipse.rdf4j.common.app.AppConfiguration;
@@ -48,7 +47,7 @@ public class QueryStorage {
 	private static QueryStorage instance;
 
 	public static QueryStorage getSingletonInstance(final AppConfiguration config)
-			throws RepositoryException, IOException {
+			throws RepositoryException {
 		synchronized (LOCK) {
 			if (instance == null || instance.isShutdown()) {
 				instance = new QueryStorage(config);
@@ -119,9 +118,8 @@ public class QueryStorage {
 	 *
 	 * @param appConfig the application configuration, for obtaining the data directory
 	 * @throws RepositoryException if there is an issue creating the object to access the repository
-	 * @throws IOException
 	 */
-	private QueryStorage(final AppConfiguration appConfig) throws RepositoryException, IOException {
+	private QueryStorage(final AppConfiguration appConfig) throws RepositoryException {
 		queries = new SailRepository(new NativeStore(new File(appConfig.getDataDir(), "queries")));
 		queries.init();
 	}

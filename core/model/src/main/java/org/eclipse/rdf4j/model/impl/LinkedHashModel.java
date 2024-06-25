@@ -341,13 +341,13 @@ public class LinkedHashModel extends AbstractModel {
 
 		private static final long serialVersionUID = -1205676084606998540L;
 
-		Set<ModelStatement> subjects = new LinkedHashSet<>();
+		Set<ModelStatement> subjects = new LinkedHashSet<>(1);
 
-		Set<ModelStatement> predicates = new LinkedHashSet<>();
+		Set<ModelStatement> predicates = new LinkedHashSet<>(1);
 
-		Set<ModelStatement> objects = new LinkedHashSet<>();
+		Set<ModelStatement> objects = new LinkedHashSet<>(1);
 
-		Set<ModelStatement> contexts = new LinkedHashSet<>();
+		Set<ModelStatement> contexts = new LinkedHashSet<>(1);
 
 		private final V value;
 
@@ -360,7 +360,7 @@ public class LinkedHashModel extends AbstractModel {
 		}
 	}
 
-	public static class ModelStatement extends ContextStatement {
+	public static class ModelStatement extends GenericStatement<Resource, IRI, Value> {
 
 		private static final long serialVersionUID = 2200404772364346279L;
 		private Statement statement;
@@ -373,7 +373,7 @@ public class LinkedHashModel extends AbstractModel {
 
 		ModelNode<Resource> ctx;
 
-		public ModelStatement(ModelNode<Resource> subj, ModelNode<IRI> pred, ModelNode<Value> obj,
+		ModelStatement(ModelNode<Resource> subj, ModelNode<IRI> pred, ModelNode<Value> obj,
 				ModelNode<Resource> ctx) {
 			super(subj.getValue(), pred.getValue(), obj.getValue(), ctx.getValue());
 			this.subj = subj;
@@ -382,7 +382,7 @@ public class LinkedHashModel extends AbstractModel {
 			this.ctx = ctx;
 		}
 
-		public ModelStatement(ModelNode<Resource> subj, ModelNode<IRI> pred, ModelNode<Value> obj,
+		ModelStatement(ModelNode<Resource> subj, ModelNode<IRI> pred, ModelNode<Value> obj,
 				ModelNode<Resource> ctx, Statement statement) {
 			super(subj.getValue(), pred.getValue(), obj.getValue(), ctx.getValue());
 			this.subj = subj;
@@ -420,6 +420,13 @@ public class LinkedHashModel extends AbstractModel {
 			if (this == other) {
 				return true;
 			}
+			if (other == null) {
+				return false;
+			}
+			if (other == statement) {
+				return true;
+			}
+
 			if (!super.equals(other)) {
 				return false;
 			}
@@ -445,7 +452,7 @@ public class LinkedHashModel extends AbstractModel {
 			IRI pred = st.getPredicate();
 			Value obj = st.getObject();
 			Resource ctx = st.getContext();
-			s.writeObject(new ContextStatement(subj, pred, obj, ctx));
+			s.writeObject(new GenericStatement<>(subj, pred, obj, ctx));
 		}
 	}
 

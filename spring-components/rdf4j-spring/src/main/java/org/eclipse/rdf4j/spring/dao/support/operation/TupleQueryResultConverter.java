@@ -28,6 +28,7 @@ import java.util.stream.Collector;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.spring.dao.support.BindingSetMapper;
@@ -56,8 +57,10 @@ public class TupleQueryResultConverter {
 		try {
 			consumer.accept(tupleQueryResult);
 		} catch (Exception e) {
-			logger.debug("Caught execption while processing TupleQueryResult", e);
-			throw mapException("Error processing TupleQueryResult", e);
+			logger.debug("Caught execption while processing TupleQueryResult: {}", e.getMessage());
+			RDF4JException mapped = mapException("Error processing TupleQueryResult", e);
+			logger.debug("Re-throwing as {} ", mapped.getClass().getSimpleName());
+			throw mapped;
 		} finally {
 			tupleQueryResult.close();
 			tupleQueryResult = null;
@@ -71,8 +74,10 @@ public class TupleQueryResultConverter {
 		try {
 			return function.apply(tupleQueryResult);
 		} catch (Exception e) {
-			logger.warn("Caught execption while processing TupleQueryResult", e);
-			throw mapException("Error processing TupleQueryResult", e);
+			logger.debug("Caught execption while processing TupleQueryResult: {}", e.getMessage());
+			RDF4JException mapped = mapException("Error processing TupleQueryResult", e);
+			logger.debug("Re-throwing as {} ", mapped.getClass().getSimpleName());
+			throw mapped;
 		} finally {
 			tupleQueryResult.close();
 			tupleQueryResult = null;
@@ -305,7 +310,7 @@ public class TupleQueryResultConverter {
 			return Stream.empty();
 		}
 		BindingSet first = result.next();
-		if (!result.hasNext() && first.size() == 0) {
+		if (!result.hasNext() && first.isEmpty()) {
 			return Stream.empty();
 		}
 		return Stream.concat(Stream.of(first), result.stream());

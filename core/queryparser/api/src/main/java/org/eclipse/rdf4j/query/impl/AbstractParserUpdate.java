@@ -51,7 +51,7 @@ public abstract class AbstractParserUpdate extends AbstractUpdate {
 			return sparqlDefinedDataset;
 		}
 
-		final DatasetImpl mergedDataset = new DatasetImpl();
+		final SimpleDataset mergedDataset = new SimpleDataset();
 
 		final boolean hasWithClause = sparqlDefinedDataset.getDefaultInsertGraph() != null;
 		final Set<IRI> sparqlDefaultGraphs = sparqlDefinedDataset.getDefaultGraphs();
@@ -88,11 +88,11 @@ public abstract class AbstractParserUpdate extends AbstractUpdate {
 
 		// if there are default graphs in the SPARQL update but it's not a WITH
 		// clause, it's a USING clause
-		final boolean hasUsingClause = !hasWithClause && sparqlDefaultGraphs != null ? sparqlDefaultGraphs.size() > 0
+		final boolean hasUsingClause = !hasWithClause && sparqlDefaultGraphs != null ? !sparqlDefaultGraphs.isEmpty()
 				: false;
 
 		final Set<IRI> sparqlNamedGraphs = sparqlDefinedDataset.getNamedGraphs();
-		final boolean hasUsingNamedClause = sparqlNamedGraphs != null ? sparqlNamedGraphs.size() > 0 : false;
+		final boolean hasUsingNamedClause = sparqlNamedGraphs != null ? !sparqlNamedGraphs.isEmpty() : false;
 
 		if (hasUsingClause) {
 			// one or more USING-clauses in the update itself, we need to

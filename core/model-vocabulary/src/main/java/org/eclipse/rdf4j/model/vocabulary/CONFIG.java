@@ -10,7 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
-import org.eclipse.rdf4j.common.annotation.Experimental;
+import static org.eclipse.rdf4j.model.vocabulary.Vocabularies.createIRI;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -21,7 +22,6 @@ import org.eclipse.rdf4j.model.Namespace;
  *
  * @since 4.3.0
  */
-@Experimental
 public class CONFIG {
 
 	/**
@@ -48,7 +48,7 @@ public class CONFIG {
 	 *
 	 * <var>tag:rdf4j.org,2023:config/delegate</var>
 	 */
-	public final static IRI delegate = Vocabularies.createIRI(NAMESPACE, "delegate");
+	public final static IRI delegate = createIRI(NAMESPACE, "delegate");
 
 	/**
 	 * Repository config
@@ -59,28 +59,28 @@ public class CONFIG {
 		 *
 		 * <var>tag:rdf4j.org,2023:config/Repository</var>
 		 */
-		public final static IRI Repository = Vocabularies.createIRI(NAMESPACE, "Repository");
+		public final static IRI Repository = createIRI(NAMESPACE, "Repository");
 
 		/**
 		 * Setting for the repository ID.
 		 *
 		 * <var>tag:rdf4j.org,2023:config/rep.id</var>
 		 */
-		public final static IRI id = Vocabularies.createIRI(NAMESPACE, "rep.id");
+		public final static IRI id = createIRI(NAMESPACE, "rep.id");
 
 		/**
 		 * Setting for the repository implementation-specific configuration.
 		 *
 		 * <var>tag:rdf4j.org,2023:config/rep.impl</var>
 		 */
-		public final static IRI impl = Vocabularies.createIRI(NAMESPACE, "rep.impl");
+		public final static IRI impl = createIRI(NAMESPACE, "rep.impl");
 
 		/**
 		 * Setting for the repository type.
 		 *
 		 * <var>tag:rdf4j.org,2023:config/rep.type</var>
 		 */
-		public final static IRI type = Vocabularies.createIRI(NAMESPACE, "rep.type");
+		public final static IRI type = createIRI(NAMESPACE, "rep.type");
 	}
 
 	/**
@@ -92,21 +92,21 @@ public class CONFIG {
 		 *
 		 * <var>tag:rdf4j.org,2023:config/http.url</var>
 		 */
-		public static final IRI url = Vocabularies.createIRI(NAMESPACE, "http.url");
+		public static final IRI url = createIRI(NAMESPACE, "http.url");
 
 		/**
 		 * Setting for a username to use for authentication.
 		 *
 		 * <var>tag:rdf4j.org,2023:config/http.username</var>
 		 */
-		public final static IRI username = Vocabularies.createIRI(NAMESPACE, "http.username");
+		public final static IRI username = createIRI(NAMESPACE, "http.username");
 
 		/**
 		 * Setting for a password to use for authentication.
 		 *
 		 * <var>tag:rdf4j.org,2023:config/http.password</var>
 		 */
-		public final static IRI password = Vocabularies.createIRI(NAMESPACE, "http.password");
+		public final static IRI password = createIRI(NAMESPACE, "http.password");
 	}
 
 	/**
@@ -118,43 +118,43 @@ public class CONFIG {
 		 *
 		 * <var>tag:rdf4j.org,2023:config/ca.includeInferred</var>
 		 */
-		public final static IRI includeInferred = Vocabularies.createIRI(NAMESPACE, "ca.includeInferred");
+		public final static IRI includeInferred = createIRI(NAMESPACE, "ca.includeInferred");
 
 		/**
 		 * Setting for the max query time.
 		 *
 		 * <var>tag:rdf4j.org,2023:config/ca.maxQueryTime</var>
 		 */
-		public final static IRI maxQueryTime = Vocabularies.createIRI(NAMESPACE, "ca.maxQueryTime");
+		public final static IRI maxQueryTime = createIRI(NAMESPACE, "ca.maxQueryTime");
 
 		/**
 		 * Setting for the query language to be used.
 		 *
 		 * <var>tag:rdf4j.org,2023:config/ca.queryLanguage</var>
 		 */
-		public final static IRI queryLanguage = Vocabularies.createIRI(NAMESPACE, "ca.queryLanguage");
+		public final static IRI queryLanguage = createIRI(NAMESPACE, "ca.queryLanguage");
 		/**
 		 *
 		 * <var>tag:rdf4j.org,2023:config/ca.readContext</var>
 		 */
-		public final static IRI readContext = Vocabularies.createIRI(NAMESPACE, "ca.readContext");
+		public final static IRI readContext = createIRI(NAMESPACE, "ca.readContext");
 
 		/**
 		 * <var>tag:rdf4j.org,2023:config/ca.removeContext</var>
 		 */
-		public final static IRI removeContext = Vocabularies.createIRI(NAMESPACE, "ca.removeContext");
+		public final static IRI removeContext = createIRI(NAMESPACE, "ca.removeContext");
 
 		/**
 		 * <var>tag:rdf4j.org,2023:config/ca.insertContext</var>
 		 */
-		public final static IRI insertContext = Vocabularies.createIRI(NAMESPACE, "ca.insertContext");
+		public final static IRI insertContext = createIRI(NAMESPACE, "ca.insertContext");
 
 		/**
 		 * Setting for a base URI.
 		 *
 		 * <var>tag:rdf4j.org,2023:config/ca.base</var>
 		 */
-		public final static IRI base = Vocabularies.createIRI(NAMESPACE, "ca.base");
+		public final static IRI base = createIRI(NAMESPACE, "ca.base");
 
 	}
 
@@ -166,7 +166,7 @@ public class CONFIG {
 		/**
 		 * <var>tag:rdf4j.org,2023:config/proxy.proxiedID</var>
 		 */
-		public final static IRI proxiedID = Vocabularies.createIRI(NAMESPACE, "proxy.proxiedID");
+		public final static IRI proxiedID = createIRI(NAMESPACE, "proxy.proxiedID");
 
 	}
 
@@ -179,15 +179,14 @@ public class CONFIG {
 		 *
 		 * <var>tag:rdf4j.org,2023:config/sparql.queryEndpoint</var>
 		 */
-		public static final IRI queryEndpoint = Vocabularies.createIRI(NAMESPACE, "sparql.queryEndpoint");
+		public static final IRI queryEndpoint = createIRI(NAMESPACE, "sparql.queryEndpoint");
 
 		/**
 		 * Configuration setting for the SPARQL update endpoint.
 		 *
 		 * <var>tag:rdf4j.org,2023:config/sparql.updateEndpoint</var>
 		 */
-		public static final IRI updateEndpoint = Vocabularies
-				.createIRI(NAMESPACE, "sparql.updateEndpoint");
+		public static final IRI updateEndpoint = createIRI(NAMESPACE, "sparql.updateEndpoint");
 
 		/**
 		 * Configuration setting for enabling/disabling direct result pass-through.
@@ -196,7 +195,7 @@ public class CONFIG {
 		 *
 		 * @see SPARQLProtocolSession#isPassThroughEnabled()
 		 */
-		public static final IRI passThroughEnabled = Vocabularies.createIRI(NAMESPACE, "sparql.passThroughEnabled");
+		public static final IRI passThroughEnabled = createIRI(NAMESPACE, "sparql.passThroughEnabled");
 	}
 
 	/**
@@ -206,30 +205,30 @@ public class CONFIG {
 		/**
 		 * <var>tag:rdf4j.org,2023:config/sail.type</var>
 		 */
-		public final static IRI type = Vocabularies.createIRI(NAMESPACE, "sail.type");
+		public final static IRI type = createIRI(NAMESPACE, "sail.type");
 
 		/**
 		 * <var>tag:rdf4j.org,2023:config/sail.impl</var>
 		 */
-		public final static IRI impl = Vocabularies.createIRI(NAMESPACE, "sail.impl");
+		public final static IRI impl = createIRI(NAMESPACE, "sail.impl");
 
 		/**
 		 * <var>tag:rdf4j.org,2023:config/sail.iterationCacheSyncTreshold</var>
 		 */
-		public final static IRI iterationCacheSyncThreshold = Vocabularies.createIRI(NAMESPACE,
+		public final static IRI iterationCacheSyncThreshold = createIRI(NAMESPACE,
 				"sail.iterationCacheSyncThreshold");
 
 		/**
 		 * <var>tag:rdf4j.org,2023:config/sail.connectionTimeOut</var>
 		 */
-		public final static IRI connectionTimeOut = Vocabularies.createIRI(NAMESPACE, "sail.connectionTimeOut");
+		public final static IRI connectionTimeOut = createIRI(NAMESPACE, "sail.connectionTimeOut");
 
 		/** <var>tag:rdf4j.org,2023:config/sail.evaluationStrategyFactory</var> */
-		public final static IRI evaluationStrategyFactory = Vocabularies.createIRI(NAMESPACE,
+		public final static IRI evaluationStrategyFactory = createIRI(NAMESPACE,
 				"sail.evaluationStrategyFactory");
 
 		/** <var>tag:rdf4j.org,2023:config/sail.defaultQueryEvaluationMode</var> */
-		public final static IRI defaultQueryEvaluationMode = Vocabularies.createIRI(NAMESPACE,
+		public final static IRI defaultQueryEvaluationMode = createIRI(NAMESPACE,
 				"sail.defaultQueryEvaluationMode");
 	}
 
@@ -238,10 +237,10 @@ public class CONFIG {
 	 */
 	public static final class Mem {
 		/** <var>tag:rdf4j.org,2023:config/mem.persist</var> */
-		public final static IRI persist = Vocabularies.createIRI(NAMESPACE, "mem.persist");
+		public final static IRI persist = createIRI(NAMESPACE, "mem.persist");
 
 		/** <var>tag:rdf4j.org,2023:config/mem.syncDelay</var> */
-		public final static IRI syncDelay = Vocabularies.createIRI(NAMESPACE, "mem.syncDelay");
+		public final static IRI syncDelay = createIRI(NAMESPACE, "mem.syncDelay");
 	}
 
 	/**
@@ -251,32 +250,32 @@ public class CONFIG {
 		/**
 		 * <var>tag:rdf4j.org,2023:config/native.tripleIndexes</var>
 		 */
-		public final static IRI tripleIndexes = Vocabularies.createIRI(NAMESPACE, "native.tripleIndexes");
+		public final static IRI tripleIndexes = createIRI(NAMESPACE, "native.tripleIndexes");
 
 		/**
 		 * <var>tag:rdf4j.org,2023:config/native.forceSync</var>
 		 */
-		public final static IRI forceSync = Vocabularies.createIRI(NAMESPACE, "native.forceSync");
+		public final static IRI forceSync = createIRI(NAMESPACE, "native.forceSync");
 
 		/**
 		 * <var>tag:rdf4j.org,2023:config/native.valueCacheSize</var>
 		 */
-		public final static IRI valueCacheSize = Vocabularies.createIRI(NAMESPACE, "native.valueCacheSize");
+		public final static IRI valueCacheSize = createIRI(NAMESPACE, "native.valueCacheSize");
 
 		/**
 		 * <var>tag:rdf4j.org,2023:config/native.valueIDCacheSize</var>
 		 */
-		public final static IRI valueIDCacheSize = Vocabularies.createIRI(NAMESPACE, "native.valueIDCacheSize");
+		public final static IRI valueIDCacheSize = createIRI(NAMESPACE, "native.valueIDCacheSize");
 
 		/**
 		 * <var>tag:rdf4j.org,2023:config/native.namespaceCacheSize</var>
 		 */
-		public final static IRI namespaceCacheSize = Vocabularies.createIRI(NAMESPACE, "native.namespaceCacheSize");
+		public final static IRI namespaceCacheSize = createIRI(NAMESPACE, "native.namespaceCacheSize");
 
 		/**
 		 * <var>tag:rdf4j.org,2023:config/native.namespaceIDCacheSize</var>
 		 */
-		public final static IRI namespaceIDCacheSize = Vocabularies.createIRI(NAMESPACE, "native.namespaceIDCacheSize");
+		public final static IRI namespaceIDCacheSize = createIRI(NAMESPACE, "native.namespaceIDCacheSize");
 	}
 
 	/**
@@ -286,65 +285,65 @@ public class CONFIG {
 		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.parallelValidation</code>
 		 */
-		public final static IRI parallelValidation = Vocabularies.createIRI(NAMESPACE, "shacl.parallelValidation");
+		public final static IRI parallelValidation = createIRI(NAMESPACE, "shacl.parallelValidation");
 
 		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.logValidationPlans</code>
 		 */
-		public final static IRI logValidationPlans = Vocabularies.createIRI(NAMESPACE, "shacl.logValidationPlans");
+		public final static IRI logValidationPlans = createIRI(NAMESPACE, "shacl.logValidationPlans");
 
 		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.logValidationViolations</code>
 		 */
-		public final static IRI logValidationViolations = Vocabularies.createIRI(NAMESPACE,
+		public final static IRI logValidationViolations = createIRI(NAMESPACE,
 				"shacl.logValidationViolations");
 
 		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.validationEnabled</code>
 		 */
-		public final static IRI validationEnabled = Vocabularies.createIRI(NAMESPACE, "shacl.validationEnabled");
+		public final static IRI validationEnabled = createIRI(NAMESPACE, "shacl.validationEnabled");
 
 		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.cacheSelectNodes</code>
 		 */
-		public final static IRI cacheSelectNodes = Vocabularies.createIRI(NAMESPACE, "shacl.cacheSelectNodes");
+		public final static IRI cacheSelectNodes = createIRI(NAMESPACE, "shacl.cacheSelectNodes");
 
 		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.globalLogValidationExecution</code>
 		 */
-		public final static IRI globalLogValidationExecution = Vocabularies.createIRI(NAMESPACE,
+		public final static IRI globalLogValidationExecution = createIRI(NAMESPACE,
 				"shacl.globalLogValidationExecution");
 
 		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.rdfsSubClassReasoning</code>
 		 */
-		public final static IRI rdfsSubClassReasoning = Vocabularies.createIRI(NAMESPACE,
+		public final static IRI rdfsSubClassReasoning = createIRI(NAMESPACE,
 				"shacl.rdfsSubClassReasoning");
 
 		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.performanceLogging</code>
 		 */
-		public final static IRI performanceLogging = Vocabularies.createIRI(NAMESPACE, "shacl.performanceLogging");
+		public final static IRI performanceLogging = createIRI(NAMESPACE, "shacl.performanceLogging");
 
 		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.serializableValidation</code>
 		 */
-		public final static IRI serializableValidation = Vocabularies.createIRI(NAMESPACE,
+		public final static IRI serializableValidation = createIRI(NAMESPACE,
 				"shacl.serializableValidation");
 
-		public final static IRI eclipseRdf4jShaclExtensions = Vocabularies.createIRI(NAMESPACE,
+		public final static IRI eclipseRdf4jShaclExtensions = createIRI(NAMESPACE,
 				"shacl.eclipseRdf4jShaclExtensions");
 
-		public final static IRI dashDataShapes = Vocabularies.createIRI(NAMESPACE, "shacl.dashDataShapes");
+		public final static IRI dashDataShapes = createIRI(NAMESPACE, "shacl.dashDataShapes");
 
-		public final static IRI validationResultsLimitTotal = Vocabularies.createIRI(NAMESPACE,
+		public final static IRI validationResultsLimitTotal = createIRI(NAMESPACE,
 				"shacl.validationResultsLimitTotal");
-		public final static IRI validationResultsLimitPerConstraint = Vocabularies.createIRI(NAMESPACE,
+		public final static IRI validationResultsLimitPerConstraint = createIRI(NAMESPACE,
 				"shacl.validationResultsLimitPerConstraint");
-		public final static IRI transactionalValidationLimit = Vocabularies.createIRI(NAMESPACE,
+		public final static IRI transactionalValidationLimit = createIRI(NAMESPACE,
 				"shacl.transactionalValidationLimit");
 
-		public final static IRI shapesGraph = Vocabularies.createIRI(NAMESPACE, "shacl.shapesGraph");
+		public final static IRI shapesGraph = createIRI(NAMESPACE, "shacl.shapesGraph");
 	}
 
 	/**
@@ -352,7 +351,7 @@ public class CONFIG {
 	 *
 	 */
 	public static final class Lucene {
-		public final static IRI indexDir = Vocabularies.createIRI(NAMESPACE, "lucene.indexDir");
+		public final static IRI indexDir = createIRI(NAMESPACE, "lucene.indexDir");
 	}
 
 	/**
@@ -360,20 +359,21 @@ public class CONFIG {
 	 */
 	public static final class Ess {
 
-		public final static IRI hostname = Vocabularies.createIRI(NAMESPACE, "ess.hostname");
-		public final static IRI port = Vocabularies.createIRI(NAMESPACE, "ess.port");
-		public final static IRI index = Vocabularies.createIRI(NAMESPACE, "ess.index");
-		public final static IRI clusterName = Vocabularies.createIRI(NAMESPACE, "ess.clusterName");
+		public final static IRI hostname = createIRI(NAMESPACE, "ess.hostname");
+		public final static IRI port = createIRI(NAMESPACE, "ess.port");
+		public final static IRI index = createIRI(NAMESPACE, "ess.index");
+		public final static IRI clusterName = createIRI(NAMESPACE, "ess.clusterName");
 	}
 
 	/**
 	 * Custom Graph Query Inferencer config
 	 */
 	public static final class Cgqi {
-		public final static IRI queryLanguage = Vocabularies.createIRI(NAMESPACE, "cgqi.queryLanguage");
+		public final static IRI queryLanguage = createIRI(NAMESPACE, "cgqi.queryLanguage");
 
-		public final static IRI ruleQuery = Vocabularies.createIRI(NAMESPACE, "cgqi.ruleQuery");
+		public final static IRI ruleQuery = createIRI(NAMESPACE, "cgqi.ruleQuery");
 
-		public final static IRI matcherQuery = Vocabularies.createIRI(NAMESPACE, "cgqi.matcherQuery");
+		public final static IRI matcherQuery = createIRI(NAMESPACE, "cgqi.matcherQuery");
 	}
+
 }

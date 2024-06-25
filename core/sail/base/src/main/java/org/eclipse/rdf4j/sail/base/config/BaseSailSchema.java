@@ -29,12 +29,12 @@ public class BaseSailSchema {
 	public static final String NAMESPACE = "http://www.openrdf.org/config/sail/base#";
 
 	/**
-	 * @deprecated use {@link CONFIG#evaluationStrategyFactory} instead.
+	 * @deprecated use {@link CONFIG.Sail#evaluationStrategyFactory} instead.
 	 */
 	public final static IRI EVALUATION_STRATEGY_FACTORY = iri(NAMESPACE, "evaluationStrategyFactory");
 
 	/**
-	 * @deprecated use {@link CONFIG#defaultQueryEvaluationMode} instead.
+	 * @deprecated use {@link CONFIG.Sail#defaultQueryEvaluationMode} instead.
 	 */
 	public final static IRI DEFAULT_QUERY_EVALUATION_MODE = iri(NAMESPACE, "defaultQueryEvaluationMode");
 

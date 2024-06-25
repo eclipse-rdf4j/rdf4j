@@ -18,8 +18,7 @@ import java.util.function.Supplier;
 /**
  * An Iteration that filters any duplicate elements from an underlying iterator.
  */
-@Deprecated(since = "4.1.0")
-public class DistinctIteration<E, X extends Exception> extends FilterIteration<E, X> {
+public class DistinctIteration<E> extends FilterIteration<E> {
 
 	/*-----------*
 	 * Variables *
@@ -39,13 +38,31 @@ public class DistinctIteration<E, X extends Exception> extends FilterIteration<E
 	 *
 	 * @param iter The underlying iterator.
 	 */
-	public DistinctIteration(Iteration<? extends E, ? extends X> iter) {
+	@Deprecated
+	public DistinctIteration(CloseableIteration<? extends E> iter) {
 		super(iter);
 
-		excludeSet = makeSet();
+		excludeSet = new HashSet<>();
 	}
 
-	public DistinctIteration(Iteration<? extends E, ? extends X> iter, Supplier<Set<E>> setMaker) {
+	/**
+	 * Creates a new DistinctIterator.
+	 *
+	 * @param Set<E> a hopefully optimized set
+	 * @param iter   The underlying iterator.
+	 */
+	public DistinctIteration(CloseableIteration<? extends E> iter, Set<E> excludeSet) {
+		super(iter);
+		this.excludeSet = excludeSet;
+	}
+
+	/**
+	 * Creates a new DistinctIterator.
+	 *
+	 * @param Supplier<Set<E>> a supplier of a hopefully optimized set
+	 * @param iter             The underlying iterator.
+	 */
+	public DistinctIteration(CloseableIteration<? extends E> iter, Supplier<Set<E>> setMaker) {
 		super(iter);
 		excludeSet = setMaker.get();
 	}
@@ -58,7 +75,7 @@ public class DistinctIteration<E, X extends Exception> extends FilterIteration<E
 	 * Returns <var>true</var> if the specified object hasn't been seen before.
 	 */
 	@Override
-	protected boolean accept(E object) throws X {
+	protected boolean accept(E object) {
 		if (inExcludeSet(object)) {
 			// object has already been returned
 			return false;
@@ -66,6 +83,11 @@ public class DistinctIteration<E, X extends Exception> extends FilterIteration<E
 			add(object);
 			return true;
 		}
+	}
+
+	@Override
+	protected void handleClose() {
+
 	}
 
 	/**
@@ -79,12 +101,7 @@ public class DistinctIteration<E, X extends Exception> extends FilterIteration<E
 	/**
 	 * @param object to put into the set
 	 */
-	protected boolean add(E object) throws X {
+	protected boolean add(E object) {
 		return excludeSet.add(object);
 	}
-
-	protected Set<E> makeSet() {
-		return new HashSet<>();
-	}
-
 }

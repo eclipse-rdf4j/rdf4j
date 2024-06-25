@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.http.client.SessionManagerDependent;
 import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.repository.DelegatingRepository;
@@ -262,6 +263,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 			File configFile = new File(dataDir, CFG_FILE);
 			try (InputStream input = new FileInputStream(configFile)) {
 				Model model = Rio.parse(input, configFile.toURI().toString(), CONFIG_FORMAT);
+
 				Set<String> repositoryIDs = RepositoryConfigUtil.getRepositoryIDs(model);
 				if (repositoryIDs.isEmpty()) {
 					throw new RepositoryConfigException("No repository ID in configuration: " + configFile);
@@ -273,12 +275,30 @@ public class LocalRepositoryManager extends RepositoryManager {
 						&& !getRepositoryDir(repositoryID).getCanonicalFile().equals(dataDir.getCanonicalFile())) {
 					throw new RepositoryConfigException("Wrong repository ID in configuration: " + configFile);
 				}
-				return RepositoryConfigUtil.getRepositoryConfig(model, repositoryID);
+				var config = RepositoryConfigUtil.getRepositoryConfig(model, repositoryID);
+				if (Configurations.hasLegacyConfiguration(model) && !Configurations.useLegacyConfig()
+						&& config != null) {
+					migrateToNewConfigVocabulary(config);
+				}
+				return config;
 			} catch (IOException e) {
 				throw new RepositoryConfigException(e);
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * Migrate a repository configuration from the legacy vocabulary to the new vocabulary in
+	 * {@link org.eclipse.rdf4j.model.vocabulary.CONFIG}.
+	 * <p>
+	 * Override this method to provide custom migration logic.
+	 *
+	 * @param config
+	 */
+	protected void migrateToNewConfigVocabulary(RepositoryConfig config) {
+		logger.warn("Configuration for {} uses legacy vocabulary, converting.", config.getID());
+		addRepositoryConfig(config);
 	}
 
 	@Override

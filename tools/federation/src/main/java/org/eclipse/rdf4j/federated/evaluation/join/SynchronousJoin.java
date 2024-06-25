@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 public class SynchronousJoin extends JoinExecutorBase<BindingSet> {
 
 	public SynchronousJoin(FederationEvalStrategy strategy,
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
+			CloseableIteration<BindingSet> leftIter,
 			TupleExpr rightArg, BindingSet bindings, QueryInfo queryInfo)
 			throws QueryEvaluationException {
 		super(strategy, leftIter, rightArg, bindings, queryInfo);

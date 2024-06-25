@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-import java.io.IOException;
-import java.net.MalformedURLException;
 import java.util.Arrays;
 import java.util.Deque;
 import java.util.HashSet;
@@ -67,10 +65,9 @@ public class Federate extends ConsoleCommand {
 	 * Executes a 'federate' command for the RDF4J Console.
 	 *
 	 * @param parameters the expectations for the tokens in this array are fully documented in {@link PrintHelp} .
-	 * @throws java.io.IOException
 	 */
 	@Override
-	public void execute(String... parameters) throws IOException {
+	public void execute(String... parameters) {
 		if (parameters.length < 4) {
 			writeln(getHelpLong());
 		} else {
@@ -123,9 +120,9 @@ public class Federate extends ConsoleCommand {
 				manager.addRepositoryConfig(config);
 				writeln("Federation created.");
 			}
-		} catch (RepositoryConfigException | RepositoryException | MalformedURLException rce) {
+		} catch (RepositoryConfigException | RepositoryException rce) {
 			writeError("Federation failed", rce);
-		} catch (RDF4JException | IOException rce) {
+		} catch (RDF4JException rce) {
 			writeError("I/O exception on federation", rce);
 		}
 	}

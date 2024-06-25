@@ -10,9 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql.manifest;
 
-import java.util.Map;
-
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -26,15 +23,8 @@ import org.junit.jupiter.api.Disabled;
 @Deprecated
 public class W3CApprovedSPARQL11UpdateTest extends SPARQL11UpdateComplianceTest {
 
-	public W3CApprovedSPARQL11UpdateTest(String displayName, String testURI, String name, String requestFile,
-			IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
-			Map<String, IRI> resultNamedGraphs) {
-		super(displayName, testURI, name, requestFile, defaultGraphURI, inputNamedGraphs, resultDefaultGraphURI,
-				resultNamedGraphs);
-	}
-
 	@Override
-	protected Repository newRepository() throws Exception {
+	protected Repository newRepository() {
 		SailRepository repo = new SailRepository(new MemoryStore());
 
 		return repo;

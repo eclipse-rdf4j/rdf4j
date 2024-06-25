@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.ndjsonld;
 
-import java.io.IOException;
-
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
@@ -34,7 +32,7 @@ public class NDJSONLDWriterTest extends RDFWriterTest {
 	@Test
 	@Override
 	@Disabled("TODO: See case for JSONLDWriterTest")
-	public void testIllegalPrefix() throws RDFHandlerException, RDFParseException, IOException {
+	public void testIllegalPrefix() throws RDFHandlerException, RDFParseException {
 	}
 
 	@Override
@@ -54,12 +52,13 @@ public class NDJSONLDWriterTest extends RDFWriterTest {
 	protected RioSetting<?>[] getExpectedSupportedSettings() {
 		return new RioSetting[] {
 				BasicWriterSettings.BASE_DIRECTIVE,
+				BasicWriterSettings.PRETTY_PRINT,
 				JSONLDSettings.COMPACT_ARRAYS,
-				JSONLDSettings.HIERARCHICAL_VIEW,
 				JSONLDSettings.JSONLD_MODE,
 				JSONLDSettings.PRODUCE_GENERALIZED_RDF,
 				JSONLDSettings.USE_RDF_TYPE,
-				JSONLDSettings.USE_NATIVE_TYPES
+				JSONLDSettings.USE_NATIVE_TYPES,
+				JSONLDSettings.EXCEPTION_ON_WARNING
 		};
 	}
 }

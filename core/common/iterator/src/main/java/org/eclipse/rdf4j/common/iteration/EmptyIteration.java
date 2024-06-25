@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.common.iteration;
 
 import java.util.NoSuchElementException;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 /**
@@ -20,22 +21,10 @@ import java.util.stream.Stream;
  * @implNote In the future this class will stop extending AbstractCloseableIteration and instead implement
  *           CloseableIteration directly.
  */
-@Deprecated(since = "4.1.0")
-public final class EmptyIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
+public final class EmptyIteration<E> implements CloseableIteration<E> {
 
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
-
-	/**
-	 * Creates a new EmptyIteration.
-	 */
 	public EmptyIteration() {
 	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
 
 	@Override
 	public boolean hasNext() {
@@ -55,6 +44,15 @@ public final class EmptyIteration<E, X extends Exception> extends AbstractClosea
 	@Override
 	public Stream<E> stream() {
 		return Stream.empty();
+	}
+
+	@Override
+	public void close() {
+
+	}
+
+	@Override
+	public void forEachRemaining(Consumer<? super E> action) {
 	}
 
 }

@@ -127,7 +127,7 @@ public abstract class AbstractLuceneSailIndexedPropertiesTest {
 	}
 
 	@Test
-	public void testTriplesStored() throws Exception {
+	public void testTriplesStored() {
 		// are the triples stored in the underlying sail?
 		try (RepositoryConnection connection = repository.getConnection()) {
 			assertTrue(connection.hasStatement(SUBJECT_1, RDFSLABEL, vf.createLiteral("the first resource"), false));

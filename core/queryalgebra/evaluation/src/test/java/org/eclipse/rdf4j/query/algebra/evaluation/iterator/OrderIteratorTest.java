@@ -20,9 +20,10 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Set;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -35,33 +36,51 @@ import org.junit.jupiter.api.Test;
  */
 public class OrderIteratorTest {
 
-	class IterationStub extends CloseableIteratorIteration<BindingSet, QueryEvaluationException> {
+	private static class IterationStub extends AbstractCloseableIteration<BindingSet> {
 
 		int hasNextCount = 0;
 
 		int nextCount = 0;
 
 		int removeCount = 0;
+		private Iterator<? extends BindingSet> iter;
 
 		public IterationStub(Iterator<BindingSet> iterator) {
-			super(iterator);
+			this.iter = iterator;
 		}
 
 		@Override
 		public boolean hasNext() throws QueryEvaluationException {
 			hasNextCount++;
-			return super.hasNext();
+			if (isClosed()) {
+				return false;
+			}
+
+			boolean result = iter.hasNext();
+			if (!result) {
+				close();
+			}
+			return result;
 		}
 
 		@Override
 		public BindingSet next() throws QueryEvaluationException {
 			nextCount++;
-			return super.next();
+			if (isClosed()) {
+				throw new NoSuchElementException("Iteration has been closed");
+			}
+
+			return iter.next();
 		}
 
 		@Override
 		public void remove() {
 			removeCount++;
+		}
+
+		@Override
+		protected void handleClose() {
+
 		}
 	}
 
@@ -139,7 +158,7 @@ public class OrderIteratorTest {
 	private SizeComparator cmp;
 
 	@Test
-	public void testFirstHasNext() throws Exception {
+	public void testFirstHasNext() {
 		order.hasNext();
 		assertEquals(list.size() + 1, iteration.hasNextCount);
 		assertEquals(list.size(), iteration.nextCount);
@@ -147,7 +166,7 @@ public class OrderIteratorTest {
 	}
 
 	@Test
-	public void testHasNext() throws Exception {
+	public void testHasNext() {
 		order.hasNext();
 		order.next();
 		order.hasNext();
@@ -157,7 +176,7 @@ public class OrderIteratorTest {
 	}
 
 	@Test
-	public void testFirstNext() throws Exception {
+	public void testFirstNext() {
 		order.next();
 		assertEquals(list.size() + 1, iteration.hasNextCount);
 		assertEquals(list.size(), iteration.nextCount);
@@ -165,7 +184,7 @@ public class OrderIteratorTest {
 	}
 
 	@Test
-	public void testNext() throws Exception {
+	public void testNext() {
 		order.next();
 		order.next();
 		assertEquals(list.size() + 1, iteration.hasNextCount);
@@ -174,7 +193,7 @@ public class OrderIteratorTest {
 	}
 
 	@Test
-	public void testRemove() throws Exception {
+	public void testRemove() {
 		try {
 			order.remove();
 			fail();
@@ -184,7 +203,7 @@ public class OrderIteratorTest {
 	}
 
 	@Test
-	public void testSorting() throws Exception {
+	public void testSorting() {
 		List<BindingSet> sorted = new ArrayList<>(list);
 		Collections.sort(sorted, cmp);
 		for (BindingSet b : sorted) {
@@ -194,7 +213,7 @@ public class OrderIteratorTest {
 	}
 
 	@BeforeEach
-	protected void setUp() throws Exception {
+	protected void setUp() {
 		list = Arrays.asList(b3, b5, b2, b1, b4, b2);
 		cmp = new SizeComparator();
 		iteration = new IterationStub(list.iterator());

@@ -10,10 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail;
 
+import java.util.Comparator;
 import java.util.Optional;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
@@ -24,7 +27,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Query;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
@@ -88,7 +90,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
+	CloseableIteration<? extends BindingSet> evaluate(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException;
 
 	/**
@@ -97,7 +99,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @return An iterator over the context identifiers, should not contain any duplicates.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException;
+	CloseableIteration<? extends Resource> getContextIDs() throws SailException;
 
 	/**
 	 * Gets all statements from the specified contexts that have a specific subject, predicate and/or object. All three
@@ -116,8 +118,40 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
+	CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts) throws SailException;
+
+	/**
+	 * Gets all statements from the specified contexts that have a specific subject, predicate and/or object. All three
+	 * parameters may be null to indicate wildcards. The <var>includeInferred</var> parameter can be used to control
+	 * which statements are fetched: all statements or only the statements that have been added explicitly.
+	 * <p>
+	 * Statements are returned in the order specified by the <var>statementOrder</var> parameter. Use
+	 * {@link #getSupportedOrders(Resource, IRI, Value, Resource...)} to first retrieve the statement orders supported
+	 * by this store for this statement pattern.
+	 * <p>
+	 * Note that this method is experimental and may be changed or removed without notice.
+	 *
+	 *
+	 * @param statementOrder  The order that the statements should be returned in.
+	 * @param subj            A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred            A URI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj             A Value specifying the object, or <var>null</var> for a wildcard.
+	 * @param includeInferred if false, no inferred statements are returned; if true, inferred statements are returned
+	 *                        if available
+	 * @param contexts        The context(s) to get the data from. Note that this parameter is a vararg and as such is
+	 *                        optional. If no contexts are specified the method operates on the entire repository. A
+	 *                        <var>null</var> value can be used to match context-less statements.
+	 * @return The statements matching the specified pattern.
+	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
+	 * @throws IllegalStateException If the connection has been closed.
+	 */
+	@Experimental
+	default CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj,
+			IRI pred, Value obj,
+			boolean includeInferred, Resource... contexts) throws SailException {
+		throw new SailException("Statement ordering is not supported by " + this.getClass().getSimpleName());
+	}
 
 	/**
 	 * Determines if the store contains any statements from the specified contexts that have a specific subject,
@@ -141,7 +175,7 @@ public interface SailConnection extends AutoCloseable {
 	default boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
 			throws SailException {
 
-		try (CloseableIteration<? extends Statement, SailException> stIter = getStatements(subj, pred, obj,
+		try (CloseableIteration<? extends Statement> stIter = getStatements(subj, pred, obj,
 				includeInferred, contexts)) {
 			return stIter.hasNext();
 		}
@@ -365,7 +399,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException;
+	CloseableIteration<? extends Namespace> getNamespaces() throws SailException;
 
 	/**
 	 * Gets the namespace that is associated with the specified prefix, if any.
@@ -409,17 +443,6 @@ public interface SailConnection extends AutoCloseable {
 	void clearNamespaces() throws SailException;
 
 	/**
-	 * Indicates if the Sail has any statement removal operations pending (not yet {@link #flush() flushed}) for the
-	 * current transaction.
-	 *
-	 * @return true if any statement removal operations have not yet been flushed, false otherwise.
-	 * @see #flush()
-	 * @deprecated
-	 */
-	@Deprecated
-	boolean pendingRemovals();
-
-	/**
 	 * <p>
 	 * Explain how the TupleExpr will be (or has been) executed/evaluated by returning a TupleExpr (which may or may not
 	 * be the provided TupleExpr) that has gone through zero or more of the stages prior to and also including execution
@@ -453,4 +476,40 @@ public interface SailConnection extends AutoCloseable {
 		throw new UnsupportedOperationException();
 	}
 
+	/**
+	 * The underlying store may support some, but not all, statement orders based on the statement pattern. This method
+	 * can be used to determine which orders are supported for a given statement pattern. The supported orders can be
+	 * used to retrieve statements in a specific order using
+	 * {@link #getStatements(StatementOrder, Resource, IRI, Value, boolean, Resource...)}.
+	 * <p>
+	 * Note that this method is experimental and may be changed or removed without notice.
+	 *
+	 * @param subj     A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred     A URI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj      A Value specifying the object, or <var>null</var> for a wildcard.
+	 * @param contexts The context(s) to get the data from. Note that this parameter is a vararg and as such is
+	 *                 optional. If no contexts are specified the method operates on the entire repository. A
+	 *                 <var>null</var> value can be used to match context-less statements.
+	 * @return a set of supported statement orders
+	 */
+	@Experimental
+	default Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		return Set.of();
+	}
+
+	/**
+	 * Different underlying datastructures may have different ways of ordering statements. On-disk stores typically use
+	 * a long to represent a value and only stores the actual value in a dictionary, in this case the order would be the
+	 * order that values where inserted into the dictionary. Stores that instead store values in SPARQL-order can return
+	 * an instance of {@link org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator} which may allow for
+	 * further optimizations.
+	 * <p>
+	 * Note that this method is experimental and may be changed or removed without notice.
+	 *
+	 * @return a comparator that matches the order of values in the store
+	 */
+	@Experimental
+	default Comparator<Value> getComparator() {
+		return null;
+	}
 }

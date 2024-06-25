@@ -30,7 +30,6 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -43,7 +42,6 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
@@ -134,7 +132,7 @@ public class TargetChainRetriever implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple> iterator() {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
@@ -144,10 +142,10 @@ public class TargetChainRetriever implements PlanNode {
 			private StatementMatcher currentStatementMatcher;
 			private String sparqlValuesDecl;
 			private Set<String> currentVarNames;
-			private CloseableIteration<? extends Statement, SailException> statements;
+			private CloseableIteration<? extends Statement> statements;
 			private ValidationTuple next;
 
-			private CloseableIteration<? extends BindingSet, QueryEvaluationException> results;
+			private CloseableIteration<? extends BindingSet> results;
 
 			private ParsedQuery parsedQuery;
 
@@ -204,7 +202,7 @@ public class TargetChainRetriever implements PlanNode {
 					this.currentVarNames = currentStatementMatcher.getVarNames(varNames, removedStatement,
 							varNamesInQueryFragment);
 
-					assert !currentVarNames.isEmpty();
+					assert !currentVarNames.isEmpty() : "currentVarNames is empty!";
 
 					statements = connection.getStatements(
 							currentStatementMatcher.getSubjectValue(),
@@ -289,7 +287,7 @@ public class TargetChainRetriever implements PlanNode {
 					Statement next = statements.next();
 					Stream<EffectiveTarget.StatementsAndMatcher> rootStatements = Stream
 							.of(new EffectiveTarget.StatementsAndMatcher(List.of(next), currentStatementMatcher));
-					if (removedStatement) {
+					if (removedStatement && removedStatementTarget != null) {
 						Stream<EffectiveTarget.StatementsAndMatcher> root = removedStatementTarget.getRoot(
 								connectionsGroup,
 								dataGraph, currentStatementMatcher,

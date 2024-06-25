@@ -182,7 +182,7 @@ public class IsomorphicTest {
 	}
 
 	@Test
-	public void testValidationReport() throws IOException {
+	public void testValidationReport() {
 		Model m1 = getModel("shaclValidationReport.ttl");
 		Model m2 = getModel("shaclValidationReport.ttl");
 
@@ -191,7 +191,7 @@ public class IsomorphicTest {
 
 	@Test
 	@Timeout(2)
-	public void testValidationReport_LexicalOrdering() throws IOException {
+	public void testValidationReport_LexicalOrdering() {
 		Model m1 = getModel("shaclValidationReport.ttl");
 		Model m2 = getModel("shaclValidationReport.ttl");
 
@@ -205,7 +205,7 @@ public class IsomorphicTest {
 	}
 
 	@Test
-	public void testValidationReport_Changed() throws IOException {
+	public void testValidationReport_Changed() {
 		Model m1 = getModel("shaclValidationReport.ttl");
 		Model m2 = getModel("shaclValidationReport-changed.ttl");
 

@@ -35,7 +35,7 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
  * @author Bart Hanssens
  */
 abstract class HDTArray extends HDTPart {
-	protected enum Type {
+	enum Type {
 		LOG64(1),
 		UINT32(2),
 		UINT64(3);
@@ -47,7 +47,7 @@ abstract class HDTArray extends HDTPart {
 		 *
 		 * @return value 1,2 or 3
 		 */
-		public int getValue() {
+		int getValue() {
 			return value;
 		}
 
@@ -56,22 +56,22 @@ abstract class HDTArray extends HDTPart {
 		}
 	}
 
-	protected int nrbits;
-	protected int entries;
+	int nrbits;
+	int entries;
 
 	/**
 	 * Get the type of the array
 	 *
 	 * @return byte
 	 */
-	protected abstract int getType();
+	abstract int getType();
 
 	/**
 	 * Get number of bits used to encode an entry
 	 *
 	 * @return positive integer value
 	 */
-	protected int getNrBits() {
+	int getNrBits() {
 		return nrbits;
 	}
 
@@ -80,7 +80,7 @@ abstract class HDTArray extends HDTPart {
 	 *
 	 * @return positive integer value
 	 */
-	protected int size() {
+	int size() {
 		return entries;
 	}
 
@@ -90,10 +90,10 @@ abstract class HDTArray extends HDTPart {
 	 * @param i zero-based index
 	 * @return entry
 	 */
-	protected abstract int get(int i);
+	abstract int get(int i);
 
 	@Override
-	protected void parse(InputStream is) throws IOException {
+	void parse(InputStream is) throws IOException {
 		CRC8 crc8 = new CRC8();
 		crc8.update(getType());
 

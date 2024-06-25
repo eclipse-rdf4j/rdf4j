@@ -15,9 +15,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -34,7 +38,6 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
-import org.openjdk.jmh.runner.RunnerException;
 
 /**
  * @author Håvard Ottestad
@@ -65,6 +68,8 @@ public class QueryBenchmark {
 	private static final String query_distinct_predicates;
 	private static final String simple_filter_not;
 	private static final String wild_card_chain_with_common_ends;
+	private static final String sub_select;
+	private static final String multiple_sub_select;
 
 	static {
 		try {
@@ -93,13 +98,17 @@ public class QueryBenchmark {
 					StandardCharsets.UTF_8);
 			wild_card_chain_with_common_ends = IOUtils.toString(
 					getResourceAsStream("benchmarkFiles/wild-card-chain-with-common-ends.qr"), StandardCharsets.UTF_8);
+			sub_select = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/sub-select.qr"), StandardCharsets.UTF_8);
+			multiple_sub_select = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/multiple-sub-select.qr"), StandardCharsets.UTF_8);
 
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
 	}
 
-	public static void main(String[] args) throws RunnerException, IOException, InterruptedException {
+	public static void main(String[] args) throws IOException {
 //		Options opt = new OptionsBuilder()
 //				.include("QueryBenchmark") // adapt to run other benchmark tests
 //				// .addProfiler("stack", "lines=20;period=1;top=20")
@@ -108,25 +117,102 @@ public class QueryBenchmark {
 //
 //		new Runner(opt).run();
 
+		long k = 0;
+
 		QueryBenchmark queryBenchmark = new QueryBenchmark();
 		queryBenchmark.beforeClass();
 		for (int i = 0; i < 100; i++) {
 			System.out.println(i);
-			queryBenchmark.pathExpressionQuery1();
-			queryBenchmark.groupByQuery();
-			queryBenchmark.different_datasets_with_similar_distributions();
-			queryBenchmark.long_chain();
-			queryBenchmark.simple_filter_not();
-			queryBenchmark.complexQuery();
-			queryBenchmark.lots_of_optional();
-			queryBenchmark.nested_optionals();
+			long result;
+			try (SailRepositoryConnection connection = queryBenchmark.repository.getConnection()) {
+				result = count(connection
+						.prepareTupleQuery(query1)
+						.evaluate());
+
+			}
+			k += result;
+			long result1;
+			try (SailRepositoryConnection connection = queryBenchmark.repository.getConnection()) {
+				result1 = count(connection
+						.prepareTupleQuery(query4)
+						.evaluate());
+
+			}
+			k += result1;
+			long result2;
+
+			try (SailRepositoryConnection connection = queryBenchmark.repository.getConnection()) {
+				result2 = count(connection
+						.prepareTupleQuery(query7_pathexpression1)
+						.evaluate());
+
+			}
+			k += result2;
+			long result3;
+			try (SailRepositoryConnection connection = queryBenchmark.repository.getConnection()) {
+				result3 = count(connection
+						.prepareTupleQuery(query8_pathexpression2)
+						.evaluate());
+
+			}
+			k += result3;
+			long result4;
+			try (SailRepositoryConnection connection = queryBenchmark.repository.getConnection()) {
+				result4 = count(connection
+						.prepareTupleQuery(different_datasets_with_similar_distributions)
+						.evaluate());
+
+			}
+			k += result4;
+			long result5;
+			try (SailRepositoryConnection connection = queryBenchmark.repository.getConnection()) {
+				result5 = count(connection
+						.prepareTupleQuery(long_chain)
+						.evaluate());
+
+			}
+			k += result5;
+			long result6;
+			try (SailRepositoryConnection connection = queryBenchmark.repository.getConnection()) {
+				result6 = count(connection
+						.prepareTupleQuery(lots_of_optional)
+						.evaluate());
+
+			}
+			k += result6;
+//            k += queryBenchmark.minus();
+			long result7;
+			try (SailRepositoryConnection connection = queryBenchmark.repository.getConnection()) {
+				result7 = count(connection
+						.prepareTupleQuery(nested_optionals)
+						.evaluate());
+
+			}
+			k += result7;
+			long result8;
+			try (SailRepositoryConnection connection = queryBenchmark.repository.getConnection()) {
+				result8 = count(connection
+						.prepareTupleQuery(query_distinct_predicates)
+						.evaluate());
+
+			}
+			k += result8;
+			long result9;
+			try (SailRepositoryConnection connection = queryBenchmark.repository.getConnection()) {
+				result9 = count(connection
+						.prepareTupleQuery(simple_filter_not)
+						.evaluate());
+
+			}
+			k += result9;
 		}
 		queryBenchmark.afterClass();
+		System.out.println(k);
 
 	}
 
 	@Setup(Level.Trial)
-	public void beforeClass() throws IOException, InterruptedException {
+	public void beforeClass() throws IOException {
 		repository = new SailRepository(new MemoryStore());
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -146,22 +232,25 @@ public class QueryBenchmark {
 	@Benchmark
 	public long groupByQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
+			return count(connection
 					.prepareTupleQuery(query1)
-					.evaluate()
-					.stream()
-					.count();
+					.evaluate());
+		}
+	}
+
+	private static long count(TupleQueryResult evaluate) {
+		try (Stream<BindingSet> stream = evaluate.stream()) {
+			return stream.count();
 		}
 	}
 
 	@Benchmark
 	public long complexQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
+			return count(connection
 					.prepareTupleQuery(query4)
 					.evaluate()
-					.stream()
-					.count();
+			);
 		}
 	}
 
@@ -169,11 +258,9 @@ public class QueryBenchmark {
 	public long pathExpressionQuery1() {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
+			return count(connection
 					.prepareTupleQuery(query7_pathexpression1)
-					.evaluate()
-					.stream()
-					.count();
+					.evaluate());
 
 		}
 	}
@@ -181,11 +268,9 @@ public class QueryBenchmark {
 	@Benchmark
 	public long pathExpressionQuery2() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
+			return count(connection
 					.prepareTupleQuery(query8_pathexpression2)
-					.evaluate()
-					.stream()
-					.count();
+					.evaluate());
 		}
 	}
 
@@ -203,55 +288,45 @@ public class QueryBenchmark {
 	@Benchmark
 	public long different_datasets_with_similar_distributions() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
+			return count(connection
 					.prepareTupleQuery(different_datasets_with_similar_distributions)
-					.evaluate()
-					.stream()
-					.count();
+					.evaluate());
 		}
 	}
 
 	@Benchmark
 	public long long_chain() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
+			return count(connection
 					.prepareTupleQuery(long_chain)
-					.evaluate()
-					.stream()
-					.count();
+					.evaluate());
 		}
 	}
 
 	@Benchmark
 	public long lots_of_optional() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
+			return count(connection
 					.prepareTupleQuery(lots_of_optional)
-					.evaluate()
-					.stream()
-					.count();
+					.evaluate());
 		}
 	}
 
 	@Benchmark
 	public long minus() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
+			return count(connection
 					.prepareTupleQuery(minus)
-					.evaluate()
-					.stream()
-					.count();
+					.evaluate());
 		}
 	}
 
 	@Benchmark
 	public long nested_optionals() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
+			return count(connection
 					.prepareTupleQuery(nested_optionals)
-					.evaluate()
-					.stream()
-					.count();
+					.evaluate());
 		}
 	}
 
@@ -269,22 +344,18 @@ public class QueryBenchmark {
 	@Benchmark
 	public long query_distinct_predicates() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
+			return count(connection
 					.prepareTupleQuery(query_distinct_predicates)
-					.evaluate()
-					.stream()
-					.count();
+					.evaluate());
 		}
 	}
 
 	@Benchmark
 	public long simple_filter_not() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
+			return count(connection
 					.prepareTupleQuery(simple_filter_not)
-					.evaluate()
-					.stream()
-					.count();
+					.evaluate());
 		}
 	}
 
@@ -299,7 +370,26 @@ public class QueryBenchmark {
 //		}
 //	}
 
+	@Benchmark
+	public long subSelect() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(sub_select)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long multipleSubSelect() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(multiple_sub_select)
+					.evaluate());
+		}
+	}
+
 	private static InputStream getResourceAsStream(String filename) {
 		return QueryBenchmark.class.getClassLoader().getResourceAsStream(filename);
 	}
+
 }

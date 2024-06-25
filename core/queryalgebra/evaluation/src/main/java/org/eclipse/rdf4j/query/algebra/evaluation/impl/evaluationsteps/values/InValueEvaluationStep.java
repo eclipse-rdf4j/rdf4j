@@ -40,7 +40,7 @@ public final class InValueEvaluationStep implements QueryValueEvaluationStep {
 		boolean result = false;
 		// Use first binding name from tuple expr to compare values
 		String bindingName = node.getSubQuery().getBindingNames().iterator().next();
-		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = subquery.evaluate(bindings)) {
+		try (CloseableIteration<BindingSet> iter = subquery.evaluate(bindings)) {
 			while (!result && iter.hasNext()) {
 				BindingSet bindingSet = iter.next();
 				Value rightValue = bindingSet.getValue(bindingName);

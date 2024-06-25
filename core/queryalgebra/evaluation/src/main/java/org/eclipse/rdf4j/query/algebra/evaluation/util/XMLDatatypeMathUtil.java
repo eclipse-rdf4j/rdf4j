@@ -53,8 +53,8 @@ public class XMLDatatypeMathUtil {
 	 */
 	public static Literal compute(Literal leftLit, Literal rightLit, MathOp op, ValueFactory vf)
 			throws ValueExprEvaluationException {
-		CoreDatatype.XSD leftDatatype = leftLit.getCoreDatatype().asXSDDatatype().orElse(null);
-		CoreDatatype.XSD rightDatatype = rightLit.getCoreDatatype().asXSDDatatype().orElse(null);
+		CoreDatatype.XSD leftDatatype = leftLit.getCoreDatatype().asXSDDatatypeOrNull();
+		CoreDatatype.XSD rightDatatype = rightLit.getCoreDatatype().asXSDDatatypeOrNull();
 
 		if (leftDatatype != null && rightDatatype != null) {
 			if (leftDatatype.isNumericDatatype() && rightDatatype.isNumericDatatype()) {

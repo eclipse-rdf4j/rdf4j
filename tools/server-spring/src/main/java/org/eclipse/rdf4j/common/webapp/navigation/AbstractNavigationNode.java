@@ -99,7 +99,7 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 			if (getParent().getPathPrefix() != null) {
 				result.append(getParent().getPathPrefix());
 			}
-			if (getParent().getId().length() > 0) {
+			if (!getParent().getId().isEmpty()) {
 				result.append(getParent().getId());
 				result.append(getPathSeparator());
 			}
@@ -139,7 +139,7 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 			if (getParent().getIconPrefix() != null) {
 				result.append(getParent().getIconPrefix());
 			}
-			if (getParent().getId().length() > 0) {
+			if (!getParent().getId().isEmpty()) {
 				result.append(getParent().getId());
 				result.append(getIconSeparator());
 			}
@@ -190,7 +190,7 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 			if (getParent().getI18nPrefix() != null) {
 				result.append(getParent().getI18nPrefix());
 			}
-			if (getParent().getId().length() > 0) {
+			if (!getParent().getId().isEmpty()) {
 				result.append(getParent().getId());
 				result.append(getI18nSeparator());
 			}

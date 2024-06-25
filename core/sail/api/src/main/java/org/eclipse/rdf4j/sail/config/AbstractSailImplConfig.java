@@ -30,9 +30,6 @@ import org.eclipse.rdf4j.model.vocabulary.CONFIG;
  */
 public abstract class AbstractSailImplConfig implements SailImplConfig {
 
-	private static final boolean USE_CONFIG = "true"
-			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
-
 	private String type;
 
 	private long iterationCacheSyncThreshold;
@@ -70,30 +67,41 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 
 	@Override
 	public Resource export(Model m) {
+		if (Configurations.useLegacyConfig()) {
+			return exportLegacy(m);
+		}
+
 		BNode implNode = bnode();
 
+		m.setNamespace(CONFIG.NS);
 		if (type != null) {
-			if (USE_CONFIG) {
-				m.add(implNode, CONFIG.Sail.type, literal(type));
-			} else {
-				m.add(implNode, SAILTYPE, literal(type));
-			}
+			m.add(implNode, CONFIG.Sail.type, literal(type));
 		}
 
 		if (iterationCacheSyncThreshold > 0) {
-			if (USE_CONFIG) {
-				m.add(implNode, CONFIG.Sail.iterationCacheSyncThreshold, literal(iterationCacheSyncThreshold));
-			} else {
-				m.add(implNode, ITERATION_CACHE_SYNC_THRESHOLD, literal(iterationCacheSyncThreshold));
-			}
+			m.add(implNode, CONFIG.Sail.iterationCacheSyncThreshold, literal(iterationCacheSyncThreshold));
 		}
 
 		if (connectionTimeOut > 0) {
-			if (USE_CONFIG) {
-				m.add(implNode, CONFIG.Sail.connectionTimeOut, literal(connectionTimeOut));
-			} else {
-				m.add(implNode, CONNECTION_TIME_OUT, literal(connectionTimeOut));
-			}
+			m.add(implNode, CONFIG.Sail.connectionTimeOut, literal(connectionTimeOut));
+		}
+		return implNode;
+	}
+
+	private Resource exportLegacy(Model m) {
+		BNode implNode = bnode();
+
+		m.setNamespace("sail", SailConfigSchema.NAMESPACE);
+		if (type != null) {
+			m.add(implNode, SAILTYPE, literal(type));
+		}
+
+		if (iterationCacheSyncThreshold > 0) {
+			m.add(implNode, ITERATION_CACHE_SYNC_THRESHOLD, literal(iterationCacheSyncThreshold));
+		}
+
+		if (connectionTimeOut > 0) {
+			m.add(implNode, CONNECTION_TIME_OUT, literal(connectionTimeOut));
 		}
 		return implNode;
 	}

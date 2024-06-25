@@ -18,7 +18,6 @@ import java.io.InputStream;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -94,7 +93,7 @@ public class Rdf4jShaclShapeGraphShapeSource implements ShapeSource {
 		}
 	}
 
-	private SailRepository forwardChain(CloseableIteration<? extends Statement, ? extends RDF4JException> statements) {
+	private SailRepository forwardChain(CloseableIteration<? extends Statement> statements) {
 		if (!statements.hasNext()) {
 			return new SailRepository(new MemoryStore());
 		}

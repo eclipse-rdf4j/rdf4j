@@ -10,7 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.evaluation;
 
+import java.util.Comparator;
+import java.util.Set;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -37,12 +42,15 @@ public class SailTripleSource implements TripleSource {
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj, IRI pred,
+	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws QueryEvaluationException {
-		CloseableIteration<? extends Statement, SailException> iter = null;
+		CloseableIteration<? extends Statement> iter = null;
 		try {
 			iter = conn.getStatements(subj, pred, obj, includeInferred, contexts);
-			return new TripleSourceIterationWrapper(iter);
+			if (iter instanceof EmptyIteration) {
+				return iter;
+			}
+			return new TripleSourceIterationWrapper<>(iter);
 		} catch (Throwable t) {
 			if (iter != null) {
 				iter.close();
@@ -55,7 +63,38 @@ public class SailTripleSource implements TripleSource {
 	}
 
 	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subj, IRI pred,
+			Value obj, Resource... contexts) throws QueryEvaluationException {
+		CloseableIteration<? extends Statement> iter = null;
+		try {
+			iter = conn.getStatements(order, subj, pred, obj, includeInferred, contexts);
+			if (iter instanceof EmptyIteration) {
+				return iter;
+			}
+			return new TripleSourceIterationWrapper<>(iter);
+		} catch (Throwable t) {
+			if (iter != null) {
+				iter.close();
+			}
+			if (t instanceof SailException) {
+				throw new QueryEvaluationException(t);
+			}
+			throw t;
+		}
+	}
+
+	@Override
+	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		return conn.getSupportedOrders(subj, pred, obj, contexts);
+	}
+
+	@Override
 	public ValueFactory getValueFactory() {
 		return vf;
+	}
+
+	@Override
+	public Comparator<Value> getComparator() {
+		return conn.getComparator();
 	}
 }

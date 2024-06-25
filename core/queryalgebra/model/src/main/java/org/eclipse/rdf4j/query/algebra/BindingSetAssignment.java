@@ -14,6 +14,7 @@ import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
 import org.eclipse.rdf4j.query.BindingSet;
 
 /**
@@ -59,6 +60,11 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	}
 
 	@Override
+	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+		throw new IllegalArgumentException("Node is not a child node: " + current);
+	}
+
+	@Override
 	public boolean equals(Object obj) {
 		if (this == obj) {
 			return true;
@@ -79,6 +85,23 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	@Override
 	public BindingSetAssignment clone() {
 		return (BindingSetAssignment) super.clone();
+	}
+
+	@Override
+	public Set<Var> getSupportedOrders(AvailableStatementOrder tripleSource) {
+		// Todo, we should consider if we should sort the bindings, and also if there is only one then we don't have to
+		// sort anything.
+		return Set.of();
+	}
+
+	@Override
+	public void setOrder(Var var) {
+		throw new UnsupportedOperationException("Not implemented yet");
+	}
+
+	@Override
+	public Var getOrder() {
+		throw new UnsupportedOperationException("Not implemented yet");
 	}
 
 	/**

@@ -50,7 +50,7 @@ public class NativeStoreTxnTest {
 	protected IRI ctx = vf.createIRI("http://ex.org/ctx");
 
 	@BeforeEach
-	public void before() throws Exception {
+	public void before() {
 
 		File dataDir = new File(tempFolder, "dbmodel");
 		repo = new SailRepository(new NativeStore(dataDir, "spoc,posc"));
@@ -58,7 +58,7 @@ public class NativeStoreTxnTest {
 	}
 
 	@AfterEach
-	public void after() throws Exception {
+	public void after() {
 		repo.shutDown();
 	}
 

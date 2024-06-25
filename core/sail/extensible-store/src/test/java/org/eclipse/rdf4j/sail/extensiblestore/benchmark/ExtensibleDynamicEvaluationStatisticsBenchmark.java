@@ -61,7 +61,7 @@ public class ExtensibleDynamicEvaluationStatisticsBenchmark {
 	}
 
 	@Setup(Level.Iteration)
-	public void beforeClassIteration() throws IOException, InterruptedException {
+	public void beforeClassIteration() throws InterruptedException {
 
 		System.gc();
 		Thread.sleep(100);
@@ -71,7 +71,7 @@ public class ExtensibleDynamicEvaluationStatisticsBenchmark {
 	}
 
 	@Setup(Level.Trial)
-	public void beforeClass() throws IOException, InterruptedException {
+	public void beforeClass() throws IOException {
 
 		parse = Rio.parse(getResourceAsStream("bsbm-100.ttl"), "", RDFFormat.TURTLE);
 		System.gc();
@@ -83,7 +83,7 @@ public class ExtensibleDynamicEvaluationStatisticsBenchmark {
 	}
 
 	@Benchmark
-	public ExtensibleDynamicEvaluationStatistics addStatements() throws IOException, InterruptedException {
+	public ExtensibleDynamicEvaluationStatistics addStatements() throws InterruptedException {
 		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
 				null);
 
@@ -96,7 +96,7 @@ public class ExtensibleDynamicEvaluationStatisticsBenchmark {
 	}
 
 	@Benchmark
-	public ExtensibleDynamicEvaluationStatistics instantiate() throws IOException {
+	public ExtensibleDynamicEvaluationStatistics instantiate() {
 		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
 				null);
 

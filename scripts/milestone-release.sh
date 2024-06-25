@@ -75,10 +75,10 @@ if  ! [[ $(git status --porcelain -u no  --branch) == "## main...origin/main" ]]
 fi
 
 ORIGINAL_BRANCH=""
-if  git status --porcelain -u no  --branch == "## main...origin/main"; then
+if  [[ $(git status --porcelain -u no  --branch) == "## main...origin/main" ]]; then
   ORIGINAL_BRANCH="main";
 fi
-if git status --porcelain -u no  --branch == "## develop...origin/develop"; then
+if [[ $(git status --porcelain -u no  --branch) == "## develop...origin/develop" ]]; then
   ORIGINAL_BRANCH="develop";
 fi
 
@@ -208,11 +208,11 @@ mvn clean -Dmaven.clean.failOnError=false
 # temporarily disable exiting on error
 set +e
 mvn clean
-mvn install -DskipTests;
-mvn package -Passembly -DskipTests
+mvn install -DskipTests -Djapicmp.skip
+mvn package -Passembly -DskipTests -Djapicmp.skip
 set -e
 
-mvn package -Passembly -DskipTests
+mvn package -Passembly -DskipTests -Djapicmp.skip
 
 git checkout main
 RELEASE_NOTES_BRANCH="${MVN_VERSION_RELEASE}-release-notes"

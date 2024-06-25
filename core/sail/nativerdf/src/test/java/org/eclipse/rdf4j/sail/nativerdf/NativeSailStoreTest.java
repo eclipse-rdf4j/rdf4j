@@ -53,7 +53,7 @@ public class NativeSailStoreTest {
 			F.createLiteral("two"));
 
 	@BeforeEach
-	public void before() throws Exception {
+	public void before() {
 		File dataDir = new File(tempFolder, "dbmodel");
 		dataDir.mkdir();
 		repo = new SailRepository(new NativeStore(dataDir, "spoc,posc"));
@@ -127,7 +127,7 @@ public class NativeSailStoreTest {
 	}
 
 	@AfterEach
-	public void after() throws Exception {
+	public void after() {
 		repo.shutDown();
 	}
 }

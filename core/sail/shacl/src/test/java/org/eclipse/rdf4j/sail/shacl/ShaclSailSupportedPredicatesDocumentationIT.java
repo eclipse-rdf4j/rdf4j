@@ -11,7 +11,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
@@ -46,7 +45,7 @@ public class ShaclSailSupportedPredicatesDocumentationIT extends AbstractShaclTe
 
 	@ParameterizedTest
 	@MethodSource("testCases")
-	public void testShaclSailSupportedPredicatesDocumentation(TestCase testCase) throws IOException {
+	public void testShaclSailSupportedPredicatesDocumentation(TestCase testCase) {
 
 		HashSet<IRI> shaclPredicates = new HashSet<>(ShaclSail.getSupportedShaclPredicates());
 

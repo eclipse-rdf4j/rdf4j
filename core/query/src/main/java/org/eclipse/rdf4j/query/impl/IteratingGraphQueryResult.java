@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.GraphQueryResult;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * An iterating implementation of the {@link GraphQueryResult} interface.
@@ -27,8 +26,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @author Arjohn Kampman
  * @author Jeen Broekstra
  */
-@Deprecated(since = "4.1.0")
-public class IteratingGraphQueryResult extends IterationWrapper<Statement, QueryEvaluationException>
+public class IteratingGraphQueryResult extends IterationWrapper<Statement>
 		implements GraphQueryResult {
 
 	/*-----------*
@@ -46,11 +44,11 @@ public class IteratingGraphQueryResult extends IterationWrapper<Statement, Query
 	}
 
 	public IteratingGraphQueryResult(Map<String, String> namespaces, Iterator<? extends Statement> statementIter) {
-		this(namespaces, new CloseableIteratorIteration<Statement, QueryEvaluationException>(statementIter));
+		this(namespaces, new CloseableIteratorIteration<Statement>(statementIter));
 	}
 
 	public IteratingGraphQueryResult(Map<String, String> namespaces,
-			CloseableIteration<? extends Statement, ? extends QueryEvaluationException> statementIter) {
+			CloseableIteration<? extends Statement> statementIter) {
 		super(statementIter);
 		this.namespaces = Collections.unmodifiableMap(namespaces);
 	}

@@ -75,7 +75,7 @@ public class ElasticsearchSailGeoSPARQLTest extends ESIntegTestCase {
 	}
 
 	@Test
-	public void testTriplesStored() throws Exception {
+	public void testTriplesStored() {
 		delegateTest.testTriplesStored();
 	}
 

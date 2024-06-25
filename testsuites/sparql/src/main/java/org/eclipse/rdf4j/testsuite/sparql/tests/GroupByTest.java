@@ -10,13 +10,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.sparql.tests;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
 
 /**
  * Tests on SPARQL GROUP BY
@@ -25,8 +30,11 @@ import org.junit.Test;
  */
 public class GroupByTest extends AbstractComplianceTest {
 
-	@Test
-	public void testGroupByEmpty() {
+	public GroupByTest(Supplier<Repository> repo) {
+		super(repo);
+	}
+
+	private void testGroupByEmpty(RepositoryConnection conn) {
 		// see issue https://github.com/eclipse/rdf4j/issues/573
 		String query = "select ?x where {?x ?p ?o} group by ?x";
 
@@ -35,6 +43,10 @@ public class GroupByTest extends AbstractComplianceTest {
 			assertNotNull(result);
 			assertFalse(result.hasNext());
 		}
+	}
+
+	public Stream<DynamicTest> tests() {
+		return Stream.of(makeTest("GroupByEmpty", this::testGroupByEmpty));
 	}
 
 }

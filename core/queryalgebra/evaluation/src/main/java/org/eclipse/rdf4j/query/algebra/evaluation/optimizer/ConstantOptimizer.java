@@ -292,7 +292,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 			// we treat constant functions as the 'regular case' and make
 			// exceptions for specific SPARQL built-in functions that require
 			// different treatment.
-			return !(function.mustReturnDifferentResult());
+			return !function.mustReturnDifferentResult();
 		}
 
 		@Override

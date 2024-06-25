@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
-@Deprecated(forRemoval = true, since = "4.2.1")
 public abstract class CompareSubQueryValueOperator extends SubQueryValueOperator {
 
 	/*-----------*

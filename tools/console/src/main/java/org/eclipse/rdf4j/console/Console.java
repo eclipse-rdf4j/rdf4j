@@ -360,13 +360,12 @@ public class Console {
 	 *
 	 * @param command
 	 * @return true when exit/quit command is entered
-	 * @throws IOException
 	 */
-	private boolean executeCommand(String command) throws IOException {
+	private boolean executeCommand(String command) {
 		boolean exit = false;
 
 		// only try to parse the command if non-empty.
-		if (0 < command.length()) {
+		if (!command.isEmpty()) {
 			final String[] tokens = parse(command);
 			final String operation = tokens[0].toLowerCase(Locale.ENGLISH);
 

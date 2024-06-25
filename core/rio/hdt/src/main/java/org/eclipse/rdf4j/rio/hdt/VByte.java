@@ -72,7 +72,7 @@ public class VByte {
 		int i = 0;
 		do {
 			buffer[i] = (byte) is.read();
-		} while (i < buffer.length && hasNext(buffer[i++]));
+		} while (i + 1 < buffer.length && hasNext(buffer[i++]));
 		return decode(buffer, i);
 	}
 
@@ -82,15 +82,14 @@ public class VByte {
 	 * @param b     byte array
 	 * @param start starting position
 	 * @return decode value
-	 * @throws IOException
 	 */
-	public static long decodeFrom(byte[] b, int start) throws IOException {
+	public static long decodeFrom(byte[] b, int start) {
 		byte[] buffer = new byte[8];
 
 		int i = 0;
 		do {
 			buffer[i] = b[start + i];
-		} while (i < buffer.length && hasNext(buffer[i++]));
+		} while (i + 1 < buffer.length && hasNext(buffer[i++]));
 		return decode(buffer, i);
 	}
 

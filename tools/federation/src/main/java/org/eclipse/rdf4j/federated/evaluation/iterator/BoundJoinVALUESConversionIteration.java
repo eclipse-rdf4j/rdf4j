@@ -34,9 +34,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  * @see SparqlFederationEvalStrategy
  * @since 3.0
  */
-@Deprecated(since = "4.1.0")
 public class BoundJoinVALUESConversionIteration
-		extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
+		extends ConvertingIteration<BindingSet, BindingSet> {
 
 	/**
 	 * The binding name for the index
@@ -45,7 +44,7 @@ public class BoundJoinVALUESConversionIteration
 
 	protected final List<BindingSet> bindings;
 
-	public BoundJoinVALUESConversionIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public BoundJoinVALUESConversionIteration(CloseableIteration<BindingSet> iter,
 			List<BindingSet> bindings) {
 		super(iter);
 		this.bindings = bindings;

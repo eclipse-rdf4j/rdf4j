@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2021 Eclipse RDF4J contributors.
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -15,17 +15,15 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.assertj.core.util.Files;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -48,13 +46,13 @@ import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
- * Benchmarks query performance with real data.
+ * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 2)
+@Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-Xmn1G", "-XX:+UseSerialGC" })
-//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
+@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G" })
+//@Fork(value = 1, jvmArgs = {"-Xms1G", "-Xmx1G", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class QueryBenchmark {
@@ -62,32 +60,59 @@ public class QueryBenchmark {
 	private SailRepository repository;
 
 	private static final String query1;
-	private static final String query2;
-	private static final String query3;
 	private static final String query4;
-	private static final String query5;
 	private static final String query7_pathexpression1;
+	private static final String query8_pathexpression2;
+
+	private static final String common_themes;
+	private static final String different_datasets_with_similar_distributions;
+	private static final String long_chain;
+	private static final String lots_of_optional;
+	private static final String minus;
+	private static final String nested_optionals;
+	private static final String particularly_large_join_surface;
+	private static final String query_distinct_predicates;
+	private static final String simple_filter_not;
+	private static final String wild_card_chain_with_common_ends;
 
 	static {
 		try {
+			common_themes = IOUtils.toString(getResourceAsStream("benchmarkFiles/common-themes.qr"),
+					StandardCharsets.UTF_8);
+			different_datasets_with_similar_distributions = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/different-datasets-with-similar-distributions.qr"),
+					StandardCharsets.UTF_8);
+			long_chain = IOUtils.toString(getResourceAsStream("benchmarkFiles/long-chain.qr"), StandardCharsets.UTF_8);
+			lots_of_optional = IOUtils.toString(getResourceAsStream("benchmarkFiles/lots-of-optional.qr"),
+					StandardCharsets.UTF_8);
+			minus = IOUtils.toString(getResourceAsStream("benchmarkFiles/minus.qr"), StandardCharsets.UTF_8);
+			nested_optionals = IOUtils.toString(getResourceAsStream("benchmarkFiles/nested-optionals.qr"),
+					StandardCharsets.UTF_8);
+			particularly_large_join_surface = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/particularly-large-join-surface.qr"), StandardCharsets.UTF_8);
 			query1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query1.qr"), StandardCharsets.UTF_8);
-			query2 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query2.qr"), StandardCharsets.UTF_8);
-			query3 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query3.qr"), StandardCharsets.UTF_8);
 			query4 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query4.qr"), StandardCharsets.UTF_8);
-			query5 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query5.qr"), StandardCharsets.UTF_8);
 			query7_pathexpression1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query7-pathexpression1.qr"),
 					StandardCharsets.UTF_8);
+			query8_pathexpression2 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query8-pathexpression2.qr"),
+					StandardCharsets.UTF_8);
+			query_distinct_predicates = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/query-distinct-predicates.qr"), StandardCharsets.UTF_8);
+			simple_filter_not = IOUtils.toString(getResourceAsStream("benchmarkFiles/simple-filter-not.qr"),
+					StandardCharsets.UTF_8);
+			wild_card_chain_with_common_ends = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/wild-card-chain-with-common-ends.qr"), StandardCharsets.UTF_8);
+
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
 	}
 
-	List<Statement> statementList;
 	private File file;
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("QueryBenchmark") // adapt to control which benchmark tests to run
+				.include("QueryBenchmark") // adapt to run other benchmark tests
 				.forks(1)
 				.build();
 
@@ -96,28 +121,17 @@ public class QueryBenchmark {
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException {
-
 		file = Files.newTemporaryFolder();
 
 		repository = new SailRepository(new LmdbStore(file, ConfigUtil.createConfig()));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
-			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl"), "", RDFFormat.TURTLE);
+			try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl")) {
+				connection.add(resourceAsStream, RDFFormat.TURTLE);
+			}
 			connection.commit();
 		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-
-			statementList = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
-		}
-
-		System.gc();
-
-	}
-
-	private static InputStream getResourceAsStream(String name) {
-		return QueryBenchmark.class.getClassLoader().getResourceAsStream(name);
 	}
 
 	@TearDown(Level.Trial)
@@ -126,39 +140,28 @@ public class QueryBenchmark {
 		FileUtils.deleteDirectory(file);
 	}
 
+	private static long count(TupleQueryResult evaluate) {
+		try (Stream<BindingSet> stream = evaluate.stream()) {
+			return stream.count();
+		}
+	}
+
 	@Benchmark
 	public long groupByQuery() {
-
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
+			return count(connection
 					.prepareTupleQuery(query1)
-					.evaluate()
-					.stream()
-					.count();
+					.evaluate());
 		}
 	}
 
 	@Benchmark
 	public long complexQuery() {
-
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
+			return count(connection
 					.prepareTupleQuery(query4)
 					.evaluate()
-					.stream()
-					.count();
-		}
-	}
-
-	@Benchmark
-	public long distinctPredicatesQuery() {
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
-					.prepareTupleQuery(query5)
-					.evaluate()
-					.stream()
-					.count();
+			);
 		}
 	}
 
@@ -166,85 +169,119 @@ public class QueryBenchmark {
 	public long pathExpressionQuery1() {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
+			return count(connection
 					.prepareTupleQuery(query7_pathexpression1)
-					.evaluate()
-					.stream()
-					.count();
+					.evaluate());
 
 		}
 	}
 
 	@Benchmark
-	public boolean removeByQuery() {
-
+	public long pathExpressionQuery2() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.remove((Resource) null, RDF.TYPE, null);
-			connection.commit();
-			connection.begin(IsolationLevels.NONE);
-			connection.add(statementList);
-			connection.commit();
+			return count(connection
+					.prepareTupleQuery(query8_pathexpression2)
+					.evaluate());
 		}
-		return hasStatement();
+	}
 
+//	@Benchmark
+//	public long common_themes() {
+//		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			return connection
+//				.prepareTupleQuery(common_themes)
+//				.evaluate()
+//				.stream()
+//				.count();
+//		}
+//	}
+
+	@Benchmark
+	public long different_datasets_with_similar_distributions() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(different_datasets_with_similar_distributions)
+					.evaluate());
+		}
 	}
 
 	@Benchmark
-	public boolean removeByQueryReadCommitted() {
-
+	public long long_chain() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.READ_COMMITTED);
-			connection.remove((Resource) null, RDF.TYPE, null);
-			connection.commit();
-			connection.begin(IsolationLevels.READ_COMMITTED);
-			connection.add(statementList);
-			connection.commit();
+			return count(connection
+					.prepareTupleQuery(long_chain)
+					.evaluate());
 		}
-		return hasStatement();
-
 	}
 
 	@Benchmark
-	public boolean simpleUpdateQueryIsolationReadCommitted() {
-
+	public long lots_of_optional() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.READ_COMMITTED);
-			connection.prepareUpdate(query2).execute();
-			connection.commit();
+			return count(connection
+					.prepareTupleQuery(lots_of_optional)
+					.evaluate());
 		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.READ_COMMITTED);
-			connection.prepareUpdate(query3).execute();
-			connection.commit();
-		}
-		return hasStatement();
-
 	}
 
 	@Benchmark
-	public boolean simpleUpdateQueryIsolationNone() {
-
+	public long minus() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.prepareUpdate(query2).execute();
-			connection.commit();
-		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.prepareUpdate(query3).execute();
-			connection.commit();
-		}
-		return hasStatement();
-
-	}
-
-	private boolean hasStatement() {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection.hasStatement(RDF.TYPE, RDF.TYPE, RDF.TYPE, true);
+			return count(connection
+					.prepareTupleQuery(minus)
+					.evaluate());
 		}
 	}
 
+	@Benchmark
+	public long nested_optionals() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(nested_optionals)
+					.evaluate());
+		}
+	}
+
+//	@Benchmark
+//	public long particularly_large_join_surface() {
+//		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			return connection
+//				.prepareTupleQuery(particularly_large_join_surface)
+//				.evaluate()
+//				.stream()
+//				.count();
+//		}
+//	}
+
+	@Benchmark
+	public long query_distinct_predicates() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(query_distinct_predicates)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long simple_filter_not() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(simple_filter_not)
+					.evaluate());
+		}
+	}
+
+//	@Benchmark
+//	public long wild_card_chain_with_common_ends() {
+//		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			return connection
+//				.prepareTupleQuery(wild_card_chain_with_common_ends)
+//				.evaluate()
+//				.stream()
+//				.count();
+//		}
+//	}
+
+	private static InputStream getResourceAsStream(String filename) {
+		return QueryBenchmark.class.getClassLoader().getResourceAsStream(filename);
+	}
 }

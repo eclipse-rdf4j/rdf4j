@@ -15,7 +15,6 @@ import java.math.BigInteger;
 import java.util.Date;
 import java.util.IllformedLocaleException;
 import java.util.Locale;
-import java.util.Optional;
 
 import javax.xml.datatype.Duration;
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -25,7 +24,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.impl.SimpleLiteral;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
@@ -55,29 +53,6 @@ public class Literals {
 	 */
 	public static String getLabel(Value v, String fallback) {
 		return v instanceof Literal ? getLabel((Literal) v, fallback) : fallback;
-	}
-
-	public static String getLabel(Optional<Value> v, String fallback) {
-		return v != null ? getLabel(v.orElseGet(null), fallback) : fallback;
-	}
-
-	/**
-	 * Retrieves the {@link org.eclipse.rdf4j.model.vocabulary.XSD.Datatype} value for the supplied Literal, if it has
-	 * one.
-	 *
-	 * @param l a Literal
-	 * @return an Optional {@link org.eclipse.rdf4j.model.vocabulary.XSD.Datatype} enum, if one is available. Note that
-	 *         the absence of this enum does <i>not</i> indicate that the literal has no datatype, merely that it has no
-	 *         cached enum representation of that datatype.
-	 * @since 3.5.0
-	 * @deprecated Use {@link Literal#getCoreDatatype()} instead.
-	 */
-	@Deprecated(since = "4.0.0", forRemoval = true)
-	public static Optional<XSD.Datatype> getXsdDatatype(Literal l) {
-		if (l instanceof SimpleLiteral) {
-			return ((SimpleLiteral) l).getXsdDatatype();
-		}
-		return Optional.empty();
 	}
 
 	/**
@@ -570,7 +545,7 @@ public class Literals {
 	public static boolean langMatches(String langTag, String langRange) {
 		boolean result = false;
 		if (langRange.equals("*")) {
-			result = langTag.length() > 0;
+			result = !langTag.isEmpty();
 		} else if (langTag.length() == langRange.length()) {
 			result = langTag.equalsIgnoreCase(langRange);
 		} else if (langTag.length() > langRange.length()) {

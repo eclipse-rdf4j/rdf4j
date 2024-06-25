@@ -37,7 +37,10 @@ public class BoundJoinTests extends SPARQLBaseTest {
 		/* test a simple bound join */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl"));
 
-		repoSettings(2).setFailAfter(5);
+		// specifically reduce the bind join size for this test to run into "fail After"
+		fedxRule.getFederationContext().getConfig().withBoundJoinBlockSize(2);
+
+		repoSettings(2).setFailAfter(5); // fail after 5 remote requests on repo 2
 		Assertions.assertThrows(QueryEvaluationException.class, () -> {
 			execute("/tests/boundjoin/query01.rq", "/tests/boundjoin/query01.srx", false, true);
 		});

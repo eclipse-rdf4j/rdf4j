@@ -10,8 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.HashSet;
+import java.util.Objects;
+import java.util.Set;
+
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
 
 /**
  * An abstract superclass for binary tuple operators which, by definition, has two arguments.
@@ -145,7 +150,7 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 	}
 
 	@Experimental
-	public void setAlgorithm(CloseableIteration<?, ?> iteration) {
+	public void setAlgorithm(CloseableIteration<?> iteration) {
 		this.algorithmName = iteration.getClass().getSimpleName();
 	}
 
@@ -157,5 +162,33 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 	@Experimental
 	public String getAlgorithmName() {
 		return algorithmName;
+	}
+
+	@Override
+	public Set<Var> getSupportedOrders(AvailableStatementOrder tripleSource) {
+		Set<Var> leftArgSupportedOrders = leftArg.getSupportedOrders(tripleSource);
+		Set<Var> rightArgSupportedOrders = rightArg.getSupportedOrders(tripleSource);
+		if (leftArgSupportedOrders.equals(rightArgSupportedOrders)) {
+			return leftArgSupportedOrders;
+		} else {
+			HashSet<Var> intersection = new HashSet<>(leftArgSupportedOrders);
+			intersection.retainAll(rightArgSupportedOrders);
+			return intersection;
+		}
+
+	}
+
+	@Override
+	public void setOrder(Var var) {
+		leftArg.setOrder(var);
+		rightArg.setOrder(var);
+	}
+
+	@Override
+	public Var getOrder() {
+		Var leftArgOrder = leftArg.getOrder();
+		Var rightArgOrder = rightArg.getOrder();
+		assert Objects.equals(leftArgOrder, rightArgOrder);
+		return leftArgOrder;
 	}
 }

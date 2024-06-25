@@ -14,7 +14,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
-public abstract class LoggingCloseableIteration implements CloseableIteration<ValidationTuple, SailException> {
+public abstract class LoggingCloseableIteration implements CloseableIteration<ValidationTuple> {
 
 	private final ValidationExecutionLogger validationExecutionLogger;
 	private final PlanNode planNode;

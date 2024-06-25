@@ -13,12 +13,11 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.xsd;
 import java.math.BigInteger;
 import java.util.Optional;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
 /**
@@ -33,13 +32,13 @@ public abstract class IntegerCastFunction extends CastFunction {
 	protected Literal convert(ValueFactory valueFactory, Value value) throws ValueExprEvaluationException {
 		if (value instanceof Literal) {
 			Literal literal = (Literal) value;
-			IRI datatype = literal.getDatatype();
+			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
 
-			if (XMLDatatypeUtil.isNumericDatatype(datatype)) {
-				if (XMLDatatypeUtil.isIntegerDatatype(datatype)) {
+			if (datatype != null && datatype.isNumericDatatype()) {
+				if (datatype.isIntegerDatatype()) {
 					String lexicalValue = XMLDatatypeUtil.collapseWhiteSpace(literal.getLabel());
 					if (isValidForDatatype(lexicalValue)) {
-						return valueFactory.createLiteral(lexicalValue, getXsdDatatype());
+						return valueFactory.createLiteral(lexicalValue, getCoreXsdDatatype());
 					}
 				}
 
@@ -47,7 +46,8 @@ public abstract class IntegerCastFunction extends CastFunction {
 				// separately, see
 				// http://www.w3.org/TR/xpath-functions/#casting-from-primitive-to-primitive
 				BigInteger integerValue;
-				if (XSD.DECIMAL.equals(datatype) || XMLDatatypeUtil.isFloatingPointDatatype(datatype)) {
+				if (CoreDatatype.XSD.DECIMAL == datatype
+						|| datatype.isXSDDatatype() && datatype.isFloatingPointDatatype()) {
 					integerValue = literal.decimalValue().toBigInteger();
 				} else {
 					integerValue = literal.integerValue();
@@ -57,7 +57,7 @@ public abstract class IntegerCastFunction extends CastFunction {
 				} catch (ArithmeticException | NumberFormatException e) {
 					throw typeError(literal, e);
 				}
-			} else if (datatype.equals(XSD.BOOLEAN)) {
+			} else if (datatype == CoreDatatype.XSD.BOOLEAN) {
 				try {
 					return createTypedLiteral(valueFactory, literal.booleanValue())
 							.orElseThrow(() -> typeError(literal, null));
@@ -91,6 +91,6 @@ public abstract class IntegerCastFunction extends CastFunction {
 	 *         successfully converted to the specific datatype.
 	 */
 	protected Optional<Literal> createTypedLiteral(ValueFactory vf, boolean booleanValue) {
-		return Optional.of(vf.createLiteral(booleanValue ? "1" : "0", getXsdDatatype()));
+		return Optional.of(vf.createLiteral(booleanValue ? "1" : "0", getCoreXsdDatatype()));
 	}
 }

@@ -471,7 +471,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 
 				// For broken SPARQL endpoints which return LANGSTRING without a language, fall back
 				// to using STRING as the datatype
-				if (RDF.LANGSTRING.equals(datatypeIri) && language == null) {
+				if (RDF.LANGSTRING.equals(datatypeIri)) {
 					logger.debug(
 							"rdf:langString typed literal missing language tag: '{}'. Falling back to xsd:string.",
 							StringUtils.abbreviate(value, 10)

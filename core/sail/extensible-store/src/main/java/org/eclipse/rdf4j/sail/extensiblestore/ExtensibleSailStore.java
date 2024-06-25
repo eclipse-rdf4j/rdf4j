@@ -120,7 +120,7 @@ public class ExtensibleSailStore implements SailStore {
 	}
 
 	private void addToStats(DynamicStatistics instance,
-			CloseableIteration<? extends ExtensibleStatement, SailException> statements) {
+			CloseableIteration<? extends ExtensibleStatement> statements) {
 
 		long estimatedSize = dataStructure.getEstimatedSize();
 

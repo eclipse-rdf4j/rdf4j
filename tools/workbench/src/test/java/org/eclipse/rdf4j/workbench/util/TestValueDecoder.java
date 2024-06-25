@@ -38,10 +38,9 @@ public class TestValueDecoder {
 	private ValueFactory factory;
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		factory = SimpleValueFactory.getInstance();
 
 		// Build a mock repository instance that provides 'decoder' with all
@@ -70,7 +69,7 @@ public class TestValueDecoder {
 	}
 
 	@Test
-	public final void testUnexpectedLiteralAttribute() throws BadRequestException {
+	public final void testUnexpectedLiteralAttribute() {
 		try {
 			decoder.decodeValue("\"datatype oops\"^rdfs:label");
 			fail("Expected BadRequestException.");

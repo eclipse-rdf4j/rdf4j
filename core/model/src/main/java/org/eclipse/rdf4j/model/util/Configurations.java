@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,10 +34,33 @@ import org.slf4j.LoggerFactory;
 @InternalUseOnly
 public class Configurations {
 
-	private static final boolean USE_CONFIG = "true"
-			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.experimental.enableConfig"));
-
 	private static final Logger logger = LoggerFactory.getLogger(Configurations.class);
+
+	/**
+	 * Verifies if use of legacy configuration vocabulary is preferred. Defaults to <code>false</code>. Can be set by
+	 * having a system property <code>org.eclipse.rdf4j.model.vocabulary.useLegacyConfig</code> set to
+	 * <code>true</code>.
+	 *
+	 * @return <code>true</code> if <code>org.eclipse.rdf4j.model.vocabulary.useLegacyConfig</code> system property is
+	 *         set to <code>true</code>, <code>false</code> otherwise.
+	 * @since 5.0.0
+	 */
+	public static boolean useLegacyConfig() {
+		return "true".equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig"));
+	}
+
+	/**
+	 * Verifies if the supplied configuration model uses any legacy vocabulary by checking the IRIs of its properties
+	 *
+	 * @param configModel a configuration model
+	 * @return <code>true</code> if any property IRIs start with <code>http://www.openrdf.org/config</code>,
+	 *         <code>false</code> otherwise.
+	 */
+	public static boolean hasLegacyConfiguration(Model configModel) {
+		return configModel.predicates()
+				.stream()
+				.anyMatch(p -> p.stringValue().startsWith("http://www.openrdf.org/config"));
+	}
 
 	/**
 	 * Retrieve a property value for the supplied subject as a {@link Resource} if present, falling back to a supplied
@@ -52,13 +76,18 @@ public class Configurations {
 	 */
 	@InternalUseOnly
 	public static Optional<Resource> getResourceValue(Model model, Resource subject, IRI property, IRI legacyProperty) {
-		if (!USE_CONFIG) {
-			var result = Models.objectResource(model.getStatements(subject, legacyProperty, null));
-			if (result.isPresent()) {
-				return result;
-			}
+		var preferredProperty = useLegacyConfig() ? legacyProperty : property;
+		var fallbackProperty = useLegacyConfig() ? property : legacyProperty;
+
+		var preferredResult = Models.objectResource(model.getStatements(subject, preferredProperty, null));
+		var fallbackResult = Models.objectResource(model.getStatements(subject, fallbackProperty, null));
+
+		logDiscrepancyWarning(preferredResult, fallbackResult);
+
+		if (preferredResult.isPresent()) {
+			return preferredResult;
 		}
-		return Models.objectResource(model.getStatements(subject, property, null));
+		return fallbackResult;
 	}
 
 	/**
@@ -75,13 +104,44 @@ public class Configurations {
 	 */
 	@InternalUseOnly
 	public static Optional<Literal> getLiteralValue(Model model, Resource subject, IRI property, IRI legacyProperty) {
-		if (!USE_CONFIG) {
-			var result = Models.objectLiteral(model.getStatements(subject, legacyProperty, null));
-			if (result.isPresent()) {
-				return result;
-			}
+		var preferredProperty = useLegacyConfig() ? legacyProperty : property;
+		var fallbackProperty = useLegacyConfig() ? property : legacyProperty;
+
+		var preferredResult = Models.objectLiteral(model.getStatements(subject, preferredProperty, null));
+		var fallbackResult = Models.objectLiteral(model.getStatements(subject, fallbackProperty, null));
+
+		logDiscrepancyWarning(preferredResult, fallbackResult);
+		if (preferredResult.isPresent()) {
+			return preferredResult;
 		}
-		return Models.objectLiteral(model.getStatements(subject, property, null));
+		return fallbackResult;
+	}
+
+	/**
+	 * Retrieve a property value for the supplied subject as a {@link Value} if present, falling back to a supplied
+	 * legacy property .
+	 * <p>
+	 * This method allows querying repository config models with a mix of old and new namespaces.
+	 *
+	 * @param model          the model to retrieve property values from.
+	 * @param subject        the subject of the property.
+	 * @param property       the property to retrieve the value of.
+	 * @param legacyProperty legacy property to use if the supplied property has no value in the model.
+	 * @return the literal value for supplied subject and property (or the legacy property ), if present.
+	 */
+	@InternalUseOnly
+	public static Optional<Value> getValue(Model model, Resource subject, IRI property, IRI legacyProperty) {
+		var preferredProperty = useLegacyConfig() ? legacyProperty : property;
+		var fallbackProperty = useLegacyConfig() ? property : legacyProperty;
+
+		var preferredResult = Models.object(model.getStatements(subject, preferredProperty, null));
+		var fallbackResult = Models.object(model.getStatements(subject, fallbackProperty, null));
+
+		logDiscrepancyWarning(preferredResult, fallbackResult);
+		if (preferredResult.isPresent()) {
+			return preferredResult;
+		}
+		return fallbackResult;
 	}
 
 	/**
@@ -98,31 +158,27 @@ public class Configurations {
 	 */
 	@InternalUseOnly
 	public static Set<Value> getPropertyValues(Model model, Resource subject, IRI property, IRI legacyProperty) {
+		var preferredProperty = useLegacyConfig() ? legacyProperty : property;
+		var fallbackProperty = useLegacyConfig() ? property : legacyProperty;
 
-		Set<Value> objects = model.filter(subject, property, null).objects();
-		Set<Value> legacyObjects = model.filter(subject, legacyProperty, null).objects();
-		if (USE_CONFIG) {
-			legacyObjects = objects;
-		} else {
-			if (objects.isEmpty()) {
-				return legacyObjects;
-			}
-		}
+		var preferredObjects = model.filter(subject, preferredProperty, null).objects();
+		var fallbackObjects = model.filter(subject, fallbackProperty, null).objects();
 
-		if (!objects.equals(legacyObjects)) {
+		if (!fallbackObjects.isEmpty() && !preferredObjects.equals(fallbackObjects)) {
 			logger.warn("Discrepancy between use of the old and new config vocabulary.");
-			if (objects.containsAll(legacyObjects)) {
-				return objects;
-			} else if (legacyObjects.containsAll(objects)) {
-				return legacyObjects;
+
+			if (preferredObjects.containsAll(fallbackObjects)) {
+				return preferredObjects;
+			} else if (fallbackObjects.containsAll(preferredObjects)) {
+				return fallbackObjects;
 			}
 
-			Set<Value> results = new HashSet<>(objects);
-			results.addAll(legacyObjects);
+			Set<Value> results = new HashSet<>(preferredObjects);
+			results.addAll(fallbackObjects);
 			return results;
 		}
 
-		return legacyObjects;
+		return preferredObjects;
 	}
 
 	/**
@@ -139,12 +195,47 @@ public class Configurations {
 	 */
 	@InternalUseOnly
 	public static Optional<IRI> getIRIValue(Model model, Resource subject, IRI property, IRI legacyProperty) {
-		if (!USE_CONFIG) {
-			var result = Models.objectIRI(model.getStatements(subject, legacyProperty, null));
-			if (result.isPresent()) {
-				return result;
-			}
+		var preferredProperty = useLegacyConfig() ? legacyProperty : property;
+		var fallbackProperty = useLegacyConfig() ? property : legacyProperty;
+
+		var preferredResult = Models.objectIRI(model.getStatements(subject, preferredProperty, null));
+		var fallbackResult = Models.objectIRI(model.getStatements(subject, fallbackProperty, null));
+
+		logDiscrepancyWarning(preferredResult, fallbackResult);
+		if (preferredResult.isPresent()) {
+			return preferredResult;
 		}
-		return Models.objectIRI(model.getStatements(subject, property, null));
+		return fallbackResult;
+	}
+
+	/**
+	 * Retrieve the subject of the supplied type, falling back to a supplied legacy type.
+	 *
+	 * @param model      the model to retrieve property values from.
+	 * @param type       the type to retrieve the value of.
+	 * @param legacyType legacy type to use if the supplied type has no value in the model.
+	 * @return The subject of the supplied type (or the legacy type), if present.
+	 */
+	@InternalUseOnly
+	public static Optional<Resource> getSubjectByType(Model model, IRI type, IRI legacyType) {
+		var preferredType = useLegacyConfig() ? legacyType : type;
+		var fallbackType = useLegacyConfig() ? type : legacyType;
+
+		var preferredResult = Models.subject(model.getStatements(null, RDF.TYPE, preferredType));
+		var fallbackResult = Models.subject(model.getStatements(null, RDF.TYPE, fallbackType));
+
+		logDiscrepancyWarning(preferredResult, fallbackResult);
+		if (preferredResult.isPresent()) {
+			return preferredResult;
+		}
+
+		return fallbackResult;
+	}
+
+	private static void logDiscrepancyWarning(Optional<? extends Value> preferred,
+			Optional<? extends Value> fallback) {
+		if (!fallback.isEmpty() && !preferred.equals(fallback)) {
+			logger.warn("Discrepancy between use of the old and new config vocabulary.");
+		}
 	}
 }

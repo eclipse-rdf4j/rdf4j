@@ -43,7 +43,7 @@ public class ConfigControllerTest {
 	private RepositoryManager manager;
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		request = new MockHttpServletRequest();
 		request.setAttribute("repositoryID", repositoryId);
 		response = new MockHttpServletResponse();

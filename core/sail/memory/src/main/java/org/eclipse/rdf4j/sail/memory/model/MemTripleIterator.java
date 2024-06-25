@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.model.Triple;
  *
  * @author Jeen Broekstra
  */
-public class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTriple, X> {
+public class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTriple> {
 
 	/*-----------*
 	 * Variables *
@@ -122,5 +122,10 @@ public class MemTripleIterator<X extends Exception> extends LookAheadIteration<M
 
 	private boolean isInSnapshot(MemStatement st) {
 		return snapshot < 0 || st.isInSnapshot(snapshot);
+	}
+
+	@Override
+	protected void handleClose() {
+
 	}
 }

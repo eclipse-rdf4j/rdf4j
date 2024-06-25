@@ -18,35 +18,23 @@ import java.util.Objects;
 /**
  * An Iteration that can convert an {@link Iterator} to a {@link CloseableIteration}.
  */
-@Deprecated(since = "4.1.0")
-public class CloseableIteratorIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
+public class CloseableIteratorIteration<E> implements CloseableIteration<E> {
 
 	private Iterator<? extends E> iter;
-
 	/**
-	 * Creates an uninitialized CloseableIteratorIteration, needs to be initialized by calling
-	 * {@link #setIterator(Iterator)} before it can be used.
+	 * Flag indicating whether this iteration has been closed.
 	 */
-	public CloseableIteratorIteration() {
-	}
+	private boolean closed = false;
 
 	/**
 	 * Creates a CloseableIteratorIteration that wraps the supplied iterator.
 	 */
 	public CloseableIteratorIteration(Iterator<? extends E> iter) {
-		setIterator(iter);
-	}
-
-	protected void setIterator(Iterator<? extends E> iter) {
 		this.iter = Objects.requireNonNull(iter, "Iterator was null");
 	}
 
-	protected boolean hasIterator() {
-		return iter != null;
-	}
-
 	@Override
-	public boolean hasNext() throws X {
+	public boolean hasNext() {
 		if (isClosed()) {
 			return false;
 		}
@@ -59,7 +47,7 @@ public class CloseableIteratorIteration<E, X extends Exception> extends Abstract
 	}
 
 	@Override
-	public E next() throws X {
+	public E next() {
 		if (isClosed()) {
 			throw new NoSuchElementException("Iteration has been closed");
 		}
@@ -68,11 +56,35 @@ public class CloseableIteratorIteration<E, X extends Exception> extends Abstract
 	}
 
 	@Override
-	public void remove() throws X {
+	public void remove() {
 		if (isClosed()) {
 			throw new IllegalStateException("Iteration has been closed");
 		}
 
 		iter.remove();
+	}
+
+	protected void handleClose() {
+
+	}
+
+	/**
+	 * Checks whether this CloseableIteration has been closed.
+	 *
+	 * @return <var>true</var> if the CloseableIteration has been closed, <var>false</var> otherwise.
+	 */
+	public final boolean isClosed() {
+		return closed;
+	}
+
+	/**
+	 * Calls {@link #handleClose()} upon first call and makes sure the resource closures are only executed once.
+	 */
+	@Override
+	public final void close() {
+		if (!closed) {
+			closed = true;
+			handleClose();
+		}
 	}
 }

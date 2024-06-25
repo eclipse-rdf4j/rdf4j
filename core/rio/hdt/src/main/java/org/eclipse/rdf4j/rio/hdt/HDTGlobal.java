@@ -38,12 +38,12 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
  * @author Bart Hanssens
  */
 class HDTGlobal extends HDTPart {
-	protected final static byte[] GLOBAL_FORMAT = "<http://purl.org/HDT/hdt#HDTv1>".getBytes(StandardCharsets.US_ASCII);
-	protected final static String GLOBAL_BASEURI = "BaseUri";
-	protected final static String GLOBAL_SOFTWARE = "Software";
+	final static byte[] GLOBAL_FORMAT = "<http://purl.org/HDT/hdt#HDTv1>".getBytes(StandardCharsets.US_ASCII);
+	final static String GLOBAL_BASEURI = "BaseUri";
+	final static String GLOBAL_SOFTWARE = "Software";
 
 	@Override
-	protected void parse(InputStream is) throws IOException {
+	void parse(InputStream is) throws IOException {
 		// don't close CheckedInputStream, as it will close the underlying inputstream
 		try (UncloseableInputStream uis = new UncloseableInputStream(is);
 				CheckedInputStream cis = new CheckedInputStream(uis, new CRC16())) {

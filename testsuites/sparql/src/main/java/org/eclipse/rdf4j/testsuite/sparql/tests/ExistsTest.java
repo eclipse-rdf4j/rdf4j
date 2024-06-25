@@ -10,9 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.sparql.tests;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -20,8 +21,10 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
 
 /**
  * Test for queries using EXISTS
@@ -30,8 +33,11 @@ import org.junit.Test;
  */
 public class ExistsTest extends AbstractComplianceTest {
 
-	@Test
-	public void testFilterNotExistsBindingToCurrentSolutionMapping() {
+	public ExistsTest(Supplier<Repository> repo) {
+		super(repo);
+	}
+
+	private void testFilterNotExistsBindingToCurrentSolutionMapping(RepositoryConnection conn) {
 
 		String ex = "http://example/";
 		IRI a1 = Values.iri(ex, "a1");
@@ -64,6 +70,11 @@ public class ExistsTest extends AbstractComplianceTest {
 			assertEquals(a2, collect.get(0).getValue("a"));
 		}
 
+	}
+
+	public Stream<DynamicTest> tests() {
+		return Stream.of(makeTest("FilterNotExistsBindingToCurrentSolutionMapping",
+				this::testFilterNotExistsBindingToCurrentSolutionMapping));
 	}
 
 }

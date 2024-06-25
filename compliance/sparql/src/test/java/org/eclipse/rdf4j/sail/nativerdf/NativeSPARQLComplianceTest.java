@@ -15,27 +15,19 @@ import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryFactory;
 import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreFactory;
 import org.eclipse.rdf4j.testsuite.sparql.RepositorySPARQLComplianceTestSuite;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
 
 /**
  * @author jeen
  */
 public class NativeSPARQLComplianceTest extends RepositorySPARQLComplianceTestSuite {
 
-	@BeforeClass
-	public static void setUpFactory() throws Exception {
-		setRepositoryFactory(new SailRepositoryFactory() {
+	public NativeSPARQLComplianceTest() {
+		super(new SailRepositoryFactory() {
 			@Override
 			public RepositoryImplConfig getConfig() {
 
 				return new SailRepositoryConfig(new NativeStoreFactory().getConfig());
 			}
 		});
-	}
-
-	@AfterClass
-	public static void tearDownFactory() throws Exception {
-		setRepositoryFactory(null);
 	}
 }

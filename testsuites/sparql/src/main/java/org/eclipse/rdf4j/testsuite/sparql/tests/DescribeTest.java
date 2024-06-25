@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.testsuite.sparql.tests;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Set;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -26,8 +28,10 @@ import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
 
 /**
  * Tests on SPARQL DESCRIBE queries
@@ -36,9 +40,12 @@ import org.junit.Test;
  */
 public class DescribeTest extends AbstractComplianceTest {
 
-	@Test
-	public void testDescribeA() throws Exception {
-		loadTestData("/testdata-query/dataset-describe.trig");
+	public DescribeTest(Supplier<Repository> repo) {
+		super(repo);
+	}
+
+	private void testDescribeA(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-describe.trig", conn);
 		String query = getNamespaceDeclarations() +
 				"DESCRIBE ex:a";
 
@@ -60,9 +67,8 @@ public class DescribeTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testDescribeAWhere() throws Exception {
-		loadTestData("/testdata-query/dataset-describe.trig");
+	private void testDescribeAWhere(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-describe.trig", conn);
 		String query = getNamespaceDeclarations() +
 				"DESCRIBE ?x WHERE {?x rdfs:label \"a\". } ";
 
@@ -84,11 +90,9 @@ public class DescribeTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testDescribeWhere() throws Exception {
-		loadTestData("/testdata-query/dataset-describe.trig");
-		String query = getNamespaceDeclarations() +
-				"DESCRIBE ?x WHERE {?x rdfs:label ?y . } ";
+	private void testDescribeWhere(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-describe.trig", conn);
+		String query = getNamespaceDeclarations() + "DESCRIBE ?x WHERE {?x rdfs:label ?y . } ";
 
 		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
 
@@ -120,11 +124,9 @@ public class DescribeTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testDescribeB() throws Exception {
-		loadTestData("/testdata-query/dataset-describe.trig");
-		String query = getNamespaceDeclarations() +
-				"DESCRIBE ex:b";
+	private void testDescribeB(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-describe.trig", conn);
+		String query = getNamespaceDeclarations() + "DESCRIBE ex:b";
 
 		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
 
@@ -143,11 +145,9 @@ public class DescribeTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testDescribeD() throws Exception {
-		loadTestData("/testdata-query/dataset-describe.trig");
-		String query = getNamespaceDeclarations() +
-				"DESCRIBE ex:d";
+	private void testDescribeD(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-describe.trig", conn);
+		String query = getNamespaceDeclarations() + "DESCRIBE ex:d";
 
 		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
 
@@ -177,9 +177,8 @@ public class DescribeTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testDescribeF() throws Exception {
-		loadTestData("/testdata-query/dataset-describe.trig");
+	private void testDescribeF(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-describe.trig", conn);
 		String query = getNamespaceDeclarations() +
 				"DESCRIBE ex:f";
 
@@ -208,13 +207,11 @@ public class DescribeTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testDescribeMultipleA() {
+	private void testDescribeMultipleA(RepositoryConnection conn) {
 		String update = "insert data { <urn:1> <urn:p1> <urn:v> . [] <urn:blank> <urn:1> . <urn:2> <urn:p2> <urn:3> . } ";
 		conn.prepareUpdate(QueryLanguage.SPARQL, update).execute();
 
-		String query = getNamespaceDeclarations() +
-				"DESCRIBE <urn:1> <urn:2> ";
+		String query = getNamespaceDeclarations() + "DESCRIBE <urn:1> <urn:2> ";
 
 		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
 
@@ -233,13 +230,11 @@ public class DescribeTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testDescribeMultipleB() {
+	private void testDescribeMultipleB(RepositoryConnection conn) {
 		String update = "insert data { <urn:1> <urn:p1> <urn:v> . <urn:1> <urn:blank> [] . <urn:2> <urn:p2> <urn:3> . } ";
 		conn.prepareUpdate(QueryLanguage.SPARQL, update).execute();
 
-		String query = getNamespaceDeclarations() +
-				"DESCRIBE <urn:1> <urn:2> ";
+		String query = getNamespaceDeclarations() + "DESCRIBE <urn:1> <urn:2> ";
 
 		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
 
@@ -258,13 +253,11 @@ public class DescribeTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testDescribeMultipleC() {
+	private void testDescribeMultipleC(RepositoryConnection conn) {
 		String update = "insert data { <urn:1> <urn:p1> <urn:v> . [] <urn:blank> <urn:1>. <urn:1> <urn:blank> [] . <urn:2> <urn:p2> <urn:3> . } ";
 		conn.prepareUpdate(QueryLanguage.SPARQL, update).execute();
 
-		String query = getNamespaceDeclarations() +
-				"DESCRIBE <urn:1> <urn:2> ";
+		String query = getNamespaceDeclarations() + "DESCRIBE <urn:1> <urn:2> ";
 
 		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
 
@@ -284,13 +277,11 @@ public class DescribeTest extends AbstractComplianceTest {
 		}
 	}
 
-	@Test
-	public void testDescribeMultipleD() {
+	private void testDescribeMultipleD(RepositoryConnection conn) {
 		String update = "insert data { <urn:1> <urn:p1> <urn:v> . [] <urn:blank> <urn:1>. <urn:2> <urn:p2> <urn:3> . [] <urn:blank> <urn:2> . <urn:4> <urn:p2> <urn:3> . <urn:4> <urn:blank> [] .} ";
 		conn.prepareUpdate(QueryLanguage.SPARQL, update).execute();
 
-		String query = getNamespaceDeclarations() +
-				"DESCRIBE <urn:1> <urn:2> <urn:4> ";
+		String query = getNamespaceDeclarations() + "DESCRIBE <urn:1> <urn:2> <urn:4> ";
 
 		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
 
@@ -310,6 +301,16 @@ public class DescribeTest extends AbstractComplianceTest {
 			assertThat(result.contains(urn4, p2, null)).isTrue();
 			assertThat(result.contains(urn4, blank, null)).isTrue();
 		}
+	}
+
+	public Stream<DynamicTest> tests() {
+		return Stream.of(makeTest("DescribeMultipleD", this::testDescribeMultipleD),
+				makeTest("DescribeMultipleC", this::testDescribeMultipleC),
+				makeTest("DescribeMultipleB", this::testDescribeMultipleB),
+				makeTest("DescribeMultipleA", this::testDescribeMultipleA), makeTest("DescribeF", this::testDescribeF),
+				makeTest("DescribeD", this::testDescribeD), makeTest("DescribeB", this::testDescribeB),
+				makeTest("DescribeWhere", this::testDescribeWhere),
+				makeTest("DescribeAWhere", this::testDescribeAWhere), makeTest("DescribeA", this::testDescribeA));
 	}
 
 }

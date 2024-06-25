@@ -113,4 +113,12 @@ public class FallbackDataset implements Dataset, Serializable {
 		}
 	}
 
+	public Dataset getPrimary() {
+		return primary;
+	}
+
+	public Dataset getFallback() {
+		return fallback;
+	}
+
 }

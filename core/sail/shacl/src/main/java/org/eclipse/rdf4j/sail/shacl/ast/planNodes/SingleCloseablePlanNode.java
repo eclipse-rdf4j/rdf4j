@@ -35,7 +35,7 @@ public class SingleCloseablePlanNode implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple> iterator() {
 		assert receivedLogger;
 		return new SingleCloseableIteration(parent);
 	}
@@ -97,9 +97,9 @@ public class SingleCloseablePlanNode implements PlanNode {
 		return Objects.hash(parent);
 	}
 
-	private static class SingleCloseableIteration implements CloseableIteration<ValidationTuple, SailException> {
+	private static class SingleCloseableIteration implements CloseableIteration<ValidationTuple> {
 
-		final CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
+		final CloseableIteration<? extends ValidationTuple> parentIterator;
 		final AtomicBoolean closed = new AtomicBoolean(false);
 
 		public SingleCloseableIteration(PlanNode parent) {

@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.iteration;
 
-import java.lang.ref.WeakReference;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -24,8 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * @author James Leigh
  */
-@Deprecated(since = "4.1.0")
-public abstract class QueueIteration<E, T extends Exception> extends LookAheadIteration<E, T> {
+public abstract class QueueIteration<E, T extends RuntimeException> extends LookAheadIteration<E> {
 
 	private final AtomicBoolean done = new AtomicBoolean(false);
 
@@ -45,36 +43,6 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	}
 
 	/**
-	 * Creates an <var>QueueIteration</var> with the given (fixed) capacity and default access policy.
-	 *
-	 * @param capacity the capacity of this queue
-	 * @deprecated WeakReference is no longer supported as a way to automatically close this iteration. The recommended
-	 *             approach to automatically closing an iteration on garbage collection is to use a
-	 *             {@link java.lang.ref.Cleaner}.
-	 */
-	@Deprecated(since = "4.1.2", forRemoval = true)
-	protected QueueIteration(int capacity, WeakReference<?> callerRef) {
-		this(capacity, false, callerRef);
-	}
-
-	/**
-	 * Creates an <var>QueueIteration</var> with the given (fixed) capacity and the specified access policy.
-	 *
-	 * @param capacity the capacity of this queue
-	 * @param fair     if <var>true</var> then queue accesses for threads blocked on insertion or removal, are processed
-	 *                 in FIFO order; if <var>false</var> the access order is unspecified.
-	 * @deprecated WeakReference is no longer supported as a way to automatically close this iteration. The recommended
-	 *             approach to automatically closing an iteration on garbage collection is to use a
-	 *             {@link java.lang.ref.Cleaner}.
-	 */
-	@Deprecated(since = "4.1.2", forRemoval = true)
-	protected QueueIteration(int capacity, boolean fair, WeakReference<?> callerRef) {
-		super();
-		assert callerRef == null;
-		this.queue = new ArrayBlockingQueue<>(capacity, fair);
-	}
-
-	/**
 	 * Creates an <var>QueueIteration</var> with the given (fixed) capacity and the specified access policy.
 	 *
 	 * @param capacity the capacity of this queue
@@ -84,23 +52,6 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	protected QueueIteration(int capacity, boolean fair) {
 		super();
 		this.queue = new ArrayBlockingQueue<>(capacity, fair);
-	}
-
-	/**
-	 * Creates an <var>QueueIteration</var> with the given {@link BlockingQueue} as its backing queue.<br>
-	 * It may not be threadsafe to modify or access the given {@link BlockingQueue} from other locations. This method
-	 * only enables the default {@link ArrayBlockingQueue} to be overridden.
-	 *
-	 * @param queue A BlockingQueue that is not used in other locations, but will be used as the backing Queue
-	 *              implementation for this cursor.
-	 * @deprecated WeakReference is no longer supported as a way to automatically close this iteration. The recommended
-	 *             approach to automatically closing an iteration on garbage collection is to use a
-	 *             {@link java.lang.ref.Cleaner}.
-	 */
-	@Deprecated(since = "4.1.2", forRemoval = true)
-	protected QueueIteration(BlockingQueue<E> queue, WeakReference<?> callerRef) {
-		assert callerRef == null;
-		this.queue = queue;
 	}
 
 	/**
@@ -165,7 +116,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	 * Returns the next item in the queue, which may be <var>null</var>, or throws an exception.
 	 */
 	@Override
-	public E getNextElement() throws T {
+	public E getNextElement() {
 		if (isClosed()) {
 			return null;
 		}
@@ -202,16 +153,12 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	}
 
 	@Override
-	public void handleClose() throws T {
-		try {
-			super.handleClose();
-		} finally {
-			done.set(true);
-			do {
-				queue.clear(); // ensure extra room is available
-			} while (!queue.offer(afterLast));
-			checkException();
-		}
+	public void handleClose() {
+		done.set(true);
+		do {
+			queue.clear(); // ensure extra room is available
+		} while (!queue.offer(afterLast));
+		checkException();
 	}
 
 	public void checkException() throws T {

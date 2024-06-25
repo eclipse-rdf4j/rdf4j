@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.Random;
 
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -42,7 +41,7 @@ public class CardinalityTest {
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 	}
 
-	int count(RecordIterator it) throws IOException {
+	int count(RecordIterator it) {
 		int count = 0;
 		while (it.next() != null) {
 			count++;

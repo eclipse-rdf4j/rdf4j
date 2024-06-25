@@ -95,7 +95,7 @@ import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.helpers.QueryModelVisitorBase;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedDescribeQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
@@ -387,7 +387,7 @@ public class SpinRenderer {
 		}
 	}
 
-	private class SpinVisitor extends QueryModelVisitorBase<RDFHandlerException> {
+	private class SpinVisitor extends AbstractQueryModelVisitor<RDFHandlerException> {
 
 		final RDFHandler handler;
 
@@ -1338,7 +1338,7 @@ public class SpinRenderer {
 			}
 		}
 
-		private final class ExtensionVisitor extends QueryModelVisitorBase<RDFHandlerException> {
+		private final class ExtensionVisitor extends AbstractQueryModelVisitor<RDFHandlerException> {
 
 			@Override
 			public void meet(Count node) throws RDFHandlerException {
@@ -1437,7 +1437,7 @@ public class SpinRenderer {
 			}
 		}
 
-		private final class GroupVisitor extends QueryModelVisitorBase<RDFHandlerException> {
+		private final class GroupVisitor extends AbstractQueryModelVisitor<RDFHandlerException> {
 
 			Group group;
 
@@ -1486,7 +1486,7 @@ public class SpinRenderer {
 			}
 		}
 
-		private final class OrderVisitor extends QueryModelVisitorBase<RDFHandlerException> {
+		private final class OrderVisitor extends AbstractQueryModelVisitor<RDFHandlerException> {
 
 			@Override
 			public void meet(Order node) throws RDFHandlerException {
@@ -1514,7 +1514,7 @@ public class SpinRenderer {
 		}
 	}
 
-	private static final class ExtensionContext extends QueryModelVisitorBase<RuntimeException> {
+	private static final class ExtensionContext extends AbstractQueryModelVisitor<RuntimeException> {
 
 		Extension extension;
 

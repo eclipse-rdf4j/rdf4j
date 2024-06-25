@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.testsuite.rio;
 
 import java.io.InputStream;
-import java.net.MalformedURLException;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -51,7 +50,7 @@ public class PositiveParserTest extends TestCase {
 	 *--------------*/
 
 	public PositiveParserTest(IRI testUri, String testName, String inputURL, String outputURL, String baseURL,
-			RDFParser targetParser, RDFParser ntriplesParser) throws MalformedURLException {
+			RDFParser targetParser, RDFParser ntriplesParser) {
 		super(testName);
 		this.testUri = testUri;
 		this.inputURL = inputURL;

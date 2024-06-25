@@ -72,6 +72,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.QualifiedMaxCountCo
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.QualifiedMinCountConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.SparqlConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.UniqueLangConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.VoidConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.XoneConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -295,7 +296,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 
 		if (properties.isClosed()) {
 			constraintComponent.add(new ClosedConstraintComponent(shapeSource, properties.getProperty(),
-					properties.getIgnoredProperties()));
+					properties.getIgnoredProperties(), this));
 		}
 
 		for (IRI iri : properties.getClazz()) {
@@ -309,23 +310,23 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		}
 
 		for (IRI iri : properties.getEquals()) {
-			var equalsConstraintComponent = new EqualsConstraintComponent(iri);
+			var equalsConstraintComponent = new EqualsConstraintComponent(iri, this);
 			constraintComponent.add(equalsConstraintComponent);
 		}
 
 		for (IRI iri : properties.getDisjoint()) {
-			var disjointConstraintComponent = new DisjointConstraintComponent(iri);
+			var disjointConstraintComponent = new DisjointConstraintComponent(iri, this);
 			constraintComponent.add(disjointConstraintComponent);
 		}
 
 		for (IRI iri : properties.getLessThan()) {
-			var lessThanConstraintComponent = new LessThanConstraintComponent(iri);
+			var lessThanConstraintComponent = new LessThanConstraintComponent(iri, this);
 			constraintComponent.add(lessThanConstraintComponent);
 		}
 
 		for (IRI iri : properties.getLessThanOrEquals()) {
 			var lessThanOrEqualsConstraintComponent = new LessThanOrEqualsConstraintComponent(
-					iri);
+					iri, this);
 			constraintComponent.add(lessThanOrEqualsConstraintComponent);
 		}
 
@@ -377,6 +378,10 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		for (Resource resource : properties.getSparql()) {
 			var component = new SparqlConstraintComponent(resource, shapeSource, this);
 			constraintComponent.add(component);
+		}
+
+		if (constraintComponent.isEmpty()) {
+			constraintComponent.add(new VoidConstraintComponent());
 		}
 
 		return constraintComponent;
@@ -608,11 +613,17 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 						}
 					}
 
-					propertyShape.produceValidationReports = true;
+					if (propertyShape.constraintComponents.get(0) instanceof CanProduceValidationReport) {
+						((CanProduceValidationReport) propertyShape.constraintComponents.get(0))
+								.setProducesValidationReport(true);
+					} else {
+						propertyShape.produceValidationReports = true;
+					}
 
 				} else if (shape instanceof NodeShape) {
-					if (shape.constraintComponents.get(0) instanceof SparqlConstraintComponent) {
-						((SparqlConstraintComponent) shape.constraintComponents.get(0)).produceValidationReports = true;
+					if (shape.constraintComponents.get(0) instanceof CanProduceValidationReport) {
+						((CanProduceValidationReport) shape.constraintComponents.get(0))
+								.setProducesValidationReport(true);
 					} else {
 						shape.produceValidationReports = true;
 					}

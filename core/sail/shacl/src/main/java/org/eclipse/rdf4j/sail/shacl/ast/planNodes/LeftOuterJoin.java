@@ -15,7 +15,6 @@ import java.util.Objects;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * @author Håvard Ottestad
@@ -34,11 +33,11 @@ public class LeftOuterJoin implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			CloseableIteration<? extends ValidationTuple, SailException> leftIterator;
-			CloseableIteration<? extends ValidationTuple, SailException> rightIterator;
+			CloseableIteration<? extends ValidationTuple> leftIterator;
+			CloseableIteration<? extends ValidationTuple> rightIterator;
 
 			ValidationTuple next;
 			ValidationTuple nextLeft;

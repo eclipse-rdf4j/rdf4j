@@ -32,6 +32,9 @@ import org.springframework.web.bind.annotation.RestController;
 @Experimental
 @RestController
 public class QueryResponder {
+
+	private static final String[] ALL_GRAPHS = {};
+
 	/**
 	 * The repository that is being served.
 	 */
@@ -54,7 +57,7 @@ public class QueryResponder {
 			HttpServletRequest request, HttpServletResponse response) throws IOException {
 		try {
 			EvaluateResultHttpResponse result = new EvaluateResultHttpResponse(response);
-			sparqlQueryEvaluator.evaluate(result, repository, query, acceptHeader, defaultGraphUri,
+			sparqlQueryEvaluator.evaluate(result, repository, query, acceptHeader, toArray(defaultGraphUri),
 					toArray(namedGraphUri));
 		} catch (MalformedQueryException | IllegalStateException | IOException e) {
 			response.sendError(HttpServletResponse.SC_BAD_REQUEST);
@@ -69,7 +72,7 @@ public class QueryResponder {
 
 		try {
 			EvaluateResultHttpResponse result = new EvaluateResultHttpResponse(response);
-			sparqlQueryEvaluator.evaluate(result, repository, query, acceptHeader, defaultGraphUri,
+			sparqlQueryEvaluator.evaluate(result, repository, query, acceptHeader, toArray(defaultGraphUri),
 					toArray(namedGraphUri));
 		} catch (MalformedQueryException | IllegalStateException | IOException e) {
 			response.sendError(HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
@@ -77,10 +80,9 @@ public class QueryResponder {
 	}
 
 	private String[] toArray(String namedGraphUri) {
-		String[] namedGraphUris = new String[] {};
 		if (namedGraphUri != null) {
-			namedGraphUris = new String[] { namedGraphUri };
+			return new String[] { namedGraphUri };
 		}
-		return namedGraphUris;
+		return ALL_GRAPHS;
 	}
 }

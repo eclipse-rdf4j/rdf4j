@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.model.util;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -31,15 +30,13 @@ public class URIUtil {
 	 * URI component would conflict with the reserved purpose, then the conflicting data must be escaped before forming
 	 * the URI. http://www.isi.edu/in-notes/rfc2396.txt section 2.2.
 	 */
-	private static final Set<Character> reserved = new HashSet<>(
-			Arrays.asList(new Character[] { ';', '/', '?', ':', '@', '&', '=', '+', '$', ',' }));
+	private static final Set<Character> reserved = Set.of(';', '/', '?', ':', '@', '&', '=', '+', '$', ',');
 
 	/**
 	 * Punctuation mark characters, which are part of the set of unreserved chars and therefore allowed to occur in
 	 * unescaped form. See http://www.isi.edu/in-notes/rfc2396.txt
 	 */
-	private static final Set<Character> mark = new HashSet<>(
-			Arrays.asList(new Character[] { '-', '_', '.', '!', '~', '*', '\'', '(', ')' }));
+	private static final Set<Character> mark = Set.of('-', '_', '.', '!', '~', '*', '\'', '(', ')');
 
 	/**
 	 * Regular expression pattern for matching unicode control characters.
@@ -100,7 +97,7 @@ public class URIUtil {
 		assert namespace != null : "namespace must not be null";
 		assert localName != null : "localName must not be null";
 
-		if (namespace.length() == 0) {
+		if (namespace.isEmpty()) {
 			return false;
 		}
 
@@ -216,7 +213,7 @@ public class URIUtil {
 	 */
 	public static boolean isValidLocalName(String name) {
 		// Empty names are legal
-		if (name.length() == 0) {
+		if (name.isEmpty()) {
 			return true;
 		}
 

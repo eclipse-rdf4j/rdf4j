@@ -83,6 +83,11 @@ public class SourceSelectionMemoryCache implements SourceSelectionCache {
 		updateInferredInformation(subQuery, endpoint, hasStatements);
 	}
 
+	@Override
+	public void invalidate() {
+		cache.invalidateAll(); // invalidate the entire cache
+	}
+
 	private void updateCacheEntry(SubQuery subQuery, Endpoint endpoint, boolean hasStatements) {
 		Entry entry;
 		try {

@@ -119,7 +119,7 @@ final class SequentialRecordCache extends AbstractRecordCache {
 	}
 
 	@Override
-	protected RecordIterator getRecordsInternal() throws IOException {
+	protected RecordIterator getRecordsInternal() {
 		return new RecordCacheIterator();
 	}
 
@@ -196,7 +196,7 @@ final class SequentialRecordCache extends AbstractRecordCache {
 		}
 
 		@Override
-		public void close() throws IOException {
+		public void close() {
 		}
 	}
 }

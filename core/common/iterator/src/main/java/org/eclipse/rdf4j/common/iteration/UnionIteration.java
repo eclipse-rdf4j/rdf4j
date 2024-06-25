@@ -21,16 +21,15 @@ import java.util.List;
  * An Iteration that returns the bag union of the results of a number of Iterations. 'Bag union' means that the
  * UnionIteration does not filter duplicate objects.
  */
-@Deprecated(since = "4.1.0")
-public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E, X> {
+public class UnionIteration<E> extends LookAheadIteration<E> {
 
 	/*-----------*
 	 * Variables *
 	 *-----------*/
 
-	private final Iterator<? extends Iteration<? extends E, X>> argIter;
+	private final Iterator<? extends CloseableIteration<? extends E>> argIter;
 
-	private Iteration<? extends E, X> currentIter;
+	private CloseableIteration<? extends E> currentIter;
 
 	/*--------------*
 	 * Constructors *
@@ -42,7 +41,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	 * @param args The Iterations containing the elements to iterate over.
 	 */
 	@SafeVarargs
-	public UnionIteration(Iteration<? extends E, X>... args) {
+	public UnionIteration(CloseableIteration<? extends E>... args) {
 		this(Arrays.asList(args));
 	}
 
@@ -51,7 +50,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	 *
 	 * @param args The Iterations containing the elements to iterate over.
 	 */
-	public UnionIteration(Iterable<? extends Iteration<? extends E, X>> args) {
+	public UnionIteration(Iterable<? extends CloseableIteration<? extends E>> args) {
 		argIter = args.iterator();
 
 		// Initialize with empty iteration
@@ -63,20 +62,22 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	 *--------------*/
 
 	@Override
-	protected E getNextElement() throws X {
+	protected E getNextElement() {
 		if (isClosed()) {
 			return null;
 		}
 
 		while (true) {
 
-			Iteration<? extends E, X> nextCurrentIter = currentIter;
+			CloseableIteration<? extends E> nextCurrentIter = currentIter;
 			if (nextCurrentIter != null && nextCurrentIter.hasNext()) {
 				return nextCurrentIter.next();
 			}
 
 			// Current Iteration exhausted, continue with the next one
-			Iterations.closeCloseable(nextCurrentIter);
+			if (nextCurrentIter != null) {
+				nextCurrentIter.close();
+			}
 
 			if (argIter.hasNext()) {
 				currentIter = argIter.next();
@@ -88,30 +89,27 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	}
 
 	@Override
-	protected void handleClose() throws X {
+	protected void handleClose() {
 		try {
-			// Close this iteration, this will prevent lookAhead() from calling
-			// getNextElement() again
-			super.handleClose();
-		} finally {
-			try {
-				List<Throwable> collectedExceptions = new ArrayList<>();
-				while (argIter.hasNext()) {
-					try {
-						Iterations.closeCloseable(argIter.next());
-					} catch (Throwable e) {
-						if (e instanceof InterruptedException) {
-							Thread.currentThread().interrupt();
-						}
-						collectedExceptions.add(e);
+			List<Throwable> collectedExceptions = new ArrayList<>();
+			while (argIter.hasNext()) {
+				try {
+					CloseableIteration<? extends E> next = argIter.next();
+					if (next != null) {
+						next.close();
 					}
+				} catch (Throwable e) {
+					collectedExceptions.add(e);
 				}
-				if (!collectedExceptions.isEmpty()) {
-					throw new UndeclaredThrowableException(collectedExceptions.get(0));
-				}
-			} finally {
-				Iterations.closeCloseable(currentIter);
+			}
+			if (!collectedExceptions.isEmpty()) {
+				throw new UndeclaredThrowableException(collectedExceptions.get(0));
+			}
+		} finally {
+			if (currentIter != null) {
+				currentIter.close();
 			}
 		}
+
 	}
 }

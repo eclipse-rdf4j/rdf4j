@@ -15,9 +15,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.net.URL;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
@@ -47,8 +47,9 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.testsuite.sparql.vocabulary.EX;
-import org.junit.After;
-import org.junit.Before;
+import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.function.Executable;
+import org.junit.jupiter.api.function.ThrowingConsumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,27 +60,45 @@ import org.slf4j.LoggerFactory;
  */
 public abstract class AbstractComplianceTest {
 
+	protected DynamicTest makeTest(String name, ThrowingConsumer<RepositoryConnection> x) {
+		Executable e = () -> {
+			Repository repo = openRepository();
+			try (RepositoryConnection conn = repo.getConnection();) {
+				x.accept(conn);
+			} finally {
+				closeRepository(repo);
+			}
+		};
+		return DynamicTest.dynamicTest(name, e);
+
+	}
+
+	protected Repository openRepository() {
+		Repository r = repo.get();
+		r.init();
+		return r;
+	}
+
+	protected RepositoryConnection openConnection(Repository r) {
+		return new RepositoryConnectionWrapper(r.getConnection());
+	}
+
+	protected void closeRepository(Repository r) {
+		try (RepositoryConnection conn = r.getConnection()) {
+			conn.clear();
+		}
+		r.shutDown();
+	}
+
 	protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
-	protected Repository repo;
-	protected RepositoryConnection conn;
+	protected final Supplier<Repository> repo;
 
-	@Before
-	public void setUp() throws Exception {
-		repo = RepositorySPARQLComplianceTestSuite.getEmptyInitializedRepository(this.getClass());
-		conn = new RepositoryConnectionWrapper(repo.getConnection());
+	public AbstractComplianceTest(Supplier<Repository> repo) {
+		this.repo = repo;
 	}
 
-	@After
-	public void tearDown() throws Exception {
-		try {
-			conn.close();
-		} finally {
-			repo.shutDown();
-		}
-	}
-
-	protected void loadTestData(String dataFile, Resource... contexts)
+	protected void loadTestData(String dataFile, RepositoryConnection conn, Resource... contexts)
 			throws RDFParseException, RepositoryException, IOException {
 		logger.debug("loading dataset {}", dataFile);
 		try (InputStream dataset = this.getClass().getResourceAsStream(dataFile)) {
@@ -412,15 +431,8 @@ public abstract class AbstractComplianceTest {
 		}
 
 		@Override
-		@Deprecated(since = "4.1.0", forRemoval = true)
-		public <E extends Exception> void add(Iteration<? extends Statement, E> statements, Resource... contexts)
-				throws RepositoryException, E {
-			delegate.add(statements, contexts);
-		}
-
-		@Override
-		public <E extends Exception> void add(CloseableIteration<? extends Statement, E> statements,
-				Resource... contexts) throws RepositoryException, E {
+		public void add(CloseableIteration<? extends Statement> statements,
+				Resource... contexts) throws RepositoryException {
 			delegate.add(statements, contexts);
 		}
 
@@ -446,15 +458,8 @@ public abstract class AbstractComplianceTest {
 		}
 
 		@Override
-		@Deprecated(since = "4.1.0", forRemoval = true)
-		public <E extends Exception> void remove(Iteration<? extends Statement, E> statements, Resource... contexts)
-				throws RepositoryException, E {
-			delegate.remove(statements, contexts);
-		}
-
-		@Override
-		public <E extends Exception> void remove(CloseableIteration<? extends Statement, E> statements,
-				Resource... contexts) throws RepositoryException, E {
+		public void remove(CloseableIteration<? extends Statement> statements,
+				Resource... contexts) throws RepositoryException {
 			delegate.remove(statements, contexts);
 		}
 

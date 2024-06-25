@@ -68,7 +68,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	private final TupleAndGraphQueryEvaluator evaluator;
 
 	private final List<String> sparqlQueryStart = Arrays
-			.asList(new String[] { "select", "construct", "describe", "ask", "prefix", "base" });
+			.asList("select", "construct", "describe", "ask", "prefix", "base");
 
 	private final long MAX_INPUT = 1_000_000;
 
@@ -238,14 +238,10 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		if (!str.isEmpty()) {
 			return str;
 		}
-		try {
-			writeln("Enter multi-line " + queryLn.getName() + " query "
-					+ "(terminate with line containing single '.')");
-			return consoleIO.readMultiLineInput();
-		} catch (IOException e) {
-			writeError("Failed to read query", e);
-		}
-		return null;
+
+		writeln("Enter multi-line " + queryLn.getName() + " query "
+				+ "(terminate with line containing single '.')");
+		return consoleIO.readMultiLineInput();
 	}
 
 	/**

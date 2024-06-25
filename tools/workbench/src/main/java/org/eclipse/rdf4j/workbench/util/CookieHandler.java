@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.workbench.util;
 
 import static java.lang.Integer.parseInt;
 
-import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
@@ -44,8 +43,7 @@ public class CookieHandler {
 		this.servlet = servlet;
 	}
 
-	public void updateCookies(final WorkbenchRequest req, final HttpServletResponse resp)
-			throws UnsupportedEncodingException {
+	public void updateCookies(final WorkbenchRequest req, final HttpServletResponse resp) {
 		for (String name : this.servlet.getCookieNames()) {
 			if (req.isParameterPresent(name)) {
 				addCookie(req, resp, name);
@@ -53,8 +51,7 @@ public class CookieHandler {
 		}
 	}
 
-	private void addCookie(final WorkbenchRequest req, final HttpServletResponse resp, final String name)
-			throws UnsupportedEncodingException {
+	private void addCookie(final WorkbenchRequest req, final HttpServletResponse resp, final String name) {
 		final String raw = req.getParameter(name);
 		final String value = URLEncoder.encode(raw, StandardCharsets.UTF_8);
 		LOGGER.info("name: {}\nvalue: {}", name, value);

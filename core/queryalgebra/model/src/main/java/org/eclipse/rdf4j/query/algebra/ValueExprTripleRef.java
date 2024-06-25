@@ -106,7 +106,7 @@ public class ValueExprTripleRef extends AbstractQueryModelNode implements ValueE
 		} else if (objectVar == current) {
 			setObjectVar((Var) replacement);
 		} else {
-			super.replaceChildNode(current, replacement);
+			throw new IllegalArgumentException("Node is not a child node: " + current);
 		}
 	}
 }

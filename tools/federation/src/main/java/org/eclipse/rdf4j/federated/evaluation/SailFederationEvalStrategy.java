@@ -53,7 +53,7 @@ public class SailFederationEvalStrategy extends FederationEvalStrategy {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateBoundJoinStatementPattern(
+	public CloseableIteration<BindingSet> evaluateBoundJoinStatementPattern(
 			StatementTupleExpr stmt, List<BindingSet> bindings)
 			throws QueryEvaluationException {
 
@@ -71,7 +71,7 @@ public class SailFederationEvalStrategy extends FederationEvalStrategy {
 		TupleExpr preparedQuery = QueryAlgebraUtil.selectQueryBoundUnion((StatementPattern) stmt, bindings, filterExpr,
 				isEvaluated);
 
-		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery,
+		CloseableIteration<BindingSet> result = evaluateAtStatementSources(preparedQuery,
 				stmt.getStatementSources(), stmt.getQueryInfo());
 
 		// apply filter and/or convert to original bindings
@@ -89,7 +89,7 @@ public class SailFederationEvalStrategy extends FederationEvalStrategy {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateGroupedCheck(
+	public CloseableIteration<BindingSet> evaluateGroupedCheck(
 			CheckStatementPattern stmt, List<BindingSet> bindings)
 			throws QueryEvaluationException {
 
@@ -99,16 +99,16 @@ public class SailFederationEvalStrategy extends FederationEvalStrategy {
 
 		TupleExpr preparedQuery = QueryAlgebraUtil.selectQueryStringBoundCheck(stmt.getStatementPattern(), bindings);
 
-		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery,
+		CloseableIteration<BindingSet> result = evaluateAtStatementSources(preparedQuery,
 				stmt.getStatementSources(), stmt.getQueryInfo());
 
 		return new GroupedCheckConversionIteration(result, bindings);
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> executeJoin(
+	public CloseableIteration<BindingSet> executeJoin(
 			ControlledWorkerScheduler<BindingSet> joinScheduler,
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
+			CloseableIteration<BindingSet> leftIter,
 			TupleExpr rightArg, Set<String> joinVars, BindingSet bindings, QueryInfo queryInfo)
 			throws QueryEvaluationException {
 
@@ -120,7 +120,7 @@ public class SailFederationEvalStrategy extends FederationEvalStrategy {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateExclusiveGroup(
+	public CloseableIteration<BindingSet> evaluateExclusiveGroup(
 			ExclusiveGroup group, BindingSet bindings)
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {

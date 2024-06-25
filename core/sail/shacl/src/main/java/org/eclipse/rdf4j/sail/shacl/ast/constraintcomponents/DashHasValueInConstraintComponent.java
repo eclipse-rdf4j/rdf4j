@@ -39,7 +39,6 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ShiftToPropertyShape;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnBufferedPlanNode;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValueInFilter;
@@ -88,7 +87,7 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 			PlanNodeProvider overrideTargetNode, Scope scope) {
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
-		EffectiveTarget target = getTargetChain().getEffectiveTarget(scope,
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(scope,
 				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);
 
 		if (scope == Scope.propertyShape) {
@@ -97,23 +96,13 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 			PlanNode addedTargets;
 
 			if (overrideTargetNode != null) {
-				addedTargets = target.extend(overrideTargetNode.getPlanNode(), connectionsGroup,
+				addedTargets = effectiveTarget.extend(overrideTargetNode.getPlanNode(), connectionsGroup,
 						validationSettings.getDataGraph(), scope,
 						EffectiveTarget.Extend.right,
 						false, null);
 			} else {
-				addedTargets = target.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, true,
-						null);
-				PlanNode addedByPath = path.getAllAdded(connectionsGroup, validationSettings.getDataGraph(), null);
-
-				addedByPath = target.getTargetFilter(connectionsGroup,
-						validationSettings.getDataGraph(), Unique.getInstance(new TrimToTarget(addedByPath), false));
-				addedByPath = target.extend(addedByPath, connectionsGroup, validationSettings.getDataGraph(), scope,
-						EffectiveTarget.Extend.left, false,
-						null);
-
-				addedTargets = UnionNode.getInstance(addedByPath, addedTargets);
-				addedTargets = Unique.getInstance(addedTargets, false);
+				addedTargets = getAllTargetsIncludingThoseAddedByPath(connectionsGroup, validationSettings, scope,
+						effectiveTarget, path, true);
 			}
 
 			PlanNode joined = new BulkedExternalLeftOuterJoin(
@@ -137,12 +126,13 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 			PlanNode addedTargets;
 
 			if (overrideTargetNode != null) {
-				addedTargets = target.extend(overrideTargetNode.getPlanNode(), connectionsGroup,
+				addedTargets = effectiveTarget.extend(overrideTargetNode.getPlanNode(), connectionsGroup,
 						validationSettings.getDataGraph(), scope,
 						EffectiveTarget.Extend.right,
 						false, null);
 			} else {
-				addedTargets = target.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false,
+				addedTargets = effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope,
+						false,
 						null);
 			}
 

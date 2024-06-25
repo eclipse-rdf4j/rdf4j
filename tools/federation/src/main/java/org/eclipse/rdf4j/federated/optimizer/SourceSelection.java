@@ -39,7 +39,6 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.SubQuery;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.slf4j.Logger;
@@ -114,7 +113,7 @@ public class SourceSelection {
 
 		// if remote checks are necessary, execute them using the concurrency
 		// infrastructure and block until everything is resolved
-		if (remoteCheckTasks.size() > 0) {
+		if (!remoteCheckTasks.isEmpty()) {
 			SourceSelectionExecutorWithLatch.run(this, remoteCheckTasks, cache);
 		}
 
@@ -231,13 +230,14 @@ public class SourceSelection {
 			finished = true;
 
 			// check for errors:
-			if (errors.size() > 0) {
+			if (!errors.isEmpty()) {
 				StringBuilder sb = new StringBuilder();
-				sb.append(
-						errors.size() + " errors were reported while optimizing query " + getQueryInfo().getQueryID());
+				sb.append(errors.size())
+						.append(" errors were reported while optimizing query ")
+						.append(getQueryInfo().getQueryID());
 
 				for (Exception e : errors) {
-					sb.append("\n" + ExceptionUtil.getExceptionString("Error occured", e));
+					sb.append("\n").append(ExceptionUtil.getExceptionString("Error occured", e));
 				}
 
 				log.debug(sb.toString());
@@ -258,7 +258,7 @@ public class SourceSelection {
 		}
 
 		@Override
-		public void addResult(CloseableIteration<BindingSet, QueryEvaluationException> res) {
+		public void addResult(CloseableIteration<BindingSet> res) {
 			latch.countDown();
 		}
 
@@ -318,7 +318,7 @@ public class SourceSelection {
 		}
 
 		@Override
-		protected CloseableIteration<BindingSet, QueryEvaluationException> performTaskInternal() throws Exception {
+		protected CloseableIteration<BindingSet> performTaskInternal() throws Exception {
 			try {
 				TripleSource t = endpoint.getTripleSource();
 				boolean hasResults = t.hasStatements(stmt, EmptyBindingSet.getInstance(), queryInfo,

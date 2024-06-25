@@ -226,7 +226,7 @@ public class SPARQLServiceEvaluationTest {
 	 * @see <a href="https://github.com/eclipse/rdf4j/issues/646">#646</a>
 	 */
 	@Test
-	public void testValuesBindClauseHandling() throws Exception {
+	public void testValuesBindClauseHandling() {
 		String query = "select * { service <" + getRepositoryUrl(1) + "> { Bind(1 as ?val) . VALUES ?x {1 2} . } }";
 
 		try (RepositoryConnection conn = localRepository.getConnection()) {
@@ -268,7 +268,7 @@ public class SPARQLServiceEvaluationTest {
 			assertTrue(tqr.hasNext());
 
 			List<BindingSet> result = QueryResults.asList(tqr);
-			assertTrue(result.size() > 0);
+			assertTrue(!result.isEmpty());
 			for (BindingSet bs : result) {
 				assertTrue(bs.hasBinding("val"));
 				assertTrue(bs.hasBinding("s"));
@@ -566,10 +566,9 @@ public class SPARQLServiceEvaluationTest {
 	 * @param queryResult
 	 * @param expectedResult
 	 * @param checkOrder
-	 * @throws Exception
 	 */
 	private void compareTupleQueryResults(TupleQueryResult queryResult, TupleQueryResult expectedResult,
-			boolean checkOrder) throws Exception {
+			boolean checkOrder) {
 		// Create MutableTupleQueryResult to be able to re-iterate over the
 		// results
 		MutableTupleQueryResult queryResultTable = new MutableTupleQueryResult(queryResult);
@@ -688,9 +687,8 @@ public class SPARQLServiceEvaluationTest {
 	 *
 	 * @param queryResult
 	 * @param expectedResult
-	 * @throws Exception
 	 */
-	private void compareGraphs(Set<Statement> queryResult, Set<Statement> expectedResult) throws Exception {
+	private void compareGraphs(Set<Statement> queryResult, Set<Statement> expectedResult) {
 		if (!Models.isomorphic(expectedResult, queryResult)) {
 			// Don't use RepositoryUtil.difference, it reports incorrect diffs
 			/*

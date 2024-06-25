@@ -44,7 +44,7 @@ public final class CompareAllQueryValueEvaluationStep implements QueryValueEvalu
 		Value leftValue = arg.evaluate(bindings);
 		// Result is true until a mismatch has been found
 		boolean result = true;
-		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = subquery.evaluate(bindings)) {
+		try (CloseableIteration<BindingSet> iter = subquery.evaluate(bindings)) {
 			while (result && iter.hasNext()) {
 				BindingSet bindingSet = iter.next();
 				Value rightValue = getValue.apply(bindingSet);

@@ -28,8 +28,8 @@ public class MaxLengthFilter extends FilterPlanNode {
 	}
 
 	@Override
-	boolean checkTuple(ValidationTuple t) {
-		Value literal = t.getValue();
+	boolean checkTuple(Reference t) {
+		Value literal = t.get().getValue();
 
 		return literal.stringValue().length() <= maxLength;
 	}

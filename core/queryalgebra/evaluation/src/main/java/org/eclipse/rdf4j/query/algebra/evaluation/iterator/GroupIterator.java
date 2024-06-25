@@ -14,7 +14,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -30,13 +29,12 @@ import org.eclipse.rdf4j.collection.factory.api.BindingSetEntry;
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteratorIteration;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
-import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
@@ -75,7 +73,7 @@ import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateFunctionRe
  * @author Jerven Bolleman
  * @author Tomas Kovachev
  */
-public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryEvaluationException> {
+public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet> {
 
 	/*-----------*
 	 * Constants *
@@ -131,30 +129,11 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	@Override
 	public void handleClose() throws QueryEvaluationException {
-		try {
-			cf.close();
-		} finally {
-			super.handleClose();
-		}
+		cf.close();
 	}
 
 	@Override
-	public boolean hasNext() throws QueryEvaluationException {
-		if (!super.hasIterator()) {
-			super.setIterator(createIterator());
-		}
-		return super.hasNext();
-	}
-
-	@Override
-	public BindingSet next() throws QueryEvaluationException {
-		if (!super.hasIterator()) {
-			super.setIterator(createIterator());
-		}
-		return super.next();
-	}
-
-	private Iterator<BindingSet> createIterator() throws QueryEvaluationException {
+	protected Iterator<BindingSet> getIterator() throws QueryEvaluationException {
 		List<AggregatePredicateCollectorSupplier<?, ?>> aggregates = makeAggregates();
 
 		Supplier<MutableBindingSet> makeNewBindingSet;
@@ -177,7 +156,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		BiConsumer<Entry, MutableBindingSet> bindSolution = makeBindSolution(aggregates);
 		Collection<Entry> entries = buildEntries(aggregates);
-		Set<BindingSet> bindingSets = cf.createSetOfBindingSets();
+		Set<BindingSet> bindingSets = cf.createSetOfBindingSets(context::createBindingSet, context::hasBinding,
+				context::getValue, context::setBinding);
 		BiConsumer<BindingSet, MutableBindingSet> setValues = makeSetValues(getValues, setBindings);
 		for (Entry entry : entries) {
 			MutableBindingSet sol = makeNewBindingSet.get();
@@ -289,7 +269,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 				// Fixing this requires separating the computation of the aggregates and their
 				// distinct sets if needed from the intermediary values.
 
-				Map<BindingSetKey, Entry> entries = new LinkedHashMap<>();
+				Map<BindingSetKey, Entry> entries = cf.createGroupByMap();
 				// Make an optimized hash function valid during this query evaluation step.
 				ToIntFunction<BindingSet> hashMaker = cf.hashOfBindingSetFuntion(getValues);
 				while (iter.hasNext()) {
@@ -384,8 +364,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		private final Supplier<T> makeAggregateCollector;
 
 		public AggregatePredicateCollectorSupplier(AggregateFunction<T, D> agg,
-				Supplier<Predicate<D>> makePotentialDistinctTest,
-				Supplier<T> makeAggregateCollector, String name) {
+				Supplier<Predicate<D>> makePotentialDistinctTest, Supplier<T> makeAggregateCollector, String name) {
 			super();
 			this.agg = agg;
 			this.makePotentialDistinctTest = makePotentialDistinctTest;
@@ -398,8 +377,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 	}
 
-	private static final Predicate<BindingSet> ALWAYS_TRUE_BINDING_SET = (t) -> true;
-	private static final Predicate<Value> ALWAYS_TRUE_VALUE = (t) -> true;
+	private static final Predicate<BindingSet> ALWAYS_TRUE_BINDING_SET = t -> true;
+	private static final Predicate<Value> ALWAYS_TRUE_VALUE = t -> true;
 	private static final Supplier<Predicate<Value>> ALWAYS_TRUE_VALUE_SUPPLIER = () -> ALWAYS_TRUE_VALUE;
 
 	private AggregatePredicateCollectorSupplier<?, ?> create(GroupElem ge, ValueFactory vf)
@@ -409,12 +388,10 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		if (operator instanceof Count) {
 			if (((Count) operator).getArg() == null) {
 				WildCardCountAggregate wildCardCountAggregate = new WildCardCountAggregate();
-				Supplier<Predicate<BindingSet>> potentialDistinctTest = operator.isDistinct()
-						? DistinctBindingSets::new
+				Supplier<Predicate<BindingSet>> potentialDistinctTest = operator.isDistinct() ? DistinctBindingSets::new
 						: () -> ALWAYS_TRUE_BINDING_SET;
 				return new AggregatePredicateCollectorSupplier<>(wildCardCountAggregate, potentialDistinctTest,
-						() -> new CountCollector(vf),
-						ge.getName());
+						() -> new CountCollector(vf), ge.getName());
 			} else {
 				QueryStepEvaluator f = new QueryStepEvaluator(
 						strategy.precompile(((Count) operator).getArg(), context));
@@ -473,8 +450,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			var function = factory.orElseThrow(
 					() -> new QueryEvaluationException("Unknown aggregate function '" + aggOperator.getIRI() + "'"))
 					.buildFunction(new QueryStepEvaluator(strategy.precompile(aggOperator.getArg(), context)));
-			return new AggregatePredicateCollectorSupplier<>(function, predicate,
-					() -> factory.get().getCollector(),
+			return new AggregatePredicateCollectorSupplier<>(function, predicate, () -> factory.get().getCollector(),
 					ge.getName());
 
 		}
@@ -702,8 +678,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 				if (v.isLiteral()) {
 					if (distinctValue.test(v)) {
 						Literal literal = (Literal) v;
-						CoreDatatype coreDatatype = literal.getCoreDatatype();
-						if (coreDatatype.isXSDDatatype() && ((CoreDatatype.XSD) coreDatatype).isNumericDatatype()) {
+						CoreDatatype.XSD coreDatatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+						if (coreDatatype != null && coreDatatype.isNumericDatatype()) {
 							sum.value = MathUtil.compute(sum.value, literal, MathOp.PLUS);
 						} else {
 							sum.setTypeError(new ValueExprEvaluationException("not a number: " + v));
@@ -736,8 +712,9 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 				if (v instanceof Literal) {
 					Literal nextLiteral = (Literal) v;
 					// check if the literal is numeric.
-					if (nextLiteral.getDatatype() != null
-							&& XMLDatatypeUtil.isNumericDatatype(nextLiteral.getDatatype())) {
+					CoreDatatype.XSD datatype = nextLiteral.getCoreDatatype().asXSDDatatypeOrNull();
+
+					if (datatype != null && datatype.isNumericDatatype()) {
 						avg.sum = MathUtil.compute(avg.sum, nextLiteral, MathOp.PLUS);
 					} else {
 						avg.setTypeError(new ValueExprEvaluationException("not a number: " + v));

@@ -33,6 +33,11 @@ public class InsertData extends AbstractQueryModelNode implements UpdateExpr {
 		// no-op
 	}
 
+	@Override
+	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+		throw new IllegalArgumentException("Node is not a child node: " + current);
+	}
+
 	public String getDataBlock() {
 		return dataBlock;
 	}

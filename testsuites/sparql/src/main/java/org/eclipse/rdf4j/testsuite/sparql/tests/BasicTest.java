@@ -10,10 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.sparql.tests;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -24,9 +25,11 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.AbstractTupleQueryResultHandler;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
 import org.eclipse.rdf4j.testsuite.sparql.vocabulary.EX;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
 
 /**
  * Basic SPARQL functionality tests
@@ -36,8 +39,11 @@ import org.junit.Test;
  */
 public class BasicTest extends AbstractComplianceTest {
 
-	@Test
-	public void testIdenticalVariablesInStatementPattern() {
+	public BasicTest(Supplier<Repository> repo) {
+		super(repo);
+	}
+
+	private void testIdenticalVariablesInStatementPattern(RepositoryConnection conn) {
 		conn.add(EX.ALICE, DC.PUBLISHER, EX.BOB);
 
 		String queryBuilder = "SELECT ?publisher " +
@@ -53,8 +59,14 @@ public class BasicTest extends AbstractComplianceTest {
 				});
 	}
 
-	@Test
-	public void testIdenticalVariablesSubjectContextInStatementPattern() {
+	public Stream<DynamicTest> tests() {
+		return Stream.of(
+				makeTest("testIdenticalVariablesInStatementPattern", this::testIdenticalVariablesInStatementPattern),
+				makeTest("testIdenticalVariablesInStatementPattern",
+						this::testIdenticalVariablesSubjectContextInStatementPattern));
+	}
+
+	private void testIdenticalVariablesSubjectContextInStatementPattern(RepositoryConnection conn) {
 		conn.add(EX.ALICE, FOAF.KNOWS, EX.BOB, EX.ALICE);
 		conn.add(EX.ALICE, RDF.TYPE, FOAF.PERSON, EX.ALICE);
 		conn.add(EX.ALICE, FOAF.KNOWS, EX.A, EX.BOB);

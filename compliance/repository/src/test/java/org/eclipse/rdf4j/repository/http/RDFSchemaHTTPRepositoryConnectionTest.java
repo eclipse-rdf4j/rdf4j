@@ -56,7 +56,7 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Override
-	public void testTransactionIsolation(IsolationLevel level) throws Exception {
+	public void testTransactionIsolation(IsolationLevel level) {
 		System.err.println("temporarily disabled testTransactionIsolation() for HTTPRepository");
 	}
 
@@ -64,7 +64,7 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Override
-	public void testAutoCommit(IsolationLevel level) throws Exception {
+	public void testAutoCommit(IsolationLevel level) {
 		System.err.println("temporarily disabled testAutoCommit() for HTTPRepository");
 	}
 
@@ -72,7 +72,7 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Override
-	public void testRollback(IsolationLevel level) throws Exception {
+	public void testRollback(IsolationLevel level) {
 		System.err.println("temporarily disabled testRollback() for HTTPRepository");
 	}
 
@@ -80,7 +80,7 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Override
-	public void testEmptyCommit(IsolationLevel level) throws Exception {
+	public void testEmptyCommit(IsolationLevel level) {
 		System.err.println("temporarily disabled testEmptyCommit() for HTTPRepository");
 	}
 
@@ -88,7 +88,7 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Override
-	public void testEmptyRollback(IsolationLevel level) throws Exception {
+	public void testEmptyRollback(IsolationLevel level) {
 		System.err.println("temporarily disabled testEmptyRollback() for HTTPRepository");
 	}
 
@@ -96,7 +96,7 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Override
-	public void testSizeCommit(IsolationLevel level) throws Exception {
+	public void testSizeCommit(IsolationLevel level) {
 		System.err.println("temporarily disabled testSizeCommit() for HTTPRepository");
 	}
 
@@ -104,7 +104,7 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Override
-	public void testSizeRollback(IsolationLevel level) throws Exception {
+	public void testSizeRollback(IsolationLevel level) {
 		System.err.println("temporarily disabled testSizeRollback() for HTTPRepository");
 	}
 
@@ -112,7 +112,7 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Override
-	public void testGetContextIDs(IsolationLevel level) throws Exception {
+	public void testGetContextIDs(IsolationLevel level) {
 		System.err.println("temporarily disabled testGetContextIDs() for HTTPRepository");
 	}
 
@@ -120,7 +120,7 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Override
-	public void testInferencerQueryDuringTransaction(IsolationLevel level) throws Exception {
+	public void testInferencerQueryDuringTransaction(IsolationLevel level) {
 		System.err.println("temporarily disabled testInferencerDuringTransaction() for HTTPRepository");
 	}
 
@@ -128,7 +128,7 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Override
-	public void testInferencerTransactionIsolation(IsolationLevel level) throws Exception {
+	public void testInferencerTransactionIsolation(IsolationLevel level) {
 		System.err.println("temporarily disabled testInferencerTransactionIsolation() for HTTPRepository");
 	}
 
@@ -150,7 +150,7 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Disabled
-	public void testQueryDefaultGraph(IsolationLevel level) throws Exception {
+	public void testQueryDefaultGraph(IsolationLevel level) {
 		// ignore - schema caching inferencer uses different context handling
 	}
 
@@ -158,7 +158,7 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Disabled
-	public void testDeleteDefaultGraph(IsolationLevel level) throws Exception {
+	public void testDeleteDefaultGraph(IsolationLevel level) {
 		// ignore - schema caching inferencer uses different context handling
 	}
 
@@ -166,7 +166,7 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Disabled
-	public void testContextStatementsNotDuplicated(IsolationLevel level) throws Exception {
+	public void testContextStatementsNotDuplicated(IsolationLevel level) {
 		// ignore - schema caching inferencer uses different context handling
 	}
 
@@ -174,7 +174,7 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	@ParameterizedTest
 	@MethodSource("parameters")
 	@Disabled
-	public void testContextStatementsNotDuplicated2(IsolationLevel level) throws Exception {
+	public void testContextStatementsNotDuplicated2(IsolationLevel level) {
 		// ignore - schema caching inferencer uses different context handling
 	}
 
@@ -182,7 +182,7 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	@MethodSource("parameters")
 	@Override
 	@Disabled("See SES-1833")
-	public void testAddMalformedLiteralsStrictConfig(IsolationLevel level) throws Exception {
+	public void testAddMalformedLiteralsStrictConfig(IsolationLevel level) {
 		System.err.println("SES-1833: temporarily disabled testAddMalformedLiteralsStrictConfig() for HTTPRepository");
 	}
 

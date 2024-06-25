@@ -79,12 +79,12 @@ class HDTTriplesSectionBitmap extends HDTTriplesSection {
 	}
 
 	@Override
-	protected void parse(InputStream is) throws IOException {
+	void parse(InputStream is) throws IOException {
 		parse(is, HDTTriples.Order.SPO);
 	}
 
 	@Override
-	protected void parse(InputStream is, HDTTriples.Order order) throws IOException {
+	void parse(InputStream is, HDTTriples.Order order) throws IOException {
 		bitmapY = new HDTBitmap();
 		bitmapY.parse(is);
 		sizeY = bitmapY.size();

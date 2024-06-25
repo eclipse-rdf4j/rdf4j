@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
-import java.io.IOException;
-
 /**
  * Abstraction of console commands.
  *
@@ -22,9 +20,8 @@ public interface Command {
 	 * Execute the given parameters.
 	 *
 	 * @param parameters parameters typed by user
-	 * @throws IOException if a problem occurs reading or writing
 	 */
-	void execute(String... parameters) throws IOException;
+	void execute(String... parameters);
 
 	/**
 	 * Return the names of the settings used.

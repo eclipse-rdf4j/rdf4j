@@ -10,10 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.sparql.tests;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -21,8 +23,10 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
 
 /**
  * Tests on SPARQL nested SELECT query handling.
@@ -31,8 +35,11 @@ import org.junit.Test;
  */
 public class SubselectTest extends AbstractComplianceTest {
 
-	@Test
-	public void testSES2373SubselectOptional() {
+	public SubselectTest(Supplier<Repository> repo) {
+		super(repo);
+	}
+
+	private void testSES2373SubselectOptional(RepositoryConnection conn) {
 		conn.prepareUpdate(QueryLanguage.SPARQL,
 				"insert data {" + "<u:1> <u:r> <u:subject> ." + "<u:1> <u:v> 1 ." + "<u:1> <u:x> <u:x1> ."
 						+ "<u:2> <u:r> <u:subject> ." + "<u:2> <u:v> 2 ." + "<u:2> <u:x> <u:x2> ."
@@ -49,14 +56,13 @@ public class SubselectTest extends AbstractComplianceTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb);
 		try (TupleQueryResult result = tq.evaluate()) {
-			assertTrue("The query should return a result", result.hasNext());
+			assertTrue(result.hasNext(), "The query should return a result");
 			BindingSet b = result.next();
-			assertTrue("?x is from the mandatory part of the query and should be bound", b.hasBinding("x"));
+			assertTrue(b.hasBinding("x"), "?x is from the mandatory part of the query and should be bound");
 		}
 	}
 
-	@Test
-	public void testSES2154SubselectOptional() {
+	private void testSES2154SubselectOptional(RepositoryConnection conn) {
 
 		String ub = "insert data { \n" +
 				" <urn:s1> a <urn:C> .  \n" +
@@ -101,15 +107,20 @@ public class SubselectTest extends AbstractComplianceTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb);
 		try (TupleQueryResult evaluate = tq.evaluate()) {
-			assertTrue("The query should return a result", evaluate.hasNext());
+			assertTrue(evaluate.hasNext(), "The query should return a result");
 
 			List<BindingSet> result = QueryResults.asList(evaluate);
 			assertEquals(10, result.size());
 			for (BindingSet bs : result) {
 				Literal label = (Literal) bs.getValue("label");
-				assertTrue("wrong label value (expected '01' or '02', but got '" + label.stringValue() + "')",
-						label.stringValue().equals("01") || label.stringValue().equals("02"));
+				assertTrue(label.stringValue().equals("01") || label.stringValue().equals("02"),
+						"wrong label value (expected '01' or '02', but got '" + label.stringValue() + "')");
 			}
 		}
+	}
+
+	public Stream<DynamicTest> tests() {
+		return Stream.of(makeTest("SES2373SubselectOptional", this::testSES2373SubselectOptional),
+				makeTest("SES2154SubselectOptional", this::testSES2154SubselectOptional));
 	}
 }

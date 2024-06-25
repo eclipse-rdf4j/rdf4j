@@ -11,7 +11,6 @@
 
 package org.eclipse.rdf4j.benchmark.rio;
 
-import java.io.IOException;
 import java.io.OutputStream;
 import java.util.concurrent.TimeUnit;
 
@@ -73,7 +72,7 @@ public class WriterBenchmark {
 	private Model model;
 
 	@Setup(Level.Trial)
-	public void setup() throws IOException {
+	public void setup() {
 		writerFormat = Rio.getWriterFormatForFileName("dummy." + format).orElseThrow();
 
 		model = new LinkedHashModel();

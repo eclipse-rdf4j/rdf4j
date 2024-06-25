@@ -5,18 +5,18 @@ PREFIX s:            <http://schema.org/>
 PREFIX vaem:         <http://www.linkedmodel.org/schema/vaem#>
 
 INSERT DATA {
-<urn:uuid:1111aaaa>
-    dtype:hasMember   <urn:uuid:tnxa92342>, <urn:uuid:9009009009> ;
+<urn:uuid2:1111aaaa>
+    dtype:hasMember   <urn:uuid2:tnxa92342>, <urn:uuid2:9009009009> ;
     a                 mms:EnumerationType ;
     mms:allowMultiple false .
 
-<urn:uuid:tnxa92342>
+<urn:uuid2:tnxa92342>
     s:description "first value" ;
-    dtype:value   <urn:uuid:3333ccccc> ;
+    dtype:value   <urn:uuid2:3333ccccc> ;
     vaem:name     "one" .
 
-<urn:uuid:9009009009>
+<urn:uuid2:9009009009>
     s:description "second value" ;
-    dtype:value   <urn:uuid:2222bbbb> ;
+    dtype:value   <urn:uuid2:2222bbbb> ;
     vaem:name     "two" .
 }

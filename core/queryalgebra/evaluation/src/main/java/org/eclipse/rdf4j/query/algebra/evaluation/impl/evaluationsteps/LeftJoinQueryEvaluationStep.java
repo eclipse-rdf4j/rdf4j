@@ -15,7 +15,6 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -61,34 +60,6 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		return new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin, optionalVarCollector.getVarNames());
 	}
 
-	@Deprecated(forRemoval = true, since = "4.1.0")
-	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,
-			QueryEvaluationStep left, LeftJoin leftJoin,
-			org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector optionalVarCollector) {
-		this.right = right;
-		this.condition = condition;
-		this.left = left;
-		this.leftJoin = leftJoin;
-		// This is used to determine if the left join is well designed.
-
-		Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
-		Set<String> optionalVars = optionalVarCollector.getVarNames();
-
-		boolean optionalVarsContainLeftBindingName = false;
-		for (String leftBindingName : leftBindingNames) {
-			if (!optionalVarsContainLeftBindingName && optionalVars.contains(leftBindingName)) {
-				optionalVars = new HashSet<>(optionalVars);
-				optionalVarsContainLeftBindingName = true;
-			}
-			if (optionalVarsContainLeftBindingName) {
-				optionalVars.remove(leftBindingName);
-			}
-		}
-
-		this.optionalVars = optionalVars;
-
-	}
-
 	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,
 			QueryEvaluationStep left, LeftJoin leftJoin, Set<String> optionalVars) {
 		this.right = right;
@@ -118,7 +89,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 
 		boolean containsNone = true;
 		Set<String> bindingNames = bindings.getBindingNames();
@@ -132,7 +103,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		if (containsNone) {
 			// left join is "well designed"
 			leftJoin.setAlgorithm(LeftJoinIterator.class.getSimpleName());
-			return new LeftJoinIterator(left, right, condition, bindings, leftJoin.getBindingNames());
+			return LeftJoinIterator.getInstance(left, right, condition, bindings, leftJoin.getBindingNames());
 		} else {
 			Set<String> problemVars = new HashSet<>(optionalVars);
 			problemVars.retainAll(bindings.getBindingNames());

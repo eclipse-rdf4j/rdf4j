@@ -49,12 +49,12 @@ import org.junit.jupiter.api.io.TempDir;
 public abstract class EvaluationStrategyTest {
 
 	@BeforeAll
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
 	@AfterAll
-	public static void afterClass() throws Exception {
+	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
@@ -73,10 +73,9 @@ public abstract class EvaluationStrategyTest {
 	private IRI s2 = iri("urn:s2");
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		manager = RepositoryProvider.getRepositoryManager(tempDir);
 
 		BaseSailConfig strictStoreConfig = getBaseSailConfig();

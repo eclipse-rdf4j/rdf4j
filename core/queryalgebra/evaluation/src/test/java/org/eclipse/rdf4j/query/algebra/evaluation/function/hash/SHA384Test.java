@@ -18,10 +18,9 @@ import org.junit.jupiter.api.BeforeEach;
 public class SHA384Test extends HashFunctionTest {
 
 	/**
-	 * @throws java.lang.Exception
 	 */
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		setHashFunction(new SHA384());
 		setToHash("abc");
 		setExpectedDigest(

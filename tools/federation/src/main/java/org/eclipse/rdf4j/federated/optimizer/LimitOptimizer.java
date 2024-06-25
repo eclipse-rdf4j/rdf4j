@@ -65,6 +65,18 @@ public class LimitOptimizer extends AbstractSimpleQueryModelVisitor<Optimization
 			applicableLimitInScope = node.getLimit();
 		}
 		super.meet(node);
+
+		TupleExpr expr = node.getArg();
+		// if the top most element is a statement (e.g. for an ASK query with single statement pattern),
+		// i.e. no join, union or
+		// any other complex pattern, we can push the limit
+		// => this case typically represents a query with a single BGP
+		if (expr instanceof FedXStatementPattern) {
+			if (applicableLimitInScope > 0) {
+				pushLimit((FedXStatementPattern) expr, applicableLimitInScope);
+			}
+		}
+
 		applicableLimitInScope = -1;
 
 	}

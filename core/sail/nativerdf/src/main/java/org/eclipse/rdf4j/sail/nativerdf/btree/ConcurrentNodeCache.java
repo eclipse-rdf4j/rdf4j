@@ -19,6 +19,8 @@ import org.eclipse.rdf4j.sail.nativerdf.ConcurrentCache;
 
 class ConcurrentNodeCache extends ConcurrentCache<Integer, Node> {
 
+	private final static int CONCURRENCY = Runtime.getRuntime().availableProcessors();
+
 	private final Function<Integer, Node> reader;
 
 	private static final Consumer<Node> writeNode = node -> {
@@ -38,10 +40,10 @@ class ConcurrentNodeCache extends ConcurrentCache<Integer, Node> {
 	}
 
 	public void flush() {
-		cache.forEachValue(Long.MAX_VALUE, writeNode);
+		cache.forEachValue(CONCURRENCY, writeNode);
 	}
 
-	public void put(Node node) throws IOException {
+	public void put(Node node) {
 		cache.put(node.getID(), node);
 	}
 

@@ -37,13 +37,13 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
  */
 class HDTHeader extends HDTPart {
 
-	protected final static byte[] HEADER_FORMAT = "ntriples".getBytes(StandardCharsets.US_ASCII);
-	protected final static String HEADER_LENGTH = "length";
+	final static byte[] HEADER_FORMAT = "ntriples".getBytes(StandardCharsets.US_ASCII);
+	final static String HEADER_LENGTH = "length";
 
 	private byte[] headerData;
 
 	@Override
-	protected void parse(InputStream is) throws IOException {
+	void parse(InputStream is) throws IOException {
 		// don't close CheckedInputStream, as it will close the underlying inputstream
 		try (UncloseableInputStream uis = new UncloseableInputStream(is);
 				CheckedInputStream cis = new CheckedInputStream(uis, new CRC16())) {
@@ -63,7 +63,7 @@ class HDTHeader extends HDTPart {
 	 *
 	 * @return byte array
 	 */
-	protected byte[] getHeaderData() {
+	byte[] getHeaderData() {
 		return headerData;
 	}
 
@@ -75,7 +75,7 @@ class HDTHeader extends HDTPart {
 	 * @throws IOException
 	 */
 	private byte[] parseHeaderData(InputStream is, int len) throws IOException {
-		byte b[] = new byte[len];
+		byte[] b = new byte[len];
 		is.read(b);
 		return b;
 	}

@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -32,8 +33,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
-@Deprecated(since = "4.1.0")
-public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationException> {
+public class FilterIterator extends FilterIteration<BindingSet> {
 
 	private final QueryValueEvaluationStep condition;
 	private final EvaluationStrategy strategy;
@@ -64,8 +64,8 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 	 * Constructors *
 	 *--------------*/
 
-	public FilterIterator(Filter filter, CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			QueryValueEvaluationStep condition, EvaluationStrategy strategy) throws QueryEvaluationException {
+	public FilterIterator(Filter filter, CloseableIteration<BindingSet> iter, QueryValueEvaluationStep condition,
+			EvaluationStrategy strategy) throws QueryEvaluationException {
 		super(iter);
 		this.condition = condition;
 		this.strategy = strategy;
@@ -80,7 +80,7 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 		}
 	}
 
-	private FilterIterator(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	private FilterIterator(CloseableIteration<BindingSet> iter,
 			QueryValueEvaluationStep condition, EvaluationStrategy strategy, Function<BindingSet, BindingSet> retain)
 			throws QueryEvaluationException {
 		super(iter);
@@ -144,6 +144,11 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 		} else {
 			return isPartOfSubQuery(parent);
 		}
+	}
+
+	@Override
+	protected void handleClose() {
+
 	}
 
 }

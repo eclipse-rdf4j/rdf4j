@@ -100,7 +100,7 @@ public abstract class AbstractQueryResultIOBooleanTest extends AbstractQueryResu
 	}
 
 	@Test
-	public final void testInvalidBooleanAfterStartQueryResult() throws Exception {
+	public final void testInvalidBooleanAfterStartQueryResult() {
 		doInvalidBooleanAfterStartQueryResult(getBooleanFormat(), true,
 				Arrays.asList("info", "alternate", "other", "another"));
 		doInvalidBooleanAfterStartQueryResult(getBooleanFormat(), false,

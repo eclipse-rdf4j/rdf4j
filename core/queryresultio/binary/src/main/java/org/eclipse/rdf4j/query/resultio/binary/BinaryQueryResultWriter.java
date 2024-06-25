@@ -174,7 +174,7 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 		}
 
 		try {
-			if (bindingSet.size() == 0) {
+			if (bindingSet.isEmpty()) {
 				writeEmptyRow();
 			} else {
 				for (String bindingName : bindingNames) {

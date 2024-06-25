@@ -47,12 +47,12 @@ import org.slf4j.LoggerFactory;
 public class IsolationLevelTest {
 
 	@BeforeClass
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
 	@AfterClass
-	public static void afterClass() throws Exception {
+	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
@@ -79,7 +79,7 @@ public class IsolationLevelTest {
 	}
 
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		store.shutDown();
 	}
 
@@ -97,12 +97,12 @@ public class IsolationLevelTest {
 	}
 
 	@Test
-	public void testNone() throws Exception {
+	public void testNone() {
 		readPending(IsolationLevels.NONE);
 	}
 
 	@Test
-	public void testReadUncommitted() throws Exception {
+	public void testReadUncommitted() {
 		rollbackTriple(IsolationLevels.READ_UNCOMMITTED);
 		readPending(IsolationLevels.READ_UNCOMMITTED);
 	}
@@ -306,7 +306,7 @@ public class IsolationLevelTest {
 				insertTestStatement(con, i);
 			}
 			int counter = 0;
-			try (CloseableIteration<? extends Statement, RepositoryException> stmts = con.getStatements(null, null,
+			try (CloseableIteration<? extends Statement> stmts = con.getStatements(null, null,
 					null, false)) {
 				while (stmts.hasNext()) {
 					Statement st = stmts.next();
@@ -461,7 +461,7 @@ public class IsolationLevelTest {
 
 	protected long count(RepositoryConnection con, Resource subj, IRI pred, Value obj, boolean includeInferred,
 			Resource... contexts) throws RepositoryException {
-		try (CloseableIteration<Statement, RepositoryException> stmts = con.getStatements(subj, pred, obj,
+		try (CloseableIteration<Statement> stmts = con.getStatements(subj, pred, obj,
 				includeInferred, contexts)) {
 			long counter = 0;
 			while (stmts.hasNext()) {
@@ -473,7 +473,7 @@ public class IsolationLevelTest {
 	}
 
 	protected Literal readLiteral(RepositoryConnection con, final IRI subj, final IRI pred) throws RepositoryException {
-		try (CloseableIteration<? extends Statement, RepositoryException> stmts = con.getStatements(subj, pred, null,
+		try (CloseableIteration<? extends Statement> stmts = con.getStatements(subj, pred, null,
 				false)) {
 			if (!stmts.hasNext()) {
 				return null;

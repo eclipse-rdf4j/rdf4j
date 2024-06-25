@@ -10,14 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
-import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IntersectIteration;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 
 /**
@@ -27,17 +26,28 @@ public class IntersectionQueryEvaluationStep implements QueryEvaluationStep {
 
 	private final QueryEvaluationStep leftArg;
 	private final Function<BindingSet, DelayedEvaluationIteration> rightArgDelayed;
-	private final Supplier<Set<BindingSet>> setMaker;
+	private final Supplier<CollectionFactory> cfs;
 
 	public IntersectionQueryEvaluationStep(QueryEvaluationStep leftArg, QueryEvaluationStep rightArg,
-			Supplier<Set<BindingSet>> setMaker) {
-		this.setMaker = setMaker;
+			Supplier<CollectionFactory> cfs) {
+		this.cfs = cfs;
 		this.leftArg = leftArg;
 		rightArgDelayed = bs -> new DelayedEvaluationIteration(rightArg, bs);
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-		return new IntersectIteration<>(leftArg.evaluate(bs), rightArgDelayed.apply(bs), setMaker);
+	public CloseableIteration<BindingSet> evaluate(BindingSet bs) {
+		CollectionFactory cf = cfs.get();
+		return new IntersectIteration<>(leftArg.evaluate(bs), rightArgDelayed.apply(bs), cf::createSetOfBindingSets) {
+			@Override
+			protected void handleClose() {
+				try {
+					cf.close();
+				} finally {
+					super.handleClose();
+				}
+			}
+		};
 	}
+
 }

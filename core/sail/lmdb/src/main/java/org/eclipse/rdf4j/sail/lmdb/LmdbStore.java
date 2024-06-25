@@ -18,10 +18,11 @@ import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
-import org.eclipse.rdf4j.collection.factory.mapdb.MapDbCollectionFactory;
+import org.eclipse.rdf4j.collection.factory.mapdb.MapDb3CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockManager;
@@ -250,11 +251,13 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				FileUtils.writeStringToFile(versionFile, VERSION, StandardCharsets.UTF_8);
 			}
 			backingStore = new LmdbSailStore(dataDir, config);
-			this.store = new SnapshotSailStore(backingStore, () -> new MemoryOverflowModel() {
+			this.store = new SnapshotSailStore(backingStore, () -> new MemoryOverflowModel(false) {
 				@Override
-				protected SailStore createSailStore(File dataDir) throws IOException, SailException {
+				protected LmdbSailStore createSailStore(File dataDir) throws IOException, SailException {
 					// Model can't fit into memory, use another LmdbSailStore to store delta
-					return new LmdbSailStore(dataDir, config);
+					LmdbSailStore lmdbSailStore = new LmdbSailStore(dataDir, config);
+					lmdbSailStore.enableMultiThreading = false;
+					return lmdbSailStore;
 				}
 			}) {
 
@@ -307,10 +310,13 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			File dataDir = getDataDir();
 			if (dataDir != null) {
 				try {
-					Files.walk(dataDir.toPath())
-							.map(Path::toFile)
-							.sorted(Comparator.reverseOrder()) // delete files before directory
-							.forEach(File::delete);
+					try (Stream<Path> walk = Files.walk(dataDir.toPath())) {
+						walk
+								.map(Path::toFile)
+								.sorted(Comparator.reverseOrder()) // delete files before directory
+								.forEach(File::delete);
+					}
+
 				} catch (IOException ioe) {
 					logger.error("Could not delete temp file " + dataDir);
 				}
@@ -335,11 +341,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	@Override
 	protected NotifyingSailConnection getConnectionInternal() throws SailException {
-		try {
-			return new LmdbStoreConnection(this);
-		} catch (IOException e) {
-			throw new SailException(e);
-		}
+		return new LmdbStoreConnection(this);
 	}
 
 	@Override
@@ -397,13 +399,14 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return backingStore;
 	}
 
-	private boolean upgradeStore(File dataDir, String version) throws IOException, SailException {
+	private boolean upgradeStore(File dataDir, String version) throws SailException {
 		// nothing to do, just update version number
 		return true;
 	}
 
 	@Override
 	public Supplier<CollectionFactory> getCollectionFactory() {
-		return () -> new MapDbCollectionFactory(getIterationCacheSyncThreshold());
+		return () -> new MapDb3CollectionFactory(getIterationCacheSyncThreshold());
 	}
+
 }

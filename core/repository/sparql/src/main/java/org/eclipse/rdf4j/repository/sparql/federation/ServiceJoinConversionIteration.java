@@ -26,13 +26,11 @@ import org.eclipse.rdf4j.repository.sparql.query.SPARQLQueryBindingSet;
  *
  * @author Andreas Schwarte
  */
-@Deprecated(since = "4.1.0")
-public class ServiceJoinConversionIteration
-		extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
+public class ServiceJoinConversionIteration extends ConvertingIteration<BindingSet, BindingSet> {
 
 	protected final List<BindingSet> bindings;
 
-	public ServiceJoinConversionIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public ServiceJoinConversionIteration(CloseableIteration<BindingSet> iter,
 			List<BindingSet> bindings) {
 		super(iter);
 		this.bindings = bindings;

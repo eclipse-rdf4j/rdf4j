@@ -66,4 +66,10 @@ public interface SourceSelectionCache {
 	 * @param hasStatements
 	 */
 	void updateInformation(SubQuery subQuery, Endpoint endpoint, boolean hasStatements);
+
+	/**
+	 * Invalidate the underlying cache
+	 */
+	void invalidate();
+
 }

@@ -14,12 +14,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.model.util.Statements.statement;
 import static org.eclipse.rdf4j.model.util.Values.iri;
 import static org.eclipse.rdf4j.model.util.Values.literal;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.io.StringReader;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -30,9 +33,13 @@ import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
-import org.junit.Test;
+import org.junit.jupiter.api.DynamicTest;
 
 /**
  * Tests on SPARQL CONSTRUCT queries.
@@ -42,9 +49,12 @@ import org.junit.Test;
  */
 public class ConstructTest extends AbstractComplianceTest {
 
-	@Test
-	public void testConstructModifiers() throws Exception {
-		loadTestData("/testdata-query/dataset-construct-modifiers.ttl");
+	public ConstructTest(Supplier<Repository> repo) {
+		super(repo);
+	}
+
+	private void testConstructModifiers(RepositoryConnection conn) throws Exception {
+		loadTestData("/testdata-query/dataset-construct-modifiers.ttl", conn);
 		String qry = "PREFIX foaf: <http://xmlns.com/foaf/0.1/> \n"
 				+ "PREFIX site: <http://example.org/stats#> \n"
 				+ "CONSTRUCT { \n"
@@ -86,8 +96,8 @@ public class ConstructTest extends AbstractComplianceTest {
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/3011
 	 */
-	@Test
-	public void testConstruct_CyclicPathWithJoin() {
+
+	private void testConstruct_CyclicPathWithJoin(RepositoryConnection conn) {
 		IRI test = iri("urn:test"), a = iri("urn:a"), b = iri("urn:b"), c = iri("urn:c");
 		conn.add(test, RDF.TYPE, DCAT.CATALOG);
 
@@ -107,8 +117,8 @@ public class ConstructTest extends AbstractComplianceTest {
 		assertThat(result.contains(test, c, test)).isTrue();
 	}
 
-	@Test
-	public void testSES2104ConstructBGPSameURI() throws Exception {
+	private void testSES2104ConstructBGPSameURI(RepositoryConnection conn)
+			throws RDFParseException, RepositoryException, IOException {
 		final String queryStr = "PREFIX : <urn:> CONSTRUCT {:x :p :x } WHERE {} ";
 
 		conn.add(new StringReader("@prefix : <urn:> . :a :p :b . "), "", RDFFormat.TURTLE);
@@ -124,5 +134,11 @@ public class ConstructTest extends AbstractComplianceTest {
 			assertFalse(result.isEmpty());
 			assertTrue(result.contains(x, p, x));
 		}
+	}
+
+	public Stream<DynamicTest> tests() {
+		return Stream.of(makeTest("ConstructModifiers", this::testConstructModifiers),
+				makeTest("SES2104ConstructBGPSameURI", this::testSES2104ConstructBGPSameURI),
+				makeTest("Construct_CyclicPathWithJoin", this::testConstruct_CyclicPathWithJoin));
 	}
 }

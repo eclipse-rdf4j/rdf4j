@@ -65,7 +65,7 @@ public class TargetClass extends Target {
 		if (targetClass.size() == 1) {
 			Resource clazz = targetClass.stream().findAny().get();
 			planNode = new UnorderedSelect(connection, null, RDF.TYPE, clazz,
-					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope));
+					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope), null);
 		} else {
 			planNode = new Select(connection,
 					SparqlFragment.bgp(Set.of(),
@@ -87,7 +87,7 @@ public class TargetClass extends Target {
 					.collect(Collectors.toSet());
 		}
 
-		assert targets.size() >= 1;
+		assert !targets.isEmpty();
 
 		return targets.stream()
 				.map(r -> "<" + r + ">")

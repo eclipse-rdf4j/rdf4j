@@ -49,7 +49,7 @@ public abstract class OptimisticIsolationTest {
 	}
 
 	@AfterClass
-	public static void afterClass() throws Exception {
+	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 

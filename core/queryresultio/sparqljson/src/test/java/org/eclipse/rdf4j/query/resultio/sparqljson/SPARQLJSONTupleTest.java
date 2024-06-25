@@ -309,7 +309,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 	}
 
 	@Test
-	public void testRDFStar_extendedFormatRDF4J_incompleteTriple() throws Exception {
+	public void testRDFStar_extendedFormatRDF4J_incompleteTriple() {
 		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
 		parser.setQueryResultHandler(handler);
@@ -322,7 +322,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 	}
 
 	@Test
-	public void testRDFStar_extendedFormatRDF4J_doubleSubject() throws Exception {
+	public void testRDFStar_extendedFormatRDF4J_doubleSubject() {
 		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
 		parser.setQueryResultHandler(handler);

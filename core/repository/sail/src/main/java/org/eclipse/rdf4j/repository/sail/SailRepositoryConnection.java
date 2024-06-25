@@ -153,7 +153,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	public void begin() throws RepositoryException {
 		try {
 			// always call receiveTransactionSettings(...) before calling begin();
-			sailConnection.setTransactionSettings(new TransactionSetting[0]);
+			sailConnection.setTransactionSettings();
 
 			if (getIsolationLevel() != null) {
 				sailConnection.begin(getIsolationLevel());
@@ -169,7 +169,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	public void begin(IsolationLevel level) throws RepositoryException {
 		try {
 			// always call receiveTransactionSettings(...) before calling begin();
-			sailConnection.setTransactionSettings(new TransactionSetting[0]);
+			sailConnection.setTransactionSettings();
 
 			if (level != null) {
 				sailConnection.begin(level);
@@ -349,7 +349,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 			Resource... contexts) throws RepositoryException {
 		Objects.requireNonNull(contexts,
 				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
-		CloseableIteration<? extends Statement, SailException> statements = null;
+		CloseableIteration<? extends Statement> statements = null;
 		try {
 			statements = sailConnection.getStatements(subj, pred, obj, includeInferred, contexts);
 			return createRepositoryResult(statements);
@@ -507,7 +507,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	/**
 	 * Wraps a CloseableIteration coming from a Sail in a RepositoryResult object, applying the required conversions
 	 */
-	protected <E> RepositoryResult<E> createRepositoryResult(CloseableIteration<? extends E, SailException> sailIter) {
+	protected <E> RepositoryResult<E> createRepositoryResult(CloseableIteration<? extends E> sailIter) {
 		return new RepositoryResult<>(new SailCloseableIteration<E>(sailIter));
 	}
 

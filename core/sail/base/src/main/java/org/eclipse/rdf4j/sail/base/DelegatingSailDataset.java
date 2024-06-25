@@ -10,7 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.Comparator;
+import java.util.Set;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -48,7 +52,7 @@ abstract class DelegatingSailDataset implements SailDataset {
 	}
 
 	@Override
-	public CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException {
+	public CloseableIteration<? extends Namespace> getNamespaces() throws SailException {
 		return delegate.getNamespaces();
 	}
 
@@ -58,19 +62,35 @@ abstract class DelegatingSailDataset implements SailDataset {
 	}
 
 	@Override
-	public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
+	public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
 		return delegate.getContextIDs();
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
+	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws SailException {
 		return delegate.getStatements(subj, pred, obj, contexts);
 	}
 
 	@Override
-	public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred,
+	public CloseableIteration<? extends Triple> getTriples(Resource subj, IRI pred,
 			Value obj) throws SailException {
 		return delegate.getTriples(subj, pred, obj);
+	}
+
+	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj, IRI pred,
+			Value obj, Resource... contexts) throws SailException {
+		return delegate.getStatements(statementOrder, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		return delegate.getSupportedOrders(subj, pred, obj, contexts);
+	}
+
+	@Override
+	public Comparator<Value> getComparator() {
+		return delegate.getComparator();
 	}
 }

@@ -39,7 +39,7 @@ public class NTriplesUtilTest {
 	private final ValueFactory f = SimpleValueFactory.getInstance();
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		appendable = new StringBuilder();
 	}
 

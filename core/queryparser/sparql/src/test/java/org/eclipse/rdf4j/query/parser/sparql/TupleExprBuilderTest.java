@@ -253,7 +253,7 @@ public class TupleExprBuilderTest {
 	}
 
 	@Test
-	public void testServiceGraphPatternChopping() throws Exception {
+	public void testServiceGraphPatternChopping() {
 
 		// just for construction
 		Service service = new Service(new Var(null, null, false, false), new SingletonSet(), "", null, null, false);

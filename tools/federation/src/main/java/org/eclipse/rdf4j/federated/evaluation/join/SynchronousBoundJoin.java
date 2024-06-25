@@ -36,7 +36,7 @@ public class SynchronousBoundJoin extends SynchronousJoin {
 	private static final Logger log = LoggerFactory.getLogger(SynchronousBoundJoin.class);
 
 	public SynchronousBoundJoin(FederationEvalStrategy strategy,
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
+			CloseableIteration<BindingSet> leftIter,
 			TupleExpr rightArg, BindingSet bindings, QueryInfo queryInfo)
 			throws QueryEvaluationException {
 		super(strategy, leftIter, rightArg, bindings, queryInfo);

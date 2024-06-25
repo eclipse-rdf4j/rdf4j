@@ -219,7 +219,7 @@ public class NTriplesUtil {
 			String triple = nTriplesTriple.substring(2);
 			int offset = 2;
 
-			while (triple.length() > 0 && Character.isWhitespace(triple.charAt(0))) {
+			while (!triple.isEmpty() && Character.isWhitespace(triple.charAt(0))) {
 				triple = triple.substring(1);
 				++offset;
 			}
@@ -277,7 +277,7 @@ public class NTriplesUtil {
 					}
 					object = v;
 				}
-				while (triple.length() > 0 && Character.isWhitespace(triple.charAt(0))) {
+				while (!triple.isEmpty() && Character.isWhitespace(triple.charAt(0))) {
 					triple = triple.substring(1);
 					++offset;
 				}

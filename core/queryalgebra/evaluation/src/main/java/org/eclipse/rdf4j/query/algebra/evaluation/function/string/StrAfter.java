@@ -59,7 +59,7 @@ public class StrAfter implements Function {
 				String substringAfter = "";
 				if (index > -1) {
 					index += substring.length() - 1;
-					substringAfter = lexicalValue.substring(index + 1, lexicalValue.length());
+					substringAfter = lexicalValue.substring(index + 1);
 				} else {
 					// no match, return empty string with no language or datatype
 					leftLanguage = Optional.empty();

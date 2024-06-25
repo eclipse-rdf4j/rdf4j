@@ -51,7 +51,7 @@ public abstract class SPARQLOperation implements Operation {
 		this.url = url;
 		this.operation = operation;
 		this.client = client;
-		boolean abs = base != null && base.length() > 0 && ParsedIRI.create(base).isAbsolute();
+		boolean abs = base != null && !base.isEmpty() && ParsedIRI.create(base).isAbsolute();
 		if (abs && !operation.toUpperCase().contains("BASE")) {
 			this.operation = "BASE <" + base + "> " + operation;
 		}
@@ -109,7 +109,7 @@ public abstract class SPARQLOperation implements Operation {
 	}
 
 	protected Set<String> getBindingNames() {
-		if (bindings.size() == 0) {
+		if (bindings.isEmpty()) {
 			return Collections.EMPTY_SET;
 		}
 		Set<String> names = new HashSet<>();
@@ -129,7 +129,7 @@ public abstract class SPARQLOperation implements Operation {
 	}
 
 	protected String getQueryString() {
-		if (bindings.size() == 0) {
+		if (bindings.isEmpty()) {
 			return operation;
 		}
 		String qry = operation;

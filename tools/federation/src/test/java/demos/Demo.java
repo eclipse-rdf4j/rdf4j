@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 
 public class Demo {
 
-	public static void main(String[] args) throws Exception {
+	public static void main(String[] args) {
 
 		File dataConfig = new File("local/dataSourceConfig.ttl");
 		FedXRepository repo = FedXFactory.createFederation(dataConfig);

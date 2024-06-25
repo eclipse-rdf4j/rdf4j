@@ -53,7 +53,7 @@ public class NamespacesController extends AbstractController {
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	public NamespacesController() throws ApplicationContextException {
-		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD, "DELETE" });
+		setSupportedMethods(METHOD_GET, METHOD_HEAD, "DELETE");
 	}
 
 	@Override
@@ -87,7 +87,7 @@ public class NamespacesController extends AbstractController {
 			try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
 				final ValueFactory vf = repositoryCon.getValueFactory();
 				try {
-					try (CloseableIteration<? extends Namespace, RepositoryException> iter = repositoryCon
+					try (CloseableIteration<? extends Namespace> iter = repositoryCon
 							.getNamespaces()) {
 						while (iter.hasNext()) {
 							Namespace ns = iter.next();

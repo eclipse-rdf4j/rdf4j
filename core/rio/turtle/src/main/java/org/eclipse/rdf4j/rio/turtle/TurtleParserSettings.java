@@ -30,7 +30,7 @@ public class TurtleParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.turtle.case_insensitive_directives}.
 	 */
-	public static final RioSetting<Boolean> CASE_INSENSITIVE_DIRECTIVES = new BooleanRioSetting(
+	public static final BooleanRioSetting CASE_INSENSITIVE_DIRECTIVES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.turtle.case_insensitive_directives",
 			"Allows case-insensitive directives to be recognised", Boolean.FALSE);
 
@@ -43,7 +43,7 @@ public class TurtleParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.turtle.accept_turtlestar}.
 	 */
-	public static final RioSetting<Boolean> ACCEPT_TURTLESTAR = new BooleanRioSetting(
+	public static final BooleanRioSetting ACCEPT_TURTLESTAR = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.turtle.accept_turtlestar",
 			"Allow processing of Turtle-star data by the standard Turtle parser",
 			Boolean.TRUE);

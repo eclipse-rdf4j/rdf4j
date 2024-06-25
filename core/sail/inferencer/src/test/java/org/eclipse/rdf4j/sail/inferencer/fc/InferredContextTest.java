@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
 
@@ -61,7 +60,7 @@ public class InferredContextTest {
 
 			assertTrue(connection.hasStatement(bNode, RDF.TYPE, RDFS.RESOURCE, true, context));
 
-			try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(bNode,
+			try (CloseableIteration<? extends Statement> statements = connection.getStatements(bNode,
 					RDF.TYPE, RDFS.RESOURCE, true)) {
 				while (statements.hasNext()) {
 					Statement next = statements.next();

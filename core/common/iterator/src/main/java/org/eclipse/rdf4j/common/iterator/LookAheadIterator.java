@@ -74,8 +74,6 @@ public abstract class LookAheadIterator<E> extends AbstractCloseableIterator<E> 
 
 	/**
 	 * Fetches the next element if it hasn't been fetched yet and stores it in {@link #nextElement}.
-	 *
-	 * @throws X
 	 */
 	private void lookAhead() {
 		if (nextElement == null && !isClosed()) {

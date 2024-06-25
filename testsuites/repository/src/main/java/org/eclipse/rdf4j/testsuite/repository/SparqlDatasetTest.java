@@ -37,12 +37,12 @@ import org.junit.jupiter.api.Test;
 public abstract class SparqlDatasetTest {
 
 	@BeforeAll
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
 	@AfterAll
-	public static void afterClass() throws Exception {
+	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
@@ -72,7 +72,7 @@ public abstract class SparqlDatasetTest {
 	private IRI ringo;
 
 	@Test
-	public void testNoFrom() throws Exception {
+	public void testNoFrom() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryNoFrom);
 		TupleQueryResult result = query.evaluate();
 
@@ -103,7 +103,7 @@ public abstract class SparqlDatasetTest {
 	}
 
 	@Test
-	public void testWithFrom() throws Exception {
+	public void testWithFrom() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryWithFrom);
 		TupleQueryResult result = query.evaluate();
 
@@ -134,7 +134,7 @@ public abstract class SparqlDatasetTest {
 	}
 
 	@BeforeEach
-	public void setUp() throws Exception {
+	public void setUp() {
 		repository = createRepository();
 		vf = repository.getValueFactory();
 		graph1 = vf.createIRI("http://example.org/graph1");
@@ -148,7 +148,7 @@ public abstract class SparqlDatasetTest {
 		dataset.addDefaultGraph(graph1);
 	}
 
-	protected Repository createRepository() throws Exception {
+	protected Repository createRepository() {
 		Repository repository = newRepository();
 		try (RepositoryConnection con = repository.getConnection()) {
 			con.clear();
@@ -157,10 +157,10 @@ public abstract class SparqlDatasetTest {
 		return repository;
 	}
 
-	protected abstract Repository newRepository() throws Exception;
+	protected abstract Repository newRepository();
 
 	@AfterEach
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		conn.close();
 		conn = null;
 
@@ -183,7 +183,7 @@ public abstract class SparqlDatasetTest {
 	}
 
 	@Test
-	public void testSelectAllIsSameAsCount() throws Exception {
+	public void testSelectAllIsSameAsCount() {
 		try (RepositoryConnection con = repository.getConnection()) {
 			TupleQuery tupleQuery = con.prepareTupleQuery(QueryLanguage.SPARQL, "SELECT ?s ?p ?o WHERE {?s ?p ?o}");
 			TupleQueryResult res = tupleQuery.evaluate();

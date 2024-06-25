@@ -142,7 +142,7 @@ public class RepositoryProvider {
 		}
 		int idx = url.lastIndexOf(REPOSITORIES);
 		String server = url.substring(0, idx);
-		if (server.length() == 0) {
+		if (server.isEmpty()) {
 			server = ".";
 		}
 		return getRepositoryManager(server);

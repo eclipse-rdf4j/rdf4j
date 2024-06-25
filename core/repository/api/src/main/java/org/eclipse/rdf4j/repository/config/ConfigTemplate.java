@@ -72,7 +72,7 @@ public class ConfigTemplate {
 			String[] tokensArray = group.substring(2, group.length() - 2).split("\\|");
 			List<String> tokens = Arrays.asList(tokensArray);
 			String var = tokens.get(0).trim();
-			if (var.length() == 0) {
+			if (var.isEmpty()) {
 				throw new IllegalArgumentException("Illegal template token: " + matcher.group());
 			}
 			if (!variableMap.containsKey(var)) {

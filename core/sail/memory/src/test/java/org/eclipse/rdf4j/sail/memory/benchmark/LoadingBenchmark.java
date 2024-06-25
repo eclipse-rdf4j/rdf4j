@@ -34,7 +34,6 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -273,7 +272,7 @@ public class LoadingBenchmark {
 
 			long counter = 0;
 			for (int i = 0; i < 10; i++) {
-				try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null,
+				try (CloseableIteration<? extends Statement> statements = connection.getStatements(null,
 						null, null, false)) {
 					counter += statements.next().toString().length();
 				}
@@ -299,7 +298,7 @@ public class LoadingBenchmark {
 
 			long count = 0;
 			for (int i = 0; i < 10; i++) {
-				try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null,
+				try (CloseableIteration<? extends Statement> statements = connection.getStatements(null,
 						null, null, false)) {
 					count += statements.next().toString().length();
 				}
