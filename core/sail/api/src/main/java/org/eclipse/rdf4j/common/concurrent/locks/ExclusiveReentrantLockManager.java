@@ -10,9 +10,8 @@
  ******************************************************************************/
 package org.eclipse.rdf4j.common.concurrent.locks;
 
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.StampedLock;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockCleaner;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockMonitoring;
@@ -30,12 +29,12 @@ public class ExclusiveReentrantLockManager {
 	private final static Logger logger = LoggerFactory.getLogger(ExclusiveReentrantLockManager.class);
 
 	// the underlying lock object
-	final StampedLock lock = new StampedLock();
 	final AtomicLong activeLocks = new AtomicLong();
+	final AtomicReference<Thread> owner = new AtomicReference<>();
 
 	private final int waitToCollect;
 
-	LockMonitoring lockMonitoring;
+	LockMonitoring<ExclusiveReentrantLock> lockMonitoring;
 
 	public ExclusiveReentrantLockManager() {
 		this(false);
@@ -72,35 +71,53 @@ public class ExclusiveReentrantLockManager {
 
 	private Lock tryExclusiveLockInner() {
 
-		long writeLock = lock.tryWriteLock();
-		if (writeLock != 0) {
-			return new ExclusiveLock(writeLock, lock, activeLocks);
-		} else {
-			lockMonitoring.runCleanup();
-			return null;
+		synchronized (owner) {
+			if (owner.get() == Thread.currentThread()) {
+				activeLocks.incrementAndGet();
+				return new ExclusiveReentrantLock(owner, activeLocks);
+			}
+
+			if (owner.compareAndSet(null, Thread.currentThread())) {
+				activeLocks.incrementAndGet();
+				return new ExclusiveReentrantLock(owner, activeLocks);
+			}
 		}
+
+		return null;
 
 	}
 
 	private Lock getExclusiveLockInner() throws InterruptedException {
 
-		long writeLock;
+		synchronized (owner) {
 
-		if (lockMonitoring.requiresManualCleanup()) {
-			do {
-				if (Thread.interrupted()) {
-					throw new InterruptedException();
+			if (lockMonitoring.requiresManualCleanup()) {
+				do {
+					if (Thread.interrupted()) {
+						throw new InterruptedException();
+					}
+					Lock lock = tryExclusiveLockInner();
+					if (lock != null) {
+						return lock;
+					} else {
+						lockMonitoring.runCleanup();
+						owner.wait(waitToCollect);
+					}
+				} while (true);
+			} else {
+				while (true) {
+					if (Thread.interrupted()) {
+						throw new InterruptedException();
+					}
+					Lock lock = tryExclusiveLockInner();
+					if (lock != null) {
+						return lock;
+					} else {
+						owner.wait(waitToCollect);
+					}
 				}
-				writeLock = lock.tryWriteLock(waitToCollect, TimeUnit.MILLISECONDS);
-				if (writeLock == 0) {
-					lockMonitoring.runCleanup();
-				}
-			} while (writeLock == 0);
-		} else {
-			writeLock = lock.writeLockInterruptibly();
+			}
 		}
-
-		return new ExclusiveLock(writeLock, lock, activeLocks);
 	}
 
 	public Lock tryExclusiveLock() {
@@ -112,41 +129,44 @@ public class ExclusiveReentrantLockManager {
 	}
 
 	public boolean isActiveLock() {
-		return lock.isWriteLocked();
+		return owner.get() != null;
 	}
 
-	static class ExclusiveLock implements Lock {
+	static class ExclusiveReentrantLock implements Lock {
 
-		private final StampedLock lock;
-		private final AtomicLong activeLocks;
-		private long stamp;
+		final AtomicLong activeLocks;
+		final AtomicReference<Thread> owner;
+		private boolean released = false;
 
-		public ExclusiveLock(long stamp, StampedLock lock, AtomicLong activeLocks) {
-			assert stamp != 0;
-			activeLocks.incrementAndGet();
+		public ExclusiveReentrantLock(AtomicReference<Thread> owner, AtomicLong activeLocks) {
+			this.owner = owner;
 			this.activeLocks = activeLocks;
-			this.stamp = stamp;
-			this.lock = lock;
 		}
 
 		@Override
 		public boolean isActive() {
-			return stamp != 0;
+			return !released;
 		}
 
 		@Override
 		public void release() {
-			long temp = stamp;
-			stamp = 0;
-
-			if (temp == 0) {
-				throw new IllegalMonitorStateException("Trying to release a lock that is not locked");
+			if (released) {
+				throw new IllegalStateException("Lock already released");
 			}
 
-			long l = activeLocks.decrementAndGet();
-			if (l == 0) {
-				lock.unlockWrite(temp);
+			synchronized (owner) {
+				if (owner.get() != Thread.currentThread()) {
+					logger.warn("Releasing lock from different thread, owner: " + owner.get() + ", current: "
+							+ Thread.currentThread());
+				}
+
+				if (activeLocks.decrementAndGet() == 0) {
+					owner.set(null);
+					owner.notifyAll();
+				}
 			}
+
+			released = true;
 
 		}
 	}
