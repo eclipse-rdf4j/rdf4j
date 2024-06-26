@@ -1,4 +1,5 @@
-/*******************************************************************************
+/**
+ * *****************************************************************************
  * Copyright (c) 2021 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
@@ -11,6 +12,8 @@
 
 package org.eclipse.rdf4j.spring.support;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import java.util.List;
 import java.util.Set;
 
@@ -20,13 +23,20 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPathBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 import org.eclipse.rdf4j.spring.RDF4JSpringTestBase;
+import org.eclipse.rdf4j.spring.dao.exception.IncorrectResultSetSizeException;
 import org.eclipse.rdf4j.spring.dao.support.opbuilder.UpdateExecutionBuilder;
 import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
+import org.eclipse.rdf4j.spring.domain.dao.ArtistDao;
+import org.eclipse.rdf4j.spring.domain.dao.PaintingDao;
+import org.eclipse.rdf4j.spring.domain.model.Artist;
 import org.eclipse.rdf4j.spring.domain.model.EX;
+import org.eclipse.rdf4j.spring.domain.model.Painting;
 import org.eclipse.rdf4j.spring.util.QueryResultUtils;
+import org.eclipse.rdf4j.spring.util.TypeMappingUtils;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,6 +49,13 @@ public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 
 	@Autowired
 	private RDF4JTemplate rdf4JTemplate;
+
+	// used for checks
+	@Autowired
+	private ArtistDao artistDao;
+
+	@Autowired
+	PaintingDao paintingDao;
 
 	@Test
 	public void testUpdate1() {
@@ -428,6 +445,62 @@ public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 	}
 
 	@Test
+	public void testDeleteWithPropertyPaths() {
+		int triplesBeforeDelete = countTriples();
+		Artist picasso = artistDao.getById(EX.Picasso);
+		assertNotNull(picasso);
+		Painting guernica = paintingDao.getById(EX.guernica);
+		assertNotNull(guernica);
+		rdf4JTemplate.delete(EX.Picasso, List.of(PropertyPathBuilder.of(EX.creatorOf).build()));
+		assertThrows(IncorrectResultSetSizeException.class, () -> artistDao.getById(EX.Picasso));
+		assertThrows(IncorrectResultSetSizeException.class, () -> paintingDao.getById(EX.guernica));
+		assertEquals(triplesBeforeDelete - 8, countTriples());
+	}
+
+	@Test
+	public void testDeleteWithDisjunctivePropertyPaths() {
+		int triplesBeforeDelete = countTriples();
+		Artist picasso = artistDao.getById(EX.Picasso);
+		assertNotNull(picasso);
+		Painting guernica = paintingDao.getById(EX.guernica);
+		assertNotNull(guernica);
+		rdf4JTemplate.delete(EX.Picasso, List.of(PropertyPathBuilder.of(EX.creatorOf).or(EX.homeAddress).build()));
+		assertThrows(IncorrectResultSetSizeException.class, () -> artistDao.getById(EX.Picasso));
+		assertThrows(IncorrectResultSetSizeException.class, () -> paintingDao.getById(EX.guernica));
+		assertEquals(triplesBeforeDelete - 11, countTriples());
+	}
+
+	@Test
+	public void testDeleteWithMultiplePropertyPaths() {
+		int triplesBeforeDelete = countTriples();
+		Artist picasso = artistDao.getById(EX.Picasso);
+		assertNotNull(picasso);
+		Painting guernica = paintingDao.getById(EX.guernica);
+		assertNotNull(guernica);
+		rdf4JTemplate.delete(EX.Picasso,
+				List.of(PropertyPathBuilder.of(EX.creatorOf).build(), PropertyPathBuilder.of(EX.homeAddress).build()));
+		assertThrows(IncorrectResultSetSizeException.class, () -> artistDao.getById(EX.Picasso));
+		assertThrows(IncorrectResultSetSizeException.class, () -> paintingDao.getById(EX.guernica));
+		assertEquals(triplesBeforeDelete - 11, countTriples());
+	}
+
+	@Test
+	public void testDeleteWithLongerPropertyPaths() {
+		int triplesBeforeDelete = countTriples();
+		Artist picasso = artistDao.getById(EX.Picasso);
+		assertNotNull(picasso);
+		Painting guernica = paintingDao.getById(EX.guernica);
+		assertNotNull(guernica);
+		// deletes guernica and the home address, but not picasso
+		rdf4JTemplate.delete(EX.guernica,
+				List.of(PropertyPathBuilder.of(EX.creatorOf).inv().then(EX.homeAddress).build()));
+		picasso = artistDao.getById(EX.Picasso);
+		assertNotNull(picasso);
+		assertThrows(IncorrectResultSetSizeException.class, () -> paintingDao.getById(EX.guernica));
+		assertEquals(triplesBeforeDelete - 8, countTriples());
+	}
+
+	@Test
 	public void testAssociate() {
 		IRI me = EX.of("me");
 		rdf4JTemplate.updateWithBuilder()
@@ -463,5 +536,15 @@ public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 						.toList(b -> b)
 						.size());
 
+	}
+
+	private int countTriples() {
+		return this.rdf4JTemplate
+				.tupleQuery("SELECT (count(*) AS ?count) WHERE { ?a ?b ?c }")
+				.evaluateAndConvert()
+				.toSingletonOfWholeResult(result -> {
+					BindingSet bs = result.next();
+					return TypeMappingUtils.toInt(QueryResultUtils.getValue(bs, "count"));
+				});
 	}
 }
