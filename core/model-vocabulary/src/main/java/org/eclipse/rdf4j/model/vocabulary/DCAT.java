@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.model.Namespace;
  * @author Bart Hanssens
  * @see <a href="https://www.w3.org/TR/vocab-dcat/">Data Catalog Vocabulary</a>
  * @see <a href="https://www.w3.org/TR/vocab-dcat-2/">Data Catalog Vocabulary version 2</a>
+ * @see <a href="https://www.w3.org/TR/vocab-dcat-3/">Data Catalog Vocabulary version 3</a>
  */
 public class DCAT {
 
@@ -50,6 +51,9 @@ public class DCAT {
 
 	/** dcat:Dataset */
 	public static final IRI DATASET;
+
+	/** dcat;DatasetSeries */
+	public static final IRI DATASET_SERIES;
 
 	/** dcat:Distribution */
 	public static final IRI DISTRIBUTION;
@@ -97,11 +101,17 @@ public class DCAT {
 	/** dcat:endpointURL */
 	public static final IRI ENDPOINT_URL;
 
+	/** dcat;first */
+	public static final IRI FIRST;
+
 	/** dcat:hadRole */
 	public static final IRI HAD_ROLE;
 
 	/** dcat:catalog */
 	public static final IRI HAS_CATALOG;
+
+	/** dcat:hasCurrentVersion */
+	public static final IRI HAS_CURRENT_VERSION;
 
 	/** dcat:dataset */
 	public static final IRI HAS_DATASET;
@@ -115,17 +125,47 @@ public class DCAT {
 	/** dcat:service */
 	public static final IRI HAS_SERVICE;
 
+	/** dcat;inCatalog, inverse property, see section 7 of DCAT v3 */
+	public static final IRI IN_CATALOG;
+
+	/** dcat:inSeries */
+	public static final IRI IN_SERIES;
+
+	/** dcat:isDistributionOf, inverse property, see section 7 of DCAT v3 */
+	public static final IRI IS_DISTRIBUTION_OF;
+
+	/** dcat:isVersionOf, inverse property, see section 7 of DCAT v3 */
+	public static final IRI IS_VERSION_OF;
+
 	/** dcat:keyword */
 	public static final IRI KEYWORD;
 
 	/** dcat:landingPage */
 	public static final IRI LANDING_PAGE;
 
+	/** dcat:last */
+	public static final IRI LAST;
+
 	/** dcat:mediaType */
 	public static final IRI MEDIA_TYPE;
 
+	/** dcat:next, inverse property, see section 7 of DCAT v3 */
+	public static final IRI NEXT;
+
+	/** dcat:nextVersion, inverse property, see section 7 of DCAT v3 */
+	public static final IRI NEXT_VERSION;
+
 	/** dcat:packageFormat */
 	public static final IRI PACKAGE_FORMAT;
+
+	/** dcat:prev */
+	public static final IRI PREV;
+
+	/** dcat:previousVersion */
+	public static final IRI PREVIOUS_VERSION;
+
+	/** dcat:seriesMember, inverse property, see section 7 of DCAT v3 */
+	public static final IRI SERIES_MEMBER;
 
 	/** dcat:qualifiedRelation */
 	public static final IRI QUALIFIED_RELATION;
@@ -148,12 +188,16 @@ public class DCAT {
 	/** dcat:themeTaxonomy */
 	public static final IRI THEME_TAXONOMY;
 
+	/** dcat:version */
+	public static final IRI VERSION;
+
 	static {
 
 		CATALOG = Vocabularies.createIRI(NAMESPACE, "Catalog");
 		CATALOG_RECORD = Vocabularies.createIRI(NAMESPACE, "CatalogRecord");
 		DATA_SERVICE = Vocabularies.createIRI(NAMESPACE, "DataService");
 		DATASET = Vocabularies.createIRI(NAMESPACE, "Dataset");
+		DATASET_SERIES = Vocabularies.createIRI(NAMESPACE, "DatasetSeries");
 		DISTRIBUTION = Vocabularies.createIRI(NAMESPACE, "Distribution");
 		RELATIONSHIP = Vocabularies.createIRI(NAMESPACE, "Relationship");
 		RESOURCE = Vocabularies.createIRI(NAMESPACE, "Resource");
@@ -170,22 +214,35 @@ public class DCAT {
 		END_DATE = Vocabularies.createIRI(NAMESPACE, "endDate");
 		ENDPOINT_DESCRIPTION = Vocabularies.createIRI(NAMESPACE, "endpointDescription");
 		ENDPOINT_URL = Vocabularies.createIRI(NAMESPACE, "endpointURL");
+		FIRST = Vocabularies.createIRI(NAMESPACE, "first");
 		HAD_ROLE = Vocabularies.createIRI(NAMESPACE, "hadRole");
 		HAS_CATALOG = Vocabularies.createIRI(NAMESPACE, "catalog");
 		HAS_DATASET = Vocabularies.createIRI(NAMESPACE, "dataset");
+		HAS_CURRENT_VERSION = Vocabularies.createIRI(NAMESPACE, "hasCurrentVersion");
 		HAS_DISTRIBUTION = Vocabularies.createIRI(NAMESPACE, "distribution");
 		HAS_RECORD = Vocabularies.createIRI(NAMESPACE, "record");
 		HAS_SERVICE = Vocabularies.createIRI(NAMESPACE, "service");
+		IN_CATALOG = Vocabularies.createIRI(NAMESPACE, "inCatalog");
+		IN_SERIES = Vocabularies.createIRI(NAMESPACE, "inSeries");
+		IS_DISTRIBUTION_OF = Vocabularies.createIRI(NAMESPACE, "isDistributionOf");
+		IS_VERSION_OF = Vocabularies.createIRI(NAMESPACE, "isVersionOf");
 		KEYWORD = Vocabularies.createIRI(NAMESPACE, "keyword");
 		LANDING_PAGE = Vocabularies.createIRI(NAMESPACE, "landingPage");
+		LAST = Vocabularies.createIRI(NAMESPACE, "last");
 		MEDIA_TYPE = Vocabularies.createIRI(NAMESPACE, "mediaType");
+		NEXT = Vocabularies.createIRI(NAMESPACE, "next");
+		NEXT_VERSION = Vocabularies.createIRI(NAMESPACE, "nextVersion");
 		PACKAGE_FORMAT = Vocabularies.createIRI(NAMESPACE, "packageFormat");
+		PREV = Vocabularies.createIRI(NAMESPACE, "prev");
+		PREVIOUS_VERSION = Vocabularies.createIRI(NAMESPACE, "previousVersion");
 		QUALIFIED_RELATION = Vocabularies.createIRI(NAMESPACE, "qualifiedRelation");
+		SERIES_MEMBER = Vocabularies.createIRI(NAMESPACE, "seriesMember");
 		SERVES_DATASET = Vocabularies.createIRI(NAMESPACE, "servesDataset");
 		SPATIAL_RESOLUTION_IN_METERS = Vocabularies.createIRI(NAMESPACE, "spatialResolutionInMeters");
 		START_DATE = Vocabularies.createIRI(NAMESPACE, "startDate");
 		TEMPORAL_RESOLUTION = Vocabularies.createIRI(NAMESPACE, "temporalResolution");
 		THEME = Vocabularies.createIRI(NAMESPACE, "theme");
 		THEME_TAXONOMY = Vocabularies.createIRI(NAMESPACE, "themeTaxonomy");
+		VERSION = Vocabularies.createIRI(NAMESPACE, "version");
 	}
 }
