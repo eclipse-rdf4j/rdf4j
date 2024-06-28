@@ -99,6 +99,18 @@ public class MemoryAppender extends ListAppender<ILoggingEvent> {
 	public void waitForEvents() {
 		while (list.isEmpty()) {
 			try {
+				System.gc();
+				Thread.sleep(1);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+		}
+	}
+
+	public void waitForEvents(int size) {
+		while (list.size() < size) {
+			try {
+				System.gc();
 				Thread.sleep(1);
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();

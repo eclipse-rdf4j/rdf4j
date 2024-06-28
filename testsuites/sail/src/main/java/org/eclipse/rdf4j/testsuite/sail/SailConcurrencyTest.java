@@ -356,6 +356,87 @@ public abstract class SailConcurrencyTest {
 
 	}
 
+//	@Disabled
+	@Test
+	public void testSerialThreads() throws InterruptedException {
+		if (store instanceof AbstractSail) {
+			((AbstractSail) store).setConnectionTimeOut(200);
+		} else if (store instanceof SailWrapper) {
+			Sail baseSail = ((SailWrapper) store).getBaseSail();
+			if (baseSail instanceof AbstractSail) {
+				((AbstractSail) baseSail).setConnectionTimeOut(200);
+			}
+		}
+
+		try (SailConnection connection = store.getConnection()) {
+			connection.begin();
+			connection.addStatement(RDF.TYPE, RDF.TYPE, RDF.PROPERTY, RDF.TYPE);
+			connection.commit();
+		}
+
+		AtomicReference<SailConnection> connection1 = new AtomicReference<>();
+
+		Thread thread1 = new Thread(() -> {
+			SailConnection connection = store.getConnection();
+			connection1.setRelease(connection);
+
+		});
+
+		thread1.start();
+		thread1.join();
+
+		thread1 = new Thread(() -> {
+			SailConnection connection = connection1.getAcquire();
+			connection.begin(IsolationLevels.NONE);
+		});
+
+		thread1.start();
+		thread1.join();
+
+		thread1 = new Thread(() -> {
+			SailConnection connection = connection1.getAcquire();
+			connection.addStatement(RDF.FIRST, RDF.TYPE, RDF.PROPERTY);
+		});
+
+		thread1.start();
+		thread1.join();
+
+		thread1 = new Thread(() -> {
+			SailConnection connection = connection1.getAcquire();
+			connection.clear(RDF.TYPE);
+		});
+
+		thread1.start();
+		thread1.join();
+
+		thread1 = new Thread(() -> {
+			SailConnection connection = connection1.getAcquire();
+			connection.commit();
+		});
+
+		thread1.start();
+		thread1.join();
+
+		thread1 = new Thread(() -> {
+			SailConnection connection = connection1.getAcquire();
+			connection.close();
+		});
+
+		thread1.start();
+		thread1.join();
+
+		try (SailConnection connection = store.getConnection()) {
+			connection.begin();
+			long size = connection.size();
+			assertEquals(1, size);
+			connection.clear();
+			connection.commit();
+		}
+
+		store.shutDown();
+
+	}
+
 	@Test
 	public void testConcurrentConnectionsShutdownReadCommitted() throws InterruptedException {
 		if (store instanceof AbstractSail) {
@@ -470,6 +551,17 @@ public abstract class SailConcurrencyTest {
 			long size = connection.size();
 			connection.commit();
 			assertThat(size).isLessThanOrEqualTo(1);
+		}
+
+		try (SailConnection connection = store.getConnection()) {
+			connection.begin();
+			connection.addStatement(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
+			connection.commit();
+		}
+		try (SailConnection connection = store.getConnection()) {
+			connection.begin();
+			connection.clear();
+			connection.commit();
 		}
 
 		store.shutDown();
