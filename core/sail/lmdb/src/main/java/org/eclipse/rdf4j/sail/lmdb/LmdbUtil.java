@@ -105,7 +105,7 @@ final class LmdbUtil {
 			int err;
 			try {
 				ret = transaction.exec(stack, txn);
-				err = E(mdb_txn_commit(txn));
+				err = mdb_txn_commit(txn);
 			} catch (Throwable t) {
 				mdb_txn_abort(txn);
 				throw t;
