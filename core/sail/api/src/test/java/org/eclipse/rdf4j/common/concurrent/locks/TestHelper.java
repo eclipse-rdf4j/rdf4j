@@ -42,6 +42,13 @@ public class TestHelper {
 		}
 	}
 
+	public static void callGC(ExclusiveReentrantLockManager lockManager) throws InterruptedException {
+		while (lockManager.isActiveLock()) {
+			System.gc();
+			Thread.sleep(1);
+		}
+	}
+
 	public static void interruptAndJoin(Thread thread) throws InterruptedException {
 		assertNotNull(thread);
 		thread.interrupt();
