@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
-import org.eclipse.rdf4j.collection.factory.mapdb.MapDbCollectionFactory;
+import org.eclipse.rdf4j.collection.factory.mapdb.MapDb3CollectionFactory;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.ResolvableEndpoint;
@@ -247,6 +247,6 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 
 	@Override
 	public Supplier<CollectionFactory> getCollectionFactory() {
-		return () -> new MapDbCollectionFactory(getIterationCacheSyncThreshold());
+		return () -> new MapDb3CollectionFactory(getIterationCacheSyncThreshold());
 	}
 }
