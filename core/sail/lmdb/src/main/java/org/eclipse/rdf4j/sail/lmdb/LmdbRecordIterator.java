@@ -138,12 +138,12 @@ class LmdbRecordIterator implements RecordIterator {
 					index.toKey(minKeyBuf, quad[0], quad[1], quad[2], quad[3]);
 					minKeyBuf.flip();
 					keyData.mv_data(minKeyBuf);
-					lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_SET));
-					if (lastResult != 0) {
+					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET);
+					if (lastResult != MDB_SUCCESS) {
 						// use MDB_SET_RANGE if key was deleted
-						lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE));
+						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 					}
-					if (lastResult != 0) {
+					if (lastResult != MDB_SUCCESS) {
 						closeInternal(false);
 						return null;
 					}
@@ -153,16 +153,16 @@ class LmdbRecordIterator implements RecordIterator {
 			}
 
 			if (fetchNext) {
-				lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT));
+				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 				fetchNext = false;
 			} else {
 				if (minKeyBuf != null) {
 					// set cursor to min key
 					keyData.mv_data(minKeyBuf);
-					lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE));
+					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 				} else {
 					// set cursor to first item
-					lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT));
+					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 				}
 			}
 
@@ -172,7 +172,7 @@ class LmdbRecordIterator implements RecordIterator {
 					lastResult = MDB_NOTFOUND;
 				} else if (groupMatcher != null && !groupMatcher.matches(keyData.mv_data())) {
 					// value doesn't match search key/mask, fetch next value
-					lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT));
+					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 				} else {
 					// Matching value found
 					index.keyToQuad(keyData.mv_data(), quad);
@@ -183,8 +183,6 @@ class LmdbRecordIterator implements RecordIterator {
 			}
 			closeInternal(false);
 			return null;
-		} catch (IOException e) {
-			throw new SailException(e);
 		} finally {
 			txnLock.unlockRead(stamp);
 		}

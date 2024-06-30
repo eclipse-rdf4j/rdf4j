@@ -214,13 +214,13 @@ class ValueStore extends AbstractValueFactory {
 					// set cursor after max ID
 					keyData.mv_data(stack.bytes(new byte[] { ID_KEY, (byte) 0xFF }));
 					MDBVal valueData = MDBVal.calloc(stack);
-					int rc = E(mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE));
-					if (rc != 0) {
+					int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+					if (rc != MDB_SUCCESS) {
 						// directly go to last value
-						rc = E(mdb_cursor_get(cursor, keyData, valueData, MDB_LAST));
+						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
 					} else {
 						// go to previous value of selected key
-						rc = E(mdb_cursor_get(cursor, keyData, valueData, MDB_PREV));
+						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
 					}
 					if (rc == MDB_SUCCESS && keyData.mv_data().get(0) == ID_KEY) {
 						// remove lower 2 type bits
@@ -257,7 +257,7 @@ class ValueStore extends AbstractValueFactory {
 				// set cursor to min key
 				keyData.mv_data(stack.bytes(new byte[] { ID_KEY }));
 				MDBVal valueData = MDBVal.calloc(stack);
-				int rc = E(mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE));
+				int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 				while (rc == MDB_SUCCESS && keyData.mv_data().get(0) == ID_KEY) {
 					long id = data2id(keyData.mv_data());
 					try {
@@ -373,7 +373,7 @@ class ValueStore extends AbstractValueFactory {
 						E(mdb_cursor_del(cursor, 0));
 						return value;
 					}
-					freeIdsAvailable = E(mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT)) == MDB_SUCCESS;
+					freeIdsAvailable = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == MDB_SUCCESS;
 					return null;
 				} finally {
 					if (cursor != 0) {
@@ -429,7 +429,7 @@ class ValueStore extends AbstractValueFactory {
 			MDBVal keyData = MDBVal.calloc(stack);
 			keyData.mv_data(id2data(idBuffer(stack), id).flip());
 			MDBVal valueData = MDBVal.calloc(stack);
-			if (E(mdb_get(txn, dbi, keyData, valueData)) == MDB_SUCCESS) {
+			if (mdb_get(txn, dbi, keyData, valueData) == MDB_SUCCESS) {
 				byte[] valueBytes = new byte[valueData.mv_data().remaining()];
 				valueData.mv_data().get(valueBytes);
 				return valueBytes;
@@ -616,7 +616,7 @@ class ValueStore extends AbstractValueFactory {
 				MDBVal dataVal = MDBVal.calloc(stack);
 				idVal.mv_data(idBuffer(stack).put(ID_KEY).put(data, 1, idLength).flip());
 				long newCount = 1;
-				if (E(mdb_get(writeTxn, refCountsDbi, idVal, dataVal)) == MDB_SUCCESS) {
+				if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
 					// update count
 					newCount = Varint.readUnsigned(dataVal.mv_data()) + 1;
 				}
@@ -638,7 +638,7 @@ class ValueStore extends AbstractValueFactory {
 			MDBVal idVal = MDBVal.calloc(stack);
 			idVal.mv_data(idBb);
 			MDBVal dataVal = MDBVal.calloc(stack);
-			if (E(mdb_get(writeTxn, refCountsDbi, idVal, dataVal)) == MDB_SUCCESS) {
+			if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
 				// update count
 				long newCount = Varint.readUnsigned(dataVal.mv_data()) - 1;
 				if (newCount <= 0) {
@@ -664,7 +664,7 @@ class ValueStore extends AbstractValueFactory {
 				MDBVal dataVal = MDBVal.calloc(stack);
 				dataVal.mv_data(stack.bytes(data));
 				MDBVal idVal = MDBVal.calloc(stack);
-				if (E(mdb_get(txn, dbi, dataVal, idVal)) == MDB_SUCCESS) {
+				if (mdb_get(txn, dbi, dataVal, idVal) == MDB_SUCCESS) {
 					return data2id(idVal.mv_data());
 				}
 				if (!create) {
@@ -702,10 +702,9 @@ class ValueStore extends AbstractValueFactory {
 				MDBVal dataVal = MDBVal.calloc(stack);
 
 				// ID of first value is directly stored with hash as key
-				if (E(mdb_get(txn, dbi, hashVal, dataVal)) == MDB_SUCCESS) {
+				if (mdb_get(txn, dbi, hashVal, dataVal) == MDB_SUCCESS) {
 					idVal.mv_data(dataVal.mv_data());
-					if (E(mdb_get(txn, dbi, idVal, dataVal)) == MDB_SUCCESS &&
-							dataVal.mv_data().compareTo(dataBb) == 0) {
+					if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS && dataVal.mv_data().compareTo(dataBb) == 0) {
 						return data2id(idVal.mv_data());
 					}
 				} else {
@@ -745,7 +744,7 @@ class ValueStore extends AbstractValueFactory {
 					cursor = pp.get(0);
 
 					// iterate all entries for hash value
-					if (E(mdb_cursor_get(cursor, hashVal, dataVal, MDB_SET_RANGE)) == MDB_SUCCESS) {
+					if (mdb_cursor_get(cursor, hashVal, dataVal, MDB_SET_RANGE) == MDB_SUCCESS) {
 						do {
 							if (compareRegion(hashVal.mv_data(), 0, hashBb, 0, hashLength) != 0) {
 								break;
@@ -755,12 +754,12 @@ class ValueStore extends AbstractValueFactory {
 							ByteBuffer hashIdBb = hashVal.mv_data();
 							hashIdBb.position(hashLength);
 							idVal.mv_data(hashIdBb);
-							if (E(mdb_get(txn, dbi, idVal, dataVal)) == MDB_SUCCESS
+							if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS
 									&& dataVal.mv_data().compareTo(dataBb) == 0) {
 								// id was found if stored value is equal to requested value
 								return data2id(hashIdBb);
 							}
-						} while (E(mdb_cursor_get(cursor, hashVal, dataVal, MDB_NEXT)) == MDB_SUCCESS);
+						} while (mdb_cursor_get(cursor, hashVal, dataVal, MDB_NEXT) == MDB_SUCCESS);
 					}
 				} finally {
 					if (cursor != 0) {
@@ -959,7 +958,7 @@ class ValueStore extends AbstractValueFactory {
 						revIdVal.mv_data(id2data(revIdBb, id).flip());
 						// check if id has internal references and therefore cannot be deleted
 						idVal.mv_data(revIdBb.slice().position(revLength));
-						if (E(mdb_get(writeTxn, refCountsDbi, idVal, dataVal)) == MDB_SUCCESS) {
+						if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
 							continue;
 						}
 						// mark id as unused
@@ -998,10 +997,9 @@ class ValueStore extends AbstractValueFactory {
 
 				idVal.mv_data(id2data(idBb.clear(), id).flip());
 				// id must not have a reference count and must have an existing value
-				int a = E(mdb_get(writeTxn, refCountsDbi, idVal, ignoreVal)); // this is where I get MDB_BAD_TXN
-				int b = E(mdb_get(txn, dbi, idVal, dataVal));
-				if (a != 0 &&
-						b == MDB_SUCCESS) {
+				int a = mdb_get(writeTxn, refCountsDbi, idVal, ignoreVal); // this is where I get MDB_BAD_TXN
+				int b = mdb_get(txn, dbi, idVal, dataVal);
+				if (a != MDB_SUCCESS && b == MDB_SUCCESS) {
 					ByteBuffer dataBuffer = dataVal.mv_data();
 
 					// update ref count if literal or URI namespace is removed

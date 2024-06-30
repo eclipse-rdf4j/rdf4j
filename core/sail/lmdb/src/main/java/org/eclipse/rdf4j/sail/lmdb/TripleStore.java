@@ -561,7 +561,7 @@ class TripleStore implements Closeable {
 				keyBuf.clear();
 				Varint.writeUnsigned(keyBuf, id);
 				keyData.mv_data(keyBuf.flip());
-				if (E(mdb_get(txn, contextsDbi, keyData, valueData)) == MDB_SUCCESS) {
+				if (mdb_get(txn, contextsDbi, keyData, valueData) == MDB_SUCCESS) {
 					it.remove();
 				}
 			}
@@ -587,7 +587,7 @@ class TripleStore implements Closeable {
 
 						if (fullScan) {
 							long[] quad = new long[4];
-							int rc = E(mdb_cursor_get(cursor, keyData, valueData, MDB_FIRST));
+							int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_FIRST);
 							while (rc == MDB_SUCCESS && !ids.isEmpty()) {
 								index.keyToQuad(keyData.mv_data(), quad);
 								ids.remove(quad[0]);
@@ -595,7 +595,7 @@ class TripleStore implements Closeable {
 								ids.remove(quad[2]);
 								ids.remove(quad[3]);
 
-								rc = E(mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT));
+								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 							}
 						} else {
 							for (Iterator<Long> it = ids.iterator(); it.hasNext();) {
@@ -625,15 +625,15 @@ class TripleStore implements Closeable {
 
 								// set cursor to min key
 								keyData.mv_data(keyBuf);
-								int rc = E(mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE));
+								int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 								boolean exists = false;
-								while (!exists && rc == 0) {
+								while (!exists && rc == MDB_SUCCESS) {
 									if (mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
 										// id was not found
 										break;
 									} else if (!matcher.matches(keyData.mv_data())) {
 										// value doesn't match search key/mask, fetch next value
-										rc = E(mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT));
+										rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 									} else {
 										exists = true;
 									}
@@ -708,8 +708,8 @@ class TripleStore implements Closeable {
 
 						// set cursor to min key
 						keyData.mv_data(keyBuf);
-						int rc = E(mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE));
-						if (rc != 0 || mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
+						int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+						if (rc != MDB_SUCCESS || mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
 							break;
 						} else {
 							Varint.readListUnsigned(keyData.mv_data(), s.minValues);
@@ -717,15 +717,15 @@ class TripleStore implements Closeable {
 
 						// set cursor to max key
 						keyData.mv_data(maxKeyBuf);
-						rc = E(mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE));
-						if (rc != 0) {
+						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+						if (rc != MDB_SUCCESS) {
 							// directly go to last value
-							rc = E(mdb_cursor_get(cursor, keyData, valueData, MDB_LAST));
+							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
 						} else {
 							// go to previous value of selected key
-							rc = E(mdb_cursor_get(cursor, keyData, valueData, MDB_PREV));
+							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
 						}
-						if (rc == 0) {
+						if (rc == MDB_SUCCESS) {
 							Varint.readListUnsigned(keyData.mv_data(), s.maxValues);
 							// this is required to correctly estimate the range size at a later point
 							s.startValues[s.MAX_BUCKETS] = s.maxValues;
@@ -747,7 +747,7 @@ class TripleStore implements Closeable {
 							keyData.mv_data(keyBuf);
 
 							int currentSamplesCount = 0;
-							rc = E(mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE));
+							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 							while (rc == MDB_SUCCESS && currentSamplesCount < s.MAX_SAMPLES_PER_BUCKET) {
 								if (mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
 									endOfRange = true;
@@ -776,8 +776,8 @@ class TripleStore implements Closeable {
 											}
 										}
 									}
-									rc = E(mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT));
-									if (rc != 0) {
+									rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+									if (rc != MDB_SUCCESS) {
 										// no more elements are available
 										endOfRange = true;
 									}
@@ -873,14 +873,14 @@ class TripleStore implements Closeable {
 				return recordCache.storeRecord(quad, explicit);
 			}
 
-			int rc = E(mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, MDB_NOOVERWRITE));
+			int rc = mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, MDB_NOOVERWRITE);
 			if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST) {
 				throw new IOException(mdb_strerror(rc));
 			}
 			stAdded = rc == MDB_SUCCESS;
 			boolean foundImplicit = false;
 			if (explicit && stAdded) {
-				foundImplicit = E(mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal)) == MDB_SUCCESS;
+				foundImplicit = mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal) == MDB_SUCCESS;
 			}
 
 			if (stAdded) {
@@ -920,7 +920,7 @@ class TripleStore implements Closeable {
 			idVal.mv_data(bb);
 			MDBVal dataVal = MDBVal.calloc(stack);
 			long newCount = 1;
-			if (E(mdb_get(writeTxn, contextsDbi, idVal, dataVal)) == MDB_SUCCESS) {
+			if (mdb_get(writeTxn, contextsDbi, idVal, dataVal) == MDB_SUCCESS) {
 				// update count
 				newCount = Varint.readUnsigned(dataVal.mv_data()) + 1;
 			}
@@ -944,7 +944,7 @@ class TripleStore implements Closeable {
 			bb.flip();
 			idVal.mv_data(bb);
 			MDBVal dataVal = MDBVal.calloc(stack);
-			if (E(mdb_get(writeTxn, contextsDbi, idVal, dataVal)) == MDB_SUCCESS) {
+			if (mdb_get(writeTxn, contextsDbi, idVal, dataVal) == MDB_SUCCESS) {
 				// update count
 				long newCount = Varint.readUnsigned(dataVal.mv_data()) - 1;
 				if (newCount <= 0) {

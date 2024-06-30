@@ -126,7 +126,7 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 			keyVal.mv_data(keyBuf);
 
 			if (add) {
-				if (E(mdb_put(factory.writeTxn, dbi, keyVal, dataVal, MDB_NOOVERWRITE)) == MDB_SUCCESS) {
+				if (mdb_put(factory.writeTxn, dbi, keyVal, dataVal, MDB_NOOVERWRITE) == MDB_SUCCESS) {
 					size++;
 					return true;
 				}
