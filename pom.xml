@@ -377,6 +377,7 @@
 		<servlet.version>3.1.0</servlet.version>
 		<junit.version>5.9.3</junit.version>
 		<jetty.version>9.4.54.v20240208</jetty.version>
+		<netty.version>4.1.111.Final</netty.version>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
@@ -393,6 +394,13 @@
 				<groupId>org.eclipse.jetty</groupId>
 				<artifactId>jetty-bom</artifactId>
 				<version>${jetty.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>io.netty</groupId>
+				<artifactId>netty-bom</artifactId>
+				<version>${netty.version}</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
