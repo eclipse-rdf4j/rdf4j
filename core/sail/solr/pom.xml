@@ -12,8 +12,14 @@
 	<properties>
 		<!-- FIXME: Support for embedded Solr server require non-provided Java EE dependencies -->
 		<enforce-javaee-provided.fail>false</enforce-javaee-provided.fail>
+		<snappy.version>1.1.10.5</snappy.version>
 	</properties>
 	<dependencies>
+		<dependency>
+			<groupId>org.xerial.snappy</groupId>
+			<artifactId>snappy-java</artifactId>
+			<version>${snappy.version}</version>
+		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-sail-lucene-api</artifactId>
