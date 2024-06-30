@@ -11,7 +11,6 @@
 
 package org.eclipse.rdf4j.common.iteration;
 
-import java.util.NoSuchElementException;
 import java.util.Objects;
 
 /**
@@ -59,14 +58,7 @@ public abstract class ConvertingIteration<S, T> extends AbstractCloseableIterati
 	 */
 	@Override
 	public final boolean hasNext() {
-		if (isClosed()) {
-			return false;
-		}
-		boolean result = iter.hasNext();
-		if (!result) {
-			close();
-		}
-		return result;
+		return iter.hasNext();
 	}
 
 	/**
@@ -78,9 +70,6 @@ public abstract class ConvertingIteration<S, T> extends AbstractCloseableIterati
 	 */
 	@Override
 	public final T next() {
-		if (isClosed()) {
-			throw new NoSuchElementException("The iteration has been closed.");
-		}
 		return convert(iter.next());
 	}
 

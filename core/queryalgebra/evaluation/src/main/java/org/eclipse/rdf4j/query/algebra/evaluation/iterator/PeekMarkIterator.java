@@ -68,18 +68,12 @@ public class PeekMarkIterator<E> implements CloseableIteration<E> {
 
 	@Override
 	public boolean hasNext() {
-		if (closed) {
-			return false;
-		}
 		calculateNext();
 		return next != null;
 	}
 
 	@Override
 	public E next() {
-		if (closed) {
-			throw new NoSuchElementException("The iteration has been closed.");
-		}
 		calculateNext();
 		E result = next;
 		next = null;

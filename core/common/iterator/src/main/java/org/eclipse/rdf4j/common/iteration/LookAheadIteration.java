@@ -46,18 +46,11 @@ public abstract class LookAheadIteration<E> extends AbstractCloseableIteration<E
 
 	@Override
 	public final boolean hasNext() {
-		if (isClosed()) {
-			return false;
-		}
-
 		return lookAhead() != null;
 	}
 
 	@Override
 	public final E next() {
-		if (isClosed()) {
-			throw new NoSuchElementException("The iteration has been closed.");
-		}
 		E result = lookAhead();
 
 		if (result != null) {
@@ -74,7 +67,7 @@ public abstract class LookAheadIteration<E> extends AbstractCloseableIteration<E
 	 * @return The next element, or null if there are no more results.
 	 */
 	private E lookAhead() {
-		if (nextElement == null) {
+		if (!isClosed() && nextElement == null) {
 			nextElement = getNextElement();
 
 			if (nextElement == null) {

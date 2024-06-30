@@ -65,10 +65,6 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet> {
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
 		while (true) {
-			if (isClosed()) {
-				return null;
-			}
-
 			int projIdx = nextProjectionIdx;
 
 			if (projIdx >= 0 && projIdx < projections.size()) {

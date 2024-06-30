@@ -18,6 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
+ * @deprecated
  * @author Arjohn Kampman
  */
 public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {

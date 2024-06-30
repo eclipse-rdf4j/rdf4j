@@ -16,6 +16,9 @@ import java.net.URL;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
@@ -32,7 +35,6 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.Add;
 import org.eclipse.rdf4j.query.algebra.Clear;
 import org.eclipse.rdf4j.query.algebra.Copy;
@@ -50,6 +52,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.InsertStopableTupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -85,6 +88,8 @@ import org.slf4j.LoggerFactory;
  * @see SailConnection#evaluate(TupleExpr, Dataset, BindingSet, boolean)
  */
 public class SailUpdateExecutor {
+
+	protected static final Timer TIMER_FOR_EXEC_LIMIT = new Timer("TimeLimitUpdate", true);
 
 	private final Logger logger = LoggerFactory.getLogger(SailUpdateExecutor.class);
 
@@ -474,29 +479,31 @@ public class SailUpdateExecutor {
 	}
 
 	private CloseableIteration<? extends BindingSet> evaluateWhereClause(
-			final TupleExpr whereClause, final UpdateContext uc, final int maxExecutionTime)
+			TupleExpr whereClause, final UpdateContext uc, final int maxExecutionTime)
 			throws SailException, QueryEvaluationException {
-		CloseableIteration<? extends BindingSet> sourceBindings1 = null;
-		CloseableIteration<? extends BindingSet> sourceBindings2 = null;
 		ConvertingIteration<BindingSet, BindingSet> result = null;
 		boolean allGood = false;
+		CloseableIteration<? extends BindingSet> sourceBindings1 = null;
 		try {
-			sourceBindings1 = con.evaluate(whereClause, uc.getDataset(), uc.getBindingSet(), uc.isIncludeInferred());
-
 			if (maxExecutionTime > 0) {
-				sourceBindings2 = new TimeLimitIteration<BindingSet>(sourceBindings1,
-						1000L * maxExecutionTime) {
+				AtomicBoolean stopper = new AtomicBoolean(false);
+
+				sourceBindings1 = con.evaluate(InsertStopableTupleExpr.makeStopable(whereClause, stopper::getAcquire),
+						uc.getDataset(), uc.getBindingSet(), uc.isIncludeInferred());
+				TIMER_FOR_EXEC_LIMIT.schedule(new TimerTask() {
 
 					@Override
-					protected void throwInterruptedException() throws QueryEvaluationException {
-						throw new QueryInterruptedException("execution took too long");
+					public void run() {
+						stopper.setRelease(true);
 					}
-				};
+
+				}, maxExecutionTime);
 			} else {
-				sourceBindings2 = sourceBindings1;
+				sourceBindings1 = con.evaluate(whereClause, uc.getDataset(), uc.getBindingSet(),
+						uc.isIncludeInferred());
 			}
 
-			result = new ConvertingIteration<BindingSet, BindingSet>(sourceBindings2) {
+			result = new ConvertingIteration<BindingSet, BindingSet>(sourceBindings1) {
 
 				@Override
 				protected BindingSet convert(BindingSet sourceBinding) throws QueryEvaluationException {
@@ -539,15 +546,11 @@ public class SailUpdateExecutor {
 						result.close();
 					}
 				} finally {
-					try {
-						if (sourceBindings2 != null) {
-							sourceBindings2.close();
-						}
-					} finally {
-						if (sourceBindings1 != null) {
-							sourceBindings1.close();
-						}
+
+					if (sourceBindings1 != null) {
+						sourceBindings1.close();
 					}
+
 				}
 			}
 		}
