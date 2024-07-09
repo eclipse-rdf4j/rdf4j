@@ -135,9 +135,9 @@ final class TxnRecordCache {
 			keyBuf.flip();
 			keyVal.mv_data(keyBuf);
 
-			boolean foundExplicit = E(mdb_get(writeTxn, dbiExplicit, keyVal, dataVal)) == MDB_SUCCESS &&
+			boolean foundExplicit = mdb_get(writeTxn, dbiExplicit, keyVal, dataVal) == MDB_SUCCESS &&
 					(dataVal.mv_data().get(0) & 0b1) != 0;
-			boolean foundImplicit = !foundExplicit && E(mdb_get(writeTxn, dbiInferred, keyVal, dataVal)) == MDB_SUCCESS
+			boolean foundImplicit = !foundExplicit && mdb_get(writeTxn, dbiInferred, keyVal, dataVal) == MDB_SUCCESS
 					&&
 					(dataVal.mv_data().get(0) & 0b1) != 0;
 
@@ -197,17 +197,13 @@ final class TxnRecordCache {
 		}
 
 		public Record next() {
-			try {
-				if (E(mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT)) == MDB_SUCCESS) {
-					Varint.readListUnsigned(keyData.mv_data(), quad);
-					byte op = valueData.mv_data().get(0);
-					Record r = new Record();
-					r.quad = quad;
-					r.add = op == 1;
-					return r;
-				}
-			} catch (IOException e) {
-				throw new SailException(e);
+			if (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == MDB_SUCCESS) {
+				Varint.readListUnsigned(keyData.mv_data(), quad);
+				byte op = valueData.mv_data().get(0);
+				Record r = new Record();
+				r.quad = quad;
+				r.add = op == 1;
+				return r;
 			}
 			close();
 			return null;

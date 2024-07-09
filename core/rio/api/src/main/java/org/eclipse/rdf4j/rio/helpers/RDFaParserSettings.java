@@ -35,7 +35,8 @@ public class RDFaParserSettings {
 
 	/**
 	 * Enables or disables <a href= "http://www.w3.org/TR/2012/REC-rdfa-core-20120607/#s_vocab_expansion" >vocabulary
-	 * expansion</a> feature.
+	 * expansion</a> feature. Note that although these settings are not used within RDF4J, they are in use by external
+	 * plugins.
 	 * <p>
 	 * Defaults to false
 	 * <p>
@@ -43,7 +44,6 @@ public class RDFaParserSettings {
 	 *
 	 * @see <a href="http://www.w3.org/TR/2012/REC-rdfa-core-20120607/#s_vocab_expansion">RDFa Vocabulary Expansion</a>
 	 */
-	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final BooleanRioSetting VOCAB_EXPANSION_ENABLED = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.rdfa.vocab_expansion", "Vocabulary Expansion", Boolean.FALSE);
 
