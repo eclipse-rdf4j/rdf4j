@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.lwjgl.system.MemoryUtil.NULL;
+import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOOVERWRITE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
@@ -24,6 +25,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
+import static org.lwjgl.util.lmdb.LMDB.mdb_strerror;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 
@@ -43,11 +45,15 @@ import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBVal;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A LMDB-based persistent set.
  */
 class PersistentSet<T extends Serializable> extends AbstractSet<T> {
+
+	private static final Logger logger = LoggerFactory.getLogger(PersistentSet.class);
 
 	private PersistentSetFactory<T> factory;
 	private final int dbi;
@@ -126,15 +132,35 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 			keyVal.mv_data(keyBuf);
 
 			if (add) {
-				if (mdb_put(factory.writeTxn, dbi, keyVal, dataVal, MDB_NOOVERWRITE) == MDB_SUCCESS) {
+				int rc = mdb_put(factory.writeTxn, dbi, keyVal, dataVal, MDB_NOOVERWRITE);
+				if (rc == MDB_SUCCESS) {
 					size++;
 					return true;
+				} else if (rc == MDB_MAP_FULL) {
+					factory.ensureResize();
+					if (mdb_put(factory.writeTxn, dbi, keyVal, dataVal, MDB_NOOVERWRITE) == MDB_SUCCESS) {
+						size++;
+						return true;
+					}
+					return false;
+				} else {
+					logger.debug("Failed to add element due to error {}: {}", mdb_strerror(rc), element);
 				}
 			} else {
 				// delete element
-				if (mdb_del(factory.writeTxn, dbi, keyVal, dataVal) == MDB_SUCCESS) {
+				int rc = mdb_del(factory.writeTxn, dbi, keyVal, dataVal);
+				if (rc == MDB_SUCCESS) {
 					size--;
 					return true;
+				} else if (rc == MDB_MAP_FULL) {
+					factory.ensureResize();
+					if (mdb_del(factory.writeTxn, dbi, keyVal, dataVal) == MDB_SUCCESS) {
+						size--;
+						return true;
+					}
+					return false;
+				} else {
+					logger.debug("Failed to remove element due to error {}: {}", mdb_strerror(rc), element);
 				}
 			}
 			return false;
