@@ -572,12 +572,14 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
+			Statement last = null;
 
 			sinkStoreAccessLock.lock();
 			try {
 				startTransaction(true);
 
 				for (Statement statement : approved) {
+					last = statement;
 					Resource subj = statement.getSubject();
 					IRI pred = statement.getPredicate();
 					Value obj = statement.getObject();
@@ -604,13 +606,20 @@ class LmdbSailStore implements SailStore {
 					}
 
 				}
-			} catch (IOException e) {
+			} catch (IOException | RuntimeException e) {
 				rollback();
+				if (multiThreadingActive) {
+					logger.error("Encountered an unexpected problem while trying to add a statement.", e);
+				} else {
+					logger.error(
+							"Encountered an unexpected problem while trying to add a statement. Last statement that was attempted to be added: [ {} ]",
+							last, e);
+				}
+
+				if (e instanceof RuntimeException) {
+					throw (RuntimeException) e;
+				}
 				throw new SailException(e);
-			} catch (RuntimeException e) {
-				rollback();
-				logger.error("Encountered an unexpected problem while trying to add a statement", e);
-				throw e;
 			} finally {
 				sinkStoreAccessLock.unlock();
 			}

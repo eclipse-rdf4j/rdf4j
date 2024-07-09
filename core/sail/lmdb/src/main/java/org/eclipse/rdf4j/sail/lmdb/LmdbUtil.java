@@ -16,6 +16,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
+import static org.lwjgl.util.lmdb.LMDB.MDB_DBS_FULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
@@ -39,11 +40,15 @@ import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.Pointer;
 import org.lwjgl.util.lmdb.MDBCmpFuncI;
 import org.lwjgl.util.lmdb.MDBVal;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Utility class for working with LMDB.
  */
 final class LmdbUtil {
+
+	private static final Logger logger = LoggerFactory.getLogger(LmdbUtil.class);
 
 	/**
 	 * Minimum free space in an LMDB db before automatically resizing the map.
@@ -61,7 +66,9 @@ final class LmdbUtil {
 
 	static int E(int rc) throws IOException {
 		if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND && rc != MDB_KEYEXIST) {
-			throw new IOException(mdb_strerror(rc));
+			IOException ioException = new IOException(mdb_strerror(rc));
+			logger.info("Possible LMDB error: {}", mdb_strerror(rc), ioException);
+			throw ioException;
 		}
 		return rc;
 	}
@@ -105,7 +112,7 @@ final class LmdbUtil {
 			int err;
 			try {
 				ret = transaction.exec(stack, txn);
-				err = E(mdb_txn_commit(txn));
+				err = mdb_txn_commit(txn);
 			} catch (Throwable t) {
 				mdb_txn_abort(txn);
 				throw t;

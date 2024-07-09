@@ -104,12 +104,12 @@ class LmdbContextIdIterator implements Closeable {
 					Varint.writeUnsigned(minKeyBuf, record[0]);
 					minKeyBuf.flip();
 					keyData.mv_data(minKeyBuf);
-					lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_SET));
-					if (lastResult != 0) {
+					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET);
+					if (lastResult != MDB_SUCCESS) {
 						// use MDB_SET_RANGE if key was deleted
-						lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE));
+						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 					}
-					if (lastResult != 0) {
+					if (lastResult != MDB_SUCCESS) {
 						closeInternal(false);
 						return null;
 					}
@@ -119,16 +119,16 @@ class LmdbContextIdIterator implements Closeable {
 			}
 
 			if (fetchNext) {
-				lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT));
+				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 				fetchNext = false;
 			} else {
 				if (minKeyBuf != null) {
 					// set cursor to min key
 					keyData.mv_data(minKeyBuf);
-					lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE));
+					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 				} else {
 					// set cursor to first item
-					lastResult = E(mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT));
+					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 				}
 			}
 
