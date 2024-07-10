@@ -241,7 +241,7 @@ git push --set-upstream origin "merge_main_into_develop_after_release_${MVN_VERS
 
 echo "Creating pull request to merge the merge-branch into develop"
 gh pr create -B develop --title "sync develop branch after release ${MVN_VERSION_RELEASE}" --body "Merge using merge commit rather than rebase"
-echo "It's ok to merge this PR later, so wait for the Jenkins tests to finish."
+echo "It's ok to merge this PR later, so wait for the CI tests to finish."
 read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 mvn clean -Dmaven.clean.failOnError=false
@@ -277,7 +277,7 @@ cp -f "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" "site/static/javadoc/late
 git add --all
 git commit -s -a -m "javadocs for ${MVN_VERSION_RELEASE}"
 git push --set-upstream origin "${RELEASE_NOTES_BRANCH}"
-gh pr create -B main --title "${RELEASE_NOTES_BRANCH}" --body "Javadocs, release-notes and news item for ${MVN_VERSION_RELEASE}"
+gh pr create -B main --title "${RELEASE_NOTES_BRANCH}" --body "Javadocs, release-notes and news item for ${MVN_VERSION_RELEASE}.\n\n - [ ] check that [Jenkins](https://ci.eclipse.org/rdf4j/) finished publishing the release\n - [ ] remember to also [add the release here on GitHub](https://github.com/eclipse-rdf4j/rdf4j/releases/new?tag=${MVN_VERSION_RELEASE}&title=RDF4JRDF4J%20${MVN_VERSION_RELEASE}) (include announcement)"
 
 echo "Javadocs are in git branch ${RELEASE_NOTES_BRANCH}"
 
