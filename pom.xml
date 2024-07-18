@@ -374,7 +374,7 @@
 		<spring.version>5.3.37</spring.version>
 		<guava.version>32.1.3-jre</guava.version>
 		<jmhVersion>1.37</jmhVersion>
-		<servlet.version>3.1.0</servlet.version>
+		<servlet.version>4.0.0</servlet.version>
 		<junit.version>5.9.3</junit.version>
 		<jetty.version>9.4.54.v20240208</jetty.version>
 		<netty.version>4.1.111.Final</netty.version>
