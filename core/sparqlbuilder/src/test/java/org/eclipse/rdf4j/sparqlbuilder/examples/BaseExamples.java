@@ -90,10 +90,7 @@ public class BaseExamples {
 			@Override
 			public void describeTo(Description description) {
 				description.appendText(
-						"To match the following String after lowercasing, removal of newlines and whitespaces.\n");
-				description.appendText("\nHint: first difference: " + aroundString + "\n");
-				description.appendText(
-						"Expected: was \"" + expected.replaceAll("\n", "\\\\n").replaceAll("\\s+", " ") + "\"");
+						"\"" + expected + "\" (ignoring case, whitespace and newlines)");
 			}
 		});
 	}

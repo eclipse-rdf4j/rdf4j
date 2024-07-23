@@ -11,7 +11,10 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.graphpattern;
 
+import java.util.function.Consumer;
+
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.Values;
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
 
 /**
@@ -40,6 +43,12 @@ public interface GraphPattern extends QueryElement {
 	 */
 	default GraphPattern and(GraphPattern... patterns) {
 		return GraphPatterns.and(this).and(patterns);
+	}
+
+	default GraphPattern values(Consumer<Values.VariablesBuilder> valuesConfigurer) {
+		Values.Builder valuesBuilder = (Values.Builder) Values.builder();
+		valuesConfigurer.accept(valuesBuilder);
+		return GraphPatterns.and(this).and(valuesBuilder.build());
 	}
 
 	/**
