@@ -10,6 +10,6 @@ For more details, have a look at the [release notes](/release-notes/${MVN_VERSIO
 <!--more-->
 ### Links
 
-- [Download RDF4J](/download/)
+- [Download RDF4J](/download/#rdf4j-43)
 - [release notes](/release-notes/${MVN_VERSION_RELEASE}).
 
