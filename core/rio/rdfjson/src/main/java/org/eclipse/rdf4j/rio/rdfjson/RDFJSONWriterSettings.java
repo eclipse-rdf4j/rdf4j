@@ -32,7 +32,7 @@ public class RDFJSONWriterSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.rdfjson.allow_multiple_object_values}.
 	 */
-	public static final BooleanRioSetting ALLOW_MULTIPLE_OBJECT_VALUES = new BooleanRioSetting(
+	public static final RioSetting<Boolean> ALLOW_MULTIPLE_OBJECT_VALUES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.rdfjson.allow_multiple_object_values", "Allow multiple object values",
 			Boolean.FALSE);
 

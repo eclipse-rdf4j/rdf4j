@@ -31,7 +31,7 @@ public class TriXParserSettings {
 	 * @deprecated Use {@link org.eclipse.rdf4j.rio.trix.TriXParserSettings#FAIL_ON_MISSING_DATATYPE} instead.
 	 */
 	@Deprecated(since = "4.3.0", forRemoval = true)
-	public static final BooleanRioSetting FAIL_ON_MISSING_DATATYPE = new BooleanRioSetting(
+	public static final RioSetting<Boolean> FAIL_ON_MISSING_DATATYPE = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.trix.fail_on_missing_datatype", "Fail on TriX missing datatype", Boolean.TRUE);
 
 	/**
@@ -44,7 +44,7 @@ public class TriXParserSettings {
 	 * @deprecated Use {@link org.eclipse.rdf4j.rio.trix.TriXParserSettings#FAIL_ON_INVALID_STATEMENT} instead.
 	 */
 	@Deprecated(since = "4.3.0", forRemoval = true)
-	public static final BooleanRioSetting FAIL_ON_INVALID_STATEMENT = new BooleanRioSetting(
+	public static final RioSetting<Boolean> FAIL_ON_INVALID_STATEMENT = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.trix.fail_on_invalid_statement", "Fail on TriX invalid statement", Boolean.TRUE);
 
 	/**

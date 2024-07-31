@@ -38,7 +38,7 @@ public final class XMLParserSettings {
 	 * @see <a href= "http://docs.oracle.com/javase/6/docs/api/javax/xml/XMLConstants.html#FEATURE_SECURE_PROCESSING">
 	 *      XMLConstants.FEATURE_SECURE_PROCESSING</a>
 	 */
-	public static final BooleanRioSetting SECURE_PROCESSING = new BooleanRioSetting(
+	public static final RioSetting<Boolean> SECURE_PROCESSING = new BooleanRioSetting(
 			XMLConstants.FEATURE_SECURE_PROCESSING, "Secure processing feature of XMLConstants", true);
 
 	/**
@@ -52,7 +52,7 @@ public final class XMLParserSettings {
 	 * @see <a href="https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet">XXE Prevention
 	 *      Cheat Sheet</a>
 	 */
-	public static final BooleanRioSetting DISALLOW_DOCTYPE_DECL = new BooleanRioSetting(
+	public static final RioSetting<Boolean> DISALLOW_DOCTYPE_DECL = new BooleanRioSetting(
 			"http://apache.org/xml/features/disallow-doctype-decl", "Disallow DOCTYPE declaration in document", false);
 
 	/**
@@ -65,7 +65,7 @@ public final class XMLParserSettings {
 	 *
 	 * @see <a href="http://xerces.apache.org/xerces2-j/features.html">Apache XML Project - Features</a>
 	 */
-	public static final BooleanRioSetting LOAD_EXTERNAL_DTD = new BooleanRioSetting(
+	public static final RioSetting<Boolean> LOAD_EXTERNAL_DTD = new BooleanRioSetting(
 			"http://apache.org/xml/features/nonvalidating/load-external-dtd", "Load External DTD", false);
 
 	/**
@@ -79,7 +79,7 @@ public final class XMLParserSettings {
 	 * @see <a href="https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet">XXE Prevention
 	 *      Cheat Sheet</a>
 	 */
-	public static final BooleanRioSetting EXTERNAL_GENERAL_ENTITIES = new BooleanRioSetting(
+	public static final RioSetting<Boolean> EXTERNAL_GENERAL_ENTITIES = new BooleanRioSetting(
 			"http://xml.org/sax/features/external-general-entities", "Include external general entities", false);
 
 	/**
@@ -93,7 +93,7 @@ public final class XMLParserSettings {
 	 * @see <a href="https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet">XXE Prevention
 	 *      Cheat Sheet</a>
 	 */
-	public static final BooleanRioSetting EXTERNAL_PARAMETER_ENTITIES = new BooleanRioSetting(
+	public static final RioSetting<Boolean> EXTERNAL_PARAMETER_ENTITIES = new BooleanRioSetting(
 			"http://xml.org/sax/features/external-parameter-entities", "Include external parameter entities", false);
 
 	/**
@@ -114,7 +114,7 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.fail_on_sax_non_fatal_errors}
 	 */
-	public static final BooleanRioSetting FAIL_ON_SAX_NON_FATAL_ERRORS = new BooleanRioSetting(
+	public static final RioSetting<Boolean> FAIL_ON_SAX_NON_FATAL_ERRORS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.fail_on_sax_non_fatal_errors", "Fail on SAX non-fatal errors", true);
 
 	/**
@@ -124,7 +124,7 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.fail_on_non_standard_attributes}
 	 */
-	public static final BooleanRioSetting FAIL_ON_NON_STANDARD_ATTRIBUTES = new BooleanRioSetting(
+	public static final RioSetting<Boolean> FAIL_ON_NON_STANDARD_ATTRIBUTES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.fail_on_non_standard_attributes", "Fail on non-standard attributes", true);
 
 	/**
@@ -134,7 +134,7 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.fail_on_invalid_ncname}
 	 */
-	public static final BooleanRioSetting FAIL_ON_INVALID_NCNAME = new BooleanRioSetting(
+	public static final RioSetting<Boolean> FAIL_ON_INVALID_NCNAME = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.fail_on_invalid_ncname", "Fail on invalid NCName", true);
 
 	/**
@@ -144,7 +144,7 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.fail_on_duplicate_rdf_id}
 	 */
-	public static final BooleanRioSetting FAIL_ON_DUPLICATE_RDF_ID = new BooleanRioSetting(
+	public static final RioSetting<Boolean> FAIL_ON_DUPLICATE_RDF_ID = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.fail_on_duplicate_rdf_id", "Fail on duplicate RDF ID", true);
 
 	/**
@@ -154,7 +154,7 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.fail_on_invalid_qname}
 	 */
-	public static final BooleanRioSetting FAIL_ON_INVALID_QNAME = new BooleanRioSetting(
+	public static final RioSetting<Boolean> FAIL_ON_INVALID_QNAME = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.fail_on_invalid_qname", "Fail on invalid QName", true);
 
 	/**
@@ -164,7 +164,7 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.fail_on_mismatched_tags}
 	 */
-	public static final BooleanRioSetting FAIL_ON_MISMATCHED_TAGS = new BooleanRioSetting(
+	public static final RioSetting<Boolean> FAIL_ON_MISMATCHED_TAGS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.fail_on_mismatched_tags", "Fail on mismatched tags", true);
 
 	/**
@@ -175,7 +175,7 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.parse_standalone_documents}
 	 */
-	public static final BooleanRioSetting PARSE_STANDALONE_DOCUMENTS = new BooleanRioSetting(
+	public static final RioSetting<Boolean> PARSE_STANDALONE_DOCUMENTS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.parse_standalone_documents", "Parse standalone documents", true);
 
 	/**

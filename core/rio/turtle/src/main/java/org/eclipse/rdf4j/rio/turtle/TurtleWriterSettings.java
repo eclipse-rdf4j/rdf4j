@@ -35,7 +35,7 @@ public class TurtleWriterSettings {
 	 * @see <a href="https://www.w3.org/TR/turtle/#abbrev">https://www.w3.org/TR/turtle/#abbrev</a>
 	 * @since 3.7.0
 	 */
-	public static final BooleanRioSetting ABBREVIATE_NUMBERS = new BooleanRioSetting(
+	public static final RioSetting<Boolean> ABBREVIATE_NUMBERS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.turtle.abbreviate_numbers", "Abbreviate numbers", Boolean.TRUE);
 
 	/**

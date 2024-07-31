@@ -46,7 +46,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.verify_datatype_values}.
 	 */
-	public static final BooleanRioSetting VERIFY_DATATYPE_VALUES = new BooleanRioSetting(
+	public static final RioSetting<Boolean> VERIFY_DATATYPE_VALUES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.verify_datatype_values", "Verify recognised datatype values", Boolean.FALSE);
 
 	/**
@@ -58,7 +58,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.fail_on_unknown_datatypes}.
 	 */
-	public static final BooleanRioSetting FAIL_ON_UNKNOWN_DATATYPES = new BooleanRioSetting(
+	public static final RioSetting<Boolean> FAIL_ON_UNKNOWN_DATATYPES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.fail_on_unknown_datatypes", "Fail on unknown datatypes", Boolean.FALSE);
 
 	/**
@@ -70,7 +70,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.normalize_datatype_values}.
 	 */
-	public static final BooleanRioSetting NORMALIZE_DATATYPE_VALUES = new BooleanRioSetting(
+	public static final RioSetting<Boolean> NORMALIZE_DATATYPE_VALUES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.normalize_datatype_values", "Normalize recognised datatype values", Boolean.FALSE);
 
 	/**
@@ -91,7 +91,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.fail_on_unknown_languages}.
 	 */
-	public static final BooleanRioSetting FAIL_ON_UNKNOWN_LANGUAGES = new BooleanRioSetting(
+	public static final RioSetting<Boolean> FAIL_ON_UNKNOWN_LANGUAGES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.fail_on_unknown_languages", "Fail on unknown languages", Boolean.FALSE);
 
 	/**
@@ -104,7 +104,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.verify_language_tags}.
 	 */
-	public static final BooleanRioSetting VERIFY_LANGUAGE_TAGS = new BooleanRioSetting(
+	public static final RioSetting<Boolean> VERIFY_LANGUAGE_TAGS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.verify_language_tags", "Verify language tags", Boolean.TRUE);
 
 	/**
@@ -116,7 +116,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.normalize_language_tags}.
 	 */
-	public static final BooleanRioSetting NORMALIZE_LANGUAGE_TAGS = new BooleanRioSetting(
+	public static final RioSetting<Boolean> NORMALIZE_LANGUAGE_TAGS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.normalize_language_tags", "Normalize recognised language tags", Boolean.FALSE);
 
 	/**
@@ -134,7 +134,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.verify_relative_uris}.
 	 */
-	public static final BooleanRioSetting VERIFY_RELATIVE_URIS = new BooleanRioSetting(
+	public static final RioSetting<Boolean> VERIFY_RELATIVE_URIS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.verify_relative_uris", "Verify relative URIs", Boolean.TRUE);
 
 	/**
@@ -145,7 +145,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.verify_uri_syntax}.
 	 */
-	public static final BooleanRioSetting VERIFY_URI_SYNTAX = new BooleanRioSetting(
+	public static final RioSetting<Boolean> VERIFY_URI_SYNTAX = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.verify_uri_syntax", "Verify URI syntax", Boolean.TRUE);
 
 	/**
@@ -156,7 +156,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.preserve_bnode_ids}.
 	 */
-	public static final BooleanRioSetting PRESERVE_BNODE_IDS = new BooleanRioSetting(
+	public static final RioSetting<Boolean> PRESERVE_BNODE_IDS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.preserve_bnode_ids", "Preserve blank node identifiers", Boolean.FALSE);
 
 	/**
@@ -168,7 +168,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.skolem_origin}.
 	 */
-	public static final StringRioSetting SKOLEMIZE_ORIGIN = new StringRioSetting(
+	public static final RioSetting<String> SKOLEMIZE_ORIGIN = new StringRioSetting(
 			"org.eclipse.rdf4j.rio.skolem_origin",
 			"Replace blank nodes with well known genid IRIs using this scheme and authority", null);
 
@@ -197,7 +197,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.large_literals_limit}.
 	 */
-	public static final LongRioSetting LARGE_LITERALS_LIMIT = new LongRioSetting(
+	public static final RioSetting<Long> LARGE_LITERALS_LIMIT = new LongRioSetting(
 			"org.eclipse.rdf4j.rio.large_literals_limit", "Size limit for large literals", 1048576L);
 
 	/**
@@ -227,7 +227,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.process_encoded_rdf_star}.
 	 */
-	public static final BooleanRioSetting PROCESS_ENCODED_RDF_STAR = new BooleanRioSetting(
+	public static final RioSetting<Boolean> PROCESS_ENCODED_RDF_STAR = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.process_encoded_rdf_star",
 			"Converts RDF-star triples encoded as RDF-compatible IRIs back to triple values", Boolean.TRUE);
 

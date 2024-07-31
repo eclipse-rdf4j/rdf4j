@@ -32,7 +32,7 @@ public class HTTPRepositorySettings {
 	 * By default inner buffers within {@link org.eclipse.rdf4j.repository.http.HTTPRepositoryConnection} keep in memory
 	 * up to 200000 statement before they are flushed to the remote repository.
 	 */
-	public static final IntegerRioSetting MAX_STATEMENT_BUFFER_SIZE = new IntegerRioSetting(
+	public static final RioSetting<Integer> MAX_STATEMENT_BUFFER_SIZE = new IntegerRioSetting(
 			"org.eclipse.rdf4j.http.maxstatementbuffersize", "Maximum number of statement buffered in memory", 200000);
 
 }

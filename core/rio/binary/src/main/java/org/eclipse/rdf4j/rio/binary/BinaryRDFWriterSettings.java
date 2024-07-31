@@ -34,7 +34,7 @@ public class BinaryRDFWriterSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.binary.format_version}
 	 */
-	public static final LongRioSetting VERSION = new LongRioSetting(
+	public static final RioSetting<Long> VERSION = new LongRioSetting(
 			"org.eclipse.rdf4j.rio.binary.format_version", "Binary RDF format", 2L);
 
 	/**
@@ -45,7 +45,7 @@ public class BinaryRDFWriterSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.binary.buffer_size}
 	 */
-	public static final LongRioSetting BUFFER_SIZE = new LongRioSetting(
+	public static final RioSetting<Long> BUFFER_SIZE = new LongRioSetting(
 			"org.eclipse.rdf4j.rio.binary.buffer_size", "Buffer size", 8192L);
 
 	/**
@@ -56,7 +56,7 @@ public class BinaryRDFWriterSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.binary.charset}
 	 */
-	public static final StringRioSetting CHARSET = new StringRioSetting(
+	public static final RioSetting<String> CHARSET = new StringRioSetting(
 			"org.eclipse.rdf4j.rio.binary.charset", "Charset", StandardCharsets.UTF_8.name());
 
 	/**
@@ -74,7 +74,7 @@ public class BinaryRDFWriterSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.binary.recycle_ids}
 	 */
-	public static final BooleanRioSetting RECYCLE_IDS = new BooleanRioSetting(
+	public static final RioSetting<Boolean> RECYCLE_IDS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.binary.recycle_ids", "Charset", true);
 
 	/**

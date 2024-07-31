@@ -34,7 +34,7 @@ public class RDFJSONParserSettings {
 	 *             instead.
 	 */
 	@Deprecated(since = "4.3.0", forRemoval = true)
-	public static final BooleanRioSetting FAIL_ON_MULTIPLE_OBJECT_VALUES = new BooleanRioSetting(
+	public static final RioSetting<Boolean> FAIL_ON_MULTIPLE_OBJECT_VALUES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.rdfjson.fail_on_multiple_object_values", "Fail on multiple object values",
 			Boolean.TRUE);
 
@@ -50,7 +50,7 @@ public class RDFJSONParserSettings {
 	 *             instead.
 	 */
 	@Deprecated(since = "4.3.0", forRemoval = true)
-	public static final BooleanRioSetting FAIL_ON_MULTIPLE_OBJECT_TYPES = new BooleanRioSetting(
+	public static final RioSetting<Boolean> FAIL_ON_MULTIPLE_OBJECT_TYPES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.rdfjson.fail_on_multiple_object_types", "Fail on multiple object types",
 			Boolean.TRUE);
 
@@ -67,7 +67,7 @@ public class RDFJSONParserSettings {
 	 *             instead.
 	 */
 	@Deprecated(since = "4.3.0", forRemoval = true)
-	public static final BooleanRioSetting FAIL_ON_MULTIPLE_OBJECT_LANGUAGES = new BooleanRioSetting(
+	public static final RioSetting<Boolean> FAIL_ON_MULTIPLE_OBJECT_LANGUAGES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.rdfjson.fail_on_multiple_object_languages", "Fail on multiple object languages",
 			Boolean.TRUE);
 
@@ -84,7 +84,7 @@ public class RDFJSONParserSettings {
 	 *             instead.
 	 */
 	@Deprecated(since = "4.3.0", forRemoval = true)
-	public static final BooleanRioSetting FAIL_ON_MULTIPLE_OBJECT_DATATYPES = new BooleanRioSetting(
+	public static final RioSetting<Boolean> FAIL_ON_MULTIPLE_OBJECT_DATATYPES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.rdfjson.fail_on_multiple_object_datatypes", "Fail on multiple object datatypes",
 			Boolean.TRUE);
 
@@ -99,7 +99,7 @@ public class RDFJSONParserSettings {
 	 * @deprecated Use {@link org.eclipse.rdf4j.rio.rdfjson.RDFJSONParserSettings#FAIL_ON_UNKNOWN_PROPERTY} instead.
 	 */
 	@Deprecated(since = "4.3.0", forRemoval = true)
-	public static final BooleanRioSetting FAIL_ON_UNKNOWN_PROPERTY = new BooleanRioSetting(
+	public static final RioSetting<Boolean> FAIL_ON_UNKNOWN_PROPERTY = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.rdfjson.fail_on_unknown_property", "Fail on unknown property", Boolean.TRUE);
 
 	/**
@@ -113,7 +113,7 @@ public class RDFJSONParserSettings {
 	 * @deprecated Use {@link org.eclipse.rdf4j.rio.rdfjson.RDFJSONParserSettings#SUPPORT_GRAPHS_EXTENSION} instead.
 	 */
 	@Deprecated(since = "4.3.0", forRemoval = true)
-	public static final BooleanRioSetting SUPPORT_GRAPHS_EXTENSION = new BooleanRioSetting(
+	public static final RioSetting<Boolean> SUPPORT_GRAPHS_EXTENSION = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.rdfjson.support_graphs_extension", "SUPPORT_GRAPHS_EXTENSION", Boolean.TRUE);
 
 	/**
