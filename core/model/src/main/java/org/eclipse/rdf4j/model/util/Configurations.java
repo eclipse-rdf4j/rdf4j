@@ -165,7 +165,13 @@ public class Configurations {
 		var fallbackObjects = model.filter(subject, fallbackProperty, null).objects();
 
 		if (!fallbackObjects.isEmpty() && !preferredObjects.equals(fallbackObjects)) {
-			logger.warn("Discrepancy between use of the old and new config vocabulary.");
+			var msg = "Discrepancy between use of the old and new config vocabulary.";
+			// depending on whether preferred is set, we log on warn or debug
+			if (preferredObjects.isEmpty()) {
+				logger.debug(msg);
+			} else {
+				logger.warn(msg);
+			}
 
 			if (preferredObjects.containsAll(fallbackObjects)) {
 				return preferredObjects;
@@ -235,7 +241,13 @@ public class Configurations {
 	private static void logDiscrepancyWarning(Optional<? extends Value> preferred,
 			Optional<? extends Value> fallback) {
 		if (!fallback.isEmpty() && !preferred.equals(fallback)) {
-			logger.warn("Discrepancy between use of the old and new config vocabulary.");
+			var msg = "Discrepancy between use of the old and new config vocabulary.";
+			// depending on whether preferred is set, we log on warn or debug
+			if (preferred.isEmpty()) {
+				logger.debug(msg);
+			} else {
+				logger.warn(msg);
+			}
 		}
 	}
 }
