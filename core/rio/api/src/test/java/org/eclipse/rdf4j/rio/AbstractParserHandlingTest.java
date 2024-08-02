@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.rio;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -19,10 +20,12 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.Locale;
+import java.util.Map;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -115,7 +118,7 @@ public abstract class AbstractParserHandlingTest {
 
 	private ParseErrorCollector testListener;
 
-	private Model testStatements;
+	private TestStatementCollector testStatements;
 
 	/**
 	 * Returns an {@link InputStream} containing the given RDF statements in a format that is recognised by the
@@ -211,6 +214,7 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
+	 *
 	 */
 	@BeforeEach
 	public void setUp() {
@@ -218,13 +222,82 @@ public abstract class AbstractParserHandlingTest {
 
 		testParser.setValueFactory(vf);
 		testListener = new ParseErrorCollector();
-		testStatements = new LinkedHashModel();
+		testStatements = new TestStatementCollector(new LinkedHashModel());
 
 		testParser.setParseErrorListener(testListener);
-		testParser.setRDFHandler(new StatementCollector(testStatements));
+		testParser.setRDFHandler(testStatements);
+	}
+
+	private class TestStatementCollector extends StatementCollector {
+
+		private boolean start;
+		private boolean end;
+
+		public TestStatementCollector(Model testStatements) {
+			super(testStatements);
+		}
+
+		@Override
+		public void clear() {
+			super.clear();
+			this.start = false;
+			this.end = false;
+		}
+
+		@Override
+		public void startRDF() throws RDFHandlerException {
+			assertFalse(start, "startRDF was called twice");
+			assertFalse(end, "startRDF was called after endRDF");
+			this.start = true;
+			super.startRDF();
+		}
+
+		@Override
+		public void endRDF() throws RDFHandlerException {
+			assertTrue(start, "startRDF was not called before endRDF");
+			assertFalse(end, "endRDF was called twice");
+			this.end = true;
+			super.endRDF();
+		}
+
+		@Override
+		public void handleComment(String comment) throws RDFHandlerException {
+			assertTrue(start, "startRDF was not called before handleComment");
+			assertFalse(end, "endRDF was called before handleComment");
+			super.handleComment(comment);
+		}
+
+		@Override
+		public void handleStatement(Statement st) {
+			assertTrue(start, "startRDF was not called before handleStatement");
+			assertFalse(end, "endRDF was called before handleStatement");
+			super.handleStatement(st);
+		}
+
+		@Override
+		public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
+			assertTrue(start, "startRDF was not called before handleNamespace");
+			assertFalse(end, "endRDF was called before handleNamespace");
+			super.handleNamespace(prefix, uri);
+		}
+
+		@Override
+		public Collection<Statement> getStatements() {
+			assertTrue(start, "startRDF was not called before getStatements");
+			assertTrue(end, "endRDF was not called before getStatements");
+			return super.getStatements();
+		}
+
+		@Override
+		public Map<String, String> getNamespaces() {
+			assertTrue(start, "startRDF was not called before getStatements");
+			assertTrue(end, "endRDF was not called before getStatements");
+			return super.getNamespaces();
+		}
 	}
 
 	/**
+	 *
 	 */
 	@AfterEach
 	public void tearDown() {
@@ -390,6 +463,9 @@ public abstract class AbstractParserHandlingTest {
 		}
 
 		assertErrorListener(0, 1, 0);
+		// Since the parser failed it would not have called endRdf(), so we just overwrite the end variable so that
+		// assertModel(...) doesn't fail
+		testStatements.end = true;
 		assertModel(new LinkedHashModel());
 	}
 
@@ -699,6 +775,9 @@ public abstract class AbstractParserHandlingTest {
 		}
 
 		assertErrorListener(0, 1, 0);
+		// Since the parser failed it would not have called endRdf(), so we just overwrite the end variable so that
+		// assertModel(...) doesn't fail
+		testStatements.end = true;
 		assertModel(new LinkedHashModel());
 	}
 
@@ -917,12 +996,13 @@ public abstract class AbstractParserHandlingTest {
 
 		assertErrorListener(0, 0, 0);
 		// assertModel(expectedModel); // GH-2768 isomorphism is not maintained after skolemization
-		assertNotEquals(new HashSet<>(expectedModel), new HashSet<>(testStatements)); // blank nodes not preserved
-		assertTrue(Models.subjectBNodes(testStatements).isEmpty()); // skolemized
+		assertNotEquals(new HashSet<>(expectedModel), new HashSet<>(testStatements.getStatements())); // blank nodes not
+		// preserved
+		assertTrue(Models.subjectBNodes(testStatements.getStatements()).isEmpty()); // skolemized
 	}
 
 	@Test
-	public void testRDFStarCompatibility() throws Exception {
+	public void testRDFStarCompatibility1() throws Exception {
 		Model expectedModel = new LinkedHashModel();
 		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
 				vf.createLiteral("example", vf.createIRI("http://example.com/3")));
@@ -939,9 +1019,20 @@ public abstract class AbstractParserHandlingTest {
 		testParser.parse(input1, BASE_URI);
 		assertErrorListener(0, 0, 0);
 		assertModel(expectedModel);
+	}
 
-		testListener.reset();
-		testStatements.clear();
+	@Test
+	public void testRDFStarCompatibility2() throws Exception {
+		Model expectedModel = new LinkedHashModel();
+		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+				vf.createLiteral("example", vf.createIRI("http://example.com/3")));
+		expectedModel.add(vf.createStatement(t1, DC.SOURCE, vf.createIRI("http://example.com/4")));
+		Triple t2 = vf.createTriple(t1, DC.DATE, vf.createLiteral(new Date()));
+		expectedModel.add(vf.createStatement(vf.createIRI("http://example.com/5"), DC.RELATION, t2));
+		Triple t3 = vf.createTriple(vf.createTriple(vf.createTriple(vf.createIRI("urn:a"), RDF.TYPE,
+				vf.createIRI("urn:b")), vf.createIRI("urn:c"), vf.createIRI("urn:d")), vf.createIRI("urn:e"),
+				vf.createIRI("urn:f"));
+		expectedModel.add(vf.createStatement(t3, vf.createIRI("urn:same"), t3));
 
 		// Turn off compatibility on parsing: formats with RDF-star support will produce RDF-star triples,
 		// non-RDF-star formats will produce IRIs of the kind urn:rdf4j:triple:xxx
@@ -952,22 +1043,26 @@ public abstract class AbstractParserHandlingTest {
 		if (testParser.getRDFFormat().supportsRDFStar()) {
 			assertModel(expectedModel);
 		} else {
-			assertTrue(testStatements.contains(RDFStarUtil.toRDFEncodedValue(t1), DC.SOURCE,
-					vf.createIRI("http://example.com/4")));
-			assertTrue(testStatements.contains(vf.createIRI("http://example.com/5"), DC.RELATION,
-					RDFStarUtil.toRDFEncodedValue(t2)));
-			assertTrue(testStatements.contains(RDFStarUtil.toRDFEncodedValue(t3), vf.createIRI("urn:same"),
-					RDFStarUtil.toRDFEncodedValue(t3)));
-			assertEquals(3, testStatements.size());
+			assertTrue(testStatements.getStatements()
+					.contains(vf.createStatement(RDFStarUtil.toRDFEncodedValue(t1), DC.SOURCE,
+							vf.createIRI("http://example.com/4"))));
+			assertTrue(testStatements.getStatements()
+					.contains(vf.createStatement(vf.createIRI("http://example.com/5"), DC.RELATION,
+							RDFStarUtil.toRDFEncodedValue(t2))));
+			assertTrue(testStatements.getStatements()
+					.contains(vf.createStatement(RDFStarUtil.toRDFEncodedValue(t3), vf.createIRI("urn:same"),
+							RDFStarUtil.toRDFEncodedValue(t3))));
+			assertEquals(3, testStatements.getStatements().size());
 		}
 	}
 
 	private void assertModel(Model expectedModel) {
 		if (logger.isTraceEnabled()) {
 			logger.trace("Expected: {}", expectedModel);
-			logger.trace("Actual: {}", testStatements);
+			logger.trace("Actual: {}", testStatements.getStatements());
 		}
-		assertTrue(Models.isomorphic(expectedModel, testStatements), "Did not find expected statements");
+		assertTrue(Models.isomorphic(expectedModel, testStatements.getStatements()),
+				"Did not find expected statements");
 	}
 
 	private void assertErrorListener(int expectedWarnings, int expectedErrors, int expectedFatalErrors) {
