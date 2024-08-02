@@ -20,8 +20,6 @@ import java.io.Reader;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Collection;
-import java.util.HashSet;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -43,9 +41,6 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.json.JsonObject;
 import jakarta.json.JsonString;
@@ -125,6 +120,10 @@ public class JSONLDParser extends AbstractRDFParser {
 			throws RDFParseException, RDFHandlerException, IOException {
 		clear();
 
+		if (rdfHandler != null) {
+			rdfHandler.startRDF();
+		}
+
 		try {
 
 			Document document = getDocument(in, reader);
@@ -179,6 +178,9 @@ public class JSONLDParser extends AbstractRDFParser {
 			}
 
 			RDFHandler rdfHandler = getRDFHandler();
+			if (rdfHandler != null) {
+				extractPrefixes(document, rdfHandler::handleNamespace);
+			}
 
 			JsonLd.toRdf(document).options(opts).base(baseURI).get(new RdfConsumer<>() {
 				@Override
@@ -242,7 +244,7 @@ public class JSONLDParser extends AbstractRDFParser {
 			});
 
 			if (rdfHandler != null) {
-				extractPrefixes(document, rdfHandler::handleNamespace);
+				rdfHandler.endRDF();
 			}
 
 		} catch (no.hasmac.jsonld.JsonLdError e) {
