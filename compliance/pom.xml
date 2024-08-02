@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j</artifactId>
-		<version>5.0.2</version>
+		<version>5.0.3-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-compliance</artifactId>
 	<packaging>pom</packaging>
