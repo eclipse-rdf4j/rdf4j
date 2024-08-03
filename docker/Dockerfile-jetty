@@ -1,0 +1,36 @@
+# Temp to reduce image size
+FROM ubuntu:jammy AS temp
+
+RUN  apt-get clean && apt-get update && apt-get install -y unzip
+
+
+COPY ignore/rdf4j.zip /tmp/rdf4j.zip
+
+WORKDIR /tmp
+
+RUN unzip -q /tmp/rdf4j.zip
+
+# Final workbench
+FROM jetty:9-jre17-eclipse-temurin 
+LABEL org.opencontainers.image.authors="Bart Hanssens (bart.hanssens@bosa.fgov.be)"
+
+USER root
+
+ENV JAVA_OPTIONS="-Dorg.eclipse.rdf4j.appdata.basedir=/var/rdf4j -Dorg.eclipse.rdf4j.rio.jsonld_secure_mode=false"
+ENV JETTY_MODULES="server,bytebufferpool,threadpool,security,servlet,webapp,ext,plus,deploy,annotations,http,jsp,jstl"
+
+COPY --from=temp /tmp/eclipse-rdf4j*/war/*.war /var/lib/jetty/webapps/
+
+# mimic Tomcat directories for data and logs
+
+RUN	ln -s /usr/local/jetty/logs /var/lib/jetty/logs && \
+	mkdir -p /usr/local/jetty/logs /var/rdf4j && \
+	chown -R jetty:jetty /usr/local/jetty/logs && \
+	chown -R jetty:jetty /var/rdf4j && \
+	chown -R jetty:jetty /var/lib/jetty/webapps && \
+	java -jar $JETTY_HOME/start.jar --add-to-start=$JETTY_MODULES --approve-all-licenses
+
+USER jetty
+
+EXPOSE 8080
+

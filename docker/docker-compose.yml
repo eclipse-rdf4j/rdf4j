@@ -3,13 +3,16 @@ services:
   rdf4j:
     environment:
       - APP_LOGGING_LEVEL=${APP_LOGGING_LEVEL}
+      - APP_SERVER=${APP_SERVER:-tomcat}
     ports:
       - 127.0.0.1:8080:8080
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile-${APP_SERVER:-tomcat}
     restart: always
     volumes:
       - rdf4j_data:/var/rdf4j
-      - rdf4j_logs:/usr/local/tomcat/logs
+      - rdf4j_logs:/usr/local/${APP_SERVER:-tomcat}/logs
 
 volumes:
   rdf4j_data:
