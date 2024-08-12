@@ -101,6 +101,7 @@ public class ConfigurationsTest {
 		var result = Configurations.getLiteralValue(m, subject, RDFS.LABEL, RDFS.COMMENT);
 		assertThat(result).contains(literal("label"));
 		assertNotLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
+		assertNotLogged("Discrepancy between use of the old and new config vocabulary.", Level.DEBUG);
 	}
 
 	@Test
@@ -116,7 +117,21 @@ public class ConfigurationsTest {
 		System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "");
 
 		assertThat(result).contains(literal("label"));
-		assertLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
+		assertLogged("Discrepancy between use of the old and new config vocabulary.", Level.DEBUG);
+	}
+
+	@Test
+	public void testGetLiteralValue_onlyLegacy() {
+
+		var subject = bnode();
+		var m = new ModelBuilder().subject(subject)
+				.add(RDFS.COMMENT, "comment")
+				.build();
+
+		var result = Configurations.getLiteralValue(m, subject, RDFS.LABEL, RDFS.COMMENT);
+
+		assertThat(result).contains(literal("comment"));
+		assertLogged("Discrepancy between use of the old and new config vocabulary.", Level.DEBUG);
 	}
 
 	@Test
@@ -158,6 +173,7 @@ public class ConfigurationsTest {
 		var result = Configurations.getResourceValue(m, subject, RDFS.LABEL, RDFS.COMMENT);
 		assertThat(result).contains(iri("urn:label"));
 		assertNotLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
+		assertNotLogged("Discrepancy between use of the old and new config vocabulary.", Level.DEBUG);
 	}
 
 	@Test
@@ -183,6 +199,7 @@ public class ConfigurationsTest {
 		var result = Configurations.getIRIValue(m, subject, RDFS.LABEL, RDFS.COMMENT);
 		assertThat(result).contains(iri("urn:label"));
 		assertNotLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
+		assertNotLogged("Discrepancy between use of the old and new config vocabulary.", Level.DEBUG);
 	}
 
 	@Test
@@ -197,6 +214,7 @@ public class ConfigurationsTest {
 		var result = Configurations.getPropertyValues(m, subject, RDFS.LABEL, RDFS.COMMENT);
 		assertThat(result).hasSize(2);
 		assertNotLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
+		assertNotLogged("Discrepancy between use of the old and new config vocabulary.", Level.DEBUG);
 	}
 
 	@Test
@@ -213,6 +231,7 @@ public class ConfigurationsTest {
 		var result = Configurations.getPropertyValues(m, subject, RDFS.LABEL, RDFS.COMMENT);
 		assertThat(result).hasSize(2);
 		assertNotLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
+		assertNotLogged("Discrepancy between use of the old and new config vocabulary.", Level.DEBUG);
 	}
 
 	@Test
@@ -229,6 +248,7 @@ public class ConfigurationsTest {
 		var result = Configurations.getPropertyValues(m, subject, RDFS.LABEL, RDFS.COMMENT);
 		assertThat(result).hasSize(2);
 		assertNotLogged("Discrepancy between use of the old and new config vocabulary.", Level.WARN);
+		assertNotLogged("Discrepancy between use of the old and new config vocabulary.", Level.DEBUG);
 	}
 
 	@Test
