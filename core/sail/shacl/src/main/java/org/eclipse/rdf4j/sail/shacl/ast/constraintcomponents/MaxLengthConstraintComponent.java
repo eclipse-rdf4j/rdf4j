@@ -89,6 +89,6 @@ public class MaxLengthConstraintComponent extends SimpleAbstractConstraintCompon
 
 	@Override
 	public int hashCode() {
-		return (int) (maxLength ^ (maxLength >>> 32)) + "MaxLengthConstraintComponent".hashCode();
+		return Long.hashCode(maxLength) + "MaxLengthConstraintComponent".hashCode();
 	}
 }
