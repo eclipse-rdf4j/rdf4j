@@ -735,49 +735,51 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		if (closed) {
 			return;
 		}
-
-		if (getWrappedConnection() instanceof AbstractSailConnection) {
-			AbstractSailConnection abstractSailConnection = (AbstractSailConnection) getWrappedConnection();
-
-			abstractSailConnection.waitForOtherOperations(true);
-		}
-
 		try {
-			if (isActive()) {
-				rollback();
+			if (getWrappedConnection() instanceof AbstractSailConnection) {
+				AbstractSailConnection abstractSailConnection = (AbstractSailConnection) getWrappedConnection();
+
+				abstractSailConnection.waitForOtherOperations(true);
 			}
 		} finally {
-			try {
-				shapesRepoConnection.close();
 
+			try {
+				if (isActive()) {
+					rollback();
+				}
 			} finally {
 				try {
-					if (previousStateConnection != null) {
-						previousStateConnection.close();
-					}
+					shapesRepoConnection.close();
 
 				} finally {
 					try {
-						if (serializableConnection != null) {
-							serializableConnection.close();
+						if (previousStateConnection != null) {
+							previousStateConnection.close();
 						}
-					} finally {
 
+					} finally {
 						try {
-							super.close();
+							if (serializableConnection != null) {
+								serializableConnection.close();
+							}
 						} finally {
+
 							try {
-								sail.closeConnection();
+								super.close();
 							} finally {
 								try {
-									cleanupShapesReadWriteLock();
+									sail.closeConnection();
 								} finally {
 									try {
-										cleanupReadWriteLock();
+										cleanupShapesReadWriteLock();
 									} finally {
-										closed = true;
-									}
+										try {
+											cleanupReadWriteLock();
+										} finally {
+											closed = true;
+										}
 
+									}
 								}
 							}
 						}
@@ -785,6 +787,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				}
 			}
 		}
+
 	}
 
 	@Override

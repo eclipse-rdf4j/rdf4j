@@ -22,9 +22,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.LockSupport;
-import java.util.concurrent.locks.ReentrantLock;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.concurrent.locks.ExclusiveReentrantLockManager;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -98,7 +98,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	private final AtomicReference<Thread> activeThread = new AtomicReference<>();
 
 	@SuppressWarnings("FieldMayBeFinal")
-	private boolean isOpen = true;
+	private volatile boolean isOpen = true;
 	private static final VarHandle IS_OPEN;
 
 	private Thread owner;
@@ -106,9 +106,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 	/**
 	 * Lock used to prevent concurrent calls to update methods like addStatement, clear, commit, etc. within a
 	 * transaction.
-	 *
 	 */
-	private final ReentrantLock updateLock = new ReentrantLock();
+	private final ExclusiveReentrantLockManager updateLock = new ExclusiveReentrantLockManager();
 	private final LongAdder iterationsOpened = new LongAdder();
 	private final LongAdder iterationsClosed = new LongAdder();
 
@@ -200,8 +199,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			activeThread.setRelease(Thread.currentThread());
 
 			verifyIsOpen();
-
-			updateLock.lock();
+			Lock exclusiveLock = updateLock.getExclusiveLock();
 			try {
 				if (isActive()) {
 					throw new SailException("a transaction is already active on this connection.");
@@ -210,8 +208,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 				startTransactionInternal();
 				txnActive = true;
 			} finally {
-				updateLock.unlock();
+				exclusiveLock.release();
 			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new SailException(e);
 		} finally {
 			try {
 				activeThread.setRelease(null);
@@ -505,15 +506,19 @@ public abstract class AbstractSailConnection implements SailConnection {
 			activeThread.setRelease(Thread.currentThread());
 			verifyIsOpen();
 
-			updateLock.lock();
+			Lock exclusiveLock = updateLock.getExclusiveLock();
+
 			try {
 				if (txnActive) {
 					prepareInternal();
 					txnPrepared = true;
 				}
 			} finally {
-				updateLock.unlock();
+				exclusiveLock.release();
 			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new SailException(e);
 		} finally {
 			try {
 				activeThread.setRelease(null);
@@ -535,7 +540,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 			verifyIsOpen();
 
-			updateLock.lock();
+			Lock exclusiveLock = updateLock.getExclusiveLock();
+
 			try {
 				if (txnActive) {
 					if (!txnPrepared) {
@@ -546,8 +552,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 					txnPrepared = false;
 				}
 			} finally {
-				updateLock.unlock();
+				exclusiveLock.release();
 			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new SailException(e);
 		} finally {
 			try {
 				activeThread.setRelease(null);
@@ -572,7 +581,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 			verifyIsOpen();
 
-			updateLock.lock();
+			Lock exclusiveLock = updateLock.getExclusiveLock();
+
 			try {
 				if (txnActive) {
 					try {
@@ -586,8 +596,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 							debugEnabled ? new Throwable() : null);
 				}
 			} finally {
-				updateLock.unlock();
+				exclusiveLock.release();
 			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new SailException(e);
 		} finally {
 			try {
 				activeThread.setRelease(null);
@@ -694,13 +707,17 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 			verifyIsOpen();
 
-			updateLock.lock();
+			Lock exclusiveLock = updateLock.getExclusiveLock();
+
 			try {
 				verifyIsActive();
 				endUpdateInternal(op);
 			} finally {
-				updateLock.unlock();
+				exclusiveLock.release();
 			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new SailException(e);
 		} finally {
 			try {
 				activeThread.setRelease(null);
@@ -750,14 +767,18 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 			verifyIsOpen();
 
-			updateLock.lock();
+			Lock exclusiveLock = updateLock.getExclusiveLock();
+
 			try {
 				verifyIsActive();
 				clearInternal(contexts);
 				statementsRemoved = true;
 			} finally {
-				updateLock.unlock();
+				exclusiveLock.release();
 			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new SailException(e);
 		} finally {
 			try {
 				activeThread.setRelease(null);
@@ -820,13 +841,17 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 			verifyIsOpen();
 
-			updateLock.lock();
+			Lock exclusiveLock = updateLock.getExclusiveLock();
+
 			try {
 				verifyIsActive();
 				setNamespaceInternal(prefix, name);
 			} finally {
-				updateLock.unlock();
+				exclusiveLock.release();
 			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new SailException(e);
 		} finally {
 			try {
 				activeThread.setRelease(null);
@@ -848,13 +873,17 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 			verifyIsOpen();
 
-			updateLock.lock();
+			Lock exclusiveLock = updateLock.getExclusiveLock();
+
 			try {
 				verifyIsActive();
 				removeNamespaceInternal(prefix);
 			} finally {
-				updateLock.unlock();
+				exclusiveLock.release();
 			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new SailException(e);
 		} finally {
 			try {
 				activeThread.setRelease(null);
@@ -873,13 +902,17 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 			verifyIsOpen();
 
-			updateLock.lock();
+			Lock exclusiveLock = updateLock.getExclusiveLock();
+
 			try {
 				verifyIsActive();
 				clearNamespacesInternal();
 			} finally {
-				updateLock.unlock();
+				exclusiveLock.release();
 			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new SailException(e);
 		} finally {
 			try {
 				activeThread.setRelease(null);

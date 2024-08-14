@@ -18,6 +18,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.WeakHashMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -119,6 +120,7 @@ public abstract class AbstractSail implements Sail {
 	 * debugging was disable at the time the connection was acquired.
 	 */
 	private final Map<SailConnection, Throwable> activeConnections = new IdentityHashMap<>();
+//	private final Map<SailConnection, Throwable> activeConnections = new WeakHashMap<>();
 
 	/*
 	 * constructors
