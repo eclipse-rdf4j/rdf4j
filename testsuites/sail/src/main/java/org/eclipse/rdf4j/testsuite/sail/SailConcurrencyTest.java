@@ -20,6 +20,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.common.concurrent.locks.Properties;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -36,7 +37,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Timeout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -77,6 +78,7 @@ public abstract class SailConcurrencyTest {
 
 	@BeforeEach
 	public void setUp() {
+		Properties.setLockTrackingEnabled(true);
 		store = createSail();
 		store.init();
 		vf = store.getValueFactory();
@@ -157,6 +159,7 @@ public abstract class SailConcurrencyTest {
 	 */
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.MINUTES)
+//	@RepeatedTest(100)
 	public void testConcurrentAddLargeTxn() throws Exception {
 		logger.info("executing two large concurrent transactions");
 		final CountDownLatch runnersDone = new CountDownLatch(2);
@@ -199,6 +202,7 @@ public abstract class SailConcurrencyTest {
 	 */
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.MINUTES)
+//	@RepeatedTest(100)
 	public void testConcurrentAddLargeTxnRollback() throws Exception {
 		logger.info("executing two large concurrent transactions");
 		final CountDownLatch runnersDone = new CountDownLatch(2);
@@ -317,6 +321,7 @@ public abstract class SailConcurrencyTest {
 		}
 	}
 
+//	@RepeatedTest(100)
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentConnectionsShutdown() throws InterruptedException {
@@ -362,6 +367,7 @@ public abstract class SailConcurrencyTest {
 	}
 
 	// @Disabled
+//	@RepeatedTest(100)
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testSerialThreads() throws InterruptedException {
@@ -443,6 +449,7 @@ public abstract class SailConcurrencyTest {
 
 	}
 
+//	@RepeatedTest(100)
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentConnectionsShutdownReadCommitted() throws InterruptedException {
@@ -499,6 +506,7 @@ public abstract class SailConcurrencyTest {
 
 	}
 
+//	@RepeatedTest(100)
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentConnectionsShutdownAndClose() throws InterruptedException {
@@ -545,13 +553,24 @@ public abstract class SailConcurrencyTest {
 
 		try {
 			if (thread2.isAlive()) {
+//                try {
 				connection2.get().close();
+
+//                }finally {
 				connection1.get().close();
+
+//                }
 			} else {
+//                try {
 				connection1.get().close();
+
+//                }finally {
 				connection2.get().close();
+
+//                }
 			}
-		} catch (SailException ignored) {
+		} catch (Throwable logged) {
+			logger.error("Error closing connection", logged);
 		}
 
 		try (SailConnection connection = store.getConnection()) {
@@ -575,6 +594,7 @@ public abstract class SailConcurrencyTest {
 		store.shutDown();
 	}
 
+//	@RepeatedTest(100)
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentConnectionsShutdownAndCloseRollback() throws InterruptedException {
