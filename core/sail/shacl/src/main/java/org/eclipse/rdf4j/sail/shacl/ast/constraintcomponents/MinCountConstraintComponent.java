@@ -227,6 +227,6 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public int hashCode() {
-		return (int) (minCount ^ (minCount >>> 32)) + "MinCountConstraintComponent".hashCode();
+		return Long.hashCode(minCount) + "MinCountConstraintComponent".hashCode();
 	}
 }

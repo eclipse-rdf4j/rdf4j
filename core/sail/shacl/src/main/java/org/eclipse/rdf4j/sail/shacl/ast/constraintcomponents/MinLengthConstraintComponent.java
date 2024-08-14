@@ -89,6 +89,6 @@ public class MinLengthConstraintComponent extends SimpleAbstractConstraintCompon
 
 	@Override
 	public int hashCode() {
-		return (int) (minLength ^ (minLength >>> 32)) + "MinLengthConstraintComponent".hashCode();
+		return Long.hashCode(minLength) + "MinLengthConstraintComponent".hashCode();
 	}
 }
