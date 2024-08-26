@@ -29,8 +29,10 @@ import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.AllTargetsPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalInnerJoin;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterByPredicateObject;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -85,10 +87,30 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			PlanNode addedTargets;
 
 			if (overrideTargetNode != null) {
-				addedTargets = effectiveTarget.extend(overrideTargetNode.getPlanNode(), connectionsGroup,
-						validationSettings.getDataGraph(), scope,
-						EffectiveTarget.Extend.right,
-						false, null);
+				PlanNode planNode = overrideTargetNode.getPlanNode();
+				if (planNode instanceof AllTargetsPlanNode) {
+					// We are cheating a bit here by retrieving all the targets and values at the same time by
+					// pretending to be in node shape scope and then shifting the results back to property shape scope
+					PlanNode allTargets = getTargetChain()
+							.getEffectiveTarget(Scope.nodeShape,
+									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)
+							.getAllTargets(connectionsGroup, validationSettings.getDataGraph(), Scope.nodeShape);
+					allTargets = new ShiftToPropertyShape(allTargets);
+
+					// filter by type against the base sail
+					allTargets = new FilterByPredicateObject(
+							connectionsGroup.getBaseConnection(),
+							validationSettings.getDataGraph(), RDF.TYPE, clazzSet,
+							allTargets, false, FilterByPredicateObject.FilterOn.value, true);
+
+					return allTargets;
+
+				} else {
+					addedTargets = effectiveTarget.extend(planNode, connectionsGroup,
+							validationSettings.getDataGraph(), scope,
+							EffectiveTarget.Extend.right,
+							false, null);
+				}
 
 			} else {
 				BufferedSplitter addedTargetsBufferedSplitter = new BufferedSplitter(
@@ -98,7 +120,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				PlanNode addedByPath = path.getAllAdded(connectionsGroup, validationSettings.getDataGraph(), null);
 
 				addedByPath = effectiveTarget.getTargetFilter(connectionsGroup,
-						validationSettings.getDataGraph(), Unique.getInstance(new TrimToTarget(addedByPath), false));
+						validationSettings.getDataGraph(), Unique.getInstance(new TrimToTarget(addedByPath), true));
 
 				addedByPath = new ReduceTargets(addedByPath, addedTargetsBufferedSplitter.getPlanNode());
 
@@ -130,6 +152,12 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 
 				addedTargets = UnionNode.getInstance(addedByPath, addedTargets);
 				addedTargets = Unique.getInstance(addedTargets, false);
+			}
+
+			int size = effectiveTarget.size();
+
+			if (size > 1) {
+				addedTargets = Unique.getInstance(addedTargets, true);
 			}
 
 			PlanNode falseNode = new BulkedExternalInnerJoin(

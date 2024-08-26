@@ -66,6 +66,7 @@ public class TargetClass extends Target {
 			Resource clazz = targetClass.stream().findAny().get();
 			planNode = new UnorderedSelect(connection, null, RDF.TYPE, clazz,
 					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope), null);
+			return planNode;
 		} else {
 			planNode = new Select(connection,
 					SparqlFragment.bgp(Set.of(),

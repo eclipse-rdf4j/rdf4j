@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -22,7 +23,11 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 
 /**
  * @author Håvard Ottestad
@@ -40,6 +45,8 @@ public class FilterByPredicateObject implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 	private final Resource[] dataGraph;
+
+	private final Cache<Resource, Boolean> cache = CacheBuilder.newBuilder().maximumSize(1000).build();
 
 	public FilterByPredicateObject(SailConnection connection, Resource[] dataGraph, IRI filterOnPredicate,
 			Set<Resource> filterOnObject, PlanNode parent, boolean returnMatching, FilterOn filterOn,
@@ -195,12 +202,26 @@ public class FilterByPredicateObject implements PlanNode {
 		}
 
 		if (subject.isResource()) {
-			for (Resource object : filterOnObject) {
-				if (connection.hasStatement(((Resource) subject), filterOnPredicate, object, includeInferred,
-						dataGraph)) {
-					return true;
+			try {
+				return cache.get(((Resource) subject), () -> {
+					for (Resource object : filterOnObject) {
+						if (connection.hasStatement(((Resource) subject), filterOnPredicate, object, includeInferred,
+								dataGraph)) {
+							return true;
+						}
+					}
+					return false;
+				});
+			} catch (ExecutionException e) {
+				if (e.getCause() != null) {
+					if (e.getCause() instanceof RuntimeException) {
+						throw ((RuntimeException) e.getCause());
+					}
+					throw new SailException(e.getCause());
 				}
+				throw new SailException(e);
 			}
+
 		}
 		return false;
 	}

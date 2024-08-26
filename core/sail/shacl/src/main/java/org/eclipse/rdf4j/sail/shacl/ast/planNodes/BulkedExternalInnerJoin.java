@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PeekMarkIterator;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
@@ -93,14 +94,14 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 			ArrayDeque<ValidationTuple> left;
 			ArrayDeque<ValidationTuple> right;
 			ArrayDeque<ValidationTuple> joined;
-			private CloseableIteration<? extends ValidationTuple> leftNodeIterator;
+			private PeekMarkIterator<? extends ValidationTuple> leftNodeIterator;
 
 			@Override
 			protected void init() {
 				left = new ArrayDeque<>(BULK_SIZE);
 				right = new ArrayDeque<>(BULK_SIZE);
 				joined = new ArrayDeque<>(BULK_SIZE);
-				leftNodeIterator = leftNode.iterator();
+				leftNodeIterator = new PeekMarkIterator<>(leftNode.iterator());
 			}
 
 			private void calculateNext() {
@@ -112,6 +113,16 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 				while (joined.isEmpty() && leftNodeIterator.hasNext()) {
 
 					while (left.size() < BULK_SIZE && leftNodeIterator.hasNext()) {
+						if (!left.isEmpty()) {
+							ValidationTuple peek = leftNodeIterator.peek();
+							if (peek.sameTargetAs(left.getFirst())) {
+								// stop if we detect a duplicate target since we only support distinct targets on the
+								// left side of the join
+								assert false
+										: "Current and next left target is the same: " + peek + " " + left.getFirst();
+								break;
+							}
+						}
 						left.addFirst(leftNodeIterator.next());
 					}
 
