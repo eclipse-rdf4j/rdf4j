@@ -1,0 +1,80 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+
+[] a sh:ValidationReport;
+  rdf4j:truncated false;
+  sh:conforms false;
+  sh:result [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode ex:p5;
+      sh:resultPath ex:knows5;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeKindConstraintComponent;
+      sh:sourceShape _:a799f05443e446b3a8e6afeb817a09a914840;
+      sh:value _:genid-f80a96476e0b4c59a8735fcc49f77ef718064-bnode2
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode ex:p555;
+      sh:resultPath ex:knows5;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeKindConstraintComponent;
+      sh:sourceShape _:a799f05443e446b3a8e6afeb817a09a914840;
+      sh:value _:genid-f80a96476e0b4c59a8735fcc49f77ef718064-bnode3
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode ex:p55;
+      sh:resultPath ex:knows5;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeKindConstraintComponent;
+      sh:sourceShape _:a799f05443e446b3a8e6afeb817a09a914840;
+      sh:value _:genid-f80a96476e0b4c59a8735fcc49f77ef718064-bnode2
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode ex:p55;
+      sh:resultPath ex:knows5;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeKindConstraintComponent;
+      sh:sourceShape _:a799f05443e446b3a8e6afeb817a09a914840;
+      sh:value []
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode ex:p55;
+      sh:resultPath ex:knows5;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeKindConstraintComponent;
+      sh:sourceShape _:a799f05443e446b3a8e6afeb817a09a914840;
+      sh:value _:genid-f80a96476e0b4c59a8735fcc49f77ef718064-bnode3
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode ex:p555;
+      sh:resultPath ex:knows5;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeKindConstraintComponent;
+      sh:sourceShape _:a799f05443e446b3a8e6afeb817a09a914840;
+      sh:value _:genid-f80a96476e0b4c59a8735fcc49f77ef718064-bnode2
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode ex:p5;
+      sh:resultPath ex:knows5;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeKindConstraintComponent;
+      sh:sourceShape _:a799f05443e446b3a8e6afeb817a09a914840;
+      sh:value _:genid-f80a96476e0b4c59a8735fcc49f77ef718064-bnode3
+    ] .
+
+_:a799f05443e446b3a8e6afeb817a09a914840 a sh:PropertyShape;
+  sh:nodeKind sh:IRI;
+  sh:path ex:knows5 .

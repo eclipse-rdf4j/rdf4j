@@ -1,0 +1,35 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+
+[] a sh:ValidationReport;
+  rdf4j:truncated false;
+  sh:conforms false;
+  sh:result [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode _:genid-bb83388cb99e4e1e887ebc772122a9ca57103-bnode2;
+      sh:resultPath ex:knows5;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeKindConstraintComponent;
+      sh:sourceShape _:333910f927574097a749f6b0d7ac2bbd21356;
+      sh:value _:genid-bb83388cb99e4e1e887ebc772122a9ca57103-bnode2
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode _:genid-bb83388cb99e4e1e887ebc772122a9ca57103-bnode2;
+      sh:resultPath ex:knows5;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeKindConstraintComponent;
+      sh:sourceShape _:333910f927574097a749f6b0d7ac2bbd21356;
+      sh:value []
+    ] .
+
+_:333910f927574097a749f6b0d7ac2bbd21356 a sh:PropertyShape;
+  sh:nodeKind sh:IRI;
+  sh:path ex:knows5 .
