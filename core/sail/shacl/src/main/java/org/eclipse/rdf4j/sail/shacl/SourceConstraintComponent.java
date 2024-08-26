@@ -16,53 +16,53 @@ import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 
 public enum SourceConstraintComponent {
-	MaxCountConstraintComponent(SHACL.MAX_COUNT_CONSTRAINT_COMPONENT, false),
-	MinCountConstraintComponent(SHACL.MIN_COUNT_CONSTRAINT_COMPONENT, false),
+	MaxCountConstraintComponent(SHACL.MAX_COUNT_CONSTRAINT_COMPONENT, ProducesValidationResultValue.NEVER),
+	MinCountConstraintComponent(SHACL.MIN_COUNT_CONSTRAINT_COMPONENT, ProducesValidationResultValue.NEVER),
 
-	DatatypeConstraintComponent(SHACL.DATATYPE_CONSTRAINT_COMPONENT, true),
-	NodeKindConstraintComponent(SHACL.NODE_KIND_CONSTRAINT_COMPONENT, true),
-	ClassConstraintComponent(SHACL.CLASS_CONSTRAINT_COMPONENT, true),
+	DatatypeConstraintComponent(SHACL.DATATYPE_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
+	NodeKindConstraintComponent(SHACL.NODE_KIND_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
+	ClassConstraintComponent(SHACL.CLASS_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
 
-	PatternConstraintComponent(SHACL.PATTERN_CONSTRAINT_COMPONENT, true),
-	UniqueLangConstraintComponent(SHACL.UNIQUE_LANG_CONSTRAINT_COMPONENT, false),
-	LanguageInConstraintComponent(SHACL.LANGUAGE_IN_CONSTRAINT_COMPONENT, true),
-	MaxLengthConstraintComponent(SHACL.MAX_LENGTH_CONSTRAINT_COMPONENT, true),
-	MinLengthConstraintComponent(SHACL.MIN_LENGTH_CONSTRAINT_COMPONENT, true),
+	PatternConstraintComponent(SHACL.PATTERN_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
+	UniqueLangConstraintComponent(SHACL.UNIQUE_LANG_CONSTRAINT_COMPONENT, ProducesValidationResultValue.NEVER),
+	LanguageInConstraintComponent(SHACL.LANGUAGE_IN_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
+	MaxLengthConstraintComponent(SHACL.MAX_LENGTH_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
+	MinLengthConstraintComponent(SHACL.MIN_LENGTH_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
 
-	InConstraintComponent(SHACL.IN_CONSTRAINT_COMPONENT, true),
-	HasValueConstraintComponent(SHACL.HAS_VALUE_CONSTRAINT_COMPONENT, false),
-	HasValueInConstraintComponent(DASH.HasValueInConstraintComponent, false),
-	ClosedConstraintComponent(SHACL.CLOSED_CONSTRAINT_COMPONENT, true),
+	InConstraintComponent(SHACL.IN_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
+	HasValueConstraintComponent(SHACL.HAS_VALUE_CONSTRAINT_COMPONENT, ProducesValidationResultValue.NEVER),
+	HasValueInConstraintComponent(DASH.HasValueInConstraintComponent, ProducesValidationResultValue.NEVER),
+	ClosedConstraintComponent(SHACL.CLOSED_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
 
-	MinExclusiveConstraintComponent(SHACL.MIN_EXCLUSIVE_CONSTRAINT_COMPONENT, true),
-	MaxExclusiveConstraintComponent(SHACL.MAX_EXCLUSIVE_CONSTRAINT_COMPONENT, true),
-	MaxInclusiveConstraintComponent(SHACL.MAX_INCLUSIVE_CONSTRAINT_COMPONENT, true),
-	MinInclusiveConstraintComponent(SHACL.MIN_INCLUSIVE_CONSTRAINT_COMPONENT, true),
+	MinExclusiveConstraintComponent(SHACL.MIN_EXCLUSIVE_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
+	MaxExclusiveConstraintComponent(SHACL.MAX_EXCLUSIVE_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
+	MaxInclusiveConstraintComponent(SHACL.MAX_INCLUSIVE_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
+	MinInclusiveConstraintComponent(SHACL.MIN_INCLUSIVE_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
 
-	AndConstraintComponent(SHACL.AND_CONSTRAINT_COMPONENT, true),
-	OrConstraintComponent(SHACL.OR_CONSTRAINT_COMPONENT, true),
-	NotConstraintComponent(SHACL.NOT_CONSTRAINT_COMPONENT, true),
-	XoneConstraintComponent(SHACL.XONE_CONSTRAINT_COMPONENT, true),
+	AndConstraintComponent(SHACL.AND_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
+	OrConstraintComponent(SHACL.OR_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
+	NotConstraintComponent(SHACL.NOT_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
+	XoneConstraintComponent(SHACL.XONE_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
 
-	DisjointConstraintComponent(SHACL.DISJOINT_CONSTRAINT_COMPONENT, true),
-	EqualsConstraintComponent(SHACL.EQUALS_CONSTRAINT_COMPONENT, true),
-	LessThanConstraintComponent(SHACL.LESS_THAN_CONSTRAINT_COMPONENT, true),
+	DisjointConstraintComponent(SHACL.DISJOINT_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
+	EqualsConstraintComponent(SHACL.EQUALS_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
+	LessThanConstraintComponent(SHACL.LESS_THAN_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
 	LessThanOrEqualsConstraintComponent(SHACL.LESS_THAN_OR_EQUALS_CONSTRAINT_COMPONENT,
-			true),
+			ProducesValidationResultValue.ALWAYS),
 
 	QualifiedMaxCountConstraintComponent(SHACL.QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT,
-			false),
+			ProducesValidationResultValue.NEVER),
 	QualifiedMinCountConstraintComponent(SHACL.QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT,
-			false),
-	NodeConstraintComponent(SHACL.NODE_CONSTRAINT_COMPONENT, true),
-	PropertyConstraintComponent(SHACL.PROPERTY_CONSTRAINT_COMPONENT, false),
+			ProducesValidationResultValue.NEVER),
+	NodeConstraintComponent(SHACL.NODE_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
+	PropertyConstraintComponent(SHACL.PROPERTY_CONSTRAINT_COMPONENT, ProducesValidationResultValue.NEVER),
 
-	SPARQLConstraintComponent(SHACL.SPARQL_CONSTRAINT_COMPONENT, true);
+	SPARQLConstraintComponent(SHACL.SPARQL_CONSTRAINT_COMPONENT, ProducesValidationResultValue.SOMETIMES);
 
 	private final IRI iri;
-	private final boolean producesValidationResultValue;
+	private final ProducesValidationResultValue producesValidationResultValue;
 
-	SourceConstraintComponent(IRI iri, boolean producesValidationResultValue) {
+	SourceConstraintComponent(IRI iri, ProducesValidationResultValue producesValidationResultValue) {
 		this.iri = iri;
 		this.producesValidationResultValue = producesValidationResultValue;
 	}
@@ -72,6 +72,16 @@ public enum SourceConstraintComponent {
 	}
 
 	public boolean producesValidationResultValue() {
-		return producesValidationResultValue;
+		return producesValidationResultValue != ProducesValidationResultValue.NEVER;
+	}
+
+	public boolean alwaysProducesValidationResultValue() {
+		return producesValidationResultValue == ProducesValidationResultValue.ALWAYS;
+	}
+
+	private enum ProducesValidationResultValue {
+		ALWAYS,
+		NEVER,
+		SOMETIMES
 	}
 }
