@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PatternFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 
-public class PatternConstraintComponent extends SimpleAbstractConstraintComponent {
+public class PatternConstraintComponent extends AbstractSimpleConstraintComponent {
 
 	String pattern;
 	String flags;
@@ -67,7 +67,10 @@ public class PatternConstraintComponent extends SimpleAbstractConstraintComponen
 	}
 
 	private static String escapeRegexForSparql(String pattern) {
-		return pattern.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
+		pattern = pattern.replace("\\", "\\\\");
+		pattern = pattern.replace("\"", "\\\"");
+		pattern = pattern.replace("\n", "\\n");
+		return pattern;
 	}
 
 	@Override

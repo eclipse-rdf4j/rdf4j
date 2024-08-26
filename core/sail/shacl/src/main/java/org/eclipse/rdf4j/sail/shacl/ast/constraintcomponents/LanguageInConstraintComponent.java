@@ -34,7 +34,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LanguageInFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
-public class LanguageInConstraintComponent extends SimpleAbstractConstraintComponent {
+public class LanguageInConstraintComponent extends AbstractSimpleConstraintComponent {
 
 	private final List<String> languageIn;
 	private final ArrayList<String> languageRanges;

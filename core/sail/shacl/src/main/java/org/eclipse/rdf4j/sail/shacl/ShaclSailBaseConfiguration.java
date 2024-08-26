@@ -27,7 +27,7 @@ abstract class ShaclSailBaseConfiguration extends NotifyingSailWrapper {
 	private static final Logger logger = LoggerFactory.getLogger(ShaclSailBaseConfiguration.class);
 
 	// Field used to control if the new SPARQL based validation should be enabled or disabled. Enabled by default.
-	final boolean sparqlValidation;
+	boolean sparqlValidation;
 
 	private boolean parallelValidation = ShaclSailConfig.PARALLEL_VALIDATION_DEFAULT;
 	private boolean logValidationPlans = ShaclSailConfig.LOG_VALIDATION_PLANS_DEFAULT;
@@ -375,4 +375,5 @@ abstract class ShaclSailBaseConfiguration extends NotifyingSailWrapper {
 	public void setShapesGraphs(Set<IRI> shapesGraphs) {
 		this.shapesGraphs = shapesGraphs;
 	}
+
 }

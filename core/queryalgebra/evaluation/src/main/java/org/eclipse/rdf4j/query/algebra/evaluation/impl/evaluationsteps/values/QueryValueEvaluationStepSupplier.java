@@ -50,7 +50,7 @@ public class QueryValueEvaluationStepSupplier {
 	}
 
 	public static QueryValueEvaluationStep prepareStr(QueryValueEvaluationStep arg, ValueFactory valueFactory) {
-		return make(arg, "Unkown constant argument for STR()", bs -> str(arg, valueFactory, bs));
+		return make(arg, "Unknown constant argument for STR()", bs -> str(arg, valueFactory, bs));
 	}
 
 	private static Value str(QueryValueEvaluationStep arg, ValueFactory valueFactory, BindingSet bindings) {
@@ -67,7 +67,7 @@ public class QueryValueEvaluationStepSupplier {
 				return valueFactory.createLiteral(literal.getLabel());
 			}
 		} else {
-			throw new ValueExprEvaluationException("Unkown constant argument for STR()");
+			throw new ValueExprEvaluationException("Unknown constant argument for STR()");
 		}
 	}
 
