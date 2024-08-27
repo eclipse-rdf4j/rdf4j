@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.DatatypeFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 
-public class DatatypeConstraintComponent extends SimpleAbstractConstraintComponent {
+public class DatatypeConstraintComponent extends AbstractSimpleConstraintComponent {
 
 	private final CoreDatatype coreDatatype;
 	private final IRI datatype;

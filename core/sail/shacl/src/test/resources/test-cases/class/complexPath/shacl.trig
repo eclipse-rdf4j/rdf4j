@@ -8,7 +8,7 @@
 
 rdf4j:SHACLShapeGraph {
   ex:PersonShape a sh:NodeShape;
-    sh:targetClass ex:Person, ex:SecondTarget;
+    sh:targetClass ex:Person, ex:SecondTarget, ex:AnyTarget;
     sh:property [
         sh:path (ex:knows1 ex:knows2 ex:knows3 ex:knows4);
         sh:class ex:Person

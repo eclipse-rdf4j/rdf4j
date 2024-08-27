@@ -323,6 +323,7 @@ public class ValidationTuple {
 	}
 
 	public ValidationTuple setValue(Value value) {
+		assert value != null;
 		if (value.equals(getValue())) {
 			return this;
 		}
@@ -493,7 +494,9 @@ public class ValidationTuple {
 		ValidationTuple validationTuple = new ValidationTuple(validationResults, chain, scope,
 				propertyShapeScopeWithValue, compressedTuples, contexts);
 		if (scope == ConstraintComponent.Scope.propertyShape) {
-			validationTuple = validationTuple.setValue(right.getValue());
+			if (right.hasValue()) {
+				validationTuple = validationTuple.setValue(right.getValue());
+			}
 		}
 
 		for (ValidationResult validationResult : right.getValidationResult()) {

@@ -311,7 +311,7 @@ abstract public class AbstractShaclTest {
 	}
 
 	@AfterEach
-	void tearDown() {
+	void afterEach() {
 		fullLogging = false;
 	}
 
@@ -591,6 +591,12 @@ abstract public class AbstractShaclTest {
 		// the TopBraid SHACL API doesn't agree with other implementations on how sh:closed should work in a property
 		// shape
 		if (testCase.testCasePath.startsWith("test-cases/closed/notPropertyShape/")) {
+			return;
+		}
+
+		// the TopBraid SHACL API doesn't agree with other implementations on how multiple paths to the same target
+		// should work
+		if (testCase.testCasePath.startsWith("test-cases/nodeKind/simpleCompress/")) {
 			return;
 		}
 

@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.MaxLengthFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 
-public class MaxLengthConstraintComponent extends SimpleAbstractConstraintComponent {
+public class MaxLengthConstraintComponent extends AbstractSimpleConstraintComponent {
 
 	long maxLength;
 

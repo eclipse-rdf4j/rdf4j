@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LiteralComparatorFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 
-public class MinExclusiveConstraintComponent extends SimpleAbstractConstraintComponent {
+public class MinExclusiveConstraintComponent extends AbstractSimpleConstraintComponent {
 
 	Literal minExclusive;
 

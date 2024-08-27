@@ -82,12 +82,13 @@ class ShapeValidationContainer {
 			validationResults = new ValidationResultIterator(iterator, effectiveValidationResultsLimitPerConstraint);
 			return validationResults;
 		} catch (Throwable e) {
-			logger.warn("Error validating SHACL Shape {}", shape.getId(), e);
-			logger.warn("Error validating SHACL Shape\n{}", shape, e);
+			logger.warn("Internal error while trying to validate SHACL Shape {}", shape.getId(), e);
+			logger.warn("Internal error while trying to validate SHACL Shape\n{}", shape, e);
 			if (e instanceof Error) {
 				throw e;
 			}
-			throw new SailException("Error validating SHACL Shape " + shape.getId() + "\n" + shape, e);
+			throw new SailException(
+					"Internal error while trying to validate SHACL Shape " + shape.getId() + "\n" + shape, e);
 		} finally {
 			handlePostLogging(before, validationResults);
 		}
