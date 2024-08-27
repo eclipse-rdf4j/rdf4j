@@ -32,7 +32,6 @@ import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.AllTargetsPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalInnerJoin;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterByPredicateObject;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
