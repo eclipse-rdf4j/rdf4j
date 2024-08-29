@@ -18,6 +18,7 @@ import java.util.Set;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 public class SetFilterNode implements PlanNode {
 
@@ -28,8 +29,9 @@ public class SetFilterNode implements PlanNode {
 	private boolean printed;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public SetFilterNode(Set<Value> targetNodeList, PlanNode parent, int index, boolean returnValid) {
-		this.parent = PlanNodeHelper.handleSorting(this, parent);
+	public SetFilterNode(Set<Value> targetNodeList, PlanNode parent, int index, boolean returnValid,
+			ConnectionsGroup connectionsGroup) {
+		this.parent = PlanNodeHelper.handleSorting(this, parent, connectionsGroup);
 		this.targetNodeList = targetNodeList;
 		this.index = index;
 		this.returnValid = returnValid;

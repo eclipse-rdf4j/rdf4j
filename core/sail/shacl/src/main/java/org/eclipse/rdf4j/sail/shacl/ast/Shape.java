@@ -422,7 +422,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 									Scope.none)
 							.getValidationPlan(connectionsGroup.getBaseConnection(), validationSettings.getDataGraph(),
 									getContexts()),
-							this);
+							this, connectionsGroup);
 				} else {
 					logger.debug("Use fall back validation approach for bulk validation instead of SPARQL for shape {}",
 							this);
@@ -436,7 +436,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 									.getAllTargets(connectionsGroup,
 											validationSettings.getDataGraph(),
 											this instanceof NodeShape ? Scope.nodeShape : Scope.propertyShape),
-							Scope.none), this);
+							Scope.none), this, connectionsGroup);
 				}
 
 			} else if (validationApproach == ValidationApproach.Transactional) {
@@ -447,7 +447,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 					return new SingleCloseablePlanNode(
 							Shape.this.generateTransactionalValidationPlan(connectionsGroup, validationSettings, null,
 									Scope.none),
-							this);
+							this, connectionsGroup);
 				} else {
 					return EmptyNode.getInstance();
 				}

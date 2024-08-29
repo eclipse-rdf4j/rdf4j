@@ -146,9 +146,11 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 				PlanNode addedByPath = path.getAllAdded(connectionsGroup, validationSettings.getDataGraph(), null);
 
 				addedByPath = effectiveTarget.getTargetFilter(connectionsGroup,
-						validationSettings.getDataGraph(), Unique.getInstance(new TrimToTarget(addedByPath), false));
+						validationSettings.getDataGraph(),
+						Unique.getInstance(new TrimToTarget(addedByPath, connectionsGroup), false, connectionsGroup));
 
-				addedByPath = new ReduceTargets(addedByPath, addedTargetsBufferedSplitter.getPlanNode());
+				addedByPath = new ReduceTargets(addedByPath, addedTargetsBufferedSplitter.getPlanNode(),
+						connectionsGroup);
 
 				addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, validationSettings.getDataGraph(),
 						scope,
@@ -173,11 +175,11 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)
 						.getTargetFilter(connectionsGroup, validationSettings.getDataGraph(), addedByValue);
 
-				addedTargets = UnionNode.getInstance(addedTargets,
-						new TrimToTarget(new ShiftToPropertyShape(addedByValue)));
+				addedTargets = UnionNode.getInstance(connectionsGroup, addedTargets,
+						new TrimToTarget(new ShiftToPropertyShape(addedByValue, connectionsGroup), connectionsGroup));
 
-				addedTargets = UnionNode.getInstance(addedByPath, addedTargets);
-				addedTargets = Unique.getInstance(addedTargets, false);
+				addedTargets = UnionNode.getInstance(connectionsGroup, addedByPath, addedTargets);
+				addedTargets = Unique.getInstance(addedTargets, false, connectionsGroup);
 
 			}
 
@@ -189,8 +191,8 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()),
 					false,
 					null,
-					BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph())
-			);
+					BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph()),
+					connectionsGroup);
 
 			StatementMatcher.Variable<Value> subjectVariable = stableRandomVariableProvider.next();
 			StatementMatcher.Variable<Value> predicateVariable = stableRandomVariableProvider.next();
@@ -229,7 +231,7 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 
 						return validationTuple;
 
-					})
+					}, connectionsGroup)
 					.getTrueNode(UnBufferedPlanNode.class);
 
 			return falseNode1;
@@ -258,10 +260,10 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 						}));
 
 				// then remove any that are in the addedTargets node
-				PlanNode notValuesIn = new ReduceTargets(unorderedSelect, addedTargets);
+				PlanNode notValuesIn = new ReduceTargets(unorderedSelect, addedTargets, connectionsGroup);
 
 				// remove duplicates
-				PlanNode unique = Unique.getInstance(notValuesIn, false);
+				PlanNode unique = Unique.getInstance(notValuesIn, false, connectionsGroup);
 
 				// then check that the rest are actually targets
 				PlanNode targetFilter = effectiveTarget.getTargetFilter(connectionsGroup,
@@ -273,8 +275,9 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 						validationSettings.getDataGraph(),
 						scope, EffectiveTarget.Extend.left, false, null);
 
-				targetNodePlanNode = UnionNode.getInstance(extend, effectiveTarget.getPlanNode(connectionsGroup,
-						validationSettings.getDataGraph(), scope, false, null));
+				targetNodePlanNode = UnionNode.getInstance(connectionsGroup, extend,
+						effectiveTarget.getPlanNode(connectionsGroup,
+								validationSettings.getDataGraph(), scope, false, null));
 			}
 
 			StatementMatcher.Variable<Value> predicateVariable = stableRandomVariableProvider.next();
@@ -288,7 +291,7 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 			SparqlFragment sparqlFragment = SparqlFragment.join(List.of(bgp, sparqlFragmentFilter));
 
 			BulkedExternalInnerJoin bulkedExternalInnerJoin = new BulkedExternalInnerJoin(
-					Unique.getInstance(targetNodePlanNode, false),
+					Unique.getInstance(targetNodePlanNode, false, connectionsGroup),
 					connectionsGroup.getBaseConnection(),
 					validationSettings.getDataGraph(),
 					sparqlFragment,
@@ -313,8 +316,8 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 							});
 						}
 						return validationTuple;
-					}
-			);
+					},
+					connectionsGroup);
 
 			return bulkedExternalInnerJoin;
 		}
@@ -345,7 +348,7 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 
 			// then remove any that are in the targets node
 			statementsNotMatchingPredicateList = new ReduceTargets(statementsNotMatchingPredicateList,
-					targets.getPlanNode());
+					targets.getPlanNode(), connectionsGroup);
 
 			// then check that the rest are actually targets
 			statementsNotMatchingPredicateList = effectiveTarget.getTargetFilter(connectionsGroup,
@@ -360,17 +363,18 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 						UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope),
 						(statement -> !allAllowedPredicates.contains(statement.getPredicate())));
 
-				removed = new ReduceTargets(removed, targets.getPlanNode());
+				removed = new ReduceTargets(removed, targets.getPlanNode(), connectionsGroup);
 
 				// then check that the rest are actually targets
 				removed = effectiveTarget.getTargetFilter(connectionsGroup, dataGraph, removed);
 
-				statementsNotMatchingPredicateList = UnionNode.getInstance(statementsNotMatchingPredicateList, removed);
+				statementsNotMatchingPredicateList = UnionNode.getInstance(connectionsGroup,
+						statementsNotMatchingPredicateList, removed);
 
 			}
 
 			// union and remove duplicates
-			PlanNode unique = Unique.getInstance(statementsNotMatchingPredicateList, false);
+			PlanNode unique = Unique.getInstance(statementsNotMatchingPredicateList, false, connectionsGroup);
 
 			// this should now be targets that are not valid
 			PlanNode extend = effectiveTarget.extend(unique, connectionsGroup,
@@ -389,9 +393,10 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 			PlanNode addedByPath = path.getAllAdded(connectionsGroup, dataGraph, null);
 
 			addedByPath = effectiveTarget.getTargetFilter(connectionsGroup,
-					dataGraph, Unique.getInstance(new TrimToTarget(addedByPath), false));
+					dataGraph,
+					Unique.getInstance(new TrimToTarget(addedByPath, connectionsGroup), false, connectionsGroup));
 
-			addedByPath = new ReduceTargets(addedByPath, addedTargetsBufferedSplitter.getPlanNode());
+			addedByPath = new ReduceTargets(addedByPath, addedTargetsBufferedSplitter.getPlanNode(), connectionsGroup);
 
 			addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, dataGraph,
 					scope,
@@ -410,7 +415,7 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 						return !allAllowedPredicates.contains(statement.getPredicate());
 					}));
 
-			addedByValue = UnionNode.getInstance(addedByValue, removedByValue);
+			addedByValue = UnionNode.getInstance(connectionsGroup, addedByValue, removedByValue);
 
 			addedByValue = getTargetChain()
 					.getEffectiveTarget(Scope.nodeShape,
@@ -424,11 +429,11 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)
 					.getTargetFilter(connectionsGroup, dataGraph, addedByValue);
 
-			addedTargets = UnionNode.getInstance(addedTargets,
-					new TrimToTarget(new ShiftToPropertyShape(addedByValue)));
+			addedTargets = UnionNode.getInstance(connectionsGroup, addedTargets,
+					new TrimToTarget(new ShiftToPropertyShape(addedByValue, connectionsGroup), connectionsGroup));
 
-			addedTargets = UnionNode.getInstance(addedByPath, addedTargets);
-			addedTargets = Unique.getInstance(addedTargets, false);
+			addedTargets = UnionNode.getInstance(connectionsGroup, addedByPath, addedTargets);
+			addedTargets = Unique.getInstance(addedTargets, false, connectionsGroup);
 
 			return addedTargets;
 

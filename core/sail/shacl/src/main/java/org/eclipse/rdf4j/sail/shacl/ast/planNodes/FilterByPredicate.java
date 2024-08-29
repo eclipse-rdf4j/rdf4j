@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 /**
  * @author Håvard Ottestad
@@ -45,9 +46,9 @@ public class FilterByPredicate implements PlanNode {
 	}
 
 	public FilterByPredicate(SailConnection connection, Set<IRI> filterOnPredicates, PlanNode parent,
-			On on, Resource[] dataGraph) {
+			On on, Resource[] dataGraph, ConnectionsGroup connectionsGroup) {
 		this.dataGraph = dataGraph;
-		this.parent = PlanNodeHelper.handleSorting(this, parent);
+		this.parent = PlanNodeHelper.handleSorting(this, parent, connectionsGroup);
 		this.connection = connection;
 		assert this.connection != null;
 		this.filterOnPredicates = filterOnPredicates;

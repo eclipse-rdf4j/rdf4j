@@ -82,7 +82,7 @@ public class UniqueTest {
 				Arrays.asList("a", "a", "2")
 		);
 
-		PlanNode unique = Unique.getInstance(input, true);
+		PlanNode unique = Unique.getInstance(input, true, null);
 
 		List<ValidationTuple> tuples = new MockConsumePlanNode(unique).asList();
 
@@ -91,7 +91,7 @@ public class UniqueTest {
 	}
 
 	private void runTest(MockInputPlanNode input, boolean compress) {
-		PlanNode unique = Unique.getInstance(input, compress);
+		PlanNode unique = Unique.getInstance(input, compress, null);
 
 		List<ValidationTuple> tuples = new MockConsumePlanNode(unique).asList();
 

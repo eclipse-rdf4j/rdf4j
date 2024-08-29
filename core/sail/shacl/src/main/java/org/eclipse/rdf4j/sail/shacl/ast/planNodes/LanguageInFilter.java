@@ -19,6 +19,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,8 +33,9 @@ public class LanguageInFilter extends FilterPlanNode {
 	private final List<String> languageRanges;
 	private final Set<String> lowerCaseLanguageIn;
 
-	public LanguageInFilter(PlanNode parent, Set<String> lowerCaseLanguageIn, List<String> languageRanges) {
-		super(parent);
+	public LanguageInFilter(PlanNode parent, Set<String> lowerCaseLanguageIn, List<String> languageRanges,
+			ConnectionsGroup connectionsGroup) {
+		super(parent, connectionsGroup);
 		this.lowerCaseLanguageIn = lowerCaseLanguageIn;
 		this.languageRanges = languageRanges;
 	}

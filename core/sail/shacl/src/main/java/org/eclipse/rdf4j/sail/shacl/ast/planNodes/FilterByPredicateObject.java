@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
@@ -50,9 +51,9 @@ public class FilterByPredicateObject implements PlanNode {
 
 	public FilterByPredicateObject(SailConnection connection, Resource[] dataGraph, IRI filterOnPredicate,
 			Set<Resource> filterOnObject, PlanNode parent, boolean returnMatching, FilterOn filterOn,
-			boolean includeInferred) {
+			boolean includeInferred, ConnectionsGroup connectionsGroup) {
 		this.dataGraph = dataGraph;
-		this.parent = PlanNodeHelper.handleSorting(this, parent);
+		this.parent = PlanNodeHelper.handleSorting(this, parent, connectionsGroup);
 		this.connection = connection;
 		assert this.connection != null;
 		this.includeInferred = includeInferred;

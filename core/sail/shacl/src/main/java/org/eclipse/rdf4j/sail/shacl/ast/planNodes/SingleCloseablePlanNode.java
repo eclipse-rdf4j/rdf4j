@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 /**
  * A plan node that can only be closed once
@@ -29,8 +30,8 @@ public class SingleCloseablePlanNode implements PlanNode {
 	private final Shape shape;
 	boolean receivedLogger = false;
 
-	public SingleCloseablePlanNode(PlanNode parent, Shape shape) {
-		this.parent = PlanNodeHelper.handleSorting(this, parent);
+	public SingleCloseablePlanNode(PlanNode parent, Shape shape, ConnectionsGroup connectionsGroup) {
+		this.parent = PlanNodeHelper.handleSorting(this, parent, connectionsGroup);
 		this.shape = shape;
 	}
 

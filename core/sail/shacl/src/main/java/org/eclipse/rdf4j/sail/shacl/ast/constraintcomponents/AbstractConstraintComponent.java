@@ -161,16 +161,16 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 
 		PlanNode addedByPath = path.getAllAdded(connectionsGroup, validationSettings.getDataGraph(), null);
 
-		addedByPath = Unique.getInstance(new TrimToTarget(addedByPath), false);
+		addedByPath = Unique.getInstance(new TrimToTarget(addedByPath, connectionsGroup), false, connectionsGroup);
 
-		addedByPath = new ReduceTargets(addedByPath, addedTargets.getPlanNode());
+		addedByPath = new ReduceTargets(addedByPath, addedTargets.getPlanNode(), connectionsGroup);
 
 		addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, validationSettings.getDataGraph(),
 				scope, EffectiveTarget.Extend.left,
 				false,
 				null);
 
-		allTargets = UnionNode.getInstance(addedTargets.getPlanNode(), addedByPath);
+		allTargets = UnionNode.getInstance(connectionsGroup, addedTargets.getPlanNode(), addedByPath);
 		return allTargets;
 	}
 

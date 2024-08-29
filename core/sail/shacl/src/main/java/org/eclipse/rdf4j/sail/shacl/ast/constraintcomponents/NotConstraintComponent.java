@@ -111,7 +111,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 				scope
 		);
 
-		PlanNode invalid = Unique.getInstance(planNode, false);
+		PlanNode invalid = Unique.getInstance(planNode, false, connectionsGroup);
 
 		PlanNode allTargetsPlan;
 		if (overrideTargetNode != null) {
@@ -122,7 +122,8 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 						.extend(planNodeProvider.getPlanNode(), connectionsGroup, validationSettings.getDataGraph(),
 								Scope.nodeShape,
 								EffectiveTarget.Extend.right, false, null);
-				allTargetsPlan = Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);
+				allTargetsPlan = Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan, connectionsGroup), true,
+						connectionsGroup);
 			} else {
 				allTargetsPlan = getTargetChain()
 						.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
@@ -136,7 +137,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 			allTargetsPlan = planNodeProvider.getPlanNode();
 		}
 
-		invalid = new NotValuesIn(allTargetsPlan, invalid);
+		invalid = new NotValuesIn(allTargetsPlan, invalid, connectionsGroup);
 
 		return invalid;
 
@@ -174,7 +175,8 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 							stableRandomVariableProvider)
 					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
 
-			allTargets = Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);
+			allTargets = Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan, connectionsGroup), true,
+					connectionsGroup);
 		} else {
 			allTargets = getTargetChain()
 					.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
@@ -186,7 +188,8 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 		PlanNode notTargets = not.getAllTargetsPlan(connectionsGroup, dataGraph, scope,
 				new StatementMatcher.StableRandomVariableProvider());
 
-		return Unique.getInstance(UnionNode.getInstanceDedupe(allTargets, notTargets), false);
+		return Unique.getInstance(UnionNode.getInstanceDedupe(connectionsGroup, allTargets, notTargets), false,
+				connectionsGroup);
 	}
 
 	@Override

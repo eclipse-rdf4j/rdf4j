@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 /**
  * @author Håvard Ottestad
@@ -27,8 +28,9 @@ public class FilterTargetIsSubject extends FilterPlanNode {
 	private final SailConnection connection;
 	private final Resource[] dataGraph;
 
-	public FilterTargetIsSubject(SailConnection connection, Resource[] dataGraph, PlanNode parent) {
-		super(parent);
+	public FilterTargetIsSubject(SailConnection connection, Resource[] dataGraph, PlanNode parent,
+			ConnectionsGroup connectionsGroup) {
+		super(parent, connectionsGroup);
 		this.connection = connection;
 		assert this.connection != null;
 		this.dataGraph = dataGraph;

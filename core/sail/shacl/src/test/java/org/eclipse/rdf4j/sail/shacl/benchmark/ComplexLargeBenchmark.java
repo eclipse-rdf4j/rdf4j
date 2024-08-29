@@ -119,7 +119,7 @@ public class ComplexLargeBenchmark {
 		complexLargeBenchmark.setUp();
 		for (int i = 0; i < 20; i++) {
 			System.out.println(i);
-			complexLargeBenchmark.noPreloadingNonEmptyParallel();
+			complexLargeBenchmark.noPreloadingNonEmptyParallelRemoved();
 		}
 		complexLargeBenchmark.teardown();
 	}
@@ -406,6 +406,7 @@ public class ComplexLargeBenchmark {
 					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 
 			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+//			((ShaclSail) repository.getSail()).setPerformanceLogging(true);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);

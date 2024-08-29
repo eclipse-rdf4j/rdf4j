@@ -55,21 +55,22 @@ public class DashAllSubjects extends Target {
 	@Override
 	public PlanNode getAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			ConstraintComponent.Scope scope) {
-		return getAddedRemovedInner(connectionsGroup.getAddedStatements(), dataGraph, scope);
+		return getAddedRemovedInner(connectionsGroup.getAddedStatements(), dataGraph, scope, connectionsGroup);
 	}
 
 	private PlanNode getAddedRemovedInner(SailConnection connection, Resource[] dataGraph,
-			ConstraintComponent.Scope scope) {
+			ConstraintComponent.Scope scope, ConnectionsGroup connectionsGroup) {
 
 		return Unique.getInstance(new UnorderedSelect(connection, null,
-				null, null, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope), null), false);
+				null, null, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope), null), false,
+				connectionsGroup);
 
 	}
 
 	@Override
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			PlanNode parent) {
-		return new FilterTargetIsSubject(connectionsGroup.getBaseConnection(), dataGraph, parent)
+		return new FilterTargetIsSubject(connectionsGroup.getBaseConnection(), dataGraph, parent, connectionsGroup)
 				.getTrueNode(UnBufferedPlanNode.class);
 	}
 

@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.AbstractConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -74,7 +75,7 @@ public class BindSelect implements PlanNode {
 	public BindSelect(SailConnection connection, Resource[] dataGraph, SparqlFragment query,
 			List<Variable<Value>> vars, PlanNode source,
 			List<String> varNames, ConstraintComponent.Scope scope, int bulkSize, EffectiveTarget.Extend direction,
-			boolean includePropertyShapeValues) {
+			boolean includePropertyShapeValues, ConnectionsGroup connectionsGroup) {
 		this.connection = connection;
 		assert this.connection != null;
 		this.mapper = (bindingSet) -> new ValidationTuple(bindingSet, varNames, scope, includePropertyShapeValues,
@@ -83,7 +84,7 @@ public class BindSelect implements PlanNode {
 		this.scope = scope;
 		this.vars = vars;
 		this.bulkSize = bulkSize;
-		this.source = PlanNodeHelper.handleSorting(this, source);
+		this.source = PlanNodeHelper.handleSorting(this, source, connectionsGroup);
 
 		if (query.getFragment().trim().equals("")) {
 			throw new IllegalStateException();

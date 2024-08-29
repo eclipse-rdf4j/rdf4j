@@ -18,6 +18,7 @@ import java.util.Objects;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 /**
  * @author Håvard Ottestad
@@ -29,8 +30,8 @@ public class ShiftToNodeShape implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public ShiftToNodeShape(PlanNode parent) {
-		this.parent = PlanNodeHelper.handleSorting(this, parent);
+	public ShiftToNodeShape(PlanNode parent, ConnectionsGroup connectionsGroup) {
+		this.parent = PlanNodeHelper.handleSorting(this, parent, connectionsGroup);
 //		this.stackTrace = Thread.currentThread().getStackTrace();
 	}
 

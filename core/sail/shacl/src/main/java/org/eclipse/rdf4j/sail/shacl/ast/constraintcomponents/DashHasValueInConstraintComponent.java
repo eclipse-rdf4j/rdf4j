@@ -112,14 +112,14 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 					path.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
 							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()),
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
-							validationSettings.getDataGraph())
-			);
+							validationSettings.getDataGraph()),
+					connectionsGroup);
 
 			PlanNode invalidTargets = new GroupByFilter(joined, group -> {
 				return group.stream().map(ValidationTuple::getValue).noneMatch(hasValueIn::contains);
-			});
+			}, connectionsGroup);
 
-			return Unique.getInstance(new TrimToTarget(invalidTargets), false);
+			return Unique.getInstance(new TrimToTarget(invalidTargets, connectionsGroup), false, connectionsGroup);
 
 		} else if (scope == Scope.nodeShape) {
 
@@ -136,7 +136,7 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 						null);
 			}
 
-			PlanNode falseNode = new ValueInFilter(addedTargets, hasValueIn)
+			PlanNode falseNode = new ValueInFilter(addedTargets, hasValueIn, connectionsGroup)
 					.getFalseNode(UnBufferedPlanNode.class);
 
 			return falseNode;
@@ -156,7 +156,8 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 							stableRandomVariableProvider)
 					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
 
-			return Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);
+			return Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan, connectionsGroup), true,
+					connectionsGroup);
 		}
 		return EmptyNode.getInstance();
 	}

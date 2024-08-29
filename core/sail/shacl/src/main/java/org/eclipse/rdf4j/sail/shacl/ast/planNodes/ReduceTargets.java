@@ -17,6 +17,7 @@ import java.util.Set;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 /**
  * Takes a parentToReduce and filters away any tuples that have an active target that exists in reductionSource
@@ -28,8 +29,8 @@ public class ReduceTargets implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public ReduceTargets(PlanNode parentToReduce, PlanNode reductionSource) {
-		this.parentToReduce = PlanNodeHelper.handleSorting(this, parentToReduce);
+	public ReduceTargets(PlanNode parentToReduce, PlanNode reductionSource, ConnectionsGroup connectionsGroup) {
+		this.parentToReduce = PlanNodeHelper.handleSorting(this, parentToReduce, connectionsGroup);
 		this.reductionSource = reductionSource;
 	}
 

@@ -14,6 +14,7 @@ import java.util.Objects;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 public class EqualsJoinValue implements PlanNode {
 	private final PlanNode left;
@@ -23,9 +24,9 @@ public class EqualsJoinValue implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public EqualsJoinValue(PlanNode left, PlanNode right, boolean useAsFilter) {
-		this.left = PlanNodeHelper.handleSorting(this, left);
-		this.right = PlanNodeHelper.handleSorting(this, right);
+	public EqualsJoinValue(PlanNode left, PlanNode right, boolean useAsFilter, ConnectionsGroup connectionsGroup) {
+		this.left = PlanNodeHelper.handleSorting(this, left, connectionsGroup);
+		this.right = PlanNodeHelper.handleSorting(this, right, connectionsGroup);
 
 		this.useAsFilter = useAsFilter;
 //		this.stackTrace = Thread.currentThread().getStackTrace();

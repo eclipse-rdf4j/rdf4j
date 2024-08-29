@@ -96,7 +96,7 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 					effectiveTarget, path.get(), false);
 		}
 
-		mergeNode = Unique.getInstance(new TrimToTarget(mergeNode), false);
+		mergeNode = Unique.getInstance(new TrimToTarget(mergeNode, connectionsGroup), false, connectionsGroup);
 
 		PlanNode relevantTargetsWithPath;
 
@@ -112,8 +112,8 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 									Set.of()),
 					false,
 					null,
-					BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph())
-			);
+					BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph()),
+					connectionsGroup);
 		} else {
 			relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(
 					mergeNode,
@@ -125,15 +125,16 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider,
 									Set.of()),
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
-							validationSettings.getDataGraph())
-			);
+							validationSettings.getDataGraph()),
+					connectionsGroup);
 		}
 
 		relevantTargetsWithPath = connectionsGroup.getCachedNodeFor(relevantTargetsWithPath);
 
-		PlanNode groupByCount = new GroupByCountFilter(relevantTargetsWithPath, count -> count > maxCount);
+		PlanNode groupByCount = new GroupByCountFilter(relevantTargetsWithPath, count -> count > maxCount,
+				connectionsGroup);
 
-		return Unique.getInstance(new TrimToTarget(groupByCount), false);
+		return Unique.getInstance(new TrimToTarget(groupByCount, connectionsGroup), false, connectionsGroup);
 
 	}
 
@@ -146,7 +147,8 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 							stableRandomVariableProvider)
 					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
 
-			return Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);
+			return Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan, connectionsGroup), true,
+					connectionsGroup);
 		}
 		return EmptyNode.getInstance();
 	}

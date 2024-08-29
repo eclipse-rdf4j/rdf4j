@@ -17,6 +17,7 @@ import java.util.function.Function;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 public class ValidationReportNode implements PlanNode {
 
@@ -25,8 +26,9 @@ public class ValidationReportNode implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public ValidationReportNode(PlanNode parent, Function<ValidationTuple, ValidationResult> validationResultFunction) {
-		this.parent = PlanNodeHelper.handleSorting(this, parent);
+	public ValidationReportNode(PlanNode parent, Function<ValidationTuple, ValidationResult> validationResultFunction,
+			ConnectionsGroup connectionsGroup) {
+		this.parent = PlanNodeHelper.handleSorting(this, parent, connectionsGroup);
 		this.validationResultFunction = validationResultFunction;
 	}
 

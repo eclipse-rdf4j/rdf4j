@@ -15,6 +15,7 @@ import java.util.Objects;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 /**
  * @author Håvard Ottestad
@@ -26,9 +27,9 @@ public class LeftOuterJoin implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public LeftOuterJoin(PlanNode left, PlanNode right) {
-		this.left = PlanNodeHelper.handleSorting(this, left);
-		this.right = PlanNodeHelper.handleSorting(this, right);
+	public LeftOuterJoin(PlanNode left, PlanNode right, ConnectionsGroup connectionsGroup) {
+		this.left = PlanNodeHelper.handleSorting(this, left, connectionsGroup);
+		this.right = PlanNodeHelper.handleSorting(this, right, connectionsGroup);
 
 	}
 

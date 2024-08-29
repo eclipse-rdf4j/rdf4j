@@ -16,6 +16,7 @@ import java.util.function.Function;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 public class TupleMapper implements PlanNode {
 	PlanNode parent;
@@ -23,8 +24,9 @@ public class TupleMapper implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public TupleMapper(PlanNode parent, Function<ValidationTuple, ValidationTuple> function) {
-		this.parent = PlanNodeHelper.handleSorting(this, parent);
+	public TupleMapper(PlanNode parent, Function<ValidationTuple, ValidationTuple> function,
+			ConnectionsGroup connectionsGroup) {
+		this.parent = PlanNodeHelper.handleSorting(this, parent, connectionsGroup);
 		this.function = function;
 	}
 
