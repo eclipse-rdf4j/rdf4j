@@ -66,7 +66,7 @@ public class TargetClass extends Target {
 			Resource clazz = targetClass.stream().findAny().get();
 			planNode = new UnorderedSelect(connection, null, RDF.TYPE, clazz,
 					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope), null);
-			return planNode;
+//			return planNode;
 		} else {
 			planNode = new Select(connection,
 					SparqlFragment.bgp(Set.of(),
@@ -112,7 +112,7 @@ public class TargetClass extends Target {
 			PlanNode parent) {
 
 		if (connectionsGroup.hasAddedStatements()) {
-			BufferedSplitter bufferedSplitter = new BufferedSplitter(parent);
+			BufferedSplitter bufferedSplitter = BufferedSplitter.getInstance(parent);
 
 			FilterByPredicateObject typeFoundInAdded = new FilterByPredicateObject(
 					connectionsGroup.getAddedStatements(), dataGraph, RDF.TYPE, targetClass,

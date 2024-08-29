@@ -139,7 +139,7 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 						false, null);
 			} else {
 
-				BufferedSplitter addedTargetsBufferedSplitter = new BufferedSplitter(
+				BufferedSplitter addedTargetsBufferedSplitter = BufferedSplitter.getInstance(
 						effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false,
 								null));
 				addedTargets = addedTargetsBufferedSplitter.getPlanNode();
@@ -336,7 +336,7 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 			throw new IllegalStateException();
 		case nodeShape:
 
-			BufferedSplitter targets = new BufferedSplitter(
+			BufferedSplitter targets = BufferedSplitter.getInstance(
 					effectiveTarget.getPlanNode(connectionsGroup, dataGraph, scope, false,
 							null));
 			// get all subjects of all triples where the predicate is not in the allAllowedPredicates set
@@ -386,7 +386,7 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 		case propertyShape:
 			Path path = getTargetChain().getPath().get();
 
-			BufferedSplitter addedTargetsBufferedSplitter = new BufferedSplitter(
+			BufferedSplitter addedTargetsBufferedSplitter = BufferedSplitter.getInstance(
 					effectiveTarget.getPlanNode(connectionsGroup, dataGraph, scope, false,
 							null));
 			PlanNode addedTargets = addedTargetsBufferedSplitter.getPlanNode();

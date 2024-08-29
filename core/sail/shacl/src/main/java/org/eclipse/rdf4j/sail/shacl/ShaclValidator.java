@@ -115,8 +115,8 @@ public class ShaclValidator {
 						() -> contextWithShape.getShape()
 								.generatePlans(connectionsGroup,
 										new ValidationSettings(contextWithShape.getDataGraph(), false, true, false)),
-						false, false, 1000, false, logger
-				)
+						false, false, 1000, false, false, logger,
+						connectionsGroup)
 				)
 				.filter(ShapeValidationContainer::hasPlanNode)
 				.map(ShapeValidationContainer::performValidation)

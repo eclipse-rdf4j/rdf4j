@@ -155,7 +155,7 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 			ValidationSettings validationSettings, Scope scope, EffectiveTarget effectiveTarget, Path path,
 			boolean includeTargetsAffectedByRemoval) {
 		PlanNode allTargets;
-		BufferedSplitter addedTargets = new BufferedSplitter(
+		BufferedSplitter addedTargets = BufferedSplitter.getInstance(
 				effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(),
 						scope, includeTargetsAffectedByRemoval, null));
 

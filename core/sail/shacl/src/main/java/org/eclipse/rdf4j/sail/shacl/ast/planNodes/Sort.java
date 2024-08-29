@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -70,13 +71,13 @@ public class Sort implements PlanNode {
 				}
 
 				if (!alreadySorted && sortedTuples.size() > 1) {
-//					if (sortedTuples.size() > 8192) { // MIN_ARRAY_SORT_GRAN in Arrays.parallelSort(...)
-//						ValidationTuple[] objects = sortedTuples.toArray(new ValidationTuple[0]);
-//						Arrays.parallelSort(objects, ValidationTuple::compareActiveTarget);
-//						sortedTuples = Arrays.asList(objects);
-//					} else {
-					sortedTuples.sort(ValidationTuple::compareActiveTarget);
-//					}
+					if (sortedTuples.size() > 8192) { // MIN_ARRAY_SORT_GRAN in Arrays.parallelSort(...)
+						ValidationTuple[] objects = sortedTuples.toArray(new ValidationTuple[0]);
+						Arrays.parallelSort(objects, ValidationTuple::compareActiveTarget);
+						sortedTuples = Arrays.asList(objects);
+					} else {
+						sortedTuples.sort(ValidationTuple::compareActiveTarget);
+					}
 				}
 
 				sortedTuplesIterator = sortedTuples.iterator();
@@ -160,6 +161,6 @@ public class Sort implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "Sort{" + "parent=" + parent + '}';
+		return "Sort";
 	}
 }

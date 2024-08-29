@@ -119,7 +119,7 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 		if (overrideTargetNode != null) {
 			planNodeProvider = overrideTargetNode;
 		} else {
-			planNodeProvider = new BufferedSplitter(
+			planNodeProvider = BufferedSplitter.getInstance(
 					getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
 							stableRandomVariableProvider),
 					false);

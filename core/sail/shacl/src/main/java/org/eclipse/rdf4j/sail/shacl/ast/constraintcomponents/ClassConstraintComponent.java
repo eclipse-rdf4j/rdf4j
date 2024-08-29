@@ -112,7 +112,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				}
 
 			} else {
-				BufferedSplitter addedTargetsBufferedSplitter = new BufferedSplitter(
+				BufferedSplitter addedTargetsBufferedSplitter = BufferedSplitter.getInstance(
 						effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false,
 								null));
 				addedTargets = addedTargetsBufferedSplitter.getPlanNode();

@@ -117,6 +117,12 @@ public class NotValuesIn implements PlanNode {
 				.append(StringEscapeUtils.escapeJava(this.toString()))
 				.append("\"];")
 				.append("\n");
+
+		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
+		stringBuilder.append(notIn.getId() + " -> " + getId()).append("\n");
+		parent.getPlanAsGraphvizDot(stringBuilder);
+		notIn.getPlanAsGraphvizDot(stringBuilder);
+
 	}
 
 	@Override
@@ -126,10 +132,7 @@ public class NotValuesIn implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "NotValuesIn{" +
-				"parent=" + parent +
-				", notIn=" + notIn +
-				'}';
+		return "NotValuesIn";
 	}
 
 	@Override

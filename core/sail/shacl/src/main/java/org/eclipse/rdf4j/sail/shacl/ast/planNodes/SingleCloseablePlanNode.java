@@ -53,7 +53,7 @@ public class SingleCloseablePlanNode implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "SingleCloseablePlanNode{" + "parent=" + parent + '}';
+		return "SingleCloseablePlanNode";
 	}
 
 	@Override

@@ -72,13 +72,23 @@ public class ClassBenchmarkEmpty {
 		Thread.sleep(100);
 	}
 
+	public static void main(String[] args) throws Exception {
+		ClassBenchmarkEmpty classBenchmarkEmpty = new ClassBenchmarkEmpty();
+		classBenchmarkEmpty.setUp();
+		classBenchmarkEmpty.shacl();
+
+	}
+
 	@Benchmark
 	public void shacl() throws Exception {
 
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclClassBenchmark.trig"));
 
+//		((ShaclSail) repository.getSail()).setLogValidationPlans(true);
+
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
+//				System.out.println(".");
 				connection.begin();
 				connection.add(statements);
 				connection.commit();

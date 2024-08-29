@@ -116,6 +116,11 @@ public class ReduceTargets implements PlanNode {
 				.append(StringEscapeUtils.escapeJava(this.toString()))
 				.append("\"];")
 				.append("\n");
+		stringBuilder.append(parentToReduce.getId() + " -> " + getId()).append("\n");
+		stringBuilder.append(reductionSource.getId() + " -> " + getId()).append("\n");
+		parentToReduce.getPlanAsGraphvizDot(stringBuilder);
+		reductionSource.getPlanAsGraphvizDot(stringBuilder);
+
 	}
 
 	@Override
@@ -142,10 +147,7 @@ public class ReduceTargets implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ReduceTargets{" +
-				"parentToReduce=" + parentToReduce +
-				", reductionSource=" + reductionSource +
-				'}';
+		return "ReduceTargets";
 	}
 
 	@Override

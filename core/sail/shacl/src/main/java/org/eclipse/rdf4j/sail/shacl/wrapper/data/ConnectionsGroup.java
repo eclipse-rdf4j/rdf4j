@@ -16,6 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
@@ -26,6 +27,8 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnorderedSelect;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.google.common.cache.Cache;
 
 /**
  * @apiNote since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
@@ -130,7 +133,7 @@ public class ConnectionsGroup implements AutoCloseable {
 
 			BufferedSplitter bufferedSplitter = nodeCache.computeIfAbsent(planNode, parent -> {
 				matchedCache[0] = false;
-				return new BufferedSplitter(parent, true);
+				return BufferedSplitter.getInstance(parent);
 			});
 
 			logger.debug("Found in cache: {} {}  -  {} : {}", matchedCache[0] ? " TRUE" : "FALSE",
@@ -138,7 +141,7 @@ public class ConnectionsGroup implements AutoCloseable {
 
 			return bufferedSplitter.getPlanNode();
 		} else {
-			return nodeCache.computeIfAbsent(planNode, BufferedSplitter::new).getPlanNode();
+			return nodeCache.computeIfAbsent(planNode, BufferedSplitter::getInstance).getPlanNode();
 		}
 
 	}

@@ -259,7 +259,6 @@ public class Unique implements PlanNode {
 	public String toString() {
 		return "Unique{" +
 				"compress=" + compress +
-				", parent=" + parent +
 				'}';
 	}
 

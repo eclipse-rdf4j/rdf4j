@@ -124,8 +124,7 @@ public class TrimToTarget implements PlanNode {
 	@Override
 	public String toString() {
 		return "TrimToTarget{" +
-				"parent=" + parent +
-				", keepPath=" + keepPath +
+				"keepPath=" + keepPath +
 				'}';
 	}
 }

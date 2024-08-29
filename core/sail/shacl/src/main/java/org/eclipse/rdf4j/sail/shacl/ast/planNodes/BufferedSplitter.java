@@ -41,16 +41,32 @@ public class BufferedSplitter implements PlanNodeProvider {
 	private final boolean cached;
 	private volatile List<ValidationTuple> tuplesBuffer;
 	private long id = -1;
+	private boolean printed;
 
-	public BufferedSplitter(PlanNode parent, boolean cached) {
+	private BufferedSplitter(PlanNode parent, boolean cached) {
 		this.parent = parent;
 		this.cached = cached;
 		id = idCounter.incrementAndGet();
-
 	}
 
-	public BufferedSplitter(PlanNode parent) {
+	private BufferedSplitter(PlanNode parent) {
 		this(parent, true);
+	}
+
+	public static BufferedSplitter getInstance(PlanNode parent) {
+		if (parent instanceof BufferedSplitterPlaneNode
+				&& ((BufferedSplitterPlaneNode) parent).bufferedSplitter.cached == true) {
+			return ((BufferedSplitterPlaneNode) parent).bufferedSplitter;
+		}
+		return new BufferedSplitter(parent);
+	}
+
+	public static BufferedSplitter getInstance(PlanNode parent, boolean cached) {
+		if (parent instanceof BufferedSplitterPlaneNode
+				&& ((BufferedSplitterPlaneNode) parent).bufferedSplitter.cached == cached) {
+			return ((BufferedSplitterPlaneNode) parent).bufferedSplitter;
+		}
+		return new BufferedSplitter(parent, cached);
 	}
 
 	private synchronized void init() {
@@ -156,10 +172,10 @@ public class BufferedSplitter implements PlanNodeProvider {
 
 		@Override
 		public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-			if (printed) {
+			if (bufferedSplitter.printed) {
 				return;
 			}
-			printed = true;
+			bufferedSplitter.printed = true;
 			stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
 					.append("\n");
 			stringBuilder.append(bufferedSplitter.parent.getId() + " -> " + getId()).append("\n");
@@ -173,7 +189,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 
 		@Override
 		public String toString() {
-			return "BufferedSplitter";
+			return "BufferedSplitter" + (cached ? " (cached)" : "");
 		}
 
 		@Override

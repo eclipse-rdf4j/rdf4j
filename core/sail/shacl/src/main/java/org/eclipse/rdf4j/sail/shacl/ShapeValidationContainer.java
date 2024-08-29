@@ -11,11 +11,14 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -23,6 +26,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.SingleCloseablePlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationExecutionLogger;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.results.lazy.ValidationResultIterator;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.slf4j.Logger;
 
 class ShapeValidationContainer {
@@ -36,7 +40,7 @@ class ShapeValidationContainer {
 
 	public ShapeValidationContainer(Shape shape, Supplier<PlanNode> planNodeSupplier, boolean logValidationExecution,
 			boolean logValidationViolations, long effectiveValidationResultsLimitPerConstraint,
-			boolean performanceLogging, Logger logger) {
+			boolean performanceLogging, boolean logValidationPlans, Logger logger, ConnectionsGroup connectionsGroup) {
 		this.shape = shape;
 		this.logValidationViolations = logValidationViolations;
 		this.effectiveValidationResultsLimitPerConstraint = effectiveValidationResultsLimitPerConstraint;
@@ -44,6 +48,56 @@ class ShapeValidationContainer {
 		this.logger = logger;
 		try {
 			PlanNode planNode = planNodeSupplier.get();
+
+			if (logValidationPlans) {
+
+				StringBuilder planAsGraphvizDot = new StringBuilder();
+
+				planAsGraphvizDot.append(
+						"rank1 [style=invisible];\n" +
+								"rank2 [style=invisible];\n" +
+								"\n" +
+								"rank1 -> rank2 [color=white];\n");
+
+				planAsGraphvizDot.append("{\n")
+						.append("\trank = same;\n")
+						.append("\trank2 -> ")
+						.append(System.identityHashCode(connectionsGroup.getBaseConnection()))
+						.append(" -> ")
+						.append(System.identityHashCode(connectionsGroup.getAddedStatements()))
+						.append(" -> ")
+						.append(System.identityHashCode(connectionsGroup.getRemovedStatements()))
+						.append(" [ style=invis ];\n")
+						.append("\trankdir = LR;\n")
+						.append("}\n");
+
+				planAsGraphvizDot.append(System.identityHashCode(connectionsGroup.getBaseConnection()))
+						.append(" [label=\"")
+						.append("BaseConnection")
+						.append("\" fillcolor=\"#CACADB\", style=filled];")
+						.append("\n");
+
+				planAsGraphvizDot.append(System.identityHashCode(connectionsGroup.getAddedStatements()))
+						.append(" [label=\"")
+						.append("AddedStatements")
+						.append("\" fillcolor=\"#CEDBCA\", style=filled];")
+						.append("\n");
+
+				planAsGraphvizDot.append(System.identityHashCode(connectionsGroup.getRemovedStatements()))
+						.append(" [label=\"")
+						.append("RemovedStatements")
+						.append("\" fillcolor=\"#DBCFC9r\", style=filled];")
+						.append("\n");
+
+				planNode.getPlanAsGraphvizDot(planAsGraphvizDot);
+
+				String[] split = planAsGraphvizDot.toString().split("\n");
+				planAsGraphvizDot = new StringBuilder();
+				Arrays.stream(split).map(s -> "\t" + s + "\n").forEach(planAsGraphvizDot::append);
+
+				logger.info("Plan as Graphviz dot:\ndigraph G {\n{}}", planAsGraphvizDot);
+			}
+
 			this.validationExecutionLogger = ValidationExecutionLogger
 					.getInstance(logValidationExecution);
 			if (!(planNode.isGuaranteedEmpty())) {
@@ -113,7 +167,6 @@ class ShapeValidationContainer {
 		}
 
 		if (validationResults != null) {
-
 			if (performanceLogging) {
 				long after = System.currentTimeMillis();
 				logger.info("Execution of plan took {} ms for:\n{}\n",

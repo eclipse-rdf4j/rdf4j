@@ -47,7 +47,7 @@ public class FilterByPredicateObject implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 	private final Resource[] dataGraph;
 
-	private final Cache<Resource, Boolean> cache = CacheBuilder.newBuilder().maximumSize(1000).build();
+	private final Cache<Resource, Boolean> cache;
 
 	public FilterByPredicateObject(SailConnection connection, Resource[] dataGraph, IRI filterOnPredicate,
 			Set<Resource> filterOnObject, PlanNode parent, boolean returnMatching, FilterOn filterOn,
@@ -61,6 +61,13 @@ public class FilterByPredicateObject implements PlanNode {
 		this.filterOnObject = filterOnObject;
 		this.filterOn = filterOn;
 		this.returnMatching = returnMatching;
+
+		if (connection instanceof MemoryStoreConnection) {
+			cache = null;
+		} else {
+			cache = CacheBuilder.newBuilder().maximumSize(10000).build();
+		}
+
 //		this.stackTrace = Thread.currentThread().getStackTrace();
 	}
 
@@ -203,26 +210,37 @@ public class FilterByPredicateObject implements PlanNode {
 		}
 
 		if (subject.isResource()) {
-			try {
-				return cache.get(((Resource) subject), () -> {
-					for (Resource object : filterOnObject) {
-						if (connection.hasStatement(((Resource) subject), filterOnPredicate, object, includeInferred,
-								dataGraph)) {
-							return true;
-						}
-					}
-					return false;
-				});
-			} catch (ExecutionException e) {
-				if (e.getCause() != null) {
-					if (e.getCause() instanceof RuntimeException) {
-						throw ((RuntimeException) e.getCause());
-					}
-					throw new SailException(e.getCause());
-				}
-				throw new SailException(e);
+
+			if (cache == null) {
+				return matchesUnCached((Resource) subject, filterOnPredicate, filterOnObject);
+			} else {
+				return matchesCached((Resource) subject, filterOnPredicate, filterOnObject);
 			}
 
+		}
+		return false;
+	}
+
+	private Boolean matchesCached(Resource subject, IRI filterOnPredicate, Resource[] filterOnObject) {
+		try {
+			return cache.get(subject, () -> matchesUnCached(subject, filterOnPredicate, filterOnObject));
+		} catch (ExecutionException e) {
+			if (e.getCause() != null) {
+				if (e.getCause() instanceof RuntimeException) {
+					throw ((RuntimeException) e.getCause());
+				}
+				throw new SailException(e.getCause());
+			}
+			throw new SailException(e);
+		}
+	}
+
+	private boolean matchesUnCached(Resource subject, IRI filterOnPredicate, Resource[] filterOnObject) {
+		for (Resource object : filterOnObject) {
+			if (connection.hasStatement(subject, filterOnPredicate, object, includeInferred,
+					dataGraph)) {
+				return true;
+			}
 		}
 		return false;
 	}
@@ -244,13 +262,13 @@ public class FilterByPredicateObject implements PlanNode {
 
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
-		if (connection instanceof MemoryStoreConnection) {
-			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> "
-					+ getId() + " [label=\"filter source\"]").append("\n");
-		} else {
-			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"filter source\"]")
-					.append("\n");
-		}
+//		if (connection instanceof MemoryStoreConnection) {
+//			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> "
+//					+ getId() + " [label=\"filter source\"]").append("\n");
+//		} else {
+		stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"filter source\"]")
+				.append("\n");
+//		}
 
 		parent.getPlanAsGraphvizDot(stringBuilder);
 	}
@@ -323,8 +341,10 @@ public class FilterByPredicateObject implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalPredicateObjectFilter{" + "filterOnObject=" + filterOnObject + ", filterOnPredicate="
-				+ filterOnPredicate + ", filterOn=" + filterOn + ", parent=" + parent + ", returnMatching="
+		return "ExternalPredicateObjectFilter{" + "filterOnObject=" + PlanNode.prefix(filterOnObject)
+				+ ", filterOnPredicate="
+				+ PlanNode.prefix(filterOnPredicate) + ", filterOn=" + filterOn + ", returnMatching="
 				+ returnMatching + '}';
 	}
+
 }

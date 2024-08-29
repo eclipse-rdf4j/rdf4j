@@ -81,6 +81,9 @@ public class ValidationReportNode implements PlanNode {
 				.append(StringEscapeUtils.escapeJava(this.toString()))
 				.append("\"];")
 				.append("\n");
+		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
+
+		parent.getPlanAsGraphvizDot(stringBuilder);
 	}
 
 	@Override

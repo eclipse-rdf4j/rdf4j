@@ -35,12 +35,12 @@ public class PlanNodeHelper {
 	public static PlanNode handleSorting(boolean requiresSorted, PlanNode parent, ConnectionsGroup connectionsGroup) {
 		if (requiresSorted) {
 			if (!parent.producesSorted()) {
-				if (connectionsGroup != null && (parent instanceof BufferedSplitter.BufferedSplitterPlaneNode ||
-						parent instanceof UnorderedSelect)) {
-					parent = connectionsGroup.getCachedNodeFor(new Sort(parent, connectionsGroup));
-				} else {
-					parent = new Sort(parent, connectionsGroup);
-				}
+//				if (connectionsGroup != null && (parent instanceof BufferedSplitter.BufferedSplitterPlaneNode ||
+//						parent instanceof UnorderedSelect)) {
+//					parent = connectionsGroup.getCachedNodeFor(new Sort(parent, connectionsGroup));
+//				} else {
+				parent = new Sort(parent, connectionsGroup);
+//				}
 			}
 		}
 		return parent;
