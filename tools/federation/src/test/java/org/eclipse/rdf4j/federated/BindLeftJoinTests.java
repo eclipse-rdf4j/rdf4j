@@ -1,0 +1,225 @@
+/*******************************************************************************
+ * Copyright (c) 2024 Eclipse RDF4J contributors.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ *******************************************************************************/
+package org.eclipse.rdf4j.federated;
+
+import java.util.Arrays;
+import java.util.Set;
+
+import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.federated.monitoring.MonitoringUtil;
+import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.model.vocabulary.FOAF;
+import org.eclipse.rdf4j.model.vocabulary.OWL;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+
+public class BindLeftJoinTests extends SPARQLBaseTest {
+
+	@Override
+	protected void initFedXConfig() {
+
+		fedxRule.withConfiguration(config -> {
+			config.withEnableMonitoring(true);
+		});
+	}
+
+	@Test
+	public void test_leftBindJoin_basic() throws Exception {
+
+		prepareTest(
+				Arrays.asList("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl",
+						"/tests/basic/data_emptyStore.ttl"));
+
+		Repository repo1 = getRepository(1);
+		Repository repo2 = getRepository(2);
+		Repository repo3 = getRepository(3);
+
+		Repository fedxRepo = fedxRule.getRepository();
+
+		fedxRule.setConfig(config -> {
+			config.withBoundJoinBlockSize(10);
+		});
+
+		// add some persons
+		try (RepositoryConnection conn = repo1.getConnection()) {
+
+			for (int i = 1; i <= 30; i++) {
+				var p = Values.iri("http://ex.com/p" + i);
+				var otherP = Values.iri("http://other.com/p" + i);
+				conn.add(p, OWL.SAMEAS, otherP);
+			}
+		}
+
+		// add names for person 1, 4, 7, ...
+		try (RepositoryConnection conn = repo2.getConnection()) {
+
+			for (int i = 1; i <= 30; i += 3) {
+				var otherP = Values.iri("http://other.com/p" + i);
+				conn.add(otherP, FOAF.NAME, Values.literal("Person " + i));
+			}
+		}
+
+		// add names for person 2, 5, 8, ...
+		try (RepositoryConnection conn = repo3.getConnection()) {
+
+			for (int i = 2; i <= 30; i += 3) {
+				var otherP = Values.iri("http://other.com/p" + i);
+				conn.add(otherP, FOAF.NAME, Values.literal("Person " + i));
+			}
+		}
+
+		try {
+			// run query which joins results from multiple repos
+			// for a subset of persons there exist names
+			try (RepositoryConnection conn = fedxRepo.getConnection()) {
+				String query = "PREFIX foaf: <http://xmlns.com/foaf/0.1/> " +
+						"SELECT * WHERE { "
+						+ " ?person owl:sameAs ?otherPerson . "
+						+ " OPTIONAL { ?otherPerson foaf:name ?name .  } " // # @repo2 and @repo3
+						+ "}";
+
+				TupleQuery tupleQuery = conn.prepareTupleQuery(query);
+				try (TupleQueryResult tqr = tupleQuery.evaluate()) {
+					var bindings = Iterations.asList(tqr);
+
+					MonitoringUtil.printMonitoringInformation(federationContext());
+
+					Assertions.assertEquals(30, bindings.size());
+
+					for (int i = 1; i <= 30; i++) {
+						var p = Values.iri("http://ex.com/p" + i);
+						var otherP = Values.iri("http://other.com/p" + i);
+
+						// find the bindingset for the person in the unordered result
+						BindingSet bs = bindings.stream()
+								.filter(b -> b.getValue("person").equals(p))
+								.findFirst()
+								.orElseThrow();
+
+						Assertions.assertEquals(otherP, bs.getValue("otherPerson"));
+						if (i % 3 == 1 || i % 3 == 2) {
+							// names from repo 2 or 3
+							Assertions.assertEquals("Person " + i, bs.getValue("name").stringValue());
+						} else {
+							// no name for others
+							Assertions.assertFalse(bs.hasBinding("name"));
+						}
+					}
+				}
+
+			}
+
+		} finally {
+			fedxRepo.shutDown();
+		}
+
+	}
+
+	@Test
+	public void testBoundLeftJoin_stmt_nonExclusive_boundCheck()
+			throws Exception {
+
+		prepareTest(
+				Arrays.asList("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl",
+						"/tests/basic/data_emptyStore.ttl"));
+
+		// test scenario:
+		// 3 repositories, 30 persons, bind join size 10, names distributed in repo 2
+		// and repo 3
+		Repository repo1 = getRepository(1);
+		Repository repo2 = getRepository(2);
+		Repository repo3 = getRepository(3);
+
+		Repository fedxRepo = fedxRule.getRepository();
+
+		fedxRule.setConfig(config -> {
+			config.withBoundJoinBlockSize(10);
+		});
+
+		// add some persons
+		try (RepositoryConnection conn = repo1.getConnection()) {
+
+			for (int i = 1; i <= 30; i++) {
+				var p = Values.iri("http://ex.com/p" + i);
+				var otherP = Values.iri("http://other.com/p" + i);
+				conn.add(p, OWL.SAMEAS, otherP);
+			}
+		}
+
+		// add "male" for person 1, 4, 7, ...
+		try (RepositoryConnection conn = repo2.getConnection()) {
+
+			for (int i = 1; i <= 30; i += 3) {
+				var otherP = Values.iri("http://other.com/p" + i);
+				conn.add(otherP, FOAF.GENDER, Values.literal("male"));
+			}
+		}
+
+		// add "female" for person 2, 5, 8, ...
+		// add "male" for person 30
+		try (RepositoryConnection conn = repo3.getConnection()) {
+
+			for (int i = 2; i <= 30; i += 3) {
+				var otherP = Values.iri("http://other.com/p" + i);
+				conn.add(otherP, FOAF.GENDER, Values.literal("female"));
+			}
+
+			conn.add(Values.iri("http://other.com/p30"), FOAF.GENDER, Values.literal("male"));
+		}
+
+		try {
+			// run query which joins results from multiple repos
+			// for a subset of persons there exist names
+			try (RepositoryConnection conn = fedxRepo.getConnection()) {
+				String query = "PREFIX foaf: <http://xmlns.com/foaf/0.1/> "
+						+ "SELECT * WHERE { "
+						+ " ?person owl:sameAs ?otherPerson . "
+						+ "  OPTIONAL { "
+						+ "    ?otherPerson foaf:gender \"male\" . " // # @repo2 and @repo3
+						+ " } "
+						+ "}";
+
+				TupleQuery tupleQuery = conn.prepareTupleQuery(query);
+				try (TupleQueryResult tqr = tupleQuery.evaluate()) {
+					var bindings = Iterations.asList(tqr);
+
+					Assertions.assertEquals(30, bindings.size());
+
+					MonitoringUtil.printMonitoringInformation(federationContext());
+
+					for (int i = 1; i <= 30; i++) {
+						var p = Values.iri("http://ex.com/p" + i);
+						var otherP = Values.iri("http://other.com/p" + i);
+
+						// find the bindingset for the person in the unordered result
+						BindingSet bs = bindings.stream()
+								.filter(b -> b.getValue("person").equals(p))
+								.findFirst()
+								.orElseThrow();
+
+						Assertions.assertEquals(otherP, bs.getValue("otherPerson"));
+						Assertions.assertEquals(Set.of("person", "otherPerson"), bs.getBindingNames());
+					}
+				}
+
+			}
+
+		} finally {
+			fedxRepo.shutDown();
+		}
+	}
+
+}

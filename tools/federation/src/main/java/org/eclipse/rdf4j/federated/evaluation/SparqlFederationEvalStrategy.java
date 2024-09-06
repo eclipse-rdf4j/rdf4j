@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.federated.evaluation.iterator.GroupedCheckConversionIte
 import org.eclipse.rdf4j.federated.evaluation.iterator.InsertBindingsIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBindJoin;
+import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBindLeftJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerLeftJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.JoinExecutorBase;
@@ -207,8 +208,28 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 	protected CloseableIteration<BindingSet> executeLeftJoin(ControlledWorkerScheduler<BindingSet> joinScheduler,
 			CloseableIteration<BindingSet> leftIter, LeftJoin leftJoin, BindingSet bindings, QueryInfo queryInfo)
 			throws QueryEvaluationException {
-		ControlledWorkerLeftJoin join = new ControlledWorkerLeftJoin(joinScheduler, this,
-				leftIter, leftJoin, bindings, queryInfo);
+
+		var rightArg = leftJoin.getRightArg();
+
+		// determine if we can execute the expr as bind join
+		boolean executeAsBindJoin = false;
+		if (rightArg instanceof BoundJoinTupleExpr) {
+			if (rightArg instanceof FedXService) {
+				executeAsBindJoin = false;
+			} else {
+				executeAsBindJoin = true;
+			}
+		}
+
+		JoinExecutorBase<BindingSet> join;
+		if (executeAsBindJoin) {
+			join = new ControlledWorkerBindLeftJoin(joinScheduler, this, leftIter, rightArg,
+					bindings, queryInfo);
+		} else {
+			join = new ControlledWorkerLeftJoin(joinScheduler, this,
+					leftIter, leftJoin, bindings, queryInfo);
+		}
+
 		executor.execute(join);
 		return join;
 	}

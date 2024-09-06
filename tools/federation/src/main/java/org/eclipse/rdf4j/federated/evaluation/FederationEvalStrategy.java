@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.federated.algebra.FedXService;
 import org.eclipse.rdf4j.federated.algebra.FedXZeroLengthPath;
 import org.eclipse.rdf4j.federated.algebra.FederatedDescribeOperator;
 import org.eclipse.rdf4j.federated.algebra.FilterExpr;
+import org.eclipse.rdf4j.federated.algebra.FilterTuple;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.algebra.HolderNode;
 import org.eclipse.rdf4j.federated.algebra.NJoin;
@@ -51,8 +52,10 @@ import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelServiceExecutor;
+import org.eclipse.rdf4j.federated.evaluation.iterator.BindLeftJoinIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.FedXPathIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.FederatedDescribeIteration;
+import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBindJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBoundJoin;
@@ -66,6 +69,7 @@ import org.eclipse.rdf4j.federated.evaluation.union.ParallelPreparedUnionTask;
 import org.eclipse.rdf4j.federated.evaluation.union.ParallelUnionOperatorTask;
 import org.eclipse.rdf4j.federated.evaluation.union.SynchronousWorkerUnion;
 import org.eclipse.rdf4j.federated.evaluation.union.WorkerUnionBase;
+import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
 import org.eclipse.rdf4j.federated.optimizer.DefaultFedXCostModel;
@@ -934,6 +938,59 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	 */
 	public abstract CloseableIteration<BindingSet> evaluateGroupedCheck(
 			CheckStatementPattern stmt, final List<BindingSet> bindings) throws QueryEvaluationException;
+
+	/**
+	 * Evaluate the left bind join for the given {@link StatementTupleExpr} and bindings at the relevant endpoints.
+	 *
+	 * @param stmt
+	 * @param bindings
+	 * @return the result iteration
+	 * @throws QueryEvaluationException
+	 * @see {@link BindLeftJoinIteration}
+	 */
+	public CloseableIteration<BindingSet> evaluateLeftBoundJoinStatementPattern(
+			StatementTupleExpr stmt, final List<BindingSet> bindings) throws QueryEvaluationException {
+		// we can omit the bound join handling
+		if (bindings.size() == 1) {
+			return evaluate(stmt, bindings.get(0));
+		}
+
+		FilterValueExpr filterExpr = null;
+		if (stmt instanceof FilterTuple) {
+			filterExpr = ((FilterTuple) stmt).getFilterExpr();
+		}
+
+		AtomicBoolean isEvaluated = new AtomicBoolean(false);
+		String preparedQuery = QueryStringUtil.selectQueryStringBoundJoinVALUES((StatementPattern) stmt, bindings,
+				filterExpr, isEvaluated, stmt.getQueryInfo().getDataset());
+
+		CloseableIteration<BindingSet> result = null;
+		try {
+			result = evaluateAtStatementSources(preparedQuery, stmt.getStatementSources(), stmt.getQueryInfo());
+
+			// apply filter and/or convert to original bindings
+			if (filterExpr != null && !isEvaluated.get()) {
+				result = new BindLeftJoinIteration(result, bindings); // apply conversion
+				result = new FilteringIteration(filterExpr, result, this); // apply filter
+				if (!result.hasNext()) {
+					result.close();
+					return new EmptyIteration<>();
+				}
+			} else {
+				result = new BindLeftJoinIteration(result, bindings);
+			}
+
+			return result;
+		} catch (Throwable t) {
+			if (result != null) {
+				result.close();
+			}
+			if (t instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
+			throw ExceptionUtil.toQueryEvaluationException(t);
+		}
+	}
 
 	/**
 	 * Evaluate a SERVICE using vectored evaluation, taking the provided bindings as input.
