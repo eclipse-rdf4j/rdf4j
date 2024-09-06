@@ -17,8 +17,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.federated.FederationContext;
+import org.eclipse.rdf4j.federated.algebra.BoundJoinTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.CheckStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
+import org.eclipse.rdf4j.federated.algebra.FedXService;
 import org.eclipse.rdf4j.federated.algebra.FilterTuple;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
@@ -29,7 +31,9 @@ import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.GroupedCheckConversionIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.InsertBindingsIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
-import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBoundJoin;
+import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBindJoin;
+import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerJoin;
+import org.eclipse.rdf4j.federated.evaluation.join.JoinExecutorBase;
 import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
@@ -45,7 +49,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
  * Implementation of a federation evaluation strategy which provides some special optimizations for SPARQL (remote)
  * endpoints. The most important optimization is to used prepared SPARQL Queries that are already created using Strings.
  * <p>
- * Joins are executed using {@link ControlledWorkerBoundJoin}.
+ * Joins are executed using {@link ControlledWorkerBindJoin}.
  * </p>
  * <p>
  * This implementation uses the SPARQL 1.1 VALUES operator for the bound-join evaluation
@@ -173,8 +177,25 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 			TupleExpr rightArg, Set<String> joinVars, BindingSet bindings, QueryInfo queryInfo)
 			throws QueryEvaluationException {
 
-		ControlledWorkerBoundJoin join = new ControlledWorkerBoundJoin(joinScheduler, this, leftIter, rightArg,
-				bindings, queryInfo);
+		// determine if we can execute the expr as bind join
+		boolean executeAsBindJoin = false;
+		if (rightArg instanceof BoundJoinTupleExpr) {
+			if (rightArg instanceof FedXService) {
+				executeAsBindJoin = queryInfo.getFederationContext().getConfig().getEnableServiceAsBoundJoin();
+			} else {
+				executeAsBindJoin = true;
+			}
+		}
+
+		JoinExecutorBase<BindingSet> join;
+		if (executeAsBindJoin) {
+			join = new ControlledWorkerBindJoin(joinScheduler, this, leftIter, rightArg,
+					bindings, queryInfo);
+		} else {
+			join = new ControlledWorkerJoin(joinScheduler, this, leftIter, rightArg, bindings,
+					queryInfo);
+		}
+
 		join.setJoinVars(joinVars);
 		executor.execute(join);
 		return join;

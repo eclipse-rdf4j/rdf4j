@@ -44,7 +44,9 @@ import org.slf4j.LoggerFactory;
  *
  * @author Andreas Schwarte
  *
+ * @deprecated replaced with {@link ControlledWorkerBindJoin}l
  */
+@Deprecated(forRemoval = true)
 public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 
 	private static final Logger log = LoggerFactory.getLogger(ControlledWorkerBoundJoin.class);

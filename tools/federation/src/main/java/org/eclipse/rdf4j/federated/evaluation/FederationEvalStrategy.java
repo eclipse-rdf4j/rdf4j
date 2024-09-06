@@ -15,10 +15,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
-import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
@@ -56,6 +54,7 @@ import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelServiceExecutor
 import org.eclipse.rdf4j.federated.evaluation.iterator.FedXPathIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.FederatedDescribeIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
+import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBindJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBoundJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerLeftJoin;
@@ -108,12 +107,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.DescribeIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer;
@@ -815,8 +812,14 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	/**
 	 * Execute the join in a separate thread using some join executor.
 	 *
-	 * Join executors are for instance: - {@link SynchronousJoin} - {@link SynchronousBoundJoin} -
-	 * {@link ControlledWorkerJoin} - {@link ControlledWorkerBoundJoin}
+	 * Join executors are for instance:
+	 *
+	 * <ul>
+	 * <li>{@link SynchronousJoin}</li>
+	 * <li>{@link SynchronousBoundJoin}</li>
+	 * <li>{@link ControlledWorkerJoin}</li>
+	 * <li>{@link ControlledWorkerBindJoin}</li>
+	 * </ul>
 	 *
 	 * For endpoint federation use controlled worker bound join, for local federation use controlled worker join. The
 	 * other operators are there for completeness.
@@ -923,7 +926,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	/**
 	 * Evaluate a SERVICE using vectored evaluation, taking the provided bindings as input.
 	 *
-	 * See {@link ControlledWorkerBoundJoin} and {@link FedXConfig#getEnableServiceAsBoundJoin()}
+	 * See {@link ControlledWorkerBindJoin} and {@link FedXConfig#getEnableServiceAsBoundJoin()}
 	 *
 	 * @param service
 	 * @param bindings

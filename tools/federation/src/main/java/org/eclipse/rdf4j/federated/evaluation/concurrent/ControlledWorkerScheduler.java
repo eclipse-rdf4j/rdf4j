@@ -18,7 +18,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBoundJoin;
+import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBindJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerJoin;
 import org.eclipse.rdf4j.federated.evaluation.union.ControlledWorkerUnion;
 import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
@@ -34,7 +34,7 @@ import org.slf4j.LoggerFactory;
  * @author Andreas Schwarte
  * @see ControlledWorkerUnion
  * @see ControlledWorkerJoin
- * @see ControlledWorkerBoundJoin
+ * @see ControlledWorkerBindJoin
  */
 public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAware {
 
