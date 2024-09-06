@@ -27,11 +27,13 @@ import org.eclipse.rdf4j.federated.evaluation.iterator.BoundJoinConversionIterat
 import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.GroupedCheckConversionIteration;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerJoin;
+import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerLeftJoin;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -115,6 +117,16 @@ public class SailFederationEvalStrategy extends FederationEvalStrategy {
 		ControlledWorkerJoin join = new ControlledWorkerJoin(joinScheduler, this, leftIter, rightArg, bindings,
 				queryInfo);
 		join.setJoinVars(joinVars);
+		executor.execute(join);
+		return join;
+	}
+
+	@Override
+	protected CloseableIteration<BindingSet> executeLeftJoin(ControlledWorkerScheduler<BindingSet> joinScheduler,
+			CloseableIteration<BindingSet> leftIter, LeftJoin leftJoin, BindingSet bindings, QueryInfo queryInfo)
+			throws QueryEvaluationException {
+		ControlledWorkerLeftJoin join = new ControlledWorkerLeftJoin(joinScheduler, this,
+				leftIter, leftJoin, bindings, queryInfo);
 		executor.execute(join);
 		return join;
 	}

@@ -57,7 +57,6 @@ import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBindJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBoundJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerJoin;
-import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerLeftJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.SynchronousBoundJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.SynchronousJoin;
 import org.eclipse.rdf4j.federated.evaluation.union.ControlledWorkerUnion;
@@ -96,6 +95,7 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.DescribeOperator;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -745,10 +745,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 				if (problemVars.containsAll(bindings.getBindingNames())) {
 					var leftIter = leftPrepared.evaluate(bindings);
-					ControlledWorkerLeftJoin join = new ControlledWorkerLeftJoin(scheduler, FederationEvalStrategy.this,
-							leftIter, leftJoin, bindings, leftJoin.getQueryInfo());
-					executor.execute(join);
-					return join;
+					return executeLeftJoin(scheduler, leftIter, leftJoin, bindings, leftJoin.getQueryInfo());
 				} else {
 					Set<String> problemVarsClone = new HashSet<>(problemVars);
 					problemVarsClone.retainAll(bindings.getBindingNames());
@@ -838,6 +835,21 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			ControlledWorkerScheduler<BindingSet> joinScheduler,
 			CloseableIteration<BindingSet> leftIter, TupleExpr rightArg,
 			Set<String> joinVariables, BindingSet bindings, QueryInfo queryInfo) throws QueryEvaluationException;
+
+	/**
+	 * Execute the left join in a separate thread using some join executor.
+	 *
+	 * @param joinScheduler
+	 * @param leftIter
+	 * @param leftJoin
+	 * @param bindings
+	 * @return the result
+	 * @throws QueryEvaluationException
+	 */
+	protected abstract CloseableIteration<BindingSet> executeLeftJoin(
+			ControlledWorkerScheduler<BindingSet> joinScheduler,
+			CloseableIteration<BindingSet> leftIter, LeftJoin leftJoin,
+			BindingSet bindings, QueryInfo queryInfo) throws QueryEvaluationException;
 
 	public abstract CloseableIteration<BindingSet> evaluateExclusiveGroup(
 			ExclusiveGroup group, BindingSet bindings)

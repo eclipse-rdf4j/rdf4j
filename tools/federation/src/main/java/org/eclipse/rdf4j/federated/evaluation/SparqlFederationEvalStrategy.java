@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.federated.evaluation.iterator.InsertBindingsIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBindJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerJoin;
+import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerLeftJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.JoinExecutorBase;
 import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
@@ -41,6 +42,7 @@ import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -197,6 +199,16 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 		}
 
 		join.setJoinVars(joinVars);
+		executor.execute(join);
+		return join;
+	}
+
+	@Override
+	protected CloseableIteration<BindingSet> executeLeftJoin(ControlledWorkerScheduler<BindingSet> joinScheduler,
+			CloseableIteration<BindingSet> leftIter, LeftJoin leftJoin, BindingSet bindings, QueryInfo queryInfo)
+			throws QueryEvaluationException {
+		ControlledWorkerLeftJoin join = new ControlledWorkerLeftJoin(joinScheduler, this,
+				leftIter, leftJoin, bindings, queryInfo);
 		executor.execute(join);
 		return join;
 	}
