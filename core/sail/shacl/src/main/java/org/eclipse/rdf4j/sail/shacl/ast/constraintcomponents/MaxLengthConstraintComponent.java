@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.MaxLengthFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 
-public class MaxLengthConstraintComponent extends SimpleAbstractConstraintComponent {
+public class MaxLengthConstraintComponent extends AbstractSimpleConstraintComponent {
 
 	long maxLength;
 
@@ -89,6 +89,6 @@ public class MaxLengthConstraintComponent extends SimpleAbstractConstraintCompon
 
 	@Override
 	public int hashCode() {
-		return (int) (maxLength ^ (maxLength >>> 32)) + "MaxLengthConstraintComponent".hashCode();
+		return Long.hashCode(maxLength) + "MaxLengthConstraintComponent".hashCode();
 	}
 }

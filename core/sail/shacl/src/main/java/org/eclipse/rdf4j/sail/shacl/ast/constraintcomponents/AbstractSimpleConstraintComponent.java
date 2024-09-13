@@ -47,18 +47,18 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public abstract class SimpleAbstractConstraintComponent extends AbstractConstraintComponent {
+public abstract class AbstractSimpleConstraintComponent extends AbstractConstraintComponent {
 
-	private static final Logger logger = LoggerFactory.getLogger(SimpleAbstractConstraintComponent.class);
+	private static final Logger logger = LoggerFactory.getLogger(AbstractSimpleConstraintComponent.class);
 
 	private Resource id;
 	TargetChain targetChain;
 
-	public SimpleAbstractConstraintComponent(Resource id) {
+	public AbstractSimpleConstraintComponent(Resource id) {
 		this.id = id;
 	}
 
-	public SimpleAbstractConstraintComponent() {
+	public AbstractSimpleConstraintComponent() {
 
 	}
 
@@ -159,14 +159,23 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 						validationSettings.getDataGraph(), scope);
 				allTargets = getFilterAttacherWithNegation(negatePlan, allTargets);
 
-				return Unique.getInstance(allTargets, true);
+				if (effectiveTarget.size() > 1) {
+					allTargets = Unique.getInstance(allTargets, true);
+				}
+				return allTargets;
 			} else {
-				return effectiveTarget.extend(overrideTargetPlanNode, connectionsGroup,
+				PlanNode extend = effectiveTarget.extend(overrideTargetPlanNode, connectionsGroup,
 						validationSettings.getDataGraph(), scope,
 						EffectiveTarget.Extend.right,
 						false,
 						p -> getFilterAttacherWithNegation(negatePlan, p)
 				);
+
+				if (effectiveTarget.size() > 1) {
+					extend = Unique.getInstance(extend, true);
+				}
+
+				return extend;
 
 			}
 
@@ -184,13 +193,21 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 				allTargets = getFilterAttacherWithNegation(negatePlan, allTargets);
 
-				return Unique.getInstance(allTargets, true);
+				if (effectiveTarget.size() > 1) {
+					allTargets = Unique.getInstance(allTargets, true);
+				}
+
+				return allTargets;
 
 			} else {
 
 				overrideTargetPlanNode = effectiveTarget.extend(overrideTargetPlanNode, connectionsGroup,
 						validationSettings.getDataGraph(), scope,
 						EffectiveTarget.Extend.right, false, null);
+
+				if (effectiveTarget.size() > 1) {
+					overrideTargetPlanNode = Unique.getInstance(overrideTargetPlanNode, true);
+				}
 
 				planNode = new BulkedExternalInnerJoin(overrideTargetPlanNode,
 						connectionsGroup.getBaseConnection(),
@@ -314,13 +331,25 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
-		if (scope == Scope.propertyShape) {
-			PlanNode allTargetsPlan = getTargetChain()
-					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
-							stableRandomVariableProvider)
-					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
 
-			return Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);
+		if (scope == Scope.propertyShape) {
+
+			EffectiveTarget effectiveTarget = getTargetChain()
+					.getEffectiveTarget(
+							Scope.nodeShape,
+							connectionsGroup.getRdfsSubClassOfReasoner(),
+							stableRandomVariableProvider
+					);
+
+			PlanNode allTargetsPlan = effectiveTarget
+					.getPlanNode(
+							connectionsGroup,
+							dataGraph, Scope.nodeShape,
+							true,
+							null
+					);
+
+			return Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), effectiveTarget.size() > 1);
 		}
 		return EmptyNode.getInstance();
 	}

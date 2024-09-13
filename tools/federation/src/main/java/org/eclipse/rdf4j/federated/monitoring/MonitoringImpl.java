@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
@@ -50,11 +51,7 @@ public class MonitoringImpl implements MonitoringService {
 
 	@Override
 	public void monitorRemoteRequest(Endpoint e) {
-		MonitoringInformation m = requestMap.get(e);
-		if (m == null) {
-			m = new MonitoringInformation(e);
-			requestMap.put(e, m);
-		}
+		MonitoringInformation m = requestMap.computeIfAbsent(e, (endpoint) -> new MonitoringInformation(endpoint));
 		m.increaseRequests();
 	}
 
@@ -75,20 +72,19 @@ public class MonitoringImpl implements MonitoringService {
 
 	public static class MonitoringInformation {
 		private final Endpoint e;
-		private int numberOfRequests = 0;
+		private AtomicInteger numberOfRequests = new AtomicInteger(0);
 
 		public MonitoringInformation(Endpoint e) {
 			this.e = e;
 		}
 
 		private void increaseRequests() {
-			// TODO make thread safe
-			numberOfRequests++;
+			numberOfRequests.incrementAndGet();
 		}
 
 		@Override
 		public String toString() {
-			return e.getName() + " => " + numberOfRequests;
+			return e.getName() + " => " + numberOfRequests.get();
 		}
 
 		public Endpoint getE() {
@@ -96,7 +92,7 @@ public class MonitoringImpl implements MonitoringService {
 		}
 
 		public int getNumberOfRequests() {
-			return numberOfRequests;
+			return numberOfRequests.get();
 		}
 	}
 

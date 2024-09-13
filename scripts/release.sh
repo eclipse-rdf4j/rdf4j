@@ -264,7 +264,19 @@ cp -f "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" "site/static/javadoc/late
 git add --all
 git commit -s -a -m "javadocs for ${MVN_VERSION_RELEASE}"
 git push --set-upstream origin "${RELEASE_NOTES_BRANCH}"
-gh pr create -B main --title "${RELEASE_NOTES_BRANCH}" --body "Javadocs, release-notes and news item for ${MVN_VERSION_RELEASE}.\n\n - [ ] check that [Jenkins](https://ci.eclipse.org/rdf4j/) finished publishing the release\n - [ ] remember to also [add the release here on GitHub](https://github.com/eclipse-rdf4j/rdf4j/releases/new?tag=${MVN_VERSION_RELEASE}&title=RDF4JRDF4J%20${MVN_VERSION_RELEASE}) (include announcement)"
+BODY_CONTENT=$(cat <<EOF
+Javadocs, release-notes and news item for ${MVN_VERSION_RELEASE}.
+
+ - [ ] check that downloads.md is updated
+ - [ ] check that the release notes file is updated
+ - [ ] check that the news item file is updated
+ - [ ] check that [Jenkins](https://ci.eclipse.org/rdf4j/job/rdf4j-deploy-release-ossrh/) finished publishing the release
+ - [ ] check that [Jenkins](https://ci.eclipse.org/rdf4j/job/rdf4j-deploy-release-sdk/) finished publishing the sdk
+ - [ ] remember to also [add the release here on GitHub](https://github.com/eclipse-rdf4j/rdf4j/releases/new?tag=${MVN_VERSION_RELEASE}&title=RDF4J%20${MVN_VERSION_RELEASE}) (include announcement)
+EOF
+)
+
+gh pr create -B main --title "${MVN_VERSION_RELEASE} release notes" --body "$BODY_CONTENT"
 
 echo "Javadocs are in git branch ${RELEASE_NOTES_BRANCH}"
 

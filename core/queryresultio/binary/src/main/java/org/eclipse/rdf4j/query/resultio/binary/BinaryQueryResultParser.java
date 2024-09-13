@@ -227,7 +227,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 		} else if (errTypeFlag == QUERY_EVALUATION_ERROR) {
 			errType = QueryErrorType.QUERY_EVALUATION_ERROR;
 		} else {
-			throw new QueryResultParseException("Unkown error type: " + errTypeFlag);
+			throw new QueryResultParseException("Unknown error type: " + errTypeFlag);
 		}
 
 		String msg = readString();

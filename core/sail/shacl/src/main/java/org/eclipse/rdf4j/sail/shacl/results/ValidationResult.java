@@ -77,18 +77,16 @@ public class ValidationResult {
 		this.shape = shape;
 
 		if (sourceConstraintComponent.producesValidationResultValue()) {
-			assert value != null;
+			assert !sourceConstraintComponent.alwaysProducesValidationResultValue() || value != null;
 
 			// value could be null if assertions are disabled
 			// noinspection ConstantValue
-			if (value == null) {
+			if (value == null && sourceConstraintComponent.alwaysProducesValidationResultValue()) {
 				logger.error(
 						"Source constraint component {} was expected to produce a value, but value is null! Shape: {}",
 						sourceConstraintComponent, shape);
 			}
 
-			// value could be null if assertions are disabled
-			// noinspection OptionalOfNullableMisuse
 			this.value = Optional.ofNullable(value);
 		} else {
 			assert scope != ConstraintComponent.Scope.propertyShape || value == null;

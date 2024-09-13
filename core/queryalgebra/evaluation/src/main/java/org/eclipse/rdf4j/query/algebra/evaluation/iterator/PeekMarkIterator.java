@@ -39,7 +39,7 @@ public class PeekMarkIterator<E> implements CloseableIteration<E> {
 
 	private boolean closed;
 
-	PeekMarkIterator(CloseableIteration<E> iterator) {
+	public PeekMarkIterator(CloseableIteration<E> iterator) {
 		this.iterator = iterator;
 	}
 

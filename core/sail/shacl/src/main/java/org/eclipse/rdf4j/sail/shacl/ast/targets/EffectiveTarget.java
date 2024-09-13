@@ -401,6 +401,10 @@ public class EffectiveTarget {
 		return Objects.requireNonNull(optional, "Optional was null").var;
 	}
 
+	public int size() {
+		return chain.size();
+	}
+
 	public enum Extend {
 		left,
 		right

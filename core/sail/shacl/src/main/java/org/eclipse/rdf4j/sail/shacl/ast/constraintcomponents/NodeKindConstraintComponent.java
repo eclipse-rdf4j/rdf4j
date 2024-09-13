@@ -23,11 +23,12 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
+import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.NodeKindFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 
-public class NodeKindConstraintComponent extends SimpleAbstractConstraintComponent {
+public class NodeKindConstraintComponent extends AbstractSimpleConstraintComponent {
 
 	NodeKind nodeKind;
 

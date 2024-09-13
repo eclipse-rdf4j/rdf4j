@@ -121,29 +121,42 @@ public class SparqlConstraintSelect implements PlanNode {
 							}
 						}
 
-						Value value = bindingSet.getValue("value");
+						Value value1 = bindingSet.getValue("value");
+						if (value1 == null) {
+							value1 = nextTarget.getValue();
+						}
+						Value currentValue = value1;
+
 						Value path = bindingSet.getValue("path");
 
 						if (scope == ConstraintComponent.Scope.nodeShape) {
 							next = nextTarget.addValidationResult(t -> {
-								ValidationResult validationResult = new ValidationResult(t.getActiveTarget(), value,
+								ValidationResult validationResult = new ValidationResult(t.getActiveTarget(),
+										currentValue,
 										shape,
 										constraintComponent, shape.getSeverity(),
 										ConstraintComponent.Scope.nodeShape, t.getContexts(),
 										shape.getContexts());
-								validationResult.setPathIri(path);
+								if (path != null) {
+									validationResult.setPathIri(path);
+								}
 								return validationResult;
 							});
 						} else {
-							ValidationTuple validationTuple = new ValidationTuple(nextTarget.getActiveTarget(), value,
-									scope, true, nextTarget.getContexts());
+
+							ValidationTuple validationTuple = new ValidationTuple(nextTarget.getActiveTarget(),
+									currentValue,
+									scope, currentValue != null, nextTarget.getContexts());
 							next = ValidationTupleHelper.join(nextTarget, validationTuple).addValidationResult(t -> {
-								ValidationResult validationResult = new ValidationResult(t.getActiveTarget(), value,
+								ValidationResult validationResult = new ValidationResult(t.getActiveTarget(),
+										currentValue,
 										shape,
 										constraintComponent, shape.getSeverity(),
 										ConstraintComponent.Scope.propertyShape, t.getContexts(),
 										shape.getContexts());
-								validationResult.setPathIri(path);
+								if (path != null) {
+									validationResult.setPathIri(path);
+								}
 								return validationResult;
 							});
 						}
