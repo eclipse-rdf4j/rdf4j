@@ -20,6 +20,7 @@ import java.util.Objects;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 public class Sort implements PlanNode {
 
@@ -27,8 +28,8 @@ public class Sort implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public Sort(PlanNode parent) {
-		this.parent = PlanNodeHelper.handleSorting(this, parent);
+	public Sort(PlanNode parent, ConnectionsGroup connectionsGroup) {
+		this.parent = PlanNodeHelper.handleSorting(this, parent, connectionsGroup);
 	}
 
 	@Override
@@ -160,6 +161,6 @@ public class Sort implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "Sort{" + "parent=" + parent + '}';
+		return "Sort";
 	}
 }

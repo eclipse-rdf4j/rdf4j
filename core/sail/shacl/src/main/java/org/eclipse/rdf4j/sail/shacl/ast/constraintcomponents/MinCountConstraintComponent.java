@@ -82,8 +82,8 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 				PlanNode addedByPath = getTargetChain().getPath()
 						.get()
 						.getAnyAdded(connectionsGroup, validationSettings.getDataGraph(), null);
-				LeftOuterJoin leftOuterJoin = new LeftOuterJoin(target, addedByPath);
-				target = new GroupByCountFilter(leftOuterJoin, count -> count < minCount);
+				LeftOuterJoin leftOuterJoin = new LeftOuterJoin(target, addedByPath, connectionsGroup);
+				target = new GroupByCountFilter(leftOuterJoin, count -> count < minCount, connectionsGroup);
 			}
 		} else {
 			// we can assume that we are not doing bulk validation, so it is worth checking our added statements before
@@ -97,26 +97,27 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 			PlanNode addedByPath = getTargetChain().getPath()
 					.get()
 					.getAnyAdded(connectionsGroup, validationSettings.getDataGraph(), null);
-			LeftOuterJoin leftOuterJoin = new LeftOuterJoin(target, addedByPath);
-			target = new GroupByCountFilter(leftOuterJoin, count -> count < minCount);
+			LeftOuterJoin leftOuterJoin = new LeftOuterJoin(target, addedByPath, connectionsGroup);
+			target = new GroupByCountFilter(leftOuterJoin, count -> count < minCount, connectionsGroup);
 		}
 
 		PlanNode relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(
-				Unique.getInstance(new TrimToTarget(target), false),
+				Unique.getInstance(new TrimToTarget(target, connectionsGroup), false, connectionsGroup),
 				connectionsGroup.getBaseConnection(),
 				validationSettings.getDataGraph(), getTargetChain().getPath()
 						.get()
 						.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
 								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()),
 				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
-						validationSettings.getDataGraph())
-		);
+						validationSettings.getDataGraph()),
+				connectionsGroup);
 
 		relevantTargetsWithPath = connectionsGroup.getCachedNodeFor(relevantTargetsWithPath);
 
-		PlanNode groupByCount = new GroupByCountFilter(relevantTargetsWithPath, count -> count < minCount);
+		PlanNode groupByCount = new GroupByCountFilter(relevantTargetsWithPath, count -> count < minCount,
+				connectionsGroup);
 
-		return Unique.getInstance(new TrimToTarget(groupByCount), false);
+		return Unique.getInstance(new TrimToTarget(groupByCount, connectionsGroup), false, connectionsGroup);
 
 	}
 

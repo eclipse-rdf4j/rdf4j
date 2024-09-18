@@ -524,8 +524,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 													sail.isPerformanceLogging())),
 							sail.isGlobalLogValidationExecution(), sail.isLogValidationViolations(),
 							sail.getEffectiveValidationResultsLimitPerConstraint(), sail.isPerformanceLogging(),
-							logger
-					))
+							sail.isLogValidationPlans(),
+							logger,
+							connectionsGroup))
 
 					.filter(ShapeValidationContainer::hasPlanNode)
 					.map(validationContainer -> validationContainer::performValidation);

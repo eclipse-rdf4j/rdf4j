@@ -114,7 +114,7 @@ public class SparqlTarget extends Target {
 		// TODO: this is a slow way to solve this problem! We should use bulk operations.
 		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), dataGraph, parent, sparqlFragment,
 				StatementMatcher.Variable.THIS,
-				ValidationTuple::getActiveTarget, null).getTrueNode(UnBufferedPlanNode.class);
+				ValidationTuple::getActiveTarget, null, connectionsGroup).getTrueNode(UnBufferedPlanNode.class);
 	}
 
 	@Override

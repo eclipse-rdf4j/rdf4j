@@ -18,6 +18,7 @@ import java.util.stream.Stream;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 /**
  * @author Håvard Ottestad
@@ -25,26 +26,28 @@ import org.eclipse.rdf4j.sail.SailException;
 public class UnionNode implements PlanNode {
 
 	private final HashSet<PlanNode> nodesSet;
+	private final ConnectionsGroup connectionsGroup;
 	private StackTraceElement[] stackTrace;
 	private final PlanNode[] nodes;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	private UnionNode(PlanNode... nodes) {
+	private UnionNode(ConnectionsGroup connectionsGroup, PlanNode... nodes) {
 
 		this.nodes = nodes;
 		this.nodesSet = new HashSet<>(Arrays.asList(nodes));
+		this.connectionsGroup = connectionsGroup;
 
 		// this.stackTrace = Thread.currentThread().getStackTrace();
 	}
 
-	public static PlanNode getInstance(PlanNode... nodes) {
+	public static PlanNode getInstance(ConnectionsGroup connectionsGroup, PlanNode... nodes) {
 		PlanNode[] planNodes = Arrays.stream(nodes).filter(n -> !(n.isGuaranteedEmpty())).flatMap(n -> {
 			if (n instanceof UnionNode) {
 				return Arrays.stream(((UnionNode) n).nodes);
 			}
 			return Stream.of(n);
-		}).map(n -> PlanNodeHelper.handleSorting(true, n)).toArray(PlanNode[]::new);
+		}).map(n -> PlanNodeHelper.handleSorting(true, n, connectionsGroup)).toArray(PlanNode[]::new);
 
 		if (planNodes.length == 1) {
 			return planNodes[0];
@@ -53,17 +56,17 @@ public class UnionNode implements PlanNode {
 			return EmptyNode.getInstance();
 		}
 
-		return new UnionNode(planNodes);
+		return new UnionNode(connectionsGroup, planNodes);
 
 	}
 
-	public static PlanNode getInstanceDedupe(PlanNode... nodes) {
+	public static PlanNode getInstanceDedupe(ConnectionsGroup connectionsGroup, PlanNode... nodes) {
 		PlanNode[] planNodes = Arrays.stream(nodes).filter(n -> !(n.isGuaranteedEmpty())).distinct().flatMap(n -> {
 			if (n instanceof UnionNode) {
 				return Arrays.stream(((UnionNode) n).nodes);
 			}
 			return Stream.of(n);
-		}).map(n -> PlanNodeHelper.handleSorting(true, n)).toArray(PlanNode[]::new);
+		}).map(n -> PlanNodeHelper.handleSorting(true, n, connectionsGroup)).toArray(PlanNode[]::new);
 
 		if (planNodes.length == 1) {
 			return planNodes[0];
@@ -72,7 +75,7 @@ public class UnionNode implements PlanNode {
 			return EmptyNode.getInstance();
 		}
 
-		return new UnionNode(planNodes);
+		return new UnionNode(connectionsGroup, planNodes);
 
 	}
 

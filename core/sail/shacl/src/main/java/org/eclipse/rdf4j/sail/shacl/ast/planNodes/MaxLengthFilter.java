@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 /**
  * @author Håvard Ottestad
@@ -22,8 +23,8 @@ public class MaxLengthFilter extends FilterPlanNode {
 
 	private final long maxLength;
 
-	public MaxLengthFilter(PlanNode parent, long maxLength) {
-		super(parent);
+	public MaxLengthFilter(PlanNode parent, long maxLength, ConnectionsGroup connectionsGroup) {
+		super(parent, connectionsGroup);
 		this.maxLength = maxLength;
 	}
 

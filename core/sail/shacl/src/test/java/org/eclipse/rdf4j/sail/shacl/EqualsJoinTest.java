@@ -41,7 +41,7 @@ public class EqualsJoinTest {
 		PlanNode left = new MockInputPlanNode(List.of("a"));
 		PlanNode right = new MockInputPlanNode(List.of("a"), List.of("b"));
 
-		EqualsJoin equalsJoin = new EqualsJoin(left, right, false);
+		EqualsJoin equalsJoin = new EqualsJoin(left, right, false, null);
 
 		List<ValidationTuple> tuples = new MockConsumePlanNode(equalsJoin).asList();
 
@@ -55,7 +55,7 @@ public class EqualsJoinTest {
 		PlanNode left = new MockInputPlanNode(List.of("a"), List.of("c"));
 		PlanNode right = new MockInputPlanNode(List.of("a"), List.of("b"), List.of("c"));
 
-		EqualsJoin equalsJoin = new EqualsJoin(left, right, false);
+		EqualsJoin equalsJoin = new EqualsJoin(left, right, false, null);
 
 		List<ValidationTuple> tuples = new MockConsumePlanNode(equalsJoin).asList();
 
@@ -69,7 +69,7 @@ public class EqualsJoinTest {
 		PlanNode right = new MockInputPlanNode(List.of("a"), List.of("c"));
 		PlanNode left = new MockInputPlanNode(List.of("a"), List.of("b"), List.of("c"));
 
-		EqualsJoin equalsJoin = new EqualsJoin(left, right, false);
+		EqualsJoin equalsJoin = new EqualsJoin(left, right, false, null);
 
 		List<ValidationTuple> tuples = new MockConsumePlanNode(equalsJoin).asList();
 
@@ -83,7 +83,7 @@ public class EqualsJoinTest {
 		PlanNode left = new MockInputPlanNode(List.of("b"), List.of("c"));
 		PlanNode right = new MockInputPlanNode(List.of("a"), List.of("d"), List.of("e"));
 
-		EqualsJoin equalsJoin = new EqualsJoin(left, right, false);
+		EqualsJoin equalsJoin = new EqualsJoin(left, right, false, null);
 
 		List<ValidationTuple> tuples = new MockConsumePlanNode(equalsJoin).asList();
 
@@ -97,7 +97,7 @@ public class EqualsJoinTest {
 		PlanNode left = new MockInputPlanNode(List.of("b"), List.of("c"));
 		PlanNode right = new MockInputPlanNode(List.of("a"), List.of("d"), List.of("c"));
 
-		EqualsJoin equalsJoin = new EqualsJoin(left, right, false);
+		EqualsJoin equalsJoin = new EqualsJoin(left, right, false, null);
 
 		List<ValidationTuple> tuples = new MockConsumePlanNode(equalsJoin).asList();
 
@@ -113,7 +113,7 @@ public class EqualsJoinTest {
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a", "1"), Arrays.asList("b", "1"),
 				Arrays.asList("b", "1"), Arrays.asList("c", "1"));
 
-		EqualsJoin equalsJoin = new EqualsJoin(left, right, true);
+		EqualsJoin equalsJoin = new EqualsJoin(left, right, true, null);
 
 		List<ValidationTuple> tuples = new MockConsumePlanNode(equalsJoin).asList();
 

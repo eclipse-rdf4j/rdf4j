@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 /**
  * @author Håvard Ottestad
@@ -22,8 +23,8 @@ public class MinLengthFilter extends FilterPlanNode {
 
 	private final long minLength;
 
-	public MinLengthFilter(PlanNode parent, long minLength) {
-		super(parent);
+	public MinLengthFilter(PlanNode parent, long minLength, ConnectionsGroup connectionsGroup) {
+		super(parent, connectionsGroup);
 		this.minLength = minLength;
 	}
 

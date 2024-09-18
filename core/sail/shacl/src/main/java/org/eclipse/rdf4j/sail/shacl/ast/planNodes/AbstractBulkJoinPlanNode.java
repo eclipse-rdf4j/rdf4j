@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.ArrayDeque;
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -50,7 +51,7 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 		return SparqlQueryParserCache.get(completeQuery);
 	}
 
-	void runQuery(ArrayDeque<ValidationTuple> left, ArrayDeque<ValidationTuple> right, SailConnection connection,
+	void runQuery(Collection<ValidationTuple> left, ArrayDeque<ValidationTuple> right, SailConnection connection,
 			TupleExpr parsedQuery, Dataset dataset, Resource[] dataGraph, boolean skipBasedOnPreviousConnection,
 			SailConnection previousStateConnection) {
 		List<BindingSet> newBindindingSet = buildBindingSets(left, connection, skipBasedOnPreviousConnection,
@@ -92,7 +93,7 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 				});
 	}
 
-	private List<BindingSet> buildBindingSets(ArrayDeque<ValidationTuple> left, SailConnection connection,
+	private List<BindingSet> buildBindingSets(Collection<ValidationTuple> left, SailConnection connection,
 			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection, Resource[] dataGraph) {
 		return left.stream()
 

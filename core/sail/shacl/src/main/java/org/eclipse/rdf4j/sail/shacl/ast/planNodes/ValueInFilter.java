@@ -16,6 +16,7 @@ import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 /**
  * @author Håvard Ottestad
@@ -24,8 +25,8 @@ public class ValueInFilter extends FilterPlanNode {
 
 	private final Set<Value> valueSet;
 
-	public ValueInFilter(PlanNode parent, Set<Value> valueSet) {
-		super(parent);
+	public ValueInFilter(PlanNode parent, Set<Value> valueSet, ConnectionsGroup connectionsGroup) {
+		super(parent, connectionsGroup);
 		this.valueSet = valueSet;
 	}
 

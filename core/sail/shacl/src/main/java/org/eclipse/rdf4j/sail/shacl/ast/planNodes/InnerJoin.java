@@ -19,6 +19,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,9 +42,9 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 	private NotifyingPushablePlanNode discardedLeft;
 	private NotifyingPushablePlanNode discardedRight;
 
-	public InnerJoin(PlanNode left, PlanNode right) {
-		this.left = PlanNodeHelper.handleSorting(this, left);
-		this.right = PlanNodeHelper.handleSorting(this, right);
+	public InnerJoin(PlanNode left, PlanNode right, ConnectionsGroup connectionsGroup) {
+		this.left = PlanNodeHelper.handleSorting(this, left, connectionsGroup);
+		this.right = PlanNodeHelper.handleSorting(this, right, connectionsGroup);
 
 		// this.stackTrace = Thread.currentThread().getStackTrace();
 	}

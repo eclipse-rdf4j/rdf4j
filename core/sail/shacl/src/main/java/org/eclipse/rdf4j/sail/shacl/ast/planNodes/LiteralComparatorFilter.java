@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 /**
  * @author Håvard Ottestad
@@ -27,8 +28,9 @@ public class LiteralComparatorFilter extends FilterPlanNode {
 
 	private final Compare.CompareOp compareOp;
 
-	public LiteralComparatorFilter(PlanNode parent, Literal compareTo, Compare.CompareOp compareOp) {
-		super(parent);
+	public LiteralComparatorFilter(PlanNode parent, Literal compareTo, Compare.CompareOp compareOp,
+			ConnectionsGroup connectionsGroup) {
+		super(parent, connectionsGroup);
 		this.compareTo = compareTo;
 		this.compareOp = compareOp;
 

@@ -173,14 +173,15 @@ public class NodeShape extends Shape {
 					return new ValidationResult(t.getActiveTarget(), t.getActiveTarget(), this,
 							constraintComponent, getSeverity(), t.getScope(), t.getContexts(),
 							getContexts());
-				});
+				}, connectionsGroup);
 			}
 
 			if (scope == Scope.propertyShape) {
-				validationPlanNode = Unique.getInstance(new ShiftToPropertyShape(validationPlanNode), true);
+				validationPlanNode = Unique.getInstance(new ShiftToPropertyShape(validationPlanNode, connectionsGroup),
+						true, connectionsGroup);
 			}
 
-			union = UnionNode.getInstance(union, validationPlanNode);
+			union = UnionNode.getInstance(connectionsGroup, union, validationPlanNode);
 		}
 
 		return union;
@@ -207,7 +208,7 @@ public class NodeShape extends Shape {
 				.map(c -> c.getAllTargetsPlan(connectionsGroup, dataGraph, Scope.nodeShape,
 						new StatementMatcher.StableRandomVariableProvider()))
 				.distinct()
-				.reduce(UnionNode::getInstanceDedupe)
+				.reduce((nodes, nodes2) -> UnionNode.getInstanceDedupe(connectionsGroup, nodes, nodes2))
 				.orElse(EmptyNode.getInstance());
 
 		if (connectionsGroup.getStats().hasRemoved()) {
@@ -216,14 +217,14 @@ public class NodeShape extends Shape {
 							stableRandomVariableProvider)
 					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
 
-			planNode = UnionNode.getInstanceDedupe(planNode, planNodeEffectiveTarget);
+			planNode = UnionNode.getInstanceDedupe(connectionsGroup, planNode, planNodeEffectiveTarget);
 		}
 
 		if (scope == Scope.propertyShape) {
-			planNode = Unique.getInstance(new ShiftToPropertyShape(planNode), true);
+			planNode = Unique.getInstance(new ShiftToPropertyShape(planNode, connectionsGroup), true, connectionsGroup);
 		}
 
-		planNode = Unique.getInstance(planNode, false);
+		planNode = Unique.getInstance(planNode, false, connectionsGroup);
 
 		return planNode;
 	}

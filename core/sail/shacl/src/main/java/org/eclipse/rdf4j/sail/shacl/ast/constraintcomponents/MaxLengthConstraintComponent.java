@@ -29,12 +29,14 @@ import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.MaxLengthFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 public class MaxLengthConstraintComponent extends AbstractSimpleConstraintComponent {
 
 	long maxLength;
 
 	public MaxLengthConstraintComponent(long maxLength) {
+		super();
 		this.maxLength = maxLength;
 	}
 
@@ -54,8 +56,8 @@ public class MaxLengthConstraintComponent extends AbstractSimpleConstraintCompon
 	}
 
 	@Override
-	Function<PlanNode, FilterPlanNode> getFilterAttacher() {
-		return (parent) -> new MaxLengthFilter(parent, maxLength);
+	Function<PlanNode, FilterPlanNode> getFilterAttacher(ConnectionsGroup connectionsGroup) {
+		return (parent) -> new MaxLengthFilter(parent, maxLength, connectionsGroup);
 	}
 
 	@Override

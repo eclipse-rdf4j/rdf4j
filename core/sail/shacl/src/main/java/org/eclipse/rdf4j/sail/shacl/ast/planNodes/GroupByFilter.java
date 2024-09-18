@@ -19,6 +19,7 @@ import java.util.function.Function;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 /**
  * @author Håvard Ottestad
@@ -30,8 +31,9 @@ public class GroupByFilter implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public GroupByFilter(PlanNode parent, Function<Collection<ValidationTuple>, Boolean> filter) {
-		this.parent = PlanNodeHelper.handleSorting(this, parent);
+	public GroupByFilter(PlanNode parent, Function<Collection<ValidationTuple>, Boolean> filter,
+			ConnectionsGroup connectionsGroup) {
+		this.parent = PlanNodeHelper.handleSorting(this, parent, connectionsGroup);
 		this.filter = filter;
 	}
 

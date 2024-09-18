@@ -119,7 +119,7 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 		if (overrideTargetNode != null) {
 			planNodeProvider = overrideTargetNode;
 		} else {
-			planNodeProvider = new BufferedSplitter(
+			planNodeProvider = BufferedSplitter.getInstance(
 					getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
 							stableRandomVariableProvider),
 					false);
@@ -133,10 +133,10 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 						scope
 				)
 				)
-				.reduce((a, b) -> new EqualsJoinValue(a, b, false))
+				.reduce((a, b) -> new EqualsJoinValue(a, b, false, connectionsGroup))
 				.orElse(EmptyNode.getInstance());
 
-		return Unique.getInstance(orPlanNodes, false);
+		return Unique.getInstance(orPlanNodes, false, connectionsGroup);
 	}
 
 	@Override
@@ -150,7 +150,8 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 							stableRandomVariableProvider)
 					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
 
-			allTargets = Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);
+			allTargets = Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan, connectionsGroup), true,
+					connectionsGroup);
 		} else {
 			allTargets = getTargetChain()
 					.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
@@ -163,10 +164,11 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 				.map(or -> or.getAllTargetsPlan(connectionsGroup, dataGraph, scope,
 						new StatementMatcher.StableRandomVariableProvider()))
 				.distinct()
-				.reduce(UnionNode::getInstanceDedupe)
+				.reduce((nodes, nodes2) -> UnionNode.getInstanceDedupe(connectionsGroup, nodes, nodes2))
 				.orElse(EmptyNode.getInstance());
 
-		return Unique.getInstance(UnionNode.getInstanceDedupe(allTargets, planNode), false);
+		return Unique.getInstance(UnionNode.getInstanceDedupe(connectionsGroup, allTargets, planNode), false,
+				connectionsGroup);
 	}
 
 	@Override

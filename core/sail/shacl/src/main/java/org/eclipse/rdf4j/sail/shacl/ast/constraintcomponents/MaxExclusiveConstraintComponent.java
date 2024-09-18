@@ -27,12 +27,14 @@ import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LiteralComparatorFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 public class MaxExclusiveConstraintComponent extends AbstractSimpleConstraintComponent {
 
 	Literal maxExclusive;
 
 	public MaxExclusiveConstraintComponent(Literal maxExclusive) {
+		super();
 		this.maxExclusive = maxExclusive;
 	}
 
@@ -61,8 +63,8 @@ public class MaxExclusiveConstraintComponent extends AbstractSimpleConstraintCom
 	}
 
 	@Override
-	Function<PlanNode, FilterPlanNode> getFilterAttacher() {
-		return (parent) -> new LiteralComparatorFilter(parent, maxExclusive, Compare.CompareOp.GT);
+	Function<PlanNode, FilterPlanNode> getFilterAttacher(ConnectionsGroup connectionsGroup) {
+		return (parent) -> new LiteralComparatorFilter(parent, maxExclusive, Compare.CompareOp.GT, connectionsGroup);
 	}
 
 	@Override
