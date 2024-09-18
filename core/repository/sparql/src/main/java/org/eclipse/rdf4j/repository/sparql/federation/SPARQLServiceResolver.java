@@ -76,7 +76,19 @@ public class SPARQLServiceResolver extends AbstractFederatedServiceResolver
 
 	@Override
 	public HttpClient getHttpClient() {
-		return getHttpClientSessionManager().getHttpClient();
+		HttpClientSessionManager httpClientSessionManager = getHttpClientSessionManager();
+
+		try {
+			if (httpClientSessionManager instanceof SharedHttpClientSessionManager) {
+				((SharedHttpClientSessionManager) httpClientSessionManager).setDefaultSparqlServiceTimeouts();
+			}
+			return getHttpClientSessionManager().getHttpClient();
+		} finally {
+			if (httpClientSessionManager instanceof SharedHttpClientSessionManager) {
+				((SharedHttpClientSessionManager) httpClientSessionManager).setDefaultTimeouts();
+			}
+		}
+
 	}
 
 	@Override
@@ -86,6 +98,7 @@ public class SPARQLServiceResolver extends AbstractFederatedServiceResolver
 			getHttpClientSessionManager();
 			toSetDependentClient = dependentClient;
 		}
+
 		// The strange lifecycle results in the possibility that the
 		// dependentClient will be null due to a call to setSesameClient, so add
 		// a null guard here for that possibility

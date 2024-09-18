@@ -34,6 +34,7 @@ import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.client.utils.HttpClientUtils;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.protocol.HttpContext;
 import org.eclipse.rdf4j.http.client.util.HttpClientBuilders;
 import org.slf4j.Logger;
@@ -52,6 +53,163 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	public static final String CORE_POOL_SIZE_PROPERTY = "org.eclipse.rdf4j.client.executors.corePoolSize";
 
 	private static final AtomicLong threadCount = new AtomicLong();
+
+	// System property constants for regular timeouts
+
+	/**
+	 * Configurable system property {@code org.eclipse.rdf4j.client.http.connectionTimeout} for specifying the HTTP
+	 * connection timeout in milliseconds for general use. Default is 1 hour.
+	 *
+	 * <p>
+	 * The connection timeout determines the maximum time the client will wait to establish a TCP connection to the
+	 * server. A default of 1 hour is set to allow for potential network delays without causing unnecessary timeouts.
+	 * </p>
+	 */
+	public static final String CONNECTION_TIMEOUT_PROPERTY = "org.eclipse.rdf4j.client.http.connectionTimeout";
+
+	/**
+	 * Configurable system property {@code org.eclipse.rdf4j.client.http.connectionRequestTimeout} for specifying the
+	 * HTTP connection request timeout in milliseconds for general use. Default is 10 days.
+	 *
+	 * <p>
+	 * The connection request timeout defines how long the client will wait for a connection from the connection pool. A
+	 * longer timeout is acceptable here since operations like large file uploads may need to wait for an available
+	 * connection.
+	 * </p>
+	 */
+	public static final String CONNECTION_REQUEST_TIMEOUT_PROPERTY = "org.eclipse.rdf4j.client.http.connectionRequestTimeout";
+
+	/**
+	 * Configurable system property {@code org.eclipse.rdf4j.client.http.socketTimeout} for specifying the HTTP socket
+	 * timeout in milliseconds for general use. Default is 10 days.
+	 *
+	 * <p>
+	 * The socket timeout controls the maximum period of inactivity between data packets during data transfer. A longer
+	 * timeout is appropriate for large data transfers, ensuring that operations are not interrupted prematurely.
+	 * </p>
+	 */
+	public static final String SOCKET_TIMEOUT_PROPERTY = "org.eclipse.rdf4j.client.http.socketTimeout";
+
+	// System property constants for SPARQL SERVICE timeouts
+
+	/**
+	 * Configurable system property {@code org.eclipse.rdf4j.client.sparql.http.connectionTimeout} for specifying the
+	 * HTTP connection timeout in milliseconds when used in SPARQL SERVICE calls. Default is 10 minutes.
+	 *
+	 * <p>
+	 * A shorter connection timeout is set for SPARQL SERVICE calls to quickly detect unresponsive endpoints in
+	 * federated queries, improving overall query performance by avoiding long waits for unreachable servers.
+	 * </p>
+	 */
+	public static final String SPARQL_CONNECTION_TIMEOUT_PROPERTY = "org.eclipse.rdf4j.client.sparql.http.connectionTimeout";
+
+	/**
+	 * Configurable system property {@code org.eclipse.rdf4j.client.sparql.http.connectionRequestTimeout} for specifying
+	 * the HTTP connection request timeout in milliseconds when used in SPARQL SERVICE calls. Default is 6 hours.
+	 *
+	 * <p>
+	 * This timeout controls how long the client waits for a connection from the pool when making SPARQL SERVICE calls.
+	 * A shorter timeout than general use ensures that queries fail fast if resources are constrained, maintaining
+	 * responsiveness.
+	 * </p>
+	 */
+	public static final String SPARQL_CONNECTION_REQUEST_TIMEOUT_PROPERTY = "org.eclipse.rdf4j.client.sparql.http.connectionRequestTimeout";
+
+	/**
+	 * Configurable system property {@code org.eclipse.rdf4j.client.sparql.http.socketTimeout} for specifying the HTTP
+	 * socket timeout in milliseconds when used in SPARQL SERVICE calls. Default is 6 hours.
+	 *
+	 * <p>
+	 * The socket timeout for SPARQL SERVICE calls is set to a shorter duration to detect unresponsive servers during
+	 * data transfer, ensuring that the client does not wait indefinitely for data that may never arrive.
+	 * </p>
+	 */
+	public static final String SPARQL_SOCKET_TIMEOUT_PROPERTY = "org.eclipse.rdf4j.client.sparql.http.socketTimeout";
+
+	// Default timeout values for general use
+
+	/**
+	 * Default HTTP connection timeout in milliseconds for general use. Set to 1 hour.
+	 */
+	public static final int DEFAULT_CONNECTION_TIMEOUT = 60 * 60 * 1000; // 1 hour
+
+	/**
+	 * Default HTTP connection request timeout in milliseconds for general use. Set to 10 days.
+	 */
+	public static final int DEFAULT_CONNECTION_REQUEST_TIMEOUT = 10 * 24 * 60 * 60 * 1000; // 10 days
+
+	/**
+	 * Default HTTP socket timeout in milliseconds for general use. Set to 10 days.
+	 */
+	public static final int DEFAULT_SOCKET_TIMEOUT = 10 * 24 * 60 * 60 * 1000; // 10 days
+
+	// Default timeout values for SPARQL SERVICE calls
+
+	/**
+	 * Default HTTP connection timeout in milliseconds for SPARQL SERVICE calls. Set to 10 minutes.
+	 */
+	public static final int DEFAULT_SPARQL_CONNECTION_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+
+	/**
+	 * Default HTTP connection request timeout in milliseconds for SPARQL SERVICE calls. Set to 6 hours.
+	 */
+	public static final int DEFAULT_SPARQL_CONNECTION_REQUEST_TIMEOUT = 6 * 60 * 60 * 1000; // 6 hours
+
+	/**
+	 * Default HTTP socket timeout in milliseconds for SPARQL SERVICE calls. Set to 6 hours.
+	 */
+	public static final int DEFAULT_SPARQL_SOCKET_TIMEOUT = 6 * 60 * 60 * 1000; // 6 hours
+
+	// Timeout values as read from system properties or defaults
+
+	/**
+	 * HTTP connection timeout in milliseconds for general use.
+	 */
+	public static final int CONNECTION_TIMEOUT = Integer.parseInt(
+			System.getProperty(CONNECTION_TIMEOUT_PROPERTY, String.valueOf(DEFAULT_CONNECTION_TIMEOUT))
+	);
+
+	/**
+	 * HTTP connection request timeout in milliseconds for general use.
+	 */
+	public static final int CONNECTION_REQUEST_TIMEOUT = Integer.parseInt(
+			System.getProperty(CONNECTION_REQUEST_TIMEOUT_PROPERTY, String.valueOf(DEFAULT_CONNECTION_REQUEST_TIMEOUT))
+	);
+
+	/**
+	 * HTTP socket timeout in milliseconds for general use.
+	 */
+	public static final int SOCKET_TIMEOUT = Integer.parseInt(
+			System.getProperty(SOCKET_TIMEOUT_PROPERTY, String.valueOf(DEFAULT_SOCKET_TIMEOUT))
+	);
+
+	/**
+	 * HTTP connection timeout in milliseconds for SPARQL SERVICE calls.
+	 */
+	public static final int SPARQL_CONNECTION_TIMEOUT = Integer.parseInt(
+			System.getProperty(SPARQL_CONNECTION_TIMEOUT_PROPERTY, String.valueOf(DEFAULT_SPARQL_CONNECTION_TIMEOUT))
+	);
+
+	/**
+	 * HTTP connection request timeout in milliseconds for SPARQL SERVICE calls.
+	 */
+	public static final int SPARQL_CONNECTION_REQUEST_TIMEOUT = Integer.parseInt(
+			System.getProperty(SPARQL_CONNECTION_REQUEST_TIMEOUT_PROPERTY,
+					String.valueOf(DEFAULT_SPARQL_CONNECTION_REQUEST_TIMEOUT))
+	);
+
+	/**
+	 * HTTP socket timeout in milliseconds for SPARQL SERVICE calls.
+	 */
+	public static final int SPARQL_SOCKET_TIMEOUT = Integer.parseInt(
+			System.getProperty(SPARQL_SOCKET_TIMEOUT_PROPERTY, String.valueOf(DEFAULT_SPARQL_SOCKET_TIMEOUT))
+	);
+
+	// Variables for the currently used timeouts
+
+	private int currentConnectionTimeout = CONNECTION_TIMEOUT;
+	private int currentConnectionRequestTimeout = CONNECTION_REQUEST_TIMEOUT;
+	private int currentSocketTimeout = SOCKET_TIMEOUT;
 
 	private final Logger logger = LoggerFactory.getLogger(SharedHttpClientSessionManager.class);
 
@@ -267,6 +425,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	@Override
 	public void shutDown() {
 		try {
+			// Close open sessions
 			openSessions.keySet().forEach(session -> {
 				try {
 					session.close();
@@ -280,11 +439,11 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 				HttpClientUtils.closeQuietly(toCloseDependentClient);
 			}
 		} finally {
+			// Shutdown the executor
 			try {
 				executor.shutdown();
 				executor.awaitTermination(10, TimeUnit.SECONDS);
 			} catch (InterruptedException e) {
-				// Preserve the interrupt status so others can check it as necessary
 				Thread.currentThread().interrupt();
 			} finally {
 				if (!executor.isTerminated()) {
@@ -314,17 +473,67 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	}
 
 	private CloseableHttpClient createHttpClient() {
+
 		HttpClientBuilder nextHttpClientBuilder = httpClientBuilder;
 		if (nextHttpClientBuilder != null) {
 			return nextHttpClientBuilder.build();
 		}
 
+		RequestConfig requestConfig = getDefaultRequestConfig();
+
 		return HttpClientBuilder.create()
 				.evictExpiredConnections()
+				.evictIdleConnections(30, TimeUnit.MINUTES)
 				.setRetryHandler(retryHandlerStale)
 				.setServiceUnavailableRetryStrategy(serviceUnavailableRetryHandler)
 				.useSystemProperties()
-				.setDefaultRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build())
+				.setDefaultRequestConfig(requestConfig)
 				.build();
 	}
+
+	/**
+	 * Returns the default {@link RequestConfig} using the currently set timeout values.
+	 *
+	 * @return a configured {@link RequestConfig} with the current timeouts.
+	 */
+	public RequestConfig getDefaultRequestConfig() {
+		return RequestConfig.custom()
+				.setConnectTimeout(currentConnectionTimeout)
+				.setConnectionRequestTimeout(currentConnectionRequestTimeout)
+				.setSocketTimeout(currentSocketTimeout)
+				.setCookieSpec(CookieSpecs.STANDARD)
+				.build();
+	}
+
+	/**
+	 * Switches the current timeout settings to use the SPARQL-specific timeouts. This method should be called when
+	 * making SPARQL SERVICE calls to apply shorter timeout values.
+	 *
+	 * <p>
+	 * The SPARQL-specific timeouts are shorter to ensure that unresponsive or slow SPARQL endpoints do not cause long
+	 * delays in federated query processing. Quick detection of such issues improves the responsiveness and reliability
+	 * of SPARQL queries.
+	 * </p>
+	 */
+	public void setDefaultSparqlServiceTimeouts() {
+		this.currentConnectionTimeout = SPARQL_CONNECTION_TIMEOUT;
+		this.currentConnectionRequestTimeout = SPARQL_CONNECTION_REQUEST_TIMEOUT;
+		this.currentSocketTimeout = SPARQL_SOCKET_TIMEOUT;
+	}
+
+	/**
+	 * Resets the current timeout settings to the general timeouts. This method should be called to revert any changes
+	 * made by {@link #setDefaultSparqlServiceTimeouts()} and apply the general timeout values.
+	 *
+	 * <p>
+	 * The general timeouts are longer to accommodate operations that may take more time, such as large data transfers
+	 * or extensive processing, without causing premature timeouts.
+	 * </p>
+	 */
+	public void setDefaultTimeouts() {
+		this.currentConnectionTimeout = CONNECTION_TIMEOUT;
+		this.currentConnectionRequestTimeout = CONNECTION_REQUEST_TIMEOUT;
+		this.currentSocketTimeout = SOCKET_TIMEOUT;
+	}
+
 }
