@@ -172,7 +172,7 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent imple
 		}
 
 		if (effectiveTarget.size() > 1) {
-			allTargets = Unique.getInstance(allTargets, true);
+			allTargets = Unique.getInstance(allTargets, true, connectionsGroup);
 		}
 
 		return new SparqlConstraintSelect(connectionsGroup.getBaseConnection(), allTargets, select, scope,

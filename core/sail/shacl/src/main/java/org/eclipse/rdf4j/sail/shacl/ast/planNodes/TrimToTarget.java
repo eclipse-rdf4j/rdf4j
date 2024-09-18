@@ -15,6 +15,7 @@ import java.util.Objects;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 public class TrimToTarget implements PlanNode {
 
@@ -25,8 +26,8 @@ public class TrimToTarget implements PlanNode {
 
 	boolean keepPath = false;
 
-	public TrimToTarget(PlanNode parent) {
-		this.parent = PlanNodeHelper.handleSorting(this, parent);
+	public TrimToTarget(PlanNode parent, ConnectionsGroup connectionsGroup) {
+		this.parent = PlanNodeHelper.handleSorting(this, parent, connectionsGroup);
 //		this.stackTrace = Thread.currentThread().getStackTrace();
 	}
 
@@ -123,8 +124,7 @@ public class TrimToTarget implements PlanNode {
 	@Override
 	public String toString() {
 		return "TrimToTarget{" +
-				"parent=" + parent +
-				", keepPath=" + keepPath +
+				"keepPath=" + keepPath +
 				'}';
 	}
 }

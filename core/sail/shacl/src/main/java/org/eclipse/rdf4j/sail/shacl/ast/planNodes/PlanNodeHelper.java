@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 public class PlanNodeHelper {
 
@@ -27,14 +28,19 @@ public class PlanNodeHelper {
 		rdf4jNilDataset.addDefaultGraph(RDF4J.NIL);
 	}
 
-	public static PlanNode handleSorting(PlanNode child, PlanNode parent) {
-		return handleSorting(child.requiresSorted(), parent);
+	public static PlanNode handleSorting(PlanNode child, PlanNode parent, ConnectionsGroup connectionsGroup) {
+		return handleSorting(child.requiresSorted(), parent, connectionsGroup);
 	}
 
-	public static PlanNode handleSorting(boolean requiresSorted, PlanNode parent) {
+	public static PlanNode handleSorting(boolean requiresSorted, PlanNode parent, ConnectionsGroup connectionsGroup) {
 		if (requiresSorted) {
 			if (!parent.producesSorted()) {
-				parent = new Sort(parent);
+//				if (connectionsGroup != null && (parent instanceof BufferedSplitter.BufferedSplitterPlaneNode ||
+//						parent instanceof UnorderedSelect)) {
+//					parent = connectionsGroup.getCachedNodeFor(new Sort(parent, connectionsGroup));
+//				} else {
+				parent = new Sort(parent, connectionsGroup);
+//				}
 			}
 		}
 		return parent;

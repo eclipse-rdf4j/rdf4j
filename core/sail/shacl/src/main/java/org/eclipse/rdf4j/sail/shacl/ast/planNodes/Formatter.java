@@ -10,11 +10,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.List;
+
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleNamespace;
+import org.eclipse.rdf4j.model.vocabulary.DCAT;
+import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 public class Formatter {
 
@@ -28,20 +35,19 @@ public class Formatter {
 
 			String namespace = ((IRI) in).getNamespace();
 
-			if (namespace.equals(RDF.NAMESPACE)) {
-				return in.toString().replace(RDF.NAMESPACE, RDF.PREFIX + ":");
-			}
-			if (namespace.equals(RDFS.NAMESPACE)) {
-				return in.toString().replace(RDFS.NAMESPACE, RDFS.PREFIX + ":");
-			}
-			if (namespace.equals(SHACL.NAMESPACE)) {
-				return in.toString().replace(SHACL.NAMESPACE, SHACL.PREFIX + ":");
-			}
-			if (namespace.equals("http://example.com/ns#")) {
-				return in.toString().replace("http://example.com/ns#", "ex:");
-			}
-			if (namespace.equals("http://www.w3.org/2001/XMLSchema#")) {
-				return in.toString().replace("http://www.w3.org/2001/XMLSchema#", "xsd:");
+			List<Namespace> namespaces = List.of(
+					RDF.NS,
+					SHACL.NS,
+					FOAF.NS,
+					DCAT.NS,
+					new SimpleNamespace("http://example.com/ns#", "ex"),
+					XSD.NS
+			);
+
+			for (Namespace ns : namespaces) {
+				if (namespace.equals(ns.getName())) {
+					return ns.getPrefix() + ":" + ((IRI) in).getLocalName();
+				}
 			}
 
 		}

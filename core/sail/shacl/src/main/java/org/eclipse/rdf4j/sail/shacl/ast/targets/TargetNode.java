@@ -57,7 +57,7 @@ public class TargetNode extends Target {
 	@Override
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			PlanNode parent) {
-		return new SetFilterNode(targetNodes, parent, 0, true);
+		return new SetFilterNode(targetNodes, parent, 0, true, connectionsGroup);
 	}
 
 	@Override

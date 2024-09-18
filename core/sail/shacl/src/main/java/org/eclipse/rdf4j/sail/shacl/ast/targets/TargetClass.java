@@ -56,17 +56,17 @@ public class TargetClass extends Target {
 	@Override
 	public PlanNode getAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			ConstraintComponent.Scope scope) {
-		return getAddedRemovedInner(connectionsGroup.getAddedStatements(), dataGraph, scope);
+		return getAddedRemovedInner(connectionsGroup.getAddedStatements(), dataGraph, scope, connectionsGroup);
 	}
 
 	private PlanNode getAddedRemovedInner(SailConnection connection, Resource[] dataGraph,
-			ConstraintComponent.Scope scope) {
+			ConstraintComponent.Scope scope, ConnectionsGroup connectionsGroup) {
 		PlanNode planNode;
 		if (targetClass.size() == 1) {
 			Resource clazz = targetClass.stream().findAny().get();
 			planNode = new UnorderedSelect(connection, null, RDF.TYPE, clazz,
 					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope), null);
-			return planNode;
+//			return planNode;
 		} else {
 			planNode = new Select(connection,
 					SparqlFragment.bgp(Set.of(),
@@ -74,7 +74,7 @@ public class TargetClass extends Target {
 					"?a", b -> new ValidationTuple(b.getValue("a"), scope, false, dataGraph), dataGraph);
 		}
 
-		return Unique.getInstance(planNode, false);
+		return Unique.getInstance(planNode, false, connectionsGroup);
 	}
 
 	String getQueryFragment(String subjectVariable, String objectVariable,
@@ -112,24 +112,27 @@ public class TargetClass extends Target {
 			PlanNode parent) {
 
 		if (connectionsGroup.hasAddedStatements()) {
-			BufferedSplitter bufferedSplitter = new BufferedSplitter(parent);
+			BufferedSplitter bufferedSplitter = BufferedSplitter.getInstance(parent);
 
 			FilterByPredicateObject typeFoundInAdded = new FilterByPredicateObject(
 					connectionsGroup.getAddedStatements(), dataGraph, RDF.TYPE, targetClass,
-					bufferedSplitter.getPlanNode(), true, FilterByPredicateObject.FilterOn.activeTarget, false);
+					bufferedSplitter.getPlanNode(), true, FilterByPredicateObject.FilterOn.activeTarget, false,
+					connectionsGroup);
 
 			FilterByPredicateObject typeNotFoundInAdded = new FilterByPredicateObject(
 					connectionsGroup.getAddedStatements(), dataGraph, RDF.TYPE, targetClass,
-					bufferedSplitter.getPlanNode(), false, FilterByPredicateObject.FilterOn.activeTarget, false);
+					bufferedSplitter.getPlanNode(), false, FilterByPredicateObject.FilterOn.activeTarget, false,
+					connectionsGroup);
 
 			FilterByPredicateObject filterAgainstBaseConnection = new FilterByPredicateObject(
 					connectionsGroup.getBaseConnection(), dataGraph, RDF.TYPE, targetClass, typeNotFoundInAdded, true,
-					FilterByPredicateObject.FilterOn.activeTarget, true);
+					FilterByPredicateObject.FilterOn.activeTarget, true, connectionsGroup);
 
-			return new Sort(UnionNode.getInstance(typeFoundInAdded, filterAgainstBaseConnection));
+			return new Sort(UnionNode.getInstance(connectionsGroup, typeFoundInAdded, filterAgainstBaseConnection),
+					connectionsGroup);
 		} else {
 			return new FilterByPredicateObject(connectionsGroup.getBaseConnection(), dataGraph, RDF.TYPE,
-					targetClass, parent, true, FilterByPredicateObject.FilterOn.activeTarget, true);
+					targetClass, parent, true, FilterByPredicateObject.FilterOn.activeTarget, true, connectionsGroup);
 		}
 
 	}

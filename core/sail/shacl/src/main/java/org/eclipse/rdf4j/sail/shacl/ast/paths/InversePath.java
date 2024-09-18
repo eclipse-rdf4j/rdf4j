@@ -59,7 +59,7 @@ public class InversePath extends Path {
 
 		PlanNode added = path.getAllAdded(connectionsGroup, dataGraph, null);
 		added = new TupleMapper(added, t -> new ValidationTuple(t.getValue(), t.getActiveTarget(),
-				ConstraintComponent.Scope.propertyShape, true, dataGraph));
+				ConstraintComponent.Scope.propertyShape, true, dataGraph), connectionsGroup);
 
 		if (planNodeWrapper != null) {
 			added = planNodeWrapper.apply(added);

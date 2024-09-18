@@ -59,27 +59,27 @@ public class TargetSubjectsOf extends Target {
 	@Override
 	public PlanNode getAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			ConstraintComponent.Scope scope) {
-		return getAddedRemovedInner(connectionsGroup.getAddedStatements(), dataGraph, scope);
+		return getAddedRemovedInner(connectionsGroup.getAddedStatements(), dataGraph, scope, connectionsGroup);
 	}
 
 	private PlanNode getAddedRemovedInner(SailConnection connection, Resource[] dataGraph,
-			ConstraintComponent.Scope scope) {
+			ConstraintComponent.Scope scope, ConnectionsGroup connectionsGroup) {
 
 		PlanNode planNode = targetSubjectsOf.stream()
 				.map(predicate -> (PlanNode) new UnorderedSelect(connection, null,
 						predicate, null, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope),
 						null))
-				.reduce(UnionNode::getInstance)
+				.reduce((nodes, nodes2) -> UnionNode.getInstance(connectionsGroup, nodes, nodes2))
 				.orElse(EmptyNode.getInstance());
 
-		return Unique.getInstance(planNode, false);
+		return Unique.getInstance(planNode, false, connectionsGroup);
 	}
 
 	@Override
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			PlanNode parent) {
 		return new FilterByPredicate(connectionsGroup.getBaseConnection(), targetSubjectsOf, parent,
-				FilterByPredicate.On.Subject, dataGraph);
+				FilterByPredicate.On.Subject, dataGraph, connectionsGroup);
 	}
 
 	@Override

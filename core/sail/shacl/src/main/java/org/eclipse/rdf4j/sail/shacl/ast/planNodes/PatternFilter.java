@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,8 +34,8 @@ public class PatternFilter extends FilterPlanNode {
 
 	private final Pattern pattern;
 
-	public PatternFilter(PlanNode parent, String pattern, String flags) {
-		super(parent);
+	public PatternFilter(PlanNode parent, String pattern, String flags, ConnectionsGroup connectionsGroup) {
+		super(parent, connectionsGroup);
 		if (flags != null && !flags.isEmpty()) {
 			int flag = 0b0;
 

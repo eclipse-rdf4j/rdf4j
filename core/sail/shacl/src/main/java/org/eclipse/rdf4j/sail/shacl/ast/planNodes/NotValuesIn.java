@@ -19,6 +19,7 @@ import java.util.Set;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 public class NotValuesIn implements PlanNode {
 
@@ -27,8 +28,8 @@ public class NotValuesIn implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public NotValuesIn(PlanNode parent, PlanNode notIn) {
-		this.parent = PlanNodeHelper.handleSorting(this, parent);
+	public NotValuesIn(PlanNode parent, PlanNode notIn, ConnectionsGroup connectionsGroup) {
+		this.parent = PlanNodeHelper.handleSorting(this, parent, connectionsGroup);
 		this.notIn = notIn;
 	}
 
@@ -116,6 +117,12 @@ public class NotValuesIn implements PlanNode {
 				.append(StringEscapeUtils.escapeJava(this.toString()))
 				.append("\"];")
 				.append("\n");
+
+		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
+		stringBuilder.append(notIn.getId() + " -> " + getId()).append("\n");
+		parent.getPlanAsGraphvizDot(stringBuilder);
+		notIn.getPlanAsGraphvizDot(stringBuilder);
+
 	}
 
 	@Override
@@ -125,10 +132,7 @@ public class NotValuesIn implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "NotValuesIn{" +
-				"parent=" + parent +
-				", notIn=" + notIn +
-				'}';
+		return "NotValuesIn";
 	}
 
 	@Override

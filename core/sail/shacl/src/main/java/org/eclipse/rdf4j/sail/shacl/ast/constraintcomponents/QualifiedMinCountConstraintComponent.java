@@ -143,10 +143,11 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 
 		PlanNode planNode = negated(connectionsGroup, validationSettings, overrideTargetNode, scope);
 
-		planNode = new LeftOuterJoin(target, planNode);
+		planNode = new LeftOuterJoin(target, planNode, connectionsGroup);
 
-		GroupByCountFilter groupByCountFilter = new GroupByCountFilter(planNode, count -> count < qualifiedMinCount);
-		return Unique.getInstance(new TrimToTarget(groupByCountFilter), false);
+		GroupByCountFilter groupByCountFilter = new GroupByCountFilter(planNode, count -> count < qualifiedMinCount,
+				connectionsGroup);
+		return Unique.getInstance(new TrimToTarget(groupByCountFilter, connectionsGroup), false, connectionsGroup);
 
 	}
 
@@ -175,7 +176,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 								false, null);
 			}
 
-			target = Unique.getInstance(new TrimToTarget(target), false);
+			target = Unique.getInstance(new TrimToTarget(target, connectionsGroup), false, connectionsGroup);
 
 			PlanNode relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(
 					target,
@@ -187,13 +188,13 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider,
 									Set.of()),
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
-							validationSettings.getDataGraph())
-			);
+							validationSettings.getDataGraph()),
+					connectionsGroup);
 
 			return new TupleMapper(relevantTargetsWithPath, t -> {
 				List<Value> targetChain = t.getTargetChain(true);
 				return new ValidationTuple(targetChain, Scope.propertyShape, false, validationSettings.getDataGraph());
-			});
+			}, connectionsGroup);
 
 		};
 
@@ -204,7 +205,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 				scope
 		);
 
-		PlanNode invalid = Unique.getInstance(planNode, false);
+		PlanNode invalid = Unique.getInstance(planNode, false, connectionsGroup);
 
 		PlanNode allTargetsPlan;
 		if (overrideTargetNode == null) {
@@ -223,9 +224,11 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 			allTargetsPlan = new ShiftToPropertyShape(getTargetChain()
 					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
 							stableRandomVariableProvider)
-					.getAllTargets(connectionsGroup, validationSettings.getDataGraph(), Scope.nodeShape));
+					.getAllTargets(connectionsGroup, validationSettings.getDataGraph(), Scope.nodeShape),
+					connectionsGroup);
 		} else {
-			allTargetsPlan = Unique.getInstance(new TrimToTarget(allTargetsPlan), false);
+			allTargetsPlan = Unique.getInstance(new TrimToTarget(allTargetsPlan, connectionsGroup), false,
+					connectionsGroup);
 			allTargetsPlan = new BulkedExternalLeftOuterJoin(
 					allTargetsPlan,
 					connectionsGroup.getBaseConnection(),
@@ -236,11 +239,11 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider,
 									Set.of()),
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
-							validationSettings.getDataGraph())
-			);
+							validationSettings.getDataGraph()),
+					connectionsGroup);
 		}
 
-		invalid = new NotValuesIn(allTargetsPlan, invalid);
+		invalid = new NotValuesIn(allTargetsPlan, invalid, connectionsGroup);
 
 		return invalid;
 
@@ -259,7 +262,9 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 		PlanNode subTargets = qualifiedValueShape.getAllTargetsPlan(connectionsGroup, dataGraph, scope,
 				new StatementMatcher.StableRandomVariableProvider());
 
-		return Unique.getInstance(new TrimToTarget(UnionNode.getInstanceDedupe(allTargets, subTargets)), false);
+		return Unique
+				.getInstance(new TrimToTarget(UnionNode.getInstanceDedupe(connectionsGroup, allTargets, subTargets),
+						connectionsGroup), false, connectionsGroup);
 
 	}
 

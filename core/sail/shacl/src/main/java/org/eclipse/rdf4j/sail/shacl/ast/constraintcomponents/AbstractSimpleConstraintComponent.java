@@ -59,7 +59,6 @@ public abstract class AbstractSimpleConstraintComponent extends AbstractConstrai
 	}
 
 	public AbstractSimpleConstraintComponent() {
-
 	}
 
 	public Resource getId() {
@@ -92,17 +91,17 @@ public abstract class AbstractSimpleConstraintComponent extends AbstractConstrai
 					negatePlan, stableRandomVariableProvider, effectiveTarget, path);
 		} else if (scope == Scope.nodeShape) {
 			return effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false,
-					p -> getFilterAttacherWithNegation(negatePlan, p));
+					p -> getFilterAttacherWithNegation(negatePlan, p, connectionsGroup));
 		} else {
 
 			PlanNode invalidValuesDirectOnPath = path.get()
 					.getAnyAdded(connectionsGroup, validationSettings.getDataGraph(),
-							planNode -> getFilterAttacherWithNegation(negatePlan, planNode));
+							planNode -> getFilterAttacherWithNegation(negatePlan, planNode, connectionsGroup));
 
 			PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(),
 					scope, false, null);
 
-			InnerJoin innerJoin = new InnerJoin(addedTargets, invalidValuesDirectOnPath);
+			InnerJoin innerJoin = new InnerJoin(addedTargets, invalidValuesDirectOnPath, connectionsGroup);
 
 			if (connectionsGroup.getStats().wasEmptyBeforeTransaction()) {
 				return innerJoin.getJoined(UnBufferedPlanNode.class);
@@ -120,7 +119,7 @@ public abstract class AbstractSimpleConstraintComponent extends AbstractConstrai
 						scope,
 						EffectiveTarget.Extend.left, true, null);
 
-				top = UnionNode.getInstance(top, typeFilterPlan);
+				top = UnionNode.getInstance(connectionsGroup, top, typeFilterPlan);
 
 				PlanNode bulkedExternalInnerJoin = new BulkedExternalInnerJoin(
 						effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false,
@@ -128,18 +127,19 @@ public abstract class AbstractSimpleConstraintComponent extends AbstractConstrai
 						connectionsGroup.getBaseConnection(),
 						validationSettings.getDataGraph(),
 						path.get()
-								.getTargetQueryFragment(new StatementMatcher.Variable("a"),
-										new StatementMatcher.Variable("c"),
+								.getTargetQueryFragment(new Variable("a"),
+										new Variable("c"),
 										connectionsGroup.getRdfsSubClassOfReasoner(),
 										stableRandomVariableProvider, Set.of()),
 						connectionsGroup.hasPreviousStateConnection(),
 						connectionsGroup.getPreviousStateConnection(),
 						b -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
-								validationSettings.getDataGraph()));
+								validationSettings.getDataGraph()),
+						connectionsGroup);
 
-				top = UnionNode.getInstance(top, bulkedExternalInnerJoin);
+				top = UnionNode.getInstance(connectionsGroup, top, bulkedExternalInnerJoin);
 
-				return getFilterAttacherWithNegation(negatePlan, top);
+				return getFilterAttacherWithNegation(negatePlan, top, connectionsGroup);
 
 			}
 		}
@@ -157,10 +157,10 @@ public abstract class AbstractSimpleConstraintComponent extends AbstractConstrai
 			if (overrideTargetPlanNode instanceof AllTargetsPlanNode) {
 				PlanNode allTargets = effectiveTarget.getAllTargets(connectionsGroup,
 						validationSettings.getDataGraph(), scope);
-				allTargets = getFilterAttacherWithNegation(negatePlan, allTargets);
+				allTargets = getFilterAttacherWithNegation(negatePlan, allTargets, connectionsGroup);
 
 				if (effectiveTarget.size() > 1) {
-					allTargets = Unique.getInstance(allTargets, true);
+					allTargets = Unique.getInstance(allTargets, true, connectionsGroup);
 				}
 				return allTargets;
 			} else {
@@ -168,11 +168,11 @@ public abstract class AbstractSimpleConstraintComponent extends AbstractConstrai
 						validationSettings.getDataGraph(), scope,
 						EffectiveTarget.Extend.right,
 						false,
-						p -> getFilterAttacherWithNegation(negatePlan, p)
+						p -> getFilterAttacherWithNegation(negatePlan, p, connectionsGroup)
 				);
 
 				if (effectiveTarget.size() > 1) {
-					extend = Unique.getInstance(extend, true);
+					extend = Unique.getInstance(extend, true, connectionsGroup);
 				}
 
 				return extend;
@@ -189,12 +189,12 @@ public abstract class AbstractSimpleConstraintComponent extends AbstractConstrai
 						.getEffectiveTarget(Scope.nodeShape,
 								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)
 						.getAllTargets(connectionsGroup, validationSettings.getDataGraph(), Scope.nodeShape);
-				allTargets = new ShiftToPropertyShape(allTargets);
+				allTargets = new ShiftToPropertyShape(allTargets, connectionsGroup);
 
-				allTargets = getFilterAttacherWithNegation(negatePlan, allTargets);
+				allTargets = getFilterAttacherWithNegation(negatePlan, allTargets, connectionsGroup);
 
 				if (effectiveTarget.size() > 1) {
-					allTargets = Unique.getInstance(allTargets, true);
+					allTargets = Unique.getInstance(allTargets, true, connectionsGroup);
 				}
 
 				return allTargets;
@@ -206,24 +206,24 @@ public abstract class AbstractSimpleConstraintComponent extends AbstractConstrai
 						EffectiveTarget.Extend.right, false, null);
 
 				if (effectiveTarget.size() > 1) {
-					overrideTargetPlanNode = Unique.getInstance(overrideTargetPlanNode, true);
+					overrideTargetPlanNode = Unique.getInstance(overrideTargetPlanNode, true, connectionsGroup);
 				}
 
 				planNode = new BulkedExternalInnerJoin(overrideTargetPlanNode,
 						connectionsGroup.getBaseConnection(),
 						validationSettings.getDataGraph(), path.get()
-								.getTargetQueryFragment(new StatementMatcher.Variable("a"),
-										new StatementMatcher.Variable("c"),
+								.getTargetQueryFragment(new Variable("a"),
+										new Variable("c"),
 										connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider,
 										Set.of()),
 						false, null,
-						BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph())
-				);
+						BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph()),
+						connectionsGroup);
 				planNode = connectionsGroup.getCachedNodeFor(planNode);
 			}
 		}
 
-		return getFilterAttacherWithNegation(negatePlan, planNode);
+		return getFilterAttacherWithNegation(negatePlan, planNode, connectionsGroup);
 	}
 
 	@Override
@@ -245,7 +245,7 @@ public abstract class AbstractSimpleConstraintComponent extends AbstractConstrai
 			query += "\n" + getSparqlFilter(negatePlan, effectiveTarget.getTargetVar(), stableRandomVariableProvider);
 
 		} else {
-			value = StatementMatcher.Variable.VALUE;
+			value = Variable.VALUE;
 
 			Optional<SparqlFragment> sparqlFragment = targetChain.getPath()
 					.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
@@ -290,11 +290,12 @@ public abstract class AbstractSimpleConstraintComponent extends AbstractConstrai
 	 */
 	abstract String getSparqlFilterExpression(Variable<Value> variable, boolean negated);
 
-	private PlanNode getFilterAttacherWithNegation(boolean negatePlan, PlanNode allTargets) {
+	private PlanNode getFilterAttacherWithNegation(boolean negatePlan, PlanNode allTargets,
+			ConnectionsGroup connectionsGroup) {
 		if (negatePlan) {
-			allTargets = getFilterAttacher().apply(allTargets).getTrueNode(UnBufferedPlanNode.class);
+			allTargets = getFilterAttacher(connectionsGroup).apply(allTargets).getTrueNode(UnBufferedPlanNode.class);
 		} else {
-			allTargets = getFilterAttacher().apply(allTargets).getFalseNode(UnBufferedPlanNode.class);
+			allTargets = getFilterAttacher(connectionsGroup).apply(allTargets).getFalseNode(UnBufferedPlanNode.class);
 		}
 		return allTargets;
 	}
@@ -314,7 +315,7 @@ public abstract class AbstractSimpleConstraintComponent extends AbstractConstrai
 		throw new ShaclUnsupportedException(this.getClass().getSimpleName());
 	}
 
-	abstract Function<PlanNode, FilterPlanNode> getFilterAttacher();
+	abstract Function<PlanNode, FilterPlanNode> getFilterAttacher(ConnectionsGroup connectionsGroup);
 
 	String literalToString(Literal literal) {
 		IRI datatype = (literal).getDatatype();
@@ -349,7 +350,8 @@ public abstract class AbstractSimpleConstraintComponent extends AbstractConstrai
 							null
 					);
 
-			return Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), effectiveTarget.size() > 1);
+			return Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan, connectionsGroup),
+					effectiveTarget.size() > 1, connectionsGroup);
 		}
 		return EmptyNode.getInstance();
 	}

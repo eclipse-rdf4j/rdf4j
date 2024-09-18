@@ -15,6 +15,7 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.NodeKindConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -27,8 +28,9 @@ public class NodeKindFilter extends FilterPlanNode {
 
 	private final NodeKindConstraintComponent.NodeKind nodeKind;
 
-	public NodeKindFilter(PlanNode parent, NodeKindConstraintComponent.NodeKind nodeKind) {
-		super(parent);
+	public NodeKindFilter(PlanNode parent, NodeKindConstraintComponent.NodeKind nodeKind,
+			ConnectionsGroup connectionsGroup) {
+		super(parent, connectionsGroup);
 		this.nodeKind = nodeKind;
 	}
 

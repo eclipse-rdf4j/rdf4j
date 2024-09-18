@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,8 +48,9 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 	public ExternalFilterByQuery(SailConnection connection, Resource[] dataGraph, PlanNode parent,
 			SparqlFragment queryFragment,
 			StatementMatcher.Variable queryVariable,
-			Function<ValidationTuple, Value> filterOn, BiFunction<ValidationTuple, BindingSet, ValidationTuple> map) {
-		super(parent);
+			Function<ValidationTuple, Value> filterOn, BiFunction<ValidationTuple, BindingSet, ValidationTuple> map,
+			ConnectionsGroup connectionsGroup) {
+		super(parent, connectionsGroup);
 		this.connection = connection;
 		assert this.connection != null;
 		this.queryVariable = queryVariable;

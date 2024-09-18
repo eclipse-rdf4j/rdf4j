@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PatternFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 public class PatternConstraintComponent extends AbstractSimpleConstraintComponent {
 
@@ -36,6 +37,7 @@ public class PatternConstraintComponent extends AbstractSimpleConstraintComponen
 	String flags;
 
 	public PatternConstraintComponent(String pattern, String flags) {
+		super();
 		this.pattern = pattern;
 		this.flags = flags;
 
@@ -84,8 +86,8 @@ public class PatternConstraintComponent extends AbstractSimpleConstraintComponen
 	}
 
 	@Override
-	Function<PlanNode, FilterPlanNode> getFilterAttacher() {
-		return (parent) -> new PatternFilter(parent, pattern, flags);
+	Function<PlanNode, FilterPlanNode> getFilterAttacher(ConnectionsGroup connectionsGroup) {
+		return (parent) -> new PatternFilter(parent, pattern, flags, connectionsGroup);
 	}
 
 	@Override

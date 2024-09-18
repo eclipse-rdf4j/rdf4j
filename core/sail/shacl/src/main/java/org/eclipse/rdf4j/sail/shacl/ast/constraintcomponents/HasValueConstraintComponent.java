@@ -93,12 +93,12 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 				PlanNode addedByPath = path.getAllAdded(connectionsGroup, validationSettings.getDataGraph(), null);
 
 				addedByPath = target.getTargetFilter(connectionsGroup, validationSettings.getDataGraph(),
-						Unique.getInstance(new TrimToTarget(addedByPath), false));
+						Unique.getInstance(new TrimToTarget(addedByPath, connectionsGroup), false, connectionsGroup));
 				addedByPath = target.extend(addedByPath, connectionsGroup, validationSettings.getDataGraph(), scope,
 						EffectiveTarget.Extend.left, false, null);
 
-				addedTargets = UnionNode.getInstance(addedByPath, addedTargets);
-				addedTargets = Unique.getInstance(addedTargets, false);
+				addedTargets = UnionNode.getInstance(connectionsGroup, addedByPath, addedTargets);
+				addedTargets = Unique.getInstance(addedTargets, false, connectionsGroup);
 			}
 
 			PlanNode joined = new BulkedExternalLeftOuterJoin(addedTargets, connectionsGroup.getBaseConnection(),
@@ -106,16 +106,17 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 					path.getTargetQueryFragment(new Variable<>("a"), new Variable<>("c"),
 							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()),
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
-							validationSettings.getDataGraph()));
+							validationSettings.getDataGraph()),
+					connectionsGroup);
 
 			PlanNode invalidTargets = new GroupByFilter(joined, group -> {
 				return group
 						.stream()
 						.map(ValidationTuple::getValue)
 						.noneMatch(v -> hasValue.equals(v));
-			});
+			}, connectionsGroup);
 
-			return Unique.getInstance(new TrimToTarget(invalidTargets), false);
+			return Unique.getInstance(new TrimToTarget(invalidTargets, connectionsGroup), false, connectionsGroup);
 
 		} else if (scope == Scope.nodeShape) {
 
@@ -129,7 +130,8 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 						null);
 			}
 
-			PlanNode falseNode = new ValueInFilter(addedTargets, new HashSet<>(Collections.singletonList(hasValue)))
+			PlanNode falseNode = new ValueInFilter(addedTargets, new HashSet<>(Collections.singletonList(hasValue)),
+					connectionsGroup)
 					.getFalseNode(UnBufferedPlanNode.class);
 
 			return falseNode;
@@ -149,7 +151,8 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 							stableRandomVariableProvider)
 					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
 
-			return Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);
+			return Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan, connectionsGroup), true,
+					connectionsGroup);
 		}
 		return EmptyNode.getInstance();
 	}

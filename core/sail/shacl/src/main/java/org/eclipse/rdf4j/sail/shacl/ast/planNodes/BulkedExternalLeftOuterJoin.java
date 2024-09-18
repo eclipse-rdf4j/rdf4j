@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 /**
  * @author Håvard Ottestad
@@ -45,9 +46,9 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 
 	public BulkedExternalLeftOuterJoin(PlanNode leftNode, SailConnection connection, Resource[] dataGraph,
 			SparqlFragment query,
-			Function<BindingSet, ValidationTuple> mapper) {
+			Function<BindingSet, ValidationTuple> mapper, ConnectionsGroup connectionsGroup) {
 		super();
-		leftNode = PlanNodeHelper.handleSorting(this, leftNode);
+		leftNode = PlanNodeHelper.handleSorting(this, leftNode, connectionsGroup);
 		this.leftNode = leftNode;
 		this.query = query.getNamespacesForSparql()
 				+ StatementMatcher.StableRandomVariableProvider.normalize(query.getFragment());
@@ -182,13 +183,13 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
-		if (connection instanceof MemoryStoreConnection) {
-			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> "
-					+ getId() + " [label=\"right\"]").append("\n");
-		} else {
-			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"right\"]")
-					.append("\n");
-		}
+//		if (connection instanceof MemoryStoreConnection) {
+//			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> "
+//					+ getId() + " [label=\"right\"]").append("\n");
+//		} else {
+		stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"right\"]")
+				.append("\n");
+//		}
 
 		stringBuilder.append(leftNode.getId() + " -> " + getId() + " [label=\"left\"]").append("\n");
 

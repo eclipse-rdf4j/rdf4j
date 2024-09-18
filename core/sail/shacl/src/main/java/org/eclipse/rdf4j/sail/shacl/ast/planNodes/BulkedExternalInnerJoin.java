@@ -12,12 +12,14 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.ArrayDeque;
+import java.util.LinkedHashMap;
 import java.util.Objects;
 import java.util.function.Function;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -27,6 +29,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 /**
  * @author Håvard Ottestad
@@ -58,11 +61,11 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, Resource[] dataGraph,
 			SparqlFragment query,
 			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
-			Function<BindingSet, ValidationTuple> mapper) {
+			Function<BindingSet, ValidationTuple> mapper, ConnectionsGroup connectionsGroup) {
 		super();
 		assert !skipBasedOnPreviousConnection || previousStateConnection != null;
 
-		this.leftNode = PlanNodeHelper.handleSorting(this, leftNode);
+		this.leftNode = PlanNodeHelper.handleSorting(this, leftNode, connectionsGroup);
 		this.query = query.getNamespacesForSparql() + StatementMatcher.StableRandomVariableProvider
 				.normalize(query.getFragment());
 		this.connection = connection;
@@ -91,14 +94,14 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	public CloseableIteration<? extends ValidationTuple> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			ArrayDeque<ValidationTuple> left;
+			LinkedHashMap<Value, ValidationTuple> left;
 			ArrayDeque<ValidationTuple> right;
 			ArrayDeque<ValidationTuple> joined;
 			private PeekMarkIterator<? extends ValidationTuple> leftNodeIterator;
 
 			@Override
 			protected void init() {
-				left = new ArrayDeque<>(BULK_SIZE);
+				left = new LinkedHashMap<>(BULK_SIZE * 3);
 				right = new ArrayDeque<>(BULK_SIZE);
 				joined = new ArrayDeque<>(BULK_SIZE);
 				leftNodeIterator = new PeekMarkIterator<>(leftNode.iterator());
@@ -113,67 +116,30 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 				while (joined.isEmpty() && leftNodeIterator.hasNext()) {
 
 					while (left.size() < BULK_SIZE && leftNodeIterator.hasNext()) {
-						if (!left.isEmpty()) {
-							ValidationTuple peek = leftNodeIterator.peek();
-							if (peek.sameTargetAs(left.getFirst())) {
-								// stop if we detect a duplicate target since we only support distinct targets on the
-								// left side of the join
-								assert false
-										: "Current and next left target is the same: " + peek + " " + left.getFirst();
-								break;
-							}
-						}
-						left.addFirst(leftNodeIterator.next());
+						ValidationTuple next = leftNodeIterator.next();
+						ValidationTuple previousValue = left.put(next.getActiveTarget(), next);
+						assert previousValue == null : "We dont support duplicates on the left side of the join";
 					}
 
 					if (parsedQuery == null) {
 						parsedQuery = parseQuery(query);
 					}
 
-					runQuery(left, right, connection, parsedQuery, dataset, dataGraph, skipBasedOnPreviousConnection,
+					runQuery(left.values(), right, connection, parsedQuery, dataset, dataGraph,
+							skipBasedOnPreviousConnection,
 							previousStateConnection);
 
 					while (!right.isEmpty()) {
 
-						ValidationTuple leftPeek = left.peekLast();
+						ValidationTuple rightPeek = right.getLast();
+						ValidationTuple leftPeek = left.get(rightPeek.getActiveTarget());
 
-						ValidationTuple rightPeek = right.peekLast();
-
-						assert leftPeek != null;
-						assert rightPeek != null;
-
-						assert leftPeek.getActiveTarget() != null;
-						assert rightPeek.getActiveTarget() != null;
-
-						if (rightPeek.sameTargetAs(leftPeek)) {
+						if (leftPeek != null) {
 							// we have a join !
 							joined.addLast(ValidationTupleHelper.join(leftPeek, rightPeek));
 							right.removeLast();
-
-							ValidationTuple rightPeek2 = right.peekLast();
-
-							if (rightPeek2 == null || !rightPeek2.sameTargetAs(leftPeek)) {
-								// no more to join from right, pop left so we don't print it again.
-
-								left.removeLast();
-							}
 						} else {
-							int compare = rightPeek.compareActiveTarget(leftPeek);
-
-							if (compare < 0) {
-								if (right.isEmpty()) {
-									throw new IllegalStateException();
-								}
-
-								right.removeLast();
-
-							} else {
-								if (left.isEmpty()) {
-									throw new IllegalStateException();
-								}
-								left.removeLast();
-
-							}
+							right.removeLast();
 						}
 
 					}
@@ -223,13 +189,13 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
-		if (connection instanceof MemoryStoreConnection) {
-			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> "
-					+ getId() + " [label=\"right\"]").append("\n");
-		} else {
-			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"right\"]")
-					.append("\n");
-		}
+//		if (connection instanceof MemoryStoreConnection) {
+//			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> "
+//					+ getId() + " [label=\"right\"]").append("\n");
+//		} else {
+		stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"right\"]")
+				.append("\n");
+//		}
 
 		if (skipBasedOnPreviousConnection) {
 
@@ -282,5 +248,15 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	public int hashCode() {
 		return Objects.hash(super.hashCode(), connection, dataset, leftNode, skipBasedOnPreviousConnection,
 				previousStateConnection, query);
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return leftNode.producesSorted();
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return false;
 	}
 }

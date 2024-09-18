@@ -126,29 +126,30 @@ public class EffectiveTarget {
 		if (varNames.size() == 1) {
 
 			PlanNode parent = new TupleMapper(source,
-					new ActiveTargetTupleMapper(scope, includePropertyShapeValues, dataGraph));
+					new ActiveTargetTupleMapper(scope, includePropertyShapeValues, dataGraph), connectionsGroup);
 
 			if (filter != null) {
 				parent = filter.apply(parent);
 			}
 
 			return connectionsGroup
-					.getCachedNodeFor(getTargetFilter(connectionsGroup, dataGraph, Unique.getInstance(parent, false)));
+					.getCachedNodeFor(getTargetFilter(connectionsGroup, dataGraph,
+							Unique.getInstance(parent, false, connectionsGroup)));
 		} else {
 			SparqlFragment query = getQueryFragment(includePropertyShapeValues);
 
 			PlanNode parent = new BindSelect(connectionsGroup.getBaseConnection(), dataGraph, query, vars, source,
 					varNames, scope,
-					1000, direction, includePropertyShapeValues);
+					1000, direction, includePropertyShapeValues, connectionsGroup);
 
 			if (filter != null) {
 				parent = connectionsGroup.getCachedNodeFor(parent);
 				parent = filter.apply(parent);
-				parent = Unique.getInstance(parent, true);
+				parent = Unique.getInstance(parent, true, connectionsGroup);
 				return parent;
 			} else {
 				return connectionsGroup.getCachedNodeFor(
-						Unique.getInstance(parent, true));
+						Unique.getInstance(parent, true, connectionsGroup));
 			}
 
 		}
@@ -311,9 +312,19 @@ public class EffectiveTarget {
 			}
 
 			if (filter != null) {
-				return connectionsGroup.getCachedNodeFor(Unique.getInstance(filter.apply(targetsPlanNode), true));
+				if (chain.size() > 1) {
+					return connectionsGroup.getCachedNodeFor(
+							Unique.getInstance(filter.apply(targetsPlanNode), true, connectionsGroup));
+				} else {
+					return connectionsGroup.getCachedNodeFor(filter.apply(targetsPlanNode));
+				}
 			} else {
-				return connectionsGroup.getCachedNodeFor(Unique.getInstance(targetsPlanNode, true));
+				if (chain.size() > 1) {
+					return connectionsGroup
+							.getCachedNodeFor(Unique.getInstance(targetsPlanNode, true, connectionsGroup));
+				} else {
+					return connectionsGroup.getCachedNodeFor(targetsPlanNode);
+				}
 			}
 
 		}
@@ -345,7 +356,7 @@ public class EffectiveTarget {
 		// TODO: this is a slow way to solve this problem! We should use bulk operations.
 		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), dataGraph, parent, sparqlFragment,
 				last.var,
-				ValidationTuple::getActiveTarget, null)
+				ValidationTuple::getActiveTarget, null, connectionsGroup)
 				.getTrueNode(UnBufferedPlanNode.class);
 	}
 

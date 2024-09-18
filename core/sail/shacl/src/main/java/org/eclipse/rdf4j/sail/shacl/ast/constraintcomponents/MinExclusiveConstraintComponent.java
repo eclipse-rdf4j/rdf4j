@@ -27,12 +27,14 @@ import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LiteralComparatorFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 public class MinExclusiveConstraintComponent extends AbstractSimpleConstraintComponent {
 
 	Literal minExclusive;
 
 	public MinExclusiveConstraintComponent(Literal minExclusive) {
+		super();
 		this.minExclusive = minExclusive;
 	}
 
@@ -61,8 +63,8 @@ public class MinExclusiveConstraintComponent extends AbstractSimpleConstraintCom
 	}
 
 	@Override
-	Function<PlanNode, FilterPlanNode> getFilterAttacher() {
-		return (parent) -> new LiteralComparatorFilter(parent, minExclusive, Compare.CompareOp.LT);
+	Function<PlanNode, FilterPlanNode> getFilterAttacher(ConnectionsGroup connectionsGroup) {
+		return (parent) -> new LiteralComparatorFilter(parent, minExclusive, Compare.CompareOp.LT, connectionsGroup);
 	}
 
 	@Override

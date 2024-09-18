@@ -81,7 +81,7 @@ public class AlternativePath extends Path {
 		return paths
 				.stream()
 				.map(p -> p.getAllAdded(connectionsGroup, dataGraph, planNodeWrapper))
-				.reduce(UnionNode::getInstance)
+				.reduce((nodes, nodes2) -> UnionNode.getInstance(connectionsGroup, nodes, nodes2))
 				.orElse(EmptyNode.getInstance());
 	}
 

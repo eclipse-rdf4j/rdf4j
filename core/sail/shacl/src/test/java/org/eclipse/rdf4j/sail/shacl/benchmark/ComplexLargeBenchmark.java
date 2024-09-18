@@ -117,9 +117,9 @@ public class ComplexLargeBenchmark {
 	public static void main(String[] args) throws InterruptedException {
 		ComplexLargeBenchmark complexLargeBenchmark = new ComplexLargeBenchmark();
 		complexLargeBenchmark.setUp();
-		for (int i = 0; i < 20; i++) {
+		for (int i = 0; i < 100; i++) {
 			System.out.println(i);
-			complexLargeBenchmark.noPreloadingNonEmptyParallel();
+			complexLargeBenchmark.noPreloadingNonEmptyParallelRemoved();
 		}
 		complexLargeBenchmark.teardown();
 	}
@@ -416,7 +416,7 @@ public class ComplexLargeBenchmark {
 
 			((ShaclSail) repository.getSail()).setParallelValidation(true);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
-			((ShaclSail) repository.getSail()).setPerformanceLogging(false);
+//			((ShaclSail) repository.getSail()).setPerformanceLogging(true);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.NONE);

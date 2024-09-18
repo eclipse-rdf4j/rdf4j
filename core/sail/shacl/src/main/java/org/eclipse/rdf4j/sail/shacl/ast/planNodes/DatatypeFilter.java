@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,8 +32,8 @@ public class DatatypeFilter extends FilterPlanNode {
 	private final CoreDatatype.XSD xsdDatatype;
 	private StackTraceElement[] stackTrace;
 
-	public DatatypeFilter(PlanNode parent, IRI datatype) {
-		super(parent);
+	public DatatypeFilter(PlanNode parent, IRI datatype, ConnectionsGroup connectionsGroup) {
+		super(parent, connectionsGroup);
 		this.datatype = datatype;
 		this.xsdDatatype = CoreDatatype.from(datatype).asXSDDatatype().orElse(null);
 //		stackTrace = Thread.currentThread().getStackTrace();
