@@ -17,4 +17,4 @@ jobs:
         destination_branch: "develop"         # If blank, default: main
         pr_title: "Merge main into develop"
         pr_body: "Automatically generated PR to keep develop in sync with main.\n\n **USE MERGE COMMIT TO MERGE THIS PR**.\n\nSee [merge_main_to_develop.yml](/eclipse/rdf4j/.github/workflows/merge_main_to_develop.yml)."  # Full markdown support, requires pr_title to be set
-        github_token: ${{ secrets.GITHUB_TOKEN }}
+        github_token: ${{ github.token }}
