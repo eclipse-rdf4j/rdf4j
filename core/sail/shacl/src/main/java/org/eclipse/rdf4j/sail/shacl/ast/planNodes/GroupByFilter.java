@@ -135,7 +135,7 @@ public class GroupByFilter implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "GroupByCountFilter";
+		return "GroupByFilter";
 	}
 
 	@Override

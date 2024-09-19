@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.AbstractBulkJoinPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.InnerJoin;
@@ -142,7 +143,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 					null,
 					BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph()),
 
-					connectionsGroup);
+					connectionsGroup, AbstractBulkJoinPlanNode.DEFAULT_VARS);
 
 			PlanNode nonUniqueTargetLang = new NonUniqueTargetLang(relevantTargetsWithPath, connectionsGroup);
 			return Unique.getInstance(new TrimToTarget(nonUniqueTargetLang, connectionsGroup), false, connectionsGroup);
@@ -189,8 +190,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 				false,
 				null,
 				BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph()),
-
-				connectionsGroup);
+				connectionsGroup, AbstractBulkJoinPlanNode.DEFAULT_VARS);
 
 		PlanNode nonUniqueTargetLang = new NonUniqueTargetLang(relevantTargetsWithPath, connectionsGroup);
 

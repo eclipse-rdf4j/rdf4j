@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.AbstractBulkJoinPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.GroupByCountFilter;
@@ -82,6 +83,10 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 				PlanNode addedByPath = getTargetChain().getPath()
 						.get()
 						.getAnyAdded(connectionsGroup, validationSettings.getDataGraph(), null);
+
+				// we don't need to compress here because we are anyway going to trim to target later on
+				addedByPath = Unique.getInstance(addedByPath, false, connectionsGroup);
+
 				LeftOuterJoin leftOuterJoin = new LeftOuterJoin(target, addedByPath, connectionsGroup);
 				target = new GroupByCountFilter(leftOuterJoin, count -> count < minCount, connectionsGroup);
 			}
@@ -97,6 +102,10 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 			PlanNode addedByPath = getTargetChain().getPath()
 					.get()
 					.getAnyAdded(connectionsGroup, validationSettings.getDataGraph(), null);
+
+			// we don't need to compress here because we are anyway going to trim to target later on
+			addedByPath = Unique.getInstance(addedByPath, false, connectionsGroup);
+
 			LeftOuterJoin leftOuterJoin = new LeftOuterJoin(target, addedByPath, connectionsGroup);
 			target = new GroupByCountFilter(leftOuterJoin, count -> count < minCount, connectionsGroup);
 		}
@@ -110,7 +119,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()),
 				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 						validationSettings.getDataGraph()),
-				connectionsGroup);
+				connectionsGroup, AbstractBulkJoinPlanNode.DEFAULT_VARS);
 
 		relevantTargetsWithPath = connectionsGroup.getCachedNodeFor(relevantTargetsWithPath);
 

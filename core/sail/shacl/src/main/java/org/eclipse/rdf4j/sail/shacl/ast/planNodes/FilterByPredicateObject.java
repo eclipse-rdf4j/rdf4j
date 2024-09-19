@@ -349,9 +349,9 @@ public class FilterByPredicateObject implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalPredicateObjectFilter{" + "filterOnObject=" + PlanNode.prefix(filterOnObject)
+		return "FilterByPredicateObject{" + "filterOnObject=" + Formatter.prefix(filterOnObject)
 				+ ", filterOnPredicate="
-				+ PlanNode.prefix(filterOnPredicate) + ", filterOn=" + filterOn + ", returnMatching="
+				+ Formatter.prefix(filterOnPredicate) + ", filterOn=" + filterOn + ", returnMatching="
 				+ returnMatching + '}';
 	}
 

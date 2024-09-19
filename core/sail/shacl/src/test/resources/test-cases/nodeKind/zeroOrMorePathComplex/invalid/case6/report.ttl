@@ -1,0 +1,27 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+
+[] a sh:ValidationReport;
+  rdf4j:truncated false;
+  sh:conforms false;
+  sh:result [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode _:3d9086d5ce836d2b;
+      sh:resultPath _:c796ffb912304daa9258cc6b992eef4b2;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeKindConstraintComponent;
+      sh:sourceShape [ a sh:PropertyShape;
+          sh:nodeKind sh:IRI;
+          sh:path _:c796ffb912304daa9258cc6b992eef4b2
+        ];
+      sh:value _:3d9086d5ce836d2b
+    ] .
+
+_:c796ffb912304daa9258cc6b992eef4b2 sh:zeroOrMorePath (ex:knows1 ex:knows2 ex:knows3) .
