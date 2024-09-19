@@ -80,6 +80,7 @@ public class TargetChainRetriever implements PlanNode {
 	private final EffectiveTarget.EffectiveTargetFragment removedStatementTarget;
 	private final boolean hasValue;
 	private final Set<String> varNamesInQueryFragment;
+	private final String queryStr;
 
 	private StackTraceElement[] stackTrace;
 	private ValidationExecutionLogger validationExecutionLogger;
@@ -112,9 +113,11 @@ public class TargetChainRetriever implements PlanNode {
 				.get(QueryLanguage.SPARQL)
 				.get();
 
+		this.queryStr = "select * where {\n" + this.queryFragment + "\n}";
+
 		this.varNamesInQueryFragment = Set.of(ArrayBindingBasedQueryEvaluationContext
 				.findAllVariablesUsedInQuery(((QueryRoot) queryParserFactory.getParser()
-						.parseQuery("select * where {\n" + this.queryFragment + "\n}", null)
+						.parseQuery(queryStr, null)
 						.getTupleExpr())));
 
 		assert !varNamesInQueryFragment.isEmpty();
