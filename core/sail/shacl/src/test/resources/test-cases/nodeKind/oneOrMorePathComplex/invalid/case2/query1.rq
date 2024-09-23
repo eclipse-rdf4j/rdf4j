@@ -6,5 +6,9 @@ PREFIX sh: <http://www.w3.org/ns/shacl#>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
 INSERT DATA {
-ex:validPerson1 ex:knows [ ex:knows [ ex:knows "1234" ]].
+    ex:validPerson1 a ex:Person ;
+		ex:knows1 ex:p2.
+
+    ex:p3 ex:knows3 "1234".
+
 }

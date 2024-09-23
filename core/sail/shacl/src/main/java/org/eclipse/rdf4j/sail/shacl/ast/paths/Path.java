@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.paths;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -19,6 +20,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.sail.shacl.ast.Exportable;
 import org.eclipse.rdf4j.sail.shacl.ast.Identifiable;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
@@ -49,31 +51,72 @@ public abstract class Path implements Identifiable, Exportable, Targetable {
 
 		if (id.isBNode()) {
 			List<Statement> collect = shapeSource.getAllStatements(id)
+					.filter(statement -> !statement.getPredicate().equals(RDF.TYPE))
 					.collect(Collectors.toList());
+
+			Path ret = null;
 
 			for (Statement statement : collect) {
 				IRI pathType = statement.getPredicate();
 
 				switch (pathType.toString()) {
 				case "http://www.w3.org/ns/shacl#inversePath":
-					return new InversePath(id, (Resource) statement.getObject(), shapeSource);
+					if (ret != null) {
+						throw new ShaclUnsupportedException(
+								"Multiple path types not supported! " + Arrays.toString(collect.toArray()));
+					}
+					ret = new InversePath(id, (Resource) statement.getObject(), shapeSource);
+					break;
 				case "http://www.w3.org/ns/shacl#alternativePath":
-					return new AlternativePath(id, (Resource) statement.getObject(), shapeSource);
+					if (ret != null) {
+						throw new ShaclUnsupportedException(
+								"Multiple path types not supported! " + Arrays.toString(collect.toArray()));
+					}
+					ret = new AlternativePath(id, (Resource) statement.getObject(), shapeSource);
+					break;
 				case "http://www.w3.org/ns/shacl#zeroOrMorePath":
-					return new ZeroOrMorePath(id, (Resource) statement.getObject(), shapeSource);
+					if (ret != null) {
+						throw new ShaclUnsupportedException(
+								"Multiple path types not supported! " + Arrays.toString(collect.toArray()));
+					}
+					ret = new ZeroOrMorePath(id, (Resource) statement.getObject(), shapeSource);
+					break;
 				case "http://www.w3.org/ns/shacl#oneOrMorePath":
-					return new OneOrMorePath(id, (Resource) statement.getObject(), shapeSource);
+					if (ret != null) {
+						throw new ShaclUnsupportedException(
+								"Multiple path types not supported! " + Arrays.toString(collect.toArray()));
+					}
+					ret = new OneOrMorePath(id, (Resource) statement.getObject(), shapeSource);
+					break;
 				case "http://www.w3.org/ns/shacl#zeroOrOnePath":
-					return new ZeroOrOnePath(id, (Resource) statement.getObject(), shapeSource);
+					if (ret != null) {
+						throw new ShaclUnsupportedException(
+								"Multiple path types not supported! " + Arrays.toString(collect.toArray()));
+					}
+					ret = new ZeroOrOnePath(id, (Resource) statement.getObject(), shapeSource);
+					break;
 				case "http://www.w3.org/1999/02/22-rdf-syntax-ns#first":
-					return new SequencePath(id, shapeSource);
+					if (ret != null) {
+						throw new ShaclUnsupportedException(
+								"Multiple path types not supported! " + Arrays.toString(collect.toArray()));
+					}
+					ret = new SequencePath(id, shapeSource);
+					break;
 				default:
 					break;
 				}
 
 			}
 
-			throw new ShaclUnsupportedException();
+			if (ret != null) {
+				return ret;
+			} else {
+				if (collect.size() == 1) {
+					throw new ShaclUnsupportedException("Unknown path type: " + collect.get(0));
+				} else {
+					throw new ShaclUnsupportedException("Unknown path type: " + Arrays.toString(collect.toArray()));
+				}
+			}
 
 		} else {
 			return new SimplePath((IRI) id);

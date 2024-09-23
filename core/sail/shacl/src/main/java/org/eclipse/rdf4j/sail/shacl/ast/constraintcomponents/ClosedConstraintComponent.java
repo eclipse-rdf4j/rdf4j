@@ -530,11 +530,6 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 	}
 
 	@Override
-	public ValidationApproach getPreferredValidationApproach(ConnectionsGroup connectionsGroup) {
-		return super.getPreferredValidationApproach(connectionsGroup);
-	}
-
-	@Override
 	public ValidationApproach getOptimalBulkValidationApproach() {
 		return ValidationApproach.SPARQL;
 	}

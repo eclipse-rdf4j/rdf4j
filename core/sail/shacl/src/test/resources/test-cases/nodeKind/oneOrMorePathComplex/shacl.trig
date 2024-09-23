@@ -10,9 +10,10 @@
   ex:PersonShape a sh:NodeShape;
     sh:targetClass ex:Person;
     sh:property [
-        sh:path [ sh:oneOrMorePath ex:knows ];
+        sh:path [ sh:oneOrMorePath (ex:knows1 ex:knows2 ex:knows3) ];
         sh:nodeKind sh:BlankNodeOrIRI
       ] .
   rdf4j:nil sh:shapesGraph rdf4j:nil.
+
 
 }

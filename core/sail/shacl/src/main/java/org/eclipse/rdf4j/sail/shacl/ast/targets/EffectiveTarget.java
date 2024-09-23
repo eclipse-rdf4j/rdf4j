@@ -115,11 +115,7 @@ public class EffectiveTarget {
 			return allTargets;
 		}
 
-		var vars = getVars();
-		if (includePropertyShapeValues) {
-			vars = new ArrayList<>(vars);
-			vars.add(optional.var);
-		}
+		var vars = getVars(includePropertyShapeValues);
 
 		List<String> varNames = vars.stream().map(StatementMatcher.Variable::getName).collect(Collectors.toList());
 
@@ -155,7 +151,11 @@ public class EffectiveTarget {
 		}
 	}
 
-	private List<Variable<Value>> getVars() {
+	private List<Variable<Value>> getVars(boolean optional) {
+		if (optional) {
+			return Stream.concat(chain.stream(), Stream.of(this.optional)).map(t -> t.var).collect(Collectors.toList());
+		}
+
 		return chain.stream().map(t -> t.var).collect(Collectors.toList());
 	}
 
@@ -223,7 +223,7 @@ public class EffectiveTarget {
 
 	public PlanNode getAllTargets(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			ConstraintComponent.Scope scope) {
-		return new AllTargetsPlanNode(connectionsGroup.getBaseConnection(), dataGraph, chain, getVars(), scope);
+		return new AllTargetsPlanNode(connectionsGroup.getBaseConnection(), dataGraph, chain, getVars(false), scope);
 	}
 
 	public PlanNode getPlanNode(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
@@ -289,7 +289,7 @@ public class EffectiveTarget {
 							statementMatchersRemoval,
 							optional,
 							fragment,
-							getVars(),
+							getVars(false),
 							scope,
 							false);
 				} else {
@@ -300,14 +300,14 @@ public class EffectiveTarget {
 							null,
 							null,
 							fragment,
-							getVars(),
+							getVars(false),
 							scope,
 							false);
 				}
 			} else {
 
 				targetsPlanNode = new AllTargetsPlanNode(connectionsGroup.getBaseConnection(), dataGraph, chain,
-						getVars(), scope);
+						getVars(false), scope);
 
 			}
 
@@ -449,10 +449,13 @@ public class EffectiveTarget {
 				rootStatementMatcher = null;
 			} else {
 				rootStatementMatcher = queryFragment.getStatementMatchers().get(0);
-				assert rootStatementMatcher.getSubjectName() == var.getName() ||
-						rootStatementMatcher.getObjectName() == var.getName() ||
-						rootStatementMatcher.getSubjectName() == prev.var.getName() ||
-						rootStatementMatcher.getObjectName() == prev.var.getName();
+				if (rootStatementMatcher.getSubjectName() != var.getName() &&
+						rootStatementMatcher.getObjectName() != var.getName() &&
+						rootStatementMatcher.getSubjectName() != prev.var.getName() &&
+						rootStatementMatcher.getObjectName() != prev.var.getName()) {
+					throw new AssertionError("rootStatementMatcher: " + rootStatementMatcher + ", var: " + var
+							+ ", prev.var: " + prev.var);
+				}
 			}
 		}
 
@@ -460,7 +463,7 @@ public class EffectiveTarget {
 			return queryFragment;
 		}
 
-		public Stream<StatementsAndMatcher> getRoot(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+		public Stream<SubjectObjectAndMatcher> getRoot(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 				StatementMatcher currentStatementMatcher,
 				Statement currentStatement) {
 			if (currentStatementMatcher == rootStatementMatcher) {
@@ -489,13 +492,9 @@ public class EffectiveTarget {
 				if (target instanceof Path) {
 					Path path = (Path) target;
 					assert !(path instanceof InversePath);
-					Stream<StatementsAndMatcher> root = queryFragment.getRoot(connectionsGroup, dataGraph, path,
+					return queryFragment.getRoot(connectionsGroup, dataGraph, path,
 							currentStatementMatcher,
-							List.of(currentStatement));
-
-					List<StatementsAndMatcher> collect = root.collect(Collectors.toList());
-
-					return collect.stream();
+							List.of(new EffectiveTarget.SubjectObjectAndMatcher.SubjectObject(currentStatement)));
 				}
 
 				throw new UnsupportedOperationException();
@@ -503,20 +502,20 @@ public class EffectiveTarget {
 		}
 	}
 
-	public static class StatementsAndMatcher {
-		private final List<Statement> statements;
+	public static class SubjectObjectAndMatcher {
+		private final List<SubjectObject> statements;
 		private final StatementMatcher statementMatcher;
 
 		// We should support some sort of stream instead, so that we can scale without keeping all the
 		// intermediary statements in memeory! It's very hard to implement though since the list of statements is
 		// iterated over several times in different branches, so we can't just pass in an iterator since it would be
 		// consumed by one branch and then the other branch would only see an empty iterator.
-		public StatementsAndMatcher(List<Statement> statements, StatementMatcher statementMatcher) {
+		public SubjectObjectAndMatcher(List<SubjectObject> statements, StatementMatcher statementMatcher) {
 			this.statements = statements;
 			this.statementMatcher = statementMatcher;
 		}
 
-		public List<Statement> getStatements() {
+		public List<SubjectObject> getStatements() {
 			return statements;
 		}
 
@@ -526,6 +525,29 @@ public class EffectiveTarget {
 
 		public boolean hasStatements() {
 			return !statements.isEmpty();
+		}
+
+		public static class SubjectObject {
+			private final Resource subject;
+			private final Value object;
+
+			public SubjectObject(Resource subject, Value object) {
+				this.subject = subject;
+				this.object = object;
+			}
+
+			public SubjectObject(Statement statement) {
+				this.subject = statement.getSubject();
+				this.object = statement.getObject();
+			}
+
+			public Resource getSubject() {
+				return subject;
+			}
+
+			public Value getObject() {
+				return object;
+			}
 		}
 	}
 

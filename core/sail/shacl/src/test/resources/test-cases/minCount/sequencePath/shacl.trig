@@ -6,14 +6,13 @@
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
 
-{
+ rdf4j:SHACLShapeGraph {
   ex:PersonShape a sh:NodeShape;
     sh:targetClass ex:Person;
     sh:property [
-        sh:path [ sh:oneOrMorePath (ex:knows1 ex:knows2 ex:knows3) ];
-        sh:nodeKind sh:BlankNodeOrIRI
+        sh:path (ex:ssnObject1 ex:ssnObject2 ex:ssnObject3 ex:ssnObject4 ex:ssn) ;
+        sh:minCount 2 ;
+        sh:message "Requires at least 2 social security numbers", "Trenger minst 2 fødselsnummer"@no-nb, "Requires at least 2 social security numbers"@en ;
       ] .
-  rdf4j:nil sh:shapesGraph rdf4j:nil.
-
 
 }

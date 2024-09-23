@@ -82,6 +82,10 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 				PlanNode addedByPath = getTargetChain().getPath()
 						.get()
 						.getAnyAdded(connectionsGroup, validationSettings.getDataGraph(), null);
+
+				// we don't need to compress here because we are anyway going to trim to target later on
+				addedByPath = Unique.getInstance(addedByPath, false, connectionsGroup);
+
 				LeftOuterJoin leftOuterJoin = new LeftOuterJoin(target, addedByPath, connectionsGroup);
 				target = new GroupByCountFilter(leftOuterJoin, count -> count < minCount, connectionsGroup);
 			}
@@ -97,6 +101,10 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 			PlanNode addedByPath = getTargetChain().getPath()
 					.get()
 					.getAnyAdded(connectionsGroup, validationSettings.getDataGraph(), null);
+
+			// we don't need to compress here because we are anyway going to trim to target later on
+			addedByPath = Unique.getInstance(addedByPath, false, connectionsGroup);
+
 			LeftOuterJoin leftOuterJoin = new LeftOuterJoin(target, addedByPath, connectionsGroup);
 			target = new GroupByCountFilter(leftOuterJoin, count -> count < minCount, connectionsGroup);
 		}

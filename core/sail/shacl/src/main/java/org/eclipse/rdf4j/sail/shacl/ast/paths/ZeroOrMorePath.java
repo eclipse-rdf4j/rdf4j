@@ -11,7 +11,11 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.paths;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -20,11 +24,15 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeWrapper;
+import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetChainRetriever;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
+
+import com.google.common.collect.Sets;
 
 public class ZeroOrMorePath extends Path {
 
@@ -54,7 +62,25 @@ public class ZeroOrMorePath extends Path {
 	@Override
 	public PlanNode getAllAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			PlanNodeWrapper planNodeWrapper) {
-		throw new ShaclUnsupportedException();
+		var variables = List.of(new StatementMatcher.Variable<>("subject"),
+				new StatementMatcher.Variable<>("value"));
+
+		SparqlFragment targetQueryFragment = getTargetQueryFragment(variables.get(0), variables.get(1),
+				connectionsGroup.getRdfsSubClassOfReasoner(), new StatementMatcher.StableRandomVariableProvider(),
+				Set.of());
+
+		PlanNode targetChainRetriever = new TargetChainRetriever(connectionsGroup, dataGraph,
+				targetQueryFragment.getStatementMatchers(), List.of(), null, targetQueryFragment,
+				variables,
+				ConstraintComponent.Scope.propertyShape, true);
+
+		targetChainRetriever = connectionsGroup.getCachedNodeFor(targetChainRetriever);
+
+		if (planNodeWrapper != null) {
+			targetChainRetriever = planNodeWrapper.apply(targetChainRetriever);
+		}
+
+		return connectionsGroup.getCachedNodeFor(targetChainRetriever);
 	}
 
 	@Override
@@ -65,7 +91,7 @@ public class ZeroOrMorePath extends Path {
 
 	@Override
 	public boolean isSupported() {
-		return false;
+		return true;
 	}
 
 	@Override
@@ -81,7 +107,52 @@ public class ZeroOrMorePath extends Path {
 	public SparqlFragment getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider, Set<String> inheritedVarNames) {
-		throw new ShaclUnsupportedException();
+
+		if (inheritedVarNames.isEmpty()) {
+			inheritedVarNames = Set.of(subject.getName());
+		} else {
+			inheritedVarNames = Sets.union(inheritedVarNames, Set.of(subject.getName()));
+		}
+
+		String variablePrefix = getVariablePrefix(subject, object);
+
+		String sparqlPathString = path.toSparqlPathString();
+
+		StatementMatcher.Variable pathStart = new StatementMatcher.Variable(subject, variablePrefix + "start");
+		StatementMatcher.Variable pathEnd = new StatementMatcher.Variable(subject, variablePrefix + "end");
+
+		SparqlFragment targetQueryFragmentMiddle = path.getTargetQueryFragment(pathStart, pathEnd,
+				rdfsSubClassOfReasoner, stableRandomVariableProvider,
+				inheritedVarNames);
+
+		SparqlFragment targetQueryFragmentStart = path.getTargetQueryFragment(subject, pathStart,
+				rdfsSubClassOfReasoner, stableRandomVariableProvider,
+				inheritedVarNames);
+
+		SparqlFragment targetQueryFragmentEnd = path.getTargetQueryFragment(pathEnd, object, rdfsSubClassOfReasoner,
+				stableRandomVariableProvider,
+				inheritedVarNames);
+
+		String oneOrMore = subject.asSparqlVariable() + " (" + sparqlPathString + ")* " + pathStart.asSparqlVariable()
+				+ " .\n" +
+				targetQueryFragmentMiddle.getFragment() + "\n" +
+				pathEnd.asSparqlVariable() + " (" + sparqlPathString + ")* " + object.asSparqlVariable() + " .\n";
+
+		String zeroOrOne = subject.asSparqlVariable() + " (" + sparqlPathString + ")? " + object.asSparqlVariable()
+				+ " .\n";
+
+		ArrayList<StatementMatcher> statementMatchers = Stream
+				.of(targetQueryFragmentStart.getStatementMatchers(), targetQueryFragmentMiddle.getStatementMatchers(),
+						targetQueryFragmentEnd.getStatementMatchers())
+				.flatMap(List::stream)
+				.collect(Collectors.toCollection(ArrayList::new));
+
+		SparqlFragment bgp1 = SparqlFragment.bgp(List.of(), oneOrMore, statementMatchers);
+
+		SparqlFragment bgp2 = SparqlFragment.bgp(List.of(), zeroOrOne, statementMatchers);
+
+		return SparqlFragment.union(List.of(bgp1, bgp2));
+
 	}
 
 	@Override
