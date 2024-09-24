@@ -302,18 +302,11 @@ public class TargetChainRetriever implements PlanNode {
 						}
 					}
 
-					List<EffectiveTarget.SubjectObjectAndMatcher> collect = rootStatements.collect(Collectors.toList());
-					rootStatements = collect.stream();
-
 					rootStatements
 							.filter(EffectiveTarget.SubjectObjectAndMatcher::hasStatements)
 							.flatMap(statementsAndMatcher -> {
 								StatementMatcher newCurrentStatementMatcher = statementsAndMatcher
 										.getStatementMatcher();
-
-								for (EffectiveTarget.SubjectObjectAndMatcher andMatcher : collect) {
-									System.out.println(andMatcher);
-								}
 
 								return statementsAndMatcher.getStatements()
 										.stream()

@@ -83,6 +83,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.params.provider.Arguments;
 import org.slf4j.Logger;
@@ -115,7 +116,7 @@ abstract public class AbstractShaclTest {
 			"test-cases/path/zeroOrOnePath"
 
 	);
-	public static final Set<IsolationLevels> ISOLATION_LEVELS = Set.of(
+	public static final List<IsolationLevels> ISOLATION_LEVELS = List.of(
 			IsolationLevels.NONE,
 			IsolationLevels.SNAPSHOT,
 			IsolationLevels.SERIALIZABLE

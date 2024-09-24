@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.AbstractBulkJoinPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.GroupByFilter;
@@ -98,8 +99,10 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 						EffectiveTarget.Extend.left, false, null);
 
 				addedTargets = UnionNode.getInstance(connectionsGroup, addedByPath, addedTargets);
-				addedTargets = Unique.getInstance(addedTargets, false, connectionsGroup);
 			}
+
+			addedTargets = Unique.getInstance(new TrimToTarget(addedTargets, connectionsGroup), false,
+					connectionsGroup);
 
 			PlanNode joined = new BulkedExternalLeftOuterJoin(addedTargets, connectionsGroup.getBaseConnection(),
 					validationSettings.getDataGraph(),
@@ -107,7 +110,7 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()),
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 							validationSettings.getDataGraph()),
-					connectionsGroup);
+					connectionsGroup, AbstractBulkJoinPlanNode.DEFAULT_VARS);
 
 			PlanNode invalidTargets = new GroupByFilter(joined, group -> {
 				return group

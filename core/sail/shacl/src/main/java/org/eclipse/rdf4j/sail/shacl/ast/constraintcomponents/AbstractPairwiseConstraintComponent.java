@@ -252,7 +252,7 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 
 			}
 
-			return Unique.getInstance(allTargetsPlan, false, connectionsGroup);
+			return Unique.getInstance(new TrimToTarget(allTargetsPlan, connectionsGroup), false, connectionsGroup);
 
 		}
 

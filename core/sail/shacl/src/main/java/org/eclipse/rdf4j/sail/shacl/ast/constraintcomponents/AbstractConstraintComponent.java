@@ -171,6 +171,9 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 				null);
 
 		allTargets = UnionNode.getInstance(connectionsGroup, addedTargets.getPlanNode(), addedByPath);
+
+		allTargets = Unique.getInstance(new TrimToTarget(allTargets, connectionsGroup), false, connectionsGroup);
+
 		return allTargets;
 	}
 

@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.AbstractBulkJoinPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.GroupByFilter;
@@ -113,7 +114,7 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()),
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 							validationSettings.getDataGraph()),
-					connectionsGroup);
+					connectionsGroup, AbstractBulkJoinPlanNode.DEFAULT_VARS);
 
 			PlanNode invalidTargets = new GroupByFilter(joined, group -> {
 				return group.stream().map(ValidationTuple::getValue).noneMatch(hasValueIn::contains);

@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.ArrayDeque;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -25,7 +26,6 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PeekMarkIterator;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
@@ -61,8 +61,9 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, Resource[] dataGraph,
 			SparqlFragment query,
 			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
-			Function<BindingSet, ValidationTuple> mapper, ConnectionsGroup connectionsGroup) {
-		super();
+			Function<BindingSet, ValidationTuple> mapper, ConnectionsGroup connectionsGroup,
+			List<StatementMatcher.Variable> vars) {
+		super(vars);
 		assert !skipBasedOnPreviousConnection || previousStateConnection != null;
 
 		this.leftNode = PlanNodeHelper.handleSorting(this, leftNode, connectionsGroup);

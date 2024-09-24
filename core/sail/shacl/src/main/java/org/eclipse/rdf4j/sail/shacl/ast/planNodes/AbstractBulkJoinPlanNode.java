@@ -28,18 +28,28 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
+import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.AbstractConstraintComponent;
 
 public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
+	public static final List<StatementMatcher.Variable> DEFAULT_VARS = List.of(new StatementMatcher.Variable("a"),
+			new StatementMatcher.Variable("c"));
 	public static final String BINDING_NAME = "a";
 	protected static final int BULK_SIZE = 1000;
-	private StackTraceElement[] stackTrace;
+	private final List<StatementMatcher.Variable> vars;
+	private final String varsQueryString;
+	StackTraceElement[] stackTrace;
 	protected Function<BindingSet, ValidationTuple> mapper;
 	ValidationExecutionLogger validationExecutionLogger;
 
-	public AbstractBulkJoinPlanNode() {
-//		this.stackTrace = Thread.currentThread().getStackTrace();
+	public AbstractBulkJoinPlanNode(List<StatementMatcher.Variable> vars) {
+		this.vars = vars;
+		this.varsQueryString = vars.stream()
+				.map(StatementMatcher.Variable::asSparqlVariable)
+				.reduce((a, b) -> a + " " + b)
+				.orElseThrow();
+		this.stackTrace = Thread.currentThread().getStackTrace();
 	}
 
 	TupleExpr parseQuery(String query) {
@@ -47,7 +57,8 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 		// #VALUES_INJECTION_POINT# is an annotation in the query where there is a "new scope" due to the bottom up
 		// semantics of SPARQL but where we don't actually want a new scope.
 		query = query.replace(AbstractConstraintComponent.VALUES_INJECTION_POINT, "\nVALUES (?a) {}\n");
-		String completeQuery = "select * where {\nVALUES (?a) {}\n" + query + "\n}";
+
+		String completeQuery = "select distinct " + varsQueryString + " where {\nVALUES (?a) {}\n" + query + "\n}";
 		return SparqlQueryParserCache.get(completeQuery);
 	}
 

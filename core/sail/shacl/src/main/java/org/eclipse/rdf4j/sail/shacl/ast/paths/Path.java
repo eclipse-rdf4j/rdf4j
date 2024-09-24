@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.Exportable;
 import org.eclipse.rdf4j.sail.shacl.ast.Identifiable;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
@@ -30,8 +31,12 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeWrapper;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public abstract class Path implements Identifiable, Exportable, Targetable {
+
+	private static final Logger logger = LoggerFactory.getLogger(ShaclSailConnection.class);
 
 	Resource id;
 
@@ -62,43 +67,37 @@ public abstract class Path implements Identifiable, Exportable, Targetable {
 				switch (pathType.toString()) {
 				case "http://www.w3.org/ns/shacl#inversePath":
 					if (ret != null) {
-						throw new ShaclUnsupportedException(
-								"Multiple path types not supported! " + Arrays.toString(collect.toArray()));
+						logger.error("Multiple path types not supported! {}", Arrays.toString(collect.toArray()));
 					}
 					ret = new InversePath(id, (Resource) statement.getObject(), shapeSource);
 					break;
 				case "http://www.w3.org/ns/shacl#alternativePath":
 					if (ret != null) {
-						throw new ShaclUnsupportedException(
-								"Multiple path types not supported! " + Arrays.toString(collect.toArray()));
+						logger.error("Multiple path types not supported! {}", Arrays.toString(collect.toArray()));
 					}
 					ret = new AlternativePath(id, (Resource) statement.getObject(), shapeSource);
 					break;
 				case "http://www.w3.org/ns/shacl#zeroOrMorePath":
 					if (ret != null) {
-						throw new ShaclUnsupportedException(
-								"Multiple path types not supported! " + Arrays.toString(collect.toArray()));
+						logger.error("Multiple path types not supported! {}", Arrays.toString(collect.toArray()));
 					}
 					ret = new ZeroOrMorePath(id, (Resource) statement.getObject(), shapeSource);
 					break;
 				case "http://www.w3.org/ns/shacl#oneOrMorePath":
 					if (ret != null) {
-						throw new ShaclUnsupportedException(
-								"Multiple path types not supported! " + Arrays.toString(collect.toArray()));
+						logger.error("Multiple path types not supported! {}", Arrays.toString(collect.toArray()));
 					}
 					ret = new OneOrMorePath(id, (Resource) statement.getObject(), shapeSource);
 					break;
 				case "http://www.w3.org/ns/shacl#zeroOrOnePath":
 					if (ret != null) {
-						throw new ShaclUnsupportedException(
-								"Multiple path types not supported! " + Arrays.toString(collect.toArray()));
+						logger.error("Multiple path types not supported! {}", Arrays.toString(collect.toArray()));
 					}
 					ret = new ZeroOrOnePath(id, (Resource) statement.getObject(), shapeSource);
 					break;
 				case "http://www.w3.org/1999/02/22-rdf-syntax-ns#first":
 					if (ret != null) {
-						throw new ShaclUnsupportedException(
-								"Multiple path types not supported! " + Arrays.toString(collect.toArray()));
+						logger.error("Multiple path types not supported! {}", Arrays.toString(collect.toArray()));
 					}
 					ret = new SequencePath(id, shapeSource);
 					break;

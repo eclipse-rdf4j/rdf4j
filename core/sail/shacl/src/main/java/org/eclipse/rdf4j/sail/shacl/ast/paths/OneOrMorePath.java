@@ -57,7 +57,7 @@ public class OneOrMorePath extends Path {
 
 	@Override
 	public String toString() {
-		return "OneOrOnePath{ " + path + " }";
+		return "OneOrMorePath{ " + path + " }";
 	}
 
 	@Override
@@ -132,14 +132,6 @@ public class OneOrMorePath extends Path {
 				rdfsSubClassOfReasoner, stableRandomVariableProvider,
 				inheritedVarNames);
 
-//		SparqlFragment targetQueryFragmentStart = path.getTargetQueryFragment(subject, pathStart,
-//				rdfsSubClassOfReasoner, stableRandomVariableProvider,
-//				inheritedVarNames);
-//
-//		SparqlFragment targetQueryFragmentEnd = path.getTargetQueryFragment(pathEnd, object, rdfsSubClassOfReasoner,
-//				stableRandomVariableProvider,
-//				inheritedVarNames);
-
 		SparqlFragment targetQueryFragmentExactlyOne = path.getTargetQueryFragment(subject, object,
 				rdfsSubClassOfReasoner, stableRandomVariableProvider,
 				inheritedVarNames);
@@ -171,7 +163,7 @@ public class OneOrMorePath extends Path {
 								assert subjectName.equals(pathStart.getName());
 
 								String query = "select distinct " + subject.asSparqlVariable() + " where {\n"
-										+ subject.asSparqlVariable() + " (" + sparqlPathString + ")* "
+										+ subject.asSparqlVariable() + " (" + sparqlPathString + ")+ "
 										+ pathStart.asSparqlVariable() + "\n}";
 
 								TupleExpr tupleExpr = SparqlQueryParserCache.get(query);
@@ -185,7 +177,6 @@ public class OneOrMorePath extends Path {
 											new SingletonBindingSet(subjectName, statement.getSubject()), true)) {
 										while (evaluate.hasNext()) {
 											BindingSet next = evaluate.next();
-											System.out.println(next);
 											statements.add(new EffectiveTarget.SubjectObjectAndMatcher.SubjectObject(
 													((Resource) next.getValue(subject.getName())), null));
 										}

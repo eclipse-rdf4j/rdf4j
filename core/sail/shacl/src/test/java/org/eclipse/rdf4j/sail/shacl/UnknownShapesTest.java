@@ -104,13 +104,10 @@ public class UnknownShapesTest {
 			}
 		}
 
-		Set<String> relevantLog = getRelevantLog(4);
+		Set<String> relevantLog = getRelevantLog(1);
 
 		Set<String> expected = Set.of(
-				"Unsupported SHACL feature detected: InversePath{ ZeroOrMorePath{ SimplePath{ <http://example.com/ns#inverseThis> } } }. Shape ignored! <http://example.com/ns#inverseOfWithComplex> a sh:PropertyShape;   sh:path [       sh:inversePath [           sh:zeroOrMorePath <http://example.com/ns#inverseThis>         ]     ];   sh:datatype xsd:int .",
-				"Unsupported SHACL feature detected: AlternativePath{ [SimplePath{ <http://example.com/ns#father> }, ZeroOrOnePath{ SimplePath{ <http://example.com/ns#parent> } }, SimplePath{ <http://example.com/ns#mother> }] }. Shape ignored! <http://example.com/ns#alternativePathOneOrMore> a sh:PropertyShape;   sh:path [       sh:alternativePath (<http://example.com/ns#father> [             sh:oneOrMorePath <http://example.com/ns#parent>           ] <http://example.com/ns#mother>)     ];   sh:nodeKind sh:BlankNodeOrIRI .",
-				"Unsupported SHACL feature detected: AlternativePath{ [SimplePath{ <http://example.com/ns#father> }, ZeroOrOnePath{ SimplePath{ <http://example.com/ns#parent> } }, SimplePath{ <http://example.com/ns#mother> }] }. Shape ignored! <http://example.com/ns#alternativePathZeroOrOne> a sh:PropertyShape;   sh:path [       sh:alternativePath (<http://example.com/ns#father> [             sh:zeroOrOnePath <http://example.com/ns#parent>           ] <http://example.com/ns#mother>)     ];   sh:nodeKind sh:BlankNodeOrIRI .",
-				"Unsupported SHACL feature detected: InversePath{ ZeroOrMorePath{ SimplePath{ <http://example.com/ns#inverseThis> } } }. Shape ignored! <http://example.com/ns#inverseOfWithComplex> a sh:PropertyShape;   sh:path [       sh:inversePath [           sh:zeroOrMorePath <http://example.com/ns#inverseThis>         ]     ];   sh:minCount 1 ."
+				"Unsupported SHACL feature detected: AlternativePath{ [SimplePath{ <http://example.com/ns#father> }, ZeroOrOnePath{ SimplePath{ <http://example.com/ns#parent> } }, SimplePath{ <http://example.com/ns#mother> }] }. Shape ignored! <http://example.com/ns#alternativePathZeroOrOne> a sh:PropertyShape;   sh:path [       sh:alternativePath (<http://example.com/ns#father> [             sh:zeroOrOnePath <http://example.com/ns#parent>           ] <http://example.com/ns#mother>)     ];   sh:nodeKind sh:BlankNodeOrIRI ."
 		);
 
 		Assertions.assertEquals(expected, relevantLog);
