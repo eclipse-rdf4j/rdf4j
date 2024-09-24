@@ -85,7 +85,7 @@ public class TupleMapper implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ModifyValidationTuple";
+		return "TupleMapper";
 	}
 
 	@Override
