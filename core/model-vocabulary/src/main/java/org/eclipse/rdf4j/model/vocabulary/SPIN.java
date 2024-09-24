@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
 
 /**
  * @version 1.4.0
@@ -24,6 +25,8 @@ public class SPIN {
 	public static final String NAMESPACE = "http://spinrdf.org/spin#";
 
 	public static final String PREFIX = "spin";
+
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/**
 	 * http://spinrdf.org/spin#Function Metaclass for functions that can be used in SPARQL expressions (e.g. FILTER or
