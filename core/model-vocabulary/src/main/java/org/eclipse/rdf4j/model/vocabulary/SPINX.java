@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
 
 /**
  * http://spinrdf.org/spinx#.
@@ -26,6 +27,8 @@ public final class SPINX {
 	public static final String NAMESPACE = "http://spinrdf.org/spinx#";
 
 	public static final String PREFIX = "spinx";
+
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	public static final IRI JAVA_SCRIPT_CODE_PROPERTY;
 
