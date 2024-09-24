@@ -109,12 +109,139 @@ public class ShapesGraphTest {
 					connection.begin();
 
 					connection.add(laura, FOAF.PHONE, Values.literal(1));
-					connection.add(laura, FOAF.PHONE, Values.literal(1), data1);
-					connection.add(laura, FOAF.PHONE, Values.literal(1), data2);
+					connection.add(laura, FOAF.PHONE, Values.literal(2), data1);
+					connection.add(laura, FOAF.PHONE, Values.literal(3), data2);
 
 					connection.commit();
 				}
 			});
+
+		});
+
+	}
+
+	@Test
+	public void testValidUnionGraphMinCount() throws Throwable {
+
+		test(repository -> {
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+				connection.add(laura, RDF.TYPE, FOAF.PERSON, data2);
+				connection.add(laura, FOAF.NAME, Values.literal("Laura"), data2);
+				connection.commit();
+			}
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+
+				connection.add(laura, FOAF.INTEREST, Values.literal("golf"));
+				connection.add(laura, FOAF.INTEREST, Values.literal("tennis"), data1);
+				connection.add(laura, FOAF.INTEREST, Values.literal("chess"), data2);
+
+				connection.commit();
+			}
+
+		});
+
+	}
+
+	@Test
+	public void testInvalidUnionGraphMinCount() throws Throwable {
+
+		test(repository -> {
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+				connection.add(laura, RDF.TYPE, FOAF.PERSON, data2);
+				connection.add(laura, FOAF.NAME, Values.literal("Laura"), data2);
+				connection.commit();
+			}
+
+			assertThrows(RepositoryException.class, () -> {
+				try (RepositoryConnection connection = repository.getConnection()) {
+					connection.begin();
+
+					connection.add(laura, FOAF.INTEREST, Values.literal("golf"));
+					connection.add(laura, FOAF.INTEREST, Values.literal("golf"), data1);
+					connection.add(laura, FOAF.INTEREST, Values.literal("golf"), data2);
+
+					connection.commit();
+				}
+			});
+
+		});
+
+	}
+
+	@Test
+	public void testInvalidUnionGraphMinCountSparql() throws Throwable {
+
+		test(repository -> {
+
+			assertThrows(RepositoryException.class, () -> {
+				try (RepositoryConnection connection = repository.getConnection()) {
+					connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk);
+					connection.add(laura, RDF.TYPE, FOAF.PERSON, data2);
+					connection.add(laura, FOAF.NAME, Values.literal("Laura"), data2);
+					connection.add(laura, FOAF.INTEREST, Values.literal("golf"));
+					connection.add(laura, FOAF.INTEREST, Values.literal("golf"), data1);
+					connection.add(laura, FOAF.INTEREST, Values.literal("golf"), data2);
+					connection.commit();
+				}
+			});
+
+		});
+
+	}
+
+	@Test
+	public void testValidUnionGraph() throws Throwable {
+
+		test(repository -> {
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+				connection.add(laura, RDF.TYPE, FOAF.PERSON, data2);
+				connection.add(laura, FOAF.NAME, Values.literal("Laura"), data2);
+				connection.commit();
+			}
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+
+				connection.add(laura, FOAF.PHONE, Values.literal(1));
+				connection.add(laura, FOAF.PHONE, Values.literal(1), data1);
+				connection.add(laura, FOAF.PHONE, Values.literal(1), data2);
+
+				connection.commit();
+			}
+
+		});
+
+	}
+
+	@Test
+	public void testValidUnionGraphSparql() throws Throwable {
+
+		test(repository -> {
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+				connection.add(laura, RDF.TYPE, FOAF.PERSON, data2);
+				connection.add(laura, FOAF.NAME, Values.literal("Laura"), data2);
+				connection.commit();
+			}
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk);
+
+				connection.add(laura, FOAF.PHONE, Values.literal(1));
+				connection.add(laura, FOAF.PHONE, Values.literal(1), data1);
+				connection.add(laura, FOAF.PHONE, Values.literal(1), data2);
+
+				connection.commit();
+			}
 
 		});
 
@@ -210,18 +337,44 @@ public class ShapesGraphTest {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(laura, RDF.TYPE, FOAF.PERSON, Values.iri("http://example.org/differentGraph"));
-			connection.add(laura, FOAF.PHONE, Values.literal(12345678));
-			connection.add(laura, FOAF.PHONE, Values.literal(12345678), data2);
+			connection.add(laura, FOAF.PHONE, Values.literal(1));
+			connection.add(laura, FOAF.PHONE, Values.literal(2), data2);
 			connection.commit();
 		}
 
 		assertThrows(RepositoryException.class, () -> {
 			try (RepositoryConnection connection = repository.getConnection()) {
 				connection.begin();
-				connection.add(laura, FOAF.PHONE, Values.literal(12345678), data1);
+				connection.add(laura, FOAF.PHONE, Values.literal(3), data1);
 				connection.commit();
 			}
 		});
+
+		repository.shutDown();
+
+	}
+
+	@Test
+	public void testDefaultShapesGraph2() throws IOException {
+
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+		SailRepository repository = new SailRepository(shaclSail);
+
+		loadShapes(repository);
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			connection.add(laura, RDF.TYPE, FOAF.PERSON, Values.iri("http://example.org/differentGraph"));
+			connection.add(laura, FOAF.PHONE, Values.literal(1));
+			connection.add(laura, FOAF.PHONE, Values.literal(1), data2);
+			connection.commit();
+		}
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			connection.add(laura, FOAF.PHONE, Values.literal(1), data1);
+			connection.commit();
+		}
 
 		repository.shutDown();
 
@@ -246,7 +399,8 @@ public class ShapesGraphTest {
 				Values.iri(EX, "peopleKnowHumansShapes"),
 				Values.iri(EX, "mustHaveNameShapes"),
 				Values.iri(EX, "maxFiveAcquaintances"),
-				Values.iri(EX, "nestedKnowsShouldHaveAge")
+				Values.iri(EX, "nestedKnowsShouldHaveAge"),
+				Values.iri(EX, "mustHaveMinThreeInterestsOrNoneAtAll")
 		));
 
 		loadShapes(repository);
