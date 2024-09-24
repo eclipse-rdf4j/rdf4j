@@ -607,6 +607,11 @@ abstract public class AbstractShaclTest {
 			return;
 		}
 
+		// the TopBraid SHACL API doesn't support multiple data graphs
+		if (testCase.testCasePath.startsWith("test-cases/maxCount/simple/invalid/case4/")) {
+			return;
+		}
+
 		printTestCase(testCase);
 
 		Dataset shaclDataset = DatasetFactory.create();
