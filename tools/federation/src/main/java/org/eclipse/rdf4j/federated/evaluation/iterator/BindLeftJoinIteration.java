@@ -10,14 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.evaluation.iterator;
 
-import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
-import java.util.Set;
 
+import org.eclipse.collections.impl.set.mutable.primitive.IntHashSet;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -42,7 +41,7 @@ public class BindLeftJoinIteration extends LookAheadIteration<BindingSet> {
 	protected final CloseableIteration<BindingSet> iter;
 	protected final List<BindingSet> bindings;
 
-	protected Set<Integer> seenBindingIndexes = new HashSet<>();
+	protected IntHashSet seenBindingIndexes = new IntHashSet();
 	protected final ListIterator<BindingSet> bindingsIterator;
 
 	public BindLeftJoinIteration(CloseableIteration<BindingSet> iter,
@@ -57,8 +56,7 @@ public class BindLeftJoinIteration extends LookAheadIteration<BindingSet> {
 
 		if (iter.hasNext()) {
 			var bIn = iter.next();
-			int bIndex = Integer.parseInt(
-					bIn.getBinding(BoundJoinVALUESConversionIteration.INDEX_BINDING_NAME).getValue().stringValue());
+			int bIndex = ((Literal) bIn.getValue(BoundJoinVALUESConversionIteration.INDEX_BINDING_NAME)).intValue();
 			seenBindingIndexes.add(bIndex);
 			return convert(bIn, bIndex);
 		}
@@ -82,9 +80,7 @@ public class BindLeftJoinIteration extends LookAheadIteration<BindingSet> {
 
 	protected BindingSet convert(BindingSet bIn, int bIndex) throws QueryEvaluationException {
 		QueryBindingSet res = new QueryBindingSet();
-		Iterator<Binding> bIter = bIn.iterator();
-		while (bIter.hasNext()) {
-			Binding b = bIter.next();
+		for (Binding b : bIn) {
 			if (b.getName().equals(BoundJoinVALUESConversionIteration.INDEX_BINDING_NAME)) {
 				continue;
 			}

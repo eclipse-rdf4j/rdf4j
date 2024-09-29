@@ -14,7 +14,6 @@ import java.util.Arrays;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.federated.monitoring.MonitoringUtil;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
@@ -212,8 +211,6 @@ public class BindLeftJoinTests extends SPARQLBaseTest {
 					var bindings = Iterations.asList(tqr);
 
 					Assertions.assertEquals(30, bindings.size());
-
-					MonitoringUtil.printMonitoringInformation(federationContext());
 
 					for (int i = 1; i <= 30; i++) {
 						var p = Values.iri("http://ex.com/p" + i);
