@@ -24,7 +24,8 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 public class BindLeftJoinTests extends SPARQLBaseTest {
 
@@ -36,8 +37,9 @@ public class BindLeftJoinTests extends SPARQLBaseTest {
 		});
 	}
 
-	@Test
-	public void test_leftBindJoin_basic() throws Exception {
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	public void test_leftBindJoin_basic(boolean bindLeftJoinOptimizationEnabled) throws Exception {
 
 		prepareTest(
 				Arrays.asList("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl",
@@ -51,6 +53,7 @@ public class BindLeftJoinTests extends SPARQLBaseTest {
 
 		fedxRule.setConfig(config -> {
 			config.withBoundJoinBlockSize(10);
+			config.withEnableOptionalAsBindJoin(bindLeftJoinOptimizationEnabled);
 		});
 
 		// add some persons
@@ -95,8 +98,6 @@ public class BindLeftJoinTests extends SPARQLBaseTest {
 				try (TupleQueryResult tqr = tupleQuery.evaluate()) {
 					var bindings = Iterations.asList(tqr);
 
-					MonitoringUtil.printMonitoringInformation(federationContext());
-
 					Assertions.assertEquals(30, bindings.size());
 
 					for (int i = 1; i <= 30; i++) {
@@ -122,14 +123,25 @@ public class BindLeftJoinTests extends SPARQLBaseTest {
 
 			}
 
+			if (bindLeftJoinOptimizationEnabled) {
+				assertNumberOfRequests("endpoint1", 3);
+				assertNumberOfRequests("endpoint2", 5);
+				assertNumberOfRequests("endpoint3", 5);
+			} else {
+				assertNumberOfRequests("endpoint1", 3);
+				assertNumberOfRequests("endpoint2", 32);
+				assertNumberOfRequests("endpoint3", 32);
+			}
+
 		} finally {
 			fedxRepo.shutDown();
 		}
 
 	}
 
-	@Test
-	public void testBoundLeftJoin_stmt_nonExclusive_boundCheck()
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	public void testBoundLeftJoin_stmt_nonExclusive_boundCheck(boolean bindLeftJoinOptimizationEnabled)
 			throws Exception {
 
 		prepareTest(
@@ -147,6 +159,7 @@ public class BindLeftJoinTests extends SPARQLBaseTest {
 
 		fedxRule.setConfig(config -> {
 			config.withBoundJoinBlockSize(10);
+			config.withEnableOptionalAsBindJoin(bindLeftJoinOptimizationEnabled);
 		});
 
 		// add some persons
@@ -179,6 +192,8 @@ public class BindLeftJoinTests extends SPARQLBaseTest {
 
 			conn.add(Values.iri("http://other.com/p30"), FOAF.GENDER, Values.literal("male"));
 		}
+
+		fedxRule.enableDebug();
 
 		try {
 			// run query which joins results from multiple repos
@@ -215,6 +230,18 @@ public class BindLeftJoinTests extends SPARQLBaseTest {
 					}
 				}
 
+			}
+
+			if (bindLeftJoinOptimizationEnabled) {
+				assertNumberOfRequests("endpoint1", 3);
+				assertNumberOfRequests("endpoint2", 5);
+				assertNumberOfRequests("endpoint3", 5);
+			} else {
+				assertNumberOfRequests("endpoint1", 3);
+				// Note: with the current implementation we cannot
+				// make exact assertions for endpoint 2 and 3
+				// this is because due to the check statement
+				// not all requests are required
 			}
 
 		} finally {

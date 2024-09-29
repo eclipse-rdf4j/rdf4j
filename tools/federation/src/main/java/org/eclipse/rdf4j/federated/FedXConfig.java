@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.federated;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
-import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionCacheFactory;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionMemoryCache;
@@ -48,6 +47,8 @@ public class FedXConfig {
 
 	private boolean enableServiceAsBoundJoin = true;
 
+	private boolean enableOptionalAsBindJoin = true;
+
 	private boolean enableMonitoring = false;
 
 	private boolean isLogQueryPlan = false;
@@ -68,7 +69,6 @@ public class FedXConfig {
 
 	private int consumingIterationMax = 1000;
 
-	private CollectionFactory cf = new DefaultCollectionFactory();
 	/* factory like setters */
 
 	/**
@@ -245,6 +245,17 @@ public class FedXConfig {
 	}
 
 	/**
+	 * Whether OPTIONAL clauses are evaluated using bind join (i.e. with the VALUES clause). Default <i>true</i>
+	 *
+	 * @param flag
+	 * @return the current config.
+	 */
+	public FedXConfig withEnableOptionalAsBindJoin(boolean flag) {
+		this.enableOptionalAsBindJoin = flag;
+		return this;
+	}
+
+	/**
 	 * The cache specification for the {@link SourceSelectionMemoryCache}. If not set explicitly, the
 	 * {@link SourceSelectionMemoryCache#DEFAULT_CACHE_SPEC} is used.
 	 *
@@ -326,14 +337,24 @@ public class FedXConfig {
 	 * Returns a flag indicating whether vectored evaluation using the VALUES clause shall be applied for SERVICE
 	 * expressions.
 	 *
-	 * Default: false
+	 * Default: true
 	 *
-	 * Note: for todays endpoints it is more efficient to disable vectored evaluation of SERVICE.
-	 *
-	 * @return whether SERVICE expressions are evaluated using bound joins
+	 * @return whether SERVICE expressions are evaluated using bind joins
 	 */
 	public boolean getEnableServiceAsBoundJoin() {
 		return enableServiceAsBoundJoin;
+	}
+
+	/**
+	 * Returns a flag indicating whether bind join evaluation using the VALUES clause shall be applied for OPTIONAL
+	 * expressions.
+	 *
+	 * Default: true
+	 *
+	 * @return whether OPTIONAL expressions are evaluated using bind joins
+	 */
+	public boolean isEnableOptionalAsBindJoin() {
+		return enableOptionalAsBindJoin;
 	}
 
 	/**
@@ -485,9 +506,10 @@ public class FedXConfig {
 	 *
 	 * @param cf
 	 * @return the current config
+	 * @deprecated unusedO
 	 */
+	@Deprecated(forRemoval = true)
 	public FedXConfig withCollectionFactory(CollectionFactory cf) {
-		this.cf = cf;
 		return this;
 	}
 }

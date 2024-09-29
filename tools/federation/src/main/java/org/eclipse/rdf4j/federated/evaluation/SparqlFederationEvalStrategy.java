@@ -210,10 +210,11 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 			throws QueryEvaluationException {
 
 		var rightArg = leftJoin.getRightArg();
+		var fedxConfig = queryInfo.getFederationContext().getConfig();
 
 		// determine if we can execute the expr as bind join
 		boolean executeAsBindJoin = false;
-		if (rightArg instanceof BoundJoinTupleExpr) {
+		if (fedxConfig.isEnableOptionalAsBindJoin() && rightArg instanceof BoundJoinTupleExpr) {
 			if (rightArg instanceof FedXService) {
 				executeAsBindJoin = false;
 			} else {
