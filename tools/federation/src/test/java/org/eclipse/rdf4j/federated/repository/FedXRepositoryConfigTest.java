@@ -12,10 +12,8 @@ package org.eclipse.rdf4j.federated.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.model.util.Models.subject;
-import static org.junit.Assert.assertThat;
 
 import java.io.InputStream;
-import java.util.Optional;
 
 import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.util.Vocabulary.FEDX;
@@ -161,7 +159,7 @@ public class FedXRepositoryConfigTest {
 					.orElse(null);
 			assertThat(configNode).isNotNull();
 
-			assertThat(export.filter(configNode, null, null)).hasSize(14);
+			assertThat(export.filter(configNode, null, null)).hasSize(15);
 
 			assertThat(
 					Models.objectLiteral(
@@ -187,6 +185,11 @@ public class FedXRepositoryConfigTest {
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_ENABLE_SERVICE_AS_BOUND_JOIN,
+									null)))
+					.hasValueSatisfying(v -> assertThat(v.booleanValue()).isFalse());
+			assertThat(
+					Models.objectLiteral(
+							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_ENABLE_OPTIONAL_AS_BIND_JOIN,
 									null)))
 					.hasValueSatisfying(v -> assertThat(v.booleanValue()).isFalse());
 			assertThat(
@@ -242,9 +245,9 @@ public class FedXRepositoryConfigTest {
 					.orElse(null);
 			assertThat(configNode).isNotNull();
 
-			// Note: 14 instead of 12 since CONFIG_SOURCE_SELECTION_CACHE_SPEC & CONFIG_PREFIX_DECLARATIONS are null
+			// Note: 13 instead of 15 since CONFIG_SOURCE_SELECTION_CACHE_SPEC & CONFIG_PREFIX_DECLARATIONS are null
 			// and thus should not be populated
-			assertThat(export.filter(configNode, null, null)).hasSize(12);
+			assertThat(export.filter(configNode, null, null)).hasSize(13);
 
 			assertThat(
 					Models.objectLiteral(
@@ -270,6 +273,11 @@ public class FedXRepositoryConfigTest {
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_ENABLE_SERVICE_AS_BOUND_JOIN,
+									null)))
+					.hasValueSatisfying(v -> assertThat(v.booleanValue()).isTrue());
+			assertThat(
+					Models.objectLiteral(
+							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_ENABLE_OPTIONAL_AS_BIND_JOIN,
 									null)))
 					.hasValueSatisfying(v -> assertThat(v.booleanValue()).isTrue());
 			assertThat(

@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+import org.eclipse.rdf4j.federated.monitoring.MonitoringService;
 import org.eclipse.rdf4j.federated.repository.RepositorySettings;
 import org.eclipse.rdf4j.federated.server.NativeStoreServer;
 import org.eclipse.rdf4j.federated.server.SPARQLEmbeddedServer;
@@ -28,6 +29,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.Rio;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -235,6 +237,41 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 	 */
 	protected RepositorySettings repoSettings(int endpoint) {
 		return server.getRepository(endpoint);
+	}
+
+	/**
+	 * Helper method to check the number of requests sent to respective endpoint
+	 *
+	 * @param memberName       the memberName, typically "endpointN", where N >= 1
+	 * @param expectedRequests
+	 */
+	protected void assertNumberOfRequests(String memberName, int expectedRequests) {
+		if (!isSPARQLServer()) {
+			return; // ignore for non SPARQL server environment where requests are not counted
+		}
+		var fedxContext = federationContext();
+		if (!fedxContext.getConfig().isEnableMonitoring()) {
+			Assertions.fail("monitoring is not enabled in the current federation.");
+		}
+		MonitoringService monitoringService = (MonitoringService) fedxContext.getMonitoringService();
+
+		// obtain the monitoring information
+		// Note: this method has some simplifications for the name
+		var monitoringInformation = monitoringService.getAllMonitoringInformation()
+				.stream()
+				.filter(m -> {
+					var endpoint = m.getE();
+					return endpoint.getId().equals(memberName)
+							|| endpoint.getId().equals("http://" + memberName)
+							|| endpoint.getName().equals(memberName)
+							|| endpoint.getName().equals("http://" + memberName);
+				})
+				.findFirst()
+				.orElse(null);
+
+		Assertions.assertEquals(expectedRequests,
+				(monitoringInformation != null ? monitoringInformation.getNumberOfRequests() : 0));
+
 	}
 
 }

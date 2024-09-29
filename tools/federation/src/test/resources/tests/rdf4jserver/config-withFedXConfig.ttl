@@ -16,6 +16,7 @@
          fedx:boundJoinBlockSize 104 ;
          fedx:enforceMaxQueryTime 105 ;
          fedx:enableServiceAsBoundJoin false ;
+         fedx:enableOptionalAsBindJoin false ;
          fedx:enableMonitoring true ;
          fedx:logQueryPlan true ;
          fedx:logQueries true ;

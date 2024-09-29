@@ -136,6 +136,11 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 	public static final IRI CONFIG_ENABLE_SERVICE_AS_BOUND_JOIN = vf.createIRI(NAMESPACE, "enableServiceAsBoundJoin");
 
 	/**
+	 * IRI of the property populating {@link FedXConfig#isEnableOptionalAsBindJoin()}
+	 */
+	public static final IRI CONFIG_ENABLE_OPTIONAL_AS_BIND_JOIN = vf.createIRI(NAMESPACE, "enableOptionalAsBindJoin");
+
+	/**
 	 * IRI of the property populating {@link FedXConfig#isEnableMonitoring()}
 	 */
 	public static final IRI CONFIG_ENABLE_MONITORING = vf.createIRI(NAMESPACE, "enableMonitoring");
@@ -331,6 +336,9 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 		Models.objectLiteral(m.getStatements(confNode, CONFIG_ENABLE_SERVICE_AS_BOUND_JOIN, null))
 				.ifPresent(value -> config.withEnableServiceAsBoundJoin(value.booleanValue()));
 
+		Models.objectLiteral(m.getStatements(confNode, CONFIG_ENABLE_OPTIONAL_AS_BIND_JOIN, null))
+				.ifPresent(value -> config.withEnableOptionalAsBindJoin(value.booleanValue()));
+
 		Models.objectLiteral(m.getStatements(confNode, CONFIG_ENABLE_MONITORING, null))
 				.ifPresent(value -> config.withEnableMonitoring(value.booleanValue()));
 
@@ -383,6 +391,9 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 
 		model.add(confNode, CONFIG_ENABLE_SERVICE_AS_BOUND_JOIN,
 				vf.createLiteral(config.getEnableServiceAsBoundJoin()));
+
+		model.add(confNode, CONFIG_ENABLE_OPTIONAL_AS_BIND_JOIN,
+				vf.createLiteral(config.isEnableOptionalAsBindJoin()));
 
 		model.add(confNode, CONFIG_ENABLE_MONITORING, vf.createLiteral(config.isEnableMonitoring()));
 

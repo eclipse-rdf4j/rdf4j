@@ -10,14 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.algebra;
 
-import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBoundJoin;
+import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBindJoin;
 
 /**
  * Marker interface indicating that instances are applicable for bound join processing (see
- * {@link ControlledWorkerBoundJoin}
+ * {@link ControlledWorkerBindJoin}
  *
  * @author Andreas Schwarte
- * @see ControlledWorkerBoundJoin
+ * @see ControlledWorkerBindJoin
  */
 public interface BoundJoinTupleExpr {
 
