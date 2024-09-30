@@ -63,7 +63,8 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 	SourceConstraintComponent getConstraintComponent();
 
 	PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider);
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider,
+			ValidationSettings validationSettings);
 
 	SparqlFragment buildSparqlValidNodes_rsx_targetShape(Variable<Value> subject,
 			Variable<Value> object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,

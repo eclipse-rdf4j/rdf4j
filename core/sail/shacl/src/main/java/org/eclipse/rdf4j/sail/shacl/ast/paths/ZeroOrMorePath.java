@@ -187,7 +187,6 @@ public class ZeroOrMorePath extends Path {
 											new SingletonBindingSet(subjectName, statement.getSubject()), true)) {
 										while (evaluate.hasNext()) {
 											BindingSet next = evaluate.next();
-											System.out.println(next);
 											statements.add(new EffectiveTarget.SubjectObjectAndMatcher.SubjectObject(
 													((Resource) next.getValue(subject.getName())), null));
 										}
