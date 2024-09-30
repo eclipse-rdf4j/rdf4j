@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.ArrayDeque;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -23,7 +24,6 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PeekMarkIterator;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
@@ -46,8 +46,9 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 
 	public BulkedExternalLeftOuterJoin(PlanNode leftNode, SailConnection connection, Resource[] dataGraph,
 			SparqlFragment query,
-			Function<BindingSet, ValidationTuple> mapper, ConnectionsGroup connectionsGroup) {
-		super();
+			Function<BindingSet, ValidationTuple> mapper, ConnectionsGroup connectionsGroup,
+			List<StatementMatcher.Variable> vars) {
+		super(vars);
 		leftNode = PlanNodeHelper.handleSorting(this, leftNode, connectionsGroup);
 		this.leftNode = leftNode;
 		this.query = query.getNamespacesForSparql()

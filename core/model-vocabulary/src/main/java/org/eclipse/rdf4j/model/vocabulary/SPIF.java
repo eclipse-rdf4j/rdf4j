@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
 
 /**
  * http://spinrdf.org/spif#.
@@ -26,6 +27,8 @@ public final class SPIF {
 	public static final String NAMESPACE = "http://spinrdf.org/spif#";
 
 	public static final String PREFIX = "spif";
+
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	public static final IRI MOD_FUNCTION;
 

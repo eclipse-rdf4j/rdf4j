@@ -11,7 +11,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.Arrays;
 import java.util.Objects;
 import java.util.Set;
 
@@ -113,7 +112,7 @@ public class SetFilterNode implements PlanNode {
 	@Override
 	public String toString() {
 		return "SetFilterNode{" + "targetNodeList="
-				+ Arrays.toString(targetNodeList.stream().map(Formatter::prefix).toArray()) + ", index=" + index
+				+ Formatter.prefix(targetNodeList) + ", index=" + index
 				+ ", returnValid=" + returnValid + '}';
 	}
 

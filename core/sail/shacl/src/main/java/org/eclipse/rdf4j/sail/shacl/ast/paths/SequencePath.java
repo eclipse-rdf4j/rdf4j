@@ -21,7 +21,6 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclAstLists;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
@@ -159,8 +158,9 @@ public class SequencePath extends Path {
 
 		return SparqlFragment.join(sparqlFragments,
 				(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Path path,
-						StatementMatcher currentStatementMatcher, List<Statement> currentStatements) -> {
-					Stream<EffectiveTarget.StatementsAndMatcher> currentRoot = null;
+						StatementMatcher currentStatementMatcher,
+						List<EffectiveTarget.SubjectObjectAndMatcher.SubjectObject> currentStatements) -> {
+					Stream<EffectiveTarget.SubjectObjectAndMatcher> currentRoot = null;
 
 					for (int i = sparqlFragments.size() - 1; i >= 0; i--) {
 						SparqlFragment sparqlFragment = sparqlFragments.get(i);
@@ -169,7 +169,7 @@ public class SequencePath extends Path {
 									.flatMap(root -> sparqlFragment.getRoot(connectionsGroup, dataGraph, path,
 											root.getStatementMatcher(),
 											root.getStatements()))
-									.filter(EffectiveTarget.StatementsAndMatcher::hasStatements);
+									.filter(EffectiveTarget.SubjectObjectAndMatcher::hasStatements);
 						} else {
 							currentRoot = sparqlFragment.getRoot(connectionsGroup, dataGraph, path,
 									currentStatementMatcher,

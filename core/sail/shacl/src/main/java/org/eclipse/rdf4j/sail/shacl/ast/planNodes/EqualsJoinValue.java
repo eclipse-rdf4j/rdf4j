@@ -165,7 +165,9 @@ public class EqualsJoinValue implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "EqualsJoin{" + "useAsFilter=" + useAsFilter + '}';
+		return "EqualsJoinValue{" +
+				"useAsFilter=" + useAsFilter +
+				'}';
 	}
 
 	@Override

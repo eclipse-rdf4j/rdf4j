@@ -20,6 +20,7 @@ ex:PersonShape
 	        ex:alternativePath ,
 	        ex:nestedSequencePath ,
 	        ex:alternativePathZeroOrOne ,
+	        ex:alternativePathZeroOrMore ,
 	        ex:alternativePathOneOrMore .
 
 ex:inverseOfWithComplex
@@ -46,6 +47,11 @@ ex:alternativePath
 ex:alternativePathZeroOrOne
 		sh:path [ sh:alternativePath (ex:father [sh:zeroOrOnePath ex:parent] ex:mother ) ]  ;
 		sh:nodeKind sh:BlankNodeOrIRI .
+
+ex:alternativePathZeroOrMore
+		sh:path [ sh:alternativePath (ex:father [sh:zeroOrMorePath ex:parent] ex:mother ) ]  ;
+		sh:nodeKind sh:BlankNodeOrIRI .
+
 
 ex:alternativePathOneOrMore
 		sh:path [ sh:alternativePath (ex:father [sh:oneOrMorePath ex:parent] ex:mother ) ]  ;

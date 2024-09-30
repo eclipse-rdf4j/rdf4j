@@ -255,10 +255,11 @@ public class PropertyShape extends Shape {
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider,
+			ValidationSettings validationSettings) {
 		PlanNode planNode = constraintComponents.stream()
 				.map(c -> c.getAllTargetsPlan(connectionsGroup, dataGraph, Scope.propertyShape,
-						new StatementMatcher.StableRandomVariableProvider()))
+						new StatementMatcher.StableRandomVariableProvider(), validationSettings))
 				.distinct()
 				.reduce((nodes, nodes2) -> UnionNode.getInstanceDedupe(connectionsGroup, nodes, nodes2))
 				.orElse(EmptyNode.getInstance());

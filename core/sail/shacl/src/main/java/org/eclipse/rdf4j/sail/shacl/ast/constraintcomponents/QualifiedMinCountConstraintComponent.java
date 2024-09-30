@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.AbstractBulkJoinPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.AllTargetsPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.GroupByCountFilter;
@@ -138,7 +139,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 							false, null);
 		} else {
 			target = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
-					stableRandomVariableProvider);
+					stableRandomVariableProvider, validationSettings);
 		}
 
 		PlanNode planNode = negated(connectionsGroup, validationSettings, overrideTargetNode, scope);
@@ -162,7 +163,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 
 			if (overrideTargetNode == null) {
 				target = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
-						stableRandomVariableProvider);
+						stableRandomVariableProvider, validationSettings);
 			} else {
 				PlanNode planNode = overrideTargetNode.getPlanNode();
 				if (planNode instanceof AllTargetsPlanNode) {
@@ -189,7 +190,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 									Set.of()),
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 							validationSettings.getDataGraph()),
-					connectionsGroup);
+					connectionsGroup, AbstractBulkJoinPlanNode.DEFAULT_VARS);
 
 			return new TupleMapper(relevantTargetsWithPath, t -> {
 				List<Value> targetChain = t.getTargetChain(true);
@@ -210,7 +211,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 		PlanNode allTargetsPlan;
 		if (overrideTargetNode == null) {
 			allTargetsPlan = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
-					stableRandomVariableProvider);
+					stableRandomVariableProvider, validationSettings);
 		} else {
 			allTargetsPlan = getTargetChain()
 					.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
@@ -240,7 +241,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 									Set.of()),
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 							validationSettings.getDataGraph()),
-					connectionsGroup);
+					connectionsGroup, AbstractBulkJoinPlanNode.DEFAULT_VARS);
 		}
 
 		invalid = new NotValuesIn(allTargetsPlan, invalid, connectionsGroup);
@@ -251,7 +252,8 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider,
+			ValidationSettings validationSettings) {
 		assert scope == Scope.propertyShape;
 
 		PlanNode allTargets = getTargetChain()
@@ -260,7 +262,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 				.getPlanNode(connectionsGroup, dataGraph, Scope.propertyShape, true, null);
 
 		PlanNode subTargets = qualifiedValueShape.getAllTargetsPlan(connectionsGroup, dataGraph, scope,
-				new StatementMatcher.StableRandomVariableProvider());
+				new StatementMatcher.StableRandomVariableProvider(), validationSettings);
 
 		return Unique
 				.getInstance(new TrimToTarget(UnionNode.getInstanceDedupe(connectionsGroup, allTargets, subTargets),

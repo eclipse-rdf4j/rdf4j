@@ -50,11 +50,6 @@ public class FilterTargetIsSubject extends FilterPlanNode {
 	}
 
 	@Override
-	public String toString() {
-		return "ExternalFilterTargetIsSubject{}";
-	}
-
-	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
 			return true;

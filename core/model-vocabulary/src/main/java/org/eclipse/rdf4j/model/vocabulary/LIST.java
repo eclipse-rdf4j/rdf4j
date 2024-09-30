@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
 
 /**
  * http://jena.hpl.hp.com/ARQ/list#.
@@ -26,6 +27,8 @@ public final class LIST {
 	public static final String NAMESPACE = "http://jena.hpl.hp.com/ARQ/list#";
 
 	public static final String PREFIX = "list";
+
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	public static final IRI MEMBER;
 

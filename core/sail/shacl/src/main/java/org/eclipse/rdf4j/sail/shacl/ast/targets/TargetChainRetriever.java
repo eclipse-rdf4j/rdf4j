@@ -80,6 +80,7 @@ public class TargetChainRetriever implements PlanNode {
 	private final EffectiveTarget.EffectiveTargetFragment removedStatementTarget;
 	private final boolean hasValue;
 	private final Set<String> varNamesInQueryFragment;
+	private final String queryStr;
 
 	private StackTraceElement[] stackTrace;
 	private ValidationExecutionLogger validationExecutionLogger;
@@ -112,9 +113,11 @@ public class TargetChainRetriever implements PlanNode {
 				.get(QueryLanguage.SPARQL)
 				.get();
 
+		this.queryStr = "select * where {\n" + this.queryFragment + "\n}";
+
 		this.varNamesInQueryFragment = Set.of(ArrayBindingBasedQueryEvaluationContext
 				.findAllVariablesUsedInQuery(((QueryRoot) queryParserFactory.getParser()
-						.parseQuery("select * where {\n" + this.queryFragment + "\n}", null)
+						.parseQuery(queryStr, null)
 						.getTupleExpr())));
 
 		assert !varNamesInQueryFragment.isEmpty();
@@ -285,10 +288,12 @@ public class TargetChainRetriever implements PlanNode {
 
 				while (bulk.size() < BULK_SIZE && statements.hasNext()) {
 					Statement next = statements.next();
-					Stream<EffectiveTarget.StatementsAndMatcher> rootStatements = Stream
-							.of(new EffectiveTarget.StatementsAndMatcher(List.of(next), currentStatementMatcher));
+					Stream<EffectiveTarget.SubjectObjectAndMatcher> rootStatements = Stream
+							.of(new EffectiveTarget.SubjectObjectAndMatcher(
+									List.of(new EffectiveTarget.SubjectObjectAndMatcher.SubjectObject(next)),
+									currentStatementMatcher));
 					if (removedStatement && removedStatementTarget != null) {
-						Stream<EffectiveTarget.StatementsAndMatcher> root = removedStatementTarget.getRoot(
+						Stream<EffectiveTarget.SubjectObjectAndMatcher> root = removedStatementTarget.getRoot(
 								connectionsGroup,
 								dataGraph, currentStatementMatcher,
 								next);
@@ -298,7 +303,7 @@ public class TargetChainRetriever implements PlanNode {
 					}
 
 					rootStatements
-							.filter(EffectiveTarget.StatementsAndMatcher::hasStatements)
+							.filter(EffectiveTarget.SubjectObjectAndMatcher::hasStatements)
 							.flatMap(statementsAndMatcher -> {
 								StatementMatcher newCurrentStatementMatcher = statementsAndMatcher
 										.getStatementMatcher();
@@ -306,8 +311,12 @@ public class TargetChainRetriever implements PlanNode {
 								return statementsAndMatcher.getStatements()
 										.stream()
 										.map(temp -> {
-											Binding[] bindings = new Binding[varNames.size()];
+											Binding[] bindings = new Binding[currentVarNames.size()];
 											int j = 0;
+
+											assert newCurrentStatementMatcher.getPredicateValue() != null
+													|| !currentVarNames
+															.contains(newCurrentStatementMatcher.getPredicateName());
 
 											if (newCurrentStatementMatcher.getSubjectValue() == null
 													&& currentVarNames
@@ -315,14 +324,6 @@ public class TargetChainRetriever implements PlanNode {
 												bindings[j++] = new SimpleBinding(
 														newCurrentStatementMatcher.getSubjectName(),
 														temp.getSubject());
-											}
-
-											if (newCurrentStatementMatcher.getPredicateValue() == null
-													&& currentVarNames
-															.contains(newCurrentStatementMatcher.getPredicateName())) {
-												bindings[j++] = new SimpleBinding(
-														newCurrentStatementMatcher.getPredicateName(),
-														temp.getPredicate());
 											}
 
 											if (newCurrentStatementMatcher.getObjectValue() == null
@@ -333,6 +334,9 @@ public class TargetChainRetriever implements PlanNode {
 														temp.getObject());
 											}
 											if (bindings.length == 1) {
+												if (bindings[0] == null) {
+													throw new IllegalStateException("Binding is null!");
+												}
 												return new SingletonBindingSet(bindings[0].getName(),
 														bindings[0].getValue());
 
