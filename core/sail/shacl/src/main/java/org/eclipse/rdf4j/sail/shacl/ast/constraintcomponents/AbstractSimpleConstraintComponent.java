@@ -332,7 +332,8 @@ public abstract class AbstractSimpleConstraintComponent extends AbstractConstrai
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider,
+			ValidationSettings validationSettings) {
 
 		if (scope == Scope.propertyShape) {
 
