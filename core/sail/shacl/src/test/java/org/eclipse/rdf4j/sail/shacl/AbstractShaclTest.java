@@ -109,6 +109,8 @@ abstract public class AbstractShaclTest {
 	public static final Set<IRI> SHAPE_GRAPHS = Set.of(RDF4J.SHACL_SHAPE_GRAPH, RDF4J.NIL,
 			Values.iri("http://example.com/ns#shapesGraph1"));
 
+	public static final String INITIAL_DATA_FILE = "initialData.trig";
+
 	private static final Set<String> ignoredTestCases = Set.of(
 			"test-cases/path/oneOrMorePath",
 			"test-cases/path/zeroOrMorePath",
@@ -222,7 +224,7 @@ abstract public class AbstractShaclTest {
 						if (files != null) {
 							Optional<String> initialData = Arrays.stream(files)
 									.map(File::getName)
-									.filter(name -> name.equals("initialData.ttl"))
+									.filter(name -> name.equals(INITIAL_DATA_FILE))
 									.findAny();
 							List<File> queries = Arrays.stream(files)
 									.filter(f -> f.getName().endsWith(".rq"))

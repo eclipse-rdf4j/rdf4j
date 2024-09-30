@@ -1,0 +1,22 @@
+PREFIX ex: <http://example.com/ns#>
+PREFIX owl: <http://www.w3.org/2002/07/owl#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+INSERT {
+    GRAPH ex:graph2 {
+        ex:person2 ex:change ?entity_iri .
+    }
+    ?entity_iri ex:name "NONE (string) value updated 2", "NONE (string) value updated 3".
+} WHERE {
+    VALUES ?entity_iri {
+         ex:person1
+    }
+    ?entity_iri rdf:type ?entity_iri_rdf_type__0 .
+
+    FILTER (?entity_iri_rdf_type__0 = ex:Person)
+    BIND ('LangStringUniq' as ?entity_iri_ignore__1) .
+}
+
