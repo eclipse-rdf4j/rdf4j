@@ -81,6 +81,16 @@
 				<prop key="/repositories/*/rdf-graphs/*">rdf4jRepositoryGraphController</prop>
 				<prop key="/repositories/*/size">rdf4jRepositorySizeController</prop>
 				<prop key="/repositories/*/transactions">rdf4jRepositoryTransactionStartController</prop>
+				<prop key="/repositories/*/transactions/*/add">rdf4jTransactionAddController</prop>
+				<prop key="/repositories/*/transactions/*/commit">rdf4jTransactionCommitController</prop>
+				<prop key="/repositories/*/transactions/*/delete">rdf4jTransactionDeleteController</prop>
+				<prop key="/repositories/*/transactions/*/export">rdf4jTransactionExportController</prop>
+				<prop key="/repositories/*/transactions/*/ping">rdf4jTransactionPingController</prop>
+				<prop key="/repositories/*/transactions/*/prepare">rdf4jTransactionPrepareController</prop>
+				<prop key="/repositories/*/transactions/*/query">rdf4jTransactionQueryController</prop>
+				<prop key="/repositories/*/transactions/*/rollback">rdf4jTransactionRollbackController</prop>
+				<prop key="/repositories/*/transactions/*/size">rdf4jTransactionSizeController</prop>
+				<prop key="/repositories/*/transactions/*/update">rdf4jTransactionUpdateController</prop>
 				<prop key="/repositories/*/transactions/*">rdf4jRepositoryTransactionController</prop>
 				<prop key="/repositories/*">rdf4jRepositoryController</prop>
 			</props>
@@ -126,8 +136,18 @@
 	<bean id="rdf4jRepositorySizeController" class="org.eclipse.rdf4j.http.server.repository.size.SizeController"/>
 	<bean id="rdf4jRepositoryStatementsController" class="org.eclipse.rdf4j.http.server.repository.statements.StatementsController"/>
 	<bean id="rdf4jRepositoryGraphController" class="org.eclipse.rdf4j.http.server.repository.graph.GraphController"/>
-	<bean id="rdf4jRepositoryTransactionController" class="org.eclipse.rdf4j.http.server.repository.transaction.TransactionController"/>
 	<bean id="rdf4jRepositoryTransactionStartController" class="org.eclipse.rdf4j.http.server.repository.transaction.TransactionStartController">
 		<property name="externalUrl" value="${rdf4j.externalurl:#{null}}"/>
 	</bean>
+	<bean id="rdf4jRepositoryTransactionController" class="org.eclipse.rdf4j.http.server.repository.transaction.TransactionController"/>
+	<bean id="rdf4jTransactionAddController" class="org.eclipse.rdf4j.http.server.repository.transaction.AddController"/>
+	<bean id="rdf4jTransactionCommitController" class="org.eclipse.rdf4j.http.server.repository.transaction.CommitController"/>
+	<bean id="rdf4jTransactionDeleteController" class="org.eclipse.rdf4j.http.server.repository.transaction.DeleteController"/>
+	<bean id="rdf4jTransactionExportController" class="org.eclipse.rdf4j.http.server.repository.transaction.ExportController"/>
+	<bean id="rdf4jTransactionPingController" class="org.eclipse.rdf4j.http.server.repository.transaction.PingController"/>
+	<bean id="rdf4jTransactionPrepareController" class="org.eclipse.rdf4j.http.server.repository.transaction.PrepareController"/>
+	<bean id="rdf4jTransactionQueryController" class="org.eclipse.rdf4j.http.server.repository.transaction.QueryController"/>
+	<bean id="rdf4jTransactionRollbackController" class="org.eclipse.rdf4j.http.server.repository.transaction.RollbackController"/>
+	<bean id="rdf4jTransactionSizeController" class="org.eclipse.rdf4j.http.server.repository.transaction.SizeController"/>
+	<bean id="rdf4jTransactionUpdateController" class="org.eclipse.rdf4j.http.server.repository.transaction.UpdateController"/>
 </beans>

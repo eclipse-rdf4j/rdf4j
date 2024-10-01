@@ -20,6 +20,7 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Reader;
 import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -121,6 +122,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 	private long pingDelay = PINGDELAY;
 
+	private int serverProtocolVersion = 0;
+
 	/**
 	 * @deprecated Use {@link #RDF4JProtocolSession(HttpClient, ExecutorService)} instead
 	 */
@@ -165,6 +168,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		}
 
 		this.serverURL = serverURL;
+		this.serverProtocolVersion = 0; // side effect
 	}
 
 	public String getServerURL() {
@@ -275,6 +279,16 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		}
 	}
 
+	private int getServerProtocolVersion() throws UnauthorizedException, RepositoryException, IOException {
+		if (serverProtocolVersion > 0) {
+			return serverProtocolVersion;
+		}
+
+		var protocolVersionString = getServerProtocol();
+		serverProtocolVersion = Integer.parseInt(protocolVersionString);
+		return serverProtocolVersion;
+	}
+
 	/*-------------------------*
 	 * Repository/context size *
 	 *-------------------------*/
@@ -286,9 +300,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			String transactionURL = getTransactionURL();
 			final boolean useTransaction = transactionURL != null;
 
-			String baseLocation = useTransaction ? appendAction(transactionURL, Action.SIZE)
-					: Protocol.getSizeLocation(getQueryURL());
-			URIBuilder url = new URIBuilder(baseLocation);
+			URIBuilder url = useTransaction ? getTxnActionURIBuilder(Action.SIZE)
+					: new URIBuilder(Protocol.getSizeLocation(getQueryURL()));
 
 			String[] encodedContexts = Protocol.encodeContexts(contexts);
 			for (int i = 0; i < encodedContexts.length; i++) {
@@ -591,8 +604,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			String transactionURL = getTransactionURL();
 			final boolean useTransaction = transactionURL != null;
 
-			String baseLocation = useTransaction ? transactionURL : Protocol.getStatementsLocation(getQueryURL());
-			URIBuilder url = new URIBuilder(baseLocation);
+			URIBuilder url = useTransaction ? getTxnActionURIBuilder(Action.GET)
+					: new URIBuilder(Protocol.getStatementsLocation(getQueryURL()));
 
 			if (subj != null) {
 				url.setParameter(Protocol.SUBJECT_PARAM_NAME, Protocol.encodeValue(subj));
@@ -607,9 +620,6 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 				url.addParameter(Protocol.CONTEXT_PARAM_NAME, encodedContext);
 			}
 			url.setParameter(Protocol.INCLUDE_INFERRED_PARAM_NAME, Boolean.toString(includeInferred));
-			if (useTransaction) {
-				url.setParameter(Protocol.ACTION_PARAM_NAME, Action.GET.toString());
-			}
 
 			HttpRequestBase method = useTransaction ? new HttpPut(url.build()) : new HttpGet(url.build());
 			method = applyAdditionalHeaders(method);
@@ -683,6 +693,24 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		}
 	}
 
+	private URIBuilder getTxnActionURIBuilder(Action action)
+			throws RDF4JException, IOException, UnauthorizedException {
+		Objects.requireNonNull(action);
+		try {
+			if (getServerProtocolVersion() < 14) { // use legacy action parameter instead of dedicated action endpoint
+				URIBuilder builder = new URIBuilder(transactionURL);
+				builder.addParameter(Protocol.ACTION_PARAM_NAME, action.toString());
+				return builder;
+			}
+
+			URIBuilder builder = new URIBuilder(transactionURL + "/" + action.toString().toLowerCase());
+			return builder;
+		} catch (URISyntaxException e) {
+			logger.error("could not create URL for transaction " + action, e);
+			throw new RuntimeException(e);
+		}
+	}
+
 	public synchronized void prepareTransaction() throws RDF4JException, IOException, UnauthorizedException {
 		checkRepositoryURL();
 
@@ -692,9 +720,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 		HttpPut method = null;
 		try {
-			URIBuilder url = new URIBuilder(transactionURL);
-			url.addParameter(Protocol.ACTION_PARAM_NAME, Action.PREPARE.toString());
-			method = applyAdditionalHeaders(new HttpPut(url.build()));
+			var uriBuilder = getTxnActionURIBuilder(Action.PREPARE);
+			method = applyAdditionalHeaders(new HttpPut(uriBuilder.build()));
 
 			final HttpResponse response = execute(method);
 			try {
@@ -725,9 +752,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 		HttpPut method = null;
 		try {
-			URIBuilder url = new URIBuilder(transactionURL);
-			url.addParameter(Protocol.ACTION_PARAM_NAME, Action.COMMIT.toString());
-			method = applyAdditionalHeaders(new HttpPut(url.build()));
+			var uriBuilder = getTxnActionURIBuilder(Action.COMMIT);
+			method = applyAdditionalHeaders(new HttpPut(uriBuilder.build()));
 
 			final HttpResponse response = execute(method);
 			try {
@@ -804,11 +830,10 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		if (transactionURL == null) {
 			return; // transaction has already been closed
 		}
-		HttpPost method;
 		try {
-			URIBuilder url = new URIBuilder(transactionURL);
-			url.addParameter(Protocol.ACTION_PARAM_NAME, Action.PING.toString());
-			method = applyAdditionalHeaders(new HttpPost(url.build()));
+			var uriBuilder = getTxnActionURIBuilder(Action.PING);
+			var method = applyAdditionalHeaders(new HttpPost(uriBuilder.build()));
+
 			String text = EntityUtils.toString(executeOK(method).getEntity());
 			long timeout = Long.parseLong(text);
 			// clients should ping before server timeouts transaction
@@ -824,16 +849,16 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		pingTransaction(); // reschedule
 	}
 
-	/**
-	 * Appends the action as a parameter to the supplied url
-	 *
-	 * @param url    a url on which to append the parameter. it is assumed the url has no parameters.
-	 * @param action the action to add as a parameter
-	 * @return the url parametrized with the supplied action
-	 */
-	private String appendAction(String url, Action action) {
-		return url + "?" + Protocol.ACTION_PARAM_NAME + "=" + action.toString();
-	}
+//	/**
+//	 * Appends the action as a parameter to the supplied url
+//	 *
+//	 * @param url    a url on which to append the parameter. it is assumed the url has no parameters.
+//	 * @param action the action to add as a parameter
+//	 * @return the url parametrized with the supplied action
+//	 */
+//	private String appendAction(String url, Action action) {
+//		return url + "?" + Protocol.ACTION_PARAM_NAME + "=" + action.toString();
+//	}
 
 	/**
 	 * Sends a transaction list as serialized XML to the server.
@@ -938,9 +963,16 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		RequestBuilder builder;
 		String transactionURL = getTransactionURL();
 		if (transactionURL != null) {
-			builder = RequestBuilder.put(transactionURL);
+			URI requestURI;
+			try {
+				requestURI = getTxnActionURIBuilder(Action.QUERY).build();
+			} catch (URISyntaxException | IOException e) {
+				logger.error("could not create URL for transaction query", e);
+				throw new RuntimeException(e);
+			}
+
+			builder = RequestBuilder.put(requestURI);
 			builder.setHeader("Content-Type", Protocol.SPARQL_QUERY_MIME_TYPE + "; charset=utf-8");
-			builder.addParameter(Protocol.ACTION_PARAM_NAME, Action.QUERY.toString());
 			for (NameValuePair nvp : getQueryMethodParameters(ql, null, baseURI, dataset, includeInferred, maxQueryTime,
 					bindings)) {
 				builder.addParameter(nvp);
@@ -971,9 +1003,17 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		RequestBuilder builder;
 		String transactionURL = getTransactionURL();
 		if (transactionURL != null) {
-			builder = RequestBuilder.put(transactionURL);
+
+			URI requestURI;
+			try {
+				requestURI = getTxnActionURIBuilder(Action.UPDATE).build();
+			} catch (URISyntaxException | IOException e) {
+				logger.error("could not create URL for transaction update", e);
+				throw new RuntimeException(e);
+			}
+
+			builder = RequestBuilder.put(requestURI);
 			builder.addHeader("Content-Type", Protocol.SPARQL_UPDATE_MIME_TYPE + "; charset=utf-8");
-			builder.addParameter(Protocol.ACTION_PARAM_NAME, Action.UPDATE.toString());
 			for (NameValuePair nvp : getUpdateMethodParameters(ql, null, baseURI, dataset, includeInferred,
 					maxExecutionTime, bindings)) {
 				builder.addParameter(nvp);
@@ -1061,36 +1101,28 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		boolean useTransaction = transactionURL != null;
 
 		try {
-
-			String baseLocation = useTransaction ? transactionURL : Protocol.getStatementsLocation(getQueryURL());
-			URIBuilder url = new URIBuilder(baseLocation);
+			URIBuilder uriBuilder = useTransaction ? getTxnActionURIBuilder(action)
+					: new URIBuilder(Protocol.getStatementsLocation(getQueryURL()));
 
 			// Set relevant query parameters
 			for (String encodedContext : Protocol.encodeContexts(contexts)) {
-				url.addParameter(Protocol.CONTEXT_PARAM_NAME, encodedContext);
+				uriBuilder.addParameter(Protocol.CONTEXT_PARAM_NAME, encodedContext);
 			}
 			if (baseURI != null && !baseURI.trim().isEmpty()) {
 				String encodedBaseURI = Protocol.encodeValue(SimpleValueFactory.getInstance().createIRI(baseURI));
-				url.setParameter(Protocol.BASEURI_PARAM_NAME, encodedBaseURI);
+				uriBuilder.setParameter(Protocol.BASEURI_PARAM_NAME, encodedBaseURI);
 			}
 			if (preserveNodeIds) {
-				url.setParameter(Protocol.PRESERVE_BNODE_ID_PARAM_NAME, "true");
-			}
-
-			if (useTransaction) {
-				if (action == null) {
-					throw new IllegalArgumentException("action can not be null on transaction operation");
-				}
-				url.setParameter(Protocol.ACTION_PARAM_NAME, action.toString());
+				uriBuilder.setParameter(Protocol.PRESERVE_BNODE_ID_PARAM_NAME, "true");
 			}
 
 			// Select appropriate HTTP method
 			HttpEntityEnclosingRequestBase method = null;
 			try {
 				if (overwrite || useTransaction) {
-					method = applyAdditionalHeaders(new HttpPut(url.build()));
+					method = applyAdditionalHeaders(new HttpPut(uriBuilder.build()));
 				} else {
-					method = applyAdditionalHeaders(new HttpPost(url.build()));
+					method = applyAdditionalHeaders(new HttpPost(uriBuilder.build()));
 				}
 
 				// Set payload
@@ -1216,5 +1248,10 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			method.addHeader(additionalHeader.getKey(), additionalHeader.getValue());
 		}
 		return method;
+	}
+
+	private boolean useDeprecatedTxnActions()
+			throws UnauthorizedException, NumberFormatException, RepositoryException, IOException {
+		return Integer.parseInt(getServerProtocol()) < 14;
 	}
 }
