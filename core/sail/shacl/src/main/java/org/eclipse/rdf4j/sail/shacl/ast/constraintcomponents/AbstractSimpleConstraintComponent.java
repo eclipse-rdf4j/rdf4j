@@ -47,18 +47,18 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public abstract class SimpleAbstractConstraintComponent extends AbstractConstraintComponent {
+public abstract class AbstractSimpleConstraintComponent extends AbstractConstraintComponent {
 
-	private static final Logger logger = LoggerFactory.getLogger(SimpleAbstractConstraintComponent.class);
+	private static final Logger logger = LoggerFactory.getLogger(AbstractSimpleConstraintComponent.class);
 
 	private Resource id;
 	TargetChain targetChain;
 
-	public SimpleAbstractConstraintComponent(Resource id) {
+	public AbstractSimpleConstraintComponent(Resource id) {
 		this.id = id;
 	}
 
-	public SimpleAbstractConstraintComponent() {
+	public AbstractSimpleConstraintComponent() {
 
 	}
 
@@ -313,7 +313,8 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider,
+			ValidationSettings validationSettings) {
 		if (scope == Scope.propertyShape) {
 			PlanNode allTargetsPlan = getTargetChain()
 					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),

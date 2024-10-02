@@ -310,9 +310,19 @@ public class EffectiveTarget {
 			}
 
 			if (filter != null) {
-				return connectionsGroup.getCachedNodeFor(Unique.getInstance(filter.apply(targetsPlanNode), true));
+				if (chain.size() > 1) {
+					return connectionsGroup.getCachedNodeFor(
+							Unique.getInstance(filter.apply(targetsPlanNode), true));
+				} else {
+					return connectionsGroup.getCachedNodeFor(filter.apply(targetsPlanNode));
+				}
 			} else {
-				return connectionsGroup.getCachedNodeFor(Unique.getInstance(targetsPlanNode, true));
+				if (chain.size() > 1) {
+					return connectionsGroup
+							.getCachedNodeFor(Unique.getInstance(targetsPlanNode, true));
+				} else {
+					return connectionsGroup.getCachedNodeFor(targetsPlanNode);
+				}
 			}
 
 		}
@@ -394,6 +404,14 @@ public class EffectiveTarget {
 		return chain.stream()
 				.map(c -> c.var)
 				.collect(Collectors.toCollection(ArrayList::new));
+	}
+
+	public Variable<Value> getOptionalVar() {
+		return Objects.requireNonNull(optional, "Optional was null").var;
+	}
+
+	public int size() {
+		return chain.size();
 	}
 
 	public enum Extend {

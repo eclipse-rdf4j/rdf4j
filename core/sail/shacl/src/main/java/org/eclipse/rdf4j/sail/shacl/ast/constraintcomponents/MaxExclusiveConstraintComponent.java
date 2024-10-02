@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LiteralComparatorFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 
-public class MaxExclusiveConstraintComponent extends SimpleAbstractConstraintComponent {
+public class MaxExclusiveConstraintComponent extends AbstractSimpleConstraintComponent {
 
 	Literal maxExclusive;
 

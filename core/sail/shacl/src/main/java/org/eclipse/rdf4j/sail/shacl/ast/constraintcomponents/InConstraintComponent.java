@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValueInFilter;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
-public class InConstraintComponent extends SimpleAbstractConstraintComponent {
+public class InConstraintComponent extends AbstractSimpleConstraintComponent {
 
 	private final Set<Value> in;
 

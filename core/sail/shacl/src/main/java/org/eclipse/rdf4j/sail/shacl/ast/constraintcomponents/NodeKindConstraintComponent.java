@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.NodeKindFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 
-public class NodeKindConstraintComponent extends SimpleAbstractConstraintComponent {
+public class NodeKindConstraintComponent extends AbstractSimpleConstraintComponent {
 
 	NodeKind nodeKind;
 

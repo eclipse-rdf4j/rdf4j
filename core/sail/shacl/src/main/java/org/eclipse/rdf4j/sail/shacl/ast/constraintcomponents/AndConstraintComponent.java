@@ -121,10 +121,11 @@ public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider,
+			ValidationSettings validationSettings) {
 		PlanNode planNode = and.stream()
 				.map(c -> c.getAllTargetsPlan(connectionsGroup, dataGraph, scope,
-						new StatementMatcher.StableRandomVariableProvider()))
+						new StatementMatcher.StableRandomVariableProvider(), validationSettings))
 				.distinct()
 				.reduce(UnionNode::getInstanceDedupe)
 				.orElse(EmptyNode.getInstance());

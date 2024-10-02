@@ -138,7 +138,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 							false, null);
 		} else {
 			target = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
-					stableRandomVariableProvider);
+					stableRandomVariableProvider, validationSettings);
 		}
 
 		PlanNode planNode = negated(connectionsGroup, validationSettings, overrideTargetNode, scope);
@@ -161,7 +161,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 
 			if (overrideTargetNode == null) {
 				target = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
-						stableRandomVariableProvider);
+						stableRandomVariableProvider, validationSettings);
 			} else {
 				PlanNode planNode = overrideTargetNode.getPlanNode();
 				if (planNode instanceof AllTargetsPlanNode) {
@@ -209,7 +209,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 		PlanNode allTargetsPlan;
 		if (overrideTargetNode == null) {
 			allTargetsPlan = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
-					stableRandomVariableProvider);
+					stableRandomVariableProvider, validationSettings);
 		} else {
 			allTargetsPlan = getTargetChain()
 					.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
@@ -248,7 +248,8 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider,
+			ValidationSettings validationSettings) {
 		assert scope == Scope.propertyShape;
 
 		PlanNode allTargets = getTargetChain()
@@ -257,7 +258,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 				.getPlanNode(connectionsGroup, dataGraph, Scope.propertyShape, true, null);
 
 		PlanNode subTargets = qualifiedValueShape.getAllTargetsPlan(connectionsGroup, dataGraph, scope,
-				new StatementMatcher.StableRandomVariableProvider());
+				new StatementMatcher.StableRandomVariableProvider(), validationSettings);
 
 		return Unique.getInstance(new TrimToTarget(UnionNode.getInstanceDedupe(allTargets, subTargets)), false);
 

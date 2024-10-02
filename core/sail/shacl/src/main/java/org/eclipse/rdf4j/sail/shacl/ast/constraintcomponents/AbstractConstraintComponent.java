@@ -22,9 +22,16 @@ import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
+import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ReduceTargets;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.TrimToTarget;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnionNode;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
+import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetChain;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
@@ -96,7 +103,8 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider,
+			ValidationSettings validationSettings) {
 		throw new UnsupportedOperationException();
 	}
 
@@ -142,6 +150,29 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 		}
 
 		throw new IllegalStateException(value.getClass().getSimpleName());
+	}
+
+	static PlanNode getAllTargetsIncludingThoseAddedByPath(ConnectionsGroup connectionsGroup,
+			ValidationSettings validationSettings, Scope scope, EffectiveTarget effectiveTarget, Path path,
+			boolean includeTargetsAffectedByRemoval) {
+		PlanNode allTargets;
+		BufferedSplitter addedTargets = new BufferedSplitter(
+				effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(),
+						scope, includeTargetsAffectedByRemoval, null));
+
+		PlanNode addedByPath = path.getAllAdded(connectionsGroup, validationSettings.getDataGraph(), null);
+
+		addedByPath = Unique.getInstance(new TrimToTarget(addedByPath), false);
+
+		addedByPath = new ReduceTargets(addedByPath, addedTargets.getPlanNode());
+
+		addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, validationSettings.getDataGraph(),
+				scope, EffectiveTarget.Extend.left,
+				false,
+				null);
+
+		allTargets = UnionNode.getInstance(addedTargets.getPlanNode(), addedByPath);
+		return allTargets;
 	}
 
 }

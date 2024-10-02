@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PatternFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 
-public class PatternConstraintComponent extends SimpleAbstractConstraintComponent {
+public class PatternConstraintComponent extends AbstractSimpleConstraintComponent {
 
 	String pattern;
 	String flags;

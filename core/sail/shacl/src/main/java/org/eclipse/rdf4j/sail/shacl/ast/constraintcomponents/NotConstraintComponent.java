@@ -101,7 +101,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 			planNodeProvider = overrideTargetNode;
 		} else {
 			planNodeProvider = () -> getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
-					stableRandomVariableProvider);
+					stableRandomVariableProvider, validationSettings);
 		}
 
 		PlanNode planNode = not.generateTransactionalValidationPlan(
@@ -165,7 +165,8 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider,
+			ValidationSettings validationSettings) {
 		PlanNode allTargets;
 
 		if (scope == Scope.propertyShape) {
@@ -184,7 +185,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 		}
 
 		PlanNode notTargets = not.getAllTargetsPlan(connectionsGroup, dataGraph, scope,
-				new StatementMatcher.StableRandomVariableProvider());
+				new StatementMatcher.StableRandomVariableProvider(), validationSettings);
 
 		return Unique.getInstance(UnionNode.getInstanceDedupe(allTargets, notTargets), false);
 	}

@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.MinLengthFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 
-public class MinLengthConstraintComponent extends SimpleAbstractConstraintComponent {
+public class MinLengthConstraintComponent extends AbstractSimpleConstraintComponent {
 
 	long minLength;
 

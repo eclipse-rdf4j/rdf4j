@@ -201,11 +201,12 @@ public class NodeShape extends Shape {
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider,
+			ValidationSettings validationSettings) {
 
 		PlanNode planNode = constraintComponents.stream()
 				.map(c -> c.getAllTargetsPlan(connectionsGroup, dataGraph, Scope.nodeShape,
-						new StatementMatcher.StableRandomVariableProvider()))
+						new StatementMatcher.StableRandomVariableProvider(), validationSettings))
 				.distinct()
 				.reduce(UnionNode::getInstanceDedupe)
 				.orElse(EmptyNode.getInstance());

@@ -28,11 +28,13 @@ import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
 import org.eclipse.rdf4j.sail.shacl.ast.Cache;
 import org.eclipse.rdf4j.sail.shacl.ast.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.ast.PropertyShape;
+import org.eclipse.rdf4j.sail.shacl.ast.ShaclParsingException;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
+import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.GroupByCountFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LeftOuterJoin;
@@ -120,22 +122,27 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
 			ValidationSettings validationSettings,
 			PlanNodeProvider overrideTargetNode, Scope scope) {
-		assert scope == Scope.propertyShape;
+
+		if (scope != Scope.propertyShape) {
+			throw new ShaclParsingException(
+					"QualifiedMaxCountConstraintComponent can only be used on property shapes!");
+		}
 
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
 		PlanNode target;
 
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(scope,
+				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);
+
 		if (overrideTargetNode != null) {
-			target = getTargetChain()
-					.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
-							stableRandomVariableProvider)
+			target = effectiveTarget
 					.extend(overrideTargetNode.getPlanNode(), connectionsGroup, validationSettings.getDataGraph(),
 							scope, EffectiveTarget.Extend.right,
 							false, null);
 		} else {
 			target = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
-					stableRandomVariableProvider);
+					stableRandomVariableProvider, validationSettings);
 		}
 
 		PlanNode planNode = negated(connectionsGroup, validationSettings, overrideTargetNode, scope);
@@ -158,7 +165,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 
 			if (overrideTargetNode == null) {
 				target = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
-						stableRandomVariableProvider);
+						stableRandomVariableProvider, validationSettings);
 			} else {
 				target = getTargetChain()
 						.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
@@ -180,8 +187,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider,
 									Set.of()),
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
-							validationSettings.getDataGraph())
-			);
+							validationSettings.getDataGraph()));
 
 			return new TupleMapper(relevantTargetsWithPath, t -> {
 				List<Value> targetChain = t.getTargetChain(true);
@@ -203,7 +209,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 
 		if (overrideTargetNode == null) {
 			allTargetsPlan = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
-					stableRandomVariableProvider);
+					stableRandomVariableProvider, validationSettings);
 		} else {
 			allTargetsPlan = getTargetChain()
 					.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
@@ -223,8 +229,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 						.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
 								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()),
 				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
-						validationSettings.getDataGraph())
-		);
+						validationSettings.getDataGraph()));
 
 		invalid = new NotValuesIn(allTargetsPlan, invalid);
 
@@ -234,18 +239,28 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider,
+			ValidationSettings validationSettings) {
 		assert scope == Scope.propertyShape;
 
-		PlanNode allTargets = getTargetChain()
+		EffectiveTarget effectiveTarget = getTargetChain()
 				.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
-						stableRandomVariableProvider)
-				.getPlanNode(connectionsGroup, dataGraph, Scope.propertyShape, true, null);
+						stableRandomVariableProvider);
+
+		Path path = getTargetChain().getPath().orElseThrow();
+
+		PlanNode allTargets = getAllTargetsIncludingThoseAddedByPath(connectionsGroup, validationSettings, scope,
+				effectiveTarget, path, false);
 
 		PlanNode subTargets = qualifiedValueShape.getAllTargetsPlan(connectionsGroup, dataGraph, scope,
-				new StatementMatcher.StableRandomVariableProvider());
+				new StatementMatcher.StableRandomVariableProvider(), validationSettings);
 
-		return Unique.getInstance(new TrimToTarget(UnionNode.getInstanceDedupe(allTargets, subTargets)), false);
+		return Unique.getInstance(
+				new TrimToTarget(
+						UnionNode.getInstanceDedupe(allTargets, subTargets)
+				),
+				false
+		);
 
 	}
 
