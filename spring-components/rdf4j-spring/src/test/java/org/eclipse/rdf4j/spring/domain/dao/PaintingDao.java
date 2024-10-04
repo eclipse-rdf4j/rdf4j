@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.sparqlbuilder.core.query.Queries;
 import org.eclipse.rdf4j.spring.dao.SimpleRDF4JCRUDDao;
+import org.eclipse.rdf4j.spring.dao.support.UpdateWithModelBuilder;
 import org.eclipse.rdf4j.spring.dao.support.bindingsBuilder.MutableBindings;
 import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
 import org.eclipse.rdf4j.spring.domain.model.EX;
@@ -96,5 +97,12 @@ public class PaintingDao extends SimpleRDF4JCRUDDao<Painting, IRI> {
 			return getRdf4JTemplate().getNewUUID();
 		}
 		return painting.getId();
+	}
+
+	public void changeArtist(IRI painting, IRI newArtist) {
+		UpdateWithModelBuilder update = getRdf4JTemplate().updateWithBuilder();
+		update.remove(null, EX.creatorOf, painting);
+		update.add(newArtist, EX.creatorOf, painting);
+		update.execute();
 	}
 }
