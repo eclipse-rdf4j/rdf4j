@@ -17,12 +17,16 @@ import static org.eclipse.rdf4j.spring.domain.model.Painting.PAINTING_ID;
 import static org.eclipse.rdf4j.spring.domain.model.Painting.PAINTING_LABEL;
 import static org.eclipse.rdf4j.spring.domain.model.Painting.PAINTING_TECHNIQUE;
 
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.sparqlbuilder.core.query.Queries;
 import org.eclipse.rdf4j.spring.dao.SimpleRDF4JCRUDDao;
 import org.eclipse.rdf4j.spring.dao.support.bindingsBuilder.MutableBindings;
+import org.eclipse.rdf4j.spring.dao.support.join.JoinQueryBuilder;
+import org.eclipse.rdf4j.spring.dao.support.join.LazyJoinQueryInitizalizer;
 import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
 import org.eclipse.rdf4j.spring.domain.model.EX;
 import org.eclipse.rdf4j.spring.domain.model.Painting;
@@ -39,6 +43,19 @@ public class PaintingDao extends SimpleRDF4JCRUDDao<Painting, IRI> {
 
 	public PaintingDao(RDF4JTemplate rdf4JTemplate) {
 		super(rdf4JTemplate);
+	}
+
+	private static final LazyJoinQueryInitizalizer getArtistIdsOfPaintingQuery = JoinQueryBuilder
+			.of(p -> p.pred(EX.creatorOf).inv())
+			.sourceEntityConstraints(artist -> artist.isA(EX.Painting))
+			.targetEntityConstraints(painting -> painting.isA(EX.Artist))
+			.leftOuterJoin()
+			.buildLazyInitializer();
+
+	public Set<IRI> getArtistIdsOfPainting(IRI paintingId) {
+		return getArtistIdsOfPaintingQuery.get(getRdf4JTemplate())
+				.withSourceEntityId(paintingId)
+				.asTargetEntityIdSet();
 	}
 
 	@Override
