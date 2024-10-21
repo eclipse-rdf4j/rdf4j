@@ -107,3 +107,5 @@ The metaphactory platform is developed by [metaphacts GmbH](https://www.metaphac
   an RDF service backend for Knowledge Management, used by thesaurus management platform [VocBench](http://vocbench.uniroma2.it/).
 - [Sesame Tools](https://github.com/joshsh/sesametools)<br>
   a collection of utility classes for use with Sesame/RDF4J.
+- [Jelly](https://w3id.org/jelly/jelly-jvm)<br>
+  a high-performance binary RDF serialization format with an implementation for RDF4J. Can be used as a JAR plugin.
