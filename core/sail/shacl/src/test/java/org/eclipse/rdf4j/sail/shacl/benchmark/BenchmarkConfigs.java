@@ -24,18 +24,25 @@ public class BenchmarkConfigs {
 
 	public static List<List<Statement>> generateStatements(StatementCreator statementCreator) {
 
+		return generateStatements(NUMBER_OF_TRANSACTIONS, STATEMENTS_PER_TRANSACTION, NUMBER_OF_EMPTY_TRANSACTIONS,
+				statementCreator);
+	}
+
+	public static List<List<Statement>> generateStatements(int numberOfTransactions, int statementsPerTransaction,
+			int numberOfEmptyTransactions, StatementCreator statementCreator) {
+
 		List<List<Statement>> allStatements = new ArrayList<>();
 
-		for (int j = 0; j < BenchmarkConfigs.NUMBER_OF_TRANSACTIONS; j++) {
+		for (int j = 0; j < numberOfTransactions; j++) {
 			List<Statement> statements = new ArrayList<>();
 			allStatements.add(statements);
-			for (int i = 0; i < BenchmarkConfigs.STATEMENTS_PER_TRANSACTION; i++) {
+			for (int i = 0; i < statementsPerTransaction; i++) {
 
 				statementCreator.createStatement(statements, i, j);
 			}
 		}
 
-		for (int j = 0; j < BenchmarkConfigs.NUMBER_OF_EMPTY_TRANSACTIONS; j++) {
+		for (int j = 0; j < numberOfEmptyTransactions; j++) {
 			List<Statement> statements = new ArrayList<>();
 			allStatements.add(statements);
 		}

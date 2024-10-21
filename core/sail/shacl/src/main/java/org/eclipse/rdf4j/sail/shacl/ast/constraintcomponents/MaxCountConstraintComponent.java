@@ -54,8 +54,8 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 	// Performance degrades quickly as the maxCount increases when using a SPARQL Validation Approach. The default is 5,
 	// but it can be tuned using the system property below.
 	private static final String SPARQL_VALIDATION_APPROACH_LIMIT_PROPERTY = "org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.MaxCountConstraintComponent.sparqlValidationApproachLimit";
-	private static final long SPARQL_VALIDATION_APPROACH_LIMIT = System
-			.getProperty(SPARQL_VALIDATION_APPROACH_LIMIT_PROPERTY) == null ? 5
+	public static long SPARQL_VALIDATION_APPROACH_LIMIT = System
+			.getProperty(SPARQL_VALIDATION_APPROACH_LIMIT_PROPERTY) == null ? 1
 					: Long.parseLong(System.getProperty(SPARQL_VALIDATION_APPROACH_LIMIT_PROPERTY));
 
 	private final long maxCount;
