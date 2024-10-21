@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.endpoint.provider;
 
+import org.apache.http.client.config.CookieSpecs;
+import org.apache.http.client.config.RequestConfig;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
@@ -40,13 +42,19 @@ public class RemoteRepositoryProvider implements EndpointProvider<RemoteReposito
 		}
 
 		try {
+
 			HTTPRepository repo = new HTTPRepository(repositoryServer, repositoryName);
+			SharedHttpClientSessionManager httpClientSessionManager = (SharedHttpClientSessionManager) repo
+					.getHttpClientSessionManager();
+
 			HttpClientBuilder httpClientBuilder = HttpClients.custom()
 					.useSystemProperties()
+					.setDefaultRequestConfig(httpClientSessionManager.getDefaultRequestConfig())
 					.setMaxConnTotal(20)
 					.setMaxConnPerRoute(20);
-			((SharedHttpClientSessionManager) repo.getHttpClientSessionManager())
-					.setHttpClientBuilder(httpClientBuilder);
+
+			httpClientSessionManager.setHttpClientBuilder(httpClientBuilder);
+
 			try {
 				repo.init();
 			} finally {
