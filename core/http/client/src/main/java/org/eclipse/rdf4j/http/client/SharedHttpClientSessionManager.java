@@ -34,7 +34,6 @@ import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.client.utils.HttpClientUtils;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
-import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.protocol.HttpContext;
 import org.eclipse.rdf4j.http.client.util.HttpClientBuilders;
 import org.slf4j.Logger;
@@ -46,35 +45,56 @@ import org.slf4j.LoggerFactory;
  * @author James Leigh
  */
 public class SharedHttpClientSessionManager implements HttpClientSessionManager, HttpClientDependent {
+
+	private static final AtomicLong threadCount = new AtomicLong();
+
 	/**
 	 * Configurable system property {@code org.eclipse.rdf4j.client.executors.corePoolSize} for specifying the
 	 * background executor core thread pool size.
 	 */
 	public static final String CORE_POOL_SIZE_PROPERTY = "org.eclipse.rdf4j.client.executors.corePoolSize";
 
-	private static final AtomicLong threadCount = new AtomicLong();
+	/**
+	 * Configurable system property {@code org.eclipse.rdf4j.client.http.maxConnPerRoute} for specifying the maximum
+	 * number of connections per route (per host). Default is 25.
+	 *
+	 * <p>
+	 * This property determines the maximum number of concurrent connections to a single host (route). Adjusting this
+	 * value can improve performance when communicating with a server that supports multiple concurrent connections.
+	 * </p>
+	 */
+	public static final String MAX_CONN_PER_ROUTE_PROPERTY = "org.eclipse.rdf4j.client.http.maxConnPerRoute";
 
-	// System property constants for regular timeouts
+	/**
+	 * Configurable system property {@code org.eclipse.rdf4j.client.http.maxConnTotal} for specifying the maximum total
+	 * number of connections. Default is 50.
+	 *
+	 * <p>
+	 * This property sets the maximum total number of concurrent connections that can be open at the same time.
+	 * Increasing this value allows more simultaneous connections to different hosts, which can improve throughput in
+	 * multi-threaded environments.
+	 * </p>
+	 */
+	public static final String MAX_CONN_TOTAL_PROPERTY = "org.eclipse.rdf4j.client.http.maxConnTotal";
 
 	/**
 	 * Configurable system property {@code org.eclipse.rdf4j.client.http.connectionTimeout} for specifying the HTTP
-	 * connection timeout in milliseconds for general use. Default is 1 hour.
+	 * connection timeout in milliseconds for general use. Default is 30 seconds.
 	 *
 	 * <p>
 	 * The connection timeout determines the maximum time the client will wait to establish a TCP connection to the
-	 * server. A default of 1 hour is set to allow for potential network delays without causing unnecessary timeouts.
+	 * server. A default of 30 seconds is set to allow for potential network delays without causing unnecessary
+	 * timeouts.
 	 * </p>
 	 */
 	public static final String CONNECTION_TIMEOUT_PROPERTY = "org.eclipse.rdf4j.client.http.connectionTimeout";
 
 	/**
 	 * Configurable system property {@code org.eclipse.rdf4j.client.http.connectionRequestTimeout} for specifying the
-	 * HTTP connection request timeout in milliseconds for general use. Default is 10 days.
+	 * HTTP connection request timeout in milliseconds for general use. Default is 1 hour.
 	 *
 	 * <p>
-	 * The connection request timeout defines how long the client will wait for a connection from the connection pool. A
-	 * longer timeout is acceptable here since operations like large file uploads may need to wait for an available
-	 * connection.
+	 * The connection request timeout defines how long the client will wait for a connection from the connection pool.
 	 * </p>
 	 */
 	public static final String CONNECTION_REQUEST_TIMEOUT_PROPERTY = "org.eclipse.rdf4j.client.http.connectionRequestTimeout";
@@ -94,7 +114,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 
 	/**
 	 * Configurable system property {@code org.eclipse.rdf4j.client.sparql.http.connectionTimeout} for specifying the
-	 * HTTP connection timeout in milliseconds when used in SPARQL SERVICE calls. Default is 10 minutes.
+	 * HTTP connection timeout in milliseconds when used in SPARQL SERVICE calls. Default is 5 seconds.
 	 *
 	 * <p>
 	 * A shorter connection timeout is set for SPARQL SERVICE calls to quickly detect unresponsive endpoints in
@@ -105,7 +125,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 
 	/**
 	 * Configurable system property {@code org.eclipse.rdf4j.client.sparql.http.connectionRequestTimeout} for specifying
-	 * the HTTP connection request timeout in milliseconds when used in SPARQL SERVICE calls. Default is 6 hours.
+	 * the HTTP connection request timeout in milliseconds when used in SPARQL SERVICE calls. Default is 10 minutes.
 	 *
 	 * <p>
 	 * This timeout controls how long the client waits for a connection from the pool when making SPARQL SERVICE calls.
@@ -117,7 +137,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 
 	/**
 	 * Configurable system property {@code org.eclipse.rdf4j.client.sparql.http.socketTimeout} for specifying the HTTP
-	 * socket timeout in milliseconds when used in SPARQL SERVICE calls. Default is 6 hours.
+	 * socket timeout in milliseconds when used in SPARQL SERVICE calls. Default is 1 hour.
 	 *
 	 * <p>
 	 * The socket timeout for SPARQL SERVICE calls is set to a shorter duration to detect unresponsive servers during
@@ -126,84 +146,155 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	 */
 	public static final String SPARQL_SOCKET_TIMEOUT_PROPERTY = "org.eclipse.rdf4j.client.sparql.http.socketTimeout";
 
-	// Default timeout values for general use
+	// Defaults
 
 	/**
-	 * Default HTTP connection timeout in milliseconds for general use. Set to 1 hour.
+	 * Default core pool size for the executor service. Set to 5.
+	 *
+	 * <p>
+	 * This value determines the number of threads to keep in the pool, even if they are idle. Adjusting this value can
+	 * help manage resource utilization in high-load scenarios.
+	 * </p>
 	 */
-	public static final int DEFAULT_CONNECTION_TIMEOUT = 60 * 60 * 1000; // 1 hour
+	public static final int DEFAULT_CORE_POOL_SIZE = 5;
 
 	/**
-	 * Default HTTP connection request timeout in milliseconds for general use. Set to 10 days.
+	 * Default maximum number of connections per route (per host). Set to 25.
+	 *
+	 * <p>
+	 * This value limits the number of concurrent connections to a single host. Increasing it can improve performance
+	 * when communicating with a server that can handle multiple connections.
+	 * </p>
 	 */
-	public static final int DEFAULT_CONNECTION_REQUEST_TIMEOUT = 10 * 24 * 60 * 60 * 1000; // 10 days
+	public static final int DEFAULT_MAX_CONN_PER_ROUTE = 25;
+
+	/**
+	 * Default maximum total number of connections. Set to 50.
+	 *
+	 * <p>
+	 * This value limits the total number of concurrent connections that can be open at the same time. Increasing it
+	 * allows for more simultaneous connections to different hosts.
+	 * </p>
+	 */
+	public static final int DEFAULT_MAX_CONN_TOTAL = 50;
+
+	/**
+	 * Default HTTP connection timeout in milliseconds for general use. Set to 30 seconds.
+	 *
+	 * <p>
+	 * The connection timeout determines the maximum time the client will wait to establish a TCP connection to the
+	 * server.
+	 * </p>
+	 */
+	public static final int DEFAULT_CONNECTION_TIMEOUT = 30 * 1000; // 30 seconds
+
+	/**
+	 * Default HTTP connection request timeout in milliseconds for general use. Set to 1 hour.
+	 *
+	 * <p>
+	 * The connection request timeout defines how long the client will wait for a connection from the connection pool.
+	 * </p>
+	 */
+	public static final int DEFAULT_CONNECTION_REQUEST_TIMEOUT = 60 * 60 * 1000; // 1 hour
 
 	/**
 	 * Default HTTP socket timeout in milliseconds for general use. Set to 10 days.
+	 *
+	 * <p>
+	 * The socket timeout controls the maximum period of inactivity between data packets during data transfer. A longer
+	 * timeout is appropriate for large data transfers.
+	 * </p>
 	 */
 	public static final int DEFAULT_SOCKET_TIMEOUT = 10 * 24 * 60 * 60 * 1000; // 10 days
 
 	// Default timeout values for SPARQL SERVICE calls
 
 	/**
-	 * Default HTTP connection timeout in milliseconds for SPARQL SERVICE calls. Set to 10 minutes.
+	 * Default HTTP connection timeout in milliseconds for SPARQL SERVICE calls. Set to 5 seconds.
+	 *
+	 * <p>
+	 * A shorter connection timeout is set for SPARQL SERVICE calls to quickly detect unresponsive endpoints in
+	 * federated queries.
+	 * </p>
 	 */
-	public static final int DEFAULT_SPARQL_CONNECTION_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+	public static final int DEFAULT_SPARQL_CONNECTION_TIMEOUT = 5 * 1000; // 5 seconds
 
 	/**
-	 * Default HTTP connection request timeout in milliseconds for SPARQL SERVICE calls. Set to 6 hours.
+	 * Default HTTP connection request timeout in milliseconds for SPARQL SERVICE calls. Set to 10 minutes.
+	 *
+	 * <p>
+	 * This timeout controls how long the client waits for a connection from the pool when making SPARQL SERVICE calls.
+	 * </p>
 	 */
-	public static final int DEFAULT_SPARQL_CONNECTION_REQUEST_TIMEOUT = 6 * 60 * 60 * 1000; // 6 hours
+	public static final int DEFAULT_SPARQL_CONNECTION_REQUEST_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 
 	/**
-	 * Default HTTP socket timeout in milliseconds for SPARQL SERVICE calls. Set to 6 hours.
+	 * Default HTTP socket timeout in milliseconds for SPARQL SERVICE calls. Set to 1 hour.
+	 *
+	 * <p>
+	 * The socket timeout for SPARQL SERVICE calls is set to a shorter duration to detect unresponsive servers during
+	 * data transfer.
+	 * </p>
 	 */
-	public static final int DEFAULT_SPARQL_SOCKET_TIMEOUT = 6 * 60 * 60 * 1000; // 6 hours
+	public static final int DEFAULT_SPARQL_SOCKET_TIMEOUT = 60 * 60 * 1000; // 1 hour
 
-	// Timeout values as read from system properties or defaults
+	// Values as read from system properties or defaults
+
+	/**
+	 * Core pool size for the executor service, as read from system properties or defaults.
+	 */
+	public static final int CORE_POOL_SIZE = Integer
+			.parseInt(System.getProperty(CORE_POOL_SIZE_PROPERTY, String.valueOf(DEFAULT_CORE_POOL_SIZE)));
+
+	/**
+	 * Maximum number of connections per route (per host), as read from system properties or defaults.
+	 */
+	public static final int MAX_CONN_PER_ROUTE = Integer
+			.parseInt(System.getProperty(MAX_CONN_PER_ROUTE_PROPERTY, String.valueOf(DEFAULT_MAX_CONN_PER_ROUTE)));
+
+	/**
+	 * Maximum total number of connections, as read from system properties or defaults.
+	 */
+	public static final int MAX_CONN_TOTAL = Integer
+			.parseInt(System.getProperty(MAX_CONN_TOTAL_PROPERTY, String.valueOf(DEFAULT_MAX_CONN_TOTAL)));
 
 	/**
 	 * HTTP connection timeout in milliseconds for general use.
 	 */
 	public static final int CONNECTION_TIMEOUT = Integer.parseInt(
-			System.getProperty(CONNECTION_TIMEOUT_PROPERTY, String.valueOf(DEFAULT_CONNECTION_TIMEOUT))
-	);
+			System.getProperty(CONNECTION_TIMEOUT_PROPERTY, String.valueOf(DEFAULT_CONNECTION_TIMEOUT)));
 
 	/**
 	 * HTTP connection request timeout in milliseconds for general use.
 	 */
 	public static final int CONNECTION_REQUEST_TIMEOUT = Integer.parseInt(
-			System.getProperty(CONNECTION_REQUEST_TIMEOUT_PROPERTY, String.valueOf(DEFAULT_CONNECTION_REQUEST_TIMEOUT))
-	);
+			System.getProperty(CONNECTION_REQUEST_TIMEOUT_PROPERTY,
+					String.valueOf(DEFAULT_CONNECTION_REQUEST_TIMEOUT)));
 
 	/**
 	 * HTTP socket timeout in milliseconds for general use.
 	 */
-	public static final int SOCKET_TIMEOUT = Integer.parseInt(
-			System.getProperty(SOCKET_TIMEOUT_PROPERTY, String.valueOf(DEFAULT_SOCKET_TIMEOUT))
-	);
+	public static final int SOCKET_TIMEOUT = Integer
+			.parseInt(System.getProperty(SOCKET_TIMEOUT_PROPERTY, String.valueOf(DEFAULT_SOCKET_TIMEOUT)));
 
 	/**
 	 * HTTP connection timeout in milliseconds for SPARQL SERVICE calls.
 	 */
 	public static final int SPARQL_CONNECTION_TIMEOUT = Integer.parseInt(
-			System.getProperty(SPARQL_CONNECTION_TIMEOUT_PROPERTY, String.valueOf(DEFAULT_SPARQL_CONNECTION_TIMEOUT))
-	);
+			System.getProperty(SPARQL_CONNECTION_TIMEOUT_PROPERTY, String.valueOf(DEFAULT_SPARQL_CONNECTION_TIMEOUT)));
 
 	/**
 	 * HTTP connection request timeout in milliseconds for SPARQL SERVICE calls.
 	 */
 	public static final int SPARQL_CONNECTION_REQUEST_TIMEOUT = Integer.parseInt(
 			System.getProperty(SPARQL_CONNECTION_REQUEST_TIMEOUT_PROPERTY,
-					String.valueOf(DEFAULT_SPARQL_CONNECTION_REQUEST_TIMEOUT))
-	);
+					String.valueOf(DEFAULT_SPARQL_CONNECTION_REQUEST_TIMEOUT)));
 
 	/**
 	 * HTTP socket timeout in milliseconds for SPARQL SERVICE calls.
 	 */
 	public static final int SPARQL_SOCKET_TIMEOUT = Integer.parseInt(
-			System.getProperty(SPARQL_SOCKET_TIMEOUT_PROPERTY, String.valueOf(DEFAULT_SPARQL_SOCKET_TIMEOUT))
-	);
+			System.getProperty(SPARQL_SOCKET_TIMEOUT_PROPERTY, String.valueOf(DEFAULT_SPARQL_SOCKET_TIMEOUT)));
 
 	// Variables for the currently used timeouts
 
@@ -214,12 +305,12 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	private final Logger logger = LoggerFactory.getLogger(SharedHttpClientSessionManager.class);
 
 	/**
-	 * independent life cycle
+	 * Independent life cycle
 	 */
 	private volatile HttpClient httpClient;
 
 	/**
-	 * dependent life cycle
+	 * Dependent life cycle
 	 */
 	private volatile CloseableHttpClient dependentClient;
 
@@ -275,7 +366,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 
 		@Override
 		public boolean retryRequest(HttpResponse response, int executionCount, HttpContext context) {
-			// only retry on `408`
+			// only retry on HTTP 408 (Request Timeout)
 			if (response.getStatusLine().getStatusCode() != HttpURLConnection.HTTP_CLIENT_TIMEOUT) {
 				return false;
 			}
@@ -287,11 +378,10 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 				return false;
 			}
 
-			// worst case, the connection pool is filled to the max and all of them idled out on the server already
-			// we then need to clean up the pool and finally retry with a fresh connection. Hence, we need at most
-			// pooledConnections+1 retries.
-			// the pool size setting used here is taken from `HttpClientBuilder` when `useSystemProperties()` is used
-			int pooledConnections = Integer.parseInt(System.getProperty("http.maxConnections", "5"));
+			// Worst case, the connection pool is filled to the max and all of them idled out on the server already
+			// We then need to clean up the pool and retry with a fresh connection. Hence, we need at most
+			// pooledConnections + 1 retries.
+			int pooledConnections = MAX_CONN_PER_ROUTE;
 			if (executionCount > (pooledConnections + 1)) {
 				return false;
 			}
@@ -332,7 +422,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 			return thread;
 		});
 
-		Integer corePoolSize = Integer.getInteger(CORE_POOL_SIZE_PROPERTY, 1);
+		Integer corePoolSize = CORE_POOL_SIZE;
 		((ThreadPoolExecutor) threadPoolExecutor).setCorePoolSize(corePoolSize);
 		this.executor = threadPoolExecutor;
 	}
@@ -486,6 +576,8 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 				.evictIdleConnections(30, TimeUnit.MINUTES)
 				.setRetryHandler(retryHandlerStale)
 				.setServiceUnavailableRetryStrategy(serviceUnavailableRetryHandler)
+				.setMaxConnPerRoute(MAX_CONN_PER_ROUTE)
+				.setMaxConnTotal(MAX_CONN_TOTAL)
 				.useSystemProperties()
 				.setDefaultRequestConfig(requestConfig)
 				.build();
