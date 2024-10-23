@@ -543,7 +543,7 @@ public class ValueStore extends SimpleValueFactory {
 	private NativeValue data2value(int id, byte[] data) throws IOException {
 		if (data.length == 0) {
 			if (softFailOnCorruptData) {
-				return new CorruptValue(revision, id);
+				return new CorruptValue(revision, id, data);
 			}
 			throw new SailException("Empty data array for value with id " + id);
 		}
@@ -556,7 +556,7 @@ public class ValueStore extends SimpleValueFactory {
 			return data2literal(id, data);
 		default:
 			if (softFailOnCorruptData) {
-				return new CorruptValue(revision, id);
+				return new CorruptValue(revision, id, data);
 			}
 			throw new SailException("Invalid type " + data[0] + " for value with id " + id);
 		}
