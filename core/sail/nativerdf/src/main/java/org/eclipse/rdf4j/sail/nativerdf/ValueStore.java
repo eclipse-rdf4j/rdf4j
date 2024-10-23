@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
+import org.eclipse.rdf4j.sail.nativerdf.model.CorruptValue;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeBNode;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeIRI;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeLiteral;
@@ -123,6 +124,11 @@ public class ValueStore extends SimpleValueFactory {
 	 */
 	private final ConcurrentCache<String, Integer> namespaceIDCache;
 
+	/**
+	 * Do not throw an exception in case a value cannot be loaded, e.g. due to a corrupt value store.
+	 */
+	private final boolean softFailOnCorruptData;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -146,6 +152,15 @@ public class ValueStore extends SimpleValueFactory {
 		namespaceIDCache = new ConcurrentCache<>(namespaceIDCacheSize);
 
 		setNewRevision();
+
+		/*
+		 * Soft failure when a ValueStore is corrupt (i.e., one or more NativeValues cannot be read properly) can be
+		 * enabled using the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptData (boolean). The
+		 * default behavior is that ValueStore will fail hard with a SailException, whereas softFaileOnCorruptData set
+		 * to true will make ValueStore return instances of CorruptValue if NativeValue cannot be read.
+		 */
+		this.softFailOnCorruptData = "true"
+				.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptData"));
 	}
 
 	/*---------*
@@ -526,6 +541,12 @@ public class ValueStore extends SimpleValueFactory {
 	}
 
 	private NativeValue data2value(int id, byte[] data) throws IOException {
+		if (data.length == 0) {
+			if (softFailOnCorruptData) {
+				return new CorruptValue(revision, id);
+			}
+			throw new SailException("Empty data array for value with id " + id);
+		}
 		switch (data[0]) {
 		case URI_VALUE:
 			return data2uri(id, data);
@@ -534,7 +555,10 @@ public class ValueStore extends SimpleValueFactory {
 		case LITERAL_VALUE:
 			return data2literal(id, data);
 		default:
-			throw new IllegalArgumentException("Invalid type " + data[0] + " for value with id " + id);
+			if (softFailOnCorruptData) {
+				return new CorruptValue(revision, id);
+			}
+			throw new SailException("Invalid type " + data[0] + " for value with id " + id);
 		}
 	}
 
