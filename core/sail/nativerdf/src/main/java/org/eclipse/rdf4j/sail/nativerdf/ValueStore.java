@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
 import org.eclipse.rdf4j.sail.nativerdf.model.CorruptIRI;
 import org.eclipse.rdf4j.sail.nativerdf.model.CorruptIRIOrBNode;
 import org.eclipse.rdf4j.sail.nativerdf.model.CorruptLiteral;
+import org.eclipse.rdf4j.sail.nativerdf.model.CorruptUnknownValue;
 import org.eclipse.rdf4j.sail.nativerdf.model.CorruptValue;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeBNode;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeIRI;
@@ -225,10 +226,12 @@ public class ValueStore extends SimpleValueFactory {
 
 		NativeValue resultValue = getValue(id);
 
-		if (!(resultValue instanceof Resource)) {
+		if (resultValue != null && !(resultValue instanceof Resource)) {
 			if (SOFT_FAIL_ON_CORRUPT_DATA && resultValue instanceof CorruptValue) {
 				return (T) new CorruptIRIOrBNode(revision, id, ((CorruptValue) resultValue).getData());
 			}
+			logger.warn(
+					"Possible corrupt data consider setting the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptData to true");
 		}
 
 		return (T) resultValue;
@@ -245,10 +248,15 @@ public class ValueStore extends SimpleValueFactory {
 
 		NativeValue resultValue = getValue(id);
 
-		if (!(resultValue instanceof Resource)) {
+		if (resultValue != null && !(resultValue instanceof IRI)) {
 			if (SOFT_FAIL_ON_CORRUPT_DATA && resultValue instanceof CorruptValue) {
-				return (T) new CorruptIRIOrBNode(revision, id, ((CorruptValue) resultValue).getData());
+				if (resultValue instanceof CorruptIRI) {
+					return (T) resultValue;
+				}
+				return (T) new CorruptIRI(revision, id, null, ((CorruptValue) resultValue).getData());
 			}
+			logger.warn(
+					"Possible corrupt data consider setting the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptData to true");
 		}
 
 		return (T) resultValue;
@@ -584,9 +592,10 @@ public class ValueStore extends SimpleValueFactory {
 		if (data.length == 0) {
 			if (SOFT_FAIL_ON_CORRUPT_DATA) {
 				logger.error("Soft fail on corrupt data: Empty data array for value with id {}", id);
-				return new CorruptValue(revision, id, data);
+				return new CorruptUnknownValue(revision, id, data);
 			}
-			throw new SailException("Empty data array for value with id " + id);
+			throw new SailException("Empty data array for value with id " + id
+					+ " consider setting the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptData to true");
 		}
 		switch (data[0]) {
 		case URI_VALUE:
@@ -598,24 +607,29 @@ public class ValueStore extends SimpleValueFactory {
 		default:
 			if (SOFT_FAIL_ON_CORRUPT_DATA) {
 				logger.error("Soft fail on corrupt data: Invalid type {} for value with id {}", data[0], id);
-				return new CorruptValue(revision, id, data);
+				return new CorruptUnknownValue(revision, id, data);
 			}
-			throw new SailException("Invalid type " + data[0] + " for value with id " + id);
+			throw new SailException("Invalid type " + data[0] + " for value with id " + id
+					+ "  consider setting the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptData to true");
 		}
 	}
 
 	private <T extends IRI & NativeValue> T data2uri(int id, byte[] data) throws IOException {
+		String namespace = null;
+
 		try {
 			int nsID = ByteArrayUtil.getInt(data, 1);
-			String namespace = getNamespace(nsID);
+			namespace = getNamespace(nsID);
 
 			String localName = new String(data, 5, data.length - 5, StandardCharsets.UTF_8);
 
 			return (T) new NativeIRI(revision, namespace, localName, id);
 		} catch (Throwable e) {
 			if (SOFT_FAIL_ON_CORRUPT_DATA && (e instanceof Exception || e instanceof AssertionError)) {
-				return (T) new CorruptIRI(revision, id, data);
+				return (T) new CorruptIRI(revision, id, namespace, data);
 			}
+			logger.error(
+					"Possible corrupt data consider setting the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptData to true");
 			throw e;
 		}
 

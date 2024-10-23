@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
@@ -32,6 +33,9 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.RDFWriter;
+import org.eclipse.rdf4j.rio.Rio;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -204,6 +208,10 @@ public class NativeSailStoreCorruptionTest {
 		ValueStore.SOFT_FAIL_ON_CORRUPT_DATA = true;
 
 		try (RepositoryConnection conn = repo.getConnection()) {
+			StringWriter stringWriter = new StringWriter();
+			RDFWriter writer = Rio.createWriter(RDFFormat.NQUADS, stringWriter);
+			conn.export(writer);
+			logger.debug(stringWriter.toString());
 			try (RepositoryResult<Statement> statements = conn.getStatements(null, null, null, false)) {
 				while (statements.hasNext()) {
 					Statement next = statements.next();

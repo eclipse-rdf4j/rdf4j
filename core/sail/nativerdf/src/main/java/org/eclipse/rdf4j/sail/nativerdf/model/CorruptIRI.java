@@ -11,8 +11,13 @@
 
 package org.eclipse.rdf4j.sail.nativerdf.model;
 
+import java.nio.charset.StandardCharsets;
+
+import org.apache.commons.codec.binary.Hex;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStoreRevision;
+
+import com.google.common.net.UrlEscapers;
 
 /**
  * CorruptIRI is used when a NativeValue cannot be read from the ValueStore and if soft failure is enabled (see
@@ -23,22 +28,48 @@ import org.eclipse.rdf4j.sail.nativerdf.ValueStoreRevision;
 public class CorruptIRI extends CorruptValue implements IRI {
 
 	private static final long serialVersionUID = -6995615243794525852L;
+	private final String namespace;
 
-	public CorruptIRI(ValueStoreRevision revision, int internalID, byte[] data) {
+	public CorruptIRI(ValueStoreRevision revision, int internalID, String namespace, byte[] data) {
 		super(revision, internalID, data);
+		this.namespace = namespace;
+	}
+
+	@Override
+	public String toString() {
+		return stringValue();
 	}
 
 	public String stringValue() {
+		try {
+			return getNamespace() + ":" + getLocalName();
+		} catch (Throwable ignored) {
+		}
+
 		return "CorruptIRI_with_ID_" + getInternalID();
 	}
 
 	@Override
 	public String getNamespace() {
-		return "CORRUPT";
+		if (namespace != null && !namespace.isEmpty()) {
+			return namespace;
+		}
+		return "urn:CorruptIRI:";
 	}
 
 	@Override
 	public String getLocalName() {
+		byte[] data = getData();
+		if (data != null && data.length < 1024) {
+			try {
+				String localName = new String(data, 5, data.length - 5, StandardCharsets.UTF_8);
+				return "CORRUPT_" + UrlEscapers.urlPathSegmentEscaper().escape(localName);
+			} catch (Throwable ignored) {
+			}
+
+			return "CORRUPT_" + Hex.encodeHexString(data);
+		}
+
 		return "CORRUPT";
 	}
 

@@ -21,27 +21,21 @@ import javax.xml.datatype.XMLGregorianCalendar;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
-import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStoreRevision;
 
 /**
- * CorruptLiteral is used when a NativeValue cannot be read from the ValueStore and if soft failure is enabled (see
- * ValueStore#softFailOnCorruptData).
+ * CorruptUnknownValue is used when a NativeValue cannot be read from the ValueStore and if soft failure is enabled (see
+ * ValueStore#softFailOnCorruptData). Since a type is needed
  *
  * @author Håvard M. Ottestad
  */
-public class CorruptLiteral extends CorruptValue implements Literal {
+public class CorruptUnknownValue extends CorruptValue implements Literal {
 
-	private static final long serialVersionUID = -2510885288827542623L;
+	private static final long serialVersionUID = -6650510290226676279L;
 
-	private static final IRI CORRUPT = Values.iri("urn:corrupt");
-
-	public CorruptLiteral(ValueStoreRevision revision, int internalID, byte[] data) {
+	public CorruptUnknownValue(ValueStoreRevision revision, int internalID, byte[] data) {
 		super(revision, internalID, data);
-	}
-
-	public String stringValue() {
-		return "CorruptLiteral_with_ID_" + getInternalID();
 	}
 
 	@Override
@@ -64,7 +58,7 @@ public class CorruptLiteral extends CorruptValue implements Literal {
 
 	@Override
 	public IRI getDatatype() {
-		return CORRUPT;
+		return XSD.STRING;
 	}
 
 	@Override
@@ -128,8 +122,8 @@ public class CorruptLiteral extends CorruptValue implements Literal {
 			return true;
 		}
 
-		if (o instanceof CorruptLiteral && getInternalID() != NativeValue.UNKNOWN_ID) {
-			CorruptLiteral otherCorruptValue = (CorruptLiteral) o;
+		if (o instanceof CorruptUnknownValue && getInternalID() != NativeValue.UNKNOWN_ID) {
+			CorruptUnknownValue otherCorruptValue = (CorruptUnknownValue) o;
 
 			if (otherCorruptValue.getInternalID() != NativeValue.UNKNOWN_ID
 					&& getValueStoreRevision().equals(otherCorruptValue.getValueStoreRevision())) {

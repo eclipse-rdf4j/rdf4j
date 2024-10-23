@@ -11,9 +11,14 @@
 
 package org.eclipse.rdf4j.sail.nativerdf.model;
 
+import java.nio.charset.StandardCharsets;
+
+import org.apache.commons.codec.binary.Hex;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStoreRevision;
+
+import com.google.common.net.UrlEscapers;
 
 /**
  * CorruptIRIOrBNode is used when a NativeValue cannot be read from the ValueStore and if soft failure is enabled (see
@@ -29,17 +34,38 @@ public class CorruptIRIOrBNode extends CorruptValue implements IRI, BNode {
 		super(revision, internalID, data);
 	}
 
+	@Override
+	public String toString() {
+		return stringValue();
+	}
+
 	public String stringValue() {
-		return "CorruptIRI_with_ID_" + getInternalID();
+		try {
+			return getNamespace() + ":" + getLocalName();
+		} catch (Throwable ignored) {
+		}
+
+		return "CorruptIRIOrBNode_with_ID_" + getInternalID();
 	}
 
 	@Override
 	public String getNamespace() {
-		return "CORRUPT";
+		return "urn:CorruptIRIOrBNode:";
 	}
 
 	@Override
 	public String getLocalName() {
+		byte[] data = getData();
+		if (data != null && data.length < 1024) {
+			try {
+				String localName = new String(data, 5, data.length - 5, StandardCharsets.UTF_8);
+				return "CORRUPT_" + UrlEscapers.urlPathSegmentEscaper().escape(localName);
+			} catch (Throwable ignored) {
+			}
+
+			return "CORRUPT_" + Hex.encodeHexString(data);
+		}
+
 		return "CORRUPT";
 	}
 
