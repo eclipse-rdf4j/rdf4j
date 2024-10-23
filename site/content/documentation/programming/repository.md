@@ -98,6 +98,9 @@ import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 Repository repo = new SailRepository(new NativeStore());
 ```
 
+In the unlikely event of corruption the system property `org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptData` can be set to `true` to
+allow the NativeStore to output CorruptValue/CorruptIRI/CorruptIRIOrBNode/CorruptLiteral objects.
+
 ### Elasticsearch RDF Repository
 
 {{< tag " New in RDF4J 3.1" >}}

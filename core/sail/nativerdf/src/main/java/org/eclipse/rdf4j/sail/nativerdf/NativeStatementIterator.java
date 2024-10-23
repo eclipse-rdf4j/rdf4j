@@ -61,10 +61,10 @@ class NativeStatementIterator extends LookAheadIteration<Statement> {
 			}
 
 			int subjID = ByteArrayUtil.getInt(nextValue, TripleStore.SUBJ_IDX);
-			Resource subj = (Resource) valueStore.getValue(subjID);
+			Resource subj = valueStore.getResource(subjID);
 
 			int predID = ByteArrayUtil.getInt(nextValue, TripleStore.PRED_IDX);
-			IRI pred = (IRI) valueStore.getValue(predID);
+			IRI pred = valueStore.getIRI(predID);
 
 			int objID = ByteArrayUtil.getInt(nextValue, TripleStore.OBJ_IDX);
 			Value obj = valueStore.getValue(objID);
@@ -72,7 +72,7 @@ class NativeStatementIterator extends LookAheadIteration<Statement> {
 			Resource context = null;
 			int contextID = ByteArrayUtil.getInt(nextValue, TripleStore.CONTEXT_IDX);
 			if (contextID != 0) {
-				context = (Resource) valueStore.getValue(contextID);
+				context = valueStore.getResource(contextID);
 			}
 
 			return valueStore.createStatement(subj, pred, obj, context);
