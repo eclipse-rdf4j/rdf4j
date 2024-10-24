@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
+import static org.eclipse.rdf4j.sail.nativerdf.NativeStore.SOFT_FAIL_ON_CORRUPT_DATA;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
@@ -127,12 +129,6 @@ public class ValueStore extends SimpleValueFactory {
 	 * namespace.
 	 */
 	private final ConcurrentCache<String, Integer> namespaceIDCache;
-
-	/**
-	 * Do not throw an exception in case a value cannot be loaded, e.g. due to a corrupt value store.
-	 */
-	public static boolean SOFT_FAIL_ON_CORRUPT_DATA = "true"
-			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptData"));;
 
 	/*--------------*
 	 * Constructors *

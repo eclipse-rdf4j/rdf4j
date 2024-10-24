@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
+import static org.eclipse.rdf4j.sail.nativerdf.NativeStore.SOFT_FAIL_ON_CORRUPT_DATA;
+
 import java.io.IOException;
 
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
@@ -20,6 +22,9 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
+import org.eclipse.rdf4j.sail.nativerdf.model.CorruptIRI;
+import org.eclipse.rdf4j.sail.nativerdf.model.CorruptIRIOrBNode;
+import org.eclipse.rdf4j.sail.nativerdf.model.CorruptUnknownValue;
 
 /**
  * A statement iterator that wraps a RecordIterator containing statement records and translates these records to
@@ -73,6 +78,17 @@ class NativeStatementIterator extends LookAheadIteration<Statement> {
 			int contextID = ByteArrayUtil.getInt(nextValue, TripleStore.CONTEXT_IDX);
 			if (contextID != 0) {
 				context = valueStore.getResource(contextID);
+			}
+			if (SOFT_FAIL_ON_CORRUPT_DATA) {
+				if (subj == null) {
+					subj = new CorruptIRIOrBNode(valueStore.getRevision(), subjID, null);
+				}
+				if (pred == null) {
+					pred = new CorruptIRI(valueStore.getRevision(), predID, null, null);
+				}
+				if (obj == null) {
+					obj = new CorruptUnknownValue(valueStore.getRevision(), objID, null);
+				}
 			}
 
 			return valueStore.createStatement(subj, pred, obj, context);

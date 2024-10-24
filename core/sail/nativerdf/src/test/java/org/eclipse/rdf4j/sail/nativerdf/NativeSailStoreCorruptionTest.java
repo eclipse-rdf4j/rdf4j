@@ -251,7 +251,7 @@ public class NativeSailStoreCorruptionTest {
 	private List<Statement> getStatements() {
 		List<Statement> list = new ArrayList<>();
 
-		ValueStore.SOFT_FAIL_ON_CORRUPT_DATA = true;
+		NativeStore.SOFT_FAIL_ON_CORRUPT_DATA = true;
 
 		try (RepositoryConnection conn = repo.getConnection()) {
 			StringWriter stringWriter = new StringWriter();
@@ -267,15 +267,12 @@ public class NativeSailStoreCorruptionTest {
 			}
 			return list;
 		} finally {
-			ValueStore.SOFT_FAIL_ON_CORRUPT_DATA = false;
+			NativeStore.SOFT_FAIL_ON_CORRUPT_DATA = false;
 		}
 	}
 
 	@AfterEach
 	public void after() throws IOException {
 		repo.shutDown();
-		restoreFile(dataDir, "values.hash");
-		restoreFile(dataDir, "values.id");
-		restoreFile(dataDir, "values.dat");
 	}
 }
