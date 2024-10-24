@@ -90,6 +90,15 @@ public class NativeSailStoreCorruptionTest {
 		backupFile(dataDir, "values.dat");
 		backupFile(dataDir, "values.id");
 		backupFile(dataDir, "values.hash");
+		backupFile(dataDir, "namespaces.dat");
+		backupFile(dataDir, "contexts.dat");
+		backupFile(dataDir, "triples-posc.alloc");
+		backupFile(dataDir, "triples-posc.dat");
+		backupFile(dataDir, "triples-spoc.alloc");
+		backupFile(dataDir, "triples-spoc.dat");
+
+		NativeStore.SOFT_FAIL_ON_CORRUPT_DATA = true;
+
 	}
 
 	public static void overwriteByteInFile(File valuesFile, long pos, int newVal) throws IOException {
@@ -234,12 +243,13 @@ public class NativeSailStoreCorruptionTest {
 	@Test
 	public void testCorruptValuesHashFile() throws IOException {
 		repo.shutDown();
-		File valuesHashFile = new File(dataDir, "values.hash");
-		long fileSize = valuesHashFile.length();
+		String file = "values.hash";
+		File nativeStoreFile = new File(dataDir, file);
+		long fileSize = nativeStoreFile.length();
 
 		for (long i = 4; i < fileSize; i++) {
-			restoreFile(dataDir, "values.hash");
-			overwriteByteInFile(valuesHashFile, i, 0x0);
+			restoreFile(dataDir, file);
+			overwriteByteInFile(nativeStoreFile, i, 0x0);
 			repo.init();
 			List<Statement> list = getStatements();
 			assertEquals(6, list.size(), "Failed at byte position " + i);
@@ -247,11 +257,121 @@ public class NativeSailStoreCorruptionTest {
 		}
 	}
 
+	@Test
+	public void testCorruptValuesNamespacesFile() throws IOException {
+		repo.shutDown();
+		String file = "namespaces.dat";
+		File nativeStoreFile = new File(dataDir, file);
+		long fileSize = nativeStoreFile.length();
+
+		for (long i = 4; i < fileSize; i++) {
+			restoreFile(dataDir, file);
+			overwriteByteInFile(nativeStoreFile, i, 0x0);
+			repo.init();
+			List<Statement> list = getStatements();
+			assertEquals(6, list.size(), "Failed at byte position " + i);
+			repo.shutDown();
+		}
+	}
+
+	@Test
+	public void testCorruptValuesContextsFile() throws IOException {
+		repo.shutDown();
+		String file = "contexts.dat";
+		File nativeStoreFile = new File(dataDir, file);
+		long fileSize = nativeStoreFile.length();
+
+		for (long i = 4; i < fileSize; i++) {
+			restoreFile(dataDir, file);
+			overwriteByteInFile(nativeStoreFile, i, 0x0);
+			repo.init();
+			List<Statement> list = getStatements();
+			assertEquals(6, list.size(), "Failed at byte position " + i);
+			repo.shutDown();
+		}
+	}
+
+	@Test
+	public void testCorruptValuesPoscAllocFile() throws IOException {
+		repo.shutDown();
+		String file = "triples-posc.alloc";
+		File nativeStoreFile = new File(dataDir, file);
+		long fileSize = nativeStoreFile.length();
+
+		for (long i = 4; i < fileSize; i++) {
+			restoreFile(dataDir, file);
+			overwriteByteInFile(nativeStoreFile, i, 0x0);
+			repo.init();
+			List<Statement> list = getStatements();
+			assertEquals(6, list.size(), "Failed at byte position " + i);
+			repo.shutDown();
+		}
+	}
+
+	@Test
+	public void testCorruptValuesPoscDataFile() throws IOException {
+		repo.shutDown();
+		String file = "triples-posc.dat";
+		File nativeStoreFile = new File(dataDir, file);
+		long fileSize = nativeStoreFile.length();
+
+		for (long i = 4; i < fileSize; i++) {
+			NativeStore.SOFT_FAIL_ON_CORRUPT_DATA = true;
+			restoreFile(dataDir, file);
+			overwriteByteInFile(nativeStoreFile, i, 0x0);
+			repo.init();
+			List<Statement> list = getStatements();
+			assertEquals(6, list.size(), "Failed at byte position " + i);
+			repo.shutDown();
+		}
+	}
+
+	@Test
+	public void testCorruptValuesSpocAllocFile() throws IOException {
+		repo.shutDown();
+		String file = "triples-spoc.alloc";
+		File nativeStoreFile = new File(dataDir, file);
+		long fileSize = nativeStoreFile.length();
+
+		for (long i = 4; i < fileSize; i++) {
+			restoreFile(dataDir, file);
+			overwriteByteInFile(nativeStoreFile, i, 0x0);
+			repo.init();
+			List<Statement> list = getStatements();
+			assertEquals(6, list.size(), "Failed at byte position " + i);
+			repo.shutDown();
+		}
+	}
+
+	@Test
+	public void testCorruptValuesSpocDataFile() throws IOException {
+		repo.shutDown();
+		String file = "triples-spoc.dat";
+		File nativeStoreFile = new File(dataDir, file);
+		long fileSize = nativeStoreFile.length();
+
+		for (long i = 4; i < fileSize; i++) {
+			restoreFile(dataDir, file);
+			overwriteByteInFile(nativeStoreFile, i, 0x0);
+			repo.init();
+			try {
+				List<Statement> list = getStatements();
+				assertEquals(6, list.size(), "Failed at byte position " + i);
+			} catch (Throwable ignored) {
+				repo.shutDown();
+				nativeStoreFile.delete();
+				repo.init();
+				List<Statement> list = getStatements();
+				assertEquals(6, list.size(), "Failed at byte position " + i);
+			}
+
+			repo.shutDown();
+		}
+	}
+
 	@NotNull
 	private List<Statement> getStatements() {
 		List<Statement> list = new ArrayList<>();
-
-		NativeStore.SOFT_FAIL_ON_CORRUPT_DATA = true;
 
 		try (RepositoryConnection conn = repo.getConnection()) {
 			StringWriter stringWriter = new StringWriter();
@@ -266,13 +386,12 @@ public class NativeSailStoreCorruptionTest {
 				}
 			}
 			return list;
-		} finally {
-			NativeStore.SOFT_FAIL_ON_CORRUPT_DATA = false;
 		}
 	}
 
 	@AfterEach
 	public void after() throws IOException {
+		NativeStore.SOFT_FAIL_ON_CORRUPT_DATA = false;
 		repo.shutDown();
 	}
 }

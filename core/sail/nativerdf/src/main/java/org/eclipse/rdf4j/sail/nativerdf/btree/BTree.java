@@ -292,6 +292,12 @@ public class BTree implements Closeable {
 			this.valueSize = buf.getInt();
 			this.rootNodeID = buf.getInt();
 
+			if (rootNodeID == 0) {
+				if (nioFile.size() >= 1024) {
+					throw new IllegalStateException("Root node ID is 0 but file is not empty");
+				}
+			}
+
 			if (Arrays.equals(MAGIC_NUMBER, magicNumber)) {
 				if (version > FILE_FORMAT_VERSION) {
 					throw new IOException("Unable to read BTree file " + file + "; it uses a newer file format");
@@ -1116,5 +1122,12 @@ public class BTree implements Closeable {
 		out.println("#nodes          = " + nodeCount);
 		out.println("#values         = " + valueCount);
 		out.println("---end of BTree file---");
+	}
+
+	@Override
+	public String toString() {
+		return "BTree{" +
+				"file=" + getFile() +
+				'}';
 	}
 }

@@ -25,12 +25,16 @@ import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
 import org.eclipse.rdf4j.sail.nativerdf.model.CorruptIRI;
 import org.eclipse.rdf4j.sail.nativerdf.model.CorruptIRIOrBNode;
 import org.eclipse.rdf4j.sail.nativerdf.model.CorruptUnknownValue;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A statement iterator that wraps a RecordIterator containing statement records and translates these records to
  * {@link Statement} objects.
  */
 class NativeStatementIterator extends LookAheadIteration<Statement> {
+
+	private static final Logger logger = LoggerFactory.getLogger(NativeStatementIterator.class);
 
 	/*-----------*
 	 * Variables *
@@ -59,7 +63,13 @@ class NativeStatementIterator extends LookAheadIteration<Statement> {
 	@Override
 	public Statement getNextElement() throws SailException {
 		try {
-			byte[] nextValue = btreeIter.next();
+			byte[] nextValue;
+			try {
+				nextValue = btreeIter.next();
+			} catch (AssertionError | Exception e) {
+				logger.error("Error while reading next value from btree iterator for {}", btreeIter.toString(), e);
+				throw e;
+			}
 
 			if (nextValue == null) {
 				return null;
