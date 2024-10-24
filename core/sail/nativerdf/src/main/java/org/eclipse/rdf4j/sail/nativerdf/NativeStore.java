@@ -66,11 +66,13 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	/**
 	 * Do not throw an exception when corrupt data is detected. Instead, try to return as much data as possible.
 	 *
-	 * Variable can be set through the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptData.
+	 * Variable can be set through the system property
+	 * org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes.
 	 */
 	@InternalUseOnly
-	public static boolean SOFT_FAIL_ON_CORRUPT_DATA = "true"
-			.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptData"));;
+	public static boolean SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES = "true"
+			.equalsIgnoreCase(
+					System.getProperty("org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes"));;
 
 	private static final Cleaner REMOVE_STORES_USED_FOR_MEMORY_OVERFLOW = Cleaner.create();
 

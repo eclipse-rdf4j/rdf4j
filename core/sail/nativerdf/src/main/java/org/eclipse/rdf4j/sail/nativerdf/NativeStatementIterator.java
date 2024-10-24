@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import static org.eclipse.rdf4j.sail.nativerdf.NativeStore.SOFT_FAIL_ON_CORRUPT_DATA;
+import static org.eclipse.rdf4j.sail.nativerdf.NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES;
 
 import java.io.IOException;
 
@@ -89,7 +89,7 @@ class NativeStatementIterator extends LookAheadIteration<Statement> {
 			if (contextID != 0) {
 				context = valueStore.getResource(contextID);
 			}
-			if (SOFT_FAIL_ON_CORRUPT_DATA) {
+			if (SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
 				if (subj == null) {
 					subj = new CorruptIRIOrBNode(valueStore.getRevision(), subjID, null);
 				}

@@ -98,7 +98,7 @@ import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 Repository repo = new SailRepository(new NativeStore());
 ```
 
-In the unlikely event of corruption the system property `org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptData` can be set to `true` to
+In the unlikely event of corruption the system property `org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes` can be set to `true` to
 allow the NativeStore to output CorruptValue/CorruptIRI/CorruptIRIOrBNode/CorruptLiteral objects. Take a backup of all data before setting 
 this property as it allows the NativeStore to delete corrupt indexes in an attempt to recreate them. Consider this feature experimental and use with caution.
 

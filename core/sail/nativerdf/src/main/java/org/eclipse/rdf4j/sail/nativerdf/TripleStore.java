@@ -295,12 +295,12 @@ class TripleStore implements Closeable {
 			try {
 				indexes.add(new TripleIndex(fieldSeq, false));
 			} catch (Exception e) {
-				if (NativeStore.SOFT_FAIL_ON_CORRUPT_DATA) {
+				if (NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
 					invalidIndexes.add(fieldSeq);
 					logger.warn("Ignoring index because it failed to initialize index '{}'", fieldSeq, e);
 				} else {
 					logger.error(
-							"Failed to initialize index '{}', consider setting org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptData to true.",
+							"Failed to initialize index '{}', consider setting org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes to true.",
 							fieldSeq, e);
 					throw e;
 				}
@@ -309,7 +309,7 @@ class TripleStore implements Closeable {
 
 		}
 
-		if (NativeStore.SOFT_FAIL_ON_CORRUPT_DATA) {
+		if (NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
 			indexSpecs.removeAll(invalidIndexes);
 		}
 
@@ -319,12 +319,12 @@ class TripleStore implements Closeable {
 		checkIfIndexesAreEmptyOrNot(nonEmptyIndexes, emptyIndexes);
 
 		if (!emptyIndexes.isEmpty() && !nonEmptyIndexes.isEmpty()) {
-			if (NativeStore.SOFT_FAIL_ON_CORRUPT_DATA) {
+			if (NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
 				indexes.removeAll(emptyIndexes);
 			} else {
 				for (TripleIndex index : emptyIndexes) {
 					throw new IOException("Index '" + new String(index.getFieldSeq())
-							+ "' is unexpectedly empty while other indexes are not. Consider setting the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptData to true. Index file: "
+							+ "' is unexpectedly empty while other indexes are not. Consider setting the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes to true. Index file: "
 							+ index.getBTree().getFile().getAbsolutePath());
 				}
 			}

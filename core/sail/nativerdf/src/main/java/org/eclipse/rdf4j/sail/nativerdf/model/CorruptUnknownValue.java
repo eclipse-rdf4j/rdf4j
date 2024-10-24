@@ -22,11 +22,13 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStoreRevision;
 
 /**
- * CorruptUnknownValue is used when a NativeValue cannot be read from the ValueStore and if soft failure is enabled (see
- * ValueStore#softFailOnCorruptData). Since a type is needed
+ * CorruptUnknownValue is used when a NativeValue cannot be read from the ValueStore and if soft failure is enabled
+ *
+ * @see NativeStore#SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES .
  *
  * @author Håvard M. Ottestad
  */

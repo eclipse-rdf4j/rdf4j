@@ -11,15 +11,17 @@
 
 package org.eclipse.rdf4j.sail.nativerdf.model;
 
+import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStoreRevision;
 
 /**
- * CorruptValue is used when a NativeValue cannot be read from the ValueStore and if soft failure is enabled (see
- * ValueStore#softFailOnCorruptData).
- * <p>
- * There is no method isCorruptValue() as it would exist for a "regular" implementation of NativeValue. Since
- * CorruptValue is only to be used in exceptional situations, the recommended way of checking for it is using
- * "instanceof".
+ * CorruptValue is used when a NativeValue cannot be read from the ValueStore and if soft failure is enabled
+ *
+ * @see NativeStore#SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES .
+ *      <p>
+ *      There is no method isCorruptValue() as it would exist for a "regular" implementation of NativeValue. Since
+ *      CorruptValue is only to be used in exceptional situations, the recommended way of checking for it is using
+ *      "instanceof".
  *
  * @author Hannes Ebner
  */

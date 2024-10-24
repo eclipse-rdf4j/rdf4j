@@ -16,13 +16,15 @@ import java.nio.charset.StandardCharsets;
 import org.apache.commons.codec.binary.Hex;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStoreRevision;
 
 import com.google.common.net.UrlEscapers;
 
 /**
- * CorruptIRIOrBNode is used when a NativeValue cannot be read from the ValueStore and if soft failure is enabled (see
- * ValueStore#softFailOnCorruptData).
+ * CorruptIRIOrBNode is used when a NativeValue cannot be read from the ValueStore and if soft failure is enabled
+ *
+ * @see NativeStore#SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES .
  *
  * @author Håvard M. Ottestad
  */

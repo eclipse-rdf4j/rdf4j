@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf.datastore;
 
-import static org.eclipse.rdf4j.sail.nativerdf.NativeStore.SOFT_FAIL_ON_CORRUPT_DATA;
+import static org.eclipse.rdf4j.sail.nativerdf.NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES;
 
 import java.io.Closeable;
 import java.io.File;
@@ -205,7 +205,7 @@ public class DataFile implements Closeable {
 
 		// If the data length is larger than 750MB, we are likely reading the wrong data. Probably data corruption.
 		if (dataLength > 128 * 1024 * 1024) {
-			if (SOFT_FAIL_ON_CORRUPT_DATA) {
+			if (SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
 				logger.error(
 						"Data length is {}MB which is larger than 750MB. This is likely data corruption. Truncating length to 32 MB.",
 						dataLength / ((1024 * 1024)));
@@ -244,7 +244,7 @@ public class DataFile implements Closeable {
 		} catch (OutOfMemoryError e) {
 			if (dataLength > 128 * 1024 * 1024) {
 				logger.error(
-						"Trying to read large amounts of data may be a sign of data corruption. Consider setting the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptData to true");
+						"Trying to read large amounts of data may be a sign of data corruption. Consider setting the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes to true");
 			}
 			throw e;
 		}

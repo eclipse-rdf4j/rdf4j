@@ -97,7 +97,7 @@ public class NativeSailStoreCorruptionTest {
 		backupFile(dataDir, "triples-spoc.alloc");
 		backupFile(dataDir, "triples-spoc.dat");
 
-		NativeStore.SOFT_FAIL_ON_CORRUPT_DATA = true;
+		NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES = true;
 
 	}
 
@@ -316,7 +316,7 @@ public class NativeSailStoreCorruptionTest {
 		long fileSize = nativeStoreFile.length();
 
 		for (long i = 4; i < fileSize; i++) {
-			NativeStore.SOFT_FAIL_ON_CORRUPT_DATA = true;
+			NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES = true;
 			restoreFile(dataDir, file);
 			overwriteByteInFile(nativeStoreFile, i, 0x0);
 			repo.init();
@@ -391,7 +391,7 @@ public class NativeSailStoreCorruptionTest {
 
 	@AfterEach
 	public void after() throws IOException {
-		NativeStore.SOFT_FAIL_ON_CORRUPT_DATA = false;
+		NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES = false;
 		repo.shutDown();
 	}
 }
