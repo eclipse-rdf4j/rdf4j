@@ -287,9 +287,71 @@ class TripleStore implements Closeable {
 	}
 
 	private void initIndexes(Set<String> indexSpecs) throws IOException {
+
+		HashSet<String> invalidIndexes = new HashSet<>();
+
 		for (String fieldSeq : indexSpecs) {
 			logger.trace("Initializing index '{}'...", fieldSeq);
-			indexes.add(new TripleIndex(fieldSeq));
+			try {
+				indexes.add(new TripleIndex(fieldSeq, false));
+			} catch (Exception e) {
+				if (NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
+					invalidIndexes.add(fieldSeq);
+					logger.warn("Ignoring index because it failed to initialize index '{}'", fieldSeq, e);
+				} else {
+					logger.error(
+							"Failed to initialize index '{}', consider setting org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes to true.",
+							fieldSeq, e);
+					throw e;
+				}
+
+			}
+
+		}
+
+		if (NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
+			indexSpecs.removeAll(invalidIndexes);
+		}
+
+		List<TripleIndex> emptyIndexes = new ArrayList<>();
+		List<TripleIndex> nonEmptyIndexes = new ArrayList<>();
+
+		checkIfIndexesAreEmptyOrNot(nonEmptyIndexes, emptyIndexes);
+
+		if (!emptyIndexes.isEmpty() && !nonEmptyIndexes.isEmpty()) {
+			if (NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
+				indexes.removeAll(emptyIndexes);
+			} else {
+				for (TripleIndex index : emptyIndexes) {
+					throw new IOException("Index '" + new String(index.getFieldSeq())
+							+ "' is unexpectedly empty while other indexes are not. Consider setting the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes to true. Index file: "
+							+ index.getBTree().getFile().getAbsolutePath());
+				}
+			}
+		}
+
+	}
+
+	private void checkIfIndexesAreEmptyOrNot(List<TripleIndex> nonEmptyIndexes, List<TripleIndex> emptyIndexes)
+			throws IOException {
+		for (TripleIndex index : indexes) {
+			try (RecordIterator recordIterator = index.getBTree().iterateAll()) {
+				try {
+					byte[] next = recordIterator.next();
+					if (next != null) {
+						next = recordIterator.next();
+						if (next != null) {
+							nonEmptyIndexes.add(index);
+						} else {
+							emptyIndexes.add(index);
+						}
+					} else {
+						emptyIndexes.add(index);
+					}
+				} catch (Throwable ignored) {
+					emptyIndexes.add(index);
+				}
+			}
 		}
 	}
 
@@ -355,7 +417,7 @@ class TripleStore implements Closeable {
 			for (String fieldSeq : addedIndexSpecs) {
 				logger.debug("Initializing new index '{}'...", fieldSeq);
 
-				TripleIndex addedIndex = new TripleIndex(fieldSeq);
+				TripleIndex addedIndex = new TripleIndex(fieldSeq, true);
 				BTree addedBTree = null;
 				RecordIterator sourceIter = null;
 				try {
@@ -1122,7 +1184,17 @@ class TripleStore implements Closeable {
 
 		private final BTree btree;
 
-		public TripleIndex(String fieldSeq) throws IOException {
+		public TripleIndex(String fieldSeq, boolean deleteExistingIndexFile) throws IOException {
+			if (deleteExistingIndexFile) {
+				File indexFile = new File(dir, getFilenamePrefix(fieldSeq) + ".dat");
+				if (indexFile.exists()) {
+					indexFile.delete();
+				}
+				File alloxFile = new File(dir, getFilenamePrefix(fieldSeq) + ".alloc");
+				if (alloxFile.exists()) {
+					alloxFile.delete();
+				}
+			}
 			tripleComparator = new TripleComparator(fieldSeq);
 			btree = new BTree(dir, getFilenamePrefix(fieldSeq), 2048, RECORD_LENGTH, tripleComparator, forceSync);
 		}

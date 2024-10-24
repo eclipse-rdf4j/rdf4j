@@ -422,4 +422,11 @@ class RangeIterator implements RecordIterator, NodeListener {
 
 		return deregister;
 	}
+
+	@Override
+	public String toString() {
+		return "RangeIterator{" +
+				"tree=" + tree +
+				'}';
+	}
 }
