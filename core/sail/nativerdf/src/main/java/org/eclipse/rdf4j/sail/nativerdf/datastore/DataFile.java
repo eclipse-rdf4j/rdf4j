@@ -18,6 +18,9 @@ import java.util.Arrays;
 import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.io.NioFile;
+import org.eclipse.rdf4j.sail.nativerdf.ValueStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Class supplying access to a data file. A data file stores data sequentially. Each entry starts with the entry's
@@ -26,6 +29,8 @@ import org.eclipse.rdf4j.common.io.NioFile;
  * @author Arjohn Kampman
  */
 public class DataFile implements Closeable {
+
+	private static final Logger logger = LoggerFactory.getLogger(DataFile.class);
 
 	/*-----------*
 	 * Constants *
@@ -196,6 +201,16 @@ public class DataFile implements Closeable {
 				(data[1] << 16) & 0x00ff0000 |
 				(data[2] << 8) & 0x0000ff00 |
 				(data[3]) & 0x000000ff;
+
+		// If the data length is larger than 750MB, we are likely reading the wrong data. Probably data corruption.
+		if (dataLength > 750 * 1024 * 1024) {
+			if (ValueStore.SOFT_FAIL_ON_CORRUPT_DATA) {
+				logger.error(
+						"Data length is {}MB which is larger than 750MB. This is likely data corruption. Truncating length to 32 MB.",
+						dataLength / ((1024 * 1024)));
+				dataLength = 32 * 1024 * 1024;
+			}
+		}
 
 		// We have either managed to read enough data and can return the required subset of the data, or we have read
 		// too little so we need to execute another read to get the correct data.

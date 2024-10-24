@@ -88,6 +88,8 @@ public class NativeSailStoreCorruptionTest {
 			conn.add(S5, CTX_2);
 		}
 		backupFile(dataDir, "values.dat");
+		backupFile(dataDir, "values.id");
+		backupFile(dataDir, "values.hash");
 	}
 
 	public static void overwriteByteInFile(File valuesFile, long pos, int newVal) throws IOException {
@@ -116,7 +118,7 @@ public class NativeSailStoreCorruptionTest {
 		File backupFile = new File(dataDir, s + ".bak");
 
 		if (!valuesFile.exists()) {
-			throw new IOException("values.dat does not exist and cannot be backed up.");
+			throw new IOException(s + " does not exist and cannot be backed up.");
 		}
 
 		// Copy values.dat to values.dat.bak
@@ -128,7 +130,7 @@ public class NativeSailStoreCorruptionTest {
 		File backupFile = new File(dataDir, s + ".bak");
 
 		if (!backupFile.exists()) {
-			throw new IOException("Backup file values.dat.bak does not exist.");
+			throw new IOException("Backup file " + s + ".bak does not exist.");
 		}
 
 		// Copy values.dat.bak back to values.dat
@@ -196,9 +198,53 @@ public class NativeSailStoreCorruptionTest {
 
 			List<Statement> list = getStatements();
 			assertEquals(6, list.size());
-
 		}
+	}
 
+	@Test
+	public void testCorruptLastByteOfValuesDatFile() throws IOException {
+		repo.shutDown();
+		File valuesFile = new File(dataDir, "values.dat");
+		long fileSize = valuesFile.length();
+
+		overwriteByteInFile(valuesFile, fileSize - 1, 0x0);
+
+		repo.init();
+
+		List<Statement> list = getStatements();
+		assertEquals(6, list.size());
+	}
+
+	@Test
+	public void testCorruptValuesIdFile() throws IOException {
+		repo.shutDown();
+		File valuesIdFile = new File(dataDir, "values.id");
+		long fileSize = valuesIdFile.length();
+
+		for (long i = 4; i < fileSize; i++) {
+			restoreFile(dataDir, "values.id");
+			overwriteByteInFile(valuesIdFile, i, 0x0);
+			repo.init();
+			List<Statement> list = getStatements();
+			assertEquals(6, list.size(), "Failed at byte position " + i);
+			repo.shutDown();
+		}
+	}
+
+	@Test
+	public void testCorruptValuesHashFile() throws IOException {
+		repo.shutDown();
+		File valuesHashFile = new File(dataDir, "values.hash");
+		long fileSize = valuesHashFile.length();
+
+		for (long i = 4; i < fileSize; i++) {
+			restoreFile(dataDir, "values.hash");
+			overwriteByteInFile(valuesHashFile, i, 0x0);
+			repo.init();
+			List<Statement> list = getStatements();
+			assertEquals(6, list.size(), "Failed at byte position " + i);
+			repo.shutDown();
+		}
 	}
 
 	@NotNull
@@ -226,7 +272,10 @@ public class NativeSailStoreCorruptionTest {
 	}
 
 	@AfterEach
-	public void after() {
+	public void after() throws IOException {
 		repo.shutDown();
+		restoreFile(dataDir, "values.hash");
+		restoreFile(dataDir, "values.id");
+		restoreFile(dataDir, "values.dat");
 	}
 }
