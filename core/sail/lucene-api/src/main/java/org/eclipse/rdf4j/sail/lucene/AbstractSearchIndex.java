@@ -66,6 +66,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	}
 
 	protected int maxDocs;
+	protected int maxQueryDocs;
 
 	protected Set<String> wktFields = Collections.singleton(SearchFields.getPropertyField(GEO.AS_WKT));
 
@@ -77,6 +78,8 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	public void initialize(Properties parameters) throws Exception {
 		String maxDocParam = parameters.getProperty(LuceneSail.MAX_DOCUMENTS_KEY);
 		maxDocs = (maxDocParam != null) ? Integer.parseInt(maxDocParam) : -1;
+		String maxQueryDocParam = parameters.getProperty(LuceneSail.MAX_QUERY_DOCUMENTS_KEY);
+		maxQueryDocs = (maxQueryDocParam != null) ? Integer.parseInt(maxQueryDocParam) : maxDocs;
 
 		String wktFieldParam = parameters.getProperty(LuceneSail.WKT_FIELDS);
 		if (wktFieldParam != null) {

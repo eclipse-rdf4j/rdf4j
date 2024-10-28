@@ -297,6 +297,13 @@ public class LuceneSail extends NotifyingSailWrapper {
 	public static final String MAX_DOCUMENTS_KEY = "maxDocuments";
 
 	/**
+	 * Set the key "maxQueryDocuments=&lt;n&gt;" as sail parameter to limit the maximum number of documents the user can
+	 * query at a time to return from a search query. The default is the value of the {@link #MAX_DOCUMENTS_KEY}
+	 * parameter.
+	 */
+	public static final String MAX_QUERY_DOCUMENTS_KEY = "maxQueryDocuments";
+
+	/**
 	 * Set this key to configure which fields contain WKT and should be spatially indexed. The value should be a
 	 * space-separated list of URIs. Default is http://www.opengis.net/ont/geosparql#asWKT.
 	 */

@@ -317,11 +317,20 @@ public class SolrIndex extends AbstractSearchIndex {
 			q.addField(SearchFields.URI_FIELD_NAME);
 		}
 		q.addField("score");
+		Integer numDocs = spec.getNumDocs();
 		try {
 			if (subject != null) {
-				response = search(subject, q);
+				if (numDocs != null) {
+					response = search(subject, q, numDocs);
+				} else {
+					response = search(subject, q);
+				}
 			} else {
-				response = search(q);
+				if (numDocs != null) {
+					response = search(q, numDocs);
+				} else {
+					response = search(q);
+				}
 			}
 		} catch (SolrServerException e) {
 			throw new IOException(e);
@@ -346,10 +355,25 @@ public class SolrIndex extends AbstractSearchIndex {
 	 * @throws IOException
 	 */
 	public QueryResponse search(Resource resource, SolrQuery query) throws SolrServerException, IOException {
+		return search(resource, query, -1);
+	}
+
+	/**
+	 * Evaluates the given query only for the given resource.
+	 *
+	 * @param resource
+	 * @param query
+	 * @param numDocs
+	 * @return response
+	 * @throws SolrServerException
+	 * @throws IOException
+	 */
+	public QueryResponse search(Resource resource, SolrQuery query, int numDocs)
+			throws SolrServerException, IOException {
 		// rewrite the query
 		String idQuery = termQuery(SearchFields.URI_FIELD_NAME, SearchFields.getResourceID(resource));
 		query.setQuery(query.getQuery() + " AND " + idQuery);
-		return search(query);
+		return search(query, numDocs);
 	}
 
 	@Override
@@ -553,8 +577,27 @@ public class SolrIndex extends AbstractSearchIndex {
 	 * @throws IOException
 	 */
 	public QueryResponse search(SolrQuery query) throws SolrServerException, IOException {
+		return search(query, -1);
+	}
+
+	/**
+	 * Evaluates the given query and returns the results as a TopDocs instance.
+	 *
+	 * @param query
+	 * @param numDocs
+	 * @return query response
+	 * @throws SolrServerException
+	 * @throws IOException
+	 */
+	public QueryResponse search(SolrQuery query, int numDocs) throws SolrServerException, IOException {
 		int nDocs;
-		if (maxDocs > 0) {
+		if (numDocs > 0) {
+			if (maxQueryDocs > 0 && maxQueryDocs < numDocs) {
+				nDocs = maxQueryDocs;
+			} else {
+				nDocs = numDocs;
+			}
+		} else if (maxDocs > 0) {
 			nDocs = maxDocs;
 		} else {
 			long docCount = client.query(query.setRows(0)).getResults().getNumFound();

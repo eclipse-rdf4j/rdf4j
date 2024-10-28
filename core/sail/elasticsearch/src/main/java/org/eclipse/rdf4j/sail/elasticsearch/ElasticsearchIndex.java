@@ -577,10 +577,19 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		}
 
 		SearchHits hits;
+		Integer numDocs = spec.getNumDocs();
 		if (subject != null) {
-			hits = search(subject, request, qb);
+			if (numDocs != null) {
+				hits = search(subject, request, qb, numDocs);
+			} else {
+				hits = search(subject, request, qb);
+			}
 		} else {
-			hits = search(request, qb);
+			if (numDocs != null) {
+				hits = search(request, qb, numDocs);
+			} else {
+				hits = search(request, qb);
+			}
 		}
 		return Iterables.transform(hits, new Function<>() {
 
@@ -600,11 +609,24 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	 * @return search hits
 	 */
 	public SearchHits search(Resource resource, SearchRequestBuilder request, QueryBuilder query) {
+		return search(resource, request, query, -1);
+	}
+
+	/**
+	 * Evaluates the given query only for the given resource.
+	 *
+	 * @param resource
+	 * @param request
+	 * @param query
+	 * @param numDocs
+	 * @return search hits
+	 */
+	public SearchHits search(Resource resource, SearchRequestBuilder request, QueryBuilder query, int numDocs) {
 		// rewrite the query
 		QueryBuilder idQuery = QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME,
 				SearchFields.getResourceID(resource));
 		QueryBuilder combinedQuery = QueryBuilders.boolQuery().must(idQuery).must(query);
-		return search(request, combinedQuery);
+		return search(request, combinedQuery, numDocs);
 	}
 
 	@Override
@@ -712,9 +734,22 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	 * Evaluates the given query and returns the results as a TopDocs instance.
 	 */
 	public SearchHits search(SearchRequestBuilder request, QueryBuilder query) {
+		return search(request, query, -1);
+	}
+
+	/**
+	 * Evaluates the given query and returns the results as a TopDocs instance.
+	 */
+	public SearchHits search(SearchRequestBuilder request, QueryBuilder query, int numDocs) {
 		String[] types = getTypes();
 		int nDocs;
-		if (maxDocs > 0) {
+		if (numDocs > 0) {
+			if (maxQueryDocs > 0 && maxQueryDocs < numDocs) {
+				nDocs = maxQueryDocs;
+			} else {
+				nDocs = numDocs;
+			}
+		} else if (maxDocs > 0) {
 			nDocs = maxDocs;
 		} else {
 			long docCount = client.prepareSearch(indexName)

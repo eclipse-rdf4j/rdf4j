@@ -16,7 +16,9 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -67,21 +69,43 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 
 	private final StatementPattern idPattern;
 
+	private final StatementPattern numDocsPattern;
+
 	private final Resource subject;
 
 	private final String matchesVarName;
 
 	private final String scoreVarName;
 
+	private final Integer numDocs;
+
 	public QuerySpec(StatementPattern matchesPattern, Collection<QueryParam> queryPatterns,
 			StatementPattern scorePattern, StatementPattern typePattern,
 			StatementPattern idPattern, Resource subject) {
+		this(matchesPattern, queryPatterns, scorePattern, typePattern, idPattern, null, subject);
+	}
+
+	public QuerySpec(StatementPattern matchesPattern, Collection<QueryParam> queryPatterns,
+			StatementPattern scorePattern, StatementPattern typePattern,
+			StatementPattern idPattern, StatementPattern numDocsPattern, Resource subject) {
 		this.matchesPattern = matchesPattern;
 		this.queryPatterns = queryPatterns;
 		this.scorePattern = scorePattern;
 		this.typePattern = typePattern;
 		this.idPattern = idPattern;
+		this.numDocsPattern = numDocsPattern;
 		this.subject = subject;
+		if (numDocsPattern != null) {
+			Value val = numDocsPattern.getObjectVar().getValue();
+			if (val != null && val.isLiteral()) {
+				this.numDocs = ((Literal) val).intValue();
+			} else {
+				throw new IllegalArgumentException("numDocs should be constant literal value");
+			}
+		} else {
+			this.numDocs = null;
+		}
+
 		if (matchesPattern != null) {
 			this.matchesVarName = matchesPattern.getSubjectVar().getName();
 		} else {
@@ -101,9 +125,11 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 		this.matchesPattern = null;
 		this.scorePattern = null;
 		this.typePattern = null;
+		this.numDocsPattern = null;
 		this.queryPatterns = Set.of();
 		this.idPattern = null;
 		this.subject = subject;
+		this.numDocs = null;
 	}
 
 	@Override
@@ -121,6 +147,7 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 		replace(getScorePattern(), replacement);
 		replace(getTypePattern(), replacement);
 		replace(getIdPattern(), replacement);
+		replace(getNumDocsPattern(), replacement);
 
 		final QueryModelNode placeholder = new SingletonSet();
 
@@ -154,6 +181,10 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 		return scorePattern;
 	}
 
+	public StatementPattern getNumDocsPattern() {
+		return numDocsPattern;
+	}
+
 	/**
 	 * The variable name associated with the query score
 	 *
@@ -161,6 +192,10 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 	 */
 	public String getScoreVariableName() {
 		return scoreVarName;
+	}
+
+	public Integer getNumDocs() {
+		return numDocs;
 	}
 
 	public StatementPattern getTypePattern() {

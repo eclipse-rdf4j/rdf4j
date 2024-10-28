@@ -751,11 +751,21 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			highlighter = null;
 		}
 
+		Integer numDocs = spec.getNumDocs();
+
 		TopDocs docs;
 		if (subject != null) {
-			docs = search(subject, q);
+			if (numDocs != null) {
+				docs = search(subject, q, numDocs);
+			} else {
+				docs = search(subject, q);
+			}
 		} else {
-			docs = search(q);
+			if (numDocs != null) {
+				docs = search(q, numDocs);
+			} else {
+				docs = search(q);
+			}
 		}
 		return Iterables.transform(Arrays.asList(docs.scoreDocs),
 				(ScoreDoc doc) -> new LuceneDocumentScore(doc, highlighter, LuceneIndex.this));
@@ -960,12 +970,25 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * @throws IOException
 	 */
 	public synchronized TopDocs search(Resource resource, Query query) throws IOException {
+		return search(resource, query, -1);
+	}
+
+	/**
+	 * Evaluates the given query only for the given resource.
+	 *
+	 * @param resource
+	 * @param query
+	 * @param numDocs
+	 * @return top documents
+	 * @throws IOException
+	 */
+	public synchronized TopDocs search(Resource resource, Query query, int numDocs) throws IOException {
 		// rewrite the query
 		TermQuery idQuery = new TermQuery(new Term(SearchFields.URI_FIELD_NAME, SearchFields.getResourceID(resource)));
 		BooleanQuery.Builder combinedQuery = new BooleanQuery.Builder();
 		combinedQuery.add(idQuery, Occur.MUST);
 		combinedQuery.add(query, Occur.MUST);
-		return search(combinedQuery.build());
+		return search(combinedQuery.build(), numDocs);
 	}
 
 	/**
@@ -976,8 +999,26 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * @throws IOException
 	 */
 	public synchronized TopDocs search(Query query) throws IOException {
+		return search(query, -1);
+	}
+
+	/**
+	 * Evaluates the given query and returns the results as a TopDocs instance.
+	 *
+	 * @param query
+	 * @param numDocs
+	 * @return top documents
+	 * @throws IOException
+	 */
+	public synchronized TopDocs search(Query query, int numDocs) throws IOException {
 		int nDocs;
-		if (maxDocs > 0) {
+		if (numDocs > 0) {
+			if (maxQueryDocs > 0 && maxQueryDocs < numDocs) {
+				nDocs = maxQueryDocs;
+			} else {
+				nDocs = numDocs;
+			}
+		} else if (maxDocs > 0) {
 			nDocs = maxDocs;
 		} else {
 			nDocs = Math.max(getIndexReader().numDocs(), 1);
