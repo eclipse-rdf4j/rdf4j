@@ -138,8 +138,6 @@ public class JSONLDParser extends AbstractRDFParser {
 						BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES);
 			}
 
-			assert checkSupportedRioSettings(getParserConfig());
-
 			boolean secureMode = getParserConfig().get(JSONLDSettings.SECURE_MODE);
 			Set<String> whitelist = getParserConfig().get(JSONLDSettings.WHITELIST);
 			boolean documentLoaderCache = getParserConfig().get(JSONLDSettings.DOCUMENT_LOADER_CACHE);
@@ -271,24 +269,6 @@ public class JSONLDParser extends AbstractRDFParser {
 		} finally {
 			clear();
 		}
-	}
-
-	private boolean checkSupportedRioSettings(RioConfig config) {
-		Map<RioSetting<Object>, Object> settings = config.getSettings();
-
-		for (RioSetting<Object> objectRioSetting : settings.keySet()) {
-			if (objectRioSetting.equals(BasicParserSettings.PROCESS_ENCODED_RDF_STAR))
-				continue;
-			if (objectRioSetting.equals(BasicWriterSettings.ENCODE_RDF_STAR))
-				continue;
-			if (objectRioSetting.equals(BasicWriterSettings.BASE_DIRECTIVE))
-				continue;
-
-			assert getSupportedSettings().contains(objectRioSetting) : "Setting " + objectRioSetting.getKey()
-					+ " is not supported.";
-		}
-
-		return true;
 	}
 
 	/**
