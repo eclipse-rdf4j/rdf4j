@@ -38,12 +38,12 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
+import org.eclipse.rdf4j.rio.RioConfig;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
+import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
-import org.eclipse.rdf4j.rio.helpers.JSONLDMode;
-import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 
 import com.github.jsonldjava.core.JsonLdConsts;
@@ -150,6 +150,8 @@ public class JSONLDWriter extends AbstractRDFWriter implements CharSink {
 			JsonLdOptions opts = new JsonLdOptions();
 			WriterConfig writerConfig = getWriterConfig();
 
+			assert checkSupportedRioSettings(writerConfig);
+
 			if (writerConfig.get(JSONLDSettings.HIERARCHICAL_VIEW)) {
 				throw new UnsupportedOperationException(
 						"Hierarchical view is not supported by this JSON-LD processor. Use org.eclipse.rdf4j.rio.jsonld.legacy.JSONLDWriter instead.");
@@ -252,7 +254,7 @@ public class JSONLDWriter extends AbstractRDFWriter implements CharSink {
 					.useRdfType(writerConfig.get(JSONLDSettings.USE_RDF_TYPE))
 					.build();
 
-			JSONLDMode mode = getWriterConfig().get(JSONLDSettings.JSONLD_MODE);
+			JSONLDMode mode = mapJsonLdMode(getWriterConfig().get(JSONLDSettings.JSONLD_MODE));
 
 			switch (mode) {
 			case EXPAND:
@@ -296,6 +298,34 @@ public class JSONLDWriter extends AbstractRDFWriter implements CharSink {
 		} catch (no.hasmac.jsonld.JsonLdError | IOException e) {
 			throw new RDFHandlerException("Could not render JSONLD", e);
 		}
+	}
+
+	private boolean checkSupportedRioSettings(RioConfig config) {
+		Map<RioSetting<Object>, Object> settings = config.getSettings();
+
+		for (RioSetting<Object> objectRioSetting : settings.keySet()) {
+			if (objectRioSetting.equals(BasicParserSettings.PROCESS_ENCODED_RDF_STAR))
+				continue;
+			if (objectRioSetting.equals(BasicWriterSettings.ENCODE_RDF_STAR))
+				continue;
+			if (objectRioSetting.equals(BasicWriterSettings.CONVERT_RDF_STAR_TO_REIFICATION))
+				continue;
+
+			assert getSupportedSettings().contains(objectRioSetting) : "Setting " + objectRioSetting.getKey()
+					+ " is not supported.";
+		}
+
+		return true;
+	}
+
+	private JSONLDMode mapJsonLdMode(Object jsonldMode) {
+		if (jsonldMode instanceof JSONLDMode) {
+			return (JSONLDMode) jsonldMode;
+		}
+		if (jsonldMode instanceof org.eclipse.rdf4j.rio.helpers.JSONLDMode) {
+			return JSONLDMode.valueOf(jsonldMode.toString());
+		}
+		throw new IllegalArgumentException("Unknown JSONLDMode: " + jsonldMode);
 	}
 
 	private static RdfNQuad toRdfNQuad(Statement statement) {
@@ -398,6 +428,15 @@ public class JSONLDWriter extends AbstractRDFWriter implements CharSink {
 		result.add(JSONLDSettings.USE_NATIVE_TYPES);
 		result.add(JSONLDSettings.PRODUCE_GENERALIZED_RDF);
 		result.add(JSONLDSettings.EXCEPTION_ON_WARNING);
+		result.add(JSONLDSettings.FRAME);
+
+		result.add(org.eclipse.rdf4j.rio.helpers.JSONLDSettings.COMPACT_ARRAYS);
+		result.add(org.eclipse.rdf4j.rio.helpers.JSONLDSettings.JSONLD_MODE);
+		result.add(org.eclipse.rdf4j.rio.helpers.JSONLDSettings.USE_RDF_TYPE);
+		result.add(org.eclipse.rdf4j.rio.helpers.JSONLDSettings.USE_NATIVE_TYPES);
+		result.add(org.eclipse.rdf4j.rio.helpers.JSONLDSettings.PRODUCE_GENERALIZED_RDF);
+		result.add(org.eclipse.rdf4j.rio.helpers.JSONLDSettings.EXCEPTION_ON_WARNING);
+		result.add(org.eclipse.rdf4j.rio.helpers.JSONLDSettings.FRAME);
 
 		return result;
 	}

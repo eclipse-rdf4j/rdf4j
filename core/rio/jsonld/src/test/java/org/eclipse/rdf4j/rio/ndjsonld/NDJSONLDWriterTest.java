@@ -58,7 +58,8 @@ public class NDJSONLDWriterTest extends RDFWriterTest {
 				JSONLDSettings.PRODUCE_GENERALIZED_RDF,
 				JSONLDSettings.USE_RDF_TYPE,
 				JSONLDSettings.USE_NATIVE_TYPES,
-				JSONLDSettings.EXCEPTION_ON_WARNING
+				JSONLDSettings.EXCEPTION_ON_WARNING,
+				JSONLDSettings.FRAME
 		};
 	}
 }
