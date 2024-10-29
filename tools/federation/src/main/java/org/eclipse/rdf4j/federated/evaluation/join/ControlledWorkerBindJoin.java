@@ -45,12 +45,7 @@ public class ControlledWorkerBindJoin extends ControlledWorkerBindJoinBase {
 		final TaskCreator taskCreator;
 		if (expr instanceof StatementTupleExpr) {
 			StatementTupleExpr stmt = (StatementTupleExpr) expr;
-			if (stmt.hasFreeVarsFor(bs)) {
-				taskCreator = new BoundJoinTaskCreator(strategy, stmt);
-			} else {
-				expr = new CheckStatementPattern(stmt, queryInfo);
-				taskCreator = new CheckJoinTaskCreator(strategy, (CheckStatementPattern) expr);
-			}
+			taskCreator = new BoundJoinTaskCreator(strategy, stmt);
 		} else if (expr instanceof FedXService) {
 			taskCreator = new FedXServiceJoinTaskCreator(strategy, (FedXService) expr);
 		} else {
@@ -77,6 +72,7 @@ public class ControlledWorkerBindJoin extends ControlledWorkerBindJoinBase {
 		}
 	}
 
+	@Deprecated(forRemoval = true)
 	protected class CheckJoinTaskCreator implements TaskCreator {
 		protected final FederationEvalStrategy _strategy;
 		protected final CheckStatementPattern _expr;

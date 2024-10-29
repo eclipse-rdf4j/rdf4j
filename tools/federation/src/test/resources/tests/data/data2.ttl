@@ -9,7 +9,7 @@
 :Person_6 rdf:type foaf:Person .
 :Person_6 rdf:type :Person .
 :Person_6 foaf:name "Person6" .
-:Person_1 foaf:age "25"^^xsd:integer .
+:Person_6 foaf:age "25"^^xsd:integer .
 
 :Person_7 rdf:type foaf:Person .
 :Person_7 rdf:type :Person .

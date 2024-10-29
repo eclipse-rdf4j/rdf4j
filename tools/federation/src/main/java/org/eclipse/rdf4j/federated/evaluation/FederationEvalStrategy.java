@@ -935,7 +935,10 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	 * @param bindings
 	 * @return the result iteration
 	 * @throws QueryEvaluationException
+	 * @deprecated with VALUES implementation, control flow goes via
+	 *             {@link #evaluateBoundJoinStatementPattern(StatementTupleExpr, List)}
 	 */
+	@Deprecated(forRemoval = true)
 	public abstract CloseableIteration<BindingSet> evaluateGroupedCheck(
 			CheckStatementPattern stmt, final List<BindingSet> bindings) throws QueryEvaluationException;
 
