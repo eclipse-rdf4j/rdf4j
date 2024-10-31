@@ -20,6 +20,8 @@ public class GEOF {
 
 	public static final String NAMESPACE = "http://www.opengis.net/def/function/geosparql/";
 
+	public static final String PREFIX = "geof";
+
 	public static final IRI DISTANCE;
 
 	public static final IRI BUFFER;
