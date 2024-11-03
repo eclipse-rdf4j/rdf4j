@@ -13,13 +13,19 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -29,22 +35,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
-import org.eclipse.rdf4j.query.algebra.Avg;
-import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.Count;
-import org.eclipse.rdf4j.query.algebra.Group;
-import org.eclipse.rdf4j.query.algebra.GroupConcat;
-import org.eclipse.rdf4j.query.algebra.GroupElem;
-import org.eclipse.rdf4j.query.algebra.MathExpr;
-import org.eclipse.rdf4j.query.algebra.Max;
-import org.eclipse.rdf4j.query.algebra.Min;
-import org.eclipse.rdf4j.query.algebra.Sample;
-import org.eclipse.rdf4j.query.algebra.Sum;
-import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
-import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.*;
+import org.eclipse.rdf4j.query.algebra.evaluation.*;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
@@ -257,6 +249,52 @@ public class GroupIteratorTest {
 		try (GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance(), context)) {
 			assertThatExceptionOfType(QueryEvaluationException.class)
 					.isThrownBy(() -> gi.next().getBinding("customSum").getValue());
+		}
+	}
+
+	@Test
+	public void testGroupIteratorClose() throws QueryEvaluationException, InterruptedException {
+		// Lock which is already locked to block the thread driving the iteration
+		Lock lock = new ReentrantLock();
+		lock.lock();
+		// Latch to rendezvous on with the iterating thread
+		CountDownLatch iterating = new CountDownLatch(1);
+		// Latch to record whether the iteration under GroupIterator was closed
+		CountDownLatch closed = new CountDownLatch(1);
+
+		EvaluationStrategy evaluator = new StrictEvaluationStrategy(null, null) {
+			@Override
+			protected QueryEvaluationStep prepare(EmptySet emptySet, QueryEvaluationContext context)
+					throws QueryEvaluationException {
+				return bindings -> new LookAheadIteration<>() {
+					@Override
+					protected BindingSet getNextElement() {
+						iterating.countDown(); // signal to test thread iteration started
+						lock.lock(); // block iterating thread
+						return null;
+					}
+
+					@Override
+					protected void handleClose() {
+						closed.countDown();
+					}
+				};
+			}
+		};
+
+		Group group = new Group(new EmptySet());
+		GroupIterator groupIterator = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance(), context);
+
+		Thread iteratorThread = new Thread(groupIterator::next, "GroupIteratorTest#testGroupIteratorClose");
+		try {
+			iteratorThread.start();
+			assertThat(iterating.await(5, TimeUnit.SECONDS)).isTrue();
+			groupIterator.close();
+			assertThat(closed.await(5, TimeUnit.SECONDS)).isTrue();
+		} finally {
+			lock.unlock();
+			iteratorThread.join(Duration.ofSeconds(5).toMillis());
+			assertThat(iteratorThread.isAlive()).isFalse();
 		}
 	}
 
