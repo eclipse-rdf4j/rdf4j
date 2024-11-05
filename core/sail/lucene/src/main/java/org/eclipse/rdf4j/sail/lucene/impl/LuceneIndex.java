@@ -25,6 +25,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -751,21 +752,13 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			highlighter = null;
 		}
 
-		Integer numDocs = spec.getNumDocs();
+		int numDocs = Objects.requireNonNullElse(spec.getNumDocs(), -1);
 
 		TopDocs docs;
 		if (subject != null) {
-			if (numDocs != null) {
-				docs = search(subject, q, numDocs);
-			} else {
-				docs = search(subject, q);
-			}
+			docs = search(subject, q, numDocs);
 		} else {
-			if (numDocs != null) {
-				docs = search(q, numDocs);
-			} else {
-				docs = search(q);
-			}
+			docs = search(q, numDocs);
 		}
 		return Iterables.transform(Arrays.asList(docs.scoreDocs),
 				(ScoreDoc doc) -> new LuceneDocumentScore(doc, highlighter, LuceneIndex.this));

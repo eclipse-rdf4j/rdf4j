@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 
@@ -317,20 +318,12 @@ public class SolrIndex extends AbstractSearchIndex {
 			q.addField(SearchFields.URI_FIELD_NAME);
 		}
 		q.addField("score");
-		Integer numDocs = spec.getNumDocs();
+		int numDocs = Objects.requireNonNullElse(spec.getNumDocs(), -1);
 		try {
 			if (subject != null) {
-				if (numDocs != null) {
-					response = search(subject, q, numDocs);
-				} else {
-					response = search(subject, q);
-				}
+				response = search(subject, q, numDocs);
 			} else {
-				if (numDocs != null) {
-					response = search(q, numDocs);
-				} else {
-					response = search(q);
-				}
+				response = search(q, numDocs);
 			}
 		} catch (SolrServerException e) {
 			throw new IOException(e);

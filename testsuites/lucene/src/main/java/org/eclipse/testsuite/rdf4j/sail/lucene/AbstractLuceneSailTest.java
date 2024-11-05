@@ -22,7 +22,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -64,6 +63,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Timeout(value = 10, unit = TimeUnit.MINUTES)
 public abstract class AbstractLuceneSailTest {
@@ -111,7 +112,7 @@ public abstract class AbstractLuceneSailTest {
 
 	protected abstract void configure(LuceneSail sail);
 
-	private void createTestSail(Consumer<LuceneSail> config) throws IOException {
+	private void createTestSail(Consumer<LuceneSail> config) {
 		if (repository != null) {
 			repository.shutDown();
 			repository = null;
@@ -1096,65 +1097,59 @@ public abstract class AbstractLuceneSailTest {
 		assertEquals(0, exceptions.size(), "Exceptions occurred during testMultithreadedAdd, see stacktraces above");
 	}
 
-	@Test
-	public void testMaxNumDocsResult() throws IOException {
-		for (int i = 1; i <= 3; i++) {
-			final int j = i;
-			createTestSail(lc -> lc.setParameter(LuceneSail.MAX_QUERY_DOCUMENTS_KEY, String.valueOf(j)));
-			Repositories.consumeNoTransaction(repository, conn -> {
-				try (TupleQueryResult res = conn.prepareTupleQuery(
-						"SELECT ?Resource {\n"
-								+ "  ?Resource <" + MATCHES + "> [\n "
-								+ "    <" + QUERY + "> \"one\";\n "
-								+ "    <" + NUM_DOCS + "> 3;\n "
-								+ "  ]. } "
-				).evaluate()) {
-					for (int k = 0; k < j; k++) {
-						assertTrue(res.hasNext(), "missing result #" + k);
-						res.next();
-					}
-					if (res.hasNext()) {
-						StringBuilder b = new StringBuilder();
-						int r = 0;
-						do {
-							b.append("\n#").append(r++).append(res.next());
-						} while (res.hasNext());
-						fail("can't have more than " + j + " result(s)" + b);
-					}
+	@ParameterizedTest
+	@ValueSource(ints = { 1, 2, 3 })
+	public void testMaxNumDocsResult(int numDoc) {
+		createTestSail(lc -> lc.setParameter(LuceneSail.MAX_QUERY_DOCUMENTS_KEY, String.valueOf(numDoc)));
+		Repositories.consumeNoTransaction(repository, conn -> {
+			try (TupleQueryResult res = conn.prepareTupleQuery(
+					"SELECT ?Resource {\n"
+							+ "  ?Resource <" + MATCHES + "> [\n "
+							+ "    <" + QUERY + "> \"one\";\n "
+							+ "    <" + NUM_DOCS + "> 3;\n "
+							+ "  ]. } "
+			).evaluate()) {
+				for (int k = 0; k < numDoc; k++) {
+					assertTrue(res.hasNext(), "missing result #" + k);
+					res.next();
 				}
-				;
-			});
-		}
+				if (res.hasNext()) {
+					StringBuilder b = new StringBuilder();
+					int r = 0;
+					do {
+						b.append("\n#").append(r++).append(res.next());
+					} while (res.hasNext());
+					fail("can't have more than " + numDoc + " result(s)" + b);
+				}
+			}
+		});
 	}
 
-	@Test
-	public void testNumDocsResult() {
-		for (int i = 1; i <= 3; i++) {
-			final int j = i;
-			Repositories.consumeNoTransaction(repository, conn -> {
-				try (TupleQueryResult res = conn.prepareTupleQuery(
-						"SELECT ?Resource {\n"
-								+ "  ?Resource <" + MATCHES + "> [\n "
-								+ "    <" + QUERY + "> \"one\";\n "
-								+ "    <" + NUM_DOCS + "> " + j + ";\n "
-								+ "  ]. } "
-				).evaluate()) {
-					for (int k = 0; k < j; k++) {
-						assertTrue(res.hasNext(), "missing result #" + k);
-						res.next();
-					}
-					if (res.hasNext()) {
-						StringBuilder b = new StringBuilder();
-						int r = 0;
-						do {
-							b.append("\n#").append(r++).append(res.next());
-						} while (res.hasNext());
-						fail("can't have more than " + j + " result(s)" + b);
-					}
+	@ParameterizedTest
+	@ValueSource(ints = { 1, 2, 3 })
+	public void testNumDocsResult(int numDoc) {
+		Repositories.consumeNoTransaction(repository, conn -> {
+			try (TupleQueryResult res = conn.prepareTupleQuery(
+					"SELECT ?Resource {\n"
+							+ "  ?Resource <" + MATCHES + "> [\n "
+							+ "    <" + QUERY + "> \"one\";\n "
+							+ "    <" + NUM_DOCS + "> " + numDoc + ";\n "
+							+ "  ]. } "
+			).evaluate()) {
+				for (int k = 0; k < numDoc; k++) {
+					assertTrue(res.hasNext(), "missing result #" + k);
+					res.next();
 				}
-				;
-			});
-		}
+				if (res.hasNext()) {
+					StringBuilder b = new StringBuilder();
+					int r = 0;
+					do {
+						b.append("\n#").append(r++).append(res.next());
+					} while (res.hasNext());
+					fail("can't have more than " + numDoc + " result(s)" + b);
+				}
+			}
+		});
 	}
 
 	protected void assertQueryResult(String literal, IRI predicate, Resource resultUri) {

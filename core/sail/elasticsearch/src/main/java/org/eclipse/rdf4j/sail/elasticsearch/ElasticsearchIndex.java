@@ -18,6 +18,7 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 
@@ -577,19 +578,11 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		}
 
 		SearchHits hits;
-		Integer numDocs = spec.getNumDocs();
+		int numDocs = Objects.requireNonNullElse(spec.getNumDocs(), -1);
 		if (subject != null) {
-			if (numDocs != null) {
-				hits = search(subject, request, qb, numDocs);
-			} else {
-				hits = search(subject, request, qb);
-			}
+			hits = search(subject, request, qb, numDocs);
 		} else {
-			if (numDocs != null) {
-				hits = search(request, qb, numDocs);
-			} else {
-				hits = search(request, qb);
-			}
+			hits = search(request, qb, numDocs);
 		}
 		return Iterables.transform(hits, new Function<>() {
 
