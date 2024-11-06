@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -53,7 +54,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 
 		this.queryString = queryFragment.getNamespacesForSparql()
 				+ StatementMatcher.StableRandomVariableProvider.normalize("SELECT " + queryVariable.asSparqlVariable()
-						+ " WHERE {\n" + queryFragment.getFragment() + "\n}");
+						+ " WHERE {\n" + queryFragment.getFragment() + "\n}", List.of(queryVariable), List.of());
 		try {
 			this.query = SparqlQueryParserCache.get(queryString);
 		} catch (MalformedQueryException e) {

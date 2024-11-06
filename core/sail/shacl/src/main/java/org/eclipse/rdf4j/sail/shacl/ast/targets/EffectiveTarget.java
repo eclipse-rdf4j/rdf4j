@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.targets;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -114,11 +115,7 @@ public class EffectiveTarget {
 			return allTargets;
 		}
 
-		var vars = getVars();
-		if (includePropertyShapeValues) {
-			vars = new ArrayList<>(vars);
-			vars.add(optional.var);
-		}
+		var vars = getVars(includePropertyShapeValues);
 
 		List<String> varNames = vars.stream().map(StatementMatcher.Variable::getName).collect(Collectors.toList());
 
@@ -153,7 +150,26 @@ public class EffectiveTarget {
 		}
 	}
 
-	private List<Variable<Value>> getVars() {
+	private List<Variable<Value>> getVars(boolean optional) {
+		int chainSize = chain.size();
+		if (chainSize == 1) {
+			if (optional) {
+				return List.of(chain.getFirst().var, this.optional.var);
+			} else {
+				return List.of(chain.getFirst().var);
+			}
+		} else if (chainSize == 2) {
+			if (optional) {
+				return List.of(chain.getFirst().var, chain.getLast().var, this.optional.var);
+			} else {
+				return List.of(chain.getFirst().var, chain.getLast().var);
+			}
+		}
+
+		if (optional) {
+			return Stream.concat(chain.stream(), Stream.of(this.optional)).map(t -> t.var).collect(Collectors.toList());
+		}
+
 		return chain.stream().map(t -> t.var).collect(Collectors.toList());
 	}
 
@@ -221,7 +237,7 @@ public class EffectiveTarget {
 
 	public PlanNode getAllTargets(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			ConstraintComponent.Scope scope) {
-		return new AllTargetsPlanNode(connectionsGroup.getBaseConnection(), dataGraph, chain, getVars(), scope);
+		return new AllTargetsPlanNode(connectionsGroup.getBaseConnection(), dataGraph, chain, getVars(false), scope);
 	}
 
 	public PlanNode getPlanNode(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
@@ -287,7 +303,7 @@ public class EffectiveTarget {
 							statementMatchersRemoval,
 							optional,
 							fragment,
-							getVars(),
+							getVars(false),
 							scope,
 							false);
 				} else {
@@ -298,14 +314,14 @@ public class EffectiveTarget {
 							null,
 							null,
 							fragment,
-							getVars(),
+							getVars(false),
 							scope,
 							false);
 				}
 			} else {
 
 				targetsPlanNode = new AllTargetsPlanNode(connectionsGroup.getBaseConnection(), dataGraph, chain,
-						getVars(), scope);
+						getVars(false), scope);
 
 			}
 
@@ -487,13 +503,9 @@ public class EffectiveTarget {
 				if (target instanceof Path) {
 					Path path = (Path) target;
 					assert !(path instanceof InversePath);
-					Stream<StatementsAndMatcher> root = queryFragment.getRoot(connectionsGroup, dataGraph, path,
+					return queryFragment.getRoot(connectionsGroup, dataGraph, path,
 							currentStatementMatcher,
 							List.of(currentStatement));
-
-					List<StatementsAndMatcher> collect = root.collect(Collectors.toList());
-
-					return collect.stream();
 				}
 
 				throw new UnsupportedOperationException();
@@ -524,6 +536,14 @@ public class EffectiveTarget {
 
 		public boolean hasStatements() {
 			return !statements.isEmpty();
+		}
+
+		@Override
+		public String toString() {
+			return "StatementsAndMatcher{" +
+					"statements=" + Arrays.toString(statements.toArray()) +
+					", statementMatcher=" + statementMatcher +
+					'}';
 		}
 	}
 
