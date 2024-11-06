@@ -137,7 +137,7 @@ public class Utils {
 
 			try (RepositoryConnection conn = repo.getConnection()) {
 				conn.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
-				conn.add(initialData, "", RDFFormat.TURTLE);
+				conn.add(initialData, "", RDFFormat.TRIG);
 				conn.commit();
 			}
 		}
