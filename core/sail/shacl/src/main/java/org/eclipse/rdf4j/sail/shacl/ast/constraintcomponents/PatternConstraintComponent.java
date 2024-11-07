@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -41,6 +42,47 @@ public class PatternConstraintComponent extends AbstractSimpleConstraintComponen
 
 		if (flags == null) {
 			this.flags = "";
+		}
+
+		verifyPattern(pattern, flags);
+	}
+
+	private static void verifyPattern(String pattern, String flags) {
+		if (flags != null && !flags.isEmpty()) {
+			int flag = 0b0;
+
+			if (flags.contains("i")) {
+				flag = flag | Pattern.CASE_INSENSITIVE;
+			}
+
+			if (flags.contains("d")) {
+				flag = flag | Pattern.UNIX_LINES;
+			}
+
+			if (flags.contains("m")) {
+				flag = flag | Pattern.MULTILINE;
+			}
+
+			if (flags.contains("s")) {
+				flag = flag | Pattern.DOTALL;
+			}
+
+			if (flags.contains("u")) {
+				flag = flag | Pattern.UNICODE_CASE;
+			}
+
+			if (flags.contains("x")) {
+				flag = flag | Pattern.COMMENTS;
+			}
+
+			if (flags.contains("U")) {
+				flag = flag | Pattern.UNICODE_CHARACTER_CLASS;
+			}
+
+			Pattern.compile(pattern, flag);
+
+		} else {
+			Pattern.compile(pattern, 0b0);
 		}
 	}
 
@@ -67,7 +109,10 @@ public class PatternConstraintComponent extends AbstractSimpleConstraintComponen
 	}
 
 	private static String escapeRegexForSparql(String pattern) {
-		return pattern.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
+		pattern = pattern.replace("\\", "\\\\");
+		pattern = pattern.replace("\"", "\\\"");
+		pattern = pattern.replace("\n", "\\n");
+		return pattern;
 	}
 
 	@Override
