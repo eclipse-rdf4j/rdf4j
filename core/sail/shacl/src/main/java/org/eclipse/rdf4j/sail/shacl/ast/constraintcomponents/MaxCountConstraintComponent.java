@@ -47,8 +47,19 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class MaxCountConstraintComponent extends AbstractConstraintComponent {
+
+	private static final Logger logger = LoggerFactory.getLogger(MaxCountConstraintComponent.class);
+
+	// Performance degrades quickly as the maxCount increases when using a SPARQL Validation Approach. The default is 5,
+	// but it can be tuned using the system property below.
+	private static final String SPARQL_VALIDATION_APPROACH_LIMIT_PROPERTY = "org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.MaxCountConstraintComponent.sparqlValidationApproachLimit";
+	public static long SPARQL_VALIDATION_APPROACH_LIMIT = System
+			.getProperty(SPARQL_VALIDATION_APPROACH_LIMIT_PROPERTY) == null ? 1
+					: Long.parseLong(System.getProperty(SPARQL_VALIDATION_APPROACH_LIMIT_PROPERTY));
 
 	private final long maxCount;
 
@@ -235,8 +246,12 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public ValidationApproach getOptimalBulkValidationApproach() {
-		// performance of large maxCount is terrible
-		if (maxCount > 5) {
+		if (maxCount > SPARQL_VALIDATION_APPROACH_LIMIT) {
+			if (logger.isDebugEnabled()) {
+				logger.debug(
+						"maxCount is {}, which is greater than the limit of {}, using ValidationApproach.Transactional instead of ValidationApproach.SPARQL for {}",
+						maxCount, SPARQL_VALIDATION_APPROACH_LIMIT, stringRepresentationOfValue(getId()));
+			}
 			return ValidationApproach.Transactional;
 		}
 		return ValidationApproach.SPARQL;

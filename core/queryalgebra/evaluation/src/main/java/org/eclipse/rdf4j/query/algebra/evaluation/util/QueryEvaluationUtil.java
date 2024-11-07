@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -62,13 +63,20 @@ public class QueryEvaluationUtil {
 	 * @throws ValueExprEvaluationException In case the application of the EBV algorithm results in a type error.
 	 */
 	public static boolean getEffectiveBooleanValue(Value value) throws ValueExprEvaluationException {
+
+		if (value == BooleanLiteral.TRUE) {
+			return true;
+		} else if (value == BooleanLiteral.FALSE) {
+			return false;
+		}
+
 		if (value.isLiteral()) {
 			Literal literal = (Literal) value;
 			String label = literal.getLabel();
 			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatype().orElse(null);
 
 			if (datatype == CoreDatatype.XSD.STRING) {
-				return label.length() > 0;
+				return !label.isEmpty();
 			} else if (datatype == CoreDatatype.XSD.BOOLEAN) {
 				// also false for illegal values
 				return "true".equals(label) || "1".equals(label);
@@ -107,6 +115,15 @@ public class QueryEvaluationUtil {
 
 	public static boolean compare(Value leftVal, Value rightVal, CompareOp operator, boolean strict)
 			throws ValueExprEvaluationException {
+		if (leftVal == rightVal) {
+			switch (operator) {
+			case EQ:
+				return true;
+			case NE:
+				return false;
+			}
+		}
+
 		if (leftVal != null && leftVal.isLiteral() && rightVal != null && rightVal.isLiteral()) {
 			// Both left and right argument is a Literal
 			return compareLiterals((Literal) leftVal, (Literal) rightVal, operator, strict);
@@ -161,6 +178,15 @@ public class QueryEvaluationUtil {
 		// - CoreDatatype.XSD:dateTime
 		// - CoreDatatype.XSD:string
 		// - RDF term (equal and unequal only)
+
+		if (leftLit == rightLit) {
+			switch (operator) {
+			case EQ:
+				return true;
+			case NE:
+				return false;
+			}
+		}
 
 		CoreDatatype.XSD leftCoreDatatype = leftLit.getCoreDatatype().asXSDDatatype().orElse(null);
 		CoreDatatype.XSD rightCoreDatatype = rightLit.getCoreDatatype().asXSDDatatype().orElse(null);
@@ -329,7 +355,7 @@ public class QueryEvaluationUtil {
 	 * <a href="http://www.w3.org/TR/rdf-concepts/#section-blank-nodes">6.6 Blank Nodes of [CONCEPTS]</a>.
 	 * </ul>
 	 * </blockquote>
-	 *
+	 * <p>
 	 * (emphasis ours)
 	 * <p>
 	 * When applying the SPARQL specification in a minimally-conforming manner, RDFterm-equal is supposed to return a
@@ -349,7 +375,6 @@ public class QueryEvaluationUtil {
 	 * @param rightCoreDatatype the right datatype to compare
 	 * @throws ValueExprEvaluationException if query evaluation is operating in strict mode, and the two supplied
 	 *                                      datatypes are both supported datatypes but not comparable.
-	 *
 	 * @see <a href="https://github.com/eclipse/rdf4j/issues/3947">Github issue #3947</a>
 	 */
 	private static void validateDatatypeCompatibility(boolean strict, CoreDatatype.XSD leftCoreDatatype,
@@ -432,13 +457,13 @@ public class QueryEvaluationUtil {
 	 */
 	public static boolean isPlainLiteral(Value v) {
 		if (v.isLiteral()) {
-			return isPlainLiteral(((Literal) v));
+			return isPlainLiteral((Literal) v);
 		}
 		return false;
 	}
 
 	public static boolean isPlainLiteral(Literal l) {
-		assert l.getLanguage().isEmpty() || (l.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING);
+		assert l.getLanguage().isEmpty() || l.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING;
 		return l.getCoreDatatype() == CoreDatatype.XSD.STRING || l.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING;
 	}
 
@@ -510,10 +535,10 @@ public class QueryEvaluationUtil {
 		// 3. The first argument is a language literal and the second
 		// argument is a literal typed as CoreDatatype.XSD:string
 
-		return (isSimpleLiteral(arg1) && isSimpleLiteral(arg2))
-				|| (Literals.isLanguageLiteral(arg1) && Literals.isLanguageLiteral(arg2)
-						&& arg1.getLanguage().equals(arg2.getLanguage()))
-				|| (Literals.isLanguageLiteral(arg1) && isSimpleLiteral(arg2));
+		return isSimpleLiteral(arg1) && isSimpleLiteral(arg2)
+				|| Literals.isLanguageLiteral(arg1) && Literals.isLanguageLiteral(arg2)
+						&& arg1.getLanguage().equals(arg2.getLanguage())
+				|| Literals.isLanguageLiteral(arg1) && isSimpleLiteral(arg2);
 	}
 
 	/**
