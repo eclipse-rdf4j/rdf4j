@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -89,6 +90,9 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 	private final QueryEvaluationStep arguments;
 
+	// The iteration of the arguments, stored while building entries for allowing premature closing
+	private volatile CloseableIteration<BindingSet> argumentsIter;
+
 	private final ValueFactory vf;
 
 	private final CollectionFactory cf;
@@ -129,7 +133,13 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 	@Override
 	public void handleClose() throws QueryEvaluationException {
-		cf.close();
+		try {
+			cf.close();
+		} finally {
+			var iter = argumentsIter;
+			if (iter != null)
+				iter.close();
+		}
 	}
 
 	@Override
@@ -256,42 +266,46 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 	private Collection<Entry> buildEntries(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates)
 			throws QueryEvaluationException {
-		try (var iter = arguments.evaluate(parentBindings)) {
+		// store the arguments' iterator so it can be closed while building entries
+		this.argumentsIter = arguments.evaluate(parentBindings);
+		try (var iter = argumentsIter) {
+			if (!iter.hasNext()) {
+				return emptySolutionSpecialCase(aggregates);
+			}
+
 			List<Function<BindingSet, Value>> getValues = group.getGroupBindingNames()
 					.stream()
 					.map(n -> context.getValue(n))
 					.collect(Collectors.toList());
 
-			if (!iter.hasNext()) {
-				return emptySolutionSpecialCase(aggregates);
-			} else {
-				// TODO: this is an in memory map with no backing into any disk form.
-				// Fixing this requires separating the computation of the aggregates and their
-				// distinct sets if needed from the intermediary values.
+			// TODO: this is an in memory map with no backing into any disk form.
+			// Fixing this requires separating the computation of the aggregates and their
+			// distinct sets if needed from the intermediary values.
 
-				Map<BindingSetKey, Entry> entries = cf.createGroupByMap();
-				// Make an optimized hash function valid during this query evaluation step.
-				ToIntFunction<BindingSet> hashMaker = cf.hashOfBindingSetFuntion(getValues);
-				while (iter.hasNext()) {
-					BindingSet sol = iter.next();
-					// The binding set key will be constant
-					BindingSetKey key = cf.createBindingSetKey(sol, getValues, hashMaker);
-					Entry entry = entries.get(key);
-					if (entry == null) {
-						List<AggregateCollector> collectors = makeCollectors(aggregates);
-						List<Predicate<?>> predicates = new ArrayList<>(aggregates.size());
-						for (AggregatePredicateCollectorSupplier<?, ?> a : aggregates) {
-							predicates.add(a.makePotentialDistinctTest.get());
-						}
-
-						entry = new Entry(sol, collectors, predicates);
-						entries.put(key, entry);
+			Map<BindingSetKey, Entry> entries = cf.createGroupByMap();
+			// Make an optimized hash function valid during this query evaluation step.
+			ToIntFunction<BindingSet> hashMaker = cf.hashOfBindingSetFuntion(getValues);
+			while (!isClosed() && iter.hasNext()) {
+				BindingSet sol = iter.next();
+				// The binding set key will be constant
+				BindingSetKey key = cf.createBindingSetKey(sol, getValues, hashMaker);
+				Entry entry = entries.get(key);
+				if (entry == null) {
+					List<AggregateCollector> collectors = makeCollectors(aggregates);
+					List<Predicate<?>> predicates = new ArrayList<>(aggregates.size());
+					for (AggregatePredicateCollectorSupplier<?, ?> a : aggregates) {
+						predicates.add(a.makePotentialDistinctTest.get());
 					}
 
-					entry.addSolution(sol, aggregates);
+					entry = new Entry(sol, collectors, predicates);
+					entries.put(key, entry);
 				}
-				return entries.values();
+
+				entry.addSolution(sol, aggregates);
 			}
+			return entries.values();
+		} finally {
+			this.argumentsIter = null;
 		}
 	}
 
