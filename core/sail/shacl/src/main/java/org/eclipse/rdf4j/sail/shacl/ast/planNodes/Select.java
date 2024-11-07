@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -65,10 +66,11 @@ public class Select implements PlanNode {
 
 		if (!sorted && fragment.trim().startsWith("select ")) {
 			this.query = queryFragment.getNamespacesForSparql() + "\n"
-					+ StatementMatcher.StableRandomVariableProvider.normalize(fragment);
+					+ StatementMatcher.StableRandomVariableProvider.normalize(fragment, List.of(), List.of());
 		} else {
 			this.query = queryFragment.getNamespacesForSparql() + "\n" + StatementMatcher.StableRandomVariableProvider
-					.normalize("select * where {\n" + fragment + "\n}" + (sorted ? " order by " + orderBy : ""));
+					.normalize("select * where {\n" + fragment + "\n}" + (sorted ? " order by " + orderBy : ""),
+							List.of(), List.of());
 		}
 
 		dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
@@ -85,7 +87,7 @@ public class Select implements PlanNode {
 		this.connection = connection;
 		assert this.connection != null;
 		this.mapper = mapper;
-		this.query = StatementMatcher.StableRandomVariableProvider.normalize(query);
+		this.query = StatementMatcher.StableRandomVariableProvider.normalize(query, List.of(), List.of());
 		this.dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
 
 		this.sorted = false;
