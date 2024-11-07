@@ -87,7 +87,7 @@ public class TargetClass extends Target {
 					.collect(Collectors.toSet());
 		}
 
-		assert targets.size() >= 1;
+		assert !targets.isEmpty();
 
 		return targets.stream()
 				.map(r -> "<" + r + ">")
@@ -96,7 +96,7 @@ public class TargetClass extends Target {
 						"{",
 						"BIND(rdf:type as " + stableRandomVariableProvider.next().asSparqlVariable() + ")",
 						"BIND(" + r + " as " + objectVariable + ")",
-						"" + subjectVariable + " " + stableRandomVariableProvider.current().asSparqlVariable()
+						subjectVariable + " " + stableRandomVariableProvider.current().asSparqlVariable()
 								+ objectVariable + ".",
 						"}"
 				)

@@ -91,7 +91,7 @@ public class BindSelect implements PlanNode {
 			throw new IllegalStateException();
 		}
 
-		this.query = StatementMatcher.StableRandomVariableProvider.normalize(query.getFragment());
+		this.query = StatementMatcher.StableRandomVariableProvider.normalize(query.getFragment(), vars, List.of());
 		this.prefixes = query.getNamespacesForSparql();
 		this.direction = direction;
 		this.includePropertyShapeValues = includePropertyShapeValues;

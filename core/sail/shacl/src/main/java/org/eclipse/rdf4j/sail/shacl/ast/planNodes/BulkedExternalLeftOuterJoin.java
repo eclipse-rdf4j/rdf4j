@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.ArrayDeque;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -49,7 +50,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 		leftNode = PlanNodeHelper.handleSorting(this, leftNode);
 		this.leftNode = leftNode;
 		this.query = query.getNamespacesForSparql()
-				+ StatementMatcher.StableRandomVariableProvider.normalize(query.getFragment());
+				+ StatementMatcher.StableRandomVariableProvider.normalize(query.getFragment(), List.of(), List.of());
 		this.connection = connection;
 		assert this.connection != null;
 		this.mapper = mapper;

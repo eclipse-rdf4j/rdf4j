@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import static org.junit.jupiter.api.parallel.ExecutionMode.CONCURRENT;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import java.io.File;
@@ -83,6 +84,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.params.provider.Arguments;
 import org.slf4j.Logger;
@@ -117,7 +119,7 @@ abstract public class AbstractShaclTest {
 			"test-cases/path/zeroOrOnePath"
 
 	);
-	public static final Set<IsolationLevels> ISOLATION_LEVELS = Set.of(
+	public static final List<IsolationLevels> ISOLATION_LEVELS = List.of(
 			IsolationLevels.NONE,
 			IsolationLevels.SNAPSHOT,
 			IsolationLevels.SERIALIZABLE
@@ -555,13 +557,18 @@ abstract public class AbstractShaclTest {
 			return;
 		}
 
-		// uses rsx:nodeShape
+		// uses rsx:targetShape
 		if (testCase.testCasePath.startsWith("test-cases/qualifiedShape/complex/")) {
 			return;
 		}
 
-		// uses rsx:nodeShape
+		// uses rsx:targetShape
 		if (testCase.testCasePath.startsWith("test-cases/complex/targetShapeAndQualifiedShape/")) {
+			return;
+		}
+
+		// uses rsx:targetShape
+		if (testCase.testCasePath.startsWith("test-cases/path/sequencePathTargetShape")) {
 			return;
 		}
 
@@ -1055,7 +1062,13 @@ abstract public class AbstractShaclTest {
 			return;
 		}
 
-		SailRepository shaclRepository = getShaclSail(testCase);
+		SailRepository shaclRepository;
+		try {
+			shaclRepository = getShaclSail(testCase);
+		} catch (Exception e) {
+			System.err.println(testCase.getTestCasePath() + "shacl.trig");
+			throw e;
+		}
 		try {
 
 			List<ContextWithShape> shapes = ((ShaclSail) shaclRepository.getSail()).getCachedShapes()
