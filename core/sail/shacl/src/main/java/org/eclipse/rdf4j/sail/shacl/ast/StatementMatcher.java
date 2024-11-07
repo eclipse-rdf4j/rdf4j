@@ -11,7 +11,9 @@
 package org.eclipse.rdf4j.sail.shacl.ast;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -31,10 +33,10 @@ public class StatementMatcher {
 	private final Variable<IRI> predicate;
 	private final Variable<? extends Value> object;
 
-//	private final Set<String> varNames;
+	// private final Set<String> varNames;
 	private final Targetable origin;
 
-	private final Set<String> inheritedVarNames;
+	private Set<String> inheritedVarNames;
 
 	private List<StatementMatcher> subset = List.of();
 
@@ -216,11 +218,17 @@ public class StatementMatcher {
 
 	private StatementMatcher swap(Variable<?> existingVariable, Variable<?> newVariable) {
 		String subjectName = getSubjectName();
+		String subjectBasename = getSubjectBasename();
 		Resource subjectValue = getSubjectValue();
+
 		String predicateName = getPredicateName();
+		String predicateBasename = getPredicateBasename();
 		IRI predicateValue = getPredicateValue();
+
 		String objectName = getObjectName();
+		String objectBasename = getObjectBasename();
 		Value objectValue = getObjectValue();
+
 		boolean changed = false;
 
 		if (Objects.equals(existingVariable.name, subjectName)
@@ -228,6 +236,7 @@ public class StatementMatcher {
 			changed = true;
 			subjectName = newVariable.name;
 			subjectValue = (Resource) newVariable.value;
+			subjectBasename = newVariable.baseName;
 		}
 
 		if (Objects.equals(existingVariable.name, predicateName)
@@ -235,18 +244,21 @@ public class StatementMatcher {
 			changed = true;
 			predicateName = newVariable.name;
 			predicateValue = (IRI) newVariable.value;
+			predicateBasename = newVariable.baseName;
 		}
 
 		if (Objects.equals(existingVariable.name, objectName) && Objects.equals(existingVariable.value, objectValue)) {
 			changed = true;
 			objectName = newVariable.name;
 			objectValue = newVariable.value;
+			objectBasename = newVariable.baseName;
 		}
 
 		if (changed) {
 			assert subset.isEmpty();
-			return new StatementMatcher(new Variable<>(subjectName, subjectValue),
-					new Variable<>(predicateName, predicateValue), new Variable<>(objectName, objectValue), origin,
+			return new StatementMatcher(new Variable<>(subjectName, subjectValue, subjectBasename),
+					new Variable<>(predicateName, predicateValue, predicateBasename),
+					new Variable<>(objectName, objectValue, objectBasename), origin,
 					inheritedVarNames);
 		}
 		return this;
@@ -268,6 +280,10 @@ public class StatementMatcher {
 		return subject.name;
 	}
 
+	public String getSubjectBasename() {
+		return subject.baseName;
+	}
+
 	public Resource getSubjectValue() {
 		return subject.value;
 	}
@@ -280,6 +296,10 @@ public class StatementMatcher {
 		return predicate.name;
 	}
 
+	public String getPredicateBasename() {
+		return predicate.baseName;
+	}
+
 	public IRI getPredicateValue() {
 		return predicate.value;
 	}
@@ -290,6 +310,10 @@ public class StatementMatcher {
 
 	public String getObjectName() {
 		return object.name;
+	}
+
+	public String getObjectBasename() {
+		return object.baseName;
 	}
 
 	public Value getObjectValue() {
@@ -376,13 +400,13 @@ public class StatementMatcher {
 		return sb.toString();
 	}
 
-	public Set<String> getVarNames(Set<String> varNamesRestriction, boolean addInheritedVarNames,
+	public LinkedHashSet<String> getVarNames(Set<String> varNamesRestriction, boolean addInheritedVarNames,
 			Set<String> varNamesInQueryFragment) {
 		if (varNamesRestriction.isEmpty()) {
-			return Set.of();
+			return new LinkedHashSet<>();
 		}
 
-		HashSet<String> ret = new HashSet<>();
+		LinkedHashSet<String> ret = new LinkedHashSet<>();
 		if (subject.name != null && varNamesRestriction.contains(subject.name)
 				&& varNamesInQueryFragment.contains(subject.name)) {
 			ret.add(subject.name);
@@ -462,6 +486,26 @@ public class StatementMatcher {
 		return variable.name.equals(object.name);
 	}
 
+	public Set<String> getInheritedVarNames() {
+		return Set.copyOf(inheritedVarNames);
+	}
+
+	public Set<String> getVarNames() {
+		Set<String> varNames = new HashSet<>();
+
+		if (subject.name != null) {
+			varNames.add(subject.name);
+		}
+		if (predicate.name != null) {
+			varNames.add(predicate.name);
+		}
+		if (object.name != null) {
+			varNames.add(object.name);
+		}
+
+		return Collections.unmodifiableSet(varNames);
+	}
+
 	public static class StableRandomVariableProvider {
 
 		// We just need a random base that isn't used elsewhere in the ShaclSail, but we don't want it to be stable so
@@ -485,9 +529,12 @@ public class StatementMatcher {
 		 * increments of one.
 		 *
 		 * @param inputQuery the query string that should be normalized
+		 * @param union
 		 * @return a normalized query string
 		 */
-		public static String normalize(String inputQuery) {
+		public static String normalize(String inputQuery, List<? extends Variable> protectedVars,
+				List<StatementMatcher> union) {
+
 			if (!inputQuery.contains(BASE)) {
 				return inputQuery;
 			}
@@ -513,18 +560,30 @@ public class StatementMatcher {
 			if (lowest == 0 && incrementsOfOne) {
 				return inputQuery;
 			}
+			String joinedProtectedVars = protectedVars.stream()
+					.map(Variable::getName)
+					.filter(Objects::nonNull)
+					.filter(s -> s.contains(BASE))
+					.collect(Collectors.joining());
 
-			return normalizeRange(inputQuery, lowest, highest);
+			return normalizeRange(inputQuery, lowest, highest, joinedProtectedVars, union);
 		}
 
-		private static String normalizeRange(String inputQuery, int lowest, int highest) {
+		private static String normalizeRange(String inputQuery, int lowest, int highest, String joinedProtectedVars,
+				List<StatementMatcher> union) {
 
 			String normalizedQuery = inputQuery;
 			for (int i = 0; i <= highest; i++) {
-				if (!normalizedQuery.contains(BASE + i + "_")) {
+				String replacement = BASE + i + "_";
+				if (!normalizedQuery.contains(replacement)) {
 					for (int j = Math.max(i + 1, lowest); j <= highest; j++) {
-						if (normalizedQuery.contains(BASE + j + "_")) {
-							normalizedQuery = normalizedQuery.replace(BASE + j + "_", BASE + i + "_");
+						String original = BASE + j + "_";
+						if (normalizedQuery.contains(original)) {
+							if (joinedProtectedVars.contains(original)) {
+								continue;
+							}
+							normalizedQuery = normalizedQuery.replace(original, replacement);
+							replaceInStatementMatcher(union, original, replacement);
 							break;
 						}
 					}
@@ -532,6 +591,13 @@ public class StatementMatcher {
 			}
 
 			return normalizedQuery;
+		}
+
+		private static void replaceInStatementMatcher(List<StatementMatcher> statementMatchers, String original,
+				String replacement) {
+			for (StatementMatcher statementMatcher : statementMatchers) {
+				statementMatcher.replaceVariableName(original, replacement);
+			}
 		}
 
 		public Variable<Value> next() {
@@ -550,6 +616,44 @@ public class StatementMatcher {
 			}
 			return new Variable<>(prefix + BASE + counter + "_");
 		}
+	}
+
+	private void replaceVariableName(String original, String replacement) {
+
+		if (subject.name != null && subject.name.contains(original)) {
+			subject.name = subject.name.replace(original, replacement);
+		}
+		if (subject.baseName != null && subject.baseName.contains(original)) {
+			subject.baseName = subject.baseName.replace(original, replacement);
+		}
+		if (predicate.name != null && predicate.name.contains(original)) {
+			predicate.name = predicate.name.replace(original, replacement);
+		}
+		if (predicate.baseName != null && predicate.baseName.contains(original)) {
+			predicate.baseName = predicate.baseName.replace(original, replacement);
+		}
+		if (object.name != null && object.name.contains(original)) {
+			object.name = object.name.replace(original, replacement);
+		}
+		if (object.baseName != null && object.baseName.contains(original)) {
+			object.baseName = object.baseName.replace(original, replacement);
+		}
+
+		boolean contains = false;
+		for (String inheritedVarName : inheritedVarNames) {
+			if (inheritedVarName.contains(original)) {
+				contains = true;
+				break;
+			}
+		}
+		if (contains) {
+			HashSet<String> newInheritedVarNames = new HashSet<>();
+			for (String inheritedVarName : inheritedVarNames) {
+				newInheritedVarNames.add(inheritedVarName.replace(original, replacement));
+			}
+			inheritedVarNames = newInheritedVarNames;
+		}
+
 	}
 
 	public static class Variable<T extends Value> {
@@ -574,6 +678,12 @@ public class StatementMatcher {
 		public Variable(Variable<?> baseVariable, String name) {
 			this.name = name;
 			this.baseName = baseVariable.name;
+		}
+
+		public Variable(String name, T value, String baseName) {
+			this.name = name;
+			this.value = value;
+			this.baseName = baseName;
 		}
 
 		public Variable(T value) {

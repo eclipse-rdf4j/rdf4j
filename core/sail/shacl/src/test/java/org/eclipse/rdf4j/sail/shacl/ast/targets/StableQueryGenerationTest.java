@@ -71,22 +71,28 @@ public class StableQueryGenerationTest {
 		};
 
 		String test1 = names[4] + names[4] + names[9];
-		assertEquals(names[0] + names[0] + names[1], StatementMatcher.StableRandomVariableProvider.normalize(test1));
+		assertEquals(names[0] + names[0] + names[1],
+				StatementMatcher.StableRandomVariableProvider.normalize(test1, List.of(), List.of()));
 
 		String test2 = names[9] + names[4] + names[9];
-		assertEquals(names[1] + names[0] + names[1], StatementMatcher.StableRandomVariableProvider.normalize(test2));
+		assertEquals(names[1] + names[0] + names[1],
+				StatementMatcher.StableRandomVariableProvider.normalize(test2, List.of(), List.of()));
 
 		String test3 = names[0] + names[1] + names[2];
-		assertEquals(names[0] + names[1] + names[2], StatementMatcher.StableRandomVariableProvider.normalize(test3));
+		assertEquals(names[0] + names[1] + names[2],
+				StatementMatcher.StableRandomVariableProvider.normalize(test3, List.of(), List.of()));
 
 		String test4 = names[1] + names[2] + names[3];
-		assertEquals(names[0] + names[1] + names[2], StatementMatcher.StableRandomVariableProvider.normalize(test4));
+		assertEquals(names[0] + names[1] + names[2],
+				StatementMatcher.StableRandomVariableProvider.normalize(test4, List.of(), List.of()));
 
 		String test5 = names[2] + names[4] + names[8];
-		assertEquals(names[0] + names[1] + names[2], StatementMatcher.StableRandomVariableProvider.normalize(test5));
+		assertEquals(names[0] + names[1] + names[2],
+				StatementMatcher.StableRandomVariableProvider.normalize(test5, List.of(), List.of()));
 
 		String test6 = names[8] + names[4] + names[2];
-		assertEquals(names[2] + names[1] + names[0], StatementMatcher.StableRandomVariableProvider.normalize(test6));
+		assertEquals(names[2] + names[1] + names[0],
+				StatementMatcher.StableRandomVariableProvider.normalize(test6, List.of(), List.of()));
 
 	}
 

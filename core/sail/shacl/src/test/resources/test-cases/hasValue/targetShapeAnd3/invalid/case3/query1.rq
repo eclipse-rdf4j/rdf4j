@@ -5,6 +5,6 @@ PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX sh: <http://www.w3.org/ns/shacl#>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
-DELETE DATA {
-        ex:validPerson1 ex:info "red" .
+INSERT DATA {
+    ex:validPerson1 ex:info "blue", "red" .
 }
