@@ -1,0 +1,15 @@
+PREFIX dash: <http://datashapes.org/dash#>
+PREFIX ex: <http://example.com/ns#>
+PREFIX rdf4j: <http://rdf4j.org/schema/rdf4j#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX rsx: <http://rdf4j.org/shacl-extensions#>
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+
+INSERT DATA {
+    ex:validNode ex:knows ex:node2 .
+    ex:node2 rdf:type ex:Type1 ;
+	rdf:type ex:Type2 .
+}

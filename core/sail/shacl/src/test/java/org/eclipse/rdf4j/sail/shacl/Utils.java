@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import java.io.BufferedInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
@@ -137,7 +138,7 @@ public class Utils {
 
 			try (RepositoryConnection conn = repo.getConnection()) {
 				conn.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
-				conn.add(initialData, "", RDFFormat.TURTLE);
+				conn.add(initialData, "", RDFFormat.TRIG);
 				conn.commit();
 			}
 		}

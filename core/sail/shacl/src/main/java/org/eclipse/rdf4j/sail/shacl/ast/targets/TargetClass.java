@@ -97,7 +97,7 @@ public class TargetClass extends Target {
 						"{",
 						"BIND(rdf:type as " + stableRandomVariableProvider.next().asSparqlVariable() + ")",
 						"BIND(" + r + " as " + objectVariable + ")",
-						"" + subjectVariable + " " + stableRandomVariableProvider.current().asSparqlVariable()
+						subjectVariable + " " + stableRandomVariableProvider.current().asSparqlVariable()
 								+ objectVariable + ".",
 						"}"
 				)
