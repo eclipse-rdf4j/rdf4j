@@ -71,8 +71,9 @@ public class AllTargetsPlanNode implements PlanNode {
 
 			@Override
 			public void localClose() {
-				if (iterator != null)
+				if (iterator != null) {
 					iterator.close();
+				}
 			}
 
 			@Override

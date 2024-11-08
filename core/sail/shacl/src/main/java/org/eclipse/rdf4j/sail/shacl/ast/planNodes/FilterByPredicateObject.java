@@ -20,8 +20,8 @@ import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
@@ -42,10 +42,12 @@ public class FilterByPredicateObject implements PlanNode {
 	private final FilterOn filterOn;
 	private final PlanNode parent;
 	private final boolean returnMatching;
+	private final ConnectionsGroup connectionsGroup;
 	private StackTraceElement[] stackTrace;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 	private final Resource[] dataGraph;
+	boolean typeFilterWithInference;
 
 	private final Cache<Resource, Boolean> cache;
 
@@ -68,6 +70,11 @@ public class FilterByPredicateObject implements PlanNode {
 			cache = CacheBuilder.newBuilder().maximumSize(10000).build();
 		}
 
+		this.connectionsGroup = connectionsGroup;
+		if (includeInferred && connectionsGroup.getRdfsSubClassOfReasoner() != null
+				&& RDF.TYPE.equals(filterOnPredicate)) {
+			typeFilterWithInference = true;
+		}
 //		this.stackTrace = Thread.currentThread().getStackTrace();
 	}
 
@@ -148,31 +155,32 @@ public class FilterByPredicateObject implements PlanNode {
 
 			private void internResources() {
 				if (filterOnObject == null) {
-
-					try (var stream = connection
-							.getStatements(null, FilterByPredicateObject.this.filterOnPredicate, null, includeInferred,
-									dataGraph)
-							.stream()) {
-						filterOnPredicate = stream.map(Statement::getPredicate).findAny().orElse(null);
-					}
-
+					filterOnPredicate = connectionsGroup.getSailSpecificValue(
+							FilterByPredicateObject.this.filterOnPredicate,
+							ConnectionsGroup.StatementPosition.predicate, connection
+					);
 					if (filterOnPredicate == null) {
 						filterOnObject = new Resource[0];
 					} else {
-						filterOnObject = FilterByPredicateObject.this.filterOnObject.stream()
-								.map(object -> {
-									try (var stream = connection
-											.getStatements(null, filterOnPredicate, object, includeInferred, dataGraph)
-											.stream()) {
-										return stream.map(Statement::getObject)
-												.map(o -> ((Resource) o))
-												.findAny()
-												.orElse(null);
-									}
-								}
-								)
-								.filter(Objects::nonNull)
-								.toArray(Resource[]::new);
+						if (typeFilterWithInference) {
+							filterOnObject = FilterByPredicateObject.this.filterOnObject.stream()
+									.flatMap(type -> connectionsGroup.getRdfsSubClassOfReasoner()
+											.backwardsChain(type)
+											.stream())
+									.distinct()
+									.map(object -> connectionsGroup.getSailSpecificValue(object,
+											ConnectionsGroup.StatementPosition.object, connection
+									))
+									.filter(Objects::nonNull)
+									.toArray(Resource[]::new);
+						} else {
+							filterOnObject = FilterByPredicateObject.this.filterOnObject.stream()
+									.map(object -> connectionsGroup.getSailSpecificValue(object,
+											ConnectionsGroup.StatementPosition.object, connection
+									))
+									.filter(Objects::nonNull)
+									.toArray(Resource[]::new);
+						}
 					}
 
 				}
@@ -237,8 +245,8 @@ public class FilterByPredicateObject implements PlanNode {
 
 	private boolean matchesUnCached(Resource subject, IRI filterOnPredicate, Resource[] filterOnObject) {
 		for (Resource object : filterOnObject) {
-			if (connection.hasStatement(subject, filterOnPredicate, object, includeInferred,
-					dataGraph)) {
+			if (connection.hasStatement(subject, filterOnPredicate, object,
+					includeInferred && !typeFilterWithInference, dataGraph)) {
 				return true;
 			}
 		}

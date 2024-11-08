@@ -166,8 +166,9 @@ class OnlyNonUnique extends LoggingCloseableIteration {
 
 	@Override
 	public void localClose() {
-		if (parentIterator != null)
+		if (parentIterator != null) {
 			parentIterator.close();
+		}
 	}
 
 	@Override
