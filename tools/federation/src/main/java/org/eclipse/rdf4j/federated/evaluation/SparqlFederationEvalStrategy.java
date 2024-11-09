@@ -118,8 +118,9 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 	/**
 	 * Alternative evaluation implementation using UNION. Nowadays we use a VALUES clause based implementation
 	 *
-	 * @deprecated
+	 * @deprecated no longer used
 	 */
+	@Deprecated(forRemoval = true)
 	protected CloseableIteration<BindingSet> evaluateBoundJoinStatementPattern_UNION(
 			StatementTupleExpr stmt, List<BindingSet> bindings)
 			throws QueryEvaluationException {

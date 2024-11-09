@@ -24,6 +24,7 @@
 :Person_4 rdf:type foaf:Person .
 :Person_4 rdf:type :Person .
 :Person_4 foaf:name "Person4" .
+:Person_4 foaf:age "25"^^xsd:integer .
 
 :Person_5 rdf:type foaf:Person .
 :Person_5 rdf:type :Person .
