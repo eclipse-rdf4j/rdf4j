@@ -38,6 +38,8 @@ import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.rio.helpers.JSONLDMode;
+import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -48,11 +50,13 @@ import no.hasmac.jsonld.document.JsonDocument;
 
 /**
  * @author Peter Ansell
+ *
+ *         Tests with the old JSONLDSettings class
  */
-public class JSONLDWriterTest extends RDFWriterTest {
+public class JSONLDWriterOldTest extends RDFWriterTest {
 	private final String exNs = "http://example.org/";
 
-	public JSONLDWriterTest() {
+	public JSONLDWriterOldTest() {
 		super(new JSONLDWriterFactory(), new JSONLDParserFactory());
 	}
 

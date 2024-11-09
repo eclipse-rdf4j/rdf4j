@@ -16,6 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.util.Collection;
+import java.util.HashSet;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -121,12 +123,14 @@ public class JSONLDWriterBackgroundTest extends RDFWriterTest {
 		return new RioSetting[] {
 				BasicWriterSettings.BASE_DIRECTIVE,
 				BasicWriterSettings.PRETTY_PRINT,
-				JSONLDSettings.COMPACT_ARRAYS,
-				JSONLDSettings.JSONLD_MODE,
-				JSONLDSettings.PRODUCE_GENERALIZED_RDF,
-				JSONLDSettings.USE_RDF_TYPE,
-				JSONLDSettings.USE_NATIVE_TYPES,
-				JSONLDSettings.EXCEPTION_ON_WARNING
+				org.eclipse.rdf4j.rio.jsonld.JSONLDSettings.COMPACT_ARRAYS,
+				org.eclipse.rdf4j.rio.jsonld.JSONLDSettings.JSONLD_MODE,
+				org.eclipse.rdf4j.rio.jsonld.JSONLDSettings.USE_RDF_TYPE,
+				org.eclipse.rdf4j.rio.jsonld.JSONLDSettings.USE_NATIVE_TYPES,
+				org.eclipse.rdf4j.rio.jsonld.JSONLDSettings.PRODUCE_GENERALIZED_RDF,
+				org.eclipse.rdf4j.rio.jsonld.JSONLDSettings.EXCEPTION_ON_WARNING,
+				org.eclipse.rdf4j.rio.jsonld.JSONLDSettings.FRAME
+
 		};
 	}
 }
