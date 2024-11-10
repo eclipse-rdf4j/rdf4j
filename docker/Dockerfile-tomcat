@@ -11,7 +11,7 @@ WORKDIR /tmp
 RUN unzip -q /tmp/rdf4j.zip
 
 # Final workbench
-FROM tomcat:8.5-jre11-temurin
+FROM tomcat:9-jre17-temurin-jammy
 MAINTAINER Bart Hanssens (bart.hanssens@bosa.fgov.be)
 
 RUN apt-get clean && apt-get update && apt-get upgrade -y && apt-get clean
@@ -28,7 +28,7 @@ RUN	rm -rf /usr/local/tomcat/webapps/* && \
 
 COPY --from=temp /tmp/eclipse-rdf4j*/war/*.war /usr/local/tomcat/webapps/
 
-COPY web.xml /usr/local/tomcat/conf/web.xml
+COPY tomcat/web.xml /usr/local/tomcat/conf/web.xml
 
 USER tomcat
 
