@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf.datastore;
 
+import static org.eclipse.rdf4j.sail.nativerdf.NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES;
+
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
@@ -18,6 +20,8 @@ import java.util.Arrays;
 import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.io.NioFile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Class supplying access to a data file. A data file stores data sequentially. Each entry starts with the entry's
@@ -26,6 +30,8 @@ import org.eclipse.rdf4j.common.io.NioFile;
  * @author Arjohn Kampman
  */
 public class DataFile implements Closeable {
+
+	private static final Logger logger = LoggerFactory.getLogger(DataFile.class);
 
 	/*-----------*
 	 * Constants *
@@ -197,29 +203,51 @@ public class DataFile implements Closeable {
 				(data[2] << 8) & 0x0000ff00 |
 				(data[3]) & 0x000000ff;
 
-		// We have either managed to read enough data and can return the required subset of the data, or we have read
-		// too little so we need to execute another read to get the correct data.
-		if (dataLength <= data.length - 4) {
+		// If the data length is larger than 750MB, we are likely reading the wrong data. Probably data corruption. The
+		// limit of 750MB was chosen based on results from experimenting in the NativeSailStoreCorruptionTest class.
+		if (dataLength > 128 * 1024 * 1024) {
+			if (SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
+				logger.error(
+						"Data length is {}MB which is larger than 750MB. This is likely data corruption. Truncating length to 32 MB.",
+						dataLength / ((1024 * 1024)));
+				dataLength = 32 * 1024 * 1024;
+			}
+		}
 
-			// adjust the approximate average with 1 part actual length and 99 parts previous average up to a sensible
-			// max of 200
-			dataLengthApproximateAverage = (int) (Math.min(200,
-					((dataLengthApproximateAverage / 100.0) * 99) + (dataLength / 100.0)));
+		try {
 
-			return Arrays.copyOfRange(data, 4, dataLength + 4);
+			// We have either managed to read enough data and can return the required subset of the data, or we have
+			// read
+			// too little so we need to execute another read to get the correct data.
+			if (dataLength <= data.length - 4) {
 
-		} else {
+				// adjust the approximate average with 1 part actual length and 99 parts previous average up to a
+				// sensible
+				// max of 200
+				dataLengthApproximateAverage = (int) (Math.min(200,
+						((dataLengthApproximateAverage / 100.0) * 99) + (dataLength / 100.0)));
 
-			// adjust the approximate average, but favour the actual dataLength since dataLength predictions misses are
-			// costly
-			dataLengthApproximateAverage = Math.min(200, (dataLengthApproximateAverage + dataLength) / 2);
+				return Arrays.copyOfRange(data, 4, dataLength + 4);
 
-			// we didn't read enough data so we need to execute a new read
-			data = new byte[dataLength];
-			buf = ByteBuffer.wrap(data);
-			nioFile.read(buf, offset + 4L);
+			} else {
 
-			return data;
+				// adjust the approximate average, but favour the actual dataLength since dataLength predictions misses
+				// are costly
+				dataLengthApproximateAverage = Math.min(200, (dataLengthApproximateAverage + dataLength) / 2);
+
+				// we didn't read enough data so we need to execute a new read
+				data = new byte[dataLength];
+				buf = ByteBuffer.wrap(data);
+				nioFile.read(buf, offset + 4L);
+
+				return data;
+			}
+		} catch (OutOfMemoryError e) {
+			if (dataLength > 128 * 1024 * 1024) {
+				logger.error(
+						"Trying to read large amounts of data may be a sign of data corruption. Consider setting the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes to true");
+			}
+			throw e;
 		}
 
 	}
