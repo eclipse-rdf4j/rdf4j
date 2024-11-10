@@ -25,6 +25,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 import org.eclipse.rdf4j.common.io.NioFile;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -291,6 +292,13 @@ public class BTree implements Closeable {
 			this.blockSize = buf.getInt();
 			this.valueSize = buf.getInt();
 			this.rootNodeID = buf.getInt();
+
+			if (rootNodeID == 0 && NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
+				if (nioFile.size() > blockSize) {
+					throw new SailException("Root node ID is 0 but file is not empty. Btree may be corrupt. File: "
+							+ file.getAbsolutePath());
+				}
+			}
 
 			if (Arrays.equals(MAGIC_NUMBER, magicNumber)) {
 				if (version > FILE_FORMAT_VERSION) {
@@ -1116,5 +1124,12 @@ public class BTree implements Closeable {
 		out.println("#nodes          = " + nodeCount);
 		out.println("#values         = " + valueCount);
 		out.println("---end of BTree file---");
+	}
+
+	@Override
+	public String toString() {
+		return "BTree{" +
+				"file=" + getFile() +
+				'}';
 	}
 }

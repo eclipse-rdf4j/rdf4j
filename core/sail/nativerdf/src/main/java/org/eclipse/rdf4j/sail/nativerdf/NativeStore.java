@@ -24,6 +24,7 @@ import java.util.function.Supplier;
 import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.mapdb.MapDb3CollectionFactory;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockManager;
 import org.eclipse.rdf4j.common.io.MavenUtil;
@@ -61,6 +62,17 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	private static final Logger logger = LoggerFactory.getLogger(NativeStore.class);
 
 	private static final String VERSION = MavenUtil.loadVersion("org.eclipse.rdf4j", "rdf4j-sail-nativerdf", "devel");
+
+	/**
+	 * Do not throw an exception when corrupt data is detected. Instead, try to return as much data as possible.
+	 *
+	 * Variable can be set through the system property
+	 * org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes.
+	 */
+	@InternalUseOnly
+	public static boolean SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES = "true"
+			.equalsIgnoreCase(
+					System.getProperty("org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes"));;
 
 	private static final Cleaner REMOVE_STORES_USED_FOR_MEMORY_OVERFLOW = Cleaner.create();
 

@@ -17,7 +17,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.net.URL;
+import java.util.Arrays;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -39,6 +41,8 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
@@ -78,6 +82,8 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
  * @author James Leigh
  */
 public class SPARQLConnection extends AbstractRepositoryConnection implements HttpClientDependent {
+
+	private static final String COUNT_EVERYTHING = "SELECT (COUNT(*) AS ?count) WHERE { ?s ?p ?o }";
 
 	private static final String EVERYTHING = "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }";
 
@@ -281,14 +287,59 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	@Override
 	public long size(Resource... contexts) throws RepositoryException {
-		try (RepositoryResult<Statement> stmts = getStatements(null, null, null, true, contexts)) {
-			long i = 0;
-			while (stmts.hasNext()) {
-				stmts.next();
-				i++;
+		String query = sizeAsTupleQuery(contexts);
+		TupleQuery tq = prepareTupleQuery(SPARQL, query);
+		try (TupleQueryResult res = tq.evaluate()) {
+			if (res.hasNext()) {
+
+				Value value = res.next().getBinding("count").getValue();
+				if (value instanceof Literal) {
+					return ((Literal) value).longValue();
+				} else {
+					return 0;
+				}
 			}
-			return i;
+		} catch (QueryEvaluationException e) {
+			throw new RepositoryException(e);
 		}
+		return 0;
+	}
+
+	String sizeAsTupleQuery(Resource... contexts) {
+
+		// in case the context is null we want the
+		// default graph of the remote store i.e. ask without graph/from.
+		if (contexts != null && isQuadMode() && contexts.length > 0) {
+			// this is an optimization for the case that we can use a GRAPH instead of a FROM.
+			if (contexts.length == 1 && isExposableGraphIri(contexts[0])) {
+				return "SELECT (COUNT(*) AS ?count) WHERE { GRAPH <" + contexts[0].stringValue()
+						+ "> { ?s ?p ?o}}";
+			} else {
+				// If we had an default graph setting that is sesame/rdf4j specific
+				// we must drop it before sending it over the wire. Otherwise
+				// gather up the given contexts and send them as a from clauses
+				// to make the matching dataset.
+				String graphs = Arrays.stream(contexts)
+						.filter(SPARQLConnection::isExposableGraphIri)
+						.map(Resource::stringValue)
+						.map(s -> "FROM <" + s + ">")
+						.collect(Collectors.joining(" "));
+				return "SELECT (COUNT(*) AS ?count) " + graphs + "WHERE { ?s ?p ?o}";
+			}
+		} else {
+			return COUNT_EVERYTHING;
+		}
+	}
+
+	/**
+	 * For the sparql protocol a context must be an IRI However we can't send out the RDF4j internal default graph IRIs
+	 *
+	 * @param resource to test if it can be the IRI for a named graph
+	 * @return true if it the input can be a foreign named graph.
+	 */
+	private static boolean isExposableGraphIri(Resource resource) {
+		// We use the instanceof test to avoid any issue with a null pointer.
+		return resource instanceof IRI && !RDF4J.NIL.equals(resource) && !SESAME.NIL.equals(resource);
 	}
 
 	@Override
