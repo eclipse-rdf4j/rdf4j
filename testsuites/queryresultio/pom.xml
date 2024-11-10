@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-testsuites</artifactId>
-		<version>5.0.3-SNAPSHOT</version>
+		<version>5.0.4-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-queryresultio-testsuite</artifactId>
 	<name>RDF4J: QueryResultIO testsuite</name>
