@@ -227,7 +227,7 @@ public class ValueStore extends SimpleValueFactory {
 				return (T) new CorruptIRIOrBNode(revision, id, ((CorruptValue) resultValue).getData());
 			}
 			logger.warn(
-					"Possible corrupt data consider setting the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes to true");
+					"NativeStore is possibly corrupt. To attempt to repair or retrieve the data, read the documentation on http://rdf4j.org about the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes");
 		}
 
 		return (T) resultValue;
@@ -252,7 +252,7 @@ public class ValueStore extends SimpleValueFactory {
 				return (T) new CorruptIRI(revision, id, null, ((CorruptValue) resultValue).getData());
 			}
 			logger.warn(
-					"Possible corrupt data consider setting the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes to true");
+					"NativeStore is possibly corrupt. To attempt to repair or retrieve the data, read the documentation on http://rdf4j.org about the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes");
 		}
 
 		return (T) resultValue;
@@ -625,8 +625,8 @@ public class ValueStore extends SimpleValueFactory {
 					&& (e instanceof Exception || e instanceof AssertionError)) {
 				return (T) new CorruptIRI(revision, id, namespace, data);
 			}
-			logger.error(
-					"Possible corrupt data consider setting the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes to true");
+			logger.warn(
+					"NativeStore is possibly corrupt. To attempt to repair or retrieve the data, read the documentation on http://rdf4j.org about the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes");
 			throw e;
 		}
 
