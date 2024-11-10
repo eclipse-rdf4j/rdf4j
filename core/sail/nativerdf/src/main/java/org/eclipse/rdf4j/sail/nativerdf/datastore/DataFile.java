@@ -203,7 +203,8 @@ public class DataFile implements Closeable {
 				(data[2] << 8) & 0x0000ff00 |
 				(data[3]) & 0x000000ff;
 
-		// If the data length is larger than 750MB, we are likely reading the wrong data. Probably data corruption.
+		// If the data length is larger than 750MB, we are likely reading the wrong data. Probably data corruption. The
+		// limit of 750MB was chosen based on results from experimenting in the NativeSailStoreCorruptionTest class.
 		if (dataLength > 128 * 1024 * 1024) {
 			if (SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
 				logger.error(

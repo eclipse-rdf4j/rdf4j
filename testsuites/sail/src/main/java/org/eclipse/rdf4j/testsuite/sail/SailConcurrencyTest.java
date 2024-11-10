@@ -37,6 +37,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -155,6 +156,7 @@ public abstract class SailConcurrencyTest {
 	 * @see <a href="https://github.com/eclipse/rdf4j/issues/693">https://github.com/eclipse/rdf4j/issues/693</a>
 	 */
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentAddLargeTxn() throws Exception {
 		logger.info("executing two large concurrent transactions");
 		final CountDownLatch runnersDone = new CountDownLatch(2);
@@ -196,6 +198,7 @@ public abstract class SailConcurrencyTest {
 	 * one of the transactions rolls back at the end.
 	 */
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentAddLargeTxnRollback() throws Exception {
 		logger.info("executing two large concurrent transactions");
 		final CountDownLatch runnersDone = new CountDownLatch(2);
@@ -237,6 +240,7 @@ public abstract class SailConcurrencyTest {
 	}
 
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	@Disabled("This test takes a long time and accomplishes little extra")
 	public void testGetContextIDs() throws Exception {
 		// Create one thread which writes statements to the repository, on a
@@ -314,6 +318,7 @@ public abstract class SailConcurrencyTest {
 	}
 
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentConnectionsShutdown() throws InterruptedException {
 		if (store instanceof AbstractSail) {
 			((AbstractSail) store).setConnectionTimeOut(200);
@@ -356,8 +361,9 @@ public abstract class SailConcurrencyTest {
 
 	}
 
-//	@Disabled
+	// @Disabled
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testSerialThreads() throws InterruptedException {
 		if (store instanceof AbstractSail) {
 			((AbstractSail) store).setConnectionTimeOut(200);
@@ -438,6 +444,7 @@ public abstract class SailConcurrencyTest {
 	}
 
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentConnectionsShutdownReadCommitted() throws InterruptedException {
 		if (store instanceof AbstractSail) {
 			((AbstractSail) store).setConnectionTimeOut(200);
@@ -493,6 +500,7 @@ public abstract class SailConcurrencyTest {
 	}
 
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentConnectionsShutdownAndClose() throws InterruptedException {
 		if (store instanceof AbstractSail) {
 			((AbstractSail) store).setConnectionTimeOut(200);
@@ -568,6 +576,7 @@ public abstract class SailConcurrencyTest {
 	}
 
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentConnectionsShutdownAndCloseRollback() throws InterruptedException {
 		if (store instanceof AbstractSail) {
 			((AbstractSail) store).setConnectionTimeOut(200);

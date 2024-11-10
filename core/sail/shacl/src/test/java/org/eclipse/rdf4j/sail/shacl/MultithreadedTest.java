@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.sail.SailConflictException;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.slf4j.LoggerFactory;
 
@@ -67,6 +68,7 @@ public abstract class MultithreadedTest {
 	}
 
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testDataAndShapes() {
 		System.out.println("testDataAndShapes");
 
@@ -339,6 +341,7 @@ public abstract class MultithreadedTest {
 	}
 
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testLotsOfValidationFailuresSnapshot() throws IOException {
 		System.out.println("testLotsOfValidationFailuresSnapshot");
 		ShaclSail sail = new ShaclSail(getBaseSail());
@@ -354,6 +357,7 @@ public abstract class MultithreadedTest {
 	}
 
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testLotsOfValidationFailuresSerializableValidation() throws IOException {
 		System.out.println("testLotsOfValidationFailuresSerializableValidation");
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailBaseConfiguration.class.getName());
@@ -371,6 +375,7 @@ public abstract class MultithreadedTest {
 	}
 
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testLotsOfValidationFailuresSerializable() throws IOException {
 		System.out.println("testLotsOfValidationFailuresSerializable");
 
@@ -389,6 +394,7 @@ public abstract class MultithreadedTest {
 	}
 
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testLotsOfValidationFailuresReadCommitted() throws IOException {
 		System.out.println("testLotsOfValidationFailuresReadCommitted");
 		ShaclSail sail = new ShaclSail(getBaseSail());
@@ -403,6 +409,7 @@ public abstract class MultithreadedTest {
 	}
 
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testLotsOfValidationFailuresReadUncommitted() throws IOException {
 		System.out.println("testLotsOfValidationFailuresReadUncommitted");
 		ShaclSail sail = new ShaclSail(getBaseSail());
