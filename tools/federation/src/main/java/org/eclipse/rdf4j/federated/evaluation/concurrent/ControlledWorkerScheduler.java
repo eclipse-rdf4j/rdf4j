@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.federated.evaluation.concurrent;
 
 import java.util.List;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -42,7 +43,8 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 
 	private final ExecutorService executor;
 
-	private final LinkedBlockingQueue<Runnable> _taskQueue = new LinkedBlockingQueue<>();
+	// Note: initialized in #createExecutorService
+	protected BlockingQueue<Runnable> _taskQueue;
 
 	private final int nWorkers;
 	private final String name;
@@ -57,7 +59,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 	public ControlledWorkerScheduler(int nWorkers, String name) {
 		this.nWorkers = nWorkers;
 		this.name = name;
-		this.executor = createExecutorService();
+		this.executor = createExecutorService(nWorkers, name);
 	}
 
 	/**
@@ -112,13 +114,25 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 		return nWorkers;
 	}
 
+	@Deprecated(forRemoval = true) // currently unused and this class is internal
 	public int getNumberOfTasks() {
 		return _taskQueue.size();
 	}
 
-	private ExecutorService createExecutorService() {
+	/**
+	 * Create the {@link ExecutorService} which is managing the individual {@link ParallelTask}s in a thread pool. The
+	 * default implementation creates a thread pool with a {@link LinkedBlockingQueue}.
+	 *
+	 * @param nWorkers the number of workers in the thread pool
+	 * @param name     the base name for threads in the pool
+	 * @return
+	 */
+	protected ExecutorService createExecutorService(int nWorkers, String name) {
 
-		ThreadPoolExecutor executor = new ThreadPoolExecutor(nWorkers, nWorkers, 60L, TimeUnit.SECONDS, _taskQueue,
+		// use a LinkedBlockingQueue by default
+		this._taskQueue = new LinkedBlockingQueue<>();
+
+		ThreadPoolExecutor executor = new ThreadPoolExecutor(nWorkers, nWorkers, 60L, TimeUnit.SECONDS, this._taskQueue,
 				new NamingThreadFactory(name));
 		executor.allowCoreThreadTimeOut(true);
 		return executor;

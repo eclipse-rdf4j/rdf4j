@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.NamingThreadFactory;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.Scheduler;
+import org.eclipse.rdf4j.federated.evaluation.concurrent.SchedulerFactory;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.TaskWrapper;
 import org.eclipse.rdf4j.federated.evaluation.union.ControlledWorkerUnion;
 import org.eclipse.rdf4j.federated.evaluation.union.SynchronousWorkerUnion;
@@ -118,26 +119,28 @@ public class FederationManager {
 			log.debug("Scheduler for join and union are reset.");
 		}
 
+		SchedulerFactory schedulerFactory = federation.getSchedulerFactory();
+
 		Optional<TaskWrapper> taskWrapper = federationContext.getConfig().getTaskWrapper();
 		if (joinScheduler != null) {
 			joinScheduler.abort();
 		}
-		joinScheduler = new ControlledWorkerScheduler<>(federationContext.getConfig().getJoinWorkerThreads(),
-				"Join Scheduler");
+		joinScheduler = schedulerFactory.createJoinScheduler(federationContext,
+				federationContext.getConfig().getJoinWorkerThreads());
 		taskWrapper.ifPresent(joinScheduler::setTaskWrapper);
 
 		if (unionScheduler != null) {
 			unionScheduler.abort();
 		}
-		unionScheduler = new ControlledWorkerScheduler<>(federationContext.getConfig().getUnionWorkerThreads(),
-				"Union Scheduler");
+		unionScheduler = schedulerFactory.createUnionScheduler(federationContext,
+				federationContext.getConfig().getUnionWorkerThreads());
 		taskWrapper.ifPresent(unionScheduler::setTaskWrapper);
 
 		if (leftJoinScheduler != null) {
 			leftJoinScheduler.abort();
 		}
-		leftJoinScheduler = new ControlledWorkerScheduler<>(federationContext.getConfig().getLeftJoinWorkerThreads(),
-				"Left Join Scheduler");
+		leftJoinScheduler = schedulerFactory.createLeftJoinScheduler(federationContext,
+				federationContext.getConfig().getLeftJoinWorkerThreads());
 		taskWrapper.ifPresent(leftJoinScheduler::setTaskWrapper);
 
 	}

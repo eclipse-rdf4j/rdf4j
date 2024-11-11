@@ -22,6 +22,8 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.ResolvableEndpoint;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategyFactory;
+import org.eclipse.rdf4j.federated.evaluation.concurrent.DefaultSchedulerFactory;
+import org.eclipse.rdf4j.federated.evaluation.concurrent.SchedulerFactory;
 import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
@@ -64,6 +66,8 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 
 	private FederationEvaluationStrategyFactory strategyFactory;
 
+	private SchedulerFactory schedulerFactory;
+
 	private WriteStrategyFactory writeStrategyFactory;
 
 	private File dataDir;
@@ -94,6 +98,22 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 
 	public void setFederationEvaluationStrategy(FederationEvaluationStrategyFactory strategyFactory) {
 		this.strategyFactory = strategyFactory;
+	}
+
+	/* package */ SchedulerFactory getSchedulerFactory() {
+		if (schedulerFactory == null) {
+			schedulerFactory = DefaultSchedulerFactory.INSTANCE;
+		}
+		return schedulerFactory;
+	}
+
+	/**
+	 * Set the {@link SchedulerFactory}. Can only be done before initialization of the federation
+	 *
+	 * @param schedulerFactory the {@link SchedulerFactory}
+	 */
+	public void setSchedulerFactory(SchedulerFactory schedulerFactory) {
+		this.schedulerFactory = schedulerFactory;
 	}
 
 	/**
