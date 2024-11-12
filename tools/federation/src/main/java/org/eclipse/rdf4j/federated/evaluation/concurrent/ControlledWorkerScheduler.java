@@ -43,8 +43,9 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 
 	private final ExecutorService executor;
 
-	// Note: initialized in #createExecutorService
-	protected BlockingQueue<Runnable> _taskQueue;
+	// TODO: in the next major version of RDF4J this final field should be removed.
+	// Initialization of the executor service should managed the details
+	private final BlockingQueue<Runnable> _taskQueue;
 
 	private final int nWorkers;
 	private final String name;
@@ -59,6 +60,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 	public ControlledWorkerScheduler(int nWorkers, String name) {
 		this.nWorkers = nWorkers;
 		this.name = name;
+		this._taskQueue = createBlockingQueue();
 		this.executor = createExecutorService(nWorkers, name);
 	}
 
@@ -114,23 +116,32 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 		return nWorkers;
 	}
 
-	@Deprecated(forRemoval = true) // currently unused and this class is internal
+	@Deprecated(forRemoval = true, since = "5.1") // currently unused and this class is internal
 	public int getNumberOfTasks() {
 		return _taskQueue.size();
+	}
+
+	/**
+	 * Create the {@link BlockingQueue} used for the thread pool. The default implementation creates a
+	 * {@link LinkedBlockingQueue}.
+	 *
+	 * @return
+	 */
+	protected BlockingQueue<Runnable> createBlockingQueue() {
+		return new LinkedBlockingQueue<>();
 	}
 
 	/**
 	 * Create the {@link ExecutorService} which is managing the individual {@link ParallelTask}s in a thread pool. The
 	 * default implementation creates a thread pool with a {@link LinkedBlockingQueue}.
 	 *
+	 * The thread pool should be configured to terminate idle threads after a period of time (default: 60s)
+	 *
 	 * @param nWorkers the number of workers in the thread pool
 	 * @param name     the base name for threads in the pool
 	 * @return
 	 */
 	protected ExecutorService createExecutorService(int nWorkers, String name) {
-
-		// use a LinkedBlockingQueue by default
-		this._taskQueue = new LinkedBlockingQueue<>();
 
 		ThreadPoolExecutor executor = new ThreadPoolExecutor(nWorkers, nWorkers, 60L, TimeUnit.SECONDS, this._taskQueue,
 				new NamingThreadFactory(name));

@@ -11,6 +11,10 @@
 package org.eclipse.rdf4j.federated.evaluation.concurrent;
 
 import org.eclipse.rdf4j.federated.FederationContext;
+import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBindJoin;
+import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBindLeftJoin;
+import org.eclipse.rdf4j.federated.evaluation.join.ParallelBindLeftJoinTask;
+import org.eclipse.rdf4j.federated.evaluation.join.ParallelBoundJoinTask;
 import org.eclipse.rdf4j.query.BindingSet;
 
 /**
@@ -22,16 +26,19 @@ import org.eclipse.rdf4j.query.BindingSet;
 public interface SchedulerFactory {
 
 	/**
-	 * Create a {@link ControlledWorkerScheduler} for joins
+	 * Create a {@link ControlledWorkerScheduler} for regular joins (e.g., the sub-queries generated as part of bind
+	 * joins)
 	 *
 	 * @param federationContext
 	 * @param nWorkers
 	 * @return
+	 * @see ControlledWorkerBindJoin
+	 * @see ParallelBoundJoinTask
 	 */
 	ControlledWorkerScheduler<BindingSet> createJoinScheduler(FederationContext federationContext, int nWorkers);
 
 	/**
-	 * Create a {@link ControlledWorkerScheduler} for unions
+	 * Create a {@link ControlledWorkerScheduler} for unions (e.g., for executing UNION operands in parallel)
 	 *
 	 * @param federationContext
 	 * @param nWorkers
@@ -40,11 +47,14 @@ public interface SchedulerFactory {
 	ControlledWorkerScheduler<BindingSet> createUnionScheduler(FederationContext federationContext, int nWorkers);
 
 	/**
-	 * Create a {@link ControlledWorkerScheduler} for left joins
+	 * Create a {@link ControlledWorkerScheduler} for left joins (e.g., the sub-queries generated as part of left bind
+	 * joins, i.e. OPTIONAL)
 	 *
 	 * @param federationContext
 	 * @param nWorkers
 	 * @return
+	 * @see ControlledWorkerBindLeftJoin
+	 * @see ParallelBindLeftJoinTask
 	 */
 	ControlledWorkerScheduler<BindingSet> createLeftJoinScheduler(FederationContext federationContext, int nWorkers);
 }

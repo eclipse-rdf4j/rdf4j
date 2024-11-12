@@ -66,7 +66,7 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 
 	private FederationEvaluationStrategyFactory strategyFactory;
 
-	private SchedulerFactory schedulerFactory;
+	private SchedulerFactory schedulerFactory = DefaultSchedulerFactory.INSTANCE;
 
 	private WriteStrategyFactory writeStrategyFactory;
 
@@ -101,9 +101,6 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 	}
 
 	/* package */ SchedulerFactory getSchedulerFactory() {
-		if (schedulerFactory == null) {
-			schedulerFactory = DefaultSchedulerFactory.INSTANCE;
-		}
 		return schedulerFactory;
 	}
 
