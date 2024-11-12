@@ -192,8 +192,6 @@ public class BindLeftJoinTests extends SPARQLBaseTest {
 			conn.add(Values.iri("http://other.com/p30"), FOAF.GENDER, Values.literal("male"));
 		}
 
-		fedxRule.enableDebug();
-
 		try {
 			// run query which joins results from multiple repos
 			// for a subset of persons there exist names
@@ -239,6 +237,101 @@ public class BindLeftJoinTests extends SPARQLBaseTest {
 				// make exact assertions for endpoint 2 and 3
 				// this is because due to the check statement
 				// not all requests are required
+			}
+
+		} finally {
+			fedxRepo.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	public void test_leftBindJoin_emptyOptional(boolean bindLeftJoinOptimizationEnabled) throws Exception {
+
+		prepareTest(
+				Arrays.asList("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl",
+						"/tests/basic/data_emptyStore.ttl"));
+
+		Repository repo1 = getRepository(1);
+		Repository repo2 = getRepository(2);
+		Repository repo3 = getRepository(3);
+
+		Repository fedxRepo = fedxRule.getRepository();
+
+		fedxRule.setConfig(config -> {
+			config.withBoundJoinBlockSize(10);
+			config.withEnableOptionalAsBindJoin(bindLeftJoinOptimizationEnabled);
+		});
+
+		// add some persons
+		try (RepositoryConnection conn = repo1.getConnection()) {
+
+			for (int i = 1; i <= 30; i++) {
+				var p = Values.iri("http://ex.com/p" + i);
+				var otherP = Values.iri("http://other.com/p" + i);
+				conn.add(p, OWL.SAMEAS, otherP);
+			}
+		}
+
+		// add names for person 1, 4, 7, ...
+		try (RepositoryConnection conn = repo2.getConnection()) {
+
+			for (int i = 1; i <= 30; i += 3) {
+				var otherP = Values.iri("http://other.com/p" + i);
+				conn.add(otherP, FOAF.NAME, Values.literal("Person " + i));
+			}
+		}
+
+		// add names for person 2, 5, 8, ...
+		try (RepositoryConnection conn = repo3.getConnection()) {
+
+			for (int i = 2; i <= 30; i += 3) {
+				var otherP = Values.iri("http://other.com/p" + i);
+				conn.add(otherP, FOAF.NAME, Values.literal("Person " + i));
+			}
+		}
+
+		try {
+			// run query which joins results from multiple repos
+			// for a subset of persons there exist names
+			// the age does not exist for any person
+			try (RepositoryConnection conn = fedxRepo.getConnection()) {
+				String query = "PREFIX foaf: <http://xmlns.com/foaf/0.1/> " +
+						"SELECT * WHERE { "
+						+ " ?person owl:sameAs ?otherPerson . "
+						+ " OPTIONAL { ?otherPerson foaf:name ?name .  } " // # @repo2 and @repo3
+						+ " OPTIONAL { ?otherPerson foaf:age ?age . } " // # does not exist
+						+ "}";
+
+				TupleQuery tupleQuery = conn.prepareTupleQuery(query);
+				try (TupleQueryResult tqr = tupleQuery.evaluate()) {
+					var bindings = Iterations.asList(tqr);
+
+					Assertions.assertEquals(30, bindings.size());
+
+					for (int i = 1; i <= 30; i++) {
+						var p = Values.iri("http://ex.com/p" + i);
+						var otherP = Values.iri("http://other.com/p" + i);
+
+						// find the bindingset for the person in the unordered result
+						BindingSet bs = bindings.stream()
+								.filter(b -> b.getValue("person").equals(p))
+								.findFirst()
+								.orElseThrow();
+
+						Assertions.assertEquals(otherP, bs.getValue("otherPerson"));
+						if (i % 3 == 1 || i % 3 == 2) {
+							// names from repo 2 or 3
+							Assertions.assertEquals("Person " + i, bs.getValue("name").stringValue());
+						} else {
+							// no name for others
+							Assertions.assertFalse(bs.hasBinding("name"));
+						}
+
+						Assertions.assertEquals(otherP, bs.getValue("otherPerson"));
+						Assertions.assertFalse(bs.hasBinding("age"));
+					}
+				}
 			}
 
 		} finally {
