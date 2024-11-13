@@ -18,6 +18,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBindJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerJoin;
@@ -127,6 +128,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 	 *
 	 * @return
 	 */
+	@Experimental
 	protected BlockingQueue<Runnable> createBlockingQueue() {
 		return new LinkedBlockingQueue<>();
 	}
@@ -141,6 +143,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 	 * @param name     the base name for threads in the pool
 	 * @return
 	 */
+	@Experimental
 	protected ExecutorService createExecutorService(int nWorkers, String name) {
 
 		ThreadPoolExecutor executor = new ThreadPoolExecutor(nWorkers, nWorkers, 60L, TimeUnit.SECONDS, this._taskQueue,
