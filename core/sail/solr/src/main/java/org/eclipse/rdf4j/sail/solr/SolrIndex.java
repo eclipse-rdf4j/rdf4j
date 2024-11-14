@@ -585,13 +585,13 @@ public class SolrIndex extends AbstractSearchIndex {
 	public QueryResponse search(SolrQuery query, int numDocs) throws SolrServerException, IOException {
 		int nDocs;
 		if (numDocs > 0) {
-			if (maxQueryDocs > 0 && maxQueryDocs < numDocs) {
-				nDocs = maxQueryDocs;
+			if (maxDocs > 0 && maxDocs < numDocs) {
+				nDocs = maxDocs;
 			} else {
 				nDocs = numDocs;
 			}
-		} else if (maxDocs > 0) {
-			nDocs = maxDocs;
+		} else if (defaultNumDocs > 0) {
+			nDocs = defaultNumDocs;
 		} else {
 			long docCount = client.query(query.setRows(0)).getResults().getNumFound();
 			nDocs = Math.max((int) Math.min(docCount, Integer.MAX_VALUE), 1);

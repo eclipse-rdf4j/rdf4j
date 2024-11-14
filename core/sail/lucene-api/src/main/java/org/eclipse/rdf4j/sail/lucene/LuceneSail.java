@@ -290,18 +290,18 @@ public class LuceneSail extends NotifyingSailWrapper {
 	public static final String LUCENE_RAMDIR_KEY = "useramdir";
 
 	/**
-	 * Set the key "maxDocuments=&lt;n&gt;" as sail parameter to limit the maximum number of documents to return from a
-	 * search query. The default is to return all documents. NB: this may involve extra cost for some SearchIndex
+	 * Set the key "defaultNumDocs=&lt;n&gt;" as sail parameter to limit the maximum number of documents to return from
+	 * a search query. The default is to return all documents. NB: this may involve extra cost for some SearchIndex
 	 * implementations as they may have to determine this number.
 	 */
-	public static final String MAX_DOCUMENTS_KEY = "maxDocuments";
+	public static final String DEFAULT_NUM_DOCS_KEY = "defaultNumDocs";
 
 	/**
-	 * Set the key "maxQueryDocuments=&lt;n&gt;" as sail parameter to limit the maximum number of documents the user can
-	 * query at a time to return from a search query. The default is the value of the {@link #MAX_DOCUMENTS_KEY}
+	 * Set the key "maxDocuments=&lt;n&gt;" as sail parameter to limit the maximum number of documents the user can
+	 * query at a time to return from a search query. The default is the value of the {@link #DEFAULT_NUM_DOCS_KEY}
 	 * parameter.
 	 */
-	public static final String MAX_QUERY_DOCUMENTS_KEY = "maxQueryDocuments";
+	public static final String MAX_DOCUMENTS_KEY = "maxDocuments";
 
 	/**
 	 * Set this key to configure which fields contain WKT and should be spatially indexed. The value should be a

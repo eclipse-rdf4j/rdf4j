@@ -65,8 +65,8 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		REJECTED_DATATYPES.add("http://www.w3.org/2001/XMLSchema#float");
 	}
 
+	protected int defaultNumDocs;
 	protected int maxDocs;
-	protected int maxQueryDocs;
 
 	protected Set<String> wktFields = Collections.singleton(SearchFields.getPropertyField(GEO.AS_WKT));
 
@@ -76,10 +76,10 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 
 	@Override
 	public void initialize(Properties parameters) throws Exception {
-		String maxDocParam = parameters.getProperty(LuceneSail.MAX_DOCUMENTS_KEY);
-		maxDocs = (maxDocParam != null) ? Integer.parseInt(maxDocParam) : -1;
-		String maxQueryDocParam = parameters.getProperty(LuceneSail.MAX_QUERY_DOCUMENTS_KEY);
-		maxQueryDocs = (maxQueryDocParam != null) ? Integer.parseInt(maxQueryDocParam) : maxDocs;
+		String maxDocumentsParam = parameters.getProperty(LuceneSail.MAX_DOCUMENTS_KEY);
+		maxDocs = (maxDocumentsParam != null) ? Integer.parseInt(maxDocumentsParam) : -1;
+		String defaultNumDocsParam = parameters.getProperty(LuceneSail.DEFAULT_NUM_DOCS_KEY);
+		defaultNumDocs = (defaultNumDocsParam != null) ? Integer.parseInt(defaultNumDocsParam) : defaultNumDocs;
 
 		String wktFieldParam = parameters.getProperty(LuceneSail.WKT_FIELDS);
 		if (wktFieldParam != null) {

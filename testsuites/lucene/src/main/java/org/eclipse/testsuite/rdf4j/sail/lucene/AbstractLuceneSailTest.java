@@ -1099,8 +1099,35 @@ public abstract class AbstractLuceneSailTest {
 
 	@ParameterizedTest
 	@ValueSource(ints = { 1, 2, 3 })
+	public void testDefaultNumDocsResult(int numDoc) {
+		createTestSail(lc -> lc.setParameter(LuceneSail.DEFAULT_NUM_DOCS_KEY, String.valueOf(numDoc)));
+		Repositories.consumeNoTransaction(repository, conn -> {
+			try (TupleQueryResult res = conn.prepareTupleQuery(
+					"SELECT ?Resource {\n"
+							+ "  ?Resource <" + MATCHES + "> [\n "
+							+ "    <" + QUERY + "> \"one\"\n "
+							+ "  ]. } "
+			).evaluate()) {
+				for (int k = 0; k < numDoc; k++) {
+					assertTrue(res.hasNext(), "missing result #" + k);
+					res.next();
+				}
+				if (res.hasNext()) {
+					StringBuilder b = new StringBuilder();
+					int r = 0;
+					do {
+						b.append("\n#").append(r++).append(res.next());
+					} while (res.hasNext());
+					fail("can't have more than " + numDoc + " result(s)" + b);
+				}
+			}
+		});
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 1, 2, 3 })
 	public void testMaxNumDocsResult(int numDoc) {
-		createTestSail(lc -> lc.setParameter(LuceneSail.MAX_QUERY_DOCUMENTS_KEY, String.valueOf(numDoc)));
+		createTestSail(lc -> lc.setParameter(LuceneSail.MAX_DOCUMENTS_KEY, String.valueOf(numDoc)));
 		Repositories.consumeNoTransaction(repository, conn -> {
 			try (TupleQueryResult res = conn.prepareTupleQuery(
 					"SELECT ?Resource {\n"

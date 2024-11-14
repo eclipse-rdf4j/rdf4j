@@ -737,13 +737,13 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		String[] types = getTypes();
 		int nDocs;
 		if (numDocs > 0) {
-			if (maxQueryDocs > 0 && maxQueryDocs < numDocs) {
-				nDocs = maxQueryDocs;
+			if (maxDocs > 0 && maxDocs < numDocs) {
+				nDocs = maxDocs;
 			} else {
 				nDocs = numDocs;
 			}
-		} else if (maxDocs > 0) {
-			nDocs = maxDocs;
+		} else if (defaultNumDocs > 0) {
+			nDocs = defaultNumDocs;
 		} else {
 			long docCount = client.prepareSearch(indexName)
 					.setTypes(types)

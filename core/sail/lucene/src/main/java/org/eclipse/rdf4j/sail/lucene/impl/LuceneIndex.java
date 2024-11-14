@@ -1006,13 +1006,13 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	public synchronized TopDocs search(Query query, int numDocs) throws IOException {
 		int nDocs;
 		if (numDocs > 0) {
-			if (maxQueryDocs > 0 && maxQueryDocs < numDocs) {
-				nDocs = maxQueryDocs;
+			if (maxDocs > 0 && maxDocs < numDocs) {
+				nDocs = maxDocs;
 			} else {
 				nDocs = numDocs;
 			}
-		} else if (maxDocs > 0) {
-			nDocs = maxDocs;
+		} else if (defaultNumDocs > 0) {
+			nDocs = defaultNumDocs;
 		} else {
 			nDocs = Math.max(getIndexReader().numDocs(), 1);
 		}
