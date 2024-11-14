@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.federated.evaluation.join;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.federated.algebra.EmptyStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
@@ -42,7 +43,9 @@ public class ControlledWorkerBindLeftJoin extends ControlledWorkerBindJoinBase {
 		if (expr instanceof StatementTupleExpr) {
 			StatementTupleExpr stmt = (StatementTupleExpr) expr;
 			taskCreator = new LeftBoundJoinTaskCreator(strategy, stmt);
-
+		} else if (expr instanceof EmptyStatementPattern) {
+			EmptyStatementPattern stmt = (EmptyStatementPattern) expr;
+			taskCreator = new EmptyLeftBoundJoinTaskCreator(strategy, stmt);
 		} else {
 			throw new RuntimeException("Expr is of unexpected type: " + expr.getClass().getCanonicalName()
 					+ ". Please report this problem.");
@@ -67,4 +70,20 @@ public class ControlledWorkerBindLeftJoin extends ControlledWorkerBindJoinBase {
 		}
 	}
 
+	static protected class EmptyLeftBoundJoinTaskCreator implements TaskCreator {
+		protected final FederationEvalStrategy _strategy;
+		protected final EmptyStatementPattern _expr;
+
+		public EmptyLeftBoundJoinTaskCreator(
+				FederationEvalStrategy strategy, EmptyStatementPattern expr) {
+			super();
+			_strategy = strategy;
+			_expr = expr;
+		}
+
+		@Override
+		public ParallelTask<BindingSet> getTask(ParallelExecutor<BindingSet> control, List<BindingSet> bindings) {
+			return new ParallelEmptyBindLeftJoinTask(control, _strategy, _expr, bindings);
+		}
+	}
 }
