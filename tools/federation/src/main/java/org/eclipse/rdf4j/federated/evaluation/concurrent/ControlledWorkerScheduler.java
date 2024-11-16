@@ -11,12 +11,14 @@
 package org.eclipse.rdf4j.federated.evaluation.concurrent;
 
 import java.util.List;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBindJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerJoin;
@@ -42,7 +44,9 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 
 	private final ExecutorService executor;
 
-	private final LinkedBlockingQueue<Runnable> _taskQueue = new LinkedBlockingQueue<>();
+	// TODO: in the next major version of RDF4J this final field should be removed.
+	// Initialization of the executor service should managed the details
+	private final BlockingQueue<Runnable> _taskQueue;
 
 	private final int nWorkers;
 	private final String name;
@@ -57,7 +61,8 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 	public ControlledWorkerScheduler(int nWorkers, String name) {
 		this.nWorkers = nWorkers;
 		this.name = name;
-		this.executor = createExecutorService();
+		this._taskQueue = createBlockingQueue();
+		this.executor = createExecutorService(nWorkers, name);
 	}
 
 	/**
@@ -112,13 +117,36 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 		return nWorkers;
 	}
 
+	@Deprecated(forRemoval = true, since = "5.1") // currently unused and this class is internal
 	public int getNumberOfTasks() {
 		return _taskQueue.size();
 	}
 
-	private ExecutorService createExecutorService() {
+	/**
+	 * Create the {@link BlockingQueue} used for the thread pool. The default implementation creates a
+	 * {@link LinkedBlockingQueue}.
+	 *
+	 * @return
+	 */
+	@Experimental
+	protected BlockingQueue<Runnable> createBlockingQueue() {
+		return new LinkedBlockingQueue<>();
+	}
 
-		ThreadPoolExecutor executor = new ThreadPoolExecutor(nWorkers, nWorkers, 60L, TimeUnit.SECONDS, _taskQueue,
+	/**
+	 * Create the {@link ExecutorService} which is managing the individual {@link ParallelTask}s in a thread pool. The
+	 * default implementation creates a thread pool with a {@link LinkedBlockingQueue}.
+	 *
+	 * The thread pool should be configured to terminate idle threads after a period of time (default: 60s)
+	 *
+	 * @param nWorkers the number of workers in the thread pool
+	 * @param name     the base name for threads in the pool
+	 * @return
+	 */
+	@Experimental
+	protected ExecutorService createExecutorService(int nWorkers, String name) {
+
+		ThreadPoolExecutor executor = new ThreadPoolExecutor(nWorkers, nWorkers, 60L, TimeUnit.SECONDS, this._taskQueue,
 				new NamingThreadFactory(name));
 		executor.allowCoreThreadTimeOut(true);
 		return executor;
