@@ -18,7 +18,6 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 
@@ -88,14 +87,13 @@ import com.google.common.collect.Iterables;
 
 /**
  * Requires an Elasticsearch cluster with the DeleteByQuery plugin.
- *
+ * <p>
  * Note that, while RDF4J is licensed under the EDL, several ElasticSearch dependencies are licensed under the Elastic
  * license or the SSPL, which may have implications for some projects.
- *
+ * <p>
  * Please consult the ElasticSearch website and license FAQ for more information.
  *
  * @see <a href="https://www.elastic.co/licensing/elastic-license/faq">Elastic License FAQ</a>
- *
  * @see LuceneSail
  */
 public class ElasticsearchIndex extends AbstractSearchIndex {
@@ -410,13 +408,8 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	@Override
 	protected Iterable<? extends SearchDocument> getDocuments(String resourceId) throws IOException {
 		SearchHits hits = getDocuments(QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME, resourceId));
-		return Iterables.transform(hits, new Function<>() {
-
-			@Override
-			public SearchDocument apply(SearchHit hit) {
-				return new ElasticsearchDocument(hit, geoContextMapper);
-			}
-		});
+		return Iterables.transform(hits,
+				(Function<SearchHit, SearchDocument>) hit -> new ElasticsearchDocument(hit, geoContextMapper));
 	}
 
 	@Override
@@ -578,19 +571,26 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		}
 
 		SearchHits hits;
-		int numDocs = Objects.requireNonNullElse(spec.getNumDocs(), -1);
+
+		int numDocs;
+
+		Integer specNumDocs = spec.getNumDocs();
+		if (specNumDocs != null) {
+			if (specNumDocs < 0) {
+				throw new IllegalArgumentException("numDocs must be >= 0");
+			}
+			numDocs = specNumDocs;
+		} else {
+			numDocs = -1;
+		}
+
 		if (subject != null) {
 			hits = search(subject, request, qb, numDocs);
 		} else {
 			hits = search(request, qb, numDocs);
 		}
-		return Iterables.transform(hits, new Function<>() {
-
-			@Override
-			public DocumentScore apply(SearchHit hit) {
-				return new ElasticsearchDocumentScore(hit, geoContextMapper);
-			}
-		});
+		return Iterables.transform(hits,
+				(Function<SearchHit, DocumentScore>) hit -> new ElasticsearchDocumentScore(hit, geoContextMapper));
 	}
 
 	/**
@@ -701,13 +701,8 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 		SearchRequestBuilder request = client.prepareSearch();
 		SearchHits hits = search(request, QueryBuilders.boolQuery().must(qb).filter(fb));
-		return Iterables.transform(hits, new Function<>() {
-
-			@Override
-			public DocumentResult apply(SearchHit hit) {
-				return new ElasticsearchDocumentResult(hit, geoContextMapper);
-			}
-		});
+		return Iterables.transform(hits,
+				(Function<SearchHit, DocumentResult>) hit -> new ElasticsearchDocumentResult(hit, geoContextMapper));
 	}
 
 	private ShapeRelation toSpatialOp(String relation) {
@@ -735,30 +730,35 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	 */
 	public SearchHits search(SearchRequestBuilder request, QueryBuilder query, int numDocs) {
 		String[] types = getTypes();
-		int nDocs;
-		if (numDocs > 0) {
-			if (maxDocs > 0 && maxDocs < numDocs) {
-				nDocs = maxDocs;
-			} else {
-				nDocs = numDocs;
-			}
-		} else if (defaultNumDocs > 0) {
-			nDocs = defaultNumDocs;
-		} else {
+
+		if (numDocs < -1) {
+			throw new IllegalArgumentException("numDocs should be 0 or greater if defined by the user");
+		}
+
+		int size = defaultNumDocs;
+		if (numDocs >= 0) {
+			// If the user has set numDocs we will use that. If it is 0 then the implementation may end up throwing an
+			// exception.
+			size = Math.min(maxDocs, numDocs);
+		}
+
+		if (size < 0) {
+			// defaultNumDocs is not set
 			long docCount = client.prepareSearch(indexName)
 					.setTypes(types)
 					.setSource(new SearchSourceBuilder().size(0).query(query))
 					.get()
 					.getHits()
 					.getTotalHits().value;
-			nDocs = Math.max((int) Math.min(docCount, Integer.MAX_VALUE), 1);
+			size = Math.max((int) Math.min(docCount, maxDocs), 1);
 		}
+
 		SearchResponse response = request.setIndices(indexName)
 				.setTypes(types)
 				.setVersion(false)
 				.seqNoAndPrimaryTerm(true)
 				.setQuery(query)
-				.setSize(nDocs)
+				.setSize(size)
 				.execute()
 				.actionGet();
 		return response.getHits();

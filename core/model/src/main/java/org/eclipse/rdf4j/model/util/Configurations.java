@@ -240,7 +240,7 @@ public class Configurations {
 
 	private static void logDiscrepancyWarning(Optional<? extends Value> preferred,
 			Optional<? extends Value> fallback) {
-		if (!fallback.isEmpty() && !preferred.equals(fallback)) {
+		if (fallback.isPresent() && !preferred.equals(fallback)) {
 			var msg = "Discrepancy between use of the old and new config vocabulary.";
 			// depending on whether preferred is set, we log on warn or debug
 			if (preferred.isEmpty()) {

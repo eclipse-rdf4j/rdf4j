@@ -583,20 +583,22 @@ public class SolrIndex extends AbstractSearchIndex {
 	 * @throws IOException
 	 */
 	public QueryResponse search(SolrQuery query, int numDocs) throws SolrServerException, IOException {
-		int nDocs;
-		if (numDocs > 0) {
-			if (maxDocs > 0 && maxDocs < numDocs) {
-				nDocs = maxDocs;
-			} else {
-				nDocs = numDocs;
-			}
-		} else if (defaultNumDocs > 0) {
-			nDocs = defaultNumDocs;
-		} else {
-			long docCount = client.query(query.setRows(0)).getResults().getNumFound();
-			nDocs = Math.max((int) Math.min(docCount, Integer.MAX_VALUE), 1);
+		if (numDocs < -1) {
+			throw new IllegalArgumentException("numDocs should be 0 or greater if defined by the user");
 		}
-		return client.query(query.setRows(nDocs));
+
+		int size = defaultNumDocs;
+		if (numDocs >= 0) {
+			// If the user has set numDocs we will use that. If it is 0 then the implementation may end up throwing an
+			// exception.
+			size = Math.min(maxDocs, numDocs);
+		}
+
+		if (size < 0) {
+			long docCount = client.query(query.setRows(0)).getResults().getNumFound();
+			size = Math.max((int) Math.min(docCount, maxDocs), 1);
+		}
+		return client.query(query.setRows(size));
 	}
 
 	private SolrQuery prepareQuery(IRI propertyURI, SolrQuery query) {

@@ -752,7 +752,17 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			highlighter = null;
 		}
 
-		int numDocs = Objects.requireNonNullElse(spec.getNumDocs(), -1);
+		int numDocs;
+
+		Integer specNumDocs = spec.getNumDocs();
+		if (specNumDocs != null) {
+			if (specNumDocs < 0) {
+				throw new IllegalArgumentException("numDocs must be >= 0");
+			}
+			numDocs = specNumDocs;
+		} else {
+			numDocs = -1;
+		}
 
 		TopDocs docs;
 		if (subject != null) {
@@ -1004,19 +1014,20 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * @throws IOException
 	 */
 	public synchronized TopDocs search(Query query, int numDocs) throws IOException {
-		int nDocs;
-		if (numDocs > 0) {
-			if (maxDocs > 0 && maxDocs < numDocs) {
-				nDocs = maxDocs;
-			} else {
-				nDocs = numDocs;
-			}
-		} else if (defaultNumDocs > 0) {
-			nDocs = defaultNumDocs;
-		} else {
-			nDocs = Math.max(getIndexReader().numDocs(), 1);
+		if (numDocs < -1) {
+			throw new IllegalArgumentException("numDocs should be 0 or greater if defined by the user");
 		}
-		return getIndexSearcher().search(query, nDocs);
+
+		int size = defaultNumDocs;
+		if (numDocs >= 0) {
+			// If the user has set numDocs we will use that. If it is 0 then the implementation may end up throwing an
+			// exception.
+			size = Math.min(maxDocs, numDocs);
+		}
+		if (size < 0) {
+			size = Math.max(getIndexReader().numDocs(), 1);
+		}
+		return getIndexSearcher().search(query, size);
 	}
 
 	private QueryParser getQueryParser(IRI propertyURI) {

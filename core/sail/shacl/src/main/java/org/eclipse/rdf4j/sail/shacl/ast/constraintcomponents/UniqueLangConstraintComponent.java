@@ -120,7 +120,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);
 		Optional<Path> path = getTargetChain().getPath();
 
-		if (!path.isPresent() || scope != Scope.propertyShape) {
+		if (path.isEmpty() || scope != Scope.propertyShape) {
 			throw new IllegalStateException("UniqueLang only operates on paths");
 		}
 

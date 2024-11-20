@@ -19,6 +19,7 @@ import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SNIPPET;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -1176,6 +1177,25 @@ public abstract class AbstractLuceneSailTest {
 					fail("can't have more than " + numDoc + " result(s)" + b);
 				}
 			}
+		});
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { -1, -2, -3 })
+	public void testNumDocsResultNegative(int numDocs) {
+		// assert that negative values cause an assertion error
+		assertThrows(AssertionError.class, () -> {
+			Repositories.consumeNoTransaction(repository, conn -> {
+				try (TupleQueryResult res = conn.prepareTupleQuery(
+						"SELECT ?Resource {\n"
+								+ "  ?Resource <" + MATCHES + "> [\n "
+								+ "    <" + QUERY + "> \"one\";\n "
+								+ "    <" + NUM_DOCS + "> " + numDocs + ";\n "
+								+ "  ]. } "
+				).evaluate()) {
+					assertFalse(res.hasNext());
+				}
+			});
 		});
 	}
 

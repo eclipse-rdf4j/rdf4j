@@ -316,7 +316,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 			w = new ConsoleQueryResultWriter(consoleIO, getConsoleWidth());
 		} else {
 			Optional<QueryResultFormat> fmt = QueryResultIO.getWriterFormatForFileName(path.toFile().toString());
-			if (!fmt.isPresent()) {
+			if (fmt.isEmpty()) {
 				throw new IllegalArgumentException("No suitable result writer found");
 			}
 			w = QueryResultIO.createWriter(fmt.get(), out);
@@ -342,7 +342,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 			w = new ConsoleRDFWriter(consoleIO, getConsoleWidth());
 		} else {
 			Optional<RDFFormat> fmt = Rio.getWriterFormatForFileName(path.toFile().toString());
-			if (!fmt.isPresent()) {
+			if (fmt.isEmpty()) {
 				throw new IllegalArgumentException("No suitable result writer found");
 			}
 			w = Rio.createWriter(fmt.get(), out);
