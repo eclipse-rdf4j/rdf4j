@@ -64,7 +64,7 @@ class JSONLDInternalRDFParser implements com.github.jsonldjava.core.RDFParser {
 
 			// In RDF-1.1, RDF-1.0 Plain Literals are now Typed Literals with
 			// type xsd:String
-			if (!literal.getLanguage().isPresent() && datatype == null) {
+			if (literal.getLanguage().isEmpty() && datatype == null) {
 				datatype = XSD.STRING.stringValue();
 			}
 

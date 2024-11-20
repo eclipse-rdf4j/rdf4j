@@ -169,7 +169,7 @@ class GraphComparisons {
 
 		// Because we have previously already checked that the models are the same size, we don't have to check both
 		// ways to establish model equality.
-		return !missingInModel2.isPresent();
+		return missingInModel2.isEmpty();
 	}
 
 	private static boolean mappingsIncompatible(Map<BNode, HashCode> mapping1, Map<BNode, HashCode> mapping2) {

@@ -45,7 +45,7 @@ public class Contains implements Function {
 			Literal rightLit = (Literal) rightVal;
 
 			if (leftLit.getLanguage().isPresent()) {
-				if (!rightLit.getLanguage().isPresent() || rightLit.getLanguage().equals(leftLit.getLanguage())) {
+				if (rightLit.getLanguage().isEmpty() || rightLit.getLanguage().equals(leftLit.getLanguage())) {
 
 					String leftLexVal = leftLit.getLabel();
 					String rightLexVal = rightLit.getLabel();
