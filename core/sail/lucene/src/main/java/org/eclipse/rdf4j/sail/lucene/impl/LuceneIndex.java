@@ -25,6 +25,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -751,11 +752,13 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			highlighter = null;
 		}
 
+		int numDocs = Objects.requireNonNullElse(spec.getNumDocs(), -1);
+
 		TopDocs docs;
 		if (subject != null) {
-			docs = search(subject, q);
+			docs = search(subject, q, numDocs);
 		} else {
-			docs = search(q);
+			docs = search(q, numDocs);
 		}
 		return Iterables.transform(Arrays.asList(docs.scoreDocs),
 				(ScoreDoc doc) -> new LuceneDocumentScore(doc, highlighter, LuceneIndex.this));
@@ -960,12 +963,25 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * @throws IOException
 	 */
 	public synchronized TopDocs search(Resource resource, Query query) throws IOException {
+		return search(resource, query, -1);
+	}
+
+	/**
+	 * Evaluates the given query only for the given resource.
+	 *
+	 * @param resource
+	 * @param query
+	 * @param numDocs
+	 * @return top documents
+	 * @throws IOException
+	 */
+	public synchronized TopDocs search(Resource resource, Query query, int numDocs) throws IOException {
 		// rewrite the query
 		TermQuery idQuery = new TermQuery(new Term(SearchFields.URI_FIELD_NAME, SearchFields.getResourceID(resource)));
 		BooleanQuery.Builder combinedQuery = new BooleanQuery.Builder();
 		combinedQuery.add(idQuery, Occur.MUST);
 		combinedQuery.add(query, Occur.MUST);
-		return search(combinedQuery.build());
+		return search(combinedQuery.build(), numDocs);
 	}
 
 	/**
@@ -976,9 +992,27 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * @throws IOException
 	 */
 	public synchronized TopDocs search(Query query) throws IOException {
+		return search(query, -1);
+	}
+
+	/**
+	 * Evaluates the given query and returns the results as a TopDocs instance.
+	 *
+	 * @param query
+	 * @param numDocs
+	 * @return top documents
+	 * @throws IOException
+	 */
+	public synchronized TopDocs search(Query query, int numDocs) throws IOException {
 		int nDocs;
-		if (maxDocs > 0) {
-			nDocs = maxDocs;
+		if (numDocs > 0) {
+			if (maxDocs > 0 && maxDocs < numDocs) {
+				nDocs = maxDocs;
+			} else {
+				nDocs = numDocs;
+			}
+		} else if (defaultNumDocs > 0) {
+			nDocs = defaultNumDocs;
 		} else {
 			nDocs = Math.max(getIndexReader().numDocs(), 1);
 		}

@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 
@@ -317,11 +318,12 @@ public class SolrIndex extends AbstractSearchIndex {
 			q.addField(SearchFields.URI_FIELD_NAME);
 		}
 		q.addField("score");
+		int numDocs = Objects.requireNonNullElse(spec.getNumDocs(), -1);
 		try {
 			if (subject != null) {
-				response = search(subject, q);
+				response = search(subject, q, numDocs);
 			} else {
-				response = search(q);
+				response = search(q, numDocs);
 			}
 		} catch (SolrServerException e) {
 			throw new IOException(e);
@@ -346,10 +348,25 @@ public class SolrIndex extends AbstractSearchIndex {
 	 * @throws IOException
 	 */
 	public QueryResponse search(Resource resource, SolrQuery query) throws SolrServerException, IOException {
+		return search(resource, query, -1);
+	}
+
+	/**
+	 * Evaluates the given query only for the given resource.
+	 *
+	 * @param resource
+	 * @param query
+	 * @param numDocs
+	 * @return response
+	 * @throws SolrServerException
+	 * @throws IOException
+	 */
+	public QueryResponse search(Resource resource, SolrQuery query, int numDocs)
+			throws SolrServerException, IOException {
 		// rewrite the query
 		String idQuery = termQuery(SearchFields.URI_FIELD_NAME, SearchFields.getResourceID(resource));
 		query.setQuery(query.getQuery() + " AND " + idQuery);
-		return search(query);
+		return search(query, numDocs);
 	}
 
 	@Override
@@ -553,9 +570,28 @@ public class SolrIndex extends AbstractSearchIndex {
 	 * @throws IOException
 	 */
 	public QueryResponse search(SolrQuery query) throws SolrServerException, IOException {
+		return search(query, -1);
+	}
+
+	/**
+	 * Evaluates the given query and returns the results as a TopDocs instance.
+	 *
+	 * @param query
+	 * @param numDocs
+	 * @return query response
+	 * @throws SolrServerException
+	 * @throws IOException
+	 */
+	public QueryResponse search(SolrQuery query, int numDocs) throws SolrServerException, IOException {
 		int nDocs;
-		if (maxDocs > 0) {
-			nDocs = maxDocs;
+		if (numDocs > 0) {
+			if (maxDocs > 0 && maxDocs < numDocs) {
+				nDocs = maxDocs;
+			} else {
+				nDocs = numDocs;
+			}
+		} else if (defaultNumDocs > 0) {
+			nDocs = defaultNumDocs;
 		} else {
 			long docCount = client.query(query.setRows(0)).getResults().getNumFound();
 			nDocs = Math.max((int) Math.min(docCount, Integer.MAX_VALUE), 1);

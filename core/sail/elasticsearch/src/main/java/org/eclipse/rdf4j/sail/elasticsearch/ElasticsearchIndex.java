@@ -18,6 +18,7 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 
@@ -577,10 +578,11 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		}
 
 		SearchHits hits;
+		int numDocs = Objects.requireNonNullElse(spec.getNumDocs(), -1);
 		if (subject != null) {
-			hits = search(subject, request, qb);
+			hits = search(subject, request, qb, numDocs);
 		} else {
-			hits = search(request, qb);
+			hits = search(request, qb, numDocs);
 		}
 		return Iterables.transform(hits, new Function<>() {
 
@@ -600,11 +602,24 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	 * @return search hits
 	 */
 	public SearchHits search(Resource resource, SearchRequestBuilder request, QueryBuilder query) {
+		return search(resource, request, query, -1);
+	}
+
+	/**
+	 * Evaluates the given query only for the given resource.
+	 *
+	 * @param resource
+	 * @param request
+	 * @param query
+	 * @param numDocs
+	 * @return search hits
+	 */
+	public SearchHits search(Resource resource, SearchRequestBuilder request, QueryBuilder query, int numDocs) {
 		// rewrite the query
 		QueryBuilder idQuery = QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME,
 				SearchFields.getResourceID(resource));
 		QueryBuilder combinedQuery = QueryBuilders.boolQuery().must(idQuery).must(query);
-		return search(request, combinedQuery);
+		return search(request, combinedQuery, numDocs);
 	}
 
 	@Override
@@ -712,10 +727,23 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	 * Evaluates the given query and returns the results as a TopDocs instance.
 	 */
 	public SearchHits search(SearchRequestBuilder request, QueryBuilder query) {
+		return search(request, query, -1);
+	}
+
+	/**
+	 * Evaluates the given query and returns the results as a TopDocs instance.
+	 */
+	public SearchHits search(SearchRequestBuilder request, QueryBuilder query, int numDocs) {
 		String[] types = getTypes();
 		int nDocs;
-		if (maxDocs > 0) {
-			nDocs = maxDocs;
+		if (numDocs > 0) {
+			if (maxDocs > 0 && maxDocs < numDocs) {
+				nDocs = maxDocs;
+			} else {
+				nDocs = numDocs;
+			}
+		} else if (defaultNumDocs > 0) {
+			nDocs = defaultNumDocs;
 		} else {
 			long docCount = client.prepareSearch(indexName)
 					.setTypes(types)

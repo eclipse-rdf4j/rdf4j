@@ -15,6 +15,7 @@ import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.BOOST;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.INDEXID;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.LUCENE_QUERY;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.MATCHES;
+import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.NUM_DOCS;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.PROPERTY;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.QUERY;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SCORE;
@@ -152,7 +153,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 			}
 
 			// find the relevant outgoing patterns
-			StatementPattern typePattern, propertyPattern, scorePattern, snippetPattern;
+			StatementPattern typePattern, propertyPattern, scorePattern, snippetPattern, numDocsPattern;
 			List<StatementPattern> queryPatterns;
 
 			try {
@@ -161,6 +162,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 				propertyPattern = getPattern(matchesVar, filter.propertyPatterns);
 				scorePattern = getPattern(matchesVar, filter.scorePatterns);
 				snippetPattern = getPattern(matchesVar, filter.snippetPatterns);
+				numDocsPattern = getPattern(matchesVar, filter.numDocsPatterns);
 			} catch (IllegalArgumentException e) {
 				failOrWarn(e);
 				continue;
@@ -302,7 +304,8 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 						queryString, propertyURI, null));
 			}
 
-			QuerySpec querySpec = new QuerySpec(matchesPattern, queries, scorePattern, typePattern, idPattern, subject);
+			QuerySpec querySpec = new QuerySpec(matchesPattern, queries, scorePattern, typePattern, idPattern,
+					numDocsPattern, subject);
 
 			if (querySpec.isEvaluable()) {
 				// constant optimizer
@@ -340,6 +343,10 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 				if (snippetVar != null) {
 					funcCall.addArg(new ValueConstant(LuceneSailSchema.SNIPPET));
 					funcCall.addResultVar(snippetVar);
+				}
+				if (numDocsPattern != null) {
+					funcCall.addArg(new ValueConstant(LuceneSailSchema.NUM_DOCS));
+					funcCall.addArg(numDocsPattern.getObjectVar());
 				}
 
 				Join join = new Join();
@@ -465,6 +472,8 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 
 		public ArrayList<StatementPattern> boostPatterns = new ArrayList<>();
 
+		public ArrayList<StatementPattern> numDocsPatterns = new ArrayList<>();
+
 		/**
 		 * Method implementing the visitor pattern that gathers all statements using a predicate from the LuceneSail's
 		 * namespace.
@@ -487,6 +496,8 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 				idPatterns.add(node);
 			} else if (BOOST.equals(predicate)) {
 				boostPatterns.add(node);
+			} else if (NUM_DOCS.equals(predicate)) {
+				numDocsPatterns.add(node);
 			} else if (TYPE.equals(predicate)) {
 				Value object = node.getObjectVar().getValue();
 				if (LUCENE_QUERY.equals(object)) {

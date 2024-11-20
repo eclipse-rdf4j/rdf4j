@@ -11,6 +11,7 @@
 package org.eclipse.testsuite.rdf4j.sail.lucene;
 
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.MATCHES;
+import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.NUM_DOCS;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.PROPERTY;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.QUERY;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SCORE;
@@ -33,6 +34,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -53,6 +55,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.util.Repositories;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailSchema;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -60,6 +63,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Timeout(value = 10, unit = TimeUnit.MINUTES)
 public abstract class AbstractLuceneSailTest {
@@ -107,17 +112,19 @@ public abstract class AbstractLuceneSailTest {
 
 	protected abstract void configure(LuceneSail sail);
 
-	@BeforeEach
-	public void setUp() {
-		// set logging, uncomment this to get better logging for debugging
-		// org.apache.log4j.BasicConfigurator.configure();
-
+	private void createTestSail(Consumer<LuceneSail> config) {
+		if (repository != null) {
+			repository.shutDown();
+			repository = null;
+		}
 		// setup a LuceneSail
 		MemoryStore memoryStore = new MemoryStore();
 		// enable lock tracking
 		org.eclipse.rdf4j.common.concurrent.locks.Properties.setLockTrackingEnabled(true);
 		sail = new LuceneSail();
+
 		configure(sail);
+		config.accept(sail);
 		sail.setBaseSail(memoryStore);
 
 		// create a Repository wrapping the LuceneSail
@@ -139,10 +146,19 @@ public abstract class AbstractLuceneSailTest {
 		}
 	}
 
+	@BeforeEach
+	public void setUp() throws Exception {
+		// set logging, uncomment this to get better logging for debugging
+		// org.apache.log4j.BasicConfigurator.configure();
+		createTestSail(lc -> {
+		});
+	}
+
 	@AfterEach
 	public void tearDown() throws RepositoryException {
 		if (repository != null) {
 			repository.shutDown();
+			repository = null;
 		}
 		org.eclipse.rdf4j.common.concurrent.locks.Properties.setLockTrackingEnabled(false);
 	}
@@ -1079,6 +1095,88 @@ public abstract class AbstractLuceneSailTest {
 			e.printStackTrace(System.err);
 		}
 		assertEquals(0, exceptions.size(), "Exceptions occurred during testMultithreadedAdd, see stacktraces above");
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 1, 2, 3 })
+	public void testDefaultNumDocsResult(int numDoc) {
+		createTestSail(lc -> lc.setParameter(LuceneSail.DEFAULT_NUM_DOCS_KEY, String.valueOf(numDoc)));
+		Repositories.consumeNoTransaction(repository, conn -> {
+			try (TupleQueryResult res = conn.prepareTupleQuery(
+					"SELECT ?Resource {\n"
+							+ "  ?Resource <" + MATCHES + "> [\n "
+							+ "    <" + QUERY + "> \"one\"\n "
+							+ "  ]. } "
+			).evaluate()) {
+				for (int k = 0; k < numDoc; k++) {
+					assertTrue(res.hasNext(), "missing result #" + k);
+					res.next();
+				}
+				if (res.hasNext()) {
+					StringBuilder b = new StringBuilder();
+					int r = 0;
+					do {
+						b.append("\n#").append(r++).append(res.next());
+					} while (res.hasNext());
+					fail("can't have more than " + numDoc + " result(s)" + b);
+				}
+			}
+		});
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 1, 2, 3 })
+	public void testMaxNumDocsResult(int numDoc) {
+		createTestSail(lc -> lc.setParameter(LuceneSail.MAX_DOCUMENTS_KEY, String.valueOf(numDoc)));
+		Repositories.consumeNoTransaction(repository, conn -> {
+			try (TupleQueryResult res = conn.prepareTupleQuery(
+					"SELECT ?Resource {\n"
+							+ "  ?Resource <" + MATCHES + "> [\n "
+							+ "    <" + QUERY + "> \"one\";\n "
+							+ "    <" + NUM_DOCS + "> 3;\n "
+							+ "  ]. } "
+			).evaluate()) {
+				for (int k = 0; k < numDoc; k++) {
+					assertTrue(res.hasNext(), "missing result #" + k);
+					res.next();
+				}
+				if (res.hasNext()) {
+					StringBuilder b = new StringBuilder();
+					int r = 0;
+					do {
+						b.append("\n#").append(r++).append(res.next());
+					} while (res.hasNext());
+					fail("can't have more than " + numDoc + " result(s)" + b);
+				}
+			}
+		});
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 1, 2, 3 })
+	public void testNumDocsResult(int numDoc) {
+		Repositories.consumeNoTransaction(repository, conn -> {
+			try (TupleQueryResult res = conn.prepareTupleQuery(
+					"SELECT ?Resource {\n"
+							+ "  ?Resource <" + MATCHES + "> [\n "
+							+ "    <" + QUERY + "> \"one\";\n "
+							+ "    <" + NUM_DOCS + "> " + numDoc + ";\n "
+							+ "  ]. } "
+			).evaluate()) {
+				for (int k = 0; k < numDoc; k++) {
+					assertTrue(res.hasNext(), "missing result #" + k);
+					res.next();
+				}
+				if (res.hasNext()) {
+					StringBuilder b = new StringBuilder();
+					int r = 0;
+					do {
+						b.append("\n#").append(r++).append(res.next());
+					} while (res.hasNext());
+					fail("can't have more than " + numDoc + " result(s)" + b);
+				}
+			}
+		});
 	}
 
 	protected void assertQueryResult(String literal, IRI predicate, Resource resultUri) {
