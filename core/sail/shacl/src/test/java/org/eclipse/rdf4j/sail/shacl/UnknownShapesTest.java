@@ -87,6 +87,7 @@ public class UnknownShapesTest {
 					.map(String::trim)
 					.collect(Collectors.toSet());
 		} while (relevantLog.size() < expectedNumberOfItems);
+		assert relevantLog.size() == expectedNumberOfItems;
 		return relevantLog;
 	}
 
@@ -105,7 +106,7 @@ public class UnknownShapesTest {
 			}
 		}
 
-		Set<String> relevantLog = getRelevantLog(4).stream()
+		Set<String> relevantLog = getRelevantLog(5).stream()
 				.sorted()
 				.collect(Collectors.toCollection(LinkedHashSet::new));
 
