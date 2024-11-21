@@ -97,7 +97,7 @@ public class OneOrMorePath extends Path {
 
 	@Override
 	public boolean isSupported() {
-		return true;
+		return false;
 	}
 
 	@Override

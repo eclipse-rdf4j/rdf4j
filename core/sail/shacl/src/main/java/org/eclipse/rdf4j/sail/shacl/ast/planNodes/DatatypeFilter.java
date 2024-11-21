@@ -36,7 +36,6 @@ public class DatatypeFilter extends FilterPlanNode {
 		super(parent, connectionsGroup);
 		this.datatype = datatype;
 		this.xsdDatatype = CoreDatatype.from(datatype).asXSDDatatype().orElse(null);
-//		stackTrace = Thread.currentThread().getStackTrace();
 	}
 
 	@Override

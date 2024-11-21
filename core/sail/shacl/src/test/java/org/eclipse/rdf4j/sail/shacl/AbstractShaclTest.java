@@ -113,7 +113,12 @@ abstract public class AbstractShaclTest {
 
 	private static final Set<String> ignoredTestCases = Set.of(
 			"test-cases/path/oneOrMorePath",
+			"test-cases/nodeKind/oneOrMorePathComplex",
+			"test-cases/nodeKind/zeroOrMorePathComplex",
+			"test-cases/nodeKind/oneOrMorePathSimple",
+			"test-cases/minCount/oneOrMorePath",
 			"test-cases/path/zeroOrMorePath",
+			"test-cases/minCount/zeroOrMorePath",
 			"test-cases/path/zeroOrOnePath"
 
 	);

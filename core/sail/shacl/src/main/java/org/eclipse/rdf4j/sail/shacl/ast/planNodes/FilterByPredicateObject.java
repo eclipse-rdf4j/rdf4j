@@ -26,6 +26,8 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
@@ -34,6 +36,8 @@ import com.google.common.cache.CacheBuilder;
  * @author Håvard Ottestad
  */
 public class FilterByPredicateObject implements PlanNode {
+
+	static private final Logger logger = LoggerFactory.getLogger(FilterByPredicateObject.class);
 
 	private final SailConnection connection;
 	private final boolean includeInferred;
@@ -54,6 +58,7 @@ public class FilterByPredicateObject implements PlanNode {
 	public FilterByPredicateObject(SailConnection connection, Resource[] dataGraph, IRI filterOnPredicate,
 			Set<Resource> filterOnObject, PlanNode parent, boolean returnMatching, FilterOn filterOn,
 			boolean includeInferred, ConnectionsGroup connectionsGroup) {
+
 		this.dataGraph = dataGraph;
 		this.parent = PlanNodeHelper.handleSorting(this, parent, connectionsGroup);
 		this.connection = connection;
@@ -75,7 +80,9 @@ public class FilterByPredicateObject implements PlanNode {
 				&& RDF.TYPE.equals(filterOnPredicate)) {
 			typeFilterWithInference = true;
 		}
-//		this.stackTrace = Thread.currentThread().getStackTrace();
+		if (logger.isDebugEnabled()) {
+			this.stackTrace = Thread.currentThread().getStackTrace();
+		}
 	}
 
 	@Override

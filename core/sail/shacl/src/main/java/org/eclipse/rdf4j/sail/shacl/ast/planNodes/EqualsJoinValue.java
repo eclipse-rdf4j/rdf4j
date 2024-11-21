@@ -15,8 +15,13 @@ import java.util.Objects;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class EqualsJoinValue implements PlanNode {
+
+	static private final Logger logger = LoggerFactory.getLogger(EqualsJoinValue.class);
+
 	private final PlanNode left;
 	private final PlanNode right;
 	private final boolean useAsFilter;
@@ -29,8 +34,9 @@ public class EqualsJoinValue implements PlanNode {
 		this.right = PlanNodeHelper.handleSorting(this, right, connectionsGroup);
 
 		this.useAsFilter = useAsFilter;
-//		this.stackTrace = Thread.currentThread().getStackTrace();
-
+		if (logger.isDebugEnabled()) {
+			this.stackTrace = Thread.currentThread().getStackTrace();
+		}
 	}
 
 	@Override
