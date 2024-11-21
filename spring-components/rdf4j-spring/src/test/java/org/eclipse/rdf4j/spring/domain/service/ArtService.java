@@ -29,6 +29,16 @@ public class ArtService {
 	@Autowired
 	private PaintingDao paintingDao;
 
+	@Transactional
+	public Artist getArtist(IRI id) {
+		return this.artistDao.getById(id);
+	}
+
+	@Transactional
+	public Painting getPainting(IRI id) {
+		return this.paintingDao.getById(id);
+	}
+
 	@Transactional(propagation = Propagation.REQUIRED)
 	public Artist createArtist(String firstName, String lastName) {
 		Artist artist = new Artist();
@@ -44,6 +54,11 @@ public class ArtService {
 		painting.setTechnique(technique);
 		painting.setArtistId(artist);
 		return paintingDao.save(painting);
+	}
+
+	@Transactional(propagation = Propagation.REQUIRED)
+	public void changeArtist(IRI painting, IRI newArtist) {
+		paintingDao.changeArtist(painting, newArtist);
 	}
 
 }

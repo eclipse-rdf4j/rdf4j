@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.spring.RDF4JSpringTestBase;
 import org.eclipse.rdf4j.spring.domain.model.Artist;
+import org.eclipse.rdf4j.spring.domain.model.EX;
 import org.eclipse.rdf4j.spring.domain.model.Painting;
 import org.eclipse.rdf4j.spring.domain.service.ArtService;
 import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
@@ -64,6 +65,19 @@ public class ServiceLayerTests extends RDF4JSpringTestBase {
 	}
 
 	@Test
+	public void testChangeArtist() {
+		Artist artist = artService.createArtist("Jan", "Vermeer");
+		Painting painting = artService.createPainting("Cypresses", "oil on canvas", artist.getId());
+		assertNotNull(painting.getId());
+		assertTrue(painting.getId().toString().startsWith("urn:uuid"));
+		assertEquals(artist.getId(), painting.getArtistId());
+		artService.changeArtist(painting.getId(), EX.VanGogh);
+		painting = artService.getPainting(painting.getId());
+		assertNotNull(painting);
+		assertEquals(EX.VanGogh, painting.getArtistId());
+	}
+
+	@Test
 	public void testCreatePaintingWithoutArtist() {
 		assertThrows(NullPointerException.class, () -> artService.createPainting(
 				"Girl with a pearl earring",
@@ -71,7 +85,6 @@ public class ServiceLayerTests extends RDF4JSpringTestBase {
 				null));
 	}
 
-	// TODO
 	@Test
 	public void testRollbackOnException() {
 		transactionTemplate.execute(status -> {
