@@ -10,16 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.jsonld;
 
-import static org.eclipse.rdf4j.rio.helpers.JSONLDSettings.DOCUMENT_LOADER_CACHE;
-import static org.eclipse.rdf4j.rio.helpers.JSONLDSettings.SECURE_MODE;
-import static org.eclipse.rdf4j.rio.helpers.JSONLDSettings.WHITELIST;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -35,10 +32,11 @@ import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
+import org.eclipse.rdf4j.rio.RioConfig;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
-import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -91,6 +89,13 @@ public class JSONLDParser extends AbstractRDFParser {
 
 		result.add(JSONLDSettings.EXPAND_CONTEXT);
 		result.add(JSONLDSettings.EXCEPTION_ON_WARNING);
+		result.add(JSONLDSettings.SECURE_MODE);
+		result.add(JSONLDSettings.WHITELIST);
+		result.add(JSONLDSettings.DOCUMENT_LOADER);
+		result.add(JSONLDSettings.DOCUMENT_LOADER_CACHE);
+		result.add(org.eclipse.rdf4j.rio.helpers.JSONLDSettings.SECURE_MODE);
+		result.add(org.eclipse.rdf4j.rio.helpers.JSONLDSettings.WHITELIST);
+		result.add(org.eclipse.rdf4j.rio.helpers.JSONLDSettings.DOCUMENT_LOADER_CACHE);
 
 		return result;
 	}
@@ -133,9 +138,9 @@ public class JSONLDParser extends AbstractRDFParser {
 						BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES);
 			}
 
-			boolean secureMode = getParserConfig().get(SECURE_MODE);
-			Set<String> whitelist = getParserConfig().get(WHITELIST);
-			boolean documentLoaderCache = getParserConfig().get(DOCUMENT_LOADER_CACHE);
+			boolean secureMode = getParserConfig().get(JSONLDSettings.SECURE_MODE);
+			Set<String> whitelist = getParserConfig().get(JSONLDSettings.WHITELIST);
+			boolean documentLoaderCache = getParserConfig().get(JSONLDSettings.DOCUMENT_LOADER_CACHE);
 
 			JsonLdOptions opts = new JsonLdOptions();
 			opts.setUriValidation(false);
@@ -144,8 +149,13 @@ public class JSONLDParser extends AbstractRDFParser {
 			Document context = getParserConfig().get(JSONLDSettings.EXPAND_CONTEXT);
 
 			DocumentLoader defaultDocumentLoader = opts.getDocumentLoader();
-			CachingDocumentLoader cachingDocumentLoader = new CachingDocumentLoader(secureMode, whitelist,
-					documentLoaderCache);
+
+			DocumentLoader documentLoader;
+			if (getParserConfig().get(JSONLDSettings.DOCUMENT_LOADER) == null) {
+				documentLoader = new CachingDocumentLoader(secureMode, whitelist, documentLoaderCache);
+			} else {
+				documentLoader = getParserConfig().get(JSONLDSettings.DOCUMENT_LOADER);
+			}
 
 			if (context != null) {
 
@@ -162,14 +172,14 @@ public class JSONLDParser extends AbstractRDFParser {
 							return context;
 						}
 
-						return cachingDocumentLoader.loadDocument(uri, options);
+						return documentLoader.loadDocument(uri, options);
 					});
 				}
 
 			}
 
-			if (secureMode && opts.getDocumentLoader() == defaultDocumentLoader) {
-				opts.setDocumentLoader(cachingDocumentLoader);
+			if (opts.getDocumentLoader() == defaultDocumentLoader) {
+				opts.setDocumentLoader(documentLoader);
 			}
 
 			if (baseURI != null && !baseURI.isEmpty()) {

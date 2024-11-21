@@ -24,7 +24,9 @@ import org.eclipse.rdf4j.query.BindingSet;
  * {@link FederationEvalStrategy#evaluateGroupedCheck(CheckStatementPattern, List)} for further details.
  *
  * @author Andreas Schwarte
+ * @deprecated now integrated in {@link ParallelBoundJoinTask} (with VALUES clause)
  */
+@Deprecated(forRemoval = true)
 public class ParallelCheckJoinTask extends ParallelTaskBase<BindingSet> {
 
 	protected final FederationEvalStrategy strategy;

@@ -104,7 +104,7 @@ public class Convert extends ConsoleCommand {
 			return;
 		}
 		Optional<RDFFormat> fmtFrom = Rio.getParserFormatForFileName(fileFrom);
-		if (!fmtFrom.isPresent()) {
+		if (fmtFrom.isEmpty()) {
 			writeError("No RDF parser for " + fileFrom);
 			return;
 		}
@@ -116,7 +116,7 @@ public class Convert extends ConsoleCommand {
 			return;
 		}
 		Optional<RDFFormat> fmtTo = Rio.getWriterFormatForFileName(fileTo);
-		if (!fmtTo.isPresent()) {
+		if (fmtTo.isEmpty()) {
 			writeError("No RDF writer for " + fileTo);
 			return;
 		}

@@ -35,11 +35,13 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	private CloseableIteration<ValidationTuple> iterator;
 	private ValidationExecutionLogger validationExecutionLogger;
 	private boolean closed;
+	StackTraceElement[] stackTrace;
 
 	abstract boolean checkTuple(Reference t);
 
 	public FilterPlanNode(PlanNode parent, ConnectionsGroup connectionsGroup) {
 		this.parent = PlanNodeHelper.handleSorting(this, parent, connectionsGroup);
+//		this.stackTrace = Thread.currentThread().getStackTrace();
 	}
 
 	public PlanNode getTrueNode(Class<? extends PushablePlanNode> type) {

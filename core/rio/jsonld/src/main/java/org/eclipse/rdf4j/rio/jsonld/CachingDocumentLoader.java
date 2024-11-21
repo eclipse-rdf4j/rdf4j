@@ -37,7 +37,7 @@ public class CachingDocumentLoader implements DocumentLoader {
 	private static final LoadingCache<URI, Document> cache = CacheBuilder.newBuilder()
 			.maximumSize(1000) // Maximum 1000 documents in cache
 			.expireAfterWrite(1, TimeUnit.HOURS) // Expire after 1 hour
-			.concurrencyLevel(8) // Optimize for 8 concurrent threads
+			.concurrencyLevel(Runtime.getRuntime().availableProcessors())
 			.build(new CacheLoader<>() {
 				@Override
 				public Document load(URI url) throws Exception {

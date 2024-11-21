@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import java.io.IOException;
+import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -86,6 +87,7 @@ public class UnknownShapesTest {
 					.map(String::trim)
 					.collect(Collectors.toSet());
 		} while (relevantLog.size() < expectedNumberOfItems);
+		assert relevantLog.size() == expectedNumberOfItems;
 		return relevantLog;
 	}
 
@@ -104,14 +106,19 @@ public class UnknownShapesTest {
 			}
 		}
 
-		Set<String> relevantLog = getRelevantLog(4);
+		Set<String> relevantLog = getRelevantLog(5).stream()
+				.sorted()
+				.collect(Collectors.toCollection(LinkedHashSet::new));
 
 		Set<String> expected = Set.of(
-				"Unsupported SHACL feature detected: InversePath{ ZeroOrMorePath{ SimplePath{ <http://example.com/ns#inverseThis> } } }. Shape ignored! <http://example.com/ns#inverseOfWithComplex> a sh:PropertyShape;   sh:path [       sh:inversePath [           sh:zeroOrMorePath <http://example.com/ns#inverseThis>         ]     ];   sh:datatype xsd:int .",
-				"Unsupported SHACL feature detected: AlternativePath{ [SimplePath{ <http://example.com/ns#father> }, ZeroOrOnePath{ SimplePath{ <http://example.com/ns#parent> } }, SimplePath{ <http://example.com/ns#mother> }] }. Shape ignored! <http://example.com/ns#alternativePathOneOrMore> a sh:PropertyShape;   sh:path [       sh:alternativePath (<http://example.com/ns#father> [             sh:oneOrMorePath <http://example.com/ns#parent>           ] <http://example.com/ns#mother>)     ];   sh:nodeKind sh:BlankNodeOrIRI .",
+				"Unsupported SHACL feature detected: AlternativePath{ [SimplePath{ <http://example.com/ns#father> }, OneOrMorePath{ SimplePath{ <http://example.com/ns#parent> } }, SimplePath{ <http://example.com/ns#mother> }] }. Shape ignored! <http://example.com/ns#alternativePathOneOrMore> a sh:PropertyShape;   sh:path [       sh:alternativePath (<http://example.com/ns#father> [             sh:oneOrMorePath <http://example.com/ns#parent>           ] <http://example.com/ns#mother>)     ];   sh:nodeKind sh:BlankNodeOrIRI .",
+				"Unsupported SHACL feature detected: AlternativePath{ [SimplePath{ <http://example.com/ns#father> }, ZeroOrMorePath{ SimplePath{ <http://example.com/ns#parent> } }, SimplePath{ <http://example.com/ns#mother> }] }. Shape ignored! <http://example.com/ns#alternativePathZeroOrMore> a sh:PropertyShape;   sh:path [       sh:alternativePath (<http://example.com/ns#father> [             sh:zeroOrMorePath <http://example.com/ns#parent>           ] <http://example.com/ns#mother>)     ];   sh:nodeKind sh:BlankNodeOrIRI .",
 				"Unsupported SHACL feature detected: AlternativePath{ [SimplePath{ <http://example.com/ns#father> }, ZeroOrOnePath{ SimplePath{ <http://example.com/ns#parent> } }, SimplePath{ <http://example.com/ns#mother> }] }. Shape ignored! <http://example.com/ns#alternativePathZeroOrOne> a sh:PropertyShape;   sh:path [       sh:alternativePath (<http://example.com/ns#father> [             sh:zeroOrOnePath <http://example.com/ns#parent>           ] <http://example.com/ns#mother>)     ];   sh:nodeKind sh:BlankNodeOrIRI .",
+				"Unsupported SHACL feature detected: InversePath{ ZeroOrMorePath{ SimplePath{ <http://example.com/ns#inverseThis> } } }. Shape ignored! <http://example.com/ns#inverseOfWithComplex> a sh:PropertyShape;   sh:path [       sh:inversePath [           sh:zeroOrMorePath <http://example.com/ns#inverseThis>         ]     ];   sh:datatype xsd:int .",
 				"Unsupported SHACL feature detected: InversePath{ ZeroOrMorePath{ SimplePath{ <http://example.com/ns#inverseThis> } } }. Shape ignored! <http://example.com/ns#inverseOfWithComplex> a sh:PropertyShape;   sh:path [       sh:inversePath [           sh:zeroOrMorePath <http://example.com/ns#inverseThis>         ]     ];   sh:minCount 1 ."
 		);
+
+		expected = expected.stream().sorted().collect(Collectors.toCollection(LinkedHashSet::new));
 
 		Assertions.assertEquals(expected, relevantLog);
 

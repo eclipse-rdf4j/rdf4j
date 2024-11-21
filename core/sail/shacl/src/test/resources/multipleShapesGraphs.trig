@@ -5,6 +5,7 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
 
 ex:peopleKnowPeopleShapes {
   ex:PersonShapeKnowsPerson a sh:NodeShape;
@@ -43,6 +44,23 @@ ex:mustHaveNameShapes {
   ex:data2 sh:shapesGraph ex:mustHaveNameShapes.
 }
 
+ex:mustHaveMinThreeInterestsOrNoneAtAll {
+  ex:mustHaveMinThreeInterestsOrNoneAtAll a sh:NodeShape;
+    sh:targetSubjectsOf foaf:interest;
+    sh:property [
+        sh:path foaf:interest;
+        sh:minCount 3;
+      ] .
+
+  [
+    a rsx:DataAndShapesGraphLink;
+    rsx:shapesGraph ex:mustHaveMinThreeInterestsOrNoneAtAll;
+    rsx:dataGraph rdf4j:nil, ex:data1, ex:data2;
+  ]
+}
+
+
+
 rdf4j:SHACLShapeGraph {
   ex:PersonShapeMustHaveName a sh:NodeShape;
     sh:targetClass foaf:Person;
@@ -64,6 +82,7 @@ ex:maxFiveAcquaintances {
   ex:data1 sh:shapesGraph ex:maxFiveAcquaintances.
   ex:data2 sh:shapesGraph ex:maxFiveAcquaintances.
 }
+
 
 ex:nestedKnowsShouldHaveAge {
   ex:PersonShapeNestedKnowsShouldHaveAge a sh:NodeShape;

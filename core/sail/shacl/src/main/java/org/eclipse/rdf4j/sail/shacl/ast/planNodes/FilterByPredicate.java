@@ -21,7 +21,6 @@ import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
@@ -36,6 +35,7 @@ public class FilterByPredicate implements PlanNode {
 	private final Set<IRI> filterOnPredicates;
 	final PlanNode parent;
 	private final On on;
+	private final ConnectionsGroup connectionsGroup;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 	private final Resource[] dataGraph;
@@ -53,6 +53,7 @@ public class FilterByPredicate implements PlanNode {
 		assert this.connection != null;
 		this.filterOnPredicates = filterOnPredicates;
 		this.on = on;
+		this.connectionsGroup = connectionsGroup;
 	}
 
 	@Override
@@ -77,18 +78,11 @@ public class FilterByPredicate implements PlanNode {
 						return;
 					}
 
-					filterOnPredicates = FilterByPredicate.this.filterOnPredicates.stream()
-							.map(predicate -> {
-								try (var stream = connection
-										.getStatements(null, predicate, null, true, dataGraph)
-										.stream()) {
-									return stream.map(Statement::getPredicate)
-											.findAny()
-											.orElse(null);
-								}
-							}
-							)
-							.filter(Objects::nonNull)
+					filterOnPredicates = FilterByPredicate.this.filterOnPredicates
+							.stream()
+							.map(iri -> connectionsGroup.getSailSpecificValue(iri,
+									ConnectionsGroup.StatementPosition.predicate, connection
+							))
 							.collect(Collectors.toList());
 
 				}
@@ -188,8 +182,8 @@ public class FilterByPredicate implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalFilterByPredicate{" + "filterOnPredicates="
-				+ Arrays.toString(filterOnPredicates.stream().map(Formatter::prefix).toArray())
+		return "FilterByPredicate{" + "filterOnPredicates="
+				+ Formatter.prefix(filterOnPredicates)
 				+ '}';
 	}
 

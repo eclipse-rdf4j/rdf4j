@@ -45,4 +45,12 @@ public class BoundJoinTests extends SPARQLBaseTest {
 			execute("/tests/boundjoin/query01.rq", "/tests/boundjoin/query01.srx", false, true);
 		});
 	}
+
+	@Test
+	public void testBoundCheck() throws Exception {
+
+		/* test with VALUES clause based bound join, check join */
+		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl"));
+		execute("/tests/boundjoin/query02_checkJoin.rq", "/tests/boundjoin/query02_checkJoin.srx", false, true);
+	}
 }

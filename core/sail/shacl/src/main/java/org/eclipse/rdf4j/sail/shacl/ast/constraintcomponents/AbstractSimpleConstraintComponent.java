@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.AbstractBulkJoinPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.AllTargetsPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalInnerJoin;
@@ -135,7 +136,7 @@ public abstract class AbstractSimpleConstraintComponent extends AbstractConstrai
 						connectionsGroup.getPreviousStateConnection(),
 						b -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 								validationSettings.getDataGraph()),
-						connectionsGroup);
+						connectionsGroup, AbstractBulkJoinPlanNode.DEFAULT_VARS);
 
 				top = UnionNode.getInstance(connectionsGroup, top, bulkedExternalInnerJoin);
 
@@ -218,7 +219,7 @@ public abstract class AbstractSimpleConstraintComponent extends AbstractConstrai
 										Set.of()),
 						false, null,
 						BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph()),
-						connectionsGroup);
+						connectionsGroup, AbstractBulkJoinPlanNode.DEFAULT_VARS);
 				planNode = connectionsGroup.getCachedNodeFor(planNode);
 			}
 		}
@@ -331,7 +332,8 @@ public abstract class AbstractSimpleConstraintComponent extends AbstractConstrai
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider,
+			ValidationSettings validationSettings) {
 
 		if (scope == Scope.propertyShape) {
 

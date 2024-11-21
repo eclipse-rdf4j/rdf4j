@@ -94,7 +94,7 @@ public class InversePath extends Path {
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider, Set<String> inheritedVarNames) {
 
 		return path.getTargetQueryFragment(object, subject, rdfsSubClassOfReasoner,
-				stableRandomVariableProvider, Set.of());
+				stableRandomVariableProvider, inheritedVarNames);
 
 	}
 

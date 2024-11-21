@@ -37,7 +37,7 @@ public class DebugPlanNode implements PlanNode {
 	public DebugPlanNode(PlanNode parent, String message) {
 		this.parent = parent;
 		this.message = message;
-		// this.stackTrace = Thread.currentThread().getStackTrace();
+		this.stackTrace = Thread.currentThread().getStackTrace();
 
 	}
 

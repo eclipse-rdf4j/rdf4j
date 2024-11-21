@@ -112,6 +112,8 @@ public class Unique implements PlanNode {
 						Set<ValidationTuple> tuples = new HashSet<>();
 
 						if (propertyShapeWithValue) {
+							if (parentIterator.hasNext())
+								parentIterator.peek();
 
 							while (parentIterator.hasNext()
 									&& parentIterator.peek().getValue().equals(temp.getValue())

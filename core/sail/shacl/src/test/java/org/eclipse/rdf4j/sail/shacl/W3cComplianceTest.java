@@ -62,7 +62,8 @@ public class W3cComplianceTest {
 			"/core/path/path-zeroOrOne-001.ttl",
 			"/core/property/qualifiedMinCountDisjoint-001.ttl",
 			"/core/property/qualifiedValueShapesDisjoint-001.ttl",
-			"/core/property/uniqueLang-002.ttl");
+			"/core/property/uniqueLang-002.ttl"
+	);
 
 	public static Stream<Arguments> data() {
 		return getTestFiles().stream()

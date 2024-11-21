@@ -11,8 +11,6 @@
 package org.eclipse.rdf4j.rio.jsonld;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
-import static org.eclipse.rdf4j.rio.helpers.JSONLDSettings.SECURE_MODE;
-import static org.eclipse.rdf4j.rio.helpers.JSONLDSettings.WHITELIST;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -24,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.ServiceLoader;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import org.apache.commons.io.FileUtils;
@@ -41,7 +40,6 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.ContextStatementCollector;
-import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,8 +47,12 @@ import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 
 import jakarta.json.spi.JsonProvider;
+import no.hasmac.jsonld.JsonLdError;
 import no.hasmac.jsonld.document.Document;
 import no.hasmac.jsonld.document.JsonDocument;
+import no.hasmac.jsonld.loader.DocumentLoader;
+import no.hasmac.jsonld.loader.DocumentLoaderOptions;
+import no.hasmac.jsonld.loader.SchemeRouter;
 
 /**
  * Custom (non-manifest) tests for JSON-LD parser.
@@ -152,7 +154,7 @@ public class JSONLDParserCustomTest {
 
 	@Test
 	public void testSupportedSettings() {
-		assertEquals(15, parser.getSupportedSettings().size());
+		assertEquals(19, parser.getSupportedSettings().size());
 	}
 
 	@Test
@@ -276,7 +278,7 @@ public class JSONLDParserCustomTest {
 				.toString();
 		jsonld = jsonld.replace("file:./context.jsonld", contextUri);
 
-		parser.getParserConfig().set(WHITELIST, Set.of(contextUri));
+		parser.getParserConfig().set(JSONLDSettings.WHITELIST, Set.of(contextUri));
 
 		parser.parse(new StringReader(jsonld), "");
 		assertTrue(model.objects().contains(FOAF.PERSON));
@@ -292,10 +294,54 @@ public class JSONLDParserCustomTest {
 						.getResource("testcases/jsonld/localFileContext/context.jsonld")
 						.toString());
 
-		parser.getParserConfig().set(SECURE_MODE, false);
+		parser.getParserConfig().set(JSONLDSettings.SECURE_MODE, false);
 
 		parser.parse(new StringReader(jsonld), "");
 		assertTrue(model.objects().contains(FOAF.PERSON));
+	}
+
+	@Test
+	public void testLocalFileSecurityCustomDocumentLoader() throws Exception {
+		String jsonld = FileUtils.readFileToString(new File(JSONLDParserCustomTest.class.getClassLoader()
+				.getResource("testcases/jsonld/localFileContext/data.jsonld")
+				.getFile()), StandardCharsets.UTF_8);
+		jsonld = jsonld.replace("file:./context.jsonld",
+				JSONLDParserCustomTest.class.getClassLoader()
+						.getResource("testcases/jsonld/localFileContext/context.jsonld")
+						.toString());
+
+		AtomicBoolean called = new AtomicBoolean(false);
+		parser.getParserConfig().set(JSONLDSettings.DOCUMENT_LOADER, (url, options) -> {
+			called.set(true);
+			return new CachingDocumentLoader(false, Set.of(), true).loadDocument(url, options);
+		});
+
+		parser.parse(new StringReader(jsonld), "");
+		assertTrue(model.objects().contains(FOAF.PERSON));
+		assertTrue(called.get());
+	}
+
+	@Test
+	public void testLocalFileSecurityCustomDocumentLoader2() throws Exception {
+		String jsonld = FileUtils.readFileToString(new File(JSONLDParserCustomTest.class.getClassLoader()
+				.getResource("testcases/jsonld/localFileContext/data.jsonld")
+				.getFile()), StandardCharsets.UTF_8);
+		jsonld = jsonld.replace("file:./context.jsonld",
+				JSONLDParserCustomTest.class.getClassLoader()
+						.getResource("testcases/jsonld/localFileContext/context.jsonld")
+						.toString());
+
+		AtomicBoolean called = new AtomicBoolean(false);
+		parser.getParserConfig().set(JSONLDSettings.DOCUMENT_LOADER, (url, options) -> {
+			called.set(true);
+			return new CachingDocumentLoader(false, Set.of(), true).loadDocument(url, options);
+		});
+
+		parser.getParserConfig().set(JSONLDSettings.SECURE_MODE, false);
+
+		parser.parse(new StringReader(jsonld), "");
+		assertTrue(model.objects().contains(FOAF.PERSON));
+		assertTrue(called.get());
 	}
 
 	@Test
@@ -309,22 +355,32 @@ public class JSONLDParserCustomTest {
 						.toString());
 
 		try {
-			System.setProperty(SECURE_MODE.getKey(), "false");
+			System.setProperty(JSONLDSettings.SECURE_MODE.getKey(), "false");
 			parser.parse(new StringReader(jsonld), "");
 			assertTrue(model.objects().contains(FOAF.PERSON));
 		} finally {
-			System.clearProperty(SECURE_MODE.getKey());
+			System.clearProperty(JSONLDSettings.SECURE_MODE.getKey());
 		}
 
 	}
 
-	@RepeatedTest(10)
+	@RepeatedTest(100)
+	public void testRemoteContextDefaultWhitelist() throws Exception {
+		String jsonld = FileUtils.readFileToString(new File(JSONLDParserCustomTest.class.getClassLoader()
+				.getResource("testcases/jsonld/remoteContext/data.jsonld")
+				.getFile()), StandardCharsets.UTF_8);
+
+		parser.parse(new StringReader(jsonld), "");
+		assertEquals(59, model.size());
+	}
+
+	@RepeatedTest(100)
 	public void testRemoteContext() throws Exception {
 		String jsonld = FileUtils.readFileToString(new File(JSONLDParserCustomTest.class.getClassLoader()
 				.getResource("testcases/jsonld/remoteContext/data.jsonld")
 				.getFile()), StandardCharsets.UTF_8);
 
-		parser.getParserConfig().set(WHITELIST, Set.of("https://schema.org"));
+		parser.getParserConfig().set(JSONLDSettings.WHITELIST, Set.of("https://schema.org"));
 		parser.parse(new StringReader(jsonld), "");
 		assertEquals(59, model.size());
 	}
@@ -336,11 +392,12 @@ public class JSONLDParserCustomTest {
 				.getFile()), StandardCharsets.UTF_8);
 
 		try {
-			System.setProperty(WHITELIST.getKey(), "[\"https://schema.org\"]");
+			System.setProperty(JSONLDSettings.WHITELIST.getKey(),
+					"[\"https://schema.org\",\"https://example.org/context.jsonld\"]");
 			parser.parse(new StringReader(jsonld), "");
 			assertEquals(59, model.size());
 		} finally {
-			System.clearProperty(WHITELIST.getKey());
+			System.clearProperty(JSONLDSettings.WHITELIST.getKey());
 		}
 
 	}
@@ -351,7 +408,7 @@ public class JSONLDParserCustomTest {
 				.getResource("testcases/jsonld/remoteContextException/data.jsonld")
 				.getFile()), StandardCharsets.UTF_8);
 
-		parser.getParserConfig().set(WHITELIST, Set.of("https://example.org/context.jsonld"));
+		parser.getParserConfig().set(JSONLDSettings.WHITELIST, Set.of("https://example.org/context.jsonld"));
 		RDFParseException rdfParseException = Assertions.assertThrowsExactly(RDFParseException.class, () -> {
 			parser.parse(new StringReader(jsonld), "");
 		});

@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -30,11 +31,16 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PatternFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class PatternConstraintComponent extends AbstractSimpleConstraintComponent {
 
+	private static final Logger logger = LoggerFactory.getLogger(PatternConstraintComponent.class);
+
 	String pattern;
 	String flags;
+	private final Pattern compiledPattern;
 
 	public PatternConstraintComponent(String pattern, String flags) {
 		super();
@@ -43,6 +49,52 @@ public class PatternConstraintComponent extends AbstractSimpleConstraintComponen
 
 		if (flags == null) {
 			this.flags = "";
+		}
+
+		if (flags != null && !flags.isEmpty()) {
+			int flag = 0b0;
+
+			if (flags.contains("i")) {
+				flag = flag | Pattern.CASE_INSENSITIVE;
+				logger.trace("PatternFilter constructed with case insensitive flag");
+			}
+
+			if (flags.contains("d")) {
+				flag = flag | Pattern.UNIX_LINES;
+				logger.trace("PatternFilter constructed with UNIX lines flag");
+			}
+
+			if (flags.contains("m")) {
+				flag = flag | Pattern.MULTILINE;
+				logger.trace("PatternFilter constructed with multiline flag");
+			}
+
+			if (flags.contains("s")) {
+				flag = flag | Pattern.DOTALL;
+				logger.trace("PatternFilter constructed with dotall flag");
+			}
+
+			if (flags.contains("u")) {
+				flag = flag | Pattern.UNICODE_CASE;
+				logger.trace("PatternFilter constructed with unicode case flag");
+			}
+
+			if (flags.contains("x")) {
+				flag = flag | Pattern.COMMENTS;
+				logger.trace("PatternFilter constructed with comments flag");
+			}
+
+			if (flags.contains("U")) {
+				flag = flag | Pattern.UNICODE_CHARACTER_CLASS;
+				logger.trace("PatternFilter constructed with unicode character class flag");
+			}
+
+			this.compiledPattern = Pattern.compile(pattern, flag);
+			logger.trace("PatternFilter constructed with pattern: {} and flags: {}", pattern, flags);
+
+		} else {
+			this.compiledPattern = Pattern.compile(pattern, 0b0);
+			logger.trace("PatternFilter constructed with pattern: {} and no flags", pattern);
 		}
 	}
 
@@ -87,7 +139,7 @@ public class PatternConstraintComponent extends AbstractSimpleConstraintComponen
 
 	@Override
 	Function<PlanNode, FilterPlanNode> getFilterAttacher(ConnectionsGroup connectionsGroup) {
-		return (parent) -> new PatternFilter(parent, pattern, flags, connectionsGroup);
+		return (parent) -> new PatternFilter(parent, compiledPattern, connectionsGroup);
 	}
 
 	@Override

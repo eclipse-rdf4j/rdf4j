@@ -24,7 +24,6 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
@@ -337,8 +336,10 @@ public class SparqlFragment {
 		return ShaclPrefixParser.toSparqlPrefixes(namespaces);
 	}
 
-	public Stream<EffectiveTarget.StatementsAndMatcher> getRoot(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
-			Path path, StatementMatcher currentStatementMatcher, List<Statement> currentStatements) {
+	public Stream<EffectiveTarget.SubjectObjectAndMatcher> getRoot(ConnectionsGroup connectionsGroup,
+			Resource[] dataGraph,
+			Path path, StatementMatcher currentStatementMatcher,
+			List<EffectiveTarget.SubjectObjectAndMatcher.SubjectObject> currentStatements) {
 		assert traceBackFunction != null;
 		return traceBackFunction.getRoot(connectionsGroup, dataGraph, path, currentStatementMatcher, currentStatements);
 	}
@@ -411,12 +412,12 @@ public class SparqlFragment {
 
 	public interface TraceBack {
 
-		Stream<EffectiveTarget.StatementsAndMatcher> getRoot(
+		Stream<EffectiveTarget.SubjectObjectAndMatcher> getRoot(
 				ConnectionsGroup connectionsGroup,
 				Resource[] dataGraph,
 				Path path,
 				StatementMatcher currentStatementMatcher,
-				List<Statement> currentStatements);
+				List<EffectiveTarget.SubjectObjectAndMatcher.SubjectObject> currentStatements);
 	}
 
 }

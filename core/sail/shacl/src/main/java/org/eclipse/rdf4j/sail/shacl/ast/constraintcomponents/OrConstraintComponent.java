@@ -121,7 +121,7 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 		} else {
 			planNodeProvider = BufferedSplitter.getInstance(
 					getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
-							stableRandomVariableProvider),
+							stableRandomVariableProvider, validationSettings),
 					false);
 		}
 
@@ -141,7 +141,8 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider,
+			ValidationSettings validationSettings) {
 		PlanNode allTargets;
 
 		if (scope == Scope.propertyShape) {
@@ -162,7 +163,7 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 
 		PlanNode planNode = or.stream()
 				.map(or -> or.getAllTargetsPlan(connectionsGroup, dataGraph, scope,
-						new StatementMatcher.StableRandomVariableProvider()))
+						new StatementMatcher.StableRandomVariableProvider(), validationSettings))
 				.distinct()
 				.reduce((nodes, nodes2) -> UnionNode.getInstanceDedupe(connectionsGroup, nodes, nodes2))
 				.orElse(EmptyNode.getInstance());

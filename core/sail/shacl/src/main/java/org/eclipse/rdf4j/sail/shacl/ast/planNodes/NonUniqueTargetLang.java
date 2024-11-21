@@ -149,7 +149,7 @@ class OnlyNonUnique extends LoggingCloseableIteration {
 			if (value.isLiteral()) {
 				Optional<String> lang = ((Literal) value).getLanguage();
 
-				if (!lang.isPresent()) {
+				if (lang.isEmpty()) {
 					next = null;
 				} else if (!seenLanguages.contains(lang.get())) {
 					seenLanguages.add(lang.get());
@@ -166,8 +166,9 @@ class OnlyNonUnique extends LoggingCloseableIteration {
 
 	@Override
 	public void localClose() {
-		if (parentIterator != null)
+		if (parentIterator != null) {
 			parentIterator.close();
+		}
 	}
 
 	@Override

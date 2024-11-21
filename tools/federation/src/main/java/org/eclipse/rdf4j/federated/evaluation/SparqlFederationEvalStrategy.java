@@ -17,8 +17,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.federated.FederationContext;
+import org.eclipse.rdf4j.federated.algebra.BoundJoinTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.CheckStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
+import org.eclipse.rdf4j.federated.algebra.FedXService;
 import org.eclipse.rdf4j.federated.algebra.FilterTuple;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
@@ -29,7 +31,11 @@ import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.GroupedCheckConversionIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.InsertBindingsIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
-import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBoundJoin;
+import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBindJoin;
+import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBindLeftJoin;
+import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerJoin;
+import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerLeftJoin;
+import org.eclipse.rdf4j.federated.evaluation.join.JoinExecutorBase;
 import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
@@ -37,6 +43,7 @@ import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -45,7 +52,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
  * Implementation of a federation evaluation strategy which provides some special optimizations for SPARQL (remote)
  * endpoints. The most important optimization is to used prepared SPARQL Queries that are already created using Strings.
  * <p>
- * Joins are executed using {@link ControlledWorkerBoundJoin}.
+ * Joins are executed using {@link ControlledWorkerBindJoin}.
  * </p>
  * <p>
  * This implementation uses the SPARQL 1.1 VALUES operator for the bound-join evaluation
@@ -111,8 +118,9 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 	/**
 	 * Alternative evaluation implementation using UNION. Nowadays we use a VALUES clause based implementation
 	 *
-	 * @deprecated
+	 * @deprecated no longer used
 	 */
+	@Deprecated(forRemoval = true)
 	protected CloseableIteration<BindingSet> evaluateBoundJoinStatementPattern_UNION(
 			StatementTupleExpr stmt, List<BindingSet> bindings)
 			throws QueryEvaluationException {
@@ -173,9 +181,57 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 			TupleExpr rightArg, Set<String> joinVars, BindingSet bindings, QueryInfo queryInfo)
 			throws QueryEvaluationException {
 
-		ControlledWorkerBoundJoin join = new ControlledWorkerBoundJoin(joinScheduler, this, leftIter, rightArg,
-				bindings, queryInfo);
+		// determine if we can execute the expr as bind join
+		boolean executeAsBindJoin = false;
+		if (rightArg instanceof BoundJoinTupleExpr) {
+			if (rightArg instanceof FedXService) {
+				executeAsBindJoin = queryInfo.getFederationContext().getConfig().getEnableServiceAsBoundJoin();
+			} else {
+				executeAsBindJoin = true;
+			}
+		}
+
+		JoinExecutorBase<BindingSet> join;
+		if (executeAsBindJoin) {
+			join = new ControlledWorkerBindJoin(joinScheduler, this, leftIter, rightArg,
+					bindings, queryInfo);
+		} else {
+			join = new ControlledWorkerJoin(joinScheduler, this, leftIter, rightArg, bindings,
+					queryInfo);
+		}
+
 		join.setJoinVars(joinVars);
+		executor.execute(join);
+		return join;
+	}
+
+	@Override
+	protected CloseableIteration<BindingSet> executeLeftJoin(ControlledWorkerScheduler<BindingSet> joinScheduler,
+			CloseableIteration<BindingSet> leftIter, LeftJoin leftJoin, BindingSet bindings, QueryInfo queryInfo)
+			throws QueryEvaluationException {
+
+		var rightArg = leftJoin.getRightArg();
+		var fedxConfig = queryInfo.getFederationContext().getConfig();
+
+		// determine if we can execute the expr as bind join
+		boolean executeAsBindJoin = false;
+		if (fedxConfig.isEnableOptionalAsBindJoin() && rightArg instanceof BoundJoinTupleExpr) {
+			if (rightArg instanceof FedXService) {
+				executeAsBindJoin = false;
+			} else {
+				executeAsBindJoin = true;
+			}
+		}
+
+		JoinExecutorBase<BindingSet> join;
+		if (executeAsBindJoin) {
+			join = new ControlledWorkerBindLeftJoin(joinScheduler, this, leftIter, rightArg,
+					bindings, queryInfo);
+		} else {
+			join = new ControlledWorkerLeftJoin(joinScheduler, this,
+					leftIter, leftJoin, bindings, queryInfo);
+		}
+
 		executor.execute(join);
 		return join;
 	}

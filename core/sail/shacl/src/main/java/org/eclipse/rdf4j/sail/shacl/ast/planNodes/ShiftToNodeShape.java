@@ -19,11 +19,14 @@ import java.util.Objects;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * @author Håvard Ottestad
  */
 public class ShiftToNodeShape implements PlanNode {
+	static private final Logger logger = LoggerFactory.getLogger(ShiftToNodeShape.class);
 
 	private StackTraceElement[] stackTrace;
 	PlanNode parent;

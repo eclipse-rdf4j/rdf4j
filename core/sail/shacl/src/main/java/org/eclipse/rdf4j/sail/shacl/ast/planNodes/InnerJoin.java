@@ -300,7 +300,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 
 	@Override
 	public String toString() {
-		return "InnerJoin(" + left.toString() + " : " + right.toString() + ")";
+		return "InnerJoin";
 	}
 
 	private String leadingSpace() {

@@ -119,11 +119,13 @@ public class LeftOuterJoin implements PlanNode {
 			@Override
 			public void localClose() {
 				try {
-					if (leftIterator != null)
+					if (leftIterator != null) {
 						leftIterator.close();
+					}
 				} finally {
-					if (rightIterator != null)
+					if (rightIterator != null) {
 						rightIterator.close();
+					}
 				}
 			}
 

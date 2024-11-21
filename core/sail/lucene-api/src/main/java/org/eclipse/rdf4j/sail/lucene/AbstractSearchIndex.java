@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lucene.util.MapOfListMaps;
 import org.locationtech.spatial4j.context.SpatialContext;
@@ -65,7 +66,8 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		REJECTED_DATATYPES.add("http://www.w3.org/2001/XMLSchema#float");
 	}
 
-	protected int maxDocs;
+	protected int defaultNumDocs = -1;
+	protected int maxDocs = Integer.MAX_VALUE;
 
 	protected Set<String> wktFields = Collections.singleton(SearchFields.getPropertyField(GEO.AS_WKT));
 
@@ -75,8 +77,29 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 
 	@Override
 	public void initialize(Properties parameters) throws Exception {
-		String maxDocParam = parameters.getProperty(LuceneSail.MAX_DOCUMENTS_KEY);
-		maxDocs = (maxDocParam != null) ? Integer.parseInt(maxDocParam) : -1;
+		String maxDocumentsParam = parameters.getProperty(LuceneSail.MAX_DOCUMENTS_KEY);
+		String defaultNumDocsParam = parameters.getProperty(LuceneSail.DEFAULT_NUM_DOCS_KEY);
+
+		if ((maxDocumentsParam != null)) {
+			maxDocs = Integer.parseInt(maxDocumentsParam);
+
+			// if maxDocs is set then defaultNumDocs is set to maxDocs if it is not set, because we now have a known
+			// upper limit
+			defaultNumDocs = (defaultNumDocsParam != null) ? Math.min(maxDocs, Integer.parseInt(defaultNumDocsParam))
+					: maxDocs;
+		} else {
+			// we can never return more than Integer.MAX_VALUE documents
+			maxDocs = Integer.MAX_VALUE;
+
+			// legacy behaviour is to return the number of documents that the query would return if there was no limit,
+			// so if the defaultNumDocs is not set, we set it to -1 to signal that there is no limit
+			defaultNumDocs = (defaultNumDocsParam != null) ? Integer.parseInt(defaultNumDocsParam) : -1;
+		}
+
+		if (defaultNumDocs > maxDocs) {
+			throw new IllegalArgumentException(LuceneSail.DEFAULT_NUM_DOCS_KEY + " must be less than or equal to "
+					+ LuceneSail.MAX_DOCUMENTS_KEY + " (" + defaultNumDocs + " > " + maxDocs + ")");
+		}
 
 		String wktFieldParam = parameters.getProperty(LuceneSail.WKT_FIELDS);
 		if (wktFieldParam != null) {
@@ -146,7 +169,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 
 		// we reject literals that aren't in the list of the indexed lang
 		if (indexedLangs != null
-				&& (!literal.getLanguage().isPresent()
+				&& (literal.getLanguage().isEmpty()
 						|| !indexedLangs.contains(literal.getLanguage().get().toLowerCase()
 						))) {
 			return false;
@@ -353,11 +376,8 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 									// remove value from both property field and the
 									// corresponding text field
 									String field = SearchFields.getPropertyField(r.getPredicate());
-									Set<String> removedValues = removedOfResource.get(field);
-									if (removedValues == null) {
-										removedValues = new HashSet<>();
-										removedOfResource.put(field, removedValues);
-									}
+									Set<String> removedValues = removedOfResource.computeIfAbsent(field,
+											k -> new HashSet<>());
 									removedValues.add(val);
 								}
 							}
@@ -545,7 +565,8 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 				hits = query(query.getSubject(), query);
 			}
 		} catch (Exception e) {
-			logger.error("There was a problem evaluating query '" + query.getCatQuery() + "'!", e);
+			logger.error("There was a problem evaluating query '{}'!", query.getCatQuery(), e);
+			assert false : "There was a problem evaluating query '" + query.getCatQuery() + "'!";
 		}
 
 		return hits;
@@ -717,6 +738,8 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		} catch (Exception e) {
 			logger.error("There was a problem evaluating distance query 'within " + distance + getUnitSymbol(units)
 					+ " of " + from.getLabel() + "'!", e);
+			assert false : "There was a problem evaluating distance query 'within " + distance + getUnitSymbol(units)
+					+ " of " + from.getLabel() + "'!";
 		}
 
 		return hits;
@@ -825,6 +848,8 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		} catch (Exception e) {
 			logger.error("There was a problem evaluating spatial relation query '" + query.getRelation() + " "
 					+ qgeom.getLabel() + "'!", e);
+			assert false : "There was a problem evaluating spatial relation query '" + query.getRelation() + " "
+					+ qgeom.getLabel() + "'!";
 		}
 
 		return hits;

@@ -52,6 +52,8 @@ public class LuceneSailSchema {
 
 	public static final IRI CONTEXT;
 
+	public static final IRI NUM_DOCS;
+
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance(); // compatible with beta4:
 		// creating a new factory
@@ -73,5 +75,6 @@ public class LuceneSailSchema {
 		WITHIN_DISTANCE = factory.createIRI(NAMESPACE + "withinDistance");
 		DISTANCE = factory.createIRI(NAMESPACE + "distance");
 		CONTEXT = factory.createIRI(NAMESPACE + "context");
+		NUM_DOCS = factory.createIRI(NAMESPACE + "numDocs");
 	}
 }

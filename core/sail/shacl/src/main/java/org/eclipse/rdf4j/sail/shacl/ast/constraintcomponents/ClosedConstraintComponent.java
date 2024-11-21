@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.SimplePath;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.AbstractBulkJoinPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalFilterByQuery;
@@ -192,7 +193,7 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 					false,
 					null,
 					BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph()),
-					connectionsGroup);
+					connectionsGroup, AbstractBulkJoinPlanNode.DEFAULT_VARS);
 
 			StatementMatcher.Variable<Value> subjectVariable = stableRandomVariableProvider.next();
 			StatementMatcher.Variable<Value> predicateVariable = stableRandomVariableProvider.next();
@@ -317,7 +318,10 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 						}
 						return validationTuple;
 					},
-					connectionsGroup);
+					connectionsGroup,
+					List.of(AbstractBulkJoinPlanNode.DEFAULT_VARS.get(0), AbstractBulkJoinPlanNode.DEFAULT_VARS.get(1),
+							predicateVariable)
+			);
 
 			return bulkedExternalInnerJoin;
 		}
@@ -326,7 +330,8 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider,
+			ValidationSettings validationSettings) {
 
 		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(scope,
 				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);
@@ -527,11 +532,6 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 		SparqlFragment sparqlFragment = SparqlFragment.join(List.of(bgp, sparqlFragmentFilter));
 
 		return sparqlFragment.getFragment();
-	}
-
-	@Override
-	public ValidationApproach getPreferredValidationApproach(ConnectionsGroup connectionsGroup) {
-		return super.getPreferredValidationApproach(connectionsGroup);
 	}
 
 	@Override

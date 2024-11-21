@@ -14,6 +14,7 @@ import static org.eclipse.rdf4j.model.vocabulary.RDF.TYPE;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.BOOST;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.LUCENE_QUERY;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.MATCHES;
+import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.NUM_DOCS;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.QUERY;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SCORE;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SNIPPET;
@@ -55,6 +56,7 @@ public class QuerySpecBuilderTest {
 				"<" + TYPE + "> <" + LUCENE_QUERY + ">; " +
 				"<" + QUERY + "> \"my Lucene query\"; " +
 				"<" + SCORE + "> ?Score; " +
+				"<" + NUM_DOCS + "> 76; " +
 				"<" + SNIPPET + "> ?Snippet ]. } ";
 		ParsedQuery query = parser.parseQuery(buffer, null);
 		TupleExpr tupleExpr = query.getTupleExpr();
@@ -69,6 +71,8 @@ public class QuerySpecBuilderTest {
 		assertEquals("Score", querySpec.getScorePattern().getObjectVar().getName());
 		assertEquals("Snippet", param.getSnippetPattern().getObjectVar().getName());
 		assertEquals(LUCENE_QUERY, querySpec.getTypePattern().getObjectVar().getValue());
+		assertEquals(76, querySpec.getNumDocs());
+		assertEquals(76, ((Literal) querySpec.getNumDocsPattern().getObjectVar().getValue()).intValue());
 		assertEquals("my Lucene query", param.getQuery());
 		assertNull(querySpec.getSubject());
 	}
@@ -80,11 +84,13 @@ public class QuerySpecBuilderTest {
 				"<" + TYPE + "> <" + LUCENE_QUERY + ">; " +
 				"<" + QUERY + "> \"my Lucene query\"; " +
 				"<" + SCORE + "> ?score1; " +
+				"<" + NUM_DOCS + "> 86; " +
 				"<" + SNIPPET + "> ?snippet1 ]. " +
 				" ?sub2 <" + MATCHES + "> [ " +
 				"<" + TYPE + "> <" + LUCENE_QUERY + ">; " +
 				"<" + QUERY + "> \"second lucene query\"; " +
 				"<" + SCORE + "> ?score2; " +
+				"<" + NUM_DOCS + "> 13; " +
 				"<" + SNIPPET + "> ?snippet2 ]. " +
 				// and connect them both via any X in between, just as salt to make the
 				// parser do something
@@ -103,6 +109,7 @@ public class QuerySpecBuilderTest {
 				// Matched the first
 				assertEquals("sub1", querySpec.getMatchesPattern().getSubjectVar().getName());
 				assertEquals(1, querySpec.getQueryPatterns().size());
+				assertEquals(86, querySpec.getNumDocs());
 				QuerySpec.QueryParam param = querySpec.getQueryPatterns().iterator().next();
 				assertEquals("my Lucene query",
 						((Literal) param.getQueryPattern().getObjectVar().getValue()).getLabel());
@@ -116,6 +123,7 @@ public class QuerySpecBuilderTest {
 				// and the second
 				assertEquals("sub2", querySpec.getMatchesPattern().getSubjectVar().getName());
 				assertEquals(1, querySpec.getQueryPatterns().size());
+				assertEquals(13, querySpec.getNumDocs());
 				QuerySpec.QueryParam param = querySpec.getQueryPatterns().iterator().next();
 				assertEquals("second lucene query",
 						((Literal) param.getQueryPattern().getObjectVar().getValue()).getLabel());

@@ -232,8 +232,9 @@ public class ValidationQuery {
 			} else {
 				extraVariablesString = "";
 			}
-		} else
+		} else {
 			extraVariablesString = "";
+		}
 
 		if (scope_validationReport == ConstraintComponent.Scope.propertyShape
 				&& propertyShapeWithValue_validationReport) {

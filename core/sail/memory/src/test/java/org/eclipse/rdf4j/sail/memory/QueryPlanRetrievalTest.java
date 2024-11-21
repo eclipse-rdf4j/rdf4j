@@ -16,6 +16,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 
 import org.apache.commons.io.IOUtils;
@@ -85,7 +86,7 @@ public class QueryPlanRetrievalTest {
 			"\n" +
 			"\n" +
 			"        {\n" +
-			"          SELECT DISTINCT ?buyerrole ?countryID WHERE {\n" +
+			"          SELECT DISTINCT ?buyerrole ?countryID  WHERE {\n" +
 			"            ?org epo:hasBuyerType ?buytype .\n" +
 			"            FILTER (?buytype != <http://publications.europa.eu/resource/authority/buyer-legal-type/eu-int-org> )\n"
 			+
@@ -1145,6 +1146,176 @@ public class QueryPlanRetrievalTest {
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			TupleQuery query = connection.prepareTupleQuery("select * where {?a ?b ?c. ?c <http://a>* ?d}");
 			String actual = query.explain(Explanation.Level.Optimized).toString();
+
+			assertThat(actual).isEqualToNormalizingNewlines(expected);
+
+		}
+		sailRepository.shutDown();
+
+	}
+
+	@Test
+	public void testHaving() {
+
+		String expected = "Order (resultSizeActual=4)\n" +
+				"   OrderElem (ASC)\n" +
+				"      Var (name=nbTerm)\n" +
+				"   OrderElem (ASC)\n" +
+				"      Var (name=nameSjb1)\n" +
+				"   OrderElem (ASC)\n" +
+				"      Var (name=idTerm3)\n" +
+				"   Projection (resultSizeActual=4)\n" +
+				"   ├── ProjectionElemList\n" +
+				"   │     ProjectionElem \"nameSjb1\"\n" +
+				"   │     ProjectionElem \"idCN1\"\n" +
+				"   │     ProjectionElem \"nbTerm\"\n" +
+				"   │     ProjectionElem \"idTerm3\"\n" +
+				"   └── Join (JoinIterator) (resultSizeActual=4)\n" +
+				"      ╠══ Projection (new scope) (resultSizeActual=2) [left]\n" +
+				"      ║  ├── ProjectionElemList\n" +
+				"      ║  │     ProjectionElem \"nameSjb1\"\n" +
+				"      ║  │     ProjectionElem \"idCN1\"\n" +
+				"      ║  │     ProjectionElem \"nbTerm\"\n" +
+				"      ║  └── Extension (resultSizeActual=2)\n" +
+				"      ║     ╠══ Extension (resultSizeActual=2)\n" +
+				"      ║     ║     Filter (resultSizeActual=2)\n" +
+				"      ║     ║     ╠══ Compare (<)\n" +
+				"      ║     ║     ║     Var (name=nbTerm)\n" +
+				"      ║     ║     ║     ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+				"      ║     ║     ╚══ Group (nameSjb1, idCN1) (resultSizeActual=4)\n" +
+				"      ║     ║        ├── LeftJoin (LeftJoinIterator) (resultSizeActual=11)\n" +
+				"      ║     ║        │  ╠══ Join (JoinIterator) (resultSizeActual=11) [left]\n" +
+				"      ║     ║        │  ║  ├── StatementPattern (costEstimate=54, resultSizeEstimate=4.00, resultSizeActual=4) [left]\n"
+				+
+				"      ║     ║        │  ║  │     s: Var (name=idTerm1)\n" +
+				"      ║     ║        │  ║  │     p: Var (name=_const_c6e40399_uri, value=http://iec.ch/TC57/2013/CIM-schema-cim16#Terminal.ConductingEquipment, anonymous)\n"
+				+
+				"      ║     ║        │  ║  │     o: Var (name=idSjb1)\n" +
+				"      ║     ║        │  ║  └── Join (JoinIterator) (resultSizeActual=11) [right]\n" +
+				"      ║     ║        │  ║     ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=4.00, resultSizeActual=4) [left]\n"
+				+
+				"      ║     ║        │  ║     ║     s: Var (name=idSjb1)\n" +
+				"      ║     ║        │  ║     ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+				+
+				"      ║     ║        │  ║     ║     o: Var (name=_const_6965b017_uri, value=http://iec.ch/TC57/2013/CIM-schema-cim16#BusbarSection, anonymous)\n"
+				+
+				"      ║     ║        │  ║     ╚══ Join (JoinIterator) (resultSizeActual=11) [right]\n" +
+				"      ║     ║        │  ║        ├── StatementPattern (costEstimate=2.12, resultSizeEstimate=13, resultSizeActual=4) [left]\n"
+				+
+				"      ║     ║        │  ║        │     s: Var (name=idTerm1)\n" +
+				"      ║     ║        │  ║        │     p: Var (name=_const_4395d870_uri, value=http://iec.ch/TC57/2013/CIM-schema-cim16#Terminal.ConnectivityNode, anonymous)\n"
+				+
+				"      ║     ║        │  ║        │     o: Var (name=idCN1)\n" +
+				"      ║     ║        │  ║        └── StatementPattern (costEstimate=4.24, resultSizeEstimate=13, resultSizeActual=11) [right]\n"
+				+
+				"      ║     ║        │  ║              s: Var (name=idTermOfCN)\n" +
+				"      ║     ║        │  ║              p: Var (name=_const_4395d870_uri, value=http://iec.ch/TC57/2013/CIM-schema-cim16#Terminal.ConnectivityNode, anonymous)\n"
+				+
+				"      ║     ║        │  ║              o: Var (name=idCN1)\n" +
+				"      ║     ║        │  ╚══ StatementPattern (resultSizeEstimate=4.00, resultSizeActual=11) [right]\n"
+				+
+				"      ║     ║        │        s: Var (name=idSjb1)\n" +
+				"      ║     ║        │        p: Var (name=_const_857da984_uri, value=http://iec.ch/TC57/2013/CIM-schema-cim16#IdentifiedObject.name, anonymous)\n"
+				+
+				"      ║     ║        │        o: Var (name=nameSjb1)\n" +
+				"      ║     ║        └── GroupElem (nbTerm)\n" +
+				"      ║     ║              Count\n" +
+				"      ║     ║                 Var (name=idTermOfCN)\n" +
+				"      ║     ╚══ ExtensionElem (nbTerm)\n" +
+				"      ║           Count\n" +
+				"      ║              Var (name=idTermOfCN)\n" +
+				"      ╚══ StatementPattern (costEstimate=18, resultSizeEstimate=13, resultSizeActual=4) [right]\n" +
+				"            s: Var (name=idTerm3)\n" +
+				"            p: Var (name=_const_4395d870_uri, value=http://iec.ch/TC57/2013/CIM-schema-cim16#Terminal.ConnectivityNode, anonymous)\n"
+				+
+				"            o: Var (name=idCN1)\n";
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			connection.add(new StringReader("@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
+					"@prefix cim: <http://iec.ch/TC57/2013/CIM-schema-cim16#> .\n" +
+					"@prefix : <http://example.org/> .\n" +
+					"\n" +
+					"# Busbar Sections\n" +
+					":BusbarSection1 rdf:type cim:BusbarSection ;\n" +
+					"    cim:IdentifiedObject.name \"Busbar1\" .\n" +
+					"\n" +
+					":BusbarSection2 rdf:type cim:BusbarSection ;\n" +
+					"    cim:IdentifiedObject.name \"Busbar2\" .\n" +
+					"\n" +
+					":BusbarSection3 rdf:type cim:BusbarSection ;\n" +
+					"    cim:IdentifiedObject.name \"Busbar3\" .\n" +
+					"\n" +
+					":BusbarSection4 rdf:type cim:BusbarSection ;\n" +
+					"    cim:IdentifiedObject.name \"Busbar4\" .\n" +
+					"\n" +
+					"# Connectivity Nodes\n" +
+					":ConnectivityNode1 a cim:ConnectivityNode .\n" +
+					":ConnectivityNode2 a cim:ConnectivityNode .\n" +
+					":ConnectivityNode3 a cim:ConnectivityNode .\n" +
+					":ConnectivityNode4 a cim:ConnectivityNode .\n" +
+					":ConnectivityNode5 a cim:ConnectivityNode .\n" +
+					":ConnectivityNode6 a cim:ConnectivityNode .\n" +
+					"\n" +
+					"# Terminals connected to ConnectivityNode1 (3 terminals)\n" +
+					":Terminal1 cim:Terminal.ConductingEquipment :BusbarSection1 ;\n" +
+					"    cim:Terminal.ConnectivityNode :ConnectivityNode1 .\n" +
+					"\n" +
+					":Terminal2 cim:Terminal.ConnectivityNode :ConnectivityNode1 .\n" +
+					":Terminal3 cim:Terminal.ConnectivityNode :ConnectivityNode1 .\n" +
+					"\n" +
+					"# Terminals connected to ConnectivityNode2 (2 terminals)\n" +
+					":Terminal4 cim:Terminal.ConductingEquipment :BusbarSection2 ;\n" +
+					"    cim:Terminal.ConnectivityNode :ConnectivityNode2 .\n" +
+					"\n" +
+					":Terminal5 cim:Terminal.ConnectivityNode :ConnectivityNode2 .\n" +
+					"\n" +
+					"# Terminal connected to ConnectivityNode3 (1 terminal)\n" +
+					":Terminal6 cim:Terminal.ConnectivityNode :ConnectivityNode3 .\n" +
+					"\n" +
+					"# Terminals connected to ConnectivityNode4 (4 terminals)\n" +
+					":Terminal7 cim:Terminal.ConductingEquipment :BusbarSection3 ;\n" +
+					"    cim:Terminal.ConnectivityNode :ConnectivityNode4 .\n" +
+					"\n" +
+					":Terminal8 cim:Terminal.ConnectivityNode :ConnectivityNode4 .\n" +
+					":Terminal9 cim:Terminal.ConnectivityNode :ConnectivityNode4 .\n" +
+					":Terminal10 cim:Terminal.ConnectivityNode :ConnectivityNode4 .\n" +
+					"\n" +
+					"# Terminals connected to ConnectivityNode5 (2 terminals)\n" +
+					":Terminal11 cim:Terminal.ConductingEquipment :BusbarSection4 ;\n" +
+					"    cim:Terminal.ConnectivityNode :ConnectivityNode5 .\n" +
+					"\n" +
+					":Terminal12 cim:Terminal.ConnectivityNode :ConnectivityNode5 .\n" +
+					"\n" +
+					"# Terminal connected to ConnectivityNode6 (1 terminal)\n" +
+					":Terminal13 cim:Terminal.ConnectivityNode :ConnectivityNode6 ."), "", RDFFormat.TURTLE);
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery(
+					"PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n" +
+							"PREFIX cim: <http://iec.ch/TC57/2013/CIM-schema-cim16#>\n" +
+							"" +
+							"select ?nameSjb1 ?idCN1 ?nbTerm ?idTerm3\n" +
+							"where {\n" +
+							"    {\n" +
+							"        select ?nameSjb1 ?idCN1 (count(?idTermOfCN) as ?nbTerm)\n" +
+							"        where {\n" +
+							"            ?idSjb1 rdf:type cim:BusbarSection .\n" +
+							"            ?idTerm1 cim:Terminal.ConductingEquipment ?idSjb1 .\n" +
+							"            ?idTerm1 cim:Terminal.ConnectivityNode ?idCN1 .\n" +
+							"            ?idTermOfCN cim:Terminal.ConnectivityNode ?idCN1\n" +
+							"            OPTIONAL { ?idSjb1 cim:IdentifiedObject.name ?nameSjb1 . }\n" +
+							"        }\n" +
+							"        group by ?nameSjb1 ?idCN1\n" +
+							"        having (?nbTerm < 3)\n" +
+							"    }\n" +
+							"    ?idTerm3 cim:Terminal.ConnectivityNode ?idCN1\n" +
+							"}\n" +
+							"order by ?nbTerm ?nameSjb1 ?idTerm3");
+			String actual = query.explain(Explanation.Level.Executed).toString();
 
 			assertThat(actual).isEqualToNormalizingNewlines(expected);
 
