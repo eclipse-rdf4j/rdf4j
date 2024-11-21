@@ -80,16 +80,20 @@ public class SimplePath extends Path {
 
 		StatementMatcher statementMatcher = new StatementMatcher(subject, new StatementMatcher.Variable(predicate),
 				object, this, inheritedVarNames);
+
 		return SparqlFragment.bgp(List.of(),
 				subject.asSparqlVariable() + " <" + predicate + "> " + object.asSparqlVariable() + " .",
 				statementMatcher, (connectionsGroup, dataGraph, path, currentStatementMatcher, currentStatements) -> {
 					if (currentStatementMatcher.getOrigin() == this) {
-						assert currentStatementMatcher == statementMatcher;
+						if (currentStatementMatcher != statementMatcher) {
+							return null;
+						}
 						return Stream.of(
-								new EffectiveTarget.StatementsAndMatcher(currentStatements, currentStatementMatcher));
+								new EffectiveTarget.SubjectObjectAndMatcher(currentStatements,
+										currentStatementMatcher));
 					} else {
 						if (currentStatementMatcher.hasSubject(object)) {
-							List<Statement> newStatements = currentStatements.stream()
+							var newStatements = currentStatements.stream()
 									.map(currentStatement -> {
 										try (CloseableIteration<? extends Statement> statements = connectionsGroup
 												.getBaseConnection()
@@ -99,10 +103,12 @@ public class SimplePath extends Path {
 										}
 									})
 									.flatMap(List::stream)
+									.map(EffectiveTarget.SubjectObjectAndMatcher.SubjectObject::new)
 									.collect(Collectors.toList());
-							return Stream.of(new EffectiveTarget.StatementsAndMatcher(newStatements, statementMatcher));
+							return Stream
+									.of(new EffectiveTarget.SubjectObjectAndMatcher(newStatements, statementMatcher));
 						} else if (currentStatementMatcher.hasObject(object)) {
-							List<Statement> newStatements = currentStatements.stream()
+							var newStatements = currentStatements.stream()
 									.map(currentStatement -> {
 										try (CloseableIteration<? extends Statement> statements = connectionsGroup
 												.getBaseConnection()
@@ -112,8 +118,10 @@ public class SimplePath extends Path {
 										}
 									})
 									.flatMap(List::stream)
+									.map(EffectiveTarget.SubjectObjectAndMatcher.SubjectObject::new)
 									.collect(Collectors.toList());
-							return Stream.of(new EffectiveTarget.StatementsAndMatcher(newStatements, statementMatcher));
+							return Stream
+									.of(new EffectiveTarget.SubjectObjectAndMatcher(newStatements, statementMatcher));
 						}
 
 						return null;

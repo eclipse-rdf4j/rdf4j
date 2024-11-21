@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
 
 /**
  * Constants for EARL primitives and for the EARL namespace.
@@ -26,6 +27,8 @@ public class EARL {
 	 * The recommended prefix for the EARL namespace: "earl"
 	 */
 	public static final String PREFIX = "earl";
+
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	public final static IRI ASSERTOR;
 

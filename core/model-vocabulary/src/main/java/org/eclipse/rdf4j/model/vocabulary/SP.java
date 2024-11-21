@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
 
 /**
  * @version 1.4.0
@@ -24,6 +25,8 @@ public class SP {
 	public static final String NAMESPACE = "http://spinrdf.org/sp#";
 
 	public static final String PREFIX = "sp";
+
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/**
 	 * http://spinrdf.org/sp#Path The base class of SPARQL property path expressions. Paths are used by sp:TriplePath

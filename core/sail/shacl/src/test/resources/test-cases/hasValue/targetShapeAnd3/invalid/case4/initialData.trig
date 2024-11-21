@@ -8,4 +8,3 @@
 @prefix rsx: <http://rdf4j.org/shacl-extensions#> .
 
 ex:validPerson1 ex:info "blue", "red" .
-

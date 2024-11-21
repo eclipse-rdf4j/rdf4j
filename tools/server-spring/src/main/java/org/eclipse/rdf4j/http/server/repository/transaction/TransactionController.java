@@ -37,6 +37,7 @@ import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -635,6 +636,24 @@ public class TransactionController extends AbstractController implements Disposa
 					throw new ClientHTTPException(SC_BAD_REQUEST, "Illegal URI for named graph: " + namedGraphURI);
 				}
 			}
+		}
+
+		if (logger.isDebugEnabled()) {
+			StringBuilder datasetStr = new StringBuilder();
+			dataset.getDefaultGraphs()
+					.forEach(g -> datasetStr.append("DEFAULT GRAPH: FROM <").append(g.stringValue()).append(">\n"));
+			dataset.getNamedGraphs()
+					.forEach(g -> datasetStr.append("NAMED GRAPH: FROM NAMED <").append(g.stringValue()).append(">\n"));
+			dataset.getDefaultRemoveGraphs()
+					.forEach(g -> datasetStr.append("DEFAULT REMOVE GRAPH: DELETE FROM <")
+							.append(g.stringValue())
+							.append(">\n"));
+			Optional.ofNullable(dataset.getDefaultInsertGraph())
+					.ifPresent(g -> datasetStr.append("DEFAULT INSERT GRAPH: INSERT INTO <")
+							.append(g.stringValue())
+							.append(">\n"));
+
+			logger.debug("Dataset: {}", datasetStr);
 		}
 
 		try {

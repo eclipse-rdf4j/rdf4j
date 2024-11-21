@@ -97,7 +97,7 @@ public class ValuesBackedNode implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ValuesBackedNode{" + "values=" + values + '}';
+		return "ValuesBackedNode{" + "values=" + Formatter.prefix(values) + '}';
 	}
 
 	@Override

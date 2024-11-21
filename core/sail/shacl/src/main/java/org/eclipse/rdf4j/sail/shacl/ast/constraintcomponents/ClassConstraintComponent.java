@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.AbstractBulkJoinPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.AllTargetsPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalInnerJoin;
@@ -171,7 +172,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 					false,
 					null,
 					BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph()),
-					connectionsGroup);
+					connectionsGroup, AbstractBulkJoinPlanNode.DEFAULT_VARS);
 
 			if (connectionsGroup.getAddedStatements() != null) {
 				// filter by type against the added statements
@@ -236,7 +237,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider,
+			ValidationSettings validationSettings) {
 		if (scope == Scope.propertyShape) {
 			PlanNode allTargetsPlan = getTargetChain()
 					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),

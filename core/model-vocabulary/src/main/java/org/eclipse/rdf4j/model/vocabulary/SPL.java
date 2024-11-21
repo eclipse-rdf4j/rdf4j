@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
 
 /**
  * SPIN Standard Module library.
@@ -26,6 +27,8 @@ public final class SPL {
 	public static final String NAMESPACE = "http://spinrdf.org/spl#";
 
 	public static final String PREFIX = "spl";
+
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/**
 	 * http://spinrdf.org/spl#Argument Provides metadata about an argument of a SPIN Function or Template.

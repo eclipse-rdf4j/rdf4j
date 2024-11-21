@@ -11,9 +11,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.Arrays;
-import java.util.Set;
-
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -22,18 +19,6 @@ import org.eclipse.rdf4j.model.Value;
  * @author Håvard Mikkelsen Ottestad
  */
 public interface PlanNode {
-
-	static String prefix(Set<Resource> filterOnObject) {
-		if (filterOnObject.size() == 1) {
-			return prefix(filterOnObject.iterator().next());
-		}
-
-		return Arrays.toString(filterOnObject.stream().map(PlanNode::prefix).toArray());
-	}
-
-	static String prefix(Value value) {
-		return Formatter.prefix(value);
-	}
 
 	CloseableIteration<? extends ValidationTuple> iterator();
 
