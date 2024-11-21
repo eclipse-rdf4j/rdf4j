@@ -3,7 +3,7 @@
 	<parent>
 		<artifactId>rdf4j-compliance</artifactId>
 		<groupId>org.eclipse.rdf4j</groupId>
-		<version>5.1.0</version>
+		<version>5.1.1-SNAPSHOT</version>
 	</parent>
 	<modelVersion>4.0.0</modelVersion>
 	<artifactId>rdf4j-model-compliance</artifactId>
