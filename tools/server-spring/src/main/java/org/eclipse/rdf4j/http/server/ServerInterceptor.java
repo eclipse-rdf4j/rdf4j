@@ -10,9 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server;
 
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
+
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import org.slf4j.MDC;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 /**
@@ -24,13 +28,23 @@ import org.springframework.web.servlet.HandlerInterceptor;
  */
 public abstract class ServerInterceptor implements HandlerInterceptor {
 
+	private static final String REQUEST_ID_KEY = "org.eclipse.rdf4j.requestId";
+	private static final String PROCESS_ID = "process:" + UUID.randomUUID();
+
+	private static final AtomicLong requestNumber = new AtomicLong(0L);
+
 	private volatile String origThreadName;
+
+	private static String createRequestId() {
+		return PROCESS_ID + ":request:" + requestNumber.getAndIncrement();
+	}
 
 	@Override
 	public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
 			throws Exception {
 		origThreadName = Thread.currentThread().getName();
 		Thread.currentThread().setName(getThreadName());
+		MDC.put(REQUEST_ID_KEY, createRequestId());
 
 		setRequestAttributes(request);
 
@@ -43,6 +57,7 @@ public abstract class ServerInterceptor implements HandlerInterceptor {
 		try {
 			cleanUpResources();
 		} finally {
+			MDC.remove(REQUEST_ID_KEY);
 			Thread.currentThread().setName(origThreadName);
 		}
 	}
