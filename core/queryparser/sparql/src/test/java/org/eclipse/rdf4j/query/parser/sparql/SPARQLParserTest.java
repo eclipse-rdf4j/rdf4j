@@ -976,6 +976,19 @@ public class SPARQLParserTest {
 		verifySerializable(parsedQuery.getTupleExpr());
 	}
 
+	@Test
+	public void testApostrophe() {
+		String query = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n" +
+				"select * where { \n" +
+				"  rdf:Test\\'s ?p1 ?o1\n" +
+				"}";
+
+		HashSet<Namespace> customPrefixes = new HashSet<>();
+		SPARQLParser parser = new SPARQLParser(customPrefixes);
+
+		parser.parseQuery(query, null);
+	}
+
 	private AggregateFunctionFactory buildDummyFactory() {
 		return new AggregateFunctionFactory() {
 			@Override
