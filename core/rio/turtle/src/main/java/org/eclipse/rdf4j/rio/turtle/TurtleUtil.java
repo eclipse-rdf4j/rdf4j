@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.rio.turtle;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
+import org.eclipse.rdf4j.model.util.URIUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -366,41 +367,7 @@ public class TurtleUtil {
 	}
 
 	public static boolean isPN_LOCAL(String name) {
-		// Empty names are legal
-		if (name.isEmpty()) {
-			return true;
-		}
-
-		if (!isPN_CHARS_U(name.charAt(0)) && name.charAt(0) != ':' && !ASCIIUtil.isNumber(name.charAt(0))
-				&& !isPLX_START(name)) {
-			logger.debug("PN_LOCAL was not valid (start characters invalid) i=" + 0 + " nextchar="
-					+ name.charAt(0) + " name=" + name);
-			return false;
-		}
-
-		if (!isNameStartChar(name.charAt(0))) {
-			logger.debug("name was not valid (start character invalid) i=" + 0 + " nextchar=" + name.charAt(0)
-					+ " name=" + name);
-			return false;
-		}
-
-		for (int i = 1; i < name.length(); i++) {
-			if (!isNameChar(name.charAt(i))) {
-				logger.debug("name was not valid (intermediate character invalid) i=" + i + " nextchar="
-						+ name.charAt(i) + " name=" + name);
-				return false;
-			}
-
-			// Check if the percent encoding was less than two characters from the
-			// end of the prefix, in which case it is invalid
-			if (name.charAt(i) == '%' && (name.length() - i) < 3) {
-				logger.debug("name was not valid (short percent escape) i=" + i + " nextchar=" + name.charAt(i)
-						+ " name=" + name);
-				return false;
-			}
-		}
-
-		return true;
+		return URIUtil.isValidLocalName(name);
 	}
 
 	// public static boolean isLegalName(String name) {
