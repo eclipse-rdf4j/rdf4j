@@ -228,6 +228,19 @@ public class URIUtil {
 
 		for (int i = 1; i < name.length(); i++) {
 			if (!isNameChar(name.charAt(i))) {
+
+				// PLX
+				if (name.charAt(i) == '%') {
+					continue;
+				} else if (name.charAt(i) == '\\') {
+					if (i + 1 < name.length() && isPN_LOCAL_ESC(name.substring(i, i + 2))) {
+						i++;
+						continue;
+					} else {
+						return false;
+					}
+				}
+
 				return false;
 			}
 
@@ -341,7 +354,7 @@ public class URIUtil {
 	 * @return <code>true</code> if the supplied code point represents a valid name char, <code>false</code> otherwise.
 	 */
 	private static boolean isNameChar(int codePoint) {
-		return isPN_CHARS(codePoint) || codePoint == '.' || codePoint == ':' | codePoint == '\\' || codePoint == '%';
+		return isPN_CHARS(codePoint) || codePoint == '.' || codePoint == ':';
 	}
 
 	/**

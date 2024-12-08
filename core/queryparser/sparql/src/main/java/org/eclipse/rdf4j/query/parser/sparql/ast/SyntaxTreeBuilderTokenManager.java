@@ -2296,7 +2296,7 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 				}
 				break;
 			case 82:
-				if ((0xa800ff7e00000000L & l) != 0L) {
+				if ((0xa800fffa00000000L & l) != 0L) {
 					jjCheckNAddStates(44, 47);
 				}
 				break;
@@ -2326,12 +2326,12 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 				}
 				break;
 			case 88:
-				if ((0xa800ff7e00000000L & l) != 0L && kind > 146) {
+				if ((0xa800fffa00000000L & l) != 0L && kind > 146) {
 					kind = 146;
 				}
 				break;
 			case 90:
-				if ((0xa800ff7e00000000L & l) == 0L) {
+				if ((0xa800fffa00000000L & l) == 0L) {
 					break;
 				}
 				if (kind > 146) {
