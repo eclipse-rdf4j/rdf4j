@@ -989,6 +989,19 @@ public class SPARQLParserTest {
 		parser.parseQuery(query, null);
 	}
 
+	@Test
+	public void testApostropheInsertData() {
+		String query = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n" +
+				"INSERT DATA { \n" +
+				"  rdf:Test\\'s a <http://example.com/Test> .\n" +
+				"}";
+
+		HashSet<Namespace> customPrefixes = new HashSet<>();
+		SPARQLParser parser = new SPARQLParser(customPrefixes);
+
+		parser.parseUpdate(query, null);
+	}
+
 	private AggregateFunctionFactory buildDummyFactory() {
 		return new AggregateFunctionFactory() {
 			@Override
