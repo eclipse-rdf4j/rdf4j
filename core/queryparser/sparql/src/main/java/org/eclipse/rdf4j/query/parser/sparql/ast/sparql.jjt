@@ -345,7 +345,7 @@ TOKEN:
 |	<#PN_LOCAL: (<PN_CHARS_U> | ":" | <NUM> | <PLX> ) ( (<PN_CHARS> | "." | ":" | <PLX>)* ( <PN_CHARS> | ":" | <PLX>) )?>
 |	<#PLX: <PERCENT> | <PN_LOCAL_ESC>>
 |	<#PERCENT: "%" <HEX> <HEX>>
-|	<#PN_LOCAL_ESC: "\\" [ "_", "~", ".", "-", "!", "$", "&", "\"", "(", ")", "*", "+", ",", ";", "=", "/", "?", "#", "@", "%" ]>
+|	<#PN_LOCAL_ESC: "\\" [ "_", "~", ".", "-", "!", "$", "&", "'", "(", ")", "*", "+", ",", ";", "=", "/", "?", "#", "@", "%" ]>
 |	<#VARNAME: (<PN_CHARS_U> | <NUM> ) (<VAR_CHAR>)*>
 |	<TRIPLE_OPEN: "<<">
 |	<TRIPLE_CLOSE: ">>">
