@@ -5,7 +5,8 @@
 ex:a a ex:Foo .
 ex:b a ex:Foo .
 ex:b ex:value '''^M'''.
-ex:c 
+ex:c
     :foo ex:Foo .
+rdf:Test\'s a ex:Foo .
 ex:a ex:value 1.0 .
 ex:a ex:value 3.0 .

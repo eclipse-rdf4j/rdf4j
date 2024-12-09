@@ -229,6 +229,7 @@ public class TurtleUtilTest {
 		assertFalse(TurtleUtil.isPN_LOCAL("foo\tbar"));
 		assertFalse(TurtleUtil.isPN_LOCAL("foo\nbar"));
 		assertFalse(TurtleUtil.isPN_LOCAL("*foobar"));
+		assertTrue(TurtleUtil.isPN_LOCAL("foo\\'bar"));
 	}
 
 	/**
