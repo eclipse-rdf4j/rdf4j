@@ -108,5 +108,6 @@ public class URIUtilTest {
 		assertFalse(URIUtil.isValidLocalName("foo\tbar"));
 		assertFalse(URIUtil.isValidLocalName("foo\nbar"));
 		assertFalse(URIUtil.isValidLocalName("*foobar"));
+		assertTrue(URIUtil.isValidLocalName("fo\\'obar"));
 	}
 }
