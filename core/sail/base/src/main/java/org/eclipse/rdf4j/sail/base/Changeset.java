@@ -29,6 +29,7 @@ import java.util.concurrent.locks.StampedLock;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -175,7 +176,8 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		}
 	}
 
-	boolean hasDeprecated(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+	@Experimental
+	public boolean hasDeprecated(Resource subj, IRI pred, Value obj, Resource[] contexts) {
 		assert !closed;
 		if ((deprecated == null || deprecatedEmpty) && deprecatedContexts == null) {
 			return false;

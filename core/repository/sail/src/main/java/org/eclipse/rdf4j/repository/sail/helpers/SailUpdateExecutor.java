@@ -447,8 +447,8 @@ public class SailUpdateExecutor {
 					whereClause, uc, maxExecutionTime)) {
 				while (sourceBindings.hasNext()) {
 					BindingSet sourceBinding = sourceBindings.next();
-					deleteBoundTriples(sourceBinding, modify.getDeleteExpr(), uc);
 
+					deleteBoundTriples(sourceBinding, modify.getDeleteExpr(), uc);
 					insertBoundTriples(sourceBinding, modify.getInsertExpr(), uc);
 				}
 			}

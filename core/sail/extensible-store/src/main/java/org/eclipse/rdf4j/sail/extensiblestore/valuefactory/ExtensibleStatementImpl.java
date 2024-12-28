@@ -14,6 +14,7 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.GenericStatement;
 
@@ -45,19 +46,17 @@ public class ExtensibleStatementImpl extends GenericStatement<Resource, IRI, Val
 		if (this == o) {
 			return true;
 		}
-		if (!(o instanceof ExtensibleStatementImpl)) {
+		if (!(o instanceof Statement)) {
 			return false;
+		}
+		if (!(o instanceof ExtensibleStatement)) {
+			return super.equals(o);
 		}
 		if (!super.equals(o)) {
 			return false;
 		}
-		ExtensibleStatementImpl that = (ExtensibleStatementImpl) o;
-		return inferred == that.inferred;
-	}
-
-	@Override
-	public int hashCode() {
-		return Objects.hash(super.hashCode(), inferred);
+		ExtensibleStatement that = (ExtensibleStatement) o;
+		return inferred == that.isInferred();
 	}
 
 }

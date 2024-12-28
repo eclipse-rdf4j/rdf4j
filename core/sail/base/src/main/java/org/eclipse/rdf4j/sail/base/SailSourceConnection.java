@@ -763,8 +763,13 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			if (hasConnectionListeners()) {
 				if (!hasStatement(dataset, subj, pred, obj, NULL_CTX)) {
 					notifyStatementAdded(vf.createStatement(subj, pred, obj));
-					sink.approve(subj, pred, obj, null);
+				} else if (sink instanceof Changeset && ((Changeset) sink).hasDeprecated(subj, pred, obj, NULL_CTX)) {
+					notifyStatementAdded(vf.createStatement(subj, pred, obj));
 				}
+
+				// always approve the statement, even if it already exists
+				sink.approve(subj, pred, obj, null);
+
 			} else {
 				sink.approve(subj, pred, obj, null);
 			}
@@ -784,8 +789,11 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				if (hasConnectionListeners()) {
 					if (!hasStatement(dataset, subj, pred, obj, contextsToCheck)) {
 						notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));
-						sink.approve(subj, pred, obj, ctx);
+					} else if (sink instanceof Changeset
+							&& ((Changeset) sink).hasDeprecated(subj, pred, obj, contextsToCheck)) {
+						notifyStatementAdded(vf.createStatement(subj, pred, obj));
 					}
+					sink.approve(subj, pred, obj, ctx);
 				} else {
 					sink.approve(subj, pred, obj, ctx);
 				}
@@ -830,7 +838,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			while (iter.hasNext()) {
 				Statement st = iter.next();
 				sink.deprecate(st);
-
 				statementsRemoved = true;
 				notifyStatementRemoved(st);
 			}
