@@ -126,9 +126,6 @@ public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements Sail
 
 		}
 
-		addEventCount = 0;
-		removeEventCount = 0;
-
 		try (SailRepositoryConnection connection = repo.getConnection()) {
 			Set<Statement> added = new HashSet<>();
 			Set<Statement> removed = new HashSet<>();
@@ -136,43 +133,12 @@ public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements Sail
 			List<Statement> addedRaw = new ArrayList<>();
 			List<Statement> removedRaw = new ArrayList<>();
 
-			((NotifyingSailConnection) connection.getSailConnection())
-					.addConnectionListener(new SailConnectionListener() {
-						@Override
-						public void statementAdded(Statement st) {
-							boolean add = added.add(st);
-							if (!add) {
-								removed.remove(st);
-							}
-
-							addedRaw.add(st);
-						}
-
-						@Override
-						public void statementRemoved(Statement st) {
-							boolean add = removed.add(st);
-							if (!add) {
-								added.remove(st);
-							}
-
-							removedRaw.add(st);
-						}
-					}
-					);
+			registerConnectionListener(connection, added, removed, addedRaw, removedRaw);
 
 			connection.prepareUpdate("" +
 					"DELETE {?a ?b ?c}" +
 					"INSERT {?a ?b ?c}" +
 					"WHERE {?a ?b ?c}").execute();
-
-			System.out.println("Added Raw Size: " + addedRaw.size());
-			System.out.println("Removed Raw Size: " + removedRaw.size());
-			System.out.println("Added Raw: " + addedRaw);
-			System.out.println("Removed Raw: " + removedRaw);
-			System.out.println("Added Size: " + added.size());
-			System.out.println("Removed Size: " + removed.size());
-			System.out.println("Added: " + added);
-			System.out.println("Removed: " + removed);
 
 			assertEquals(5, added.size());
 			assertEquals(5, removed.size());
@@ -193,14 +159,10 @@ public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements Sail
 		try (SailRepositoryConnection connection = repo.getConnection()) {
 			connection.begin();
 			connection.add(painter, RDF.TYPE, RDFS.CLASS);
+			connection.add(painting, RDF.TYPE, RDFS.CLASS);
 			connection.commit();
 
 		}
-
-		String statement = "<" + painter + "> <" + RDF.TYPE + "> <" + RDFS.CLASS + "> .";
-
-		addEventCount = 0;
-		removeEventCount = 0;
 
 		try (SailRepositoryConnection connection = repo.getConnection()) {
 			Set<Statement> added = new HashSet<>();
@@ -209,55 +171,54 @@ public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements Sail
 			List<Statement> addedRaw = new ArrayList<>();
 			List<Statement> removedRaw = new ArrayList<>();
 
-			((NotifyingSailConnection) connection.getSailConnection())
-					.addConnectionListener(new SailConnectionListener() {
-						@Override
-						public void statementAdded(Statement st) {
-							boolean add = added.add(st);
-							if (!add) {
-								removed.remove(st);
-							}
+			registerConnectionListener(connection, added, removed, addedRaw, removedRaw);
 
-							addedRaw.add(st);
-						}
-
-						@Override
-						public void statementRemoved(Statement st) {
-							boolean add = removed.add(st);
-							if (!add) {
-								added.remove(st);
-							}
-
-							removedRaw.add(st);
-						}
-					}
-					);
+			String statement = "<" + painter + "> <" + RDF.TYPE + "> <" + RDFS.CLASS + "> .";
 
 			connection.prepareUpdate("" +
 					"DELETE {" + statement + "}" +
 					"INSERT {" + statement + "}" +
 					"WHERE {?a ?b ?c}").execute();
 
-			System.out.println("Added Raw Size: " + addedRaw.size());
-			System.out.println("Removed Raw Size: " + removedRaw.size());
-			System.out.println("Added Raw: " + addedRaw);
-			System.out.println("Removed Raw: " + removedRaw);
-			System.out.println("Added Size: " + added.size());
-			System.out.println("Removed Size: " + removed.size());
-			System.out.println("Added: " + added);
-			System.out.println("Removed: " + removed);
-
 			assertEquals(1, added.size());
 			assertEquals(1, removed.size());
-			assertEquals(1, addedRaw.size());
-			assertEquals(1, removedRaw.size());
+			assertEquals(2, addedRaw.size());
+			assertEquals(2, removedRaw.size());
 
 			assertEquals(added, removed);
 
 		}
 
-		assertEquals(1, con.size());
+		assertEquals(2, con.size());
 
+	}
+
+	private static void registerConnectionListener(SailRepositoryConnection connection, Set<Statement> added,
+			Set<Statement> removed, List<Statement> addedRaw, List<Statement> removedRaw) {
+		((NotifyingSailConnection) connection.getSailConnection())
+				.addConnectionListener(
+						new SailConnectionListener() {
+							@Override
+							public void statementAdded(Statement st) {
+								boolean add = added.add(st);
+								if (!add) {
+									removed.remove(st);
+								}
+
+								addedRaw.add(st);
+							}
+
+							@Override
+							public void statementRemoved(Statement st) {
+								boolean add = removed.add(st);
+								if (!add) {
+									added.remove(st);
+								}
+
+								removedRaw.add(st);
+							}
+						}
+				);
 	}
 
 	@Override
