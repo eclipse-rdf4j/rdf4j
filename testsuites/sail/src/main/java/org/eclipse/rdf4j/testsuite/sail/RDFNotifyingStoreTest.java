@@ -13,11 +13,21 @@ package org.eclipse.rdf4j.testsuite.sail;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSail;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailChangedEvent;
 import org.eclipse.rdf4j.sail.SailChangedListener;
+import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,6 +46,7 @@ public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements Sail
 	private int removeEventCount;
 
 	private int addEventCount;
+	private SailRepository repo;
 
 	/*---------*
 	 * Methods *
@@ -54,7 +65,9 @@ public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements Sail
 	public void addSailChangedListener() {
 		// set self as listener
 		((NotifyingSail) sail).addSailChangedListener(this);
-
+		removeEventCount = 0;
+		addEventCount = 0;
+		this.repo = new SailRepository(sail);
 	}
 
 	@Test
@@ -97,6 +110,154 @@ public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements Sail
 		assertEquals(1, addEventCount, "There should have been 1 event in which statements were added");
 
 		assertEquals(3, removeEventCount, "There should have been 3 events in which statements were removed");
+	}
+
+	@Test
+	public void testUpdateQuery() {
+
+		try (SailRepositoryConnection connection = repo.getConnection()) {
+			connection.begin();
+			connection.add(painter, RDF.TYPE, RDFS.CLASS);
+			connection.add(painting, RDF.TYPE, RDFS.CLASS);
+			connection.add(picasso, RDF.TYPE, painter);
+			connection.add(guernica, RDF.TYPE, painting);
+			connection.add(picasso, paints, guernica);
+			connection.commit();
+
+		}
+
+		addEventCount = 0;
+		removeEventCount = 0;
+
+		try (SailRepositoryConnection connection = repo.getConnection()) {
+			Set<Statement> added = new HashSet<>();
+			Set<Statement> removed = new HashSet<>();
+
+			List<Statement> addedRaw = new ArrayList<>();
+			List<Statement> removedRaw = new ArrayList<>();
+
+			((NotifyingSailConnection) connection.getSailConnection())
+					.addConnectionListener(new SailConnectionListener() {
+						@Override
+						public void statementAdded(Statement st) {
+							boolean add = added.add(st);
+							if (!add) {
+								removed.remove(st);
+							}
+
+							addedRaw.add(st);
+						}
+
+						@Override
+						public void statementRemoved(Statement st) {
+							boolean add = removed.add(st);
+							if (!add) {
+								added.remove(st);
+							}
+
+							removedRaw.add(st);
+						}
+					}
+					);
+
+			connection.prepareUpdate("" +
+					"DELETE {?a ?b ?c}" +
+					"INSERT {?a ?b ?c}" +
+					"WHERE {?a ?b ?c}").execute();
+
+			System.out.println("Added Raw Size: " + addedRaw.size());
+			System.out.println("Removed Raw Size: " + removedRaw.size());
+			System.out.println("Added Raw: " + addedRaw);
+			System.out.println("Removed Raw: " + removedRaw);
+			System.out.println("Added Size: " + added.size());
+			System.out.println("Removed Size: " + removed.size());
+			System.out.println("Added: " + added);
+			System.out.println("Removed: " + removed);
+
+			assertEquals(5, added.size());
+			assertEquals(5, removed.size());
+			assertEquals(5, addedRaw.size());
+			assertEquals(5, removedRaw.size());
+
+			assertEquals(added, removed);
+
+		}
+
+		assertEquals(5, con.size());
+
+	}
+
+	@Test
+	public void testUpdateQuery2() {
+
+		try (SailRepositoryConnection connection = repo.getConnection()) {
+			connection.begin();
+			connection.add(painter, RDF.TYPE, RDFS.CLASS);
+			connection.commit();
+
+		}
+
+		String statement = "<" + painter + "> <" + RDF.TYPE + "> <" + RDFS.CLASS + "> .";
+
+		addEventCount = 0;
+		removeEventCount = 0;
+
+		try (SailRepositoryConnection connection = repo.getConnection()) {
+			Set<Statement> added = new HashSet<>();
+			Set<Statement> removed = new HashSet<>();
+
+			List<Statement> addedRaw = new ArrayList<>();
+			List<Statement> removedRaw = new ArrayList<>();
+
+			((NotifyingSailConnection) connection.getSailConnection())
+					.addConnectionListener(new SailConnectionListener() {
+						@Override
+						public void statementAdded(Statement st) {
+							boolean add = added.add(st);
+							if (!add) {
+								removed.remove(st);
+							}
+
+							addedRaw.add(st);
+						}
+
+						@Override
+						public void statementRemoved(Statement st) {
+							boolean add = removed.add(st);
+							if (!add) {
+								added.remove(st);
+							}
+
+							removedRaw.add(st);
+						}
+					}
+					);
+
+			connection.prepareUpdate("" +
+					"DELETE {" + statement + "}" +
+					"INSERT {" + statement + "}" +
+					"WHERE {?a ?b ?c}").execute();
+
+			System.out.println("Added Raw Size: " + addedRaw.size());
+			System.out.println("Removed Raw Size: " + removedRaw.size());
+			System.out.println("Added Raw: " + addedRaw);
+			System.out.println("Removed Raw: " + removedRaw);
+			System.out.println("Added Size: " + added.size());
+			System.out.println("Removed Size: " + removed.size());
+			System.out.println("Added: " + added);
+			System.out.println("Removed: " + removed);
+
+			assertEquals(1, added.size());
+			assertEquals(1, removed.size());
+			assertEquals(1, addedRaw.size());
+			assertEquals(1, removedRaw.size());
+
+			assertEquals(added, removed);
+
+		}
+
+		assertEquals(1, con.size());
+
 	}
 
 	@Override
