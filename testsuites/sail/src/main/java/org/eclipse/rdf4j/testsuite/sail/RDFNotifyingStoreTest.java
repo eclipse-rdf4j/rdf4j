@@ -180,12 +180,13 @@ public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements Sail
 					"INSERT {" + statement + "}" +
 					"WHERE {?a ?b ?c}").execute();
 
-			assertEquals(1, added.size());
-			assertEquals(1, removed.size());
+			assertEquals(added, removed, "Added (expected) is not the same as removed (actual)");
+
 			assertEquals(2, addedRaw.size());
 			assertEquals(2, removedRaw.size());
 
-			assertEquals(added, removed);
+			assertEquals(1, added.size());
+			assertEquals(1, removed.size());
 
 		}
 
