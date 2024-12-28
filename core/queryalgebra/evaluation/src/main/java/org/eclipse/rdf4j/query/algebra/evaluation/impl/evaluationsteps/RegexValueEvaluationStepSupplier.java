@@ -38,6 +38,9 @@ public class RegexValueEvaluationStepSupplier {
 	private static final class ChangingRegexQueryValueEvaluationStep implements QueryValueEvaluationStep {
 		private final Regex node;
 		private final EvaluationStrategy strategy;
+		private Value parg;
+		private Value farg;
+		private Pattern pattern;
 
 		private ChangingRegexQueryValueEvaluationStep(Regex node, EvaluationStrategy strategy) {
 			this.node = node;
@@ -56,15 +59,32 @@ public class RegexValueEvaluationStepSupplier {
 
 			if (QueryEvaluationUtility.isStringLiteral(arg) && QueryEvaluationUtility.isSimpleLiteral(parg)
 					&& (farg == null || QueryEvaluationUtility.isSimpleLiteral(farg))) {
+
+				Pattern pattern = getPattern((Literal) parg, farg);
+
 				String text = ((Literal) arg).getLabel();
-				String ptn = ((Literal) parg).getLabel();
-				// TODO should this Pattern be cached?
-				int f = extractRegexFlags(farg);
-				Pattern pattern = Pattern.compile(ptn, f);
 				boolean result = pattern.matcher(text).find();
 				return BooleanLiteral.valueOf(result);
 			}
 			throw new ValueExprEvaluationException();
+		}
+
+		private Pattern getPattern(Literal parg, Value farg) {
+			if (this.parg == parg && this.farg == farg) {
+				return pattern;
+			}
+
+			String ptn = parg.getLabel();
+			int f = extractRegexFlags(farg);
+			Pattern pattern = Pattern.compile(ptn, f);
+
+			// cache the pattern object and the current parg and farg so that we can reuse it if the parg and farg are
+			// reused or somehow constant
+			this.parg = parg;
+			this.farg = farg;
+			this.pattern = pattern;
+
+			return pattern;
 		}
 	}
 
