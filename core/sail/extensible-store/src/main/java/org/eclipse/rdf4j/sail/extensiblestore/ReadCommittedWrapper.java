@@ -50,14 +50,18 @@ class ReadCommittedWrapper implements DataStructureInterface {
 
 	@Override
 	public void addStatement(ExtensibleStatement statement) {
-		internalAdded.put(statement, statement);
-		internalRemoved.remove(statement);
-
+		ExtensibleStatement put = internalAdded.put(statement, statement);
+		if (put == null) {
+			internalRemoved.remove(statement);
+		}
 	}
 
 	@Override
 	public void removeStatement(ExtensibleStatement statement) {
-		internalRemoved.put(statement, statement);
+		ExtensibleStatement put = internalRemoved.put(statement, statement);
+		if (put == null) {
+			internalAdded.remove(statement);
+		}
 
 	}
 
