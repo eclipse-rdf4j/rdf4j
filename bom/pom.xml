@@ -413,7 +413,13 @@
 			<dependency>
 				<groupId>org.lwjgl</groupId>
 				<artifactId>lwjgl-lmdb</artifactId>
-				<classifier>natives-macos-arm64</classifier>
+				<classifier>natives-linux-arm64</classifier>
+				<version>${lwjgl.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.lwjgl</groupId>
+				<artifactId>lwjgl-lmdb</artifactId>
+				<classifier>natives-linux-ppc64le</classifier>
 				<version>${lwjgl.version}</version>
 			</dependency>
 			<dependency>
@@ -425,7 +431,19 @@
 			<dependency>
 				<groupId>org.lwjgl</groupId>
 				<artifactId>lwjgl-lmdb</artifactId>
+				<classifier>natives-macos-arm64</classifier>
+				<version>${lwjgl.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.lwjgl</groupId>
+				<artifactId>lwjgl-lmdb</artifactId>
 				<classifier>natives-windows</classifier>
+				<version>${lwjgl.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.lwjgl</groupId>
+				<artifactId>lwjgl-lmdb</artifactId>
+				<classifier>natives-windows-arm64</classifier>
 				<version>${lwjgl.version}</version>
 			</dependency>
 			<dependency>
@@ -437,6 +455,18 @@
 			<dependency>
 				<groupId>org.lwjgl</groupId>
 				<artifactId>lwjgl</artifactId>
+				<classifier>natives-linux-arm64</classifier>
+				<version>${lwjgl.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.lwjgl</groupId>
+				<artifactId>lwjgl</artifactId>
+				<classifier>natives-linux-ppc64le</classifier>
+				<version>${lwjgl.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.lwjgl</groupId>
+				<artifactId>lwjgl</artifactId>
 				<classifier>natives-macos</classifier>
 				<version>${lwjgl.version}</version>
 			</dependency>
@@ -450,6 +480,12 @@
 				<groupId>org.lwjgl</groupId>
 				<artifactId>lwjgl</artifactId>
 				<classifier>natives-windows</classifier>
+				<version>${lwjgl.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.lwjgl</groupId>
+				<artifactId>lwjgl</artifactId>
+				<classifier>natives-windows-arm64</classifier>
 				<version>${lwjgl.version}</version>
 			</dependency>
 		</dependencies>
