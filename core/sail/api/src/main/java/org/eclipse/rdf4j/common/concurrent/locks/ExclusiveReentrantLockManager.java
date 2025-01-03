@@ -52,7 +52,7 @@ public class ExclusiveReentrantLockManager {
 
 			lockMonitoring = new LockTracking<>(
 					true,
-					"ExclusiveReentrantLockManager-Tracking",
+					"ExclusiveReentrantLockManager(w/tracking)",
 					LoggerFactory.getLogger(this.getClass()),
 					waitToCollect,
 					Lock.ExtendedSupplier.wrap(this::getExclusiveLockInner, this::tryExclusiveLockInner)
@@ -61,7 +61,7 @@ public class ExclusiveReentrantLockManager {
 		} else {
 			lockMonitoring = new LockCleaner<>(
 					false,
-					"ExclusiveReentrantLockManager-Cleaner",
+					"ExclusiveReentrantLockManager(w/cleaner)",
 					LoggerFactory.getLogger(this.getClass()),
 					Lock.ExtendedSupplier.wrap(this::getExclusiveLockInner, this::tryExclusiveLockInner)
 			);

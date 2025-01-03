@@ -128,7 +128,8 @@ class ExclusiveReentrantLockManagerTest {
 
 		assertThat(memoryAppender.countEventsForLogger(ExclusiveReentrantLockManager.class.getName()))
 				.isGreaterThanOrEqualTo(1);
-		memoryAppender.assertContains("is waiting on a possibly stalled lock \"ExclusiveReentrantLockManager\" with id",
+		memoryAppender.assertContains(
+				"is waiting on a possibly stalled lock \"ExclusiveReentrantLockManager(w/tracking)\" with id",
 				Level.INFO);
 		memoryAppender.assertContains(
 				"at org.eclipse.rdf4j.common.concurrent.locks.ExclusiveReentrantLockManagerTest.lambda$stalledTest$0(ExclusiveReentrantLockManagerTest.java:",
