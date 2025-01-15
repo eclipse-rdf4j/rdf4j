@@ -953,10 +953,6 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	 */
 	public CloseableIteration<BindingSet> evaluateLeftBoundJoinStatementPattern(
 			StatementTupleExpr stmt, final List<BindingSet> bindings) throws QueryEvaluationException {
-		// we can omit the bound join handling
-		if (bindings.size() == 1) {
-			return evaluate(stmt, bindings.get(0));
-		}
 
 		FilterValueExpr filterExpr = null;
 		if (stmt instanceof FilterTuple) {
