@@ -562,7 +562,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			IRI pred, Value obj, Resource... contexts)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 
-		List<Endpoint> members = federationContext.getFederation().getMembers();
+		List<Endpoint> members = getAccessibleFederationMembers(queryInfo);
 
 		// a bound query: if at least one fed member provides results
 		// return the statement, otherwise empty result
@@ -603,6 +603,47 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		// TODO distinct iteration ?
 
 		return union;
+	}
+
+	/**
+	 * Returns true if the federation has statements
+	 *
+	 * @param queryInfo information about the query
+	 * @param subj      the subject or <code>null</code>
+	 * @param pred      the predicate or <code>null</code>
+	 * @param obj       the object or <code>null</code>
+	 * @param contexts  optional list of contexts
+	 * @return the statement iteration
+	 *
+	 * @throws RepositoryException
+	 * @throws MalformedQueryException
+	 * @throws QueryEvaluationException
+	 */
+	public boolean hasStatements(QueryInfo queryInfo, Resource subj,
+			IRI pred, Value obj, Resource... contexts)
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+
+		List<Endpoint> members = getAccessibleFederationMembers(queryInfo);
+
+		// form the union of results from relevant endpoints
+		List<StatementSource> sources = CacheUtils.checkCacheForStatementSourcesUpdateCache(cache, members, subj, pred,
+				obj, queryInfo, contexts);
+
+		if (sources.isEmpty()) {
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * Returns the accessible federation members in the context of the query. By default this is all federation members.
+	 *
+	 * @param queryInfo
+	 * @return
+	 */
+	protected List<Endpoint> getAccessibleFederationMembers(QueryInfo queryInfo) {
+		return federationContext.getFederation().getMembers();
 	}
 
 	public CloseableIteration<BindingSet> evaluateService(FedXService service,

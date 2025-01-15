@@ -338,6 +338,27 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
+	protected boolean hasStatementInternal(Resource subj, IRI pred, Value obj, boolean includeInferred,
+			Resource[] contexts) {
+		try {
+			Dataset dataset = new SimpleDataset();
+			FederationEvalStrategy strategy = federationContext.createStrategy(dataset);
+			QueryInfo queryInfo = new QueryInfo(subj, pred, obj, 0, includeInferred, federationContext, strategy,
+					dataset);
+			federationContext.getMonitoringService().monitorQuery(queryInfo);
+			return strategy.hasStatements(queryInfo, subj, pred, obj, contexts);
+
+		} catch (RuntimeException e) {
+			throw e;
+		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
+			throw new SailException(e);
+		}
+	}
+
+	@Override
 	protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		try {
 			getWriteStrategyInternal().addStatement(subj, pred, obj, contexts);
