@@ -17,6 +17,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
@@ -638,10 +639,16 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 	/**
 	 * Returns the accessible federation members in the context of the query. By default this is all federation members.
+	 * <p>
+	 * Specialized implementations of the {@link FederationEvalStrategy} may override and define custom behavior (e.g.,
+	 * to support resilience).
+	 * </p>
+	 *
 	 *
 	 * @param queryInfo
 	 * @return
 	 */
+	@Experimental
 	protected List<Endpoint> getAccessibleFederationMembers(QueryInfo queryInfo) {
 		return federationContext.getFederation().getMembers();
 	}
