@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.federated.cache;
 
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
@@ -47,6 +48,14 @@ public class SourceSelectionMemoryCache implements SourceSelectionCache {
 	public SourceSelectionMemoryCache(String cacheSpec) {
 		cacheSpec = cacheSpec == null ? DEFAULT_CACHE_SPEC : cacheSpec;
 		this.cache = CacheBuilder.from(CacheBuilderSpec.parse(cacheSpec)).build();
+	}
+
+	/**
+	 *
+	 * @param cacheSupplier provider for an instantiated Guava cache
+	 */
+	public SourceSelectionMemoryCache(Supplier<Cache<SubQuery, Entry>> cacheSupplier) {
+		this.cache = cacheSupplier.get();
 	}
 
 	@Override
