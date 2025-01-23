@@ -87,7 +87,7 @@ public class NativeStoreConnection extends SailSourceConnection implements Threa
 	}
 
 	@Override
-	protected void rollbackInternal() throws SailException {
+	public void rollbackInternal() throws SailException {
 		try {
 			super.rollbackInternal();
 		} finally {

@@ -1001,7 +1001,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	protected abstract void commitInternal() throws SailException;
 
-	protected abstract void rollbackInternal() throws SailException;
+	public abstract void rollbackInternal() throws SailException;
 
 	protected abstract void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException;
@@ -1032,7 +1032,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 		return sailBase;
 	}
 
-	private void forceCloseActiveOperations() throws SailException {
+	public void forceCloseActiveOperations() throws SailException {
 		for (int i = 0; i < 10 && isActiveOperation() && !debugEnabled; i++) {
 			System.gc();
 			try {

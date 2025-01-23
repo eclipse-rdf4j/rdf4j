@@ -115,6 +115,7 @@ public class ExclusiveReentrantLockManager {
 					}
 				} while (true);
 			} else {
+				int deadCount = 0;
 				while (true) {
 					if (Thread.interrupted()) {
 						throw new InterruptedException();

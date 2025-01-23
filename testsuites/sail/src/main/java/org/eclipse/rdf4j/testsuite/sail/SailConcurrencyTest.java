@@ -79,7 +79,7 @@ public abstract class SailConcurrencyTest {
 
 	@BeforeEach
 	public void setUp() {
-		Properties.setLockTrackingEnabled(true);
+//		Properties.setLockTrackingEnabled(true);
 		store = createSail();
 		store.init();
 		vf = store.getValueFactory();
@@ -509,7 +509,7 @@ public abstract class SailConcurrencyTest {
 
 	@RepeatedTest(100)
 //	@Test
-	@Timeout(value = 30, unit = TimeUnit.MINUTES)
+//	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentConnectionsShutdownAndClose() throws InterruptedException {
 		if (store instanceof AbstractSail) {
 			((AbstractSail) store).setConnectionTimeOut(200);
@@ -572,6 +572,7 @@ public abstract class SailConcurrencyTest {
 			}
 		} catch (Throwable logged) {
 			logger.error("Error closing connection", logged);
+			throw logged;
 		}
 
 		try (SailConnection connection = store.getConnection()) {

@@ -513,7 +513,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	}
 
 	@Override
-	protected void rollbackInternal() throws SailException {
+	public void rollbackInternal() throws SailException {
 		synchronized (datasets) {
 			SailDataset toCloseDataset = null;
 			SailSink toCloseExplicitSink = null;
