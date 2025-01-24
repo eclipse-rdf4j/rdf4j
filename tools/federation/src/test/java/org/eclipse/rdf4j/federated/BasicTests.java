@@ -140,6 +140,61 @@ public class BasicTests extends SPARQLBaseTest {
 	}
 
 	@Test
+	public void testRepositoryConnectionApi() throws Exception {
+
+		prepareTest(
+				Arrays.asList("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl"));
+
+		Repository repo1 = getRepository(1);
+		Repository repo2 = getRepository(2);
+
+		IRI bob = Values.iri("http://example.org/bob");
+		IRI alice = Values.iri("http://example.org/alice");
+		IRI graph1 = Values.iri("http://example.org/graph1");
+		IRI graph2 = Values.iri("http://example.org/graph2");
+
+		try (RepositoryConnection conn = repo1.getConnection()) {
+			conn.add(bob, RDF.TYPE, FOAF.PERSON, graph1);
+			conn.add(bob, FOAF.NAME, Values.literal("Bob"), graph1);
+		}
+
+		try (RepositoryConnection conn = repo2.getConnection()) {
+			conn.add(alice, RDF.TYPE, FOAF.PERSON, graph2);
+			conn.add(alice, FOAF.NAME, Values.literal("Alice"), graph2);
+		}
+
+		var fedxRepo = fedxRule.getRepository();
+
+		try (var conn = fedxRepo.getConnection()) {
+
+			// hasStatement which exist
+			Assertions.assertTrue(conn.hasStatement(bob, RDF.TYPE, FOAF.PERSON, false));
+			Assertions.assertTrue(conn.hasStatement(bob, RDF.TYPE, FOAF.PERSON, false, graph1));
+			Assertions.assertTrue(conn.hasStatement(null, RDF.TYPE, FOAF.PERSON, false));
+			Assertions.assertTrue(conn.hasStatement(null, RDF.TYPE, FOAF.PERSON, false, graph1));
+			Assertions.assertTrue(conn.hasStatement(null, RDF.TYPE, null, false));
+			Assertions.assertTrue(conn.hasStatement(null, RDF.TYPE, null, false, graph1));
+			Assertions.assertTrue(conn.hasStatement(null, RDF.TYPE, null, false, graph2));
+			Assertions.assertTrue(conn.hasStatement(null, null, null, false));
+			Assertions.assertTrue(conn.hasStatement(null, null, null, false, graph1));
+
+			// hasStatement which do not exist
+			Assertions.assertFalse(conn.hasStatement(bob, RDF.TYPE, FOAF.ORGANIZATION, false));
+			Assertions.assertFalse(conn.hasStatement(bob, RDF.TYPE, FOAF.PERSON, false, graph2));
+
+			// getStatements
+			Assertions.assertEquals(Set.of(bob, alice),
+					QueryResults.asModel(conn.getStatements(null, RDF.TYPE, FOAF.PERSON, false)).subjects());
+			Assertions.assertEquals(Set.of(bob),
+					QueryResults.asModel(conn.getStatements(null, RDF.TYPE, FOAF.PERSON, false, graph1)).subjects());
+			Assertions.assertEquals(Set.of(bob, alice),
+					QueryResults.asModel(conn.getStatements(null, null, null, false)).subjects());
+			Assertions.assertEquals(Set.of(bob),
+					QueryResults.asModel(conn.getStatements(null, null, null, false, graph1)).subjects());
+		}
+	}
+
+	@Test
 	public void testFederationSubSetQuery() throws Exception {
 		String ns1 = "http://namespace1.org/";
 		String ns2 = "http://namespace2.org/";
