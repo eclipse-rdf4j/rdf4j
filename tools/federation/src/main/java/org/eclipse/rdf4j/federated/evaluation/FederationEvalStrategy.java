@@ -107,6 +107,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
@@ -118,6 +119,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoin
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -146,6 +148,14 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	protected SourceSelectionCache cache;
 
 	protected FederationContext federationContext;
+
+	/**
+	 * List of standard {@link QueryOptimizer}s applicable to federation
+	 */
+	private static final List<QueryOptimizer> standardOptimizers = List.of(
+			StandardQueryOptimizerPipeline.BINDING_ASSIGNER,
+			StandardQueryOptimizerPipeline.BINDING_SET_ASSIGNMENT_INLINER,
+			StandardQueryOptimizerPipeline.DISJUNCTIVE_CONSTRAINT_OPTIMIZER);
 
 	public FederationEvalStrategy(FederationContext federationContext) {
 		super(new org.eclipse.rdf4j.query.algebra.evaluation.TripleSource() {
@@ -209,9 +219,11 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}
 
 		/* original RDF4J optimizers */
-		new ConstantOptimizer(this).optimize(query, dataset, bindings); // maybe remove this optimizer later
+		for (QueryOptimizer optimizer : standardOptimizers) {
+			optimizer.optimize(query, dataset, bindings);
+		}
 
-		new DisjunctiveConstraintOptimizer().optimize(query, dataset, bindings);
+		new ConstantOptimizer(this).optimize(query, dataset, bindings); // maybe remove this optimizer later
 
 		/*
 		 * TODO add some generic optimizers: - FILTER ?s=1 && ?s=2 => EmptyResult - Remove variables that are not
