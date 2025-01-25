@@ -17,6 +17,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
@@ -107,6 +108,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
@@ -118,6 +120,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoin
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -146,6 +149,14 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	protected SourceSelectionCache cache;
 
 	protected FederationContext federationContext;
+
+	/**
+	 * List of standard {@link QueryOptimizer}s applicable to federation
+	 */
+	private static final List<QueryOptimizer> standardOptimizers = List.of(
+			StandardQueryOptimizerPipeline.BINDING_ASSIGNER,
+			StandardQueryOptimizerPipeline.BINDING_SET_ASSIGNMENT_INLINER,
+			StandardQueryOptimizerPipeline.DISJUNCTIVE_CONSTRAINT_OPTIMIZER);
 
 	public FederationEvalStrategy(FederationContext federationContext) {
 		super(new org.eclipse.rdf4j.query.algebra.evaluation.TripleSource() {
@@ -209,9 +220,11 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}
 
 		/* original RDF4J optimizers */
-		new ConstantOptimizer(this).optimize(query, dataset, bindings); // maybe remove this optimizer later
+		for (QueryOptimizer optimizer : standardOptimizers) {
+			optimizer.optimize(query, dataset, bindings);
+		}
 
-		new DisjunctiveConstraintOptimizer().optimize(query, dataset, bindings);
+		new ConstantOptimizer(this).optimize(query, dataset, bindings); // maybe remove this optimizer later
 
 		/*
 		 * TODO add some generic optimizers: - FILTER ?s=1 && ?s=2 => EmptyResult - Remove variables that are not
@@ -562,7 +575,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			IRI pred, Value obj, Resource... contexts)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 
-		List<Endpoint> members = federationContext.getFederation().getMembers();
+		List<Endpoint> members = getAccessibleFederationMembers(queryInfo);
 
 		// a bound query: if at least one fed member provides results
 		// return the statement, otherwise empty result
@@ -603,6 +616,53 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		// TODO distinct iteration ?
 
 		return union;
+	}
+
+	/**
+	 * Returns true if the federation has statements
+	 *
+	 * @param queryInfo information about the query
+	 * @param subj      the subject or <code>null</code>
+	 * @param pred      the predicate or <code>null</code>
+	 * @param obj       the object or <code>null</code>
+	 * @param contexts  optional list of contexts
+	 * @return the statement iteration
+	 *
+	 * @throws RepositoryException
+	 * @throws MalformedQueryException
+	 * @throws QueryEvaluationException
+	 */
+	public boolean hasStatements(QueryInfo queryInfo, Resource subj,
+			IRI pred, Value obj, Resource... contexts)
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+
+		List<Endpoint> members = getAccessibleFederationMembers(queryInfo);
+
+		// form the union of results from relevant endpoints
+		List<StatementSource> sources = CacheUtils.checkCacheForStatementSourcesUpdateCache(cache, members, subj, pred,
+				obj, queryInfo, contexts);
+
+		if (sources.isEmpty()) {
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * Returns the accessible federation members in the context of the query. By default this is all federation members.
+	 * <p>
+	 * Specialized implementations of the {@link FederationEvalStrategy} may override and define custom behavior (e.g.,
+	 * to support resilience).
+	 * </p>
+	 *
+	 *
+	 * @param queryInfo
+	 * @return
+	 */
+	@Experimental
+	protected List<Endpoint> getAccessibleFederationMembers(QueryInfo queryInfo) {
+		return federationContext.getFederation().getMembers();
 	}
 
 	public CloseableIteration<BindingSet> evaluateService(FedXService service,
@@ -953,10 +1013,6 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	 */
 	public CloseableIteration<BindingSet> evaluateLeftBoundJoinStatementPattern(
 			StatementTupleExpr stmt, final List<BindingSet> bindings) throws QueryEvaluationException {
-		// we can omit the bound join handling
-		if (bindings.size() == 1) {
-			return evaluate(stmt, bindings.get(0));
-		}
 
 		FilterValueExpr filterExpr = null;
 		if (stmt instanceof FilterTuple) {

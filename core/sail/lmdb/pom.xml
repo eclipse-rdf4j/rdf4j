@@ -32,6 +32,13 @@
 		<dependency>
 			<groupId>org.lwjgl</groupId>
 			<artifactId>lwjgl-lmdb</artifactId>
+			<classifier>natives-linux-ppc64le</classifier>
+			<version>${lwjgl.version}</version>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl-lmdb</artifactId>
 			<classifier>natives-macos</classifier>
 			<version>${lwjgl.version}</version>
 			<scope>runtime</scope>
@@ -68,6 +75,13 @@
 			<groupId>org.lwjgl</groupId>
 			<artifactId>lwjgl</artifactId>
 			<classifier>natives-linux-arm64</classifier>
+			<version>${lwjgl.version}</version>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl</artifactId>
+			<classifier>natives-linux-ppc64le</classifier>
 			<version>${lwjgl.version}</version>
 			<scope>runtime</scope>
 		</dependency>
