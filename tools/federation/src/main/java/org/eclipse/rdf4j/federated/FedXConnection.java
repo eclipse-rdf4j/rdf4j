@@ -383,7 +383,7 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	protected void rollbackInternal() throws SailException {
+	public void rollbackInternal() throws SailException {
 		try {
 			getWriteStrategyInternal().rollback();
 		} catch (RepositoryException e) {
