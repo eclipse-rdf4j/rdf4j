@@ -57,7 +57,9 @@ public enum SourceConstraintComponent {
 	NodeConstraintComponent(SHACL.NODE_CONSTRAINT_COMPONENT, ProducesValidationResultValue.ALWAYS),
 	PropertyConstraintComponent(SHACL.PROPERTY_CONSTRAINT_COMPONENT, ProducesValidationResultValue.NEVER),
 
-	SPARQLConstraintComponent(SHACL.SPARQL_CONSTRAINT_COMPONENT, ProducesValidationResultValue.SOMETIMES);
+	SPARQLConstraintComponent(SHACL.SPARQL_CONSTRAINT_COMPONENT, ProducesValidationResultValue.SOMETIMES),
+	UniqueValueForClassConstraintComponent(DASH.UniqueValueForClassConstraintComponent,
+			ProducesValidationResultValue.NEVER);
 
 	private final IRI iri;
 	private final ProducesValidationResultValue producesValidationResultValue;

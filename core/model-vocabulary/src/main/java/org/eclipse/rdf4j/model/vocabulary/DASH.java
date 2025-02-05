@@ -29,6 +29,9 @@ public class DASH {
 	public static final IRI AllSubjectsTarget = createIRI("AllSubjectsTarget");
 	public static final IRI hasValueIn = createIRI("hasValueIn");
 	public static final IRI HasValueInConstraintComponent = createIRI("HasValueInConstraintComponent");
+	public static final IRI UniqueValueForClassConstraintComponent = createIRI(
+			"UniqueValueForClassConstraintComponent");
+	public static final IRI uniqueValueForClass = createIRI("uniqueValueForClass");
 
 	private static IRI createIRI(String allObjectsTarget) {
 		return Vocabularies.createIRI(NAMESPACE, allObjectsTarget);

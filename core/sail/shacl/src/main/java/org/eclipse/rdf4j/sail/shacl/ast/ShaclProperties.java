@@ -105,14 +105,15 @@ public class ShaclProperties {
 
 	private final List<Resource> sparql = new ArrayList<>();
 
+	private IRI dashUniqueValueForClass;
+
 	public ShaclProperties(Resource id, ShapeSource connection) {
 		this.id = id;
+
 		try (Stream<Statement> stream = connection.getAllStatements(id)) {
 			stream.forEach(statement -> {
-
 				String predicate = statement.getPredicate().toString();
 				Value object = statement.getObject();
-
 				switch (predicate) {
 				case "http://www.w3.org/1999/02/22-rdf-syntax-ns#type":
 					if (object.equals(SHACL.NODE_SHAPE)) {
@@ -124,9 +125,7 @@ public class ShaclProperties {
 					} else if (object.equals(SHACL.PROPERTY_SHAPE)) {
 						if (type != null && !type.equals(SHACL.PROPERTY_SHAPE)) {
 							throw new ShaclShapeParsingException(
-									"Shape with multiple types: <" + type + ">, <" + SHACL.PROPERTY_SHAPE
-											+ ">",
-									id);
+									"Shape with multiple types: <" + type + ">, <" + SHACL.PROPERTY_SHAPE + ">", id);
 						}
 						type = SHACL.PROPERTY_SHAPE;
 					}
@@ -194,7 +193,6 @@ public class ShaclProperties {
 						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
 					}
 					break;
-
 				case "http://www.w3.org/ns/shacl#severity":
 					if (severity != null) {
 						throw getExceptionForAlreadyPopulated(id, predicate, severity, object);
@@ -574,81 +572,62 @@ public class ShaclProperties {
 						throw getExceptionForCastIssue(id, predicate, Resource.class, object);
 					}
 					break;
-
+				/* ---- Newly added logic for dash:uniqueValueForClass ---- */
+				case "http://datashapes.org/dash#uniqueValueForClass":
+					if (dashUniqueValueForClass != null) {
+						throw getExceptionForAlreadyPopulated(id, predicate, dashUniqueValueForClass, object);
+					}
+					try {
+						dashUniqueValueForClass = ((IRI) object);
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					}
+					break;
 				default:
+					// Warn if an unrecognized SHACL property was found
 					if (predicate.startsWith(SHACL.NAMESPACE)) {
 						logger.warn("Unsupported SHACL feature detected {} in statement {}",
 								predicate.replace("http://www.w3.org/ns/shacl#", "sh:"),
 								statement);
 					}
 				}
-
 			});
 		}
 
-		// We default to sh:NodeShape if no other type is given.
+		// We default to sh:NodeShape if no other type is given
 		if (type == null) {
-			type = path == null ? SHACL.NODE_SHAPE : SHACL.PROPERTY_SHAPE;
+			type = (path == null) ? SHACL.NODE_SHAPE : SHACL.PROPERTY_SHAPE;
 		}
-
 	}
 
-	private static ShaclShapeParsingException getExceptionForLiteralFormatIssue(Resource id, String predicate,
-			Value object, Class<?> clazz) {
-		return new ShaclShapeParsingException("Expected predicate <" + predicate + "> to have a "
-				+ clazz.getSimpleName() + " as object but found " + object, id);
+	/* --- Getters for all relevant fields, including new one for dash:uniqueValueForClass --- */
+
+	public Resource getId() {
+		return id;
 	}
 
-	private static ShaclShapeParsingException getExceptionForAlreadyPopulated(Resource id, String predicate,
-			Object existingObject, Value secondValue) {
-		Value existingValue;
-
-		if (existingObject instanceof Value) {
-			existingValue = (Value) existingObject;
-		} else if (existingObject instanceof String) {
-			existingValue = Values.literal(existingObject);
-		} else if (existingObject instanceof Boolean) {
-			existingValue = Values.literal(existingObject);
-		} else {
-			return new ShaclShapeParsingException("Expected predicate <" + predicate
-					+ "> to have no more than 1 object, found " + existingObject + " and " + secondValue, id);
-		}
-
-		return new ShaclShapeParsingException("Expected predicate <" + predicate
-				+ "> to have no more than 1 object, found " + existingValue + " and " + secondValue, id);
+	public IRI getType() {
+		return type;
 	}
 
-	private static ShaclShapeParsingException getExceptionForCastIssue(Resource id, String predicate,
-			Class<?> expectedClass, Value object) {
-		String expectedClassString;
-		if (expectedClass == IRI.class) {
-			expectedClassString = "an IRI";
-		} else {
-			expectedClassString = "a " + expectedClass.getSimpleName();
-		}
-
-		return new ShaclShapeParsingException("Expected predicate <" + predicate + "> to have " + expectedClassString
-				+ " as object, but found " + getClassName(object) + " for " + object, id);
+	public IRI getDashUniqueValueForClass() {
+		return dashUniqueValueForClass;
 	}
 
-	private static String getClassName(Value object) {
-		if (object == null) {
-			return "null";
-		}
-		String actualClassName;
-		if (object.isIRI()) {
-			actualClassName = "IRI";
-		} else if (object.isLiteral()) {
-			actualClassName = "Literal";
-		} else if (object.isBNode()) {
-			actualClassName = "BNode";
-		} else if (object.isTriple()) {
-			actualClassName = "Triple";
-		} else {
-			assert false;
-			actualClassName = object.getClass().getSimpleName();
-		}
-		return actualClassName;
+	public boolean isDeactivated() {
+		return deactivated != null && deactivated;
+	}
+
+	public boolean isUniqueLang() {
+		return uniqueLang != null && uniqueLang;
+	}
+
+	public boolean isClosed() {
+		return closed != null && closed;
+	}
+
+	public Resource getIgnoredProperties() {
+		return ignoredProperties;
 	}
 
 	public List<IRI> getClazz() {
@@ -657,6 +636,10 @@ public class ShaclProperties {
 
 	public List<Resource> getOr() {
 		return or;
+	}
+
+	public List<Resource> getXone() {
+		return xone;
 	}
 
 	public List<Resource> getAnd() {
@@ -731,10 +714,6 @@ public class ShaclProperties {
 		return targetClass;
 	}
 
-	public TreeSet<Value> getTargetNode() {
-		return targetNode;
-	}
-
 	public Set<IRI> getTargetSubjectsOf() {
 		return targetSubjectsOf;
 	}
@@ -743,68 +722,12 @@ public class ShaclProperties {
 		return targetObjectsOf;
 	}
 
-	public boolean isDeactivated() {
-		return deactivated != null && deactivated;
+	public List<Resource> getTargetShape() {
+		return targetShape;
 	}
 
-	public boolean isUniqueLang() {
-		return uniqueLang != null && uniqueLang;
-	}
-
-	public Resource getId() {
-		return id;
-	}
-
-	public IRI getType() {
-		return type;
-	}
-
-	public List<Literal> getMessage() {
-		return message;
-	}
-
-	public IRI getSeverity() {
-		return severity;
-	}
-
-	public List<Literal> getName() {
-		return name;
-	}
-
-	public List<Literal> getDescription() {
-		return description;
-	}
-
-	public Value getDefaultValue() {
-		return defaultValue;
-	}
-
-	public Value getOrder() {
-		return order;
-	}
-
-	public Value getGroup() {
-		return group;
-	}
-
-	public List<Resource> getProperty() {
-		return property;
-	}
-
-	public List<Resource> getNode() {
-		return node;
-	}
-
-	public boolean isClosed() {
-		return closed != null && closed;
-	}
-
-	public Resource getIgnoredProperties() {
-		return ignoredProperties;
-	}
-
-	public List<Resource> getXone() {
-		return xone;
+	public List<Resource> getTarget() {
+		return target;
 	}
 
 	public List<Value> getHasValue() {
@@ -827,18 +750,6 @@ public class ShaclProperties {
 		return lessThanOrEquals;
 	}
 
-	public List<Resource> getTarget() {
-		return target;
-	}
-
-	public List<Resource> getTargetShape() {
-		return targetShape;
-	}
-
-	public List<Resource> getHasValueIn() {
-		return hasValueIn;
-	}
-
 	public Resource getQualifiedValueShape() {
 		return qualifiedValueShape;
 	}
@@ -855,7 +766,108 @@ public class ShaclProperties {
 		return qualifiedValueShapesDisjoint != null && qualifiedValueShapesDisjoint;
 	}
 
+	public Value getDefaultValue() {
+		return defaultValue;
+	}
+
+	public Value getOrder() {
+		return order;
+	}
+
+	public Value getGroup() {
+		return group;
+	}
+
+	public List<Literal> getMessage() {
+		return message;
+	}
+
+	public IRI getSeverity() {
+		return severity;
+	}
+
+	public List<Literal> getName() {
+		return name;
+	}
+
+	public List<Literal> getDescription() {
+		return description;
+	}
+
 	public List<Resource> getSparql() {
 		return sparql;
 	}
+
+	public TreeSet<Value> getTargetNode() {
+		return targetNode;
+	}
+
+	public List<Resource> getNode() {
+		return node;
+	}
+
+	public List<Resource> getProperty() {
+		return property;
+	}
+
+	public List<Resource> getHasValueIn() {
+		return hasValueIn;
+	}
+
+	/* --- Internal helper methods for throwing consistent parsing exceptions --- */
+
+	private static ShaclShapeParsingException getExceptionForAlreadyPopulated(
+			Resource id, String predicate, Object existingObject, Value secondValue) {
+
+		Value existingValue;
+		if (existingObject instanceof Value) {
+			existingValue = (Value) existingObject;
+		} else if (existingObject instanceof String || existingObject instanceof Boolean) {
+			existingValue = Values.literal(existingObject);
+		} else {
+			return new ShaclShapeParsingException("Expected predicate <" + predicate
+					+ "> to have no more than 1 object, found " + existingObject + " and " + secondValue, id);
+		}
+
+		return new ShaclShapeParsingException("Expected predicate <" + predicate
+				+ "> to have no more than 1 object, found " + existingValue + " and " + secondValue, id);
+	}
+
+	private static ShaclShapeParsingException getExceptionForCastIssue(
+			Resource id, String predicate, Class<?> expectedClass, Value object) {
+
+		String expectedStr = (expectedClass == IRI.class)
+				? "an IRI"
+				: ("a " + expectedClass.getSimpleName());
+
+		return new ShaclShapeParsingException("Expected predicate <" + predicate
+				+ "> to have " + expectedStr + " as object, but found "
+				+ getClassName(object) + " for " + object, id);
+	}
+
+	private static ShaclShapeParsingException getExceptionForLiteralFormatIssue(
+			Resource id, String predicate, Value object, Class<?> clazz) {
+		return new ShaclShapeParsingException(
+				"Expected predicate <" + predicate + "> to have a "
+						+ clazz.getSimpleName() + " as object but found " + object,
+				id
+		);
+	}
+
+	private static String getClassName(Value object) {
+		if (object == null) {
+			return "null";
+		}
+		if (object.isIRI()) {
+			return "IRI";
+		} else if (object.isLiteral()) {
+			return "Literal";
+		} else if (object.isBNode()) {
+			return "BNode";
+		} else if (object.isTriple()) {
+			return "Triple";
+		}
+		return object.getClass().getSimpleName();
+	}
+
 }
