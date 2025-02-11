@@ -69,7 +69,7 @@ public class ConjunctiveConstraintSplitterOptimizer implements QueryOptimizer {
 			super.meet(node);
 
 			if (node.getCondition() != null) {
-				List<ValueExpr> conjunctiveConstraints = new ArrayList<>(16);
+				List<ValueExpr> conjunctiveConstraints = new ArrayList<>();
 				getConjunctiveConstraints(node.getCondition(), conjunctiveConstraints);
 
 				TupleExpr arg = node.getRightArg();

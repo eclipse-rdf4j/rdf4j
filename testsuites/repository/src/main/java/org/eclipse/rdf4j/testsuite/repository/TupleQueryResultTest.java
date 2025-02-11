@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.StringReader;
 import java.lang.ref.Reference;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
@@ -324,4 +325,73 @@ public abstract class TupleQueryResultTest {
 		});
 
 	}
+
+	@Test
+	public void testLeftJoinWithJoinCondition() throws IOException {
+
+		String data = "@prefix wdt: <http://www.wikidata.org/prop/direct/> .\n" +
+				"@prefix wd: <http://www.wikidata.org/entity/> .\n" +
+				"@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n" +
+				"@prefix wikibase: <http://wikiba.se/ontology#> .\n" +
+
+				"\n" +
+				"wd:other1 wdt:P106 wd:Q27532438 .\n" +
+				"wd:other2 wdt:P106 wd:Q27532438 .\n" +
+				"wd:other3 wdt:P106 wd:Q27532438 .\n" +
+
+				"wd:Q27532438 a wikibase:Item;\n" +
+				"  rdfs:label \"suffragist\"@en, \"sufrageto\"@eo, \"суфражистка\"@ru, \"suffragetti\"@fi, \"szüfrazsett\"@lv.\n"
+				+
+
+				"wd:Q38203 wdt:P106 wd:Q27532437 .\n" +
+				"\n" +
+				"wd:Q27532437 a wikibase:Item;\n" +
+				"  rdfs:label \"suffragist\"@en, \"sufrageto\"@eo, \"суфражистка\"@ru, \"suffragetti\"@fi, \"szüfrazsett\"@hu.\n"
+				+
+				"\n" +
+
+				"wd:other9 wdt:P106 wd:Q27532439 .\n" +
+
+				"wd:Q27532438 a wikibase:Item;\n" +
+				"  rdfs:label \"suffragist\"@en, \"sufrageto\"@eo, \"суфражистка\"@ru, \"suffragetti\"@fi, \"szüfrazsett\"@no-nb.\n"
+				+
+
+				"wd:Q89166696 wdt:P106 wd:Q27532437 .\n";
+
+		con.add(new StringReader(data), "", RDFFormat.TURTLE);
+
+		TupleQuery tupleQuery = con.prepareTupleQuery("PREFIX wdt: <http://www.wikidata.org/prop/direct/>\n" +
+				"PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n" +
+				"SELECT ?occup ?occupLabel ?count\n" +
+				"WHERE\n" +
+				"{\n" +
+				"    {\n" +
+				"        SELECT ?occup (COUNT(?person) as ?count)\n" +
+				"        WHERE\n" +
+				"        {\n" +
+				"            ?person wdt:P106 ?occup\n" +
+				"        }\n" +
+				"        GROUP BY ?occup\n" +
+				"        ORDER BY DESC(?count)\n" +
+				"        LIMIT 1000\n" +
+				"    }\n" +
+				"BIND(\"lv\" AS ?lang)\n" +
+				"      OPTIONAL {" +
+				"			?occup rdfs:label ?label1.     \n" +
+				"			filter(lang(?label1) = ?lang)\n" +
+				"}\n" +
+				"    FILTER(!BOUND(?label1))\n" +
+				"?occup rdfs:label ?occupLabel FILTER (LANG(?occupLabel)=\"en\") .\n" +
+				"\n" +
+				"}\n" +
+				"ORDER BY DESC(?count)\n" +
+				"LIMIT 50");
+		con.begin();
+		try (TupleQueryResult evaluate = tupleQuery.evaluate()) {
+			assertTrue(evaluate.hasNext());
+		}
+		con.commit();
+
+	}
+
 }
