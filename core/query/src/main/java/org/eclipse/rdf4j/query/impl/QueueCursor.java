@@ -53,4 +53,7 @@ public class QueueCursor<E> extends QueueIteration<E, QueryEvaluationException> 
 		throw new QueryEvaluationException(e);
 	}
 
+	public int size() {
+		return 0;
+	}
 }

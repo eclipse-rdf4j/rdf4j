@@ -172,7 +172,7 @@ public class RepositoryFederatedService implements FederatedService {
 	 * blockSize is set to 0, the entire input stream is used as block input the block size effectively determines the
 	 * number of remote requests
 	 */
-	protected int boundJoinBlockSize = 15;
+	protected int boundJoinBlockSize = 10;
 
 	/**
 	 * Whether to use a fresh repository connection for individual queries

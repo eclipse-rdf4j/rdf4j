@@ -52,7 +52,7 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T> {
 	 */
 	protected volatile boolean finished = false;
 
-	protected final QueueCursor<CloseableIteration<T>> rightQueue = new QueueCursor<>(1024);
+	protected final QueueCursor<CloseableIteration<T>> rightQueue = new QueueCursor<>(10);
 
 	protected JoinExecutorBase(CloseableIteration<T> leftIter, TupleExpr rightArg,
 			BindingSet bindings) throws QueryEvaluationException {
@@ -111,6 +111,8 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T> {
 
 	@Override
 	public T getNextElement() throws QueryEvaluationException {
+		System.out.println(System.identityHashCode(rightQueue) + " take");
+
 		// TODO check if we need to protect rightQueue from synchronized access
 		// wasn't done in the original implementation either
 		// if we see any weird behavior check here !!

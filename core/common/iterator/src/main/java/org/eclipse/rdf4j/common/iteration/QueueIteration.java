@@ -84,8 +84,10 @@ public abstract class QueueIteration<E, T extends RuntimeException> extends Look
 	 */
 	public void put(E item) throws InterruptedException, T {
 		try {
+			System.out.println(System.identityHashCode(queue) + " " + queue.size());
 			while (!isClosed() && !done.get() && !Thread.currentThread().isInterrupted()
 					&& !queue.offer(item, 1, TimeUnit.SECONDS)) {
+				System.out.println(System.identityHashCode(queue) + " " + queue.size() + " waiting");
 				// No body, just iterating regularly through the loop conditions to respond to state changes without a
 				// full busy-wait loop
 			}

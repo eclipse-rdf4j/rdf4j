@@ -1,4 +1,3 @@
-version: '2'
 services:
   rdf4j:
     environment:
@@ -6,6 +5,7 @@ services:
       - APP_SERVER=${APP_SERVER:-tomcat}
     ports:
       - 127.0.0.1:8080:8080
+      - 127.0.0.1:5005:5005
     build:
       context: .
       dockerfile: Dockerfile-${APP_SERVER:-tomcat}

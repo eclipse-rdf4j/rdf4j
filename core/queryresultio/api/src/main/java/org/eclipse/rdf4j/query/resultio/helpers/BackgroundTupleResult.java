@@ -46,6 +46,7 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult implements 
 
 	public BackgroundTupleResult(TupleQueryResultParser parser, InputStream in) {
 		this(new QueueCursor<>(10), parser, in);
+//		this(new QueueCursor<>(1024), parser, in);
 	}
 
 	public BackgroundTupleResult(QueueCursor<BindingSet> queue, TupleQueryResultParser parser, InputStream in) {
