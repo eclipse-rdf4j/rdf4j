@@ -175,8 +175,6 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet> {
 					// Join failed, return left arg's bindings
 					return leftBindings;
 				}
-
-				return null;
 			}
 		} catch (NoSuchElementException ignore) {
 			// probably, one of the iterations has been closed concurrently in

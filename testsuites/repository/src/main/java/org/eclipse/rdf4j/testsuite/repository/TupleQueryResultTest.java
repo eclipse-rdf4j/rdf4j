@@ -389,9 +389,6 @@ public abstract class TupleQueryResultTest {
 		con.begin();
 		try (TupleQueryResult evaluate = tupleQuery.evaluate()) {
 			assertTrue(evaluate.hasNext());
-			while (evaluate.hasNext()) {
-				System.out.println(evaluate.next());
-			}
 		}
 		con.commit();
 
