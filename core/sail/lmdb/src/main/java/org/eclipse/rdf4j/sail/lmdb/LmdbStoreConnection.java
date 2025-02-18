@@ -102,7 +102,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	}
 
 	@Override
-	protected void rollbackInternal() throws SailException {
+	public void rollbackInternal() throws SailException {
 		try {
 			super.rollbackInternal();
 		} finally {
