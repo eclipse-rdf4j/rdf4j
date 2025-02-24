@@ -25,14 +25,19 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.junit.Assert;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -58,49 +63,53 @@ public class ValueStoreTest {
 
 	@Test
 	public void testGcValues() throws Exception {
-		Random random = new Random(1337);
-		LmdbValue values[] = new LmdbValue[1000];
+		Value values[] = new Value[] {
+				RDF.TYPE, RDFS.CLASS,
+				Values.iri("some:iri"),
+				Values.literal("This is a literal.")
+		};
+		long ids[] = new long[values.length];
 		valueStore.startTransaction(true);
 		for (int i = 0; i < values.length; i++) {
-			values[i] = valueStore.createLiteral("This is a random literal:" + random.nextLong());
-			valueStore.storeValue(values[i]);
+			ids[i] = valueStore.storeValue(values[i]);
 		}
 		valueStore.commit();
 
 		ValueStoreRevision revBefore = valueStore.getRevision();
 
 		valueStore.startTransaction(true);
-		Set<Long> ids = new HashSet<>();
-		for (int i = 0; i < 30; i++) {
-			ids.add(values[i].getInternalID());
-		}
-		valueStore.gcIds(ids, new HashSet<>());
+		Set<Long> idsToGc = new HashSet<>(Arrays.stream(ids).boxed().collect(Collectors.toList()));
+		valueStore.gcIds(idsToGc, new HashSet<>());
 		valueStore.commit();
 
 		ValueStoreRevision revAfter = valueStore.getRevision();
-
 		assertNotEquals("revisions must change after gc of IDs", revBefore, revAfter);
 
-		Arrays.fill(values, null);
-		// GC would collect revision at some point in time
-		// just add revision ID to free list for this test as forcing GC is not possible
+		for (int i = 0; i < values.length; i++) {
+			Assert.assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(values[i]));
+			Assert.assertTrue(valueStore.getValue(ids[i]) != null);
+		}
+
+		// simulate GC of unused revisions
 		valueStore.unusedRevisionIds.add(revBefore.getRevisionId());
 
 		valueStore.forceEvictionOfValues();
 		valueStore.startTransaction(true);
 		valueStore.commit();
 
+		for (int i = 0; i < values.length; i++) {
+			Assert.assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(values[i]));
+			Assert.assertTrue(valueStore.getValue(ids[i]) != null);
+		}
+
 		valueStore.startTransaction(true);
-		for (int i = 0; i < 30; i++) {
-			LmdbValue value = valueStore.createLiteral("This is a random literal:" + random.nextLong());
-			values[i] = value;
-			valueStore.storeValue(value);
+		for (int i = 0; i < values.length; i++) {
 			// this ID should have been reused
-			ids.remove(value.getInternalID());
+			idsToGc.remove(valueStore.storeValue(values[i]));
 		}
 		valueStore.commit();
 
-		assertEquals("IDs should have been reused", Collections.emptySet(), ids);
+		assertEquals("IDs should have been reused", Collections.emptySet(), idsToGc);
 	}
 
 	@Test
