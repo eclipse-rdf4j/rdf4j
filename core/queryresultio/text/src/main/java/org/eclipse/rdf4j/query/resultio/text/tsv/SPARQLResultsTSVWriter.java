@@ -194,21 +194,15 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 			// Append the literal's language
 			writer.write("@");
 			writer.write(lit.getLanguage().get());
-		} else if (!XSD.STRING.equals(datatype) || !xsdStringToPlainLiteral()) {
-			writer.write("\"");
-			writer.write(encoded);
-			writer.write("\"");
-			// Append the literal's datatype
-			writer.write("^^");
-			writeURI(datatype);
-		} else if (!label.isEmpty() && encoded.equals(label) && label.charAt(0) != '<' && label.charAt(0) != '_'
-				&& !label.matches("^[\\+\\-]?[\\d\\.].*")) {
-			// no need to include double quotes
-			writer.write(encoded);
 		} else {
 			writer.write("\"");
 			writer.write(encoded);
 			writer.write("\"");
+			// Append the literal's datatype if it's not xsd:string or if xsdStringToPlainLiteral is false
+			if (!XSD.STRING.equals(datatype) || !xsdStringToPlainLiteral()) {
+				writer.write("^^");
+				writeURI(datatype);
+			}
 		}
 	}
 
