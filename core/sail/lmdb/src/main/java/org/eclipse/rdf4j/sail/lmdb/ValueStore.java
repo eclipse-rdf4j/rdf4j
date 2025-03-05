@@ -1252,6 +1252,7 @@ class ValueStore extends AbstractValueFactory {
 		valueIDCache.clear();
 		namespaceCache.clear();
 		namespaceIDCache.clear();
+		commonVocabulary.clear();
 	}
 
 	/**
