@@ -221,6 +221,54 @@ public class ValueStoreTest {
 		}
 	}
 
+	@Test
+	public void testDisableGc() throws Exception {
+		final Random random = new Random(1337);
+		final LmdbValue values[] = new LmdbValue[1000];
+
+		final ValueStore valueStore = new ValueStore(
+				new File(dataDir, "values"), new LmdbStoreConfig().setValueEvictionInterval(-1));
+
+		valueStore.startTransaction(true);
+		for (int i = 0; i < values.length; i++) {
+			values[i] = valueStore.createLiteral("This is a random literal:" + random.nextLong());
+			valueStore.storeValue(values[i]);
+		}
+		valueStore.commit();
+
+		final ValueStoreRevision revBefore = valueStore.getRevision();
+
+		valueStore.startTransaction(true);
+		Set<Long> ids = new HashSet<>();
+		for (int i = 0; i < 30; i++) {
+			ids.add(values[i].getInternalID());
+		}
+		valueStore.gcIds(ids, new HashSet<>());
+		valueStore.commit();
+
+		final ValueStoreRevision revAfter = valueStore.getRevision();
+
+		assertEquals("revisions must NOT change since GC is disabled", revBefore, revAfter);
+
+		Arrays.fill(values, null);
+		valueStore.unusedRevisionIds.add(revBefore.getRevisionId());
+
+		valueStore.forceEvictionOfValues();
+		valueStore.startTransaction(true);
+		valueStore.commit();
+
+		valueStore.startTransaction(true);
+		for (int i = 0; i < 30; i++) {
+			LmdbValue value = valueStore.createLiteral("This is a random literal:" + random.nextLong());
+			values[i] = value;
+			valueStore.storeValue(value);
+			ids.remove(value.getInternalID());
+		}
+		valueStore.commit();
+
+		assertNotEquals("IDs should NOT have been reused since GC is disabled", Collections.emptySet(), ids);
+	}
+
 	@AfterEach
 	public void after() throws Exception {
 		valueStore.close();
