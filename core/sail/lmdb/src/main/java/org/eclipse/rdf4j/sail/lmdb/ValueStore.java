@@ -94,8 +94,6 @@ class ValueStore extends AbstractValueFactory {
 
 	private final static Logger logger = LoggerFactory.getLogger(ValueStore.class);
 
-	private static final long VALUE_EVICTION_INTERVAL = 60000; // 60 seconds
-
 	private static final byte URI_VALUE = 0x0; // 00
 
 	private static final byte LITERAL_VALUE = 0x1; // 01
@@ -186,18 +184,20 @@ class ValueStore extends AbstractValueFactory {
 
 	private final ConcurrentCleaner cleaner = new ConcurrentCleaner();
 
+	private final long valueEvictionInterval;
+
 	ValueStore(File dir, LmdbStoreConfig config) throws IOException {
 		this.dir = dir;
 		this.forceSync = config.getForceSync();
 		this.autoGrow = config.getAutoGrow();
 		this.mapSize = config.getValueDBSize();
+		this.valueEvictionInterval = config.getValueEvictionInterval();
 		open();
 
 		valueCache = new LmdbValue[config.getValueCacheSize()];
 		valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
 		namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
 		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
-
 		setNewRevision();
 
 		// read maximum id from store
@@ -935,6 +935,10 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	public void gcIds(Collection<Long> ids, Collection<Long> nextIds) throws IOException {
+		if (!enableGC()) {
+			return;
+		}
+
 		if (!ids.isEmpty()) {
 			// wrap into read txn as resizeMap expects an active surrounding read txn
 			readTransaction(env, (stack1, txn1) -> {
@@ -967,9 +971,9 @@ class ValueStore extends AbstractValueFactory {
 
 					deleteValueToIdMappings(stack, writeTxn, finalIds, finalNextIds);
 
-					invalidateRevisionOnCommit = true;
+					invalidateRevisionOnCommit = enableGC();
 					if (nextValueEvictionTime < 0) {
-						nextValueEvictionTime = System.currentTimeMillis() + VALUE_EVICTION_INTERVAL;
+						nextValueEvictionTime = System.currentTimeMillis() + this.valueEvictionInterval;
 					}
 					return null;
 				});
@@ -1180,7 +1184,7 @@ class ValueStore extends AbstractValueFactory {
 								unusedRevisionIds.add(revisionId);
 							}
 							if (nextValueEvictionTime < 0) {
-								nextValueEvictionTime = System.currentTimeMillis() + VALUE_EVICTION_INTERVAL;
+								nextValueEvictionTime = System.currentTimeMillis() + this.valueEvictionInterval;
 							}
 						});
 						setNewRevision();
@@ -1612,6 +1616,10 @@ class ValueStore extends AbstractValueFactory {
 			LmdbIRI datatype = getLmdbURI(l.getDatatype());
 			return new LmdbLiteral(revision, l.getLabel(), datatype, l.getCoreDatatype());
 		}
+	}
+
+	private boolean enableGC() {
+		return this.valueEvictionInterval > 0;
 	}
 
 	public void forceEvictionOfValues() {

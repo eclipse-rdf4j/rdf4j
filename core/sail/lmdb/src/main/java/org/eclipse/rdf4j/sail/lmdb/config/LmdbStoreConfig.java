@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb.config;
 
+import java.time.Duration;
+
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -71,6 +73,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private boolean autoGrow = true;
 
+	private long valueEvictionInterval = Duration.ofSeconds(60).toMillis();
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -92,7 +96,6 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	/*---------*
 	 * Methods *
 	 *---------*/
-
 	public String getTripleIndexes() {
 		return tripleIndexes;
 	}
@@ -178,6 +181,15 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public long getValueEvictionInterval() {
+		return valueEvictionInterval;
+	}
+
+	public LmdbStoreConfig setValueEvictionInterval(long valueEvictionInterval) {
+		this.valueEvictionInterval = valueEvictionInterval;
+		return this;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -210,6 +222,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		}
 		if (!autoGrow) {
 			m.add(implNode, LmdbStoreSchema.AUTO_GROW, vf.createLiteral(false));
+		}
+		if (valueEvictionInterval != Duration.ofSeconds(60).toMillis()) {
+			m.add(implNode, LmdbStoreSchema.VALUE_EVICTION_INTERVAL, vf.createLiteral(valueEvictionInterval));
 		}
 		return implNode;
 	}
@@ -304,6 +319,17 @@ public class LmdbStoreConfig extends BaseSailConfig {
 							"Boolean value required for " + LmdbStoreSchema.AUTO_GROW + " property, found " + lit);
 				}
 			});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.VALUE_EVICTION_INTERVAL, null))
+					.ifPresent(lit -> {
+						try {
+							setValueEvictionInterval(lit.longValue());
+						} catch (NumberFormatException e) {
+							throw new SailConfigException(
+									"Long value required for " + LmdbStoreSchema.VALUE_EVICTION_INTERVAL
+											+ " property, found " + lit);
+						}
+					});
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
