@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 public class ShaclSailValidationException extends SailException implements ValidationException {
 
 	private final ValidationReport validationReport;
+	private Model cachedModel = null;
 
 	ShaclSailValidationException(ValidationReport validationReport) {
 		super("Failed SHACL validation");
@@ -36,6 +37,9 @@ public class ShaclSailValidationException extends SailException implements Valid
 	 */
 	@Override
 	public Model validationReportAsModel() {
+		if (cachedModel != null) {
+			return cachedModel;
+		}
 		Model model = getValidationReport().asModel();
 
 		model.setNamespace(RSX.NS);
@@ -44,6 +48,8 @@ public class ShaclSailValidationException extends SailException implements Valid
 		model.setNamespace(XSD.NS);
 		model.setNamespace(RDF.NS);
 		model.setNamespace(RDFS.NS);
+
+		cachedModel = model;
 
 		return model;
 	}
