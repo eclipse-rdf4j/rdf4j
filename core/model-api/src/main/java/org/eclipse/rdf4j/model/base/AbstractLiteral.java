@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.model.base;
 import static java.lang.Math.abs;
 import static java.time.temporal.ChronoField.DAY_OF_MONTH;
 import static java.time.temporal.ChronoField.HOUR_OF_DAY;
+import static java.time.temporal.ChronoField.INSTANT_SECONDS;
 import static java.time.temporal.ChronoField.MINUTE_OF_HOUR;
 import static java.time.temporal.ChronoField.MONTH_OF_YEAR;
 import static java.time.temporal.ChronoField.NANO_OF_SECOND;
@@ -514,7 +515,7 @@ public abstract class AbstractLiteral implements Literal {
 		private static final ChronoField[] FIELDS = {
 				YEAR, MONTH_OF_YEAR, DAY_OF_MONTH,
 				HOUR_OF_DAY, MINUTE_OF_HOUR, SECOND_OF_MINUTE, NANO_OF_SECOND,
-				OFFSET_SECONDS
+				OFFSET_SECONDS, INSTANT_SECONDS
 		};
 
 		private static final DateTimeFormatter LOCAL_TIME_FORMATTER = new DateTimeFormatterBuilder()
@@ -576,6 +577,12 @@ public abstract class AbstractLiteral implements Literal {
 
 				.toFormatter();
 
+		private static final DateTimeFormatter DATETIMESTAMP_FORMATTER = new DateTimeFormatterBuilder()
+
+				.appendInstant()
+
+				.toFormatter();
+
 		private static final DateTimeFormatter DASH_FORMATTER = new DateTimeFormatterBuilder()
 
 				.appendLiteral("--")
@@ -612,13 +619,16 @@ public abstract class AbstractLiteral implements Literal {
 			int time = key(HOUR_OF_DAY, MINUTE_OF_HOUR, SECOND_OF_MINUTE);
 			int nano = key(NANO_OF_SECOND);
 			int zone = key(OFFSET_SECONDS);
+			int instant = key(INSTANT_SECONDS);
 
 			Map<Integer, CoreDatatype.XSD> datatypes = new HashMap<>();
-
 			datatypes.put(date + time, CoreDatatype.XSD.DATETIME);
 			datatypes.put(date + time + nano, CoreDatatype.XSD.DATETIME);
 			datatypes.put((date + time + zone), CoreDatatype.XSD.DATETIME);
 			datatypes.put((date + time + nano + zone), CoreDatatype.XSD.DATETIME);
+			datatypes.put((date + time + instant + zone), CoreDatatype.XSD.DATETIME);
+			datatypes.put((date + time + instant + nano + zone), CoreDatatype.XSD.DATETIME);
+			datatypes.put((instant + nano), CoreDatatype.XSD.DATETIMESTAMP);
 
 			datatypes.put(time, CoreDatatype.XSD.TIME);
 			datatypes.put(time + nano, CoreDatatype.XSD.TIME);
@@ -641,6 +651,7 @@ public abstract class AbstractLiteral implements Literal {
 
 			final Map<CoreDatatype.XSD, DateTimeFormatter> formatters = new EnumMap<>(CoreDatatype.XSD.class);
 
+			formatters.put(CoreDatatype.XSD.DATETIMESTAMP, DATETIMESTAMP_FORMATTER);
 			formatters.put(CoreDatatype.XSD.DATETIME, DATETIME_FORMATTER);
 			formatters.put(CoreDatatype.XSD.TIME, OFFSET_TIME_FORMATTER);
 			formatters.put(CoreDatatype.XSD.DATE, OFFSET_DATE_FORMATTER);
@@ -697,18 +708,17 @@ public abstract class AbstractLiteral implements Literal {
 		private final CoreDatatype.XSD datatype;
 
 		TemporalAccessorLiteral(TemporalAccessor value) {
-
 			this.value = value;
 
-			datatype = DATATYPES.get(key(value));
+			datatype = DATATYPES.get(key(this.value));
 
 			if (datatype == null) {
 				throw new IllegalArgumentException(String.format(
-						"value <%s> cannot be represented by an XML Schema date/time datatype", value
+						"value <%s> cannot be represented by an XML Schema date/time datatype", this.value
 				));
 			}
 
-			this.label = FORMATTERS.get(datatype).format(value);
+			this.label = FORMATTERS.get(datatype).format(this.value);
 		}
 
 		@Override
