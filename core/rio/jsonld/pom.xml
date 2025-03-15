@@ -45,6 +45,7 @@
 			<groupId>org.glassfish</groupId>
 			<artifactId>jakarta.json</artifactId>
 			<version>2.0.1</version>
+			<classifier>module</classifier>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.httpcomponents</groupId>
