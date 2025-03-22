@@ -69,6 +69,26 @@ public class SPARQLTSVCustomTest {
 		assertEquals("?test\n\"1\"\n", result);
 	}
 
+	@Test
+	public void testQuotedXSDStringLiteral() throws Exception {
+		List<String> bindingNames = List.of("test");
+		TupleQueryResult tqr = new IteratingTupleQueryResult(bindingNames,
+				List.of(new ListBindingSet(bindingNames,
+						SimpleValueFactory.getInstance().createLiteral("example", XSD.STRING))));
+		String result = writeTupleResult(tqr);
+		assertEquals("?test\n\"example\"\n", result);
+	}
+
+	@Test
+	public void testQuotedXSDStringLiteralWithSpecialCharacters() throws Exception {
+		List<String> bindingNames = List.of("test");
+		TupleQueryResult tqr = new IteratingTupleQueryResult(bindingNames,
+				List.of(new ListBindingSet(bindingNames, SimpleValueFactory.getInstance()
+						.createLiteral("example\twith\nspecial\"characters", XSD.STRING))));
+		String result = writeTupleResult(tqr);
+		assertEquals("?test\n\"example\\twith\\nspecial\\\"characters\"\n", result);
+	}
+
 	private String writeTupleResult(TupleQueryResult tqr)
 			throws IOException, TupleQueryResultHandlerException, QueryEvaluationException {
 		ByteArrayOutputStream output = new ByteArrayOutputStream();
