@@ -6,6 +6,7 @@ This is the main code repository for the Eclipse RDF4J project.
 
 [![main status](https://github.com/eclipse/rdf4j/workflows/main%20status/badge.svg)](https://github.com/eclipse/rdf4j/actions?query=workflow%3A%22main+status%22)
 [![develop status](https://github.com/eclipse/rdf4j/workflows/develop%20status/badge.svg)](https://github.com/eclipse/rdf4j/actions?query=workflow%3A%22develop+status%22) [![Join the chat at https://gitter.im/eclipse/rdf4j](https://badges.gitter.im/eclipse/rdf4j.svg)](https://gitter.im/eclipse/rdf4j?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![libs.tech recommends](https://libs.tech/project/49670957/badge.svg)](https://libs.tech/project/49670957/rdf4j)
 
 Visit the [project website](https://rdf4j.org/) for news, documentation, and downloadable releases. For support questions, comments, and any ideas for improvements you'd like to discuss, please use our [discussion forum](https://github.com/eclipse/rdf4j/discussions). If you have found a bug or have a very specific feature/improvement request, you can also use our [issue tracker](https://github.com/eclipse/rdf4j/issues) to report it.
 
