@@ -27,7 +27,7 @@ import org.locationtech.spatial4j.context.jts.JtsSpatialContext;
  * <li>a WktWriter that only supports points</li>.
  * </ul>
  */
-abstract class SpatialSupport {
+public abstract class SpatialSupport {
 
 	private static final SpatialContext spatialContext;
 
@@ -50,15 +50,15 @@ abstract class SpatialSupport {
 		wktWriter = support.createWktWriter();
 	}
 
-	static SpatialContext getSpatialContext() {
+	public static SpatialContext getSpatialContext() {
 		return spatialContext;
 	}
 
-	static SpatialAlgebra getSpatialAlgebra() {
+	public static SpatialAlgebra getSpatialAlgebra() {
 		return spatialAlgebra;
 	}
 
-	static WktWriter getWktWriter() {
+	public static WktWriter getWktWriter() {
 		return wktWriter;
 	}
 
