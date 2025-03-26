@@ -372,7 +372,7 @@ public interface RepositoryConnection extends AutoCloseable {
 			throws RepositoryException, MalformedQueryException;
 
 	/**
-	 * Gets all resources that are used as content identifiers. Care should be taken that the returned
+	 * Gets all resources that are used as context identifiers. Care should be taken that the returned
 	 * {@link RepositoryResult} is closed to free any resources that it keeps hold of.
 	 *
 	 * @return a RepositoryResult object containing Resources that are used as context identifiers.
