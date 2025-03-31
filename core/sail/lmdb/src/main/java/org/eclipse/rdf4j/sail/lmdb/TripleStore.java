@@ -201,7 +201,8 @@ class TripleStore implements Closeable {
 			env = pp.get(0);
 		}
 
-		E(mdb_env_set_maxdbs(env, 12));
+		// 1 for contexts, 12 for triple indexes (2 per index)
+		E(mdb_env_set_maxdbs(env, 13));
 		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
