@@ -72,9 +72,9 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet> {
 	}
 
 	public LeftJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right, QueryValueEvaluationStep joinCondition,
-			BindingSet bindings, Set<String> scopeBindingNamse)
+			BindingSet bindings, Set<String> scopeBindingNames)
 			throws QueryEvaluationException {
-		this.scopeBindingNames = scopeBindingNamse;
+		this.scopeBindingNames = scopeBindingNames;
 
 		leftIter = left.evaluate(bindings);
 
@@ -87,8 +87,8 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet> {
 	}
 
 	public LeftJoinIterator(CloseableIteration<BindingSet> leftIter, QueryEvaluationStep prepareRightArg,
-			QueryValueEvaluationStep joinCondition, Set<String> scopeBindingNamse) {
-		this.scopeBindingNames = scopeBindingNamse;
+			QueryValueEvaluationStep joinCondition, Set<String> scopeBindingNames) {
+		this.scopeBindingNames = scopeBindingNames;
 		this.leftIter = leftIter;
 		this.rightIter = null;
 		this.prepareRightArg = prepareRightArg;
@@ -97,14 +97,14 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet> {
 
 	public static CloseableIteration<BindingSet> getInstance(QueryEvaluationStep left,
 			QueryEvaluationStep prepareRightArg, QueryValueEvaluationStep joinCondition, BindingSet bindings,
-			Set<String> scopeBindingNamse) {
+			Set<String> scopeBindingNames) {
 
 		CloseableIteration<BindingSet> leftIter = left.evaluate(bindings);
 
 		if (leftIter == QueryEvaluationStep.EMPTY_ITERATION) {
 			return leftIter;
 		} else {
-			return new LeftJoinIterator(leftIter, prepareRightArg, joinCondition, scopeBindingNamse);
+			return new LeftJoinIterator(leftIter, prepareRightArg, joinCondition, scopeBindingNames);
 		}
 
 	}
