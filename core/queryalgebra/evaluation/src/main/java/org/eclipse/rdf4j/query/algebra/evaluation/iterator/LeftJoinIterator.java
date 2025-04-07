@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 public class LeftJoinIterator extends LookAheadIteration<BindingSet> {
 	/*-----------*
@@ -41,6 +42,8 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet> {
 	private final Set<String> scopeBindingNames;
 
 	private final CloseableIteration<BindingSet> leftIter;
+	private final LeftJoin leftJoin;
+	private final boolean canEvaluateConditionBasedOnLeftHandSide;
 
 	private CloseableIteration<BindingSet> rightIter;
 
@@ -56,6 +59,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet> {
 			QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		this.scopeBindingNames = join.getBindingNames();
+		this.leftJoin = join;
 
 		leftIter = strategy.evaluate(join.getLeftArg(), bindings);
 
@@ -69,12 +73,14 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet> {
 		} else {
 			joinCondition = strategy.precompile(condition, context);
 		}
+		this.canEvaluateConditionBasedOnLeftHandSide = canEvaluateConditionBasedOnLeftHandSide(leftJoin);
 	}
 
 	public LeftJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right, QueryValueEvaluationStep joinCondition,
-			BindingSet bindings, Set<String> scopeBindingNames)
+			BindingSet bindings, Set<String> scopeBindingNames, LeftJoin leftJoin)
 			throws QueryEvaluationException {
 		this.scopeBindingNames = scopeBindingNames;
+		this.leftJoin = leftJoin;
 
 		leftIter = left.evaluate(bindings);
 
@@ -83,28 +89,37 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet> {
 
 		prepareRightArg = right;
 		this.joinCondition = joinCondition;
+		this.canEvaluateConditionBasedOnLeftHandSide = canEvaluateConditionBasedOnLeftHandSide(leftJoin);
 
 	}
 
-	public LeftJoinIterator(CloseableIteration<BindingSet> leftIter, QueryEvaluationStep prepareRightArg,
-			QueryValueEvaluationStep joinCondition, Set<String> scopeBindingNames) {
+	public LeftJoinIterator(CloseableIteration<BindingSet> leftIter,
+							QueryEvaluationStep prepareRightArg,
+							QueryValueEvaluationStep joinCondition,
+							Set<String> scopeBindingNames,
+							LeftJoin leftJoin) {
 		this.scopeBindingNames = scopeBindingNames;
 		this.leftIter = leftIter;
+		this.leftJoin = leftJoin;
 		this.rightIter = null;
 		this.prepareRightArg = prepareRightArg;
 		this.joinCondition = joinCondition;
+		this.canEvaluateConditionBasedOnLeftHandSide = canEvaluateConditionBasedOnLeftHandSide(leftJoin);
 	}
 
 	public static CloseableIteration<BindingSet> getInstance(QueryEvaluationStep left,
-			QueryEvaluationStep prepareRightArg, QueryValueEvaluationStep joinCondition, BindingSet bindings,
-			Set<String> scopeBindingNames) {
+															 QueryEvaluationStep prepareRightArg,
+															 QueryValueEvaluationStep joinCondition,
+															 BindingSet bindings,
+															 Set<String> scopeBindingNames,
+															 LeftJoin leftJoin) {
 
 		CloseableIteration<BindingSet> leftIter = left.evaluate(bindings);
 
 		if (leftIter == QueryEvaluationStep.EMPTY_ITERATION) {
 			return leftIter;
 		} else {
-			return new LeftJoinIterator(leftIter, prepareRightArg, joinCondition, scopeBindingNames);
+			return new LeftJoinIterator(leftIter, prepareRightArg, joinCondition, scopeBindingNames, leftJoin);
 		}
 
 	}
@@ -125,7 +140,11 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet> {
 					if (leftIter.hasNext()) {
 						// Use left arg's bindings in case join fails
 						leftBindings = leftIter.next();
-						nextRightIter = rightIter = prepareRightArg.evaluate(leftBindings);
+						if (shouldEvaluateRightHandSide(leftBindings)) {
+							nextRightIter = rightIter = prepareRightArg.evaluate(leftBindings);
+						} else {
+							return leftBindings;
+						}
 					} else {
 						return null;
 					}
@@ -135,7 +154,11 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet> {
 					leftBindings = leftIter.next();
 
 					nextRightIter.close();
-					nextRightIter = rightIter = prepareRightArg.evaluate(leftBindings);
+					if (shouldEvaluateRightHandSide(leftBindings)) {
+						nextRightIter = rightIter = prepareRightArg.evaluate(leftBindings);
+					} else {
+						return leftBindings;
+					}
 				}
 
 				if (nextRightIter == QueryEvaluationStep.EMPTY_ITERATION) {
@@ -147,7 +170,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet> {
 					BindingSet rightBindings = nextRightIter.next();
 
 					try {
-						if (joinCondition == null) {
+						if (joinCondition == null || canEvaluateConditionBasedOnLeftHandSide) {
 							return rightBindings;
 						} else {
 							// Limit the bindings to the ones that are in scope for
@@ -182,6 +205,34 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet> {
 		}
 
 		return null;
+	}
+
+	private static boolean canEvaluateConditionBasedOnLeftHandSide(LeftJoin leftJoin) {
+		if (leftJoin.hasCondition()) {
+			var collector = new VarNameCollector();
+			leftJoin.getCondition().visit(collector);
+
+			Set<String> assuredBindingNames = leftJoin.getAssuredBindingNames();
+			return assuredBindingNames.containsAll(collector.getVarNames());
+		}
+
+		return false;
+	}
+
+	private boolean shouldEvaluateRightHandSide(BindingSet leftBindings) {
+		if (!canEvaluateConditionBasedOnLeftHandSide) {
+			return true;
+		}
+
+		QueryBindingSet scopeBindings = new QueryBindingSet(leftJoin.getAssuredBindingNames().size());
+		for (String scopeBindingName : leftJoin.getAssuredBindingNames()) {
+			Binding binding = leftBindings.getBinding(scopeBindingName);
+			if (binding != null) {
+				scopeBindings.addBinding(binding);
+			}
+		}
+
+		return isTrue(joinCondition, scopeBindings);
 	}
 
 	private boolean isTrue(QueryValueEvaluationStep expr, QueryBindingSet bindings) {
