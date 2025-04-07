@@ -52,10 +52,14 @@ public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
 	 * Methods *
 	 *---------*/
 
-	public BadlyDesignedLeftJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right,
-			QueryValueEvaluationStep joinCondition, BindingSet inputBindings, Set<String> problemVars)
+	public BadlyDesignedLeftJoinIterator(QueryEvaluationStep left,
+			QueryEvaluationStep right,
+			QueryValueEvaluationStep joinCondition,
+			BindingSet inputBindings,
+			Set<String> problemVars,
+			LeftJoin leftJoin)
 			throws QueryEvaluationException {
-		super(left, right, joinCondition, getFilteredBindings(inputBindings, problemVars), problemVars);
+		super(left, right, joinCondition, getFilteredBindings(inputBindings, problemVars), problemVars, leftJoin);
 		this.inputBindings = inputBindings;
 		this.problemVars = problemVars;
 	}
