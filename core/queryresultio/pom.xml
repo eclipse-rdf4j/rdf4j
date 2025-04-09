@@ -15,6 +15,7 @@
 		<module>binary</module>
 		<module>sparqljson</module>
 		<module>sparqlxml</module>
+		<module>xlsx</module>
 		<module>text</module>
 	</modules>
 </project>
