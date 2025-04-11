@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2025 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -17,7 +17,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -56,10 +55,16 @@ public class SPARQLXLSXTupleTest {
 		bs2.setBinding("iri", SimpleValueFactory.getInstance().createIRI("https://example.org/iri/test"));
 		bs2.setBinding("int", SimpleValueFactory.getInstance().createLiteral(-9));
 		b.handleSolution(bs2);
+
+		MapBindingSet bs3 = new MapBindingSet();
+		bs3.setBinding("iri", SimpleValueFactory.getInstance().createIRI("http://purl.uniprot.org/taxonomy/9606"));
+		bs3.setBinding("int", SimpleValueFactory.getInstance().createLiteral(-9));
+		b.handleSolution(bs3);
 		List<String> links = List.of("http://example.org/link1");
 		b.handleLinks(links);
 		try (var out = Files.newOutputStream(tf)) {
 			SPARQLResultsXLSXWriter writer = new SPARQLResultsXLSXWriter(out);
+			writer.handleNamespace("taxon", "http://purl.uniprot.org/taxonomy/");
 			writer.handleLinks(links);
 			writer.startQueryResult(new ArrayList<>(bs.getBindingNames()));
 			Iterator<BindingSet> iterator = b.getQueryResult().iterator();
