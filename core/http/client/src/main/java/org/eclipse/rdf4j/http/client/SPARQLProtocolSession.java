@@ -55,7 +55,7 @@ import org.apache.http.entity.ContentType;
 import org.apache.http.impl.auth.BasicScheme;
 import org.apache.http.impl.client.BasicAuthCache;
 import org.apache.http.impl.client.BasicCookieStore;
-import org.apache.http.impl.client.BasicCredentialsProvider;
+import org.apache.http.impl.client.SystemDefaultCredentialsProvider;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.http.params.BasicHttpParams;
 import org.apache.http.params.CoreConnectionPNames;
@@ -323,7 +323,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			int port = requestURI.getPort();
 			AuthScope scope = new AuthScope(host, port);
 			UsernamePasswordCredentials cred = new UsernamePasswordCredentials(username, password);
-			CredentialsProvider credsProvider = new BasicCredentialsProvider();
+			CredentialsProvider credsProvider = new SystemDefaultCredentialsProvider();
 			credsProvider.setCredentials(scope, cred);
 			httpContext.setCredentialsProvider(credsProvider);
 			AuthCache authCache = new BasicAuthCache();
