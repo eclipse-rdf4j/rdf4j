@@ -15,8 +15,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
@@ -44,6 +46,37 @@ public class StatementPatternCollector extends AbstractSimpleQueryModelVisitor<R
 	public void meet(Filter node) {
 		// Skip boolean constraints
 		node.getArg().visit(this);
+	}
+
+	@Override
+	public void meet(Join node) throws RuntimeException {
+		TupleExpr leftArg = node.getLeftArg();
+		TupleExpr rightArg = node.getRightArg();
+
+		// INSERT clause is often a deeply nested join. Recursive approach may cause stack overflow. Attempt
+		// non-recursive (or at least less-recursive) approach first.
+		while (true) {
+			if (leftArg instanceof Join && !(rightArg instanceof Join)) {
+				rightArg.visit(this);
+
+				Join join = (Join) leftArg;
+				leftArg = join.getLeftArg();
+				rightArg = join.getRightArg();
+
+			} else if (rightArg instanceof Join && !(leftArg instanceof Join)) {
+				leftArg.visit(this);
+
+				Join join = (Join) rightArg;
+				leftArg = join.getLeftArg();
+				rightArg = join.getRightArg();
+
+			} else {
+				leftArg.visit(this);
+				rightArg.visit(this);
+				return;
+			}
+		}
+
 	}
 
 	@Override
