@@ -20,9 +20,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.*;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
@@ -32,6 +30,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationStep left;
 	private final LeftJoin leftJoin;
 	private final Set<String> optionalVars;
+	private final QueryEvaluationStep wellDesignedRightEvaluationStep;
 
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
 			QueryEvaluationContext context) {
@@ -85,7 +84,11 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		}
 
 		this.optionalVars = optionalVars;
-
+		this.wellDesignedRightEvaluationStep = determineRightEvaluationStep(
+				leftJoin,
+				right,
+				condition,
+				leftJoin.getBindingNames());
 	}
 
 	@Override
@@ -103,14 +106,37 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		if (containsNone) {
 			// left join is "well designed"
 			leftJoin.setAlgorithm(LeftJoinIterator.class.getSimpleName());
-			var rightEvaluationStep = LeftJoinIterator.determineRightEvaluationStep(leftJoin, right, condition, leftJoin.getBindingNames());
-			return LeftJoinIterator.getInstance(left, bindings, rightEvaluationStep);
+			return LeftJoinIterator.getInstance(left, bindings, wellDesignedRightEvaluationStep);
 		} else {
 			Set<String> problemVars = new HashSet<>(optionalVars);
 			problemVars.retainAll(bindings.getBindingNames());
 
 			leftJoin.setAlgorithm(BadlyDesignedLeftJoinIterator.class.getSimpleName());
-			return new BadlyDesignedLeftJoinIterator(left, right, condition, bindings, problemVars, leftJoin);
+			var rightEvaluationStep = determineRightEvaluationStep(leftJoin, right, condition, problemVars);
+			return new BadlyDesignedLeftJoinIterator(left, bindings, problemVars, rightEvaluationStep);
 		}
+	}
+
+	public static QueryEvaluationStep determineRightEvaluationStep(
+			LeftJoin join,
+			QueryEvaluationStep prepareRightArg,
+			QueryValueEvaluationStep joinCondition,
+			Set<String> scopeBindingNames) {
+		if (joinCondition == null) {
+			return prepareRightArg;
+		} else if (canEvaluateConditionBasedOnLeftHandSide(join)) {
+			return new LeftJoinPreFilterQueryEvaluationStep(
+					prepareRightArg,
+					new ScopeBindingsJoinConditionEvaluator(join.getAssuredBindingNames(), joinCondition));
+		} else {
+			return new LeftJoinPostFilterQueryEvaluationStep(
+					prepareRightArg,
+					new ScopeBindingsJoinConditionEvaluator(scopeBindingNames, joinCondition));
+		}
+	}
+
+	private static boolean canEvaluateConditionBasedOnLeftHandSide(LeftJoin leftJoin) {
+		var varNames = VarNameCollector.process(leftJoin.getCondition());
+		return leftJoin.getAssuredBindingNames().containsAll(varNames);
 	}
 }

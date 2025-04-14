@@ -40,9 +40,13 @@ public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
 	 * Constructors *
 	 *--------------*/
 
-	public BadlyDesignedLeftJoinIterator(EvaluationStrategy strategy, LeftJoin join, BindingSet inputBindings,
-			Set<String> problemVars, QueryEvaluationContext context) throws QueryEvaluationException {
-		super(strategy, join, getFilteredBindings(inputBindings, problemVars), context);
+	public BadlyDesignedLeftJoinIterator(
+			EvaluationStrategy strategy,
+			LeftJoin join,
+			BindingSet inputBindings,
+			Set<String> problemVars,
+			QueryEvaluationStep rightEvaluationStep) throws QueryEvaluationException {
+		super(strategy, join, getFilteredBindings(inputBindings, problemVars), rightEvaluationStep);
 		this.inputBindings = inputBindings;
 		this.problemVars = problemVars;
 
@@ -53,13 +57,11 @@ public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
 	 *---------*/
 
 	public BadlyDesignedLeftJoinIterator(QueryEvaluationStep left,
-			QueryEvaluationStep right,
-			QueryValueEvaluationStep joinCondition,
 			BindingSet inputBindings,
 			Set<String> problemVars,
-			LeftJoin leftJoin)
+			QueryEvaluationStep rightEvaluationStep)
 			throws QueryEvaluationException {
-		super(left, right, joinCondition, getFilteredBindings(inputBindings, problemVars), problemVars, leftJoin);
+		super(left, getFilteredBindings(inputBindings, problemVars), rightEvaluationStep);
 		this.inputBindings = inputBindings;
 		this.problemVars = problemVars;
 	}

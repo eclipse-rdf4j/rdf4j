@@ -10,7 +10,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 
 import java.util.Set;
 
-class ScopeBindingsJoinConditionEvaluator {
+public class ScopeBindingsJoinConditionEvaluator {
 
 	/**
 	 * The set of binding names that are "in scope" for the filter. The filter must not include bindings that are (only)
@@ -19,7 +19,7 @@ class ScopeBindingsJoinConditionEvaluator {
     private final Set<String> scopeBindingNames;
     private final QueryValueEvaluationStep joinCondition;
 
-    ScopeBindingsJoinConditionEvaluator(Set<String> scopeBindingNames, QueryValueEvaluationStep joinCondition) {
+    public ScopeBindingsJoinConditionEvaluator(Set<String> scopeBindingNames, QueryValueEvaluationStep joinCondition) {
         this.scopeBindingNames = scopeBindingNames;
         this.joinCondition = joinCondition;
     }
