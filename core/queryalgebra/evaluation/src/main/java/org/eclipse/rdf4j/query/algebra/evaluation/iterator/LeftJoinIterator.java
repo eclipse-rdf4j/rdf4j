@@ -15,13 +15,10 @@ import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
-import org.eclipse.rdf4j.query.algebra.evaluation.*;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
-import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 
 import java.util.NoSuchElementException;
-import java.util.Optional;
-import java.util.Set;
 
 public class LeftJoinIterator extends LookAheadIteration<BindingSet> {
 	/*-----------*
@@ -41,35 +38,21 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet> {
 			EvaluationStrategy strategy,
 			LeftJoin join,
 			BindingSet bindings,
-			QueryEvaluationContext context) throws QueryEvaluationException {
-		Set<String> scopeBindingNames = join.getBindingNames();
-
+			QueryEvaluationStep rightEvaluationStep) throws QueryEvaluationException {
 		leftIter = strategy.evaluate(join.getLeftArg(), bindings);
 
 		rightIter = null;
 
-		QueryEvaluationStep prepareRightArg = strategy.precompile(join.getRightArg(), context);
 		join.setAlgorithm(this);
-		var joinCondition = Optional.ofNullable(join.getCondition())
-				.map(condition -> strategy.precompile(condition, context));
 
-		rightEvaluationStep = determineRightEvaluationStep(
-				join,
-				prepareRightArg,
-				joinCondition.orElse(null),
-				scopeBindingNames);
+		this.rightEvaluationStep = rightEvaluationStep;
 	}
 
 	public LeftJoinIterator(
 			QueryEvaluationStep left,
-			QueryEvaluationStep right,
-			QueryValueEvaluationStep joinCondition,
 			BindingSet bindings,
-			Set<String> scopeBindingNames,
-			LeftJoin leftJoin) throws QueryEvaluationException {
-		this(
-				left.evaluate(bindings),
-				determineRightEvaluationStep(leftJoin, right, joinCondition, scopeBindingNames));
+			QueryEvaluationStep rightEvaluationStep) throws QueryEvaluationException {
+		this(left.evaluate(bindings), rightEvaluationStep);
 	}
 
 	public LeftJoinIterator(CloseableIteration<BindingSet> leftIter, QueryEvaluationStep rightEvaluationStep) {
@@ -152,32 +135,5 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet> {
 				rightIter.close();
 			}
 		}
-	}
-
-	public static QueryEvaluationStep determineRightEvaluationStep(
-			LeftJoin join,
-			QueryEvaluationStep prepareRightArg,
-			QueryValueEvaluationStep joinCondition,
-			Set<String> scopeBindingNames) {
-		if (joinCondition == null) {
-			return prepareRightArg;
-		} else if (canEvaluateConditionBasedOnLeftHandSide(join)) {
-			return new LeftJoinPreFilterQueryEvaluationStep(
-					prepareRightArg,
-					new ScopeBindingsJoinConditionEvaluator(join.getAssuredBindingNames(), joinCondition));
-		} else {
-			return new LeftJoinPostFilterQueryEvaluationStep(
-					prepareRightArg,
-					new ScopeBindingsJoinConditionEvaluator(scopeBindingNames, joinCondition));
-		}
-	}
-
-	private static boolean canEvaluateConditionBasedOnLeftHandSide(LeftJoin leftJoin) {
-		if (!leftJoin.hasCondition()) {
-			return false;
-		}
-
-		var varNames = VarNameCollector.process(leftJoin.getCondition());
-		return leftJoin.getAssuredBindingNames().containsAll(varNames);
 	}
 }
