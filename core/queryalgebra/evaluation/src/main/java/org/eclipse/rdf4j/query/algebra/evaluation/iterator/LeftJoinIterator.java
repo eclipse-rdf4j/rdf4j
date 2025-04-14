@@ -80,18 +80,10 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet> {
 
 	public static CloseableIteration<BindingSet> getInstance(
 			QueryEvaluationStep left,
-			QueryEvaluationStep prepareRightArg,
-			QueryValueEvaluationStep joinCondition,
 			BindingSet bindings,
-			Set<String> scopeBindingNames,
-			LeftJoin leftJoin) {
+			QueryEvaluationStep rightEvaluationStep) {
 
 		CloseableIteration<BindingSet> leftIter = left.evaluate(bindings);
-		var rightEvaluationStep = determineRightEvaluationStep(
-				leftJoin,
-				prepareRightArg,
-				joinCondition,
-				scopeBindingNames);
 
 		if (leftIter == QueryEvaluationStep.EMPTY_ITERATION) {
 			return leftIter;
@@ -162,7 +154,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet> {
 		}
 	}
 
-	static QueryEvaluationStep determineRightEvaluationStep(
+	public static QueryEvaluationStep determineRightEvaluationStep(
 			LeftJoin join,
 			QueryEvaluationStep prepareRightArg,
 			QueryValueEvaluationStep joinCondition,
