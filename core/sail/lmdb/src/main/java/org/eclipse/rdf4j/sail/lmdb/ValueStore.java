@@ -235,13 +235,8 @@ class ValueStore extends AbstractValueFactory {
 			return null;
 		});
 
-		if (logger.isDebugEnabled()) {
-			// trigger deletion of values marked for GC
-			startTransaction(true);
-			commit();
-			// print current values in store
-			logValues();
-		}
+		startTransaction(true);
+		commit();
 	}
 
 	private void logValues() throws IOException {
