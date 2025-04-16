@@ -60,8 +60,8 @@ which artifacts RDF4J provides.
 
 ### RDF4J 4.3
 
-- [RDF4J 4.3.15 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-4.3.15-sdk.zip)
-- [RDF4J 4.3.15 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-4.3.15-onejar.jar)
+- [RDF4J 4.3.16 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-4.3.16-sdk.zip)
+- [RDF4J 4.3.16 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-4.3.16-onejar.jar)
 
 
 ### RDF4J 4.2
