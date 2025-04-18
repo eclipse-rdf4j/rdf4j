@@ -12,12 +12,14 @@
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 
 /**
  * A step in the query evaluation that works on ValueExpresions.
@@ -25,6 +27,18 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 public interface QueryValueEvaluationStep {
 	Value evaluate(BindingSet bindings)
 			throws QueryEvaluationException;
+
+	default Predicate<BindingSet> asPredicate() {
+		return bs -> {
+			try {
+				Value value = evaluate(bs);
+				return QueryEvaluationUtility.getEffectiveBooleanValue(value).orElse(false);
+			} catch (ValueExprEvaluationException e) {
+				// Ignore, condition not evaluated successfully
+				return false;
+			}
+		};
+	}
 
 	/**
 	 * If an value expression results in a constant then it may be executed once per query invocation. This can reduce

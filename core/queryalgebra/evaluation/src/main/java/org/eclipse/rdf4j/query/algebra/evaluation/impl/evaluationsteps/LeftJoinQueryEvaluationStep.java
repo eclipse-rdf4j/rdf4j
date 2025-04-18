@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ScopedQueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.*;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -117,6 +118,50 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		}
 	}
 
+	/**
+	 * This function determines the way the right-hand side is evaluated. There are 3 options:
+	 * <p>
+	 * 1. No join condition: <br>
+	 * The right-hand side should just be joined with the left-hand side. No filtering is applied.
+	 * </p>
+	 * <p>
+	 * 2. The join condition can be fully evaluated by the left-hand side:
+	 *
+	 * <pre>
+	 * SELECT * WHERE {
+	 * 	?dist a dcat:Distribution .
+	 *  ?dist dc:license ?license .
+	 *
+	 *  OPTIONAL {
+	 *     	?a dcat:distribution ?dist.
+	 *
+	 *      FILTER(?license = <http://wiki.data.gouv.fr/wiki/Licence_Ouverte_/_Open_Licence>)
+	 * 	}
+	 * }
+	 * </pre>
+	 *
+	 * In this case, pre-filtering can be applied. The right-hand side does not have to evaluated when the join
+	 * condition evaluates to false.
+	 * </p>
+	 * <p>
+	 * 3. The join condition needs right-hand side evaluation:
+	 *
+	 * <pre>
+	 * SELECT * WHERE {
+	 *  ?dist a dcat:Distribution .
+	 *
+	 * 	OPTIONAL {
+	 *		?a dcat:distribution ?dist .
+	 * 		?a dct:language $lang .
+	 *
+	 * 		FILTER(?lang = eu-lang:ENG)
+	 *     	}
+	 * }
+	 * </pre>
+	 *
+	 * In this case, the join condition can only be evaluated after the right-hand side is evaluated (post-filtering).
+	 * </p>
+	 */
 	public static QueryEvaluationStep determineRightEvaluationStep(
 			LeftJoin join,
 			QueryEvaluationStep prepareRightArg,
@@ -125,13 +170,13 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		if (joinCondition == null) {
 			return prepareRightArg;
 		} else if (canEvaluateConditionBasedOnLeftHandSide(join)) {
-			return new LeftJoinPreFilterQueryEvaluationStep(
+			return new PreFilterQueryEvaluationStep(
 					prepareRightArg,
-					new ScopeBindingsJoinConditionEvaluator(join.getAssuredBindingNames(), joinCondition));
+					new ScopedQueryValueEvaluationStep(join.getAssuredBindingNames(), joinCondition));
 		} else {
-			return new LeftJoinPostFilterQueryEvaluationStep(
+			return new PostFilterQueryEvaluationStep(
 					prepareRightArg,
-					new ScopeBindingsJoinConditionEvaluator(scopeBindingNames, joinCondition));
+					new ScopedQueryValueEvaluationStep(scopeBindingNames, joinCondition));
 		}
 	}
 
