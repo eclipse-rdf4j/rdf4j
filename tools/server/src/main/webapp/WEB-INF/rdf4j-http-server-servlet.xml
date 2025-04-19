@@ -130,4 +130,5 @@
 	<bean id="rdf4jRepositoryTransactionStartController" class="org.eclipse.rdf4j.http.server.repository.transaction.TransactionStartController">
 		<property name="externalUrl" value="${rdf4j.externalurl:#{null}}"/>
 	</bean>
+	<bean id="rdf4jRepositoryExplainController" class="org.eclipse.rdf4j.http.server.repository.explain.ExplainController"/>
 </beans>
