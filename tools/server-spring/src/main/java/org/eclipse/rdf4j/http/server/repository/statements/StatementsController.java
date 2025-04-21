@@ -156,6 +156,11 @@ public class StatementsController extends AbstractController {
 			throw new ClientHTTPException("Updates must be non-empty");
 		}
 
+		if (logger.isDebugEnabled()) {
+			final int queryHashCode = sparqlUpdateString.hashCode();
+			logger.debug("update query {} = {}", queryHashCode, sparqlUpdateString);
+		}
+
 		// default query language is SPARQL
 		QueryLanguage queryLn = QueryLanguage.SPARQL;
 
