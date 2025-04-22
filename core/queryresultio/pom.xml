@@ -16,6 +16,7 @@
 		<module>sparqljson</module>
 		<module>sparqlxml</module>
 		<module>xlsx</module>
+		<module>ods</module>
 		<module>text</module>
 	</modules>
 </project>

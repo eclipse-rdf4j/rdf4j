@@ -101,6 +101,9 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 	public static final TupleQueryResultFormat XSLX = new TupleQueryResultFormat("SPARQL/XLSX",
 			"application/vnd.ms-excel", "xlsx");
 
+	public static final TupleQueryResultFormat ODS = new TupleQueryResultFormat("SPARQL/ODS",
+			"application/vnd.oasis.opendocument.spreadsheet", "ods");
+
 	/*-----------*
 	 * Variables *
 	 *-----------*/

@@ -8,7 +8,7 @@
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
-package org.eclipse.rdf4j.query.resultio.sparqlxslx;
+package org.eclipse.rdf4j.query.resultio.sparqlods;
 
 import java.io.OutputStream;
 
@@ -16,22 +16,22 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
 
-public class SPARQLResultsXLSXWriterFactory implements TupleQueryResultWriterFactory {
+public class SPARQLResultsODSWriterFactory implements TupleQueryResultWriterFactory {
 
-	public SPARQLResultsXLSXWriterFactory() {
+	public SPARQLResultsODSWriterFactory() {
 		super();
 	}
 
 	@Override
 	public TupleQueryResultFormat getTupleQueryResultFormat() {
-		return TupleQueryResultFormat.XSLX;
+		return TupleQueryResultFormat.ODS;
 	}
 
 	/**
-	 * Returns a new instance of SPARQLResultsXLSXWriter.
+	 * Returns a new instance of SPARQLResultsODSWriter.
 	 */
 	@Override
 	public TupleQueryResultWriter getWriter(OutputStream out) {
-		return new SPARQLResultsXLSXWriter(out);
+		return new SPARQLResultsODSWriter(out);
 	}
 }
