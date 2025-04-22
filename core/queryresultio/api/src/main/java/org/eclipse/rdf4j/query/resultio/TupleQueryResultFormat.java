@@ -98,6 +98,12 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 			Arrays.asList("text/x-tab-separated-values-star", "application/x-sparqlstar-results+tsv"),
 			StandardCharsets.UTF_8, List.of("tsvs"), null, SUPPORTS_RDF_STAR);
 
+	public static final TupleQueryResultFormat XSLX = new TupleQueryResultFormat("SPARQL/XLSX",
+			"application/vnd.ms-excel", "xlsx");
+
+	public static final TupleQueryResultFormat ODS = new TupleQueryResultFormat("SPARQL/ODS",
+			"application/vnd.oasis.opendocument.spreadsheet", "ods");
+
 	/*-----------*
 	 * Variables *
 	 *-----------*/
