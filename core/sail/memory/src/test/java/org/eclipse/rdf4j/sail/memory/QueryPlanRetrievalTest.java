@@ -18,6 +18,7 @@ import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -119,6 +120,386 @@ public class QueryPlanRetrievalTest {
 			connection.add(vf.createBNode("13"), FOAF.KNOWS, vf.createBNode("14"));
 			connection.add(vf.createBNode("15"), FOAF.KNOWS, vf.createBNode("16"));
 		}
+	}
+
+	@Test
+	public void testFilterDontMergeAcrossSubqueryOptimizedPlanRetrieval() throws Exception {
+		String sparql = "SELECT * WHERE {?s ?p ?o .  {?o ?p2 ?o2. FILTER(?o > ?o2) FILTER(?o2 != ?o)}  {?o ?p3 ?o3. FILTER(?o > ?o3) FILTER(?o != ?o3  || ?o = ?o3)} FILTER(?s > ?o)}";
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(sparql);
+			String actual = query.explain(Explanation.Level.Optimized).toString();
+			assertThat(actual).isEqualToNormalizingNewlines(
+					"Join (JoinIterator)\n" +
+							"╠══ Filter [left]\n" +
+							"║  ├── Compare (>)\n" +
+							"║  │     Var (name=s)\n" +
+							"║  │     Var (name=o)\n" +
+							"║  └── StatementPattern (costEstimate=5.67, resultSizeEstimate=12)\n" +
+							"║        s: Var (name=s)\n" +
+							"║        p: Var (name=p)\n" +
+							"║        o: Var (name=o)\n" +
+							"╚══ Join (HashJoinIteration) [right]\n" +
+							"   ├── Filter (new scope) [left]\n" +
+							"   │  ╠══ And\n" +
+							"   │  ║  ├── Compare (>)\n" +
+							"   │  ║  │     Var (name=o)\n" +
+							"   │  ║  │     Var (name=o2)\n" +
+							"   │  ║  └── Compare (!=)\n" +
+							"   │  ║        Var (name=o2)\n" +
+							"   │  ║        Var (name=o)\n" +
+							"   │  ╚══ StatementPattern (resultSizeEstimate=12)\n" +
+							"   │        s: Var (name=o)\n" +
+							"   │        p: Var (name=p2)\n" +
+							"   │        o: Var (name=o2)\n" +
+							"   └── Filter (new scope) [right]\n" +
+							"      ╠══ And\n" +
+							"      ║  ├── Compare (>)\n" +
+							"      ║  │     Var (name=o)\n" +
+							"      ║  │     Var (name=o3)\n" +
+							"      ║  └── Or\n" +
+							"      ║     ╠══ Compare (!=)\n" +
+							"      ║     ║     Var (name=o)\n" +
+							"      ║     ║     Var (name=o3)\n" +
+							"      ║     ╚══ Compare (=)\n" +
+							"      ║           Var (name=o)\n" +
+							"      ║           Var (name=o3)\n" +
+							"      ╚══ StatementPattern (resultSizeEstimate=12)\n" +
+							"            s: Var (name=o)\n" +
+							"            p: Var (name=p3)\n" +
+							"            o: Var (name=o3)\n");
+		}
+		sailRepository.shutDown();
+	}
+
+	@Test
+	public void testSpecificFilterScopeScenario() throws Exception {
+		String sparql = "PREFIX ex: <http://example.com/>\n" +
+				"\n" +
+				"SELECT ?s ?p ?o ?o2 ?g WHERE {\n" +
+				"  {                                      # scope‑0\n" +
+				"    {                                    # scope‑1  (UNION A)\n" +
+				"      ?s ex:p ?o .                       #   pattern A1\n" +
+				"      ?s ex:q ?o2 .\n" +
+				"      FILTER (?o > 1 && ?o2 < 5 && BOUND(?s) && !BOUND(?g))\n" +
+				"    }\n" +
+				"    UNION {                              # scope‑1  (UNION B)\n" +
+				"      GRAPH ?g { ?s ex:r ?o }            #   GRAPH introduces scope‑2\n" +
+				"      FILTER (?o != 42 && ?g != ex:Bad)\n" +
+				"    }\n" +
+				"  }\n" +
+				"  OPTIONAL {                             # scope‑0 → scope‑3\n" +
+				"    BIND (EXISTS { ?s ex:p2 ?x } AS ?hasX)\n" +
+				"    FILTER (?hasX && STRLEN(STR(?x)) > 3)\n" +
+				"  }\n" +
+				"  FILTER (?o2 IN (1,2,3,4,5))            # top‑level filter\n" +
+				"}";
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(sparql);
+			String actual = query.explain(Explanation.Level.Optimized).toString();
+			assertThat(actual).isEqualToNormalizingNewlines("Projection\n" +
+					"╠══ ProjectionElemList\n" +
+					"║     ProjectionElem \"s\"\n" +
+					"║     ProjectionElem \"p\"\n" +
+					"║     ProjectionElem \"o\"\n" +
+					"║     ProjectionElem \"o2\"\n" +
+					"║     ProjectionElem \"g\"\n" +
+					"╚══ LeftJoin (LeftJoinIterator)\n" +
+					"      Compare (>)\n" +
+					"      ╠══ FunctionCall (http://www.w3.org/2005/xpath-functions#string-length)\n" +
+					"      ║     Str\n" +
+					"      ║        Var (name=x)\n" +
+					"      ╚══ ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+					"      Union\n" +
+					"      ╠══ Filter\n" +
+					"      ║  ├── Not\n" +
+					"      ║  │     Bound\n" +
+					"      ║  │        Var (name=g)\n" +
+					"      ║  └── Join (JoinIterator)\n" +
+					"      ║     ╠══ Filter (new scope) [left]\n" +
+					"      ║     ║  ├── And\n" +
+					"      ║     ║  │  ╠══ Bound\n" +
+					"      ║     ║  │  ║     Var (name=s)\n" +
+					"      ║     ║  │  ╚══ Compare (>)\n" +
+					"      ║     ║  │        Var (name=o)\n" +
+					"      ║     ║  │        ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"      ║     ║  └── StatementPattern (costEstimate=2.50, resultSizeEstimate=0)\n" +
+					"      ║     ║        s: Var (name=s)\n" +
+					"      ║     ║        p: Var (name=_const_c03ab50c_uri, value=http://example.com/p, anonymous)\n" +
+					"      ║     ║        o: Var (name=o)\n" +
+					"      ║     ╚══ Filter [right]\n" +
+					"      ║        ├── And\n" +
+					"      ║        │  ╠══ ListMemberOperator\n" +
+					"      ║        │  ║     Var (name=o2)\n" +
+					"      ║        │  ║     ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"      ║        │  ║     ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"      ║        │  ║     ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"      ║        │  ║     ValueConstant (value=\"4\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"      ║        │  ║     ValueConstant (value=\"5\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"      ║        │  ╚══ Compare (<)\n" +
+					"      ║        │        Var (name=o2)\n" +
+					"      ║        │        ValueConstant (value=\"5\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"      ║        └── StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
+					"      ║              s: Var (name=s)\n" +
+					"      ║              p: Var (name=_const_c03ab50d_uri, value=http://example.com/q, anonymous)\n" +
+					"      ║              o: Var (name=o2)\n" +
+					"      ╚══ Filter\n" +
+					"         ├── And\n" +
+					"         │  ╠══ And\n" +
+					"         │  ║  ├── Compare (!=)\n" +
+					"         │  ║  │     Var (name=g)\n" +
+					"         │  ║  │     ValueConstant (value=http://example.com/Bad)\n" +
+					"         │  ║  └── Compare (!=)\n" +
+					"         │  ║        Var (name=o)\n" +
+					"         │  ║        ValueConstant (value=\"42\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+					"         │  ╚══ ListMemberOperator\n" +
+					"         │        Var (name=o2)\n" +
+					"         │        ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+					"         │        ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+					"         │        ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+					"         │        ValueConstant (value=\"4\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+					"         │        ValueConstant (value=\"5\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+					"         └── StatementPattern FROM NAMED CONTEXT (resultSizeEstimate=0)\n" +
+					"               s: Var (name=s)\n" +
+					"               p: Var (name=_const_c03ab50e_uri, value=http://example.com/r, anonymous)\n" +
+					"               o: Var (name=o)\n" +
+					"               c: Var (name=g)\n" +
+					"      Filter\n" +
+					"      ╠══ Var (name=hasX)\n" +
+					"      ╚══ Extension\n" +
+					"         ├── SingletonSet\n" +
+					"         └── ExtensionElem (hasX)\n" +
+					"               Exists\n" +
+					"                  StatementPattern (resultSizeEstimate=0)\n" +
+					"                     s: Var (name=s)\n" +
+					"                     p: Var (name=_const_471beca6_uri, value=http://example.com/p2, anonymous)\n" +
+					"                     o: Var (name=x)\n");
+		}
+		sailRepository.shutDown();
+	}
+
+	@Test
+	public void multipleScopesAndFilters() throws Exception {
+		String sparql = "PREFIX : <http://example.com/>\n" +
+				"\n" +
+				"SELECT ?s ?o ?score ?lvl WHERE {\n" +
+				"\n" +
+				"  VALUES ?s { :A :B :C }\n" +
+				"\n" +
+				"  ?s :prop ?o .\n" +
+				"\n" +
+				"  FILTER (BOUND(?s))                                    # F‑0‑1\n" +
+				"  FILTER (?o         != :Forbidden)                     # F‑0‑2\n" +
+				"  {FILTER (LCASE(STR(?o)) != \"bad\")                      # F‑0‑3\n" +
+				"  FILTER (NOT EXISTS { ?s :deprecated true }) }         # F‑0‑4\n" +
+				"\n" +
+				"\n" +
+
+				"  {\n" +
+				"    ?s :score ?score .\n" +
+				"\n" +
+				"    FILTER (?score  > 10)                               # F‑1‑1\n" +
+				"    {FILTER (?score  < 100)}                              # F‑1‑2\n" +
+				"    FILTER ((?score - 2) != 0)                           # F‑1‑3\n" +
+				"\n" +
+				"\n" +
+
+				"    OPTIONAL {\n" +
+				"      ?s         :reviewedBy ?reviewer .\n" +
+				"      ?reviewer  :level      ?lvl     .\n" +
+				"\n" +
+				"      FILTER (?lvl  >= 3)                               # F‑2‑1\n" +
+				"      FILTER (?lvl  <= 8)                               # F‑2‑2\n" +
+				"      FILTER (REGEX(STR(?reviewer),\n" +
+				"                    \"^http://example\\\\.com/user\"))      # F‑2‑3\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(sparql);
+			String actual = query.explain(Explanation.Level.Optimized).toString();
+			assertThat(actual).isEqualToNormalizingNewlines("Projection\n" +
+					"╠══ ProjectionElemList\n" +
+					"║     ProjectionElem \"s\"\n" +
+					"║     ProjectionElem \"o\"\n" +
+					"║     ProjectionElem \"score\"\n" +
+					"║     ProjectionElem \"lvl\"\n" +
+					"╚══ Join (JoinIterator)\n" +
+					"   ├── Filter [left]\n" +
+					"   │  ╠══ Bound\n" +
+					"   │  ║     Var (name=s)\n" +
+					"   │  ╚══ BindingSetAssignment ([[s=http://example.com/A], [s=http://example.com/B], [s=http://example.com/C]]) (costEstimate=0, resultSizeEstimate=1.00)\n"
+					+
+					"   └── Join (JoinIterator) [right]\n" +
+					"      ╠══ Filter (new scope) [left]\n" +
+					"      ║  ├── And\n" +
+					"      ║  │  ╠══ Compare (!=)\n" +
+					"      ║  │  ║  ├── FunctionCall (http://www.w3.org/2005/xpath-functions#lower-case)\n" +
+					"      ║  │  ║  │     Str\n" +
+					"      ║  │  ║  │        Var (name=o)\n" +
+					"      ║  │  ║  └── ValueConstant (value=\"bad\")\n" +
+					"      ║  │  ╚══ Not\n" +
+					"      ║  │        Exists\n" +
+					"      ║  │           StatementPattern (resultSizeEstimate=0)\n" +
+					"      ║  │              s: Var (name=s)\n" +
+					"      ║  │              p: Var (name=_const_52097_uri, value=http://example.com/deprecated, anonymous)\n"
+					+
+					"      ║  │              o: Var (name=_const_36758e_lit_eeeee601, value=\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>, anonymous)\n"
+					+
+					"      ║  └── SingletonSet\n" +
+					"      ╚══ Join (JoinIterator) [right]\n" +
+					"         ├── Filter [left]\n" +
+					"         │  ╠══ Compare (!=)\n" +
+					"         │  ║     Var (name=o)\n" +
+					"         │  ║     ValueConstant (value=http://example.com/Forbidden)\n" +
+					"         │  ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
+					"         │        s: Var (name=s)\n" +
+					"         │        p: Var (name=_const_efd45947_uri, value=http://example.com/prop, anonymous)\n" +
+					"         │        o: Var (name=o)\n" +
+					"         └── LeftJoin [right]\n" +
+					"            ╠══ Join (HashJoinIteration) [left]\n" +
+					"            ║  ├── Filter (new scope) [left]\n" +
+					"            ║  │  ╠══ And\n" +
+					"            ║  │  ║  ├── Compare (>)\n" +
+					"            ║  │  ║  │     Var (name=score)\n" +
+					"            ║  │  ║  │     ValueConstant (value=\"10\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"            ║  │  ║  └── Compare (!=)\n" +
+					"            ║  │  ║     ╠══ MathExpr (-)\n" +
+					"            ║  │  ║     ║     Var (name=score)\n" +
+					"            ║  │  ║     ║     ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"            ║  │  ║     ╚══ ValueConstant (value=\"0\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"            ║  │  ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
+					"            ║  │        s: Var (name=s)\n" +
+					"            ║  │        p: Var (name=_const_ada452e_uri, value=http://example.com/score, anonymous)\n"
+					+
+					"            ║  │        o: Var (name=score)\n" +
+					"            ║  └── Filter (new scope) (costEstimate=6.00, resultSizeEstimate=1.00) [right]\n" +
+					"            ║     ╠══ Compare (<)\n" +
+					"            ║     ║     Var (name=score)\n" +
+					"            ║     ║     ValueConstant (value=\"100\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"            ║     ╚══ SingletonSet\n" +
+					"            ╚══ Join (JoinIterator) [right]\n" +
+					"               ├── Filter [left]\n" +
+					"               │  ╠══ Regex\n" +
+					"               │  ║  ├── Str\n" +
+					"               │  ║  │     Var (name=reviewer)\n" +
+					"               │  ║  └── ValueConstant (value=\"^http://example\\.com/user\")\n" +
+					"               │  ╚══ StatementPattern (costEstimate=1.12, resultSizeEstimate=0)\n" +
+					"               │        s: Var (name=s)\n" +
+					"               │        p: Var (name=_const_f053af92_uri, value=http://example.com/reviewedBy, anonymous)\n"
+					+
+					"               │        o: Var (name=reviewer)\n" +
+					"               └── Filter [right]\n" +
+					"                  ╠══ And\n" +
+					"                  ║  ├── Compare (>=)\n" +
+					"                  ║  │     Var (name=lvl)\n" +
+					"                  ║  │     ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"                  ║  └── Compare (<=)\n" +
+					"                  ║        Var (name=lvl)\n" +
+					"                  ║        ValueConstant (value=\"8\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"                  ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
+					"                        s: Var (name=reviewer)\n" +
+					"                        p: Var (name=_const_a78a220_uri, value=http://example.com/level, anonymous)\n"
+					+
+					"                        o: Var (name=lvl)\n");
+		}
+		sailRepository.shutDown();
+	}
+
+	@Test
+	public void multipleScopesAndFilters2() throws Exception {
+		String sparql = "PREFIX : <http://example/>\n" +
+				"\n" +
+				"SELECT ?s ?o WHERE {\n" +
+				"  VALUES ?s { :S }                                 # scope‑0  (outermost)\n" +
+				"\n" +
+				"  {                                                # scope‑1  (new group graph pattern)\n" +
+				"    {          " +
+				"      FILTER (?o != ?s)          # ▸ Filter‑B  (scope‑1)\n" +
+
+				"      FILTER (NOT EXISTS {?o ?s ?c})          # ▸ Filter‑B  (scope‑1)\n" +
+				"      BIND(?s as ?o)\n" +
+//				"		FILTER (?o = :O)                         # ▸ Filter‑A  (scope‑2)\n" +
+
+				"    }\n" +
+				"\n" +
+
+				"  }\n" +
+				"}";
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(sparql);
+			String actual = query.explain(Explanation.Level.Unoptimized).toString();
+			assertThat(actual).isEqualToNormalizingNewlines("Projection\n" +
+					"╠══ ProjectionElemList\n" +
+					"║     ProjectionElem \"s\"\n" +
+					"║     ProjectionElem \"o\"\n" +
+					"╚══ Join\n" +
+					"   ├── BindingSetAssignment ([[s=http://example/S]]) [left]\n" +
+					"   └── Filter (new scope) [right]\n" +
+					"      ╠══ Not\n" +
+					"      ║     Exists\n" +
+					"      ║        StatementPattern\n" +
+					"      ║           s: Var (name=o)\n" +
+					"      ║           p: Var (name=s)\n" +
+					"      ║           o: Var (name=c)\n" +
+					"      ╚══ Filter\n" +
+					"         ├── Compare (!=)\n" +
+					"         │     Var (name=o)\n" +
+					"         │     Var (name=s)\n" +
+					"         └── Extension\n" +
+					"            ╠══ SingletonSet\n" +
+					"            ╚══ ExtensionElem (o)\n" +
+					"                  Var (name=s)\n");
+		}
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(sparql);
+			String actual = query.explain(Explanation.Level.Optimized).toString();
+			assertThat(actual).isEqualToNormalizingNewlines("Projection\n" +
+					"╠══ ProjectionElemList\n" +
+					"║     ProjectionElem \"s\"\n" +
+					"║     ProjectionElem \"o\"\n" +
+					"╚══ Join (JoinIterator)\n" +
+					"   ├── Filter (new scope) [left]\n" +
+					"   │  ╠══ And\n" +
+					"   │  ║  ├── Compare (!=)\n" +
+					"   │  ║  │     Var (name=o)\n" +
+					"   │  ║  │     Var (name=s)\n" +
+					"   │  ║  └── Not\n" +
+					"   │  ║        Exists\n" +
+					"   │  ║           StatementPattern (resultSizeEstimate=12)\n" +
+					"   │  ║              s: Var (name=o)\n" +
+					"   │  ║              p: Var (name=s)\n" +
+					"   │  ║              o: Var (name=c)\n" +
+					"   │  ╚══ Extension\n" +
+					"   │     ├── SingletonSet\n" +
+					"   │     └── ExtensionElem (o)\n" +
+					"   │           Var (name=s)\n" +
+					"   └── BindingSetAssignment ([[s=http://example/S]]) (costEstimate=6.00, resultSizeEstimate=1.00) [right]\n");
+		}
+		sailRepository.shutDown();
 	}
 
 	@Test
@@ -608,7 +989,6 @@ public class QueryPlanRetrievalTest {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			String s = connection.prepareTupleQuery(query1).explain(Explanation.Level.Timed).toString();
-			System.out.println(s);
 		}
 
 		repository.shutDown();
