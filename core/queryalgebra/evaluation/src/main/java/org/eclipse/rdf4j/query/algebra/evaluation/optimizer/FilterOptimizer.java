@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.BindingSet;
@@ -31,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -78,9 +80,47 @@ public class FilterOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new FilterUnMerger());
-		tupleExpr.visit(new FilterOrganizer());
-		tupleExpr.visit(new FilterMerger());
+		Objects.requireNonNull(tupleExpr, "tupleExpr must not be null");
+		optimizeScope(tupleExpr);
+	}
+
+	/**
+	 * Bottom‑up optimisation: optimise each child subtree that starts a new variable scope, then run the three filter
+	 * passes on the current subtree.
+	 */
+	private void optimizeScope(TupleExpr expr) {
+		// 1) recurse into nested scopes first
+		expr.visit(new AbstractSimpleQueryModelVisitor<>(false) {
+			final TupleExpr current = expr;
+
+			@Override
+			public void meet(Filter node) throws RuntimeException {
+				if (node != current && node.isVariableScopeChange()) {
+					optimizeScope(node);
+					// do NOT traverse further into that subtree with this visitor
+				} else {
+					super.meet(node);
+				}
+			}
+
+		});
+
+		// 2) run the three filter passes for *this* scope
+		expr.visit(new FilterUnMerger());
+		expr.visit(new FilterOrganizer());
+		expr.visit(new FilterMerger());
+	}
+
+	/**
+	 * Copies the {@code isVariableScopeChange} flag from one node to another if both implement
+	 * {@link VariableScopeChange}.
+	 */
+	private static void transferScopeChange(QueryModelNode source, QueryModelNode target) {
+		if (source instanceof VariableScopeChange && target instanceof VariableScopeChange) {
+			VariableScopeChange src = (VariableScopeChange) source;
+			VariableScopeChange tgt = (VariableScopeChange) target;
+			tgt.setVariableScopeChange(src.isVariableScopeChange());
+		}
 	}
 
 	private static class FilterUnMerger extends AbstractSimpleQueryModelVisitor<RuntimeException> {
@@ -95,6 +135,7 @@ public class FilterOptimizer implements QueryOptimizer {
 				And and = (And) filter.getCondition();
 				filter.setCondition(and.getLeftArg().clone());
 				Filter newFilter = new Filter(filter.getArg().clone(), and.getRightArg().clone());
+				transferScopeChange(filter, newFilter); // preserve scope flag
 				filter.replaceChildNode(filter.getArg(), newFilter);
 			}
 			super.meet(filter);
@@ -117,6 +158,7 @@ public class FilterOptimizer implements QueryOptimizer {
 				And merge = new And(childFilter.getCondition().clone(), filter.getCondition().clone());
 
 				Filter newFilter = new Filter(childFilter.getArg().clone(), merge);
+				transferScopeChange(filter, newFilter); // both have same scope flag
 				parent.replaceChildNode(filter, newFilter);
 			}
 		}
@@ -190,6 +232,7 @@ public class FilterOptimizer implements QueryOptimizer {
 		public void meet(Union union) {
 			Filter clone = new Filter();
 			clone.setCondition(filter.getCondition().clone());
+			transferScopeChange(filter, clone);
 
 			relocate(filter, union.getLeftArg());
 			relocate(clone, union.getRightArg());
@@ -202,6 +245,7 @@ public class FilterOptimizer implements QueryOptimizer {
 		public void meet(Difference node) {
 			Filter clone = new Filter();
 			clone.setCondition(filter.getCondition().clone());
+			transferScopeChange(filter, clone);
 
 			relocate(filter, node.getLeftArg());
 			relocate(clone, node.getRightArg());
@@ -214,6 +258,7 @@ public class FilterOptimizer implements QueryOptimizer {
 		public void meet(Intersection node) {
 			Filter clone = new Filter();
 			clone.setCondition(filter.getCondition().clone());
+			transferScopeChange(filter, clone);
 
 			relocate(filter, node.getLeftArg());
 			relocate(clone, node.getRightArg());
@@ -278,5 +323,4 @@ public class FilterOptimizer implements QueryOptimizer {
 			}
 		}
 	}
-
 }
