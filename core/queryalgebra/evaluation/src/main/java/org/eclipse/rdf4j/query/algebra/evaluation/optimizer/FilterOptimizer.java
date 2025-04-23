@@ -90,16 +90,18 @@ public class FilterOptimizer implements QueryOptimizer {
 	 */
 	private void optimizeScope(TupleExpr expr) {
 		// 1) recurse into nested scopes first
-		expr.visit(new AbstractSimpleQueryModelVisitor<>(false) {
+		expr.visit(new AbstractQueryModelVisitor<>() {
 			final TupleExpr current = expr;
 
 			@Override
-			public void meet(Filter node) throws RuntimeException {
-				if (node != current && node.isVariableScopeChange()) {
-					optimizeScope(node);
+			protected void meetNode(QueryModelNode node) {
+				if (node != current && node instanceof TupleExpr && node instanceof VariableScopeChange
+						&& ((VariableScopeChange) node).isVariableScopeChange()) {
+
+					optimizeScope(((TupleExpr) node));
 					// do NOT traverse further into that subtree with this visitor
 				} else {
-					super.meet(node);
+					super.meetNode(node);
 				}
 			}
 
