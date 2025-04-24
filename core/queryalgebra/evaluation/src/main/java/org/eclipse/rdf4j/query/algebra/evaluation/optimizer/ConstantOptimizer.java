@@ -23,16 +23,24 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.Avg;
 import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.If;
+import org.eclipse.rdf4j.query.algebra.Max;
+import org.eclipse.rdf4j.query.algebra.Min;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Regex;
+import org.eclipse.rdf4j.query.algebra.Sample;
+import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
@@ -72,13 +80,36 @@ public class ConstantOptimizer implements QueryOptimizer {
 	 */
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+
 		ConstantVisitor visitor = new ConstantVisitor(strategy,
 				new QueryEvaluationContext.Minimal(new SimpleDataset()));
-		tupleExpr.visit(visitor);
-		Set<String> varsBefore = visitor.varNames;
 
+		try {
+			// We make a clone so that we can recover from failures.
+			TupleExpr clone = tupleExpr.clone();
+			clone.visit(visitor);
+
+			Set<String> varsBefore = visitor.varNames;
+
+			replaceVariables(bindings, visitor, clone, varsBefore);
+			// no exceptions so we can replace the original
+			if (tupleExpr instanceof QueryRoot) {
+				QueryRoot teqr = (QueryRoot) tupleExpr;
+				QueryRoot clqr = (QueryRoot) clone;
+				teqr.replaceChildNode(teqr.getArg(), clqr);
+			} else {
+				tupleExpr.replaceWith(clone);
+			}
+		} catch (ContantOptimizerFailure e) {
+			// If we had a failure we should return the original.
+			return;
+		}
+	}
+
+	private void replaceVariables(BindingSet bindings, ConstantVisitor visitor, TupleExpr clone, Set<String> varsBefore)
+			throws ContantOptimizerFailure {
 		VarNameCollector varCollector = new VarNameCollector();
-		tupleExpr.visit(varCollector);
+		clone.visit(varCollector);
 		Set<String> varsAfter = varCollector.varNames;
 
 		if (varsAfter.size() < varsBefore.size()) {
@@ -125,7 +156,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 		List<ProjectionElemList> projElemLists = Collections.emptyList();
 
 		@Override
-		public void meet(ProjectionElemList projElems) {
+		public void meet(ProjectionElemList projElems) throws ContantOptimizerFailure {
 			super.meet(projElems);
 			if (projElemLists.isEmpty()) {
 				projElemLists = Collections.singletonList(projElems);
@@ -138,7 +169,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 		}
 
 		@Override
-		public void meet(Or or) {
+		public void meet(Or or) throws ContantOptimizerFailure {
 			or.visitChildren(this);
 
 			try {
@@ -164,13 +195,53 @@ public class ConstantOptimizer implements QueryOptimizer {
 				// TODO: incompatible values types(?), remove the affected part of
 				// the query tree
 				logger.debug("Failed to evaluate BinaryValueOperator with two constant arguments", e);
+				throw new ContantOptimizerFailure(e);
 			} catch (QueryEvaluationException e) {
 				logger.error("Query evaluation exception caught", e);
+				throw new ContantOptimizerFailure(e);
 			}
 		}
 
 		@Override
-		public void meet(And and) {
+		public void meet(Avg node) throws ContantOptimizerFailure {
+			optimizeUnaryValueExpr(node);
+		}
+
+		@Override
+		public void meet(Max node) throws ContantOptimizerFailure {
+			optimizeUnaryValueExpr(node);
+		}
+
+		private void optimizeUnaryValueExpr(UnaryValueOperator node) {
+			if (isConstant(node.getArg())) {
+				QueryModelNode parent = node.getParentNode();
+				if (parent instanceof GroupElem) {
+					GroupElem ge = (GroupElem) parent;
+					ge.setOperator(new ConstantAggregateOperator(node.getArg()));
+				} else if (parent instanceof ExtensionElem) {
+					ExtensionElem ee = (ExtensionElem) parent;
+					ee.replaceChildNode(node, node.getArg());
+				}
+			}
+		}
+
+		@Override
+		public void meet(Min node) throws ContantOptimizerFailure {
+			optimizeUnaryValueExpr(node);
+		}
+
+		@Override
+		public void meet(Sample node) throws ContantOptimizerFailure {
+			optimizeUnaryValueExpr(node);
+		}
+
+		@Override
+		public void meet(Sum node) throws ContantOptimizerFailure {
+			optimizeUnaryValueExpr(node);
+		}
+
+		@Override
+		public void meet(And and) throws ContantOptimizerFailure {
 			and.visitChildren(this);
 
 			try {
@@ -193,16 +264,16 @@ public class ConstantOptimizer implements QueryOptimizer {
 					}
 				}
 			} catch (ValueExprEvaluationException e) {
-				// TODO: incompatible values types(?), remove the affected part of
-				// the query tree
 				logger.debug("Failed to evaluate BinaryValueOperator with two constant arguments", e);
+				throw new ContantOptimizerFailure(e);
 			} catch (QueryEvaluationException e) {
 				logger.error("Query evaluation exception caught", e);
+				throw new ContantOptimizerFailure(e);
 			}
 		}
 
 		@Override
-		protected void meetBinaryValueOperator(BinaryValueOperator binaryValueOp) {
+		protected void meetBinaryValueOperator(BinaryValueOperator binaryValueOp) throws ContantOptimizerFailure {
 			super.meetBinaryValueOperator(binaryValueOp);
 
 			if (isConstant(binaryValueOp.getLeftArg()) && isConstant(binaryValueOp.getRightArg())) {
@@ -213,14 +284,16 @@ public class ConstantOptimizer implements QueryOptimizer {
 					// TODO: incompatible values types(?), remove the affected part
 					// of the query tree
 					logger.debug("Failed to evaluate BinaryValueOperator with two constant arguments", e);
+					throw new ContantOptimizerFailure(e);
 				} catch (QueryEvaluationException e) {
 					logger.error("Query evaluation exception caught", e);
+					throw new ContantOptimizerFailure(e);
 				}
 			}
 		}
 
 		@Override
-		protected void meetUnaryValueOperator(UnaryValueOperator unaryValueOp) {
+		protected void meetUnaryValueOperator(UnaryValueOperator unaryValueOp) throws ContantOptimizerFailure {
 			super.meetUnaryValueOperator(unaryValueOp);
 
 			if (isConstant(unaryValueOp.getArg())) {
@@ -231,14 +304,16 @@ public class ConstantOptimizer implements QueryOptimizer {
 					// TODO: incompatible values types(?), remove the affected part
 					// of the query tree
 					logger.debug("Failed to evaluate UnaryValueOperator with a constant argument", e);
+					throw new ContantOptimizerFailure(e);
 				} catch (QueryEvaluationException e) {
 					logger.error("Query evaluation exception caught", e);
+					throw new ContantOptimizerFailure(e);
 				}
 			}
 		}
 
 		@Override
-		public void meet(FunctionCall functionCall) {
+		public void meet(FunctionCall functionCall) throws ContantOptimizerFailure {
 			super.meet(functionCall);
 
 			List<ValueExpr> args = functionCall.getArgs();
@@ -270,8 +345,10 @@ public class ConstantOptimizer implements QueryOptimizer {
 				// TODO: incompatible values types(?), remove the affected part of
 				// the query tree
 				logger.debug("Failed to evaluate BinaryValueOperator with two constant arguments", e);
+				throw new ContantOptimizerFailure(e);
 			} catch (QueryEvaluationException e) {
 				logger.error("Query evaluation exception caught", e);
+				throw new ContantOptimizerFailure(e);
 			}
 		}
 
@@ -296,7 +373,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 		}
 
 		@Override
-		public void meet(Bound bound) {
+		public void meet(Bound bound) throws ContantOptimizerFailure {
 			super.meet(bound);
 
 			if (bound.getArg().hasValue()) {
@@ -306,7 +383,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 		}
 
 		@Override
-		public void meet(If node) {
+		public void meet(If node) throws ContantOptimizerFailure {
 			super.meet(node);
 
 			if (isConstant(node.getCondition())) {
@@ -318,27 +395,31 @@ public class ConstantOptimizer implements QueryOptimizer {
 					}
 				} catch (ValueExprEvaluationException e) {
 					logger.debug("Failed to evaluate UnaryValueOperator with a constant argument", e);
+					throw new ContantOptimizerFailure(e);
 				} catch (QueryEvaluationException e) {
 					logger.error("Query evaluation exception caught", e);
+					throw new ContantOptimizerFailure(e);
 				}
 			}
 		}
 
 		/**
 		 * Override meetBinaryValueOperator
+		 *
+		 * @throws ContantOptimizerFailure
 		 */
 		@Override
-		public void meet(Regex node) {
-			super.meet(node);
-
+		public void meet(Regex node) throws ContantOptimizerFailure {
 			if (isConstant(node.getArg()) && isConstant(node.getPatternArg()) && isConstant(node.getFlagsArg())) {
 				try {
 					Value value = strategy.precompile(node, context).evaluate(EmptyBindingSet.getInstance());
 					node.replaceWith(new ValueConstant(value));
 				} catch (ValueExprEvaluationException e) {
 					logger.debug("Failed to evaluate BinaryValueOperator with two constant arguments", e);
+					throw new ContantOptimizerFailure(e);
 				} catch (QueryEvaluationException e) {
 					logger.error("Query evaluation exception caught", e);
+					throw new ContantOptimizerFailure(e);
 				}
 			}
 		}
@@ -348,7 +429,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 		}
 	}
 
-	private static class VarNameCollector extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+	private static class VarNameCollector extends AbstractSimpleQueryModelVisitor<ContantOptimizerFailure> {
 
 		final Set<String> varNames = new HashSet<>();
 
@@ -362,5 +443,15 @@ public class ConstantOptimizer implements QueryOptimizer {
 				varNames.add(var.getName());
 			}
 		}
+	}
+
+	private static class ContantOptimizerFailure extends Exception {
+
+		public ContantOptimizerFailure(Exception e) {
+			super(e);
+		}
+
+		private static final long serialVersionUID = 1L;
+
 	}
 }
