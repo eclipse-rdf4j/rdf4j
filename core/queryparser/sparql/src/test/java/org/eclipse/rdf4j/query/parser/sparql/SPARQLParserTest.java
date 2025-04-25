@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2025 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -43,6 +43,7 @@ import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.DeleteData;
@@ -70,6 +71,8 @@ import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunction;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunctionFactory;
@@ -1000,6 +1003,158 @@ public class SPARQLParserTest {
 		SPARQLParser parser = new SPARQLParser(customPrefixes);
 
 		parser.parseUpdate(query, null);
+	}
+
+	@Test
+	public void testInvalidConstructQueryWithPropertyPathInConstructClause() {
+		String invalidSparqlQuery = " CONSTRUCT {\n" +
+				"        ?s (!a)* ?p .\n" +
+				"    }\n" +
+				"    WHERE {\n" +
+				"        ?s (!a)* ?p .\n" +
+				"    }";
+
+		assertThrows(MalformedQueryException.class, () -> {
+			parser.parseQuery(invalidSparqlQuery, null);
+		});
+
+	}
+
+	@Test
+	public void testValidConstructQueryWithPropertyPathInWhereClause() {
+		String validSparqlQuery = "PREFIX foaf: <http://xmlns.com/foaf/0.1/> " +
+				"CONSTRUCT {\n" +
+				"  ?person foaf:knows ?friend .\n" +
+				"}\n" +
+				"WHERE {\n" +
+				"  ?person foaf:knows+ ?friend .\n" +
+				"}";
+
+		ParsedQuery parsedQuery = parser.parseQuery(validSparqlQuery, null);
+		assertThat(parsedQuery.getSourceString()).isEqualTo(validSparqlQuery);
+
+	}
+
+	@Test
+	public void testValidConstructQueryWithBlankNodeAsSubject() {
+		String validSparqlQuery = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
+				+ "PREFIX site: <http://example.org/stats#>\n"
+				+ "\n"
+				+ "CONSTRUCT { [] foaf:name ?name }\n"
+				+ "WHERE\n"
+				+ "{ [] foaf:name ?name ;\n"
+				+ "     site:hits ?hits .\n"
+				+ "}\n"
+				+ "ORDER BY desc(?hits)\n"
+				+ "LIMIT 2";
+
+		ParsedQuery parsedQuery = parser.parseQuery(validSparqlQuery, null);
+		assertThat(parsedQuery.getSourceString()).isEqualTo(validSparqlQuery);
+
+	}
+
+	@Test
+	public void testInvalidConstructQueryWithPropertyPathInPredicatePosition() {
+		String invalidSparqlQuery = "PREFIX foaf: <http://xmlns.com/foaf/0.1/> " +
+				"CONSTRUCT {\n" +
+				"  ?person foaf:knows+ ?friend . " +
+				"}\n" +
+				"WHERE {\n" +
+				"  ?person foaf:knows+ ?friend .\n" +
+				"}";
+		assertThrows(MalformedQueryException.class, () -> {
+			parser.parseQuery(invalidSparqlQuery, null);
+		});
+
+	}
+
+	@Test
+	public void testInvalidConstructQueryWithPropertyPathAlternationInPredicate() {
+		String invalidSparqlQuery = "PREFIX foaf: <http://xmlns.com/foaf/0.1/> " +
+				"CONSTRUCT {\n" +
+				"  ?x (foaf:knows|foaf:friendOf) ?y . " +
+				"}\n" +
+				"WHERE {\n" +
+				"  ?x (foaf:knows|foaf:friendOf) ?y .\n" +
+				"} ";
+		assertThrows(MalformedQueryException.class, () -> {
+			parser.parseQuery(invalidSparqlQuery, null);
+		});
+
+	}
+
+	@Test
+	public void testInvalidConstructQueryWithPathSequenceInPredicate() {
+		String invalidSparqlQuery = "PREFIX foaf: <http://xmlns.com/foaf/0.1/> " +
+				"CONSTRUCT {\n" +
+				"  ?a foaf:knows/foaf:knows ?c . " +
+				"}\n" +
+				"WHERE {\n" +
+				"  ?a foaf:knows/foaf:knows ?c . .\n" +
+				"} ";
+		assertThrows(MalformedQueryException.class, () -> {
+			parser.parseQuery(invalidSparqlQuery, null);
+		});
+
+	}
+
+	@Test
+	public void testInvalidConstructQueryWithNegatedPropertySet() {
+		String invalidSparqlQuery = "PREFIX foaf: <http://xmlns.com/foaf/0.1/> " +
+				"CONSTRUCT {\n" +
+				"  ?s !foaf:knows ?o . " +
+				"}\n" +
+				"WHERE {\n" +
+				"  ?s !foaf:knows ?o  .\n" +
+				"} ";
+		assertThrows(MalformedQueryException.class, () -> {
+			parser.parseQuery(invalidSparqlQuery, null);
+		});
+
+	}
+
+	@Test
+	public void testInvalidConstructQueryWithZeroOrMorePathInPredicate() {
+		String invalidSparqlQuery = "PREFIX foaf: <http://xmlns.com/foaf/0.1/> " +
+				"CONSTRUCT {\n" +
+				"  ?s  foaf:knows* ?o . " +
+				"}\n" +
+				"WHERE {\n" +
+				"  ?s  foaf:knows* ?o  .\n" +
+				"} ";
+		assertThrows(MalformedQueryException.class, () -> {
+			parser.parseQuery(invalidSparqlQuery, null);
+		});
+	}
+
+	@Test
+	public void testInvalidConstructQueryWithZeroOrMorePathInPredicates() {
+		String invalidSparqlQuery = "PREFIX foaf: <http://xmlns.com/foaf/0.1/> " +
+				"CONSTRUCT {\n" +
+				"  ?s  foaf:knows ?o . " +
+				"  ?s  foaf:name+ ?o . " +
+				"}\n" +
+				"WHERE {\n" +
+				"  ?s  foaf:knows* ?o  .\n" +
+				"  ?s foaf:name ?o .\n" +
+				"} ";
+		assertThrows(MalformedQueryException.class, () -> {
+			parser.parseQuery(invalidSparqlQuery, null);
+		});
+	}
+
+	@Test
+	public void testInvalidConstructQueryWithMalformedTriple() {
+		String invalidSparqlQuery = "PREFIX foaf: <http://xmlns.com/foaf/0.1/> " +
+				"CONSTRUCT {\n" +
+				"  ?person foaf:name \n" +
+				"}\n" +
+				"WHERE {\n" +
+				"  ?person foaf:name ?name .\n" +
+				"} ";
+		assertThrows(MalformedQueryException.class, () -> {
+			parser.parseQuery(invalidSparqlQuery, null);
+		});
 	}
 
 	private AggregateFunctionFactory buildDummyFactory() {
