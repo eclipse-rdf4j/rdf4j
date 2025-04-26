@@ -821,7 +821,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		// check if the construct template contains any invalid nodes
 		if (isInvalidConstructQueryTemplate(node, true)) {
-			throw new MalformedQueryException("Invalid construct caluse.");
+			throw new MalformedQueryException("Invalid construct clause.");
 		}
 
 		TupleExpr result = (TupleExpr) data;
