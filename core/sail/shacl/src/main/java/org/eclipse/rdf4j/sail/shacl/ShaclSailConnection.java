@@ -11,20 +11,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.FutureTask;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLockManager;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -57,6 +43,20 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.VerySimpleRdfsBackwardsChainingConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * @author Heshan Jayasinghe
@@ -107,7 +107,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private volatile boolean closed;
 
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection, SailConnection previousStateConnection,
-			SailRepositoryConnection shapesRepoConnection, SailConnection serializableConnection) {
+						SailRepositoryConnection shapesRepoConnection, SailConnection serializableConnection) {
 		super(connection);
 		this.previousStateConnection = previousStateConnection;
 		this.shapesRepoConnection = shapesRepoConnection;
@@ -118,7 +118,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection, SailConnection previousStateConnection,
-			SailRepositoryConnection shapesRepoConnection) {
+						SailRepositoryConnection shapesRepoConnection) {
 		super(connection);
 		this.previousStateConnection = previousStateConnection;
 		this.shapesRepoConnection = shapesRepoConnection;
@@ -129,7 +129,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
-			SailRepositoryConnection shapesRepoConnection, SailConnection serializableConnection) {
+						SailRepositoryConnection shapesRepoConnection, SailConnection serializableConnection) {
 		super(connection);
 		this.previousStateConnection = null;
 		this.shapesRepoConnection = shapesRepoConnection;
@@ -140,7 +140,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
-			SailRepositoryConnection shapesRepoConnection) {
+						SailRepositoryConnection shapesRepoConnection) {
 		super(connection);
 		this.previousStateConnection = null;
 		this.serializableConnection = null;
@@ -230,7 +230,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	/**
 	 * @return the transaction settings that are based purely on the settings based down through the begin(...) method
-	 *         without considering any sail level settings for things like caching or parallel validation.
+	 * without considering any sail level settings for things like caching or parallel validation.
 	 */
 	private Settings getLocalTransactionSettings() {
 		return new Settings(this);
@@ -503,7 +503,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	private ValidationReport performValidation(List<ContextWithShape> shapes, boolean validateEntireBaseSail,
-			ConnectionsGroup connectionsGroup) throws InterruptedException {
+											   ConnectionsGroup connectionsGroup) throws InterruptedException {
 		long beforeValidation = 0;
 
 		if (sail.isPerformanceLogging()) {
@@ -735,49 +735,54 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		if (closed) {
 			return;
 		}
-
-		if (getWrappedConnection() instanceof AbstractSailConnection) {
-			AbstractSailConnection abstractSailConnection = (AbstractSailConnection) getWrappedConnection();
-
-			abstractSailConnection.waitForOtherOperations(true);
-		}
-
 		try {
-			if (isActive()) {
-				rollback();
+			if (getWrappedConnection() instanceof AbstractSailConnection) {
+				AbstractSailConnection abstractSailConnection = (AbstractSailConnection) getWrappedConnection();
+				abstractSailConnection.waitForOtherOperations(true);
+				abstractSailConnection.forceCloseActiveOperations();
+				if(abstractSailConnection.isActive()) {
+					abstractSailConnection.rollbackInternal();
+				}
 			}
 		} finally {
-			try {
-				shapesRepoConnection.close();
 
+			try {
+				if (isActive()) {
+					super.close();
+				}
 			} finally {
 				try {
-					if (previousStateConnection != null) {
-						previousStateConnection.close();
-					}
+					shapesRepoConnection.close();
 
 				} finally {
 					try {
-						if (serializableConnection != null) {
-							serializableConnection.close();
+						if (previousStateConnection != null) {
+							previousStateConnection.close();
 						}
-					} finally {
 
+					} finally {
 						try {
-							super.close();
+							if (serializableConnection != null) {
+								serializableConnection.close();
+							}
 						} finally {
+
 							try {
-								sail.closeConnection();
+								super.close();
 							} finally {
 								try {
-									cleanupShapesReadWriteLock();
+									sail.closeConnection();
 								} finally {
 									try {
-										cleanupReadWriteLock();
+										cleanupShapesReadWriteLock();
 									} finally {
-										closed = true;
-									}
+										try {
+											cleanupReadWriteLock();
+										} finally {
+											closed = true;
+										}
 
+									}
 								}
 							}
 						}
@@ -785,6 +790,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				}
 			}
 		}
+
 	}
 
 	@Override
@@ -1040,7 +1046,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
-			boolean includeInferred, Resource... contexts) throws SailException {
+																 boolean includeInferred, Resource... contexts) throws SailException {
 		if (useDefaultShapesGraph && contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			return ConnectionHelper
 					.getCloseableIteration(shapesRepoConnection.getStatements(subj, pred, obj, includeInferred));
@@ -1094,7 +1100,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		transient private Settings previous = null;
 
 		public Settings(boolean cacheSelectNodes, boolean validationEnabled, boolean parallelValidation,
-				IsolationLevel isolationLevel) {
+						IsolationLevel isolationLevel) {
 			this.cacheSelectedNodes = cacheSelectNodes;
 			if (!validationEnabled) {
 				validationApproach = ValidationApproach.Disabled;
@@ -1119,18 +1125,18 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					validationApproach = (ValidationApproach) transactionSetting;
 				} else if (transactionSetting instanceof ShaclSail.TransactionSettings.PerformanceHint) {
 					switch (((ShaclSail.TransactionSettings.PerformanceHint) transactionSetting)) {
-					case ParallelValidation:
-						parallelValidation = true;
-						break;
-					case SerialValidation:
-						parallelValidation = false;
-						break;
-					case CacheDisabled:
-						cacheSelectedNodes = false;
-						break;
-					case CacheEnabled:
-						cacheSelectedNodes = true;
-						break;
+						case ParallelValidation:
+							parallelValidation = true;
+							break;
+						case SerialValidation:
+							parallelValidation = false;
+							break;
+						case CacheDisabled:
+							cacheSelectedNodes = false;
+							break;
+						case CacheEnabled:
+							cacheSelectedNodes = true;
+							break;
 					}
 
 				}
