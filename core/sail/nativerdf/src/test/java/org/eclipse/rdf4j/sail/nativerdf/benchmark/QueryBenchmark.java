@@ -120,7 +120,9 @@ public class QueryBenchmark {
 	public void beforeClass() throws IOException {
 		file = Files.newTemporaryFolder();
 
-		repository = new SailRepository(new NativeStore(file, "spoc,ospc,psoc"));
+		NativeStore sail = new NativeStore(file, "spoc,ospc,psoc");
+		sail.setIterationCacheSyncThreshold(10000);
+		repository = new SailRepository(sail);
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
