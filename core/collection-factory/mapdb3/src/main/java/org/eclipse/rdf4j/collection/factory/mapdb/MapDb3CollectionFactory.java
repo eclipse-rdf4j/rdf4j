@@ -24,6 +24,7 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.Spliterator;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.IntFunction;
@@ -40,7 +41,6 @@ import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
-import org.jetbrains.annotations.NotNull;
 import org.mapdb.DB;
 import org.mapdb.DB.HashMapMaker;
 import org.mapdb.DBException;
@@ -196,11 +196,15 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 	@Override
 	public <T> Set<T> createSet() {
 		if (iterationCacheSyncThreshold > 0) {
-			init();
-			Serializer<T> serializer = createAnySerializer();
-			MemoryTillSizeXSet<T> set = new MemoryTillSizeXSet<>(colectionId++, delegate.createSet(), serializer,
-					DEFAULT_SWITCH_TO_DISK_BASED_SET_AT_SIZE);
-			return new CommitingSet<>(set, iterationCacheSyncThreshold, db);
+			return new SyncThresholdAwareSet<>(delegate.createSet(), iterationCacheSyncThreshold, previousSet -> {
+				init();
+				Serializer<T> serializer = createAnySerializer();
+				MemoryTillSizeXSet<T> set = new MemoryTillSizeXSet<>(colectionId++, delegate.createSet(), serializer,
+						DEFAULT_SWITCH_TO_DISK_BASED_SET_AT_SIZE);
+				CommitingSet<T> ts = new CommitingSet<>(set, iterationCacheSyncThreshold, db);
+				ts.addAll(previousSet);
+				return ts;
+			});
 		} else {
 			return delegate.createSet();
 		}
@@ -209,11 +213,15 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 	@Override
 	public Set<Value> createValueSet() {
 		if (iterationCacheSyncThreshold > 0) {
-			init();
-			Serializer<Value> serializer = createValueSerializer();
-			Set<Value> set = new MemoryTillSizeXSet<>(colectionId++, delegate.createValueSet(), serializer,
-					DEFAULT_SWITCH_TO_DISK_BASED_SET_AT_SIZE);
-			return new CommitingSet<>(set, iterationCacheSyncThreshold, db);
+			return new SyncThresholdAwareSet<>(delegate.createValueSet(), iterationCacheSyncThreshold, previousSet -> {
+				init();
+				Serializer<Value> serializer = createValueSerializer();
+				Set<Value> set = new MemoryTillSizeXSet<>(colectionId++, delegate.createValueSet(), serializer,
+						DEFAULT_SWITCH_TO_DISK_BASED_SET_AT_SIZE);
+				CommitingSet<Value> values = new CommitingSet<>(set, iterationCacheSyncThreshold, db);
+				values.addAll(previousSet);
+				return values;
+			});
 		} else {
 			return delegate.createValueSet();
 		}
@@ -222,12 +230,16 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 	@Override
 	public <K, V> Map<K, V> createMap() {
 		if (iterationCacheSyncThreshold > 0) {
-			init();
-			Serializer<K> keySerializer = createAnySerializer();
-			Serializer<V> valueSerializer = createAnySerializer();
-			HashMapMaker<K, V> hashMap = db.hashMap(Long.toHexString(colectionId++), keySerializer, valueSerializer);
-			HTreeMap<K, V> create = hashMap.create();
-			return new CommitingMap<>(create, iterationCacheSyncThreshold, db);
+			return new SyncThresholdAwareMap<>(delegate.createMap(), iterationCacheSyncThreshold, previousMap -> {
+				Serializer<K> keySerializer = createAnySerializer();
+				Serializer<V> valueSerializer = createAnySerializer();
+				HashMapMaker<K, V> hashMap = db.hashMap(Long.toHexString(colectionId++), keySerializer,
+						valueSerializer);
+				HTreeMap<K, V> create = hashMap.create();
+				CommitingMap<K, V> map = new CommitingMap<>(create, iterationCacheSyncThreshold, db);
+				map.putAll(previousMap);
+				return map;
+			});
 		} else {
 			return delegate.createMap();
 		}
@@ -236,12 +248,18 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 	@Override
 	public <V> Map<Value, V> createValueKeyedMap() {
 		if (iterationCacheSyncThreshold > 0) {
-			init();
-			Serializer<Value> keySerializer = createValueSerializer();
-			Serializer<V> valueSerializer = createAnySerializer();
-			return new CommitingMap<>(
-					db.hashMap(Long.toHexString(colectionId++), keySerializer, valueSerializer).create(),
-					iterationCacheSyncThreshold, db);
+			return new SyncThresholdAwareMap<>(delegate.createValueKeyedMap(), iterationCacheSyncThreshold,
+					previousMap -> {
+						init();
+						Serializer<Value> keySerializer = createValueSerializer();
+						Serializer<V> valueSerializer = createAnySerializer();
+						CommitingMap<Value, V> map = new CommitingMap<>(
+								db.hashMap(Long.toHexString(colectionId++), keySerializer, valueSerializer).create(),
+								iterationCacheSyncThreshold, db);
+						map.putAll(previousMap);
+						return map;
+					});
+
 		} else {
 			return delegate.createValueKeyedMap();
 		}
@@ -250,11 +268,15 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 	@Override
 	public <T> Queue<T> createQueue() {
 		if (iterationCacheSyncThreshold > 0) {
-			init();
-			Serializer<T> s = createAnySerializer();
-			Map<Long, T> m = db.hashMap(Long.toHexString(colectionId++), new SerializerLong(), s).create();
+			return new SyncThresholdAwareQueue<>(delegate.createQueue(), iterationCacheSyncThreshold, prev -> {
+				init();
+				Serializer<T> s = createAnySerializer();
+				Map<Long, T> m = db.hashMap(Long.toHexString(colectionId++), new SerializerLong(), s).create();
 
-			return new MemoryTillSizeXQueue<>(delegate.createQueue(), 128, () -> new MapDb3BackedQueue<>(m));
+				Queue<T> ts = new MemoryTillSizeXQueue<>(delegate.createQueue(), 128, () -> new MapDb3BackedQueue<>(m));
+				ts.addAll(prev);
+				return ts;
+			});
 		} else {
 			return delegate.createQueue();
 		}
@@ -263,10 +285,15 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 	@Override
 	public Queue<Value> createValueQueue() {
 		if (iterationCacheSyncThreshold > 0) {
-			init();
-			Serializer<Value> s = createValueSerializer();
-			Map<Long, Value> m = db.hashMap(Long.toHexString(colectionId++), new SerializerLong(), s).create();
-			return new MemoryTillSizeXQueue<>(delegate.createQueue(), 128, () -> new MapDb3BackedQueue<>(m));
+			return new SyncThresholdAwareQueue<>(delegate.createValueQueue(), iterationCacheSyncThreshold, prev -> {
+				init();
+				Serializer<Value> s = createValueSerializer();
+				Map<Long, Value> m = db.hashMap(Long.toHexString(colectionId++), new SerializerLong(), s).create();
+				MemoryTillSizeXQueue<Value> values = new MemoryTillSizeXQueue<>(delegate.createQueue(), 128,
+						() -> new MapDb3BackedQueue<>(m));
+				values.addAll(prev);
+				return values;
+			});
 
 		} else {
 			return delegate.createValueQueue();
@@ -306,12 +333,18 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 	@Override
 	public <E> Map<BindingSetKey, E> createGroupByMap() {
 		if (iterationCacheSyncThreshold > 0) {
-			init();
-			Serializer<BindingSetKey> keySerializer = createBindingSetKeySerializer();
-			Serializer<E> valueSerializer = createAnySerializer();
-			return new CommitingMap<>(
-					db.hashMap(Long.toHexString(colectionId++), keySerializer, valueSerializer).create(),
-					iterationCacheSyncThreshold, db);
+			return new SyncThresholdAwareMap<>(delegate.createGroupByMap(), iterationCacheSyncThreshold,
+					previousMap -> {
+						init();
+						Serializer<BindingSetKey> keySerializer = createBindingSetKeySerializer();
+						Serializer<E> valueSerializer = createAnySerializer();
+						CommitingMap<BindingSetKey, E> map = new CommitingMap<>(
+								db.hashMap(Long.toHexString(colectionId++), keySerializer, valueSerializer).create(),
+								iterationCacheSyncThreshold, db);
+						map.putAll(previousMap);
+						return map;
+					});
+
 		} else {
 			return delegate.createGroupByMap();
 		}
@@ -653,26 +686,23 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 			return wrapped.contains(o);
 		}
 
-		@NotNull
 		@Override
 		public Iterator<E> iterator() {
 			return wrapped.iterator();
 		}
 
-		@NotNull
 		@Override
 		public Object[] toArray() {
 			return wrapped.toArray();
 		}
 
-		@NotNull
 		@Override
-		public <T> T[] toArray(@NotNull T[] a) {
+		public <T> T[] toArray(T[] a) {
 			return wrapped.toArray(a);
 		}
 
 		@Override
-		public <T> T[] toArray(@NotNull IntFunction<T[]> generator) {
+		public <T> T[] toArray(IntFunction<T[]> generator) {
 			return wrapped.toArray(generator);
 		}
 
@@ -686,29 +716,29 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 		}
 
 		@Override
-		public boolean containsAll(@NotNull Collection<?> c) {
+		public boolean containsAll(Collection<?> c) {
 			return wrapped.containsAll(c);
 		}
 
 		@Override
-		public boolean addAll(@NotNull Collection<? extends E> c) {
+		public boolean addAll(Collection<? extends E> c) {
 			estimatedSize += c.size();
 			checkAndSwitch();
 			return wrapped.addAll(c);
 		}
 
 		@Override
-		public boolean removeAll(@NotNull Collection<?> c) {
+		public boolean removeAll(Collection<?> c) {
 			return wrapped.removeAll(c);
 		}
 
 		@Override
-		public boolean removeIf(@NotNull Predicate<? super E> filter) {
+		public boolean removeIf(Predicate<? super E> filter) {
 			return wrapped.removeIf(filter);
 		}
 
 		@Override
-		public boolean retainAll(@NotNull Collection<?> c) {
+		public boolean retainAll(Collection<?> c) {
 			return wrapped.retainAll(c);
 		}
 
@@ -728,19 +758,16 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 			return wrapped.hashCode();
 		}
 
-		@NotNull
 		@Override
 		public Spliterator<E> spliterator() {
 			return wrapped.spliterator();
 		}
 
-		@NotNull
 		@Override
 		public Stream<E> stream() {
 			return wrapped.stream();
 		}
 
-		@NotNull
 		@Override
 		public Stream<E> parallelStream() {
 			return wrapped.parallelStream();
@@ -788,21 +815,18 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 			return wrapped.contains(o);
 		}
 
-		@NotNull
 		@Override
 		public Iterator<E> iterator() {
 			return wrapped.iterator();
 		}
 
-		@NotNull
 		@Override
 		public Object[] toArray() {
 			return wrapped.toArray();
 		}
 
-		@NotNull
 		@Override
-		public <T> T[] toArray(@NotNull T[] a) {
+		public <T> T[] toArray(T[] a) {
 			return wrapped.toArray(a);
 		}
 
@@ -827,24 +851,24 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 		}
 
 		@Override
-		public boolean containsAll(@NotNull Collection<?> c) {
+		public boolean containsAll(Collection<?> c) {
 			return wrapped.containsAll(c);
 		}
 
 		@Override
-		public boolean addAll(@NotNull Collection<? extends E> c) {
+		public boolean addAll(Collection<? extends E> c) {
 			estimatedSize += c.size();
 			checkAndSwitch();
 			return wrapped.addAll(c);
 		}
 
 		@Override
-		public boolean retainAll(@NotNull Collection<?> c) {
+		public boolean retainAll(Collection<?> c) {
 			return wrapped.retainAll(c);
 		}
 
 		@Override
-		public boolean removeAll(@NotNull Collection<?> c) {
+		public boolean removeAll(Collection<?> c) {
 			return wrapped.removeAll(c);
 		}
 
@@ -870,22 +894,20 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 		}
 
 		@Override
-		public <T> T[] toArray(@NotNull IntFunction<T[]> generator) {
+		public <T> T[] toArray(IntFunction<T[]> generator) {
 			return wrapped.toArray(generator);
 		}
 
 		@Override
-		public boolean removeIf(@NotNull Predicate<? super E> filter) {
+		public boolean removeIf(Predicate<? super E> filter) {
 			return wrapped.removeIf(filter);
 		}
 
-		@NotNull
 		@Override
 		public Stream<E> stream() {
 			return wrapped.stream();
 		}
 
-		@NotNull
 		@Override
 		public Stream<E> parallelStream() {
 			return wrapped.parallelStream();
@@ -896,4 +918,174 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 			wrapped.forEach(action);
 		}
 	}
+
+	private static class SyncThresholdAwareMap<K, E> implements Map<K, E> {
+
+		private int estimatedSize = 0;
+		private final long threshold;
+		private final Function<Map<K, E>, Map<K, E>> createSyncingMap;
+		private Map<K, E> wrapped;
+		private boolean switched = false;
+
+		public SyncThresholdAwareMap(Map<K, E> wrapped, long threshold,
+				Function<Map<K, E>, Map<K, E>> createSyncingMap) {
+			this.wrapped = wrapped;
+			this.threshold = threshold;
+			this.createSyncingMap = createSyncingMap;
+		}
+
+		private void checkAndSwitch() {
+			if (!switched && estimatedSize > threshold && wrapped.size() > threshold) {
+				wrapped = createSyncingMap.apply(wrapped);
+				switched = true;
+			}
+		}
+
+		@Override
+		public int size() {
+			return wrapped.size();
+		}
+
+		@Override
+		public boolean isEmpty() {
+			return wrapped.isEmpty();
+		}
+
+		@Override
+		public boolean containsKey(Object key) {
+			return wrapped.containsKey(key);
+		}
+
+		@Override
+		public boolean containsValue(Object value) {
+			return wrapped.containsValue(value);
+		}
+
+		@Override
+		public E get(Object key) {
+			return wrapped.get(key);
+		}
+
+		@Override
+		public E put(K key, E value) {
+			E put = wrapped.put(key, value);
+			if (put == null) {
+				estimatedSize++;
+				checkAndSwitch();
+			}
+			return put;
+		}
+
+		@Override
+		public E remove(Object key) {
+			E remove = wrapped.remove(key);
+			if (remove != null) {
+				estimatedSize--;
+			}
+			return remove;
+		}
+
+		@Override
+		public void putAll(Map<? extends K, ? extends E> m) {
+			estimatedSize += m.size();
+			checkAndSwitch();
+			wrapped.putAll(m);
+		}
+
+		@Override
+		public void clear() {
+			estimatedSize = 0;
+			wrapped.clear();
+		}
+
+		@Override
+		public Set<K> keySet() {
+			return wrapped.keySet();
+		}
+
+		@Override
+		public Collection<E> values() {
+			return wrapped.values();
+		}
+
+		@Override
+		public Set<Entry<K, E>> entrySet() {
+			return wrapped.entrySet();
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			return wrapped.equals(o);
+		}
+
+		@Override
+		public int hashCode() {
+			return wrapped.hashCode();
+		}
+
+		@Override
+		public E getOrDefault(Object key, E defaultValue) {
+			return wrapped.getOrDefault(key, defaultValue);
+		}
+
+		@Override
+		public void forEach(BiConsumer<? super K, ? super E> action) {
+			wrapped.forEach(action);
+		}
+
+		@Override
+		public void replaceAll(BiFunction<? super K, ? super E, ? extends E> function) {
+			wrapped.replaceAll(function);
+		}
+
+		@Override
+		public E putIfAbsent(K key, E value) {
+			return wrapped.putIfAbsent(key, value);
+		}
+
+		@Override
+		public boolean remove(Object key, Object value) {
+			boolean remove = wrapped.remove(key, value);
+			if (remove) {
+				estimatedSize--;
+			}
+			return remove;
+		}
+
+		@Override
+		public boolean replace(K key, E oldValue, E newValue) {
+			return wrapped.replace(key, oldValue, newValue);
+		}
+
+		@Override
+		public E replace(K key, E value) {
+			return wrapped.replace(key, value);
+		}
+
+		@Override
+		public E computeIfAbsent(K key, Function<? super K, ? extends E> mappingFunction) {
+			estimatedSize++;
+			checkAndSwitch();
+			return wrapped.computeIfAbsent(key, mappingFunction);
+		}
+
+		@Override
+		public E computeIfPresent(K key, BiFunction<? super K, ? super E, ? extends E> remappingFunction) {
+			return wrapped.computeIfPresent(key, remappingFunction);
+		}
+
+		@Override
+		public E compute(K key, BiFunction<? super K, ? super E, ? extends E> remappingFunction) {
+			estimatedSize++;
+			checkAndSwitch();
+			return wrapped.compute(key, remappingFunction);
+		}
+
+		@Override
+		public E merge(K key, E value, BiFunction<? super E, ? super E, ? extends E> remappingFunction) {
+			return wrapped.merge(key, value, remappingFunction);
+		}
+
+	}
+
 }
