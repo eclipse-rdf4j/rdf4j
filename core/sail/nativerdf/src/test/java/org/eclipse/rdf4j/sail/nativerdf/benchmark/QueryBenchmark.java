@@ -282,6 +282,20 @@ public class QueryBenchmark {
 		}
 	}
 
+	@Benchmark
+	public long zeroOrMore() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection
+					.prepareTupleQuery("" +
+							"SELECT ?x WHERE {\n" +
+							"  ?x rdf:type/rdfs:subClassOf* ?class\n" +
+							"} limit 30")
+					.evaluate()
+					.stream()
+					.count();
+		}
+	}
+
 //	@Benchmark
 //	public long wild_card_chain_with_common_ends() {
 //		try (SailRepositoryConnection connection = repository.getConnection()) {
