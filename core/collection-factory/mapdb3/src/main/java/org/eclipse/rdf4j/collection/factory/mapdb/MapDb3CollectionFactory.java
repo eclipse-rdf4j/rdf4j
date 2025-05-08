@@ -22,11 +22,15 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Queue;
 import java.util.Set;
+import java.util.Spliterator;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.IntFunction;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
@@ -36,6 +40,7 @@ import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.jetbrains.annotations.NotNull;
 import org.mapdb.DB;
 import org.mapdb.DB.HashMapMaker;
 import org.mapdb.DBException;
@@ -69,9 +74,10 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 
 		@Override
 		public boolean offer(T arg0) {
-			m.put((Long) tail++, arg0);
-			if (tail % iterationCacheSyncThreshold == 0)
+			m.put(tail++, arg0);
+			if (tail % iterationCacheSyncThreshold == 0) {
 				db.commit();
+			}
 			return true;
 		}
 
@@ -83,8 +89,9 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 		@Override
 		public T poll() {
 			T r = m.remove(head++);
-			if (head % iterationCacheSyncThreshold == 0)
+			if (head % iterationCacheSyncThreshold == 0) {
 				db.commit();
+			}
 			return r;
 		}
 
@@ -169,12 +176,18 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> create,
 			Function<String, Predicate<BindingSet>> getHas, Function<String, Function<BindingSet, Value>> getget,
 			Function<String, BiConsumer<Value, MutableBindingSet>> getSet) {
+
 		if (iterationCacheSyncThreshold > 0) {
-			init();
-			Serializer<BindingSet> serializer = createBindingSetSerializer(create, getHas, getget, getSet);
-			MemoryTillSizeXSet<BindingSet> set = new MemoryTillSizeXSet<>(colectionId++,
-					delegate.createSetOfBindingSets(), serializer, DEFAULT_SWITCH_TO_DISK_BASED_SET_AT_SIZE);
-			return new CommitingSet<>(set, iterationCacheSyncThreshold, db);
+			return new SyncThresholdAwareSet<>(delegate.createSet(), iterationCacheSyncThreshold, previousSet -> {
+				init();
+				Serializer<BindingSet> serializer = createBindingSetSerializer(create, getHas, getget, getSet);
+				MemoryTillSizeXSet<BindingSet> set = new MemoryTillSizeXSet<>(colectionId++,
+						delegate.createSetOfBindingSets(), serializer, DEFAULT_SWITCH_TO_DISK_BASED_SET_AT_SIZE);
+				CommitingSet<BindingSet> bindingSets = new CommitingSet<>(set, iterationCacheSyncThreshold, db);
+				bindingSets.addAll(previousSet);
+				return bindingSets;
+			});
+
 		} else {
 			return delegate.createSetOfBindingSets();
 		}
@@ -266,12 +279,18 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 			Function<String, Predicate<BindingSet>> getHas, Function<String, Function<BindingSet, Value>> getget,
 			Function<String, BiConsumer<Value, MutableBindingSet>> getSet) {
 		if (iterationCacheSyncThreshold > 0) {
-			init();
-			Serializer<BindingSet> s = createBindingSetSerializer(create, getHas, getget, getSet);
-			Map<Long, BindingSet> m = db.hashMap(Long.toHexString(colectionId++), new SerializerLong(), s).create();
-			return new MemoryTillSizeXQueue<>(delegate.createBindingSetQueue(create, getHas, getget, getSet), 128,
-					() -> new MapDb3BackedQueue<>(m));
-
+			return new SyncThresholdAwareQueue<>(delegate.createBindingSetQueue(), iterationCacheSyncThreshold,
+					prev -> {
+						init();
+						Serializer<BindingSet> s = createBindingSetSerializer(create, getHas, getget, getSet);
+						Map<Long, BindingSet> m = db.hashMap(Long.toHexString(colectionId++), new SerializerLong(), s)
+								.create();
+						MemoryTillSizeXQueue<BindingSet> bindingSets = new MemoryTillSizeXQueue<>(
+								delegate.createBindingSetQueue(create, getHas, getget, getSet), 128,
+								() -> new MapDb3BackedQueue<>(m));
+						bindingSets.addAll(prev);
+						return bindingSets;
+					});
 		} else {
 			return delegate.createBindingSetQueue();
 		}
@@ -393,7 +412,7 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 	/**
 	 * Only create a disk based set once the contents are large enough that it starts to pay off.
 	 *
-	 * @param <T> of the contents of the set.
+	 * @param <V> of the contents of the set.
 	 */
 	protected class MemoryTillSizeXSet<V> extends AbstractSet<V> {
 		private Set<V> wrapped;
@@ -484,7 +503,7 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 	/**
 	 * Only create a disk based set once the contents are large enough that it starts to pay off.
 	 *
-	 * @param <T> of the contents of the set.
+	 * @param <V> of the contents of the set.
 	 */
 	protected class MemoryTillSizeXQueue<V> extends AbstractQueue<V> {
 		private Queue<V> wrapped;
@@ -553,5 +572,328 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 
 	protected final Serializer<BindingSetKey> createBindingSetKeySerializer() {
 		return new BindingSetKeySerializer(createValueSerializer());
+	}
+
+	private static class SyncThresholdAwareQueue<E> implements Queue<E> {
+
+		private int estimatedSize = 0;
+		private final long threshold;
+		private final Function<Queue<E>, Queue<E>> createSyncingQueue;
+		private Queue<E> wrapped;
+		private boolean switched = false;
+
+		public SyncThresholdAwareQueue(Queue<E> wrapped, long threshold,
+				Function<Queue<E>, Queue<E>> createSyncingQueue) {
+			this.wrapped = wrapped;
+			this.threshold = threshold;
+			this.createSyncingQueue = createSyncingQueue;
+		}
+
+		private void checkAndSwitch() {
+			if (!switched && estimatedSize > threshold && wrapped.size() > threshold) {
+				wrapped = createSyncingQueue.apply(wrapped);
+				switched = true;
+			}
+		}
+
+		@Override
+		public boolean add(E e) {
+			boolean add = wrapped.add(e);
+			if (add) {
+				estimatedSize++;
+				checkAndSwitch();
+			}
+			return add;
+		}
+
+		@Override
+		public boolean offer(E e) {
+			boolean offer = wrapped.offer(e);
+			if (offer) {
+				estimatedSize++;
+				checkAndSwitch();
+			}
+			return offer;
+		}
+
+		@Override
+		public E remove() {
+			estimatedSize--;
+			return wrapped.remove();
+		}
+
+		@Override
+		public E poll() {
+			estimatedSize--;
+			return wrapped.poll();
+		}
+
+		@Override
+		public E element() {
+			return wrapped.element();
+		}
+
+		@Override
+		public E peek() {
+			return wrapped.peek();
+		}
+
+		@Override
+		public int size() {
+			return wrapped.size();
+		}
+
+		@Override
+		public boolean isEmpty() {
+			return wrapped.isEmpty();
+		}
+
+		@Override
+		public boolean contains(Object o) {
+			return wrapped.contains(o);
+		}
+
+		@NotNull
+		@Override
+		public Iterator<E> iterator() {
+			return wrapped.iterator();
+		}
+
+		@NotNull
+		@Override
+		public Object[] toArray() {
+			return wrapped.toArray();
+		}
+
+		@NotNull
+		@Override
+		public <T> T[] toArray(@NotNull T[] a) {
+			return wrapped.toArray(a);
+		}
+
+		@Override
+		public <T> T[] toArray(@NotNull IntFunction<T[]> generator) {
+			return wrapped.toArray(generator);
+		}
+
+		@Override
+		public boolean remove(Object o) {
+			boolean remove = wrapped.remove(o);
+			if (remove) {
+				estimatedSize--;
+			}
+			return remove;
+		}
+
+		@Override
+		public boolean containsAll(@NotNull Collection<?> c) {
+			return wrapped.containsAll(c);
+		}
+
+		@Override
+		public boolean addAll(@NotNull Collection<? extends E> c) {
+			estimatedSize += c.size();
+			checkAndSwitch();
+			return wrapped.addAll(c);
+		}
+
+		@Override
+		public boolean removeAll(@NotNull Collection<?> c) {
+			return wrapped.removeAll(c);
+		}
+
+		@Override
+		public boolean removeIf(@NotNull Predicate<? super E> filter) {
+			return wrapped.removeIf(filter);
+		}
+
+		@Override
+		public boolean retainAll(@NotNull Collection<?> c) {
+			return wrapped.retainAll(c);
+		}
+
+		@Override
+		public void clear() {
+			estimatedSize = 0;
+			wrapped.clear();
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			return wrapped.equals(o);
+		}
+
+		@Override
+		public int hashCode() {
+			return wrapped.hashCode();
+		}
+
+		@NotNull
+		@Override
+		public Spliterator<E> spliterator() {
+			return wrapped.spliterator();
+		}
+
+		@NotNull
+		@Override
+		public Stream<E> stream() {
+			return wrapped.stream();
+		}
+
+		@NotNull
+		@Override
+		public Stream<E> parallelStream() {
+			return wrapped.parallelStream();
+		}
+
+		@Override
+		public void forEach(Consumer<? super E> action) {
+			wrapped.forEach(action);
+		}
+	}
+
+	private static class SyncThresholdAwareSet<E> implements Set<E> {
+
+		private int estimatedSize = 0;
+		private final long threshold;
+		private final Function<Set<E>, Set<E>> createSyncingSet;
+		private Set<E> wrapped;
+		private boolean switched = false;
+
+		public SyncThresholdAwareSet(Set<E> wrapped, long threshold, Function<Set<E>, Set<E>> createSyncingSet) {
+			this.wrapped = wrapped;
+			this.threshold = threshold;
+			this.createSyncingSet = createSyncingSet;
+		}
+
+		private void checkAndSwitch() {
+			if (!switched && estimatedSize > threshold && wrapped.size() > threshold) {
+				wrapped = createSyncingSet.apply(wrapped);
+				switched = true;
+			}
+		}
+
+		@Override
+		public int size() {
+			return wrapped.size();
+		}
+
+		@Override
+		public boolean isEmpty() {
+			return wrapped.isEmpty();
+		}
+
+		@Override
+		public boolean contains(Object o) {
+			return wrapped.contains(o);
+		}
+
+		@NotNull
+		@Override
+		public Iterator<E> iterator() {
+			return wrapped.iterator();
+		}
+
+		@NotNull
+		@Override
+		public Object[] toArray() {
+			return wrapped.toArray();
+		}
+
+		@NotNull
+		@Override
+		public <T> T[] toArray(@NotNull T[] a) {
+			return wrapped.toArray(a);
+		}
+
+		@Override
+		public boolean add(E e) {
+
+			boolean add = wrapped.add(e);
+			if (add) {
+				estimatedSize++;
+				checkAndSwitch();
+			}
+			return add;
+		}
+
+		@Override
+		public boolean remove(Object o) {
+			boolean remove = wrapped.remove(o);
+			if (remove) {
+				estimatedSize--;
+			}
+			return remove;
+		}
+
+		@Override
+		public boolean containsAll(@NotNull Collection<?> c) {
+			return wrapped.containsAll(c);
+		}
+
+		@Override
+		public boolean addAll(@NotNull Collection<? extends E> c) {
+			estimatedSize += c.size();
+			checkAndSwitch();
+			return wrapped.addAll(c);
+		}
+
+		@Override
+		public boolean retainAll(@NotNull Collection<?> c) {
+			return wrapped.retainAll(c);
+		}
+
+		@Override
+		public boolean removeAll(@NotNull Collection<?> c) {
+			return wrapped.removeAll(c);
+		}
+
+		@Override
+		public void clear() {
+			estimatedSize = 0;
+			wrapped.clear();
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			return wrapped.equals(o);
+		}
+
+		@Override
+		public int hashCode() {
+			return wrapped.hashCode();
+		}
+
+		@Override
+		public Spliterator<E> spliterator() {
+			return wrapped.spliterator();
+		}
+
+		@Override
+		public <T> T[] toArray(@NotNull IntFunction<T[]> generator) {
+			return wrapped.toArray(generator);
+		}
+
+		@Override
+		public boolean removeIf(@NotNull Predicate<? super E> filter) {
+			return wrapped.removeIf(filter);
+		}
+
+		@NotNull
+		@Override
+		public Stream<E> stream() {
+			return wrapped.stream();
+		}
+
+		@NotNull
+		@Override
+		public Stream<E> parallelStream() {
+			return wrapped.parallelStream();
+		}
+
+		@Override
+		public void forEach(Consumer<? super E> action) {
+			wrapped.forEach(action);
+		}
 	}
 }
