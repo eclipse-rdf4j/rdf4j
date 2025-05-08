@@ -120,7 +120,9 @@ public class QueryBenchmark {
 	public void beforeClass() throws IOException {
 		file = Files.newTemporaryFolder();
 
-		repository = new SailRepository(new NativeStore(file, "spoc,ospc,psoc"));
+		NativeStore sail = new NativeStore(file, "spoc,ospc,psoc");
+		sail.setIterationCacheSyncThreshold(10000);
+		repository = new SailRepository(sail);
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -276,6 +278,20 @@ public class QueryBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return connection
 					.prepareTupleQuery(simple_filter_not)
+					.evaluate()
+					.stream()
+					.count();
+		}
+	}
+
+	@Benchmark
+	public long zeroOrMore() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection
+					.prepareTupleQuery("" +
+							"SELECT ?x WHERE {\n" +
+							"  ?x rdf:type/rdfs:subClassOf* ?class\n" +
+							"} limit 30")
 					.evaluate()
 					.stream()
 					.count();
