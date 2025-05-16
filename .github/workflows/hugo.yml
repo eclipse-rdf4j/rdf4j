@@ -44,8 +44,9 @@ jobs:
         with:
           submodules: recursive
       - name: Uncompress Javadoc
+        working-directory: site/static/javadoc
         run: |
-          bash site/static/javadoc/uncompress.sh
+          bash uncompress.sh
       - name: Setup Pages
         id: pages
         uses: actions/configure-pages@v5
