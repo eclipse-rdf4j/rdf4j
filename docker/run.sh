@@ -2,8 +2,6 @@
 set -e
 ./build.sh
 
-export JAVA_OPTIONS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005"
-
 echo "Starting the docker container for ${APP_SERVER}"
 docker compose up --force-recreate -d
 
