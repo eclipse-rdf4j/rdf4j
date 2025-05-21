@@ -115,7 +115,7 @@ public class NamespaceController extends AbstractController {
 	}
 
 	private ModelAndView getRemoveNamespaceResult(HttpServletRequest request, String prefix)
-			throws ServerHTTPException {
+			throws ServerHTTPException, ClientHTTPException {
 		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
 			repositoryCon.removeNamespace(prefix);
 		} catch (RepositoryException e) {
