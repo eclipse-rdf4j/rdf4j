@@ -5,15 +5,15 @@ toc: true
 
 You can either retrieve RDF4J via Apache Maven, or download the SDK or onejar directly.
 
-## RDF4J 5.1.2 (latest)
+## RDF4J 5.1.3 (latest)
 
-RDF4J 5.1.2 is our latest stable release. It requires Java 11 minimally.
-For details on what’s new and how to upgrade, see the [release and upgrade notes](/release-notes/5.1.2).
+RDF4J 5.1.3 is our latest stable release. It requires Java 11 minimally.
+For details on what’s new and how to upgrade, see the [release and upgrade notes](/release-notes/5.1.3).
 
-- [RDF4J 5.1.2 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-5.1.2-sdk.zip)<br/>
+- [RDF4J 5.1.3 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-5.1.3-sdk.zip)<br/>
   Full Eclipse RDF4J SDK, containing all libraries, RDF4J Server, Workbench, and Console applications, and Javadoc API.
 
-- [RDF4J 5.1.2 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-5.1.2-onejar.jar)<br/>
+- [RDF4J 5.1.3 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-5.1.3-onejar.jar)<br/>
   Single jar file for easy inclusion of the full RDF4J toolkit in your Java project.
 
 - [RDF4J artifacts](https://search.maven.org/search?q=org.eclipse.rdf4j) on the [Maven Central Repository](http://search.maven.org/)
@@ -28,7 +28,7 @@ You can include RDF4J as a Maven dependency in your Java project by including th
         <dependency>
             <groupId>org.eclipse.rdf4j</groupId>
             <artifactId>rdf4j-bom</artifactId>
-            <version>5.1.2</version>
+            <version>5.1.3</version>
             <type>pom</type>
             <scope>import</scope>
         </dependency>
@@ -60,8 +60,8 @@ which artifacts RDF4J provides.
 
 ### RDF4J 4.3
 
-- [RDF4J 4.3.15 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-4.3.15-sdk.zip)
-- [RDF4J 4.3.15 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-4.3.15-onejar.jar)
+- [RDF4J 4.3.16 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-4.3.16-sdk.zip)
+- [RDF4J 4.3.16 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-4.3.16-onejar.jar)
 
 
 ### RDF4J 4.2
