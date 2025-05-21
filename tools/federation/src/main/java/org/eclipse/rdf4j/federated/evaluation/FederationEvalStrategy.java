@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.federated.evaluation;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -116,6 +117,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LeftJoinQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
@@ -813,8 +815,21 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 				} else {
 					Set<String> problemVarsClone = new HashSet<>(problemVars);
 					problemVarsClone.retainAll(bindings.getBindingNames());
-					return new BadlyDesignedLeftJoinIterator(FederationEvalStrategy.this, leftJoin, bindings,
-							problemVarsClone, context);
+					QueryEvaluationStep preCompiledRight = this.precompile(leftJoin.getRightArg(), context);
+					var joinCondition = Optional.ofNullable(leftJoin.getCondition())
+							.map(condition -> this.precompile(condition, context))
+							.orElse(null);
+					var rightEvaluationStep = LeftJoinQueryEvaluationStep.determineRightEvaluationStep(
+							leftJoin,
+							preCompiledRight,
+							joinCondition,
+							problemVars);
+					return new BadlyDesignedLeftJoinIterator(
+							FederationEvalStrategy.this,
+							leftJoin,
+							bindings,
+							problemVarsClone,
+							rightEvaluationStep);
 				}
 			};
 		}

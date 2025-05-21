@@ -21,7 +21,6 @@ import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
-import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -61,6 +60,8 @@ public class QueryBenchmark {
 	private static final String common_themes;
 	private static final String different_datasets_with_similar_distributions;
 	private static final String long_chain;
+	private static final String optional_lhs_filter;
+	private static final String optional_rhs_filter;
 	private static final String lots_of_optional;
 	private static final String minus;
 	private static final String nested_optionals;
@@ -79,6 +80,10 @@ public class QueryBenchmark {
 					getResourceAsStream("benchmarkFiles/different-datasets-with-similar-distributions.qr"),
 					StandardCharsets.UTF_8);
 			long_chain = IOUtils.toString(getResourceAsStream("benchmarkFiles/long-chain.qr"), StandardCharsets.UTF_8);
+			optional_lhs_filter = IOUtils.toString(getResourceAsStream("benchmarkFiles/optional-lhs-filter.qr"),
+					StandardCharsets.UTF_8);
+			optional_rhs_filter = IOUtils.toString(getResourceAsStream("benchmarkFiles/optional-rhs-filter.qr"),
+					StandardCharsets.UTF_8);
 			lots_of_optional = IOUtils.toString(getResourceAsStream("benchmarkFiles/lots-of-optional.qr"),
 					StandardCharsets.UTF_8);
 			minus = IOUtils.toString(getResourceAsStream("benchmarkFiles/minus.qr"), StandardCharsets.UTF_8);
@@ -299,6 +304,24 @@ public class QueryBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return count(connection
 					.prepareTupleQuery(long_chain)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long optional_lhs_filter() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(optional_lhs_filter)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long optional_rhs_filter() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(optional_rhs_filter)
 					.evaluate());
 		}
 	}
