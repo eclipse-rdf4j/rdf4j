@@ -259,7 +259,7 @@ mvn package -Passembly -DskipTests -Djapicmp.skip
 git checkout main
 git checkout -b "${RELEASE_NOTES_BRANCH}"
 
-tar -cvzf "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" -C target/site/apidocs .
+tar --no-xattrs --exclude ".*" -cvzf "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" -C target/site/apidocs .
 cp -f "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" "site/static/javadoc/latest.tgz"
 git add --all
 git commit -s -a -m "javadocs for ${MVN_VERSION_RELEASE}"
