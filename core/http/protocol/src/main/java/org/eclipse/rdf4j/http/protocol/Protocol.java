@@ -166,6 +166,8 @@ public abstract class Protocol {
 
 	public static final String OFFSET_PARAM_NAME = "offset";
 
+	public static final String EXPLAIN_PARAM_NAME = "explain";
+
 	/**
 	 * Parameter name for the query language parameter.
 	 */
