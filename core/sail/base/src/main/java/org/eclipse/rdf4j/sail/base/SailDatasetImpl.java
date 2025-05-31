@@ -115,7 +115,7 @@ class SailDatasetImpl implements SailDataset {
 		if (added == null && removed == null) {
 			return namespaces;
 		}
-		final Iterator<Map.Entry<String, String>> addedIter = added;
+		final Iterator<Entry<String, String>> addedIter = added;
 		final Set<String> removedSet = removed;
 		return new AbstractCloseableIteration<>() {
 
@@ -382,5 +382,16 @@ class SailDatasetImpl implements SailDataset {
 			}
 		}
 		return true;
+	}
+
+	@Override
+	public long size(final Resource subj, final IRI pred, final Value obj, final Resource... contexts) {
+		// Fast path: no approved or deprecated
+		if (!changes.hasApproved() && !changes.hasDeprecated()) {
+			return derivedFrom.size(subj, pred, obj, contexts);
+		}
+
+		// Fallback path: iterate over all matching statements
+		return getStatements(subj, pred, obj, contexts).stream().count();
 	}
 }

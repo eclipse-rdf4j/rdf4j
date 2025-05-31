@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -1030,6 +1031,23 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		try (CloseableIteration<? extends Statement> iter = dataset.getStatements(subj, pred, obj,
 				contexts)) {
 			return iter.hasNext();
+		}
+	}
+
+	/**
+	 * Returns the number of statements in the snapshot, optionally including inferred statements, for the given
+	 * contexts. This method reads the size directly from the dataset within the current isolation level.
+	 *
+	 * @param includeInferred whether to include inferred statements in the count
+	 * @param contexts        the RDF contexts (named graphs) to restrict the count to; if none are provided, counts all
+	 *                        contexts
+	 * @return the number of statements in the dataset
+	 * @throws SailException if an error occurs while accessing the Sail store
+	 */
+	@Experimental
+	protected long getSizeFromSnapshot(final boolean includeInferred, final Resource... contexts) throws SailException {
+		try (SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred))) {
+			return branch.dataset(getIsolationLevel()).size(null, null, null, contexts);
 		}
 	}
 

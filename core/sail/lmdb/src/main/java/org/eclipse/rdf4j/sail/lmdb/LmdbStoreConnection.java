@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
-import org.eclipse.rdf4j.sail.base.SailSourceConnection;
+import org.eclipse.rdf4j.sail.base.*;
 import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
@@ -200,4 +200,8 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		sailChangedEvent.setStatementsRemoved(true);
 	}
 
+	@Override
+	protected long sizeInternal(Resource... contexts) throws SailException {
+		return super.getSizeFromSnapshot(false, contexts);
+	}
 }
