@@ -130,4 +130,9 @@ public interface SailDataset extends SailClosable {
 		return null;
 	}
 
+	@Experimental
+	default long size(final Resource subj, final IRI pred, final Value obj, final Resource... contexts) {
+		return getStatements(subj, pred, obj, contexts).stream()
+				.count();
+	}
 }
