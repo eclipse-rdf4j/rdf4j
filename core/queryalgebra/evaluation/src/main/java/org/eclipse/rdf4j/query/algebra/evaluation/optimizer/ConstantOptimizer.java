@@ -215,10 +215,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 		private void optimizeUnaryValueExpr(UnaryValueOperator node) {
 			if (isConstant(node.getArg())) {
 				QueryModelNode parent = node.getParentNode();
-				if (parent instanceof GroupElem) {
-					GroupElem ge = (GroupElem) parent;
-					ge.setOperator(new ConstantAggregateOperator(node.getArg()));
-				} else if (parent instanceof ExtensionElem) {
+				if (parent instanceof ExtensionElem) {
 					ExtensionElem ee = (ExtensionElem) parent;
 					ee.replaceChildNode(node, node.getArg());
 				}
