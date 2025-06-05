@@ -167,7 +167,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.XMLDatatypeMathUtil;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
-import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunction;
 
 import com.google.common.base.Stopwatch;
 
@@ -904,10 +903,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			return prepare((ListMemberOperator) expr, context);
 		} else if (expr instanceof ValueExprTripleRef) {
 			return prepare((ValueExprTripleRef) expr, context);
-		} else if (expr instanceof Max) {
-			return prepare((Max) expr, context);
-		} else if (expr instanceof AggregateFunction) {
-			throw new IllegalStateException("Function is not yet supported");
+		} else if (expr instanceof AggregateOperator) {
+			throw new IllegalStateException("Aggregates should not be evaluated here but in the GroupIterator");
 		} else if (expr == null) {
 			throw new IllegalArgumentException("expr must not be null");
 		} else {
