@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.model.Value;
 /**
  * Collector for values used by {@link AggregateFunction}'s
  */
+@FunctionalInterface
 @Experimental
 public interface AggregateCollector {
 	Value getFinalValue();

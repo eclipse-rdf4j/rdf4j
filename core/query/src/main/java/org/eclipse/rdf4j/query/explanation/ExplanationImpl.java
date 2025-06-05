@@ -29,9 +29,16 @@ public class ExplanationImpl implements Explanation {
 	private final GenericPlanNode genericPlanNode;
 
 	public ExplanationImpl(GenericPlanNode genericPlanNode, boolean timedOut) {
-		this.genericPlanNode = genericPlanNode;
+		if (GenericPlanNode.QUERYROOT.equals(genericPlanNode.getType())) {
+			assert genericPlanNode.getPlans().size() == 1
+					: "GenericPlanNode of type QUERYROOT should have exactly one plan, but has "
+							+ genericPlanNode.getPlans().size();
+			this.genericPlanNode = genericPlanNode.getPlans().get(0);
+		} else {
+			this.genericPlanNode = genericPlanNode;
+		}
 		if (timedOut) {
-			genericPlanNode.setTimedOut(timedOut);
+			this.genericPlanNode.setTimedOut(timedOut);
 		}
 	}
 

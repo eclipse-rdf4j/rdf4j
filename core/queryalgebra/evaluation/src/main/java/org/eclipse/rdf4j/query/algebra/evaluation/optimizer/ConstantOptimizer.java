@@ -215,15 +215,9 @@ public class ConstantOptimizer implements QueryOptimizer {
 		}
 
 		private void optimizeUnaryValueExpr(UnaryValueOperator node) {
-			QueryModelNode parent = node.getParentNode();
-//			if ((parent instanceof ExtensionElem) && isConstant(node.getArg())) {
-//				ExtensionElem ee = (ExtensionElem) parent;
-//				Value value = strategy.precompile(node.getArg(), context).evaluate(EmptyBindingSet.getInstance());
-//				ee.setExpr(new ValueConstant(value));
-//			} else if ((parent instanceof GroupElem) && isConstant(node.getArg())) {
-//					GroupElem ee = (GroupElem) parent;
-//					Value value = strategy.precompile(node.getArg(), context).evaluate(EmptyBindingSet.getInstance());
-//			}
+			// Do nothing, because even if this is constant. We don't know if we can optimize it here
+			// because the final value depends if the query had results or not.
+			// This is however optimized in the GroupIterator which executes this part of the query.
 		}
 
 		@Override

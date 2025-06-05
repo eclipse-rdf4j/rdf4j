@@ -35,6 +35,8 @@ public class GenericPlanNode {
 
 	public static final String UNKNOWN = "UNKNOWN";
 
+	public static final String QUERYROOT = "QueryRoot";
+
 	// static UUID as prefix together with a thread safe incrementing long ensures a unique identifier.
 	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
 	private final static AtomicLong uniqueIdSuffix = new AtomicLong();

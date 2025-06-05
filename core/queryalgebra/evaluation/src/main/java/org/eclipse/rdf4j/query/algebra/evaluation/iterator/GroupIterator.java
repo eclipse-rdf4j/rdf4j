@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.AbstractAggregateOperator;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.Avg;
@@ -318,8 +319,8 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			} else {
 				List<AggregateCollector> collectors = makeCollectors(aggregates);
 				List<Predicate<?>> predicates = new ArrayList<>(aggregates.size());
-				for (var aggregate : aggregates) {
-					predicates.add(aggregate.makePotentialDistinctTest.get());
+				for (int i = 0; i < aggregates.size(); i++) {
+					predicates.add(ALWAYS_TRUE_BINDING_SET);
 				}
 				final Entry entry = new Entry(null, collectors, predicates);
 				entry.addSolution(EmptyBindingSet.getInstance(), aggregates);
@@ -422,72 +423,92 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 						ge.getName());
 			}
 		} else if (operator instanceof Min) {
-			MinAggregate agg = new MinAggregate(precompileArg(((Min) operator).getArg()),
-					shouldValueComparisonBeStrict());
-			Supplier<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
-					: ALWAYS_TRUE_VALUE_SUPPLIER;
-			return new AggregatePredicateCollectorSupplier<>(agg, predicate, ValueCollector::new, ge.getName());
+			QueryStepEvaluator oper = precompileArg(((Min) operator));
+			AggregateFunction<ValueCollector, Value> agg = aggregateSupplier(oper,
+					() -> new MinAggregate(oper, shouldValueComparisonBeStrict()));
+			Supplier<ValueCollector> vcs = valueCollectorSupplier(oper);
+			return new AggregatePredicateCollectorSupplier<>(agg, getValuePredicate(operator), vcs, ge.getName());
 		} else if (operator instanceof Max) {
-			MaxAggregate agg = new MaxAggregate(precompileArg(((Max) operator).getArg()),
-					shouldValueComparisonBeStrict());
-			Supplier<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
-					: ALWAYS_TRUE_VALUE_SUPPLIER;
-			return new AggregatePredicateCollectorSupplier<>(agg, predicate, ValueCollector::new, ge.getName());
-		} else if (operator instanceof Sum) {
+			QueryStepEvaluator oper = precompileArg(((Max) operator));
+			AggregateFunction<ValueCollector, Value> agg = aggregateSupplier(oper,
+					() -> new MaxAggregate(oper, shouldValueComparisonBeStrict()));
+			Supplier<ValueCollector> vcs = valueCollectorSupplier(oper);
 
-			SumAggregate agg = new SumAggregate(precompileArg(((Sum) operator).getArg()));
-			Supplier<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
-					: ALWAYS_TRUE_VALUE_SUPPLIER;
-			return new AggregatePredicateCollectorSupplier<>(agg, predicate, () -> new IntegerCollector(vf),
+			return new AggregatePredicateCollectorSupplier<>(agg, getValuePredicate(operator), vcs, ge.getName());
+		} else if (operator instanceof Sum) {
+			QueryStepEvaluator oper = precompileArg(((Sum) operator));
+			AggregateFunction<IntegerCollector, Value> agg = new SumAggregate(oper);
+			return new AggregatePredicateCollectorSupplier<>(agg, getValuePredicate(operator),
+					() -> new IntegerCollector(vf),
 					ge.getName());
 		} else if (operator instanceof Avg) {
-			AvgAggregate agg = new AvgAggregate(precompileArg(((Avg) operator).getArg()));
-			Supplier<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
-					: ALWAYS_TRUE_VALUE_SUPPLIER;
-			return new AggregatePredicateCollectorSupplier<>(agg, predicate, () -> new AvgCollector(vf), ge.getName());
+			QueryStepEvaluator oper = precompileArg(((Avg) operator));
+			AggregateFunction<AvgCollector, Value> agg = new AvgAggregate(oper);
+			return new AggregatePredicateCollectorSupplier<>(agg, getValuePredicate(operator),
+					() -> new AvgCollector(vf), ge.getName());
 		} else if (operator instanceof Sample) {
-			SampleAggregate agg = new SampleAggregate(precompileArg(((Sample) operator).getArg()));
-			Supplier<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
-					: ALWAYS_TRUE_VALUE_SUPPLIER;
-			return new AggregatePredicateCollectorSupplier<>(agg, predicate, SampleCollector::new, ge.getName());
+			QueryStepEvaluator oper = precompileArg(((Sample) operator));
+			SampleAggregate agg = new SampleAggregate(oper);
+			return new AggregatePredicateCollectorSupplier<>(agg, getValuePredicate(operator), SampleCollector::new,
+					ge.getName());
 		} else if (operator instanceof GroupConcat) {
 			ValueExpr separatorExpr = ((GroupConcat) operator).getSeparator();
 			ConcatAggregate agg;
+			QueryStepEvaluator oper = precompileArg((GroupConcat) operator);
 			if (separatorExpr != null) {
 				Value separatorValue = strategy.evaluate(separatorExpr, parentBindings);
-				agg = new ConcatAggregate(precompileArg(operator), separatorValue.stringValue());
+				agg = new ConcatAggregate(oper, separatorValue.stringValue());
 			} else {
-				agg = new ConcatAggregate(precompileArg(((GroupConcat) operator).getArg()));
+				agg = new ConcatAggregate(oper);
 			}
-			Supplier<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
-					: ALWAYS_TRUE_VALUE_SUPPLIER;
-			return new AggregatePredicateCollectorSupplier<>(agg, predicate, () -> new StringBuilderCollector(vf),
+			return new AggregatePredicateCollectorSupplier<>(agg, getValuePredicate(operator),
+					() -> new StringBuilderCollector(vf),
 					ge.getName());
 		} else if (operator instanceof AggregateFunctionCall) {
 			var aggOperator = (AggregateFunctionCall) operator;
-			Supplier<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
-					: ALWAYS_TRUE_VALUE_SUPPLIER;
+
 			var factory = CustomAggregateFunctionRegistry.getInstance().get(aggOperator.getIRI());
 
 			var function = factory.orElseThrow(
 					() -> new QueryEvaluationException("Unknown aggregate function '" + aggOperator.getIRI() + "'"))
 					.buildFunction(new QueryStepEvaluator(strategy.precompile(aggOperator.getArg(), context)));
-			return new AggregatePredicateCollectorSupplier<>(function, predicate, () -> factory.get().getCollector(),
+			return new AggregatePredicateCollectorSupplier<>(function, getValuePredicate(operator),
+					() -> factory.get().getCollector(),
 					ge.getName());
 		}
 
 		return null;
 	}
 
-	private Function<BindingSet, Value> precompileArg(ValueExpr operator) {
-		QueryValueEvaluationStep precompile = strategy.precompile(operator, context);
-		if (precompile.isConstant()) {
-			Value evaluate = precompile.evaluate(parentBindings);
-			return new ConstantStepEvaluator(evaluate);
+	private AggregateFunction<ValueCollector, Value> aggregateSupplier(QueryStepEvaluator oper,
+			Supplier<AggregateFunction<ValueCollector, Value>> nonConstantSupplier) {
+		if (oper.isConstant()) {
+			return new ConstantAggregate(oper);
 		} else {
-			return new QueryStepEvaluator(precompile);
+			return nonConstantSupplier.get();
 		}
+	}
 
+	private Supplier<ValueCollector> valueCollectorSupplier(QueryStepEvaluator oper) {
+		Supplier<ValueCollector> vcs;
+		if (oper.isConstant()) {
+			final Value con = oper.evaluationStep.evaluate(EmptyBindingSet.getInstance());
+			vcs = () -> new ValueCollector(con);
+		} else {
+			vcs = () -> new ValueCollector();
+		}
+		return vcs;
+	}
+
+	private Supplier<Predicate<Value>> getValuePredicate(AggregateOperator operator) {
+		Supplier<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
+				: ALWAYS_TRUE_VALUE_SUPPLIER;
+		return predicate;
+	}
+
+	private QueryStepEvaluator precompileArg(AbstractAggregateOperator operator) {
+		QueryValueEvaluationStep precompile = strategy.precompile(operator.getArg(), context);
+		return new QueryStepEvaluator(precompile);
 	}
 
 	private boolean shouldValueComparisonBeStrict() {
@@ -511,6 +532,15 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 	private static class ValueCollector implements AggregateCollector {
 		private Value value;
+
+		public ValueCollector() {
+			super();
+		}
+
+		public ValueCollector(Value value) {
+			super();
+			this.value = value;
+		}
 
 		@Override
 		public Value getFinalValue() {
@@ -662,6 +692,19 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 					min.value = v;
 				}
 			}
+		}
+	}
+
+	private static class ConstantAggregate extends AggregateFunction<ValueCollector, Value> {
+
+		public ConstantAggregate(Function<BindingSet, Value> f) {
+			super(f);
+		}
+
+		@Override
+		public void processAggregate(BindingSet s, Predicate<Value> distinctValue, ValueCollector max)
+				throws QueryEvaluationException {
+			// Don't do anything, we have a constant value.
 		}
 	}
 
@@ -856,19 +899,9 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 				return null; // treat missing or invalid expressions as null
 			}
 		}
-	}
 
-	private static class ConstantStepEvaluator implements Function<BindingSet, Value> {
-
-		private final Value constant;
-
-		public ConstantStepEvaluator(Value constant) {
-			this.constant = constant;
-		}
-
-		@Override
-		public Value apply(BindingSet bindings) {
-			return constant;
+		public boolean isConstant() {
+			return evaluationStep.isConstant();
 		}
 	}
 }
