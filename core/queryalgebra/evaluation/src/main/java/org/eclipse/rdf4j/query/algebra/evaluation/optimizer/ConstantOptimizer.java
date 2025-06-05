@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Avg;
 import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.If;
 import org.eclipse.rdf4j.query.algebra.Max;
@@ -213,13 +215,15 @@ public class ConstantOptimizer implements QueryOptimizer {
 		}
 
 		private void optimizeUnaryValueExpr(UnaryValueOperator node) {
-			if (isConstant(node.getArg())) {
-				QueryModelNode parent = node.getParentNode();
-				if (parent instanceof ExtensionElem) {
-					ExtensionElem ee = (ExtensionElem) parent;
-					ee.replaceChildNode(node, node.getArg());
-				}
-			}
+			QueryModelNode parent = node.getParentNode();
+//			if ((parent instanceof ExtensionElem) && isConstant(node.getArg())) {
+//				ExtensionElem ee = (ExtensionElem) parent;
+//				Value value = strategy.precompile(node.getArg(), context).evaluate(EmptyBindingSet.getInstance());
+//				ee.setExpr(new ValueConstant(value));
+//			} else if ((parent instanceof GroupElem) && isConstant(node.getArg())) {
+//					GroupElem ee = (GroupElem) parent;
+//					Value value = strategy.precompile(node.getArg(), context).evaluate(EmptyBindingSet.getInstance());
+//			}
 		}
 
 		@Override

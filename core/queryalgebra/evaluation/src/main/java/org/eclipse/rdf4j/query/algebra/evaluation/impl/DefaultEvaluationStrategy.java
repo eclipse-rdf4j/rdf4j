@@ -82,6 +82,7 @@ import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.LocalName;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
+import org.eclipse.rdf4j.query.algebra.Max;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Namespace;
 import org.eclipse.rdf4j.query.algebra.Not;
@@ -903,10 +904,34 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			return prepare((ListMemberOperator) expr, context);
 		} else if (expr instanceof ValueExprTripleRef) {
 			return prepare((ValueExprTripleRef) expr, context);
+		} else if (expr instanceof Max) {
+			return prepare((Max) expr, context);
+		} else if (expr instanceof AggregateFunction) {
+			throw new IllegalStateException("Function is not yet supported");
 		} else if (expr == null) {
 			throw new IllegalArgumentException("expr must not be null");
 		} else {
 			throw new QueryEvaluationException("Unsupported value expr type: " + expr.getClass());
+		}
+	}
+
+	private QueryValueEvaluationStep prepare(Max expr, QueryEvaluationContext context) {
+		QueryValueEvaluationStep arg = precompile(expr.getArg(), context);
+
+		if (arg.isConstant()) {
+			Value value = arg.evaluate(EmptyBindingSet.getInstance());
+			return new ConstantQueryValueEvaluationStep(value);
+		} else {
+			return new QueryValueEvaluationStep() {
+
+				@Override
+				public Value evaluate(BindingSet bindings) throws QueryEvaluationException {
+					Value evaluate = arg.evaluate(bindings);
+
+					return evaluate;
+				}
+
+			};
 		}
 	}
 

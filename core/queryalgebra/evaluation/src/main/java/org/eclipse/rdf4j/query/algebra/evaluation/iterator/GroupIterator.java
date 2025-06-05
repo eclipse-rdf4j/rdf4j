@@ -52,7 +52,6 @@ import org.eclipse.rdf4j.query.algebra.Max;
 import org.eclipse.rdf4j.query.algebra.Min;
 import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Sum;
-import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -319,8 +318,8 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			} else {
 				List<AggregateCollector> collectors = makeCollectors(aggregates);
 				List<Predicate<?>> predicates = new ArrayList<>(aggregates.size());
-				for (int i = 0; i < aggregates.size(); i++) {
-					predicates.add(ALWAYS_TRUE_BINDING_SET);
+				for (var aggregate : aggregates) {
+					predicates.add(aggregate.makePotentialDistinctTest.get());
 				}
 				final Entry entry = new Entry(null, collectors, predicates);
 				entry.addSolution(EmptyBindingSet.getInstance(), aggregates);
@@ -393,7 +392,14 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 	private static final Predicate<BindingSet> ALWAYS_TRUE_BINDING_SET = t -> true;
 	private static final Predicate<Value> ALWAYS_TRUE_VALUE = t -> true;
-	private static final Supplier<Predicate<Value>> ALWAYS_TRUE_VALUE_SUPPLIER = () -> ALWAYS_TRUE_VALUE;
+	private static final Supplier<Predicate<Value>> ALWAYS_TRUE_VALUE_SUPPLIER = new Supplier<Predicate<Value>>() {
+
+		@Override
+		public Predicate<Value> get() {
+			return ALWAYS_TRUE_VALUE;
+		}
+
+	};
 
 	private AggregatePredicateCollectorSupplier<?, ?> create(GroupElem ge, ValueFactory vf)
 			throws QueryEvaluationException {
@@ -472,8 +478,15 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		return null;
 	}
 
-	private QueryStepEvaluator precompileArg(AggregateOperator operator) {
-		return new QueryStepEvaluator(strategy.precompile(((UnaryValueOperator) operator).getArg(), context));
+	private Function<BindingSet, Value> precompileArg(AggregateOperator operator) {
+		QueryValueEvaluationStep precompile = strategy.precompile(operator, context);
+		if (precompile.isConstant()) {
+			Value evaluate = precompile.evaluate(parentBindings);
+			return new ConstantStepEvaluator(evaluate);
+		} else {
+			return new QueryStepEvaluator(precompile);
+		}
+
 	}
 
 	private boolean shouldValueComparisonBeStrict() {
@@ -841,6 +854,20 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			} catch (ValueExprEvaluationException e) {
 				return null; // treat missing or invalid expressions as null
 			}
+		}
+	}
+
+	private static class ConstantStepEvaluator implements Function<BindingSet, Value> {
+
+		private final Value constant;
+
+		public ConstantStepEvaluator(Value constant) {
+			this.constant = constant;
+		}
+
+		@Override
+		public Value apply(BindingSet bindings) {
+			return constant;
 		}
 	}
 }
