@@ -832,7 +832,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				AbstractSailConnection abstractSailConnection = (AbstractSailConnection) getWrappedConnection();
 
 				abstractSailConnection.waitForOtherOperations(true);
-				for (int i = 0; i < 50 && abstractSailConnection.isActiveOperation(); i++) {
+				for (int i = 0; i < 50 && abstractSailConnection.hasActiveIterations(); i++) {
 					try {
 						Thread.sleep(1);
 					} catch (InterruptedException e) {

@@ -990,8 +990,14 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	protected abstract void clearNamespacesInternal() throws SailException;
 
+	protected boolean isActiveOperation() {
+		long closed = iterationsClosed.sum();
+		long opened = iterationsOpened.sum();
+		return closed != opened;
+	}
+
 	@InternalUseOnly
-	public boolean isActiveOperation() {
+	public boolean hasActiveIterations() {
 		long closed = iterationsClosed.sum();
 		long opened = iterationsOpened.sum();
 		return closed != opened;
