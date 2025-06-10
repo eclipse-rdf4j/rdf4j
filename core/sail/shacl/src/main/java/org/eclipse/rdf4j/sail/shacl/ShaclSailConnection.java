@@ -11,9 +11,9 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -22,7 +22,8 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
-import java.util.stream.Collectors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
@@ -106,6 +107,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private TransactionSetting[] transactionSettingsRaw = new TransactionSetting[0];
 	private volatile boolean closed;
 
+	private volatile List<Future<ValidationResultIterator>> futures;
+
+	private List<ShapeValidationContainer> shapeValidatorContainers;
+
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection, SailConnection previousStateConnection,
 			SailRepositoryConnection shapesRepoConnection, SailConnection serializableConnection) {
 		super(connection);
@@ -171,7 +176,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		if (closed) {
 			throw new SailException("Connection is closed");
 		}
+		if (sail.isShutdown()) {
+			throw new SailException("Sail is shutdown");
+		}
 
+		shapeValidatorContainers = new ArrayList<>();
 		currentIsolationLevel = level;
 
 		assert addedStatements == null;
@@ -489,6 +498,14 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			rdfsSubClassOfReasoner = RdfsSubClassOfReasoner.createReasoner(this, validationSettings);
 		}
 
+		if (sail.isShutdown()) {
+			throw new SailException("Sail is shutdown");
+		}
+
+		if (Thread.interrupted()) {
+			throw new InterruptedException();
+		}
+
 		if (!isBulkValidation()) {
 			fillAddedAndRemovedStatementRepositories();
 		}
@@ -529,36 +546,74 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							connectionsGroup))
 
 					.filter(ShapeValidationContainer::hasPlanNode)
+					.peek(s -> {
+						if (sail.isShutdown()) {
+							throw new SailException("Sail is shutdown");
+						}
+						if (closed) {
+							throw new SailException("Connection is closed");
+						}
+						sail.runningValidations.put(s, s);
+						this.shapeValidatorContainers.add(s);
+					})
 					.map(validationContainer -> validationContainer::performValidation);
 
 			List<ValidationResultIterator> validationResultIterators = new ArrayList<>(numberOfShapes);
 
-			List<Future<ValidationResultIterator>> futures = Collections.emptyList();
+			var futures = new ArrayList<Future<ValidationResultIterator>>(numberOfShapes);
+			this.futures = futures;
 
 			boolean parallelValidation = numberOfShapes > 1 && isParallelValidation();
 
 			try {
-				futures = callableStream
+				callableStream
 						.map(callable -> {
 							if (Thread.currentThread().isInterrupted()) {
 								return null;
 							}
 
+							if (sail.isShutdown()) {
+								throw new SailException("Sail is shutdown");
+							}
+							if (closed) {
+								throw new SailException("Connection is closed");
+							}
+
 							if (parallelValidation) {
-								return sail.submitToExecutorService(callable);
+								try {
+									return sail.submitToExecutorService(callable);
+								} catch (Throwable e) {
+									if (sail.isShutdown()) {
+										throw new SailException("Sail is shutdown", e);
+									}
+									throw e;
+								}
 							} else {
 								FutureTask<ValidationResultIterator> futureTask = new FutureTask<>(callable);
 								futureTask.run();
 								return futureTask;
 							}
 						})
-						.collect(Collectors.toList());
+						.forEach(futures::add);
 
-				for (Future<ValidationResultIterator> future : futures) {
+				boolean done = false;
+
+				ArrayDeque<Future<ValidationResultIterator>> futures1 = new ArrayDeque<>(futures);
+				while (!futures1.isEmpty()) {
+					Future<ValidationResultIterator> future = futures1.removeFirst();
+
 					assert future != null;
 					try {
+						if (sail.isShutdown()) {
+							throw new SailException("Sail is shutdown");
+						}
+						if (closed) {
+							throw new SailException("Connection is closed");
+						}
 						if (!Thread.currentThread().isInterrupted()) {
-							validationResultIterators.add(future.get());
+
+							ValidationResultIterator validationResultIterator = future.get(100, TimeUnit.MILLISECONDS);
+							validationResultIterators.add(validationResultIterator);
 						}
 					} catch (ExecutionException e) {
 						Throwable cause = e.getCause();
@@ -574,7 +629,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							assert false;
 							throw new IllegalStateException(cause);
 						}
+					} catch (TimeoutException e) {
+						futures1.addLast(future);
 					}
+
 				}
 
 				if (Thread.currentThread().isInterrupted()) {
@@ -584,6 +642,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				for (Future<ValidationResultIterator> future : futures) {
 					future.cancel(true);
 				}
+				this.futures = null;
 			}
 
 			if (Thread.currentThread().isInterrupted()) {
@@ -618,13 +677,13 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			before = System.currentTimeMillis();
 		}
 
-		List<Future<Object>> futures = Collections.emptyList();
+		List<Future<Object>> futures = new ArrayList<>();
 
 		boolean parallelValidation = isParallelValidation() && !addedStatementsSet.isEmpty()
 				&& !removedStatementsSet.isEmpty();
 
 		try {
-			futures = Stream.of(addedStatementsSet, removedStatementsSet)
+			Stream.of(addedStatementsSet, removedStatementsSet)
 					.map(set -> (Callable<Object>) () -> {
 
 						Set<Statement> otherSet;
@@ -658,6 +717,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						try (SailConnection connection = repository.getConnection()) {
 							connection.begin(IsolationLevels.NONE);
 							set.stream()
+									.peek(s -> {
+										if (Thread.interrupted()) {
+											throw new SailException(
+													"ShacilSailConnection was interrupted while filling added/removed statement repositories");
+										}
+									})
 									.filter(statement -> !otherSet.contains(statement))
 									.flatMap(statement -> rdfsSubClassOfReasoner == null ? Stream.of(statement)
 											: rdfsSubClassOfReasoner.forwardChain(statement))
@@ -683,6 +748,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						if (Thread.currentThread().isInterrupted()) {
 							return null;
 						}
+						if (closed) {
+							throw new SailException("Connection is closed");
+						}
+						if (sail.isShutdown()) {
+							throw new SailException("Sail is shutdown");
+						}
 						if (parallelValidation) {
 							return sail.submitToExecutorService(callable);
 						} else {
@@ -691,7 +762,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							return objectFutureTask;
 						}
 					})
-					.collect(Collectors.toList());
+					.forEach(futures::add);
 
 			for (Future<Object> future : futures) {
 				try {
@@ -736,48 +807,79 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			return;
 		}
 
-		if (getWrappedConnection() instanceof AbstractSailConnection) {
-			AbstractSailConnection abstractSailConnection = (AbstractSailConnection) getWrappedConnection();
-
-			abstractSailConnection.waitForOtherOperations(true);
-		}
-
 		try {
-			if (isActive()) {
-				rollback();
+
+			List<Future<ValidationResultIterator>> futures = this.futures;
+			if (futures != null) {
+				for (Future<ValidationResultIterator> future : futures) {
+					future.cancel(true);
+				}
+			}
+
+			if (shapeValidatorContainers != null) {
+				for (ShapeValidationContainer shapeValidatorContainer : shapeValidatorContainers) {
+					try {
+						shapeValidatorContainer.forceClose();
+					} catch (Throwable ignored) {
+						logger.debug("Throwable was ignored while closing connection", ignored);
+					}
+				}
+				shapeValidatorContainers.clear();
 			}
 		} finally {
-			try {
-				shapesRepoConnection.close();
 
+			if (getWrappedConnection() instanceof AbstractSailConnection) {
+				AbstractSailConnection abstractSailConnection = (AbstractSailConnection) getWrappedConnection();
+
+				abstractSailConnection.waitForOtherOperations(true);
+				for (int i = 0; i < 50 && abstractSailConnection.isActiveOperation(); i++) {
+					try {
+						Thread.sleep(1);
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						break;
+					}
+				}
+
+			}
+
+			try {
+				if (isActive()) {
+					rollback();
+				}
 			} finally {
 				try {
-					if (previousStateConnection != null) {
-						previousStateConnection.close();
-					}
+					shapesRepoConnection.close();
 
 				} finally {
 					try {
-						if (serializableConnection != null) {
-							serializableConnection.close();
+						if (previousStateConnection != null) {
+							previousStateConnection.close();
 						}
-					} finally {
 
+					} finally {
 						try {
-							super.close();
+							if (serializableConnection != null) {
+								serializableConnection.close();
+							}
 						} finally {
+
 							try {
-								sail.closeConnection();
+								super.close();
 							} finally {
 								try {
-									cleanupShapesReadWriteLock();
+									sail.closeConnection();
 								} finally {
 									try {
-										cleanupReadWriteLock();
+										cleanupShapesReadWriteLock();
 									} finally {
-										closed = true;
-									}
+										try {
+											cleanupReadWriteLock();
+										} finally {
+											closed = true;
+										}
 
+									}
 								}
 							}
 						}
@@ -791,6 +893,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	public void prepare() throws SailException {
 		if (closed) {
 			throw new SailException("Connection is closed");
+		}
+
+		if (sail.isShutdown()) {
+			throw new SailException("Sail is shutdown");
 		}
 
 		prepareHasBeenCalled = true;
@@ -888,6 +994,14 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			}
 
 			boolean valid = invalidTuples.conforms();
+
+			if (Thread.currentThread().isInterrupted()) {
+				throw new InterruptedException("ShaclSailConnection was interrupted while validating.");
+			}
+
+			if (closed) {
+				throw new SailException("Connection is closed");
+			}
 
 			if (!valid) {
 				throw new ShaclSailValidationException(invalidTuples);

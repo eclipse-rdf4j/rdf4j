@@ -137,6 +137,17 @@ public class UnionNode implements PlanNode {
 				for (int i = 0; i < peekList.length; i++) {
 					if (peekList[i] == null) {
 						var iterator = iterators[i];
+						if (iterator == null) {
+							if (isClosed()) {
+								return;
+							}
+							if (Thread.currentThread().isInterrupted()) {
+								close();
+								return;
+							}
+							// It is very unlikely that the iterator is null when we are not closed or interrupted, so
+							// in those cases we just let it throw a NullPointerException
+						}
 						if (iterator.hasNext()) {
 							peekList[i] = iterator.next();
 						}
@@ -196,6 +207,10 @@ public class UnionNode implements PlanNode {
 
 			@Override
 			protected boolean localHasNext() {
+				if (Thread.currentThread().isInterrupted()) {
+					close();
+					return false;
+				}
 				calculateNext();
 				return next != null;
 			}
