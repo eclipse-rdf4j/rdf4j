@@ -17,6 +17,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.WeakHashMap;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -205,6 +206,10 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 	public StampedLockManager.Cache<List<ContextWithShape>>.ReadableState getCachedShapes()
 			throws InterruptedException {
 		return cachedShapes.getReadState();
+	}
+
+	public boolean isShutdown() {
+		return !initialized.get();
 	}
 
 	static class CleanableState implements Runnable {
@@ -442,29 +447,45 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 
 	@Override
 	public synchronized void shutDown() throws SailException {
-		if (shapesRepo != null) {
-			shapesRepo.shutDown();
-			shapesRepo = null;
-		}
-
-		cachedShapes = null;
-
-		boolean terminated = shutdownExecutorService(false);
-
 		initialized.set(false);
-		super.shutDown();
 
-		if (!terminated) {
-			shutdownExecutorService(true);
+		try {
+			boolean terminated = shutdownExecutorService(false);
+
+			if (!terminated) {
+				shutdownExecutorService(true);
+			}
+		} finally {
+			try {
+				for (ShapeValidationContainer shapeValidationContainer : runningValidations.keySet()) {
+					shapeValidationContainer.forceClose();
+				}
+			} finally {
+				try {
+					if (shapesRepo != null) {
+						shapesRepo.shutDown();
+						shapesRepo = null;
+					}
+
+					cachedShapes = null;
+				} finally {
+					super.shutDown();
+				}
+			}
+
 		}
+
 	}
+
+	// weak hashset to keep track of ShapeValidationContainers that are currently running
+	final WeakHashMap<ShapeValidationContainer, Object> runningValidations = new WeakHashMap<>();
 
 	private boolean shutdownExecutorService(boolean forced) {
 		boolean terminated = false;
 
 		executorService.shutdown();
 		try {
-			terminated = executorService.awaitTermination(200, TimeUnit.MILLISECONDS);
+			terminated = executorService.awaitTermination(1000, TimeUnit.MILLISECONDS);
 		} catch (InterruptedException ignored) {
 			Thread.currentThread().interrupt();
 		}
@@ -480,6 +501,13 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 	}
 
 	<T> Future<T> submitToExecutorService(Callable<T> runnable) {
+		if (isShutdown()) {
+			throw new SailException("ShaclSail is shutdown.");
+		}
+		if (Thread.interrupted()) {
+			throw new SailException("Interrupted while submitting to executor service.");
+		}
+
 		return executorService.submit(runnable);
 	}
 

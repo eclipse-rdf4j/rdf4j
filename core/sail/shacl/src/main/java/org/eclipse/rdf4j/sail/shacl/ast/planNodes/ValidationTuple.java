@@ -155,6 +155,10 @@ public class ValidationTuple {
 
 	public int compareActiveTarget(ValidationTuple other) {
 
+		if (Thread.currentThread().isInterrupted()) {
+			throw new InterruptedSailException("Thread was interrupted");
+		}
+
 		Value left = getActiveTarget();
 		Value right = other.getActiveTarget();
 
@@ -162,6 +166,10 @@ public class ValidationTuple {
 	}
 
 	public int compareFullTarget(ValidationTuple other) {
+
+		if (Thread.currentThread().isInterrupted()) {
+			throw new InterruptedSailException("Thread was interrupted");
+		}
 
 		int min = Math.min(getFullChainSize(false), other.getFullChainSize(false));
 
@@ -219,7 +227,7 @@ public class ValidationTuple {
 				if (v == getActiveTarget()) {
 					return "T–" + v;
 				} else if (v == getValue()) {
-					return "V–" + v + "";
+					return "V–" + v;
 				}
 				return v.stringValue();
 			}).collect(Collectors.joining(" -> ")) + " }, propertyShapeScopeWithValue=" + propertyShapeScopeWithValue +
