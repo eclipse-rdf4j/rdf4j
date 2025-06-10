@@ -70,6 +70,9 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
 		if (!newBindindingSet.isEmpty()) {
 			updateQuery(parsedQuery, newBindindingSet);
+			if (Thread.currentThread().isInterrupted()) {
+				throw new InterruptedSailException();
+			}
 			executeQuery(right, connection, dataset, parsedQuery);
 		}
 	}

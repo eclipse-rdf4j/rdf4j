@@ -925,7 +925,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 		if (debugEnabled) {
 			var result = new SailBaseIteration<>(iter, this);
-			activeIterationsDebug.put(result, new Throwable("Unclosed iteration"));
+			activeIterationsDebug.put(result,
+					new Throwable("Unclosed iteration created in " + this.getClass().getName()));
 			return result;
 		} else {
 			return new CleanerIteration<>(new SailBaseIteration<>(iter, this), cleaner);
@@ -989,7 +990,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	protected abstract void clearNamespacesInternal() throws SailException;
 
-	protected boolean isActiveOperation() {
+	@InternalUseOnly
+	public boolean isActiveOperation() {
 		long closed = iterationsClosed.sum();
 		long opened = iterationsOpened.sum();
 		return closed != opened;

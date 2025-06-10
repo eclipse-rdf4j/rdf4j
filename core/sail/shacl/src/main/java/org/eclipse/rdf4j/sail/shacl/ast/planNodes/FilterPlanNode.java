@@ -144,6 +144,10 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 
 			@Override
 			public boolean hasNext() throws SailException {
+				if (Thread.currentThread().isInterrupted() || closed) {
+					close();
+					return false;
+				}
 				calculateNext();
 				return next != null;
 			}

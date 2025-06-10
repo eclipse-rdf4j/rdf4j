@@ -11,11 +11,16 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.NoSuchElementException;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public abstract class LoggingCloseableIteration implements CloseableIteration<ValidationTuple> {
 
+	private static final Logger log = LoggerFactory.getLogger(LoggingCloseableIteration.class);
 	private final ValidationExecutionLogger validationExecutionLogger;
 	private final PlanNode planNode;
 	private boolean closed;
@@ -45,12 +50,37 @@ public abstract class LoggingCloseableIteration implements CloseableIteration<Va
 			return false;
 		}
 
-		if (!initialized) {
-			initialized = true;
-			init();
+		if (Thread.currentThread().isInterrupted()) {
+			close();
+			return false;
 		}
 
-		boolean hasNext = localHasNext();
+		if (!initialized) {
+			initialized = true;
+			try {
+				init();
+			} catch (InterruptedSailException e) {
+				Thread.currentThread().interrupt();
+				close();
+				return false;
+			} catch (Throwable t) {
+				close();
+				throw t;
+			}
+
+		}
+
+		if (Thread.currentThread().isInterrupted()) {
+			close();
+			return false;
+		}
+
+		boolean hasNext = false;
+		try {
+			hasNext = localHasNext();
+		} catch (NoSuchElementException loggedOnly) {
+			log.trace("No more elements in iteration: {}", this.getClass(), loggedOnly);
+		}
 
 		if (!hasNext) {
 			assert !localHasNext() : "Iterator was initially empty, but still has more elements! " + this.getClass();

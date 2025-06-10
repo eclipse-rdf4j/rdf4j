@@ -20,6 +20,7 @@ import java.util.Objects;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 public class Sort implements PlanNode {
@@ -45,18 +46,27 @@ public class Sort implements PlanNode {
 				assert sortedTuples == null;
 
 				boolean alreadySorted;
+				List<ValidationTuple> sortedTuples = new ArrayList<>(1);
 
 				try (CloseableIteration<? extends ValidationTuple> iterator = parent.iterator()) {
-					sortedTuples = new ArrayList<>(1);
 					alreadySorted = true;
 					ValidationTuple prev = null;
 					while (iterator.hasNext()) {
+						if (isClosed()) {
+							throw new SailException("Iterator was closed while sorting.");
+						}
 						ValidationTuple next = iterator.next();
+						if (Thread.currentThread().isInterrupted()) {
+							close();
+							throw new InterruptedSailException("Thread was interrupted while sorting.");
+						}
+
 						sortedTuples.add(next);
 
 						// quick break out if sortedTuples is guaranteed to be of size 1 since we don't need to sort
 						// it then
 						if (sortedTuples.size() == 1 && !iterator.hasNext()) {
+							this.sortedTuples = sortedTuples;
 							sortedTuplesIterator = sortedTuples.iterator();
 							return;
 						}
@@ -80,6 +90,7 @@ public class Sort implements PlanNode {
 					}
 				}
 
+				this.sortedTuples = sortedTuples;
 				sortedTuplesIterator = sortedTuples.iterator();
 
 			}

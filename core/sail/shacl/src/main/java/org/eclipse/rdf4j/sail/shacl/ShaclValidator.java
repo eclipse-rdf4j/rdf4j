@@ -122,6 +122,10 @@ public class ShaclValidator {
 				.map(ShapeValidationContainer::performValidation)
 				.collect(Collectors.toList());
 
+		if (Thread.currentThread().isInterrupted()) {
+			throw new IllegalStateException("Thread was interrupted");
+		}
+
 		return new LazyValidationReport(collect, 10000);
 
 	}
