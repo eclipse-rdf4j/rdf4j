@@ -11,18 +11,21 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
@@ -112,11 +115,48 @@ public class ConstantOptimizerTest extends QueryOptimizerTest {
 
 	}
 
+	@Test
+	public void testAggregateOptimization() throws RDF4JException {
+		String query = "prefix ex: <ex:>" + "select (max(1) AS ?a) \n " + "where {\n" + "?x a ?z \n"
+				+ "}";
+
+		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		EvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		TupleExpr original = pq.getTupleExpr();
+
+		final AlgebraFinder finder = new AlgebraFinder();
+		original.visit(finder);
+		assertTrue(finder.groupElemFound);
+
+		// reset for re-use on optimized query
+		finder.reset();
+
+		QueryBindingSet constants = new QueryBindingSet();
+		constants.addBinding("x", SimpleValueFactory.getInstance().createLiteral("foo"));
+		constants.addBinding("z", SimpleValueFactory.getInstance().createLiteral("bar"));
+
+		TupleExpr optimized = optimize(pq.getTupleExpr().clone(), constants, strategy);
+
+		optimized.visit(finder);
+		assertThat(finder.functionCallFound).isFalse();
+
+		CloseableIteration<BindingSet> result = strategy.precompile(optimized)
+				.evaluate(
+						new EmptyBindingSet());
+		assertNotNull(result);
+		assertTrue(result.hasNext());
+		BindingSet bindings = result.next();
+		assertTrue(bindings.hasBinding("a"));
+		assertEquals(1, ((Literal) bindings.getBinding("a").getValue()).intValue());
+	}
+
 	private class AlgebraFinder extends AbstractQueryModelVisitor<RuntimeException> {
 
 		public boolean logicalAndfound = false;
 
 		public boolean functionCallFound = false;
+
+		public boolean groupElemFound = false;
 
 		@Override
 		public void meet(And and) {
@@ -134,6 +174,12 @@ public class ConstantOptimizerTest extends QueryOptimizerTest {
 		public void reset() {
 			logicalAndfound = false;
 			functionCallFound = false;
+			groupElemFound = false;
+		}
+
+		public void meet(GroupElem ge) {
+			groupElemFound = true;
+			super.meet(ge);
 		}
 	}
 
