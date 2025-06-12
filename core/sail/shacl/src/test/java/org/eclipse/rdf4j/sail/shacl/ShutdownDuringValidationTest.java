@@ -110,6 +110,6 @@ public class ShutdownDuringValidationTest {
 	}
 
 	private static IntStream sleepTimes() {
-		return IntStream.iterate(1, n -> n <= 2000, n -> n + 10);
+		return IntStream.iterate(1, n -> n <= 2000, n -> n + 5);
 	}
 }

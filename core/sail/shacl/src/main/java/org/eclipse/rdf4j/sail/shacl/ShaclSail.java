@@ -457,9 +457,9 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 			}
 		} finally {
 			try {
-				for (ShapeValidationContainer shapeValidationContainer : runningValidations.keySet()) {
-					shapeValidationContainer.forceClose();
-				}
+//				for (ShapeValidationContainer shapeValidationContainer : runningValidations.keySet()) {
+//					shapeValidationContainer.forceClose();
+//				}
 			} finally {
 				try {
 					if (shapesRepo != null) {
@@ -478,7 +478,7 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 	}
 
 	// weak hashset to keep track of ShapeValidationContainers that are currently running
-	final WeakHashMap<ShapeValidationContainer, Object> runningValidations = new WeakHashMap<>();
+//	final WeakHashMap<ShapeValidationContainer, Object> runningValidations = new WeakHashMap<>();
 
 	private boolean shutdownExecutorService(boolean forced) {
 		boolean terminated = false;

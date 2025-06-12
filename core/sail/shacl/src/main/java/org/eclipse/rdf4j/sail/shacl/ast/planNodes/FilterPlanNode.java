@@ -222,8 +222,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 
 	@Override
 	public boolean incrementIterator() {
-		assert !closed;
-		if (iterator.hasNext()) {
+		if (!closed && iterator.hasNext()) {
 			iterator.next();
 			return true;
 		}
