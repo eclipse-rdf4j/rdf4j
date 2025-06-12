@@ -147,6 +147,9 @@ class ShapeValidationContainer {
 				if (e instanceof Error) {
 					throw e;
 				}
+				if (e instanceof RuntimeException) {
+					throw e;
+				}
 				throw new SailException(
 						"Internal error while trying to validate SHACL Shape " + shape.getId() + "\n" + shape, e);
 			} finally {

@@ -553,7 +553,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						if (closed) {
 							throw new SailException("Connection is closed");
 						}
-						sail.runningValidations.put(s, s);
+//						sail.runningValidations.put(s, s);
 						this.shapeValidatorContainers.add(s);
 					})
 					.map(validationContainer -> validationContainer::performValidation);
