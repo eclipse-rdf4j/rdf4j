@@ -101,12 +101,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 	private boolean isOpen = true;
 	private static final VarHandle IS_OPEN;
 
-	private Thread owner;
+	private final Thread owner;
 
 	/**
 	 * Lock used to prevent concurrent calls to update methods like addStatement, clear, commit, etc. within a
 	 * transaction.
-	 *
 	 */
 	private final ReentrantLock updateLock = new ReentrantLock();
 	private final LongAdder iterationsOpened = new LongAdder();
@@ -245,11 +244,13 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (!IS_OPEN.compareAndSet(this, true, false)) {
 			return;
 		}
+
 		try {
-
-			waitForOtherOperations(true);
-
+			sailBase.connectionClosed(this);
+		} finally {
 			try {
+				waitForOtherOperations(true);
+			} finally {
 				try {
 					forceCloseActiveOperations();
 				} finally {
@@ -272,11 +273,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 						throw new SailException("Connection closed before all iterations were closed.");
 					}
 				}
-
-			} finally {
-				sailBase.connectionClosed(this);
 			}
-		} finally {
 		}
 
 	}
