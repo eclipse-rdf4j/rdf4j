@@ -126,7 +126,7 @@ class ShapeValidationContainer {
 		return !(planNode.isGuaranteedEmpty());
 	}
 
-	public ValidationResultIterator performValidation() {
+	public ValidationResultIterator performValidation() throws SailException {
 		long before = getTimeStamp();
 		handlePreLogging();
 
@@ -145,9 +145,6 @@ class ShapeValidationContainer {
 				logger.warn("Internal error while trying to validate SHACL Shape {}", shape.getId(), e);
 				logger.warn("Internal error while trying to validate SHACL Shape\n{}", shape, e);
 				if (e instanceof Error) {
-					throw e;
-				}
-				if (e instanceof RuntimeException) {
 					throw e;
 				}
 				throw new SailException(
