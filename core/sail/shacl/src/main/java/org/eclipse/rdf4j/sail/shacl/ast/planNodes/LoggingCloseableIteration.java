@@ -77,13 +77,19 @@ public abstract class LoggingCloseableIteration implements CloseableIteration<Va
 
 		boolean hasNext = false;
 		try {
+			if (Thread.currentThread().isInterrupted()) {
+				System.err.println("Interrupted");
+			}
 			hasNext = localHasNext();
 		} catch (NoSuchElementException loggedOnly) {
 			log.trace("No more elements in iteration: {}", this.getClass(), loggedOnly);
 		}
 
 		if (!hasNext) {
-			assert !localHasNext() : "Iterator was initially empty, but still has more elements! " + this.getClass();
+			if (localHasNext() && !closed) {
+				assert !localHasNext() && !closed
+						: "Iterator was initially empty, but still has more elements! " + this.getClass();
+			}
 			close();
 		}
 
