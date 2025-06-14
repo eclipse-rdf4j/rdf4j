@@ -150,6 +150,62 @@ public class ConstantOptimizerTest extends QueryOptimizerTest {
 		assertEquals(1, ((Literal) bindings.getBinding("a").getValue()).intValue());
 	}
 
+	@Test
+	public void testAllAggregateOptimizations() throws RDF4JException {
+		String query = String.join("\n",
+				"PREFIX ex: <ex:>",
+				"SELECT",
+				"  (MAX(1) AS ?a)",
+				"  (MIN(1) AS ?b)",
+				"  (AVG(1) AS ?c)",
+				"  (COUNT(1) AS ?d)",
+				"  (COUNT(DISTINCT 1) AS ?e)",
+				"  (COUNT(*) AS ?f)",
+				"WHERE {",
+				"  ?x a ?z ;",
+				"  ex:someProperty ?val .",
+				"}"
+		);
+
+		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		EvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		TupleExpr original = pq.getTupleExpr();
+
+		final AlgebraFinder finder = new AlgebraFinder();
+		original.visit(finder);
+		assertTrue(finder.groupElemFound);
+
+		// reset for re-use on optimized query
+		finder.reset();
+
+		QueryBindingSet constants = new QueryBindingSet();
+
+		TupleExpr optimized = optimize(pq.getTupleExpr().clone(), constants, strategy);
+
+		optimized.visit(finder);
+		assertThat(finder.functionCallFound).isFalse();
+
+		CloseableIteration<BindingSet> result = strategy.precompile(optimized)
+				.evaluate(
+						new EmptyBindingSet());
+		assertNotNull(result);
+		assertTrue(result.hasNext());
+
+		BindingSet bindings = result.next();
+		assertTrue(bindings.hasBinding("a"));
+		assertTrue(bindings.hasBinding("b"));
+		assertTrue(bindings.hasBinding("c"));
+		assertTrue(bindings.hasBinding("d"));
+		assertTrue(bindings.hasBinding("e"));
+		assertTrue(bindings.hasBinding("f"));
+		assertEquals(1, ((Literal) bindings.getBinding("a").getValue()).intValue());
+		assertEquals(1, ((Literal) bindings.getBinding("b").getValue()).intValue());
+		assertEquals(1, ((Literal) bindings.getBinding("c").getValue()).intValue());
+		assertEquals(0, ((Literal) bindings.getBinding("d").getValue()).intValue());
+		assertEquals(0, ((Literal) bindings.getBinding("e").getValue()).intValue());
+		assertEquals(0, ((Literal) bindings.getBinding("f").getValue()).intValue());
+	}
+
 	private class AlgebraFinder extends AbstractQueryModelVisitor<RuntimeException> {
 
 		public boolean logicalAndfound = false;

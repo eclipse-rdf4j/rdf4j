@@ -322,6 +322,11 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 				for (var ag : aggregates) {
 					if (ag.agg instanceof WildCardCountAggregate) {
 						predicates.add(ALWAYS_TRUE_BINDING_SET);
+					} else if (ag.agg instanceof CountAggregate) {
+						// Counts are special, because they always return a number related to the number of solutions.
+						// which in the empty case should be 0. So we should never accept a value here.
+						// Even in the case that the Count is of a constant value.
+						predicates.add(ALWAYS_FALSE_VALUE);
 					} else {
 						predicates.add(ALWAYS_TRUE_VALUE);
 					}
@@ -397,6 +402,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 	private static final Predicate<BindingSet> ALWAYS_TRUE_BINDING_SET = t -> true;
 	private static final Predicate<Value> ALWAYS_TRUE_VALUE = t -> true;
+	private static final Predicate<Value> ALWAYS_FALSE_VALUE = t -> false;
 	private static final Supplier<Predicate<Value>> ALWAYS_TRUE_VALUE_SUPPLIER = () -> ALWAYS_TRUE_VALUE;
 
 	private AggregatePredicateCollectorSupplier<?, ?> create(GroupElem ge, ValueFactory vf)
