@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -117,6 +118,19 @@ public class GroupIteratorTest {
 
 			assertThat(gi.hasNext()).isTrue();
 			assertThat(gi.next().size()).isEqualTo(0);
+		}
+	}
+
+	@Test
+	public void testConstantCountEmptySet_DefaultGroup() throws QueryEvaluationException {
+		Group group = new Group(EMPTY_ASSIGNMENT);
+		group.addGroupElement(new GroupElem("count", new Count(new ValueConstant(VF.createLiteral("a")))));
+		try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
+
+			assertTrue(gi.hasNext());
+			BindingSet next = gi.next();
+			assertEquals(1, next.size());
+			assertEquals(0, ((Literal) next.getBinding("count").getValue()).intValue());
 		}
 	}
 
