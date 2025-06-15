@@ -403,6 +403,68 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	/**
+	 * Returns the number of statements that match the specified pattern.
+	 *
+	 * @param subj     The subject of the pattern, or <tt>null</tt> to indicate a wildcard.
+	 * @param pred     The predicate of the pattern, or <tt>null</tt> to indicate a wildcard.
+	 * @param obj      The object of the pattern, or <tt>null</tt> to indicate a wildcard.
+	 * @param contexts The context(s) of the pattern. Note that this parameter is a vararg and as such is optional. If
+	 *                 no contexts are supplied the method operates on the entire repository.
+	 * @return The number of statements that match the specified pattern.
+	 * @throws SailException If an error occurred while determining the size.
+	 */
+	private long size(final TxnManager.Txn txn, final Resource subj, final IRI pred, final Value obj,
+			final Resource... contexts)
+			throws SailException {
+		try {
+			long totalSize = 0;
+
+			long subjID = LmdbValue.UNKNOWN_ID;
+			if (subj != null) {
+				subjID = valueStore.getId(subj);
+				if (subjID == LmdbValue.UNKNOWN_ID) {
+					return 0;
+				}
+			}
+
+			long predID = LmdbValue.UNKNOWN_ID;
+			if (pred != null) {
+				predID = valueStore.getId(pred);
+				if (predID == LmdbValue.UNKNOWN_ID) {
+					return 0;
+				}
+			}
+
+			long objID = LmdbValue.UNKNOWN_ID;
+			if (obj != null) {
+				objID = valueStore.getId(obj);
+				if (objID == LmdbValue.UNKNOWN_ID) {
+					return 0;
+				}
+			}
+
+			// Handle the case where no contexts are specified (query all contexts)
+			if (contexts.length == 0) {
+				totalSize = tripleStore.cardinalityExact(txn, subjID, predID, objID, LmdbValue.UNKNOWN_ID, false);
+			} else {
+				for (Resource context : contexts) {
+					long contextID = LmdbValue.UNKNOWN_ID;
+					if (context != null) {
+						contextID = valueStore.getId(context);
+						if (contextID == LmdbValue.UNKNOWN_ID) {
+							return 0;
+						}
+					}
+					totalSize += tripleStore.cardinalityExact(txn, subjID, predID, objID, contextID, false);
+				}
+			}
+			return totalSize;
+		} catch (final IOException e) {
+			throw new SailException(e);
+		}
+	}
+
 	private final class LmdbSailSource extends BackingSailSource {
 
 		private final boolean explicit;
@@ -954,6 +1016,16 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public Comparator<Value> getComparator() {
 			return null;
+		}
+
+		@Override
+		public long size(final Resource subj, final IRI pred, final Value obj, final Resource... contexts)
+				throws SailException {
+			try {
+				return LmdbSailStore.this.size(txn, subj, pred, obj, contexts);
+			} catch (final Exception e) {
+				throw new SailException(e);
+			}
 		}
 	}
 }

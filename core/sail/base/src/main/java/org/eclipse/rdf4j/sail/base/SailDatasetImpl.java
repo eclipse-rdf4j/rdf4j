@@ -10,15 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.Map.Entry;
-import java.util.NoSuchElementException;
-import java.util.Set;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
@@ -382,5 +375,16 @@ class SailDatasetImpl implements SailDataset {
 			}
 		}
 		return true;
+	}
+
+	@Override
+	public long size(final Resource subj, final IRI pred, final Value obj, final Resource... contexts) {
+		// Fast path: no approved or deprecated
+		if (!changes.hasApproved() && !changes.hasDeprecated()) {
+			return derivedFrom.size(subj, pred, obj, contexts);
+		}
+
+		// Fallback path: iterate over all matching statements
+		return getStatements(subj, pred, obj, contexts).stream().count();
 	}
 }
