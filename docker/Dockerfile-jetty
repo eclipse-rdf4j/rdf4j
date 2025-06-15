@@ -11,12 +11,12 @@ WORKDIR /tmp
 RUN unzip -q /tmp/rdf4j.zip
 
 # Final workbench
-FROM jetty:9-jre17-eclipse-temurin 
+FROM jetty:9-jre17-eclipse-temurin
 LABEL org.opencontainers.image.authors="Bart Hanssens (bart.hanssens@bosa.fgov.be)"
 
 USER root
 
-ENV JAVA_OPTIONS="-Dorg.eclipse.rdf4j.appdata.basedir=/var/rdf4j -Dorg.eclipse.rdf4j.rio.jsonld_secure_mode=false"
+ENV JAVA_OPTIONS="-Xmx2g -Dorg.eclipse.rdf4j.appdata.basedir=/var/rdf4j -Dorg.eclipse.rdf4j.rio.jsonld_secure_mode=false"
 ENV JETTY_MODULES="server,bytebufferpool,threadpool,security,servlet,webapp,ext,plus,deploy,annotations,http,jsp,jstl"
 
 COPY --from=temp /tmp/eclipse-rdf4j*/war/*.war /var/lib/jetty/webapps/
