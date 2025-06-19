@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.DCAT;
 import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -128,10 +129,11 @@ public class ShutdownDuringValidationTest {
 
 		Thread thread;
 		try (var connection = repository.getConnection()) {
+			connection.begin();
 			ValueFactory vf = connection.getValueFactory();
-			BNode iri = vf.createBNode();
-			connection.add(iri, RDF.TYPE, DCAT.DATASET);
-			connection.add(iri, DCTERMS.ACCESS_RIGHTS, vf.createLiteral("valid"));
+			BNode bnode = vf.createBNode();
+			connection.add(bnode, RDF.TYPE, RDFS.RESOURCE);
+			connection.commit();
 		}
 
 		try (var connection = repository.getConnection()) {
