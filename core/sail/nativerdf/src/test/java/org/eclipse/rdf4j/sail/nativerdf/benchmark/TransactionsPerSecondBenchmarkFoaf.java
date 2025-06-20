@@ -9,7 +9,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.lmdb.benchmark;
+package org.eclipse.rdf4j.sail.nativerdf.benchmark;
 
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
@@ -38,14 +38,16 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @State(Scope.Benchmark)
 @Warmup(iterations = 2)
 @BenchmarkMode({ Mode.Throughput })
-@Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
-@Measurement(iterations = 3)
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-XX:+UseG1GC" })
+//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-XX:+UseG1GC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
+@Measurement(iterations = 2, time = 60)
 @OutputTimeUnit(TimeUnit.SECONDS)
 public class TransactionsPerSecondBenchmarkFoaf extends BenchmarkBaseFoaf {
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("TransactionsPerSecondBenchmarkFoaf\\.") // adapt to control which benchmark tests to run
+				.include("TransactionsPerSecondBenchmarkFoaf\\.") // adapt to control which
+																	// benchmark tests to run
 				.forks(1)
 				.build();
 
