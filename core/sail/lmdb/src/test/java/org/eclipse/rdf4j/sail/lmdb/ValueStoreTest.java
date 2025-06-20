@@ -152,11 +152,12 @@ public class ValueStoreTest {
 
 	@Test
 	public void testGcDatatypes() throws Exception {
-		IRI[] types = new IRI[] { XSD.STRING, XSD.INTEGER, XSD.DOUBLE, XSD.DECIMAL, XSD.FLOAT };
+		IRI[] types = new IRI[] { XSD.STRING, XSD.INTEGER, XSD.LONG, XSD.DECIMAL };
 		LmdbValue values[] = new LmdbValue[types.length];
 		valueStore.startTransaction(true);
 		for (int i = 0; i < values.length; i++) {
-			values[i] = valueStore.createLiteral("123", types[i]);
+			// use a value that is large enough to not being inlined
+			values[i] = valueStore.createLiteral(Long.toString(Long.MAX_VALUE - 1), types[i]);
 			valueStore.storeValue(values[i]);
 		}
 		valueStore.commit();
@@ -198,7 +199,8 @@ public class ValueStoreTest {
 	public void testGcURIs() throws Exception {
 		for (boolean storeAndGcUri : List.of(false, true)) {
 			valueStore.startTransaction(true);
-			LmdbLiteral literal = valueStore.createLiteral("123", XSD.STRING);
+			// use a value that is large enough to not being inlined
+			LmdbLiteral literal = valueStore.createLiteral("123".repeat(5), XSD.STRING);
 			valueStore.storeValue(literal);
 			if (storeAndGcUri) {
 				valueStore.storeValue(XSD.STRING);

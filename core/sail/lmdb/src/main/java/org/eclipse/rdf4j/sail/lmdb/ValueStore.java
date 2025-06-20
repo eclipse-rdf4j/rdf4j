@@ -76,6 +76,7 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
@@ -513,6 +514,10 @@ class ValueStore extends AbstractValueFactory {
 					resultValue = new LmdbBNode(lazyRevision, id);
 					break;
 				default:
+					if (ValueIds.isInlined(id)) {
+						resultValue = new LmdbLiteral(lazyRevision, id);
+						break;
+					}
 					throw new IOException("Unsupported value with id type: " + idType);
 				}
 				// Store value in cache
@@ -540,6 +545,12 @@ class ValueStore extends AbstractValueFactory {
 			LmdbValue resultValue = cachedValue(cacheID);
 
 			if (resultValue == null) {
+				// unpack inlined values if possible
+				if (ValueIds.isInlined(id)) {
+					Literal unpacked = Values.unpackLiteral(id, this);
+					return new LmdbLiteral(revision, unpacked.getLabel(), unpacked.getDatatype(), id);
+				}
+
 				// Value not in cache, fetch it from file
 				byte[] data = getData(id);
 
@@ -564,6 +575,13 @@ class ValueStore extends AbstractValueFactory {
 	 * @return <code>true</code> if value could be successfully resolved, else <code>false</code>
 	 */
 	public boolean resolveValue(long id, LmdbValue value) {
+		// unpack inlined values if possible
+		if (ValueIds.isInlined(id)) {
+			Literal unpacked = Values.unpackLiteral(id, this);
+			((LmdbLiteral) value).setLabel(unpacked.getLabel());
+			((LmdbLiteral) value).setDatatype(unpacked.getDatatype());
+			return true;
+		}
 		try {
 			byte[] data = getData(id);
 			if (data != null) {
@@ -903,13 +921,10 @@ class ValueStore extends AbstractValueFactory {
 	public long getId(Value value, boolean create) throws IOException {
 		// Try to get the internal ID from the value itself
 		boolean isOwnValue = isOwnValue(value);
-
 		if (isOwnValue) {
 			LmdbValue lmdbValue = (LmdbValue) value;
-
 			if (revisionIsCurrent(lmdbValue)) {
 				long id = lmdbValue.getInternalID();
-
 				if (id != LmdbValue.UNKNOWN_ID) {
 					return id;
 				}
@@ -926,42 +941,57 @@ class ValueStore extends AbstractValueFactory {
 
 			if (cachedID != null) {
 				long id = cachedID;
-
 				if (isOwnValue) {
 					// Store id in value for fast access in any consecutive calls
 					((LmdbValue) value).setInternalID(id, revision);
 				}
-
 				return id;
 			}
 
-			// ID not cached, search in file
-			byte[] data = value2data(value, create);
-			if (data == null && value instanceof Literal) {
-				data = literal2legacy((Literal) value);
+			long id = LmdbValue.UNKNOWN_ID;
+			if (value instanceof Literal) {
+				// inline value into id if possible
+				try {
+					long packedId = Values.packLiteral((Literal) value);
+					if (packedId != 0L) {
+						Literal unpacked = Values.unpackLiteral(packedId, this);
+						if (unpacked.equals(value)) {
+							id = packedId;
+						}
+					}
+				} catch (IllegalArgumentException e) {
+					// ignore, invalid literal
+				}
 			}
 
-			if (data != null) {
-				long id = findId(data, create);
-				if (id != LmdbValue.UNKNOWN_ID) {
-					if (isOwnValue) {
-						// Store id in value for fast access in any consecutive calls
-						((LmdbValue) value).setInternalID(id, revision);
-						// Store id in cache
-						valueIDCache.put((LmdbValue) value, id);
-					} else {
-						// Store id in cache
-						LmdbValue nv = getLmdbValue(value);
-						nv.setInternalID(id, revision);
-
-						if (nv.isIRI() && isCommonVocabulary(((IRI) nv))) {
-							commonVocabulary.put(value, id);
-						}
-
-						valueIDCache.put(nv, id);
-					}
+			if (id == LmdbValue.UNKNOWN_ID) {
+				// not inlined or ID not cached, search in index
+				byte[] data = value2data(value, create);
+				if (data == null && value instanceof Literal) {
+					data = literal2legacy((Literal) value);
 				}
 
+				if (data != null) {
+					id = findId(data, create);
+				}
+			}
+
+			if (id != LmdbValue.UNKNOWN_ID) {
+				if (isOwnValue) {
+					// Store id in value for fast access in any consecutive calls
+					((LmdbValue) value).setInternalID(id, revision);
+					// Store id in cache
+					valueIDCache.put((LmdbValue) value, id);
+				} else {
+					// Store id in cache
+					LmdbValue nv = getLmdbValue(value);
+					nv.setInternalID(id, revision);
+
+					if (nv.isIRI() && isCommonVocabulary(((IRI) nv))) {
+						commonVocabulary.put(value, id);
+					}
+					valueIDCache.put(nv, id);
+				}
 				return id;
 			}
 		} finally {

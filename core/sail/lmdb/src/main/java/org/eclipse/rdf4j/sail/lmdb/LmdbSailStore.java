@@ -767,7 +767,8 @@ class LmdbSailStore implements SailStore {
 				tripleStore.removeTriplesByContext(subj, pred, obj, contextId, explicit, quad -> {
 					removeCount[0]++;
 					for (long id : quad) {
-						if (id != 0L) {
+						if (id != 0L && !ValueIds.isInlined(id)) {
+							// only add references, exclude inlined values
 							unusedIds.add(id);
 						}
 					}
