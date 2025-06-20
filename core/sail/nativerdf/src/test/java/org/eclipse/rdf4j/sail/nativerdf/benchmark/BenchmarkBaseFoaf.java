@@ -9,7 +9,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.lmdb.benchmark;
+package org.eclipse.rdf4j.sail.nativerdf.benchmark;
 
 import java.io.File;
 import java.io.IOException;
@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 
 public class BenchmarkBaseFoaf {
 
@@ -45,7 +45,7 @@ public class BenchmarkBaseFoaf {
 		}
 		file = Files.newTemporaryFolder();
 
-		LmdbStore sail = new LmdbStore(file, ConfigUtil.createConfig());
+		NativeStore sail = new NativeStore(file);
 		repository = new SailRepository(sail);
 		connection = repository.getConnection();
 

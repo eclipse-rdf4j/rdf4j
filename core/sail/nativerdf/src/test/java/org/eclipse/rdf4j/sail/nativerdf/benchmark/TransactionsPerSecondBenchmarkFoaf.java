@@ -9,7 +9,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.lmdb.benchmark;
+package org.eclipse.rdf4j.sail.nativerdf.benchmark;
 
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
@@ -39,13 +39,14 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @Warmup(iterations = 2)
 @BenchmarkMode({ Mode.Throughput })
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
-@Measurement(iterations = 5)
+@Measurement(iterations = 2, time = 60)
 @OutputTimeUnit(TimeUnit.SECONDS)
 public class TransactionsPerSecondBenchmarkFoaf extends BenchmarkBaseFoaf {
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("TransactionsPerSecondBenchmarkFoaf") // adapt to control which benchmark tests to run
+				.include("TransactionsPerSecondBenchmarkFoaf.transaction100kxLevelNone") // adapt to control which
+																							// benchmark tests to run
 				.forks(1)
 				.build();
 
