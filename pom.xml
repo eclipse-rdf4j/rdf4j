@@ -673,7 +673,6 @@
 					<version>3.12.1</version>
 					<configuration>
 						<fork>false</fork>
-						<encoding>utf8</encoding>
 					</configuration>
 				</plugin>
 				<plugin>
@@ -815,7 +814,6 @@
 					<artifactId>maven-surefire-plugin</artifactId>
 					<version>3.2.5</version>
 					<configuration>
-						<encoding>UTF-8</encoding>
 						<argLine>-Xmx2048M</argLine>
 					</configuration>
 				</plugin>
@@ -824,7 +822,6 @@
 					<artifactId>maven-failsafe-plugin</artifactId>
 					<version>3.2.5</version>
 					<configuration>
-						<encoding>UTF-8</encoding>
 						<forkCount>1</forkCount>
 						<reuseForks>false</reuseForks>
 						<argLine>-Xmx1G</argLine>

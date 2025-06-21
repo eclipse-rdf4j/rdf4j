@@ -77,7 +77,7 @@ jobs:
       - name: Build
         run: mvn clean && mvn -B -U -T 2C install -Pquick
       - name: Test
-        run: mvn -B test -P-formatting -DskipITs -formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
+        run: mvn -B test -DskipITs -P-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: scacap/action-surefire-report@v1
@@ -111,7 +111,7 @@ jobs:
       - name: Build
         run: mvn clean && mvn -B -U -T 2C install -Pquick
       - name: Verify
-        run: mvn -B verify -PskipUnitTests,-formatting -Dmaven.javadoc.skip=true -Denforcer.skip=true -Danimal.sniffer.skip=true
+        run: mvn -B verify -PskipUnitTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: scacap/action-surefire-report@v1
@@ -145,7 +145,7 @@ jobs:
       - name: Build
         run: mvn clean && mvn -B -U -T 2C install -Pquick
       - name: Verify
-        run: mvn -B verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
+        run: mvn -B verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: scacap/action-surefire-report@v1
