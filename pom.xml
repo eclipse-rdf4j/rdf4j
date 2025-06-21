@@ -208,6 +208,7 @@
 				<impsort.skip>true</impsort.skip>
 				<xml-format.skip>true</xml-format.skip>
 				<japicmp.skip>true</japicmp.skip>
+				<enforcer.skip>true</enforcer.skip>
 			</properties>
 		</profile>
 		<profile>
