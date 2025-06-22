@@ -467,7 +467,7 @@ class ValueStore extends AbstractValueFactory {
 	 * @return the value object or <code>null</code> if not found
 	 */
 	LmdbValue cachedValue(long id) {
-		LmdbValue value = valueCache[(int) (id % valueCache.length)];
+		LmdbValue value = valueCache[(int) ((id < 0 ? -id : id) % valueCache.length)];
 		if (value != null && value.getInternalID() == id) {
 			return value;
 		}
@@ -484,7 +484,7 @@ class ValueStore extends AbstractValueFactory {
 	 * @return the value object or <code>null</code> if not found
 	 */
 	void cacheValue(long id, LmdbValue value) {
-		valueCache[(int) (id % valueCache.length)] = value;
+		valueCache[(int) ((id < 0 ? -id : id) % valueCache.length)] = value;
 	}
 
 	/**

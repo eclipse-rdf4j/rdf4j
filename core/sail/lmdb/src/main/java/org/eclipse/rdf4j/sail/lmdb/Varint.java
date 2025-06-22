@@ -89,7 +89,11 @@ public final class Varint {
 	 * @param value value to encode
 	 */
 	public static void writeUnsigned(final ByteBuffer bb, final long value) {
-		if (value <= 240) {
+		if (value < 0) {
+			int bytes = descriptor(value) + 1;
+			bb.put((byte) (250 + (bytes - 3)));
+			writeSignificantBits(bb, value, bytes);
+		} else if (value <= 240) {
 			bb.put((byte) value);
 		} else if (value <= 2287) {
 			bb.put((byte) ((value - 240) / 256 + 241));
@@ -112,7 +116,10 @@ public final class Varint {
 	 * @return length in bytes
 	 */
 	public static int calcLengthUnsigned(long value) {
-		if (value <= 240) {
+		if (value < 0) {
+			int bytes = descriptor(value) + 1;
+			return 1 + bytes;
+		} else if (value <= 240) {
 			return 1;
 		} else if (value <= 2287) {
 			return 2;
