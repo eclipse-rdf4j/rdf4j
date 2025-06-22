@@ -113,7 +113,7 @@ public class Decimals {
 	}
 
 	static long packFloat(float value) {
-		return ValueIds.createId(ValueIds.T_FLOAT, Float.floatToIntBits(value));
+		return ValueIds.createId(ValueIds.T_FLOAT, Integers.encodeZigZag(Float.floatToRawIntBits(value)));
 	}
 
 	static Literal unpackDecimal(long value, ValueFactory valueFactory) {
@@ -147,7 +147,7 @@ public class Decimals {
 	}
 
 	static Literal unpackFloat(long value, ValueFactory valueFactory) {
-		float floatValue = Float.intBitsToFloat((int) ValueIds.getValue(value));
+		float floatValue = Float.intBitsToFloat((int) Integers.decodeZigZag(ValueIds.getValue(value)));
 		return valueFactory.createLiteral(floatValue);
 	}
 }
