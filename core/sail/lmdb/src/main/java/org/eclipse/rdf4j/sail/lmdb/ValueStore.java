@@ -623,8 +623,7 @@ class ValueStore extends AbstractValueFactory {
 		long stamp = revisionLock.readLock();
 		try {
 			// Check value cache
-			Long cacheID = id;
-			LmdbValue resultValue = cachedValue(cacheID);
+			LmdbValue resultValue = cachedValue(id);
 
 			if (resultValue == null) {
 				int idType = ValueIds.getIdType(id);
@@ -645,8 +644,6 @@ class ValueStore extends AbstractValueFactory {
 					}
 					throw new IOException("Unsupported value with id type: " + idType);
 				}
-				// Store value in cache
-				cacheValue(cacheID, resultValue);
 			}
 
 			return resultValue;
