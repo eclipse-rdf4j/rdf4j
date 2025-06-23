@@ -11,7 +11,7 @@ jobs:
   formatting-and-quick-compile:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up JDK
         uses: actions/setup-java@v1
         with:
@@ -33,7 +33,7 @@ jobs:
     needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up JDK
         uses: actions/setup-java@v1
         with:
@@ -57,7 +57,7 @@ jobs:
       matrix:
         jdk: [ 11, 21 ]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up JDK
         uses: actions/setup-java@v1
         with:
@@ -86,7 +86,7 @@ jobs:
     needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up JDK
         uses: actions/setup-java@v1
         with:
@@ -114,7 +114,7 @@ jobs:
     needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up JDK
         uses: actions/setup-java@v1
         with:
@@ -142,7 +142,7 @@ jobs:
     needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up JDK
         uses: actions/setup-java@v1
         with:
@@ -164,7 +164,7 @@ jobs:
     needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up JDK
         uses: actions/setup-java@v1
         with:
@@ -189,7 +189,7 @@ jobs:
   copyright-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: check copyright header present
         run: scripts/checkCopyrightPresent.sh
 
