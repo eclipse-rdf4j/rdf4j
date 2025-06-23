@@ -25,7 +25,7 @@ jobs:
       - name: Check formatting
         run: mvn -B --quiet -T 2C formatter:validate impsort:check xml-format:xml-check
       - name: Quick compile
-        run: mvn -B --quiet -T 2C compile -DskipTests    -Pquick
+        run: mvn -B --quiet -T 2C compile -DskipTests -Pquick
       - name: Download all other dependencies
         run: mvn -B --quiet -T 2C dependency:go-offline
 
