@@ -117,13 +117,6 @@ jobs:
         uses: scacap/action-surefire-report@v1
         with:
           check_name: Test report - integration-tests
-      - name: Cancel workflow on failure
-        uses: vishnudxb/cancel-workflow@v1.2
-        if: failure()
-        with:
-          repo: eclipse/rdf4j
-          workflow_id: ${{ github.run_id }}
-          access_token: ${{secrets.GITHUB_TOKEN}}
 
   slow-tests:
     runs-on: ubuntu-latest
@@ -151,13 +144,6 @@ jobs:
         uses: scacap/action-surefire-report@v1
         with:
           check_name: Test report - slow-tests
-      - name: Cancel workflow on failure
-        uses: vishnudxb/cancel-workflow@v1.2
-        if: failure()
-        with:
-          repo: eclipse/rdf4j
-          workflow_id: ${{ github.run_id }}
-          access_token: ${{secrets.GITHUB_TOKEN}}
 
   package-assembly:
     runs-on: ubuntu-latest
@@ -210,13 +196,6 @@ jobs:
       - name: Run end-to-end tests of RDF4J Server and Workbench
         working-directory: ./e2e
         run: ./run.sh
-      - name: Cancel workflow on failure
-        uses: vishnudxb/cancel-workflow@v1.2
-        if: failure()
-        with:
-          repo: eclipse/rdf4j
-          workflow_id: ${{ github.run_id }}
-          access_token: ${{secrets.GITHUB_TOKEN}}
 
   copyright-check:
     runs-on: ubuntu-latest
