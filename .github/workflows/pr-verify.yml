@@ -23,7 +23,7 @@ jobs:
       - name: Quick compile
         run: mvn -B --quiet -T 2C compile -DskipTests    -Pquick
       - name: Download all other dependencies
-        run: mvn -B -T 2C dependency:go-offline
+        run: mvn -B --quiet -T 2C dependency:go-offline
 
   compile:
     needs: formatting-and-quick-compile
