@@ -12,16 +12,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set up JDK
-        uses: actions/setup-java@v1
+        uses: actions/setup-java@v4
         with:
-          java-version: '21'
-      - name: Cache local Maven repository
-        uses: actions/cache@v3
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-jdk21-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-jdk20-maven-
+          java-version: 21
+          distribution: 'temurin'
+          cache: maven
+      - name: Clean install
+        run: mvn -B clean install -Pquick -DskipTests
+      - name: Package
+        run: mvn -B -U package -Pquick -DskipTests
       - name: Run license-check
         run: mvn -B -Plicence-check org.eclipse.dash:license-tool-plugin:license-check -Ddash.summary=DEPENDENCIES
       - name: Print Dash Summary
