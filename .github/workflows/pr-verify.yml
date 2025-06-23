@@ -25,23 +25,6 @@ jobs:
       - name: Download all other dependencies
         run: mvn -B dependency:go-offline
 
-  formatting-and-quick-compile-jdk24:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          java-version: 24
-          distribution: 'temurin'
-          cache: maven
-      - name: Check formatting
-        run: mvn -B formatter:validate impsort:check xml-format:xml-check
-      - name: Quick compile
-        run: mvn -B compile -DskipTests    -Pquick
-      - name: Download all other dependencies
-        run: mvn -B dependency:go-offline
-
   compile:
     needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
@@ -58,7 +41,7 @@ jobs:
 
 
   build:
-    needs: [formatting-and-quick-compile, formatting-and-quick-compile-jdk24]
+    needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
     strategy:
       fail-fast: true
