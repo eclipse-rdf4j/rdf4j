@@ -29,6 +29,8 @@ jobs:
         run: mvn -B formatter:validate impsort:check xml-format:xml-check
       - name: Quick compile
         run: mvn -B install -DskipTests    -Pquick
+      - name: Download all other dependencies
+        run: mvn -B dependency:go-offline
 
   formatting-and-quick-compile-jdk24:
     runs-on: ubuntu-latest
@@ -51,7 +53,8 @@ jobs:
         run: mvn -B formatter:validate impsort:check xml-format:xml-check
       - name: Quick compile
         run: mvn -B install -DskipTests    -Pquick
-
+      - name: Download all other dependencies
+        run: mvn -B dependency:go-offline
 
   compile:
     needs: formatting-and-quick-compile
