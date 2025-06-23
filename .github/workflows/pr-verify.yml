@@ -28,7 +28,7 @@ jobs:
       - name: Check formatting
         run: mvn -B formatter:validate impsort:check xml-format:xml-check
       - name: Quick compile
-        run: mvn -B install -DskipTests    -Pquick
+        run: mvn -B compile -DskipTests    -Pquick
       - name: Download all other dependencies
         run: mvn -B dependency:go-offline
 
@@ -52,7 +52,7 @@ jobs:
       - name: Check formatting
         run: mvn -B formatter:validate impsort:check xml-format:xml-check
       - name: Quick compile
-        run: mvn -B install -DskipTests    -Pquick
+        run: mvn -B compile -DskipTests    -Pquick
       - name: Download all other dependencies
         run: mvn -B dependency:go-offline
 
