@@ -18,13 +18,6 @@ jobs:
           java-version: 11
           distribution: 'temurin'
           cache: maven
-      - name: Cache local Maven repository
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-jdk11-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-jdk11-maven-
       - name: Check formatting
         run: mvn -B formatter:validate impsort:check xml-format:xml-check
       - name: Quick compile
@@ -42,13 +35,6 @@ jobs:
           java-version: 24
           distribution: 'temurin'
           cache: maven
-      - name: Cache local Maven repository
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-jdk24-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-jdk24-maven-
       - name: Check formatting
         run: mvn -B formatter:validate impsort:check xml-format:xml-check
       - name: Quick compile
@@ -67,13 +53,6 @@ jobs:
           java-version: 11
           distribution: 'temurin'
           cache: maven
-      - name: Cache local Maven repository
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-jdk11-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-jdk11-maven-
       - name: Compile (mvn clean install)
         run: mvn -B clean install -DskipTests
 
@@ -93,13 +72,6 @@ jobs:
           java-version: ${{ matrix.jdk }}
           distribution: 'temurin'
           cache: maven
-      - name: Cache local Maven repository
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
       - name: Check formatting
         run: mvn -B formatter:validate impsort:check xml-format:xml-check
       - name: Build
@@ -124,13 +96,6 @@ jobs:
           java-version: 11
           distribution: 'temurin'
           cache: maven
-      - name: Cache local Maven repository
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-jdk11-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-jdk11-maven-
       - name: Check formatting
         run: mvn -B formatter:validate impsort:check xml-format:xml-check
       - name: Build
@@ -154,13 +119,6 @@ jobs:
           java-version: 11
           distribution: 'temurin'
           cache: maven
-      - name: Cache local Maven repository
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-jdk11-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-jdk11-maven-
       - name: Check formatting
         run: mvn -B formatter:validate impsort:check xml-format:xml-check
       - name: Build
@@ -184,13 +142,6 @@ jobs:
           java-version: 11
           distribution: 'temurin'
           cache: maven
-      - name: Cache local Maven repository
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-jdk11-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-jdk11-maven-
       - name: Run install
         run: mvn clean && mvn -B -U -T 2C install -Pquick
       - name: Package assembly
@@ -208,13 +159,6 @@ jobs:
           java-version: 11
           distribution: 'temurin'
           cache: maven
-      - name: Cache local Maven repository
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-jdk11-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-jdk11-maven-
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y libxml2-utils
       - name: Install Node.js
