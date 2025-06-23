@@ -27,7 +27,7 @@ jobs:
         with:
           repo: eclipse/rdf4j
           workflow_id: ${{ github.run_id }}
-          access_token: ${{ github.token }}
+          access_token: ${{secrets.GITHUB_TOKEN}}
 
   compile:
     runs-on: ubuntu-latest
@@ -52,7 +52,7 @@ jobs:
         with:
           repo: eclipse/rdf4j
           workflow_id: ${{ github.run_id }}
-          access_token: ${{ github.token }}
+          access_token: ${{secrets.GITHUB_TOKEN}}
 
   build:
     runs-on: ubuntu-latest
@@ -89,7 +89,7 @@ jobs:
         with:
           repo: eclipse/rdf4j
           workflow_id: ${{ github.run_id }}
-          access_token: ${{ github.token }}
+          access_token: ${{secrets.GITHUB_TOKEN}}
 
   integration-tests:
     runs-on: ubuntu-latest
@@ -123,7 +123,7 @@ jobs:
         with:
           repo: eclipse/rdf4j
           workflow_id: ${{ github.run_id }}
-          access_token: ${{ github.token }}
+          access_token: ${{secrets.GITHUB_TOKEN}}
 
   slow-tests:
     runs-on: ubuntu-latest
@@ -157,7 +157,7 @@ jobs:
         with:
           repo: eclipse/rdf4j
           workflow_id: ${{ github.run_id }}
-          access_token: ${{ github.token }}
+          access_token: ${{secrets.GITHUB_TOKEN}}
 
   package-assembly:
     runs-on: ubuntu-latest
@@ -184,7 +184,7 @@ jobs:
         with:
           repo: eclipse/rdf4j
           workflow_id: ${{ github.run_id }}
-          access_token: ${{ github.token }}
+          access_token: ${{secrets.GITHUB_TOKEN}}
 
   e2e:
     runs-on: ubuntu-latest
@@ -216,7 +216,7 @@ jobs:
         with:
           repo: eclipse/rdf4j
           workflow_id: ${{ github.run_id }}
-          access_token: ${{ github.token }}
+          access_token: ${{secrets.GITHUB_TOKEN}}
 
   copyright-check:
     runs-on: ubuntu-latest
@@ -230,5 +230,5 @@ jobs:
         with:
           repo: eclipse/rdf4j
           workflow_id: ${{ github.run_id }}
-          access_token: ${{ github.token }}
+          access_token: ${{secrets.GITHUB_TOKEN}}
 
