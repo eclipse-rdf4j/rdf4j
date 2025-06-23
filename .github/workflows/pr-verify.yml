@@ -8,7 +8,7 @@ permissions:
 
 jobs:
 
-  formatting:
+  formatting-and-quick-compile:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -25,15 +25,12 @@ jobs:
             ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
       - name: Check formatting
         run: mvn -B formatter:validate impsort:check xml-format:xml-check
-      - name: Abort all jobs
-        if: failure()             # ← fires only when the job is red
-        uses: potiuk/cancel-workflow-runs@master
-        with:
-          cancelMode: self
-          notifyPRCancel: true
-          token: ${{ github.token }}
+      - name: Quick compile
+        run: mvn -B install -DskipTests    -Pquick
+
 
   compile:
+    needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -50,15 +47,10 @@ jobs:
             ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
       - name: Compile (mvn clean install)
         run: mvn -B clean install -DskipTests
-      - name: Abort all jobs
-        if: failure()             # ← fires only when the job is red
-        uses: potiuk/cancel-workflow-runs@master
-        with:
-          cancelMode: self
-          notifyPRCancel: true
-          token: ${{ github.token }}
+
 
   build:
+    needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
     strategy:
       fail-fast: true
@@ -88,15 +80,10 @@ jobs:
         uses: scacap/action-surefire-report@v1.9.0
         with:
           check_name: Test report - build - ${{ matrix.jdk }}
-      - name: Abort all jobs
-        if: failure()             # ← fires only when the job is red
-        uses: potiuk/cancel-workflow-runs@master
-        with:
-          cancelMode: self
-          notifyPRCancel: true
-          token: ${{ github.token }}
+
 
   integration-tests:
+    needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -124,6 +111,7 @@ jobs:
           check_name: Test report - integration-tests
 
   slow-tests:
+    needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -151,6 +139,7 @@ jobs:
           check_name: Test report - slow-tests
 
   package-assembly:
+    needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -169,15 +158,10 @@ jobs:
         run: mvn clean && mvn -B -U -T 2C install -Pquick
       - name: Package assembly
         run: mvn package -Passembly -DskipTests
-      - name: Abort all jobs
-        if: failure()             # ← fires only when the job is red
-        uses: potiuk/cancel-workflow-runs@master
-        with:
-          cancelMode: self
-          notifyPRCancel: true
-          token: ${{ github.token }}
+
 
   e2e:
+    needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -208,10 +192,4 @@ jobs:
       - uses: actions/checkout@v2
       - name: check copyright header present
         run: scripts/checkCopyrightPresent.sh
-      - name: Abort all jobs
-        if: failure()             # ← fires only when the job is red
-        uses: potiuk/cancel-workflow-runs@master
-        with:
-          cancelMode: self
-          notifyPRCancel: true
-          token: ${{ github.token }}
+
