@@ -19,11 +19,11 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Check formatting
-        run: mvn -B formatter:validate impsort:check xml-format:xml-check
+        run: mvn -B --quiet -T 2C formatter:validate impsort:check xml-format:xml-check
       - name: Quick compile
-        run: mvn -B compile -DskipTests    -Pquick
+        run: mvn -B --quiet -T 2C compile -DskipTests    -Pquick
       - name: Download all other dependencies
-        run: mvn -B dependency:go-offline
+        run: mvn -B -T 2C dependency:go-offline
 
   compile:
     needs: formatting-and-quick-compile
@@ -58,7 +58,7 @@ jobs:
       - name: Check formatting
         run: mvn -B formatter:validate impsort:check xml-format:xml-check
       - name: Build
-        run: mvn clean && mvn -B -U -T 2C install -Pquick
+        run: mvn clean && mvn -B -T 2C install -Pquick
       - name: Test
         run: mvn -B test -DskipITs -P-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
@@ -82,7 +82,7 @@ jobs:
       - name: Check formatting
         run: mvn -B formatter:validate impsort:check xml-format:xml-check
       - name: Build
-        run: mvn clean && mvn -B -U -T 2C install -Pquick
+        run: mvn clean && mvn -B -T 2C install -Pquick
       - name: Verify
         run: mvn -B verify -PskipUnitTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
@@ -105,7 +105,7 @@ jobs:
       - name: Check formatting
         run: mvn -B formatter:validate impsort:check xml-format:xml-check
       - name: Build
-        run: mvn clean && mvn -B -U -T 2C install -Pquick
+        run: mvn clean && mvn -B -T 2C install -Pquick
       - name: Verify
         run: mvn -B verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
@@ -126,7 +126,7 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Run install
-        run: mvn clean && mvn -B -U -T 2C install -Pquick
+        run: mvn clean && mvn -B -T 2C install -Pquick
       - name: Package assembly
         run: mvn package -Passembly -DskipTests
 
