@@ -21,7 +21,7 @@ jobs:
       - name: Check formatting
         run: mvn -B --quiet -T 2C formatter:validate impsort:check xml-format:xml-check
       - name: Quick compile
-        run: mvn -B --quiet -T 2C install -DskipTests    -Pquick
+        run: mvn -B --quiet -T 2C compile -DskipTests    -Pquick
       - name: Download all other dependencies
         run: mvn -B -T 2C dependency:go-offline
 
@@ -55,6 +55,8 @@ jobs:
           java-version: ${{ matrix.jdk }}
           distribution: 'temurin'
           cache: maven
+      - name: Build
+        run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
       - name: Test
         run: mvn -B test -DskipITs -P-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
@@ -75,6 +77,8 @@ jobs:
           java-version: 11
           distribution: 'temurin'
           cache: maven
+      - name: Build
+        run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
       - name: Verify
         run: mvn -B verify -PskipUnitTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
@@ -94,6 +98,8 @@ jobs:
           java-version: 11
           distribution: 'temurin'
           cache: maven
+      - name: Build
+        run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
       - name: Verify
         run: mvn -B verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
@@ -114,7 +120,7 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Run install
-        run: mvn clean && mvn -B -T 2C install -Pquick
+        run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
       - name: Package assembly
         run: mvn package -Passembly -DskipTests
 
