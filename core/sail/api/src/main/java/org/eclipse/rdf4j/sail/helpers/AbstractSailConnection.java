@@ -443,7 +443,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	protected boolean hasStatementInternal(Resource subj, IRI pred, Value obj, boolean includeInferred,
 			Resource[] contexts) {
 		try (var iteration = getStatementsInternal(subj, pred, obj, includeInferred, contexts)) {
-			    return iteration.hasNext();
+			return iteration.hasNext();
 		}
 	}
 
