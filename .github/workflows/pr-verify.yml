@@ -8,6 +8,14 @@ permissions:
 
 jobs:
 
+  cancel-if-needed:
+    needs: [formatting, compile, build]
+    if: contains(needs.*.result, 'failure')
+    runs-on: ubuntu-latest
+    permissions: { actions: write }
+    steps:
+      - uses: andymckay/cancel-action@0.4
+
   formatting:
     runs-on: ubuntu-latest
     steps:
@@ -51,7 +59,7 @@ jobs:
       - name: Compile (mvn clean install)
         run: mvn -B clean install -DskipTests
       - name: Cancel workflow on failure
-        uses: vishnudxb/cancel-workflow@v1.2
+        uses: andymckay/cancel-action@0.4
         if: failure()
         with:
           repo: eclipse/rdf4j
@@ -61,6 +69,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: true
       matrix:
         jdk: [ 11, 21 ]
     steps:
