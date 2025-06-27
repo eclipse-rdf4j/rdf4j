@@ -11,6 +11,12 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.ArrayDeque;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.Function;
+
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
@@ -25,20 +31,14 @@ import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
-import java.util.ArrayDeque;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Objects;
-import java.util.function.Function;
-
 /**
  * @author Håvard Ottestad
- * <p>
- * This inner join algorithm assumes the left iterator is unique for tuple[0], eg. no two tuples have the same
- * value at index 0. The right iterator is allowed to contain duplicates.
- * <p>
- * External means that this plan node can join the iterator from a plan node with an external source (Repository
- * or SailConnection) based on a query or a predicate.
+ *         <p>
+ *         This inner join algorithm assumes the left iterator is unique for tuple[0], eg. no two tuples have the same
+ *         value at index 0. The right iterator is allowed to contain duplicates.
+ *         <p>
+ *         External means that this plan node can join the iterator from a plan node with an external source (Repository
+ *         or SailConnection) based on a query or a predicate.
  */
 public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 
@@ -59,10 +59,10 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	private boolean printed = false;
 
 	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, Resource[] dataGraph,
-								   SparqlFragment query,
-								   boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
-								   Function<BindingSet, ValidationTuple> mapper, ConnectionsGroup connectionsGroup,
-								   List<StatementMatcher.Variable> vars) {
+			SparqlFragment query,
+			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
+			Function<BindingSet, ValidationTuple> mapper, ConnectionsGroup connectionsGroup,
+			List<StatementMatcher.Variable> vars) {
 		super(vars);
 		assert !skipBasedOnPreviousConnection || previousStateConnection != null;
 
@@ -79,7 +79,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	}
 
 	public static Function<BindingSet, ValidationTuple> getMapper(String a, String c, ConstraintComponent.Scope scope,
-																  Resource[] dataGraph) {
+			Resource[] dataGraph) {
 		assert a.equals("a");
 		assert c.equals("c");
 		if (scope == ConstraintComponent.Scope.nodeShape && dataGraph.length == 0) {

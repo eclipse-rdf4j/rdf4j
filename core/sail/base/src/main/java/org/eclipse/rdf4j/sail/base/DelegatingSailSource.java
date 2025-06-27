@@ -33,7 +33,7 @@ class DelegatingSailSource implements SailSource {
 	 * @param closing  if {@link #close()} should be delegated
 	 */
 	public DelegatingSailSource(SailSource delegate, boolean closing) {
-		if(delegate == null) {
+		if (delegate == null) {
 			System.out.println();
 		}
 		assert delegate != null;
