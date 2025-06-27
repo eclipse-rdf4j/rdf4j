@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.InterruptedSailException;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LoggingCloseableIteration;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeHelper;
@@ -227,6 +228,14 @@ public class TargetChainRetriever implements PlanNode {
 					if (currentVarNames.isEmpty()) {
 						logger.error("currentVarNames should not be empty!");
 						throw new IllegalStateException("currentVarNames should not be empty!");
+					}
+
+					if (Thread.currentThread().isInterrupted()) {
+						throw new InterruptedSailException();
+					}
+
+					if (isClosed()) {
+						return;
 					}
 
 					statements = connection.getStatements(

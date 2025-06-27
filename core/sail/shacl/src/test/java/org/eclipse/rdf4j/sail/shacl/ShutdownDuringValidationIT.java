@@ -35,18 +35,26 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-public class ShutdownDuringValidationTest {
+@Tag("slow")
+public class ShutdownDuringValidationIT {
+
+	private static final Logger logger = LoggerFactory
+			.getLogger(ShutdownDuringValidationIT.class);
 
 	private static final Model realData = getRealData();
-	private static long MAX_MILLIS = Long.MAX_VALUE;
+	public static final int EXPECTED_REPOSITORY_SIZE = 613157;
+	private static long MAX_MILLIS = Long.MIN_VALUE;
 
 	private SailRepository repository;
 
 	private static Model getRealData() {
-		ClassLoader classLoader = ShutdownDuringValidationTest.class.getClassLoader();
+		ClassLoader classLoader = ShutdownDuringValidationIT.class.getClassLoader();
 
 		try {
 			try (InputStream inputStream = new BufferedInputStream(
@@ -75,8 +83,7 @@ public class ShutdownDuringValidationTest {
 			} finally {
 				repository.shutDown();
 			}
-			MAX_MILLIS = Math.min(MAX_MILLIS, (System.currentTimeMillis() - start) * 2);
-			System.out.println(MAX_MILLIS);
+			MAX_MILLIS = Math.max(MAX_MILLIS, (long) ((System.currentTimeMillis() - start) * 1.1));
 		}
 	}
 
@@ -96,7 +103,7 @@ public class ShutdownDuringValidationTest {
 
 	@ParameterizedTest
 	@MethodSource("sleepTimes")
-	public void shutdownDuringValidation(int sleepMillis) throws InterruptedException, IOException {
+	public void shutdownDuringValidation(int sleepMillis) {
 
 		Thread thread;
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -104,7 +111,7 @@ public class ShutdownDuringValidationTest {
 			connection.add(realData);
 			thread = startShutdownThread(sleepMillis);
 
-			commitAndExpect(connection, 613157);
+			commitAndExpect(connection, EXPECTED_REPOSITORY_SIZE);
 
 		}
 
@@ -113,7 +120,7 @@ public class ShutdownDuringValidationTest {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long size = connection.size();
 			if (size > 0) {
-				assertEquals(613157, size,
+				assertEquals(EXPECTED_REPOSITORY_SIZE, size,
 						"The repository should either be empty or contain the expected data after shutdown during validation");
 			} else {
 				assertEquals(0, size, "The repository should be empty after shutdown during validation");
@@ -125,7 +132,7 @@ public class ShutdownDuringValidationTest {
 
 	@ParameterizedTest
 	@MethodSource("sleepTimes")
-	public void shutdownDuringValidationTransactional(int sleepMillis) throws InterruptedException, IOException {
+	public void shutdownDuringValidationTransactional(int sleepMillis) {
 
 		Thread thread;
 		try (var connection = repository.getConnection()) {
@@ -141,7 +148,7 @@ public class ShutdownDuringValidationTest {
 			connection.add(realData);
 			thread = startShutdownThread(sleepMillis);
 
-			commitAndExpect(connection, 613157);
+			commitAndExpect(connection, EXPECTED_REPOSITORY_SIZE);
 		}
 
 		waitForThread(thread);
@@ -149,7 +156,7 @@ public class ShutdownDuringValidationTest {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long size = connection.size();
 			if (size > 0) {
-				assertEquals(613157, size,
+				assertEquals(EXPECTED_REPOSITORY_SIZE, size,
 						"The repository should either be empty or contain the expected data after shutdown during validation");
 			} else {
 				assertEquals(0, size, "The repository should be empty after shutdown during validation");
@@ -161,7 +168,7 @@ public class ShutdownDuringValidationTest {
 
 	@ParameterizedTest
 	@MethodSource("sleepTimes")
-	public void shutdownDuringValidationFailure(int sleepMillis) throws InterruptedException, IOException {
+	public void shutdownDuringValidationFailure(int sleepMillis) {
 
 		Thread thread;
 
@@ -188,7 +195,7 @@ public class ShutdownDuringValidationTest {
 
 	@ParameterizedTest
 	@MethodSource("sleepTimes")
-	public void shutdownDuringValidationFailureNonParallel(int sleepMillis) throws InterruptedException, IOException {
+	public void shutdownDuringValidationFailureNonParallel(int sleepMillis) {
 
 		Thread thread;
 
@@ -217,15 +224,15 @@ public class ShutdownDuringValidationTest {
 
 	@ParameterizedTest
 	@MethodSource("sleepTimes")
-	public void shutdownDuringValidationTransactionalNonParallel(int sleepMillis)
-			throws InterruptedException, IOException {
+	public void shutdownDuringValidationTransactionalNonParallel(int sleepMillis) {
 
 		Thread thread;
 		try (var connection = repository.getConnection()) {
+			connection.begin();
 			ValueFactory vf = connection.getValueFactory();
 			BNode iri = vf.createBNode();
-			connection.add(iri, RDF.TYPE, DCAT.DATASET);
-			connection.add(iri, DCTERMS.ACCESS_RIGHTS, vf.createLiteral("valid"));
+			connection.add(iri, RDF.TYPE, RDFS.RESOURCE);
+			connection.commit();
 		}
 
 		try (var connection = repository.getConnection()) {
@@ -233,7 +240,7 @@ public class ShutdownDuringValidationTest {
 			connection.add(realData);
 			thread = startShutdownThread(sleepMillis);
 
-			commitAndExpect(connection, 613157);
+			commitAndExpect(connection, EXPECTED_REPOSITORY_SIZE);
 		}
 
 		waitForThread(thread);
@@ -241,7 +248,7 @@ public class ShutdownDuringValidationTest {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long size = connection.size();
 			if (size > 0) {
-				assertEquals(613157, size,
+				assertEquals(EXPECTED_REPOSITORY_SIZE, size,
 						"The repository should either be empty or contain the expected data after shutdown during validation");
 			} else {
 				assertEquals(0, size, "The repository should be empty after shutdown during validation");

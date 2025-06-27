@@ -102,6 +102,10 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 				if (parsedQuery == null) {
 					parsedQuery = parseQuery(query);
 				}
+				if (isClosed()) {
+					return;
+				}
+
 				if (Thread.currentThread().isInterrupted()) {
 					close();
 					return;

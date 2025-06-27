@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.AbstractConstraintComponent;
@@ -118,16 +119,32 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
 					boolean hasStatement;
 
-					if (!(tuple.getActiveTarget().isResource())) {
-						hasStatement = previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(),
-								true, dataGraph);
+					boolean interrupted = Thread.currentThread().isInterrupted();
 
-					} else {
-						hasStatement = previousStateConnection.hasStatement(((Resource) tuple.getActiveTarget()),
-								null, null, true, dataGraph) ||
-								previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(), true,
-										dataGraph);
+					if (interrupted) {
+						throw new InterruptedSailException(
+								"Thread was interrupted while checking previous state connection.");
+					}
 
+					if (!(connection.isOpen() && connection.isActive())) {
+						throw new SailException("Connection is not active");
+					}
+
+					try {
+
+						if (!(tuple.getActiveTarget().isResource())) {
+							hasStatement = previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(),
+									true, dataGraph);
+
+						} else {
+							hasStatement = previousStateConnection.hasStatement(((Resource) tuple.getActiveTarget()),
+									null, null, true, dataGraph) ||
+									previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(), true,
+											dataGraph);
+
+						}
+					} catch (AssertionError e) {
+						throw e;
 					}
 
 					if (!hasStatement && validationExecutionLogger.isEnabled()) {
