@@ -54,22 +54,21 @@
 			<distributionManagement>
 				<snapshotRepository>
 					<id>ossrh</id>
-					<url>https://oss.sonatype.org/content/repositories/snapshots</url>
+					<url>https://central.sonatype.com/repository/maven-snapshots/</url>
 				</snapshotRepository>
 			</distributionManagement>
 			<build>
 				<plugins>
 					<plugin>
-						<groupId>org.sonatype.plugins</groupId>
-						<artifactId>nexus-staging-maven-plugin</artifactId>
-						<version>1.6.13</version>
+						<groupId>org.sonatype.central</groupId>
+						<artifactId>central-publishing-maven-plugin</artifactId>
+						<version>0.7.0</version>
 						<extensions>true</extensions>
 						<configuration>
-							<serverId>ossrh</serverId>
-							<nexusUrl>https://oss.sonatype.org/</nexusUrl>
-							<autoReleaseAfterClose>true</autoReleaseAfterClose>
-							<stagingProgressTimeoutMinutes>120</stagingProgressTimeoutMinutes>
-							<stagingProgressPauseDurationSeconds>10</stagingProgressPauseDurationSeconds>
+							<publishingServerId>central</publishingServerId>
+							<autoPublish>true</autoPublish>
+							<waitUntil>published</waitUntil>
+							<centralSnapshotsUrl>https://central.sonatype.com/repository/maven-snapshots/</centralSnapshotsUrl>
 						</configuration>
 					</plugin>
 					<plugin>
@@ -235,8 +234,8 @@
 					<snapshots>
 						<enabled>true</enabled>
 					</snapshots>
-					<id>oss-sonatype-snapshots</id>
-					<url>https://oss.sonatype.org/content/repositories/snapshots</url>
+					<id>central-sonatype-snapshots</id>
+					<url>https://central.sonatype.com/repository/maven-snapshots/</url>
 				</repository>
 			</repositories>
 		</profile>
