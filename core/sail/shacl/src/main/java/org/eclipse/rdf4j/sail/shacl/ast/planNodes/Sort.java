@@ -46,7 +46,7 @@ public class Sort implements PlanNode {
 			protected void init() {
 				assert sortedTuples == null;
 
-				checkClosedOrIterrupted();
+				checkClosedOrInterrupted();
 
 				boolean alreadySorted;
 				List<ValidationTuple> sortedTuples = new ArrayList<>(1);
@@ -56,9 +56,9 @@ public class Sort implements PlanNode {
 					alreadySorted = true;
 					ValidationTuple prev = null;
 					while (iterator.hasNext()) {
-						checkClosedOrIterrupted();
+						checkClosedOrInterrupted();
 						ValidationTuple next = iterator.next();
-						checkClosedOrIterrupted();
+						checkClosedOrInterrupted();
 
 						sortedTuples.add(next);
 
@@ -74,7 +74,7 @@ public class Sort implements PlanNode {
 							alreadySorted = false;
 						}
 						prev = next;
-						checkClosedOrIterrupted();
+						checkClosedOrInterrupted();
 
 					}
 					this.iterator = null;
@@ -96,7 +96,7 @@ public class Sort implements PlanNode {
 
 			}
 
-			private void checkClosedOrIterrupted() {
+			private void checkClosedOrInterrupted() {
 				if (isClosed()) {
 					throw new SailException("Iterator was closed while sorting.");
 				}
