@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Bound;
@@ -223,7 +224,11 @@ public class ConstantOptimizer implements QueryOptimizer {
 		protected void meetUnaryValueOperator(UnaryValueOperator unaryValueOp) {
 			super.meetUnaryValueOperator(unaryValueOp);
 
-			if (isConstant(unaryValueOp.getArg())) {
+			ValueExpr arg = unaryValueOp.getArg();
+			// This is not the place to optimize aggregates, as they are not
+			// evaluated in the same way as other unary value operators.
+			// They must be evaluated in the context of a group.
+			if (isConstant(arg) && !(unaryValueOp instanceof AggregateOperator)) {
 				try {
 					Value value = strategy.precompile(unaryValueOp, context).evaluate(EmptyBindingSet.getInstance());
 					unaryValueOp.replaceWith(new ValueConstant(value));
