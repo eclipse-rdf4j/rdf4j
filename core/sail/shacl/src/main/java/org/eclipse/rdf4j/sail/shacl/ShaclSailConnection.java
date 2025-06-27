@@ -594,6 +594,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 								return futureTask;
 							}
 						})
+						.filter(Objects::nonNull)
 						.forEach(futures::add);
 
 				boolean done = false;
@@ -642,7 +643,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				for (Future<ValidationResultIterator> future : futures) {
 					future.cancel(true);
 				}
-				this.futures = null;
+				this.futures = List.of();
 			}
 
 			if (Thread.currentThread().isInterrupted()) {
@@ -762,6 +763,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							return objectFutureTask;
 						}
 					})
+					.filter(Objects::nonNull)
 					.forEach(futures::add);
 
 			for (Future<Object> future : futures) {
@@ -786,8 +788,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			}
 
 		} finally {
-			for (Future<Object> future : futures) {
-				future.cancel(true);
+			if (futures != null) {
+				for (Future<Object> future : futures) {
+					future.cancel(true);
+				}
 			}
 		}
 
