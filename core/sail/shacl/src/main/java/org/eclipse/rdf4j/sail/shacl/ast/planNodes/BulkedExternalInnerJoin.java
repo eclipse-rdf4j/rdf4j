@@ -126,6 +126,14 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 						parsedQuery = parseQuery(query);
 					}
 
+					if (isClosed()) {
+						return;
+					}
+
+					if (Thread.currentThread().isInterrupted()) {
+						close();
+					}
+
 					runQuery(left.values(), right, connection, parsedQuery, dataset, dataGraph,
 							skipBasedOnPreviousConnection,
 							previousStateConnection);
