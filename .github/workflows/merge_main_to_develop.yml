@@ -5,8 +5,15 @@ on:
     branches:
     - "main"
 
+concurrency:
+  group: ${{ github.ref }}-sync
+  cancel-in-progress: true
+
 jobs:
   pull-request:
+    permissions:
+      contents: write
+      pull-requests: write
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
