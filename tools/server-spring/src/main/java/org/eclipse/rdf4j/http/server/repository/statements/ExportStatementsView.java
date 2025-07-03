@@ -45,6 +45,8 @@ import org.springframework.web.servlet.View;
  */
 public class ExportStatementsView implements View {
 
+	private static final Logger logger = LoggerFactory.getLogger(ExportStatementsView.class);
+
 	public static final String SUBJECT_KEY = "subject";
 	public static final String PREDICATE_KEY = "predicate";
 	public static final String OBJECT_KEY = "object";
@@ -56,9 +58,29 @@ public class ExportStatementsView implements View {
 	public static final String HEADERS_ONLY = "headersOnly";
 
 	private static final ExportStatementsView INSTANCE = new ExportStatementsView();
-	public static final int MAX_NUMBER_OF_STATEMENTS_WHEN_TESTING_FOR_POSSIBLE_EXCEPTIONS = 1024;
+	public static int MAX_NUMBER_OF_STATEMENTS_WHEN_TESTING_FOR_POSSIBLE_EXCEPTIONS;
 
-	private static final Logger logger = LoggerFactory.getLogger(ExportStatementsView.class);
+	static {
+		int max = 1024; // default value
+		String maxStatements = System.getProperty(
+				"org.eclipse.rdf4j.http.server.repository.statements.ExportStatementsView.MAX_NUMBER_OF_STATEMENTS_WHEN_TESTING_FOR_POSSIBLE_EXCEPTIONS");
+		if (maxStatements != null) {
+			try {
+				int userMax = Integer.parseInt(maxStatements);
+				if (userMax >= -1) {
+					max = userMax;
+				} else {
+					logger.warn(
+							"Invalid value for MAX_NUMBER_OF_STATEMENTS_WHEN_TESTING_FOR_POSSIBLE_EXCEPTIONS: {}, must be >= -1, using default value of {}.",
+							maxStatements, max);
+				}
+			} catch (NumberFormatException e) {
+				logger.warn("Invalid value for MAX_NUMBER_OF_STATEMENTS_WHEN_TESTING_FOR_POSSIBLE_EXCEPTIONS: "
+						+ maxStatements, e);
+			}
+		}
+		MAX_NUMBER_OF_STATEMENTS_WHEN_TESTING_FOR_POSSIBLE_EXCEPTIONS = max;
+	}
 
 	public static ExportStatementsView getInstance() {
 		return INSTANCE;
@@ -143,6 +165,10 @@ public class ExportStatementsView implements View {
 	private static void attemptToDetectExceptions(HttpServletRequest request, RDFWriterFactory rdfWriterFactory,
 			boolean headersOnly, Resource subj, IRI pred, Value obj, boolean useInferencing, Resource[] contexts)
 			throws IOException, ServerHTTPException {
+		if (MAX_NUMBER_OF_STATEMENTS_WHEN_TESTING_FOR_POSSIBLE_EXCEPTIONS == 0) {
+			return;
+		}
+
 		try (OutputStream out = OutputStream.nullOutputStream()) {
 			RDFHandler rdfWriter = new LimitedSizeRDFHandler(rdfWriterFactory.getWriter(out),
 					MAX_NUMBER_OF_STATEMENTS_WHEN_TESTING_FOR_POSSIBLE_EXCEPTIONS);
@@ -200,7 +226,7 @@ public class ExportStatementsView implements View {
 
 		private void incrementCurrentSize() {
 			currentSize++;
-			if (currentSize > maxSize) {
+			if (maxSize >= 0 && currentSize > maxSize) {
 				endRDF();
 				logger.trace(
 						"Limited size reached, throwing LimitedSizeReachedException to signal that we are done testing the export of statements for exceptions.");

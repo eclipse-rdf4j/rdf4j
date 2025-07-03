@@ -47,6 +47,7 @@ import org.apache.http.impl.client.HttpClients;
 import org.apache.http.message.BasicNameValuePair;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.http.protocol.Protocol;
+import org.eclipse.rdf4j.http.server.repository.statements.ExportStatementsView;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -93,6 +94,8 @@ public class ProtocolIT {
 	public void clearRepository() throws Exception {
 		// Clear the repository after each test
 		delete(Protocol.getStatementsLocation(TestServer.REPOSITORY_URL));
+		ExportStatementsView.MAX_NUMBER_OF_STATEMENTS_WHEN_TESTING_FOR_POSSIBLE_EXCEPTIONS = 1024;
+
 	}
 
 	/**
@@ -415,6 +418,94 @@ public class ProtocolIT {
 					count++;
 				}
 				assertEquals(1860000, count, "Expected 1860000 triples, but got " + count + " instead.");
+			}
+		} finally {
+			conn.disconnect();
+		}
+
+	}
+
+	@Test
+	public void testUploadAndRetrieveStatementsNoValidation_GET() throws Exception {
+
+		ExportStatementsView.MAX_NUMBER_OF_STATEMENTS_WHEN_TESTING_FOR_POSSIBLE_EXCEPTIONS = 0;
+
+		String statementsLocation = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
+
+		// PUT the Turtle file into the repository
+		final String baseLocation = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
+		final String file = "/testcases/default-graph-2.ttl";
+
+		// 1. PUT the same file multiple times so that we would trigger an OOM error when retrieving it if it were not
+		// directly written to the http output stream
+		for (int i = 1; i <= 20000; i++) {
+			IRI context = vf.createIRI("http://example.org/graph" + i);
+			putFile(baseLocation, file, context);
+		}
+
+		// GET all statements back from the same endpoint
+		URL url = new URL(statementsLocation);
+		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+		conn.setRequestMethod("GET");
+		conn.setRequestProperty("Accept", RDFFormat.NQUADS.getDefaultMIMEType()); // ask for easy-to-parse format
+		conn.connect();
+
+		try {
+			assertEquals(HttpURLConnection.HTTP_OK, conn.getResponseCode(),
+					"GET /statements should respond 200 OK");
+
+			// Parse the response stream and count triples
+			try (InputStream in = conn.getInputStream()) {
+				Scanner scanner = new Scanner(in);
+				int count = 0;
+				while (scanner.hasNext()) {
+					scanner.nextLine();
+					count++;
+				}
+				assertEquals(1860000, count, "Expected 1860000 triples, but got " + count + " instead.");
+			}
+		} finally {
+			conn.disconnect();
+		}
+
+	}
+
+	@Test
+	public void testUploadAndRetrieveStatementsWithFullValidation_GET() throws Exception {
+
+		ExportStatementsView.MAX_NUMBER_OF_STATEMENTS_WHEN_TESTING_FOR_POSSIBLE_EXCEPTIONS = -1;
+
+		String statementsLocation = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
+
+		String baseLocation = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
+		String file = "/testcases/default-graph-2.ttl";
+
+		// PUT the Turtle file into the repository
+		for (int i = 1; i <= 2000; i++) {
+			IRI context = vf.createIRI("http://example.org/graph" + i);
+			putFile(baseLocation, file, context);
+		}
+
+		// GET all statements back from the same endpoint
+		URL url = new URL(statementsLocation);
+		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+		conn.setRequestMethod("GET");
+		conn.setRequestProperty("Accept", RDFFormat.NQUADS.getDefaultMIMEType()); // ask for easy-to-parse format
+		conn.connect();
+
+		try {
+			assertEquals(HttpURLConnection.HTTP_OK, conn.getResponseCode(),
+					"GET /statements should respond 200 OK");
+
+			// Parse the response stream and count triples
+			try (InputStream in = conn.getInputStream()) {
+				Scanner scanner = new Scanner(in);
+				int count = 0;
+				while (scanner.hasNext()) {
+					scanner.nextLine();
+					count++;
+				}
+				assertEquals(186000, count, "Expected 186000 triples, but got " + count + " instead.");
 			}
 		} finally {
 			conn.disconnect();
