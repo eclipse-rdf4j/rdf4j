@@ -187,6 +187,7 @@ components:
           schema:
             type: string
             format: binary
+
   examples:
     SparqlXmlBindings:
       value: |
@@ -381,6 +382,22 @@ paths:
           description: Specifies the number of query solutions to skip. The value should be a positive integer. This parameter is cumulative with any OFFSET modifier in the supplied SPARQL query itself.
           schema:
             type: integer
+        - name: explain
+          in: query
+          required: false
+          description: |
+            The level of explanation to return. If specified, the server will return an explanation of the query execution plan. The value should be one of the following:
+            - `Unoptimized`: Simple parsed plan
+            - `Optimized`: Parsed and optimized plan, including cost estimation
+            - `Executed`: Plan as it was executed, including actual result size
+            - `Timed`: Executed plan with timing details for each node
+          schema:
+            type: string
+            enum:
+              - Unoptimized
+              - Optimized
+              - Executed
+              - Timed
       responses:
         '200':
           $ref: "#/components/responses/200SparqlResult"
@@ -449,7 +466,7 @@ paths:
         required: true
         $ref: "#/components/requestBodies/RdfData"
       responses:
-        '204': 
+        '204':
           description: created
 
   /repositories/{repositoryID}/statements:
@@ -829,8 +846,8 @@ paths:
               type: string
             example: http://www.example.com
       responses:
-          204:
-            description: The defined namespace was successfully set to the given prefix.
+        204:
+          description: The defined namespace was successfully set to the given prefix.
     delete:
       tags:
         - Namespaces
@@ -1126,24 +1143,24 @@ paths:
           description: No content
 
     delete:
-        tags:
-          - Transactions
-        summary: Abort a transaction
-        description: |
-          An active transaction can be aborted by means of a HTTP DELETE request on the transaction resource. This will execute a transaction rollback on the repository and will close the transaction. After executing a DELETE, further operations on the same transaction will result in an error.
-        parameters:
-          - name: repositoryID
-            in: path
-            required: true
-            description: The repository ID
-            schema:
-              type: string
-          - name: transactionID
-            in: path
-            required: true
-            schema:
-              type: string
-            description: The transaction ID
-        responses:
-          204:
-            description: Successfully aborted the defined transaction.
+      tags:
+        - Transactions
+      summary: Abort a transaction
+      description: |
+        An active transaction can be aborted by means of a HTTP DELETE request on the transaction resource. This will execute a transaction rollback on the repository and will close the transaction. After executing a DELETE, further operations on the same transaction will result in an error.
+      parameters:
+        - name: repositoryID
+          in: path
+          required: true
+          description: The repository ID
+          schema:
+            type: string
+        - name: transactionID
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The transaction ID
+      responses:
+        204:
+          description: Successfully aborted the defined transaction.
