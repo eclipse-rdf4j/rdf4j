@@ -35,6 +35,7 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+import com.google.common.util.concurrent.UncheckedExecutionException;
 
 /**
  * @apiNote since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
@@ -165,7 +166,14 @@ public class ConnectionsGroup implements AutoCloseable {
 
 			});
 			return ((T) t);
-		} catch (ExecutionException e) {
+		} catch (ExecutionException | UncheckedExecutionException e) {
+			Throwable cause = e.getCause();
+			if (cause instanceof RuntimeException) {
+				throw (RuntimeException) cause;
+			}
+			if (cause instanceof Error) {
+				throw (Error) cause;
+			}
 			throw new SailException(e);
 		}
 	}

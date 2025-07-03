@@ -101,12 +101,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 	private boolean isOpen = true;
 	private static final VarHandle IS_OPEN;
 
-	private Thread owner;
+	private final Thread owner;
 
 	/**
 	 * Lock used to prevent concurrent calls to update methods like addStatement, clear, commit, etc. within a
 	 * transaction.
-	 *
 	 */
 	private final ReentrantLock updateLock = new ReentrantLock();
 	private final LongAdder iterationsOpened = new LongAdder();
@@ -245,11 +244,13 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (!IS_OPEN.compareAndSet(this, true, false)) {
 			return;
 		}
+
 		try {
-
-			waitForOtherOperations(true);
-
+			sailBase.connectionClosed(this);
+		} finally {
 			try {
+				waitForOtherOperations(true);
+			} finally {
 				try {
 					forceCloseActiveOperations();
 				} finally {
@@ -272,11 +273,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 						throw new SailException("Connection closed before all iterations were closed.");
 					}
 				}
-
-			} finally {
-				sailBase.connectionClosed(this);
 			}
-		} finally {
 		}
 
 	}
@@ -925,7 +922,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 		if (debugEnabled) {
 			var result = new SailBaseIteration<>(iter, this);
-			activeIterationsDebug.put(result, new Throwable("Unclosed iteration"));
+			activeIterationsDebug.put(result,
+					new Throwable("Unclosed iteration created in " + this.getClass().getName()));
 			return result;
 		} else {
 			return new CleanerIteration<>(new SailBaseIteration<>(iter, this), cleaner);
@@ -990,6 +988,13 @@ public abstract class AbstractSailConnection implements SailConnection {
 	protected abstract void clearNamespacesInternal() throws SailException;
 
 	protected boolean isActiveOperation() {
+		long closed = iterationsClosed.sum();
+		long opened = iterationsOpened.sum();
+		return closed != opened;
+	}
+
+	@InternalUseOnly
+	public boolean hasActiveIterations() {
 		long closed = iterationsClosed.sum();
 		long opened = iterationsOpened.sum();
 		return closed != opened;
