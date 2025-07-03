@@ -29,6 +29,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Random;
+import java.util.Scanner;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -46,6 +47,8 @@ import org.apache.http.impl.client.HttpClients;
 import org.apache.http.message.BasicNameValuePair;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.http.protocol.Protocol;
+import org.eclipse.rdf4j.http.server.repository.statements.ExportStatementsView;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
@@ -57,6 +60,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -84,6 +88,14 @@ public class ProtocolIT {
 	@AfterAll
 	public static void stopServer() throws Exception {
 		server.stop();
+	}
+
+	@AfterEach
+	public void clearRepository() throws Exception {
+		// Clear the repository after each test
+		delete(Protocol.getStatementsLocation(TestServer.REPOSITORY_URL));
+		ExportStatementsView.MAX_NUMBER_OF_STATEMENTS_WHEN_TESTING_FOR_POSSIBLE_EXCEPTIONS = 1024;
+
 	}
 
 	/**
@@ -172,7 +184,7 @@ public class ProtocolIT {
 
 		System.out.println("Query Direct POST Status: " + response.getStatusLine());
 		int statusCode = response.getStatusLine().getStatusCode();
-		assertEquals(true, statusCode >= 200 && statusCode < 400);
+		assertTrue(statusCode >= 200 && statusCode < 400);
 	}
 
 	/**
@@ -192,7 +204,7 @@ public class ProtocolIT {
 
 		System.out.println("Update Direct Post Status: " + response.getStatusLine());
 		int statusCode = response.getStatusLine().getStatusCode();
-		assertEquals(true, statusCode >= 200 && statusCode < 400);
+		assertTrue(statusCode >= 200 && statusCode < 400);
 	}
 
 	/**
@@ -215,7 +227,7 @@ public class ProtocolIT {
 
 		System.out.println("Update Form Post Status: " + response.getStatusLine());
 		int statusCode = response.getStatusLine().getStatusCode();
-		assertEquals(true, statusCode >= 200 && statusCode < 400);
+		assertTrue(statusCode >= 200 && statusCode < 400);
 	}
 
 	/**
@@ -368,6 +380,137 @@ public class ProtocolIT {
 		} finally {
 			conn.disconnect();
 		}
+	}
+
+	@Test
+	public void testUploadAndRetrieveStatements_GET() throws Exception {
+
+		String statementsLocation = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
+
+		// PUT the Turtle file into the repository
+		final String baseLocation = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
+		final String file = "/testcases/default-graph-2.ttl";
+
+		// 1. PUT the same file multiple times so that we would trigger an OOM error when retrieving it if it were not
+		// directly written to the http output stream
+		for (int i = 1; i <= 20000; i++) {
+			IRI context = vf.createIRI("http://example.org/graph" + i);
+			putFile(baseLocation, file, context);
+		}
+
+		// GET all statements back from the same endpoint
+		URL url = new URL(statementsLocation);
+		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+		conn.setRequestMethod("GET");
+		conn.setRequestProperty("Accept", RDFFormat.NQUADS.getDefaultMIMEType()); // ask for easy-to-parse format
+		conn.connect();
+
+		try {
+			assertEquals(HttpURLConnection.HTTP_OK, conn.getResponseCode(),
+					"GET /statements should respond 200 OK");
+
+			// Parse the response stream and count triples
+			try (InputStream in = conn.getInputStream()) {
+				Scanner scanner = new Scanner(in);
+				int count = 0;
+				while (scanner.hasNext()) {
+					scanner.nextLine();
+					count++;
+				}
+				assertEquals(1860000, count, "Expected 1860000 triples, but got " + count + " instead.");
+			}
+		} finally {
+			conn.disconnect();
+		}
+
+	}
+
+	@Test
+	public void testUploadAndRetrieveStatementsNoValidation_GET() throws Exception {
+
+		ExportStatementsView.MAX_NUMBER_OF_STATEMENTS_WHEN_TESTING_FOR_POSSIBLE_EXCEPTIONS = 0;
+
+		String statementsLocation = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
+
+		// PUT the Turtle file into the repository
+		final String baseLocation = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
+		final String file = "/testcases/default-graph-2.ttl";
+
+		// 1. PUT the same file multiple times so that we would trigger an OOM error when retrieving it if it were not
+		// directly written to the http output stream
+		for (int i = 1; i <= 20000; i++) {
+			IRI context = vf.createIRI("http://example.org/graph" + i);
+			putFile(baseLocation, file, context);
+		}
+
+		// GET all statements back from the same endpoint
+		URL url = new URL(statementsLocation);
+		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+		conn.setRequestMethod("GET");
+		conn.setRequestProperty("Accept", RDFFormat.NQUADS.getDefaultMIMEType()); // ask for easy-to-parse format
+		conn.connect();
+
+		try {
+			assertEquals(HttpURLConnection.HTTP_OK, conn.getResponseCode(),
+					"GET /statements should respond 200 OK");
+
+			// Parse the response stream and count triples
+			try (InputStream in = conn.getInputStream()) {
+				Scanner scanner = new Scanner(in);
+				int count = 0;
+				while (scanner.hasNext()) {
+					scanner.nextLine();
+					count++;
+				}
+				assertEquals(1860000, count, "Expected 1860000 triples, but got " + count + " instead.");
+			}
+		} finally {
+			conn.disconnect();
+		}
+
+	}
+
+	@Test
+	public void testUploadAndRetrieveStatementsWithFullValidation_GET() throws Exception {
+
+		ExportStatementsView.MAX_NUMBER_OF_STATEMENTS_WHEN_TESTING_FOR_POSSIBLE_EXCEPTIONS = -1;
+
+		String statementsLocation = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
+
+		String baseLocation = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
+		String file = "/testcases/default-graph-2.ttl";
+
+		// PUT the Turtle file into the repository
+		for (int i = 1; i <= 2000; i++) {
+			IRI context = vf.createIRI("http://example.org/graph" + i);
+			putFile(baseLocation, file, context);
+		}
+
+		// GET all statements back from the same endpoint
+		URL url = new URL(statementsLocation);
+		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+		conn.setRequestMethod("GET");
+		conn.setRequestProperty("Accept", RDFFormat.NQUADS.getDefaultMIMEType()); // ask for easy-to-parse format
+		conn.connect();
+
+		try {
+			assertEquals(HttpURLConnection.HTTP_OK, conn.getResponseCode(),
+					"GET /statements should respond 200 OK");
+
+			// Parse the response stream and count triples
+			try (InputStream in = conn.getInputStream()) {
+				Scanner scanner = new Scanner(in);
+				int count = 0;
+				while (scanner.hasNext()) {
+					scanner.nextLine();
+					count++;
+				}
+				assertEquals(186000, count, "Expected 186000 triples, but got " + count + " instead.");
+			}
+		} finally {
+			conn.disconnect();
+		}
+
 	}
 
 	/**
@@ -560,9 +703,16 @@ public class ProtocolIT {
 		}
 	}
 
-	private void putFile(String location, String file) throws Exception {
-		System.out.println("Put file to " + location);
+	/**
+	 * PUT a file into a specific named graph (context) by adding the ?context=<encodedIRI> query parameter.
+	 */
+	private void putFile(String repositoryBaseLocation, String file, IRI context) throws Exception {
+		String location = repositoryBaseLocation
+				+ "?" + Protocol.CONTEXT_PARAM_NAME + "=" + Protocol.encodeValue(context);
+		putFile(location, file); // delegate to the existing helper
+	}
 
+	private void putFile(String location, String file) throws Exception {
 		URL url = new URL(location);
 		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 		conn.setRequestMethod("PUT");
