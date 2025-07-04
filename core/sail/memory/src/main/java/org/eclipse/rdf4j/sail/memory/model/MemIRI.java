@@ -45,7 +45,7 @@ public class MemIRI extends MemResource implements IRI {
 	/**
 	 * The MemURI's hash code, 0 if not yet initialized.
 	 */
-	private volatile int hashCode = 0;
+	private final int hashCode;
 
 	/**
 	 * The list of statements for which this MemURI is the predicate.
@@ -72,6 +72,7 @@ public class MemIRI extends MemResource implements IRI {
 		this.creator = creator;
 		this.namespace = namespace;
 		this.localName = localName;
+		this.hashCode = (namespace + localName).hashCode();
 	}
 
 	/*---------*
@@ -157,10 +158,6 @@ public class MemIRI extends MemResource implements IRI {
 
 	@Override
 	public int hashCode() {
-		if (hashCode == 0) {
-			hashCode = stringValue().hashCode();
-		}
-
 		return hashCode;
 	}
 
