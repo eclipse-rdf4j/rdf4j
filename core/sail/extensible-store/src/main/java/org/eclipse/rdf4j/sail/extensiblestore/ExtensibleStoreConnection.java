@@ -54,7 +54,7 @@ public class ExtensibleStoreConnection<E extends ExtensibleStore> extends SailSo
 	}
 
 	@Override
-	protected void rollbackInternal() throws SailException {
+	public void rollbackInternal() throws SailException {
 		super.rollbackInternal();
 		// create a fresh event object.
 		sailChangedEvent = new DefaultSailChangedEvent(sail);
