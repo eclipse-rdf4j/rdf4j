@@ -284,6 +284,7 @@ public interface CoreDatatype {
 
 		HTML(iri("HTML")),
 		XMLLITERAL(iri("XMLLiteral")),
+		JSON(iri("JSON")),
 		LANGSTRING(iri("langString"));
 
 		public static final String NAMESPACE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";

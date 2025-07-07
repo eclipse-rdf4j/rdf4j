@@ -580,4 +580,34 @@ public class TurtleParserTest {
 		}
 	}
 
+	@Test
+	public void testParseAdditionalDatatypes() throws IOException {
+		String data = prefixes + ":s :p \"o\"^^rdf:JSON . \n"
+							   + ":s :p \"o\"^^rdf:HTML . \n"
+							   + ":s :p \"o\"^^rdf:XMLLiteral . ";
+		Reader r = new StringReader(data);
+
+		try {
+			parser.getParserConfig().set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, true);
+
+			parser.parse(r, baseURI);
+
+			assertThat(errorCollector.getErrors()).isEmpty();
+
+			Collection<Statement> stmts = statementCollector.getStatements();
+
+			assertThat(stmts).hasSize(3);
+
+			Iterator<Statement> iter = stmts.iterator();
+
+			Statement stmt1 = iter.next(), stmt2 = iter.next(), stmt3 = iter.next();
+
+			assertEquals(vf.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON"), ((Literal)stmt1.getObject()).getDatatype());
+			assertEquals(vf.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#HTML"), ((Literal)stmt2.getObject()).getDatatype());
+			assertEquals(vf.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#XMLLiteral"), ((Literal)stmt3.getObject()).getDatatype());
+		} catch (RDFParseException e) {
+			fail("parse error on correct data: " + e.getMessage());
+		}
+	}
+
 }

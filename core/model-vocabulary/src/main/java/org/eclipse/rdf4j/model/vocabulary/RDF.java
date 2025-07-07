@@ -90,4 +90,6 @@ public class RDF {
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#HTML */
 	public static final IRI HTML = CoreDatatype.RDF.HTML.getIri();
 
+	public static final IRI JSON = CoreDatatype.RDF.JSON.getIri();
+
 }
