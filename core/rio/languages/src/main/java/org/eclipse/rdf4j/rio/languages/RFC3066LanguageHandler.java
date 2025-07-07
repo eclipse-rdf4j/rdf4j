@@ -67,11 +67,18 @@ public class RFC3066LanguageHandler implements LanguageHandler {
 	@Override
 	public Literal normalizeLanguage(String literalValue, String languageTag, ValueFactory valueFactory)
 			throws LiteralUtilException {
+		return normalizeLanguage(literalValue, languageTag, Literal.BaseDirection.NONE, valueFactory);
+	}
+
+	@Override
+	public Literal normalizeLanguage(String literalValue, String languageTag, Literal.BaseDirection baseDir,
+			ValueFactory valueFactory)
+			throws LiteralUtilException {
 		Objects.requireNonNull(languageTag, "Language tag cannot be null");
 		Objects.requireNonNull(literalValue, "Literal value cannot be null");
 
 		if (isRecognizedLanguage(languageTag)) {
-			return valueFactory.createLiteral(literalValue, languageTag.toLowerCase().intern());
+			return valueFactory.createLiteral(literalValue, languageTag.toLowerCase().intern(), baseDir);
 		}
 
 		throw new LiteralUtilException("Could not normalize RFC3066 language tag");
