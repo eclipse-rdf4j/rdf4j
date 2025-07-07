@@ -565,6 +565,7 @@ public class NTriplesUtil {
 			// Append the literal's language
 			appendable.append("@");
 			appendable.append(lit.getLanguage().get());
+			appendable.append(lit.getBaseDirection().toString());
 		} else {
 			// SES-1917 : In RDF-1.1, all literals have a type, and if they are not
 			// language literals we display the type for backwards compatibility

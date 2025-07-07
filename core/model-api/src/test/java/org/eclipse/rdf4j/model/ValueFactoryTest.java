@@ -71,6 +71,7 @@ import javax.xml.datatype.DatatypeConfigurationException;
 import javax.xml.datatype.DatatypeFactory;
 import javax.xml.datatype.XMLGregorianCalendar;
 
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -535,6 +536,18 @@ public abstract class ValueFactoryTest {
 		assertThat(literal.getLabel()).isEqualTo(string);
 		assertThat(literal.getDatatype().stringValue()).isEqualTo(XSD_DATETIME);
 
+	}
+
+	@Test
+	public void testCreateDirLangLiteral() {
+		final Literal literal = factory().createLiteral("label", "he", Literal.BaseDirection.RTL);
+
+		assertThat(literal).isNotNull();
+		assertThat(literal.getLabel()).isEqualTo("label");
+		assertThat(literal.getLanguage()).contains("he");
+		assertThat(literal.getBaseDirection()).isEqualTo(Literal.BaseDirection.RTL);
+		assertThat(literal.getBaseDirection().toString()).isEqualTo("--rtl");
+		assertThat(literal.getDatatype()).isEqualTo(CoreDatatype.RDF.DIRLANGSTRING.getIri());
 	}
 
 }

@@ -1531,6 +1531,11 @@ class ValueStore extends AbstractValueFactory {
 		return new LmdbLiteral(revision, value, language);
 	}
 
+	@Override
+	public LmdbLiteral createLiteral(String value, String language, Literal.BaseDirection baseDirection) {
+		return new LmdbLiteral(revision, value, language, baseDirection);
+	}
+
 	/*----------------------------------------------------------------------*
 	 * Methods for converting model objects to LmdbStore-specific objects *
 	 *----------------------------------------------------------------------*/

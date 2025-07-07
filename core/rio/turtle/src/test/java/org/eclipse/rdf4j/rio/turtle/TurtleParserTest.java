@@ -25,6 +25,7 @@ import java.io.StringReader;
 import java.net.URL;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -32,46 +33,36 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.rio.AbstractParserTest;
+import org.eclipse.rdf4j.rio.LanguageHandler;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
-import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
-import org.eclipse.rdf4j.rio.helpers.SimpleParseLocationListener;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.rio.helpers.TurtleParserSettings;
-import org.junit.jupiter.api.BeforeEach;
+import org.eclipse.rdf4j.rio.languages.RFC3066LanguageHandler;
 import org.junit.jupiter.api.Test;
 
 /**
  * @author jeen
  */
-public class TurtleParserTest {
-
-	private TurtleParser parser;
+public class TurtleParserTest extends AbstractParserTest {
 
 	private final ValueFactory vf = SimpleValueFactory.getInstance();
-
-	private final ParseErrorCollector errorCollector = new ParseErrorCollector();
-
-	private final StatementCollector statementCollector = new StatementCollector();
 
 	private final String prefixes = "@prefix ex: <http://example.org/ex/> . \n@prefix : <http://example.org/> . \n";
 
 	private final String baseURI = "http://example.org/";
 
-	private final SimpleParseLocationListener locationListener = new SimpleParseLocationListener();
-
-	@BeforeEach
-	public void setUp() {
-		parser = new TurtleParser();
-		parser.setParseErrorListener(errorCollector);
-		parser.setRDFHandler(statementCollector);
-		parser.setParseLocationListener(locationListener);
+	@Override
+	protected RDFParser createRDFParser() {
+		return new TurtleParser();
 	}
 
 	@Test
@@ -275,99 +266,80 @@ public class TurtleParserTest {
 			final String error = errorCollector.getFatalErrors().get(0);
 			// expected to fail at line 9.
 			assertTrue(error.contains("(9,"));
-			assertEquals(9, locationListener.getLineNo());
-			assertEquals(-1, locationListener.getColumnNo());
+			locationListener.assertListener(9, -1);
 		}
 	}
 
 	@Test
 	public void testLineNumberReportingNoErrorsSingleLine() throws IOException {
-		assertEquals(0, locationListener.getLineNo());
-		assertEquals(0, locationListener.getColumnNo());
+		locationListener.assertListener(0, 0);
 		Reader in = new StringReader("<urn:a> <urn:b> <urn:c>.");
 		parser.parse(in, baseURI);
-		assertEquals(1, locationListener.getLineNo());
-		assertEquals(-1, locationListener.getColumnNo());
+		locationListener.assertListener(1, -1);
 	}
 
 	@Test
 	public void testLineNumberReportingNoErrorsSingleLineEndNewline() throws IOException {
-		assertEquals(0, locationListener.getLineNo());
-		assertEquals(0, locationListener.getColumnNo());
+		locationListener.assertListener(0, 0);
 		Reader in = new StringReader("<urn:a> <urn:b> <urn:c>.\n");
 		parser.parse(in, baseURI);
-		assertEquals(2, locationListener.getLineNo());
-		assertEquals(-1, locationListener.getColumnNo());
+		locationListener.assertListener(2, -1);
 	}
 
 	@Test
 	public void testLineNumberReportingNoErrorsMultipleLinesNoEndNewline() throws IOException {
-		assertEquals(0, locationListener.getLineNo());
-		assertEquals(0, locationListener.getColumnNo());
+		locationListener.assertListener(0, 0);
 		Reader in = new StringReader("<urn:a> <urn:b> <urn:c>.\n<urn:a> <urn:b> <urn:d>.");
 		parser.parse(in, baseURI);
-		assertEquals(2, locationListener.getLineNo());
-		assertEquals(-1, locationListener.getColumnNo());
+		locationListener.assertListener(2, -1);
 	}
 
 	@Test
 	public void testLineNumberReportingNoErrorsMultipleLinesEndNewline() throws IOException {
-		assertEquals(0, locationListener.getLineNo());
-		assertEquals(0, locationListener.getColumnNo());
+		locationListener.assertListener(0, 0);
 		Reader in = new StringReader("<urn:a> <urn:b> <urn:c>.\n<urn:a> <urn:b> <urn:d>.\n");
 		parser.parse(in, baseURI);
-		assertEquals(3, locationListener.getLineNo());
-		assertEquals(-1, locationListener.getColumnNo());
+		locationListener.assertListener(3, -1);
 	}
 
 	@Test
 	public void testLineNumberReportingOnlySingleCommentNoEndline() throws IOException {
-		assertEquals(0, locationListener.getLineNo());
-		assertEquals(0, locationListener.getColumnNo());
+		locationListener.assertListener(0, 0);
 		Reader in = new StringReader("# This is just a comment");
 		parser.parse(in, baseURI);
-		assertEquals(1, locationListener.getLineNo());
-		assertEquals(-1, locationListener.getColumnNo());
+		locationListener.assertListener(1, -1);
 	}
 
 	@Test
 	public void testLineNumberReportingOnlySingleCommentEndline() throws IOException {
-		assertEquals(0, locationListener.getLineNo());
-		assertEquals(0, locationListener.getColumnNo());
+		locationListener.assertListener(0, 0);
 		Reader in = new StringReader("# This is just a comment\n");
 		parser.parse(in, baseURI);
-		assertEquals(2, locationListener.getLineNo());
-		assertEquals(-1, locationListener.getColumnNo());
+		locationListener.assertListener(2, -1);
 	}
 
 	@Test
 	public void testLineNumberReportingOnlySingleCommentCarriageReturn() throws IOException {
-		assertEquals(0, locationListener.getLineNo());
-		assertEquals(0, locationListener.getColumnNo());
+		locationListener.assertListener(0, 0);
 		Reader in = new StringReader("# This is just a comment\r");
 		parser.parse(in, baseURI);
-		assertEquals(2, locationListener.getLineNo());
-		assertEquals(-1, locationListener.getColumnNo());
+		locationListener.assertListener(2, -1);
 	}
 
 	@Test
 	public void testLineNumberReportingOnlySingleCommentCarriageReturnNewline() throws IOException {
-		assertEquals(0, locationListener.getLineNo());
-		assertEquals(0, locationListener.getColumnNo());
+		locationListener.assertListener(0, 0);
 		Reader in = new StringReader("# This is just a comment\r\n");
 		parser.parse(in, baseURI);
-		assertEquals(2, locationListener.getLineNo());
-		assertEquals(-1, locationListener.getColumnNo());
+		locationListener.assertListener(2, -1);
 	}
 
 	@Test
 	public void testLineNumberReportingInLongStringLiterals() throws IOException {
-		assertEquals(0, locationListener.getLineNo());
-		assertEquals(0, locationListener.getColumnNo());
+		locationListener.assertListener(0, 0);
 		Reader in = new StringReader("<urn:a> <urn:b> \"\"\"is\nallowed\nin\na very long string\"\"\" .");
 		parser.parse(in, baseURI);
-		assertEquals(4, locationListener.getLineNo());
-		assertEquals(-1, locationListener.getColumnNo());
+		locationListener.assertListener(4, -1);
 	}
 
 	@Test
@@ -580,4 +552,117 @@ public class TurtleParserTest {
 		}
 	}
 
+	@Test
+	public void testParseAdditionalDatatypes() throws IOException {
+		String data = prefixes + ":s :p \"o\"^^rdf:JSON . \n"
+				+ ":s :p \"o\"^^rdf:HTML . \n"
+				+ ":s :p \"o\"^^rdf:XMLLiteral . ";
+		Reader r = new StringReader(data);
+
+		try {
+			parser.getParserConfig().set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, true);
+
+			parser.parse(r, baseURI);
+
+			assertThat(errorCollector.getErrors()).isEmpty();
+
+			Collection<Statement> stmts = statementCollector.getStatements();
+
+			assertThat(stmts).hasSize(3);
+
+			Iterator<Statement> iter = stmts.iterator();
+
+			Statement stmt1 = iter.next(), stmt2 = iter.next(), stmt3 = iter.next();
+
+			assertEquals(CoreDatatype.RDF.JSON.getIri(), ((Literal) stmt1.getObject()).getDatatype());
+			assertEquals(CoreDatatype.RDF.HTML.getIri(), ((Literal) stmt2.getObject()).getDatatype());
+			assertEquals(CoreDatatype.RDF.XMLLITERAL.getIri(), ((Literal) stmt3.getObject()).getDatatype());
+		} catch (RDFParseException e) {
+			fail("parse error on correct data: " + e.getMessage());
+		}
+	}
+
+	/**
+	 * https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax/nt-ttl12-langdir-1.ttl
+	 */
+	@Test
+	public void testLanguageDirectionLTR() throws IOException {
+		String data = "<http://example/a> <http://example/b> \"Hello\"@en--ltr .";
+		dirLangStringTestHelper(data, "en", Literal.LTR_SUFFIX, false, false);
+	}
+
+	/**
+	 * https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax/nt-ttl12-langdir-1.ttl
+	 */
+	@Test
+	public void testLanguageDirectionLTRWithNormalization() throws IOException {
+		String data = "<http://example/a> <http://example/b> \"Hello\"@EN--ltr .";
+		dirLangStringTestHelper(data, "en", Literal.LTR_SUFFIX, true, false);
+	}
+
+	/**
+	 * https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax/nt-ttl12-langdir-2.ttl
+	 */
+	@Test
+	public void testLanguageDirectionRTL() throws IOException {
+		String data = "<http://example/a> <http://example/b> \"Hello\"@en--rtl .";
+		dirLangStringTestHelper(data, "en", Literal.RTL_SUFFIX, false, false);
+	}
+
+	/**
+	 * https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax/nt-ttl12-langdir-2.ttl
+	 */
+	@Test
+	public void testLanguageDirectionRTLWithNormalization() throws IOException {
+		String data = "<http://example/a> <http://example/b> \"Hello\"@EN--rtl .";
+		dirLangStringTestHelper(data, "en", Literal.RTL_SUFFIX, true, false);
+	}
+
+	/**
+	 * https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax/nt-ttl12-langdir-bad-1.ttl
+	 */
+	@Test
+	public void testBadLanguageDirection() throws IOException {
+		String data = "<http://example/a> <http://example/b> \"Hello\"@en--unk .";
+		dirLangStringTestHelper(data, "", "", false, true);
+	}
+
+	/**
+	 * https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax/nt-ttl12-langdir-bad-2.ttl
+	 */
+	@Test
+	public void testBadCapitalizationLanguageDirection() throws IOException {
+		String data = "<http://example/a> <http://example/b> \"Hello\"@en--LTR .";
+		dirLangStringTestHelper(data, "", "", false, true);
+	}
+
+	@Test
+	public void testDirLangStringNoLanguage() throws IOException {
+		String data = "<http://example/a> <http://example/b> \"Hello\"^^rdf:dirLangString .";
+		dirLangStringNoLanguageTestHelper(data);
+	}
+
+	@Test
+	public void testRFC3066LanguageHandler() throws IOException {
+		String data = "<http://example/a> <http://example/b> \"Hello\"@en--ltr .";
+
+		try {
+			List<LanguageHandler> customHandlers = List.of(new RFC3066LanguageHandler());
+			parser.getParserConfig().set(BasicParserSettings.LANGUAGE_HANDLERS, customHandlers);
+			parser.parse(new StringReader(data), baseURI);
+
+			assertThat(errorCollector.getErrors()).isEmpty();
+
+			Collection<Statement> stmts = statementCollector.getStatements();
+
+			assertThat(stmts).hasSize(1);
+
+			Iterator<Statement> iter = stmts.iterator();
+			Statement stmt1 = iter.next();
+
+			assertEquals(CoreDatatype.RDF.DIRLANGSTRING.getIri(), ((Literal) stmt1.getObject()).getDatatype());
+		} catch (RDFParseException e) {
+			fail("parse error on correct data: " + e.getMessage());
+		}
+	}
 }
