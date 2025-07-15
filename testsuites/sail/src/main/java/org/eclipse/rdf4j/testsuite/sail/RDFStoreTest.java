@@ -323,6 +323,24 @@ public abstract class RDFStoreTest {
 		testValueRoundTrip(subj, pred, obj);
 	}
 
+	@Test
+	public void testDirLangStringRoundTrip() {
+		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);
+		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);
+		Literal obj = vf.createLiteral("guernica", "es--ltr");
+
+		testValueRoundTrip(subj, pred, obj);
+	}
+
+	@Test
+	public void testJSONLiteralRoundTrip() {
+		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);
+		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);
+		Literal obj = vf.createLiteral("{ \"name\" : \"guernica\", \"dateCreated\": 1937 }", RDF.JSON);
+
+		testValueRoundTrip(subj, pred, obj);
+	}
+
 	private void testValueRoundTrip(Resource subj, IRI pred, Value obj) {
 		con.begin();
 		con.addStatement(subj, pred, obj);

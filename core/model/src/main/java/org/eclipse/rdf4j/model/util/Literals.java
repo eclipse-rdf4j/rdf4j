@@ -473,7 +473,8 @@ public class Literals {
 	 * @return True if the literal has a language tag attached to it and false otherwise.
 	 */
 	public static boolean isLanguageLiteral(Literal literal) {
-		return literal.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING;
+		return literal.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING
+				|| literal.getCoreDatatype() == CoreDatatype.RDF.DIRLANGSTRING;
 	}
 
 	/**

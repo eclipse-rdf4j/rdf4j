@@ -81,8 +81,13 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	public LmdbLiteral(ValueStoreRevision revision, String label, String lang, long internalID) {
 		this.label = label;
 		this.language = lang;
-		coreDatatype = CoreDatatype.RDF.LANGSTRING;
-		datatype = CoreDatatype.RDF.LANGSTRING.getIri();
+		if (lang.endsWith("--ltr") || lang.endsWith("--rtl")) {
+			coreDatatype = CoreDatatype.RDF.DIRLANGSTRING;
+			datatype = CoreDatatype.RDF.DIRLANGSTRING.getIri();
+		} else {
+			coreDatatype = CoreDatatype.RDF.LANGSTRING;
+			datatype = CoreDatatype.RDF.LANGSTRING.getIri();
+		}
 		setInternalID(internalID, revision);
 		this.initialized = true;
 	}

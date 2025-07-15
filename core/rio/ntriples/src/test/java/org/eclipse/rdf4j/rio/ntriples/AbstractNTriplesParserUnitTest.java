@@ -10,21 +10,21 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.ntriples;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.TreeSet;
+import java.util.*;
 
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -525,6 +525,91 @@ public abstract class AbstractNTriplesParserUnitTest {
 
 		assertEquals(1, errors.size());
 		assertTrue(errors.get(0).contains("(1, 32)"), "Unknown line number");
+	}
+
+	@Test
+	public void testDirLangStringLTR() {
+		String data = "<http://example/a> <http://example/b> \"Hello\"@en--ltr .";
+		dirLangStringTest(data, "en--ltr", false, false);
+	}
+
+	@Test
+	public void testDirLangStringRTL() {
+		String data = "<http://example/a> <http://example/b> \"שלום\"@he--rtl .";
+		dirLangStringTest(data, "he--rtl", false, false);
+	}
+
+	@Test
+	public void testDirLangStringLTRWithNormalization() {
+		String data = "<http://example/a> <http://example/b> \"Hello\"@en--ltr .";
+		dirLangStringTest(data, "en--ltr", true, false);
+	}
+
+	@Test
+	public void testDirLangStringRTLWithNormalization() {
+		String data = "<http://example/a> <http://example/b> \"שלום\"@HE--rtl .";
+		dirLangStringTest(data, "he--rtl", true, false);
+	}
+
+	@Test
+	public void testBadDirLangString() {
+		String data = "<http://example/a> <http://example/b> \"hello\"@en--unk .";
+		dirLangStringTest(data, "", true, true);
+	}
+
+	@Test
+	public void testBadCapitalizationDirLangString() {
+		String data = "<http://example/a> <http://example/b> \"Hello\"@en--LTR .";
+		dirLangStringTest(data, "", true, true);
+	}
+
+	@Test
+	public void testDirLangStringNoLanguage() throws IOException {
+		String data = "<http://example/a> <http://example/b> \"Hello\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString> .";
+
+		try {
+			RDFParser nTriplesParser = new NTriplesParser();
+			Model model = new LinkedHashModel();
+			nTriplesParser.setRDFHandler(new StatementCollector(model));
+			nTriplesParser.parse(new StringReader(data));
+
+			assertThat(model).hasSize(1);
+
+			Iterator<Statement> iter = model.iterator();
+			Statement stmt1 = iter.next();
+
+			assertEquals(CoreDatatype.XSD.STRING.getIri(), ((Literal)stmt1.getObject()).getDatatype());
+		} catch (RDFParseException e) {
+			fail("parse error on correct data: " + e.getMessage());
+		}
+	}
+
+	protected void dirLangStringTest(String data, String expectedLangString, boolean normalize, boolean shouldCauseException) {
+		try {
+			RDFParser nTriplesParser = new NTriplesParser();
+			nTriplesParser.getParserConfig().set(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES, true);
+			nTriplesParser.getParserConfig().set(BasicParserSettings.NORMALIZE_LANGUAGE_TAGS, normalize);
+			Model model = new LinkedHashModel();
+			nTriplesParser.setRDFHandler(new StatementCollector(model));
+			nTriplesParser.parse(new StringReader(data));
+
+			if (shouldCauseException) {
+				fail("default config should result in fatal error / parse exception");
+			}
+
+			assertEquals(1, model.size());
+
+			Iterator<Statement> iter = model.iterator();
+			Statement stmt = iter.next();
+
+			assertEquals(CoreDatatype.RDF.DIRLANGSTRING.getIri(), ((Literal) stmt.getObject()).getDatatype());
+			assertTrue(((Literal) stmt.getObject()).getLanguage().isPresent());
+			assertEquals(expectedLangString, ((Literal) stmt.getObject()).getLanguage().get());
+		} catch (Exception e) {
+			if (!shouldCauseException) {
+				fail("parse error on correct data: " + e.getMessage());
+			}
+		}
 	}
 
 	protected abstract RDFParser createRDFParser();

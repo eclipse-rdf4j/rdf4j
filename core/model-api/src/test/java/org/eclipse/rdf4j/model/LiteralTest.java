@@ -85,6 +85,7 @@ public abstract class LiteralTest {
 	static final String XSD_DURATION_YEARMONTH = XSD + "yearMonthDuration";
 
 	static final String RDF_LANG_STRING = RDF + "langString";
+	static final String RDF_DIR_LANG_STRING = RDF + "dirLangString";
 
 	/**
 	 * Creates a test literal instance.
@@ -168,11 +169,18 @@ public abstract class LiteralTest {
 		final String label = "label";
 		final String language = "en";
 
-		final Literal literal = literal(label, language);
+		final Literal languageLiteral = literal(label, language);
 
-		assertThat(literal.getLabel()).isEqualTo(label);
-		assertThat(literal.getLanguage()).contains(language);
-		assertThat(literal.getDatatype().stringValue()).isEqualTo(RDF_LANG_STRING);
+		assertThat(languageLiteral.getLabel()).isEqualTo(label);
+		assertThat(languageLiteral.getLanguage()).contains(language);
+		assertThat(languageLiteral.getDatatype().stringValue()).isEqualTo(RDF_LANG_STRING);
+
+		final String directedLanguage = "en--ltr";
+		final Literal directedLanguageLiteral = literal(label, directedLanguage);
+
+		assertThat(directedLanguageLiteral.getLabel()).isEqualTo(label);
+		assertThat(directedLanguageLiteral.getLanguage()).contains(directedLanguage);
+		assertThat(directedLanguageLiteral.getDatatype().stringValue()).isEqualTo(RDF_DIR_LANG_STRING);
 
 		assertThatNullPointerException().isThrownBy(() -> literal(null, (String) null));
 		assertThatNullPointerException().isThrownBy(() -> literal("", (String) null));
@@ -198,8 +206,10 @@ public abstract class LiteralTest {
 		assertThatNullPointerException().isThrownBy(() -> literal(null, (IRI) null));
 		assertThatNullPointerException().isThrownBy(() -> literal(null, datatype(XSD_STRING)));
 		assertThatNullPointerException().isThrownBy(() -> literal(null, datatype(RDF_LANG_STRING)));
+		assertThatNullPointerException().isThrownBy(() -> literal(null, datatype(RDF_DIR_LANG_STRING)));
 
 		assertThatIllegalArgumentException().isThrownBy(() -> literal("", datatype(RDF_LANG_STRING)));
+		assertThatIllegalArgumentException().isThrownBy(() -> literal("", datatype(RDF_DIR_LANG_STRING)));
 
 	}
 
@@ -763,10 +773,13 @@ public abstract class LiteralTest {
 
 		final Literal plain = literal("plain");
 		final Literal tagged = literal("tagged", "en");
+		final Literal tagged_with_direction = literal("tagged", "en--ltr");
 		final Literal typed = literal("typed", datatype("http://example.org/datatype"));
 
 		final Literal _plain = literal(plain.getLabel());
 		final Literal _tagged = literal(tagged.getLabel(), tagged.getLanguage().orElse(""));
+		final Literal _tagged_with_direction = literal(tagged_with_direction.getLabel(),
+				tagged_with_direction.getLanguage().orElse(""));
 		final Literal _typed = literal(typed.getLabel(), typed.getDatatype());
 
 		assertThat(plain).isEqualTo(plain);
@@ -774,6 +787,9 @@ public abstract class LiteralTest {
 
 		assertThat(tagged).isEqualTo(tagged);
 		assertThat(tagged).isEqualTo(_tagged);
+
+		assertThat(tagged_with_direction).isEqualTo(tagged_with_direction);
+		assertThat(tagged_with_direction).isEqualTo(_tagged_with_direction);
 
 		assertThat(typed).isEqualTo(typed);
 		assertThat(typed).isEqualTo(_typed);
@@ -784,16 +800,21 @@ public abstract class LiteralTest {
 		assertThat(plain).isNotEqualTo(tagged);
 		assertThat(plain).isNotEqualTo(typed);
 		assertThat(tagged).isNotEqualTo(typed);
+		assertThat(tagged_with_direction).isNotEqualTo(plain);
+		assertThat(tagged_with_direction).isNotEqualTo(tagged);
+		assertThat(tagged_with_direction).isNotEqualTo(typed);
 
 		assertThat(plain).isNotEqualTo(literal("other"));
 		assertThat(tagged).isNotEqualTo(literal(tagged.getLabel(), "other"));
 		assertThat(typed).isNotEqualTo(literal(typed.getLabel(), datatype("http://example.org/other")));
+		assertThat(_tagged_with_direction).isNotEqualTo(literal(tagged_with_direction.getLabel(), "en--rtl"));
 
 		// hashCode() should return identical values for literals for which equals() is true
 
-		assertThat(plain.hashCode()).isEqualTo(_plain.hashCode());
-		assertThat(tagged.hashCode()).isEqualTo(_tagged.hashCode());
-		assertThat(typed.hashCode()).isEqualTo(_typed.hashCode());
+		assertThat(plain).hasSameHashCodeAs(_plain);
+		assertThat(tagged).hasSameHashCodeAs(_tagged);
+		assertThat(tagged_with_direction).hasSameHashCodeAs(_tagged_with_direction);
+		assertThat(typed).hasSameHashCodeAs(_typed);
 
 		assertThat(tagged.hashCode())
 				.as("computed according to contract")
@@ -859,12 +880,18 @@ public abstract class LiteralTest {
 
 		String label = "label";
 		String language = "en";
+		String direction = "--ltr";
 
-		Literal literal = literal(label, language);
+		Literal languageLiteral = literal(label, language);
+		Literal directedLanguageLiteral = literal(label, language + direction);
 
-		assertThat(literal.getLabel()).isEqualTo(label);
-		assertThat(literal.getLanguage()).contains(language);
-		assertThat(literal.getCoreDatatype()).isEqualTo(CoreDatatype.RDF.LANGSTRING);
+		assertThat(languageLiteral.getLabel()).isEqualTo(label);
+		assertThat(languageLiteral.getLanguage()).contains(language);
+		assertThat(languageLiteral.getCoreDatatype()).isEqualTo(CoreDatatype.RDF.LANGSTRING);
+
+		assertThat(directedLanguageLiteral.getLabel()).isEqualTo(label);
+		assertThat(directedLanguageLiteral.getLanguage()).contains(language + direction);
+		assertThat(directedLanguageLiteral.getCoreDatatype()).isEqualTo(CoreDatatype.RDF.DIRLANGSTRING);
 
 		assertThatNullPointerException().isThrownBy(() -> literal(null, (String) null));
 		assertThatNullPointerException().isThrownBy(() -> literal("", (String) null));
@@ -890,8 +917,10 @@ public abstract class LiteralTest {
 		assertThatNullPointerException().isThrownBy(() -> literal(null, (CoreDatatype) null));
 		assertThatNullPointerException().isThrownBy(() -> literal(null, CoreDatatype.XSD.STRING));
 		assertThatNullPointerException().isThrownBy(() -> literal(null, CoreDatatype.RDF.LANGSTRING));
+		assertThatNullPointerException().isThrownBy(() -> literal(null, CoreDatatype.RDF.DIRLANGSTRING));
 
 		assertThatIllegalArgumentException().isThrownBy(() -> literal("", CoreDatatype.RDF.LANGSTRING));
+		assertThatIllegalArgumentException().isThrownBy(() -> literal("", CoreDatatype.RDF.DIRLANGSTRING));
 
 	}
 
@@ -907,10 +936,12 @@ public abstract class LiteralTest {
 
 		String label = "literal";
 		String language = "en";
+		String direction = "--ltr";
 		CoreDatatype datatype = CoreDatatype.XSD.DECIMAL;
 
 		assertThat(literal(label).stringValue()).isEqualTo(label);
 		assertThat(literal(label, language).stringValue()).isEqualTo(label);
+		assertThat(literal(label, language + direction).stringValue()).isEqualTo(label);
 		assertThat(literal(label, datatype).stringValue()).isEqualTo(label);
 	}
 
@@ -1443,49 +1474,6 @@ public abstract class LiteralTest {
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	@Test
-	public void testCoreDatatypeEqualsAndHashCode() {
-
-		Literal plain = literal("plain");
-		Literal tagged = literal("tagged", "en");
-		Literal typed = literal("typed", datatype("http://example.org/datatype"));
-
-		Literal _plain = literal(plain.getLabel());
-		Literal _tagged = literal(tagged.getLabel(), tagged.getLanguage().orElse(""));
-		Literal _typed = literal(typed.getLabel(), typed.getDatatype());
-
-		assertThat(plain).isEqualTo(plain);
-		assertThat(plain).isEqualTo(_plain);
-
-		assertThat(tagged).isEqualTo(tagged);
-		assertThat(tagged).isEqualTo(_tagged);
-
-		assertThat(typed).isEqualTo(typed);
-		assertThat(typed).isEqualTo(_typed);
-
-		assertThat(plain).isNotEqualTo(null);
-		assertThat(plain).isNotEqualTo(new Object());
-
-		assertThat(plain).isNotEqualTo(tagged);
-		assertThat(plain).isNotEqualTo(typed);
-		assertThat(tagged).isNotEqualTo(typed);
-
-		assertThat(plain).isNotEqualTo(literal("other"));
-		assertThat(tagged).isNotEqualTo(literal(tagged.getLabel(), "other"));
-		assertThat(typed).isNotEqualTo(literal(typed.getLabel(), "http://example.org/other"));
-
-		// hashCode() should return identical values for literals for which equals() is true
-
-		assertThat(plain.hashCode()).isEqualTo(_plain.hashCode());
-		assertThat(tagged.hashCode()).isEqualTo(_tagged.hashCode());
-		assertThat(typed.hashCode()).isEqualTo(_typed.hashCode());
-
-		assertThat(tagged.hashCode())
-				.as("computed according to contract")
-				.isEqualTo(tagged.getLabel().hashCode()); // !!! label >> label+language+datatype
-
-	}
-
-	@Test
 	public final void testCoreDatatypeEqualsAndHashCodeCaseInsensitiveLanguage() {
 
 		Literal lowercase = literal("label", "en");
@@ -1526,6 +1514,21 @@ public abstract class LiteralTest {
 		Literal roundTrip = (Literal) bytesToObject(bytes);
 
 		assertEquals(CoreDatatype.RDF.LANGSTRING, roundTrip.getCoreDatatype());
+	}
+
+	@Test
+	public final void testSerializationWithCoreDatatypeRdfDirLangString() {
+		Literal literal = literal("hello", "en--ltr");
+		assertEquals(CoreDatatype.RDF.DIRLANGSTRING, literal.getCoreDatatype());
+		assertThat(literal.getLanguage()).isPresent();
+		assertEquals("en--ltr", literal.getLanguage().get());
+
+		byte[] bytes = objectToBytes(literal);
+		Literal roundTrip = (Literal) bytesToObject(bytes);
+
+		assertEquals(CoreDatatype.RDF.DIRLANGSTRING, roundTrip.getCoreDatatype());
+		assertThat(roundTrip.getLanguage()).isPresent();
+		assertEquals("en--ltr", roundTrip.getLanguage().get());
 	}
 
 	@Test

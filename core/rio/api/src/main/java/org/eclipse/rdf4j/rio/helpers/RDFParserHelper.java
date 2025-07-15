@@ -106,25 +106,45 @@ public class RDFParserHelper {
 		// non-null lang
 		if (workingLang.isPresent() && (workingDatatype == null || RDF.LANGSTRING.equals(workingDatatype))) {
 			boolean recognisedLanguage = false;
+
+			// Split workingLang into language tag and base direction so both can be separately verified
+			String languageTag, baseDirection;
+			int index = lang.indexOf("--");
+			if (index != -1) {
+				languageTag = lang.substring(0, index);
+				baseDirection = lang.substring(index);
+
+				if (parserConfig.get(BasicParserSettings.VERIFY_BASE_TEXT_DIRECTION)
+						&& !(baseDirection.equals("--ltr") || baseDirection.equals("--rtl"))) {
+					reportError("'" + baseDirection + "' is not a valid base direction ", lineNo, columnNo,
+							BasicParserSettings.VERIFY_BASE_TEXT_DIRECTION, parserConfig, errListener);
+				}
+			} else {
+				languageTag = lang;
+				baseDirection = "";
+			}
+
 			for (LanguageHandler nextHandler : parserConfig.get(BasicParserSettings.LANGUAGE_HANDLERS)) {
-				if (nextHandler.isRecognizedLanguage(workingLang.get())) {
+				if (nextHandler.isRecognizedLanguage(languageTag)) {
 					recognisedLanguage = true;
 					if (parserConfig.get(BasicParserSettings.VERIFY_LANGUAGE_TAGS)) {
 						try {
-							if (!nextHandler.verifyLanguage(workingLabel, workingLang.get())) {
-								reportError("'" + lang + "' is not a valid language tag ", lineNo, columnNo,
+							if (!nextHandler.verifyLanguage(workingLabel, languageTag)) {
+								reportError("'" + languageTag + "' is not a valid language tag ", lineNo, columnNo,
 										BasicParserSettings.VERIFY_LANGUAGE_TAGS, parserConfig, errListener);
 							}
 						} catch (LiteralUtilException e) {
 							reportError("'" + label
 									+ " could not be verified by a language handler that recognised it. language was "
-									+ lang, lineNo, columnNo, BasicParserSettings.VERIFY_LANGUAGE_TAGS, parserConfig,
+									+ languageTag, lineNo, columnNo, BasicParserSettings.VERIFY_LANGUAGE_TAGS,
+									parserConfig,
 									errListener);
 						}
 					}
 					if (parserConfig.get(BasicParserSettings.NORMALIZE_LANGUAGE_TAGS)) {
 						try {
-							result = nextHandler.normalizeLanguage(workingLabel, workingLang.get(), valueFactory);
+							result = nextHandler.normalizeLanguage(workingLabel, languageTag, baseDirection,
+									valueFactory);
 							workingLabel = result.getLabel();
 							workingLang = result.getLanguage();
 							workingDatatype = result.getDatatype();
@@ -189,14 +209,17 @@ public class RDFParserHelper {
 		if (result == null) {
 			try {
 				// Removes datatype for langString datatype with no language tag when VERIFY_DATATYPE_VALUES is False.
-				if ((workingDatatype == null || RDF.LANGSTRING.equals(workingDatatype))
+				if ((workingDatatype == null || RDF.LANGSTRING.equals(workingDatatype)
+						|| RDF.DIRLANGSTRING.equals(workingDatatype))
 						&& (workingLang.isEmpty() || workingLang.get().isEmpty())
 						&& !parserConfig.get(BasicParserSettings.VERIFY_DATATYPE_VALUES)) {
 					workingLang = Optional.ofNullable(null);
 					workingDatatype = null;
 				}
 				// Backup for unnormalised language literal creation
-				if (workingLang.isPresent() && (workingDatatype == null || RDF.LANGSTRING.equals(workingDatatype))) {
+				if (workingLang.isPresent()
+						&& (workingDatatype == null || RDF.LANGSTRING.equals(workingDatatype)
+								|| RDF.DIRLANGSTRING.equals(workingDatatype))) {
 					result = valueFactory.createLiteral(workingLabel, workingLang.get().intern());
 				}
 				// Backup for unnormalised datatype literal creation

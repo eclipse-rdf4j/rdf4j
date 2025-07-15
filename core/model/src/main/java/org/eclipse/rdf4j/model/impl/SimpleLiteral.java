@@ -100,8 +100,9 @@ public class SimpleLiteral extends AbstractLiteral {
 	 */
 	protected SimpleLiteral(String label, IRI datatype) {
 		setLabel(label);
-		if (org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING.equals(datatype)) {
-			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
+		if (org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING.equals(datatype)
+				|| org.eclipse.rdf4j.model.vocabulary.RDF.DIRLANGSTRING.equals(datatype)) {
+			throw new IllegalArgumentException("datatype rdf:langString or rdf:dirLangString requires a language tag");
 		} else if (datatype == null) {
 			setDatatype(CoreDatatype.XSD.STRING);
 		} else {
@@ -122,8 +123,8 @@ public class SimpleLiteral extends AbstractLiteral {
 		assert datatype != null;
 		assert coreDatatype == CoreDatatype.NONE || datatype == coreDatatype.getIri();
 
-		if (CoreDatatype.RDF.LANGSTRING == coreDatatype) {
-			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
+		if (CoreDatatype.RDF.LANGSTRING == coreDatatype || CoreDatatype.RDF.DIRLANGSTRING == coreDatatype) {
+			throw new IllegalArgumentException("datatype rdf:langString or rdf:dirLangString requires a language tag");
 		}
 
 		setLabel(label);
@@ -133,8 +134,8 @@ public class SimpleLiteral extends AbstractLiteral {
 
 	protected SimpleLiteral(String label, CoreDatatype datatype) {
 		setLabel(label);
-		if (datatype == CoreDatatype.RDF.LANGSTRING) {
-			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
+		if (datatype == CoreDatatype.RDF.LANGSTRING || datatype == CoreDatatype.RDF.DIRLANGSTRING) {
+			throw new IllegalArgumentException("datatype rdf:langString or rdf:dirLangString requires a language tag");
 		} else {
 			setDatatype(datatype);
 		}
@@ -163,7 +164,12 @@ public class SimpleLiteral extends AbstractLiteral {
 		}
 		this.language = language;
 		optionalLanguageCache = Optional.of(language);
-		setDatatype(CoreDatatype.RDF.LANGSTRING);
+
+		if (language.endsWith("--ltr") || language.endsWith("--rtl")) {
+			setDatatype(CoreDatatype.RDF.DIRLANGSTRING);
+		} else {
+			setDatatype(CoreDatatype.RDF.LANGSTRING);
+		}
 	}
 
 	@Override

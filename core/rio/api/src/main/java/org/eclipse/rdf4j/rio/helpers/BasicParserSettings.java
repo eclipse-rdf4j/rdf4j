@@ -120,6 +120,16 @@ public class BasicParserSettings {
 			"org.eclipse.rdf4j.rio.normalize_language_tags", "Normalize recognised language tags", Boolean.FALSE);
 
 	/**
+	 * Boolean setting for parser to determine whether base direction syntax should be verified.
+	 * <p>
+	 * Defaults to true.
+	 * <p>
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.verify_base_text_direction}.
+	 */
+	public static final BooleanRioSetting VERIFY_BASE_TEXT_DIRECTION = new BooleanRioSetting(
+			"org.eclipse.rdf4j.rio.verify_base_text_direction", "Verify base text direction", Boolean.TRUE);
+
+	/**
 	 * Setting used to specify which {@link LanguageHandler} implementations are to be used for a given parser
 	 * configuration.
 	 * <p>

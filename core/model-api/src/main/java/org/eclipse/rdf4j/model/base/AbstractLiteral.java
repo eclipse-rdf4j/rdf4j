@@ -77,11 +77,11 @@ public abstract class AbstractLiteral implements Literal {
 	private static final long serialVersionUID = -1286527360744086451L;
 
 	static boolean reserved(IRI datatype) {
-		return CoreDatatype.RDF.LANGSTRING.getIri().equals(datatype);
+		return CoreDatatype.RDF.LANGSTRING.getIri().equals(datatype) || CoreDatatype.RDF.DIRLANGSTRING.getIri().equals(datatype);
 	}
 
 	static boolean reserved(CoreDatatype datatype) {
-		return CoreDatatype.RDF.LANGSTRING == datatype;
+		return CoreDatatype.RDF.LANGSTRING == datatype || CoreDatatype.RDF.DIRLANGSTRING == datatype;
 	}
 
 	/**
@@ -268,10 +268,12 @@ public abstract class AbstractLiteral implements Literal {
 
 		private final String label;
 		private final String language;
+		private final boolean hasBaseDirection;
 
 		TaggedLiteral(String label, String language) {
 			this.label = label;
 			this.language = language;
+			hasBaseDirection = language.endsWith("--ltr") || language.endsWith("--rtl");
 		}
 
 		@Override
@@ -286,12 +288,12 @@ public abstract class AbstractLiteral implements Literal {
 
 		@Override
 		public IRI getDatatype() {
-			return CoreDatatype.RDF.LANGSTRING.getIri();
+			return hasBaseDirection ? CoreDatatype.RDF.DIRLANGSTRING.getIri() : CoreDatatype.RDF.LANGSTRING.getIri();
 		}
 
 		@Override
 		public CoreDatatype.RDF getCoreDatatype() {
-			return CoreDatatype.RDF.LANGSTRING;
+			return hasBaseDirection ? CoreDatatype.RDF.DIRLANGSTRING : CoreDatatype.RDF.LANGSTRING;
 		}
 	}
 
