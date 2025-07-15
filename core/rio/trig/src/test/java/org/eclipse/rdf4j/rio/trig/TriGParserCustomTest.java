@@ -16,22 +16,19 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import java.io.IOException;
 import java.io.StringReader;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
-import org.eclipse.rdf4j.rio.ParserConfig;
+import org.eclipse.rdf4j.rio.AbstractParserTest;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
-import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
-import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,34 +40,21 @@ import org.junit.jupiter.api.Timeout;
  * @author Peter Ansell
  */
 @Timeout(value = 10, unit = TimeUnit.MINUTES)
-public class TriGParserCustomTest {
-	private ValueFactory vf;
+public class TriGParserCustomTest extends AbstractParserTest {
 
-	private ParserConfig settingsNoVerifyLangTag;
+	private Model model;
 
-	private ParseErrorCollector errors;
-
-	private RDFParser parser;
-
-	private StatementCollector statementCollector;
-
-	/**
-	 */
 	@BeforeEach
 	public void setUp() {
-		vf = SimpleValueFactory.getInstance();
-		settingsNoVerifyLangTag = new ParserConfig();
-		settingsNoVerifyLangTag.set(BasicParserSettings.VERIFY_LANGUAGE_TAGS, false);
-		errors = new ParseErrorCollector();
-		parser = Rio.createParser(RDFFormat.TRIG);
-		statementCollector = new StatementCollector(new LinkedHashModel());
-		parser.setRDFHandler(statementCollector);
+		model = new LinkedHashModel();
+		statementCollector = new StatementCollector(model);
+		super.setUp();
 	}
 
 	@Test
 	public void testSPARQLGraphKeyword() throws Exception {
-		Model model = Rio.parse(new StringReader("GRAPH <urn:a> { [] <http://www.example.net/test> \"Foo\" }"), "",
-				RDFFormat.TRIG);
+		String data = "GRAPH <urn:a> { [] <http://www.example.net/test> \"Foo\" }";
+		parser.parse(new StringReader(data));
 
 		assertEquals(1, model.size());
 		assertNotNull(model.contexts().iterator().next());
@@ -82,8 +66,8 @@ public class TriGParserCustomTest {
 
 	@Test
 	public void testGraph() throws Exception {
-		Model model = Rio.parse(new StringReader("<urn:a> { [] <http://www.example.net/test> \"Foo\" }"), "",
-				RDFFormat.TRIG);
+		String data = "<urn:a> { [] <http://www.example.net/test> \"Foo\" }";
+		parser.parse(new StringReader(data));
 
 		assertEquals(1, model.size());
 		assertNotNull(model.contexts().iterator().next());
@@ -95,9 +79,8 @@ public class TriGParserCustomTest {
 
 	@Test
 	public void testGraphLocalNameGraph() throws Exception {
-		Model model = Rio.parse(
-				new StringReader("@prefix graph: <urn:> .\n graph:a { [] <http://www.example.net/test> \"Foo\" }"), "",
-				RDFFormat.TRIG);
+		String data = "@prefix graph: <urn:> .\n graph:a { [] <http://www.example.net/test> \"Foo\" }";
+		parser.parse(new StringReader(data));
 
 		assertEquals(1, model.size());
 		assertNotNull(model.contexts().iterator().next());
@@ -109,9 +92,8 @@ public class TriGParserCustomTest {
 
 	@Test
 	public void testGraphLocalNameIntegerGraph() throws Exception {
-		Model model = Rio.parse(
-				new StringReader("@prefix graph: <urn:> .\n graph:1 { [] <http://www.example.net/test> \"Foo\" }"), "",
-				RDFFormat.TRIG);
+		String data = "@prefix graph: <urn:> .\n graph:1 { [] <http://www.example.net/test> \"Foo\" }";
+		parser.parse(new StringReader(data));
 
 		assertEquals(1, model.size());
 		assertNotNull(model.contexts().iterator().next());
@@ -123,9 +105,8 @@ public class TriGParserCustomTest {
 
 	@Test
 	public void testGraphLocalNameNotGraph() throws Exception {
-		Model model = Rio.parse(
-				new StringReader("@prefix ex: <urn:> .\n ex:a { [] <http://www.example.net/test> \"Foo\" }"), "",
-				RDFFormat.TRIG);
+		String data = "@prefix ex: <urn:> .\n ex:a { [] <http://www.example.net/test> \"Foo\" }";
+		parser.parse(new StringReader(data));
 
 		assertEquals(1, model.size());
 		assertNotNull(model.contexts().iterator().next());
@@ -137,9 +118,8 @@ public class TriGParserCustomTest {
 
 	@Test
 	public void testGraphLocalNameIntegerNotGraph() throws Exception {
-		Model model = Rio.parse(
-				new StringReader("@prefix ex: <urn:> .\n ex:1 { [] <http://www.example.net/test> \"Foo\" }"), "",
-				RDFFormat.TRIG);
+		String data = "@prefix ex: <urn:> .\n ex:1 { [] <http://www.example.net/test> \"Foo\" }";
+		parser.parse(new StringReader(data));
 
 		assertEquals(1, model.size());
 		assertNotNull(model.contexts().iterator().next());
@@ -151,40 +131,38 @@ public class TriGParserCustomTest {
 
 	@Test
 	public void testTrailingSemicolon() throws Exception {
-		Rio.parse(new StringReader("{<http://example/s> <http://example/p> <http://example/o> ;}"), "", RDFFormat.TRIG);
+		parser.parse(new StringReader("{<http://example/s> <http://example/p> <http://example/o> ;}"), "");
 	}
 
 	@Test
 	public void testAnonymousGraph1() throws Exception {
-		Rio.parse(new StringReader("PREFIX : <http://example/>\n GRAPH [] { :s :p :o }"), "", RDFFormat.TRIG);
+		parser.parse(new StringReader("PREFIX : <http://example/>\n GRAPH [] { :s :p :o }"), "");
 	}
 
 	@Test
 	public void testAnonymousGraph2() throws Exception {
-		Rio.parse(new StringReader("PREFIX : <http://example/>\n [] { :s :p :o }"), "", RDFFormat.TRIG);
+		parser.parse(new StringReader("PREFIX : <http://example/>\n [] { :s :p :o }"), "");
 	}
 
 	@Test
 	public void testTurtle() throws Exception {
-		Rio.parse(new StringReader("<urn:a> <urn:b> <urn:c>"), "", RDFFormat.TRIG);
+		parser.parse(new StringReader("<urn:a> <urn:b> <urn:c>"), "");
 	}
 
 	@Test
 	public void testMinimalWhitespace() throws Exception {
-		Rio.parse(this.getClass().getResourceAsStream("/testcases/trig/trig-syntax-minimal-whitespace-01.trig"), "",
-				RDFFormat.TRIG);
+		parser.parse(this.getClass().getResourceAsStream("/testcases/trig/trig-syntax-minimal-whitespace-01.trig"), "");
 	}
 
 	@Test
 	public void testMinimalWhitespaceLine12() throws Exception {
-		Rio.parse(new StringReader("@prefix : <http://example/c/> . {_:s:p :o ._:s:p\"Alice\". _:s:p _:o .}"), "",
-				RDFFormat.TRIG);
+		parser.parse(new StringReader("@prefix : <http://example/c/> . {_:s:p :o ._:s:p\"Alice\". _:s:p _:o .}"), "");
 	}
 
 	@Test
 	public void testBadPname02() throws Exception {
 		try {
-			Rio.parse(new StringReader("@prefix : <http://example/> . {:a%2 :p :o .}"), "", RDFFormat.TRIG);
+			parser.parse(new StringReader("@prefix : <http://example/> . {:a%2 :p :o .}"), "");
 			fail("Did not receive expected exception");
 		} catch (RDFParseException e) {
 
@@ -198,35 +176,100 @@ public class TriGParserCustomTest {
 
 	@Test
 	public void testParseTruePrefix() throws Exception {
-		Rio.parse(new StringReader("@prefix true: <http://example/c/> . {true:s true:p true:o .}"), "", RDFFormat.TRIG);
+		parser.parse(new StringReader("@prefix true: <http://example/c/> . {true:s true:p true:o .}"), "");
 	}
 
 	@Test
 	public void testParseTrig_booleanLiteral() throws Exception {
 		String trig = "{\n" + "  <http://www.ex.com/s> <http://www.ex.com/b> true.\n" + "}";
-		Model m = Rio.parse(new StringReader(trig), "http://ex/", RDFFormat.TRIG);
-		assertEquals(1, m.size());
+		parser.parse(new StringReader(trig), "http://ex/");
+		assertEquals(1, model.size());
 	}
 
 	@Test
 	public void testParseTrig_booleanLiteral_space() throws Exception {
 		String trig = "{\n" + "  <http://www.ex.com/s> <http://www.ex.com/b> true .\n" + "}";
-		Model m = Rio.parse(new StringReader(trig), "http://ex/", RDFFormat.TRIG);
-		assertEquals(1, m.size());
+		parser.parse(new StringReader(trig), "http://ex/");
+		assertEquals(1, model.size());
 	}
 
 	@Test
 	public void testParseTrig_intLiteral() throws Exception {
 		String trig = "{\n" + "  <http://www.ex.com/s> <http://www.ex.com/b> 1.\n" + "}";
-		Model m = Rio.parse(new StringReader(trig), "http://ex/", RDFFormat.TRIG);
-		assertEquals(1, Models.objectLiteral(m).get().intValue());
+		parser.parse(new StringReader(trig), "http://ex/");
+		assertEquals(1, Models.objectLiteral(model).get().intValue());
 	}
 
 	@Test
 	public void testParseTrig_doubleLiteral() throws Exception {
 		String trig = "{\n" + "  <http://www.ex.com/s> <http://www.ex.com/b> 1.2.\n" + "}";
-		Model m = Rio.parse(new StringReader(trig), "http://ex/", RDFFormat.TRIG);
-		assertEquals(1.2d, Models.objectLiteral(m).get().doubleValue(), 0.01);
+		parser.parse(new StringReader(trig), "http://ex/");
+		assertEquals(1.2d, Models.objectLiteral(model).get().doubleValue(), 0.01);
 	}
 
+	@Test
+	public void testDirLangStringRTLNoContext() {
+		String data = "<http://example/a> <http://example/b> \"שלום\"@he--rtl";
+		dirLangStringTest(data, false, "he--rtl", false, false);
+	}
+
+	@Test
+	public void testDirLangStringRTLWithContext() {
+		String data = "<http://example/a> <http://example/b> \"שלום\"@he--rtl";
+		dirLangStringTest(data, true, "he--rtl", false, false);
+	}
+
+	@Test
+	public void testDirLangStringLTRWithNormalizationNoContext() {
+		String data = "<http://example/a> <http://example/b> \"Hello\"@en--ltr";
+		dirLangStringTest(data, false, "en--ltr", true, false);
+	}
+
+	@Test
+	public void testDirLangStringLTRWithNormalizationWithContext() {
+		String data = "<http://example/a> <http://example/b> \"Hello\"@en--ltr";
+		dirLangStringTest(data, true, "en--ltr", true, false);
+	}
+
+	@Test
+	public void testBadDirLangStringNoContext() {
+		String data = "<http://example/a> <http://example/b> \"hello\"@en--unk";
+		dirLangStringTest(data, false, "", true, true);
+	}
+
+	@Test
+	public void testBadDirLangStringWithContext() {
+		String data = "<http://example/a> <http://example/b> \"hello\"@en--unk";
+		dirLangStringTest(data, true, "", true, true);
+	}
+
+	@Test
+	public void testBadCapitalizationDirLangStringNoContext() {
+		String data = "<http://example/a> <http://example/b> \"Hello\"@en--LTR";
+		dirLangStringTest(data, false, "", true, true);
+	}
+
+	@Test
+	public void testBadCapitalizationDirLangStringWithContext() {
+		String data = "<http://example/a> <http://example/b> \"Hello\"@en--LTR";
+		dirLangStringTest(data, true, "", true, true);
+	}
+
+	@Test
+	public void testDirLangStringNoLanguage() throws IOException {
+		String data = "<http://example/a> <http://example/b> \"Hello\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString> .";
+		dirLangStringNoLanguageTestHelper(data);
+	}
+
+	private void dirLangStringTest(String triple, boolean withContext, String expectedLangString, boolean normalize,
+			boolean shouldCauseException) {
+		String data = (withContext ? "<http://www.example.org/> { " : "") + triple + " ." + (withContext ? " }" : "");
+
+		dirLangStringTestHelper(data, expectedLangString, normalize, shouldCauseException);
+	}
+
+	@Override
+	public RDFParser createRDFParser() {
+		return new TriGParser();
+	}
 }

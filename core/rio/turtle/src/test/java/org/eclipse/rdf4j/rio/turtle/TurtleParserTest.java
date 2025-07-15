@@ -44,12 +44,9 @@ import org.eclipse.rdf4j.rio.LanguageHandler;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
-import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
-import org.eclipse.rdf4j.rio.helpers.SimpleParseLocationListener;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.rio.helpers.TurtleParserSettings;
 import org.eclipse.rdf4j.rio.languages.RFC3066LanguageHandler;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -269,99 +266,80 @@ public class TurtleParserTest extends AbstractParserTest {
 			final String error = errorCollector.getFatalErrors().get(0);
 			// expected to fail at line 9.
 			assertTrue(error.contains("(9,"));
-			assertEquals(9, locationListener.getLineNo());
-			assertEquals(-1, locationListener.getColumnNo());
+			locationListener.assertListener(9, -1);
 		}
 	}
 
 	@Test
 	public void testLineNumberReportingNoErrorsSingleLine() throws IOException {
-		assertEquals(0, locationListener.getLineNo());
-		assertEquals(0, locationListener.getColumnNo());
+		locationListener.assertListener(0, 0);
 		Reader in = new StringReader("<urn:a> <urn:b> <urn:c>.");
 		parser.parse(in, baseURI);
-		assertEquals(1, locationListener.getLineNo());
-		assertEquals(-1, locationListener.getColumnNo());
+		locationListener.assertListener(1, -1);
 	}
 
 	@Test
 	public void testLineNumberReportingNoErrorsSingleLineEndNewline() throws IOException {
-		assertEquals(0, locationListener.getLineNo());
-		assertEquals(0, locationListener.getColumnNo());
+		locationListener.assertListener(0, 0);
 		Reader in = new StringReader("<urn:a> <urn:b> <urn:c>.\n");
 		parser.parse(in, baseURI);
-		assertEquals(2, locationListener.getLineNo());
-		assertEquals(-1, locationListener.getColumnNo());
+		locationListener.assertListener(2, -1);
 	}
 
 	@Test
 	public void testLineNumberReportingNoErrorsMultipleLinesNoEndNewline() throws IOException {
-		assertEquals(0, locationListener.getLineNo());
-		assertEquals(0, locationListener.getColumnNo());
+		locationListener.assertListener(0, 0);
 		Reader in = new StringReader("<urn:a> <urn:b> <urn:c>.\n<urn:a> <urn:b> <urn:d>.");
 		parser.parse(in, baseURI);
-		assertEquals(2, locationListener.getLineNo());
-		assertEquals(-1, locationListener.getColumnNo());
+		locationListener.assertListener(2, -1);
 	}
 
 	@Test
 	public void testLineNumberReportingNoErrorsMultipleLinesEndNewline() throws IOException {
-		assertEquals(0, locationListener.getLineNo());
-		assertEquals(0, locationListener.getColumnNo());
+		locationListener.assertListener(0, 0);
 		Reader in = new StringReader("<urn:a> <urn:b> <urn:c>.\n<urn:a> <urn:b> <urn:d>.\n");
 		parser.parse(in, baseURI);
-		assertEquals(3, locationListener.getLineNo());
-		assertEquals(-1, locationListener.getColumnNo());
+		locationListener.assertListener(3, -1);
 	}
 
 	@Test
 	public void testLineNumberReportingOnlySingleCommentNoEndline() throws IOException {
-		assertEquals(0, locationListener.getLineNo());
-		assertEquals(0, locationListener.getColumnNo());
+		locationListener.assertListener(0, 0);
 		Reader in = new StringReader("# This is just a comment");
 		parser.parse(in, baseURI);
-		assertEquals(1, locationListener.getLineNo());
-		assertEquals(-1, locationListener.getColumnNo());
+		locationListener.assertListener(1, -1);
 	}
 
 	@Test
 	public void testLineNumberReportingOnlySingleCommentEndline() throws IOException {
-		assertEquals(0, locationListener.getLineNo());
-		assertEquals(0, locationListener.getColumnNo());
+		locationListener.assertListener(0, 0);
 		Reader in = new StringReader("# This is just a comment\n");
 		parser.parse(in, baseURI);
-		assertEquals(2, locationListener.getLineNo());
-		assertEquals(-1, locationListener.getColumnNo());
+		locationListener.assertListener(2, -1);
 	}
 
 	@Test
 	public void testLineNumberReportingOnlySingleCommentCarriageReturn() throws IOException {
-		assertEquals(0, locationListener.getLineNo());
-		assertEquals(0, locationListener.getColumnNo());
+		locationListener.assertListener(0, 0);
 		Reader in = new StringReader("# This is just a comment\r");
 		parser.parse(in, baseURI);
-		assertEquals(2, locationListener.getLineNo());
-		assertEquals(-1, locationListener.getColumnNo());
+		locationListener.assertListener(2, -1);
 	}
 
 	@Test
 	public void testLineNumberReportingOnlySingleCommentCarriageReturnNewline() throws IOException {
-		assertEquals(0, locationListener.getLineNo());
-		assertEquals(0, locationListener.getColumnNo());
+		locationListener.assertListener(0, 0);
 		Reader in = new StringReader("# This is just a comment\r\n");
 		parser.parse(in, baseURI);
-		assertEquals(2, locationListener.getLineNo());
-		assertEquals(-1, locationListener.getColumnNo());
+		locationListener.assertListener(2, -1);
 	}
 
 	@Test
 	public void testLineNumberReportingInLongStringLiterals() throws IOException {
-		assertEquals(0, locationListener.getLineNo());
-		assertEquals(0, locationListener.getColumnNo());
+		locationListener.assertListener(0, 0);
 		Reader in = new StringReader("<urn:a> <urn:b> \"\"\"is\nallowed\nin\na very long string\"\"\" .");
 		parser.parse(in, baseURI);
-		assertEquals(4, locationListener.getLineNo());
-		assertEquals(-1, locationListener.getColumnNo());
+		locationListener.assertListener(4, -1);
 	}
 
 	@Test
@@ -577,8 +555,8 @@ public class TurtleParserTest extends AbstractParserTest {
 	@Test
 	public void testParseAdditionalDatatypes() throws IOException {
 		String data = prefixes + ":s :p \"o\"^^rdf:JSON . \n"
-							   + ":s :p \"o\"^^rdf:HTML . \n"
-							   + ":s :p \"o\"^^rdf:XMLLiteral . ";
+				+ ":s :p \"o\"^^rdf:HTML . \n"
+				+ ":s :p \"o\"^^rdf:XMLLiteral . ";
 		Reader r = new StringReader(data);
 
 		try {
@@ -596,9 +574,9 @@ public class TurtleParserTest extends AbstractParserTest {
 
 			Statement stmt1 = iter.next(), stmt2 = iter.next(), stmt3 = iter.next();
 
-			assertEquals(CoreDatatype.RDF.JSON.getIri(), ((Literal)stmt1.getObject()).getDatatype());
-			assertEquals(CoreDatatype.RDF.HTML.getIri(), ((Literal)stmt2.getObject()).getDatatype());
-			assertEquals(CoreDatatype.RDF.XMLLITERAL.getIri(), ((Literal)stmt3.getObject()).getDatatype());
+			assertEquals(CoreDatatype.RDF.JSON.getIri(), ((Literal) stmt1.getObject()).getDatatype());
+			assertEquals(CoreDatatype.RDF.HTML.getIri(), ((Literal) stmt2.getObject()).getDatatype());
+			assertEquals(CoreDatatype.RDF.XMLLITERAL.getIri(), ((Literal) stmt3.getObject()).getDatatype());
 		} catch (RDFParseException e) {
 			fail("parse error on correct data: " + e.getMessage());
 		}
@@ -682,7 +660,7 @@ public class TurtleParserTest extends AbstractParserTest {
 			Iterator<Statement> iter = stmts.iterator();
 			Statement stmt1 = iter.next();
 
-			assertEquals(CoreDatatype.RDF.DIRLANGSTRING.getIri(), ((Literal)stmt1.getObject()).getDatatype());
+			assertEquals(CoreDatatype.RDF.DIRLANGSTRING.getIri(), ((Literal) stmt1.getObject()).getDatatype());
 		} catch (RDFParseException e) {
 			fail("parse error on correct data: " + e.getMessage());
 		}

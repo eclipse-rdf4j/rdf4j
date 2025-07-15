@@ -77,7 +77,8 @@ public abstract class AbstractLiteral implements Literal {
 	private static final long serialVersionUID = -1286527360744086451L;
 
 	static boolean reserved(IRI datatype) {
-		return CoreDatatype.RDF.LANGSTRING.getIri().equals(datatype) || CoreDatatype.RDF.DIRLANGSTRING.getIri().equals(datatype);
+		return CoreDatatype.RDF.LANGSTRING.getIri().equals(datatype)
+				|| CoreDatatype.RDF.DIRLANGSTRING.getIri().equals(datatype);
 	}
 
 	static boolean reserved(CoreDatatype datatype) {

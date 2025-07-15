@@ -10,12 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.ntriples;
 
-import org.eclipse.rdf4j.rio.RDFParserFactory;
-import org.eclipse.rdf4j.rio.RDFWriterFactory;
-import org.eclipse.rdf4j.rio.RDFWriterTest;
-import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.*;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.NTriplesWriterSettings;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Jeen Broekstra
@@ -34,4 +32,8 @@ public abstract class AbstractNTriplesWriterTest extends RDFWriterTest {
 		};
 	}
 
+	@Test
+	public void testDirLangString() throws Exception {
+		dirLangStringTest(RDFFormat.NTRIPLES);
+	}
 }

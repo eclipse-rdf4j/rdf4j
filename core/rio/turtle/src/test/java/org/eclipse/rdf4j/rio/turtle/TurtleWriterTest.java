@@ -775,18 +775,4 @@ public class TurtleWriterTest extends AbstractTurtleWriterTest {
 		assertThat(stringWriter.toString())
 				.contains("\"object3\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#XMLLiteral>");
 	}
-
-	@Test
-	public void testDirLangString() {
-		Model model = new DynamicModelFactory().createEmptyModel();
-		model.add(vf.createStatement(uri1, uri2, vf.createLiteral("hello", "en--ltr")));
-		model.add(vf.createStatement(uri1, uri2, vf.createLiteral("שלום", "he--rtl")));
-
-		StringWriter stringWriter = new StringWriter();
-		Rio.write(model, stringWriter, RDFFormat.TURTLE);
-		String output = stringWriter.toString();
-
-		assertThat(output).contains("\"hello\"@en--ltr");
-		assertThat(output).contains("\"שלום\"@he--rtl");
-	}
 }

@@ -123,7 +123,8 @@ public class RDFParserHelperTest {
 	 */
 	@Test
 	public final void testCreateLiteralLabelAndLanguageAndDirection() {
-		Literal literalLTR = RDFParserHelper.createLiteral(LABEL_TESTA, LANG_EN + "--ltr", null, parserConfig, errListener,
+		Literal literalLTR = RDFParserHelper.createLiteral(LABEL_TESTA, LANG_EN + "--ltr", null, parserConfig,
+				errListener,
 				valueFactory);
 		Literal literalRTL = RDFParserHelper.createLiteral(LABEL_TESTA, "he--rtl", null, parserConfig, errListener,
 				valueFactory);

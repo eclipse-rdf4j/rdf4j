@@ -19,14 +19,7 @@ import java.io.IOException;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.rio.RDFHandlerException;
-import org.eclipse.rdf4j.rio.RDFParseException;
-import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.RDFParserFactory;
-import org.eclipse.rdf4j.rio.RDFWriter;
-import org.eclipse.rdf4j.rio.RDFWriterFactory;
-import org.eclipse.rdf4j.rio.RDFWriterTest;
-import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.*;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.NTriplesWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
@@ -153,6 +146,11 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 		assertEquals(1, lines.length, "Unexpected number of lines.");
 		assertTrue(lines[0].startsWith(
 				"<http://test.example.org/test/subject/1> <http://other.example.com/test/predicate/1> \"test literal\"^^<http://www.w3.org/2001/XMLSchema#string> _:"));
+	}
+
+	@Test
+	public void testDirLangString() throws Exception {
+		dirLangStringTest(RDFFormat.NQUADS);
 	}
 
 	@Override
