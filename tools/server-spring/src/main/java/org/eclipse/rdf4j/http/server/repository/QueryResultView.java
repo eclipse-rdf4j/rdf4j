@@ -41,6 +41,11 @@ public abstract class QueryResultView implements View {
 	public static final String QUERY_RESULT_KEY = "queryResult";
 
 	/**
+	 * Key by which the query result explanation is stored in the model.
+	 */
+	public static final String QUERY_EXPLAIN_RESULT_KEY = "explainResult";
+
+	/**
 	 * Key by which the query result writer factory is stored in the model.
 	 */
 	public static final String FACTORY_KEY = "factory";
