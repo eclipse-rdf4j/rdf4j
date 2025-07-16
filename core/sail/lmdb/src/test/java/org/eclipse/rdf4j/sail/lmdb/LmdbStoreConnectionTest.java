@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.File;
+import java.util.Random;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -22,6 +23,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.testsuite.repository.RepositoryConnectionTest;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -64,4 +66,37 @@ public class LmdbStoreConnectionTest extends RepositoryConnectionTest {
 		testCon2.close();
 	}
 
+	@ParameterizedTest
+	@MethodSource("parameters")
+	public void testSize(final IsolationLevel level) {
+		setupTest(level);
+
+		ValueFactory vf = testCon.getValueFactory();
+		IRI context1 = vf.createIRI("http://my.context.1");
+		IRI context2 = vf.createIRI("http://my.context.2");
+		IRI predicate = vf.createIRI("http://my.predicate");
+		IRI object = vf.createIRI("http://my.object");
+		Random random = new Random();
+		int context1Size = random.nextInt(5000);
+		int context2Size = random.nextInt(5000);
+		for (int j = 0; j < context1Size; j++) {
+			testCon.add(vf.createIRI("http://my.subject" + j), predicate, object, context1);
+		}
+		for (int j = 0; j < context2Size; j++) {
+			testCon.add(vf.createIRI("http://my.subject" + j), predicate, object, context2);
+		}
+		assertEquals(context1Size, testCon.size(context1));
+		assertEquals(context2Size, testCon.size(context2));
+		assertEquals(context1Size + context2Size, testCon.size());
+
+		testCon.clear(context1);
+		assertEquals(0, testCon.size(context1));
+		assertEquals(context2Size, testCon.size(context2));
+		testCon.commit();
+
+		assertEquals(0, testCon2.size(context1));
+		assertEquals(context2Size, testCon2.size(context2));
+
+		testCon2.close();
+	}
 }

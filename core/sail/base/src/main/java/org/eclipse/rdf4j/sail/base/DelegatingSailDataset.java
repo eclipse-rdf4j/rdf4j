@@ -93,4 +93,9 @@ abstract class DelegatingSailDataset implements SailDataset {
 	public Comparator<Value> getComparator() {
 		return delegate.getComparator();
 	}
+
+	@Override
+	public long size(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		return delegate.size(subj, pred, obj, contexts);
+	}
 }
