@@ -24,6 +24,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.NoSuchElementException;
 import java.util.concurrent.locks.StampedLock;
 
 import org.eclipse.rdf4j.sail.SailException;
@@ -33,11 +34,14 @@ import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBVal;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A record iterator that wraps a native LMDB iterator.
  */
 class LmdbRecordIterator implements RecordIterator {
+	private static final Logger log = LoggerFactory.getLogger(LmdbRecordIterator.class);
 	private final Pool pool;
 
 	private final TripleIndex index;
@@ -126,6 +130,11 @@ class LmdbRecordIterator implements RecordIterator {
 	public long[] next() {
 		long stamp = txnLock.readLock();
 		try {
+			if (closed) {
+				log.debug("Calling next() on an LmdbRecordIterator that is already closed, returning null");
+				return null;
+			}
+
 			if (txnRefVersion != txnRef.version()) {
 				// cursor must be renewed
 				mdb_cursor_renew(txn, cursor);
