@@ -209,6 +209,7 @@ class SailSourceBranch implements SailSource {
 				long tryLockMillis = 10;
 				while (pending.contains(this)) {
 					boolean locked = false;
+					boolean interrupted = Thread.interrupted();
 					try {
 						locked = semaphore.tryLock(tryLockMillis *= 2, TimeUnit.MILLISECONDS);
 						if (locked) {
@@ -218,9 +219,16 @@ class SailSourceBranch implements SailSource {
 						Thread.currentThread().interrupt();
 						throw new SailException(e);
 					} finally {
-						if (locked) {
-							semaphore.unlock();
+						try {
+							if (locked) {
+								semaphore.unlock();
+							}
+						} finally {
+							if (interrupted) {
+								Thread.currentThread().interrupt();
+							}
 						}
+
 					}
 
 				}

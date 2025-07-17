@@ -273,6 +273,7 @@ public class PrepareCommitTest {
 			connection.begin();
 			connection.addStatement(RDFS.RESOURCE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 			thread.start();
+			Thread.sleep(500);
 
 			assertThrows(SailException.class, () -> {
 				try {
@@ -291,7 +292,11 @@ public class PrepareCommitTest {
 			});
 
 		} finally {
-			thread.join();
+			try {
+				thread.join();
+			} catch (Exception e) {
+			}
+
 			shaclSail.shutDown();
 		}
 
