@@ -16,7 +16,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
-import static org.lwjgl.util.lmdb.LMDB.MDB_DBS_FULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
@@ -32,7 +31,6 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.util.Comparator;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
