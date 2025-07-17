@@ -112,7 +112,7 @@ public class QueryBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("QueryBenchmark") // adapt to run other benchmark tests
+				.include("QueryBenchmark.*") // adapt to run other benchmark tests
 				.forks(1)
 				.build();
 
