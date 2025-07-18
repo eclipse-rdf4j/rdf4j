@@ -185,6 +185,14 @@ public class Unique implements PlanNode {
 
 			@Override
 			protected boolean localHasNext() {
+				if (isClosed()) {
+					return false;
+				}
+				if (Thread.currentThread().isInterrupted()) {
+					close();
+					return false;
+				}
+
 				calculateNext();
 				return next != null;
 			}
