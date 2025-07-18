@@ -207,24 +207,25 @@ class SailSourceBranch implements SailSource {
 			 */
 			private void removeThisFromPendingWithoutCausingDeadlock() {
 				long tryLockMillis = 10;
+				boolean interrupted = false;
 				while (pending.contains(this)) {
 					boolean locked = false;
 					try {
 						try {
 							locked = semaphore.tryLock(tryLockMillis, TimeUnit.MILLISECONDS);
 						} catch (InterruptedException e) {
+							interrupted = true;
 							try {
 								// retry once if interrupted
 								locked = semaphore.tryLock(500, TimeUnit.MILLISECONDS);
 								if (locked) {
 									pending.remove(this);
+									break;
 								} else {
 									throw new SailException(
 											"Interrupted while trying to remove Changeset from pending list, giving up.",
 											e);
 								}
-								Thread.currentThread().interrupt();
-								return;
 							} catch (InterruptedException e1) {
 								throw new SailException(
 										"Interrupted while trying to remove Changeset from pending list, giving up.",
@@ -233,11 +234,19 @@ class SailSourceBranch implements SailSource {
 						}
 						if (locked) {
 							pending.remove(this);
+							break;
 						}
 					} finally {
-						if (locked) {
-							semaphore.unlock();
+						try {
+							if (locked) {
+								semaphore.unlock();
+							}
+						} finally {
+							if (interrupted) {
+								Thread.currentThread().interrupt();
+							}
 						}
+
 					}
 
 					tryLockMillis = Math.min(tryLockMillis * 2, 1000);
