@@ -83,7 +83,7 @@ public abstract class LoggingCloseableIteration implements CloseableIteration<Va
 		}
 
 		if (!hasNext) {
-			assert !localHasNext() && !closed
+			assert !localHasNext() || closed
 					: "Iterator was initially empty, but still has more elements! " + this.getClass();
 			close();
 		}
