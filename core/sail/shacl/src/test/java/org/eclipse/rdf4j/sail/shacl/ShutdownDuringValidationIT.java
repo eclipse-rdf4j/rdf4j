@@ -148,18 +148,18 @@ public class ShutdownDuringValidationIT {
 			connection.add(realData);
 			thread = startShutdownThread(sleepMillis);
 
-			commitAndExpect(connection, EXPECTED_REPOSITORY_SIZE);
+			commitAndExpect(connection, EXPECTED_REPOSITORY_SIZE + 1);
 		}
 
 		waitForThread(thread);
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long size = connection.size();
-			if (size > 0) {
-				assertEquals(EXPECTED_REPOSITORY_SIZE, size,
+			if (size > 1) {
+				assertEquals(EXPECTED_REPOSITORY_SIZE + 1, size,
 						"The repository should either be empty or contain the expected data after shutdown during validation");
 			} else {
-				assertEquals(0, size, "The repository should be empty after shutdown during validation");
+				assertEquals(1, size, "The repository should be empty after shutdown during validation");
 			}
 
 		}

@@ -217,7 +217,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			throws QueryEvaluationException {
 		final CloseableIteration<? extends List<? extends Value>> iter = func
 				.evaluate(valueFactory, argValues);
-		return new LookAheadIteration<BindingSet>() {
+		return new LookAheadIteration<>() {
 
 			@Override
 			public BindingSet getNextElement() throws QueryEvaluationException {
@@ -712,7 +712,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		final CollectionFactory cf = this.getCollectionFactory().get();
 		return bindings -> {
 			final CloseableIteration<BindingSet> evaluate = child.evaluate(bindings);
-			return new DistinctIteration<BindingSet>(evaluate, cf.createSetOfBindingSets()) {
+			return new DistinctIteration<>(evaluate, cf.createSetOfBindingSets()) {
 
 				@Override
 				protected void handleClose() throws QueryEvaluationException {
