@@ -135,6 +135,11 @@ public class FilterByPredicateObject implements PlanNode {
 						throw new IllegalStateException("Unknown filterOn: " + filterOn);
 					}
 
+					if (Thread.currentThread().isInterrupted()) {
+						close();
+						return;
+					}
+
 					boolean matches = matches(value, filterOnPredicate, filterOnObject);
 
 					if (returnMatching) {

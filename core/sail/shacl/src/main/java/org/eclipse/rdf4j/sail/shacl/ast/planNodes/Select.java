@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -170,13 +171,13 @@ public class Select implements PlanNode {
 
 			@Override
 			protected boolean localHasNext() {
-//				try {
-				return bindingSet.hasNext();
-//				} catch (NoSuchElementException e) {
-//					// This can happen if the connection is closed while we are iterating.
-//					// In that case, we just return false.
-//					return false;
-//				}
+				try {
+					return bindingSet.hasNext();
+				} catch (NoSuchElementException e) {
+					// This can happen if the connection is closed while we are iterating.
+					// In that case, we just return false.
+					return false;
+				}
 			}
 
 			@Override
