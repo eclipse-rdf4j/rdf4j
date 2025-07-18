@@ -47,8 +47,7 @@ public interface LanguageHandler {
 	 *
 	 * @param languageTag The language tag to check.
 	 * @return True if the language tag is syntactically well-formed and could be used with
-	 *         {@link #verifyLanguage(String, String)} and
-	 *         {@link #normalizeLanguage(String, String, String, ValueFactory)}.
+	 *         {@link #verifyLanguage(String, String)} and {@link #normalizeLanguage(String, String, ValueFactory)}.
 	 */
 	boolean isRecognizedLanguage(String languageTag);
 
@@ -75,17 +74,16 @@ public interface LanguageHandler {
 	 * given language tag, and {@link #verifyLanguage(String, String)} also returns true for the given language and
 	 * literal value.
 	 *
-	 * @param literalValue        Required literal value to use in the normalization process and to provide the value
-	 *                            for the resulting literal.
-	 * @param languageTag         The language tag which is to be normalized. This tag is available in normalized form
-	 *                            from the result using {@link Literal#getLanguage()}.
-	 * @param baseDirectionSuffix The suffix specifying text direction, if present. Should be equal to "--ltr", "--rtl",
-	 *                            or "". * @param languageTag The language tag which is to be normalized. This tag is
-	 *                            available in normalized form from the
+	 * @param literalValue Required literal value to use in the normalization process and to provide the value for the
+	 *                     resulting literal.
+	 * @param languageTag  The language tag which is to be normalized. This tag is available in normalized form from the
+	 *                     result using {@link Literal#getLanguage()}.
+	 * @param valueFactory The {@link ValueFactory} to use to create the result literal.
+	 * @return A {@link Literal} containing the normalized literal value and language tag.
 	 * @throws LiteralUtilException If the language tag was not recognized or verified, or the literal value could not
 	 *                              be normalized due to an error.
 	 */
-	Literal normalizeLanguage(String literalValue, String languageTag, String baseDirectionSuffix,
+	Literal normalizeLanguage(String literalValue, String languageTag,
 			ValueFactory valueFactory)
 			throws LiteralUtilException;
 

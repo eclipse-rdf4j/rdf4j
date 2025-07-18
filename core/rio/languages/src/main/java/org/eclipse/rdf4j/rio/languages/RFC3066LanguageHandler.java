@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.rio.LanguageHandler;
  * A language handler that can verify RFC3066 formatted language tags.
  * <p>
  * This language handler normalises language tags to lower-case if
- * {@link #normalizeLanguage(String, String, String, ValueFactory)} is used.
+ * {@link #normalizeLanguage(String, String, ValueFactory)} is used.
  *
  * @author Peter Ansell
  * @see <a href="http://www.ietf.org/rfc/rfc3066.txt">RFC 3066</a>
@@ -32,7 +32,7 @@ public class RFC3066LanguageHandler implements LanguageHandler {
 	/**
 	 * Language tag is RFC3066-conformant if it matches this regex: [a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*
 	 */
-	protected final Pattern matcher = Pattern.compile("[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*");
+	protected final Pattern matcher = Pattern.compile("[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*(--[a-zA-Z])?");
 
 	/**
 	 * Default constructor.
@@ -65,14 +65,13 @@ public class RFC3066LanguageHandler implements LanguageHandler {
 	}
 
 	@Override
-	public Literal normalizeLanguage(String literalValue, String languageTag, String baseDirectionSuffix,
-			ValueFactory valueFactory)
+	public Literal normalizeLanguage(String literalValue, String languageTag, ValueFactory valueFactory)
 			throws LiteralUtilException {
 		Objects.requireNonNull(languageTag, "Language tag cannot be null");
 		Objects.requireNonNull(literalValue, "Literal value cannot be null");
 
 		if (isRecognizedLanguage(languageTag)) {
-			return valueFactory.createLiteral(literalValue, (languageTag + baseDirectionSuffix).toLowerCase().intern());
+			return valueFactory.createLiteral(literalValue, languageTag.toLowerCase().intern());
 		}
 
 		throw new LiteralUtilException("Could not normalize RFC3066 language tag");

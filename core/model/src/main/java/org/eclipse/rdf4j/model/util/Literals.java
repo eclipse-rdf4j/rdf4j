@@ -492,11 +492,20 @@ public class Literals {
 	 *                                  BCP47 (RFC 5646).
 	 */
 	public static String normalizeLanguageTag(String languageTag) throws IllformedLocaleException {
+		String lang, baseDir;
+		if (languageTag.endsWith("--ltr") || languageTag.endsWith("--rtl")) {
+			lang = languageTag.substring(0, languageTag.length() - 5);
+			baseDir = languageTag.substring(languageTag.length() - 5);
+		} else {
+			lang = languageTag;
+			baseDir = "";
+		}
+
 		// check if language tag is well-formed
-		new Locale.Builder().setLanguageTag(languageTag);
+		new Locale.Builder().setLanguageTag(lang);
 
 		// all subtags are case-insensitive
-		String normalizedTag = languageTag.toLowerCase();
+		String normalizedTag = lang.toLowerCase();
 
 		String[] subtags = normalizedTag.split("-");
 		for (int i = 1; i < subtags.length; i++) {
@@ -515,7 +524,7 @@ public class Literals {
 			}
 		}
 
-		return String.join("-", subtags);
+		return String.join("-", subtags) + baseDir;
 	}
 
 	/**

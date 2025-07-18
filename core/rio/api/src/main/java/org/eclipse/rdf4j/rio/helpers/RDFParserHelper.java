@@ -143,8 +143,7 @@ public class RDFParserHelper {
 					}
 					if (parserConfig.get(BasicParserSettings.NORMALIZE_LANGUAGE_TAGS)) {
 						try {
-							result = nextHandler.normalizeLanguage(workingLabel, languageTag, baseDirection,
-									valueFactory);
+							result = nextHandler.normalizeLanguage(workingLabel, lang, valueFactory);
 							workingLabel = result.getLabel();
 							workingLang = result.getLanguage();
 							workingDatatype = result.getDatatype();
