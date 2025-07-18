@@ -213,7 +213,6 @@ class ShapeValidationContainer {
 		if (iterator != null) {
 			try {
 				iterator.close();
-			} catch (NullPointerException ignored) {
 			} finally {
 				this.iterator = null;
 			}
