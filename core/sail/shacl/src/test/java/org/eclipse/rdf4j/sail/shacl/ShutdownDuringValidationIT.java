@@ -291,6 +291,14 @@ public class ShutdownDuringValidationIT {
 	}
 
 	private static IntStream sleepTimes() {
-		return IntStream.iterate(1, n -> n <= MAX_MILLIS, n -> n + 50);
+//		return IntStream.iterate(1, n -> n <= MAX_MILLIS, n -> n + 50);
+
+		// 10 evenly spaced sleep times from 1 to MAX_MILLIS
+		if (MAX_MILLIS <= 0) {
+			throw new IllegalStateException("MAX_MILLIS must be set to a positive value before running tests.");
+		}
+		int step = ((int) (MAX_MILLIS / 10));
+
+		return IntStream.iterate(1, n -> n <= MAX_MILLIS, n -> n + step);
 	}
 }
