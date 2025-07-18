@@ -212,7 +212,7 @@ class SailSourceBranch implements SailSource {
 					boolean locked = false;
 					try {
 						try {
-							locked = semaphore.tryLock(tryLockMillis, TimeUnit.MILLISECONDS);
+							locked = semaphore.tryLock(500, TimeUnit.MILLISECONDS);
 						} catch (InterruptedException e) {
 							interrupted = true;
 							try {
@@ -222,14 +222,25 @@ class SailSourceBranch implements SailSource {
 									pending.remove(this);
 									break;
 								} else {
-									throw new SailException(
-											"Interrupted while trying to remove Changeset from pending list, giving up.",
-											e);
+									if (pending.contains(this)) {
+										throw new SailException(
+												"Interrupted while trying to remove Changeset from pending list, giving up.",
+												e);
+									} else {
+										// Changeset was removed from pending by another thread, so we can exit the loop
+										break;
+									}
+
 								}
 							} catch (InterruptedException e1) {
-								throw new SailException(
-										"Interrupted while trying to remove Changeset from pending list, giving up.",
-										e1);
+								if (pending.contains(this)) {
+									throw new SailException(
+											"Interrupted while trying to remove Changeset from pending list, giving up.",
+											e1);
+								} else {
+									// Changeset was removed from pending by another thread, so we can exit the loop
+									break;
+								}
 							}
 						}
 						if (locked) {
