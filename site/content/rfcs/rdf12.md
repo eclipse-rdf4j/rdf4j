@@ -21,7 +21,7 @@ The Github discussion on adding RDF1.2 support can be found [here](https://githu
 * Parse Turtle1.2 data according to the process detailed in the [spec](https://www.w3.org/TR/rdf12-turtle/#sec-parsing)
 * Serialize data to Turtle1.2
 * Support statements with triple terms in the object position in the MemoryStore
-* Support additional datatypes and directed language literals
+* Support JSON datatype, directed language literals, and version announcement
 
 ### **Considered Out of Scope For Now**
 
@@ -74,15 +74,11 @@ Three classes implementing Literal need to be changed:
 
 ## **Additional Datatypes**
 
-RDF1.2 defines three [additional literal datatypes](https://www.w3.org/TR/rdf12-concepts/#section-additional-datatypes) for literals: HTML, XML, and JSON.
+RDF1.2 defines JSON as a recognized datatype for literals, with IRI:
 
-The IRIs for these datatypes are:
+[http://www.w3.org/1999/02/22-rdf-syntax-ns\#JSON](http://www.w3.org/1999/02/22-rdf-syntax-ns#HTML) `(rdf:JSON)`
 
-* [http://www.w3.org/1999/02/22-rdf-syntax-ns\#HTML](http://www.w3.org/1999/02/22-rdf-syntax-ns#HTML) `(rdf:HTML)`
-* [http://www.w3.org/1999/02/22-rdf-syntax-ns\#XMLLiteral](http://www.w3.org/1999/02/22-rdf-syntax-ns#XMLLiteral) `(rdf:XMLLiteral)`
-* [http://www.w3.org/1999/02/22-rdf-syntax-ns\#JSON](http://www.w3.org/1999/02/22-rdf-syntax-ns#HTML) `(rdf:JSON)`
-
-HTML and XMLLiteral are already included in the current RDF4J implementation, so only JSON needs to be added. The IRI for `rdf:JSON` needs to be added to the RDF vocabulary and to the RDF enum implementation of CoreDatatype. This will make it an assignable datatype in the TypedLiteral and MemLiteral classes, used by the Turtle parser and MemoryStore.
+The IRI for `rdf:JSON` needs to be added to the RDF vocabulary and to the RDF enum implementation of CoreDatatype. This will make it an assignable datatype in the TypedLiteral and MemLiteral classes, used by the Turtle parser and MemoryStore.
 
 In the RDFDatatypeHandler class, the isRecognizedDatatype must also be updated to recognize `rdf:JSON`.
 
@@ -267,7 +263,7 @@ Before the language tag is passed to the LanguageHandlers to test if it is a rec
 
 ### **Additional Literal Datatypes**
 
-Processing the new literal datatypes (HTML, XML, JSON) should work the same as processing existing types, once the IRIs are added to the CoreDatatype class, the RDF vocabulary, and the RDFDatatypeHandler.
+Processing the JSON datatype should work the same as processing existing types, once the IRI is added to the CoreDatatype class, the RDF vocabulary, and the RDFDatatypeHandler.
 
 ##
 
@@ -292,7 +288,7 @@ No change is needed to write literals with a language direction because the base
 
 ### **Additional Literal Datatypes**
 
-No new functionality is needed to update the Turtle writer to handle additional datatypes. The current behavior already handles printing the datatype IRI for any non-string literals.
+No new functionality is needed to update the Turtle writer to handle the JSON datatype. The current behavior already handles printing the datatype IRI for any non-string literals.
 
 ### **Version Announcement**
 
