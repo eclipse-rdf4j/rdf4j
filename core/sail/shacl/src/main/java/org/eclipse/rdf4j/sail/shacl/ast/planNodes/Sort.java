@@ -97,13 +97,14 @@ public class Sort implements PlanNode {
 			}
 
 			private void checkClosedOrInterrupted() {
-				if (isClosed()) {
-					throw new SailException("Iterator was closed while sorting.");
-				}
 				if (Thread.currentThread().isInterrupted()) {
 					close();
 					throw new InterruptedSailException("Thread was interrupted while sorting.");
 				}
+				if (isClosed()) {
+					throw new SailException("Iterator was closed while sorting.");
+				}
+
 			}
 
 			@Override

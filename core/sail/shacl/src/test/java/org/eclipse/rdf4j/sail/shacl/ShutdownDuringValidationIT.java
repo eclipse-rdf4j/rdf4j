@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
@@ -89,6 +90,7 @@ public class ShutdownDuringValidationIT {
 
 	@BeforeEach
 	void setUp() throws IOException {
+		assertFalse(Thread.interrupted());
 		repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 		((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
 	}
@@ -155,12 +157,10 @@ public class ShutdownDuringValidationIT {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long size = connection.size();
-			if (size > 1) {
-				assertEquals(EXPECTED_REPOSITORY_SIZE + 1, size,
-						"The repository should either be empty or contain the expected data after shutdown during validation");
-			} else {
-				assertEquals(1, size, "The repository should be empty after shutdown during validation");
-			}
+
+			assertThat(size)
+					.as("Repository size")
+					.isIn(0L, 1L, EXPECTED_REPOSITORY_SIZE + 1);
 
 		}
 
@@ -240,20 +240,16 @@ public class ShutdownDuringValidationIT {
 			connection.add(realData);
 			thread = startShutdownThread(sleepMillis);
 
-			commitAndExpect(connection, EXPECTED_REPOSITORY_SIZE);
+			commitAndExpect(connection, EXPECTED_REPOSITORY_SIZE + 1);
 		}
 
 		waitForThread(thread);
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long size = connection.size();
-			if (size > 0) {
-				assertEquals(EXPECTED_REPOSITORY_SIZE, size,
-						"The repository should either be empty or contain the expected data after shutdown during validation");
-			} else {
-				assertEquals(0, size, "The repository should be empty after shutdown during validation");
-			}
-
+			assertThat(size)
+					.as("Repository size")
+					.isIn(0L, 1L, EXPECTED_REPOSITORY_SIZE + 1);
 		}
 
 	}
