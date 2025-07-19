@@ -11,7 +11,9 @@
 
 package org.eclipse.rdf4j.query.algebra.helpers.collectors;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -50,33 +52,32 @@ public class StatementPatternCollector extends AbstractSimpleQueryModelVisitor<R
 
 	@Override
 	public void meet(Join node) throws RuntimeException {
-		TupleExpr leftArg = node.getLeftArg();
-		TupleExpr rightArg = node.getRightArg();
-
-		// INSERT clause is often a deeply nested join. Recursive approach may cause stack overflow. Attempt
-		// non-recursive (or at least less-recursive) approach first.
-		while (true) {
-			if (leftArg instanceof Join && !(rightArg instanceof Join)) {
-				rightArg.visit(this);
-
-				Join join = (Join) leftArg;
-				leftArg = join.getLeftArg();
-				rightArg = join.getRightArg();
-
-			} else if (rightArg instanceof Join && !(leftArg instanceof Join)) {
-				leftArg.visit(this);
-
-				Join join = (Join) rightArg;
-				leftArg = join.getLeftArg();
-				rightArg = join.getRightArg();
-
-			} else {
-				leftArg.visit(this);
-				rightArg.visit(this);
-				return;
-			}
+		if (!(node.getLeftArg() instanceof Join || node.getRightArg() instanceof Join)) {
+			super.meet(node);
+			return;
 		}
 
+		Deque<TupleExpr> stack = new ArrayDeque<>();
+		TupleExpr current = node;
+
+		while (true) {
+			// Drill down the leftmost spine, pushing right branches onto the stack
+			while (current instanceof Join) {
+				Join join = (Join) current;
+				stack.push(join.getRightArg()); // defer right side
+				current = join.getLeftArg(); // continue with left side
+			}
+
+			// current is a leaf (not a Join)
+			current.visit(this);
+
+			// When the stack is empty, we have visited every deferred right branch
+			if (stack.isEmpty()) {
+				return;
+			}
+			// Pop the next right branch to process
+			current = stack.pop();
+		}
 	}
 
 	@Override
