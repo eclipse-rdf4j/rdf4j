@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -68,6 +69,60 @@ public class QueryPlanRetrievalTest {
 			"PREFIX dc: <http://purl.org/dc/elements/1.1/>\n" +
 			"\n" +
 			"SELECT DISTINCT ?countryID ?year (COUNT(DISTINCT ?lot) AS ?amountLots) (SUM(if(?bidders = 1, 1, 0)) AS ?numSingleBidders) WHERE {\n"
+			+
+			"\n" +
+			"        ?proc a epo:Procedure .\n" +
+			"        ?proc epo:hasProcedureType ?p .\n" +
+			"        ?stat epo:concernsSubmissionsForLot ?lot .\n" +
+			"        ?stat a epo:SubmissionStatisticalInformation .\n" +
+			"        ?stat epo:hasReceivedTenders ?bidders .\n" +
+			"        ?resultnotice a epo:ResultNotice .\n" +
+			"        ?resultnotice epo:hasDispatchDate ?ddate .\n" +
+			"        ?proc epo:hasProcurementScopeDividedIntoLot ?lot .\n" +
+			"        ?resultnotice epo:refersToRole ?buyerrole .\n" +
+			"      	  ?resultnotice epo:refersToProcedure ?proc .\n" +
+			"\n" +
+			"      \tFILTER ( ?p != <http://publications.europa.eu/resource/authority/procurement-procedure-type/neg-wo-call>)\n"
+			+
+			"\t\tBIND(year(xsd:dateTime(?ddate)) AS ?year) .\n" +
+			"\n" +
+			"\n" +
+			"        {\n" +
+			"          SELECT DISTINCT ?buyerrole ?countryID  WHERE {\n" +
+			"            ?org epo:hasBuyerType ?buytype .\n" +
+			"            FILTER (?buytype != <http://publications.europa.eu/resource/authority/buyer-legal-type/eu-int-org> )\n"
+			+
+			"\n" +
+			"            ?buyerrole epo:playedBy ?org .\n" +
+			"            ?org legal:registeredAddress ?orgaddress .\n" +
+			"            ?orgaddress epo:hasCountryCode ?countrycode  .\n" +
+			"            ?countrycode dc:identifier ?countryID .\n" +
+			"\n" +
+			"           }\n" +
+			"        }\n" +
+			"} GROUP BY ?countryID ?year";
+
+	public static final String CONSTRUCT = "PREFIX epo: <http://data.europa.eu/a4g/ontology#>\n" +
+			"PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n" +
+			"PREFIX legal: <https://www.w3.org/ns/legal#>\n" +
+			"PREFIX dcterms: <http://purl.org/dc/terms#>\n" +
+			"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n" +
+			"PREFIX dc: <http://purl.org/dc/elements/1.1/>\n" +
+			"\n" +
+			"CONSTRUCT {" +
+			"\n" +
+			"        ?proc a epo:Procedure .\n" +
+			"        ?proc epo:hasProcedureType ?p .\n" +
+			"        ?stat epo:concernsSubmissionsForLot ?lot .\n" +
+			"        ?stat a epo:SubmissionStatisticalInformation .\n" +
+			"        ?stat epo:hasReceivedTenders ?bidders .\n" +
+			"        ?resultnotice a epo:ResultNotice .\n" +
+			"        ?resultnotice epo:hasDispatchDate ?ddate .\n" +
+			"        ?proc epo:hasProcurementScopeDividedIntoLot ?lot .\n" +
+			"        ?resultnotice epo:refersToRole ?buyerrole .\n" +
+			"      	  ?resultnotice epo:refersToProcedure ?proc .\n" +
+			"}" +
+			" WHERE {\n"
 			+
 			"\n" +
 			"        ?proc a epo:Procedure .\n" +
@@ -1525,6 +1580,211 @@ public class QueryPlanRetrievalTest {
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			TupleQuery query = connection.prepareTupleQuery("select * where {?a ?b ?c. ?c <http://a>* ?d}");
+			String actual = query.explain(Explanation.Level.Optimized).toString();
+
+			assertThat(actual).isEqualToNormalizingNewlines(expected);
+
+		}
+		sailRepository.shutDown();
+
+	}
+
+	@Test
+	public void constructQueryTest() {
+
+		String expected = "Reduced\n" +
+				"   MultiProjection\n" +
+				"      ProjectionElemList\n" +
+				"         ProjectionElem \"proc\" AS \"subject\"\n" +
+				"         ProjectionElem \"_const_f5e5585a_uri\" AS \"predicate\"\n" +
+				"         ProjectionElem \"_const_be18ee7b_uri\" AS \"object\"\n" +
+				"      ProjectionElemList\n" +
+				"         ProjectionElem \"proc\" AS \"subject\"\n" +
+				"         ProjectionElem \"_const_9c756f6b_uri\" AS \"predicate\"\n" +
+				"         ProjectionElem \"p\" AS \"object\"\n" +
+				"      ProjectionElemList\n" +
+				"         ProjectionElem \"stat\" AS \"subject\"\n" +
+				"         ProjectionElem \"_const_25686184_uri\" AS \"predicate\"\n" +
+				"         ProjectionElem \"lot\" AS \"object\"\n" +
+				"      ProjectionElemList\n" +
+				"         ProjectionElem \"stat\" AS \"subject\"\n" +
+				"         ProjectionElem \"_const_f5e5585a_uri\" AS \"predicate\"\n" +
+				"         ProjectionElem \"_const_ea79e75_uri\" AS \"object\"\n" +
+				"      ProjectionElemList\n" +
+				"         ProjectionElem \"stat\" AS \"subject\"\n" +
+				"         ProjectionElem \"_const_98c73a3c_uri\" AS \"predicate\"\n" +
+				"         ProjectionElem \"bidders\" AS \"object\"\n" +
+				"      ProjectionElemList\n" +
+				"         ProjectionElem \"resultnotice\" AS \"subject\"\n" +
+				"         ProjectionElem \"_const_f5e5585a_uri\" AS \"predicate\"\n" +
+				"         ProjectionElem \"_const_77e914ad_uri\" AS \"object\"\n" +
+				"      ProjectionElemList\n" +
+				"         ProjectionElem \"resultnotice\" AS \"subject\"\n" +
+				"         ProjectionElem \"_const_1b0b00ca_uri\" AS \"predicate\"\n" +
+				"         ProjectionElem \"ddate\" AS \"object\"\n" +
+				"      ProjectionElemList\n" +
+				"         ProjectionElem \"proc\" AS \"subject\"\n" +
+				"         ProjectionElem \"_const_9c3f1eec_uri\" AS \"predicate\"\n" +
+				"         ProjectionElem \"lot\" AS \"object\"\n" +
+				"      ProjectionElemList\n" +
+				"         ProjectionElem \"resultnotice\" AS \"subject\"\n" +
+				"         ProjectionElem \"_const_6aa9a9c_uri\" AS \"predicate\"\n" +
+				"         ProjectionElem \"buyerrole\" AS \"object\"\n" +
+				"      ProjectionElemList\n" +
+				"         ProjectionElem \"resultnotice\" AS \"subject\"\n" +
+				"         ProjectionElem \"_const_183bd06d_uri\" AS \"predicate\"\n" +
+				"         ProjectionElem \"proc\" AS \"object\"\n" +
+				"      Extension\n" +
+				"         Group (countryID, year)\n" +
+				"            Join (HashJoinIteration)\n" +
+				"            ╠══ Extension [left]\n" +
+				"            ║  ├── Join (JoinIterator)\n" +
+				"            ║  │  ╠══ StatementPattern (costEstimate=0.71, resultSizeEstimate=0) [left]\n" +
+				"            ║  │  ║     s: Var (name=resultnotice)\n" +
+				"            ║  │  ║     p: Var (name=_const_183bd06d_uri, value=http://data.europa.eu/a4g/ontology#refersToProcedure, anonymous)\n"
+				+
+				"            ║  │  ║     o: Var (name=proc)\n" +
+				"            ║  │  ╚══ Join (JoinIterator) [right]\n" +
+				"            ║  │     ├── StatementPattern (costEstimate=1.00, resultSizeEstimate=0) [left]\n" +
+				"            ║  │     │     s: Var (name=proc)\n" +
+				"            ║  │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+				+
+				"            ║  │     │     o: Var (name=_const_be18ee7b_uri, value=http://data.europa.eu/a4g/ontology#Procedure, anonymous)\n"
+				+
+				"            ║  │     └── Join (JoinIterator) [right]\n" +
+				"            ║  │        ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0) [left]\n" +
+				"            ║  │        ║     s: Var (name=resultnotice)\n" +
+				"            ║  │        ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+				+
+				"            ║  │        ║     o: Var (name=_const_77e914ad_uri, value=http://data.europa.eu/a4g/ontology#ResultNotice, anonymous)\n"
+				+
+				"            ║  │        ╚══ Join (JoinIterator) [right]\n" +
+				"            ║  │           ├── StatementPattern (costEstimate=1.12, resultSizeEstimate=0) [left]\n" +
+				"            ║  │           │     s: Var (name=proc)\n" +
+				"            ║  │           │     p: Var (name=_const_9c3f1eec_uri, value=http://data.europa.eu/a4g/ontology#hasProcurementScopeDividedIntoLot, anonymous)\n"
+				+
+				"            ║  │           │     o: Var (name=lot)\n" +
+				"            ║  │           └── Join (JoinIterator) [right]\n" +
+				"            ║  │              ╠══ StatementPattern (costEstimate=0.75, resultSizeEstimate=0) [left]\n"
+				+
+				"            ║  │              ║     s: Var (name=stat)\n" +
+				"            ║  │              ║     p: Var (name=_const_25686184_uri, value=http://data.europa.eu/a4g/ontology#concernsSubmissionsForLot, anonymous)\n"
+				+
+				"            ║  │              ║     o: Var (name=lot)\n" +
+				"            ║  │              ╚══ Join (JoinIterator) [right]\n" +
+				"            ║  │                 ├── StatementPattern (costEstimate=1.00, resultSizeEstimate=0) [left]\n"
+				+
+				"            ║  │                 │     s: Var (name=stat)\n" +
+				"            ║  │                 │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+				+
+				"            ║  │                 │     o: Var (name=_const_ea79e75_uri, value=http://data.europa.eu/a4g/ontology#SubmissionStatisticalInformation, anonymous)\n"
+				+
+				"            ║  │                 └── Join (JoinIterator) [right]\n" +
+				"            ║  │                    ╠══ Filter [left]\n" +
+				"            ║  │                    ║  ├── Compare (!=)\n" +
+				"            ║  │                    ║  │     Var (name=p)\n" +
+				"            ║  │                    ║  │     ValueConstant (value=http://publications.europa.eu/resource/authority/procurement-procedure-type/neg-wo-call)\n"
+				+
+				"            ║  │                    ║  └── StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n"
+				+
+				"            ║  │                    ║        s: Var (name=proc)\n" +
+				"            ║  │                    ║        p: Var (name=_const_9c756f6b_uri, value=http://data.europa.eu/a4g/ontology#hasProcedureType, anonymous)\n"
+				+
+				"            ║  │                    ║        o: Var (name=p)\n" +
+				"            ║  │                    ╚══ Join (JoinIterator) [right]\n" +
+				"            ║  │                       ├── StatementPattern (costEstimate=2.24, resultSizeEstimate=0) [left]\n"
+				+
+				"            ║  │                       │     s: Var (name=stat)\n" +
+				"            ║  │                       │     p: Var (name=_const_98c73a3c_uri, value=http://data.europa.eu/a4g/ontology#hasReceivedTenders, anonymous)\n"
+				+
+				"            ║  │                       │     o: Var (name=bidders)\n" +
+				"            ║  │                       └── Join (JoinIterator) [right]\n" +
+				"            ║  │                          ╠══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0) [left]\n"
+				+
+				"            ║  │                          ║     s: Var (name=resultnotice)\n" +
+				"            ║  │                          ║     p: Var (name=_const_1b0b00ca_uri, value=http://data.europa.eu/a4g/ontology#hasDispatchDate, anonymous)\n"
+				+
+				"            ║  │                          ║     o: Var (name=ddate)\n" +
+				"            ║  │                          ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0) [right]\n"
+				+
+				"            ║  │                                s: Var (name=resultnotice)\n" +
+				"            ║  │                                p: Var (name=_const_6aa9a9c_uri, value=http://data.europa.eu/a4g/ontology#refersToRole, anonymous)\n"
+				+
+				"            ║  │                                o: Var (name=buyerrole)\n" +
+				"            ║  └── ExtensionElem (year)\n" +
+				"            ║        FunctionCall (http://www.w3.org/2005/xpath-functions#year-from-dateTime)\n" +
+				"            ║           FunctionCall (http://www.w3.org/2001/XMLSchema#dateTime)\n" +
+				"            ║              Var (name=ddate)\n" +
+				"            ╚══ Distinct (new scope) [right]\n" +
+				"                  Projection\n" +
+				"                  ╠══ ProjectionElemList\n" +
+				"                  ║     ProjectionElem \"buyerrole\"\n" +
+				"                  ║     ProjectionElem \"countryID\"\n" +
+				"                  ╚══ Join (JoinIterator)\n" +
+				"                     ├── StatementPattern (costEstimate=1.25, resultSizeEstimate=0) [left]\n" +
+				"                     │     s: Var (name=org)\n" +
+				"                     │     p: Var (name=_const_beb18915_uri, value=https://www.w3.org/ns/legal#registeredAddress, anonymous)\n"
+				+
+				"                     │     o: Var (name=orgaddress)\n" +
+				"                     └── Join (JoinIterator) [right]\n" +
+				"                        ╠══ StatementPattern (costEstimate=1.12, resultSizeEstimate=0) [left]\n" +
+				"                        ║     s: Var (name=orgaddress)\n" +
+				"                        ║     p: Var (name=_const_2f7de0e1_uri, value=http://data.europa.eu/a4g/ontology#hasCountryCode, anonymous)\n"
+				+
+				"                        ║     o: Var (name=countrycode)\n" +
+				"                        ╚══ Join (JoinIterator) [right]\n" +
+				"                           ├── Filter [left]\n" +
+				"                           │  ╠══ Compare (!=)\n" +
+				"                           │  ║     Var (name=buytype)\n" +
+				"                           │  ║     ValueConstant (value=http://publications.europa.eu/resource/authority/buyer-legal-type/eu-int-org)\n"
+				+
+				"                           │  ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
+				"                           │        s: Var (name=org)\n" +
+				"                           │        p: Var (name=_const_1abd8d4b_uri, value=http://data.europa.eu/a4g/ontology#hasBuyerType, anonymous)\n"
+				+
+				"                           │        o: Var (name=buytype)\n" +
+				"                           └── Join (JoinIterator) [right]\n" +
+				"                              ╠══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0) [left]\n"
+				+
+				"                              ║     s: Var (name=buyerrole)\n" +
+				"                              ║     p: Var (name=_const_beb855c2_uri, value=http://data.europa.eu/a4g/ontology#playedBy, anonymous)\n"
+				+
+				"                              ║     o: Var (name=org)\n" +
+				"                              ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0) [right]\n"
+				+
+				"                                    s: Var (name=countrycode)\n" +
+				"                                    p: Var (name=_const_a825a5f4_uri, value=http://purl.org/dc/elements/1.1/identifier, anonymous)\n"
+				+
+				"                                    o: Var (name=countryID)\n" +
+				"         ExtensionElem (_const_f5e5585a_uri)\n" +
+				"            ValueConstant (value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type)\n" +
+				"         ExtensionElem (_const_be18ee7b_uri)\n" +
+				"            ValueConstant (value=http://data.europa.eu/a4g/ontology#Procedure)\n" +
+				"         ExtensionElem (_const_9c756f6b_uri)\n" +
+				"            ValueConstant (value=http://data.europa.eu/a4g/ontology#hasProcedureType)\n" +
+				"         ExtensionElem (_const_25686184_uri)\n" +
+				"            ValueConstant (value=http://data.europa.eu/a4g/ontology#concernsSubmissionsForLot)\n" +
+				"         ExtensionElem (_const_ea79e75_uri)\n" +
+				"            ValueConstant (value=http://data.europa.eu/a4g/ontology#SubmissionStatisticalInformation)\n"
+				+
+				"         ExtensionElem (_const_98c73a3c_uri)\n" +
+				"            ValueConstant (value=http://data.europa.eu/a4g/ontology#hasReceivedTenders)\n" +
+				"         ExtensionElem (_const_77e914ad_uri)\n" +
+				"            ValueConstant (value=http://data.europa.eu/a4g/ontology#ResultNotice)\n" +
+				"         ExtensionElem (_const_1b0b00ca_uri)\n" +
+				"            ValueConstant (value=http://data.europa.eu/a4g/ontology#hasDispatchDate)\n" +
+				"         ExtensionElem (_const_9c3f1eec_uri)\n" +
+				"            ValueConstant (value=http://data.europa.eu/a4g/ontology#hasProcurementScopeDividedIntoLot)\n"
+				+
+				"         ExtensionElem (_const_6aa9a9c_uri)\n" +
+				"            ValueConstant (value=http://data.europa.eu/a4g/ontology#refersToRole)\n" +
+				"         ExtensionElem (_const_183bd06d_uri)\n" +
+				"            ValueConstant (value=http://data.europa.eu/a4g/ontology#refersToProcedure)\n";
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			GraphQuery query = connection.prepareGraphQuery(CONSTRUCT);
 			String actual = query.explain(Explanation.Level.Optimized).toString();
 
 			assertThat(actual).isEqualToNormalizingNewlines(expected);
