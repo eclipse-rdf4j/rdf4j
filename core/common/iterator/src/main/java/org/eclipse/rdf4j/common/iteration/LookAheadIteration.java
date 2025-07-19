@@ -13,12 +13,16 @@ package org.eclipse.rdf4j.common.iteration;
 
 import java.util.NoSuchElementException;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * An Iteration that looks one element ahead, if necessary, to handle calls to {@link #hasNext}. This is a convenient
  * super class for Iterations that have no easy way to tell if there are any more results, but still should implement
  * the <var>java.util.Iteration</var> interface.
  */
 public abstract class LookAheadIteration<E> extends AbstractCloseableIteration<E> {
+	private static final Logger log = LoggerFactory.getLogger(LookAheadIteration.class);
 
 	/*-----------*
 	 * Variables *
@@ -50,7 +54,14 @@ public abstract class LookAheadIteration<E> extends AbstractCloseableIteration<E
 			return false;
 		}
 
-		return lookAhead() != null;
+		try {
+			return lookAhead() != null;
+		} catch (NoSuchElementException logged) {
+			// The lookAhead() method shouldn't throw a NoSuchElementException since it should return null when there
+			// are no more elements.
+			log.trace("LookAheadIteration threw NoSuchElementException:", logged);
+			return false;
+		}
 	}
 
 	@Override
