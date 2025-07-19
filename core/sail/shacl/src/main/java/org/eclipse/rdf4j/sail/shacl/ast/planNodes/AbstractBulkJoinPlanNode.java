@@ -119,9 +119,7 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
 					boolean hasStatement;
 
-					boolean interrupted = Thread.currentThread().isInterrupted();
-
-					if (interrupted) {
+					if (Thread.currentThread().isInterrupted()) {
 						throw new InterruptedSailException(
 								"Thread was interrupted while checking previous state connection.");
 					}
@@ -130,21 +128,16 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 						throw new SailException("Connection is not active");
 					}
 
-					try {
+					if (!(tuple.getActiveTarget().isResource())) {
+						hasStatement = previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(),
+								true, dataGraph);
 
-						if (!(tuple.getActiveTarget().isResource())) {
-							hasStatement = previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(),
-									true, dataGraph);
+					} else {
+						hasStatement = previousStateConnection.hasStatement(((Resource) tuple.getActiveTarget()),
+								null, null, true, dataGraph) ||
+								previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(), true,
+										dataGraph);
 
-						} else {
-							hasStatement = previousStateConnection.hasStatement(((Resource) tuple.getActiveTarget()),
-									null, null, true, dataGraph) ||
-									previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(), true,
-											dataGraph);
-
-						}
-					} catch (AssertionError e) {
-						throw e;
 					}
 
 					if (!hasStatement && validationExecutionLogger.isEnabled()) {
