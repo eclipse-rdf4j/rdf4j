@@ -718,7 +718,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							connection.begin(IsolationLevels.NONE);
 							set.stream()
 									.peek(s -> {
-										if (Thread.interrupted()) {
+										if (Thread.currentThread().isInterrupted()) {
 											throw new SailException(
 													"ShacilSailConnection was interrupted while filling added/removed statement repositories");
 										}
