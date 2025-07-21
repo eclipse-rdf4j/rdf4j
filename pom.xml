@@ -628,7 +628,7 @@
 			<dependency>
 				<groupId>no.hasmac</groupId>
 				<artifactId>hasmac-json-ld</artifactId>
-				<version>0.9.0</version>
+				<version>0.10.1</version>
 			</dependency>
 			<!-- kerby is used by solr-->
 			<dependency>
@@ -824,7 +824,6 @@
 						<forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
 						<reportFormat>plain</reportFormat>
 						<printSummary>true</printSummary>
-						<useFile>false</useFile>
 						<trimStackTrace>false</trimStackTrace>
 						<!-- silence the default reporter to avoid duplicates -->
 						<consoleOutputReporter>
