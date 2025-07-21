@@ -8,5 +8,5 @@
 	</parent>
 	<artifactId>rdf4j-assembly-descriptors</artifactId>
 	<name>RDF4J: Assembly Descriptors</name>
-	<description/>
+	<description>RDF4J Assembly Descriptors for ex. JMH benchmarks</description>
 </project>
