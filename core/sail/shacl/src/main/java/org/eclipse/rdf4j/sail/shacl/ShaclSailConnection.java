@@ -811,77 +811,77 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 
 		try {
-
 			List<Future<ValidationResultIterator>> futures = this.futures;
 			if (futures != null) {
 				for (Future<ValidationResultIterator> future : futures) {
 					future.cancel(true);
 				}
 			}
-
-			if (shapeValidatorContainers != null) {
-				for (ShapeValidationContainer shapeValidatorContainer : shapeValidatorContainers) {
-					try {
-						shapeValidatorContainer.forceClose();
-					} catch (Throwable ignored) {
-						logger.debug("Throwable was ignored while closing connection", ignored);
-					}
-				}
-				shapeValidatorContainers.clear();
-			}
 		} finally {
-
-			if (getWrappedConnection() instanceof AbstractSailConnection) {
-				AbstractSailConnection abstractSailConnection = (AbstractSailConnection) getWrappedConnection();
-
-				abstractSailConnection.waitForOtherOperations(true);
-				for (int i = 0; i < 50 && abstractSailConnection.hasActiveIterations(); i++) {
-					try {
-						Thread.sleep(1);
-					} catch (InterruptedException e) {
-						Thread.currentThread().interrupt();
-						break;
-					}
-				}
-
-			}
-
 			try {
-				if (isActive()) {
-					rollback();
+				if (shapeValidatorContainers != null) {
+					for (ShapeValidationContainer shapeValidatorContainer : shapeValidatorContainers) {
+						try {
+							shapeValidatorContainer.forceClose();
+						} catch (Throwable ignored) {
+							logger.debug("Throwable was ignored while closing connection", ignored);
+						}
+					}
+					shapeValidatorContainers.clear();
 				}
 			} finally {
 				try {
-					shapesRepoConnection.close();
+					if (getWrappedConnection() instanceof AbstractSailConnection) {
+						AbstractSailConnection abstractSailConnection = (AbstractSailConnection) getWrappedConnection();
 
+						abstractSailConnection.waitForOtherOperations(true);
+						for (int i = 0; i < 50 && abstractSailConnection.hasActiveIterations(); i++) {
+							try {
+								Thread.sleep(1);
+							} catch (InterruptedException e) {
+								Thread.currentThread().interrupt();
+								break;
+							}
+						}
+					}
 				} finally {
 					try {
-						if (previousStateConnection != null) {
-							previousStateConnection.close();
+						if (isActive()) {
+							rollback();
 						}
-
 					} finally {
 						try {
-							if (serializableConnection != null) {
-								serializableConnection.close();
-							}
-						} finally {
+							shapesRepoConnection.close();
 
+						} finally {
 							try {
-								super.close();
+								if (previousStateConnection != null) {
+									previousStateConnection.close();
+								}
+
 							} finally {
 								try {
-									sail.closeConnection();
+									if (serializableConnection != null) {
+										serializableConnection.close();
+									}
 								} finally {
+
 									try {
-										cleanupShapesReadWriteLock();
+										super.close();
 									} finally {
 										try {
-											cleanupReadWriteLock();
+											sail.closeConnection();
 										} finally {
-											closed = true;
+											try {
+												cleanupShapesReadWriteLock();
+											} finally {
+												try {
+													cleanupReadWriteLock();
+												} finally {
+													closed = true;
+												}
+											}
 										}
-
 									}
 								}
 							}
