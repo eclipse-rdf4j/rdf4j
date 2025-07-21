@@ -52,8 +52,8 @@ public class TriGStarParser extends TriGParser {
 
 	@Override
 	protected Value parseValue() throws IOException, RDFParseException, RDFHandlerException {
-		if (peekIsTripleValue()) {
-			return parseTripleValue();
+		if (peekIsTripleTerm()) {
+			return parseTripleTerm();
 		}
 
 		return super.parseValue();

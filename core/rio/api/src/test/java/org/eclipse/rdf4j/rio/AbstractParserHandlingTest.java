@@ -1001,60 +1001,60 @@ public abstract class AbstractParserHandlingTest {
 		assertTrue(Models.subjectBNodes(testStatements.getStatements()).isEmpty()); // skolemized
 	}
 
-	@Test
-	public void testRDFStarCompatibility1() throws Exception {
-		Model expectedModel = new LinkedHashModel();
-		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
-				vf.createLiteral("example", vf.createIRI("http://example.com/3")));
-		expectedModel.add(vf.createStatement(t1, DC.SOURCE, vf.createIRI("http://example.com/4")));
-		Triple t2 = vf.createTriple(t1, DC.DATE, vf.createLiteral(new Date()));
-		expectedModel.add(vf.createStatement(vf.createIRI("http://example.com/5"), DC.RELATION, t2));
-		Triple t3 = vf.createTriple(vf.createTriple(vf.createTriple(vf.createIRI("urn:a"), RDF.TYPE,
-				vf.createIRI("urn:b")), vf.createIRI("urn:c"), vf.createIRI("urn:d")), vf.createIRI("urn:e"),
-				vf.createIRI("urn:f"));
-		expectedModel.add(vf.createStatement(t3, vf.createIRI("urn:same"), t3));
-
-		// Default: formats with RDF-star support handle it natively and non-RDF-star use a compatibility encoding
-		InputStream input1 = serialize(expectedModel);
-		testParser.parse(input1, BASE_URI);
-		assertErrorListener(0, 0, 0);
-		assertModel(expectedModel);
-	}
-
-	@Test
-	public void testRDFStarCompatibility2() throws Exception {
-		Model expectedModel = new LinkedHashModel();
-		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
-				vf.createLiteral("example", vf.createIRI("http://example.com/3")));
-		expectedModel.add(vf.createStatement(t1, DC.SOURCE, vf.createIRI("http://example.com/4")));
-		Triple t2 = vf.createTriple(t1, DC.DATE, vf.createLiteral(new Date()));
-		expectedModel.add(vf.createStatement(vf.createIRI("http://example.com/5"), DC.RELATION, t2));
-		Triple t3 = vf.createTriple(vf.createTriple(vf.createTriple(vf.createIRI("urn:a"), RDF.TYPE,
-				vf.createIRI("urn:b")), vf.createIRI("urn:c"), vf.createIRI("urn:d")), vf.createIRI("urn:e"),
-				vf.createIRI("urn:f"));
-		expectedModel.add(vf.createStatement(t3, vf.createIRI("urn:same"), t3));
-
-		// Turn off compatibility on parsing: formats with RDF-star support will produce RDF-star triples,
-		// non-RDF-star formats will produce IRIs of the kind urn:rdf4j:triple:xxx
-		InputStream input2 = serialize(expectedModel);
-		testParser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_RDF_STAR, false);
-		testParser.parse(input2, BASE_URI);
-		assertErrorListener(0, 0, 0);
-		if (testParser.getRDFFormat().supportsRDFStar()) {
-			assertModel(expectedModel);
-		} else {
-			assertTrue(testStatements.getStatements()
-					.contains(vf.createStatement(RDFStarUtil.toRDFEncodedValue(t1), DC.SOURCE,
-							vf.createIRI("http://example.com/4"))));
-			assertTrue(testStatements.getStatements()
-					.contains(vf.createStatement(vf.createIRI("http://example.com/5"), DC.RELATION,
-							RDFStarUtil.toRDFEncodedValue(t2))));
-			assertTrue(testStatements.getStatements()
-					.contains(vf.createStatement(RDFStarUtil.toRDFEncodedValue(t3), vf.createIRI("urn:same"),
-							RDFStarUtil.toRDFEncodedValue(t3))));
-			assertEquals(3, testStatements.getStatements().size());
-		}
-	}
+//	@Test
+//	public void testRDFStarCompatibility1() throws Exception {
+//		Model expectedModel = new LinkedHashModel();
+//		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+//				vf.createLiteral("example", vf.createIRI("http://example.com/3")));
+//		expectedModel.add(vf.createStatement(t1, DC.SOURCE, vf.createIRI("http://example.com/4")));
+//		Triple t2 = vf.createTriple(t1, DC.DATE, vf.createLiteral(new Date()));
+//		expectedModel.add(vf.createStatement(vf.createIRI("http://example.com/5"), DC.RELATION, t2));
+//		Triple t3 = vf.createTriple(vf.createTriple(vf.createTriple(vf.createIRI("urn:a"), RDF.TYPE,
+//				vf.createIRI("urn:b")), vf.createIRI("urn:c"), vf.createIRI("urn:d")), vf.createIRI("urn:e"),
+//				vf.createIRI("urn:f"));
+//		expectedModel.add(vf.createStatement(t3, vf.createIRI("urn:same"), t3));
+//
+//		// Default: formats with RDF-star support handle it natively and non-RDF-star use a compatibility encoding
+//		InputStream input1 = serialize(expectedModel);
+//		testParser.parse(input1, BASE_URI);
+//		assertErrorListener(0, 0, 0);
+//		assertModel(expectedModel);
+//	}
+//
+//	@Test
+//	public void testRDFStarCompatibility2() throws Exception {
+//		Model expectedModel = new LinkedHashModel();
+//		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+//				vf.createLiteral("example", vf.createIRI("http://example.com/3")));
+//		expectedModel.add(vf.createStatement(t1, DC.SOURCE, vf.createIRI("http://example.com/4")));
+//		Triple t2 = vf.createTriple(t1, DC.DATE, vf.createLiteral(new Date()));
+//		expectedModel.add(vf.createStatement(vf.createIRI("http://example.com/5"), DC.RELATION, t2));
+//		Triple t3 = vf.createTriple(vf.createTriple(vf.createTriple(vf.createIRI("urn:a"), RDF.TYPE,
+//				vf.createIRI("urn:b")), vf.createIRI("urn:c"), vf.createIRI("urn:d")), vf.createIRI("urn:e"),
+//				vf.createIRI("urn:f"));
+//		expectedModel.add(vf.createStatement(t3, vf.createIRI("urn:same"), t3));
+//
+//		// Turn off compatibility on parsing: formats with RDF-star support will produce RDF-star triples,
+//		// non-RDF-star formats will produce IRIs of the kind urn:rdf4j:triple:xxx
+//		InputStream input2 = serialize(expectedModel);
+//		testParser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_RDF_STAR, false);
+//		testParser.parse(input2, BASE_URI);
+//		assertErrorListener(0, 0, 0);
+//		if (testParser.getRDFFormat().supportsRDFStar()) {
+//			assertModel(expectedModel);
+//		} else {
+//			assertTrue(testStatements.getStatements()
+//					.contains(vf.createStatement(RDFStarUtil.toRDFEncodedValue(t1), DC.SOURCE,
+//							vf.createIRI("http://example.com/4"))));
+//			assertTrue(testStatements.getStatements()
+//					.contains(vf.createStatement(vf.createIRI("http://example.com/5"), DC.RELATION,
+//							RDFStarUtil.toRDFEncodedValue(t2))));
+//			assertTrue(testStatements.getStatements()
+//					.contains(vf.createStatement(RDFStarUtil.toRDFEncodedValue(t3), vf.createIRI("urn:same"),
+//							RDFStarUtil.toRDFEncodedValue(t3))));
+//			assertEquals(3, testStatements.getStatements().size());
+//		}
+//	}
 
 	private void assertModel(Model expectedModel) {
 		if (logger.isTraceEnabled()) {

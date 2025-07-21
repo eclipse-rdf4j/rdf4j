@@ -118,9 +118,9 @@ public abstract class RDFWriterTest {
 
 	private final Triple triple4;
 
-	private final Triple triple5;
-
-	private final Triple triple6;
+//	private final Triple triple5;
+//
+//	private final Triple triple6;
 
 	private final Literal plainLit;
 
@@ -190,8 +190,8 @@ public abstract class RDFWriterTest {
 		triple2 = vf.createTriple(bnode, uri3, litWithMultipleNewlines);
 		triple3 = vf.createTriple(uri3, uri4, bnodeSingleLetter);
 		triple4 = vf.createTriple(uri5, uri1, uri3);
-		triple5 = vf.createTriple(triple1, uri3, litBigPlaceholder);
-		triple6 = vf.createTriple(triple2, uri4, triple5);
+//		triple5 = vf.createTriple(triple1, uri3, litBigPlaceholder);
+//		triple6 = vf.createTriple(triple2, uri4, triple5);
 
 		potentialSubjects = new ArrayList<>();
 		potentialSubjects.add(bnode);
@@ -206,7 +206,7 @@ public abstract class RDFWriterTest {
 		potentialSubjects.add(uri3);
 		potentialSubjects.add(uri4);
 		potentialSubjects.add(uri5);
-		potentialSubjects.addAll(Arrays.asList(triple1, triple2, triple2, triple3, triple4, triple5, triple6));
+//		potentialSubjects.addAll(Arrays.asList(triple1, triple2, triple2, triple3, triple4, triple5, triple6));
 		for (int i = 0; i < 50; i++) {
 			potentialSubjects.add(vf.createBNode());
 		}
@@ -229,7 +229,7 @@ public abstract class RDFWriterTest {
 		potentialObjects.add(plainLit);
 		potentialObjects.add(dtLit);
 		potentialObjects.add(langLit);
-		potentialObjects.addAll(Arrays.asList(triple1, triple2, triple2, triple3, triple4, triple5, triple6));
+//		potentialObjects.addAll(Arrays.asList(triple1, triple2, triple2, triple3, triple4, triple5, triple6));
 		// FIXME: SES-879: The following break the RDF/XML parser/writer
 		// combination in terms of getting the same number of triples back as we
 		// start with
@@ -1814,36 +1814,36 @@ public abstract class RDFWriterTest {
 		assertEquals(model.size(), parsedOutput.size());
 	}
 
-	@Test
-	public void testRDFStarConversion() throws IOException {
-		Model model = new LinkedHashModel();
-		model.add(vf.createStatement(triple3, uri1, triple6, uri4));
-		model.add(vf.createStatement(uri1, uri2, uri3, uri5));
-
-		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
-		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
-		setupWriterConfig(rdfWriter.getWriterConfig());
-		rdfWriter.getWriterConfig().set(BasicWriterSettings.CONVERT_RDF_STAR_TO_REIFICATION, true);
-		rdfWriter.startRDF();
-		model.forEach(rdfWriter::handleStatement);
-		rdfWriter.endRDF();
-
-		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
-		RDFParser rdfParser = rdfParserFactory.getParser();
-		setupParserConfig(rdfParser.getParserConfig().set(BasicParserSettings.VERIFY_URI_SYNTAX, false));
-		Model parsedOutput = new LinkedHashModel();
-		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
-		rdfParser.parse(inputReader, "");
-
-		// 1 non-RDF-star statement
-		// 1 RDF-star statement whose conversion yields 20 additional statements:
-		// 4 for triple3
-		// 4 for triple6
-		// 4 for triple2 (contained in triple6)
-		// 4 for triple5 (contained in triple6)
-		// 4 for triple1 (contained in triple5)
-		assertEquals(22, parsedOutput.size());
-	}
+//	@Test
+//	public void testRDFStarConversion() throws IOException {
+//		Model model = new LinkedHashModel();
+//		model.add(vf.createStatement(triple3, uri1, triple6, uri4));
+//		model.add(vf.createStatement(uri1, uri2, uri3, uri5));
+//
+//		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+//		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+//		setupWriterConfig(rdfWriter.getWriterConfig());
+//		rdfWriter.getWriterConfig().set(BasicWriterSettings.CONVERT_RDF_STAR_TO_REIFICATION, true);
+//		rdfWriter.startRDF();
+//		model.forEach(rdfWriter::handleStatement);
+//		rdfWriter.endRDF();
+//
+//		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+//		RDFParser rdfParser = rdfParserFactory.getParser();
+//		setupParserConfig(rdfParser.getParserConfig().set(BasicParserSettings.VERIFY_URI_SYNTAX, false));
+//		Model parsedOutput = new LinkedHashModel();
+//		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+//		rdfParser.parse(inputReader, "");
+//
+//		// 1 non-RDF-star statement
+//		// 1 RDF-star statement whose conversion yields 20 additional statements:
+//		// 4 for triple3
+//		// 4 for triple6
+//		// 4 for triple2 (contained in triple6)
+//		// 4 for triple5 (contained in triple6)
+//		// 4 for triple1 (contained in triple5)
+//		assertEquals(22, parsedOutput.size());
+//	}
 
 	@Test
 	public void testGetSupportedSettings() {

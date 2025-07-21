@@ -60,55 +60,55 @@ public class TriGStarParserTest {
 		parser.setParseLocationListener(locationListener);
 	}
 
-	@Test
-	public void testParseRDFStarData() throws IOException {
-		IRI graph = vf.createIRI("http://example.com/rdfstar");
-
-		IRI bob = vf.createIRI("http://example.com/bob");
-		IRI alice = vf.createIRI("http://example.com/alice");
-		IRI book = vf.createIRI("http://example.com/book");
-		IRI otherbook = vf.createIRI("http://example.com/otherbook");
-		IRI bobshomepage = vf.createIRI("http://example.com/bobshomepage");
-		IRI a = vf.createIRI("http://example.org/a");
-		IRI b = vf.createIRI("http://example.com/b");
-		IRI c = vf.createIRI("http://example.com/c");
-		IRI valid = vf.createIRI("http://example.com/valid");
-		Literal abcDate = vf.createLiteral("1999-08-16", XSD.DATE);
-		Literal birthDate = vf.createLiteral("1908-03-18", XSD.DATE);
-		Literal titleEn = vf.createLiteral("Example book", "en");
-		Literal titleDe = vf.createLiteral("Beispielbuch", "de");
-		Literal titleEnUs = vf.createLiteral("Example Book", "en-US");
-
-		Triple bobCreatedBook = vf.createTriple(bob, DCTERMS.CREATED, book);
-		Triple aliceKnowsBobCreatedBook = vf.createTriple(alice, FOAF.KNOWS, bobCreatedBook);
-		Triple bobCreatedBookKnowsAlice = vf.createTriple(bobCreatedBook, FOAF.KNOWS, alice);
-		Triple bookCreatorAlice = vf.createTriple(book, DCTERMS.CREATOR, alice);
-		Triple aliceCreatedBook = vf.createTriple(alice, DCTERMS.CREATED, book);
-		Triple abc = vf.createTriple(a, b, c);
-		Triple bobBirthdayDate = vf.createTriple(bob, FOAF.BIRTHDAY, birthDate);
-		Triple bookTitleEn = vf.createTriple(book, DCTERMS.TITLE, titleEn);
-		Triple bookTitleDe = vf.createTriple(book, DCTERMS.TITLE, titleDe);
-		Triple bookTitleEnUs = vf.createTriple(book, DCTERMS.TITLE, titleEnUs);
-
-		try (InputStream in = this.getClass().getResourceAsStream("/test-rdfstar.trigs")) {
-			parser.parse(in, baseURI);
-
-			Collection<Statement> stmts = statementCollector.getStatements();
-
-			assertEquals(10, stmts.size());
-
-			assertTrue(stmts.contains(vf.createStatement(bob, FOAF.KNOWS, aliceKnowsBobCreatedBook, graph)));
-			assertTrue(stmts.contains(vf.createStatement(bobCreatedBookKnowsAlice, DCTERMS.SOURCE, otherbook, graph)));
-			assertTrue(stmts.contains(vf.createStatement(bobshomepage, DCTERMS.SOURCE, bookCreatorAlice, graph)));
-			assertTrue(stmts.contains(vf.createStatement(bookCreatorAlice, DCTERMS.SOURCE, bobshomepage, graph)));
-			assertTrue(stmts.contains(vf.createStatement(bookCreatorAlice, DCTERMS.REQUIRES, aliceCreatedBook, graph)));
-			assertTrue(stmts.contains(vf.createStatement(abc, valid, abcDate, graph)));
-			assertTrue(stmts.contains(vf.createStatement(bobBirthdayDate, DCTERMS.SOURCE, bobshomepage, graph)));
-			assertTrue(stmts.contains(vf.createStatement(bookTitleEn, DCTERMS.SOURCE, bobshomepage, graph)));
-			assertTrue(stmts.contains(vf.createStatement(bookTitleDe, DCTERMS.SOURCE, bobshomepage, graph)));
-			assertTrue(stmts.contains(vf.createStatement(bookTitleEnUs, DCTERMS.SOURCE, bobshomepage, graph)));
-		}
-	}
+//	@Test
+//	public void testParseRDFStarData() throws IOException {
+//		IRI graph = vf.createIRI("http://example.com/rdfstar");
+//
+//		IRI bob = vf.createIRI("http://example.com/bob");
+//		IRI alice = vf.createIRI("http://example.com/alice");
+//		IRI book = vf.createIRI("http://example.com/book");
+//		IRI otherbook = vf.createIRI("http://example.com/otherbook");
+//		IRI bobshomepage = vf.createIRI("http://example.com/bobshomepage");
+//		IRI a = vf.createIRI("http://example.org/a");
+//		IRI b = vf.createIRI("http://example.com/b");
+//		IRI c = vf.createIRI("http://example.com/c");
+//		IRI valid = vf.createIRI("http://example.com/valid");
+//		Literal abcDate = vf.createLiteral("1999-08-16", XSD.DATE);
+//		Literal birthDate = vf.createLiteral("1908-03-18", XSD.DATE);
+//		Literal titleEn = vf.createLiteral("Example book", "en");
+//		Literal titleDe = vf.createLiteral("Beispielbuch", "de");
+//		Literal titleEnUs = vf.createLiteral("Example Book", "en-US");
+//
+//		Triple bobCreatedBook = vf.createTriple(bob, DCTERMS.CREATED, book);
+//		Triple aliceKnowsBobCreatedBook = vf.createTriple(alice, FOAF.KNOWS, bobCreatedBook);
+//		Triple bobCreatedBookKnowsAlice = vf.createTriple(bobCreatedBook, FOAF.KNOWS, alice);
+//		Triple bookCreatorAlice = vf.createTriple(book, DCTERMS.CREATOR, alice);
+//		Triple aliceCreatedBook = vf.createTriple(alice, DCTERMS.CREATED, book);
+//		Triple abc = vf.createTriple(a, b, c);
+//		Triple bobBirthdayDate = vf.createTriple(bob, FOAF.BIRTHDAY, birthDate);
+//		Triple bookTitleEn = vf.createTriple(book, DCTERMS.TITLE, titleEn);
+//		Triple bookTitleDe = vf.createTriple(book, DCTERMS.TITLE, titleDe);
+//		Triple bookTitleEnUs = vf.createTriple(book, DCTERMS.TITLE, titleEnUs);
+//
+//		try (InputStream in = this.getClass().getResourceAsStream("/test-rdfstar.trigs")) {
+//			parser.parse(in, baseURI);
+//
+//			Collection<Statement> stmts = statementCollector.getStatements();
+//
+//			assertEquals(10, stmts.size());
+//
+//			assertTrue(stmts.contains(vf.createStatement(bob, FOAF.KNOWS, aliceKnowsBobCreatedBook, graph)));
+//			assertTrue(stmts.contains(vf.createStatement(bobCreatedBookKnowsAlice, DCTERMS.SOURCE, otherbook, graph)));
+//			assertTrue(stmts.contains(vf.createStatement(bobshomepage, DCTERMS.SOURCE, bookCreatorAlice, graph)));
+//			assertTrue(stmts.contains(vf.createStatement(bookCreatorAlice, DCTERMS.SOURCE, bobshomepage, graph)));
+//			assertTrue(stmts.contains(vf.createStatement(bookCreatorAlice, DCTERMS.REQUIRES, aliceCreatedBook, graph)));
+//			assertTrue(stmts.contains(vf.createStatement(abc, valid, abcDate, graph)));
+//			assertTrue(stmts.contains(vf.createStatement(bobBirthdayDate, DCTERMS.SOURCE, bobshomepage, graph)));
+//			assertTrue(stmts.contains(vf.createStatement(bookTitleEn, DCTERMS.SOURCE, bobshomepage, graph)));
+//			assertTrue(stmts.contains(vf.createStatement(bookTitleDe, DCTERMS.SOURCE, bobshomepage, graph)));
+//			assertTrue(stmts.contains(vf.createStatement(bookTitleEnUs, DCTERMS.SOURCE, bobshomepage, graph)));
+//		}
+//	}
 
 	@Test
 	public void testTripleInPredicate() throws IOException {

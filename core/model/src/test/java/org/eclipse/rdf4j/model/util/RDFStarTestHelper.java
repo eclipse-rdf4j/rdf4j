@@ -36,21 +36,21 @@ public class RDFStarTestHelper {
 	private final static BNode BNODE_1 = VF.createBNode("bnode1");
 	private final static BNode BNODE_2 = VF.createBNode("bnode2");
 
-	public static Model createRDFStarModel() {
-		Model rdfStarModel = new LinkedHashModel();
-		Statements.create(VF, IRI_1, IRI_2, IRI_3, rdfStarModel, GRAPH_NULL);
-		// The same triple repeated twice
-		Statements.create(VF, IRI_1, IRI_2, VF.createTriple(IRI_4, IRI_5, LITERAL_1), rdfStarModel, GRAPH_1);
-		Statements.create(VF, IRI_1, IRI_3, VF.createTriple(IRI_4, IRI_5, LITERAL_1), rdfStarModel, GRAPH_1);
-		Statements.create(VF, VF.createTriple(IRI_5, IRI_6, IRI_4), IRI_3, BNODE_1, rdfStarModel, GRAPH_2);
-		Statements.create(VF, VF.createTriple(VF.createTriple(IRI_1, IRI_2, LITERAL_2),
-				IRI_3, VF.createTriple(IRI_4, IRI_5, IRI_6)),
-				IRI_2, VF.createTriple(VF.createTriple(BNODE_2, IRI_3, LITERAL_2),
-						IRI_4, VF.createTriple(IRI_3, IRI_6, IRI_1)),
-				rdfStarModel, GRAPH_2);
-
-		return rdfStarModel;
-	}
+//	public static Model createRDFStarModel() {
+//		Model rdfStarModel = new LinkedHashModel();
+//		Statements.create(VF, IRI_1, IRI_2, IRI_3, rdfStarModel, GRAPH_NULL);
+//		// The same triple repeated twice
+//		Statements.create(VF, IRI_1, IRI_2, VF.createTriple(IRI_4, IRI_5, LITERAL_1), rdfStarModel, GRAPH_1);
+//		Statements.create(VF, IRI_1, IRI_3, VF.createTriple(IRI_4, IRI_5, LITERAL_1), rdfStarModel, GRAPH_1);
+//		Statements.create(VF, VF.createTriple(IRI_5, IRI_6, IRI_4), IRI_3, BNODE_1, rdfStarModel, GRAPH_2);
+//		Statements.create(VF, VF.createTriple(VF.createTriple(IRI_1, IRI_2, LITERAL_2),
+//				IRI_3, VF.createTriple(IRI_4, IRI_5, IRI_6)),
+//				IRI_2, VF.createTriple(VF.createTriple(BNODE_2, IRI_3, LITERAL_2),
+//						IRI_4, VF.createTriple(IRI_3, IRI_6, IRI_1)),
+//				rdfStarModel, GRAPH_2);
+//
+//		return rdfStarModel;
+//	}
 
 	public static Model createRDFReificationModel() {
 		Model reifiedModel = new LinkedHashModel();

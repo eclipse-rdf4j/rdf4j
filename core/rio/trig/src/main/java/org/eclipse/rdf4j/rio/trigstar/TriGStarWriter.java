@@ -76,9 +76,4 @@ public class TriGStarWriter extends TriGWriter {
 		// serialization
 		return super.acceptsFileFormat(format) || RDFFormat.TRIG.equals(format);
 	}
-
-	@Override
-	protected void writeTriple(Triple triple, boolean canShorten) throws IOException {
-		writeTripleRDFStar(triple, canShorten);
-	}
 }

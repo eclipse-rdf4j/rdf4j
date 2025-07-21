@@ -97,9 +97,7 @@ public class NTriplesUtil {
 	 */
 	public static Resource parseResource(String nTriplesResource, ValueFactory valueFactory)
 			throws IllegalArgumentException {
-		if (nTriplesResource.startsWith("<<")) {
-			return parseTriple(nTriplesResource, valueFactory);
-		} else if (nTriplesResource.startsWith("<")) {
+		if (nTriplesResource.startsWith("<")) {
 			return parseURI(nTriplesResource, valueFactory);
 		} else if (nTriplesResource.startsWith("_:")) {
 			return parseBNode(nTriplesResource, valueFactory);
@@ -215,6 +213,7 @@ public class NTriplesUtil {
 	 * @throws IllegalArgumentException If the supplied triple could not be parsed correctly.
 	 */
 	private static TripleMatch parseTripleInternal(String nTriplesTriple, ValueFactory valueFactory) {
+		//TODO
 		if (nTriplesTriple.startsWith("<<")) {
 			String triple = nTriplesTriple.substring(2);
 			int offset = 2;
@@ -347,7 +346,9 @@ public class NTriplesUtil {
 			return toNTriplesString((Resource) value);
 		} else if (value instanceof Literal) {
 			return toNTriplesString((Literal) value, xsdStringToPlainLiteral);
-		} else {
+		} else if (value instanceof Triple) {
+			return toNTriplesString((Triple) value);
+		}else {
 			throw new IllegalArgumentException("Unknown value type: " + value.getClass());
 		}
 	}
@@ -585,9 +586,9 @@ public class NTriplesUtil {
 	 * @return string
 	 */
 	public static String toNTriplesString(Triple triple) {
-		return "<<" + NTriplesUtil.toNTriplesString(triple.getSubject()) + " "
+		return "<<( " + NTriplesUtil.toNTriplesString(triple.getSubject()) + " "
 				+ NTriplesUtil.toNTriplesString(triple.getPredicate()) + " "
-				+ NTriplesUtil.toNTriplesString(triple.getObject()) + ">>";
+				+ NTriplesUtil.toNTriplesString(triple.getObject()) + " )>>";
 	}
 
 	/**
@@ -598,13 +599,13 @@ public class NTriplesUtil {
 	 * @throws IOException
 	 */
 	public static void append(Triple triple, Appendable appendable) throws IOException {
-		appendable.append("<<");
+		appendable.append("<<(");
 		append(triple.getSubject(), appendable);
 		appendable.append(' ');
 		append(triple.getPredicate(), appendable);
 		appendable.append(' ');
 		append(triple.getObject(), appendable);
-		appendable.append(">>");
+		appendable.append(")>>");
 	}
 
 	/**

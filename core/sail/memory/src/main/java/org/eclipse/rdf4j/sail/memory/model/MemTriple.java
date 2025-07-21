@@ -19,7 +19,7 @@ import com.google.common.base.Objects;
  *
  * @author Jeen Broekstra
  */
-public class MemTriple extends MemResource implements Triple {
+public class MemTriple implements MemValue, Triple {
 
 	private static final long serialVersionUID = -9085188980084028689L;
 
@@ -43,13 +43,13 @@ public class MemTriple extends MemResource implements Triple {
 
 	@Override
 	public String stringValue() {
-		return "<<" +
+		return "<<(" +
 				getSubject() +
 				" " +
 				getPredicate() +
 				" " +
 				getObject() +
-				">>";
+				")>>";
 	}
 
 	@Override
@@ -89,26 +89,6 @@ public class MemTriple extends MemResource implements Triple {
 	}
 
 	@Override
-	public MemStatementList getContextStatementList() {
-		return EMPTY_LIST;
-	}
-
-	@Override
-	public int getContextStatementCount() {
-		return 0;
-	}
-
-	@Override
-	public void addContextStatement(MemStatement st) {
-		throw new UnsupportedOperationException("RDF-star triples can not be used as context identifier");
-	}
-
-	@Override
-	public void cleanSnapshotsFromContextStatements(int currentSnapshot) {
-		// no-op
-	}
-
-	@Override
 	public MemResource getSubject() {
 		return subject;
 	}
@@ -140,6 +120,11 @@ public class MemTriple extends MemResource implements Triple {
 					&& this.object.equals(that.getObject());
 		}
 
+		return false;
+	}
+
+	@Override
+	public boolean hasSubjectStatements() {
 		return false;
 	}
 

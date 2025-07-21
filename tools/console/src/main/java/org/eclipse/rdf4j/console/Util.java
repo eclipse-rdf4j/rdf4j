@@ -127,9 +127,9 @@ public class Util {
 			}
 		}
 		if (value instanceof Triple) {
-			return "<<" + getPrefixedValue(((Triple) value).getSubject(), namespaces) + " "
+			return "<<(" + getPrefixedValue(((Triple) value).getSubject(), namespaces) + " "
 					+ getPrefixedValue(((Triple) value).getPredicate(), namespaces) + " "
-					+ getPrefixedValue(((Triple) value).getObject(), namespaces) + ">>";
+					+ getPrefixedValue(((Triple) value).getObject(), namespaces) + ")>>";
 		}
 		return NTriplesUtil.toNTriplesString(value);
 	}

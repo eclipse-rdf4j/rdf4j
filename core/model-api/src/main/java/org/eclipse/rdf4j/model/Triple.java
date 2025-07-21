@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  * @see <a href="https://w3c.github.io/rdf-star/cg-spec/">RDF-star and SPARQL-star Draft Community Group Report</a>
  */
 @Experimental
-public interface Triple extends Resource {
+public interface Triple extends Value {
 
 	@Override
 	default boolean isTriple() {

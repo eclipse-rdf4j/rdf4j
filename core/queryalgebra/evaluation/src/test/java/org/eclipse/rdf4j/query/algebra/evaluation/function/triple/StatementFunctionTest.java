@@ -156,57 +156,57 @@ public class StatementFunctionTest {
 		assertEquals(value, other, "expect to be the same");
 	}
 
-	@Test
-	public void testEvaluateTripleAndIRI() {
-		IRI pred = f.createIRI("urn:b");
-		IRI obj = f.createIRI("urn:c");
-		Triple subj = f.createTriple(pred, pred, pred);
+//	@Test
+//	public void testEvaluateTripleAndIRI() {
+//		IRI pred = f.createIRI("urn:b");
+//		IRI obj = f.createIRI("urn:c");
+//		Triple subj = f.createTriple(pred, pred, pred);
+//
+//		Value value = function.evaluate(f, subj, pred, obj);
+//		assertNotNull(value);
+//		assertTrue(value instanceof Triple, "expect Triple");
+//		Triple other = f.createTriple(subj, pred, obj);
+//		assertEquals(value, other, "expect to be the same");
+//	}
 
-		Value value = function.evaluate(f, subj, pred, obj);
-		assertNotNull(value);
-		assertTrue(value instanceof Triple, "expect Triple");
-		Triple other = f.createTriple(subj, pred, obj);
-		assertEquals(value, other, "expect to be the same");
-	}
+//	@Test
+//	public void testEvaluateTripleAndBNode() {
+//		IRI pred = f.createIRI("urn:b");
+//		BNode obj = f.createBNode();
+//		Triple subj = f.createTriple(pred, pred, pred);
+//
+//		Value value = function.evaluate(f, subj, pred, obj);
+//		assertNotNull(value);
+//		assertTrue(value instanceof Triple, "expect Triple");
+//		Triple other = f.createTriple(subj, pred, obj);
+//		assertEquals(value, other, "expect to be the same");
+//	}
+//
+//	@Test
+//	public void testEvaluateTripleAndLiteral() {
+//		IRI pred = f.createIRI("urn:b");
+//		Literal obj = f.createLiteral(1);
+//		Triple subj = f.createTriple(pred, pred, pred);
+//
+//		Value value = function.evaluate(f, subj, pred, obj);
+//		assertNotNull(value);
+//		assertTrue(value instanceof Triple, "expect Triple");
+//		Triple other = f.createTriple(subj, pred, obj);
+//		assertEquals(value, other, "expect to be the same");
+//	}
 
-	@Test
-	public void testEvaluateTripleAndBNode() {
-		IRI pred = f.createIRI("urn:b");
-		BNode obj = f.createBNode();
-		Triple subj = f.createTriple(pred, pred, pred);
-
-		Value value = function.evaluate(f, subj, pred, obj);
-		assertNotNull(value);
-		assertTrue(value instanceof Triple, "expect Triple");
-		Triple other = f.createTriple(subj, pred, obj);
-		assertEquals(value, other, "expect to be the same");
-	}
-
-	@Test
-	public void testEvaluateTripleAndLiteral() {
-		IRI pred = f.createIRI("urn:b");
-		Literal obj = f.createLiteral(1);
-		Triple subj = f.createTriple(pred, pred, pred);
-
-		Value value = function.evaluate(f, subj, pred, obj);
-		assertNotNull(value);
-		assertTrue(value instanceof Triple, "expect Triple");
-		Triple other = f.createTriple(subj, pred, obj);
-		assertEquals(value, other, "expect to be the same");
-	}
-
-	@Test
-	public void testEvaluateTripleAndTriple() {
-		IRI pred = f.createIRI("urn:b");
-		Triple obj = f.createTriple(pred, pred, pred);
-		Triple subj = f.createTriple(pred, pred, pred);
-
-		Value value = function.evaluate(f, subj, pred, obj);
-		assertNotNull(value);
-		assertTrue(value instanceof Triple, "expect Triple");
-		Triple other = f.createTriple(subj, pred, obj);
-		assertEquals(value, other, "expect to be the same");
-	}
+//	@Test
+//	public void testEvaluateTripleAndTriple() {
+//		IRI pred = f.createIRI("urn:b");
+//		Triple obj = f.createTriple(pred, pred, pred);
+//		Triple subj = f.createTriple(pred, pred, pred);
+//
+//		Value value = function.evaluate(f, subj, pred, obj);
+//		assertNotNull(value);
+//		assertTrue(value instanceof Triple, "expect Triple");
+//		Triple other = f.createTriple(subj, pred, obj);
+//		assertEquals(value, other, "expect to be the same");
+//	}
 
 	@Test
 	public void testNegariveWrongNumberOfArguments() {

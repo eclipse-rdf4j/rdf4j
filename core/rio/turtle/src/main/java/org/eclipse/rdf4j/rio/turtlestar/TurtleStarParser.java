@@ -46,12 +46,4 @@ public class TurtleStarParser extends TurtleParser {
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.TURTLESTAR;
 	}
-
-	@Override
-	protected Value parseValue() throws IOException, RDFParseException, RDFHandlerException {
-		if (peekIsTripleValue()) {
-			return parseTripleValue();
-		}
-		return super.parseValue();
-	}
 }

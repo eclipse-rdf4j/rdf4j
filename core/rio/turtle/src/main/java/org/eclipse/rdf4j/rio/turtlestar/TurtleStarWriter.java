@@ -76,9 +76,4 @@ public class TurtleStarWriter extends TurtleWriter {
 		// serialization
 		return super.acceptsFileFormat(format) || RDFFormat.TURTLE.equals(format);
 	}
-
-	@Override
-	protected void writeTriple(Triple triple, boolean canShorten) throws IOException {
-		writeTripleRDFStar(triple, canShorten);
-	}
 }

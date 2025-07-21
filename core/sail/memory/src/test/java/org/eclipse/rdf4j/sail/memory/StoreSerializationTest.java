@@ -172,34 +172,34 @@ public class StoreSerializationTest {
 		store.shutDown();
 	}
 
-	@Test
-	public void testMemTriple() {
-		MemoryStore store = new MemoryStore(dataDir);
-		store.init();
-
-		ValueFactory factory = store.getValueFactory();
-		Triple triple = factory.createTriple(RDF.TYPE, RDF.TYPE, RDF.TYPE);
-		Literal longLiteral = factory.createLiteral("a".repeat(4));
-
-		try (SailConnection con = store.getConnection()) {
-			con.begin();
-			con.addStatement(triple, RDFS.LABEL, longLiteral);
-			con.commit();
-
-		}
-		store.shutDown();
-
-		store = new MemoryStore(dataDir);
-		store.init();
-
-		try (SailConnection con = store.getConnection()) {
-			try (CloseableIteration<? extends Statement> iter = con.getStatements(null, RDFS.LABEL, null,
-					false)) {
-				assertTrue(iter.hasNext());
-				Statement next = iter.next();
-				assertEquals(next.getSubject(), triple);
-			}
-		}
-		store.shutDown();
-	}
+//	@Test
+//	public void testMemTriple() {
+//		MemoryStore store = new MemoryStore(dataDir);
+//		store.init();
+//
+//		ValueFactory factory = store.getValueFactory();
+//		Triple triple = factory.createTriple(RDF.TYPE, RDF.TYPE, RDF.TYPE);
+//		Literal longLiteral = factory.createLiteral("a".repeat(4));
+//
+//		try (SailConnection con = store.getConnection()) {
+//			con.begin();
+//			con.addStatement(triple, RDFS.LABEL, longLiteral);
+//			con.commit();
+//
+//		}
+//		store.shutDown();
+//
+//		store = new MemoryStore(dataDir);
+//		store.init();
+//
+//		try (SailConnection con = store.getConnection()) {
+//			try (CloseableIteration<? extends Statement> iter = con.getStatements(null, RDFS.LABEL, null,
+//					false)) {
+//				assertTrue(iter.hasNext());
+//				Statement next = iter.next();
+//				assertEquals(next.getSubject(), triple);
+//			}
+//		}
+//		store.shutDown();
+//	}
 }

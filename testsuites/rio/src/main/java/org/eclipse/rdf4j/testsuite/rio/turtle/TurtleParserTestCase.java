@@ -47,13 +47,13 @@ public abstract class TurtleParserTestCase {
 	/**
 	 * Base directory for W3C Turtle tests
 	 */
-	private static final String TEST_W3C_FILE_BASE_PATH = "/testcases/turtle/tests-ttl-w3c-20170126/";
+	protected static String TEST_W3C_FILE_BASE_PATH = "/testcases/turtle/tests-ttl-w3c-20170126/";
 
-	private static final String TEST_W3C_MANIFEST_URL = TEST_W3C_FILE_BASE_PATH + "manifest.ttl";
+	protected static String TEST_W3C_MANIFEST_URL = TEST_W3C_FILE_BASE_PATH + "manifest.ttl";
 
-	private static final String TEST_W3C_MANIFEST_URI_BASE = "http://www.w3.org/2013/TurtleTests/manifest.ttl#";
+	protected static String TEST_W3C_MANIFEST_URI_BASE = "http://www.w3.org/2013/TurtleTests/manifest.ttl#";
 
-	private static final String TEST_W3C_TEST_URI_BASE = "http://www.w3.org/2013/TurtleTests/";
+	protected static String TEST_W3C_TEST_URI_BASE = "http://www.w3.org/2013/TurtleTests/";
 
 	private static final String NTRIPLES_TEST_URL = "http://www.w3.org/2000/10/rdf-tests/rdfcore/ntriples/test.nt";
 
@@ -101,7 +101,7 @@ public abstract class TurtleParserTestCase {
 		return suite;
 	}
 
-	private void parsePositiveTurtleSyntaxTests(TestSuite suite, String fileBasePath, String testBaseUrl,
+	protected void parsePositiveTurtleSyntaxTests(TestSuite suite, String fileBasePath, String testBaseUrl,
 			String testLocationBaseUri, RepositoryConnection con) {
 		StringBuilder positiveQuery = new StringBuilder();
 		positiveQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
@@ -134,7 +134,7 @@ public abstract class TurtleParserTestCase {
 
 	}
 
-	private void parseNegativeTurtleSyntaxTests(TestSuite suite, String fileBasePath, String testBaseUrl,
+	protected void parseNegativeTurtleSyntaxTests(TestSuite suite, String fileBasePath, String testBaseUrl,
 			String manifestBaseUrl, RepositoryConnection con) {
 		StringBuilder negativeQuery = new StringBuilder();
 		negativeQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
@@ -167,7 +167,7 @@ public abstract class TurtleParserTestCase {
 
 	}
 
-	private void parsePositiveTurtleEvalTests(TestSuite suite, String fileBasePath, String testBaseUrl,
+	protected void parsePositiveTurtleEvalTests(TestSuite suite, String fileBasePath, String testBaseUrl,
 			String manifestBaseUrl, RepositoryConnection con) {
 		StringBuilder positiveEvalQuery = new StringBuilder();
 		positiveEvalQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
@@ -210,7 +210,7 @@ public abstract class TurtleParserTestCase {
 		queryResult.close();
 	}
 
-	private void parseNegativeTurtleEvalTests(TestSuite suite, String fileBasePath, String testBaseUrl,
+	protected void parseNegativeTurtleEvalTests(TestSuite suite, String fileBasePath, String testBaseUrl,
 			String manifestBaseUrl, RepositoryConnection con) {
 		StringBuilder negativeEvalQuery = new StringBuilder();
 		negativeEvalQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
