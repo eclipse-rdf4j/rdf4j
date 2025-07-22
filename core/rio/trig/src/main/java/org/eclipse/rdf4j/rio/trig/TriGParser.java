@@ -91,10 +91,11 @@ public class TriGParser extends TurtleParser {
 			skipWSC();
 			verifyCharacterOrFail(readCodePoint(), ".");
 		} else if ((directive.length() >= 6 && directive.substring(0, 6).equalsIgnoreCase("prefix"))
-				|| (directive.length() >= 4 && directive.substring(0, 4).equalsIgnoreCase("base"))) {
+				|| (directive.length() >= 4 && directive.substring(0, 4).equalsIgnoreCase("base"))
+				|| (directive.length() >= 7 && directive.substring(0, 7).equalsIgnoreCase("version"))) {
 			parseDirective(directive);
 			skipWSC();
-			// SPARQL BASE and PREFIX lines do not end in .
+			// SPARQL BASE and PREFIX and VERSION lines do not end in .
 		} else if (directive.length() >= 6 && directive.substring(0, 5).equalsIgnoreCase("GRAPH")
 				&& directive.substring(5, 6).equals(":")) {
 			// If there was a colon immediately after the graph keyword then

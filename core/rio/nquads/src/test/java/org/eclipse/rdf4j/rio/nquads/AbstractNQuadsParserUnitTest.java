@@ -646,6 +646,38 @@ public abstract class AbstractNQuadsParserUnitTest extends AbstractParserTest {
 	}
 
 	@Test
+	public void testSparqlVersionDirectiveDoubleQuotes() throws IOException {
+		String data = "VERSION \"1.2--basic\"";
+		try {
+			parser.parse(new StringReader(data));
+		} catch (RDFParseException e) {
+			fail("parse error on correct data: " + e.getMessage());
+		}
+	}
+
+	@Test
+	public void testSparqlVersionDirectiveSingleQuotes() throws IOException {
+		String data = "VERSION '1.2--basic'";
+		try {
+			parser.parse(new StringReader(data));
+		} catch (RDFParseException e) {
+			fail("parse error on correct data: " + e.getMessage());
+		}
+	}
+
+	@Test
+	public void testSparqlVersionDirectiveMismatchedQuotes() throws IOException {
+		String data = "VERSION '1.2--basic\"";
+		assertThrows(RDFParseException.class, () -> parser.parse(new StringReader(data)));
+	}
+
+	@Test
+	public void testSparqlVersionDirectiveExtraCharsAfter() throws IOException {
+		String data = "VERSION '1.2--basic\" asdfsdf";
+		assertThrows(RDFParseException.class, () -> parser.parse(new StringReader(data)));
+	}
+
+	@Test
 	public void testSupportedSettings() {
 		assertThat(parser.getSupportedSettings()).hasSize(14);
 	}

@@ -14,6 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -328,6 +329,64 @@ public class TriGParserCustomTest extends AbstractParserTest {
 		} catch (RDFParseException e) {
 			fail("parse error on correct data: " + e.getMessage());
 		}
+	}
+
+	@Test
+	public void testVersionDirectiveDoubleQuotes() throws IOException {
+		String data = "@version \"1.2\" .";
+		try {
+			parser.parse(new StringReader(data));
+		} catch (RDFParseException e) {
+			fail("parse error on correct data: " + e.getMessage());
+		}
+	}
+
+	@Test
+	public void testVersionDirectiveSingleQuotes() throws IOException {
+		String data = "@version '1.2' .";
+		try {
+			parser.parse(new StringReader(data));
+		} catch (RDFParseException e) {
+			fail("parse error on correct data: " + e.getMessage());
+		}
+	}
+
+	@Test
+	public void testVersionDirectiveNoPeriod() throws IOException {
+		String data = "@version '1.2'";
+		assertThrows(RDFParseException.class, () -> parser.parse(new StringReader(data)));
+	}
+
+	@Test
+	public void testVersionDirectiveMismatchedQuotes() throws IOException {
+		String data = "@version '1.2\" .";
+		assertThrows(RDFParseException.class, () -> parser.parse(new StringReader(data)));
+	}
+
+	@Test
+	public void testSparqlVersionDirectiveDoubleQuotes() throws IOException {
+		String data = "VERSION \"1.2--basic\"";
+		try {
+			parser.parse(new StringReader(data));
+		} catch (RDFParseException e) {
+			fail("parse error on correct data: " + e.getMessage());
+		}
+	}
+
+	@Test
+	public void testSparqlVersionDirectiveSingleQuotes() throws IOException {
+		String data = "VERSION '1.2--basic'";
+		try {
+			parser.parse(new StringReader(data));
+		} catch (RDFParseException e) {
+			fail("parse error on correct data: " + e.getMessage());
+		}
+	}
+
+	@Test
+	public void testSparqlVersionDirectiveMismatchedQuotes() throws IOException {
+		String data = "VERSION '1.2--basic\"";
+		assertThrows(RDFParseException.class, () -> parser.parse(new StringReader(data)));
 	}
 
 	@Override

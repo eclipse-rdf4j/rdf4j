@@ -158,6 +158,12 @@ public class TriGWriter extends TurtleWriter {
 		super.writeNamespace(prefix, name);
 	}
 
+	@Override
+	protected void writeVersion() throws IOException {
+		closeActiveContext();
+		super.writeVersion();
+	}
+
 	protected void closeActiveContext() throws IOException {
 		if (inActiveContext) {
 			writer.decreaseIndentation();

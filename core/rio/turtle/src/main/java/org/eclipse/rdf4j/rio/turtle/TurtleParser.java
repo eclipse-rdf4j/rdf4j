@@ -184,7 +184,7 @@ public class TurtleParser extends AbstractRDFParser {
 		StringBuilder sb = new StringBuilder(8);
 
 		int codePoint;
-		// longest valid directive @prefix
+		// longest valid directive @version
 		do {
 			codePoint = readCodePoint();
 			if (codePoint == -1 || TurtleUtil.isWhitespace(codePoint)) {
@@ -196,7 +196,8 @@ public class TurtleParser extends AbstractRDFParser {
 
 		String directive = sb.toString();
 
-		if (directive.startsWith("@") || directive.equalsIgnoreCase("prefix") || directive.equalsIgnoreCase("base")) {
+		if (directive.startsWith("@") || directive.equalsIgnoreCase("prefix") || directive.equalsIgnoreCase("base")
+				|| directive.equalsIgnoreCase("version")) {
 			parseDirective(directive);
 			skipWSC();
 			// SPARQL BASE and PREFIX lines do not end in .
@@ -222,6 +223,8 @@ public class TurtleParser extends AbstractRDFParser {
 				unread(directive.substring(5));
 			}
 			parseBase();
+		} else if (directive.equals("@version")) {
+			parseVersion();
 		} else if (directive.length() >= 6 && directive.substring(0, 6).equalsIgnoreCase("prefix")) {
 			// SPARQL doesn't require whitespace after directive, so must unread
 			// if
@@ -235,6 +238,11 @@ public class TurtleParser extends AbstractRDFParser {
 				unread(directive.substring(4));
 			}
 			parseBase();
+		} else if ((directive.length() >= 7 && directive.substring(0, 7).equalsIgnoreCase("version"))) {
+			if (directive.length() > 7) {
+				unread(directive.substring(7));
+			}
+			parseVersion();
 		} else if (directive.length() >= 7 && directive.substring(0, 7).equalsIgnoreCase("@prefix")) {
 			if (!this.getParserConfig().get(TurtleParserSettings.CASE_INSENSITIVE_DIRECTIVES)) {
 				reportFatalError("Cannot strictly support case-insensitive @prefix directive in compliance mode.");
@@ -251,10 +259,33 @@ public class TurtleParser extends AbstractRDFParser {
 				unread(directive.substring(5));
 			}
 			parseBase();
+		} else if (directive.equalsIgnoreCase("@version")) {
+			if (!this.getParserConfig().get(TurtleParserSettings.CASE_INSENSITIVE_DIRECTIVES)) {
+				reportFatalError("Cannot strictly support case-insensitive @version directive in compliance mode.");
+			}
+			parseVersion();
 		} else if (directive.isEmpty()) {
-			reportFatalError("Directive name is missing, expected @prefix or @base");
+			reportFatalError("Directive name is missing, expected @prefix or @base or @version");
 		} else {
 			reportFatalError("Unknown directive \"" + directive + "\"");
+		}
+	}
+
+	// Parses version directive. The version directive is optional, this parser supports any version up to and including
+	// 1.2, and any string surrounded by single or double quotes is accepted, so we can safely ignore the version.
+	private void parseVersion() throws IOException, RDFParseException {
+		skipWSC();
+
+		int startQuote = readCodePoint();
+		verifyCharacterOrFail(startQuote, "\"'");
+
+		int codePoint;
+		do {
+			codePoint = readCodePoint();
+		} while (codePoint != startQuote && codePoint != -1);
+
+		if (codePoint == -1) {
+			throwEOFException();
 		}
 	}
 

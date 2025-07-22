@@ -136,19 +136,21 @@ public class NTriplesParser extends AbstractRDFParser {
 			if (!shouldParseLine()) {
 				return;
 			}
-			subject = parseSubject();
+			if (peekVersionDirective()) {
+				parseVersionDirective();
+				return;
+			} else {
+				subject = parseSubject();
+				skipWhitespace(true);
 
-			skipWhitespace(true);
+				predicate = parsePredicate();
+				skipWhitespace(true);
 
-			predicate = parsePredicate();
+				object = parseObject();
+				skipWhitespace(true);
 
-			skipWhitespace(true);
-
-			object = parseObject();
-
-			skipWhitespace(true);
-
-			assertLineTerminates();
+				assertLineTerminates();
+			}
 		} catch (RDFParseException e) {
 			if (!getParserConfig().get(NTriplesParserSettings.FAIL_ON_INVALID_LINES)
 					|| getParserConfig().isNonFatalError(NTriplesParserSettings.FAIL_ON_INVALID_LINES)) {
@@ -182,6 +184,40 @@ public class NTriplesParser extends AbstractRDFParser {
 			}
 		}
 		return false;
+	}
+
+	protected boolean peekVersionDirective() {
+		// version directive must be at least 10 characters: "VERSION """ or "VERSION ''"
+		return currentIndex < lineChars.length - 10
+				&& lineChars[currentIndex] == 'V'
+				&& lineChars[currentIndex + 1] == 'E'
+				&& lineChars[currentIndex + 2] == 'R'
+				&& lineChars[currentIndex + 3] == 'S'
+				&& lineChars[currentIndex + 4] == 'I'
+				&& lineChars[currentIndex + 5] == 'O'
+				&& lineChars[currentIndex + 6] == 'N'
+				&& (lineChars[currentIndex + 7] == ' ' || lineChars[currentIndex + 7] == '\t');
+	}
+
+	protected void parseVersionDirective() {
+		currentIndex += 8;
+		final int startQuote = lineChars[currentIndex];
+		if (startQuote != '"' && startQuote != '\'') {
+			throw new RDFParseException("Expected '\"' or '\\'', found: " + startQuote);
+		}
+
+		do {
+			currentIndex++;
+		} while (currentIndex < lineChars.length && lineChars[currentIndex] != startQuote);
+
+		if (currentIndex >= lineChars.length) {
+			throw new RDFParseException("Unterminated version string");
+		}
+
+		skipWhitespace(false);
+		if (currentIndex != lineChars.length - 1) {
+			throw new RDFParseException("Unexpected content after version string");
+		}
 	}
 
 	protected Resource parseSubject() {

@@ -101,6 +101,8 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 
 	private ModelFactory modelFactory = new LinkedHashModelFactory();
 
+	private boolean versionPrinted = false;
+
 	/**
 	 * Creates a new TurtleWriter that will write to the supplied OutputStream.
 	 *
@@ -303,6 +305,20 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 		IRI pred = st.getPredicate();
 		Value obj = st.getObject();
 
+		if (!versionPrinted) {
+			if (usesVersion12(obj)) {
+				try {
+					// If we're in the middle of writing a structure, close it first
+					if (!statementClosed || !stack.isEmpty()) {
+						closePreviousStatement();
+					}
+					writeVersion();
+				} catch (IOException e) {
+					throw new RDFHandlerException(e);
+				}
+			}
+		}
+
 		try {
 			if (inlineBNodes) {
 				if ((pred.equals(RDF.FIRST) || pred.equals(RDF.REST)) && isWellFormedCollection(subj)) {
@@ -465,6 +481,12 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 		StringUtil.simpleEscapeIRI(name, writer, false);
 		writer.write("> .");
 		writer.writeEOL();
+	}
+
+	protected void writeVersion() throws IOException {
+		writer.write("VERSION \"1.2\"");
+		writer.writeEOL();
+		versionPrinted = true;
 	}
 
 	protected void writePredicate(IRI predicate) throws IOException {
@@ -836,6 +858,14 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 			return;
 		}
 
+		if (!versionPrinted && bufferedStatements.objects().stream().anyMatch(o -> usesVersion12(o))) {
+			try {
+				writeVersion();
+			} catch (IOException e) {
+				throw new RDFHandlerException(e);
+			}
+		}
+
 		if (this.getRDFFormat().supportsContexts()) { // to allow use in Turtle extensions such a TriG
 			// primary grouping per context.
 			for (Resource context : bufferedStatements.contexts()) {
@@ -935,6 +965,10 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 	 */
 	private boolean isBuffering() {
 		return inlineBNodes || prettyPrint;
+	}
+
+	private static boolean usesVersion12(Value v) {
+		return v.isTriple() || (v.isLiteral() && ((Literal) v).getDatatype() == RDF.DIRLANGSTRING);
 	}
 
 }
