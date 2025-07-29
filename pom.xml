@@ -628,7 +628,7 @@
 			<dependency>
 				<groupId>no.hasmac</groupId>
 				<artifactId>hasmac-json-ld</artifactId>
-				<version>0.9.0</version>
+				<version>0.10.1</version>
 			</dependency>
 			<!-- kerby is used by solr-->
 			<dependency>
@@ -811,15 +811,35 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-surefire-plugin</artifactId>
-					<version>3.2.5</version>
+					<version>3.5.3</version>
+					<dependencies>
+						<dependency>
+							<groupId>me.fabriciorby</groupId>
+							<artifactId>maven-surefire-junit5-tree-reporter</artifactId>
+							<version>1.4.0</version>
+						</dependency>
+					</dependencies>
 					<configuration>
 						<argLine>-Xmx2048M</argLine>
+						<forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
+						<reportFormat>plain</reportFormat>
+						<printSummary>true</printSummary>
+						<trimStackTrace>false</trimStackTrace>
+						<!-- silence the default reporter to avoid duplicates -->
+						<consoleOutputReporter>
+							<disable>true</disable>
+						</consoleOutputReporter>
+						<!-- pretty tree output -->
+						<statelessTestsetInfoReporter implementation="org.apache.maven.plugin.surefire.extensions.junit5.JUnit5StatelessTestsetInfoTreeReporter">
+							<theme>UNICODE</theme>
+							<!-- ASCII also available -->
+						</statelessTestsetInfoReporter>
 					</configuration>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-failsafe-plugin</artifactId>
-					<version>3.2.5</version>
+					<version>3.5.3</version>
 					<configuration>
 						<forkCount>1</forkCount>
 						<reuseForks>false</reuseForks>

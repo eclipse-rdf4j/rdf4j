@@ -144,6 +144,10 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 
 			@Override
 			public boolean hasNext() throws SailException {
+				if (Thread.currentThread().isInterrupted() || closed) {
+					close();
+					return false;
+				}
 				calculateNext();
 				return next != null;
 			}
@@ -218,8 +222,8 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 
 	@Override
 	public boolean incrementIterator() {
-		assert !closed;
-		if (iterator.hasNext()) {
+		var iterator = this.iterator;
+		if (!closed && iterator != null && iterator.hasNext()) {
 			iterator.next();
 			return true;
 		}
