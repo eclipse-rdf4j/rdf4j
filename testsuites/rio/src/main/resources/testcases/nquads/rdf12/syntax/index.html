@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang='en' prefix='mf: http://www.w3.org/2001/sw/DataAccess/tests/test-manifest# rdft: http://www.w3.org/ns/rdftest#'>
+  <!-- This file is generated automatically from manifest.ttl, and should not be edited directly. -->
+  <head>
+    <meta content='text/html;charset=utf-8' http-equiv='Content-Type'>
+    <meta content='width=device-width, initial-scale=1.0' name='viewport'>
+    <link href='https://www.w3.org/StyleSheets/TR/base' rel='stylesheet' type='text/css'>
+    <style>
+      body {background-image: none;}
+      dl.editor>dd {
+        margin: 0 0 0 40px;
+      }
+      dl.test-detail {
+        padding: 0.5em;
+      }
+      dl.test-detail>dt {
+        float: left;
+        clear: left;
+        text-align: right;
+        font-weight: bold;
+        color: green;
+      }
+      dl.test-detail>dt:after {content: ": "}
+      dl.test-detail>dd {
+        margin: 0 0 0 110px;
+        padding: 0 0 0.5em 0;
+      }
+      dl.test-description>dt {margin-top: 2em;}
+      dd {margin-left: 0;}
+      dd code {display: inline;}
+      footer {text-align: center;}
+    </style>
+    <title>
+      RDF 1.2 N-Quads Syntax Tests
+    </title>
+    <style>
+      em.rfc2119 {
+        text-transform: lowercase;
+        font-variant:   small-caps;
+        font-style:     normal;
+        color:          #900;
+      }
+      a.testlink {
+        color: inherit;
+        text-decoration: none;
+      }
+      a.testlink:hover {
+        text-decoration: underline;
+      }
+      .warning {color: orange;}
+      .error {color: red;}
+    </style>
+  </head>
+  <body resource='../syntax#manifest' typeof='mf:Manifest'>
+    <p>
+      <a href='http://www.w3.org/'>
+        <img alt='W3C' height='48' src='http://www.w3.org/Icons/w3c_home' width='72'>
+      </a>
+    </p>
+    <h1 property='rdfs:label'>RDF 1.2 N-Quads Syntax Tests</h1>
+    <p><a href="http://www.w3.org/Consortium/Legal/ipr-notice#Copyright">Copyright</a> © 2004-2023 <a href="https://www.w3.org/">World Wide Web Consortium</a>. <abbr title="World Wide Web Consortium">W3C</abbr><sup>®</sup> <a href="https://www.w3.org/Consortium/Legal/ipr-notice#Legal_Disclaimer">liability</a>, <a href="https://www.w3.org/Consortium/Legal/ipr-notice#W3C_Trademarks">trademark</a> and <a href="https://www.w3.org/Consortium/Legal/2015/copyright-software-and-document">permissive document license</a> rules apply.</p>
+    <hr title='Separator for header'>
+    <div>
+      <h2 id='abstract'>Abstract</h2>
+      <p>This page describes W3C RDF &amp; SPARQL Working Group's test suite for RDF 1.2.
+        Conformance for RDF 1.2 requires conforming with tests in this test suite
+        along with the relevant RDF 1.2 tests.</p>
+      <h3 id='contributing-tests'>Contributing Tests</h3>
+      <p>The test manifests and entries are built automatically from <a href="manifest.ttl">manifest.ttl</a> using a Rake task. Tests may be contributed via pull request to <a href="https://github.com/w3c/rdf-tests">https://github.com/w3c/rdf-tests</a> with suitable changes to the <a href="manifest.ttl">manifest.ttl</a> and referenced files.</p>
+      <h3 id='distribution'>Distribution</h3>
+      <p>Distributed under both the <a href="http://www.w3.org/Consortium/Legal/2008/04-testsuite-license">W3C Test Suite License</a> and the <a href="http://www.w3.org/Consortium/Legal/2008/03-bsd-license">W3C 3-clause BSD License</a>. To contribute to a W3C Test Suite, see the <a href="http://www.w3.org/2004/10/27-testcases">policies and contribution forms</a>.</p>
+      <h3 id='disclaimer'>Disclaimer</h3>
+      <p>UNDER BOTH MUTUALLY EXCLUSIVE LICENSES, THIS DOCUMENT AND ALL DOCUMENTS, TESTS AND SOFTWARE THAT LINK THIS STATEMENT ARE PROVIDED "AS IS," AND COPYRIGHT HOLDERS MAKE NO REPRESENTATIONS OR WARRANTIES, EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, OR TITLE; THAT THE CONTENTS OF THE DOCUMENT ARE SUITABLE FOR ANY PURPOSE; NOR THAT THE IMPLEMENTATION OF SUCH CONTENTS WILL NOT INFRINGE ANY THIRD PARTY PATENTS, COPYRIGHTS, TRADEMARKS OR OTHER RIGHTS.
+        COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE DOCUMENT OR THE PERFORMANCE OR IMPLEMENTATION OF THE CONTENTS THEREOF.</p>
+    </div>
+    <div>
+      <h2>
+        Test Descriptions
+      </h2>
+      <dl class='test-description'>
+        <dt id='nquads12-01'>
+          <a class='testlink' href='#nquads12-01'>
+            nquads12-01:
+          </a>
+          <span about='../syntax#nquads12-01' property='mf:name'>N-Quads-12 - object triple term</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-01' typeof='rdft:TestNQuadsPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-syntax-01.nq' property='mf:action'>nquads12-syntax-01.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-02'>
+          <a class='testlink' href='#nquads12-02'>
+            nquads12-02:
+          </a>
+          <span about='../syntax#nquads12-02' property='mf:name'>N-Quads-12 - object triple term, no whitespace</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-02' typeof='rdft:TestNQuadsPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-syntax-02.nq' property='mf:action'>nquads12-syntax-02.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-03'>
+          <a class='testlink' href='#nquads12-03'>
+            nquads12-03:
+          </a>
+          <span about='../syntax#nquads12-03' property='mf:name'>N-Quads-12 - Nested, no whitespace</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-03' typeof='rdft:TestNQuadsPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-syntax-03.nq' property='mf:action'>nquads12-syntax-03.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-bnode-1'>
+          <a class='testlink' href='#nquads12-bnode-1'>
+            nquads12-bnode-1:
+          </a>
+          <span about='../syntax#nquads12-bnode-1' property='mf:name'>N-Quads-12 - Blank node subject</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-bnode-1' typeof='rdft:TestNQuadsPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-bnode-1.nq' property='mf:action'>nquads12-bnode-1.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-nested-1'>
+          <a class='testlink' href='#nquads12-nested-1'>
+            nquads12-nested-1:
+          </a>
+          <span about='../syntax#nquads12-nested-1' property='mf:name'>N-Quads-12 - Nested object term</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-nested-1' typeof='rdft:TestNQuadsPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-nested-1.nq' property='mf:action'>nquads12-nested-1.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads-langdir-1'>
+          <a class='testlink' href='#nquads-langdir-1'>
+            nquads-langdir-1:
+          </a>
+          <span about='../syntax#nquads-langdir-1' property='mf:name'>N-Quads literal with base direction ltr</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads-langdir-1' typeof='rdft:TestNQuadsPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads-langdir-1.nq' property='mf:action'>nquads-langdir-1.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads-langdir-2'>
+          <a class='testlink' href='#nquads-langdir-2'>
+            nquads-langdir-2:
+          </a>
+          <span about='../syntax#nquads-langdir-2' property='mf:name'>N-Quads literal with base direction rtl</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads-langdir-2' typeof='rdft:TestNQuadsPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads-langdir-2.nq' property='mf:action'>nquads-langdir-2.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-bad-01'>
+          <a class='testlink' href='#nquads12-bad-01'>
+            nquads12-bad-01:
+          </a>
+          <span about='../syntax#nquads12-bad-01' property='mf:name'>N-Quads-12 - Bad - reified triple as predicate</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-bad-01' typeof='rdft:TestNQuadsNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-bad-syntax-01.nq' property='mf:action'>nquads12-bad-syntax-01.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-bad-02'>
+          <a class='testlink' href='#nquads12-bad-02'>
+            nquads12-bad-02:
+          </a>
+          <span about='../syntax#nquads12-bad-02' property='mf:name'>N-Quads-12 - Bad - reified triple, literal subject</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-bad-02' typeof='rdft:TestNQuadsNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-bad-syntax-02.nq' property='mf:action'>nquads12-bad-syntax-02.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-bad-03'>
+          <a class='testlink' href='#nquads12-bad-03'>
+            nquads12-bad-03:
+          </a>
+          <span about='../syntax#nquads12-bad-03' property='mf:name'>N-Quads-12 - Bad - reified triple, literal predicate</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-bad-03' typeof='rdft:TestNQuadsNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-bad-syntax-03.nq' property='mf:action'>nquads12-bad-syntax-03.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-bad-04'>
+          <a class='testlink' href='#nquads12-bad-04'>
+            nquads12-bad-04:
+          </a>
+          <span about='../syntax#nquads12-bad-04' property='mf:name'>N-Quads-12 - Bad - reified triple, blank node predicate</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-bad-04' typeof='rdft:TestNQuadsNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-bad-syntax-04.nq' property='mf:action'>nquads12-bad-syntax-04.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-bad-05'>
+          <a class='testlink' href='#nquads12-bad-05'>
+            nquads12-bad-05:
+          </a>
+          <span about='../syntax#nquads12-bad-05' property='mf:name'>N-Quads-12 - Bad - triple term as predicate</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-bad-05' typeof='rdft:TestNQuadsNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-bad-syntax-05.nq' property='mf:action'>nquads12-bad-syntax-05.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-bad-06'>
+          <a class='testlink' href='#nquads12-bad-06'>
+            nquads12-bad-06:
+          </a>
+          <span about='../syntax#nquads12-bad-06' property='mf:name'>N-Quads-12 - Bad - triple term, literal subject</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-bad-06' typeof='rdft:TestNQuadsNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-bad-syntax-06.nq' property='mf:action'>nquads12-bad-syntax-06.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-bad-07'>
+          <a class='testlink' href='#nquads12-bad-07'>
+            nquads12-bad-07:
+          </a>
+          <span about='../syntax#nquads12-bad-07' property='mf:name'>N-Quads-12 - Bad - triple term, literal predicate</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-bad-07' typeof='rdft:TestNQuadsNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-bad-syntax-07.nq' property='mf:action'>nquads12-bad-syntax-07.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-bad-08'>
+          <a class='testlink' href='#nquads12-bad-08'>
+            nquads12-bad-08:
+          </a>
+          <span about='../syntax#nquads12-bad-08' property='mf:name'>N-Quads-12 - Bad - triple term, blank node predicate</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-bad-08' typeof='rdft:TestNQuadsNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-bad-syntax-08.nq' property='mf:action'>nquads12-bad-syntax-08.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-bad-09'>
+          <a class='testlink' href='#nquads12-bad-09'>
+            nquads12-bad-09:
+          </a>
+          <span about='../syntax#nquads12-bad-09' property='mf:name'>N-Quads-12 - Bad - reified triple object</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-bad-09' typeof='rdft:TestNQuadsNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-bad-syntax-09.nq' property='mf:action'>nquads12-bad-syntax-09.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-bad-10'>
+          <a class='testlink' href='#nquads12-bad-10'>
+            nquads12-bad-10:
+          </a>
+          <span about='../syntax#nquads12-bad-10' property='mf:name'>N-Quads-12 - Bad - triple term as subject</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-bad-10' typeof='rdft:TestNQuadsNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-bad-syntax-10.nq' property='mf:action'>nquads12-bad-syntax-10.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-bad-reified-1'>
+          <a class='testlink' href='#nquads12-bad-reified-1'>
+            nquads12-bad-reified-1:
+          </a>
+          <span about='../syntax#nquads12-bad-reified-1' property='mf:name'>N-Quads-12 - Bad - subject reified triple</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-bad-reified-1' typeof='rdft:TestNQuadsNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-bad-reified-syntax-1.nq' property='mf:action'>nquads12-bad-reified-syntax-1.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-bad-reified-2'>
+          <a class='testlink' href='#nquads12-bad-reified-2'>
+            nquads12-bad-reified-2:
+          </a>
+          <span about='../syntax#nquads12-bad-reified-2' property='mf:name'>N-Quads-12 - Bad - object reified triple</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-bad-reified-2' typeof='rdft:TestNQuadsNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-bad-reified-syntax-2.nq' property='mf:action'>nquads12-bad-reified-syntax-2.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-bad-reified-3'>
+          <a class='testlink' href='#nquads12-bad-reified-3'>
+            nquads12-bad-reified-3:
+          </a>
+          <span about='../syntax#nquads12-bad-reified-3' property='mf:name'>N-Quads-12 - Bad - subject and object reified triples</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-bad-reified-3' typeof='rdft:TestNQuadsNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-bad-reified-syntax-3.nq' property='mf:action'>nquads12-bad-reified-syntax-3.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-bad-reified-4'>
+          <a class='testlink' href='#nquads12-bad-reified-4'>
+            nquads12-bad-reified-4:
+          </a>
+          <span about='../syntax#nquads12-bad-reified-4' property='mf:name'>N-Quads-12 - Bad - predicate reified triple</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-bad-reified-4' typeof='rdft:TestNQuadsNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-bad-reified-syntax-4.nq' property='mf:action'>nquads12-bad-reified-syntax-4.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-bnode-bad-annotated-syntax-1'>
+          <a class='testlink' href='#nquads12-bnode-bad-annotated-syntax-1'>
+            nquads12-bnode-bad-annotated-syntax-1:
+          </a>
+          <span about='../syntax#nquads12-bnode-bad-annotated-syntax-1' property='mf:name'>N-Quads-12 - Bad - annotated triple, blank node subject</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-bnode-bad-annotated-syntax-1' typeof='rdft:TestNQuadsNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-bnode-bad-annotated-syntax-1.nq' property='mf:action'>nquads12-bnode-bad-annotated-syntax-1.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-bnode-bad-annotated-syntax-2'>
+          <a class='testlink' href='#nquads12-bnode-bad-annotated-syntax-2'>
+            nquads12-bnode-bad-annotated-syntax-2:
+          </a>
+          <span about='../syntax#nquads12-bnode-bad-annotated-syntax-2' property='mf:name'>N-Quads-12 - Bad - annotated triple, blank node object</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-bnode-bad-annotated-syntax-2' typeof='rdft:TestNQuadsNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-bnode-bad-annotated-syntax-2.nq' property='mf:action'>nquads12-bnode-bad-annotated-syntax-2.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-nested-bad-annotated-syntax-1'>
+          <a class='testlink' href='#nquads12-nested-bad-annotated-syntax-1'>
+            nquads12-nested-bad-annotated-syntax-1:
+          </a>
+          <span about='../syntax#nquads12-nested-bad-annotated-syntax-1' property='mf:name'>N-Quads-12 - Bad - annotated triple, nested subject term</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-nested-bad-annotated-syntax-1' typeof='rdft:TestNQuadsNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-nested-bad-annotated-syntax-1.nq' property='mf:action'>nquads12-nested-bad-annotated-syntax-1.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads12-nested-bad-annotated-syntax-2'>
+          <a class='testlink' href='#nquads12-nested-bad-annotated-syntax-2'>
+            nquads12-nested-bad-annotated-syntax-2:
+          </a>
+          <span about='../syntax#nquads12-nested-bad-annotated-syntax-2' property='mf:name'>N-Quads-12 - Bad - annotated triple, nested object term</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads12-nested-bad-annotated-syntax-2' typeof='rdft:TestNQuadsNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads12-nested-bad-annotated-syntax-2.nq' property='mf:action'>nquads12-nested-bad-annotated-syntax-2.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads-langdir-bad-1'>
+          <a class='testlink' href='#nquads-langdir-bad-1'>
+            nquads-langdir-bad-1:
+          </a>
+          <span about='../syntax#nquads-langdir-bad-1' property='mf:name'>N-Quads literal- Bad - undefined base direction</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads-langdir-bad-1' typeof='rdft:TestNQuadsNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads-langdir-bad-1.nq' property='mf:action'>nquads-langdir-bad-1.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='nquads-langdir-bad-2'>
+          <a class='testlink' href='#nquads-langdir-bad-2'>
+            nquads-langdir-bad-2:
+          </a>
+          <span about='../syntax#nquads-langdir-bad-2' property='mf:name'>N-Quads literal- Bad - upper case LTR</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#nquads-langdir-bad-2' typeof='rdft:TestNQuadsNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestNQuadsNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='nquads-langdir-bad-2.nq' property='mf:action'>nquads-langdir-bad-2.nq</a>
+            </dd>
+          </dl>
+        </dd>
+      </dl>
+    </div>
+    <footer>
+      <p><a href="http://www.w3.org/Consortium/Legal/ipr-notice#Copyright">Copyright</a> © 2004-2023 <a href="https://www.w3.org/">World Wide Web Consortium</a>. <abbr title="World Wide Web Consortium">W3C</abbr><sup>®</sup> <a href="https://www.w3.org/Consortium/Legal/ipr-notice#Legal_Disclaimer">liability</a>, <a href="https://www.w3.org/Consortium/Legal/ipr-notice#W3C_Trademarks">trademark</a> and <a href="https://www.w3.org/Consortium/Legal/2015/copyright-software-and-document">permissive document license</a> rules apply.</p>
+    </footer>
+  </body>
+</html>

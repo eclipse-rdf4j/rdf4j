@@ -10,32 +10,36 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
-import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
-import org.eclipse.rdf4j.rio.ntriples.NTriplesParser;
 import org.eclipse.rdf4j.testsuite.rio.turtle.TurtleParserTestCase;
 
 import junit.framework.Test;
+import junit.framework.TestSuite;
 
-/**
- * JUnit test for the Turtle parser that uses the tests that are available
- * <a href="https://dvcs.w3.org/hg/rdf/file/09a9da374a9f/rdf-turtle/">online</a>.
- */
-public class TurtleParserTest extends TurtleParserTestCase {
+public class TurtleParserTest {
 
 	public static Test suite() throws Exception {
-		return new TurtleParserTest().createTestSuite();
+		final TestSuite suite = new TestSuite();
+		suite.addTest(Turtle11ParserTest.suite());
+//		suite.addTest(Turtle12ParserTest.suite());
+		return suite;
 	}
 
-	@Override
-	protected RDFParser createTurtleParser() {
-		RDFParser result = new TurtleParser();
-		result.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);
-		return result;
+	static class Turtle11ParserTest extends TurtleParserTestCase {
+		public static Test suite() throws Exception {
+			return new Turtle11ParserTest().createTestSuite();
+		}
 	}
 
-	@Override
-	protected RDFParser createNTriplesParser() {
-		return new NTriplesParser();
+	static class Turtle12ParserTest extends TurtleParserTestCase {
+		protected static final String TESTS_W3C_BASE_URL = "https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/";
+		protected static final String TEST_W3C_FILE_BASE_PATH_RDF12 = "/testcases/turtle/rdf12/";
+
+		private Turtle12ParserTest() {
+			super(TEST_W3C_FILE_BASE_PATH_RDF12, TESTS_W3C_BASE_URL);
+		}
+
+		public static Test suite() throws Exception {
+			return new Turtle12ParserTest().createTestSuite();
+		}
 	}
 }

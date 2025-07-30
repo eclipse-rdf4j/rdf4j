@@ -831,6 +831,9 @@ public class NTriplesUtil {
 
 				try {
 					final int codePoint = Integer.parseInt(xx, 16);
+					if (codePoint >= 0xD800 && codePoint <= 0xDFFF) {
+						throw new IllegalArgumentException("Illegal Unicode escape sequence: " + s);
+					}
 					sb.append(Character.toChars(codePoint));
 
 					startIdx = backSlashIdx + 6;
@@ -846,6 +849,9 @@ public class NTriplesUtil {
 
 				try {
 					final int codePoint = Integer.parseInt(xx, 16);
+					if (codePoint >= 0xD800 && codePoint <= 0xDFFF) {
+						throw new IllegalArgumentException("Illegal Unicode escape sequence: " + s);
+					}
 					sb.append(Character.toChars(codePoint));
 
 					startIdx = backSlashIdx + 10;

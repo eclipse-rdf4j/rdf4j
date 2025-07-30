@@ -41,5 +41,10 @@
 			<artifactId>junit-vintage-engine</artifactId>
 			<scope>compile</scope>
 		</dependency>
+		<dependency>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-rio-nquads</artifactId>
+			<version>${project.version}</version>
+		</dependency>
 	</dependencies>
 </project>
