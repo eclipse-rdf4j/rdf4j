@@ -24,10 +24,10 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-
-import junit.framework.TestSuite;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import junit.framework.TestSuite;
 
 public abstract class AbstractParserTestSuite {
 
@@ -86,7 +86,7 @@ public abstract class AbstractParserTestSuite {
 		return suite;
 	}
 
-	private void parseSubManifests (RepositoryConnection con) throws IOException {
+	private void parseSubManifests(RepositoryConnection con) throws IOException {
 		final String manifestQuery = "PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> "
 				+ "SELECT DISTINCT ?manifestFile "
 				+ "WHERE { [] mf:include [ rdf:rest*/rdf:first ?manifestFile ] . }   ";
@@ -185,7 +185,8 @@ public abstract class AbstractParserTestSuite {
 		canonicalizationQuery.append("     ?test mf:result ?outputURL . ");
 		canonicalizationQuery.append(" }");
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, canonicalizationQuery.toString()).evaluate();
+		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, canonicalizationQuery.toString())
+				.evaluate();
 
 		// Add all canonicalization tests to the test suite
 		while (queryResult.hasNext()) {

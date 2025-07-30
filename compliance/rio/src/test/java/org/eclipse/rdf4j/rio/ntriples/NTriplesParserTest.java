@@ -10,11 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.ntriples;
 
-import junit.framework.Test;
-import junit.framework.TestSuite;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.testsuite.rio.AbstractParserTestSuite;
+
+import junit.framework.Test;
+import junit.framework.TestSuite;
 
 public class NTriplesParserTest {
 
@@ -28,7 +29,8 @@ public class NTriplesParserTest {
 	static class NTriples11ParserTest extends AbstractParserTestSuite {
 
 		private NTriples11ParserTest() {
-			super("/testcases/ntriples/rdf11/", "http://www.w3.org/2013/N-TriplesTests/", RDFFormat.NTRIPLES, "NTriples");
+			super("/testcases/ntriples/rdf11/", "http://www.w3.org/2013/N-TriplesTests/", RDFFormat.NTRIPLES,
+					"NTriples");
 		}
 
 		public static Test suite() throws Exception {
@@ -44,7 +46,8 @@ public class NTriplesParserTest {
 	static class NTriples12ParserTest extends AbstractParserTestSuite {
 
 		private NTriples12ParserTest() {
-			super("/testcases/ntriples/rdf12/", "http://www.w3.org/2013/N-TriplesTests/", RDFFormat.NTRIPLES, "NTriples");
+			super("/testcases/ntriples/rdf12/", "http://www.w3.org/2013/N-TriplesTests/", RDFFormat.NTRIPLES,
+					"NTriples");
 		}
 
 		public static Test suite() throws Exception {

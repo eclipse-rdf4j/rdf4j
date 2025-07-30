@@ -10,13 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.trig;
 
-import junit.framework.Test;
-import junit.framework.TestSuite;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.nquads.NQuadsParser;
 import org.eclipse.rdf4j.testsuite.rio.AbstractParserTestSuite;
+
+import junit.framework.Test;
+import junit.framework.TestSuite;
 
 public class TriGParserTest {
 
@@ -73,4 +74,3 @@ public class TriGParserTest {
 		}
 	}
 }
-

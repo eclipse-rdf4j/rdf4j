@@ -10,12 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
-import junit.framework.Test;
-import junit.framework.TestSuite;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.ntriples.NTriplesParser;
 import org.eclipse.rdf4j.testsuite.rio.AbstractParserTestSuite;
+
+import junit.framework.Test;
+import junit.framework.TestSuite;
 
 public class TurtleParserTest {
 

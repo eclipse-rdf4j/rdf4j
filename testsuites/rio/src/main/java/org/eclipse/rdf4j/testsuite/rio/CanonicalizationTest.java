@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.rio;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.io.InputStream;
 import java.io.StringWriter;
 import java.nio.file.Files;
@@ -33,8 +35,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import junit.framework.TestCase;
-
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class CanonicalizationTest extends TestCase {
 
@@ -61,7 +61,8 @@ public class CanonicalizationTest extends TestCase {
 	 *--------------*/
 
 	public CanonicalizationTest(
-			final IRI testUri, final String testName, final String inputURL, final String outputURL, final String baseURL,
+			final IRI testUri, final String testName, final String inputURL, final String outputURL,
+			final String baseURL,
 			final RDFParser parser, final RDFFormat format) {
 		super(testName);
 		this.testUri = testUri;
