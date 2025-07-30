@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang='en' prefix='mf: http://www.w3.org/2001/sw/DataAccess/tests/test-manifest# rdft: http://www.w3.org/ns/rdftest#'>
+  <!-- This file is generated automatically from manifest.ttl, and should not be edited directly. -->
+  <head>
+    <meta content='text/html;charset=utf-8' http-equiv='Content-Type'>
+    <meta content='width=device-width, initial-scale=1.0' name='viewport'>
+    <link href='https://www.w3.org/StyleSheets/TR/base' rel='stylesheet' type='text/css'>
+    <style>
+      body {background-image: none;}
+      dl.editor>dd {
+        margin: 0 0 0 40px;
+      }
+      dl.test-detail {
+        padding: 0.5em;
+      }
+      dl.test-detail>dt {
+        float: left;
+        clear: left;
+        text-align: right;
+        font-weight: bold;
+        color: green;
+      }
+      dl.test-detail>dt:after {content: ": "}
+      dl.test-detail>dd {
+        margin: 0 0 0 110px;
+        padding: 0 0 0.5em 0;
+      }
+      dl.test-description>dt {margin-top: 2em;}
+      dd {margin-left: 0;}
+      dd code {display: inline;}
+      footer {text-align: center;}
+    </style>
+    <title>
+      RDF 1.2 TriG Evaluation Tests
+    </title>
+    <style>
+      em.rfc2119 {
+        text-transform: lowercase;
+        font-variant:   small-caps;
+        font-style:     normal;
+        color:          #900;
+      }
+      a.testlink {
+        color: inherit;
+        text-decoration: none;
+      }
+      a.testlink:hover {
+        text-decoration: underline;
+      }
+      .warning {color: orange;}
+      .error {color: red;}
+    </style>
+  </head>
+  <body resource='../eval#manifest' typeof='mf:Manifest'>
+    <p>
+      <a href='http://www.w3.org/'>
+        <img alt='W3C' height='48' src='http://www.w3.org/Icons/w3c_home' width='72'>
+      </a>
+    </p>
+    <h1 property='rdfs:label'>RDF 1.2 TriG Evaluation Tests</h1>
+    <p><a href="http://www.w3.org/Consortium/Legal/ipr-notice#Copyright">Copyright</a> © 2004-2023 <a href="https://www.w3.org/">World Wide Web Consortium</a>. <abbr title="World Wide Web Consortium">W3C</abbr><sup>®</sup> <a href="https://www.w3.org/Consortium/Legal/ipr-notice#Legal_Disclaimer">liability</a>, <a href="https://www.w3.org/Consortium/Legal/ipr-notice#W3C_Trademarks">trademark</a> and <a href="https://www.w3.org/Consortium/Legal/2015/copyright-software-and-document">permissive document license</a> rules apply.</p>
+    <hr title='Separator for header'>
+    <div>
+      <h2 id='abstract'>Abstract</h2>
+      <p>This page describes W3C RDF &amp; SPARQL Working Group's test suite for RDF 1.2.
+        Conformance for RDF 1.2 requires conforming with tests in this test suite
+        along with the relevant RDF 1.2 tests.</p>
+      <h3 id='contributing-tests'>Contributing Tests</h3>
+      <p>The test manifests and entries are built automatically from <a href="manifest.ttl">manifest.ttl</a> using a Rake task. Tests may be contributed via pull request to <a href="https://github.com/w3c/rdf-tests">https://github.com/w3c/rdf-tests</a> with suitable changes to the <a href="manifest.ttl">manifest.ttl</a> and referenced files.</p>
+      <h3 id='distribution'>Distribution</h3>
+      <p>Distributed under both the <a href="http://www.w3.org/Consortium/Legal/2008/04-testsuite-license">W3C Test Suite License</a> and the <a href="http://www.w3.org/Consortium/Legal/2008/03-bsd-license">W3C 3-clause BSD License</a>. To contribute to a W3C Test Suite, see the <a href="http://www.w3.org/2004/10/27-testcases">policies and contribution forms</a>.</p>
+      <h3 id='disclaimer'>Disclaimer</h3>
+      <p>UNDER BOTH MUTUALLY EXCLUSIVE LICENSES, THIS DOCUMENT AND ALL DOCUMENTS, TESTS AND SOFTWARE THAT LINK THIS STATEMENT ARE PROVIDED "AS IS," AND COPYRIGHT HOLDERS MAKE NO REPRESENTATIONS OR WARRANTIES, EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, OR TITLE; THAT THE CONTENTS OF THE DOCUMENT ARE SUITABLE FOR ANY PURPOSE; NOR THAT THE IMPLEMENTATION OF SUCH CONTENTS WILL NOT INFRINGE ANY THIRD PARTY PATENTS, COPYRIGHTS, TRADEMARKS OR OTHER RIGHTS.
+        COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE DOCUMENT OR THE PERFORMANCE OR IMPLEMENTATION OF THE CONTENTS THEREOF.</p>
+    </div>
+    <div>
+      <h2>
+        Test Descriptions
+      </h2>
+      <dl class='test-description'>
+        <dt id='trig12-rt-01'>
+          <a class='testlink' href='#trig12-rt-01'>
+            trig12-rt-01:
+          </a>
+          <span about='../eval#trig12-rt-01' property='mf:name'>TriG 1.2 - subject reification</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-rt-01' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-rt-01.trig' property='mf:action'>trig12-eval-rt-01.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-rt-01.nq' property='mf:result'>trig12-eval-rt-01.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-rt-02'>
+          <a class='testlink' href='#trig12-rt-02'>
+            trig12-rt-02:
+          </a>
+          <span about='../eval#trig12-rt-02' property='mf:name'>TriG 1.2 - object reification</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-rt-02' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-rt-02.trig' property='mf:action'>trig12-eval-rt-02.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-rt-02.nq' property='mf:result'>trig12-eval-rt-02.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-rt-03'>
+          <a class='testlink' href='#trig12-rt-03'>
+            trig12-rt-03:
+          </a>
+          <span about='../eval#trig12-rt-03' property='mf:name'>TriG 1.2 - subject reification with identifier</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-rt-03' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-rt-03.trig' property='mf:action'>trig12-eval-rt-03.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-rt-03.nq' property='mf:result'>trig12-eval-rt-03.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-rt-04'>
+          <a class='testlink' href='#trig12-rt-04'>
+            trig12-rt-04:
+          </a>
+          <span about='../eval#trig12-rt-04' property='mf:name'>TriG 1.2 - object reification with identifier</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-rt-04' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-rt-04.trig' property='mf:action'>trig12-eval-rt-04.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-rt-04.nq' property='mf:result'>trig12-eval-rt-04.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-rt-05'>
+          <a class='testlink' href='#trig12-rt-05'>
+            trig12-rt-05:
+          </a>
+          <span about='../eval#trig12-rt-05' property='mf:name'>TriG 1.2 - subject reification with bnode identifier</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-rt-05' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-rt-05.trig' property='mf:action'>trig12-eval-rt-05.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-rt-05.nq' property='mf:result'>trig12-eval-rt-05.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-rt-06'>
+          <a class='testlink' href='#trig12-rt-06'>
+            trig12-rt-06:
+          </a>
+          <span about='../eval#trig12-rt-06' property='mf:name'>TriG 1.2 - object reification with bnode identifier</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-rt-06' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-rt-06.trig' property='mf:action'>trig12-eval-rt-06.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-rt-06.nq' property='mf:result'>trig12-eval-rt-06.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-rt-07'>
+          <a class='testlink' href='#trig12-rt-07'>
+            trig12-rt-07:
+          </a>
+          <span about='../eval#trig12-rt-07' property='mf:name'>TriG 1.2 - subject reification with empty identifier</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-rt-07' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-rt-07.trig' property='mf:action'>trig12-eval-rt-07.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-rt-07.nq' property='mf:result'>trig12-eval-rt-07.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-rt-08'>
+          <a class='testlink' href='#trig12-rt-08'>
+            trig12-rt-08:
+          </a>
+          <span about='../eval#trig12-rt-08' property='mf:name'>TriG 1.2 - object reification with empty identifier</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-rt-08' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-rt-08.trig' property='mf:action'>trig12-eval-rt-08.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-rt-08.nq' property='mf:result'>trig12-eval-rt-08.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-bnode-1'>
+          <a class='testlink' href='#trig12-bnode-1'>
+            trig12-bnode-1:
+          </a>
+          <span about='../eval#trig12-bnode-1' property='mf:name'>TriG 1.2 - blank node label</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-bnode-1' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-bnode-1.trig' property='mf:action'>trig12-eval-bnode-1.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-bnode-1.nq' property='mf:result'>trig12-eval-bnode-1.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-bnode-2'>
+          <a class='testlink' href='#trig12-bnode-2'>
+            trig12-bnode-2:
+          </a>
+          <span about='../eval#trig12-bnode-2' property='mf:name'>TriG 1.2 - blank node labels</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-bnode-2' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-bnode-2.trig' property='mf:action'>trig12-eval-bnode-2.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-bnode-2.nq' property='mf:result'>trig12-eval-bnode-2.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-annotation-01'>
+          <a class='testlink' href='#trig12-annotation-01'>
+            trig12-annotation-01:
+          </a>
+          <span about='../eval#trig12-annotation-01' property='mf:name'>TriG 1.2 - Annotation form</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-annotation-01' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-annotation-01.trig' property='mf:action'>trig12-eval-annotation-01.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-annotation-01.nq' property='mf:result'>trig12-eval-annotation-01.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-annotation-02'>
+          <a class='testlink' href='#trig12-annotation-02'>
+            trig12-annotation-02:
+          </a>
+          <span about='../eval#trig12-annotation-02' property='mf:name'>TriG 1.2 - Annotation example</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-annotation-02' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-annotation-02.trig' property='mf:action'>trig12-eval-annotation-02.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-annotation-02.nq' property='mf:result'>trig12-eval-annotation-02.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-annotation-03'>
+          <a class='testlink' href='#trig12-annotation-03'>
+            trig12-annotation-03:
+          </a>
+          <span about='../eval#trig12-annotation-03' property='mf:name'>TriG 1.2 - Annotation - predicate and object lists</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-annotation-03' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-annotation-03.trig' property='mf:action'>trig12-eval-annotation-03.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-annotation-03.nq' property='mf:result'>trig12-eval-annotation-03.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-annotation-04'>
+          <a class='testlink' href='#trig12-annotation-04'>
+            trig12-annotation-04:
+          </a>
+          <span about='../eval#trig12-annotation-04' property='mf:name'>TriG 1.2 - Annotation - nested</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-annotation-04' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-annotation-04.trig' property='mf:action'>trig12-eval-annotation-04.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-annotation-04.nq' property='mf:result'>trig12-eval-annotation-04.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-annotation-05'>
+          <a class='testlink' href='#trig12-annotation-05'>
+            trig12-annotation-05:
+          </a>
+          <span about='../eval#trig12-annotation-05' property='mf:name'>TriG 1.2 - Annotation object list</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-annotation-05' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-annotation-05.trig' property='mf:action'>trig12-eval-annotation-05.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-annotation-05.nq' property='mf:result'>trig12-eval-annotation-05.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-annotation-06'>
+          <a class='testlink' href='#trig12-annotation-06'>
+            trig12-annotation-06:
+          </a>
+          <span about='../eval#trig12-annotation-06' property='mf:name'>TriG 1.2 - Annotation with identifier</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-annotation-06' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-annotation-06.trig' property='mf:action'>trig12-eval-annotation-06.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-annotation-06.nq' property='mf:result'>trig12-eval-annotation-06.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-annotation-07'>
+          <a class='testlink' href='#trig12-annotation-07'>
+            trig12-annotation-07:
+          </a>
+          <span about='../eval#trig12-annotation-07' property='mf:name'>TriG 1.2 - Different annotations have different default identifiers</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-annotation-07' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-annotation-07.trig' property='mf:action'>trig12-eval-annotation-07.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-annotation-07.nq' property='mf:result'>trig12-eval-annotation-07.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-annotation-08'>
+          <a class='testlink' href='#trig12-annotation-08'>
+            trig12-annotation-08:
+          </a>
+          <span about='../eval#trig12-annotation-08' property='mf:name'>TriG 1.2 - Annotation form with explicit identifier</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-annotation-08' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-annotation-08.trig' property='mf:action'>trig12-eval-annotation-08.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-annotation-08.nq' property='mf:result'>trig12-eval-annotation-08.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-annotation-09'>
+          <a class='testlink' href='#trig12-annotation-09'>
+            trig12-annotation-09:
+          </a>
+          <span about='../eval#trig12-annotation-09' property='mf:name'>TriG 1.2 - Annotation form with multiple reifiers</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-annotation-09' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-annotation-09.trig' property='mf:action'>trig12-eval-annotation-09.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-annotation-09.nq' property='mf:result'>trig12-eval-annotation-09.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-annotation-10'>
+          <a class='testlink' href='#trig12-annotation-10'>
+            trig12-annotation-10:
+          </a>
+          <span about='../eval#trig12-annotation-10' property='mf:name'>TriG 1.2 - Annotation form with multiple annotation blocks</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-annotation-10' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-annotation-10.trig' property='mf:action'>trig12-eval-annotation-10.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-annotation-10.nq' property='mf:result'>trig12-eval-annotation-10.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-annotation-11'>
+          <a class='testlink' href='#trig12-annotation-11'>
+            trig12-annotation-11:
+          </a>
+          <span about='../eval#trig12-annotation-11' property='mf:name'>TriG 1.2 - Annotation form with annotation block followed by reifier</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-annotation-11' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-annotation-11.trig' property='mf:action'>trig12-eval-annotation-11.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-annotation-11.nq' property='mf:result'>trig12-eval-annotation-11.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-annotation-12'>
+          <a class='testlink' href='#trig12-annotation-12'>
+            trig12-annotation-12:
+          </a>
+          <span about='../eval#trig12-annotation-12' property='mf:name'>TriG 1.2 - Annotation form with alternating reifiers and annotation blocks</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-annotation-12' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-annotation-12.trig' property='mf:action'>trig12-eval-annotation-12.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-annotation-12.nq' property='mf:result'>trig12-eval-annotation-12.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-reified-triples-annotation-01'>
+          <a class='testlink' href='#trig12-reified-triples-annotation-01'>
+            trig12-reified-triples-annotation-01:
+          </a>
+          <span about='../eval#trig12-reified-triples-annotation-01' property='mf:name'>TriG 1.2 - Annotation with reified triples</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-reified-triples-annotation-01' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-reified-triples-annotation-01.trig' property='mf:action'>trig12-eval-reified-triples-annotation-01.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-reified-triples-annotation-01.nq' property='mf:result'>trig12-eval-reified-triples-annotation-01.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-reified-triples-annotation-02'>
+          <a class='testlink' href='#trig12-reified-triples-annotation-02'>
+            trig12-reified-triples-annotation-02:
+          </a>
+          <span about='../eval#trig12-reified-triples-annotation-02' property='mf:name'>TriG 1.2 - Annotation on triple with reified triple subject</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-reified-triples-annotation-02' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-reified-triples-annotation-02.trig' property='mf:action'>trig12-eval-reified-triples-annotation-02.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-reified-triples-annotation-02.nq' property='mf:result'>trig12-eval-reified-triples-annotation-02.nq</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-reified-triples-annotation-03'>
+          <a class='testlink' href='#trig12-reified-triples-annotation-03'>
+            trig12-reified-triples-annotation-03:
+          </a>
+          <span about='../eval#trig12-reified-triples-annotation-03' property='mf:name'>TriG 1.2 - Annotation on triple with reified triple object</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../eval#trig12-reified-triples-annotation-03' typeof='rdft:TestTrigEval'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigEval</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-eval-reified-triples-annotation-03.trig' property='mf:action'>trig12-eval-reified-triples-annotation-03.trig</a>
+            </dd>
+            <dt>result</dt>
+            <dd>
+              <a href='trig12-eval-reified-triples-annotation-03.nq' property='mf:result'>trig12-eval-reified-triples-annotation-03.nq</a>
+            </dd>
+          </dl>
+        </dd>
+      </dl>
+    </div>
+    <footer>
+      <p><a href="http://www.w3.org/Consortium/Legal/ipr-notice#Copyright">Copyright</a> © 2004-2023 <a href="https://www.w3.org/">World Wide Web Consortium</a>. <abbr title="World Wide Web Consortium">W3C</abbr><sup>®</sup> <a href="https://www.w3.org/Consortium/Legal/ipr-notice#Legal_Disclaimer">liability</a>, <a href="https://www.w3.org/Consortium/Legal/ipr-notice#W3C_Trademarks">trademark</a> and <a href="https://www.w3.org/Consortium/Legal/2015/copyright-software-and-document">permissive document license</a> rules apply.</p>
+    </footer>
+  </body>
+</html>
