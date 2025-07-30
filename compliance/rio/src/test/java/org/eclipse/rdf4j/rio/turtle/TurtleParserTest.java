@@ -10,32 +10,67 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.ntriples.NTriplesParser;
-import org.eclipse.rdf4j.testsuite.rio.turtle.TurtleParserTestCase;
+import org.eclipse.rdf4j.testsuite.rio.AbstractParserTestSuite;
 
 import junit.framework.Test;
+import junit.framework.TestSuite;
 
-/**
- * JUnit test for the Turtle parser that uses the tests that are available
- * <a href="https://dvcs.w3.org/hg/rdf/file/09a9da374a9f/rdf-turtle/">online</a>.
- */
-public class TurtleParserTest extends TurtleParserTestCase {
+public class TurtleParserTest {
 
 	public static Test suite() throws Exception {
-		return new TurtleParserTest().createTestSuite();
+		final TestSuite suite = new TestSuite(TurtleParserTest.class);
+		suite.addTest(Turtle11ParserTest.suite());
+		suite.addTest(Turtle12ParserTest.suite());
+		return suite;
 	}
 
-	@Override
-	protected RDFParser createTurtleParser() {
-		RDFParser result = new TurtleParser();
-		result.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);
-		return result;
+	static class Turtle12ParserTest extends AbstractParserTestSuite {
+
+		protected static final String TESTS_W3C_BASE_URL = "https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/";
+		protected static final String TEST_W3C_FILE_BASE_PATH_RDF12 = "/testcases/turtle/rdf12/";
+
+		private Turtle12ParserTest() {
+			super(TEST_W3C_FILE_BASE_PATH_RDF12, TESTS_W3C_BASE_URL, RDFFormat.TURTLE, "Turtle");
+		}
+
+		public static Test suite() throws Exception {
+			return new Turtle12ParserTest().createTestSuite();
+		}
+
+		@Override
+		protected RDFParser createRDFParser() {
+			return new TurtleParser();
+		}
+
+		@Override
+		protected RDFParser createRDFBaseParser() {
+			return new NTriplesParser();
+		}
 	}
 
-	@Override
-	protected RDFParser createNTriplesParser() {
-		return new NTriplesParser();
+	static class Turtle11ParserTest extends AbstractParserTestSuite {
+		protected static final String TESTS_W3C_BASE_URL = "https://w3c.github.io/rdf-tests/rdf/rdf11/rdf-turtle/";
+		protected static final String TEST_W3C_FILE_BASE_PATH = "/testcases/turtle/rdf11/";
+
+		public Turtle11ParserTest() {
+			super(TEST_W3C_FILE_BASE_PATH, TESTS_W3C_BASE_URL, RDFFormat.TURTLE, "Turtle");
+		}
+
+		public static Test suite() throws Exception {
+			return new Turtle11ParserTest().createTestSuite();
+		}
+
+		@Override
+		protected RDFParser createRDFParser() {
+			return new TurtleParser();
+		}
+
+		@Override
+		protected RDFParser createRDFBaseParser() {
+			return new NTriplesParser();
+		}
 	}
 }

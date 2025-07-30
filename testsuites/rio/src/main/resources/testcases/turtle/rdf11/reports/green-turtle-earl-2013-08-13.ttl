@@ -1,0 +1,2943 @@
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dc:   <http://purl.org/dc/terms/> .
+@prefix doap: <http://usefulinc.com/ns/doap#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix earl: <http://www.w3.org/ns/earl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+<> foaf:primaryTopic <https://code.google.com/p/green-turtle/>;
+  dc:issued "2013-08-13T14:32:31-07:00"^^xsd:dateTime;
+  foaf:maker <http://www.milowski.com/#alex>.
+
+<http://www.milowski.com/#alex> a foaf:Person, earl:Assertor;
+  foaf:name "Alex Milowski";
+  foaf:title "Implementor";
+  foaf:homepage <http://www.milowski.com/> .
+  
+<https://code.google.com/p/green-turtle/> a earl:Software, earl:TestSubject, doap:Project;
+  doap:name "Green Turtle";
+  doap:homepage <https://code.google.com/p/green-turtle/>;
+  doap:license <http://opensource.org/licenses/BSD-3-Clause>;
+  doap:programming-language "Javascript";
+  doap:implements <http://www.w3.org/TR/turtle/>;
+  doap:developer <http://www.milowski.com/#alex>;
+  doap:maintainer <http://www.milowski.com/#alex>;
+  doap:documenter <http://www.milowski.com/#alex>;
+  doap:maker <http://www.milowski.com/#alex>;
+  dc:title           "Green Turtle" ;
+  dc:description     "Green Turtle support for parsing and load Turtle representations into graphs."@en ;
+  dc:date            "2013-08-13"^^xsd:date ;
+  dc:creator         <http://www.milowski.com#alex> .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#IRI_subject> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#IRI_with_four_digit_numeric_escape> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#IRI_with_eight_digit_numeric_escape> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#IRI_with_all_punctuation> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#bareword_a_predicate> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#old_style_prefix> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#SPARQL_style_prefix> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#prefixed_IRI_predicate> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#prefixed_IRI_object> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#prefix_only_IRI> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#prefix_with_PN_CHARS_BASE_character_boundaries> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#prefix_with_non_leading_extras> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#default_namespace_IRI> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#prefix_reassigned_and_used> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#reserved_escaped_localName> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#percent_escaped_localName> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#HYPHEN_MINUS_in_localName> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#underscore_in_localName> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#localname_with_COLON> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#localName_with_assigned_nfc_bmp_PN_CHARS_BASE_character_boundaries> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#localName_with_assigned_nfc_PN_CHARS_BASE_character_boundaries> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#localName_with_nfc_PN_CHARS_BASE_character_boundaries> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#localName_with_leading_underscore> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#localName_with_leading_digit> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#localName_with_non_leading_extras> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#old_style_base> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#SPARQL_style_base> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#labeled_blank_node_subject> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#labeled_blank_node_object> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#labeled_blank_node_with_PN_CHARS_BASE_character_boundaries> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#labeled_blank_node_with_leading_underscore> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#labeled_blank_node_with_leading_digit> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#labeled_blank_node_with_non_leading_extras> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#anonymous_blank_node_subject> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#anonymous_blank_node_object> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#sole_blankNodePropertyList> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#blankNodePropertyList_as_subject> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#blankNodePropertyList_as_object> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#blankNodePropertyList_with_multiple_triples> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#nested_blankNodePropertyLists> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#blankNodePropertyList_containing_collection> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#collection_subject> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#collection_object> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#empty_collection> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#nested_collection> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#first> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#last> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#LITERAL1> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#LITERAL1_ascii_boundaries> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#LITERAL1_with_UTF8_boundaries> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#LITERAL1_all_controls> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#LITERAL1_all_punctuation> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#LITERAL_LONG1> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#LITERAL_LONG1_ascii_boundaries> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#LITERAL_LONG1_with_UTF8_boundaries> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#LITERAL_LONG1_with_1_squote> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#LITERAL_LONG1_with_2_squotes> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#LITERAL2> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#LITERAL2_ascii_boundaries> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#LITERAL2_with_UTF8_boundaries> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#LITERAL_LONG2> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#LITERAL_LONG2_ascii_boundaries> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#LITERAL_LONG2_with_UTF8_boundaries> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#LITERAL_LONG2_with_1_squote> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#LITERAL_LONG2_with_2_squotes> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#literal_with_CHARACTER_TABULATION> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#literal_with_BACKSPACE> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#literal_with_LINE_FEED> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#literal_with_CARRIAGE_RETURN> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#literal_with_FORM_FEED> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#literal_with_REVERSE_SOLIDUS> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#literal_with_escaped_CHARACTER_TABULATION> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#literal_with_escaped_BACKSPACE> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#literal_with_escaped_LINE_FEED> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#literal_with_escaped_CARRIAGE_RETURN> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#literal_with_escaped_FORM_FEED> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#literal_with_numeric_escape4> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#literal_with_numeric_escape8> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#IRIREF_datatype> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#prefixed_name_datatype> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#bareword_integer> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#bareword_decimal> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#bareword_double> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#double_lower_case_e> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#negative_numeric> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#positive_numeric> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#numeric_with_leading_0> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#literal_true> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#literal_false> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#langtagged_non_LONG> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#langtagged_LONG> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#lantag_with_subtag> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#objectList_with_two_objects> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#predicateObjectList_with_two_objectLists> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#repeated_semis_at_end> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#repeated_semis_not_at_end> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#comment_following_localName> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#number_sign_following_localName> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#comment_following_PNAME_NS> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#number_sign_following_PNAME_NS> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#LITERAL_LONG2_with_REVERSE_SOLIDUS> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-LITERAL2_with_langtag_and_datatype> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#two_LITERAL_LONG2s> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#langtagged_LONG_with_subtag> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-file-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-file-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-file-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-uri-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-uri-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-uri-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-uri-04> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-base-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-base-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-base-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-base-04> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-prefix-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-prefix-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-prefix-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-prefix-04> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-prefix-05> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-prefix-06> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-prefix-07> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-prefix-08> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-prefix-09> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-string-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-string-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-string-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-string-04> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-string-05> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-string-06> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-string-07> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-string-08> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-string-09> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-string-10> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-string-11> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-str-esc-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-str-esc-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-str-esc-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-pname-esc-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-pname-esc-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-pname-esc-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bnode-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bnode-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bnode-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bnode-04> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bnode-05> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bnode-06> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bnode-07> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bnode-08> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bnode-09> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bnode-10> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-number-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-number-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-number-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-number-04> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-number-05> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-number-06> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-number-07> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-number-08> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-number-09> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-number-10> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-number-11> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-datatypes-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-datatypes-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-kw-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-kw-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-kw-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-struct-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-struct-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-struct-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-struct-04> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-struct-05> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-lists-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-lists-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-lists-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-lists-04> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-lists-05> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-uri-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-uri-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-uri-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-uri-04> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-uri-05> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-prefix-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-prefix-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-prefix-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-prefix-04> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-prefix-05> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-base-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-base-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-base-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-struct-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-struct-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-struct-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-struct-04> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-struct-05> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-struct-06> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-struct-07> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-kw-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-kw-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-kw-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-kw-04> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-kw-05> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-n3-extras-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-n3-extras-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-n3-extras-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-n3-extras-04> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-n3-extras-05> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-n3-extras-06> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-n3-extras-07> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-n3-extras-08> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-n3-extras-09> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-n3-extras-10> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-n3-extras-11> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-n3-extras-12> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-n3-extras-13> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-struct-08> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-struct-09> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-struct-10> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-struct-11> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-struct-12> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-struct-13> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-struct-14> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-struct-15> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-struct-16> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-struct-17> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-lang-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-esc-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-esc-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-esc-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-esc-04> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-pname-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-pname-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-pname-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-string-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-string-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-string-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-string-04> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-string-05> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-string-06> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-string-07> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-num-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-num-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-num-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-num-04> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-num-05> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-eval-struct-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-eval-struct-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-04> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-05> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-06> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-07> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-08> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-09> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-10> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-11> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-12> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-13> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-14> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-15> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-16> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-17> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-18> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-19> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-20> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-21> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-22> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-23> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-24> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-25> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-26> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-subm-27> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-eval-bad-01> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-eval-bad-02> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-eval-bad-03> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-eval-bad-04> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-blank-label-dot-end> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-ln-dash-start> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-ln-escape-start> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-ln-escape> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-missing-ns-dot-end> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-missing-ns-dot-start> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-ns-dot-end> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-ns-dot-start> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-bad-number-dot-in-anon> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-blank-label> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-ln-colons> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-ln-dots> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+[ a earl:Assertion; 
+  earl:assertedBy <http://www.milowski.com#alex>; 
+  earl:subject <https://code.google.com/p/green-turtle/>; 
+  earl:test <http://www.w3.org/2013/TurtleTests/manifest.ttl#turtle-syntax-ns-dots> ;
+  earl:result [
+    a earl:TestResult; 
+    earl:outcome earl:passed; 
+    dc:date "2013-08-13T14:32:31-07:00"^^xsd:dateTime ];
+  earl:mode earl:automatic ] .
+
+

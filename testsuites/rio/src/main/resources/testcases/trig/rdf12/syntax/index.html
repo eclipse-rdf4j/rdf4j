@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang='en' prefix='mf: http://www.w3.org/2001/sw/DataAccess/tests/test-manifest# rdft: http://www.w3.org/ns/rdftest#'>
+  <!-- This file is generated automatically from manifest.ttl, and should not be edited directly. -->
+  <head>
+    <meta content='text/html;charset=utf-8' http-equiv='Content-Type'>
+    <meta content='width=device-width, initial-scale=1.0' name='viewport'>
+    <link href='https://www.w3.org/StyleSheets/TR/base' rel='stylesheet' type='text/css'>
+    <style>
+      body {background-image: none;}
+      dl.editor>dd {
+        margin: 0 0 0 40px;
+      }
+      dl.test-detail {
+        padding: 0.5em;
+      }
+      dl.test-detail>dt {
+        float: left;
+        clear: left;
+        text-align: right;
+        font-weight: bold;
+        color: green;
+      }
+      dl.test-detail>dt:after {content: ": "}
+      dl.test-detail>dd {
+        margin: 0 0 0 110px;
+        padding: 0 0 0.5em 0;
+      }
+      dl.test-description>dt {margin-top: 2em;}
+      dd {margin-left: 0;}
+      dd code {display: inline;}
+      footer {text-align: center;}
+    </style>
+    <title>
+      RDF 1.2 TriG Syntax Tests
+    </title>
+    <style>
+      em.rfc2119 {
+        text-transform: lowercase;
+        font-variant:   small-caps;
+        font-style:     normal;
+        color:          #900;
+      }
+      a.testlink {
+        color: inherit;
+        text-decoration: none;
+      }
+      a.testlink:hover {
+        text-decoration: underline;
+      }
+      .warning {color: orange;}
+      .error {color: red;}
+    </style>
+  </head>
+  <body resource='../syntax#manifest' typeof='mf:Manifest'>
+    <p>
+      <a href='http://www.w3.org/'>
+        <img alt='W3C' height='48' src='http://www.w3.org/Icons/w3c_home' width='72'>
+      </a>
+    </p>
+    <h1 property='rdfs:label'>RDF 1.2 TriG Syntax Tests</h1>
+    <p><a href="http://www.w3.org/Consortium/Legal/ipr-notice#Copyright">Copyright</a> © 2004-2023 <a href="https://www.w3.org/">World Wide Web Consortium</a>. <abbr title="World Wide Web Consortium">W3C</abbr><sup>®</sup> <a href="https://www.w3.org/Consortium/Legal/ipr-notice#Legal_Disclaimer">liability</a>, <a href="https://www.w3.org/Consortium/Legal/ipr-notice#W3C_Trademarks">trademark</a> and <a href="https://www.w3.org/Consortium/Legal/2015/copyright-software-and-document">permissive document license</a> rules apply.</p>
+    <hr title='Separator for header'>
+    <div>
+      <h2 id='abstract'>Abstract</h2>
+      <p>This page describes W3C RDF &amp; SPARQL Working Group's test suite for RDF 1.2.
+        Conformance for RDF 1.2 requires conforming with tests in this test suite
+        along with the relevant RDF 1.2 tests.</p>
+      <h3 id='contributing-tests'>Contributing Tests</h3>
+      <p>The test manifests and entries are built automatically from <a href="manifest.ttl">manifest.ttl</a> using a Rake task. Tests may be contributed via pull request to <a href="https://github.com/w3c/rdf-tests">https://github.com/w3c/rdf-tests</a> with suitable changes to the <a href="manifest.ttl">manifest.ttl</a> and referenced files.</p>
+      <h3 id='distribution'>Distribution</h3>
+      <p>Distributed under both the <a href="http://www.w3.org/Consortium/Legal/2008/04-testsuite-license">W3C Test Suite License</a> and the <a href="http://www.w3.org/Consortium/Legal/2008/03-bsd-license">W3C 3-clause BSD License</a>. To contribute to a W3C Test Suite, see the <a href="http://www.w3.org/2004/10/27-testcases">policies and contribution forms</a>.</p>
+      <h3 id='disclaimer'>Disclaimer</h3>
+      <p>UNDER BOTH MUTUALLY EXCLUSIVE LICENSES, THIS DOCUMENT AND ALL DOCUMENTS, TESTS AND SOFTWARE THAT LINK THIS STATEMENT ARE PROVIDED "AS IS," AND COPYRIGHT HOLDERS MAKE NO REPRESENTATIONS OR WARRANTIES, EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, OR TITLE; THAT THE CONTENTS OF THE DOCUMENT ARE SUITABLE FOR ANY PURPOSE; NOR THAT THE IMPLEMENTATION OF SUCH CONTENTS WILL NOT INFRINGE ANY THIRD PARTY PATENTS, COPYRIGHTS, TRADEMARKS OR OTHER RIGHTS.
+        COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE DOCUMENT OR THE PERFORMANCE OR IMPLEMENTATION OF THE CONTENTS THEREOF.</p>
+    </div>
+    <div>
+      <h2>
+        Test Descriptions
+      </h2>
+      <dl class='test-description'>
+        <dt id='trig12-1'>
+          <a class='testlink' href='#trig12-1'>
+            trig12-1:
+          </a>
+          <span about='../syntax#trig12-1' property='mf:name'>TriG 1.2 - subject reified triple</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-1' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-basic-01.trig' property='mf:action'>trig12-syntax-basic-01.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-2'>
+          <a class='testlink' href='#trig12-2'>
+            trig12-2:
+          </a>
+          <span about='../syntax#trig12-2' property='mf:name'>TriG 1.2 - object reified triple</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-2' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-basic-02.trig' property='mf:action'>trig12-syntax-basic-02.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-3'>
+          <a class='testlink' href='#trig12-3'>
+            trig12-3:
+          </a>
+          <span about='../syntax#trig12-3' property='mf:name'>TriG 1.2 - triple term object</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-3' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-basic-03.trig' property='mf:action'>trig12-syntax-basic-03.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-4'>
+          <a class='testlink' href='#trig12-4'>
+            trig12-4:
+          </a>
+          <span about='../syntax#trig12-4' property='mf:name'>TriG 1.2 - reified triple outside triple</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-4' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-basic-04.trig' property='mf:action'>trig12-syntax-basic-04.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-inside-1'>
+          <a class='testlink' href='#trig12-inside-1'>
+            trig12-inside-1:
+          </a>
+          <span about='../syntax#trig12-inside-1' property='mf:name'>TriG 1.2 - reified triple inside blankNodePropertyList</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-inside-1' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-inside-01.trig' property='mf:action'>trig12-syntax-inside-01.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-inside-2'>
+          <a class='testlink' href='#trig12-inside-2'>
+            trig12-inside-2:
+          </a>
+          <span about='../syntax#trig12-inside-2' property='mf:name'>TriG 1.2 - reified triple inside collection</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-inside-2' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-inside-02.trig' property='mf:action'>trig12-syntax-inside-02.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-inside-3'>
+          <a class='testlink' href='#trig12-inside-3'>
+            trig12-inside-3:
+          </a>
+          <span about='../syntax#trig12-inside-3' property='mf:name'>TriG 1.2 - reified triple with IRI identifier</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-inside-3' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-inside-03.trig' property='mf:action'>trig12-syntax-inside-03.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-inside-4'>
+          <a class='testlink' href='#trig12-inside-4'>
+            trig12-inside-4:
+          </a>
+          <span about='../syntax#trig12-inside-4' property='mf:name'>TriG 1.2 - reified triple with blank node identifier</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-inside-4' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-inside-04.trig' property='mf:action'>trig12-syntax-inside-04.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-nested-1'>
+          <a class='testlink' href='#trig12-nested-1'>
+            trig12-nested-1:
+          </a>
+          <span about='../syntax#trig12-nested-1' property='mf:name'>TriG 1.2 - nested quoted triple, subject position</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-nested-1' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-nested-01.trig' property='mf:action'>trig12-syntax-nested-01.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-nested-2'>
+          <a class='testlink' href='#trig12-nested-2'>
+            trig12-nested-2:
+          </a>
+          <span about='../syntax#trig12-nested-2' property='mf:name'>TriG 1.2 - nested quoted triple, object position</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-nested-2' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-nested-02.trig' property='mf:action'>trig12-syntax-nested-02.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-compound-1'>
+          <a class='testlink' href='#trig12-compound-1'>
+            trig12-compound-1:
+          </a>
+          <span about='../syntax#trig12-compound-1' property='mf:name'>TriG 1.2 - compound forms</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-compound-1' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-compound.trig' property='mf:action'>trig12-syntax-compound.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-bnode-1'>
+          <a class='testlink' href='#trig12-bnode-1'>
+            trig12-bnode-1:
+          </a>
+          <span about='../syntax#trig12-bnode-1' property='mf:name'>TriG 1.2 - blank node subject</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-bnode-1' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-bnode-01.trig' property='mf:action'>trig12-syntax-bnode-01.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-bnode-2'>
+          <a class='testlink' href='#trig12-bnode-2'>
+            trig12-bnode-2:
+          </a>
+          <span about='../syntax#trig12-bnode-2' property='mf:name'>TriG 1.2 - blank node object</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-bnode-2' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-bnode-02.trig' property='mf:action'>trig12-syntax-bnode-02.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-bnode-3'>
+          <a class='testlink' href='#trig12-bnode-3'>
+            trig12-bnode-3:
+          </a>
+          <span about='../syntax#trig12-bnode-3' property='mf:name'>TriG 1.2 - blank node</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-bnode-3' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-bnode-03.trig' property='mf:action'>trig12-syntax-bnode-03.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-bad-1'>
+          <a class='testlink' href='#trig12-bad-1'>
+            trig12-bad-1:
+          </a>
+          <span about='../syntax#trig12-bad-1' property='mf:name'>TriG 1.2 - bad - reified triple as predicate</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-bad-1' typeof='rdft:TestTrigNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-bad-01.trig' property='mf:action'>trig12-syntax-bad-01.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-bad-2'>
+          <a class='testlink' href='#trig12-bad-2'>
+            trig12-bad-2:
+          </a>
+          <span about='../syntax#trig12-bad-2' property='mf:name'>TriG 1.2 - bad - literal in subject position of reified triple</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-bad-2' typeof='rdft:TestTrigNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-bad-02.trig' property='mf:action'>trig12-syntax-bad-02.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-bad-3'>
+          <a class='testlink' href='#trig12-bad-3'>
+            trig12-bad-3:
+          </a>
+          <span about='../syntax#trig12-bad-3' property='mf:name'>TriG 1.2 - bad - blank node  as predicate in reified triple</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-bad-3' typeof='rdft:TestTrigNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-bad-03.trig' property='mf:action'>trig12-syntax-bad-03.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-bad-4'>
+          <a class='testlink' href='#trig12-bad-4'>
+            trig12-bad-4:
+          </a>
+          <span about='../syntax#trig12-bad-4' property='mf:name'>TriG 1.2 - bad - incomplete reified triple</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-bad-4' typeof='rdft:TestTrigNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-bad-04.trig' property='mf:action'>trig12-syntax-bad-04.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-bad-5'>
+          <a class='testlink' href='#trig12-bad-5'>
+            trig12-bad-5:
+          </a>
+          <span about='../syntax#trig12-bad-5' property='mf:name'>TriG 1.2 - bad - over-long reified triple</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-bad-5' typeof='rdft:TestTrigNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-bad-05.trig' property='mf:action'>trig12-syntax-bad-05.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-bad-6'>
+          <a class='testlink' href='#trig12-bad-6'>
+            trig12-bad-6:
+          </a>
+          <span about='../syntax#trig12-bad-6' property='mf:name'>TriG 1.2 - bad - reified with list object</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-bad-6' typeof='rdft:TestTrigNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-bad-06.trig' property='mf:action'>trig12-syntax-bad-06.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-bad-7'>
+          <a class='testlink' href='#trig12-bad-7'>
+            trig12-bad-7:
+          </a>
+          <span about='../syntax#trig12-bad-7' property='mf:name'>TriG 1.2 - bad - compound blank node expression</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-bad-7' typeof='rdft:TestTrigNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-bad-07.trig' property='mf:action'>trig12-syntax-bad-07.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-ann-1'>
+          <a class='testlink' href='#trig12-ann-1'>
+            trig12-ann-1:
+          </a>
+          <span about='../syntax#trig12-ann-1' property='mf:name'>TriG 1.2 - Annotation form</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-ann-1' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-annotation-1.trig' property='mf:action'>trig12-annotation-1.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-ann-2'>
+          <a class='testlink' href='#trig12-ann-2'>
+            trig12-ann-2:
+          </a>
+          <span about='../syntax#trig12-ann-2' property='mf:name'>TriG 1.2 - Annotation example</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-ann-2' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-annotation-2.trig' property='mf:action'>trig12-annotation-2.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-ann-3'>
+          <a class='testlink' href='#trig12-ann-3'>
+            trig12-ann-3:
+          </a>
+          <span about='../syntax#trig12-ann-3' property='mf:name'>TriG 1.2 - Annotation predicateObjecetList</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-ann-3' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-annotation-3.trig' property='mf:action'>trig12-annotation-3.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-ann-4'>
+          <a class='testlink' href='#trig12-ann-4'>
+            trig12-ann-4:
+          </a>
+          <span about='../syntax#trig12-ann-4' property='mf:name'>TriG 1.2 - Annotation followed by predicate/object</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-ann-4' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-annotation-4.trig' property='mf:action'>trig12-annotation-4.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-ann-5'>
+          <a class='testlink' href='#trig12-ann-5'>
+            trig12-ann-5:
+          </a>
+          <span about='../syntax#trig12-ann-5' property='mf:name'>TriG 1.2 - Reifier without annotation block</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-ann-5' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-annotation-5.trig' property='mf:action'>trig12-annotation-5.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-ann-6'>
+          <a class='testlink' href='#trig12-ann-6'>
+            trig12-ann-6:
+          </a>
+          <span about='../syntax#trig12-ann-6' property='mf:name'>TriG 1.2 - Empty reifier without annotation block</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-ann-6' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-annotation-6.trig' property='mf:action'>trig12-annotation-6.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-ann-7'>
+          <a class='testlink' href='#trig12-ann-7'>
+            trig12-ann-7:
+          </a>
+          <span about='../syntax#trig12-ann-7' property='mf:name'>TriG 1.2 - Reifier with annotation block</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-ann-7' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-annotation-7.trig' property='mf:action'>trig12-annotation-7.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-ann-8'>
+          <a class='testlink' href='#trig12-ann-8'>
+            trig12-ann-8:
+          </a>
+          <span about='../syntax#trig12-ann-8' property='mf:name'>TriG 1.2 - Empty reifier with annotation block</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-ann-8' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-annotation-8.trig' property='mf:action'>trig12-annotation-8.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-bad-ann-1'>
+          <a class='testlink' href='#trig12-bad-ann-1'>
+            trig12-bad-ann-1:
+          </a>
+          <span about='../syntax#trig12-bad-ann-1' property='mf:name'>TriG 1.2 - bad - empty annotation</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-bad-ann-1' typeof='rdft:TestTrigNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-bad-ann-1.trig' property='mf:action'>trig12-syntax-bad-ann-1.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-bad-ann-2'>
+          <a class='testlink' href='#trig12-bad-ann-2'>
+            trig12-bad-ann-2:
+          </a>
+          <span about='../syntax#trig12-bad-ann-2' property='mf:name'>TriG 1.2 - bad - triple as annotation</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-bad-ann-2' typeof='rdft:TestTrigNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-syntax-bad-ann-2.trig' property='mf:action'>trig12-syntax-bad-ann-2.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-base-1'>
+          <a class='testlink' href='#trig12-base-1'>
+            trig12-base-1:
+          </a>
+          <span about='../syntax#trig12-base-1' property='mf:name'>base direction ltr</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-base-1' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-base-1.trig' property='mf:action'>trig12-base-1.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-base-2'>
+          <a class='testlink' href='#trig12-base-2'>
+            trig12-base-2:
+          </a>
+          <span about='../syntax#trig12-base-2' property='mf:name'>base direction ltr</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-base-2' typeof='rdft:TestTrigPositiveSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigPositiveSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-base-2.trig' property='mf:action'>trig12-base-2.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-base-bad-1'>
+          <a class='testlink' href='#trig12-base-bad-1'>
+            trig12-base-bad-1:
+          </a>
+          <span about='../syntax#trig12-base-bad-1' property='mf:name'>undefined base direction</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-base-bad-1' typeof='rdft:TestTrigNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-base-bad-1.trig' property='mf:action'>trig12-base-bad-1.trig</a>
+            </dd>
+          </dl>
+        </dd>
+        <dt id='trig12-base-bad-2'>
+          <a class='testlink' href='#trig12-base-bad-2'>
+            trig12-base-bad-2:
+          </a>
+          <span about='../syntax#trig12-base-bad-2' property='mf:name'>upper case LTR</span>
+        </dt>
+        <dd inlist='true' property='mf:entry' resource='../syntax#trig12-base-bad-2' typeof='rdft:TestTrigNegativeSyntax'>
+          <div property='rdfs:comment'>
+          </div>
+          <dl class='test-detail'>
+            <dt>type</dt>
+            <dd>rdft:TestTrigNegativeSyntax</dd>
+            <dt>approval</dt>
+            <dd property='mf:approval' resource=''></dd>
+            <dt>action</dt>
+            <dd>
+              <a href='trig12-base-bad-2.trig' property='mf:action'>trig12-base-bad-2.trig</a>
+            </dd>
+          </dl>
+        </dd>
+      </dl>
+    </div>
+    <footer>
+      <p><a href="http://www.w3.org/Consortium/Legal/ipr-notice#Copyright">Copyright</a> © 2004-2023 <a href="https://www.w3.org/">World Wide Web Consortium</a>. <abbr title="World Wide Web Consortium">W3C</abbr><sup>®</sup> <a href="https://www.w3.org/Consortium/Legal/ipr-notice#Legal_Disclaimer">liability</a>, <a href="https://www.w3.org/Consortium/Legal/ipr-notice#W3C_Trademarks">trademark</a> and <a href="https://www.w3.org/Consortium/Legal/2015/copyright-software-and-document">permissive document license</a> rules apply.</p>
+    </footer>
+  </body>
+</html>
