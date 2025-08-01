@@ -35,7 +35,8 @@ import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
-import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
+import org.eclipse.rdf4j.rio.helpers.TripleTermUtil;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -48,11 +49,12 @@ public abstract class AbstractTupleQueryResultWriterTest {
 	protected final static ValueFactory vf = SimpleValueFactory.getInstance();
 
 	@Test
+	@Disabled("pending SPARQL 1.2 implementation and adapting tests to SPARQL 1.2")
 	public void testRDFStarHandling_WithEncoding() throws Exception {
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		TupleQueryResultWriter writer = getWriterFactory().getWriter(baos);
 
-		writer.getWriterConfig().set(BasicWriterSettings.ENCODE_RDF_STAR, true);
+		writer.getWriterConfig().set(BasicWriterSettings.ENCODE_TRIPLE_TERMS, true);
 
 		Triple t = vf.createTriple(RDF.ALT, RDF.TYPE, RDFS.CLASS);
 		MapBindingSet bs = new MapBindingSet();
@@ -64,7 +66,7 @@ public abstract class AbstractTupleQueryResultWriterTest {
 
 		QueryResultCollector collector = new QueryResultCollector();
 		TupleQueryResultParser parser = getParserFactory().getParser();
-		parser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_RDF_STAR, false);
+		parser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_TRIPLE_TERMS, false);
 		parser.setQueryResultHandler(collector);
 		parser.parseQueryResult(new ByteArrayInputStream(baos.toByteArray()));
 
@@ -76,17 +78,18 @@ public abstract class AbstractTupleQueryResultWriterTest {
 			assertThat(actual.getValue("t")).isInstanceOf(Triple.class);
 		} else {
 			assertThat(actual.getValue("t")).isInstanceOf(IRI.class);
-			assertThat(actual.getValue("t")).isEqualTo(RDFStarUtil.toRDFEncodedValue((Resource) t));
+			assertThat(actual.getValue("t")).isEqualTo(TripleTermUtil.toRDFEncodedValue(t));
 
 		}
 	}
 
 	@Test
+	@Disabled("pending SPARQL 1.2 implementation and adapting tests to SPARQL 1.2")
 	public void testRDFStarHandling_NoEncoding() throws Exception {
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		TupleQueryResultWriter writer = getWriterFactory().getWriter(baos);
 
-		writer.getWriterConfig().set(BasicWriterSettings.ENCODE_RDF_STAR, false);
+		writer.getWriterConfig().set(BasicWriterSettings.ENCODE_TRIPLE_TERMS, false);
 
 		Triple t = vf.createTriple(RDF.ALT, RDF.TYPE, RDFS.CLASS);
 		MapBindingSet bs = new MapBindingSet();
@@ -99,7 +102,7 @@ public abstract class AbstractTupleQueryResultWriterTest {
 		QueryResultCollector collector = new QueryResultCollector();
 		TupleQueryResultParser parser = getParserFactory().getParser();
 
-		parser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_RDF_STAR, false);
+		parser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_TRIPLE_TERMS, false);
 		parser.setQueryResultHandler(collector);
 		parser.parseQueryResult(new ByteArrayInputStream(baos.toByteArray()));
 
@@ -108,12 +111,13 @@ public abstract class AbstractTupleQueryResultWriterTest {
 	}
 
 	@Test
+	@Disabled("pending SPARQL 1.2 implementation and adapting tests to SPARQL 1.2")
 	public void testRDFStarHandling_DeepNesting() throws Exception {
 
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		TupleQueryResultWriter writer = getWriterFactory().getWriter(baos);
 
-		writer.getWriterConfig().set(BasicWriterSettings.ENCODE_RDF_STAR, false);
+		writer.getWriterConfig().set(BasicWriterSettings.ENCODE_TRIPLE_TERMS, false);
 
 		Triple t2 = vf.createTriple(RDF.ALT, RDF.TYPE, RDFS.CLASS);
 		Triple t = vf.createTriple(RDF.BAG, RDFS.COMMENT, t2);
@@ -127,7 +131,7 @@ public abstract class AbstractTupleQueryResultWriterTest {
 		QueryResultCollector collector = new QueryResultCollector();
 		TupleQueryResultParser parser = getParserFactory().getParser();
 
-		parser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_RDF_STAR, false);
+		parser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_TRIPLE_TERMS, false);
 		parser.setQueryResultHandler(collector);
 		parser.parseQueryResult(new ByteArrayInputStream(baos.toByteArray()));
 

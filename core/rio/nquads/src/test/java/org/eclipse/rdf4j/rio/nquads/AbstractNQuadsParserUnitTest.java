@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.rio.nquads;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -21,6 +22,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.StringReader;
 import java.util.Collection;
 
 import org.eclipse.rdf4j.model.BNode;
@@ -29,6 +31,8 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.AbstractParserTest;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -44,6 +48,8 @@ import org.junit.jupiter.api.Test;
  * <a href="http://www.w3.org/2013/N-QuadsTests/">online</a>.
  */
 public abstract class AbstractNQuadsParserUnitTest extends AbstractParserTest {
+
+	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	/*-----------*
 	 * Constants *
@@ -601,6 +607,42 @@ public abstract class AbstractNQuadsParserUnitTest extends AbstractParserTest {
 		final String data = triple + (withContext ? " <http://www.example.org/>" : "") + " .";
 
 		dirLangStringTestHelper(data, expectedLang, expectedDir, normalize, shouldCauseException);
+	}
+
+	@Test
+	public void testTripleTerm() throws IOException {
+		final String data = "<http://example/a> <http://example/b> <<( <http://example/a> <http://example/b> <http://example/c> )>> <http://example/context> .";
+		parser.parse(new StringReader(data));
+
+		assertEquals(1, statementCollector.getStatements().size());
+		assertEquals(
+				vf.createTriple(vf.createIRI("http://example/a"), vf.createIRI("http://example/b"),
+						vf.createIRI("http://example/c")),
+				statementCollector.getStatements().iterator().next().getObject());
+	}
+
+	@Test
+	public void testTripleTermNoWhitespace() throws IOException {
+		final String data = "<http://example/a><http://example/b><<(<http://example/a><http://example/b><http://example/c>)>><http://example/context>.";
+		parser.parse(new StringReader(data));
+
+		assertEquals(1, statementCollector.getStatements().size());
+		assertEquals(
+				vf.createTriple(vf.createIRI("http://example/a"), vf.createIRI("http://example/b"),
+						vf.createIRI("http://example/c")),
+				statementCollector.getStatements().iterator().next().getObject());
+	}
+
+	@Test
+	public void testBadTripleTermSubject() throws IOException {
+		final String data = "<<( <http://example/a> <http://example/b> <http://example/c> )>> <http://example/a> <http://example/b> <http://example/context> .";
+		assertThrows(RDFParseException.class, () -> parser.parse(new StringReader(data)));
+	}
+
+	@Test
+	public void testBadTripleTermMissingObject() throws IOException {
+		final String data = "<http://example/a> <http://example/b> <<( <http://example/a> <http://example/b> )>> <http://example/context> .";
+		assertThrows(RDFParseException.class, () -> parser.parse(new StringReader(data)));
 	}
 
 	@Test

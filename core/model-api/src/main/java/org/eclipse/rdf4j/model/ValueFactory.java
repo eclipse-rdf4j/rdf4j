@@ -277,11 +277,11 @@ public interface ValueFactory {
 	Statement createStatement(Resource subject, IRI predicate, Value object, Resource context);
 
 	/**
-	 * Creates a new RDF-star triple with the supplied subject, predicate and object.
+	 * Creates a new triple term with the supplied subject, predicate and object.
 	 *
-	 * @param subject   The statement's subject.
-	 * @param predicate The statement's predicate.
-	 * @param object    The statement's object.
+	 * @param subject   The triple's subject.
+	 * @param predicate The triple's predicate.
+	 * @param object    The triple's object.
 	 * @return The created triple.
 	 * @implNote This temporary default method is only supplied as a stop-gap for backward compatibility, but throws an
 	 *           {@link UnsupportedOperationException}. Concrete implementations are expected to override.

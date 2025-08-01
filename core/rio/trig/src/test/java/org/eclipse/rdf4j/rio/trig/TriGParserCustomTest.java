@@ -12,19 +12,25 @@ package org.eclipse.rdf4j.rio.trig;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.IOException;
 import java.io.StringReader;
+import java.math.BigInteger;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.AbstractParserTest;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
@@ -44,6 +50,8 @@ import org.junit.jupiter.api.Timeout;
 public class TriGParserCustomTest extends AbstractParserTest {
 
 	private Model model;
+
+	private ValueFactory vf = SimpleValueFactory.getInstance();
 
 	@BeforeEach
 	public void setUp() {
@@ -270,6 +278,56 @@ public class TriGParserCustomTest extends AbstractParserTest {
 				+ (withContext ? " }" : "");
 
 		dirLangStringTestHelper(data, expectedLang, expectedBaseDir, normalize, shouldCauseException);
+	}
+
+	@Test
+	public void testSubjectReifiedTriple() throws IOException {
+		String data = "PREFIX : <http://example/>\n" +
+				"<<:s :p :o>> :q 123 .";
+		try {
+			Model model = new LinkedHashModel();
+			statementCollector = new StatementCollector(model);
+			parser.setRDFHandler(statementCollector);
+			parser.parse(new StringReader(data));
+
+			assertThat(errorCollector.getErrors()).isEmpty();
+
+			assertThat(model).hasSize(2);
+
+			Model reifyingTriples = model.filter(null, RDF.REIFIES, vf.createTriple(vf.createIRI("http://example/s"),
+					vf.createIRI("http://example/p"), vf.createIRI("http://example/o")));
+			assertThat(reifyingTriples).hasSize(1);
+			Resource reifier = Models.subject(reifyingTriples).get();
+			assertInstanceOf(BNode.class, reifier);
+			assertTrue(model.contains(reifier, vf.createIRI("http://example/q"),
+					vf.createLiteral(BigInteger.valueOf(123))));
+		} catch (RDFParseException e) {
+			fail("parse error on correct data: " + e.getMessage());
+		}
+	}
+
+	@Test
+	public void testSubjectReifiedTripleNoPredicateObjectList() throws IOException {
+		String data = "PREFIX : <http://example/>\n" +
+				"<<:s :p :o >> .";
+		try {
+			Model model = new LinkedHashModel();
+			statementCollector = new StatementCollector(model);
+			parser.setRDFHandler(statementCollector);
+			parser.parse(new StringReader(data));
+
+			assertThat(errorCollector.getErrors()).isEmpty();
+
+			assertThat(model).hasSize(1);
+
+			Model reifyingTriples = model.filter(null, RDF.REIFIES, vf.createTriple(vf.createIRI("http://example/s"),
+					vf.createIRI("http://example/p"), vf.createIRI("http://example/o")));
+			assertThat(reifyingTriples).hasSize(1);
+			Resource reifier = Models.subject(reifyingTriples).get();
+			assertInstanceOf(BNode.class, reifier);
+		} catch (RDFParseException e) {
+			fail("parse error on correct data: " + e.getMessage());
+		}
 	}
 
 	@Override

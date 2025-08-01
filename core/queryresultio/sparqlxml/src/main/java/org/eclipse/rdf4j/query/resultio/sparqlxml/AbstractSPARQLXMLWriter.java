@@ -366,7 +366,7 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 
 		result.add(BasicWriterSettings.PRETTY_PRINT);
 		result.add(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
-		result.add(BasicWriterSettings.ENCODE_RDF_STAR);
+		result.add(BasicWriterSettings.ENCODE_TRIPLE_TERMS);
 		result.add(BasicQueryWriterSettings.ADD_SESAME_QNAME);
 		result.add(XMLWriterSettings.INCLUDE_XML_PI);
 

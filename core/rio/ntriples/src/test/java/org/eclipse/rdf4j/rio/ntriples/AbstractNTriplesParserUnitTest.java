@@ -27,7 +27,9 @@ import java.util.TreeSet;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.AbstractParserTest;
@@ -46,6 +48,8 @@ import org.junit.jupiter.api.Test;
  * @author Peter Ansell
  */
 public abstract class AbstractNTriplesParserUnitTest extends AbstractParserTest {
+
+	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	private static final String NTRIPLES_TEST_URL = "http://www.w3.org/2000/10/rdf-tests/rdfcore/ntriples/test.nt";
 
@@ -489,6 +493,38 @@ public abstract class AbstractNTriplesParserUnitTest extends AbstractParserTest 
 	public void testDirLangStringNoLanguage() throws IOException {
 		final String data = "<http://example/a> <http://example/b> \"Hello\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString> .";
 		dirLangStringNoLanguageTestHelper(data);
+	}
+
+	@Test
+	public void testTripleTerm() throws IOException {
+		String data = "<http://example/a> <http://example/b> <<( <http://example/a> <http://example/b> <http://example/c> )>> .";
+		parser.parse(new StringReader(data));
+
+		assertEquals(1, model.size());
+		assertEquals(vf.createTriple(vf.createIRI("http://example/a"), vf.createIRI("http://example/b"),
+				vf.createIRI("http://example/c")), Models.object(model).get());
+	}
+
+	@Test
+	public void testTripleTermNoWhitespace() throws IOException {
+		String data = "<http://example/a><http://example/b><<(<http://example/a><http://example/b><http://example/c>)>>.";
+		parser.parse(new StringReader(data));
+
+		assertEquals(1, model.size());
+		assertEquals(vf.createTriple(vf.createIRI("http://example/a"), vf.createIRI("http://example/b"),
+				vf.createIRI("http://example/c")), Models.object(model).get());
+	}
+
+	@Test
+	public void testBadTripleTermSubject() throws IOException {
+		String data = "<<( <http://example/a> <http://example/b> <http://example/c> )>> <http://example/a> <http://example/b> .";
+		assertThrows(RDFParseException.class, () -> parser.parse(new StringReader(data)));
+	}
+
+	@Test
+	public void testBadTripleTermMissingObject() throws IOException {
+		String data = "<http://example/a> <http://example/b> <<( <http://example/a> <http://example/b> )>> .";
+		assertThrows(RDFParseException.class, () -> parser.parse(new StringReader(data)));
 	}
 
 	protected abstract RDFParser createRDFParser();

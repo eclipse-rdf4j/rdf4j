@@ -10,29 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.trigstar;
 
-import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.RDFParserFactory;
+import org.eclipse.rdf4j.rio.turtle.TurtleParserFactory;
 
 /**
  * An {@link RDFParserFactory} for TriG-star parsers.
  *
  * @author Pavel Mihaylov
  */
-public class TriGStarParserFactory implements RDFParserFactory {
-	/**
-	 * Returns {@link RDFFormat#TRIGSTAR}.
-	 */
-	@Override
-	public RDFFormat getRDFFormat() {
-		return RDFFormat.TRIGSTAR;
-	}
-
-	/**
-	 * Returns a new instance of {@link TriGStarParser}.
-	 */
-	@Override
-	public RDFParser getParser() {
-		return new TriGStarParser();
-	}
+@Deprecated
+public class TriGStarParserFactory extends TurtleParserFactory {
 }

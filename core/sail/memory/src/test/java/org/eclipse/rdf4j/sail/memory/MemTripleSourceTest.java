@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
@@ -61,6 +62,8 @@ public class MemTripleSourceTest {
 
 	private IRI mary;
 
+	private Triple t;
+
 	private ValueFactory f;
 
 	private SailDataset snapshot;
@@ -78,6 +81,7 @@ public class MemTripleSourceTest {
 		bob = f.createIRI(EX_NS, "bob");
 		alice = f.createIRI(EX_NS, "alice");
 		mary = f.createIRI(EX_NS, "mary");
+		t = f.createTriple(bob, mary, alice);
 	}
 
 	/**

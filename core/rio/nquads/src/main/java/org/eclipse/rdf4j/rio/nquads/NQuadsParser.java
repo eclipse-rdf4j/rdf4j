@@ -48,15 +48,15 @@ public class NQuadsParser extends NTriplesParser {
 			if (!shouldParseLine()) {
 				return;
 			}
-			parseSubject();
+			subject = parseSubject();
 
 			skipWhitespace(true);
 
-			parsePredicate();
+			predicate = parsePredicate();
 
 			skipWhitespace(true);
 
-			parseObject();
+			object = parseObject();
 
 			skipWhitespace(true);
 

@@ -363,15 +363,6 @@ class SailDatasetImpl implements SailDataset {
 	private boolean isDeprecated(Triple triple, List<Statement> deprecatedStatements) {
 		// the triple is deprecated if the changeset deprecates all existing statements in the backing dataset that
 		// involve this triple.
-		try (CloseableIteration<? extends Statement> subjectStatements = derivedFrom
-				.getStatements(triple, null, null)) {
-			while (subjectStatements.hasNext()) {
-				Statement st = subjectStatements.next();
-				if (!deprecatedStatements.contains(st)) {
-					return false;
-				}
-			}
-		}
 		try (CloseableIteration<? extends Statement> objectStatements = derivedFrom
 				.getStatements(null, null, triple)) {
 			while (objectStatements.hasNext()) {

@@ -137,13 +137,13 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 
 	protected void writeValue(Value val) throws IOException {
 		if (val instanceof Triple) {
-			writer.write("<<");
+			writer.write("<<( ");
 			writeValue(((Triple) val).getSubject());
 			writer.write(' ');
 			writeValue(((Triple) val).getPredicate());
 			writer.write(' ');
 			writeValue(((Triple) val).getObject());
-			writer.write(">>");
+			writer.write(" )>>");
 		} else if (val instanceof Resource) {
 			writeResource((Resource) val);
 		} else {

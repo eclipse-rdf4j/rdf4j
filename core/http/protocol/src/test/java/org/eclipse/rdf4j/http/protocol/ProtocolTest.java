@@ -136,7 +136,7 @@ public class ProtocolTest {
 		assertEquals(vf.createBNode("bnode1"), Protocol.decodeContext("_:bnode1", vf));
 		assertEquals(vf.createIRI("urn:test"), Protocol.decodeContext("<urn:test>", vf));
 
-		// RDF-star triples are resources but they can't be used as context values
+		// triples can't be used as context values
 		try {
 			Protocol.decodeContext("<<<urn:a> <urn:b> <urn:c>>>", SimpleValueFactory.getInstance());
 			fail("Must fail with exception");

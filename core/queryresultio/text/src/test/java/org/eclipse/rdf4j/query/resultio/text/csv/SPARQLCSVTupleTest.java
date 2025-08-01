@@ -99,7 +99,7 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 				+ "\"\"\"\"\"double-quoted string\"\r\n" + "space at the end         \r\n"
 				+ "space at the end         \r\n" + "\"\"\"\"\"double-quoted string with no datatype\"\r\n"
 				+ "\"newline at the end \n\"(\r\n)?"
-				+ "urn:rdf4j:triple:PDw8dXJuOmE-IDxodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjdHlwZT4gPHVybjpiPj4-(\r\n)?",
+				+ "urn:rdf4j:triple:PDwoIDx1cm46YT4gPGh0dHA6Ly93d3cudzMub3JnLzE5OTkvMDIvMjItcmRmLXN5bnRheC1ucyN0eXBlPiA8dXJuOmI-ICk-Pg==(\r\n)?",
 				out.toString(StandardCharsets.UTF_8));
 	}
 

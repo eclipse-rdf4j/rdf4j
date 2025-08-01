@@ -13,26 +13,13 @@ package org.eclipse.rdf4j.rio.turtlestar;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFParserFactory;
+import org.eclipse.rdf4j.rio.turtle.TurtleParserFactory;
 
 /**
  * An {@link RDFParserFactory} for Turtle-star parsers.
  *
  * @author Pavel Mihaylov
  */
-public class TurtleStarParserFactory implements RDFParserFactory {
-	/**
-	 * Returns {@link RDFFormat#TURTLESTAR}.
-	 */
-	@Override
-	public RDFFormat getRDFFormat() {
-		return RDFFormat.TURTLESTAR;
-	}
-
-	/**
-	 * Returns a new instance of {@link TurtleStarParser}.
-	 */
-	@Override
-	public RDFParser getParser() {
-		return new TurtleStarParser();
-	}
+@Deprecated
+public class TurtleStarParserFactory extends TurtleParserFactory {
 }

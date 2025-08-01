@@ -10,17 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.trigstar;
 
-import java.io.IOException;
-
-import org.eclipse.rdf4j.model.BNode;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.RDFHandlerException;
-import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.trig.TriGParser;
 
 /**
@@ -28,43 +17,6 @@ import org.eclipse.rdf4j.rio.trig.TriGParser;
  *
  * @author Pavel Mihaylov
  */
+@Deprecated
 public class TriGStarParser extends TriGParser {
-	/**
-	 * Creates a new TriGStarParser that will use a {@link SimpleValueFactory} to create RDF-star model objects.
-	 */
-	public TriGStarParser() {
-		super();
-	}
-
-	/**
-	 * Creates a new TriGStarParser that will use the supplied ValueFactory to create RDF-star model objects.
-	 *
-	 * @param valueFactory A ValueFactory.
-	 */
-	public TriGStarParser(ValueFactory valueFactory) {
-		super(valueFactory);
-	}
-
-	@Override
-	public RDFFormat getRDFFormat() {
-		return RDFFormat.TRIGSTAR;
-	}
-
-	@Override
-	protected Value parseValue() throws IOException, RDFParseException, RDFHandlerException {
-		if (peekIsTripleValue()) {
-			return parseTripleValue();
-		}
-
-		return super.parseValue();
-	}
-
-	@Override
-	protected void setContext(Resource context) {
-		if (context != null && !(context instanceof IRI || context instanceof BNode)) {
-			reportFatalError("Illegal context value: " + context);
-		}
-
-		super.setContext(context);
-	}
 }

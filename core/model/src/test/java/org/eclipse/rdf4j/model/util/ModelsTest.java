@@ -137,6 +137,27 @@ public class ModelsTest {
 	}
 
 	@Test
+	public void testModelsIsomorphic_TripleTerms_SingleContext() {
+		model1.add(VF.createBNode("X"), RDF.REIFIES, VF.createTriple(VF.createBNode("a"), RDF.TYPE, bar), foo);
+		model2.add(VF.createBNode("Y"), RDF.REIFIES, VF.createTriple(VF.createBNode("b"), RDF.TYPE, bar), foo);
+
+		assertTrue(Models.isomorphic(model1, model2));
+	}
+
+	@Test
+	public void testModelsIsomorphic_TripleTerms_MultipleContexts() {
+		model1.add(VF.createBNode("X"), RDF.REIFIES, VF.createTriple(VF.createBNode("a"), RDF.TYPE, bar), foo);
+		model2.add(VF.createBNode("Y"), RDF.REIFIES, VF.createTriple(VF.createBNode("b"), RDF.TYPE, bar), foo);
+
+		model1.add(VF.createBNode("Z"), RDF.REIFIES,
+				VF.createTriple(VF.createBNode("A"), RDF.ALT, VF.createLiteral("some text")), bar);
+		model2.add(VF.createBNode("W"), RDF.REIFIES,
+				VF.createTriple(VF.createBNode("B"), RDF.ALT, VF.createLiteral("some text")), bar);
+
+		assertTrue(Models.isomorphic(model1, model2));
+	}
+
+	@Test
 	public void testIsSubset() {
 
 		// two empty sets
@@ -456,75 +477,75 @@ public class ModelsTest {
 	}
 
 	@Test
-	public void testConvertReificationToRDFStar() {
-		Model reificationModel = RDFStarTestHelper.createRDFReificationModel();
-		Model referenceRDFStarModel = RDFStarTestHelper.createRDFStarModel();
+	public void testConvertReificationToRDF12() {
+		Model rdf11Model = ModelReificationTestHelper.createRDF11ReificationModel();
+		Model referenceRdf12Model = ModelReificationTestHelper.createRDF12ReificationModel();
 
-		Model rdfStarModel1 = Models.convertReificationToRDFStar(VF, reificationModel);
-		assertTrue("RDF reification conversion to RDF-star with explicit VF, model-to-model",
-				Models.isomorphic(rdfStarModel1, referenceRDFStarModel));
+		Model convertedRdf11Model = Models.convertReificationToRDF12(VF, rdf11Model);
+		assertTrue("RDF 1.1 reification conversion to RDF 1.2 with explicit VF, model-to-model",
+				Models.isomorphic(convertedRdf11Model, referenceRdf12Model));
 
-		Model rdfStarModel2 = Models.convertReificationToRDFStar(reificationModel);
-		assertTrue("RDF reification conversion to RDF-star with implicit VF, model-to-model",
-				Models.isomorphic(rdfStarModel2, referenceRDFStarModel));
+		Model convertedRdf11Model2 = Models.convertReificationToRDF12(rdf11Model);
+		assertTrue("RDF reification conversion to RDF 1.2 with implicit VF, model-to-model",
+				Models.isomorphic(convertedRdf11Model2, referenceRdf12Model));
 
-		Model rdfStarModel3 = new TreeModel();
-		Models.convertReificationToRDFStar(VF, reificationModel, (Consumer<Statement>) rdfStarModel3::add);
-		assertTrue("RDF reification conversion to RDF-star with explicit VF, model-to-consumer",
-				Models.isomorphic(rdfStarModel3, referenceRDFStarModel));
+		Model convertedRdf11Model3 = new TreeModel();
+		Models.convertReificationToRDF12(VF, rdf11Model, (Consumer<Statement>) convertedRdf11Model3::add);
+		assertTrue("RDF reification conversion to RDF 1.2 with explicit VF, model-to-consumer",
+				Models.isomorphic(convertedRdf11Model3, referenceRdf12Model));
 
-		Model rdfStarModel4 = new TreeModel();
-		Models.convertReificationToRDFStar(reificationModel, rdfStarModel4::add);
-		assertTrue("RDF reification conversion to RDF-star with implicit VF, model-to-consumer",
-				Models.isomorphic(rdfStarModel4, referenceRDFStarModel));
+		Model convertedRdf11Model4 = new TreeModel();
+		Models.convertReificationToRDF12(rdf11Model, convertedRdf11Model4::add);
+		assertTrue("RDF reification conversion to RDF 1.2 with implicit VF, model-to-consumer",
+				Models.isomorphic(convertedRdf11Model4, referenceRdf12Model));
 	}
 
 	@Test
 	public void testConvertIncompleteReificationToRDFStar() {
 		// Incomplete RDF reification (missing type, subject, predicate or object) should not add statements
 		// and should not remove any of the existing incomplete reification statements.
-		Model incompleteReificationModel = RDFStarTestHelper.createIncompleteRDFReificationModel();
+		Model incompleteReificationModel = ModelReificationTestHelper.createIncompleteRDF11ReificationModel();
 
-		Model rdfStarModel1 = Models.convertReificationToRDFStar(VF, incompleteReificationModel);
-		assertTrue("Incomplete RDF reification conversion to RDF-star with explicit VF, model-to-model",
+		Model rdfStarModel1 = Models.convertReificationToRDF12(VF, incompleteReificationModel);
+		assertTrue("Incomplete RDF reification conversion to RDF 1.2 with explicit VF, model-to-model",
 				Models.isomorphic(rdfStarModel1, incompleteReificationModel));
 
-		Model rdfStarModel2 = Models.convertReificationToRDFStar(incompleteReificationModel);
-		assertTrue("Incomplete RDF reification conversion to RDF-star with implicit VF, model-to-model",
+		Model rdfStarModel2 = Models.convertReificationToRDF12(incompleteReificationModel);
+		assertTrue("Incomplete RDF reification conversion to RDF 1.2 with implicit VF, model-to-model",
 				Models.isomorphic(rdfStarModel2, incompleteReificationModel));
 
 		Model rdfStarModel3 = new TreeModel();
-		Models.convertReificationToRDFStar(VF, incompleteReificationModel, (Consumer<Statement>) rdfStarModel3::add);
-		assertTrue("Incomplete RDF reification conversion to RDF-star with explicit VF, model-to-consumer",
+		Models.convertReificationToRDF12(VF, incompleteReificationModel, (Consumer<Statement>) rdfStarModel3::add);
+		assertTrue("Incomplete RDF reification conversion to RDF 1.2 with explicit VF, model-to-consumer",
 				Models.isomorphic(rdfStarModel3, incompleteReificationModel));
 
 		Model rdfStarModel4 = new TreeModel();
-		Models.convertReificationToRDFStar(incompleteReificationModel, rdfStarModel4::add);
-		assertTrue("Incomplete RDF reification conversion to RDF-star with implicit VF, model-to-consumer",
+		Models.convertReificationToRDF12(incompleteReificationModel, rdfStarModel4::add);
+		assertTrue("Incomplete RDF reification conversion to RDF 1.2 with implicit VF, model-to-consumer",
 				Models.isomorphic(rdfStarModel4, incompleteReificationModel));
 	}
 
 	@Test
 	public void testConvertRDFStarToReification() {
-		Model rdfStarModel = RDFStarTestHelper.createRDFStarModel();
-		Model referenceModel = RDFStarTestHelper.createRDFReificationModel();
+		Model rdf12ReificationModel = ModelReificationTestHelper.createRDF12ReificationModel();
+		Model referenceModel = ModelReificationTestHelper.createRDF11ReificationModel();
 
-		Model reificationModel1 = Models.convertRDFStarToReification(VF, rdfStarModel);
-		assertTrue("RDF-star conversion to reification with explicit VF, model-to-model",
+		Model reificationModel1 = Models.convertRDF12ReificationToRDF11(VF, rdf12ReificationModel);
+		assertTrue("RDF 1.2 conversion to RDF 1.1 reification with explicit VF, model-to-model",
 				Models.isomorphic(reificationModel1, referenceModel));
 
-		Model reificationModel2 = Models.convertRDFStarToReification(rdfStarModel);
-		assertTrue("RDF-star conversion to reification with implicit VF, model-to-model",
+		Model reificationModel2 = Models.convertRDF12ReificationToRDF11(rdf12ReificationModel);
+		assertTrue("RDF 1.2 conversion to RDF 1.1 reification with implicit VF, model-to-model",
 				Models.isomorphic(reificationModel2, referenceModel));
 
 		Model reificationModel3 = new TreeModel();
-		Models.convertRDFStarToReification(VF, rdfStarModel, (Consumer<Statement>) reificationModel3::add);
-		assertTrue("RDF-star conversion to reification with explicit VF, model-to-consumer",
+		Models.convertRDF12ReificationToRDF11(VF, rdf12ReificationModel, (Consumer<Statement>) reificationModel3::add);
+		assertTrue("RDF 1.2 conversion to RDF 1.1 reification with explicit VF, model-to-consumer",
 				Models.isomorphic(reificationModel3, referenceModel));
 
 		Model reificationModel4 = new TreeModel();
-		Models.convertRDFStarToReification(rdfStarModel, reificationModel4::add);
-		assertTrue("RDF-star conversion to reification with explicit VF, model-to-consumer",
+		Models.convertRDF12ReificationToRDF11(rdf12ReificationModel, reificationModel4::add);
+		assertTrue("RDF 1.2 conversion to RDF 1.1 reification with explicit VF, model-to-consumer",
 				Models.isomorphic(reificationModel4, referenceModel));
 	}
 

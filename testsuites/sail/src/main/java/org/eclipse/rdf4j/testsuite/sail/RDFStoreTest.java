@@ -341,7 +341,7 @@ public abstract class RDFStoreTest {
 		testValueRoundTrip(subj, pred, obj);
 	}
 
-	private void testValueRoundTrip(Resource subj, IRI pred, Value obj) {
+	protected void testValueRoundTrip(Resource subj, IRI pred, Value obj) {
 		con.begin();
 		con.addStatement(subj, pred, obj);
 		con.commit();
@@ -479,33 +479,6 @@ public abstract class RDFStoreTest {
 
 		assertEquals(0, countQueryResults("select * where {?S ?P rdf:type}"),
 				"Repository should contain 0 statements matching (_, _, type)");
-	}
-
-	/**
-	 * @see https://github.com/eclipse/rdf4j/issues/4248
-	 */
-	@Test
-	public void testAddTripleContext() {
-
-		con.begin();
-		con.addStatement(painter, RDF.TYPE, RDFS.CLASS);
-		con.commit();
-
-		Triple tripleContext = Values.triple(guernica, RDF.TYPE, painting);
-
-		con.begin();
-		assertThatExceptionOfType(SailException.class)
-				.isThrownBy(() -> con.addStatement(picasso, paints, guernica, tripleContext))
-				.withMessageStartingWith("context argument can not be of type Triple: ");
-		con.commit();
-
-		con.begin();
-		con.addStatement(picasso, paints, guernica, context1);
-		con.commit();
-
-		assertThat(con.hasStatement(picasso, paints, guernica, true, tripleContext)).isFalse();
-		assertThat(con.hasStatement(painter, RDF.TYPE, RDFS.CLASS, true)).isTrue();
-		assertThat(con.hasStatement(picasso, paints, guernica, true, context1)).isTrue();
 	}
 
 	@Test

@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.eclipse.rdf4j</groupId>
 	<artifactId>rdf4j</artifactId>
-	<version>5.1.0-SNAPSHOT</version>
+	<version>6.0.0</version>
 	<packaging>pom</packaging>
 	<name>Eclipse RDF4J</name>
 	<description>An extensible Java framework for RDF and SPARQL</description>
@@ -913,6 +913,9 @@
 								<exclude>@org.eclipse.rdf4j.common.annotation.Experimental</exclude>
 								<exclude>org.eclipse.rdf4j.common.annotation.InternalUseOnly</exclude>
 								<exclude>org.eclipse.rdf4j.common.annotation.Experimental</exclude>
+								<exclude>org.eclipse.rdf4j.rio.trigstar.*</exclude>
+								<exclude>org.eclipse.rdf4j.rio.turtlestar.*</exclude>
+								<exclude>org.eclipse.rdf4j.model.util.RDFStarTestHelper.java</exclude>
 							</excludes>
 							<overrideCompatibilityChangeParameters>
 								<!-- The override below was previously activated, left as a comment in case we want to activate it again.

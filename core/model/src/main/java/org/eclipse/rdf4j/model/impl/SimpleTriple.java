@@ -77,13 +77,13 @@ public class SimpleTriple extends AbstractTriple {
 	public String stringValue() {
 		StringBuilder sb = new StringBuilder(256);
 
-		sb.append("<<");
+		sb.append("<<( ");
 		sb.append(getSubject());
 		sb.append(" ");
 		sb.append(getPredicate());
 		sb.append(" ");
 		sb.append(getObject());
-		sb.append(">>");
+		sb.append(" )>>");
 
 		return sb.toString();
 	}

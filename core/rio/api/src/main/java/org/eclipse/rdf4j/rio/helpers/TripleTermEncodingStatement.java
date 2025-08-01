@@ -18,21 +18,21 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 
 /**
- * Represents a {@link Statement} whose subject or object may be an RDF-star triple that will be encoded as a special
- * IRI value on {@link #getSubject()} and {@link #getObject()}.
+ * Represents a {@link Statement} whose object may be a triple term that will be encoded as a special IRI value on
+ * {@link #getObject()}.
  *
  * @author Pavel Mihaylov
  */
-class RDFStarEncodingStatement implements Statement {
+class TripleTermEncodingStatement implements Statement {
 	private final Statement delegate;
 
-	RDFStarEncodingStatement(Statement delegate) {
+	TripleTermEncodingStatement(Statement delegate) {
 		this.delegate = delegate;
 	}
 
 	@Override
 	public Resource getSubject() {
-		return RDFStarUtil.toRDFEncodedValue(delegate.getSubject());
+		return TripleTermUtil.toRDFEncodedValue(delegate.getSubject());
 	}
 
 	@Override
@@ -42,7 +42,7 @@ class RDFStarEncodingStatement implements Statement {
 
 	@Override
 	public Value getObject() {
-		return RDFStarUtil.toRDFEncodedValue(delegate.getObject());
+		return TripleTermUtil.toRDFEncodedValue(delegate.getObject());
 	}
 
 	@Override
