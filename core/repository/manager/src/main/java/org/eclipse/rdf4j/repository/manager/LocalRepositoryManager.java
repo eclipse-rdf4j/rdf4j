@@ -261,8 +261,11 @@ public class LocalRepositoryManager extends RepositoryManager {
 		File dataDir = getRepositoryDir(id);
 		if (new File(dataDir, CFG_FILE).exists()) {
 			File configFile = new File(dataDir, CFG_FILE);
-			try (InputStream input = new FileInputStream(configFile)) {
-				Model model = Rio.parse(input, configFile.toURI().toString(), CONFIG_FORMAT);
+			try {
+				Model model;
+				try (InputStream input = new FileInputStream(configFile)) {
+					model = Rio.parse(input, configFile.toURI().toString(), CONFIG_FORMAT);
+				}
 
 				Set<String> repositoryIDs = RepositoryConfigUtil.getRepositoryIDs(model);
 				if (repositoryIDs.isEmpty()) {
