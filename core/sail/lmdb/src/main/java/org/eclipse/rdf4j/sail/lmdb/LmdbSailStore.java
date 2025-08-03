@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -77,6 +78,9 @@ class LmdbSailStore implements SailStore {
 
 	private PersistentSetFactory<Long> setFactory;
 	private PersistentSet<Long> unusedIds, nextUnusedIds;
+
+	private final SketchBasedJoinEstimator sketchBasedJoinEstimator = new SketchBasedJoinEstimator(this,
+			SketchBasedJoinEstimator.suggestNominalEntries(), 1000, 2);
 
 	/**
 	 * A fast non-blocking circular buffer backed by an array.
@@ -199,6 +203,7 @@ class LmdbSailStore implements SailStore {
 			tripleStore = new TripleStore(new File(dataDir, "triples"), config, valueStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
 			initialized = true;
+			sketchBasedJoinEstimator.startBackgroundRefresh(500);
 		} finally {
 			if (!initialized) {
 				close();
@@ -236,42 +241,47 @@ class LmdbSailStore implements SailStore {
 			tripleStoreException = null;
 			sinkStoreAccessLock.unlock();
 		}
+		sketchBasedJoinEstimator.requestRebuild();
 	}
 
 	@Override
 	public void close() throws SailException {
 		try {
 			try {
-				if (namespaceStore != null) {
-					namespaceStore.close();
-				}
+				sketchBasedJoinEstimator.stop();
 			} finally {
 				try {
-					if (valueStore != null) {
-						valueStore.close();
+					if (namespaceStore != null) {
+						namespaceStore.close();
 					}
 				} finally {
 					try {
-						if (tripleStore != null) {
-							try {
-								running.set(false);
-								tripleStoreExecutor.shutdown();
-								try {
-									while (!tripleStoreExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
-										logger.warn("Waiting for triple store executor to terminate");
-									}
-								} catch (InterruptedException e) {
-									Thread.currentThread().interrupt();
-									throw new InterruptedSailException(e);
-								}
-							} finally {
-								tripleStore.close();
-							}
+						if (valueStore != null) {
+							valueStore.close();
 						}
 					} finally {
-						if (setFactory != null) {
-							setFactory.close();
-							setFactory = null;
+						try {
+							if (tripleStore != null) {
+								try {
+									running.set(false);
+									tripleStoreExecutor.shutdown();
+									try {
+										while (!tripleStoreExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
+											logger.warn("Waiting for triple store executor to terminate");
+										}
+									} catch (InterruptedException e) {
+										Thread.currentThread().interrupt();
+									throw new InterruptedSailException(e);
+									}
+								} finally {
+									tripleStore.close();
+								}
+							}
+						} finally {
+							if (setFactory != null) {
+								setFactory.close();
+								setFactory = null;
+							}
 						}
 					}
 				}
@@ -289,7 +299,7 @@ class LmdbSailStore implements SailStore {
 
 	@Override
 	public EvaluationStatistics getEvaluationStatistics() {
-		return new LmdbEvaluationStatistics(valueStore, tripleStore);
+		return new LmdbEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator);
 	}
 
 	@Override
@@ -530,6 +540,7 @@ class LmdbSailStore implements SailStore {
 				multiThreadingActive = false;
 				sinkStoreAccessLock.unlock();
 			}
+			sketchBasedJoinEstimator.requestRebuild();
 		}
 
 		@Override
