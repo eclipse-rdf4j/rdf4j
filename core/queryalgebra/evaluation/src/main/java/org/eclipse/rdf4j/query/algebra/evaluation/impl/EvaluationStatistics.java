@@ -66,6 +66,10 @@ public class EvaluationStatistics {
 		return new CardinalityCalculator();
 	}
 
+	public boolean supportsJoinEstimation() {
+		return false;
+	}
+
 	/*-----------------------------------*
 	 * Inner class CardinalityCalculator *
 	 *-----------------------------------*/

@@ -1,0 +1,966 @@
+/*******************************************************************************
+ * Copyright (c) 2025 Eclipse RDF4J contributors.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ ******************************************************************************/
+
+package org.eclipse.rdf4j.sail.base;
+
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+
+import org.apache.datasketches.theta.Intersection;
+import org.apache.datasketches.theta.SetOperation;
+import org.apache.datasketches.theta.Sketch;
+import org.apache.datasketches.theta.UpdateSketch;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+
+/**
+ * Rdf4j + DataSketches‑based cardinality & join‑size estimator for S, P, O, C.
+ *
+ * <p>
+ * <b>What’s new (2025‑07‑29)</b>
+ * </p>
+ * <ul>
+ * <li>Fluent builder {@link JoinEstimate} now returns an <em>estimated result size</em>, i.e. the number of solutions
+ * produced by the Basic Graph Pattern so far.</li>
+ * <li>Uses the standard optimiser heuristic<br>
+ * |R₁ ⋈ R₂| ≈ I × (|R₁| ∕ V₁) × (|R₂| ∕ V₂)</li>
+ * <li>{@code estimate()}, {@code size()} and {@code count()} all expose this value.</li>
+ * </ul>
+ */
+public class SketchBasedJoinEstimator {
+
+	public double cardinality(Join node) {
+
+		TupleExpr leftArg = node.getLeftArg();
+		TupleExpr rightArg = node.getRightArg();
+
+		if (leftArg instanceof StatementPattern && rightArg instanceof StatementPattern) {
+			// get common variables
+			var leftStatementPattern = (StatementPattern) leftArg;
+			var rightStatementPattern = (StatementPattern) rightArg;
+
+			// first common variable
+			Var commonVar = null;
+			List<Var> varList = leftStatementPattern.getVarList();
+			for (Var var : rightStatementPattern.getVarList()) {
+				if (!var.hasValue() && varList.contains(var)) {
+					commonVar = var;
+					break;
+				}
+			}
+
+			if (commonVar == null) {
+				// no common variable, we cannot estimate the join
+				return Double.MAX_VALUE;
+			}
+
+			SketchBasedJoinEstimator.Component leftComponent = getComponent(leftStatementPattern, commonVar);
+			SketchBasedJoinEstimator.Component rightComponent = getComponent(rightStatementPattern, commonVar);
+
+			return this
+					.estimate(leftComponent, getIriAsStringOrNull(leftStatementPattern.getSubjectVar()),
+							getIriAsStringOrNull(leftStatementPattern.getPredicateVar()),
+							getIriAsStringOrNull(leftStatementPattern.getObjectVar()),
+							getIriAsStringOrNull(leftStatementPattern.getContextVar())
+					)
+					.join(rightComponent,
+							getIriAsStringOrNull(rightStatementPattern.getSubjectVar()),
+							getIriAsStringOrNull(rightStatementPattern.getPredicateVar()),
+							getIriAsStringOrNull(rightStatementPattern.getObjectVar()),
+							getIriAsStringOrNull(rightStatementPattern.getContextVar())
+					)
+					.estimate();
+		} else {
+			return -1;
+		}
+
+	}
+
+	private String getIriAsStringOrNull(Var subjectVar) {
+		if (subjectVar == null || subjectVar.getValue() == null) {
+			return null;
+		}
+		Value value = subjectVar.getValue();
+		if (value instanceof IRI) {
+			return value.stringValue();
+		}
+
+		return null;
+	}
+
+	private SketchBasedJoinEstimator.Component getComponent(StatementPattern statementPattern, Var commonVar) {
+		// if the common variable is a subject, predicate, object or context
+		if (commonVar.equals(statementPattern.getSubjectVar())) {
+			return SketchBasedJoinEstimator.Component.S;
+		} else if (commonVar.equals(statementPattern.getPredicateVar())) {
+			return SketchBasedJoinEstimator.Component.P;
+		} else if (commonVar.equals(statementPattern.getObjectVar())) {
+			return SketchBasedJoinEstimator.Component.O;
+		} else if (commonVar.equals(statementPattern.getContextVar())) {
+			return SketchBasedJoinEstimator.Component.C;
+		} else {
+			throw new IllegalStateException("Unexpected common variable " + commonVar
+					+ " didn't match any component of statement pattern " + statementPattern);
+		}
+
+	}
+
+	/* ──────────────────────────────────────────────────────────────────── */
+	/* Public enums */
+	/* ──────────────────────────────────────────────────────────────────── */
+
+	public enum Component {
+		S,
+		P,
+		O,
+		C
+	}
+
+	public enum Pair {
+		SP(Component.S, Component.P, Component.O, Component.C),
+		SO(Component.S, Component.O, Component.P, Component.C),
+		SC(Component.S, Component.C, Component.P, Component.O),
+		PO(Component.P, Component.O, Component.S, Component.C),
+		PC(Component.P, Component.C, Component.S, Component.O),
+		OC(Component.O, Component.C, Component.S, Component.P);
+
+		public final Component x, y, comp1, comp2;
+
+		Pair(Component x, Component y, Component c1, Component c2) {
+			this.x = x;
+			this.y = y;
+			this.comp1 = c1;
+			this.comp2 = c2;
+		}
+	}
+
+	/* ──────────────────────────────────────────────────────────────────── */
+	/* Configuration & state */
+	/* ──────────────────────────────────────────────────────────────────── */
+
+	private final int nominalEntries;
+	private final long throttleEveryN, throttleMillis;
+	private final SailStore sailStore;
+
+	private volatile ReadState current; // snapshot for queries
+	private final BuildState bufA;
+	private final BuildState bufB; // double buffer for rebuilds
+	private volatile boolean usingA = true;
+
+	private volatile boolean running;
+	private Thread refresher;
+	private volatile boolean rebuildRequested;
+
+	private long seen = 0L;
+
+	private static final Sketch EMPTY = UpdateSketch.builder().build().compact();
+
+	/* ──────────────────────────────────────────────────────────────────── */
+	/* Construction & life‑cycle */
+	/* ──────────────────────────────────────────────────────────────────── */
+
+	public SketchBasedJoinEstimator(SailStore sailStore, int nominalEntries,
+			long throttleEveryN, long throttleMillis) {
+		System.out.println("RdfJoinEstimator: Using nominalEntries = " + nominalEntries +
+				", throttleEveryN = " + throttleEveryN + ", throttleMillis = " + throttleMillis);
+		this.sailStore = sailStore;
+		this.nominalEntries = nominalEntries;
+		this.throttleEveryN = throttleEveryN;
+		this.throttleMillis = throttleMillis;
+
+		this.bufA = new BuildState(nominalEntries);
+		this.bufB = new BuildState(nominalEntries);
+		this.current = new ReadState(); // empty until first rebuild
+	}
+
+	/**
+	 * Heuristically choose a {@code nominalEntries} (= k, power‑of‑two) so that the whole
+	 * {@link SketchBasedJoinEstimator} stays within {@code heap/16} bytes.
+	 * <p>
+	 * The calculation is intentionally conservative: it uses the *maximum* bytes for every {@link UpdateSketch} and
+	 * assumes that
+	 * <ul>
+	 * <li>all single‑component buckets fill up (4 + 12 = 16k sketches), and</li>
+	 * <li>~4 % of the k² pair buckets across the 18 pair maps are touched.</li>
+	 * </ul>
+	 * Adjust {@code PAIR_FILL} if your workload is markedly denser/sparser.
+	 *
+	 * @return a power‑of‑two k ( ≥ 16 ) that fits the budget
+	 */
+	public static int suggestNominalEntries() {
+		final long heap = Runtime.getRuntime().maxMemory(); // what -Xmx resolved to
+
+		final long budget = heap >>> 4; // 1/16th of heap
+		final double PAIR_FILL = 0.01; // empirical default
+		long bytesPerSketch = Sketch.getMaxUpdateSketchBytes(4096);
+
+		int k = 4;
+		while (true) {
+			long singles = 16L * k; // 4 + 12
+			long pairs = (long) (18L * PAIR_FILL * k * k); // triples + cmpl
+			long projected = (singles + pairs) * bytesPerSketch;
+//			System.out.println("RdfJoinEstimator: Suggesting nominalEntries = " + k +
+//					", projected memory usage = " + projected/1024/1024 + " MB, budget = " + budget/1024/1024 + " MB.");
+
+			if (projected > budget || k >= (1 << 22)) { // cap at 4 M entries (256 MB/sketch!)
+				return k >>> 1; // previous k still fitted
+			}
+			k <<= 1; // next power‑of‑two
+		}
+	}
+
+	public boolean isReady() {
+		return seen > 1;
+	}
+
+	public void requestRebuild() {
+		this.rebuildRequested = true;
+	}
+
+	public void startBackgroundRefresh(long periodMs) {
+		if (running) {
+			return;
+		}
+		running = true;
+		refresher = new Thread(() -> {
+			while (running) {
+				if (!rebuildRequested) {
+					try {
+						Thread.sleep(periodMs);
+					} catch (InterruptedException ie) {
+						Thread.currentThread().interrupt();
+						break;
+					}
+					continue;
+				}
+
+				try {
+					rebuildOnceSlow();
+					rebuildRequested = false; // reset
+				} catch (Throwable t) {
+					t.printStackTrace();
+				}
+
+				try {
+					Thread.sleep(periodMs);
+				} catch (InterruptedException ie) {
+					Thread.currentThread().interrupt();
+					break;
+				}
+
+				System.out.println("RdfJoinEstimator: Rebuilt join estimator.");
+			}
+		}, "RdfJoinEstimator-Refresh");
+		refresher.setDaemon(true);
+		refresher.start();
+	}
+
+	public void stop() {
+		running = false;
+		if (refresher != null) {
+			refresher.interrupt();
+			try {
+				refresher.join(TimeUnit.SECONDS.toMillis(5));
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+		}
+	}
+
+	/** Force a synchronous rebuild (useful for tests / cold start). */
+	public long rebuildOnceSlow() {
+//		long usedMemory = getUsedMemory();
+
+		BuildState tgt = usingA ? bufA : bufB;
+		tgt.clear();
+
+		long seen = 0L;
+		try (SailDataset dataset = sailStore.getExplicitSailSource().dataset(IsolationLevels.READ_UNCOMMITTED)) {
+			try (CloseableIteration<? extends Statement> statements = dataset.getStatements(null, null, null)) {
+				while (statements.hasNext()) {
+					add(tgt, statements.next());
+					if (++seen % throttleEveryN == 0 && throttleMillis > 0) {
+						try {
+							Thread.sleep(throttleMillis);
+						} catch (InterruptedException ie) {
+							Thread.currentThread().interrupt();
+						}
+					}
+				}
+			}
+		}
+		System.out.println("RdfJoinEstimator: Rebuilt join estimator with " + seen + " statements.");
+		current = tgt.compact(); // publish snapshot
+		usingA = !usingA;
+		(usingA ? bufA : bufB).clear(); // recycle
+
+//		long usedMemoryAfter = getUsedMemory();
+//
+//		System.out.println("RdfJoinEstimator: Memory used: " + usedMemory + " → " + usedMemoryAfter +
+//				" bytes, " + (usedMemoryAfter - usedMemory) + " bytes increase.");
+//
+//		// print in MB
+//		System.out.printf("RdfJoinEstimator: Memory used: %.2f MB → %.2f MB, %.2f MB increase.%n",
+//				usedMemory / (1024.0 * 1024.0), usedMemoryAfter / (1024.0 * 1024.0),
+//				(usedMemoryAfter - usedMemory) / (1024.0 * 1024.0));
+
+		this.seen = seen;
+
+		return seen;
+	}
+
+	private static long getUsedMemory() {
+		System.gc();
+		try {
+			Thread.sleep(1);
+		} catch (InterruptedException e) {
+			throw new RuntimeException(e);
+		}
+		System.gc();
+		try {
+			Thread.sleep(1);
+		} catch (InterruptedException e) {
+			throw new RuntimeException(e);
+		}
+		// get the amount of memory that is used
+		long usedMemory = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+		return usedMemory;
+	}
+
+	/* ──────────────────────────────────────────────────────────────────── */
+	/* Ingestion */
+	/* ──────────────────────────────────────────────────────────────────── */
+
+	private void add(BuildState t, Statement st) {
+		String s = str(st.getSubject());
+		String p = str(st.getPredicate());
+		String o = str(st.getObject());
+		String c = str(st.getContext());
+
+		int si = hash(s), pi = hash(p), oi = hash(o), ci = hash(c);
+
+		String sig = sig(s, p, o, c);
+
+		/* single‑component cardinalities */
+		t.upSingle(Component.S, si, sig);
+		t.upSingle(Component.P, pi, sig);
+		t.upSingle(Component.O, oi, sig);
+		t.upSingle(Component.C, ci, sig);
+
+		/* complement sets for singles */
+		t.upSingleCmpl(Component.S, Component.P, si, p);
+		t.upSingleCmpl(Component.S, Component.O, si, o);
+		t.upSingleCmpl(Component.S, Component.C, si, c);
+
+		t.upSingleCmpl(Component.P, Component.S, pi, s);
+		t.upSingleCmpl(Component.P, Component.O, pi, o);
+		t.upSingleCmpl(Component.P, Component.C, pi, c);
+
+		t.upSingleCmpl(Component.O, Component.S, oi, s);
+		t.upSingleCmpl(Component.O, Component.P, oi, p);
+		t.upSingleCmpl(Component.O, Component.C, oi, c);
+
+		t.upSingleCmpl(Component.C, Component.S, ci, s);
+		t.upSingleCmpl(Component.C, Component.P, ci, p);
+		t.upSingleCmpl(Component.C, Component.O, ci, o);
+
+		/* pairs (triples + complements) */
+		t.upPair(Pair.SP, si, pi, sig, o, c);
+		t.upPair(Pair.SO, si, oi, sig, p, c);
+		t.upPair(Pair.SC, si, ci, sig, p, o);
+		t.upPair(Pair.PO, pi, oi, sig, s, c);
+		t.upPair(Pair.PC, pi, ci, sig, s, o);
+		t.upPair(Pair.OC, oi, ci, sig, s, p);
+	}
+
+	/* ──────────────────────────────────────────────────────────────────── */
+	/* Public quick cardinalities */
+	/* ──────────────────────────────────────────────────────────────────── */
+
+	public double cardinalitySingle(Component comp, String value) {
+		ReadState rs = current;
+		Sketch sk = rs.singleTriples.get(comp).get(hash(value));
+		return sk == null ? 0.0 : sk.getEstimate();
+	}
+
+	public double cardinalityPair(Pair pair, String x, String y) {
+		ReadState rs = current;
+		Sketch sk = rs.pairs.get(pair).triples.get(pairKey(hash(x), hash(y)));
+		return sk == null ? 0.0 : sk.getEstimate();
+	}
+
+	/* ──────────────────────────────────────────────────────────────────── */
+	/* Pair ⋈ Pair helpers (legacy API remains intact) */
+	/* ──────────────────────────────────────────────────────────────────── */
+
+	public double estimateJoinOn(Component j,
+			Pair a, String ax, String ay,
+			Pair b, String bx, String by) {
+		ReadState rs = current;
+		return joinPairs(rs, j, a, ax, ay, b, bx, by);
+	}
+
+	/* convenience wrappers unchanged … */
+
+	/* ──────────────────────────────────────────────────────────────────── */
+	/* Single ⋈ Single helper */
+	/* ──────────────────────────────────────────────────────────────────── */
+
+	public double estimateJoinOn(Component j,
+			Component a, String av,
+			Component b, String bv) {
+		ReadState rs = current;
+		return joinSingles(rs, j, a, av, b, bv);
+	}
+
+	/* ──────────────────────────────────────────────────────────────────── */
+	/* ✦ Fluent BGP builder ✦ */
+	/* ──────────────────────────────────────────────────────────────────── */
+
+	/**
+	 * Start a Basic‑Graph‑Pattern estimation. Any of <code>s,p,o,c</code> may be {@code null} (= unbound / variable).
+	 */
+	public JoinEstimate estimate(Component joinVar,
+			String s, String p, String o, String c) {
+		ReadState snap = current; // immutable for chain
+		PatternStats stats = statsOf(snap, joinVar, s, p, o, c);
+
+		Sketch sk = stats.sketch == null ? EMPTY : stats.sketch;
+		double distinct = sk.getEstimate();
+		double size = stats.card; // first pattern size
+
+		return new JoinEstimate(snap, joinVar, sk, distinct, size);
+	}
+
+	/** Shortcut for a single triple‑pattern cardinality. */
+	public double estimateCount(Component joinVar,
+			String s, String p, String o, String c) {
+		return estimate(joinVar, s, p, o, c).estimate();
+	}
+
+	/* ------------------------------------------------------------------ */
+
+	public final class JoinEstimate {
+		private final ReadState snap; // consistent snapshot
+		private Component joinVar;
+		private Sketch bindings; // Θ‑sketch of join‑variable
+		private double distinct; // bindings.getEstimate()
+		private double resultSize; // running BGP size estimate
+
+		private JoinEstimate(ReadState snap, Component joinVar,
+				Sketch bindings, double distinct, double size) {
+			this.snap = snap;
+			this.joinVar = joinVar;
+			this.bindings = bindings;
+			this.distinct = distinct;
+			this.resultSize = size;
+		}
+
+		/** Add another triple pattern joined on {@code joinVar}. */
+		public JoinEstimate join(Component newJoinVar,
+				String s, String p, String o, String c) {
+			/* stats of the right‑hand relation */
+			PatternStats rhs = statsOf(snap, newJoinVar, s, p, o, c);
+
+			/* intersection of bindings */
+			Intersection ix = SetOperation.builder().buildIntersection();
+			ix.intersect(this.bindings);
+			if (rhs.sketch != null) {
+				ix.intersect(rhs.sketch);
+			}
+			Sketch inter = ix.getResult();
+			double interDistinct = inter.getEstimate();
+
+			if (interDistinct == 0.0) { // early out
+				this.bindings = inter;
+				this.distinct = 0.0;
+				this.resultSize = 0.0;
+				this.joinVar = newJoinVar;
+				return this;
+			}
+
+			/* average fan‑outs */
+			double leftAvg = Math.max(0.001, distinct == 0 ? 0 : resultSize / distinct);
+			double rightAvg = Math.max(0.001, rhs.distinct == 0 ? 0 : rhs.card / rhs.distinct);
+
+			/* join‑size estimate */
+			double newSize = interDistinct * leftAvg * rightAvg;
+
+			/* round to nearest whole solution count (optional) */
+			this.resultSize = Math.round(newSize);
+
+			/* carry forward */
+			this.bindings = inter;
+			this.distinct = interDistinct;
+			this.joinVar = newJoinVar;
+			return this;
+		}
+
+		/** Estimated number of solutions produced so far. */
+		public double estimate() {
+			return resultSize;
+		}
+
+		public double size() {
+			return estimate();
+		}
+
+		public double count() {
+			return estimate();
+		}
+	}
+
+	/* ──────────────────────────────────────────────────────────────────── */
+	/* Pattern statistics */
+	/* ──────────────────────────────────────────────────────────────────── */
+
+	private static final class PatternStats {
+		final Sketch sketch; // Θ‑sketch of join‑var bindings
+		final double distinct; // = sketch.getEstimate()
+		final double card; // relation size |R|
+
+		PatternStats(Sketch s, double card) {
+			this.sketch = s;
+			this.distinct = s == null ? 0.0 : s.getEstimate();
+			this.card = card;
+		}
+	}
+
+	/** Build both |R| and Θ‑sketch for one triple pattern. */
+	private PatternStats statsOf(ReadState rs, Component j,
+			String s, String p, String o, String c) {
+		Sketch sk = bindingsSketch(rs, j, s, p, o, c);
+
+		/* ------------- relation cardinality --------------------------- */
+		EnumMap<Component, String> fixed = new EnumMap<>(Component.class);
+		if (s != null) {
+			fixed.put(Component.S, s);
+		}
+		if (p != null) {
+			fixed.put(Component.P, p);
+		}
+		if (o != null) {
+			fixed.put(Component.O, o);
+		}
+		if (c != null) {
+			fixed.put(Component.C, c);
+		}
+
+		double card;
+
+		switch (fixed.size()) {
+		case 0:
+			// unsupported
+			card = 0.0;
+			break;
+
+		case 1: {
+			Map.Entry<Component, String> e = fixed.entrySet().iterator().next();
+			card = cardSingle(rs, e.getKey(), e.getValue());
+			break;
+		}
+
+		case 2: {
+			Component[] cmp = fixed.keySet().toArray(new Component[0]);
+			Pair pr = findPair(cmp[0], cmp[1]);
+			if (pr != null) {
+				card = cardPair(rs, pr, fixed.get(pr.x), fixed.get(pr.y));
+			} else { // components not a known pair – conservative min
+				double a = cardSingle(rs, cmp[0], fixed.get(cmp[0]));
+				double b = cardSingle(rs, cmp[1], fixed.get(cmp[1]));
+				card = Math.min(a, b);
+			}
+			break;
+		}
+
+		default: { // 3 or 4 bound – use smallest single cardinality
+			card = Double.POSITIVE_INFINITY;
+			for (Map.Entry<Component, String> e : fixed.entrySet()) {
+				card = Math.min(card,
+						cardSingle(rs, e.getKey(), e.getValue()));
+			}
+			break;
+		}
+		}
+		return new PatternStats(sk, card);
+	}
+
+	/* ──────────────────────────────────────────────────────────────────── */
+	/* Low‑level cardinalities on a *snapshot* */
+	/* ──────────────────────────────────────────────────────────────────── */
+
+	private double cardSingle(ReadState rs, Component c, String val) {
+		Sketch sk = rs.singleTriples.get(c).get(hash(val));
+		return sk == null ? 0.0 : sk.getEstimate();
+	}
+
+	private double cardPair(ReadState rs, Pair p, String x, String y) {
+		Sketch sk = rs.pairs.get(p).triples.get(pairKey(hash(x), hash(y)));
+		return sk == null ? 0.0 : sk.getEstimate();
+	}
+
+	/* ──────────────────────────────────────────────────────────────────── */
+	/* Sketch helpers */
+	/* ──────────────────────────────────────────────────────────────────── */
+
+	private Sketch bindingsSketch(ReadState rs, Component j,
+			String s, String p, String o, String c) {
+		EnumMap<Component, String> f = new EnumMap<>(Component.class);
+		if (s != null) {
+			f.put(Component.S, s);
+		}
+		if (p != null) {
+			f.put(Component.P, p);
+		}
+		if (o != null) {
+			f.put(Component.O, o);
+		}
+		if (c != null) {
+			f.put(Component.C, c);
+		}
+
+		if (f.isEmpty()) {
+			return null; // no constant – unsupported
+		}
+
+		/* one constant – straight complement sketch */
+		if (f.size() == 1) {
+			var e = f.entrySet().iterator().next();
+			return singleWrapper(rs, e.getKey())
+					.getComplementSketch(j, hash(e.getValue()));
+		}
+
+		/* two constants – pair fast‑path if possible */
+		if (f.size() == 2) {
+			Component[] cs = f.keySet().toArray(new Component[0]);
+			Pair pr = findPair(cs[0], cs[1]);
+			if (pr != null && (j == pr.comp1 || j == pr.comp2)) {
+				int idxX = hash(f.get(pr.x));
+				int idxY = hash(f.get(pr.y));
+				return pairWrapper(rs, pr)
+						.getComplementSketch(j, pairKey(idxX, idxY));
+			}
+		}
+
+		/* generic fall‑back – intersection of single complements */
+		Sketch acc = null;
+		for (var e : f.entrySet()) {
+			Sketch sk = singleWrapper(rs, e.getKey())
+					.getComplementSketch(j, hash(e.getValue()));
+			if (sk == null) {
+				continue;
+			}
+			if (acc == null) {
+				acc = sk;
+			} else {
+				Intersection ix = SetOperation.builder().buildIntersection();
+				ix.intersect(acc);
+				ix.intersect(sk);
+				acc = ix.getResult();
+			}
+		}
+		return acc;
+	}
+
+	/* ──────────────────────────────────────────────────────────────────── */
+	/* Pair & single wrappers */
+	/* ──────────────────────────────────────────────────────────────────── */
+
+	private ReadStateSingleWrapper singleWrapper(ReadState rs, Component fixed) {
+		return new ReadStateSingleWrapper(fixed, rs.singles.get(fixed));
+	}
+
+	private ReadStatePairWrapper pairWrapper(ReadState rs, Pair p) {
+		return new ReadStatePairWrapper(p, rs.pairs.get(p));
+	}
+
+	/* ──────────────────────────────────────────────────────────────────── */
+	/* Join primitives (pairs & singles) */
+	/* ──────────────────────────────────────────────────────────────────── */
+
+	private double joinPairs(ReadState rs, Component j,
+			Pair a, String ax, String ay,
+			Pair b, String bx, String by) {
+		int iax = hash(ax), iay = hash(ay), ibx = hash(bx), iby = hash(by);
+		Sketch sa = pairWrapper(rs, a).getComplementSketch(j, pairKey(iax, iay));
+		Sketch sb = pairWrapper(rs, b).getComplementSketch(j, pairKey(ibx, iby));
+		if (sa == null || sb == null) {
+			return 0.0;
+		}
+
+		Intersection ix = SetOperation.builder().buildIntersection();
+		ix.intersect(sa);
+		ix.intersect(sb);
+		return ix.getResult().getEstimate(); // distinct only (legacy)
+	}
+
+	private double joinSingles(ReadState rs, Component j,
+			Component a, String av,
+			Component b, String bv) {
+		Sketch sa = singleWrapper(rs, a).getComplementSketch(j, hash(av));
+		Sketch sb = singleWrapper(rs, b).getComplementSketch(j, hash(bv));
+		if (sa == null || sb == null) {
+			return 0.0;
+		}
+
+		Intersection ix = SetOperation.builder().buildIntersection();
+		ix.intersect(sa);
+		ix.intersect(sb);
+		return ix.getResult().getEstimate(); // distinct only (legacy)
+	}
+
+	/* ──────────────────────────────────────────────────────────────────── */
+	/* Read‑only snapshot structures */
+	/* ──────────────────────────────────────────────────────────────────── */
+
+	private static final class ReadStateSingleWrapper {
+		final Component fixed;
+		final SingleRead idx;
+
+		ReadStateSingleWrapper(Component f, SingleRead i) {
+			fixed = f;
+			idx = i;
+		}
+
+		Sketch getComplementSketch(Component c, int fi) {
+			if (c == fixed) {
+				return null;
+			}
+			Int2ObjectOpenHashMap<Sketch> m = idx.complements.get(c);
+			return m == null ? null : m.getOrDefault(fi, EMPTY);
+		}
+	}
+
+	private static final class ReadStatePairWrapper {
+		final Pair p;
+		final PairRead idx;
+
+		ReadStatePairWrapper(Pair p, PairRead i) {
+			this.p = p;
+			idx = i;
+		}
+
+		Sketch getComplementSketch(Component c, long key) {
+			if (c == p.comp1) {
+				return idx.comp1.getOrDefault(key, EMPTY);
+			}
+			if (c == p.comp2) {
+				return idx.comp2.getOrDefault(key, EMPTY);
+			}
+			return null;
+		}
+	}
+
+	private static final class ReadState {
+		final EnumMap<Component, Int2ObjectOpenHashMap<Sketch>> singleTriples = new EnumMap<>(Component.class);
+		final EnumMap<Component, SingleRead> singles = new EnumMap<>(Component.class);
+		final EnumMap<Pair, PairRead> pairs = new EnumMap<>(Pair.class);
+
+		ReadState() {
+			for (Component c : Component.values()) {
+				singleTriples.put(c, new Int2ObjectOpenHashMap<>(4, 0.99999f));
+				singles.put(c, new SingleRead());
+			}
+			for (Pair p : Pair.values()) {
+				pairs.put(p, new PairRead());
+			}
+		}
+	}
+
+	private static final class SingleRead {
+		final EnumMap<Component, Int2ObjectOpenHashMap<Sketch>> complements = new EnumMap<>(Component.class);
+
+		SingleRead() {
+			for (Component c : Component.values()) {
+				complements.put(c, new Int2ObjectOpenHashMap<>(4, 0.99999f));
+			}
+		}
+	}
+
+	private static final class PairRead {
+		final Map<Long, Sketch> triples = new HashMap<>();
+		final Map<Long, Sketch> comp1 = new HashMap<>();
+		final Map<Long, Sketch> comp2 = new HashMap<>();
+	}
+
+	/* ──────────────────────────────────────────────────────────────────── */
+	/* Build‑time structures */
+	/* ──────────────────────────────────────────────────────────────────── */
+
+	private static final class SingleBuild {
+		final int k;
+		final EnumMap<Component, Int2ObjectOpenHashMap<UpdateSketch>> cmpl = new EnumMap<>(Component.class);
+
+		SingleBuild(int k, Component fixed) {
+			this.k = k;
+			for (Component c : Component.values()) {
+				if (c != fixed) {
+					cmpl.put(c, new Int2ObjectOpenHashMap<>(4, 0.99999f));
+				}
+			}
+		}
+
+		void upd(Component c, int idx, String v) {
+			Int2ObjectOpenHashMap<UpdateSketch> m = cmpl.get(c);
+			if (m == null) {
+				return;
+			}
+			m.computeIfAbsent(idx, i -> newSk(k)).update(v);
+		}
+	}
+
+	private static final class PairBuild {
+		final int k;
+		final Map<Long, UpdateSketch> triples = new HashMap<>();
+		final Map<Long, UpdateSketch> comp1 = new HashMap<>();
+		final Map<Long, UpdateSketch> comp2 = new HashMap<>();
+
+		PairBuild(int k) {
+			this.k = k;
+		}
+
+		void upT(long key, String sig) {
+			triples.computeIfAbsent(key, i -> newSk(k)).update(sig);
+		}
+
+		void up1(long key, String v) {
+			comp1.computeIfAbsent(key, i -> newSk(k)).update(v);
+		}
+
+		void up2(long key, String v) {
+			comp2.computeIfAbsent(key, i -> newSk(k)).update(v);
+		}
+	}
+
+	private static final class BuildState {
+		final int k;
+		final EnumMap<Component, Int2ObjectOpenHashMap<UpdateSketch>> singleTriples = new EnumMap<>(Component.class);
+		final EnumMap<Component, SingleBuild> singles = new EnumMap<>(Component.class);
+		final EnumMap<Pair, PairBuild> pairs = new EnumMap<>(Pair.class);
+
+		BuildState(int k) {
+			this.k = k;
+			for (Component c : Component.values()) {
+				singleTriples.put(c, new Int2ObjectOpenHashMap<>(4, 0.99999f));
+				singles.put(c, new SingleBuild(k, c));
+			}
+			for (Pair p : Pair.values()) {
+				pairs.put(p, new PairBuild(k));
+			}
+		}
+
+		void clear() {
+			singleTriples.values().forEach(Map::clear);
+			singles.values().forEach(s -> s.cmpl.values().forEach(Map::clear));
+			pairs.values().forEach(p -> {
+				p.triples.clear();
+				p.comp1.clear();
+				p.comp2.clear();
+			});
+		}
+
+		/* singles */
+		void upSingle(Component c, int idx, String sig) {
+			singleTriples.get(c).computeIfAbsent(idx, i -> newSk(k)).update(sig);
+		}
+
+		void upSingleCmpl(Component fix, Component cmp, int idx, String val) {
+			singles.get(fix).upd(cmp, idx, val);
+		}
+
+		/* pairs */
+		void upPair(Pair p, int x, int y, String sig, String v1, String v2) {
+			long key = pairKey(x, y);
+			PairBuild b = pairs.get(p);
+			b.upT(key, sig);
+			b.up1(key, v1);
+			b.up2(key, v2);
+		}
+
+		/* compact → read */
+		ReadState compact() {
+			ReadState r = new ReadState();
+
+			for (Component c : Component.values()) { // singles cardinality
+				Int2ObjectOpenHashMap<Sketch> out = r.singleTriples.get(c);
+				singleTriples.get(c).forEach((i, sk) -> out.put(i, sk.compact()));
+			}
+			for (Component fix : Component.values()) { // singles complement
+				SingleBuild in = singles.get(fix);
+				SingleRead out = r.singles.get(fix);
+				for (var e : in.cmpl.entrySet()) {
+					Component cmp = e.getKey();
+					Int2ObjectOpenHashMap<Sketch> om = out.complements.get(cmp);
+					e.getValue().forEach((i, sk) -> om.put(i, sk.compact()));
+				}
+			}
+			for (Pair p : Pair.values()) { // pairs
+				PairBuild in = pairs.get(p);
+				PairRead out = r.pairs.get(p);
+				in.triples.forEach((k, sk) -> out.triples.put(k, sk.compact()));
+				in.comp1.forEach((k, sk) -> out.comp1.put(k, sk.compact()));
+				in.comp2.forEach((k, sk) -> out.comp2.put(k, sk.compact()));
+			}
+			return r;
+		}
+	}
+
+	/* ──────────────────────────────────────────────────────────────────── */
+	/* Misc utility */
+	/* ──────────────────────────────────────────────────────────────────── */
+
+	private static UpdateSketch newSk(int k) {
+		return UpdateSketch.builder().setNominalEntries(k).build();
+	}
+
+	private int hash(String v) {
+		return Objects.hashCode(v) % nominalEntries;
+	}
+
+	private static long pairKey(int a, int b) {
+		return (((long) a) << 32) ^ (b & 0xffffffffL);
+	}
+
+	private static Pair findPair(Component a, Component b) {
+		for (Pair p : Pair.values()) {
+			if ((p.x == a && p.y == b) || (p.x == b && p.y == a)) {
+				return p;
+			}
+		}
+		return null;
+	}
+
+	private static String str(Resource r) {
+		return r == null ? "urn:default-context" : r.stringValue();
+	}
+
+	private static String str(Value v) {
+		return v == null ? "urn:default-context" : v.stringValue();
+	}
+
+	private static String sig(String s, String p, String o, String c) {
+		return s + ' ' + p + ' ' + o + ' ' + c;
+	}
+}

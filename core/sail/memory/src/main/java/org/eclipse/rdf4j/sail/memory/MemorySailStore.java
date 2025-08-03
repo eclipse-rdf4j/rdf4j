@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.memory.model.MemBNode;
 import org.eclipse.rdf4j.sail.memory.model.MemIRI;
 import org.eclipse.rdf4j.sail.memory.model.MemResource;
@@ -105,6 +106,8 @@ class MemorySailStore implements SailStore {
 	 * List containing all available statements.
 	 */
 	private final MemStatementList statements = new MemStatementList(256);
+	private final SketchBasedJoinEstimator sketchBasedJoinEstimator = new SketchBasedJoinEstimator(this,
+			SketchBasedJoinEstimator.suggestNominalEntries(), 1000, 2);
 
 	/**
 	 * This gets set to `true` when we add our first inferred statement. If the value is `false` we guarantee that there
@@ -152,6 +155,7 @@ class MemorySailStore implements SailStore {
 
 	public MemorySailStore(boolean debug) {
 		snapshotMonitor = new SnapshotMonitor(debug);
+		sketchBasedJoinEstimator.startBackgroundRefresh(500);
 	}
 
 	@Override
@@ -161,6 +165,8 @@ class MemorySailStore implements SailStore {
 
 	@Override
 	public void close() {
+		sketchBasedJoinEstimator.stop();
+
 		synchronized (snapshotCleanupThreadLockObject) {
 			if (snapshotCleanupThread != null) {
 				snapshotCleanupThread.interrupt();
@@ -174,12 +180,13 @@ class MemorySailStore implements SailStore {
 	}
 
 	private void invalidateCache() {
+		sketchBasedJoinEstimator.requestRebuild();
 		iteratorCache.invalidateCache();
 	}
 
 	@Override
 	public EvaluationStatistics getEvaluationStatistics() {
-		return new MemEvaluationStatistics(valueFactory, statements);
+		return new MemEvaluationStatistics(valueFactory, statements, sketchBasedJoinEstimator);
 	}
 
 	@Override

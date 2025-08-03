@@ -175,6 +175,12 @@ public class QueryPlanRetrievalTest {
 			connection.add(vf.createBNode("13"), FOAF.KNOWS, vf.createBNode("14"));
 			connection.add(vf.createBNode("15"), FOAF.KNOWS, vf.createBNode("16"));
 		}
+
+		try {
+			Thread.sleep(100);
+		} catch (InterruptedException e) {
+			throw new RuntimeException(e);
+		}
 	}
 
 	@Test
@@ -1118,7 +1124,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
-	public void testSubQuery2() {
+	public void testSubQuery2() throws InterruptedException {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
 

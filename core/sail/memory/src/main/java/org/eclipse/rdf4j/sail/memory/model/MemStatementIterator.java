@@ -130,25 +130,27 @@ public class MemStatementIterator implements CloseableIteration<MemStatement> {
 			MemResource subj, MemIRI pred, MemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts,
 			MemStatementIteratorCache iteratorCache) throws InterruptedException {
 
-		if (smallestList.size() > MemStatementIterator.MIN_SIZE_TO_CONSIDER_FOR_CACHE) {
-			MemStatementIterator memStatementIterator = null;
-			try {
-				memStatementIterator = new MemStatementIterator(smallestList, subj, pred, obj, explicit, snapshot,
-						iteratorCache, memContexts);
-				if (iteratorCache.shouldBeCached(memStatementIterator)) {
-					return iteratorCache.getCachedIterator(memStatementIterator);
-				} else {
-					return memStatementIterator;
-				}
-			} catch (Throwable t) {
-				if (memStatementIterator != null) {
-					memStatementIterator.close();
-				}
-				throw t;
-			}
-		} else {
-			return new MemStatementIterator(smallestList, subj, pred, obj, explicit, snapshot, null, memContexts);
-		}
+//		if (smallestList.size() > MemStatementIterator.MIN_SIZE_TO_CONSIDER_FOR_CACHE) {
+//			MemStatementIterator memStatementIterator = null;
+//			try {
+//				memStatementIterator = new MemStatementIterator(smallestList, subj, pred, obj, explicit, snapshot,
+//						iteratorCache, memContexts);
+//				if (iteratorCache.shouldBeCached(memStatementIterator)) {
+//					return iteratorCache.getCachedIterator(memStatementIterator);
+//				} else {
+//					return memStatementIterator;
+//				}
+//			} catch (Throwable t) {
+//				if (memStatementIterator != null) {
+//					memStatementIterator.close();
+//				}
+//				throw t;
+//			}
+//		} else {
+//			return new MemStatementIterator(smallestList, subj, pred, obj, explicit, snapshot, null, memContexts);
+//		}
+		return new MemStatementIterator(smallestList, subj, pred, obj, explicit, snapshot, null, memContexts);
+
 	}
 
 	/*---------*

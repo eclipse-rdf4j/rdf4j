@@ -15,9 +15,11 @@ import java.io.IOException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,10 +34,19 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 	private final ValueStore valueStore;
 
 	private final TripleStore tripleStore;
+	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
 
-	public LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore) {
+	public LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
+			SketchBasedJoinEstimator sketchBasedJoinEstimator) {
 		this.valueStore = valueStore;
 		this.tripleStore = tripleStore;
+		this.sketchBasedJoinEstimator = sketchBasedJoinEstimator;
+	}
+
+	@Override
+	public boolean supportsJoinEstimation() {
+//		return sketchBasedJoinEstimator.isReady();
+		return false;
 	}
 
 	@Override
@@ -44,6 +55,20 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 	}
 
 	protected class LmdbCardinalityCalculator extends CardinalityCalculator {
+
+		@Override
+		public void meet(Join node) {
+			if (supportsJoinEstimation()) {
+				double estimatedCardinality = sketchBasedJoinEstimator.cardinality(node);
+				if (estimatedCardinality >= 0) {
+//					System.out.println("HERE: "+estimatedCardinality);
+					this.cardinality = estimatedCardinality;
+					return;
+				}
+			}
+
+			super.meet(node);
+		}
 
 		@Override
 		protected double getCardinality(StatementPattern sp) {
