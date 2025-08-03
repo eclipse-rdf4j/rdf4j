@@ -22,7 +22,9 @@ import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -151,7 +153,7 @@ public class QueryBenchmark {
 			connection.commit();
 		}
 
-		Thread.sleep(10000);
+		Thread.sleep(5000);
 	}
 
 	@TearDown(Level.Trial)

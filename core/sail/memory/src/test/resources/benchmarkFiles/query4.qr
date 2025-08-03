@@ -12,36 +12,31 @@ PREFIX foaf:  <http://xmlns.com/foaf/0.1/>
 SELECT *
 
 WHERE {
-
-    ################################################################################
-    # 5. Distribution Details                                                      #
-    ################################################################################
-    ?distribution dcat:accessURL ?accessURL .
-
-    ################################################################################
-    # 2. Core Dataset Description                                                  #
-    ################################################################################
-    ?dataset   a               ?type2 ;
-          dct:title       ?title ;
-                   dct:issued      ?issued ;
-                   dct:modified    ?modified ;
-                   dct:publisher   ?publisher ;
-               dct:identifier  ?identifier ;
-               dct:language    ?language ;
-
-               dcat:distribution ?distribution .
-
-
-    ?publisher a ?type3  .
-    ?temp a ?type3;
-               foaf:mbox ?mbox .
-
     ################################################################################
     # 1. Catalogue ↔︎ Dataset                                                      #
     ################################################################################
  ?catalogue a               ?type1 ;
                dcat:dataset     ?dataset .
 
+    ################################################################################
+    # 2. Core Dataset Description                                                  #
+    ################################################################################
+    ?dataset   a               ?type2 ;
+               dct:identifier  ?identifier ;
+               dct:language    ?language ;
+               dct:title       ?title ;
+               dct:issued      ?issued ;
+               dct:modified    ?modified ;
+               dct:publisher   ?publisher ;
+               dcat:distribution ?distribution .
 
 
+    ?publisher a ?type3 ;
+               foaf:mbox ?mbox .
+
+
+    ################################################################################
+    # 5. Distribution Details                                                      #
+    ################################################################################
+    ?distribution dcat:accessURL ?accessURL .
 }
