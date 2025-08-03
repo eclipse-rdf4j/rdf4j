@@ -45,8 +45,8 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 
 	@Override
 	public boolean supportsJoinEstimation() {
-//		return sketchBasedJoinEstimator.isReady();
-		return false;
+		return sketchBasedJoinEstimator.isReady();
+//		return false;
 	}
 
 	@Override
