@@ -10,6 +10,18 @@
 	<name>RDF4J: Sail base implementations</name>
 	<description>RDF Storage And Inference Layer ("Sail") API.</description>
 	<dependencies>
+		<!-- https://mvnrepository.com/artifact/org.apache.datasketches/datasketches-java -->
+		<dependency>
+			<groupId>org.apache.datasketches</groupId>
+			<artifactId>datasketches-java</artifactId>
+			<version>7.0.1</version>
+		</dependency>
+		<dependency>
+			<groupId>it.unimi.dsi</groupId>
+			<artifactId>fastutil</artifactId>
+			<version>8.5.16</version>
+			<!-- current release, 2025‑06‑22 -->
+		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-sail-api</artifactId>
