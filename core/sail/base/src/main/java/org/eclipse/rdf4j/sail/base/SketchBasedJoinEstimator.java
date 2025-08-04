@@ -46,7 +46,7 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
  * Features
  * </p>
  * <ul>
- * <li>Θ‑Sketches over S, P, O, C singles and all six pairs.</li>
+ * <li>Θ‑Sketches over S, P, O, C singles and all six pairs.</li>
  * <li>Lock‑free reads; double‑buffered rebuilds.</li>
  * <li>Incremental {@code addStatement}/ {@code deleteStatement} with tombstone sketches and A‑NOT‑B compaction.</li>
  * </ul>
