@@ -11,11 +11,14 @@
 
 package org.eclipse.rdf4j.model.base;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.LiteralTest;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.AbstractValueFactoryTest.GenericValueFactory;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for {@link AbstractLiteral}.
@@ -38,6 +41,11 @@ public class AbstractLiteralTest extends LiteralTest {
 	}
 
 	@Override
+	protected Literal literal(String label, String language, Literal.BaseDirection dir) {
+		return factory.createLiteral(label, language, dir);
+	}
+
+	@Override
 	protected Literal literal(String label, IRI datatype) {
 		return factory.createLiteral(label, datatype);
 	}
@@ -51,5 +59,4 @@ public class AbstractLiteralTest extends LiteralTest {
 	protected IRI datatype(String iri) {
 		return factory.createIRI(iri);
 	}
-
 }

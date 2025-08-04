@@ -41,6 +41,36 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
  * @see <a href="https://www.w3.org/TR/xmlschema11-2">XML Schema Definition Language (XSD) 1.1 Part 2: Datatypes</a>
  */
 public interface Literal extends Value {
+	String LTR_SUFFIX = "--ltr";
+	String RTL_SUFFIX = "--rtl";
+	String BASE_DIR_SEPARATOR = "--";
+
+	enum BaseDirection {
+		NONE(""),
+		LTR(LTR_SUFFIX),
+		RTL(RTL_SUFFIX);
+
+		private final String suffix;
+
+		BaseDirection(final String suffix) {
+			this.suffix = suffix;
+		}
+
+		@Override
+		public String toString() {
+			return suffix;
+		}
+
+		public static BaseDirection fromString(final String dir) {
+			if (dir == null || dir.isEmpty())
+				return NONE;
+			if (dir.equals(LTR_SUFFIX))
+				return LTR;
+			if (dir.equals(RTL_SUFFIX))
+				return RTL;
+			throw new IllegalArgumentException("Unknown BaseDirection: " + dir);
+		}
+	}
 
 	@Override
 	default boolean isLiteral() {
@@ -60,6 +90,10 @@ public interface Literal extends Value {
 	 * @return The language tag for this literal, or {@link Optional#empty()} if it doesn't have one.
 	 */
 	Optional<String> getLanguage();
+
+	default BaseDirection getBaseDirection() {
+		return BaseDirection.NONE;
+	}
 
 	/**
 	 * Gets the datatype for this literal.

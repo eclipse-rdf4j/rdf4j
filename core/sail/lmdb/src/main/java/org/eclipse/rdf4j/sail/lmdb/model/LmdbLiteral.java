@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.lmdb.model;
 
 import java.io.ObjectStreamException;
+import java.util.Objects;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -39,6 +40,8 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	 * The literal's language tag.
 	 */
 	private String language;
+
+	private BaseDirection baseDirection;
 
 	/**
 	 * The literal's datatype.
@@ -79,10 +82,25 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	}
 
 	public LmdbLiteral(ValueStoreRevision revision, String label, String lang, long internalID) {
+		this(revision, label, lang, BaseDirection.NONE, internalID);
+	}
+
+	public LmdbLiteral(ValueStoreRevision revision, String label, String lang, BaseDirection baseDirection) {
+		this(revision, label, lang, baseDirection, UNKNOWN_ID);
+	}
+
+	public LmdbLiteral(ValueStoreRevision revision, String label, String language, BaseDirection baseDirection,
+			long internalID) {
+		Objects.requireNonNull(language, "null language");
+		Objects.requireNonNull(baseDirection, "null baseDirection");
 		this.label = label;
-		this.language = lang;
-		coreDatatype = CoreDatatype.RDF.LANGSTRING;
-		datatype = CoreDatatype.RDF.LANGSTRING.getIri();
+		this.language = language;
+		this.baseDirection = baseDirection;
+		if (baseDirection != BaseDirection.NONE) {
+			setDatatype(CoreDatatype.RDF.DIRLANGSTRING);
+		} else {
+			setDatatype(CoreDatatype.RDF.LANGSTRING);
+		}
 		setInternalID(internalID, revision);
 		this.initialized = true;
 	}
@@ -186,6 +204,11 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	public Optional<String> getLanguage() {
 		init();
 		return Optional.ofNullable(language);
+	}
+
+	@Override
+	public BaseDirection getBaseDirection() {
+		return baseDirection;
 	}
 
 	public void setLanguage(String language) {

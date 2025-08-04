@@ -63,6 +63,11 @@ public class SimpleLiteral extends AbstractLiteral {
 	// Cached CoreDatatype, or null if not yet computed.
 	private CoreDatatype coreDatatype = null;
 
+	/**
+	 * The literal's base direction.
+	 */
+	private BaseDirection baseDirection = BaseDirection.NONE;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -88,8 +93,13 @@ public class SimpleLiteral extends AbstractLiteral {
 	 * @param language The language tag for the literal, must not be <var>null</var> and not be empty.
 	 */
 	protected SimpleLiteral(String label, String language) {
+		this(label, language, BaseDirection.NONE);
+	}
+
+	protected SimpleLiteral(String label, String language, BaseDirection baseDirection) {
 		setLabel(label);
 		setLanguage(language);
+		setBaseDirection(baseDirection);
 	}
 
 	/**
@@ -100,8 +110,9 @@ public class SimpleLiteral extends AbstractLiteral {
 	 */
 	protected SimpleLiteral(String label, IRI datatype) {
 		setLabel(label);
-		if (org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING.equals(datatype)) {
-			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
+		if (org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING.equals(datatype)
+				|| org.eclipse.rdf4j.model.vocabulary.RDF.DIRLANGSTRING.equals(datatype)) {
+			throw new IllegalArgumentException("datatype rdf:langString or rdf:dirLangString requires a language tag");
 		} else if (datatype == null) {
 			setDatatype(CoreDatatype.XSD.STRING);
 		} else {
@@ -122,8 +133,8 @@ public class SimpleLiteral extends AbstractLiteral {
 		assert datatype != null;
 		assert coreDatatype == CoreDatatype.NONE || datatype == coreDatatype.getIri();
 
-		if (CoreDatatype.RDF.LANGSTRING == coreDatatype) {
-			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
+		if (CoreDatatype.RDF.LANGSTRING == coreDatatype || CoreDatatype.RDF.DIRLANGSTRING == coreDatatype) {
+			throw new IllegalArgumentException("datatype rdf:langString or rdf:dirLangString requires a language tag");
 		}
 
 		setLabel(label);
@@ -133,8 +144,8 @@ public class SimpleLiteral extends AbstractLiteral {
 
 	protected SimpleLiteral(String label, CoreDatatype datatype) {
 		setLabel(label);
-		if (datatype == CoreDatatype.RDF.LANGSTRING) {
-			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
+		if (datatype == CoreDatatype.RDF.LANGSTRING || datatype == CoreDatatype.RDF.DIRLANGSTRING) {
+			throw new IllegalArgumentException("datatype rdf:langString or rdf:dirLangString requires a language tag");
 		} else {
 			setDatatype(datatype);
 		}
@@ -163,7 +174,16 @@ public class SimpleLiteral extends AbstractLiteral {
 		}
 		this.language = language;
 		optionalLanguageCache = Optional.of(language);
-		setDatatype(CoreDatatype.RDF.LANGSTRING);
+	}
+
+	protected void setBaseDirection(BaseDirection baseDirection) {
+		Objects.requireNonNull(baseDirection, "null baseDirection");
+		this.baseDirection = baseDirection;
+		if (this.baseDirection != BaseDirection.NONE) {
+			setDatatype(CoreDatatype.RDF.DIRLANGSTRING);
+		} else {
+			setDatatype(CoreDatatype.RDF.LANGSTRING);
+		}
 	}
 
 	@Override
@@ -172,6 +192,10 @@ public class SimpleLiteral extends AbstractLiteral {
 			optionalLanguageCache = Optional.ofNullable(language);
 		}
 		return optionalLanguageCache;
+	}
+
+	public BaseDirection getBaseDirection() {
+		return baseDirection;
 	}
 
 	protected void setDatatype(IRI datatype) {
@@ -260,6 +284,7 @@ public class SimpleLiteral extends AbstractLiteral {
 			StringBuilder sb = new StringBuilder(label.length() + language.length() + 3);
 			sb.append('"').append(label).append('"');
 			sb.append('@').append(language);
+			sb.append(getBaseDirection());
 			return sb.toString();
 		} else if (org.eclipse.rdf4j.model.vocabulary.XSD.STRING.equals(datatype) || datatype == null) {
 			StringBuilder sb = new StringBuilder(label.length() + 2);

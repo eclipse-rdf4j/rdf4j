@@ -146,15 +146,21 @@ public abstract class AbstractValueFactory implements ValueFactory {
 
 	@Override
 	public Literal createLiteral(String label, String language) {
+		return createLiteral(label, language, Literal.BaseDirection.NONE);
+	}
+
+	@Override
+	public Literal createLiteral(String label, String language, Literal.BaseDirection baseDirection) {
 
 		Objects.requireNonNull(label, "null label");
 		Objects.requireNonNull(language, "null language");
+		Objects.requireNonNull(baseDirection, "null baseDirection");
 
 		if (language.isEmpty()) {
 			throw new IllegalArgumentException("empty language tag");
 		}
 
-		return new TaggedLiteral(label, language);
+		return new TaggedLiteral(label, language, baseDirection);
 	}
 
 	@Override

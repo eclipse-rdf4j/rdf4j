@@ -72,6 +72,11 @@ class RDFStarDecodingValueFactory implements ValueFactory {
 	}
 
 	@Override
+	public Literal createLiteral(String label, String language, Literal.BaseDirection baseDirection) {
+		return delegate.createLiteral(label, language, baseDirection);
+	}
+
+	@Override
 	public Literal createLiteral(String label, IRI datatype) {
 		return delegate.createLiteral(label, datatype);
 	}

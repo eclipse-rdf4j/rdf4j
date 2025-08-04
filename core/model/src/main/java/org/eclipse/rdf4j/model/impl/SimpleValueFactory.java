@@ -104,6 +104,11 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	}
 
 	@Override
+	public Literal createLiteral(String value, String language, Literal.BaseDirection baseDirection) {
+		return new SimpleLiteral(value, language, baseDirection);
+	}
+
+	@Override
 	public Literal createLiteral(boolean b) {
 		return b ? BooleanLiteral.TRUE : BooleanLiteral.FALSE;
 	}

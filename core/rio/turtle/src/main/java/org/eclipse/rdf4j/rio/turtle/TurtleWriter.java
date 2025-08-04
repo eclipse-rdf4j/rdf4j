@@ -682,6 +682,7 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 			// Append the literal's language
 			writer.write("@");
 			writer.write(lit.getLanguage().get());
+			writer.write(lit.getBaseDirection().toString());
 		} else if (!xsdStringToPlainLiteral || !XSD.STRING.equals(datatype)) {
 			// Append the literal's datatype (possibly written as an abbreviated
 			// URI)
