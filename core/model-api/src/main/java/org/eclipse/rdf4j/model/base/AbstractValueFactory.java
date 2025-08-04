@@ -154,6 +154,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 
 		Objects.requireNonNull(label, "null label");
 		Objects.requireNonNull(language, "null language");
+		Objects.requireNonNull(baseDirection, "null baseDirection");
 
 		if (language.isEmpty()) {
 			throw new IllegalArgumentException("empty language tag");

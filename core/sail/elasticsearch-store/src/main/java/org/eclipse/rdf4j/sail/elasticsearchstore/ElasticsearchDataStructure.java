@@ -244,7 +244,8 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 					boolQueryBuilder
 							.must(QueryBuilders.termQuery("object_Lang", ((Literal) object).getLanguage().get()));
 					boolQueryBuilder
-							.must(QueryBuilders.termQuery("object_LangDir", ((Literal) object).getBaseDirection().toString()));
+							.must(QueryBuilders.termQuery("object_LangDir",
+									((Literal) object).getBaseDirection().toString()));
 				}
 			}
 		}

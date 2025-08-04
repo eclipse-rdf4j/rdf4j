@@ -177,6 +177,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	}
 
 	protected void setBaseDirection(BaseDirection baseDirection) {
+		Objects.requireNonNull(baseDirection, "null baseDirection");
 		this.baseDirection = baseDirection;
 		if (this.baseDirection != BaseDirection.NONE) {
 			setDatatype(CoreDatatype.RDF.DIRLANGSTRING);

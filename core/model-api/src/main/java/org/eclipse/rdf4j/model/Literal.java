@@ -56,11 +56,12 @@ public interface Literal extends Value {
 			this.suffix = suffix;
 		}
 
+		@Override
 		public String toString() {
 			return suffix;
 		}
 
-		public static BaseDirection fromString(String dir) {
+		public static BaseDirection fromString(final String dir) {
 			if (dir == null || dir.isEmpty())
 				return NONE;
 			if (dir.equals(LTR_SUFFIX))
