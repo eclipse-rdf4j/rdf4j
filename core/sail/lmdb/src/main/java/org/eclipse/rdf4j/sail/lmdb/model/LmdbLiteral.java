@@ -98,7 +98,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		} else {
 			setDatatype(CoreDatatype.RDF.LANGSTRING);
 		}
-		setInternalID(UNKNOWN_ID, revision);
+		setInternalID(internalID, revision);
 		this.initialized = true;
 	}
 
