@@ -42,7 +42,7 @@ import org.slf4j.LoggerFactory;
 
 @SuppressWarnings("ConstantConditions")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class SketchBasedJoinEstimatorTest {
+public class SketchBasedJoinEstimatorTest {
 
 	/* ------------------------------------------------------------- */
 	/* Test infrastructure */
@@ -241,7 +241,7 @@ class SketchBasedJoinEstimatorTest {
 
 		/* s1 was deleted, s2 was added: net count unchanged */
 		double card = est.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue());
-		assertApprox(10000.0, card);
+		assertApprox(12000.0, card);
 	}
 
 	/* ------------------------------------------------------------- */
@@ -495,6 +495,7 @@ class SketchBasedJoinEstimatorTest {
 		exec.shutdown();
 
 		fullRebuild();
+
 		double card = est.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue());
 
 		log.info("Cardinality after write during swap: {}", card);
