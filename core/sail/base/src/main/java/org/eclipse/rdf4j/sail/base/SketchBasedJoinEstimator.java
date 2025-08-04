@@ -110,10 +110,7 @@ public class SketchBasedJoinEstimator {
 	/* Construction */
 	/* ────────────────────────────────────────────────────────────── */
 
-	public SketchBasedJoinEstimator(SailStore sailStore,
-			int nominalEntries,
-			long throttleEveryN,
-			long throttleMillis) {
+	public SketchBasedJoinEstimator(SailStore sailStore, int nominalEntries, long throttleEveryN, long throttleMillis) {
 		this.sailStore = sailStore;
 		this.nominalEntries = nominalEntries;
 		this.throttleEveryN = throttleEveryN;
@@ -217,13 +214,15 @@ public class SketchBasedJoinEstimator {
 		BuildState tgtAdd = usingA ? bufA : bufB;
 		BuildState tgtDel = usingA ? delA : delB;
 
-		tgtAdd.clear();
-		tgtDel.clear();
-
+		synchronized (tgtAdd) {
+			tgtAdd.clear();
+		}
+		synchronized (tgtDel) {
+			tgtDel.clear();
+		}
 		long seen = 0L;
 
-		try (SailDataset ds = sailStore.getExplicitSailSource()
-				.dataset(IsolationLevels.READ_UNCOMMITTED);
+		try (SailDataset ds = sailStore.getExplicitSailSource().dataset(IsolationLevels.READ_UNCOMMITTED);
 				CloseableIteration<? extends Statement> it = ds.getStatements(null, null, null)) {
 
 			while (it.hasNext()) {
@@ -241,13 +240,25 @@ public class SketchBasedJoinEstimator {
 			}
 		}
 
-		/* Compact adds with tombstones. */
-		current = tgtAdd.compactWithDeletes(tgtDel);
+		/* Compact adds with tombstones – hold both locks while iterating */
+		ReadState snap;
+		synchronized (tgtAdd) {
+			synchronized (tgtDel) {
+				snap = tgtAdd.compactWithDeletes(tgtDel);
+			}
+		}
+		current = snap; // publish immutable snapshot
 
 		/* Rotate buffers for next rebuild. */
 		usingA = !usingA;
-		(usingA ? bufA : bufB).clear();
-		(usingA ? delA : delB).clear();
+		BuildState recycleAdd = usingA ? bufA : bufB;
+		BuildState recycleDel = usingA ? delA : delB;
+		synchronized (recycleAdd) {
+			recycleAdd.clear();
+		}
+		synchronized (recycleDel) {
+			recycleDel.clear();
+		}
 
 		this.seenTriples = seen;
 		return seen;
@@ -359,15 +370,11 @@ public class SketchBasedJoinEstimator {
 	/* Legacy join helpers (unchanged API) */
 	/* ────────────────────────────────────────────────────────────── */
 
-	public double estimateJoinOn(Component join,
-			Pair a, String ax, String ay,
-			Pair b, String bx, String by) {
+	public double estimateJoinOn(Component join, Pair a, String ax, String ay, Pair b, String bx, String by) {
 		return joinPairs(current, join, a, ax, ay, b, bx, by);
 	}
 
-	public double estimateJoinOn(Component j,
-			Component a, String av,
-			Component b, String bv) {
+	public double estimateJoinOn(Component j, Component a, String av, Component b, String bv) {
 		return joinSingles(current, j, a, av, b, bv);
 	}
 
@@ -375,17 +382,14 @@ public class SketchBasedJoinEstimator {
 	/* ✦ Fluent Basic‑Graph‑Pattern builder ✦ */
 	/* ────────────────────────────────────────────────────────────── */
 
-	public JoinEstimate estimate(Component joinVar,
-			String s, String p, String o, String c) {
+	public JoinEstimate estimate(Component joinVar, String s, String p, String o, String c) {
 		ReadState snap = current;
 		PatternStats st = statsOf(snap, joinVar, s, p, o, c);
 		Sketch bindings = st.sketch == null ? EMPTY : st.sketch;
-		return new JoinEstimate(snap, joinVar, bindings,
-				bindings.getEstimate(), st.card);
+		return new JoinEstimate(snap, joinVar, bindings, bindings.getEstimate(), st.card);
 	}
 
-	public double estimateCount(Component joinVar,
-			String s, String p, String o, String c) {
+	public double estimateCount(Component joinVar, String s, String p, String o, String c) {
 		return estimate(joinVar, s, p, o, c).estimate();
 	}
 
@@ -396,8 +400,7 @@ public class SketchBasedJoinEstimator {
 		private double distinct;
 		private double resultSize;
 
-		private JoinEstimate(ReadState snap, Component joinVar,
-				Sketch bindings, double distinct, double size) {
+		private JoinEstimate(ReadState snap, Component joinVar, Sketch bindings, double distinct, double size) {
 			this.snap = snap;
 			this.joinVar = joinVar;
 			this.bindings = bindings;
@@ -405,8 +408,7 @@ public class SketchBasedJoinEstimator {
 			this.resultSize = size;
 		}
 
-		public JoinEstimate join(Component newJoinVar,
-				String s, String p, String o, String c) {
+		public JoinEstimate join(Component newJoinVar, String s, String p, String o, String c) {
 			/* stats of the right‑hand relation */
 			PatternStats rhs = statsOf(snap, newJoinVar, s, p, o, c);
 
@@ -475,8 +477,7 @@ public class SketchBasedJoinEstimator {
 	}
 
 	/** Build both |R| and Θ‑sketch for one triple pattern. */
-	private PatternStats statsOf(ReadState rs, Component j,
-			String s, String p, String o, String c) {
+	private PatternStats statsOf(ReadState rs, Component j, String s, String p, String o, String c) {
 		Sketch sk = bindingsSketch(rs, j, s, p, o, c);
 
 		/* ------------- relation cardinality --------------------------- */
@@ -524,8 +525,7 @@ public class SketchBasedJoinEstimator {
 		default: { // 3 or 4 bound – use smallest single cardinality
 			card = Double.POSITIVE_INFINITY;
 			for (Map.Entry<Component, String> e : fixed.entrySet()) {
-				card = Math.min(card,
-						cardSingle(rs, e.getKey(), e.getValue()));
+				card = Math.min(card, cardSingle(rs, e.getKey(), e.getValue()));
 			}
 			break;
 		}
@@ -551,8 +551,7 @@ public class SketchBasedJoinEstimator {
 	/* Sketch helpers */
 	/* ────────────────────────────────────────────────────────────── */
 
-	private Sketch bindingsSketch(ReadState rs, Component j,
-			String s, String p, String o, String c) {
+	private Sketch bindingsSketch(ReadState rs, Component j, String s, String p, String o, String c) {
 
 		EnumMap<Component, String> f = new EnumMap<>(Component.class);
 		if (s != null) {
@@ -575,8 +574,7 @@ public class SketchBasedJoinEstimator {
 		/* 1 constant → single complement */
 		if (f.size() == 1) {
 			var e = f.entrySet().iterator().next();
-			return singleWrapper(rs, e.getKey())
-					.getComplementSketch(j, hash(e.getValue()));
+			return singleWrapper(rs, e.getKey()).getComplementSketch(j, hash(e.getValue()));
 		}
 
 		/* 2 constants: pair fast path */
@@ -586,16 +584,14 @@ public class SketchBasedJoinEstimator {
 			if (pr != null && (j == pr.comp1 || j == pr.comp2)) {
 				int idxX = hash(f.get(pr.x));
 				int idxY = hash(f.get(pr.y));
-				return pairWrapper(rs, pr)
-						.getComplementSketch(j, pairKey(idxX, idxY));
+				return pairWrapper(rs, pr).getComplementSketch(j, pairKey(idxX, idxY));
 			}
 		}
 
 		/* generic fall‑back */
 		Sketch acc = null;
 		for (var e : f.entrySet()) {
-			Sketch sk = singleWrapper(rs, e.getKey())
-					.getComplementSketch(j, hash(e.getValue()));
+			Sketch sk = singleWrapper(rs, e.getKey()).getComplementSketch(j, hash(e.getValue()));
 			if (sk == null) {
 				continue;
 			}
@@ -627,9 +623,7 @@ public class SketchBasedJoinEstimator {
 	/* Join primitives */
 	/* ────────────────────────────────────────────────────────────── */
 
-	private double joinPairs(ReadState rs, Component j,
-			Pair a, String ax, String ay,
-			Pair b, String bx, String by) {
+	private double joinPairs(ReadState rs, Component j, Pair a, String ax, String ay, Pair b, String bx, String by) {
 		int iax = hash(ax), iay = hash(ay);
 		int ibx = hash(bx), iby = hash(by);
 		Sketch sa = pairWrapper(rs, a).getComplementSketch(j, pairKey(iax, iay));
@@ -644,9 +638,7 @@ public class SketchBasedJoinEstimator {
 		return ix.getResult().getEstimate(); // distinct only (legacy)
 	}
 
-	private double joinSingles(ReadState rs, Component j,
-			Component a, String av,
-			Component b, String bv) {
+	private double joinSingles(ReadState rs, Component j, Component a, String av, Component b, String bv) {
 		Sketch sa = singleWrapper(rs, a).getComplementSketch(j, hash(av));
 		Sketch sb = singleWrapper(rs, b).getComplementSketch(j, hash(bv));
 		if (sa == null || sb == null) {
@@ -950,14 +942,11 @@ public class SketchBasedJoinEstimator {
 					.estimate(leftComponent, getIriAsStringOrNull(leftStatementPattern.getSubjectVar()),
 							getIriAsStringOrNull(leftStatementPattern.getPredicateVar()),
 							getIriAsStringOrNull(leftStatementPattern.getObjectVar()),
-							getIriAsStringOrNull(leftStatementPattern.getContextVar())
-					)
-					.join(rightComponent,
-							getIriAsStringOrNull(rightStatementPattern.getSubjectVar()),
+							getIriAsStringOrNull(leftStatementPattern.getContextVar()))
+					.join(rightComponent, getIriAsStringOrNull(rightStatementPattern.getSubjectVar()),
 							getIriAsStringOrNull(rightStatementPattern.getPredicateVar()),
 							getIriAsStringOrNull(rightStatementPattern.getObjectVar()),
-							getIriAsStringOrNull(rightStatementPattern.getContextVar())
-					)
+							getIriAsStringOrNull(rightStatementPattern.getContextVar()))
 					.estimate();
 		} else {
 			return -1;
