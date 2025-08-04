@@ -19,10 +19,14 @@ import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.datasketches.theta.AnotB;
+import org.apache.datasketches.theta.CompactSketch;
+import org.apache.datasketches.theta.HashIterator;
 import org.apache.datasketches.theta.Intersection;
 import org.apache.datasketches.theta.SetOperation;
 import org.apache.datasketches.theta.Sketch;
+import org.apache.datasketches.theta.Union;
 import org.apache.datasketches.theta.UpdateSketch;
+import org.apache.datasketches.thetacommon.ThetaUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -116,10 +120,10 @@ public class SketchBasedJoinEstimator {
 		this.throttleEveryN = throttleEveryN;
 		this.throttleMillis = throttleMillis;
 
-		this.bufA = new BuildState(nominalEntries);
-		this.bufB = new BuildState(nominalEntries);
-		this.delA = new BuildState(nominalEntries);
-		this.delB = new BuildState(nominalEntries);
+		this.bufA = new BuildState(nominalEntries * 8);
+		this.bufB = new BuildState(nominalEntries * 8);
+		this.delA = new BuildState(nominalEntries * 8);
+		this.delB = new BuildState(nominalEntries * 8);
 
 		this.current = new ReadState(); // empty snapshot
 	}
@@ -241,6 +245,18 @@ public class SketchBasedJoinEstimator {
 		}
 
 		/* Compact adds with tombstones – hold both locks while iterating */
+		/*
+		 * ---------------------------------------------------------------- STEP‑2b – Merge live updates that
+		 * accumulated in the *other* buffers while we were scanning the store.
+		 */
+
+		BuildState liveAdd = usingA ? bufB : bufA; // writers touched both
+		BuildState liveDel = usingA ? delB : delA;
+
+		mergeBuildState(tgtAdd, liveAdd); // adds ∪= liveAdd
+		mergeBuildState(tgtDel, liveDel); // dels ∪= liveDel
+
+		/* Compact with deletes – still under the same locks */
 		ReadState snap;
 		synchronized (tgtAdd) {
 			synchronized (tgtDel) {
@@ -251,8 +267,9 @@ public class SketchBasedJoinEstimator {
 
 		/* Rotate buffers for next rebuild. */
 		usingA = !usingA;
-		BuildState recycleAdd = usingA ? bufA : bufB;
-		BuildState recycleDel = usingA ? delA : delB;
+		/* recycle the now‑unused (former live) buffers */
+		BuildState recycleAdd = liveAdd;
+		BuildState recycleDel = liveDel;
 		synchronized (recycleAdd) {
 			recycleAdd.clear();
 		}
@@ -264,6 +281,83 @@ public class SketchBasedJoinEstimator {
 		return seen;
 	}
 
+	/* Helper: merge src into dst & clear src */
+	/*
+	 * • Copies buckets that do not yet exist in dst. * • If a bucket exists in both, raw hashes from src are injected *
+	 * into dst via UpdateSketch.update(long). * • Finally, src.clear() is called while still holding its lock * so no
+	 * concurrent inserts are lost.
+	 */
+	/* ────────────────────────────────────────────────────────────── */
+	private static void mergeBuildState(BuildState dst, BuildState src) {
+		synchronized (dst) {
+			synchronized (src) {
+
+				/* -------- singles – triple sketches ---------- */
+				for (Component cmp : Component.values()) {
+					var dstMap = dst.singleTriples.get(cmp);
+					src.singleTriples.get(cmp)
+							.forEach(
+									(idx, skSrc) -> dstMap.merge(idx, skSrc, (skDst, s) -> {
+										absorbSketch(skDst, s);
+										return skDst;
+									}));
+				}
+
+				/* -------- singles – complement sketches ------ */
+				for (Component fixed : Component.values()) {
+					var dstSingle = dst.singles.get(fixed);
+					var srcSingle = src.singles.get(fixed);
+
+					for (Component cmp : Component.values()) {
+						if (cmp == fixed)
+							continue; // skip non‑existing complement
+						var dstMap = dstSingle.cmpl.get(cmp);
+						var srcMap = srcSingle.cmpl.get(cmp);
+						srcMap.forEach(
+								(idx, skSrc) -> dstMap.merge(idx, skSrc, (skDst, s) -> {
+									absorbSketch(skDst, s);
+									return skDst;
+								}));
+					}
+				}
+
+				/* -------- pairs (triples + complements) ------ */
+				for (Pair p : Pair.values()) {
+					var dPair = dst.pairs.get(p);
+					var sPair = src.pairs.get(p);
+
+					sPair.triples.forEach((k, skSrc) -> dPair.triples.merge(k, skSrc, (skDst, s) -> {
+						absorbSketch(skDst, s);
+						return skDst;
+					}));
+					sPair.comp1.forEach((k, skSrc) -> dPair.comp1.merge(k, skSrc, (skDst, s) -> {
+						absorbSketch(skDst, s);
+						return skDst;
+					}));
+					sPair.comp2.forEach((k, skSrc) -> dPair.comp2.merge(k, skSrc, (skDst, s) -> {
+						absorbSketch(skDst, s);
+						return skDst;
+					}));
+				}
+
+				/* -------- reset src for next cycle ------------ */
+				src.clear(); // safe: still under src’s lock
+			}
+		}
+	}
+
+	/* ────────────────────────────────────────────────────────────── */
+	/* Inject every retained hash of src into UpdateSketch dst */
+	/* ────────────────────────────────────────────────────────────── */
+	private static void absorbSketch(UpdateSketch dst, Sketch src) {
+		if (src == null || src.getRetainedEntries() == 0) {
+			return;
+		}
+		HashIterator it = src.iterator();
+		while (it.next()) {
+			dst.update(it.get());
+		}
+	}
 	/* ────────────────────────────────────────────────────────────── */
 	/* Incremental updates */
 	/* ────────────────────────────────────────────────────────────── */
