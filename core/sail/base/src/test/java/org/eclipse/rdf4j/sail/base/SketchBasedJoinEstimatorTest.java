@@ -539,7 +539,7 @@ public class SketchBasedJoinEstimatorTest {
 		assertFalse(threadAlive);
 	}
 
-	@RepeatedTest(10)
+	@RepeatedTest(1000)
 	void rapidBackToBackRebuilds() throws Exception {
 		est.startBackgroundRefresh(1);
 		ExecutorService exec = Executors.newSingleThreadExecutor();

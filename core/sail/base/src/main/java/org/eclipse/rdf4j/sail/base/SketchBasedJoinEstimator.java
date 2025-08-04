@@ -12,21 +12,18 @@
 package org.eclipse.rdf4j.sail.base;
 
 import java.util.EnumMap;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.datasketches.theta.AnotB;
-import org.apache.datasketches.theta.CompactSketch;
 import org.apache.datasketches.theta.HashIterator;
 import org.apache.datasketches.theta.Intersection;
 import org.apache.datasketches.theta.SetOperation;
 import org.apache.datasketches.theta.Sketch;
-import org.apache.datasketches.theta.Union;
 import org.apache.datasketches.theta.UpdateSketch;
-import org.apache.datasketches.thetacommon.ThetaUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -37,6 +34,8 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 
@@ -53,6 +52,8 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
  * </ul>
  */
 public class SketchBasedJoinEstimator {
+
+	private static final Logger logger = LoggerFactory.getLogger(SketchBasedJoinEstimator.class);
 
 	/* ────────────────────────────────────────────────────────────── */
 	/* Public enums */
@@ -291,8 +292,9 @@ public class SketchBasedJoinEstimator {
 					var srcSingle = src.singles.get(fixed);
 
 					for (Component cmp : Component.values()) {
-						if (cmp == fixed)
+						if (cmp == fixed) {
 							continue; // skip non‑existing complement
+						}
 						var dstMap = dstSingle.cmpl.get(cmp);
 						var srcMap = srcSingle.cmpl.get(cmp);
 						srcMap.forEach(
@@ -448,7 +450,18 @@ public class SketchBasedJoinEstimator {
 	}
 
 	public double cardinalityPair(Pair p, String x, String y) {
-		Sketch sk = current.pairs.get(p).triples.get(pairKey(hash(x), hash(y)));
+		long key = pairKey(hash(x), hash(y));
+
+		Sketch sk = current.pairs.get(p).triples.get(key); // live data
+		BuildState del = usingA ? delA : delB; // tomb-stones
+		UpdateSketch deleted = del.pairs.get(p).triples.get(key);
+
+		if (sk != null && deleted != null) { // A-NOT-B
+			AnotB diff = SetOperation.builder().buildANotB();
+			diff.setA(sk);
+			diff.notB(deleted);
+			sk = diff.getResult(false);
+		}
 		return sk == null ? 0.0 : sk.getEstimate();
 	}
 
@@ -709,11 +722,41 @@ public class SketchBasedJoinEstimator {
 	/* Join primitives */
 	/* ────────────────────────────────────────────────────────────── */
 
-	private double joinPairs(ReadState rs, Component j, Pair a, String ax, String ay, Pair b, String bx, String by) {
-		int iax = hash(ax), iay = hash(ay);
-		int ibx = hash(bx), iby = hash(by);
-		Sketch sa = pairWrapper(rs, a).getComplementSketch(j, pairKey(iax, iay));
-		Sketch sb = pairWrapper(rs, b).getComplementSketch(j, pairKey(ibx, iby));
+	private double joinPairs(ReadState rs, Component j,
+			Pair a, String ax, String ay,
+			Pair b, String bx, String by) {
+
+		long keyA = pairKey(hash(ax), hash(ay));
+		long keyB = pairKey(hash(bx), hash(by));
+
+		// live data
+		Sketch sa = pairWrapper(rs, a).getComplementSketch(j, keyA);
+		Sketch sb = pairWrapper(rs, b).getComplementSketch(j, keyB);
+
+		// tomb-stones
+		BuildState del = usingA ? delA : delB;
+
+		UpdateSketch delSa = (j == a.comp1)
+				? del.pairs.get(a).comp1.get(keyA)
+				: (j == a.comp2 ? del.pairs.get(a).comp2.get(keyA) : null);
+
+		UpdateSketch delSb = (j == b.comp1)
+				? del.pairs.get(b).comp1.get(keyB)
+				: (j == b.comp2 ? del.pairs.get(b).comp2.get(keyB) : null);
+
+		if (sa != null && delSa != null) { // A-NOT-B
+			AnotB diff = SetOperation.builder().buildANotB();
+			diff.setA(sa);
+			diff.notB(delSa);
+			sa = diff.getResult(false);
+		}
+		if (sb != null && delSb != null) {
+			AnotB diff = SetOperation.builder().buildANotB();
+			diff.setA(sb);
+			diff.notB(delSb);
+			sb = diff.getResult(false);
+		}
+
 		if (sa == null || sb == null) {
 			return 0.0;
 		}
@@ -721,12 +764,37 @@ public class SketchBasedJoinEstimator {
 		Intersection ix = SetOperation.builder().buildIntersection();
 		ix.intersect(sa);
 		ix.intersect(sb);
-		return ix.getResult().getEstimate(); // distinct only (legacy)
+		return ix.getResult().getEstimate();
 	}
 
-	private double joinSingles(ReadState rs, Component j, Component a, String av, Component b, String bv) {
-		Sketch sa = singleWrapper(rs, a).getComplementSketch(j, hash(av));
-		Sketch sb = singleWrapper(rs, b).getComplementSketch(j, hash(bv));
+	private double joinSingles(ReadState rs, Component j,
+			Component a, String av,
+			Component b, String bv) {
+
+		int idxA = hash(av), idxB = hash(bv);
+
+		// live data
+		Sketch sa = singleWrapper(rs, a).getComplementSketch(j, idxA);
+		Sketch sb = singleWrapper(rs, b).getComplementSketch(j, idxB);
+
+		// tomb-stones
+		BuildState del = usingA ? delA : delB;
+		UpdateSketch delSa = del.singles.get(a).cmpl.get(j).get(idxA);
+		UpdateSketch delSb = del.singles.get(b).cmpl.get(j).get(idxB);
+
+		if (sa != null && delSa != null) { // A-NOT-B
+			AnotB diff = SetOperation.builder().buildANotB();
+			diff.setA(sa);
+			diff.notB(delSa);
+			sa = diff.getResult(false);
+		}
+		if (sb != null && delSb != null) {
+			AnotB diff = SetOperation.builder().buildANotB();
+			diff.setA(sb);
+			diff.notB(delSb);
+			sb = diff.getResult(false);
+		}
+
 		if (sa == null || sb == null) {
 			return 0.0;
 		}
@@ -734,7 +802,7 @@ public class SketchBasedJoinEstimator {
 		Intersection ix = SetOperation.builder().buildIntersection();
 		ix.intersect(sa);
 		ix.intersect(sb);
-		return ix.getResult().getEstimate(); // distinct only (legacy)
+		return ix.getResult().getEstimate();
 	}
 
 	/* ────────────────────────────────────────────────────────────── */
@@ -806,9 +874,9 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private static final class PairRead {
-		final Map<Long, Sketch> triples = new HashMap<>();
-		final Map<Long, Sketch> comp1 = new HashMap<>();
-		final Map<Long, Sketch> comp2 = new HashMap<>();
+		final Map<Long, Sketch> triples = new ConcurrentHashMap<>();
+		final Map<Long, Sketch> comp1 = new ConcurrentHashMap<>();
+		final Map<Long, Sketch> comp2 = new ConcurrentHashMap<>();
 	}
 
 	/* ────────────────────────────────────────────────────────────── */
@@ -833,15 +901,19 @@ public class SketchBasedJoinEstimator {
 			if (m == null) {
 				return;
 			}
-			m.computeIfAbsent(idx, i -> newSk(k)).update(v);
+			UpdateSketch updateSketch = m.computeIfAbsent(idx, i -> newSk(k));
+			if (updateSketch == null) {
+				return; // sketch creation failed
+			}
+			updateSketch.update(v);
 		}
 	}
 
 	private static final class PairBuild {
 		final int k;
-		final Map<Long, UpdateSketch> triples = new HashMap<>();
-		final Map<Long, UpdateSketch> comp1 = new HashMap<>();
-		final Map<Long, UpdateSketch> comp2 = new HashMap<>();
+		final Map<Long, UpdateSketch> triples = new ConcurrentHashMap<>();
+		final Map<Long, UpdateSketch> comp1 = new ConcurrentHashMap<>();
+		final Map<Long, UpdateSketch> comp2 = new ConcurrentHashMap<>();
 
 		PairBuild(int k) {
 			this.k = k;
@@ -889,7 +961,17 @@ public class SketchBasedJoinEstimator {
 
 		/* singles */
 		void upSingle(Component c, int idx, String sig) {
-			singleTriples.get(c).computeIfAbsent(idx, i -> newSk(k)).update(sig);
+			try {
+				singleTriples.get(c).computeIfAbsent(idx, i -> newSk(k)).update(sig);
+
+			} catch (NullPointerException e) {
+				// this can happen if the sketch is being cleared while being updated
+				if (logger.isDebugEnabled()) {
+					logger.debug("Failed to update single sketch for {} at index {} with signature '{}': {}",
+							c, idx, sig, e.getMessage());
+				}
+
+			}
 		}
 
 		void upSingleCmpl(Component fix, Component cmp, int idx, String val) {
