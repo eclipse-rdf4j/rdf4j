@@ -215,15 +215,14 @@ public class SketchBasedJoinEstimator {
 	 * @return number of statements scanned
 	 */
 	public long rebuildOnceSlow() {
+		boolean usingA = this.usingA; // which buffer to use for adds
+		this.usingA = !usingA; // toggle for next rebuild
+
 		BuildState tgtAdd = usingA ? bufA : bufB;
 		BuildState tgtDel = usingA ? delA : delB;
 
-		synchronized (tgtAdd) {
-			tgtAdd.clear();
-		}
-		synchronized (tgtDel) {
-			tgtDel.clear();
-		}
+		tgtAdd.clear();
+
 		long seen = 0L;
 
 		try (SailDataset ds = sailStore.getExplicitSailSource().dataset(IsolationLevels.READ_UNCOMMITTED);
@@ -244,18 +243,6 @@ public class SketchBasedJoinEstimator {
 			}
 		}
 
-		/* Compact adds with tombstones – hold both locks while iterating */
-		/*
-		 * ---------------------------------------------------------------- STEP‑2b – Merge live updates that
-		 * accumulated in the *other* buffers while we were scanning the store.
-		 */
-
-		BuildState liveAdd = usingA ? bufB : bufA; // writers touched both
-		BuildState liveDel = usingA ? delB : delA;
-
-		mergeBuildState(tgtAdd, liveAdd); // adds ∪= liveAdd
-		mergeBuildState(tgtDel, liveDel); // dels ∪= liveDel
-
 		/* Compact with deletes – still under the same locks */
 		ReadState snap;
 		synchronized (tgtAdd) {
@@ -265,16 +252,11 @@ public class SketchBasedJoinEstimator {
 		}
 		current = snap; // publish immutable snapshot
 
-		/* Rotate buffers for next rebuild. */
-		usingA = !usingA;
-		/* recycle the now‑unused (former live) buffers */
-		BuildState recycleAdd = liveAdd;
-		BuildState recycleDel = liveDel;
-		synchronized (recycleAdd) {
-			recycleAdd.clear();
+		synchronized (tgtAdd) {
+			tgtAdd.clear();
 		}
-		synchronized (recycleDel) {
-			recycleDel.clear();
+		synchronized (tgtDel) {
+			tgtDel.clear();
 		}
 
 		this.seenTriples = seen;
@@ -389,7 +371,7 @@ public class SketchBasedJoinEstimator {
 		synchronized (delB) {
 			add(delB, st);
 		}
-		requestRebuild();
+//		requestRebuild();
 	}
 
 	public void deleteStatement(Resource s, IRI p, Value o, Resource c) {
@@ -452,6 +434,16 @@ public class SketchBasedJoinEstimator {
 
 	public double cardinalitySingle(Component c, String v) {
 		Sketch sk = current.singleTriples.get(c).get(hash(v));
+		BuildState del = usingA ? delA : delB;
+		UpdateSketch deleted = del.singleTriples.get(c).get(hash(v));
+		if (deleted != null && sk != null) {
+			// subtract deleted hashes
+			AnotB aNotB = SetOperation.builder().buildANotB();
+			aNotB.setA(sk);
+			aNotB.notB(deleted);
+			sk = aNotB.getResult(false);
+		}
+
 		return sk == null ? 0.0 : sk.getEstimate();
 	}
 
