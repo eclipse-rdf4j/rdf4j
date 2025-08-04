@@ -35,7 +35,7 @@ import org.junit.jupiter.api.TestInstance;
  */
 @SuppressWarnings("ConstantConditions")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class SketchBasedJoinEstimatorExtraTest {
+public class SketchBasedJoinEstimatorExtraTest {
 
 	/* ------------------------------------------------------------- */
 	/* Test infrastructure */
