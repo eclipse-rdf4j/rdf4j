@@ -263,6 +263,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 			File configFile = new File(dataDir, CFG_FILE);
 			try {
 				Model model;
+				// We read the input and close it so that it may be reopend by the migration process
 				try (InputStream input = new FileInputStream(configFile)) {
 					model = Rio.parse(input, configFile.toURI().toString(), CONFIG_FORMAT);
 				}
