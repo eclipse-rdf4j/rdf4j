@@ -186,7 +186,7 @@ public class Verify extends ConsoleCommand {
 				writeln("Loading shapes from " + shaclPath);
 
 				URL shaclURL = new URL(shaclPath);
-				RDFFormat format = Rio.getParserFormatForFileName(reportFile).orElse(RDFFormat.TURTLE);
+				RDFFormat format = Rio.getParserFormatForFileName(shaclPath).orElse(RDFFormat.TURTLE);
 
 				try (SailRepositoryConnection conn = repo.getConnection()) {
 					conn.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
