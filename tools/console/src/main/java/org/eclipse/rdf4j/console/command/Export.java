@@ -10,9 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-import java.io.IOException;
-import java.io.Writer;
-import java.nio.charset.StandardCharsets;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -127,8 +125,8 @@ public class Export extends ConsoleCommand {
 		}
 
 		try (RepositoryConnection conn = repository.getConnection();
-				Writer w = Files.newBufferedWriter(path, StandardCharsets.UTF_8, StandardOpenOption.CREATE,
-						StandardOpenOption.TRUNCATE_EXISTING)) {
+				BufferedOutputStream w = new BufferedOutputStream(Files.newOutputStream(path, StandardOpenOption.CREATE,
+						StandardOpenOption.TRUNCATE_EXISTING))) {
 
 			RDFFormat fmt = Rio.getWriterFormatForFileName(fileName)
 					.orElseThrow(() -> new UnsupportedRDFormatException("No RDF parser for " + fileName));
@@ -138,6 +136,8 @@ public class Export extends ConsoleCommand {
 			writeln("Exporting data...");
 
 			conn.export(writer, contexts);
+
+			w.flush();
 
 			long diff = (System.nanoTime() - startTime) / 1_000_000;
 			writeln("Data has been written to file (" + diff + " ms)");

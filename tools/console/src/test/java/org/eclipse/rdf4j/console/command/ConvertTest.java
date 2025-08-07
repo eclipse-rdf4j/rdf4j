@@ -67,6 +67,14 @@ public class ConvertTest extends AbstractCommandTest {
 	}
 
 	@Test
+	public final void testConvertToBinary() {
+		File binary = new File(locationFile, "alien.brf");
+		cmd.execute("convert", from.getAbsolutePath(), binary.getAbsolutePath());
+
+		assertTrue(binary.length() > 0, "File is empty");
+	}
+
+	@Test
 	public final void testConvertWorkDir() {
 		setWorkingDir(cmd);
 
