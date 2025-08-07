@@ -10,9 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
+import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.Writer;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.Files;
@@ -279,8 +279,9 @@ public class Verify extends ConsoleCommand {
 
 		RDFFormat format = Rio.getParserFormatForFileName(reportFile).orElse(RDFFormat.TURTLE);
 
-		try (Writer w = Files.newBufferedWriter(Paths.get(reportFile))) {
+		try (BufferedOutputStream w = new BufferedOutputStream(Files.newOutputStream(Paths.get(reportFile)))) {
 			Rio.write(model, w, format, cfg);
+			w.flush();
 		} catch (IOException ex) {
 			writeError("Could not write report to " + reportFile, ex);
 		}
