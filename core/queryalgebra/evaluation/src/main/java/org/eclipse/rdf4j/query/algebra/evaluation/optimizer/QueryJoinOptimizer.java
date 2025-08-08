@@ -20,6 +20,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiFunction;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -230,6 +231,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					}
 				}
 
+				if (statistics.supportsJoinEstimation() && orderedJoinArgs.size() > 2) {
+					orderedJoinArgs = reorderJoinArgs(orderedJoinArgs);
+				}
+
+//				if (!priorityArgs.isEmpty()) {
+//					priorityArgs = new ArrayList<>(reorderJoinArgs(new ArrayDeque<>(priorityArgs)));
+//				}
+
 				// Build new join hierarchy
 				TupleExpr priorityJoins = null;
 				if (!priorityArgs.isEmpty()) {
@@ -325,6 +334,108 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
+		private Deque<TupleExpr> reorderJoinArgs(Deque<TupleExpr> orderedJoinArgs) {
+			// Copy input into a mutable list
+			List<TupleExpr> tupleExprs = new ArrayList<>(orderedJoinArgs);
+			Deque<TupleExpr> ret = new ArrayDeque<>();
+
+			// Memo table: for each (a, b), stores statistics.getCardinality(new Join(a,b))
+			Map<TupleExpr, Map<TupleExpr, Double>> cardCache = new HashMap<>();
+
+			// Helper to look up or compute & cache the cardinality of Join(a,b)
+			BiFunction<TupleExpr, TupleExpr, Double> getCard = (a, b) -> {
+				// ensure a‐>map exists
+				Map<TupleExpr, Double> inner = cardCache.computeIfAbsent(a, k -> new HashMap<>());
+				// cache symmetric result too
+				return inner.computeIfAbsent(b, bb -> {
+					double c = statistics.getCardinality(new Join(a, b));
+					// also store in b’s map for symmetry (optional)
+					cardCache.computeIfAbsent(b, k -> new HashMap<>()).put(a, c);
+					return c;
+				});
+			};
+
+			while (!tupleExprs.isEmpty()) {
+				// If ret is empty or next isn’t a StatementPattern, just drain in original order
+				if (ret.isEmpty() || !(tupleExprs.get(0) instanceof StatementPattern)) {
+					ret.addLast(tupleExprs.remove(0));
+					continue;
+				}
+
+				// Find the tupleExpr in tupleExprs whose join with any in ret has minimal cardinality
+				TupleExpr bestCandidate = null;
+				double bestCost = Double.MAX_VALUE;
+				for (TupleExpr cand : tupleExprs) {
+					if (!statementPatternWithMinimumOneConstant(cand)) {
+						continue;
+					}
+
+					// compute the minimum join‐cost between cand and anything in ret
+					for (TupleExpr prev : ret) {
+						if (!statementPatternWithMinimumOneConstant(prev)) {
+							continue;
+						}
+						double cost = getCard.apply(prev, cand);
+						if (cost < bestCost) {
+							bestCost = cost;
+							bestCandidate = cand;
+						}
+					}
+				}
+
+				// If we found a cheap StatementPattern, pick it; otherwise just take the head
+				if (bestCandidate != null) {
+					tupleExprs.remove(bestCandidate);
+					ret.addLast(bestCandidate);
+				} else {
+					ret.addLast(tupleExprs.remove(0));
+				}
+			}
+
+			return ret;
+		}
+
+//		private Deque<TupleExpr> reorderJoinArgs(Deque<TupleExpr> orderedJoinArgs) {
+//			ArrayList<TupleExpr> tupleExprs = new ArrayList<>(orderedJoinArgs);
+//			Deque<TupleExpr> ret = new ArrayDeque<>();
+//
+//			while (!tupleExprs.isEmpty()) {
+//				if (ret.isEmpty()) {
+//					ret.addLast(tupleExprs.remove(0));
+//					continue;
+//				}
+//
+//				if (!(tupleExprs.get(0) instanceof StatementPattern)) {
+//					ret.addLast(tupleExprs.remove(0));
+//					continue;
+//				}
+//
+//				int index = 0;
+//				double currentMin = Double.MAX_VALUE;
+//
+//				for (int i = 0; i < tupleExprs.size(); i++) {
+//					TupleExpr tupleExpr = tupleExprs.get(i);
+//					if (!(tupleExpr instanceof StatementPattern)) {
+//						continue;
+//					}
+//					for (TupleExpr expr : ret) {
+//						if (!(expr instanceof StatementPattern)) {
+//							continue;
+//						}
+//						double cardinality = statistics.getCardinality(new Join(expr, tupleExpr));
+//						if (cardinality < currentMin) {
+//							currentMin = cardinality;
+//							index = i;
+//						}
+//					}
+//				}
+//
+//				ret.addLast(tupleExprs.remove(index));
+//			}
+//
+//			return ret;
+//		}
+
 		private void optimizeInNewScope(List<TupleExpr> subSelects) {
 			for (TupleExpr subSelect : subSelects) {
 				subSelect.visit(new JoinVisitor());
@@ -334,10 +445,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private boolean joinSizeIsTooDifferent(double cardinality, double second) {
 			if (cardinality > second && cardinality / MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER > second) {
 				return true;
-			} else if (second > cardinality && second / MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER > cardinality) {
-				return true;
+			} else {
+				return second > cardinality && second / MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER > cardinality;
 			}
-			return false;
 		}
 
 		private boolean joinOnMultipleVars(TupleExpr first, TupleExpr second) {
@@ -828,6 +938,17 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
+	}
+
+	private static boolean statementPatternWithMinimumOneConstant(TupleExpr cand) {
+		return cand instanceof StatementPattern && ((((StatementPattern) cand).getSubjectVar() != null
+				&& ((StatementPattern) cand).getSubjectVar().hasValue())
+				|| (((StatementPattern) cand).getPredicateVar() != null
+						&& ((StatementPattern) cand).getPredicateVar().hasValue())
+				|| (((StatementPattern) cand).getObjectVar() != null
+						&& ((StatementPattern) cand).getObjectVar().hasValue())
+				|| (((StatementPattern) cand).getContextVar() != null
+						&& ((StatementPattern) cand).getContextVar().hasValue()));
 	}
 
 	private static int getUnionSize(Set<String> currentListNames, Set<String> candidateBindingNames) {
