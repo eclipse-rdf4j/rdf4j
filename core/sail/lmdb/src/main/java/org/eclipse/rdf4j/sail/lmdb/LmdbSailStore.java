@@ -80,7 +80,7 @@ class LmdbSailStore implements SailStore {
 	private PersistentSet<Long> unusedIds, nextUnusedIds;
 
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator = new SketchBasedJoinEstimator(this,
-			SketchBasedJoinEstimator.suggestNominalEntries(), 1000, 2);
+			SketchBasedJoinEstimator.suggestNominalEntries(), Integer.MAX_VALUE, 2);
 
 	/**
 	 * A fast non-blocking circular buffer backed by an array.
@@ -203,7 +203,8 @@ class LmdbSailStore implements SailStore {
 			tripleStore = new TripleStore(new File(dataDir, "triples"), config, valueStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
 			initialized = true;
-			sketchBasedJoinEstimator.startBackgroundRefresh(500);
+			sketchBasedJoinEstimator.rebuildOnceSlow();
+			sketchBasedJoinEstimator.startBackgroundRefresh(10000);
 		} finally {
 			if (!initialized) {
 				close();

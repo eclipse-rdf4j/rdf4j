@@ -17,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
@@ -244,6 +245,17 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
 	private final static AtomicLong uniqueIdSuffix = new AtomicLong();
 
+	// Pre-built strings for lengths 0 through 9
+	private static final String[] RANDOMIZE_LENGTH = new String[10];
+	static {
+		Random r = new Random();
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i <= 9; i++) {
+			RANDOMIZE_LENGTH[i] = sb.toString();
+			sb.append(r.nextInt(9));
+		}
+	}
+
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -319,7 +331,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// the
 		// varname
 		// remains compatible with the SPARQL grammar. See SES-2310.
-		return new Var("_anon_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet(), true);
+		long l = uniqueIdSuffix.incrementAndGet();
+		return new Var("_anon_" + uniqueIdPrefix + l + RANDOMIZE_LENGTH[(int) (l % RANDOMIZE_LENGTH.length)], true);
 	}
 
 	private FunctionCall createFunctionCall(String uri, SimpleNode node, int minArgs, int maxArgs)
@@ -1067,7 +1080,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			if (resource instanceof Var) {
 				projectionElements.addElement(new ProjectionElem(((Var) resource).getName()));
 			} else {
-				String alias = "_describe_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet();
+				long l = uniqueIdSuffix.incrementAndGet();
+				String alias = "_describe_" + uniqueIdPrefix + l
+						+ RANDOMIZE_LENGTH[(int) (l % RANDOMIZE_LENGTH.length)];
 				ExtensionElem elem = new ExtensionElem(resource, alias);
 				e.addElement(elem);
 				projectionElements.addElement(new ProjectionElem(alias));

@@ -155,7 +155,8 @@ class MemorySailStore implements SailStore {
 
 	public MemorySailStore(boolean debug) {
 		snapshotMonitor = new SnapshotMonitor(debug);
-		sketchBasedJoinEstimator.startBackgroundRefresh(500);
+		sketchBasedJoinEstimator.rebuildOnceSlow();
+		sketchBasedJoinEstimator.startBackgroundRefresh(1 * 1000L); // 10 minutes
 	}
 
 	@Override

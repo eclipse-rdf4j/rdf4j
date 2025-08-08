@@ -1252,8 +1252,32 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryValueEvaluationStep prepare(Compare node, QueryEvaluationContext context) {
 		boolean strict = QueryEvaluationMode.STRICT == getQueryEvaluationMode();
-		return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> BooleanLiteral
-				.valueOf(QueryEvaluationUtil.compare(leftVal, rightVal, node.getOperator(), strict)), context);
+
+		Compare.CompareOp operator = node.getOperator();
+		switch (operator) {
+		case EQ:
+			return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> BooleanLiteral
+					.valueOf(QueryEvaluationUtil.compareEQ(leftVal, rightVal, strict)), context);
+		case NE:
+			return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> BooleanLiteral
+					.valueOf(QueryEvaluationUtil.compareNE(leftVal, rightVal, strict)), context);
+		case LT:
+			return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> BooleanLiteral
+					.valueOf(QueryEvaluationUtil.compareLT(leftVal, rightVal, strict)), context);
+		case LE:
+			return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> BooleanLiteral
+					.valueOf(QueryEvaluationUtil.compareLE(leftVal, rightVal, strict)), context);
+		case GE:
+			return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> BooleanLiteral
+					.valueOf(QueryEvaluationUtil.compareGE(leftVal, rightVal, strict)), context);
+		case GT:
+			return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> BooleanLiteral
+					.valueOf(QueryEvaluationUtil.compareGT(leftVal, rightVal, strict)), context);
+		default:
+			return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> BooleanLiteral
+					.valueOf(QueryEvaluationUtil.compare(leftVal, rightVal, node.getOperator(), strict)), context);
+		}
+
 	}
 
 	private BiFunction<Value, Value, Value> mathOperationApplier(MathExpr node,

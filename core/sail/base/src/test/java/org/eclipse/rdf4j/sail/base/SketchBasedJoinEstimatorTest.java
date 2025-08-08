@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -540,15 +541,20 @@ public class SketchBasedJoinEstimatorTest {
 	}
 
 	@RepeatedTest(1000)
-	void rapidBackToBackRebuilds() throws Exception {
+	void rapidBackToBackRebuilds() throws Throwable {
 		est.startBackgroundRefresh(1);
 		ExecutorService exec = Executors.newSingleThreadExecutor();
-		exec.submit(() -> {
-			for (int i = 0; i < 500; i++) {
-				est.addStatement(stmt(VF.createIRI("urn:s" + i), p1, o1));
-				est.deleteStatement(stmt(VF.createIRI("urn:s" + (i / 2)), p1, o1));
-			}
-		}).get();
+		try {
+			exec.submit(() -> {
+				for (int i = 0; i < 500; i++) {
+					est.addStatement(stmt(VF.createIRI("urn:s" + i), p1, o1));
+					est.deleteStatement(stmt(VF.createIRI("urn:s" + (i / 2)), p1, o1));
+				}
+			}).get();
+		} catch (ExecutionException e) {
+			throw e.getCause();
+		}
+
 		exec.shutdown();
 
 		est.stop();
