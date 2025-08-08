@@ -46,7 +46,7 @@ import org.openjdk.jmh.annotations.Warmup;
 @State(Scope.Benchmark)
 @Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms4G", "-Xmx4G" })
+@Fork(value = 3, jvmArgs = { "-Xms4G", "-Xmx4G" })
 //@Fork(value = 1, jvmArgs = {"-Xms1G", "-Xmx1G", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
@@ -56,6 +56,7 @@ public class QueryBenchmark {
 
 	private static final String query1;
 	private static final String query4;
+	private static final String query10;
 	private static final String query7_pathexpression1;
 	private static final String query8_pathexpression2;
 
@@ -109,6 +110,8 @@ public class QueryBenchmark {
 					getResourceAsStream("benchmarkFiles/sub-select.qr"), StandardCharsets.UTF_8);
 			multiple_sub_select = IOUtils.toString(
 					getResourceAsStream("benchmarkFiles/multiple-sub-select.qr"), StandardCharsets.UTF_8);
+			query10 = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/query10.qr"), StandardCharsets.UTF_8);
 
 		} catch (IOException e) {
 			throw new RuntimeException(e);
@@ -148,7 +151,7 @@ public class QueryBenchmark {
 			connection.commit();
 		}
 
-		Thread.sleep(5000);
+		Thread.sleep(10000);
 	}
 
 	@TearDown(Level.Trial)
@@ -180,6 +183,20 @@ public class QueryBenchmark {
 
 			return count(connection
 					.prepareTupleQuery(query4)
+					.evaluate()
+			);
+		}
+	}
+
+	@Benchmark
+	public long query10() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			TupleQuery tupleQuery = connection
+//					.prepareTupleQuery(query4);
+//			System.out.println(tupleQuery.explain(Explanation.Level.Executed));
+
+			return count(connection
+					.prepareTupleQuery(query10)
 					.evaluate()
 			);
 		}
