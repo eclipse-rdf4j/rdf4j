@@ -17,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
@@ -246,18 +247,12 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	// Pre-built strings for lengths 0 through 9
 	private static final String[] RANDOMIZE_LENGTH = new String[10];
-	public static final String ANON_PATH_ = new StringBuilder("_anon_path_").reverse().toString();
-	public static final String ANON_PATH_INVERSE = new StringBuilder("_anon_path_inverse_").reverse().toString();
-	public static final String ANON_HAVING_ = new StringBuilder("_anon_having_").reverse().toString();
-	public static final String ANON_BNODE_ = new StringBuilder("_anon_bnode_").reverse().toString();
-	public static final String ANON_COLLECTION_ = new StringBuilder("_anon_collection_").reverse().toString();
-	public static final String ANON_ = new StringBuilder("_anon_").reverse().toString();
-
 	static {
+		Random r = new Random();
 		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i <= 9; i++) {
 			RANDOMIZE_LENGTH[i] = sb.toString();
-			sb.append(i);
+			sb.append(r.nextInt(9));
 		}
 	}
 
@@ -337,79 +332,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// varname
 		// remains compatible with the SPARQL grammar. See SES-2310.
 		long l = uniqueIdSuffix.incrementAndGet();
-		StringBuilder sb = new StringBuilder(Long.toString(l));
-		sb.append(ANON_)
-				.reverse()
-				.append(uniqueIdPrefix)
-				.append(RANDOMIZE_LENGTH[(int) (Math.abs(l % RANDOMIZE_LENGTH.length))]);
-		return Var.of(sb.toString(), true);
-	}
-
-	protected Var createAnonCollectionVar() {
-		// dashes ('-') in the generated UUID are replaced with underscores so
-		// the
-		// varname
-		// remains compatible with the SPARQL grammar. See SES-2310.
-		long l = uniqueIdSuffix.incrementAndGet();
-		StringBuilder sb = new StringBuilder(Long.toString(l));
-		sb.append(ANON_COLLECTION_)
-				.reverse()
-				.append(uniqueIdPrefix)
-				.append(RANDOMIZE_LENGTH[(int) (Math.abs(l % RANDOMIZE_LENGTH.length))]);
-		return Var.of(sb.toString(), true);
-	}
-
-	protected Var createAnonBnodeVar() {
-		// dashes ('-') in the generated UUID are replaced with underscores so
-		// the
-		// varname
-		// remains compatible with the SPARQL grammar. See SES-2310.
-		long l = uniqueIdSuffix.incrementAndGet();
-		StringBuilder sb = new StringBuilder(Long.toString(l));
-		sb.append(ANON_BNODE_)
-				.reverse()
-				.append(uniqueIdPrefix)
-				.append(RANDOMIZE_LENGTH[(int) (Math.abs(l % RANDOMIZE_LENGTH.length))]);
-
-		return Var.of(sb.toString(), true);
-	}
-
-	protected Var createAnonHavingVar() {
-		// dashes ('-') in the generated UUID are replaced with underscores so
-		// the
-		// varname
-		// remains compatible with the SPARQL grammar. See SES-2310.
-		long l = uniqueIdSuffix.incrementAndGet();
-		StringBuilder sb = new StringBuilder(Long.toString(l));
-		sb.append(ANON_HAVING_)
-				.reverse()
-				.append(uniqueIdPrefix)
-				.append(RANDOMIZE_LENGTH[(int) (Math.abs(l % RANDOMIZE_LENGTH.length))]);
-		return Var.of(sb.toString(), true);
-	}
-
-	/**
-	 * Creates an anonymous Var specifically for use in SPARQL path expressions. The generated variable name will
-	 * contain <code>_path_</code> to allow easier identification of variables that were introduced while parsing
-	 * property paths.
-	 *
-	 * @return an anonymous Var with a unique, randomly generated, variable name that contains <code>_path_</code>
-	 */
-	protected Var createAnonPathVar(boolean inverse) {
-		// dashes ('-') in the generated UUID are replaced with underscores so
-		// the
-		// varname
-		// remains compatible with the SPARQL grammar. See SES-2310.
-
-		var prefix = inverse ? ANON_PATH_INVERSE : ANON_PATH_;
-
-		long l = uniqueIdSuffix.incrementAndGet();
-		StringBuilder sb = new StringBuilder(Long.toString(l));
-		sb.append(prefix)
-				.reverse()
-				.append(uniqueIdPrefix)
-				.append(RANDOMIZE_LENGTH[(int) (Math.abs(l % RANDOMIZE_LENGTH.length))]);
-		return Var.of(sb.toString(), true);
+		return new Var("_anon_" + uniqueIdPrefix + l + RANDOMIZE_LENGTH[(int) (l % RANDOMIZE_LENGTH.length)], true);
 	}
 
 	private FunctionCall createFunctionCall(String uri, SimpleNode node, int minArgs, int maxArgs)
@@ -1159,7 +1082,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			} else {
 				long l = uniqueIdSuffix.incrementAndGet();
 				String alias = "_describe_" + uniqueIdPrefix + l
-						+ RANDOMIZE_LENGTH[(int) (Math.abs(l % RANDOMIZE_LENGTH.length))];
+						+ RANDOMIZE_LENGTH[(int) (l % RANDOMIZE_LENGTH.length)];
 				ExtensionElem elem = new ExtensionElem(resource, alias);
 				e.addElement(elem);
 				projectionElements.addElement(new ProjectionElem(alias));

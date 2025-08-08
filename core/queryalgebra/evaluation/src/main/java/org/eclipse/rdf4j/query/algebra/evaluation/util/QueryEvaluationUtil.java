@@ -86,8 +86,7 @@ public class QueryEvaluationUtil {
 					return !("0.0E0".equals(n) || "NaN".equals(n));
 				}
 			} catch (IllegalArgumentException ignore) {
-				return false;
-			}
+				/* fall through */ }
 		}
 		throw new ValueExprEvaluationException();
 	}
@@ -171,9 +170,6 @@ public class QueryEvaluationUtil {
 	public static boolean compareLT(Value l, Value r, boolean strict)
 			throws ValueExprEvaluationException {
 		if (l == r) {
-			if (l == null || !l.isLiteral()) {
-				throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
-			}
 			return false;
 		}
 		if (l != null && l.isLiteral() && r != null && r.isLiteral()) {
@@ -190,9 +186,6 @@ public class QueryEvaluationUtil {
 	public static boolean compareLE(Value l, Value r, boolean strict)
 			throws ValueExprEvaluationException {
 		if (l == r) {
-			if (l == null || !l.isLiteral()) {
-				throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
-			}
 			return true;
 		}
 		if (l != null && l.isLiteral() && r != null && r.isLiteral()) {
@@ -209,9 +202,6 @@ public class QueryEvaluationUtil {
 	public static boolean compareGT(Value l, Value r, boolean strict)
 			throws ValueExprEvaluationException {
 		if (l == r) {
-			if (l == null || !l.isLiteral()) {
-				throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
-			}
 			return false;
 		}
 		if (l != null && l.isLiteral() && r != null && r.isLiteral()) {
@@ -228,9 +218,6 @@ public class QueryEvaluationUtil {
 	public static boolean compareGE(Value l, Value r, boolean strict)
 			throws ValueExprEvaluationException {
 		if (l == r) {
-			if (l == null || !l.isLiteral()) {
-				throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
-			}
 			return true;
 		}
 		if (l != null && l.isLiteral() && r != null && r.isLiteral()) {
@@ -399,50 +386,34 @@ public class QueryEvaluationUtil {
 			return true;
 		}
 
-		CoreDatatype ld = l.getCoreDatatype();
-		CoreDatatype rd = r.getCoreDatatype();
-
-		if (ld == rd) {
-			if (ld == CoreDatatype.XSD.STRING) {
-				return l.getLabel().equals(r.getLabel());
-			}
-			if (ld == CoreDatatype.RDF.LANGSTRING) {
-				return l.getLanguage().equals(r.getLanguage()) && l.getLabel().equals(r.getLabel());
-			}
-		}
-
+		CoreDatatype.XSD ld = l.getCoreDatatype().asXSDDatatypeOrNull();
+		CoreDatatype.XSD rd = r.getCoreDatatype().asXSDDatatypeOrNull();
 		boolean lLang = Literals.isLanguageLiteral(l);
 		boolean rLang = Literals.isLanguageLiteral(r);
 
-		if (!(lLang || rLang)) {
-			CoreDatatype.XSD common = getCommonDatatype(strict, ld.asXSDDatatypeOrNull(), rd.asXSDDatatypeOrNull());
-			if (common != null) {
+		if (isSimpleLiteral(lLang, ld) && isSimpleLiteral(rLang, rd)) {
+			return l.getLabel().equals(r.getLabel());
+		}
 
+		if (!(lLang || rLang)) {
+			CoreDatatype.XSD common = getCommonDatatype(strict, ld, rd);
+			if (common != null) {
 				try {
-					if (common == CoreDatatype.XSD.STRING) {
-						return l.getLabel().equals(r.getLabel());
-					}
 					if (common == CoreDatatype.XSD.DOUBLE) {
 						return l.doubleValue() == r.doubleValue();
 					}
 					if (common == CoreDatatype.XSD.FLOAT) {
 						return l.floatValue() == r.floatValue();
 					}
+					if (common == CoreDatatype.XSD.DECIMAL) {
+						return l.decimalValue().equals(r.decimalValue());
+					}
+					if (common.isIntegerDatatype()) {
+						return l.integerValue().equals(r.integerValue());
+					}
 					if (common == CoreDatatype.XSD.BOOLEAN) {
 						return l.booleanValue() == r.booleanValue();
 					}
-
-					if (l.getLabel().equals(r.getLabel())) {
-						return true;
-					}
-
-					if (common == CoreDatatype.XSD.DECIMAL) {
-						return l.decimalValue().compareTo(r.decimalValue()) == 0;
-					}
-					if (common.isIntegerDatatype()) {
-						return l.integerValue().compareTo(r.integerValue()) == 0;
-					}
-
 					if (common.isCalendarDatatype()) {
 						if (ld == rd) {
 							if (l.getLabel().equals(r.getLabel())) {
@@ -453,9 +424,8 @@ public class QueryEvaluationUtil {
 						int c = l.calendarValue().compare(r.calendarValue());
 						if (c == DatatypeConstants.INDETERMINATE &&
 								ld == CoreDatatype.XSD.DATETIME &&
-								rd == CoreDatatype.XSD.DATETIME) {
+								rd == CoreDatatype.XSD.DATETIME)
 							throw INDETERMINATE_DATE_TIME_EXCEPTION;
-						}
 						return _eq(c);
 					}
 					if (!strict && common.isDurationDatatype()) {
@@ -467,17 +437,18 @@ public class QueryEvaluationUtil {
 
 						int c = XMLDatatypeUtil.parseDuration(l.getLabel())
 								.compare(XMLDatatypeUtil.parseDuration(r.getLabel()));
-						if (c != DatatypeConstants.INDETERMINATE) {
+						if (c != DatatypeConstants.INDETERMINATE)
 							return _eq(c);
-						}
 					}
-
+					if (common == CoreDatatype.XSD.STRING) {
+						return l.getLabel().equals(r.getLabel());
+					}
 				} catch (IllegalArgumentException iae) {
 					// lexical‑to‑value failed; fall through
 				}
 			}
 		}
-		return otherCasesEQ(l, r, ld.asXSDDatatypeOrNull(), rd.asXSDDatatypeOrNull(), lLang, rLang, strict);
+		return otherCasesEQ(l, r, ld, rd, lLang, rLang, strict);
 	}
 
 	private static boolean doCompareLiteralsNE(Literal l, Literal r, boolean strict)
@@ -542,13 +513,6 @@ public class QueryEvaluationUtil {
 				}
 			}
 		}
-
-		if (!isSupportedDatatype(ld) || !isSupportedDatatype(rd)) {
-			throw UNSUPPOERTED_TYPES_EXCEPTION;
-		}
-
-		validateDatatypeCompatibility(strict, ld, rd);
-
 		throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
 	}
 
