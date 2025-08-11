@@ -122,8 +122,14 @@ public class DCAT {
 	/** dcat:record */
 	public static final IRI HAS_RECORD;
 
+	/** dcat:resource */
+	public static final IRI HAS_RESOURCE;
+
 	/** dcat:service */
 	public static final IRI HAS_SERVICE;
+
+	/** dcat:hasVersion */
+	public static final IRI HAS_VERSION;
 
 	/** dcat;inCatalog, inverse property, see section 7 of DCAT v3 */
 	public static final IRI IN_CATALOG;
@@ -221,7 +227,9 @@ public class DCAT {
 		HAS_CURRENT_VERSION = Vocabularies.createIRI(NAMESPACE, "hasCurrentVersion");
 		HAS_DISTRIBUTION = Vocabularies.createIRI(NAMESPACE, "distribution");
 		HAS_RECORD = Vocabularies.createIRI(NAMESPACE, "record");
+		HAS_RESOURCE = Vocabularies.createIRI(NAMESPACE, "resource");
 		HAS_SERVICE = Vocabularies.createIRI(NAMESPACE, "service");
+		HAS_VERSION = Vocabularies.createIRI(NAMESPACE, "hasVersion");
 		IN_CATALOG = Vocabularies.createIRI(NAMESPACE, "inCatalog");
 		IN_SERIES = Vocabularies.createIRI(NAMESPACE, "inSeries");
 		IS_DISTRIBUTION_OF = Vocabularies.createIRI(NAMESPACE, "isDistributionOf");
