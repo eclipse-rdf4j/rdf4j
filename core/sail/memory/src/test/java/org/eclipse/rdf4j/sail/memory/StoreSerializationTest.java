@@ -18,6 +18,7 @@ import java.nio.file.Files;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
@@ -178,12 +179,12 @@ public class StoreSerializationTest {
 		store.init();
 
 		ValueFactory factory = store.getValueFactory();
+		BNode b = factory.createBNode("b");
 		Triple triple = factory.createTriple(RDF.TYPE, RDF.TYPE, RDF.TYPE);
-		Literal longLiteral = factory.createLiteral("a".repeat(4));
 
 		try (SailConnection con = store.getConnection()) {
 			con.begin();
-			con.addStatement(triple, RDFS.LABEL, longLiteral);
+			con.addStatement(b, RDF.REIFIES, triple);
 			con.commit();
 
 		}
@@ -193,11 +194,11 @@ public class StoreSerializationTest {
 		store.init();
 
 		try (SailConnection con = store.getConnection()) {
-			try (CloseableIteration<? extends Statement> iter = con.getStatements(null, RDFS.LABEL, null,
+			try (CloseableIteration<? extends Statement> iter = con.getStatements(null, RDF.REIFIES, null,
 					false)) {
 				assertTrue(iter.hasNext());
 				Statement next = iter.next();
-				assertEquals(next.getSubject(), triple);
+				assertEquals(next.getObject(), triple);
 			}
 		}
 		store.shutDown();

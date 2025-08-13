@@ -11,15 +11,19 @@
 package org.eclipse.rdf4j.rio.turtle;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.StringReader;
 import java.io.StringWriter;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
@@ -753,5 +757,112 @@ public class TurtleWriterTest extends AbstractTurtleWriterTest {
 		assertTrue(result.contains("\"1234567.89\"^^<http://www.w3.org/2001/XMLSchema#double>"));
 		assertTrue(result.contains("\"-2\"^^<http://www.w3.org/2001/XMLSchema#integer>"));
 		assertTrue(result.contains("\"55.66\"^^<http://www.w3.org/2001/XMLSchema#decimal>"));
+	}
+
+	@Test
+	public void testAdditionalDatatypes() {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		String ns = "http://www.example.com/";
+		model.add(vf.createIRI(ns, "subject"), vf.createIRI(ns, "predicate"),
+				vf.createLiteral("object1", CoreDatatype.RDF.JSON));
+		model.add(vf.createIRI(ns, "subject"), vf.createIRI(ns, "predicate"),
+				vf.createLiteral("object2", CoreDatatype.RDF.HTML));
+		model.add(vf.createIRI(ns, "subject"), vf.createIRI(ns, "predicate"),
+				vf.createLiteral("object3", CoreDatatype.RDF.XMLLITERAL));
+
+		StringWriter stringWriter = new StringWriter();
+		Rio.write(model, stringWriter, RDFFormat.TURTLE);
+
+		assertThat(stringWriter.toString()).contains("\"object1\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON>");
+		assertThat(stringWriter.toString()).contains("\"object2\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#HTML>");
+		assertThat(stringWriter.toString())
+				.contains("\"object3\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#XMLLiteral>");
+	}
+
+	@Test
+	public void testTripleTerm() {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		String ns = "http://www.example.com/";
+		model.setNamespace("", ns);
+		model.add(vf.createIRI(ns, "s"), vf.createIRI(ns, "p"),
+				vf.createTriple(vf.createIRI(ns, "s2"), vf.createIRI(ns, "p2"), vf.createIRI(ns, "o")));
+
+		StringWriter stringWriter = new StringWriter();
+		Rio.write(model, stringWriter, RDFFormat.TURTLE);
+
+		assertTrue(stringWriter.toString().contains(":s :p <<( :s2 :p2 :o )>>"));
+	}
+
+	@Test
+	public void testNestedTripleTerm() {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		String ns = "http://www.example.com/";
+		model.setNamespace("", ns);
+		model.add(vf.createIRI(ns, "s"), vf.createIRI(ns, "p"),
+				vf.createTriple(vf.createIRI(ns, "s2"), vf.createIRI(ns, "p2"),
+						vf.createTriple(vf.createIRI(ns, "s3"), vf.createIRI(ns, "p3"), vf.createIRI(ns, "o"))));
+
+		StringWriter stringWriter = new StringWriter();
+		Rio.write(model, stringWriter, RDFFormat.TURTLE);
+
+		assertTrue(stringWriter.toString().contains(":s :p <<( :s2 :p2 <<( :s3 :p3 :o )>> )>> ."));
+	}
+
+	@Test
+	public void testNestedTripleTerm2() {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		String ns = "http://www.example.com/";
+		model.setNamespace("", ns);
+		model.add(vf.createBNode("b"), vf.createIRI(ns, "p"),
+				vf.createTriple(vf.createIRI(ns, "s"), vf.createIRI(ns, "p2"),
+						vf.createTriple(vf.createBNode("b2"), vf.createIRI(ns, "p3"), vf.createLiteral(9))));
+
+		StringWriter stringWriter = new StringWriter();
+		Rio.write(model, stringWriter, RDFFormat.TURTLE);
+
+		assertTrue(stringWriter.toString()
+				.contains("_:b :p <<( :s :p2 <<( _:b2 :p3 \"9\"^^<http://www.w3.org/2001/XMLSchema#int> )>> )>> ."));
+	}
+
+	@Test
+	public void testVersionAnnouncementTripleTerm() {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		model.add(vf.createBNode("b"), RDF.REIFIES, vf.createTriple(vf.createBNode("b2"),
+				vf.createIRI("http://example.com/p"), vf.createLiteral("literal")));
+		StringWriter stringWriter = new StringWriter();
+		Rio.write(model, stringWriter, RDFFormat.TURTLE,
+				new WriterConfig().set(BasicWriterSettings.PRETTY_PRINT, false));
+
+		assertEquals("VERSION \"1.2\"\n"
+				+ "_:b <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies> <<( _:b2 <http://example.com/p> \"literal\" )>> .\n",
+				stringWriter.toString());
+	}
+
+	@Test
+	public void testVersionAnnouncementDirLangString() {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		model.add(vf.createBNode("b"), RDF.ALT, vf.createLiteral("literal", "en", Literal.BaseDirection.LTR));
+		StringWriter stringWriter = new StringWriter();
+		Rio.write(model, stringWriter, RDFFormat.TURTLE,
+				new WriterConfig().set(BasicWriterSettings.PRETTY_PRINT, false));
+
+		assertEquals("VERSION \"1.2\"\n"
+				+ "_:b <http://www.w3.org/1999/02/22-rdf-syntax-ns#Alt> \"literal\"@en--ltr .\n",
+				stringWriter.toString());
+	}
+
+	@Test
+	public void testVersionAnnouncementPrintsOnce() {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		model.add(vf.createBNode("b"), RDF.REIFIES, vf.createTriple(vf.createBNode("b2"),
+				vf.createIRI("http://example.com/p"), vf.createLiteral("literal")));
+		model.add(vf.createBNode("b"), RDF.ALT, vf.createLiteral("literal", "en", Literal.BaseDirection.LTR));
+		StringWriter stringWriter = new StringWriter();
+		Rio.write(model, stringWriter, RDFFormat.TURTLE,
+				new WriterConfig().set(BasicWriterSettings.PRETTY_PRINT, false));
+		assertEquals("VERSION \"1.2\"\n"
+				+ "_:b <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies> <<( _:b2 <http://example.com/p> \"literal\" )>>;\n"
+				+ "<http://www.w3.org/1999/02/22-rdf-syntax-ns#Alt> \"literal\"@en--ltr .\n",
+				stringWriter.toString());
 	}
 }

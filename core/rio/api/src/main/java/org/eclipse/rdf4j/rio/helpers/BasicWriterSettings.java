@@ -92,30 +92,30 @@ public class BasicWriterSettings {
 			"org.eclipse.rdf4j.rio.base_directive", "Serialize base directive", Boolean.TRUE);
 
 	/**
-	 * Boolean setting for writer to determine whether it should convert RDF-star statements to standard RDF
-	 * reification.
+	 * Boolean setting for writer to determine whether it should convert RDF 1.2 statements to standard RDF reification.
 	 * <p>
 	 * Defaults to false
 	 * <p>
-	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.convert_rdf_star}.
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.convert_rdf_12_reification}.
 	 */
-	public static final BooleanRioSetting CONVERT_RDF_STAR_TO_REIFICATION = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.convert_rdf_star", "Convert RDF-star statements to RDF reification", Boolean.FALSE);
+	public static final BooleanRioSetting CONVERT_RDF_12_REIFICATION = new BooleanRioSetting(
+			"org.eclipse.rdf4j.rio.convert_rdf_12_reification", "Convert RDF 1.2 statements to RDF 1.1 reification",
+			Boolean.FALSE);
 
 	/**
-	 * Boolean setting for writer to determine whether it should encode RDF-star triple values to RDF-compatible special
+	 * Boolean setting for writer to determine whether it should encode RDF 1.2 triple values to RDF-compatible special
 	 * IRIs. These IRIs start with urn:rdf4j:triple: followed by the base64-encoding of the N-Triples serialization of
-	 * the RDF-star triple value.
+	 * the RDF 1.2 triple value.
 	 * <p>
-	 * Writers that support RDF-star natively will ignore this setting and always serialize RDF-star triples.
+	 * Writers that support RDF 1.2 natively will ignore this setting and always serialize RDF 1.2 triples.
 	 * <p>
 	 * Defaults to true.
 	 * <p>
-	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.encode_rdf_star}.
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.encode_triple_terms}.
 	 */
-	public static final BooleanRioSetting ENCODE_RDF_STAR = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.encode_rdf_star",
-			"Encodes RDF-star triples to special IRIs for compatibility with RDF", Boolean.TRUE);
+	public static final BooleanRioSetting ENCODE_TRIPLE_TERMS = new BooleanRioSetting(
+			"org.eclipse.rdf4j.rio.encode_triple_terms",
+			"Encodes triple terms to special IRIs for compatibility with RDF 1.1", Boolean.TRUE);
 
 	/**
 	 * Private default constructor.

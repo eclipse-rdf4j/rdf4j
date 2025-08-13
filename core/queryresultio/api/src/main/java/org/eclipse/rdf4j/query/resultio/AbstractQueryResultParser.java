@@ -88,8 +88,8 @@ public abstract class AbstractQueryResultParser implements QueryResultParser {
 
 	@Override
 	public QueryResultParser setQueryResultHandler(QueryResultHandler handler) {
-		if (getParserConfig().get(BasicParserSettings.PROCESS_ENCODED_RDF_STAR)) {
-			handler = new RDFStarDecodingQueryResultHandler(handler);
+		if (getParserConfig().get(BasicParserSettings.PROCESS_ENCODED_TRIPLE_TERMS)) {
+			handler = new TripleTermDecodingQueryResultHandler(handler);
 		}
 		this.handler = handler;
 		return this;

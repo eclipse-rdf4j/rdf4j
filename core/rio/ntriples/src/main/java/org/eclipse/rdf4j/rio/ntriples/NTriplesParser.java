@@ -25,7 +25,9 @@ import java.util.HashSet;
 import org.apache.commons.io.input.BOMInputStream;
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -134,19 +136,21 @@ public class NTriplesParser extends AbstractRDFParser {
 			if (!shouldParseLine()) {
 				return;
 			}
-			parseSubject();
+			if (peekVersionDirective()) {
+				parseVersionDirective();
+				return;
+			} else {
+				subject = parseSubject();
+				skipWhitespace(true);
 
-			skipWhitespace(true);
+				predicate = parsePredicate();
+				skipWhitespace(true);
 
-			parsePredicate();
+				object = parseObject();
+				skipWhitespace(true);
 
-			skipWhitespace(true);
-
-			parseObject();
-
-			skipWhitespace(true);
-
-			assertLineTerminates();
+				assertLineTerminates();
+			}
 		} catch (RDFParseException e) {
 			if (!getParserConfig().get(NTriplesParserSettings.FAIL_ON_INVALID_LINES)
 					|| getParserConfig().isNonFatalError(NTriplesParserSettings.FAIL_ON_INVALID_LINES)) {
@@ -182,11 +186,45 @@ public class NTriplesParser extends AbstractRDFParser {
 		return false;
 	}
 
-	protected void parseSubject() {
+	protected boolean peekVersionDirective() {
+		// version directive must be at least 10 characters: "VERSION """ or "VERSION ''"
+		return currentIndex < lineChars.length - 10
+				&& lineChars[currentIndex] == 'V'
+				&& lineChars[currentIndex + 1] == 'E'
+				&& lineChars[currentIndex + 2] == 'R'
+				&& lineChars[currentIndex + 3] == 'S'
+				&& lineChars[currentIndex + 4] == 'I'
+				&& lineChars[currentIndex + 5] == 'O'
+				&& lineChars[currentIndex + 6] == 'N'
+				&& (lineChars[currentIndex + 7] == ' ' || lineChars[currentIndex + 7] == '\t');
+	}
+
+	protected void parseVersionDirective() {
+		currentIndex += 8;
+		final int startQuote = lineChars[currentIndex];
+		if (startQuote != '"' && startQuote != '\'') {
+			throw new RDFParseException("Expected '\"' or '\\'', found: " + startQuote);
+		}
+
+		do {
+			currentIndex++;
+		} while (currentIndex < lineChars.length && lineChars[currentIndex] != startQuote);
+
+		if (currentIndex >= lineChars.length) {
+			throw new RDFParseException("Unterminated version string");
+		}
+
+		skipWhitespace(false);
+		if (currentIndex != lineChars.length - 1) {
+			throw new RDFParseException("Unexpected content after version string");
+		}
+	}
+
+	protected Resource parseSubject() {
 		if (lineChars[currentIndex] == '<') {
-			subject = parseIRI();
+			return parseIRI();
 		} else if (lineChars[currentIndex] == '_') {
-			subject = parseNode();
+			return parseNode();
 		} else {
 			throw new RDFParseException(
 					"Expected '<' or '_', found: " + new String(Character.toChars(lineChars[currentIndex])), lineNo,
@@ -194,9 +232,9 @@ public class NTriplesParser extends AbstractRDFParser {
 		}
 	}
 
-	protected void parsePredicate() {
+	protected IRI parsePredicate() {
 		if (lineChars[currentIndex] == '<') {
-			predicate = parseIRI();
+			return parseIRI();
 		} else {
 			throw new RDFParseException(
 					"Expected '<', found: " + new String(Character.toChars(lineChars[currentIndex])), lineNo,
@@ -204,13 +242,17 @@ public class NTriplesParser extends AbstractRDFParser {
 		}
 	}
 
-	protected void parseObject() {
+	protected Value parseObject() {
 		if (lineChars[currentIndex] == '<') {
-			object = parseIRI();
+			if (lineChars.length > currentIndex + 1 && lineChars[currentIndex + 1] == '<') {
+				return parseTripleTerm();
+			} else {
+				return parseIRI();
+			}
 		} else if (lineChars[currentIndex] == '_') {
-			object = parseNode();
+			return parseNode();
 		} else if (lineChars[currentIndex] == '"') {
-			parseLiteral();
+			return parseLiteral();
 		} else {
 			throw new RDFParseException(
 					"Expected '<' or '_', found: " + new String(Character.toChars(lineChars[currentIndex])), lineNo,
@@ -272,16 +314,47 @@ public class NTriplesParser extends AbstractRDFParser {
 		return createNode(new String(lineChars, startIndex, currentIndex - startIndex));
 	}
 
-	private void parseLiteral() {
+	private Literal parseLiteral() {
 		String label = parseLabel();
 		incrementIndexOrThrowEOF();
+		skipWhitespace(true);
 		if (currentIndex < lineChars.length - 1 && lineChars[currentIndex] == '^') {
-			parseLiteralWithDatatype(label);
+			return parseLiteralWithDatatype(label);
 		} else if (lineChars[currentIndex] == '@') {
-			parseLangLiteral(label);
+			return parseLangLiteral(label);
 		} else {
-			object = createLiteral(label, null, ((IRI) null), lineNo, lineChars[currentIndex]);
+			return createLiteral(label, null, ((IRI) null), lineNo, lineChars[currentIndex]);
 		}
+	}
+
+	private Triple parseTripleTerm() {
+		if (currentIndex + 2 >= lineChars.length || lineChars[currentIndex] != '<' || lineChars[currentIndex + 1] != '<'
+				|| lineChars[currentIndex + 2] != '(') {
+			reportError(
+					"Triple term must start with '<<(', is: " + new String(Character.toChars(lineChars[currentIndex])),
+					NTriplesParserSettings.FAIL_ON_INVALID_LINES);
+		}
+		currentIndex += 3;
+
+		skipWhitespace(true);
+		final Resource ttSubject = parseSubject();
+
+		skipWhitespace(true);
+		final IRI ttPredicate = parsePredicate();
+
+		skipWhitespace(true);
+		final Value ttObject = parseObject();
+
+		skipWhitespace(true);
+
+		if (currentIndex + 2 >= lineChars.length || lineChars[currentIndex] != ')' || lineChars[currentIndex + 1] != '>'
+				|| lineChars[currentIndex + 2] != '>') {
+			reportError(
+					"Triple term must end with ')>>', is: " + new String(Character.toChars(lineChars[currentIndex])),
+					NTriplesParserSettings.FAIL_ON_INVALID_LINES);
+		}
+		currentIndex += 3;
+		return valueFactory.createTriple(ttSubject, ttPredicate, ttObject);
 	}
 
 	private String parseLabel() {
@@ -300,20 +373,21 @@ public class NTriplesParser extends AbstractRDFParser {
 		}
 	}
 
-	private void parseLiteralWithDatatype(String label) {
+	private Literal parseLiteralWithDatatype(String label) {
 		if (lineChars[currentIndex + 1] != '^') {
 			reportError("Expected '^', found: " + new String(Character.toChars(lineChars[currentIndex + 1])),
 					NTriplesParserSettings.FAIL_ON_INVALID_LINES);
 		}
 		currentIndex += 2;
+		skipWhitespace(true);
 		if (currentIndex >= lineChars.length || lineChars[currentIndex] != '<') {
 			reportError("Expected '<', found: " + new String(Character.toChars(lineChars[currentIndex])),
 					NTriplesParserSettings.FAIL_ON_INVALID_LINES);
 		}
-		object = createLiteral(label, null, parseIRI(), lineNo, lineChars[currentIndex]);
+		return createLiteral(label, null, parseIRI(), lineNo, lineChars[currentIndex]);
 	}
 
-	private void parseLangLiteral(String label) {
+	private Literal parseLangLiteral(String label) {
 		incrementIndexOrThrowEOF();
 		if (!ASCIIUtil.isLetter(lineChars[currentIndex])) {
 			reportError("Expected a letter, found: " + new String(Character.toChars(lineChars[currentIndex])),
@@ -329,7 +403,7 @@ public class NTriplesParser extends AbstractRDFParser {
 		if (currentIndex >= lineChars.length) {
 			throwEOFException();
 		}
-		object = createLiteral(label, new String(lineChars, startIndex, currentIndex - startIndex), ((IRI) null),
+		return createLiteral(label, new String(lineChars, startIndex, currentIndex - startIndex), ((IRI) null),
 				lineNo, lineChars[currentIndex]);
 	}
 

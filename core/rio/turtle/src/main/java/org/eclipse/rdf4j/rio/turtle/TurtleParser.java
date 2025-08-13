@@ -24,6 +24,7 @@ import java.util.Set;
 
 import org.apache.commons.io.input.BOMInputStream;
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -70,6 +71,10 @@ public class TurtleParser extends AbstractRDFParser {
 	protected IRI predicate;
 
 	protected Value object;
+
+	protected Resource currReifier;
+
+	protected Triple currTripleTerm;
 
 	private int lineNumber = 1;
 
@@ -179,7 +184,7 @@ public class TurtleParser extends AbstractRDFParser {
 		StringBuilder sb = new StringBuilder(8);
 
 		int codePoint;
-		// longest valid directive @prefix
+		// longest valid directive @version
 		do {
 			codePoint = readCodePoint();
 			if (codePoint == -1 || TurtleUtil.isWhitespace(codePoint)) {
@@ -191,7 +196,8 @@ public class TurtleParser extends AbstractRDFParser {
 
 		String directive = sb.toString();
 
-		if (directive.startsWith("@") || directive.equalsIgnoreCase("prefix") || directive.equalsIgnoreCase("base")) {
+		if (directive.startsWith("@") || directive.equalsIgnoreCase("prefix") || directive.equalsIgnoreCase("base")
+				|| directive.equalsIgnoreCase("version")) {
 			parseDirective(directive);
 			skipWSC();
 			// SPARQL BASE and PREFIX lines do not end in .
@@ -217,6 +223,8 @@ public class TurtleParser extends AbstractRDFParser {
 				unread(directive.substring(5));
 			}
 			parseBase();
+		} else if (directive.equals("@version")) {
+			parseVersion();
 		} else if (directive.length() >= 6 && directive.substring(0, 6).equalsIgnoreCase("prefix")) {
 			// SPARQL doesn't require whitespace after directive, so must unread
 			// if
@@ -230,6 +238,11 @@ public class TurtleParser extends AbstractRDFParser {
 				unread(directive.substring(4));
 			}
 			parseBase();
+		} else if ((directive.length() >= 7 && directive.substring(0, 7).equalsIgnoreCase("version"))) {
+			if (directive.length() > 7) {
+				unread(directive.substring(7));
+			}
+			parseVersion();
 		} else if (directive.length() >= 7 && directive.substring(0, 7).equalsIgnoreCase("@prefix")) {
 			if (!this.getParserConfig().get(TurtleParserSettings.CASE_INSENSITIVE_DIRECTIVES)) {
 				reportFatalError("Cannot strictly support case-insensitive @prefix directive in compliance mode.");
@@ -246,10 +259,33 @@ public class TurtleParser extends AbstractRDFParser {
 				unread(directive.substring(5));
 			}
 			parseBase();
+		} else if (directive.equalsIgnoreCase("@version")) {
+			if (!this.getParserConfig().get(TurtleParserSettings.CASE_INSENSITIVE_DIRECTIVES)) {
+				reportFatalError("Cannot strictly support case-insensitive @version directive in compliance mode.");
+			}
+			parseVersion();
 		} else if (directive.isEmpty()) {
-			reportFatalError("Directive name is missing, expected @prefix or @base");
+			reportFatalError("Directive name is missing, expected @prefix or @base or @version");
 		} else {
 			reportFatalError("Unknown directive \"" + directive + "\"");
+		}
+	}
+
+	// Parses version directive. The version directive is optional, this parser supports any version up to and including
+	// 1.2, and any string surrounded by single or double quotes is accepted, so we can safely ignore the version.
+	private void parseVersion() throws IOException, RDFParseException {
+		skipWSC();
+
+		int startQuote = readCodePoint();
+		verifyCharacterOrFail(startQuote, "\"'");
+
+		int codePoint;
+		do {
+			codePoint = readCodePoint();
+		} while (codePoint != startQuote && codePoint != -1);
+
+		if (codePoint == -1) {
+			throwEOFException();
 		}
 	}
 
@@ -329,6 +365,17 @@ public class TurtleParser extends AbstractRDFParser {
 			if (c != '.') {
 				parsePredicateObjectList();
 			}
+		} else if (peekIsReifiedTriple()) {
+			subject = parseReifiedTriple();
+			skipWSC();
+
+			// if this is not the end of the statement, recurse into the list of
+			// predicate and objects, using the subject parsed above as the
+			// subject
+			// of the statement.
+			if (peekCodePoint() != '.') {
+				parsePredicateObjectList();
+			}
 		} else {
 			parseSubject();
 			skipWSC();
@@ -353,7 +400,7 @@ public class TurtleParser extends AbstractRDFParser {
 			int c = skipWSC();
 
 			if (c == '.' || // end of triple
-					c == ']' || c == '}') // end of predicateObjectList inside
+					c == ']' || c == '}' || c == '|') // end of predicateObjectList inside
 			// blank
 			// node
 			{
@@ -374,14 +421,17 @@ public class TurtleParser extends AbstractRDFParser {
 	protected void parseObjectList() throws IOException, RDFParseException, RDFHandlerException {
 		parseObject();
 
-		if (skipWSC() == '{') {
+		int c = skipWSC();
+		if (c == '{' || c == '~') {
 			parseAnnotation();
 		}
 		while (skipWSC() == ',') {
 			readCodePoint();
 			skipWSC();
 			parseObject();
-			if (skipWSC() == '{') {
+
+			c = skipWSC();
+			if (c == '{' || c == '~') {
 				parseAnnotation();
 			}
 		}
@@ -442,17 +492,16 @@ public class TurtleParser extends AbstractRDFParser {
 	protected void parseObject() throws IOException, RDFParseException, RDFHandlerException {
 		int c = peekCodePoint();
 
-		switch (c) {
-		case '(':
+		if (c == '(') {
 			object = parseCollection();
-			break;
-		case '[':
+		} else if (c == '[') {
 			object = parseImplicitBlank();
-			break;
-		default:
+		} else if (peekIsReifiedTriple()) {
+			object = parseReifiedTriple();
+			reportStatement(subject, predicate, object);
+		} else {
 			object = parseValue();
 			reportStatement(subject, predicate, object);
-			break;
 		}
 	}
 
@@ -560,8 +609,8 @@ public class TurtleParser extends AbstractRDFParser {
 	 * Parses an RDF value. This method parses uriref, qname, node ID, quoted literal, integer, double and boolean.
 	 */
 	protected Value parseValue() throws IOException, RDFParseException, RDFHandlerException {
-		if (getParserConfig().get(TurtleParserSettings.ACCEPT_TURTLESTAR) && peekIsTripleValue()) {
-			return parseTripleValue();
+		if (peekIsTripleTerm()) {
+			return parseTripleTerm();
 		}
 
 		int c = peekCodePoint();
@@ -575,6 +624,8 @@ public class TurtleParser extends AbstractRDFParser {
 		} else if (c == '_') {
 			// node ID, e.g. _:n1
 			return parseNodeID();
+		} else if (c == '[') {
+			return parseAnonymousBlank();
 		} else if (c == '"' || c == '\'') {
 			// quoted literal, e.g. "foo" or """foo""" or 'foo' or '''foo'''
 			return parseQuotedLiteral();
@@ -588,6 +639,17 @@ public class TurtleParser extends AbstractRDFParser {
 			reportFatalError("Expected an RDF value here, found '" + new String(Character.toChars(c)) + "'");
 			return null;
 		}
+	}
+
+	protected BNode parseAnonymousBlank() throws IOException {
+		verifyCharacterOrFail(readCodePoint(), "[");
+		if (skipWSC() != ']') {
+			reportFatalError("Expected whitespace in anonymous blank, found '"
+					+ new String(Character.toChars(peekCodePoint())) + "'");
+			return null;
+		}
+		readCodePoint();
+		return valueFactory.createBNode();
 	}
 
 	/**
@@ -1349,70 +1411,192 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Peeks at the next two Unicode code points without advancing the reader and returns true if they indicate the
-	 * start of an RDF-star triple value. Such values start with '<<'.
+	 * Peeks at the next three Unicode code points without advancing the reader and returns true if they indicate the
+	 * start of an RDF-1.2 triple term. Such values start with '<<('.
 	 *
-	 * @return true if the next code points indicate the beginning of an RDF-star triple value, false otherwise
+	 * @return true if the next code points indicate the beginning of an RDF-1.2 triple term, false otherwise
 	 * @throws IOException
 	 */
-	protected boolean peekIsTripleValue() throws IOException {
+	protected boolean peekIsTripleTerm() throws IOException {
 		int c0 = readCodePoint();
 		int c1 = readCodePoint();
+		int c2 = readCodePoint();
+		unread(c2);
 		unread(c1);
 		unread(c0);
 
-		return c0 == '<' && c1 == '<';
+		return c0 == '<' && c1 == '<' && c2 == '(';
 	}
 
 	/**
-	 * Parser an RDF-star triple value and returns it.
+	 * Peeks at the next three Unicode code points without advancing the reader and returns true if they indicate the
+	 * start of an RDF-1.2 reifiedTriple. Such values start with '<<'.
 	 *
-	 * @return An RDF-star triple.
+	 * @return true if the next code points indicate the beginning of an RDF-1.2 reifiedTriple, false otherwise
 	 * @throws IOException
 	 */
-	protected Triple parseTripleValue() throws IOException {
+	protected boolean peekIsReifiedTriple() throws IOException {
+		int c0 = readCodePoint();
+		int c1 = readCodePoint();
+		int c2 = readCodePoint();
+		unread(c2);
+		unread(c1);
+		unread(c0);
+
+		return c0 == '<' && c1 == '<' && c2 != '(';
+	}
+
+	/**
+	 * Parser an RDF-1.2 triple term and returns it.
+	 *
+	 * @return An RDF-1.2 triple term.
+	 * @throws IOException
+	 */
+	protected Triple parseTripleTerm() throws IOException {
 		verifyCharacterOrFail(readCodePoint(), "<");
 		verifyCharacterOrFail(readCodePoint(), "<");
+		verifyCharacterOrFail(readCodePoint(), "(");
 		skipWSC();
 		Value subject = parseValue();
 		if (subject instanceof Resource) {
 			skipWSC();
-			Value predicate = parseValue();
-			if (predicate instanceof IRI) {
+			IRI predicate = parsePredicate();
+			skipWSC();
+			Value object = parseValue();
+			if (object != null) {
 				skipWSC();
-				Value object = parseValue();
-				if (object != null) {
-					skipWSC();
-					verifyCharacterOrFail(readCodePoint(), ">");
-					verifyCharacterOrFail(readCodePoint(), ">");
-					return valueFactory.createTriple((Resource) subject, (IRI) predicate, object);
-				} else {
-					reportFatalError("Missing object in RDF-star triple");
-				}
+				verifyCharacterOrFail(readCodePoint(), ")");
+				verifyCharacterOrFail(readCodePoint(), ">");
+				verifyCharacterOrFail(readCodePoint(), ">");
+				return valueFactory.createTriple((Resource) subject, predicate, object);
 			} else {
-				reportFatalError("Illegal predicate value in RDF-star triple: " + predicate);
+				reportFatalError("Missing object in triple term");
 			}
 		} else {
-			reportFatalError("Illegal subject val in RDF-star triple: " + subject);
+			reportFatalError("Illegal subject val in triple term: " + subject);
 		}
 
 		return null;
 	}
 
-	protected void parseAnnotation() throws IOException {
+	protected Resource parseReifiedTriple() throws IOException {
+		verifyCharacterOrFail(readCodePoint(), "<");
+		verifyCharacterOrFail(readCodePoint(), "<");
+		skipWSC();
+
+		Triple oldTripleTerm = currTripleTerm;
+
+		Value rtSubject;
+		if (peekIsReifiedTriple()) {
+			rtSubject = parseReifiedTriple();
+		} else {
+			rtSubject = parseValue();
+		}
+
+		if (rtSubject instanceof Resource) {
+			skipWSC();
+			IRI predicate = parsePredicate();
+			skipWSC();
+			Value rtObject;
+			if (peekIsReifiedTriple()) {
+				rtObject = parseReifiedTriple();
+			} else {
+				rtObject = parseValue();
+			}
+
+			if (rtObject != null) {
+
+				currTripleTerm = valueFactory.createTriple((Resource) rtSubject, predicate, rtObject);
+
+				Resource reifier;
+
+				if (skipWSC() == '~') {
+					reifier = parseReifier();
+				} else {
+					reifier = valueFactory.createBNode();
+				}
+
+				skipWSC();
+				verifyCharacterOrFail(readCodePoint(), ">");
+				verifyCharacterOrFail(readCodePoint(), ">");
+
+				addReifyingTriple(reifier);
+
+				currTripleTerm = oldTripleTerm;
+
+				return currReifier;
+			} else {
+				reportFatalError("Missing object in triple term");
+			}
+		} else {
+			reportFatalError("Illegal subject val in reified triple: " + rtSubject);
+		}
+		return null;
+	}
+
+	protected void addReifyingTriple(Resource reifier) {
+		currReifier = reifier;
+		reportStatement(currReifier, RDF.REIFIES, currTripleTerm);
+	}
+
+	protected Resource parseReifier() throws IOException {
+		verifyCharacterOrFail(readCodePoint(), "~");
+
+		final int c = skipWSC();
+		// check if c is valid start character for a blank node or IRI
+		if (c == '_' || c == '[' || c == '<' || c == ':' || TurtleUtil.isPN_CHARS_BASE(c)) {
+			final Value reifier = parseValue();
+			if (reifier instanceof Resource) {
+				return (Resource) reifier;
+			} else {
+				reportFatalError("Reifier must be a blank node or IRI");
+			}
+		} else {
+			return valueFactory.createBNode();
+		}
+		return null;
+	}
+
+	protected void parseAnnotationBlock() throws IOException {
 		verifyCharacterOrFail(readCodePoint(), "{");
 		verifyCharacterOrFail(readCodePoint(), "|");
 		skipWSC();
 
-		// keep reference to original subject and predicate while processing the annotation content
-		final Resource currentSubject = subject;
-		final IRI currentPredicate = predicate;
-		subject = Values.triple(previousStatement);
+		final Triple oldTripleTerm = currTripleTerm;
+
+		if (currReifier == null) {
+			addReifyingTriple(valueFactory.createBNode());
+		}
+
+		subject = currReifier;
+
 		parsePredicateObjectList();
 		verifyCharacterOrFail(readCodePoint(), "|");
 		verifyCharacterOrFail(readCodePoint(), "}");
-		subject = currentSubject;
-		predicate = currentPredicate;
+
+		currReifier = null;
+		currTripleTerm = oldTripleTerm;
+	}
+
+	protected void parseAnnotation() throws IOException {
+		final Resource oldSubject = subject;
+		final IRI oldPredicate = predicate;
+
+		currTripleTerm = valueFactory.createTriple(subject, predicate, object);
+		currReifier = null;
+
+		int c = skipWSC();
+		while (c == '{' || c == '~') {
+			if (c == '~') {
+				addReifyingTriple(parseReifier());
+			} else {
+				parseAnnotationBlock();
+			}
+			c = skipWSC();
+		}
+
+		subject = oldSubject;
+		predicate = oldPredicate;
 	}
 
 }

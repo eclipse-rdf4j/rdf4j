@@ -81,7 +81,7 @@ public class SPARQLTSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 				+ "\"?space at the end         (\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?)?\n"
 				+ "\"\\\\\"\\\\\"double-quoted string with no datatype\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n"
 				+ "\"newline at the end \\\\n\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n?"
-				+ "<urn:rdf4j:triple:PDw8dXJuOmE-IDxodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjdHlwZT4gPHVybjpiPj4->\n?",
+				+ "<urn:rdf4j:triple:PDwoIDx1cm46YT4gPGh0dHA6Ly93d3cudzMub3JnLzE5OTkvMDIvMjItcmRmLXN5bnRheC1ucyN0eXBlPiA8dXJuOmI-ICk-Pg==>\n?",
 				toString(createTupleSingleVarMultipleBindingSets()));
 	}
 

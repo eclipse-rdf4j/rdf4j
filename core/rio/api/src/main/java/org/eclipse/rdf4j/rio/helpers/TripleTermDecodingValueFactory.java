@@ -30,14 +30,14 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 
 /**
  * A {@link ValueFactory} that will delegate everything to another {@link ValueFactory} and create statements whose
- * subject and object will be converted from RDF-star triples encoded as special IRIs back to RDF-star values.
+ * subject and object will be converted from RDF 1.2 triples encoded as special IRIs back to RDF 1.2 values.
  * <p>
  * All other values in the subject and object position will be used as is.
  */
-class RDFStarDecodingValueFactory implements ValueFactory {
+class TripleTermDecodingValueFactory implements ValueFactory {
 	private final ValueFactory delegate;
 
-	RDFStarDecodingValueFactory(ValueFactory delegate) {
+	TripleTermDecodingValueFactory(ValueFactory delegate) {
 		this.delegate = delegate;
 	}
 
@@ -69,6 +69,11 @@ class RDFStarDecodingValueFactory implements ValueFactory {
 	@Override
 	public Literal createLiteral(String label, String language) {
 		return delegate.createLiteral(label, language);
+	}
+
+	@Override
+	public Literal createLiteral(String label, String language, Literal.BaseDirection baseDirection) {
+		return delegate.createLiteral(label, language, baseDirection);
 	}
 
 	@Override
@@ -154,16 +159,16 @@ class RDFStarDecodingValueFactory implements ValueFactory {
 	@Override
 	public Statement createStatement(Resource subject,
 			IRI predicate, Value object) {
-		return delegate.createStatement(RDFStarUtil.fromRDFEncodedValue(subject), predicate,
-				RDFStarUtil.fromRDFEncodedValue(object));
+		return delegate.createStatement(subject, predicate,
+				TripleTermUtil.fromRDFEncodedValue(object));
 	}
 
 	@Override
 	public Statement createStatement(Resource subject,
 			IRI predicate, Value object,
 			Resource context) {
-		return delegate.createStatement(RDFStarUtil.fromRDFEncodedValue(subject), predicate,
-				RDFStarUtil.fromRDFEncodedValue(object), context);
+		return delegate.createStatement(subject, predicate,
+				TripleTermUtil.fromRDFEncodedValue(object), context);
 	}
 
 	@Override

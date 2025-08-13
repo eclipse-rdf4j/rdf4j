@@ -97,9 +97,7 @@ public class NTriplesUtil {
 	 */
 	public static Resource parseResource(String nTriplesResource, ValueFactory valueFactory)
 			throws IllegalArgumentException {
-		if (nTriplesResource.startsWith("<<")) {
-			return parseTriple(nTriplesResource, valueFactory);
-		} else if (nTriplesResource.startsWith("<")) {
+		if (nTriplesResource.startsWith("<")) {
 			return parseURI(nTriplesResource, valueFactory);
 		} else if (nTriplesResource.startsWith("_:")) {
 			return parseBNode(nTriplesResource, valueFactory);
@@ -119,7 +117,7 @@ public class NTriplesUtil {
 	public static IRI parseURI(String nTriplesURI, ValueFactory valueFactory) throws IllegalArgumentException {
 		if (nTriplesURI.startsWith("<") && nTriplesURI.endsWith(">")) {
 			String uri = nTriplesURI.substring(1, nTriplesURI.length() - 1);
-			// Disambiguate with RDF-star triple
+			// Disambiguate with triple term
 			if (!uri.startsWith("<")) {
 				uri = unescapeString(uri);
 				return valueFactory.createIRI(uri);
@@ -189,10 +187,9 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Parses an RDF-star triple (non-standard N-Triples), creates an object for it using the supplied ValueFactory and
-	 * returns this object.
+	 * Parses a tripleterm, creates an object for it using the supplied ValueFactory and returns this object.
 	 *
-	 * @param nTriplesTriple The RDF-star triple to parse.
+	 * @param nTriplesTriple The triple term to parse.
 	 * @param valueFactory   The ValueFactory to use for creating the object.
 	 * @return An object representing the parsed triple.
 	 * @throws IllegalArgumentException If the supplied triple could not be parsed correctly.
@@ -206,18 +203,18 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Parses an RDF-star triple (non-standard N-Triples), creates an object for it using the supplied ValueFactory and
-	 * returns an object that contains the parsed triple and the length of the parsed text.
+	 * Parses a triple term, creates an object for it using the supplied ValueFactory and returns an object that
+	 * contains the parsed triple and the length of the parsed text.
 	 *
-	 * @param nTriplesTriple The RDF-star triple to parse.
+	 * @param nTriplesTriple The triple to parse.
 	 * @param valueFactory   The ValueFactory to use for creating the object.
 	 * @return An object representing the parsed triple and the length of the matching text.
 	 * @throws IllegalArgumentException If the supplied triple could not be parsed correctly.
 	 */
 	private static TripleMatch parseTripleInternal(String nTriplesTriple, ValueFactory valueFactory) {
-		if (nTriplesTriple.startsWith("<<")) {
-			String triple = nTriplesTriple.substring(2);
-			int offset = 2;
+		if (nTriplesTriple.startsWith("<<(")) {
+			String triple = nTriplesTriple.substring(3);
+			int offset = 3;
 
 			while (!triple.isEmpty() && Character.isWhitespace(triple.charAt(0))) {
 				triple = triple.substring(1);
@@ -283,8 +280,8 @@ public class NTriplesUtil {
 				}
 			}
 
-			if (triple.endsWith(">>")) {
-				offset += 2;
+			if (triple.endsWith(")>>")) {
+				offset += 3;
 				return new TripleMatch(valueFactory.createTriple(subject, predicate, object), offset);
 			}
 		}
@@ -347,6 +344,8 @@ public class NTriplesUtil {
 			return toNTriplesString((Resource) value);
 		} else if (value instanceof Literal) {
 			return toNTriplesString((Literal) value, xsdStringToPlainLiteral);
+		} else if (value instanceof Triple) {
+			return toNTriplesString((Triple) value);
 		} else {
 			throw new IllegalArgumentException("Unknown value type: " + value.getClass());
 		}
@@ -383,6 +382,8 @@ public class NTriplesUtil {
 			append((Resource) value, appendable);
 		} else if (value instanceof Literal) {
 			append((Literal) value, appendable, xsdStringToPlainLiteral, escapeUnicode);
+		} else if (value instanceof Triple) {
+			append((Triple) value, appendable);
 		} else {
 			throw new IllegalArgumentException("Unknown value type: " + value.getClass());
 		}
@@ -399,8 +400,6 @@ public class NTriplesUtil {
 			return toNTriplesString((IRI) resource);
 		} else if (resource instanceof BNode) {
 			return toNTriplesString((BNode) resource);
-		} else if (resource instanceof Triple) {
-			return toNTriplesString((Triple) resource);
 		} else {
 			throw new IllegalArgumentException("Unknown resource type: " + resource.getClass());
 		}
@@ -418,8 +417,6 @@ public class NTriplesUtil {
 			append((IRI) resource, appendable);
 		} else if (resource instanceof BNode) {
 			append((BNode) resource, appendable);
-		} else if (resource instanceof Triple) {
-			append((Triple) resource, appendable);
 		} else {
 			throw new IllegalArgumentException("Unknown resource type: " + resource.getClass());
 		}
@@ -565,6 +562,7 @@ public class NTriplesUtil {
 			// Append the literal's language
 			appendable.append("@");
 			appendable.append(lit.getLanguage().get());
+			appendable.append(lit.getBaseDirection().toString());
 		} else {
 			// SES-1917 : In RDF-1.1, all literals have a type, and if they are not
 			// language literals we display the type for backwards compatibility
@@ -579,15 +577,15 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Creates an N-Triples (non-standard) string for the supplied RDF-star triple.
+	 * Creates an N-Triples string for the supplied triple.
 	 *
 	 * @param triple
 	 * @return string
 	 */
 	public static String toNTriplesString(Triple triple) {
-		return "<<" + NTriplesUtil.toNTriplesString(triple.getSubject()) + " "
+		return "<<( " + NTriplesUtil.toNTriplesString(triple.getSubject()) + " "
 				+ NTriplesUtil.toNTriplesString(triple.getPredicate()) + " "
-				+ NTriplesUtil.toNTriplesString(triple.getObject()) + ">>";
+				+ NTriplesUtil.toNTriplesString(triple.getObject()) + " )>>";
 	}
 
 	/**
@@ -598,13 +596,13 @@ public class NTriplesUtil {
 	 * @throws IOException
 	 */
 	public static void append(Triple triple, Appendable appendable) throws IOException {
-		appendable.append("<<");
+		appendable.append("<<( ");
 		append(triple.getSubject(), appendable);
 		appendable.append(' ');
 		append(triple.getPredicate(), appendable);
 		appendable.append(' ');
 		append(triple.getObject(), appendable);
-		appendable.append(">>");
+		appendable.append(" )>>");
 	}
 
 	/**
@@ -747,8 +745,12 @@ public class NTriplesUtil {
 				appendable.append("\\r");
 			} else if (c == '\t') {
 				appendable.append("\\t");
-			} else if (cInt >= 0x0 && cInt <= 0x8 || cInt == 0xB || cInt == 0xC || cInt >= 0xE && cInt <= 0x1F
-					|| cInt >= 0x7F && cInt <= 0xFFFF) {
+			} else if (c == '\b') {
+				appendable.append("\\b");
+			} else if (c == '\f') {
+				appendable.append("\\f");
+			} else if (cInt >= 0x0 && cInt <= 0x0007 || cInt >= 0xE && cInt <= 0x1F || cInt == 0xB || cInt == 0x7F
+					|| cInt >= 0xFFFE) {
 				if (escapeUnicode) {
 					appendable.append("\\u");
 					appendable.append(toHexString(cInt, 4));

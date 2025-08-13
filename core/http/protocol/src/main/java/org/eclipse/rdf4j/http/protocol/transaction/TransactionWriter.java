@@ -35,7 +35,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
+import org.eclipse.rdf4j.rio.helpers.TripleTermUtil;
 
 /**
  * Serializes of an RDF transaction.
@@ -242,6 +242,8 @@ public class TransactionWriter {
 			serialize((Resource) value, xmlWriter);
 		} else if (value instanceof Literal) {
 			serialize((Literal) value, xmlWriter);
+		} else if (value instanceof Triple) {
+			serialize((Triple) value, xmlWriter);
 		} else if (value == null) {
 			serializeNull(xmlWriter);
 		} else {
@@ -254,8 +256,6 @@ public class TransactionWriter {
 			serialize((IRI) resource, xmlWriter);
 		} else if (resource instanceof BNode) {
 			serialize((BNode) resource, xmlWriter);
-		} else if (resource instanceof Triple) {
-			serialize((Triple) resource, xmlWriter);
 		} else if (resource == null) {
 			serializeNull(xmlWriter);
 		} else {
@@ -313,7 +313,7 @@ public class TransactionWriter {
 
 	protected void serialize(Triple triple, XMLWriter xmlWriter) throws IOException {
 		if (triple != null) {
-			Value convertBase64 = RDFStarUtil.toRDFEncodedValue(triple);
+			Value convertBase64 = TripleTermUtil.toRDFEncodedValue(triple);
 			xmlWriter.textElement(TransactionXMLConstants.TRIPLE_TAG, convertBase64.stringValue());
 		} else {
 			serializeNull(xmlWriter);

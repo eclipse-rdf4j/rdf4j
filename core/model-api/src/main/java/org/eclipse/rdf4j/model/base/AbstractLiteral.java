@@ -77,11 +77,12 @@ public abstract class AbstractLiteral implements Literal {
 	private static final long serialVersionUID = -1286527360744086451L;
 
 	static boolean reserved(IRI datatype) {
-		return CoreDatatype.RDF.LANGSTRING.getIri().equals(datatype);
+		return CoreDatatype.RDF.LANGSTRING.getIri().equals(datatype)
+				|| CoreDatatype.RDF.DIRLANGSTRING.getIri().equals(datatype);
 	}
 
 	static boolean reserved(CoreDatatype datatype) {
-		return CoreDatatype.RDF.LANGSTRING == datatype;
+		return CoreDatatype.RDF.LANGSTRING == datatype || CoreDatatype.RDF.DIRLANGSTRING == datatype;
 	}
 
 	/**
@@ -186,7 +187,7 @@ public abstract class AbstractLiteral implements Literal {
 
 		return getLanguage()
 
-				.map(language -> label + '@' + language)
+				.map(language -> label + '@' + language + getBaseDirection())
 
 				.orElseGet(() -> CoreDatatype.XSD.STRING == getCoreDatatype() ? label
 						: label + "^^<" + getDatatype().stringValue() + ">");
@@ -268,10 +269,16 @@ public abstract class AbstractLiteral implements Literal {
 
 		private final String label;
 		private final String language;
+		private final BaseDirection baseDirection;
 
 		TaggedLiteral(String label, String language) {
+			this(label, language, BaseDirection.NONE);
+		}
+
+		TaggedLiteral(String label, String language, BaseDirection baseDirection) {
 			this.label = label;
 			this.language = language;
+			this.baseDirection = baseDirection;
 		}
 
 		@Override
@@ -285,13 +292,19 @@ public abstract class AbstractLiteral implements Literal {
 		}
 
 		@Override
+		public BaseDirection getBaseDirection() {
+			return baseDirection;
+		}
+
+		@Override
 		public IRI getDatatype() {
-			return CoreDatatype.RDF.LANGSTRING.getIri();
+			return baseDirection == BaseDirection.NONE ? CoreDatatype.RDF.LANGSTRING.getIri()
+					: CoreDatatype.RDF.DIRLANGSTRING.getIri();
 		}
 
 		@Override
 		public CoreDatatype.RDF getCoreDatatype() {
-			return CoreDatatype.RDF.LANGSTRING;
+			return baseDirection == BaseDirection.NONE ? CoreDatatype.RDF.LANGSTRING : CoreDatatype.RDF.DIRLANGSTRING;
 		}
 	}
 

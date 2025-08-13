@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.rio.nquads;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -21,6 +22,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.StringReader;
 import java.util.Collection;
 
 import org.eclipse.rdf4j.model.BNode;
@@ -29,24 +31,25 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.rio.AbstractParserTest;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.NTriplesParserSettings;
-import org.eclipse.rdf4j.rio.helpers.SimpleParseLocationListener;
-import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
  * JUnit test for the N-Quads parser that uses the tests that are available
  * <a href="http://www.w3.org/2013/N-QuadsTests/">online</a>.
  */
-public abstract class AbstractNQuadsParserUnitTest {
+public abstract class AbstractNQuadsParserUnitTest extends AbstractParserTest {
+
+	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	/*-----------*
 	 * Constants *
@@ -60,33 +63,16 @@ public abstract class AbstractNQuadsParserUnitTest {
 
 	private static final String NTRIPLES_TEST_FILE = "/testcases/ntriples/test.nt";
 
-	private RDFParser parser;
-
-	private TestRDFHandler rdfHandler;
-
-	@BeforeEach
-	public void setUp() {
-		parser = createRDFParser();
-		rdfHandler = new TestRDFHandler();
-		parser.setRDFHandler(this.rdfHandler);
-	}
-
-	@AfterEach
-	public void tearDown() {
-		parser = null;
-	}
-
 	/*---------*
 	 * Methods *
 	 *---------*/
 
 	public void testNQuadsFile() throws Exception {
-		RDFParser nquadsParser = createRDFParser();
-		nquadsParser.setRDFHandler(new AbstractRDFHandler() {
+		parser.setRDFHandler(new AbstractRDFHandler() {
 		});
 
 		try (InputStream in = AbstractNQuadsParserUnitTest.class.getResourceAsStream(NQUADS_TEST_FILE)) {
-			nquadsParser.parse(in, NQUADS_TEST_URL);
+			parser.parse(in, NQUADS_TEST_URL);
 		} catch (RDFParseException e) {
 			fail("NQuadsParser failed to parse N-Quads test document: " + e.getMessage());
 		}
@@ -96,12 +82,11 @@ public abstract class AbstractNQuadsParserUnitTest {
 	 * The N-Quads parser must be able to parse the N-Triples test file without error.
 	 */
 	public void testNTriplesFile() throws Exception {
-		RDFParser nquadsParser = createRDFParser();
-		nquadsParser.setRDFHandler(new AbstractRDFHandler() {
+		parser.setRDFHandler(new AbstractRDFHandler() {
 		});
 
 		try (InputStream in = AbstractNQuadsParserUnitTest.class.getResourceAsStream(NTRIPLES_TEST_FILE)) {
-			nquadsParser.parse(in, NTRIPLES_TEST_URL);
+			parser.parse(in, NTRIPLES_TEST_URL);
 		} catch (RDFParseException e) {
 			fail("NQuadsParser failed to parse N-Triples test document: " + e.getMessage());
 		}
@@ -186,10 +171,8 @@ public abstract class AbstractNQuadsParserUnitTest {
 	public void testParseEmptyLinesAndComments() throws RDFHandlerException, IOException, RDFParseException {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
 				"  \n\n\n# This is a comment\n\n#this is another comment.".getBytes());
-		final TestRDFHandler rdfHandler = new TestRDFHandler();
-		parser.setRDFHandler(rdfHandler);
 		parser.parse(bais, "http://test.base.uri");
-		assertEquals(rdfHandler.getStatements().size(), 0);
+		assertEquals(0, statementCollector.getStatements().size());
 	}
 
 	/**
@@ -200,11 +183,9 @@ public abstract class AbstractNQuadsParserUnitTest {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
 				"<http://www.v/dat/4b> <http://www.w3.org/20/ica#dtend> <http://sin/value/2> <http://sin.siteserv.org/def/> ."
 						.getBytes());
-		final TestRDFHandler rdfHandler = new TestRDFHandler();
-		parser.setRDFHandler(rdfHandler);
 		parser.parse(bais, "http://test.base.uri");
-		assertEquals(1, rdfHandler.getStatements().size());
-		final Statement statement = rdfHandler.getStatements().iterator().next();
+		assertEquals(1, statementCollector.getStatements().size());
+		final Statement statement = statementCollector.getStatements().iterator().next();
 		assertEquals("http://www.v/dat/4b", statement.getSubject().stringValue());
 		assertEquals("http://www.w3.org/20/ica#dtend", statement.getPredicate().stringValue());
 		assertTrue(statement.getObject() instanceof IRI);
@@ -220,11 +201,9 @@ public abstract class AbstractNQuadsParserUnitTest {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
 				"_:a123456768 <http://www.w3.org/20/ica#dtend> <http://sin/value/2> <http://sin.siteserv.org/def/>."
 						.getBytes());
-		final TestRDFHandler rdfHandler = new TestRDFHandler();
-		parser.setRDFHandler(rdfHandler);
 		parser.parse(bais, "http://test.base.uri");
-		assertThat(rdfHandler.getStatements()).hasSize(1);
-		final Statement statement = rdfHandler.getStatements().iterator().next();
+		assertThat(statementCollector.getStatements()).hasSize(1);
+		final Statement statement = statementCollector.getStatements().iterator().next();
 		assertTrue(statement.getSubject() instanceof BNode);
 		assertEquals("http://www.w3.org/20/ica#dtend", statement.getPredicate().stringValue());
 		assertTrue(statement.getObject() instanceof IRI);
@@ -240,11 +219,9 @@ public abstract class AbstractNQuadsParserUnitTest {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
 				"_:a123456768 <http://www.w3.org/20/ica#dtend> \"2010-05-02\" <http://sin.siteserv.org/def/>."
 						.getBytes());
-		final TestRDFHandler rdfHandler = new TestRDFHandler();
-		parser.setRDFHandler(rdfHandler);
 		parser.parse(bais, "http://test.base.uri");
-		assertThat(rdfHandler.getStatements()).hasSize(1);
-		final Statement statement = rdfHandler.getStatements().iterator().next();
+		assertThat(statementCollector.getStatements()).hasSize(1);
+		final Statement statement = statementCollector.getStatements().iterator().next();
 		assertTrue(statement.getSubject() instanceof BNode);
 		assertEquals("http://www.w3.org/20/ica#dtend", statement.getPredicate().stringValue());
 		assertTrue(statement.getObject() instanceof Literal);
@@ -260,10 +237,8 @@ public abstract class AbstractNQuadsParserUnitTest {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
 				"<http://www.v/dat/4b2-21> <http://www.w3.org/20/ica#dtend> \"2010-05-02\"@en <http://sin.siteserv.org/def/>."
 						.getBytes());
-		final TestRDFHandler rdfHandler = new TestRDFHandler();
-		parser.setRDFHandler(rdfHandler);
 		parser.parse(bais, "http://test.base.uri");
-		final Statement statement = rdfHandler.getStatements().iterator().next();
+		final Statement statement = statementCollector.getStatements().iterator().next();
 		assertEquals("http://www.v/dat/4b2-21", statement.getSubject().stringValue());
 		assertEquals("http://www.w3.org/20/ica#dtend", statement.getPredicate().stringValue());
 		assertTrue(statement.getObject() instanceof Literal);
@@ -283,10 +258,8 @@ public abstract class AbstractNQuadsParserUnitTest {
 				("<http://www.v/dat/4b2-21> " + "<http://www.w3.org/20/ica#dtend> "
 						+ "\"2010\"^^<http://www.w3.org/2001/XMLSchema#integer> " + "<http://sin.siteserv.org/def/>.")
 						.getBytes());
-		final TestRDFHandler rdfHandler = new TestRDFHandler();
-		parser.setRDFHandler(rdfHandler);
 		parser.parse(bais, "http://test.base.uri");
-		final Statement statement = rdfHandler.getStatements().iterator().next();
+		final Statement statement = statementCollector.getStatements().iterator().next();
 		assertEquals("http://www.v/dat/4b2-21", statement.getSubject().stringValue());
 		assertEquals("http://www.w3.org/20/ica#dtend", statement.getPredicate().stringValue());
 		assertTrue(statement.getObject() instanceof Literal);
@@ -307,8 +280,6 @@ public abstract class AbstractNQuadsParserUnitTest {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
 				("<http://www.v/dat/4b2-21> " + "<http://www.w3.org/20/ica#dtend> " + "\"2010\"^^xsd:integer "
 						+ "<http://sin.siteserv.org/def/>.").getBytes());
-		final TestRDFHandler rdfHandler = new TestRDFHandler();
-		parser.setRDFHandler(rdfHandler);
 		try {
 			parser.parse(bais, "http://test.base.uri");
 			fail("Expected exception when passing in a datatype using an N3 style prefix");
@@ -324,19 +295,14 @@ public abstract class AbstractNQuadsParserUnitTest {
 	 */
 	@Test
 	public void testLiteralEscapeManagement1() throws RDFHandlerException, IOException, RDFParseException {
-		TestParseLocationListener parseLocationListener = new TestParseLocationListener();
-		TestRDFHandler rdfHandler = new TestRDFHandler();
-		parser.setParseLocationListener(parseLocationListener);
-		parser.setRDFHandler(rdfHandler);
-
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
 				"<http://a> <http://b> \"\\\\\" <http://c> .".getBytes());
 		parser.parse(bais, "http://base-uri");
 
-		rdfHandler.assertHandler(1);
-		// parseLocationListener.assertListener(1, 40);
+		assertEquals(1, statementCollector.getStatements().size());
+		// locationListener.assertListener(1, 40);
 		// FIXME: Enable column numbers when parser supports them
-		parseLocationListener.assertListener(1, 1);
+		locationListener.assertListener(1, 1);
 	}
 
 	/**
@@ -344,17 +310,12 @@ public abstract class AbstractNQuadsParserUnitTest {
 	 */
 	@Test
 	public void testLiteralEscapeManagement2() throws RDFHandlerException, IOException, RDFParseException {
-		TestParseLocationListener parseLocationListener = new TestParseLocationListener();
-		TestRDFHandler rdfHandler = new TestRDFHandler();
-		parser.setParseLocationListener(parseLocationListener);
-		parser.setRDFHandler(rdfHandler);
-
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
 				"<http://a> <http://b> \"Line text 1\\nLine text 2\" <http://c> .".getBytes());
 		parser.parse(bais, "http://base-uri");
 
-		rdfHandler.assertHandler(1);
-		final Value object = rdfHandler.getStatements().iterator().next().getObject();
+		assertEquals(1, statementCollector.getStatements().size());
+		final Value object = statementCollector.getStatements().iterator().next().getObject();
 		assertTrue(object instanceof Literal);
 		final String literalContent = ((Literal) object).getLabel();
 		assertEquals("Line text 1\nLine text 2", literalContent);
@@ -365,18 +326,13 @@ public abstract class AbstractNQuadsParserUnitTest {
 	 */
 	@Test
 	public void testURIDecodingManagement() throws RDFHandlerException, IOException, RDFParseException {
-		TestParseLocationListener parseLocationListener = new TestParseLocationListener();
-		TestRDFHandler rdfHandler = new TestRDFHandler();
-		parser.setParseLocationListener(parseLocationListener);
-		parser.setRDFHandler(rdfHandler);
-
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
 				"<http://s/\\u306F\\u3080> <http://p/\\u306F\\u3080> <http://o/\\u306F\\u3080> <http://g/\\u306F\\u3080> ."
 						.getBytes());
 		parser.parse(bais, "http://base-uri");
 
-		rdfHandler.assertHandler(1);
-		final Statement statement = rdfHandler.getStatements().iterator().next();
+		assertEquals(1, statementCollector.getStatements().size());
+		final Statement statement = statementCollector.getStatements().iterator().next();
 
 		final Resource subject = statement.getSubject();
 		assertTrue(subject instanceof IRI);
@@ -401,16 +357,14 @@ public abstract class AbstractNQuadsParserUnitTest {
 
 	@Test
 	public void testUnicodeLiteralDecoding() throws RDFHandlerException, IOException, RDFParseException {
-		TestRDFHandler rdfHandler = new TestRDFHandler();
-		parser.setRDFHandler(rdfHandler);
 		final String INPUT_LITERAL_PLAIN = "[は]";
 		final String INPUT_LITERAL_ENCODED = "[\\u306F]";
 		final String INPUT_STRING = String.format("<http://a> <http://b> \"%s\" <http://c> .", INPUT_LITERAL_ENCODED);
 		final ByteArrayInputStream bais = new ByteArrayInputStream(INPUT_STRING.getBytes());
 		parser.parse(bais, "http://base-uri");
 
-		rdfHandler.assertHandler(1);
-		final Literal obj = (Literal) rdfHandler.getStatements().iterator().next().getObject();
+		assertEquals(1, statementCollector.getStatements().size());
+		final Literal obj = (Literal) statementCollector.getStatements().iterator().next().getObject();
 		assertEquals(INPUT_LITERAL_PLAIN, obj.getLabel());
 	}
 
@@ -452,17 +406,12 @@ public abstract class AbstractNQuadsParserUnitTest {
 	 */
 	@Test
 	public void testParserWithAllCases() throws IOException, RDFParseException, RDFHandlerException {
-		TestParseLocationListener parseLocationListerner = new TestParseLocationListener();
-		// SpecificTestRDFHandler rdfHandler = new SpecificTestRDFHandler();
-		parser.setParseLocationListener(parseLocationListerner);
-		parser.setRDFHandler(rdfHandler);
-
 		BufferedReader br = new BufferedReader(new InputStreamReader(
 				AbstractNQuadsParserUnitTest.class.getResourceAsStream("/testcases/nquads/test1.nq")));
 		parser.parse(br, "http://test.base.uri");
 
-		rdfHandler.assertHandler(6);
-		parseLocationListerner.assertListener(8, 1);
+		assertEquals(6, statementCollector.getStatements().size());
+		locationListener.assertListener(8, 1);
 	}
 
 	/**
@@ -470,16 +419,11 @@ public abstract class AbstractNQuadsParserUnitTest {
 	 */
 	@Test
 	public void testParserWithRealData() throws IOException, RDFParseException, RDFHandlerException {
-		TestParseLocationListener parseLocationListener = new TestParseLocationListener();
-		TestRDFHandler rdfHandler = new TestRDFHandler();
-		parser.setParseLocationListener(parseLocationListener);
-		parser.setRDFHandler(rdfHandler);
-
 		parser.parse(AbstractNQuadsParserUnitTest.class.getResourceAsStream("/testcases/nquads/test2.nq"),
 				"http://test.base.uri");
 
-		rdfHandler.assertHandler(400);
-		parseLocationListener.assertListener(400, 1);
+		assertEquals(400, statementCollector.getStatements().size());
+		locationListener.assertListener(400, 1);
 	}
 
 	@Test
@@ -566,15 +510,13 @@ public abstract class AbstractNQuadsParserUnitTest {
 						// with
 						// error.
 						"<http://s1> <http://p1> <http://o1> <http://g1> .\n").getBytes());
-		final TestRDFHandler rdfHandler = new TestRDFHandler();
-		parser.setRDFHandler(rdfHandler);
 
 		parser.getParserConfig().set(NTriplesParserSettings.FAIL_ON_INVALID_LINES, false);
 		parser.getParserConfig().addNonFatalError(NTriplesParserSettings.FAIL_ON_INVALID_LINES);
 
 		parser.parse(bais, "http://base-uri");
-		rdfHandler.assertHandler(2);
-		final Collection<Statement> statements = rdfHandler.getStatements();
+		assertEquals(2, statementCollector.getStatements().size());
+		final Collection<Statement> statements = statementCollector.getStatements();
 		int i = 0;
 		for (Statement nextStatement : statements) {
 			assertEquals("http://s" + i, nextStatement.getSubject().stringValue());
@@ -587,8 +529,6 @@ public abstract class AbstractNQuadsParserUnitTest {
 
 	private void verifyStatementWithInvalidDatatype(boolean useDatatypeVerification)
 			throws RDFHandlerException, IOException, RDFParseException {
-		TestRDFHandler rdfHandler = new TestRDFHandler();
-		parser.setRDFHandler(rdfHandler);
 		parser.getParserConfig().set(BasicParserSettings.VERIFY_DATATYPE_VALUES, useDatatypeVerification);
 		parser.getParserConfig().set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, useDatatypeVerification);
 		if (!useDatatypeVerification) {
@@ -603,41 +543,138 @@ public abstract class AbstractNQuadsParserUnitTest {
 						+ "<http://it.wikipedia.org/wiki/Camillo_Benso,_conte_di_Cavour#absolute-line=20> .")
 						.getBytes());
 		parser.parse(bais, "http://base-uri");
-		rdfHandler.assertHandler(1);
+		assertEquals(1, statementCollector.getStatements().size());
 	}
 
-	private class TestParseLocationListener extends SimpleParseLocationListener {
-
-		private void assertListener(int row, int col) {
-			assertEquals(row, this.getLineNo(), "Unexpected last row");
-			assertEquals(col, this.getColumnNo(), "Unexpected last col");
-		}
-
+	@Test
+	public void testDirLangStringRTLNoContext() {
+		final String data = "<http://example/a> <http://example/b> \"שלום\"@he--rtl";
+		dirLangStringTest(data, false, "he", Literal.RTL_SUFFIX, false, false);
 	}
 
-	private class TestRDFHandler extends StatementCollector {
+	@Test
+	public void testDirLangStringRTLWithContext() {
+		final String data = "<http://example/a> <http://example/b> \"שלום\"@he--rtl";
+		dirLangStringTest(data, true, "he", Literal.RTL_SUFFIX, false, false);
+	}
 
-		private boolean started = false;
+	@Test
+	public void testDirLangStringLTRWithNormalizationNoContext() {
+		String data = "<http://example/a> <http://example/b> \"Hello\"@en--ltr";
+		dirLangStringTest(data, false, "en", Literal.LTR_SUFFIX, true, false);
+	}
 
-		private boolean ended = false;
+	@Test
+	public void testDirLangStringLTRWithNormalizationWithContext() {
+		final String data = "<http://example/a> <http://example/b> \"Hello\"@en--ltr";
+		dirLangStringTest(data, true, "en", Literal.LTR_SUFFIX, true, false);
+	}
 
-		@Override
-		public void startRDF() throws RDFHandlerException {
-			super.startRDF();
-			started = true;
+	@Test
+	public void testBadDirLangStringNoContext() {
+		final String data = "<http://example/a> <http://example/b> \"hello\"@en--unk";
+		dirLangStringTest(data, false, "", "", true, true);
+	}
+
+	@Test
+	public void testBadDirLangStringWithContext() {
+		final String data = "<http://example/a> <http://example/b> \"hello\"@en--unk";
+		dirLangStringTest(data, true, "", "", true, true);
+	}
+
+	@Test
+	public void testBadCapitalizationDirLangStringNoContext() {
+		final String data = "<http://example/a> <http://example/b> \"Hello\"@en--LTR";
+		dirLangStringTest(data, false, "", "", true, true);
+	}
+
+	@Test
+	public void testBadCapitalizationDirLangStringWithContext() {
+		final String data = "<http://example/a> <http://example/b> \"Hello\"@en--LTR";
+		dirLangStringTest(data, true, "", "", true, true);
+	}
+
+	@Test
+	public void testDirLangStringNoLanguage() throws IOException {
+		final String data = "<http://example/a> <http://example/b> \"Hello\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString> .";
+		dirLangStringNoLanguageTestHelper(data);
+	}
+
+	private void dirLangStringTest(
+			final String triple, final boolean withContext, final String expectedLang, final String expectedDir,
+			final boolean normalize,
+			final boolean shouldCauseException) {
+		final String data = triple + (withContext ? " <http://www.example.org/>" : "") + " .";
+
+		dirLangStringTestHelper(data, expectedLang, expectedDir, normalize, shouldCauseException);
+	}
+
+	@Test
+	public void testTripleTerm() throws IOException {
+		final String data = "<http://example/a> <http://example/b> <<( <http://example/a> <http://example/b> <http://example/c> )>> <http://example/context> .";
+		parser.parse(new StringReader(data));
+
+		assertEquals(1, statementCollector.getStatements().size());
+		assertEquals(
+				vf.createTriple(vf.createIRI("http://example/a"), vf.createIRI("http://example/b"),
+						vf.createIRI("http://example/c")),
+				statementCollector.getStatements().iterator().next().getObject());
+	}
+
+	@Test
+	public void testTripleTermNoWhitespace() throws IOException {
+		final String data = "<http://example/a><http://example/b><<(<http://example/a><http://example/b><http://example/c>)>><http://example/context>.";
+		parser.parse(new StringReader(data));
+
+		assertEquals(1, statementCollector.getStatements().size());
+		assertEquals(
+				vf.createTriple(vf.createIRI("http://example/a"), vf.createIRI("http://example/b"),
+						vf.createIRI("http://example/c")),
+				statementCollector.getStatements().iterator().next().getObject());
+	}
+
+	@Test
+	public void testBadTripleTermSubject() throws IOException {
+		final String data = "<<( <http://example/a> <http://example/b> <http://example/c> )>> <http://example/a> <http://example/b> <http://example/context> .";
+		assertThrows(RDFParseException.class, () -> parser.parse(new StringReader(data)));
+	}
+
+	@Test
+	public void testBadTripleTermMissingObject() throws IOException {
+		final String data = "<http://example/a> <http://example/b> <<( <http://example/a> <http://example/b> )>> <http://example/context> .";
+		assertThrows(RDFParseException.class, () -> parser.parse(new StringReader(data)));
+	}
+
+	@Test
+	public void testSparqlVersionDirectiveDoubleQuotes() throws IOException {
+		String data = "VERSION \"1.2--basic\"";
+		try {
+			parser.parse(new StringReader(data));
+		} catch (RDFParseException e) {
+			fail("parse error on correct data: " + e.getMessage());
 		}
+	}
 
-		@Override
-		public void endRDF() throws RDFHandlerException {
-			super.endRDF();
-			ended = true;
+	@Test
+	public void testSparqlVersionDirectiveSingleQuotes() throws IOException {
+		String data = "VERSION '1.2--basic'";
+		try {
+			parser.parse(new StringReader(data));
+		} catch (RDFParseException e) {
+			fail("parse error on correct data: " + e.getMessage());
 		}
+	}
 
-		public void assertHandler(int expected) {
-			assertTrue(started, "Never started.");
-			assertTrue(ended, "Never ended.");
-			assertEquals(expected, getStatements().size(), "Unexpected number of statements.");
-		}
+	@Test
+	public void testSparqlVersionDirectiveMismatchedQuotes() throws IOException {
+		String data = "VERSION '1.2--basic\"";
+		assertThrows(RDFParseException.class, () -> parser.parse(new StringReader(data)));
+	}
+
+	@Test
+	public void testSparqlVersionDirectiveExtraCharsAfter() throws IOException {
+		String data = "VERSION '1.2--basic\" asdfsdf";
+		assertThrows(RDFParseException.class, () -> parser.parse(new StringReader(data)));
 	}
 
 	@Test

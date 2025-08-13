@@ -86,25 +86,19 @@ public class StatementsTest {
 
 	@Test
 	public void testRDFStarReification() {
-		Model rdfStarModel = RDFStarTestHelper.createRDFStarModel();
+		Model rdfStarModel = ModelReificationTestHelper.createRDF12ReificationModel();
 
-		Model reifiedModel = RDFStarTestHelper.createRDFReificationModel();
+		Model reifiedModel = ModelReificationTestHelper.createRDF11ReificationModel();
 
 		Model convertedModel1 = new LinkedHashModel();
-		rdfStarModel.forEach((s) -> Statements.convertRDFStarToReification(s, convertedModel1::add));
-		assertTrue("RDF-star conversion to reification with implicit VF",
+		rdfStarModel.forEach((s) -> Statements.convertRDF12ReificationToRDF11(s, convertedModel1::add));
+		assertTrue("RDF 1.2 conversion to reification with implicit VF",
 				Models.isomorphic(reifiedModel, convertedModel1));
 
 		Model convertedModel2 = new LinkedHashModel();
-		rdfStarModel.forEach((s) -> Statements.convertRDFStarToReification(vf, s, convertedModel2::add));
-		assertTrue("RDF-star conversion to reification with explicit VF",
+		rdfStarModel.forEach((s) -> Statements.convertRDF12ReificationToRDF11(vf, s, convertedModel2::add));
+		assertTrue("RDF 1.2 conversion to reification with explicit VF",
 				Models.isomorphic(reifiedModel, convertedModel2));
-
-		Model convertedModel3 = new LinkedHashModel();
-		rdfStarModel.forEach((s) -> Statements.convertRDFStarToReification(vf, (t) -> vf.createBNode(t.stringValue()),
-				s, convertedModel3::add));
-		assertTrue("RDF-star conversion to reification with explicit VF and custom BNode mapping",
-				Models.isomorphic(reifiedModel, convertedModel3));
 	}
 
 	@Test

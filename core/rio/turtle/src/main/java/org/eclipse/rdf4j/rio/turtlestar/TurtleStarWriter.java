@@ -10,14 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtlestar;
 
-import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Writer;
 
-import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
-import org.eclipse.rdf4j.model.Triple;
-import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.turtle.TurtleWriter;
 
 /**
@@ -26,6 +22,7 @@ import org.eclipse.rdf4j.rio.turtle.TurtleWriter;
  *
  * @author Pavel Mihaylov
  */
+@Deprecated
 public class TurtleStarWriter extends TurtleWriter {
 	/**
 	 * Creates a new TurtleStarWriter that will write to the supplied OutputStream.
@@ -63,22 +60,5 @@ public class TurtleStarWriter extends TurtleWriter {
 	 */
 	public TurtleStarWriter(Writer writer, ParsedIRI baseIRI) {
 		super(writer, baseIRI);
-	}
-
-	@Override
-	public RDFFormat getRDFFormat() {
-		return RDFFormat.TURTLESTAR;
-	}
-
-	@Override
-	public boolean acceptsFileFormat(FileFormat format) {
-		// since Turtle-star is a superset of regular Turtle, this Sink also accepts regular Turtle
-		// serialization
-		return super.acceptsFileFormat(format) || RDFFormat.TURTLE.equals(format);
-	}
-
-	@Override
-	protected void writeTriple(Triple triple, boolean canShorten) throws IOException {
-		writeTripleRDFStar(triple, canShorten);
 	}
 }

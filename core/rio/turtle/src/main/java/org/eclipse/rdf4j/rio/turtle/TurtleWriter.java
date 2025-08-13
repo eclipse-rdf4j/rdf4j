@@ -101,6 +101,8 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 
 	private ModelFactory modelFactory = new LinkedHashModelFactory();
 
+	private boolean versionPrinted = false;
+
 	/**
 	 * Creates a new TurtleWriter that will write to the supplied OutputStream.
 	 *
@@ -303,6 +305,20 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 		IRI pred = st.getPredicate();
 		Value obj = st.getObject();
 
+		if (!versionPrinted) {
+			if (usesVersion12(obj)) {
+				try {
+					// If we're in the middle of writing a structure, close it first
+					if (!statementClosed || !stack.isEmpty()) {
+						closePreviousStatement();
+					}
+					writeVersion();
+				} catch (IOException e) {
+					throw new RDFHandlerException(e);
+				}
+			}
+		}
+
 		try {
 			if (inlineBNodes) {
 				if ((pred.equals(RDF.FIRST) || pred.equals(RDF.REST)) && isWellFormedCollection(subj)) {
@@ -467,6 +483,12 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 		writer.writeEOL();
 	}
 
+	protected void writeVersion() throws IOException {
+		writer.write("VERSION \"1.2\"");
+		writer.writeEOL();
+		versionPrinted = true;
+	}
+
 	protected void writePredicate(IRI predicate) throws IOException {
 		if (predicate.equals(RDF.TYPE)) {
 			// Write short-cut for rdf:type
@@ -501,6 +523,8 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 			stack.addLast((BNode) val);
 		} else if (val instanceof Resource) {
 			writeResource((Resource) val, canShorten);
+		} else if (val instanceof Triple) {
+			writeTriple((Triple) val, canShorten);
 		} else {
 			writeLiteral((Literal) val);
 		}
@@ -625,22 +649,20 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 	}
 
 	protected void writeTriple(Triple triple, boolean canShorten) throws IOException {
-		throw new IOException(getRDFFormat().getName() + " does not support RDF-star triples");
-	}
-
-	protected void writeTripleRDFStar(Triple triple, boolean canShorten) throws IOException {
-		writer.write("<<");
-		writeResource(triple.getSubject());
+		writer.write("<<( ");
+		writeResource(triple.getSubject(), canShorten);
 		writer.write(" ");
 		writeURI(triple.getPredicate());
 		writer.write(" ");
 		Value object = triple.getObject();
 		if (object instanceof Literal) {
 			writeLiteral((Literal) object);
+		} else if (object instanceof Triple) {
+			writeTriple((Triple) object, canShorten);
 		} else {
 			writeResource((Resource) object, canShorten);
 		}
-		writer.write(">>");
+		writer.write(" )>>");
 	}
 
 	protected void writeLiteral(Literal lit) throws IOException {
@@ -682,6 +704,7 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 			// Append the literal's language
 			writer.write("@");
 			writer.write(lit.getLanguage().get());
+			writer.write(lit.getBaseDirection().toString());
 		} else if (!xsdStringToPlainLiteral || !XSD.STRING.equals(datatype)) {
 			// Append the literal's datatype (possibly written as an abbreviated
 			// URI)
@@ -835,6 +858,14 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 			return;
 		}
 
+		if (!versionPrinted && bufferedStatements.objects().stream().anyMatch(o -> usesVersion12(o))) {
+			try {
+				writeVersion();
+			} catch (IOException e) {
+				throw new RDFHandlerException(e);
+			}
+		}
+
 		if (this.getRDFFormat().supportsContexts()) { // to allow use in Turtle extensions such a TriG
 			// primary grouping per context.
 			for (Resource context : bufferedStatements.contexts()) {
@@ -934,6 +965,10 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 	 */
 	private boolean isBuffering() {
 		return inlineBNodes || prettyPrint;
+	}
+
+	private static boolean usesVersion12(Value v) {
+		return v.isTriple() || (v.isLiteral() && ((Literal) v).getDatatype() == RDF.DIRLANGSTRING);
 	}
 
 }

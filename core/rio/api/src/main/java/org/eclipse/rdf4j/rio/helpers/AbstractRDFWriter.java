@@ -93,13 +93,14 @@ public abstract class AbstractRDFWriter implements RDFWriter, Sink {
 		writingStarted = true;
 
 		statementConsumer = this::consumeStatement;
-		if (getWriterConfig().get(BasicWriterSettings.CONVERT_RDF_STAR_TO_REIFICATION)) {
-			// All writers can convert RDF-star to reification on request
-			statementConsumer = this::handleStatementConvertRDFStar;
-		} else if (!getRDFFormat().supportsRDFStar() && getWriterConfig().get(BasicWriterSettings.ENCODE_RDF_STAR)) {
-			// By default non-RDF-star writers encode RDF-star to special RDF IRIs
-			// (all parsers, including RDF-star will convert back the encoded IRIs)
-			statementConsumer = this::handleStatementEncodeRDFStar;
+		if (getWriterConfig().get(BasicWriterSettings.CONVERT_RDF_12_REIFICATION)) {
+			// All writers can convert RDF 1.2 to reification on request
+			statementConsumer = this::handleStatementConvertTripleTerms;
+		} else if (!getRDFFormat().supportsTripleTerms()
+				&& getWriterConfig().get(BasicWriterSettings.ENCODE_TRIPLE_TERMS)) {
+			// By default, non-RDF-12 writers encode triple terms to special RDF IRIs
+			// (all parsers, including RDF 1.2 will convert back the encoded IRIs)
+			statementConsumer = this::handleStatementEncodeTripleTerms;
 		}
 	}
 
@@ -113,7 +114,7 @@ public abstract class AbstractRDFWriter implements RDFWriter, Sink {
 	 * Consume a statement.
 	 * <p>
 	 * Extending classes must override this method instead of overriding {@link #handleStatement(Statement)} in order to
-	 * benefit from automatic handling of RDF-star conversion or encoding.
+	 * benefit from automatic handling of RDF 1.2 conversion or encoding.
 	 *
 	 * @param st the statement to consume.
 	 */
@@ -141,15 +142,15 @@ public abstract class AbstractRDFWriter implements RDFWriter, Sink {
 		}
 	}
 
-	private void handleStatementConvertRDFStar(Statement st) {
-		Statements.convertRDFStarToReification(st, this::consumeStatement);
+	private void handleStatementConvertTripleTerms(Statement st) {
+		Statements.convertRDF12ReificationToRDF11(st, this::consumeStatement);
 	}
 
-	private void handleStatementEncodeRDFStar(Statement st) {
+	private void handleStatementEncodeTripleTerms(Statement st) {
 		Resource s = st.getSubject();
 		Value o = st.getObject();
 		if (s instanceof Triple || o instanceof Triple) {
-			consumeStatement(new RDFStarEncodingStatement(st));
+			consumeStatement(new TripleTermEncodingStatement(st));
 		} else {
 			consumeStatement(st);
 		}

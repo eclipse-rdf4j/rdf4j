@@ -65,6 +65,19 @@ public class MemLiteral extends SimpleLiteral implements MemValue {
 	}
 
 	/**
+	 * Creates a new Literal which will get the supplied label, language code, and base direction.
+	 *
+	 * @param creator       The object that is creating this MemLiteral.
+	 * @param label         The label for this literal.
+	 * @param lang          The language code of the supplied label.
+	 * @param baseDirection The base direction as a string ("", "--ltr", "--rtl").
+	 */
+	public MemLiteral(Object creator, String label, String lang, BaseDirection baseDirection) {
+		super(label, lang, baseDirection);
+		this.creator = creator;
+	}
+
+	/**
 	 * Creates a new Literal which will get the supplied label and datatype.
 	 *
 	 * @param creator  The object that is creating this MemLiteral.
