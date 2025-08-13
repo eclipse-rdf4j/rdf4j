@@ -18,6 +18,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.datasketches.hll.HllSketch;
 import org.apache.datasketches.theta.AnotB;
 import org.apache.datasketches.theta.Intersection;
 import org.apache.datasketches.theta.SetOperation;
@@ -116,6 +117,9 @@ public class SketchBasedJoinEstimator {
 
 	private static final Sketch EMPTY = UpdateSketch.builder().build().compact();
 
+	private final HllSketch addedStatements = new HllSketch();
+	private final HllSketch deletedStatements = new HllSketch();
+
 	/* ────────────────────────────────────────────────────────────── */
 	/* Construction */
 	/* ────────────────────────────────────────────────────────────── */
@@ -203,6 +207,17 @@ public class SketchBasedJoinEstimator {
 
 		refresher = new Thread(() -> {
 			while (running) {
+				boolean staleness = staleness();
+				if (!staleness) {
+					try {
+						Thread.sleep(1000);
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						break;
+					}
+					continue;
+				}
+
 				if (!rebuildRequested) {
 					try {
 						Thread.sleep(periodMs);
@@ -247,6 +262,22 @@ public class SketchBasedJoinEstimator {
 		}
 	}
 
+	Object monitor = new Object();
+
+	public boolean staleness() {
+
+		double addedSize = addedStatements.getEstimate();
+		double deletedSize = deletedStatements.getEstimate();
+
+		if (deletedSize > addedSize) {
+			return true;
+		}
+
+		double percentageDeleted = deletedSize / (addedSize + deletedSize);
+		return percentageDeleted > 0.2;
+
+	}
+
 	/* ────────────────────────────────────────────────────────────── */
 	/* Rebuild */
 	/* ────────────────────────────────────────────────────────────── */
@@ -257,18 +288,20 @@ public class SketchBasedJoinEstimator {
 	 *
 	 * @return number of statements scanned.
 	 */
-	public long rebuildOnceSlow() {
+	public synchronized long rebuildOnceSlow() {
 
 		long currentMemoryUsage = currentMemoryUsage();
 
-		boolean rebuildIntoA = usingA; // remember before toggling
-		usingA = !usingA; // next rebuild goes to the other buffer
+		boolean rebuildIntoA = !usingA; // remember before toggling
 
 		State tgt = rebuildIntoA ? bufA : bufB;
 		tgt.clear(); // wipe everything (add + del)
 
 		long seen = 0L;
 		long l = System.currentTimeMillis();
+
+		addedStatements.reset();
+		deletedStatements.reset();
 
 		try (SailDataset ds = sailStore.getExplicitSailSource().dataset(IsolationLevels.SERIALIZABLE);
 				CloseableIteration<? extends Statement> it = ds.getStatements(null, null, null)) {
@@ -296,6 +329,7 @@ public class SketchBasedJoinEstimator {
 
 		current = tgt; // single volatile write → visible to all readers
 		seenTriples = seen;
+		usingA = !usingA;
 
 		long currentMemoryUsageAfter = currentMemoryUsage();
 		System.out.println("RdfJoinEstimator: Rebuilt " + (rebuildIntoA ? "bufA" : "bufB") +
@@ -338,6 +372,9 @@ public class SketchBasedJoinEstimator {
 	/* ────────────────────────────────────────────────────────────── */
 
 	public void addStatement(Statement st) {
+
+		addedStatements.update(st.hashCode());
+
 		Objects.requireNonNull(st);
 
 		synchronized (bufA) {
@@ -360,6 +397,8 @@ public class SketchBasedJoinEstimator {
 
 	public void deleteStatement(Statement st) {
 		Objects.requireNonNull(st);
+
+		deletedStatements.update(st.hashCode());
 
 		synchronized (bufA) {
 			ingest(bufA, st, /* isDelete= */true);
