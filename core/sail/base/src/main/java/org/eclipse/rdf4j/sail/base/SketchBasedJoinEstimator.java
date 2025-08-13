@@ -269,7 +269,7 @@ public class SketchBasedJoinEstimator {
 	 */
 	public synchronized long rebuildOnceSlow() {
 
-		long currentMemoryUsage = currentMemoryUsage();
+//		long currentMemoryUsage = currentMemoryUsage();
 
 		boolean rebuildIntoA = !usingA; // remember before toggling
 
@@ -310,11 +310,11 @@ public class SketchBasedJoinEstimator {
 		seenTriples = seen;
 		usingA = !usingA;
 
-		long currentMemoryUsageAfter = currentMemoryUsage();
-		System.out.println("RdfJoinEstimator: Rebuilt " + (rebuildIntoA ? "bufA" : "bufB") +
-				", seen " + seen + " triples, memory usage: " +
-				currentMemoryUsageAfter / 1024 / 1024 + " MB, delta = " +
-				(currentMemoryUsageAfter - currentMemoryUsage) / 1024 / 1024 + " MB.");
+//		long currentMemoryUsageAfter = currentMemoryUsage();
+//		System.out.println("RdfJoinEstimator: Rebuilt " + (rebuildIntoA ? "bufA" : "bufB") +
+//				", seen " + seen + " triples, memory usage: " +
+//				currentMemoryUsageAfter / 1024 / 1024 + " MB, delta = " +
+//				(currentMemoryUsageAfter - currentMemoryUsage) / 1024 / 1024 + " MB.");
 
 		// staleness: publish times & reset deltas
 		lastRebuildPublishMs = System.currentTimeMillis();
