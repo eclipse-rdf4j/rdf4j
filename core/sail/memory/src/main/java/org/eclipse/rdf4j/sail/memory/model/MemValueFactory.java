@@ -302,7 +302,7 @@ public class MemValueFactory extends AbstractValueFactory {
 			IRI datatype = coreDatatype != CoreDatatype.NONE ? coreDatatype.getIri() : literal.getDatatype();
 
 			if (Literals.isLanguageLiteral(literal)) {
-				return new MemLiteral(this, label, literal.getLanguage().get());
+				return new MemLiteral(this, label, literal.getLanguage().get(), literal.getBaseDirection());
 			} else {
 				try {
 					if (coreDatatype.isXSDDatatype()) {
@@ -404,6 +404,11 @@ public class MemValueFactory extends AbstractValueFactory {
 	@Override
 	public Literal createLiteral(String value, String language) {
 		return getOrCreateMemLiteral(super.createLiteral(value, language));
+	}
+
+	@Override
+	public Literal createLiteral(String value, String language, Literal.BaseDirection baseDirection) {
+		return getOrCreateMemLiteral(super.createLiteral(value, language, baseDirection));
 	}
 
 	@Override

@@ -87,7 +87,13 @@ public class RDF {
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#langString */
 	public static final IRI LANGSTRING = CoreDatatype.RDF.LANGSTRING.getIri();
 
+	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString */
+	public static final IRI DIRLANGSTRING = CoreDatatype.RDF.DIRLANGSTRING.getIri();
+
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#HTML */
 	public static final IRI HTML = CoreDatatype.RDF.HTML.getIri();
+
+	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON */
+	public static final IRI JSON = CoreDatatype.RDF.JSON.getIri();
 
 }

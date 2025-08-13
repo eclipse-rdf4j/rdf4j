@@ -134,10 +134,15 @@ public class ValidatingValueFactory implements ValueFactory {
 
 	@Override
 	public Literal createLiteral(String label, String language) {
+		return createLiteral(label, language, Literal.BaseDirection.NONE);
+	}
+
+	@Override
+	public Literal createLiteral(String label, String language, Literal.BaseDirection baseDirection) {
 		if (!Literals.isValidLanguageTag(language)) {
 			throw new IllegalArgumentException("Not a valid language tag: " + language);
 		}
-		return delegate.createLiteral(label, language);
+		return delegate.createLiteral(label, language, baseDirection);
 	}
 
 	@Override

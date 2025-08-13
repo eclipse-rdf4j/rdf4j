@@ -31,6 +31,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Reader;
+import java.io.StringWriter;
 import java.io.Writer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -50,6 +51,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
@@ -1937,5 +1939,22 @@ public abstract class RDFWriterTest {
 			assertTrue(actual.contains(subj, pred, obj), "Missing " + st);
 			assertEquals(actual.filter(subj, pred, obj).size(), actual.filter(subj, pred, obj).size());
 		}
+	}
+
+	// Helper method for testing dirLangString literals in supported formats (Turtle, NTriples, TriG, NQuads)
+	public void dirLangStringTest(RDFFormat format) throws Exception {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		String ns = "http://example.org/";
+		IRI uri1 = vf.createIRI(ns, "uri1");
+		IRI uri2 = vf.createIRI(ns, "uri2");
+		model.add(vf.createStatement(uri1, uri2, vf.createLiteral("hello", "en", Literal.BaseDirection.LTR)));
+		model.add(vf.createStatement(uri1, uri2, vf.createLiteral("שלום", "he", Literal.BaseDirection.RTL)));
+
+		StringWriter stringWriter = new StringWriter();
+		Rio.write(model, stringWriter, format);
+		String output = stringWriter.toString();
+
+		assertThat(output).contains("\"hello\"@en--ltr");
+		assertThat(output).contains("\"שלום\"@he--rtl");
 	}
 }
