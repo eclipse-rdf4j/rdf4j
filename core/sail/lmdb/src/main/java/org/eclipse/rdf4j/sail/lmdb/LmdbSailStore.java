@@ -204,7 +204,7 @@ class LmdbSailStore implements SailStore {
 			mayHaveInferred = tripleStore.hasTriples(false);
 			initialized = true;
 			sketchBasedJoinEstimator.rebuildOnceSlow();
-			sketchBasedJoinEstimator.startBackgroundRefresh(10000);
+			sketchBasedJoinEstimator.startBackgroundRefresh(3);
 		} finally {
 			if (!initialized) {
 				close();
@@ -242,7 +242,6 @@ class LmdbSailStore implements SailStore {
 			tripleStoreException = null;
 			sinkStoreAccessLock.unlock();
 		}
-		sketchBasedJoinEstimator.requestRebuild();
 	}
 
 	@Override
@@ -541,7 +540,6 @@ class LmdbSailStore implements SailStore {
 				multiThreadingActive = false;
 				sinkStoreAccessLock.unlock();
 			}
-			sketchBasedJoinEstimator.requestRebuild();
 		}
 
 		@Override
