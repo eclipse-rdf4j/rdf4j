@@ -11,6 +11,16 @@
 	<description>RDF Storage And Inference Layer ("Sail") API.</description>
 	<dependencies>
 		<dependency>
+			<groupId>org.apache.datasketches</groupId>
+			<artifactId>datasketches-java</artifactId>
+			<version>6.2.0</version>
+		</dependency>
+		<dependency>
+			<groupId>it.unimi.dsi</groupId>
+			<artifactId>fastutil</artifactId>
+			<version>8.5.16</version>
+		</dependency>
+		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-sail-api</artifactId>
 			<version>${project.version}</version>

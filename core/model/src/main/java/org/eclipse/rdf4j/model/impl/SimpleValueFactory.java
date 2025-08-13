@@ -14,6 +14,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.Date;
 import java.util.GregorianCalendar;
+import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -48,6 +49,17 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	// static UUID as prefix together with a thread safe incrementing long ensures unique blank nodes.
 	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
 	private final static AtomicLong uniqueIdSuffix = new AtomicLong();
+
+	// Pre-built strings for lengths 0 through 9
+	private static final String[] RANDOMIZE_LENGTH = new String[10];
+	static {
+		Random r = new Random();
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i <= 9; i++) {
+			RANDOMIZE_LENGTH[i] = sb.toString();
+			sb.append(r.nextInt(9));
+		}
+	}
 
 	private static final DatatypeFactory datatypeFactory;
 
@@ -130,7 +142,8 @@ public class SimpleValueFactory extends AbstractValueFactory {
 
 	@Override
 	public BNode createBNode() {
-		return createBNode(uniqueIdPrefix + uniqueIdSuffix.incrementAndGet());
+		long l = uniqueIdSuffix.incrementAndGet();
+		return createBNode(uniqueIdPrefix + l + RANDOMIZE_LENGTH[(int) (l % 9)]);
 	}
 
 	/**

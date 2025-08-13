@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.memory.model.MemBNode;
 import org.eclipse.rdf4j.sail.memory.model.MemIRI;
 import org.eclipse.rdf4j.sail.memory.model.MemResource;
@@ -105,6 +106,8 @@ class MemorySailStore implements SailStore {
 	 * List containing all available statements.
 	 */
 	private final MemStatementList statements = new MemStatementList(256);
+	private final SketchBasedJoinEstimator sketchBasedJoinEstimator = new SketchBasedJoinEstimator(this,
+			SketchBasedJoinEstimator.suggestNominalEntries(), 1000, 2);
 
 	/**
 	 * This gets set to `true` when we add our first inferred statement. If the value is `false` we guarantee that there
@@ -151,6 +154,8 @@ class MemorySailStore implements SailStore {
 
 	public MemorySailStore(boolean debug) {
 		snapshotMonitor = new SnapshotMonitor(debug);
+		sketchBasedJoinEstimator.rebuildOnceSlow();
+		sketchBasedJoinEstimator.startBackgroundRefresh(3); // 10 minutes
 	}
 
 	@Override
@@ -160,6 +165,8 @@ class MemorySailStore implements SailStore {
 
 	@Override
 	public void close() {
+		sketchBasedJoinEstimator.stop();
+
 		synchronized (snapshotCleanupThreadLockObject) {
 			if (snapshotCleanupThread != null) {
 				snapshotCleanupThread.interrupt();
@@ -178,7 +185,7 @@ class MemorySailStore implements SailStore {
 
 	@Override
 	public EvaluationStatistics getEvaluationStatistics() {
-		return new MemEvaluationStatistics(valueFactory, statements);
+		return new MemEvaluationStatistics(valueFactory, statements, sketchBasedJoinEstimator);
 	}
 
 	@Override
@@ -209,22 +216,32 @@ class MemorySailStore implements SailStore {
 			return EMPTY_ITERATION;
 		}
 
-		MemResource memSubj = valueFactory.getMemResource(subj);
-		if (subj != null && memSubj == null) {
-			// non-existent subject
-			return EMPTY_ITERATION;
+		MemIRI memPred = null;
+		MemResource memSubj = null;
+		MemValue memObj = null;
+
+		if (subj != null) {
+			memSubj = valueFactory.getMemResource(subj);
+			if (memSubj == null) {
+				// non-existent subject
+				return EMPTY_ITERATION;
+			}
 		}
 
-		MemIRI memPred = valueFactory.getMemURI(pred);
-		if (pred != null && memPred == null) {
-			// non-existent predicate
-			return EMPTY_ITERATION;
+		if (pred != null) {
+			memPred = valueFactory.getMemURI(pred);
+			if (memPred == null) {
+				// non-existent predicate
+				return EMPTY_ITERATION;
+			}
 		}
 
-		MemValue memObj = valueFactory.getMemValue(obj);
-		if (obj != null && memObj == null) {
-			// non-existent object
-			return EMPTY_ITERATION;
+		if (obj != null) {
+			memObj = valueFactory.getMemValue(obj);
+			if (memObj == null) {
+				// non-existent object
+				return EMPTY_ITERATION;
+			}
 		}
 
 		MemResource[] memContexts;
@@ -786,6 +803,7 @@ class MemorySailStore implements SailStore {
 				if ((nextSnapshot < 0 || toDeprecate.isInSnapshot(nextSnapshot))
 						&& toDeprecate.isExplicit() == explicit) {
 					toDeprecate.setTillSnapshot(nextSnapshot);
+					sketchBasedJoinEstimator.deleteStatement(toDeprecate);
 				}
 			} else if (statement instanceof LinkedHashModel.ModelStatement
 					&& ((LinkedHashModel.ModelStatement) statement).getStatement() instanceof MemStatement) {
@@ -795,6 +813,7 @@ class MemorySailStore implements SailStore {
 				if ((nextSnapshot < 0 || toDeprecate.isInSnapshot(nextSnapshot))
 						&& toDeprecate.isExplicit() == explicit) {
 					toDeprecate.setTillSnapshot(nextSnapshot);
+					sketchBasedJoinEstimator.deleteStatement(toDeprecate);
 				}
 			} else {
 				try (CloseableIteration<MemStatement> iter = createStatementIterator(
@@ -802,6 +821,7 @@ class MemorySailStore implements SailStore {
 						statement.getContext())) {
 					while (iter.hasNext()) {
 						MemStatement st = iter.next();
+						sketchBasedJoinEstimator.deleteStatement(st);
 						st.setTillSnapshot(nextSnapshot);
 					}
 				} catch (InterruptedException e) {
@@ -853,6 +873,7 @@ class MemorySailStore implements SailStore {
 			statements.add(st);
 			st.addToComponentLists();
 			invalidateCache();
+			sketchBasedJoinEstimator.addStatement(st);
 			return st;
 		}
 
@@ -916,6 +937,8 @@ class MemorySailStore implements SailStore {
 				while (iter.hasNext()) {
 					deprecated = true;
 					MemStatement st = iter.next();
+					sketchBasedJoinEstimator.deleteStatement(st);
+
 					st.setTillSnapshot(nextSnapshot);
 				}
 			} catch (InterruptedException e) {
