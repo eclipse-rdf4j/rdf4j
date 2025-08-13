@@ -52,6 +52,7 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 	@Override
 	public boolean supportsJoinEstimation() {
 		return sketchBasedJoinEstimator.isReady();
+//		return false;
 	}
 
 	protected class MemCardinalityCalculator extends CardinalityCalculator {

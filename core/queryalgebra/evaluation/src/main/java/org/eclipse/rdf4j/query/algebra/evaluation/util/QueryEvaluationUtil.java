@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
-import java.util.Objects;
-
 import javax.xml.datatype.DatatypeConstants;
 
 import org.eclipse.rdf4j.model.Literal;
@@ -88,7 +86,8 @@ public class QueryEvaluationUtil {
 					return !("0.0E0".equals(n) || "NaN".equals(n));
 				}
 			} catch (IllegalArgumentException ignore) {
-				/* fall through */ }
+				/* fall through */
+			}
 		}
 		throw new ValueExprEvaluationException();
 	}
@@ -426,8 +425,9 @@ public class QueryEvaluationUtil {
 						int c = l.calendarValue().compare(r.calendarValue());
 						if (c == DatatypeConstants.INDETERMINATE &&
 								ld == CoreDatatype.XSD.DATETIME &&
-								rd == CoreDatatype.XSD.DATETIME)
+								rd == CoreDatatype.XSD.DATETIME) {
 							throw INDETERMINATE_DATE_TIME_EXCEPTION;
+						}
 						return _eq(c);
 					}
 					if (!strict && common.isDurationDatatype()) {
@@ -439,8 +439,9 @@ public class QueryEvaluationUtil {
 
 						int c = XMLDatatypeUtil.parseDuration(l.getLabel())
 								.compare(XMLDatatypeUtil.parseDuration(r.getLabel()));
-						if (c != DatatypeConstants.INDETERMINATE)
+						if (c != DatatypeConstants.INDETERMINATE) {
 							return _eq(c);
+						}
 					}
 					if (common == CoreDatatype.XSD.STRING) {
 						return l.getLabel().equals(r.getLabel());
@@ -515,6 +516,13 @@ public class QueryEvaluationUtil {
 				}
 			}
 		}
+
+		if (!isSupportedDatatype(ld) || !isSupportedDatatype(rd)) {
+			throw UNSUPPOERTED_TYPES_EXCEPTION;
+		}
+
+		validateDatatypeCompatibility(strict, ld, rd);
+
 		throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
 	}
 

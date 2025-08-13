@@ -218,7 +218,7 @@ public class SketchBasedJoinEstimator {
 			while (running) {
 //				System.out.println(staleness().toString());
 				boolean stale = isStale(3);
-				if (!stale) {
+				if (!stale && seenTriples > 0) {
 					try {
 						Thread.sleep(1000);
 					} catch (InterruptedException e) {
@@ -446,6 +446,11 @@ public class SketchBasedJoinEstimator {
 			updateCell(tgtST.get(Component.P), pi, sig, t.k);
 			updateCell(tgtST.get(Component.O), oi, sig, t.k);
 			updateCell(tgtST.get(Component.C), ci, sig, t.k);
+
+			/* ★ churn: record incremental adds since rebuild (S bucket only) */
+			if (!isDelete) {
+				updateCell(t.incAddSingleTriples.get(Component.S), si, sig, t.k);
+			}
 
 			/* complement sets for singles (array-backed second layer) */
 			tgtS.get(Component.S).upd(Component.P, si, p);
@@ -889,6 +894,10 @@ public class SketchBasedJoinEstimator {
 		final EnumMap<Component, SingleBuild> delSingles = new EnumMap<>(Component.class);
 		final EnumMap<Pair, PairBuild> delPairs = new EnumMap<>(Pair.class);
 
+		/* ★ incremental‑adds since last rebuild (array‑backed; we only use S in metrics) */
+		final EnumMap<Component, AtomicReferenceArray<UpdateSketch>> incAddSingleTriples = new EnumMap<>(
+				Component.class);
+
 		State(int k, int buckets) {
 			this.k = k;
 			this.buckets = buckets;
@@ -896,6 +905,7 @@ public class SketchBasedJoinEstimator {
 			for (Component c : Component.values()) {
 				singleTriples.put(c, new AtomicReferenceArray<>(buckets));
 				delSingleTriples.put(c, new AtomicReferenceArray<>(buckets));
+				incAddSingleTriples.put(c, new AtomicReferenceArray<>(buckets));
 
 				singles.put(c, new SingleBuild(k, c, buckets));
 				delSingles.put(c, new SingleBuild(k, c, buckets));
@@ -909,6 +919,7 @@ public class SketchBasedJoinEstimator {
 		void clear() {
 			singleTriples.values().forEach(SketchBasedJoinEstimator::clearArray);
 			delSingleTriples.values().forEach(SketchBasedJoinEstimator::clearArray);
+			incAddSingleTriples.values().forEach(SketchBasedJoinEstimator::clearArray); // ★
 
 			singles.values().forEach(SingleBuild::clear);
 			delSingles.values().forEach(SingleBuild::clear);
@@ -1210,6 +1221,11 @@ public class SketchBasedJoinEstimator {
 		public final double distinctDeletes; // union over delSingleTriples[S]
 		public final double distinctNetLive; // union of (A-not-B per S-bucket)
 
+		// ★ churn‑specific
+		public final double distinctIncAdds; // union over incAddSingleTriples[S]
+		public final double readdOverlap; // union of per‑bucket intersections incAdd[S] ∧ del[S]
+		public final double readdOverlapOnIncAdds; // ratio readdOverlap / distinctIncAdds
+
 		public final double stalenessScore; // combined 0..1+
 
 		private Staleness(
@@ -1225,6 +1241,9 @@ public class SketchBasedJoinEstimator {
 				double distinctTriples,
 				double distinctDeletes,
 				double distinctNetLive,
+				double distinctIncAdds,
+				double readdOverlap,
+				double readdOverlapOnIncAdds,
 				double stalenessScore) {
 			this.ageMillis = ageMillis;
 			this.lastRebuildStartMs = lastRebuildStartMs;
@@ -1238,6 +1257,9 @@ public class SketchBasedJoinEstimator {
 			this.distinctTriples = distinctTriples;
 			this.distinctDeletes = distinctDeletes;
 			this.distinctNetLive = distinctNetLive;
+			this.distinctIncAdds = distinctIncAdds;
+			this.readdOverlap = readdOverlap;
+			this.readdOverlapOnIncAdds = readdOverlapOnIncAdds;
 			this.stalenessScore = stalenessScore;
 		}
 
@@ -1256,6 +1278,9 @@ public class SketchBasedJoinEstimator {
 					", distinctTriples=" + distinctTriples +
 					", distinctDeletes=" + distinctDeletes +
 					", distinctNetLive=" + distinctNetLive +
+					", distinctIncAdds=" + distinctIncAdds +
+					", readdOverlap=" + readdOverlap +
+					", readdOverlapOnIncAdds=" + readdOverlapOnIncAdds +
 					", stalenessScore=" + stalenessScore +
 					'}';
 		}
@@ -1299,12 +1324,20 @@ public class SketchBasedJoinEstimator {
 				snap.singleTriples.get(Component.S),
 				snap.delSingleTriples.get(Component.S));
 
-		// Combined score (dimensionless). You may tune weights externally; defaults below:
+		// ★ Churn: delete→re‑add overlap using incremental‑adds (S bucket only)
+		double distinctIncAdds = unionDistinctTriplesS(snap.incAddSingleTriples.get(Component.S));
+		double readdOverlap = overlapIncAddVsDelS(
+				snap.incAddSingleTriples.get(Component.S),
+				snap.delSingleTriples.get(Component.S));
+		double readdOverlapOnIncAdds = distinctIncAdds <= 0.0 ? 0.0 : (readdOverlap / distinctIncAdds);
+
+		// Combined score (dimensionless). Emphasize churn risk.
 		double ageScore = normalize(age, TimeUnit.MINUTES.toMillis(10)); // 10 min SLA by default
 		double deltaScore = clamp(deltaRatio, 0.0, 10.0); // cap to avoid runaway
 		double tombScore = (tombSingle + tombPairs + tombCompl) / 3.0;
+		double churnScore = clamp(readdOverlapOnIncAdds * 3.0, 0.0, 3.0); // up‑weight churn
 
-		double score = ageScore * 0.34 + deltaScore * 0.33 + tombScore * 0.33;
+		double score = ageScore * 0.20 + deltaScore * 0.20 + tombScore * 0.20 + churnScore * 0.40;
 
 		return new Staleness(
 				age,
@@ -1319,6 +1352,9 @@ public class SketchBasedJoinEstimator {
 				distinctAdds,
 				distinctDels,
 				distinctNet,
+				distinctIncAdds,
+				readdOverlap,
+				readdOverlapOnIncAdds,
 				score);
 	}
 
@@ -1421,6 +1457,32 @@ public class SketchBasedJoinEstimator {
 				diff.setA(a);
 				diff.notB(d);
 				u.union(diff.getResult(false)); // union A-not-B Sketch
+			}
+		}
+		return u.getResult().getEstimate();
+	}
+
+	/** ★ The key churn metric: per‑bucket (incAdd[S] ∧ del[S]) summed via a union of intersections. */
+	private static double overlapIncAddVsDelS(
+			AtomicReferenceArray<UpdateSketch> incAddS,
+			AtomicReferenceArray<UpdateSketch> delS) {
+		if (incAddS == null || delS == null) {
+			return 0.0;
+		}
+		Union u = SetOperation.builder().buildUnion();
+		int len = Math.min(incAddS.length(), delS.length());
+		for (int i = 0; i < len; i++) {
+			UpdateSketch ia = incAddS.get(i);
+			UpdateSketch d = delS.get(i);
+			if (ia == null || d == null) {
+				continue;
+			}
+			Intersection ix = SetOperation.builder().buildIntersection();
+			ix.intersect(ia);
+			ix.intersect(d);
+			Sketch inter = ix.getResult();
+			if (inter != null && inter.getRetainedEntries() > 0) {
+				u.union(inter);
 			}
 		}
 		return u.getResult().getEstimate();
