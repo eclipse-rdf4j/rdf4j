@@ -114,7 +114,7 @@ public class SailDatasetTripleSource implements RDFStarTripleSource {
 		TripleSourceIterationWrapper<? extends Triple> iterationWrapper = null;
 		try {
 			// In contrast to statement retrieval (which gets de-duplicated later on when handling things like
-			// projections and conversions) we need to make sure we de-duplicate the RDF-star triples here.
+			// projections and conversions) we need to make sure we de-duplicate the triples here.
 			triples = dataset.getTriples(subj, pred, obj);
 			if (triples instanceof EmptyIteration) {
 				return triples;

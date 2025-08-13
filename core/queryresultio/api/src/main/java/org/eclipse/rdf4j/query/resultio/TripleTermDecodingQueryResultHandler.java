@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.query.QueryResultHandler;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
-import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
+import org.eclipse.rdf4j.rio.helpers.TripleTermUtil;
 
 /**
  * A {@link QueryResultHandler} that delegates all results to another handler and processes RDF-star triples encoded as
@@ -26,10 +26,10 @@ import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
  *
  * @author Pavel Mihaylov
  */
-class RDFStarDecodingQueryResultHandler implements TupleQueryResultHandler, BooleanQueryResultHandler {
+class TripleTermDecodingQueryResultHandler implements TupleQueryResultHandler, BooleanQueryResultHandler {
 	private final QueryResultHandler delegate;
 
-	RDFStarDecodingQueryResultHandler(QueryResultHandler delegate) {
+	TripleTermDecodingQueryResultHandler(QueryResultHandler delegate) {
 		this.delegate = delegate;
 	}
 
@@ -55,6 +55,6 @@ class RDFStarDecodingQueryResultHandler implements TupleQueryResultHandler, Bool
 
 	@Override
 	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
-		delegate.handleSolution(new ValueMappingBindingSet(bindingSet, RDFStarUtil::fromRDFEncodedValue));
+		delegate.handleSolution(new ValueMappingBindingSet(bindingSet, TripleTermUtil::fromRDFEncodedValue));
 	}
 }

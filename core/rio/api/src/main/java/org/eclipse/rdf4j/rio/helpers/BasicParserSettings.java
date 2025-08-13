@@ -117,7 +117,7 @@ public class BasicParserSettings {
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.normalize_language_tags}.
 	 */
 	public static final BooleanRioSetting NORMALIZE_LANGUAGE_TAGS = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.normalize_language_tags", "Normalize recognised language tags", Boolean.FALSE);
+			"org.eclipse.rdf4j.rio.normalize_language_tags", "Normalize recognised language tags", Boolean.TRUE);
 
 	/**
 	 * Setting used to specify which {@link LanguageHandler} implementations are to be used for a given parser
@@ -217,19 +217,19 @@ public class BasicParserSettings {
 			Namespaces.DEFAULT_RDF4J);
 
 	/**
-	 * Boolean setting for parser to determine whether it should process RDF-star triples encoded as RDF-compatible
-	 * special IRIs back to RDF-star values. These IRIs start with urn:rdf4j:triple: followed by the base64-encoding of
-	 * the N-Triples serialization of the RDF-star triple value.
+	 * Boolean setting for parser to determine whether it should process RDF 1.2 triples encoded as RDF-compatible
+	 * special IRIs back to RDF 1.2 values. These IRIs start with urn:rdf4j:triple: followed by the base64-encoding of
+	 * the N-Triples serialization of the RDF 1.2 triple value.
 	 * <p>
-	 * Parsers that support RDF-star natively will honour this setting too.
+	 * Parsers that support RDF 1.2 natively will honour this setting too.
 	 * <p>
 	 * Defaults to true.
 	 * <p>
-	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.process_encoded_rdf_star}.
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.process_encoded_triple_terms}.
 	 */
-	public static final BooleanRioSetting PROCESS_ENCODED_RDF_STAR = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.process_encoded_rdf_star",
-			"Converts RDF-star triples encoded as RDF-compatible IRIs back to triple values", Boolean.TRUE);
+	public static final BooleanRioSetting PROCESS_ENCODED_TRIPLE_TERMS = new BooleanRioSetting(
+			"org.eclipse.rdf4j.rio.process_encoded_triple_terms",
+			"Converts RDF 1.2 triples encoded as RDF-compatible IRIs back to triple values", Boolean.TRUE);
 
 	static {
 		List<DatatypeHandler> defaultDatatypeHandlers = new ArrayList<>(5);

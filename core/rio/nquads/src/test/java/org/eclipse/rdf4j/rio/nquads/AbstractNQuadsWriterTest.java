@@ -15,10 +15,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.StringWriter;
 
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
@@ -26,6 +30,7 @@ import org.eclipse.rdf4j.rio.RDFParserFactory;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.RDFWriterFactory;
 import org.eclipse.rdf4j.rio.RDFWriterTest;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.NTriplesWriterSettings;
@@ -153,6 +158,64 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 		assertEquals(1, lines.length, "Unexpected number of lines.");
 		assertTrue(lines[0].startsWith(
 				"<http://test.example.org/test/subject/1> <http://other.example.com/test/predicate/1> \"test literal\"^^<http://www.w3.org/2001/XMLSchema#string> _:"));
+	}
+
+	@Test
+	public void testDirLangString() throws Exception {
+		dirLangStringTest(RDFFormat.NQUADS);
+	}
+
+	@Test
+	public void testTripleTerm() {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		String ns = "http://www.example.com/";
+		model.setNamespace("", ns);
+		model.add(vf.createIRI(ns, "s"), vf.createIRI(ns, "p"),
+				vf.createTriple(vf.createIRI(ns, "s2"), vf.createIRI(ns, "p2"), vf.createIRI(ns, "o")),
+				vf.createIRI(ns, "context"));
+
+		StringWriter stringWriter = new StringWriter();
+		Rio.write(model, stringWriter, RDFFormat.NQUADS);
+
+		assertEquals(
+				"<http://www.example.com/s> <http://www.example.com/p> <<( <http://www.example.com/s2> <http://www.example.com/p2> <http://www.example.com/o> )>> <http://www.example.com/context> .\n",
+				stringWriter.toString());
+	}
+
+	@Test
+	public void testNestedTripleTerm() {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		String ns = "http://www.example.com/";
+		model.setNamespace("", ns);
+		model.add(vf.createIRI(ns, "s"), vf.createIRI(ns, "p"),
+				vf.createTriple(vf.createIRI(ns, "s2"), vf.createIRI(ns, "p2"),
+						vf.createTriple(vf.createIRI(ns, "s3"), vf.createIRI(ns, "p3"), vf.createIRI(ns, "o"))),
+				vf.createIRI(ns, "context"));
+
+		StringWriter stringWriter = new StringWriter();
+		Rio.write(model, stringWriter, RDFFormat.NQUADS);
+
+		assertEquals(
+				"<http://www.example.com/s> <http://www.example.com/p> <<( <http://www.example.com/s2> <http://www.example.com/p2> <<( <http://www.example.com/s3> <http://www.example.com/p3> <http://www.example.com/o> )>> )>> <http://www.example.com/context> .\n",
+				stringWriter.toString());
+	}
+
+	@Test
+	public void testNestedTripleTerm2() {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		String ns = "http://www.example.com/";
+		model.setNamespace("", ns);
+		model.add(vf.createBNode("b"), vf.createIRI(ns, "p"),
+				vf.createTriple(vf.createIRI(ns, "s"), vf.createIRI(ns, "p2"),
+						vf.createTriple(vf.createBNode("b2"), vf.createIRI(ns, "p3"), vf.createLiteral(9))),
+				vf.createIRI(ns, "context"));
+
+		StringWriter stringWriter = new StringWriter();
+		Rio.write(model, stringWriter, RDFFormat.NQUADS);
+
+		assertEquals(
+				"_:b <http://www.example.com/p> <<( <http://www.example.com/s> <http://www.example.com/p2> <<( _:b2 <http://www.example.com/p3> \"9\"^^<http://www.w3.org/2001/XMLSchema#int> )>> )>> <http://www.example.com/context> .\n",
+				stringWriter.toString());
 	}
 
 	@Override

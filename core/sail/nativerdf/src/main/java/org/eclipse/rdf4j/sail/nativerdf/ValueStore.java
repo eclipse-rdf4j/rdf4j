@@ -743,6 +743,11 @@ public class ValueStore extends SimpleValueFactory {
 	}
 
 	@Override
+	public NativeLiteral createLiteral(String value, String language, Literal.BaseDirection baseDirection) {
+		return new NativeLiteral(revision, value, language, baseDirection);
+	}
+
+	@Override
 	public NativeLiteral createLiteral(String value, IRI datatype) {
 		return new NativeLiteral(revision, value, datatype);
 	}

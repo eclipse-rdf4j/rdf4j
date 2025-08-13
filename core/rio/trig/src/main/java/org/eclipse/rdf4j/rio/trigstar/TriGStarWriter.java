@@ -10,14 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.trigstar;
 
-import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Writer;
 
-import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
-import org.eclipse.rdf4j.model.Triple;
-import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.trig.TriGWriter;
 
 /**
@@ -26,6 +22,7 @@ import org.eclipse.rdf4j.rio.trig.TriGWriter;
  *
  * @author Pavel Mihaylov
  */
+@Deprecated
 public class TriGStarWriter extends TriGWriter {
 	/**
 	 * Creates a new TriGStarWriter that will write to the supplied OutputStream.
@@ -63,22 +60,5 @@ public class TriGStarWriter extends TriGWriter {
 	 */
 	public TriGStarWriter(Writer writer, ParsedIRI baseIRI) {
 		super(writer, baseIRI);
-	}
-
-	@Override
-	public RDFFormat getRDFFormat() {
-		return RDFFormat.TRIGSTAR;
-	}
-
-	@Override
-	public boolean acceptsFileFormat(FileFormat format) {
-		// since TriG-star is a superset of regular TriG, this Sink also accepts regular TriG
-		// serialization
-		return super.acceptsFileFormat(format) || RDFFormat.TRIG.equals(format);
-	}
-
-	@Override
-	protected void writeTriple(Triple triple, boolean canShorten) throws IOException {
-		writeTripleRDFStar(triple, canShorten);
 	}
 }

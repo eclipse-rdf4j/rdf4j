@@ -30,7 +30,7 @@ public class NTriplesWriterSettings {
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.ntriples.escape_unicode}
 	 */
 	public static final BooleanRioSetting ESCAPE_UNICODE = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.ntriples.escape_unicode", "Escape Unicode characters", Boolean.FALSE);
+			"org.eclipse.rdf4j.rio.ntriples.escape_unicode", "Escape Unicode characters", Boolean.TRUE);
 
 	/**
 	 * Private constructor

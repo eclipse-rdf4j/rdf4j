@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.testsuite.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.math.BigInteger;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -34,20 +33,20 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.RepositoryException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 /**
- * Test cases for RDF-star support in the Repository.
+ * Test cases for triple term support in the Repository.
  *
  * @author Jeen Broekstra
  */
 @Timeout(value = 10, unit = TimeUnit.MINUTES)
-public abstract class RDFStarSupportTest {
+public abstract class TripleTermSupportTest {
 
 	private Repository testRepository;
 
@@ -100,103 +99,84 @@ public abstract class RDFStarSupportTest {
 	}
 
 	@Test
-	public void testAddRDFStarSubject() {
-		Triple rdfStarTriple = vf.createTriple(bob, FOAF.NAME, nameBob);
-
-		testCon.add(rdfStarTriple, RDF.TYPE, RDF.ALT);
-
-		assertThat(testCon.hasStatement(rdfStarTriple, RDF.TYPE, RDF.ALT, false)).isTrue();
-	}
-
-	@Test
 	public void testAddRDFStarObject() {
-		Triple rdfStarTriple = vf.createTriple(bob, FOAF.NAME, nameBob);
+		Triple triple = vf.createTriple(bob, FOAF.NAME, nameBob);
 
-		testCon.add(RDF.ALT, RDF.TYPE, rdfStarTriple);
+		testCon.add(RDF.ALT, RDF.TYPE, triple);
 
-		assertThat(testCon.hasStatement(RDF.ALT, RDF.TYPE, rdfStarTriple, false)).isTrue();
+		assertThat(testCon.hasStatement(RDF.ALT, RDF.TYPE, triple, false)).isTrue();
 	}
 
 	@Test
-	public void testAddRDFStarContext() {
-		Triple rdfStarTriple = vf.createTriple(bob, FOAF.NAME, nameBob);
-
-		try {
-			testCon.add(RDF.ALT, RDF.TYPE, RDF.ALT, rdfStarTriple);
-			Assertions.fail("RDF-star triple value should not be allowed by store as context identifier");
-		} catch (RepositoryException e) {
-			// fall through, expected behavior
-			testCon.rollback();
-		}
-
-	}
-
-	@Test
+	@Disabled("Pending SPARQL 1.2 implementation and adapting test case to RDF 1.2")
 	public void testSparqlStar() {
-		Triple rdfStarTriple = vf.createTriple(bob, FOAF.NAME, nameBob);
-
-		testCon.add(rdfStarTriple, RDF.TYPE, RDF.ALT);
-
-		String query = "PREFIX foaf: <" + FOAF.NAMESPACE + ">\n" +
-				"SELECT DISTINCT * WHERE { <<?s foaf:name ?o>> ?b ?c. }";
-
-		List<BindingSet> result = QueryResults.asList(testCon.prepareTupleQuery(query).evaluate());
-		assertThat(result).hasSize(1);
-
-		BindingSet bs = result.get(0);
-		assertThat(bs.getValue("s")).isEqualTo(bob);
-		assertThat(bs.getValue("o")).isEqualTo(nameBob);
-		assertThat(bs.getValue("b")).isEqualTo(RDF.TYPE);
-		assertThat(bs.getValue("c")).isEqualTo(RDF.ALT);
+//		Triple rdfStarTriple = vf.createTriple(bob, FOAF.NAME, nameBob);
+//
+//		testCon.add(rdfStarTriple, RDF.TYPE, RDF.ALT);
+//
+//		String query = "PREFIX foaf: <" + FOAF.NAMESPACE + ">\n" +
+//				"SELECT DISTINCT * WHERE { <<?s foaf:name ?o>> ?b ?c. }";
+//
+//		List<BindingSet> result = QueryResults.asList(testCon.prepareTupleQuery(query).evaluate());
+//		assertThat(result).hasSize(1);
+//
+//		BindingSet bs = result.get(0);
+//		assertThat(bs.getValue("s")).isEqualTo(bob);
+//		assertThat(bs.getValue("o")).isEqualTo(nameBob);
+//		assertThat(bs.getValue("b")).isEqualTo(RDF.TYPE);
+//		assertThat(bs.getValue("c")).isEqualTo(RDF.ALT);
 
 	}
 
 	@Test
+	@Disabled("Pending SPARQL 1.2 implementation and adapting test case to RDF 1.2")
 	public void testSparqlStarUpdate() {
-		Triple rdfStarTriple = vf.createTriple(bob, FOAF.NAME, nameBob);
-		testCon.add(rdfStarTriple, RDF.TYPE, RDF.ALT);
-
-		String update = "PREFIX foaf: <" + FOAF.NAMESPACE + ">\n" +
-				"INSERT { ?s foaf:age 23 } WHERE { <<?s foaf:name ?o>> ?b ?c .}";
-
-		testCon.prepareUpdate(update).execute();
-
-		Assertions.assertTrue(testCon.hasStatement(bob, FOAF.AGE, vf.createLiteral(BigInteger.valueOf(23)), false));
+//		Triple rdfStarTriple = vf.createTriple(bob, FOAF.NAME, nameBob);
+//		testCon.add(rdfStarTriple, RDF.TYPE, RDF.ALT);
+//
+//		String update = "PREFIX foaf: <" + FOAF.NAMESPACE + ">\n" +
+//				"INSERT { ?s foaf:age 23 } WHERE { <<?s foaf:name ?o>> ?b ?c .}";
+//
+//		testCon.prepareUpdate(update).execute();
+//
+//		Assertions.assertTrue(testCon.hasStatement(bob, FOAF.AGE, vf.createLiteral(BigInteger.valueOf(23)), false));
 	}
 
 	@Test
+	@Disabled("Pending SPARQL 1.2 implementation and adapting test case to RDF 1.2")
 	public void testRdfStarAddAndRetrieveSparql() {
 
-		Triple insertedTriple = vf.createTriple(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
-
-		Literal literal = vf.createLiteral("I am a triple ;-D");
-
-		testCon.begin();
-		testCon.add(insertedTriple, RDF.TYPE, literal);
-
-		TupleQuery query = testCon.prepareTupleQuery(
-				"SELECT * WHERE { << <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> >> ?a ?b}");
-
-		Assertions.assertTrue(testCon.prepareBooleanQuery("ASK { ?t a 'I am a triple ;-D'}").evaluate());
-		Assertions.assertEquals(1, getCount(query));
-		testCon.commit();
+//		Triple insertedTriple = vf.createTriple(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
+//
+//		Literal literal = vf.createLiteral("I am a triple ;-D");
+//
+//		testCon.begin();
+//		testCon.add(insertedTriple, RDF.TYPE, literal);
+//
+//		TupleQuery query = testCon.prepareTupleQuery(
+//				"SELECT * WHERE { << <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> >> ?a ?b}");
+//
+//		Assertions.assertTrue(testCon.prepareBooleanQuery("ASK { ?t a 'I am a triple ;-D'}").evaluate());
+//		Assertions.assertEquals(1, getCount(query));
+//		testCon.commit();
 	}
 
 	@Test
+	@Disabled("Pending SPARQL 1.2 implementation and adapting test case to RDF 1.2")
 	public void testRdfStarAddAndRetrieveSparqlSeparateTransaction() {
 
-		Triple insertedTriple = vf.createTriple(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
-		Literal literal = vf.createLiteral("I am a triple ;-D");
-		testCon.begin();
-
-		testCon.add(insertedTriple, RDF.TYPE, literal);
-		testCon.commit();
-		testCon.begin();
-		Assertions.assertTrue(testCon.prepareBooleanQuery("ASK { ?t a 'I am a triple ;-D'}").evaluate());
-		TupleQuery tupleQuery = testCon.prepareTupleQuery(
-				"SELECT * WHERE { << <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> >> ?a ?b}");
-		Assertions.assertEquals(1, getCount(tupleQuery));
-		testCon.commit();
+//		Triple insertedTriple = vf.createTriple(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
+//		Literal literal = vf.createLiteral("I am a triple ;-D");
+//		testCon.begin();
+//
+//		testCon.add(insertedTriple, RDF.TYPE, literal);
+//		testCon.commit();
+//		testCon.begin();
+//		Assertions.assertTrue(testCon.prepareBooleanQuery("ASK { ?t a 'I am a triple ;-D'}").evaluate());
+//		TupleQuery tupleQuery = testCon.prepareTupleQuery(
+//				"SELECT * WHERE { << <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> >> ?a ?b}");
+//		Assertions.assertEquals(1, getCount(tupleQuery));
+//		testCon.commit();
 
 	}
 
@@ -207,22 +187,26 @@ public abstract class RDFStarSupportTest {
 	}
 
 	@Test
-	public void testRdfStarAddAndRetrieve() {
+	public void testRdf12AddAndRetrieve() {
 
 		Triple insertedTriple = vf.createTriple(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
 		Triple copyOfInsertedTriple = vf.createTriple(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
 		Literal literal = vf.createLiteral("I am a triple ;-D");
+		BNode reifier = vf.createBNode();
 		testCon.begin();
 
-		testCon.add(insertedTriple, RDF.TYPE, literal);
+		testCon.add(reifier, RDF.REIFIES, insertedTriple);
+		testCon.add(reifier, RDF.TYPE, literal);
 
 		Assertions.assertEquals(1, testCon.getStatements(null, RDF.TYPE, literal, false).stream().count());
-		Assertions.assertEquals(1, testCon.getStatements(copyOfInsertedTriple, null, null, false).stream().count());
+		Assertions.assertEquals(1,
+				testCon.getStatements(null, RDF.REIFIES, copyOfInsertedTriple, false).stream().count());
 		testCon.commit();
 
 	}
 
 	@Test
+	@Disabled("Pending SPARQL 1.2 implementation and adapting test case to RDF 1.2")
 	public void testMemoryStore_RDFstar() {
 		String queryString = "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
 				+ "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
@@ -273,6 +257,7 @@ public abstract class RDFStarSupportTest {
 	}
 
 	@Test
+	@Disabled("Pending SPARQL 1.2 implementation and adapting test case to RDF 1.2")
 	public void testSparqlStarInObjectPosition() {
 		testCon.add(Values.bnode(), FOAF.KNOWS, Values.triple(Values.bnode(), FOAF.NAME, Values.literal("John Doe")));
 		TupleQuery tupleQuery = testCon.prepareTupleQuery(

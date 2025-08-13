@@ -13,8 +13,8 @@ package org.eclipse.rdf4j.model;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
 /**
- * An RDF-star embedded triple. Embedded triples have a subject, predicate and object. Unlike {@link Statement}, a
- * triple never has an associated context.
+ * An embedded triple. Embedded triples have a subject, predicate and object. Unlike {@link Statement}, a triple never
+ * has an associated context.
  * <p>
  * Additional utility functionality for working with {@code Triple} objects is available in the
  * {@link org.eclipse.rdf4j.model.util.Statements} and {@link org.eclipse.rdf4j.model.util.Values} utility classes.
@@ -23,10 +23,9 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  * @implNote In order to ensure interoperability of concrete classes implementing this interface,
  *           {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their
  *           specs.
- * @see <a href="https://w3c.github.io/rdf-star/cg-spec/">RDF-star and SPARQL-star Draft Community Group Report</a>
  */
 @Experimental
-public interface Triple extends Resource {
+public interface Triple extends Value {
 
 	@Override
 	default boolean isTriple() {

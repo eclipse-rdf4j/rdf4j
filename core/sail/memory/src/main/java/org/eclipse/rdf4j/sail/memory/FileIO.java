@@ -39,7 +39,7 @@ import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
+import org.eclipse.rdf4j.rio.helpers.TripleTermUtil;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
@@ -294,7 +294,7 @@ class FileIO {
 			}
 		} else if (value.isTriple()) {
 			dataOut.writeByte(RDFSTAR_TRIPLE_MARKER);
-			writeValue(RDFStarUtil.toRDFEncodedValue(value), dataOut);
+			writeValue(TripleTermUtil.toRDFEncodedValue(value), dataOut);
 		} else {
 			throw new IllegalArgumentException("unexpected value type: " + value.getClass());
 		}
@@ -322,7 +322,7 @@ class FileIO {
 			return vf.createLiteral(label, datatype);
 		} else if (valueTypeMarker == RDFSTAR_TRIPLE_MARKER) {
 			IRI rdfStarEncodedTriple = (IRI) readValue(dataIn);
-			Triple triple = (Triple) RDFStarUtil.fromRDFEncodedValue(rdfStarEncodedTriple, vf);
+			Triple triple = (Triple) TripleTermUtil.fromRDFEncodedValue(rdfStarEncodedTriple, vf);
 			return vf.getOrCreateMemTriple(triple);
 		} else {
 			throw new IOException("Invalid value type marker: " + valueTypeMarker);

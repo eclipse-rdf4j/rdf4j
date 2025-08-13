@@ -133,7 +133,8 @@ public class TriGParser extends TurtleParser {
 				unread(c);
 			}
 			c = readCodePoint();
-		} else if (c == '<' || TurtleUtil.isPrefixStartChar(c) || (c == ':' && c2 != '-') || (c == '_' && c2 == ':')) {
+		} else if ((c == '<' && c2 != '<') || TurtleUtil.isPrefixStartChar(c) || (c == ':' && c2 != '-')
+				|| (c == '_' && c2 == ':')) {
 			unread(c);
 
 			Value value = parseValue();
@@ -228,6 +229,17 @@ public class TriGParser extends TurtleParser {
 			// subject
 			// of the statement.
 			if (c != '.' && c != '}') {
+				parsePredicateObjectList();
+			}
+		} else if (peekIsReifiedTriple()) {
+			subject = parseReifiedTriple();
+			skipWSC();
+
+			// if this is not the end of the statement, recurse into the list of
+			// predicate and objects, using the subject parsed above as the
+			// subject
+			// of the statement.
+			if (peekCodePoint() != '.' && c != '}') {
 				parsePredicateObjectList();
 			}
 		} else {

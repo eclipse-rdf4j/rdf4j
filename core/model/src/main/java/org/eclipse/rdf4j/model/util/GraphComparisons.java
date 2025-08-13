@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.model.util;
 
 import static org.eclipse.rdf4j.model.util.Values.bnode;
+import static org.eclipse.rdf4j.model.util.Values.triple;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
@@ -34,6 +35,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.slf4j.Logger;
@@ -213,6 +215,18 @@ class GraphComparisons {
 			if (st.getContext() != null && st.getContext().isBNode()) {
 				blankNodes.add((BNode) st.getContext());
 			}
+
+			Triple t = triple(st);
+			while (t.getObject().isTriple()) {
+				t = (Triple) t.getObject();
+
+				if (t.getSubject().isBNode()) {
+					blankNodes.add((BNode) t.getSubject());
+				}
+				if (t.getObject().isBNode()) {
+					blankNodes.add((BNode) t.getObject());
+				}
+			}
 		});
 		return blankNodes;
 	}
@@ -306,18 +320,31 @@ class GraphComparisons {
 		Model result = new DynamicModelFactory().createEmptyModel();
 
 		for (Statement st : original) {
-			if (st.getSubject().isBNode() || st.getObject().isBNode()
+			if (st.getSubject().isBNode() || st.getObject().isBNode() || st.getObject().isTriple()
 					|| (st.getContext() != null && st.getContext().isBNode())) {
 				Resource subject = st.getSubject().isBNode()
 						? createCanonicalBNode((BNode) st.getSubject(), hash)
 						: st.getSubject();
 				IRI predicate = st.getPredicate();
-				Value object = st.getObject().isBNode()
-						? createCanonicalBNode((BNode) st.getObject(), hash)
-						: st.getObject();
 				Resource context = (st.getContext() != null && st.getContext().isBNode())
 						? createCanonicalBNode((BNode) st.getContext(), hash)
 						: st.getContext();
+				Value object;
+				if (st.getObject().isBNode()) {
+					object = createCanonicalBNode((BNode) st.getObject(), hash);
+				} else if (st.getObject().isTriple()) {
+					Triple triple = (Triple) st.getObject();
+					object = triple(
+							triple.getSubject().isBNode()
+									? createCanonicalBNode((BNode) triple.getSubject(), hash)
+									: triple.getSubject(),
+							triple.getPredicate(),
+							triple.getObject().isBNode()
+									? createCanonicalBNode((BNode) triple.getObject(), hash)
+									: triple.getObject());
+				} else {
+					object = st.getObject();
+				}
 
 				result.add(subject, predicate, object, context);
 			} else {
@@ -357,10 +384,39 @@ class GraphComparisons {
 						partitioning.setCurrentHashCode(b,
 								hashBag(c, partitioning.getCurrentHashCode(b)));
 					}
+
+					for (Statement st : m.getStatements(null, null, null)) {
+						if (st.getObject().isTriple()) {
+							hashBNodeInTripleTerms((Triple) st.getObject(), b, partitioning);
+						}
+					}
+
 				}
 			} while (!partitioning.isFullyDistinguished());
 		}
 		return partitioning;
+	}
+
+	private static void hashBNodeInTripleTerms(Triple t, BNode b, Partitioning partitioning) {
+		if (t.getSubject().equals(b)) {
+			HashCode c = hashTuple(
+					partitioning.getPreviousHashCode(t.getObject()),
+					partitioning.getPreviousHashCode(t.getPredicate()),
+					outgoing);
+			partitioning.setCurrentHashCode(b,
+					hashBag(c, partitioning.getCurrentHashCode(b)));
+		}
+		if (t.getObject().equals(b)) {
+			HashCode c = hashTuple(
+					partitioning.getPreviousHashCode(t.getSubject()),
+					partitioning.getPreviousHashCode(t.getPredicate()),
+					incoming);
+			partitioning.setCurrentHashCode(b,
+					hashBag(c, partitioning.getCurrentHashCode(b)));
+		}
+		if (t.getObject().isTriple()) {
+			hashBNodeInTripleTerms((Triple) t.getObject(), b, partitioning);
+		}
 	}
 
 	protected static HashCode hashTuple(HashCode... hashCodes) {
@@ -429,6 +485,11 @@ class GraphComparisons {
 			}
 			if (value.isLiteral()) {
 				return getStaticLiteralHashCode((Literal) value);
+			}
+			if (value.isTriple()) {
+				return hashTuple(getPreviousHashCode(((Triple) value).getSubject()),
+						getPreviousHashCode(((Triple) value).getPredicate()),
+						getPreviousHashCode(((Triple) value).getObject()));
 			}
 			return staticValueMapping.computeIfAbsent(value,
 					v -> hashFunction.hashString(v.stringValue(), StandardCharsets.UTF_8));

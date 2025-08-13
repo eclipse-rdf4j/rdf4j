@@ -283,7 +283,9 @@ public interface CoreDatatype {
 	enum RDF implements CoreDatatype {
 
 		HTML(iri("HTML")),
+		JSON(iri("JSON")),
 		XMLLITERAL(iri("XMLLiteral")),
+		DIRLANGSTRING(iri("dirLangString")),
 		LANGSTRING(iri("langString"));
 
 		public static final String NAMESPACE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";

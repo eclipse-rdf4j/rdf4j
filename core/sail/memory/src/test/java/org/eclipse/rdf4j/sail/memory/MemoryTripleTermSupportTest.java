@@ -8,25 +8,26 @@
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
-package org.eclipse.rdf4j.rio.turtlestar;
+package org.eclipse.rdf4j.sail.memory;
 
-import java.io.OutputStream;
+import java.io.File;
 
-import org.eclipse.rdf4j.rio.AbstractParserHandlingTest;
-import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.RDFWriter;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.testsuite.repository.TripleTermSupportTest;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
- * @author Pavel Mihaylov
+ * @author jeen
  */
-public class TurtleStarHandlingTest extends AbstractParserHandlingTest {
-	@Override
-	protected RDFParser getParser() {
-		return new TurtleStarParser();
-	}
+public class MemoryTripleTermSupportTest extends TripleTermSupportTest {
+
+	@TempDir
+	File tempDir;
 
 	@Override
-	protected RDFWriter createWriter(OutputStream output) {
-		return new TurtleStarWriter(output);
+	protected Repository createRepository() {
+		return new SailRepository(new MemoryStore(tempDir));
 	}
+
 }

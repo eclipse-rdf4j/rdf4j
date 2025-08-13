@@ -122,8 +122,6 @@ public class MemValueFactory extends AbstractValueFactory {
 			return getMemURI((IRI) resource);
 		} else if (resource.isBNode()) {
 			return getMemBNode((BNode) resource);
-		} else if (resource.isTriple()) {
-			return getMemTriple((Triple) resource);
 		} else {
 			throw new IllegalArgumentException("resource is not a URI or BNode: " + resource);
 		}
@@ -239,8 +237,10 @@ public class MemValueFactory extends AbstractValueFactory {
 			return getOrCreateMemResource((Resource) value);
 		} else if (value.isLiteral()) {
 			return getOrCreateMemLiteral((Literal) value);
+		} else if (value.isTriple()) {
+			return getOrCreateMemTriple((Triple) value);
 		} else {
-			throw new IllegalArgumentException("value is not a Resource or Literal: " + value);
+			throw new IllegalArgumentException("value is not a Resource, Literal, or Triple: " + value);
 		}
 	}
 
@@ -252,8 +252,6 @@ public class MemValueFactory extends AbstractValueFactory {
 			return getOrCreateMemURI((IRI) resource);
 		} else if (resource.isBNode()) {
 			return getOrCreateMemBNode((BNode) resource);
-		} else if (resource.isTriple()) {
-			return getOrCreateMemTriple((Triple) resource);
 		} else {
 			throw new IllegalArgumentException("resource is not a URI or BNode: " + resource);
 		}
@@ -302,7 +300,7 @@ public class MemValueFactory extends AbstractValueFactory {
 			IRI datatype = coreDatatype != CoreDatatype.NONE ? coreDatatype.getIri() : literal.getDatatype();
 
 			if (Literals.isLanguageLiteral(literal)) {
-				return new MemLiteral(this, label, literal.getLanguage().get());
+				return new MemLiteral(this, label, literal.getLanguage().get(), literal.getBaseDirection());
 			} else {
 				try {
 					if (coreDatatype.isXSDDatatype()) {
@@ -404,6 +402,11 @@ public class MemValueFactory extends AbstractValueFactory {
 	@Override
 	public Literal createLiteral(String value, String language) {
 		return getOrCreateMemLiteral(super.createLiteral(value, language));
+	}
+
+	@Override
+	public Literal createLiteral(String value, String language, Literal.BaseDirection baseDirection) {
+		return getOrCreateMemLiteral(super.createLiteral(value, language, baseDirection));
 	}
 
 	@Override

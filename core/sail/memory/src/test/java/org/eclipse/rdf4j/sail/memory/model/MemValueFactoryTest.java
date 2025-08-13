@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.sail.memory.model;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.junit.jupiter.api.Test;
 
 public class MemValueFactoryTest {
@@ -28,4 +30,14 @@ public class MemValueFactoryTest {
 		assertThat(factory.createIRI(namespace, localName)).isInstanceOf(IRI.class);
 	}
 
+	@Test
+	public void testCreateDirLangLiteral() {
+		final Literal literal = new MemValueFactory().createLiteral("label", "he", Literal.BaseDirection.RTL);
+
+		assertThat(literal).isNotNull();
+		assertThat(literal.getLabel()).isEqualTo("label");
+		assertThat(literal.getLanguage()).contains("he");
+		assertThat(literal.getBaseDirection().toString()).isEqualTo("--rtl");
+		assertThat(literal.getDatatype()).isEqualTo(CoreDatatype.RDF.DIRLANGSTRING.getIri());
+	}
 }

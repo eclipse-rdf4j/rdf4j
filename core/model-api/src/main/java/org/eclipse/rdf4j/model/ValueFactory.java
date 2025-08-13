@@ -87,6 +87,18 @@ public interface ValueFactory {
 	Literal createLiteral(String label, String language);
 
 	/**
+	 * Creates a new literal with the supplied label and language attribute. The return value of
+	 * {@link Literal#getDatatype()} for the returned object must be
+	 * <a href="http://www.w3.org/1999/02/22-rdf-syntax-ns#langString">{@code rdf:langString}</a>.
+	 *
+	 * @param label         The literal's label, must not be <var>null</var>.
+	 * @param language      The literal's language attribute, must not be <var>null</var>.
+	 * @param baseDirection The literal's base direction, either "", "--ltr", or "--rtl".
+	 * @return A literal for the specified value and language attribute.
+	 */
+	Literal createLiteral(String label, String language, Literal.BaseDirection baseDirection);
+
+	/**
 	 * Creates a new literal with the supplied label and datatype.
 	 *
 	 * @param label    The literal's label, must not be <var>null</var>.
@@ -265,11 +277,11 @@ public interface ValueFactory {
 	Statement createStatement(Resource subject, IRI predicate, Value object, Resource context);
 
 	/**
-	 * Creates a new RDF-star triple with the supplied subject, predicate and object.
+	 * Creates a new triple term with the supplied subject, predicate and object.
 	 *
-	 * @param subject   The statement's subject.
-	 * @param predicate The statement's predicate.
-	 * @param object    The statement's object.
+	 * @param subject   The triple's subject.
+	 * @param predicate The triple's predicate.
+	 * @param object    The triple's object.
 	 * @return The created triple.
 	 * @implNote This temporary default method is only supplied as a stop-gap for backward compatibility, but throws an
 	 *           {@link UnsupportedOperationException}. Concrete implementations are expected to override.

@@ -501,6 +501,8 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 			stack.addLast((BNode) val);
 		} else if (val instanceof Resource) {
 			writeResource((Resource) val, canShorten);
+		} else if (val instanceof Triple) {
+			writeTriple((Triple) val, canShorten);
 		} else {
 			writeLiteral((Literal) val);
 		}
@@ -625,22 +627,20 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 	}
 
 	protected void writeTriple(Triple triple, boolean canShorten) throws IOException {
-		throw new IOException(getRDFFormat().getName() + " does not support RDF-star triples");
-	}
-
-	protected void writeTripleRDFStar(Triple triple, boolean canShorten) throws IOException {
-		writer.write("<<");
-		writeResource(triple.getSubject());
+		writer.write("<<( ");
+		writeResource(triple.getSubject(), canShorten);
 		writer.write(" ");
 		writeURI(triple.getPredicate());
 		writer.write(" ");
 		Value object = triple.getObject();
 		if (object instanceof Literal) {
 			writeLiteral((Literal) object);
+		} else if (object instanceof Triple) {
+			writeTriple((Triple) object, canShorten);
 		} else {
 			writeResource((Resource) object, canShorten);
 		}
-		writer.write(">>");
+		writer.write(" )>>");
 	}
 
 	protected void writeLiteral(Literal lit) throws IOException {
@@ -682,6 +682,7 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 			// Append the literal's language
 			writer.write("@");
 			writer.write(lit.getLanguage().get());
+			writer.write(lit.getBaseDirection().toString());
 		} else if (!xsdStringToPlainLiteral || !XSD.STRING.equals(datatype)) {
 			// Append the literal's datatype (possibly written as an abbreviated
 			// URI)

@@ -22,7 +22,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Date;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
@@ -42,8 +41,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
-import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+import org.eclipse.rdf4j.rio.helpers.TripleTermUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -1002,19 +1001,20 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	@Test
-	public void testRDFStarCompatibility1() throws Exception {
+	public void testRDF12Compatibility1() throws Exception {
 		Model expectedModel = new LinkedHashModel();
 		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
 				vf.createLiteral("example", vf.createIRI("http://example.com/3")));
-		expectedModel.add(vf.createStatement(t1, DC.SOURCE, vf.createIRI("http://example.com/4")));
-		Triple t2 = vf.createTriple(t1, DC.DATE, vf.createLiteral(new Date()));
+		expectedModel.add(vf.createStatement(vf.createIRI("http://example.com/4"), DC.SOURCE, t1));
+		Triple t2 = vf.createTriple(vf.createIRI("http://example.com/s"), DC.DATE, t1);
 		expectedModel.add(vf.createStatement(vf.createIRI("http://example.com/5"), DC.RELATION, t2));
-		Triple t3 = vf.createTriple(vf.createTriple(vf.createTriple(vf.createIRI("urn:a"), RDF.TYPE,
-				vf.createIRI("urn:b")), vf.createIRI("urn:c"), vf.createIRI("urn:d")), vf.createIRI("urn:e"),
-				vf.createIRI("urn:f"));
-		expectedModel.add(vf.createStatement(t3, vf.createIRI("urn:same"), t3));
+		Triple t3 = vf.createTriple(vf.createIRI("urn:e"),
+				vf.createIRI("urn:f"),
+				vf.createTriple(vf.createIRI("urn:c"), vf.createIRI("urn:d"),
+						vf.createTriple(vf.createIRI("urn:a"), RDF.TYPE,
+								vf.createIRI("urn:b"))));
+		expectedModel.add(vf.createStatement(vf.createIRI("http://example.com/s2"), vf.createIRI("urn:same"), t3));
 
-		// Default: formats with RDF-star support handle it natively and non-RDF-star use a compatibility encoding
 		InputStream input1 = serialize(expectedModel);
 		testParser.parse(input1, BASE_URI);
 		assertErrorListener(0, 0, 0);
@@ -1022,36 +1022,38 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	@Test
-	public void testRDFStarCompatibility2() throws Exception {
+	public void testRDF12Compatibility2() throws Exception {
 		Model expectedModel = new LinkedHashModel();
 		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
 				vf.createLiteral("example", vf.createIRI("http://example.com/3")));
-		expectedModel.add(vf.createStatement(t1, DC.SOURCE, vf.createIRI("http://example.com/4")));
-		Triple t2 = vf.createTriple(t1, DC.DATE, vf.createLiteral(new Date()));
+		expectedModel.add(vf.createStatement(vf.createIRI("http://example.com/4"), DC.SOURCE, t1));
+		Triple t2 = vf.createTriple(vf.createIRI("http://example.com/s"), DC.DATE, t1);
 		expectedModel.add(vf.createStatement(vf.createIRI("http://example.com/5"), DC.RELATION, t2));
-		Triple t3 = vf.createTriple(vf.createTriple(vf.createTriple(vf.createIRI("urn:a"), RDF.TYPE,
-				vf.createIRI("urn:b")), vf.createIRI("urn:c"), vf.createIRI("urn:d")), vf.createIRI("urn:e"),
-				vf.createIRI("urn:f"));
-		expectedModel.add(vf.createStatement(t3, vf.createIRI("urn:same"), t3));
+		Triple t3 = vf.createTriple(vf.createIRI("urn:e"),
+				vf.createIRI("urn:f"),
+				vf.createTriple(vf.createIRI("urn:c"), vf.createIRI("urn:d"),
+						vf.createTriple(vf.createIRI("urn:a"), RDF.TYPE,
+								vf.createIRI("urn:b"))));
+		expectedModel.add(vf.createStatement(vf.createIRI("http://example.com/s2"), vf.createIRI("urn:same"), t3));
 
-		// Turn off compatibility on parsing: formats with RDF-star support will produce RDF-star triples,
-		// non-RDF-star formats will produce IRIs of the kind urn:rdf4j:triple:xxx
+		// Turn off compatibility on parsing: formats with triple term support will produce triple term triples,
+		// non-triple term formats will produce IRIs of the kind urn:rdf4j:triple:xxx
 		InputStream input2 = serialize(expectedModel);
-		testParser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_RDF_STAR, false);
+		testParser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_TRIPLE_TERMS, false);
 		testParser.parse(input2, BASE_URI);
 		assertErrorListener(0, 0, 0);
-		if (testParser.getRDFFormat().supportsRDFStar()) {
+		if (testParser.getRDFFormat().supportsTripleTerms()) {
 			assertModel(expectedModel);
 		} else {
 			assertTrue(testStatements.getStatements()
-					.contains(vf.createStatement(RDFStarUtil.toRDFEncodedValue(t1), DC.SOURCE,
-							vf.createIRI("http://example.com/4"))));
+					.contains(vf.createStatement(vf.createIRI("http://example.com/4"), DC.SOURCE,
+							TripleTermUtil.toRDFEncodedValue(t1))));
 			assertTrue(testStatements.getStatements()
 					.contains(vf.createStatement(vf.createIRI("http://example.com/5"), DC.RELATION,
-							RDFStarUtil.toRDFEncodedValue(t2))));
+							TripleTermUtil.toRDFEncodedValue(t2))));
 			assertTrue(testStatements.getStatements()
-					.contains(vf.createStatement(RDFStarUtil.toRDFEncodedValue(t3), vf.createIRI("urn:same"),
-							RDFStarUtil.toRDFEncodedValue(t3))));
+					.contains(vf.createStatement(vf.createIRI("http://example.com/s2"), vf.createIRI("urn:same"),
+							TripleTermUtil.toRDFEncodedValue(t3))));
 			assertEquals(3, testStatements.getStatements().size());
 		}
 	}

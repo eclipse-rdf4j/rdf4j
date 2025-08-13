@@ -30,7 +30,7 @@ public abstract class AbstractTriple implements Triple {
 
 	@Override
 	public String stringValue() {
-		return "<<" + getSubject() + " " + getPredicate() + " " + getObject() + ">>";
+		return "<<(" + getSubject() + " " + getPredicate() + " " + getObject() + ")>>";
 	}
 
 	@Override

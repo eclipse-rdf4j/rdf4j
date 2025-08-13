@@ -29,61 +29,60 @@ import org.junit.jupiter.api.Test;
 /**
  * @author Pavel Mihaylov
  */
-public class RDFStarUtilTest {
+public class TripleTermUtilTest {
 	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	@Test
 	public void testEncoding() {
 		IRI iri = vf.createIRI("urn:a");
-		assertSame(iri, RDFStarUtil.toRDFEncodedValue(iri));
-		assertFalse(RDFStarUtil.isEncodedTriple(iri));
+		assertSame(iri, TripleTermUtil.toRDFEncodedValue(iri));
+		assertFalse(TripleTermUtil.isEncodedTriple(iri));
 
 		Literal literal1 = vf.createLiteral("plain");
-		assertSame(literal1, RDFStarUtil.toRDFEncodedValue(literal1));
-		assertFalse(RDFStarUtil.isEncodedTriple(literal1));
+		assertSame(literal1, TripleTermUtil.toRDFEncodedValue(literal1));
+		assertFalse(TripleTermUtil.isEncodedTriple(literal1));
 
 		Literal literal2 = vf.createLiteral(1984L);
-		assertSame(literal2, RDFStarUtil.toRDFEncodedValue(literal2));
-		assertFalse(RDFStarUtil.isEncodedTriple(literal2));
+		assertSame(literal2, TripleTermUtil.toRDFEncodedValue(literal2));
+		assertFalse(TripleTermUtil.isEncodedTriple(literal2));
 
 		Literal literal3 = vf.createLiteral("einfach aber auf deutsch", "de");
-		assertSame(literal3, RDFStarUtil.toRDFEncodedValue(literal3));
-		assertFalse(RDFStarUtil.isEncodedTriple(literal3));
+		assertSame(literal3, TripleTermUtil.toRDFEncodedValue(literal3));
+		assertFalse(TripleTermUtil.isEncodedTriple(literal3));
 
 		BNode bNode = vf.createBNode("bnode1");
-		assertSame(bNode, RDFStarUtil.toRDFEncodedValue(bNode));
-		assertFalse(RDFStarUtil.isEncodedTriple(bNode));
+		assertSame(bNode, TripleTermUtil.toRDFEncodedValue(bNode));
+		assertFalse(TripleTermUtil.isEncodedTriple(bNode));
 
 		Triple triple = vf.createTriple(iri, RDF.TYPE, literal1);
-		assertEquals(vf.createIRI("urn:rdf4j:triple:PDw8dXJuOmE-IDxodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1ze"
-				+ "W50YXgtbnMjdHlwZT4gInBsYWluIj4-"),
-				RDFStarUtil.<Value>toRDFEncodedValue(triple));
-		assertFalse(RDFStarUtil.isEncodedTriple(triple));
-		assertTrue(RDFStarUtil.isEncodedTriple(RDFStarUtil.toRDFEncodedValue(triple)));
+		assertEquals(vf.createIRI(
+				"urn:rdf4j:triple:PDwoIDx1cm46YT4gPGh0dHA6Ly93d3cudzMub3JnLzE5OTkvMDIvMjItcmRmLXN5bnRheC1ucyN0eXBlPiAicGxhaW4iICk-Pg=="),
+				TripleTermUtil.<Value>toRDFEncodedValue(triple));
+		assertFalse(TripleTermUtil.isEncodedTriple(triple));
+		assertTrue(TripleTermUtil.isEncodedTriple(TripleTermUtil.toRDFEncodedValue(triple)));
 	}
 
 	@Test
 	public void testDecoding() {
 		IRI iri = vf.createIRI("urn:a");
-		assertSame(iri, RDFStarUtil.fromRDFEncodedValue(iri));
+		assertSame(iri, TripleTermUtil.fromRDFEncodedValue(iri));
 
 		Literal literal1 = vf.createLiteral("plain");
-		assertSame(literal1, RDFStarUtil.fromRDFEncodedValue(literal1));
-		assertFalse(RDFStarUtil.isEncodedTriple(literal1));
+		assertSame(literal1, TripleTermUtil.fromRDFEncodedValue(literal1));
+		assertFalse(TripleTermUtil.isEncodedTriple(literal1));
 
 		Literal literal2 = vf.createLiteral(1984L);
-		assertSame(literal2, RDFStarUtil.fromRDFEncodedValue(literal2));
+		assertSame(literal2, TripleTermUtil.fromRDFEncodedValue(literal2));
 
 		Literal literal3 = vf.createLiteral("einfach aber auf deutsch", "de");
-		assertSame(literal3, RDFStarUtil.fromRDFEncodedValue(literal3));
-		assertFalse(RDFStarUtil.isEncodedTriple(literal3));
+		assertSame(literal3, TripleTermUtil.fromRDFEncodedValue(literal3));
+		assertFalse(TripleTermUtil.isEncodedTriple(literal3));
 
 		BNode bNode = vf.createBNode("bnode1");
-		assertSame(bNode, RDFStarUtil.fromRDFEncodedValue(bNode));
+		assertSame(bNode, TripleTermUtil.fromRDFEncodedValue(bNode));
 
-		IRI encoded = vf.createIRI("urn:rdf4j:triple:PDw8dXJuOmE-IDxodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1ze"
-				+ "W50YXgtbnMjdHlwZT4gInBsYWluIj4-");
-		Value decoded = RDFStarUtil.fromRDFEncodedValue(encoded);
+		Value encoded = TripleTermUtil.toRDFEncodedValue(vf.createTriple(iri, RDF.TYPE, literal1));
+		Value decoded = TripleTermUtil.fromRDFEncodedValue(encoded);
 		assertTrue(decoded instanceof Triple);
 		assertEquals(iri, ((Triple) decoded).getSubject());
 		assertEquals(RDF.TYPE, ((Triple) decoded).getPredicate());
@@ -106,12 +105,12 @@ public class RDFStarUtilTest {
 		};
 
 		for (IRI invalidValue : invalidValues) {
-			assertTrue(RDFStarUtil.isEncodedTriple(invalidValue));
+			assertTrue(TripleTermUtil.isEncodedTriple(invalidValue));
 			try {
-				RDFStarUtil.fromRDFEncodedValue(invalidValue);
+				TripleTermUtil.fromRDFEncodedValue(invalidValue);
 				fail("Must fail because of invalid value");
 			} catch (IllegalArgumentException e) {
-				assertTrue(e.getMessage().startsWith("Invalid RDF-star encoded triple"));
+				assertTrue(e.getMessage().startsWith("Invalid RDF 1.2 encoded triple"));
 			}
 		}
 	}
