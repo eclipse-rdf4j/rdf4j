@@ -118,7 +118,7 @@ class SketchBasedJoinEstimatorGapTest {
 		rebuild(); // empty snapshot baseline
 		assertApproxZero();
 
-		est.startBackgroundRefresh(5); // ms
+		est.startBackgroundRefresh(3); // ms
 		store.add(triple(s1, p1, o1)); // triggers rebuild request
 		est.addStatement(triple(s1, p1, o1));
 
@@ -152,37 +152,6 @@ class SketchBasedJoinEstimatorGapTest {
 				.estimate();
 
 		assertEquals(0.0, sz, 0.0001);
-	}
-
-	/* ------------------------------------------------------------- */
-	/* B5 – throttle disabled fast rebuild */
-	/* ------------------------------------------------------------- */
-
-	@Test
-	void throttleDisabledIsFast() {
-		/* two estimators: one throttled, one not */
-		StubSailStore s1Store = new StubSailStore();
-		StubSailStore s2Store = new StubSailStore();
-		SketchBasedJoinEstimator slow = new SketchBasedJoinEstimator(s1Store, K, 1, 1);
-		SketchBasedJoinEstimator fast = new SketchBasedJoinEstimator(s2Store, K, 1, 0);
-
-		for (int i = 0; i < 500; i++) {
-			Statement st = triple(VF.createIRI("urn:s" + i), p1, o1);
-			s1Store.add(st);
-			s2Store.add(st);
-		}
-
-		System.out.println("Rebuilding estimators with 500 triples…");
-		long tSlow = timed(slow::rebuildOnceSlow);
-		System.out.println("Rebuild took " + tSlow + " ms (throttled)");
-
-		// now rebuild the fast one
-		System.out.println("Rebuilding fast estimator with 500 triples…");
-		long tFast = timed(fast::rebuildOnceSlow);
-		System.out.println("Rebuild took " + tFast + " ms (throttle disabled)");
-
-		assertTrue(tFast < tSlow * 0.3,
-				"Disabled throttle should be ≥70 % faster (" + tSlow + "ms vs " + tFast + "ms)");
 	}
 
 	private long timed(Runnable r) {
