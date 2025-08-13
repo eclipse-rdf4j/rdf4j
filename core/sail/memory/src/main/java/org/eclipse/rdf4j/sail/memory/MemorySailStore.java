@@ -156,7 +156,7 @@ class MemorySailStore implements SailStore {
 	public MemorySailStore(boolean debug) {
 		snapshotMonitor = new SnapshotMonitor(debug);
 		sketchBasedJoinEstimator.rebuildOnceSlow();
-		sketchBasedJoinEstimator.startBackgroundRefresh(1 * 1000L); // 10 minutes
+		sketchBasedJoinEstimator.startBackgroundRefresh(3); // 10 minutes
 	}
 
 	@Override
@@ -181,7 +181,6 @@ class MemorySailStore implements SailStore {
 	}
 
 	private void invalidateCache() {
-		sketchBasedJoinEstimator.requestRebuild();
 		iteratorCache.invalidateCache();
 	}
 
