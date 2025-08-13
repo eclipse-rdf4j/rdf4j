@@ -113,8 +113,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		objVar = replaceValueWithNewValue(objVar, tripleSource.getValueFactory());
 		conVar = replaceValueWithNewValue(conVar, tripleSource.getValueFactory());
 
-		this.statementPattern = new StatementPattern(statementPattern.getScope(), subjVar, predVar, objVar, conVar);
-		this.statementPattern.setVariableScopeChange(statementPattern.isVariableScopeChange());
+		this.statementPattern = new StatementPattern(subjVar, predVar, objVar, conVar);
 
 		// First create the getters before removing duplicate vars since we need the getters when creating
 		// JoinStatementWithBindingSetIterator. If there are duplicate vars, for instance ?v1 as both subject and
@@ -164,51 +163,44 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	private Var replaceValueWithNewValue(Var var, ValueFactory valueFactory) {
+
 		if (var == null) {
 			return null;
-		} else if (!var.hasValue()) {
-			return var.clone();
-		} else {
-			Var ret = getVarWithNewValue(var, valueFactory);
-			ret.setVariableScopeChange(var.isVariableScopeChange());
-			return ret;
 		}
-	}
 
-	private static Var getVarWithNewValue(Var var, ValueFactory valueFactory) {
-		boolean constant = var.isConstant();
-		boolean anonymous = var.isAnonymous();
+		if (!var.hasValue()) {
+			return var.clone();
+		}
 
 		Value value = var.getValue();
 		if (value.isIRI()) {
-			return Var.of(var.getName(), valueFactory.createIRI(value.stringValue()), anonymous, constant);
+			return new Var(var.getName(), valueFactory.createIRI(value.stringValue()));
 		} else if (value.isBNode()) {
-			return Var.of(var.getName(), valueFactory.createBNode(value.stringValue()), anonymous, constant);
+			return new Var(var.getName(), valueFactory.createBNode(value.stringValue()));
 		} else if (value.isLiteral()) {
 			// preserve label + (language | datatype)
 			Literal lit = (Literal) value;
 
 			// If the literal has a language tag, recreate it with the same language
 			if (lit.getLanguage().isPresent()) {
-				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel(), lit.getLanguage().get()),
-						anonymous, constant);
+				return new Var(var.getName(), valueFactory.createLiteral(lit.getLabel(), lit.getLanguage().get()));
 			}
 
 			CoreDatatype coreDatatype = lit.getCoreDatatype();
 			if (coreDatatype != CoreDatatype.NONE) {
 				// If the literal has a core datatype, recreate it with the same core datatype
-				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel(), coreDatatype), anonymous,
-						constant);
+				return new Var(var.getName(), valueFactory.createLiteral(lit.getLabel(), coreDatatype));
 			}
 
 			// Otherwise, preserve the datatype (falls back to xsd:string if none)
 			IRI dt = lit.getDatatype();
 			if (dt != null) {
-				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel(), dt), anonymous, constant);
+				return new Var(var.getName(), valueFactory.createLiteral(lit.getLabel(), dt));
 			} else {
-				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel()), anonymous, constant);
+				return new Var(var.getName(), valueFactory.createLiteral(lit.getLabel()));
 			}
 		}
+
 		return var;
 	}
 
