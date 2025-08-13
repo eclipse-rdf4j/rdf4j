@@ -31,6 +31,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
  */
 public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
+	// public static final ImplicitLeftJoinOptimizer IMPLICIT_LEFT_JOIN_OPTIMIZER = new ImplicitLeftJoinOptimizer();
+//	public static final OptionalLinearLeftJoinOptimizer OPTIONAL_LINEAR_LEFT_JOIN_OPTIMIZER = new OptionalLinearLeftJoinOptimizer();
 	private static boolean assertsEnabled = false;
 
 	static {
@@ -81,6 +83,8 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				UNION_SCOPE_CHANGE_OPTIMIZER,
 				QUERY_MODEL_NORMALIZER,
 				PROJECTION_REMOVAL_OPTIMIZER, // Make sure this is after the UnionScopeChangeOptimizer
+//				IMPLICIT_LEFT_JOIN_OPTIMIZER,
+//				OPTIONAL_LINEAR_LEFT_JOIN_OPTIMIZER,
 				new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource),
 				ITERATIVE_EVALUATION_OPTIMIZER,
 				FILTER_OPTIMIZER,

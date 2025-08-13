@@ -21,9 +21,12 @@ import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -75,7 +78,6 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	public StatementPatternQueryEvaluationStep(StatementPattern statementPattern, QueryEvaluationContext context,
 			TripleSource tripleSource) {
 		super();
-		this.statementPattern = statementPattern;
 		this.order = statementPattern.getStatementOrder();
 		this.context = context;
 		this.tripleSource = tripleSource;
@@ -105,6 +107,13 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		Var predVar = statementPattern.getPredicateVar();
 		Var objVar = statementPattern.getObjectVar();
 		Var conVar = statementPattern.getContextVar();
+
+		subjVar = replaceValueWithNewValue(subjVar, tripleSource.getValueFactory());
+		predVar = replaceValueWithNewValue(predVar, tripleSource.getValueFactory());
+		objVar = replaceValueWithNewValue(objVar, tripleSource.getValueFactory());
+		conVar = replaceValueWithNewValue(conVar, tripleSource.getValueFactory());
+
+		this.statementPattern = new StatementPattern(subjVar, predVar, objVar, conVar);
 
 		// First create the getters before removing duplicate vars since we need the getters when creating
 		// JoinStatementWithBindingSetIterator. If there are duplicate vars, for instance ?v1 as both subject and
@@ -151,6 +160,48 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		unboundTest = getUnboundTest(context, normalizedSubjectVar, normalizedPredicateVar, normalizedObjectVar,
 				normalizedContextVar);
 
+	}
+
+	private Var replaceValueWithNewValue(Var var, ValueFactory valueFactory) {
+
+		if (var == null) {
+			return null;
+		}
+
+		if (!var.hasValue()) {
+			return var.clone();
+		}
+
+		Value value = var.getValue();
+		if (value.isIRI()) {
+			return new Var(var.getName(), valueFactory.createIRI(value.stringValue()));
+		} else if (value.isBNode()) {
+			return new Var(var.getName(), valueFactory.createBNode(value.stringValue()));
+		} else if (value.isLiteral()) {
+			// preserve label + (language | datatype)
+			Literal lit = (Literal) value;
+
+			// If the literal has a language tag, recreate it with the same language
+			if (lit.getLanguage().isPresent()) {
+				return new Var(var.getName(), valueFactory.createLiteral(lit.getLabel(), lit.getLanguage().get()));
+			}
+
+			CoreDatatype coreDatatype = lit.getCoreDatatype();
+			if (coreDatatype != CoreDatatype.NONE) {
+				// If the literal has a core datatype, recreate it with the same core datatype
+				return new Var(var.getName(), valueFactory.createLiteral(lit.getLabel(), coreDatatype));
+			}
+
+			// Otherwise, preserve the datatype (falls back to xsd:string if none)
+			IRI dt = lit.getDatatype();
+			if (dt != null) {
+				return new Var(var.getName(), valueFactory.createLiteral(lit.getLabel(), dt));
+			} else {
+				return new Var(var.getName(), valueFactory.createLiteral(lit.getLabel()));
+			}
+		}
+
+		return var;
 	}
 
 	// test if the variable must remain unbound for this solution see

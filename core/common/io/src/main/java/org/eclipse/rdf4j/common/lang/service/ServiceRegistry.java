@@ -31,7 +31,7 @@ import org.slf4j.LoggerFactory;
  */
 public abstract class ServiceRegistry<K, S> {
 
-	protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+	protected static final Logger logger = LoggerFactory.getLogger(ServiceRegistry.class);
 
 	protected Map<K, S> services = new ConcurrentHashMap<>(16, 0.75f, 1);
 
@@ -47,16 +47,18 @@ public abstract class ServiceRegistry<K, S> {
 					Optional<S> oldService = add(service);
 
 					if (oldService.isPresent()) {
-						logger.warn("New service {} replaces existing service {}", service.getClass(),
+						logger.warn("{} - New service {} replaces existing service {}", this.getClass(),
+								service.getClass(),
 								oldService.get().getClass());
 					}
-
-					logger.debug("Registered service class {}", service.getClass().getName());
+					if (logger.isDebugEnabled()) {
+						logger.debug("{} - Registered service class {}", this.getClass(), service.getClass().getName());
+					}
 				} else {
 					break;
 				}
 			} catch (Error e) {
-				logger.error("Failed to instantiate service", e);
+				logger.error("{} - Failed to instantiate service", this.getClass(), e);
 			}
 		}
 	}

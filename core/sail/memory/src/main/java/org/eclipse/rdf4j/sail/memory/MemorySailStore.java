@@ -217,22 +217,32 @@ class MemorySailStore implements SailStore {
 			return EMPTY_ITERATION;
 		}
 
-		MemResource memSubj = valueFactory.getMemResource(subj);
-		if (subj != null && memSubj == null) {
-			// non-existent subject
-			return EMPTY_ITERATION;
+		MemIRI memPred = null;
+		MemResource memSubj = null;
+		MemValue memObj = null;
+
+		if (subj != null) {
+			memSubj = valueFactory.getMemResource(subj);
+			if (memSubj == null) {
+				// non-existent subject
+				return EMPTY_ITERATION;
+			}
 		}
 
-		MemIRI memPred = valueFactory.getMemURI(pred);
-		if (pred != null && memPred == null) {
-			// non-existent predicate
-			return EMPTY_ITERATION;
+		if (pred != null) {
+			memPred = valueFactory.getMemURI(pred);
+			if (memPred == null) {
+				// non-existent predicate
+				return EMPTY_ITERATION;
+			}
 		}
 
-		MemValue memObj = valueFactory.getMemValue(obj);
-		if (obj != null && memObj == null) {
-			// non-existent object
-			return EMPTY_ITERATION;
+		if (obj != null) {
+			memObj = valueFactory.getMemValue(obj);
+			if (memObj == null) {
+				// non-existent object
+				return EMPTY_ITERATION;
+			}
 		}
 
 		MemResource[] memContexts;

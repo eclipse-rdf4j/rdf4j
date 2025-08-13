@@ -387,17 +387,23 @@ public class QueryEvaluationUtil {
 			return true;
 		}
 
-		CoreDatatype.XSD ld = l.getCoreDatatype().asXSDDatatypeOrNull();
-		CoreDatatype.XSD rd = r.getCoreDatatype().asXSDDatatypeOrNull();
+		CoreDatatype ld = l.getCoreDatatype();
+		CoreDatatype rd = r.getCoreDatatype();
+
+		if (ld == rd) {
+			if (ld == CoreDatatype.XSD.STRING) {
+				return l.getLabel().equals(r.getLabel());
+			}
+			if (ld == CoreDatatype.RDF.LANGSTRING) {
+				return l.getLanguage().equals(r.getLanguage()) && l.getLabel().equals(r.getLabel());
+			}
+		}
+
 		boolean lLang = Literals.isLanguageLiteral(l);
 		boolean rLang = Literals.isLanguageLiteral(r);
 
-		if (isSimpleLiteral(lLang, ld) && isSimpleLiteral(rLang, rd)) {
-			return l.getLabel().equals(r.getLabel());
-		}
-
 		if (!(lLang || rLang)) {
-			CoreDatatype.XSD common = getCommonDatatype(strict, ld, rd);
+			CoreDatatype.XSD common = getCommonDatatype(strict, ld.asXSDDatatypeOrNull(), rd.asXSDDatatypeOrNull());
 			if (common != null) {
 				try {
 					if (common == CoreDatatype.XSD.DOUBLE) {
@@ -451,7 +457,7 @@ public class QueryEvaluationUtil {
 				}
 			}
 		}
-		return otherCasesEQ(l, r, ld, rd, lLang, rLang, strict);
+		return otherCasesEQ(l, r, ld.asXSDDatatypeOrNull(), rd.asXSDDatatypeOrNull(), lLang, rLang, strict);
 	}
 
 	private static boolean doCompareLiteralsNE(Literal l, Literal r, boolean strict)
