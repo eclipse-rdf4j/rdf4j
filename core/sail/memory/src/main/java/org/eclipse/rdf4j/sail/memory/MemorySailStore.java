@@ -804,6 +804,7 @@ class MemorySailStore implements SailStore {
 				if ((nextSnapshot < 0 || toDeprecate.isInSnapshot(nextSnapshot))
 						&& toDeprecate.isExplicit() == explicit) {
 					toDeprecate.setTillSnapshot(nextSnapshot);
+					sketchBasedJoinEstimator.deleteStatement(toDeprecate);
 				}
 			} else if (statement instanceof LinkedHashModel.ModelStatement
 					&& ((LinkedHashModel.ModelStatement) statement).getStatement() instanceof MemStatement) {
@@ -813,6 +814,7 @@ class MemorySailStore implements SailStore {
 				if ((nextSnapshot < 0 || toDeprecate.isInSnapshot(nextSnapshot))
 						&& toDeprecate.isExplicit() == explicit) {
 					toDeprecate.setTillSnapshot(nextSnapshot);
+					sketchBasedJoinEstimator.deleteStatement(toDeprecate);
 				}
 			} else {
 				try (CloseableIteration<MemStatement> iter = createStatementIterator(
@@ -820,6 +822,7 @@ class MemorySailStore implements SailStore {
 						statement.getContext())) {
 					while (iter.hasNext()) {
 						MemStatement st = iter.next();
+						sketchBasedJoinEstimator.deleteStatement(st);
 						st.setTillSnapshot(nextSnapshot);
 					}
 				} catch (InterruptedException e) {
@@ -871,6 +874,7 @@ class MemorySailStore implements SailStore {
 			statements.add(st);
 			st.addToComponentLists();
 			invalidateCache();
+			sketchBasedJoinEstimator.addStatement(st);
 			return st;
 		}
 
@@ -934,6 +938,8 @@ class MemorySailStore implements SailStore {
 				while (iter.hasNext()) {
 					deprecated = true;
 					MemStatement st = iter.next();
+					sketchBasedJoinEstimator.deleteStatement(st);
+
 					st.setTillSnapshot(nextSnapshot);
 				}
 			} catch (InterruptedException e) {
