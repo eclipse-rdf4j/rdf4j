@@ -116,8 +116,8 @@ public class SketchBasedJoinEstimatorAdvancedTest {
 
 	@Test
 	void backgroundRefreshIdempotent() throws Exception {
-		est.startBackgroundRefresh(5);
-		est.startBackgroundRefresh(5); // no second thread
+		est.startBackgroundRefresh(3);
+		est.startBackgroundRefresh(3); // no second thread
 		Thread.sleep(20);
 		est.stop();
 		est.stop(); // idempotent
