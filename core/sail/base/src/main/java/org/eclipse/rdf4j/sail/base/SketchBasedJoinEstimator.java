@@ -11,7 +11,15 @@
 
 package org.eclipse.rdf4j.sail.base;
 
-// ★ added:
+import java.util.Collection;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+// import java.util.concurrent.ConcurrentHashMap; // ← reduced usage
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReferenceArray;
+import java.util.concurrent.atomic.LongAdder;
 
 import org.apache.datasketches.theta.AnotB;
 import org.apache.datasketches.theta.Intersection;
@@ -31,15 +39,6 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.Collection;
-import java.util.EnumMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.LongAdder;
 
 /**
  * Sketch‑based selectivity and join‑size estimator for RDF4J.
@@ -101,7 +100,7 @@ public class SketchBasedJoinEstimator {
 	/* ────────────────────────────────────────────────────────────── */
 
 	private final SailStore sailStore;
-	private final int nominalEntries;
+	private final int nominalEntries; // ← bucket count for array indices
 	private final long throttleEveryN;
 	private final long throttleMillis;
 
@@ -122,7 +121,7 @@ public class SketchBasedJoinEstimator {
 	private static final Sketch EMPTY = UpdateSketch.builder().build().compact();
 
 	// ──────────────────────────────────────────────────────────────
-	// ★ Staleness & churn tracking (global, lock‑free reads)
+	// Staleness tracking (global, lock‑free reads)
 	// ──────────────────────────────────────────────────────────────
 	private volatile long lastRebuildStartMs = System.currentTimeMillis();
 	private volatile long lastRebuildPublishMs = 0L;
@@ -134,20 +133,21 @@ public class SketchBasedJoinEstimator {
 	/* ────────────────────────────────────────────────────────────── */
 
 	public SketchBasedJoinEstimator(SailStore sailStore, int nominalEntries,
-									long throttleEveryN, long throttleMillis) {
+			long throttleEveryN, long throttleMillis) {
 		nominalEntries *= 2;
 
 		System.out.println("RdfJoinEstimator: Using nominalEntries = " + nominalEntries +
 				", throttleEveryN = " + throttleEveryN + ", throttleMillis = " + throttleMillis);
 
 		this.sailStore = sailStore;
-		this.nominalEntries = nominalEntries;
+		this.nominalEntries = nominalEntries; // used for array bucket count
 		this.throttleEveryN = throttleEveryN;
 		this.throttleMillis = throttleMillis;
 
-		this.bufA = new State(nominalEntries * 8);
-		this.bufB = new State(nominalEntries * 8);
-		this.current = bufA; // start with an empty snapshot
+		// k for DataSketches is larger than bucket count; keep original multiplier
+		this.bufA = new State(nominalEntries * 8, this.nominalEntries);
+		this.bufB = new State(nominalEntries * 8, this.nominalEntries);
+		this.current = usingA ? bufA : bufB; // start with an empty snapshot
 	}
 
 	/* Suggest k (=nominalEntries) so the estimator stays ≤ heap/16. */
@@ -216,24 +216,32 @@ public class SketchBasedJoinEstimator {
 
 		refresher = new Thread(() -> {
 			while (running) {
-
-				Staleness staleness = staleness();
-				System.out.println(staleness);
-
-
-				if (!isStale(2)) {
+//				System.out.println(staleness().toString());
+				boolean stale = isStale(3);
+				if (!stale) {
 					try {
 						Thread.sleep(1000);
-					} catch (InterruptedException ie) {
+					} catch (InterruptedException e) {
 						Thread.currentThread().interrupt();
 						break;
 					}
 					continue;
 				}
+				Staleness staleness = staleness();
+				System.out.println(staleness.toString());
+//				if (!rebuildRequested) {
+//					try {
+//						Thread.sleep(periodMs);
+//					} catch (InterruptedException ie) {
+//						Thread.currentThread().interrupt();
+//						break;
+//					}
+//					continue;
+//				}
 
 				try {
 					rebuildOnceSlow();
-					rebuildRequested = false;
+//					rebuildRequested = false;
 				} catch (Throwable t) {
 					logger.error("Error while rebuilding join estimator", t);
 				}
@@ -282,16 +290,16 @@ public class SketchBasedJoinEstimator {
 		boolean rebuildIntoA = !usingA; // remember before toggling
 
 		State tgt = rebuildIntoA ? bufA : bufB;
-		tgt.clear(); // wipe everything (add + del + incremental)
+		tgt.clear(); // wipe everything (add + del)
 
 		long seen = 0L;
 		long l = System.currentTimeMillis();
 
-		// ★ staleness: record rebuild start
+		// staleness: record rebuild start
 		lastRebuildStartMs = l;
 
 		try (SailDataset ds = sailStore.getExplicitSailSource().dataset(IsolationLevels.SERIALIZABLE);
-			 CloseableIteration<? extends Statement> it = ds.getStatements(null, null, null)) {
+				CloseableIteration<? extends Statement> it = ds.getStatements(null, null, null)) {
 
 			while (it.hasNext()) {
 				Statement st = it.next();
@@ -324,7 +332,7 @@ public class SketchBasedJoinEstimator {
 				currentMemoryUsageAfter / 1024 / 1024 + " MB, delta = " +
 				(currentMemoryUsageAfter - currentMemoryUsage) / 1024 / 1024 + " MB.");
 
-		// ★ staleness: publish times & reset deltas
+		// staleness: publish times & reset deltas
 		lastRebuildPublishMs = System.currentTimeMillis();
 		addsSinceRebuild.reset();
 		deletesSinceRebuild.reset();
@@ -335,21 +343,21 @@ public class SketchBasedJoinEstimator {
 	private long currentMemoryUsage() {
 		System.gc();
 		try {
-			Thread.sleep(1);
+			Thread.sleep(10);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new RuntimeException(e);
 		}
 		System.gc();
 		try {
-			Thread.sleep(1);
+			Thread.sleep(50);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new RuntimeException(e);
 		}
 		System.gc();
 		try {
-			Thread.sleep(1);
+			Thread.sleep(100);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new RuntimeException(e);
@@ -373,7 +381,7 @@ public class SketchBasedJoinEstimator {
 			ingest(bufB, st, /* isDelete= */false);
 		}
 
-		// ★ staleness: track deltas
+		// staleness: track deltas
 		addsSinceRebuild.increment();
 
 		requestRebuild();
@@ -397,7 +405,7 @@ public class SketchBasedJoinEstimator {
 			ingest(bufB, st, /* isDelete= */true);
 		}
 
-		// ★ staleness: track deltas
+		// staleness: track deltas
 		deletesSinceRebuild.increment();
 	}
 
@@ -433,18 +441,13 @@ public class SketchBasedJoinEstimator {
 			var tgtS = isDelete ? t.delSingles : t.singles;
 			var tgtP = isDelete ? t.delPairs : t.pairs;
 
-			/* single‑component cardinalities */
-			tgtST.get(Component.S).computeIfAbsent(si, i -> newSk(t.k)).update(sig);
-			tgtST.get(Component.P).computeIfAbsent(pi, i -> newSk(t.k)).update(sig);
-			tgtST.get(Component.O).computeIfAbsent(oi, i -> newSk(t.k)).update(sig);
-			tgtST.get(Component.C).computeIfAbsent(ci, i -> newSk(t.k)).update(sig);
+			/* single‑component cardinalities (array-backed) */
+			updateCell(tgtST.get(Component.S), si, sig, t.k);
+			updateCell(tgtST.get(Component.P), pi, sig, t.k);
+			updateCell(tgtST.get(Component.O), oi, sig, t.k);
+			updateCell(tgtST.get(Component.C), ci, sig, t.k);
 
-			/* ★ churn: record incremental adds since rebuild (S bucket only, disjoint by design) */
-			if (!isDelete) {
-				t.incAddSingleTriples.get(Component.S).computeIfAbsent(si, i -> newSk(t.k)).update(sig);
-			}
-
-			/* complement sets for singles */
+			/* complement sets for singles (array-backed second layer) */
 			tgtS.get(Component.S).upd(Component.P, si, p);
 			tgtS.get(Component.S).upd(Component.O, si, o);
 			tgtS.get(Component.S).upd(Component.C, si, c);
@@ -461,7 +464,7 @@ public class SketchBasedJoinEstimator {
 			tgtS.get(Component.C).upd(Component.P, ci, p);
 			tgtS.get(Component.C).upd(Component.O, ci, o);
 
-			/* pairs (triples + complements) */
+			/* pairs (triples + complements) — row-chunked arrays */
 			tgtP.get(Pair.SP).upT(pairKey(si, pi), sig);
 			tgtP.get(Pair.SP).up1(pairKey(si, pi), o);
 			tgtP.get(Pair.SP).up2(pairKey(si, pi), c);
@@ -496,15 +499,17 @@ public class SketchBasedJoinEstimator {
 
 	public double cardinalitySingle(Component c, String v) {
 		int idx = hash(v);
-		UpdateSketch add = current.singleTriples.get(c).get(idx);
-		UpdateSketch del = current.delSingleTriples.get(c).get(idx);
+		AtomicReferenceArray<UpdateSketch> arrAdd = current.singleTriples.get(c);
+		AtomicReferenceArray<UpdateSketch> arrDel = current.delSingleTriples.get(c);
+		UpdateSketch add = arrAdd.get(idx);
+		UpdateSketch del = arrDel.get(idx);
 		return estimateMinus(add, del);
 	}
 
 	public double cardinalityPair(Pair p, String x, String y) {
 		long key = pairKey(hash(x), hash(y));
-		UpdateSketch add = current.pairs.get(p).triples.get(key);
-		UpdateSketch del = current.delPairs.get(p).triples.get(key);
+		UpdateSketch add = current.pairs.get(p).getTriple(key);
+		UpdateSketch del = current.delPairs.get(p).getTriple(key);
 		return estimateMinus(add, del);
 	}
 
@@ -513,12 +518,12 @@ public class SketchBasedJoinEstimator {
 	/* ────────────────────────────────────────────────────────────── */
 
 	public double estimateJoinOn(Component join, Pair a, String ax, String ay,
-								 Pair b, String bx, String by) {
+			Pair b, String bx, String by) {
 		return joinPairs(current, join, a, ax, ay, b, bx, by);
 	}
 
 	public double estimateJoinOn(Component j, Component a, String av,
-								 Component b, String bv) {
+			Component b, String bv) {
 		return joinSingles(current, j, a, av, b, bv);
 	}
 
@@ -545,7 +550,7 @@ public class SketchBasedJoinEstimator {
 		private double resultSize;
 
 		private JoinEstimate(State snap, Component joinVar, Sketch bindings,
-							 double distinct, double size) {
+				double distinct, double size) {
 			this.snap = snap;
 			this.joinVar = joinVar;
 			this.bindings = bindings;
@@ -623,7 +628,7 @@ public class SketchBasedJoinEstimator {
 
 	/** Build both |R| and Θ‑sketch for one triple pattern. */
 	private PatternStats statsOf(State st, Component j,
-								 String s, String p, String o, String c) {
+			String s, String p, String o, String c) {
 
 		Sketch sk = bindingsSketch(st, j, s, p, o, c);
 
@@ -645,36 +650,36 @@ public class SketchBasedJoinEstimator {
 		double card;
 
 		switch (fixed.size()) {
-			case 0:
-				card = 0.0;
-				break;
+		case 0:
+			card = 0.0;
+			break;
 
-			case 1: {
-				Map.Entry<Component, String> e = fixed.entrySet().iterator().next();
-				card = cardSingle(st, e.getKey(), e.getValue());
-				break;
-			}
+		case 1: {
+			Map.Entry<Component, String> e = fixed.entrySet().iterator().next();
+			card = cardSingle(st, e.getKey(), e.getValue());
+			break;
+		}
 
-			case 2: {
-				Component[] cmp = fixed.keySet().toArray(new Component[0]);
-				Pair pr = findPair(cmp[0], cmp[1]);
-				if (pr != null) {
-					card = cardPair(st, pr, fixed.get(pr.x), fixed.get(pr.y));
-				} else { // components not a known pair – conservative min
-					double a = cardSingle(st, cmp[0], fixed.get(cmp[0]));
-					double b = cardSingle(st, cmp[1], fixed.get(cmp[1]));
-					card = Math.min(a, b);
-				}
-				break;
+		case 2: {
+			Component[] cmp = fixed.keySet().toArray(new Component[0]);
+			Pair pr = findPair(cmp[0], cmp[1]);
+			if (pr != null) {
+				card = cardPair(st, pr, fixed.get(pr.x), fixed.get(pr.y));
+			} else { // components not a known pair – conservative min
+				double a = cardSingle(st, cmp[0], fixed.get(cmp[0]));
+				double b = cardSingle(st, cmp[1], fixed.get(cmp[1]));
+				card = Math.min(a, b);
 			}
+			break;
+		}
 
-			default: { // 3 or 4 bound – use smallest single cardinality
-				card = Double.POSITIVE_INFINITY;
-				for (Map.Entry<Component, String> e : fixed.entrySet()) {
-					card = Math.min(card, cardSingle(st, e.getKey(), e.getValue()));
-				}
-				break;
+		default: { // 3 or 4 bound – use smallest single cardinality
+			card = Double.POSITIVE_INFINITY;
+			for (Map.Entry<Component, String> e : fixed.entrySet()) {
+				card = Math.min(card, cardSingle(st, e.getKey(), e.getValue()));
 			}
+			break;
+		}
 		}
 		return new PatternStats(sk, card);
 	}
@@ -692,8 +697,8 @@ public class SketchBasedJoinEstimator {
 
 	private double cardPair(State st, Pair p, String x, String y) {
 		long key = pairKey(hash(x), hash(y));
-		UpdateSketch add = st.pairs.get(p).triples.get(key);
-		UpdateSketch del = st.delPairs.get(p).triples.get(key);
+		UpdateSketch add = st.pairs.get(p).getTriple(key);
+		UpdateSketch del = st.delPairs.get(p).getTriple(key);
 		return estimateMinus(add, del);
 	}
 
@@ -702,7 +707,7 @@ public class SketchBasedJoinEstimator {
 	/* ────────────────────────────────────────────────────────────── */
 
 	private Sketch bindingsSketch(State st, Component j,
-								  String s, String p, String o, String c) {
+			String s, String p, String o, String c) {
 
 		EnumMap<Component, String> f = new EnumMap<>(Component.class);
 		if (s != null) {
@@ -729,8 +734,8 @@ public class SketchBasedJoinEstimator {
 		}
 
 		/* 2 constants: pair fast path */
+		Component[] cs = f.keySet().toArray(new Component[0]);
 		if (f.size() == 2) {
-			Component[] cs = f.keySet().toArray(new Component[0]);
 			Pair pr = findPair(cs[0], cs[1]);
 			if (pr != null && (j == pr.comp1 || j == pr.comp2)) {
 				int idxX = hash(f.get(pr.x));
@@ -785,8 +790,13 @@ public class SketchBasedJoinEstimator {
 			if (c == fixed) {
 				return null;
 			}
-			UpdateSketch a = add.cmpl.get(c).get(fi);
-			UpdateSketch d = del.cmpl.get(c).get(fi);
+			AtomicReferenceArray<UpdateSketch> arrA = add.cmpl.get(c);
+			AtomicReferenceArray<UpdateSketch> arrD = del.cmpl.get(c);
+			if (arrA == null || arrD == null) {
+				return null;
+			}
+			UpdateSketch a = arrA.get(fi);
+			UpdateSketch d = arrD.get(fi);
 			return subtractSketch(a, d);
 		}
 	}
@@ -804,11 +814,11 @@ public class SketchBasedJoinEstimator {
 		Sketch getComplementSketch(Component c, long key) {
 			UpdateSketch a, d;
 			if (c == p.comp1) {
-				a = add.comp1.get(key);
-				d = del.comp1.get(key);
+				a = add.getComp1(key);
+				d = del.getComp1(key);
 			} else if (c == p.comp2) {
-				a = add.comp2.get(key);
-				d = del.comp2.get(key);
+				a = add.getComp2(key);
+				d = del.getComp2(key);
 			} else {
 				return null;
 			}
@@ -821,8 +831,8 @@ public class SketchBasedJoinEstimator {
 	/* ────────────────────────────────────────────────────────────── */
 
 	private double joinPairs(State st, Component j,
-							 Pair a, String ax, String ay,
-							 Pair b, String bx, String by) {
+			Pair a, String ax, String ay,
+			Pair b, String bx, String by) {
 
 		long keyA = pairKey(hash(ax), hash(ay));
 		long keyB = pairKey(hash(bx), hash(by));
@@ -841,8 +851,8 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private double joinSingles(State st, Component j,
-							   Component a, String av,
-							   Component b, String bv) {
+			Component a, String av,
+			Component b, String bv) {
 
 		int idxA = hash(av), idxB = hash(bv);
 
@@ -864,59 +874,47 @@ public class SketchBasedJoinEstimator {
 	/* ────────────────────────────────────────────────────────────── */
 
 	private static final class State {
-		final int k;
+		final int k; // sketch nominal entries
+		final int buckets; // array bucket count (outer.nominalEntries)
 
 		/* live (add) sketches */
-		final EnumMap<Component, ConcurrentHashMap<Integer, UpdateSketch>> singleTriples = new EnumMap<>(
+		final EnumMap<Component, AtomicReferenceArray<UpdateSketch>> singleTriples = new EnumMap<>(
 				Component.class);
 		final EnumMap<Component, SingleBuild> singles = new EnumMap<>(Component.class);
 		final EnumMap<Pair, PairBuild> pairs = new EnumMap<>(Pair.class);
 
 		/* tomb‑stone (delete) sketches */
-		final EnumMap<Component, ConcurrentHashMap<Integer, UpdateSketch>> delSingleTriples = new EnumMap<>(
+		final EnumMap<Component, AtomicReferenceArray<UpdateSketch>> delSingleTriples = new EnumMap<>(
 				Component.class);
 		final EnumMap<Component, SingleBuild> delSingles = new EnumMap<>(Component.class);
 		final EnumMap<Pair, PairBuild> delPairs = new EnumMap<>(Pair.class);
 
-		// ★ incremental‑adds since last rebuild (S buckets only used in metrics)
-		final EnumMap<Component, ConcurrentHashMap<Integer, UpdateSketch>> incAddSingleTriples = new EnumMap<>(
-				Component.class);
-
-		State(int k) {
+		State(int k, int buckets) {
 			this.k = k;
+			this.buckets = buckets;
 
 			for (Component c : Component.values()) {
-				singleTriples.put(c, new ConcurrentHashMap<>(4, 0.99999f));
-				delSingleTriples.put(c, new ConcurrentHashMap<>(4, 0.99999f));
-				incAddSingleTriples.put(c, new ConcurrentHashMap<>(4, 0.99999f));
+				singleTriples.put(c, new AtomicReferenceArray<>(buckets));
+				delSingleTriples.put(c, new AtomicReferenceArray<>(buckets));
 
-				singles.put(c, new SingleBuild(k, c));
-				delSingles.put(c, new SingleBuild(k, c));
+				singles.put(c, new SingleBuild(k, c, buckets));
+				delSingles.put(c, new SingleBuild(k, c, buckets));
 			}
 			for (Pair p : Pair.values()) {
-				pairs.put(p, new PairBuild(k));
-				delPairs.put(p, new PairBuild(k));
+				pairs.put(p, new PairBuild(k, buckets));
+				delPairs.put(p, new PairBuild(k, buckets));
 			}
 		}
 
 		void clear() {
-			singleTriples.values().forEach(Map::clear);
-			delSingleTriples.values().forEach(Map::clear);
-			incAddSingleTriples.values().forEach(Map::clear); // ★
+			singleTriples.values().forEach(SketchBasedJoinEstimator::clearArray);
+			delSingleTriples.values().forEach(SketchBasedJoinEstimator::clearArray);
 
-			singles.values().forEach(sb -> sb.cmpl.values().forEach(Map::clear));
-			delSingles.values().forEach(sb -> sb.cmpl.values().forEach(Map::clear));
+			singles.values().forEach(SingleBuild::clear);
+			delSingles.values().forEach(SingleBuild::clear);
 
-			pairs.values().forEach(pb -> {
-				pb.triples.clear();
-				pb.comp1.clear();
-				pb.comp2.clear();
-			});
-			delPairs.values().forEach(pb -> {
-				pb.triples.clear();
-				pb.comp1.clear();
-				pb.comp2.clear();
-			});
+			pairs.values().forEach(PairBuild::clear);
+			delPairs.values().forEach(PairBuild::clear);
 		}
 	}
 
@@ -926,49 +924,134 @@ public class SketchBasedJoinEstimator {
 
 	private static final class SingleBuild {
 		final int k;
-		final EnumMap<Component, ConcurrentHashMap<Integer, UpdateSketch>> cmpl = new EnumMap<>(Component.class);
+		final int buckets;
+		final EnumMap<Component, AtomicReferenceArray<UpdateSketch>> cmpl = new EnumMap<>(Component.class);
 
-		SingleBuild(int k, Component fixed) {
+		SingleBuild(int k, Component fixed, int buckets) {
 			this.k = k;
+			this.buckets = buckets;
 			for (Component c : Component.values()) {
 				if (c != fixed) {
-					cmpl.put(c, new ConcurrentHashMap<>(4, 0.99999f));
+					cmpl.put(c, new AtomicReferenceArray<>(buckets));
 				}
 			}
 		}
 
+		void clear() {
+			for (AtomicReferenceArray<UpdateSketch> arr : cmpl.values()) {
+				SketchBasedJoinEstimator.clearArray(arr);
+			}
+		}
+
 		void upd(Component c, int idx, String v) {
-			ConcurrentHashMap<Integer, UpdateSketch> m = cmpl.get(c);
-			if (m == null) {
+			AtomicReferenceArray<UpdateSketch> arr = cmpl.get(c);
+			if (arr == null) {
 				return;
 			}
-			UpdateSketch sk = m.computeIfAbsent(idx, i -> newSk(k));
-			if (sk != null) {
-				sk.update(v);
+			UpdateSketch sk = arr.get(idx);
+			if (sk == null) {
+				sk = newSk(k);
+				arr.set(idx, sk);
 			}
+			sk.update(v);
 		}
 	}
 
 	private static final class PairBuild {
 		final int k;
-		final Map<Long, UpdateSketch> triples = new ConcurrentHashMap<>();
-		final Map<Long, UpdateSketch> comp1 = new ConcurrentHashMap<>();
-		final Map<Long, UpdateSketch> comp2 = new ConcurrentHashMap<>();
+		final int buckets;
 
-		PairBuild(int k) {
+		/** row-chunked: rows indexed by X; each row has AtomicReferenceArray cells over Y */
+		final AtomicReferenceArray<Row> rows;
+
+		PairBuild(int k, int buckets) {
 			this.k = k;
+			this.buckets = buckets;
+			this.rows = new AtomicReferenceArray<>(buckets);
+		}
+
+		void clear() {
+			for (int i = 0; i < buckets; i++) {
+				rows.set(i, null);
+			}
 		}
 
 		void upT(long key, String sig) {
-			triples.computeIfAbsent(key, i -> newSk(k)).update(sig);
+			int x = (int) (key >>> 32);
+			int y = (int) key;
+			Row r = getOrCreateRow(x);
+			UpdateSketch sk = r.triples.get(y);
+			if (sk == null) {
+				sk = newSk(k);
+				r.triples.set(y, sk);
+			}
+			sk.update(sig);
 		}
 
 		void up1(long key, String v) {
-			comp1.computeIfAbsent(key, i -> newSk(k)).update(v);
+			int x = (int) (key >>> 32);
+			int y = (int) key;
+			Row r = getOrCreateRow(x);
+			UpdateSketch sk = r.comp1.get(y);
+			if (sk == null) {
+				sk = newSk(k);
+				r.comp1.set(y, sk);
+			}
+			sk.update(v);
 		}
 
 		void up2(long key, String v) {
-			comp2.computeIfAbsent(key, i -> newSk(k)).update(v);
+			int x = (int) (key >>> 32);
+			int y = (int) key;
+			Row r = getOrCreateRow(x);
+			UpdateSketch sk = r.comp2.get(y);
+			if (sk == null) {
+				sk = newSk(k);
+				r.comp2.set(y, sk);
+			}
+			sk.update(v);
+		}
+
+		UpdateSketch getTriple(long key) {
+			int x = (int) (key >>> 32);
+			int y = (int) key;
+			Row r = rows.get(x);
+			return (r == null) ? null : r.triples.get(y);
+		}
+
+		UpdateSketch getComp1(long key) {
+			int x = (int) (key >>> 32);
+			int y = (int) key;
+			Row r = rows.get(x);
+			return (r == null) ? null : r.comp1.get(y);
+		}
+
+		UpdateSketch getComp2(long key) {
+			int x = (int) (key >>> 32);
+			int y = (int) key;
+			Row r = rows.get(x);
+			return (r == null) ? null : r.comp2.get(y);
+		}
+
+		private Row getOrCreateRow(int x) {
+			Row r = rows.get(x);
+			if (r == null) {
+				r = new Row(buckets);
+				rows.set(x, r);
+			}
+			return r;
+		}
+
+		static final class Row {
+			final AtomicReferenceArray<UpdateSketch> triples;
+			final AtomicReferenceArray<UpdateSketch> comp1;
+			final AtomicReferenceArray<UpdateSketch> comp2;
+
+			Row(int buckets) {
+				this.triples = new AtomicReferenceArray<>(buckets);
+				this.comp1 = new AtomicReferenceArray<>(buckets);
+				this.comp2 = new AtomicReferenceArray<>(buckets);
+			}
 		}
 	}
 
@@ -1007,8 +1090,9 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private int hash(String v) {
-		/* Using modulus avoids negative numbers without Math.abs() */
-		return Objects.hashCode(v) % nominalEntries;
+		// Ensure non-negative index in [0, nominalEntries)
+		int h = Objects.hashCode(v);
+		return (h & 0x7fffffff) % nominalEntries;
 	}
 
 	private static long pairKey(int a, int b) {
@@ -1103,7 +1187,7 @@ public class SketchBasedJoinEstimator {
 	}
 
 	/* ────────────────────────────────────────────────────────────── */
-	/* ★ Staleness & churn API */
+	/* Staleness API */
 	/* ────────────────────────────────────────────────────────────── */
 
 	/**
@@ -1126,12 +1210,7 @@ public class SketchBasedJoinEstimator {
 		public final double distinctDeletes; // union over delSingleTriples[S]
 		public final double distinctNetLive; // union of (A-not-B per S-bucket)
 
-		// ★ churn‑specific
-		public final double distinctIncAdds; // union over incAddSingleTriples[S]
-		public final double readdOverlap; // union over per‑bucket intersections of (incAdd[S] ∧ del[S])
-		public final double readdOverlapOnIncAdds; // ratio readdOverlap / max(1, distinctIncAdds)
-
-		public final double stalenessScore; // combined 0..1+ (kept for convenience)
+		public final double stalenessScore; // combined 0..1+
 
 		private Staleness(
 				long ageMillis,
@@ -1146,9 +1225,6 @@ public class SketchBasedJoinEstimator {
 				double distinctTriples,
 				double distinctDeletes,
 				double distinctNetLive,
-				double distinctIncAdds,
-				double readdOverlap,
-				double readdOverlapOnIncAdds,
 				double stalenessScore) {
 			this.ageMillis = ageMillis;
 			this.lastRebuildStartMs = lastRebuildStartMs;
@@ -1162,9 +1238,6 @@ public class SketchBasedJoinEstimator {
 			this.distinctTriples = distinctTriples;
 			this.distinctDeletes = distinctDeletes;
 			this.distinctNetLive = distinctNetLive;
-			this.distinctIncAdds = distinctIncAdds;
-			this.readdOverlap = readdOverlap;
-			this.readdOverlapOnIncAdds = readdOverlapOnIncAdds;
 			this.stalenessScore = stalenessScore;
 		}
 
@@ -1183,9 +1256,6 @@ public class SketchBasedJoinEstimator {
 					", distinctTriples=" + distinctTriples +
 					", distinctDeletes=" + distinctDeletes +
 					", distinctNetLive=" + distinctNetLive +
-					", distinctIncAdds=" + distinctIncAdds +
-					", readdOverlap=" + readdOverlap +
-					", readdOverlapOnIncAdds=" + readdOverlapOnIncAdds +
 					", stalenessScore=" + stalenessScore +
 					'}';
 		}
@@ -1210,8 +1280,8 @@ public class SketchBasedJoinEstimator {
 		final double deltaRatio = (adds + dels) / base;
 
 		// Coarse tombstone pressure via retained entries (symmetric double-counting)
-		long addSinglesRet = sumRetainedEntries(snap.singleTriples.values());
-		long delSinglesRet = sumRetainedEntries(snap.delSingleTriples.values());
+		long addSinglesRet = sumRetainedEntriesSingles(snap.singleTriples.values());
+		long delSinglesRet = sumRetainedEntriesSingles(snap.delSingleTriples.values());
 		double tombSingle = safeRatio(delSinglesRet, addSinglesRet);
 
 		long addPairsRet = sumRetainedEntriesPairs(snap.pairs.values());
@@ -1222,27 +1292,19 @@ public class SketchBasedJoinEstimator {
 		long delComplRet = sumRetainedEntriesComplements(snap.delSingles.values());
 		double tombCompl = safeRatio(delComplRet, addComplRet);
 
-		// Distinct-aware (baseline): unions across S-buckets
-		double distinctAddsAll = unionDistinctTriplesS(snap.singleTriples.get(Component.S).values());
-		double distinctDelsAll = unionDistinctTriplesS(snap.delSingleTriples.get(Component.S).values());
+		// Distinct-aware: unions across S-buckets
+		double distinctAdds = unionDistinctTriplesS(snap.singleTriples.get(Component.S));
+		double distinctDels = unionDistinctTriplesS(snap.delSingleTriples.get(Component.S));
 		double distinctNet = unionDistinctNetLiveTriplesS(
 				snap.singleTriples.get(Component.S),
 				snap.delSingleTriples.get(Component.S));
 
-		// ★ Churn‑specific metrics
-		double distinctIncAdds = unionDistinctTriplesS(snap.incAddSingleTriples.get(Component.S).values());
-		double readdOverlap = overlapIncAddVsDelS(
-				snap.incAddSingleTriples.get(Component.S),
-				snap.delSingleTriples.get(Component.S));
-		double readdOverlapOnIncAdds = distinctIncAdds <= 0.0 ? 0.0 : (readdOverlap / distinctIncAdds);
-
-		// Combined score (dimensionless). Emphasize churn risk.
+		// Combined score (dimensionless). You may tune weights externally; defaults below:
 		double ageScore = normalize(age, TimeUnit.MINUTES.toMillis(10)); // 10 min SLA by default
 		double deltaScore = clamp(deltaRatio, 0.0, 10.0); // cap to avoid runaway
 		double tombScore = (tombSingle + tombPairs + tombCompl) / 3.0;
-		double churnScore = clamp(readdOverlapOnIncAdds * 3.0, 0.0, 3.0); // up‑weight churn
 
-		double score = ageScore * 0.20 + deltaScore * 0.20 + tombScore * 0.20 + churnScore * 0.40;
+		double score = ageScore * 0.34 + deltaScore * 0.33 + tombScore * 0.33;
 
 		return new Staleness(
 				age,
@@ -1254,12 +1316,9 @@ public class SketchBasedJoinEstimator {
 				tombSingle,
 				tombPairs,
 				tombCompl,
-				distinctAddsAll,
-				distinctDelsAll,
+				distinctAdds,
+				distinctDels,
 				distinctNet,
-				distinctIncAdds,
-				readdOverlap,
-				readdOverlapOnIncAdds,
 				score);
 	}
 
@@ -1269,13 +1328,16 @@ public class SketchBasedJoinEstimator {
 	}
 
 	// ──────────────────────────────────────────────────────────────
-	// ★ Staleness & churn helpers (private)
+	// Staleness helpers (private)
 	// ──────────────────────────────────────────────────────────────
 
-	private static long sumRetainedEntries(Collection<ConcurrentHashMap<Integer, UpdateSketch>> maps) {
+	private static long sumRetainedEntriesSingles(Collection<AtomicReferenceArray<UpdateSketch>> arrays) {
 		long sum = 0L;
-		for (Map<Integer, UpdateSketch> m : maps) {
-			for (UpdateSketch sk : m.values()) {
+		for (AtomicReferenceArray<UpdateSketch> arr : arrays) {
+			if (arr == null)
+				continue;
+			for (int i = 0; i < arr.length(); i++) {
+				UpdateSketch sk = arr.get(i);
 				if (sk != null) {
 					sum += sk.getRetainedEntries();
 				}
@@ -1287,19 +1349,23 @@ public class SketchBasedJoinEstimator {
 	private static long sumRetainedEntriesPairs(Collection<PairBuild> pbs) {
 		long sum = 0L;
 		for (PairBuild pb : pbs) {
-			for (UpdateSketch sk : pb.triples.values()) {
-				if (sk != null) {
-					sum += sk.getRetainedEntries();
-				}
-			}
-			for (UpdateSketch sk : pb.comp1.values()) {
-				if (sk != null) {
-					sum += sk.getRetainedEntries();
-				}
-			}
-			for (UpdateSketch sk : pb.comp2.values()) {
-				if (sk != null) {
-					sum += sk.getRetainedEntries();
+			if (pb == null)
+				continue;
+			for (int x = 0; x < pb.buckets; x++) {
+				PairBuild.Row r = pb.rows.get(x);
+				if (r == null)
+					continue;
+				for (int y = 0; y < pb.buckets; y++) {
+					UpdateSketch sk;
+					sk = r.triples.get(y);
+					if (sk != null)
+						sum += sk.getRetainedEntries();
+					sk = r.comp1.get(y);
+					if (sk != null)
+						sum += sk.getRetainedEntries();
+					sk = r.comp2.get(y);
+					if (sk != null)
+						sum += sk.getRetainedEntries();
 				}
 			}
 		}
@@ -1309,8 +1375,9 @@ public class SketchBasedJoinEstimator {
 	private static long sumRetainedEntriesComplements(Collection<SingleBuild> sbs) {
 		long sum = 0L;
 		for (SingleBuild sb : sbs) {
-			for (Map<Integer, UpdateSketch> m : sb.cmpl.values()) {
-				for (UpdateSketch sk : m.values()) {
+			for (AtomicReferenceArray<UpdateSketch> arr : sb.cmpl.values()) {
+				for (int i = 0; i < arr.length(); i++) {
+					UpdateSketch sk = arr.get(i);
 					if (sk != null) {
 						sum += sk.getRetainedEntries();
 					}
@@ -1320,12 +1387,13 @@ public class SketchBasedJoinEstimator {
 		return sum;
 	}
 
-	private static double unionDistinctTriplesS(Collection<UpdateSketch> sketches) {
-		if (sketches == null || sketches.isEmpty()) {
+	private static double unionDistinctTriplesS(AtomicReferenceArray<UpdateSketch> arr) {
+		if (arr == null || arr.length() == 0) {
 			return 0.0;
 		}
 		Union u = SetOperation.builder().buildUnion();
-		for (UpdateSketch sk : sketches) {
+		for (int i = 0; i < arr.length(); i++) {
+			UpdateSketch sk = arr.get(i);
 			if (sk != null) {
 				u.union(sk); // DataSketches 5.x: union(Sketch)
 			}
@@ -1334,53 +1402,25 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private static double unionDistinctNetLiveTriplesS(
-			Map<Integer, UpdateSketch> addS,
-			Map<Integer, UpdateSketch> delS) {
-		if (addS == null || addS.isEmpty()) {
+			AtomicReferenceArray<UpdateSketch> addS,
+			AtomicReferenceArray<UpdateSketch> delS) {
+		if (addS == null || addS.length() == 0) {
 			return 0.0;
 		}
 		Union u = SetOperation.builder().buildUnion();
-		for (Map.Entry<Integer, UpdateSketch> e : addS.entrySet()) {
-			UpdateSketch a = e.getValue();
+		for (int i = 0; i < addS.length(); i++) {
+			UpdateSketch a = addS.get(i);
 			if (a == null) {
 				continue;
 			}
-			UpdateSketch d = delS == null ? null : delS.get(e.getKey());
+			UpdateSketch d = (delS == null || delS.length() <= i) ? null : delS.get(i);
 			if (d == null || d.getRetainedEntries() == 0) {
 				u.union(a);
 			} else {
 				AnotB diff = SetOperation.builder().buildANotB();
 				diff.setA(a);
 				diff.notB(d);
-				u.union(diff.getResult(false));
-			}
-		}
-		return u.getResult().getEstimate();
-	}
-
-	/** ★ The key churn metric: per‑bucket (incAdd[S] ∧ del[S]) summed via a union of intersections. */
-	private static double overlapIncAddVsDelS(
-			Map<Integer, UpdateSketch> incAddS,
-			Map<Integer, UpdateSketch> delS) {
-		if (incAddS == null || incAddS.isEmpty() || delS == null || delS.isEmpty()) {
-			return 0.0;
-		}
-		Union u = SetOperation.builder().buildUnion();
-		for (Map.Entry<Integer, UpdateSketch> e : incAddS.entrySet()) {
-			UpdateSketch addInc = e.getValue();
-			if (addInc == null) {
-				continue;
-			}
-			UpdateSketch del = delS.get(e.getKey());
-			if (del == null) {
-				continue;
-			}
-			Intersection ix = SetOperation.builder().buildIntersection();
-			ix.intersect(addInc);
-			ix.intersect(del);
-			Sketch inter = ix.getResult();
-			if (inter != null && inter.getRetainedEntries() > 0) {
-				u.union(inter);
+				u.union(diff.getResult(false)); // union A-not-B Sketch
 			}
 		}
 		return u.getResult().getEstimate();
@@ -1402,5 +1442,26 @@ public class SketchBasedJoinEstimator {
 
 	private static double clamp(double v, double lo, double hi) {
 		return Math.max(lo, Math.min(hi, v));
+	}
+
+	/* ────────────────────────────────────────────────────────────── */
+	/* Array helpers (private) */
+	/* ────────────────────────────────────────────────────────────── */
+
+	private static void clearArray(AtomicReferenceArray<?> arr) {
+		if (arr == null)
+			return;
+		for (int i = 0; i < arr.length(); i++) {
+			arr.set(i, null);
+		}
+	}
+
+	private static void updateCell(AtomicReferenceArray<UpdateSketch> arr, int idx, String value, int k) {
+		UpdateSketch sk = arr.get(idx);
+		if (sk == null) {
+			sk = newSk(k);
+			arr.set(idx, sk);
+		}
+		sk.update(value);
 	}
 }
