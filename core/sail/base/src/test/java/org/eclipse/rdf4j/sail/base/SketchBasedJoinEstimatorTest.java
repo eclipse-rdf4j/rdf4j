@@ -228,7 +228,7 @@ public class SketchBasedJoinEstimatorTest {
 		fullRebuild();
 
 		// start background refresh
-		est.startBackgroundRefresh(10); // 10 ms period
+		est.startBackgroundRefresh(3); // 10 ms period
 		// fire live writes while refresh thread is busy
 		est.addStatement(stmt(s2, p1, o1));
 		est.deleteStatement(stmt(s1, p1, o1));
@@ -293,7 +293,7 @@ public class SketchBasedJoinEstimatorTest {
 		sailStore.add(stmt(s1, p1, o1));
 		fullRebuild();
 
-		est.startBackgroundRefresh(5);
+		est.startBackgroundRefresh(3);
 
 		/* Continuously read during many swaps */
 		ExecutorService exec = Executors.newSingleThreadExecutor();
@@ -528,7 +528,7 @@ public class SketchBasedJoinEstimatorTest {
 		for (int i = 0; i < 20000; i++) {
 			sailStore.add(stmt(VF.createIRI("urn:s" + i), p1, o1));
 		}
-		est.startBackgroundRefresh(50);
+		est.startBackgroundRefresh(3);
 		Thread.sleep(25); // likely rebuilding
 		est.stop();
 		Thread.sleep(50);
@@ -542,7 +542,7 @@ public class SketchBasedJoinEstimatorTest {
 
 	@RepeatedTest(1000)
 	void rapidBackToBackRebuilds() throws Throwable {
-		est.startBackgroundRefresh(1);
+		est.startBackgroundRefresh(3);
 		ExecutorService exec = Executors.newSingleThreadExecutor();
 		try {
 			exec.submit(() -> {

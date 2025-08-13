@@ -114,7 +114,6 @@ public class SketchBasedJoinEstimator {
 
 	private volatile boolean running;
 	private Thread refresher;
-	private volatile boolean rebuildRequested;
 
 	private long seenTriples = 0L;
 
@@ -204,11 +203,7 @@ public class SketchBasedJoinEstimator {
 		return seenTriples > 0;
 	}
 
-	public void requestRebuild() {
-		rebuildRequested = true;
-	}
-
-	public void startBackgroundRefresh(long periodMs) {
+	public void startBackgroundRefresh(int stalenessThreshold) {
 		if (running) {
 			return;
 		}
@@ -216,8 +211,7 @@ public class SketchBasedJoinEstimator {
 
 		refresher = new Thread(() -> {
 			while (running) {
-//				System.out.println(staleness().toString());
-				boolean stale = isStale(3);
+				boolean stale = isStale(stalenessThreshold);
 				if (!stale && seenTriples > 0) {
 					try {
 						Thread.sleep(1000);
@@ -229,19 +223,9 @@ public class SketchBasedJoinEstimator {
 				}
 				Staleness staleness = staleness();
 				System.out.println(staleness.toString());
-//				if (!rebuildRequested) {
-//					try {
-//						Thread.sleep(periodMs);
-//					} catch (InterruptedException ie) {
-//						Thread.currentThread().interrupt();
-//						break;
-//					}
-//					continue;
-//				}
 
 				try {
 					rebuildOnceSlow();
-//					rebuildRequested = false;
 				} catch (Throwable t) {
 					logger.error("Error while rebuilding join estimator", t);
 				}
@@ -350,14 +334,14 @@ public class SketchBasedJoinEstimator {
 		}
 		System.gc();
 		try {
-			Thread.sleep(50);
+			Thread.sleep(10);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new RuntimeException(e);
 		}
 		System.gc();
 		try {
-			Thread.sleep(100);
+			Thread.sleep(10);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new RuntimeException(e);
@@ -383,8 +367,6 @@ public class SketchBasedJoinEstimator {
 
 		// staleness: track deltas
 		addsSinceRebuild.increment();
-
-		requestRebuild();
 	}
 
 	public void addStatement(Resource s, IRI p, Value o, Resource c) {
