@@ -10,29 +10,36 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.trig;
 
-import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
-import org.eclipse.rdf4j.rio.nquads.NQuadsParser;
 import org.eclipse.rdf4j.testsuite.rio.trig.TriGParserTestCase;
 
-/**
- * JUnit test for the TriG parser.
- */
-public class TriGParserTest extends TriGParserTestCase {
+import junit.framework.Test;
+import junit.framework.TestSuite;
 
-	public static junit.framework.Test suite() throws Exception {
-		return new TriGParserTest().createTestSuite();
+public class TriGParserTest {
+
+	public static Test suite() throws Exception {
+		final TestSuite suite = new TestSuite();
+		suite.addTest(TriG11ParserTest.suite());
+//		suite.addTest(TriG12ParserTest.suite());
+		return suite;
 	}
 
-	@Override
-	protected RDFParser createTriGParser() {
-		TriGParser parser = new TriGParser();
-		parser.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);
-		return parser;
+	static class TriG11ParserTest extends TriGParserTestCase {
+		public static Test suite() throws Exception {
+			return new TriG11ParserTest().createTestSuite();
+		}
 	}
 
-	@Override
-	protected RDFParser createNQuadsParser() {
-		return new NQuadsParser();
+	static class TriG12ParserTest extends TriGParserTestCase {
+		protected static final String TESTS_W3C_BASE_URL = "https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/";
+		protected static final String TEST_W3C_FILE_BASE_PATH = "/testcases/trig/rdf12/";
+
+		public TriG12ParserTest() {
+			super(TEST_W3C_FILE_BASE_PATH, TESTS_W3C_BASE_URL);
+		}
+
+		public static Test suite() throws Exception {
+			return new TriG12ParserTest().createTestSuite();
+		}
 	}
 }

@@ -10,24 +10,33 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.ntriples;
 
-import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.testsuite.rio.ntriples.AbstractNTriplesParserTest;
 
 import junit.framework.Test;
+import junit.framework.TestSuite;
 
-/**
- * JUnit test for the N-Triples parser.
- *
- * @author Arjohn Kampman
- */
-public class NTriplesParserTest extends AbstractNTriplesParserTest {
+public class NTriplesParserTest {
 
 	public static Test suite() throws Exception {
-		return new NTriplesParserTest().createTestSuite();
+		final TestSuite suite = new TestSuite();
+		suite.addTest(NTriples11ParserTest.suite());
+//		suite.addTest(NTriples12ParserTest.suite());
+		return suite;
 	}
 
-	@Override
-	protected RDFParser createRDFParser() {
-		return new NTriplesParser();
+	static class NTriples11ParserTest extends AbstractNTriplesParserTest {
+		public static Test suite() throws Exception {
+			return new NTriples11ParserTest().createTestSuite();
+		}
+	}
+
+	static class NTriples12ParserTest extends AbstractNTriplesParserTest {
+		private NTriples12ParserTest() {
+			super("/testcases/ntriples/rdf12/", "http://www.w3.org/2013/N-TriplesTests/");
+		}
+
+		public static Test suite() throws Exception {
+			return new NTriples12ParserTest().createTestSuite();
+		}
 	}
 }
