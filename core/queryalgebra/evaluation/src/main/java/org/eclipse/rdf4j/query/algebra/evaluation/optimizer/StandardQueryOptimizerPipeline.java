@@ -76,15 +76,20 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				BINDING_SET_ASSIGNMENT_INLINER,
 				new ConstantOptimizer(strategy),
 				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
+
 				COMPARE_OPTIMIZER,
 				CONJUNCTIVE_CONSTRAINT_SPLITTER,
 				DISJUNCTIVE_CONSTRAINT_OPTIMIZER,
+				new OptionalUnionHoistOptimizer(),
+				new OptionalSubsetFactorOptimizerAlpha(),
 				SAME_TERM_FILTER_OPTIMIZER,
 				UNION_SCOPE_CHANGE_OPTIMIZER,
+//				new FactorOptionalOptimizer(),
 				QUERY_MODEL_NORMALIZER,
 				PROJECTION_REMOVAL_OPTIMIZER, // Make sure this is after the UnionScopeChangeOptimizer
 //				IMPLICIT_LEFT_JOIN_OPTIMIZER,
 //				OPTIONAL_LINEAR_LEFT_JOIN_OPTIMIZER,
+
 				new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource),
 				ITERATIVE_EVALUATION_OPTIMIZER,
 				FILTER_OPTIMIZER,
