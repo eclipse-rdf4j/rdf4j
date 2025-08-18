@@ -17,6 +17,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -26,18 +28,24 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.Avg;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupConcat;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.IsBNode;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
 import org.eclipse.rdf4j.query.algebra.IsURI;
@@ -45,6 +53,8 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Max;
+import org.eclipse.rdf4j.query.algebra.Min;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -54,10 +64,12 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
+import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -70,8 +82,9 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  * TupleExprToSparql: render a practical subset of RDF4J algebra back into SPARQL text.
  *
  * Supported: - SELECT [DISTINCT] vars | * - WHERE with BGPs (StatementPattern / Join), OPTIONAL (LeftJoin), UNION,
- * FILTER, BIND (Extension) - ORDER BY - VALUES (BindingSetAssignment) - GRAPH, SERVICE [SILENT] - Property paths:
- * ArbitraryLengthPath (+, *, ?, {m,n}) and ZeroLengthPath - Prefix compaction (longest namespace match) - Canonical
+ * FILTER, BIND (Extension) - ORDER BY - VALUES (BindingSetAssignment) - SERVICE [SILENT] (GRAPH omitted here) -
+ * Property paths: ArbitraryLengthPath (+, *, ?, {m,n}) and ZeroLengthPath - Aggregates in SELECT (COUNT, SUM, AVG, MIN,
+ * MAX, SAMPLE, GROUP_CONCAT) - GROUP BY (variable list) - Prefix compaction (longest namespace match) - Canonical
  * whitespace toggle for stable, diffable output
  *
  * Design goals: - Deterministic, readable output; safe fallbacks instead of brittle "smart" guessing - Minimal,
@@ -82,20 +95,11 @@ public class TupleExprToSparql {
 	// ---------------- Configuration ----------------
 
 	public static final class Config {
-		/** Indentation used per nesting level. */
 		public String indent = "  ";
-		/** Emit PREFIX declarations if prefixes are provided. */
 		public boolean printPrefixes = true;
-		/** Use prefix/QName compaction for IRIs when possible. */
 		public boolean usePrefixCompaction = true;
-		/** Canonical whitespace: one-triple-per-line, stable braces/newlines. */
 		public boolean canonicalWhitespace = true;
-		/** Optional BASE IRI. */
 		public String baseIRI = null;
-		/**
-		 * Map of prefix -> namespace IRI (e.g., "foaf" -> "http://xmlns.com/foaf/0.1/"). Longest namespace match is
-		 * used for compaction.
-		 */
 		public LinkedHashMap<String, String> prefixes = new LinkedHashMap<>();
 	}
 
@@ -118,7 +122,7 @@ public class TupleExprToSparql {
 
 		final Normalized n = normalize(tupleExpr);
 
-		// Prefix/BASE header
+		// PREFIX / BASE
 		if (cfg.printPrefixes && !cfg.prefixes.isEmpty()) {
 			cfg.prefixes.forEach((pfx, ns) -> out.append("PREFIX ").append(pfx).append(": <").append(ns).append(">\n"));
 		}
@@ -126,32 +130,50 @@ public class TupleExprToSparql {
 			out.append("BASE <").append(cfg.baseIRI).append(">\n");
 		}
 
-		// SELECT header
+		// SELECT
 		out.append("SELECT ");
 		if (n.distinct) {
 			out.append("DISTINCT ");
 		}
 		if (n.projection != null) {
-			final String vars = projectVars(n.projection.getProjectionElemList());
-			out.append(vars.isEmpty() ? "*" : vars);
+			final List<ProjectionElem> elems = n.projection.getProjectionElemList().getElements();
+			if (elems.isEmpty()) {
+				out.append("*");
+			} else {
+				for (int i = 0; i < elems.size(); i++) {
+					final ProjectionElem pe = elems.get(i);
+					final String name = pe.getProjectionAlias().orElse(pe.getName());
+					final ValueExpr expr = n.selectAssignments.get(name);
+					if (expr != null) {
+						out.append("(").append(renderExpr(expr)).append(" AS ?").append(name).append(")");
+					} else {
+						out.append("?").append(name);
+					}
+					if (i + 1 < elems.size()) {
+						out.append(' ');
+					}
+				}
+			}
 		} else {
 			out.append("*");
 		}
 
-		// WHERE block
+		// WHERE
 		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
 		final BlockPrinter bp = new BlockPrinter(out, this, cfg);
 		bp.openBlock();
 
-		// Hoisted BINDs (immediately above Projection)
-		if (!n.preBinds.isEmpty()) {
-			for (final ExtensionElem ee : n.preBinds) {
-				bp.line("BIND(" + renderExpr(ee.getExpr()) + " AS ?" + ee.getName() + ")");
-			}
-		}
-
+		// Body
 		n.where.visit(bp);
 		bp.closeBlock();
+
+		// GROUP BY (variables only; SPARQL also allows expressions, which we omit intentionally)
+		if (!n.groupBy.isEmpty()) {
+			out.append("\nGROUP BY");
+			for (String v : n.groupBy) {
+				out.append(' ').append('?').append(v);
+			}
+		}
 
 		// ORDER BY
 		if (!n.orderBy.isEmpty()) {
@@ -177,20 +199,22 @@ public class TupleExprToSparql {
 		return out.toString().trim();
 	}
 
-	// ---------------- Normalization of the algebra "shell" ----------------
+	// ---------------- Normalization shell ----------------
 
 	private static final class Normalized {
-		Projection projection; // SELECT vars
-		TupleExpr where; // WHERE pattern
+		Projection projection; // SELECT vars/exprs
+		TupleExpr where; // WHERE pattern (group peeled)
 		boolean distinct = false;
 		long limit = -1, offset = -1;
-		final List<ExtensionElem> preBinds = new ArrayList<>();
 		final List<OrderElem> orderBy = new ArrayList<>();
+		final LinkedHashMap<String, ValueExpr> selectAssignments = new LinkedHashMap<>(); // name -> expr from
+		// Extension/Group
+		final List<String> groupBy = new ArrayList<>(); // variable names
 	}
 
 	/**
-	 * Peel standard wrappers—Slice, Distinct/Reduced, Order, Extension (hoist binds above projection), Projection— to
-	 * locate the core WHERE tuple expression. Order is robust: repeat until fixed point.
+	 * Peel wrappers: Slice, Distinct/Reduced, Order, Extension(above Projection) → SELECT assignments, Projection
+	 * (collect), Group (collect GROUP BY + aggregates → SELECT assignments).
 	 */
 	private Normalized normalize(final TupleExpr root) {
 		final Normalized n = new Normalized();
@@ -230,15 +254,34 @@ public class TupleExprToSparql {
 				continue;
 			}
 
+			// SELECT-level assignments: Extension immediately above Projection.
 			if (cur instanceof Extension) {
 				final Extension ext = (Extension) cur;
 				if (ext.getArg() instanceof Projection) {
-					n.preBinds.addAll(ext.getElements());
+					for (final ExtensionElem ee : ext.getElements()) {
+						// store expr for (?alias) in SELECT
+						n.selectAssignments.put(ee.getName(), ee.getExpr());
+					}
 					cur = ext.getArg();
 					changed = true;
 					continue;
 				}
-				// Otherwise: render this Extension inside WHERE; stop hoisting
+				// otherwise it's a BIND inside WHERE; we'll render it via BlockPrinter
+			}
+
+			// GROUP: collect GROUP BY vars and group aggregates as SELECT assignments
+			if (cur instanceof Group) {
+				final Group g = (Group) cur;
+				// group-by var names (deterministic order)
+				final Set<String> names = new TreeSet<>(g.getGroupBindingNames());
+				n.groupBy.addAll(names);
+				// group elements (aggregates): alias -> AggregateOperator
+				for (GroupElem ge : g.getGroupElements()) {
+					n.selectAssignments.putIfAbsent(ge.getName(), ge.getOperator());
+				}
+				cur = g.getArg();
+				changed = true;
+				continue;
 			}
 
 			if (cur instanceof Projection) {
@@ -315,8 +358,6 @@ public class TupleExprToSparql {
 			}
 		}
 
-		// ---- Canonical, one-triple-per-line BGPs ----
-
 		@Override
 		public void meet(final StatementPattern sp) {
 			final String s = r.renderVarOrValue(sp.getSubjectVar());
@@ -369,6 +410,7 @@ public class TupleExprToSparql {
 
 		@Override
 		public void meet(final Extension ext) {
+			// BIND inside WHERE (should not contain aggregates in valid SPARQL)
 			ext.getArg().visit(this);
 			for (final ExtensionElem ee : ext.getElements()) {
 				line("BIND(" + r.renderExpr(ee.getExpr()) + " AS ?" + ee.getName() + ")");
@@ -399,7 +441,6 @@ public class TupleExprToSparql {
 
 		@Override
 		public void meet(final BindingSetAssignment bsa) {
-			// Deterministic variable order for stable output
 			final List<String> names = new ArrayList<>(bsa.getBindingNames());
 			Collections.sort(names);
 			if (names.isEmpty()) {
@@ -428,15 +469,13 @@ public class TupleExprToSparql {
 			newline();
 		}
 
-		// ---- Property paths (instanceof, not stringly-typed) ----
-
 		@Override
 		public void meet(final ArbitraryLengthPath p) {
 			final String subj = r.renderVarOrValue(p.getSubjectVar());
 			final String obj = r.renderVarOrValue(p.getObjectVar());
 			final String path = r.renderPathAtom(p.getPathExpression());
 			final long min = p.getMinLength();
-			final long max = -1; // -1 means unbounded in RDF4J
+			final long max = -1; // RDF4J uses -1 for unbounded
 
 			final String q = quantifier(min, max);
 			final String pathAtom = (path != null) ? path : "/* complex-path */";
@@ -445,18 +484,14 @@ public class TupleExprToSparql {
 
 		@Override
 		public void meet(final ZeroLengthPath p) {
-			// SPARQL doesn't have a naked zero-length path operator; encode as term equality
 			line("FILTER (sameTerm(" + r.renderVarOrValue(p.getSubjectVar()) + ", "
 					+ r.renderVarOrValue(p.getObjectVar()) + "))");
 		}
 
 		@Override
 		public void meetOther(final org.eclipse.rdf4j.query.algebra.QueryModelNode node) {
-			// Unknown node: leave a helpful, minimal breadcrumb; avoid throwing.
 			line("/* unsupported-node:" + node.getClass().getSimpleName() + " */");
 		}
-
-		// ---- helpers ----
 
 		private static String quantifier(final long min, final long max) {
 			final boolean unbounded = max < 0 || max == Integer.MAX_VALUE;
@@ -479,7 +514,7 @@ public class TupleExprToSparql {
 		}
 	}
 
-	// ---------------- Rendering helpers (instance methods; prefix-aware) ----------------
+	// ---------------- Rendering helpers (prefix-aware) ----------------
 
 	private String renderVarOrValue(final Var v) {
 		if (v == null) {
@@ -520,7 +555,6 @@ public class TupleExprToSparql {
 				if (isPN_LOCAL(local)) {
 					return hit.prefix + ":" + local;
 				}
-				// local contains characters that would make an illegal QName -> fall back
 			}
 		}
 		return "<" + s + ">";
@@ -559,9 +593,15 @@ public class TupleExprToSparql {
 		return b.toString();
 	}
 
+	/** Expression renderer with aggregate support. */
 	private String renderExpr(final ValueExpr e) {
 		if (e == null) {
 			return "()";
+		}
+
+		// Aggregates first (they're ValueExprs in RDF4J)
+		if (e instanceof AggregateOperator) {
+			return renderAggregate((AggregateOperator) e);
 		}
 
 		// Vars and constants
@@ -631,14 +671,13 @@ public class TupleExprToSparql {
 			return "REGEX(" + term + ", " + patt + ")";
 		}
 
-		// Generic function call fallback
+		// Generic function call
 		if (e instanceof FunctionCall) {
 			final FunctionCall f = (FunctionCall) e;
 			final String args = f.getArgs().stream().map(this::renderExpr).collect(Collectors.joining(", "));
 			return "<" + f.getURI() + ">(" + args + ")";
 		}
 
-		// Unknown expr node: best-effort debug print.
 		return "/* unsupported-expr:" + e.getClass().getSimpleName() + " */";
 	}
 
@@ -661,6 +700,81 @@ public class TupleExprToSparql {
 		}
 	}
 
+	// ---- Aggregates ----
+
+	private String renderAggregate(final AggregateOperator op) {
+		if (op instanceof Count) {
+			final Count c = (Count) op;
+			final String inner = (c.getArg() == null) ? "*" : renderExpr(c.getArg());
+			return "COUNT(" + (c.isDistinct() && c.getArg() != null ? "DISTINCT " : "") + inner + ")";
+		}
+		if (op instanceof Sum) {
+			final Sum a = (Sum) op;
+			return "SUM(" + (a.isDistinct() ? "DISTINCT " : "") + renderExpr(a.getArg()) + ")";
+		}
+		if (op instanceof Avg) {
+			final Avg a = (Avg) op;
+			return "AVG(" + (a.isDistinct() ? "DISTINCT " : "") + renderExpr(a.getArg()) + ")";
+		}
+		if (op instanceof Min) {
+			final Min a = (Min) op;
+			return "MIN(" + (a.isDistinct() ? "DISTINCT " : "") + renderExpr(a.getArg()) + ")";
+		}
+		if (op instanceof Max) {
+			final Max a = (Max) op;
+			return "MAX(" + (a.isDistinct() ? "DISTINCT " : "") + renderExpr(a.getArg()) + ")";
+		}
+		if (op instanceof Sample) {
+			final Sample a = (Sample) op;
+			return "SAMPLE(" + (a.isDistinct() ? "DISTINCT " : "") + renderExpr(a.getArg()) + ")";
+		}
+		if (op instanceof GroupConcat) {
+			final GroupConcat a = (GroupConcat) op;
+			final StringBuilder sb = new StringBuilder();
+			sb.append("GROUP_CONCAT(");
+			if (a.isDistinct()) {
+				sb.append("DISTINCT ");
+			}
+			sb.append(renderExpr(a.getArg()));
+
+			// getSeparator() returns ValueExpr in your RDF4J
+			final ValueExpr sepExpr = a.getSeparator();
+			final String sepLex = extractSeparatorLiteral(sepExpr); // returns null if not a plain literal
+
+			// SPARQL requires a string literal here; only print when we have one
+			if (sepLex != null) {
+				sb.append("; SEPARATOR=").append('"').append(escapeLiteral(sepLex)).append('"');
+			} /* else: omit to keep the output valid SPARQL */
+
+			sb.append(")");
+			return sb.toString();
+		}
+		return "/* unsupported-aggregate:" + op.getClass().getSimpleName() + " */";
+	}
+
+	/** Returns the lexical form if the expr is a plain string literal; otherwise null. */
+	private String extractSeparatorLiteral(final ValueExpr expr) {
+		if (expr == null) {
+			return null;
+		}
+
+		if (expr instanceof ValueConstant) {
+			final Value v = ((ValueConstant) expr).getValue();
+			if (v instanceof Literal) {
+				return ((Literal) v).getLabel();
+			}
+			return null;
+		}
+		if (expr instanceof Var) {
+			final Var var = (Var) expr;
+			if (var.hasValue() && var.getValue() instanceof Literal) {
+				return ((Literal) var.getValue()).getLabel();
+			}
+		}
+		// Anything else (e.g., a non-literal expression) would not be legal in SPARQL here.
+		return null;
+	}
+
 	/**
 	 * Render a simple path atom from ArbitraryLengthPath#getPathExpression(): supports IRI constants and plain
 	 * variables; returns null for complex composites.
@@ -679,7 +793,7 @@ public class TupleExprToSparql {
 				return renderIRI((IRI) v);
 			}
 		}
-		return null; // signal "complex"; caller will print a safe comment
+		return null;
 	}
 
 	// ---------------- Prefix compaction index ----------------
