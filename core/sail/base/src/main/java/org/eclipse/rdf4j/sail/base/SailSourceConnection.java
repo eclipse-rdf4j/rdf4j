@@ -327,7 +327,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr);
 		tupleExpr.visit(converter);
 
-		return new ExplanationImpl(converter.getGenericPlanNode(), queryTimedOut);
+		return new ExplanationImpl(converter.getGenericPlanNode(), queryTimedOut, tupleExpr);
 
 	}
 
