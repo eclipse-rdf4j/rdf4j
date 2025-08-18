@@ -154,9 +154,15 @@ class MemorySailStore implements SailStore {
 	private final Object snapshotCleanupThreadLockObject = new Object();
 
 	public MemorySailStore(boolean debug) {
+		this(debug, 3);
+	}
+
+	public MemorySailStore(boolean debug, int stalenessThresholdOfSketchBasedJoinEstimator) {
 		snapshotMonitor = new SnapshotMonitor(debug);
-		sketchBasedJoinEstimator.rebuildOnceSlow();
-		sketchBasedJoinEstimator.startBackgroundRefresh(3); // 10 minutes
+		if (stalenessThresholdOfSketchBasedJoinEstimator >= 0) {
+			sketchBasedJoinEstimator.rebuildOnceSlow();
+			sketchBasedJoinEstimator.startBackgroundRefresh(stalenessThresholdOfSketchBasedJoinEstimator);
+		}
 	}
 
 	@Override

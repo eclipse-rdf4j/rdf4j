@@ -16,7 +16,6 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-// import java.util.concurrent.ConcurrentHashMap; // ← reduced usage
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.atomic.LongAdder;
@@ -135,8 +134,8 @@ public class SketchBasedJoinEstimator {
 			long throttleEveryN, long throttleMillis) {
 		nominalEntries *= 2;
 
-		System.out.println("RdfJoinEstimator: Using nominalEntries = " + nominalEntries +
-				", throttleEveryN = " + throttleEveryN + ", throttleMillis = " + throttleMillis);
+//		System.out.println("RdfJoinEstimator: Using nominalEntries = " + nominalEntries +
+//				", throttleEveryN = " + throttleEveryN + ", throttleMillis = " + throttleMillis);
 
 		this.sailStore = sailStore;
 		this.nominalEntries = nominalEntries; // used for array bucket count
@@ -155,7 +154,7 @@ public class SketchBasedJoinEstimator {
 
 		final long budget = heap >>> 4; // 1/16th of heap
 		final long budgetMB = budget / 1024 / 1024;
-		System.out.println("RdfJoinEstimator: Suggesting nominalEntries for budget = " + budgetMB + " MB.");
+//		System.out.println("RdfJoinEstimator: Suggesting nominalEntries for budget = " + budgetMB + " MB.");
 		if (budgetMB <= (8 * 1024)) {
 			if (budgetMB > 4096) {
 				return 2048;
@@ -186,9 +185,9 @@ public class SketchBasedJoinEstimator {
 			long bytesPerSketch = Sketch.getMaxUpdateSketchBytes(k * 8) / 4;
 
 			long projected = (singles + pairs) * bytesPerSketch;
-			System.out.println("RdfJoinEstimator: Suggesting nominalEntries = " + k +
-					", projected memory usage = " + projected / 1024 / 1024 + " MB, budget = " + budget / 1024 / 1024
-					+ " MB.");
+//			System.out.println("RdfJoinEstimator: Suggesting nominalEntries = " + k +
+//					", projected memory usage = " + projected / 1024 / 1024 + " MB, budget = " + budget / 1024 / 1024
+//					+ " MB.");
 
 			if (projected > budget || k >= (1 << 22)) { // cap at 4 M entries (256 MB/sketch!)
 				return k >>> 1; // previous k still fitted
@@ -222,7 +221,7 @@ public class SketchBasedJoinEstimator {
 					continue;
 				}
 				Staleness staleness = staleness();
-				System.out.println(staleness.toString());
+//				System.out.println(staleness.toString());
 
 				try {
 					rebuildOnceSlow();
@@ -237,7 +236,7 @@ public class SketchBasedJoinEstimator {
 					break;
 				}
 
-				logger.info("RdfJoinEstimator: Rebuilt join estimator.");
+				logger.debug("RdfJoinEstimator: Rebuilt join estimator.");
 			}
 		}, "RdfJoinEstimator-Refresh");
 
@@ -299,10 +298,10 @@ public class SketchBasedJoinEstimator {
 					}
 				}
 
-				if (seen % 100000 == 0) {
-					System.out.println("RdfJoinEstimator: Rebuilding " + (rebuildIntoA ? "bufA" : "bufB") + ", seen "
-							+ seen + " triples so far. Elapsed: " + (System.currentTimeMillis() - l) / 1000 + " s.");
-				}
+//				if (seen % 100000 == 0) {
+//					System.out.println("RdfJoinEstimator: Rebuilding " + (rebuildIntoA ? "bufA" : "bufB") + ", seen "
+//							+ seen + " triples so far. Elapsed: " + (System.currentTimeMillis() - l) / 1000 + " s.");
+//				}
 			}
 		}
 
@@ -1352,8 +1351,9 @@ public class SketchBasedJoinEstimator {
 	private static long sumRetainedEntriesSingles(Collection<AtomicReferenceArray<UpdateSketch>> arrays) {
 		long sum = 0L;
 		for (AtomicReferenceArray<UpdateSketch> arr : arrays) {
-			if (arr == null)
+			if (arr == null) {
 				continue;
+			}
 			for (int i = 0; i < arr.length(); i++) {
 				UpdateSketch sk = arr.get(i);
 				if (sk != null) {
@@ -1367,23 +1367,28 @@ public class SketchBasedJoinEstimator {
 	private static long sumRetainedEntriesPairs(Collection<PairBuild> pbs) {
 		long sum = 0L;
 		for (PairBuild pb : pbs) {
-			if (pb == null)
+			if (pb == null) {
 				continue;
+			}
 			for (int x = 0; x < pb.buckets; x++) {
 				PairBuild.Row r = pb.rows.get(x);
-				if (r == null)
+				if (r == null) {
 					continue;
+				}
 				for (int y = 0; y < pb.buckets; y++) {
 					UpdateSketch sk;
 					sk = r.triples.get(y);
-					if (sk != null)
+					if (sk != null) {
 						sum += sk.getRetainedEntries();
+					}
 					sk = r.comp1.get(y);
-					if (sk != null)
+					if (sk != null) {
 						sum += sk.getRetainedEntries();
+					}
 					sk = r.comp2.get(y);
-					if (sk != null)
+					if (sk != null) {
 						sum += sk.getRetainedEntries();
+					}
 				}
 			}
 		}
@@ -1493,8 +1498,9 @@ public class SketchBasedJoinEstimator {
 	/* ────────────────────────────────────────────────────────────── */
 
 	private static void clearArray(AtomicReferenceArray<?> arr) {
-		if (arr == null)
+		if (arr == null) {
 			return;
+		}
 		for (int i = 0; i < arr.length(); i++) {
 			arr.set(i, null);
 		}
