@@ -22,6 +22,8 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 @Experimental
 public interface Explanation {
 
+	Object tupleExpr();
+
 	/**
 	 * The different levels that the query explanation can be at.
 	 *
