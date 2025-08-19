@@ -821,7 +821,7 @@ public class TupleExprToSparqlTest {
 
 	@Test
 	void complex_values_matrix_paths_and_groupby_alias() {
-		String q = "SELECT (?k AS ?key) ?person (COUNT(?o) AS ?c)\n" +
+		String q = "SELECT ?key ?person (COUNT(?o) AS ?c)\n" +
 				"WHERE {\n" +
 				"  {\n" +
 				"    VALUES (?k) { (\"foaf\") }\n" +
