@@ -11,20 +11,6 @@
 
 package org.eclipse.rdf4j.queryrender.sparql;
 
-import java.math.BigDecimal;
-import java.math.BigInteger;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.TreeSet;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -93,16 +79,31 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
 /**
  * TupleExprToSparql: render a practical subset of RDF4J algebra back into SPARQL text.
  *
  * Supported: - SELECT [DISTINCT|REDUCED] vars | * - WHERE with BGPs (StatementPattern / Join), OPTIONAL (LeftJoin),
- * UNION, FILTER, BIND (Extension) - MINUS (Difference) - ORDER BY - VALUES (BindingSetAssignment) - SERVICE [SILENT]
- * (GRAPH omitted here) - Property paths: ArbitraryLengthPath (+, *, ?, {m,n}) and ZeroLengthPath - Best-effort
- * reassembly of certain complex paths from BGPs: ^IRI / !(IRI1|IRI2|...) / IRI - Aggregates in SELECT (COUNT, SUM, AVG,
- * MIN, MAX, SAMPLE, GROUP_CONCAT) - GROUP BY (variable list) - Functional forms: IF, COALESCE, IRI(), STRDT(),
- * STRLANG(), isNumeric() - Prefix compaction (longest namespace match) - Canonical whitespace toggle for stable,
- * diffable output
+ * UNION, MINUS (Difference), FILTER, BIND (Extension) - ORDER BY - VALUES (BindingSetAssignment) - SERVICE [SILENT] -
+ * Property paths: ArbitraryLengthPath (+, *, ?, {m,n}) and ZeroLengthPath + Best-effort reconstruction of ^iri /
+ * !(iri1|iri2) / iri chains from BGP + FILTER - Aggregates in SELECT (COUNT, SUM, AVG, MIN, MAX, SAMPLE, GROUP_CONCAT)
+ * - GROUP BY (variable list) - Functional forms: IF, COALESCE, IRI(), STRDT(), STRLANG(), isNumeric() - Prefix
+ * compaction (longest namespace match) - Canonical whitespace toggle for stable, diffable output
  *
  * Design goals: - Deterministic, readable output; safe fallbacks instead of brittle "smart" guessing - Minimal,
  * dependency-free (beyond RDF4J), Java 11 compatible
@@ -130,7 +131,7 @@ public class TupleExprToSparql {
 	private static final Map<String, String> BUILTIN;
 
 	static {
-		Map<String, String> m = new LinkedHashMap<>();
+		Map<String, String> m = new HashMap<>();
 
 		// --- XPath/XQuery function IRIs → SPARQL built-ins ---
 		m.put(FN_NS + "string-length", "STRLEN");
@@ -141,7 +142,6 @@ public class TupleExprToSparql {
 		m.put(FN_NS + "concat", "CONCAT");
 		m.put(FN_NS + "replace", "REPLACE");
 		m.put(FN_NS + "encode-for-uri", "ENCODE_FOR_URI");
-		m.put(FN_NS + "starts-with", "STRSTARTS");
 
 		m.put(FN_NS + "numeric-abs", "ABS");
 		m.put(FN_NS + "numeric-ceil", "CEIL");
@@ -154,11 +154,10 @@ public class TupleExprToSparql {
 		m.put(FN_NS + "hours-from-dateTime", "HOURS");
 		m.put(FN_NS + "minutes-from-dateTime", "MINUTES");
 		m.put(FN_NS + "seconds-from-dateTime", "SECONDS");
-		// Map XPath tz extractor to SPARQL TZ for readability in common queries
 		m.put(FN_NS + "timezone-from-dateTime", "TZ");
 
-		// --- Bare SPARQL built-ins RDF4J may surface as "URIs" in FunctionCall ---
-		for (String k : new String[] {
+		// --- Bare SPARQL built-in names RDF4J sometimes surfaces as "URIs" ---
+		for (String k : new String[]{
 				"RAND", "NOW",
 				"ABS", "CEIL", "FLOOR", "ROUND",
 				"YEAR", "MONTH", "DAY", "HOURS", "MINUTES", "SECONDS", "TZ", "TIMEZONE",
@@ -211,7 +210,6 @@ public class TupleExprToSparql {
 
 		boolean printedSelect = false;
 
-		// Prefer explicit Projection when available
 		if (n.projection != null) {
 			final List<ProjectionElem> elems = n.projection.getProjectionElemList().getElements();
 			if (!elems.isEmpty()) {
@@ -232,7 +230,6 @@ public class TupleExprToSparql {
 			}
 		}
 
-		// If no Projection (or SELECT *), but we have assignments, synthesize header
 		if (!printedSelect && !n.selectAssignments.isEmpty()) {
 			List<String> bare = !n.groupBy.isEmpty() ? n.groupBy : n.syntheticProjectVars;
 			boolean first = true;
@@ -314,9 +311,6 @@ public class TupleExprToSparql {
 		boolean hadExplicitGroup = false; // true if a Group wrapper was present
 	}
 
-	/**
-	 * Peel wrappers until fixed point.
-	 */
 	private Normalized normalize(final TupleExpr root) {
 		final Normalized n = new Normalized();
 		TupleExpr cur = root;
@@ -346,9 +340,7 @@ public class TupleExprToSparql {
 				changed = true;
 				continue;
 			}
-
 			if (cur instanceof Reduced) {
-				// Only print if DISTINCT not present
 				n.reduced = true;
 				cur = ((Reduced) cur).getArg();
 				changed = true;
@@ -363,7 +355,6 @@ public class TupleExprToSparql {
 				continue;
 			}
 
-			// Projection (record it and peel)
 			if (cur instanceof Projection) {
 				n.projection = (Projection) cur;
 				cur = n.projection.getArg();
@@ -371,7 +362,6 @@ public class TupleExprToSparql {
 				continue;
 			}
 
-			// SELECT-level assignments: top-level Extension wrappers
 			if (cur instanceof Extension) {
 				final Extension ext = (Extension) cur;
 				for (final ExtensionElem ee : ext.getElements()) {
@@ -382,7 +372,6 @@ public class TupleExprToSparql {
 				continue;
 			}
 
-			// GROUP: collect GROUP BY vars and group aggregates as SELECT assignments
 			if (cur instanceof Group) {
 				final Group g = (Group) cur;
 				n.hadExplicitGroup = true;
@@ -422,7 +411,6 @@ public class TupleExprToSparql {
 		final AggregateScan scan = new AggregateScan();
 		n.where.visit(scan);
 
-		// Promote aggregates found as BINDs inside WHERE
 		if (!scan.hoisted.isEmpty()) {
 			for (Map.Entry<String, ValueExpr> e : scan.hoisted.entrySet()) {
 				n.selectAssignments.putIfAbsent(e.getKey(), e.getValue());
@@ -445,7 +433,6 @@ public class TupleExprToSparql {
 			return;
 		}
 
-		// Projection-driven grouping
 		if (n.groupBy.isEmpty() && n.projection != null && n.projection.getProjectionElemList() != null) {
 			final List<String> gb = new ArrayList<>();
 			for (ProjectionElem pe : n.projection.getProjectionElemList().getElements()) {
@@ -460,7 +447,6 @@ public class TupleExprToSparql {
 			}
 		}
 
-		// Usage-based inference
 		if (n.groupBy.isEmpty()) {
 			Set<String> candidates = new TreeSet<>(scan.varCounts.keySet());
 			candidates.removeAll(scan.aggregateOutputNames);
@@ -513,12 +499,12 @@ public class TupleExprToSparql {
 
 	private static final class AggregateScan extends AbstractQueryModelVisitor<RuntimeException> {
 		final LinkedHashMap<String, ValueExpr> hoisted = new LinkedHashMap<>();
-		final Map<String, Integer> varCounts = new LinkedHashMap<>();
-		final Map<String, Integer> subjCounts = new LinkedHashMap<>();
-		final Map<String, Integer> predCounts = new LinkedHashMap<>();
-		final Map<String, Integer> objCounts = new LinkedHashMap<>();
-		final Set<String> aggregateArgVars = new LinkedHashSet<>();
-		final Set<String> aggregateOutputNames = new LinkedHashSet<>();
+		final Map<String, Integer> varCounts = new HashMap<>();
+		final Map<String, Integer> subjCounts = new HashMap<>();
+		final Map<String, Integer> predCounts = new HashMap<>();
+		final Map<String, Integer> objCounts = new HashMap<>();
+		final Set<String> aggregateArgVars = new HashSet<>();
+		final Set<String> aggregateOutputNames = new HashSet<>();
 
 		@Override
 		public void meet(StatementPattern sp) {
@@ -681,11 +667,12 @@ public class TupleExprToSparql {
 		private final TupleExprToSparql r;
 		private final Config cfg;
 		private final String indentUnit;
+		@SuppressWarnings("unused")
 		private final Normalized norm;
 		private int level = 0;
 
 		BlockPrinter(final StringBuilder out, final TupleExprToSparql renderer, final Config cfg,
-				final Normalized norm) {
+					 final Normalized norm) {
 			this.out = out;
 			this.r = renderer;
 			this.cfg = cfg;
@@ -735,15 +722,156 @@ public class TupleExprToSparql {
 
 		@Override
 		public void meet(final Join join) {
-			// Best-effort: detect ^IRI / !(…) / IRI chains and render as a single path triple
-			List<TupleExpr> flat = new ArrayList<>();
-			TupleExprToSparql.flattenJoin(join, flat);
-			if (r.tryRenderBestEffortPathChain(flat, this)) {
+			// Flatten the left-deep Join chain
+			final List<TupleExpr> flat = new ArrayList<>();
+			flattenJoin(flat, join);
+
+			// Try best-effort property-path reconstruction
+			if (tryRenderPathChain(flat)) {
 				return;
 			}
-			// Fallback: default traversal
-			join.getLeftArg().visit(this);
-			join.getRightArg().visit(this);
+
+			// Fallback: print in order
+			for (TupleExpr t : flat) {
+				t.visit(this);
+			}
+		}
+
+		private void flattenJoin(final List<TupleExpr> acc, final TupleExpr node) {
+			if (node instanceof Join) {
+				final Join j = (Join) node;
+				flattenJoin(acc, j.getLeftArg());
+				flattenJoin(acc, j.getRightArg());
+			} else {
+				acc.add(node);
+			}
+		}
+
+		/**
+		 * Detect and render a triad: SP1: X IRI1 A FILT: SP2: X p Y with Filter cond = ∧ (p != iri_i) SP3: Y IRI3 N
+		 * Render: A ( ^IRI1 / !(iri_1|...|iri_k) / IRI3 ) N .
+		 */
+		private boolean tryRenderPathChain(final List<TupleExpr> nodes) {
+			if (nodes.size() < 3) {
+				return false;
+			}
+
+			for (int i = 0; i + 2 < nodes.size(); i++) {
+				if (!(nodes.get(i) instanceof StatementPattern)) {
+					continue;
+				}
+				if (!(nodes.get(i + 1) instanceof Filter)) {
+					continue;
+				}
+				if (!(nodes.get(i + 2) instanceof StatementPattern)) {
+					continue;
+				}
+
+				final StatementPattern sp1 = (StatementPattern) nodes.get(i);
+				final Filter midF = (Filter) nodes.get(i + 1);
+				if (!(midF.getArg() instanceof StatementPattern)) {
+					continue;
+				}
+				final StatementPattern sp2 = (StatementPattern) midF.getArg();
+				final StatementPattern sp3 = (StatementPattern) nodes.get(i + 2);
+
+				// SP1 must have constant predicate IRI
+				final Var p1 = sp1.getPredicateVar();
+				if (p1 == null || !p1.hasValue() || !(p1.getValue() instanceof IRI)) {
+					continue;
+				}
+				final IRI iri1 = (IRI) p1.getValue();
+
+				// SP2 must have a predicate variable
+				final Var p2 = sp2.getPredicateVar();
+				if (p2 == null || p2.hasValue() || p2.getName() == null) {
+					continue;
+				}
+				final String p2name = p2.getName();
+
+				// Collect negated IRIs from Filter condition: ∧ (p2 != iri)
+				final LinkedHashSet<IRI> negated = new LinkedHashSet<>();
+				if (!collectNegatedIRIs(midF.getCondition(), p2name, negated)) {
+					continue;
+				}
+				if (negated.isEmpty()) {
+					continue;
+				}
+
+				// SP3 must have constant predicate IRI
+				final Var p3 = sp3.getPredicateVar();
+				if (p3 == null || !p3.hasValue() || !(p3.getValue() instanceof IRI)) {
+					continue;
+				}
+				final IRI iri3 = (IRI) p3.getValue();
+
+				// Connectivity: SP1.subject == SP2.subject, SP2.object == SP3.subject
+				if (!sameVar(sp1.getSubjectVar(), sp2.getSubjectVar())) {
+					continue;
+				}
+				if (!sameVar(sp2.getObjectVar(), sp3.getSubjectVar())) {
+					continue;
+				}
+
+				final Var start = sp1.getObjectVar(); // A
+				final Var end = sp3.getObjectVar(); // N
+				if (start == null || end == null) {
+					continue;
+				}
+
+				// Build path: ^iri1 / !(iri|...|iri) / iri3
+				final String step1 = "^" + r.renderIRI(iri1);
+				final String step2 = "!(" + negated.stream().map(r::renderIRI).collect(Collectors.joining("|")) + ")";
+				final String step3 = r.renderIRI(iri3);
+				final String path = "(" + step1 + "/" + step2 + "/" + step3 + ")";
+
+				line(r.renderVarOrValue(start) + " " + path + " " + r.renderVarOrValue(end) + " .");
+				return true;
+			}
+			return false;
+		}
+
+		private boolean sameVar(final Var a, final Var b) {
+			if (a == b) {
+				return true;
+			}
+			if (a == null || b == null) {
+				return false;
+			}
+			if (a.hasValue() || b.hasValue()) {
+				return false;
+			}
+			return Objects.equals(a.getName(), b.getName());
+		}
+
+		private boolean collectNegatedIRIs(final ValueExpr cond, final String varName, final Set<IRI> out) {
+			if (cond instanceof And) {
+				final And a = (And) cond;
+				return collectNegatedIRIs(a.getLeftArg(), varName, out)
+						&& collectNegatedIRIs(a.getRightArg(), varName, out);
+			}
+			if (cond instanceof Compare) {
+				final Compare c = (Compare) cond;
+				if (c.getOperator() != CompareOp.NE) {
+					return false;
+				}
+				// forms: ( ?p != <iri> ) OR ( <iri> != ?p )
+				if (c.getLeftArg() instanceof Var && Objects.equals(((Var) c.getLeftArg()).getName(), varName)
+						&& c.getRightArg() instanceof ValueConstant
+						&& ((ValueConstant) c.getRightArg()).getValue() instanceof IRI) {
+					out.add((IRI) ((ValueConstant) c.getRightArg()).getValue());
+					return true;
+				}
+				if (c.getRightArg() instanceof Var && Objects.equals(((Var) c.getRightArg()).getName(), varName)
+						&& c.getLeftArg() instanceof ValueConstant
+						&& ((ValueConstant) c.getLeftArg()).getValue() instanceof IRI) {
+					out.add((IRI) ((ValueConstant) c.getLeftArg()).getValue());
+					return true;
+				}
+				return false;
+			}
+			// Any other construct -> give up on reconstruction
+			return false;
 		}
 
 		@Override
@@ -803,7 +931,7 @@ public class TupleExprToSparql {
 			for (final ExtensionElem ee : ext.getElements()) {
 				final ValueExpr expr = ee.getExpr();
 				if (expr instanceof AggregateOperator) {
-					continue; // hoisted to SELECT
+					continue;
 				}
 				line("BIND(" + r.renderExpr(expr) + " AS ?" + ee.getName() + ")");
 			}
@@ -937,7 +1065,6 @@ public class TupleExprToSparql {
 		} else if (val instanceof Literal) {
 			final Literal lit = (Literal) val;
 
-			// Language-tagged strings: always quoted@lang
 			if (lit.getLanguage().isPresent()) {
 				return "\"" + escapeLiteral(lit.getLabel()) + "\"@" + lit.getLanguage().get();
 			}
@@ -945,7 +1072,6 @@ public class TupleExprToSparql {
 			final IRI dt = lit.getDatatype();
 			final String label = lit.getLabel();
 
-			// Canonical tokens for core datatypes
 			if (XSD.BOOLEAN.equals(dt)) {
 				return ("1".equals(label) || "true".equalsIgnoreCase(label)) ? "true" : "false";
 			}
@@ -964,12 +1090,10 @@ public class TupleExprToSparql {
 				}
 			}
 
-			// Other datatypes
 			if (dt != null && !XSD.STRING.equals(dt)) {
 				return "\"" + escapeLiteral(label) + "\"^^" + renderIRI(dt);
 			}
 
-			// Plain string
 			return "\"" + escapeLiteral(label) + "\"";
 		} else if (val instanceof BNode) {
 			return "_:" + ((BNode) val).getID();
@@ -1002,23 +1126,23 @@ public class TupleExprToSparql {
 		for (int i = 0; i < s.length(); i++) {
 			final char c = s.charAt(i);
 			switch (c) {
-			case '\\':
-				b.append("\\\\");
-				break;
-			case '\"':
-				b.append("\\\"");
-				break;
-			case '\n':
-				b.append("\\n");
-				break;
-			case '\r':
-				b.append("\\r");
-				break;
-			case '\t':
-				b.append("\\t");
-				break;
-			default:
-				b.append(c);
+				case '\\':
+					b.append("\\\\");
+					break;
+				case '\"':
+					b.append("\\\"");
+					break;
+				case '\n':
+					b.append("\\n");
+					break;
+				case '\r':
+					b.append("\\r");
+					break;
+				case '\t':
+					b.append("\\t");
+					break;
+				default:
+					b.append(c);
 			}
 		}
 		return b.toString();
@@ -1030,25 +1154,22 @@ public class TupleExprToSparql {
 			return "()";
 		}
 
-		// Aggregates
 		if (e instanceof AggregateOperator) {
 			return renderAggregate((AggregateOperator) e);
 		}
 
-		// Special NOT handling
 		if (e instanceof Not) {
 			final ValueExpr a = ((Not) e).getArg();
 			if (a instanceof Exists) {
 				return "NOT " + renderExists((Exists) a);
 			}
 			if (a instanceof ListMemberOperator) {
-				return renderIn((ListMemberOperator) a, true); // NOT IN
+				return renderIn((ListMemberOperator) a, true);
 			}
 			final String inner = stripRedundantOuterParens(renderExpr(a));
 			return "!(" + inner + ")";
 		}
 
-		// Vars and constants
 		if (e instanceof Var) {
 			final Var v = (Var) e;
 			return v.hasValue() ? renderValue(v.getValue()) : "?" + v.getName();
@@ -1057,7 +1178,6 @@ public class TupleExprToSparql {
 			return renderValue(((ValueConstant) e).getValue());
 		}
 
-		// Functional forms
 		if (e instanceof If) {
 			final If iff = (If) e;
 			return "IF(" + renderExpr(iff.getCondition()) + ", " + renderExpr(iff.getResult()) + ", "
@@ -1075,17 +1195,13 @@ public class TupleExprToSparql {
 			return "isNumeric(" + renderExpr(((IsNumeric) e).getArg()) + ")";
 		}
 
-		// EXISTS
 		if (e instanceof Exists) {
 			return renderExists((Exists) e);
 		}
-
-		// IN list
 		if (e instanceof ListMemberOperator) {
 			return renderIn((ListMemberOperator) e, false);
 		}
 
-		// Unary basics
 		if (e instanceof Str) {
 			return "STR(" + renderExpr(((Str) e).getArg()) + ")";
 		}
@@ -1108,14 +1224,12 @@ public class TupleExprToSparql {
 			return "isBlank(" + renderExpr(((IsBNode) e).getArg()) + ")";
 		}
 
-		// Math expressions
 		if (e instanceof MathExpr) {
 			final MathExpr me = (MathExpr) e;
 			return "(" + renderExpr(me.getLeftArg()) + " " + mathOp(me.getOperator()) + " "
 					+ renderExpr(me.getRightArg()) + ")";
 		}
 
-		// Binary/ternary
 		if (e instanceof And) {
 			final And a = (And) e;
 			return "(" + renderExpr(a.getLeftArg()) + " && " + renderExpr(a.getRightArg()) + ")";
@@ -1147,7 +1261,6 @@ public class TupleExprToSparql {
 			return "REGEX(" + term + ", " + patt + ")";
 		}
 
-		// Function calls: map known bare names or IRIs to built-in names
 		if (e instanceof FunctionCall) {
 			final FunctionCall f = (FunctionCall) e;
 			final String args = f.getArgs().stream().map(this::renderExpr).collect(Collectors.joining(", "));
@@ -1159,7 +1272,6 @@ public class TupleExprToSparql {
 			if (builtin != null) {
 				return builtin + "(" + args + ")";
 			}
-			// Fallback: render as IRI call
 			return "<" + uri + ">(" + args + ")";
 		}
 
@@ -1202,7 +1314,6 @@ public class TupleExprToSparql {
 		return "(" + left + (negate ? " NOT IN (" : " IN (") + rest + "))";
 	}
 
-	/** Use BlockPrinter to render a subpattern inline for EXISTS. */
 	private String renderInlineGroup(final TupleExpr pattern) {
 		final StringBuilder sb = new StringBuilder(64);
 		final BlockPrinter bp = new BlockPrinter(sb, this, cfg, null);
@@ -1214,20 +1325,20 @@ public class TupleExprToSparql {
 
 	private static String op(final CompareOp op) {
 		switch (op) {
-		case EQ:
-			return "=";
-		case NE:
-			return "!=";
-		case LT:
-			return "<";
-		case LE:
-			return "<=";
-		case GT:
-			return ">";
-		case GE:
-			return ">=";
-		default:
-			return "/*?*/";
+			case EQ:
+				return "=";
+			case NE:
+				return "!=";
+			case LT:
+				return "<";
+			case LE:
+				return "<=";
+			case GT:
+				return ">";
+			case GE:
+				return ">=";
+			default:
+				return "/*?*/";
 		}
 	}
 
@@ -1301,7 +1412,8 @@ public class TupleExprToSparql {
 	}
 
 	/**
-	 * Extract a simple predicate IRI from the path expression (StatementPattern with constant predicate).
+	 * Extract a simple predicate IRI from ArbitraryLengthPath#getPathExpression(): supports inner StatementPattern with
+	 * constant predicate IRI; returns null otherwise.
 	 */
 	private String renderPathAtom(final TupleExpr pathExpr) {
 		if (pathExpr instanceof StatementPattern) {
@@ -1314,250 +1426,9 @@ public class TupleExprToSparql {
 		return null;
 	}
 
-	// ---------------- Best-effort path reassembly from BGP+FILTER ----------------
-
-	private static void flattenJoin(TupleExpr expr, List<TupleExpr> out) {
-		if (expr instanceof Join) {
-			final Join j = (Join) expr;
-			flattenJoin(j.getLeftArg(), out);
-			flattenJoin(j.getRightArg(), out);
-		} else {
-			out.add(expr);
-		}
-	}
-
-	private static final class Edge {
-		final StatementPattern sp;
-		final Var s, p, o;
-		final TupleExpr container; // either the SP itself, or its wrapping Filter
-		final boolean fromFilter; // true if the SP came from Filter#getArg()
-
-		Edge(StatementPattern sp, TupleExpr container, boolean fromFilter) {
-			this.sp = sp;
-			this.s = sp.getSubjectVar();
-			this.p = sp.getPredicateVar();
-			this.o = sp.getObjectVar();
-			this.container = container;
-			this.fromFilter = fromFilter;
-		}
-	}
-
-	private static final class NegatedSet {
-		final List<IRI> iris = new ArrayList<>();
-		final Filter filterNode;
-		final String varName;
-
-		NegatedSet(String varName, Filter filterNode) {
-			this.varName = varName;
-			this.filterNode = filterNode;
-		}
-	}
-
-	private static boolean sameVar(Var a, Var b) {
-		if (a == null || b == null) {
-			return false;
-		}
-		if (a.hasValue() || b.hasValue()) {
-			return false;
-		}
-		return Objects.equals(a.getName(), b.getName());
-	}
-
-	private NegatedSet parseNegatedSet(ValueExpr cond) {
-		// Accept conjunction of NE comparisons where exactly one variable name appears, and the other side is IRI
-		String[] holder = new String[1]; // varName
-		List<IRI> iris = new ArrayList<>();
-		if (!collectNegatedSet(cond, holder, iris)) {
-			return null;
-		}
-		if (holder[0] == null || iris.isEmpty()) {
-			return null;
-		}
-		NegatedSet ns = new NegatedSet(holder[0], null);
-		ns.iris.addAll(iris);
-		return ns;
-	}
-
-	private boolean collectNegatedSet(ValueExpr e, String[] varNameHolder, List<IRI> irisOut) {
-		if (e instanceof And) {
-			And a = (And) e;
-			return collectNegatedSet(a.getLeftArg(), varNameHolder, irisOut) &&
-					collectNegatedSet(a.getRightArg(), varNameHolder, irisOut);
-		}
-		if (e instanceof Compare) {
-			Compare c = (Compare) e;
-			if (c.getOperator() != CompareOp.NE) {
-				return false;
-			}
-			ValueExpr L = c.getLeftArg();
-			ValueExpr R = c.getRightArg();
-
-			if (L instanceof Var && R instanceof ValueConstant && ((ValueConstant) R).getValue() instanceof IRI) {
-				String name = ((Var) L).getName();
-				if (varNameHolder[0] == null) {
-					varNameHolder[0] = name;
-				}
-				if (!Objects.equals(varNameHolder[0], name)) {
-					return false;
-				}
-				irisOut.add((IRI) ((ValueConstant) R).getValue());
-				return true;
-			}
-			if (R instanceof Var && L instanceof ValueConstant && ((ValueConstant) L).getValue() instanceof IRI) {
-				String name = ((Var) R).getName();
-				if (varNameHolder[0] == null) {
-					varNameHolder[0] = name;
-				}
-				if (!Objects.equals(varNameHolder[0], name)) {
-					return false;
-				}
-				irisOut.add((IRI) ((ValueConstant) L).getValue());
-				return true;
-			}
-			return false;
-		}
-		return false;
-	}
-
-	private boolean tryRenderBestEffortPathChain(List<TupleExpr> nodes, BlockPrinter bp) {
-		// Gather edges and candidate negated-sets
-		List<Edge> edges = new ArrayList<>();
-		Map<String, NegatedSet> negByVar = new LinkedHashMap<>();
-		Map<String, Filter> filterByVar = new LinkedHashMap<>();
-
-		for (TupleExpr n : nodes) {
-			if (n instanceof StatementPattern) {
-				edges.add(new Edge((StatementPattern) n, n, false));
-			} else if (n instanceof Filter) {
-				Filter f = (Filter) n;
-				if (f.getArg() instanceof StatementPattern) {
-					edges.add(new Edge((StatementPattern) f.getArg(), f, true));
-				}
-				NegatedSet ns = parseNegatedSet(f.getCondition());
-				if (ns != null) {
-					NegatedSet fixed = new NegatedSet(ns.varName, f);
-					fixed.iris.addAll(ns.iris);
-					negByVar.put(ns.varName, fixed);
-					filterByVar.put(ns.varName, f);
-				}
-			}
-		}
-
-		if (edges.size() < 3) {
-			return false;
-		}
-
-		// Find middle edge: predicate is a variable and has a pure negated-set filter
-		Edge mid = null;
-		for (Edge e : edges) {
-			if (e.p != null && !e.p.hasValue() && e.p.getName() != null && negByVar.containsKey(e.p.getName())) {
-				mid = e;
-				break;
-			}
-		}
-		if (mid == null) {
-			return false;
-		}
-
-		// Find e1 sharing mid.s, with constant IRI predicate
-		Edge e1 = null;
-		for (Edge e : edges) {
-			if (e == mid) {
-				continue;
-			}
-			if (e.p != null && e.p.hasValue() && e.p.getValue() instanceof IRI) {
-				if (sameVar(e.s, mid.s) || sameVar(e.o, mid.s)) {
-					e1 = e;
-					break;
-				}
-			}
-		}
-		if (e1 == null) {
-			return false;
-		}
-
-		// Find e3 sharing mid.o, with constant IRI predicate
-		Edge e3 = null;
-		for (Edge e : edges) {
-			if (e == mid || e == e1) {
-				continue;
-			}
-			if (e.p != null && e.p.hasValue() && e.p.getValue() instanceof IRI) {
-				if (sameVar(e.s, mid.o) || sameVar(e.o, mid.o)) {
-					e3 = e;
-					break;
-				}
-			}
-		}
-		if (e3 == null) {
-			return false;
-		}
-
-		// Determine endpoints and orientation
-		Var startVar, endVar;
-		boolean step1Inverse, step3Inverse;
-
-		if (sameVar(e1.s, mid.s)) { // mid.s --P1--> startVar (inverse when traveling from startVar to mid.s)
-			startVar = e1.o;
-			step1Inverse = true;
-		} else { // startVar --P1--> mid.s
-			startVar = e1.s;
-			step1Inverse = false;
-		}
-
-		if (sameVar(e3.s, mid.o)) { // mid.o --P3--> endVar
-			endVar = e3.o;
-			step3Inverse = false;
-		} else { // endVar --P3--> mid.o (inverse when traveling mid.o -> endVar)
-			endVar = e3.s;
-			step3Inverse = true;
-		}
-
-		// Safety: ensure endpoints exist
-		if (startVar == null || endVar == null) {
-			return false;
-		}
-
-		// Assemble path string
-		String p1 = renderVarOrValue(e1.p); // e1.p hasValue IRI -> QName or <IRI>
-		String p3 = renderVarOrValue(e3.p);
-
-		String step1 = (step1Inverse ? "^" : "") + p1;
-		String step3 = (step3Inverse ? "^" : "") + p3;
-
-		NegatedSet ns = negByVar.get(mid.p.getName());
-		if (ns == null || ns.iris.isEmpty()) {
-			return false;
-		}
-
-		String step2 = "!(" + ns.iris.stream().map(this::renderIRI).collect(Collectors.joining("|")) + ")";
-
-		// Print the reconstructed path triple
-		bp.line(renderVarOrValue(startVar) + " (" + step1 + "/" + step2 + "/" + step3 + ") " + renderVarOrValue(endVar)
-				+ " .");
-
-		// Now print the remaining nodes, skipping the consumed ones: e1, mid(+filter), e3 and the negated-set filter
-		Set<TupleExpr> consumed = new LinkedHashSet<>();
-		consumed.add(e1.container);
-		consumed.add(e3.container);
-		consumed.add(mid.container);
-		if (filterByVar.containsKey(mid.p.getName())) {
-			consumed.add(filterByVar.get(mid.p.getName()));
-		}
-
-		for (TupleExpr n : nodes) {
-			if (consumed.contains(n)) {
-				continue;
-			}
-			n.visit(bp);
-		}
-		return true;
-	}
-
 	// ---------------- Small string utility ----------------
 
-	/** Remove exactly one redundant outer set of parentheses, if the whole string is wrapped by a single pair. */
-	private static String stripRedundantOuterParens(final String s) {
+	static String stripRedundantOuterParens(final String s) {
 		if (s == null) {
 			return null;
 		}
@@ -1572,7 +1443,7 @@ public class TupleExprToSparql {
 					depth--;
 				}
 				if (depth == 0 && i < t.length() - 1) {
-					return t; // outer pair closes early → keep
+					return t; // outer closes before end → not redundant
 				}
 			}
 			return t.substring(1, t.length() - 1).trim();
