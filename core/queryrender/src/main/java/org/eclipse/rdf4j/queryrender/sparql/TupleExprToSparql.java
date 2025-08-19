@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.queryrender.sparql;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -38,10 +39,12 @@ import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Avg;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Coalesce;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Datatype;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -51,14 +54,19 @@ import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.IRIFunction;
+import org.eclipse.rdf4j.query.algebra.If;
 import org.eclipse.rdf4j.query.algebra.IsBNode;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
+import org.eclipse.rdf4j.query.algebra.IsNumeric;
 import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
 import org.eclipse.rdf4j.query.algebra.Max;
 import org.eclipse.rdf4j.query.algebra.Min;
 import org.eclipse.rdf4j.query.algebra.Not;
@@ -69,6 +77,7 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Sample;
@@ -88,11 +97,12 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 /**
  * TupleExprToSparql: render a practical subset of RDF4J algebra back into SPARQL text.
  *
- * Supported: - SELECT [DISTINCT] vars | * - WHERE with BGPs (StatementPattern / Join), OPTIONAL (LeftJoin), UNION,
- * FILTER, BIND (Extension) - ORDER BY - VALUES (BindingSetAssignment) - SERVICE [SILENT] (GRAPH omitted here) -
- * Property paths: ArbitraryLengthPath (+, *, ?, {m,n}) and ZeroLengthPath - Aggregates in SELECT (COUNT, SUM, AVG, MIN,
- * MAX, SAMPLE, GROUP_CONCAT) - GROUP BY (variable list) - Prefix compaction (longest namespace match) - Canonical
- * whitespace toggle for stable, diffable output
+ * Supported: - SELECT [DISTINCT|REDUCED] vars | * - WHERE with BGPs (StatementPattern / Join), OPTIONAL (LeftJoin),
+ * UNION, FILTER, BIND (Extension) - MINUS (Difference) - ORDER BY - VALUES (BindingSetAssignment) - SERVICE [SILENT]
+ * (GRAPH omitted here) - Property paths: ArbitraryLengthPath (+, *, ?, {m,n}) and ZeroLengthPath - Aggregates in SELECT
+ * (COUNT, SUM, AVG, MIN, MAX, SAMPLE, GROUP_CONCAT) - GROUP BY (variable list) - Functional forms: IF, COALESCE, IRI(),
+ * STRDT(), STRLANG(), isNumeric() - Prefix compaction (longest namespace match) - Canonical whitespace toggle for
+ * stable, diffable output
  *
  * Design goals: - Deterministic, readable output; safe fallbacks instead of brittle "smart" guessing - Minimal,
  * dependency-free (beyond RDF4J), Java 11 compatible
@@ -116,11 +126,13 @@ public class TupleExprToSparql {
 
 	private static final String FN_NS = "http://www.w3.org/2005/xpath-functions#";
 
-	/** Map XPath/XQuery function IRIs to SPARQL 1.1 built-in names. */
-	private static final Map<String, String> FN_TO_BUILTIN;
+	/** Map of function identifier (either bare name or full IRI) → SPARQL built-in name. */
+	private static final Map<String, String> BUILTIN;
 
 	static {
 		Map<String, String> m = new HashMap<>();
+
+		// --- XPath/XQuery function IRIs → SPARQL built-ins ---
 		m.put(FN_NS + "string-length", "STRLEN");
 		m.put(FN_NS + "lower-case", "LCASE");
 		m.put(FN_NS + "upper-case", "UCASE");
@@ -129,10 +141,37 @@ public class TupleExprToSparql {
 		m.put(FN_NS + "concat", "CONCAT");
 		m.put(FN_NS + "replace", "REPLACE");
 		m.put(FN_NS + "encode-for-uri", "ENCODE_FOR_URI");
-		// NEW: map starts-with / ends-with to SPARQL built-ins
 		m.put(FN_NS + "starts-with", "STRSTARTS");
-		m.put(FN_NS + "ends-with", "STRENDS");
-		FN_TO_BUILTIN = Collections.unmodifiableMap(m);
+
+		m.put(FN_NS + "numeric-abs", "ABS");
+		m.put(FN_NS + "numeric-ceil", "CEIL");
+		m.put(FN_NS + "numeric-floor", "FLOOR");
+		m.put(FN_NS + "numeric-round", "ROUND");
+
+		m.put(FN_NS + "year-from-dateTime", "YEAR");
+		m.put(FN_NS + "month-from-dateTime", "MONTH");
+		m.put(FN_NS + "day-from-dateTime", "DAY");
+		m.put(FN_NS + "hours-from-dateTime", "HOURS");
+		m.put(FN_NS + "minutes-from-dateTime", "MINUTES");
+		m.put(FN_NS + "seconds-from-dateTime", "SECONDS");
+		// Map XPath tz extractor to SPARQL TZ for readability in common queries
+		m.put(FN_NS + "timezone-from-dateTime", "TZ");
+
+		// --- Bare SPARQL built-in names that RDF4J sometimes uses as "URIs" in FunctionCall ---
+		for (String k : new String[] {
+				"RAND", "NOW",
+				"ABS", "CEIL", "FLOOR", "ROUND",
+				"YEAR", "MONTH", "DAY", "HOURS", "MINUTES", "SECONDS", "TZ", "TIMEZONE",
+				"MD5", "SHA1", "SHA224", "SHA256", "SHA384", "SHA512",
+				"UCASE", "LCASE", "SUBSTR", "STRLEN", "CONTAINS", "CONCAT", "REPLACE", "ENCODE_FOR_URI",
+				"STRSTARTS", "STRENDS", "STRBEFORE", "STRAFTER",
+				"REGEX",
+				"UUID", "STRUUID"
+		}) {
+			m.put(k, k);
+		}
+
+		BUILTIN = Collections.unmodifiableMap(m);
 	}
 
 	public TupleExprToSparql() {
@@ -166,6 +205,8 @@ public class TupleExprToSparql {
 		out.append("SELECT ");
 		if (n.distinct) {
 			out.append("DISTINCT ");
+		} else if (n.reduced) {
+			out.append("REDUCED ");
 		}
 
 		boolean printedSelect = false;
@@ -264,6 +305,7 @@ public class TupleExprToSparql {
 		Projection projection; // SELECT vars/exprs
 		TupleExpr where; // WHERE pattern (group peeled)
 		boolean distinct = false;
+		boolean reduced = false;
 		long limit = -1, offset = -1;
 		final List<OrderElem> orderBy = new ArrayList<>();
 		final LinkedHashMap<String, ValueExpr> selectAssignments = new LinkedHashMap<>(); // alias -> expr
@@ -273,7 +315,7 @@ public class TupleExprToSparql {
 	}
 
 	/**
-	 * Peel wrappers until fixed point. Order matters a bit only for clarity; we iterate to a fixpoint anyway.
+	 * Peel wrappers until fixed point.
 	 */
 	private Normalized normalize(final TupleExpr root) {
 		final Normalized n = new Normalized();
@@ -305,8 +347,10 @@ public class TupleExprToSparql {
 				continue;
 			}
 
-			if (cur instanceof org.eclipse.rdf4j.query.algebra.Reduced) {
-				cur = ((org.eclipse.rdf4j.query.algebra.Reduced) cur).getArg();
+			if (cur instanceof Reduced) {
+				// Only print if DISTINCT not present
+				n.reduced = true;
+				cur = ((Reduced) cur).getArg();
 				changed = true;
 				continue;
 			}
@@ -374,10 +418,6 @@ public class TupleExprToSparql {
 
 	// ---------------- Aggregate hoisting & inference ----------------
 
-	/**
-	 * Scan WHERE for aggregate BINDs; hoist them; derive GROUP BY when missing. If an explicit Group was present (even
-	 * empty), never synthesize a GROUP BY.
-	 */
 	private void applyAggregateHoisting(final Normalized n) {
 		final AggregateScan scan = new AggregateScan();
 		n.where.visit(scan);
@@ -389,7 +429,6 @@ public class TupleExprToSparql {
 			}
 		}
 
-		// ALSO account for aggregates already present in selectAssignments (from Group/Projection)
 		boolean hasAggregates = !scan.hoisted.isEmpty();
 		for (Map.Entry<String, ValueExpr> e : n.selectAssignments.entrySet()) {
 			if (e.getValue() instanceof AggregateOperator) {
@@ -402,13 +441,11 @@ public class TupleExprToSparql {
 		if (!hasAggregates) {
 			return;
 		}
-
-		// If there was an explicit Group wrapper (even with empty grouping), DO NOT synthesize grouping.
 		if (n.hadExplicitGroup) {
 			return;
 		}
 
-		// If GROUP BY is missing, try projection-driven grouping first
+		// Projection-driven grouping
 		if (n.groupBy.isEmpty() && n.projection != null && n.projection.getProjectionElemList() != null) {
 			final List<String> gb = new ArrayList<>();
 			for (ProjectionElem pe : n.projection.getProjectionElemList().getElements()) {
@@ -419,17 +456,16 @@ public class TupleExprToSparql {
 			}
 			if (!gb.isEmpty()) {
 				n.groupBy.addAll(gb);
-				return; // done
+				return;
 			}
 		}
 
-		// Otherwise infer from usage: exclude aggregate outputs and their argument vars
+		// Usage-based inference
 		if (n.groupBy.isEmpty()) {
 			Set<String> candidates = new TreeSet<>(scan.varCounts.keySet());
 			candidates.removeAll(scan.aggregateOutputNames);
 			candidates.removeAll(scan.aggregateArgVars);
 
-			// Prefer join keys (appear in >1 triple positions)
 			List<String> multiUse = candidates.stream()
 					.filter(v -> scan.varCounts.getOrDefault(v, 0) > 1)
 					.sorted()
@@ -439,7 +475,6 @@ public class TupleExprToSparql {
 			if (!multiUse.isEmpty()) {
 				chosen = multiUse;
 			} else {
-				// Pick a single best variable: subject > object > predicate (by count), then lexicographic
 				chosen = new ArrayList<>(1);
 				if (!candidates.isEmpty()) {
 					String best = candidates.stream().sorted((a, b) -> {
@@ -469,7 +504,6 @@ public class TupleExprToSparql {
 			n.syntheticProjectVars.clear();
 			n.syntheticProjectVars.addAll(chosen);
 
-			// If there is no explicit Projection, we must also output these bare vars
 			if (n.projection == null || n.projection.getProjectionElemList().getElements().isEmpty()) {
 				n.groupBy.clear();
 				n.groupBy.addAll(n.syntheticProjectVars);
@@ -477,7 +511,6 @@ public class TupleExprToSparql {
 		}
 	}
 
-	/** Collector for aggregate BINDs and variable usage/roles in BGPs. */
 	private static final class AggregateScan extends AbstractQueryModelVisitor<RuntimeException> {
 		final LinkedHashMap<String, ValueExpr> hoisted = new LinkedHashMap<>();
 		final Map<String, Integer> varCounts = new HashMap<>();
@@ -496,9 +529,7 @@ public class TupleExprToSparql {
 
 		@Override
 		public void meet(Extension ext) {
-			// Traverse the inner pattern first
 			ext.getArg().visit(this);
-
 			for (ExtensionElem ee : ext.getElements()) {
 				ValueExpr expr = ee.getExpr();
 				if (expr instanceof AggregateOperator) {
@@ -522,7 +553,6 @@ public class TupleExprToSparql {
 		}
 	}
 
-	/** Recursive variable collector used for aggregate argument analysis. */
 	private static void collectVarNames(ValueExpr e, Set<String> acc) {
 		if (e == null) {
 			return;
@@ -570,6 +600,25 @@ public class TupleExprToSparql {
 			collectVarNames(((IsBNode) e).getArg(), acc);
 			return;
 		}
+		if (e instanceof IsNumeric) {
+			collectVarNames(((IsNumeric) e).getArg(), acc);
+			return;
+		}
+		if (e instanceof IRIFunction) {
+			collectVarNames(((IRIFunction) e).getArg(), acc);
+			return;
+		}
+//		if (e instanceof StrDt) {
+//			collectVarNames(((StrDt) e).getLeftArg(), acc);
+//			collectVarNames(((StrDt) e).getRightArg(), acc);
+//			return;
+//		}
+//		if (e instanceof StrLang) {
+//			collectVarNames(((StrLang) e).getLeftArg(), acc);
+//			collectVarNames(((StrLang) e).getRightArg(), acc);
+//			return;
+//		}
+
 		if (e instanceof And) {
 			collectVarNames(((And) e).getLeftArg(), acc);
 			collectVarNames(((And) e).getRightArg(), acc);
@@ -616,6 +665,21 @@ public class TupleExprToSparql {
 				for (ValueExpr a : args) {
 					collectVarNames(a, acc);
 				}
+			}
+		}
+		if (e instanceof MathExpr) {
+			collectVarNames(((MathExpr) e).getLeftArg(), acc);
+			collectVarNames(((MathExpr) e).getRightArg(), acc);
+		}
+		if (e instanceof If) {
+			final If iff = (If) e;
+			collectVarNames(iff.getCondition(), acc);
+			collectVarNames(iff.getResult(), acc);
+			collectVarNames(iff.getAlternative(), acc);
+		}
+		if (e instanceof Coalesce) {
+			for (ValueExpr a : ((Coalesce) e).getArguments()) {
+				collectVarNames(a, acc);
 			}
 		}
 	}
@@ -719,10 +783,23 @@ public class TupleExprToSparql {
 		}
 
 		@Override
+		public void meet(final Difference diff) {
+			// left pattern
+			diff.getLeftArg().visit(this);
+			// MINUS right pattern
+			indent();
+			raw("MINUS ");
+			openBlock();
+			diff.getRightArg().visit(this);
+			closeBlock();
+			newline();
+		}
+
+		@Override
 		public void meet(final Filter filter) {
 			filter.getArg().visit(this);
 			String cond = r.renderExpr(filter.getCondition());
-			cond = TupleExprToSparql.stripRedundantOuterParens(cond); // ensure exactly one pair of parens
+			cond = TupleExprToSparql.stripRedundantOuterParens(cond);
 			line("FILTER (" + cond + ")");
 		}
 
@@ -797,7 +874,6 @@ public class TupleExprToSparql {
 			final String obj = r.renderVarOrValue(p.getObjectVar());
 			final String path = r.renderPathAtom(p.getPathExpression());
 
-			// Cross-version safe min/max handling
 			final long min = p.getMinLength();
 			final long max = getMaxLengthSafe(p);
 
@@ -884,7 +960,15 @@ public class TupleExprToSparql {
 				try {
 					return new BigInteger(label).toString();
 				} catch (NumberFormatException ignore) {
-					/* fall back */ }
+					/* fall back */
+				}
+			}
+			if (XSD.DECIMAL.equals(dt)) {
+				try {
+					return new BigDecimal(label).toPlainString();
+				} catch (NumberFormatException ignore) {
+					/* fall back */
+				}
 			}
 
 			// Other datatypes
@@ -947,7 +1031,7 @@ public class TupleExprToSparql {
 		return b.toString();
 	}
 
-	/** Expression renderer with aggregate support. */
+	/** Expression renderer with aggregate + functional-form support. */
 	private String renderExpr(final ValueExpr e) {
 		if (e == null) {
 			return "()";
@@ -967,7 +1051,6 @@ public class TupleExprToSparql {
 			if (a instanceof ListMemberOperator) {
 				return renderIn((ListMemberOperator) a, true); // NOT IN
 			}
-			// Avoid double parentheses like '!((?s = ex:bob))'
 			final String inner = stripRedundantOuterParens(renderExpr(a));
 			return "!(" + inner + ")";
 		}
@@ -981,6 +1064,32 @@ public class TupleExprToSparql {
 			return renderValue(((ValueConstant) e).getValue());
 		}
 
+		// Functional forms
+		if (e instanceof If) {
+			final If iff = (If) e;
+			return "IF(" + renderExpr(iff.getCondition()) + ", " + renderExpr(iff.getResult()) + ", "
+					+ renderExpr(iff.getAlternative()) + ")";
+		}
+		if (e instanceof Coalesce) {
+			final List<ValueExpr> args = ((Coalesce) e).getArguments();
+			final String s = args.stream().map(this::renderExpr).collect(Collectors.joining(", "));
+			return "COALESCE(" + s + ")";
+		}
+		if (e instanceof IRIFunction) {
+			return "IRI(" + renderExpr(((IRIFunction) e).getArg()) + ")";
+		}
+		if (e instanceof IsNumeric) {
+			return "isNumeric(" + renderExpr(((IsNumeric) e).getArg()) + ")";
+		}
+//		if (e instanceof StrDt) {
+//			final StrDt sd = (StrDt) e;
+//			return "STRDT(" + renderExpr(sd.getLeftArg()) + ", " + renderExpr(sd.getRightArg()) + ")";
+//		}
+//		if (e instanceof StrLang) {
+//			final StrLang sl = (StrLang) e;
+//			return "STRLANG(" + renderExpr(sl.getLeftArg()) + ", " + renderExpr(sl.getRightArg()) + ")";
+//		}
+
 		// EXISTS
 		if (e instanceof Exists) {
 			return renderExists((Exists) e);
@@ -991,7 +1100,7 @@ public class TupleExprToSparql {
 			return renderIn((ListMemberOperator) e, false);
 		}
 
-		// Unary
+		// Unary basics
 		if (e instanceof Str) {
 			return "STR(" + renderExpr(((Str) e).getArg()) + ")";
 		}
@@ -1012,6 +1121,13 @@ public class TupleExprToSparql {
 		}
 		if (e instanceof IsBNode) {
 			return "isBlank(" + renderExpr(((IsBNode) e).getArg()) + ")";
+		}
+
+		// Math expressions
+		if (e instanceof MathExpr) {
+			final MathExpr me = (MathExpr) e;
+			return "(" + renderExpr(me.getLeftArg()) + " " + mathOp(me.getOperator()) + " "
+					+ renderExpr(me.getRightArg()) + ")";
 		}
 
 		// Binary/ternary
@@ -1046,18 +1162,44 @@ public class TupleExprToSparql {
 			return "REGEX(" + term + ", " + patt + ")";
 		}
 
-		// Function calls: map known IRIs to built-in names
+		// Function calls: map known bare names or IRIs to built-in names
 		if (e instanceof FunctionCall) {
 			final FunctionCall f = (FunctionCall) e;
 			final String args = f.getArgs().stream().map(this::renderExpr).collect(Collectors.joining(", "));
-			final String builtin = FN_TO_BUILTIN.get(f.getURI());
+			final String uri = f.getURI();
+			String builtin = BUILTIN.get(uri);
+			if (builtin == null && uri != null) {
+				builtin = BUILTIN.get(uri.toUpperCase());
+			}
 			if (builtin != null) {
 				return builtin + "(" + args + ")";
 			}
-			return "<" + f.getURI() + ">(" + args + ")";
+			// Fallback: render as IRI call
+			return "<" + uri + ">(" + args + ")";
 		}
 
 		return "/* unsupported-expr:" + e.getClass().getSimpleName() + " */";
+	}
+
+	private static String mathOp(final MathOp op) {
+		// Be tolerant to possible enum names across versions (MULT, TIMES)
+		if (op == MathOp.PLUS) {
+			return "+";
+		}
+		if (op == MathOp.MINUS) {
+			return "-";
+		}
+		try {
+			if (op.name().equals("MULTIPLY") || op.name().equals("TIMES")) {
+				return "*";
+			}
+		} catch (Throwable ignore) {
+		}
+		if (op == MathOp.DIVIDE) {
+			return "/";
+		}
+		// Default:
+		return "?";
 	}
 
 	/** EXISTS { ... } */
@@ -1176,8 +1318,7 @@ public class TupleExprToSparql {
 	}
 
 	/**
-	 * Render a simple path atom from ArbitraryLengthPath#getPathExpression(): supports SP with constant predicate;
-	 * returns null for complex composites.
+	 * Extract a simple predicate IRI from the path expression (StatementPattern with constant predicate).
 	 */
 	private String renderPathAtom(final TupleExpr pathExpr) {
 		if (pathExpr instanceof StatementPattern) {
@@ -1208,11 +1349,9 @@ public class TupleExprToSparql {
 					depth--;
 				}
 				if (depth == 0 && i < t.length() - 1) {
-					// Outer '(' closes before the end → not a single wrapping pair
-					return t;
+					return t; // outer pair closes early → keep
 				}
 			}
-			// Outer pair wraps the entire string → strip one layer
 			return t.substring(1, t.length() - 1).trim();
 		}
 		return t;

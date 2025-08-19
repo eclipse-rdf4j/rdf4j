@@ -72,6 +72,9 @@ public class TupleExprToSparqlTest {
 
 	/** Round-trip twice and assert the renderer is a fixed point (idempotent). */
 	private String assertFixedPoint(String sparql, TupleExprToSparql.Config cfg) {
+		System.out.println("Original SPARQL query:\n" + sparql);
+		TupleExpr tupleExpr = parseAlgebra(SPARQL_PREFIX + sparql);
+		System.out.println("TupleExpr:\n" + tupleExpr);
 		String r1 = render(SPARQL_PREFIX + sparql, cfg);
 		String r2;
 		try {
@@ -400,7 +403,9 @@ public class TupleExprToSparqlTest {
 		String q = "SELECT ?s\n" +
 				"WHERE {\n" +
 				"  ?s ?p ?o .\n" +
-				"  MINUS { ?s foaf:name ?n }\n" +
+				"  MINUS {\n" +
+				"    ?s foaf:name ?n .\n" +
+				"  }\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
 	}
@@ -435,8 +440,10 @@ public class TupleExprToSparqlTest {
 
 	@Test
 	void select_projection_expression_alias() {
-		String q = "SELECT (?age + 1 AS ?age1)\n" +
-				"WHERE { ?s ex:age ?age . }";
+		String q = "SELECT ((?age + 1) AS ?age1)\n" +
+				"WHERE {\n" +
+				"  ?s ex:age ?age .\n" +
+				"}";
 		assertSameSparqlQuery(q, cfg());
 	}
 
@@ -665,6 +672,170 @@ public class TupleExprToSparqlTest {
 	@Test
 	void collections_fixed_point() {
 		String q = "SELECT ?el WHERE { (1 2 3) rdf:rest*/rdf:first ?el }";
+		assertFixedPoint(q, cfg());
+	}
+
+	// ==========================================
+	// ===== Complex integration-style tests ====
+	// ==========================================
+
+	@Test
+	void complex_kitchen_sink_paths_graphs_subqueries() {
+		String q = "SELECT REDUCED ?g ?y (?cnt AS ?count) (COALESCE(?avgAge, -1) AS ?ageOrMinus1)\n" +
+				"WHERE {\n" +
+				"  VALUES ?g { ex:g1 ex:g2 }\n" +
+				"  GRAPH ?g {\n" +
+				"    ?x (foaf:knows|ex:knows)/^foaf:knows ?y .\n" +
+				"    ?y foaf:name ?name .\n" +
+				"  }\n" +
+				"  OPTIONAL { ?y ex:age ?age FILTER(?age >= 21) }\n" +
+				"  MINUS { ?y rdf:type ex:Robot }\n" +
+				"  FILTER (NOT EXISTS { ?y foaf:nick ?nick FILTER(STRLEN(?nick) > 0) })\n" +
+				"  {\n" +
+				"    SELECT ?y (COUNT(DISTINCT ?name) AS ?cnt) (AVG(?age) AS ?avgAge)\n" +
+				"    WHERE {\n" +
+				"      ?y foaf:name ?name .\n" +
+				"      OPTIONAL { ?y ex:age ?age }\n" +
+				"    }\n" +
+				"    GROUP BY ?y\n" +
+				"  }\n" +
+				"}\n" +
+				"ORDER BY DESC(?cnt) LCASE(?name)\n" +
+				"LIMIT 10\n" +
+				"OFFSET 5";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void complex_deep_union_optional_with_grouping() {
+		String q = "SELECT ?s ?label ?src (SUM(?innerC) AS ?c)\n" +
+				"WHERE {\n" +
+				"  VALUES ?src { \"A\" \"B\" }\n" +
+				"  {\n" +
+				"    ?s rdf:type foaf:Person .\n" +
+				"    OPTIONAL { ?s rdfs:label ?label FILTER(LANGMATCHES(LANG(?label), \"en\")) }\n" +
+				"  } UNION {\n" +
+				"    [] foaf:name ?label .\n" +
+				"    BIND(\"B\" AS ?src)\n" +
+				"    BIND(BNODE() AS ?s)\n" +
+				"  }\n" +
+				"  {\n" +
+				"    SELECT ?s (COUNT(?o) AS ?innerC)\n" +
+				"    WHERE { ?s ?p ?o . FILTER(?p NOT IN (rdf:type)) }\n" +
+				"    GROUP BY ?s\n" +
+				"    HAVING (COUNT(?o) >= 0)\n" +
+				"  }\n" +
+				"}\n" +
+				"GROUP BY ?s ?label ?src\n" +
+				"HAVING (SUM(?innerC) >= 1)\n" +
+				"ORDER BY DESC(?c) STRLEN(COALESCE(?label, \"\"))\n" +
+				"LIMIT 20";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void complex_federated_service_subselect_and_graph() {
+		String q = "SELECT ?u ?g (COUNT(DISTINCT ?p) AS ?pc)\n" +
+				"WHERE {\n" +
+				"  SERVICE <http://example.org/sparql> {\n" +
+				"    SELECT ?u ?p WHERE { ?u ?p ?o . FILTER(?p NOT IN (rdf:type)) }\n" +
+				"  }\n" +
+				"  GRAPH ?g { ?u !(foaf:knows|ex:age) ?any }\n" +
+				"  FILTER EXISTS { GRAPH ?g { ?u foaf:name ?n } }\n" +
+				"}\n" +
+				"GROUP BY ?u ?g\n" +
+				"ORDER BY DESC(?pc)\n" +
+				"OFFSET 3\n" +
+				"LIMIT 7";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void complex_ask_with_subselect_exists_and_not_exists() {
+		String q = "ASK WHERE {\n" +
+				"  VALUES ?g { ex:g1 }\n" +
+				"  GRAPH ?g { ?s foaf:name ?n }\n" +
+				"  FILTER EXISTS {\n" +
+				"    SELECT ?s WHERE { ?s foaf:knows ?t } GROUP BY ?s HAVING (COUNT(?t) > 1)\n" +
+				"  }\n" +
+				"  FILTER NOT EXISTS { ?s ex:blockedBy ?b }\n" +
+				"}";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void complex_expressions_aggregation_and_ordering() {
+		String q = "SELECT ?s (CONCAT(LCASE(STR(?n)), \"-\", STRUUID()) AS ?tag) (MAX(?age) AS ?maxAge)\n" +
+				"WHERE {\n" +
+				"  ?s foaf:name ?n .\n" +
+				"  OPTIONAL { ?s ex:age ?age }\n" +
+				"  FILTER(STRLEN(?n) > 1 && (isLiteral(?n) || BOUND(?n)))\n" +
+				"  FILTER(REPLACE(?n, \"A\", \"a\") != ?n || ?s IN (ex:alice, ex:bob))\n" +
+				"  FILTER(DATATYPE(?age) = xsd:integer || !BOUND(?age))\n" +
+				"}\n" +
+				"GROUP BY ?s ?n\n" +
+				"ORDER BY STRLEN(?n) DESC(?maxAge)\n" +
+				"LIMIT 50";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void complex_mutual_knows_with_degree_subqueries() {
+		String q = "SELECT ?a ?b ?aC ?bC\n" +
+				"WHERE {\n" +
+				"  { SELECT ?a (COUNT(?ka) AS ?aC) WHERE { ?a foaf:knows ?ka } GROUP BY ?a }\n" +
+				"  { SELECT ?b (COUNT(?kb) AS ?bC) WHERE { ?b foaf:knows ?kb } GROUP BY ?b }\n" +
+				"  ?a foaf:knows ?b .\n" +
+				"  FILTER EXISTS { ?b foaf:knows ?a }\n" +
+				"}\n" +
+				"ORDER BY DESC(?aC + ?bC)\n" +
+				"LIMIT 10";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void complex_path_inverse_and_negated_set_mix() {
+		String q = "SELECT ?a ?n WHERE {\n" +
+				"  ?a (^foaf:knows/!(rdf:type|ex:age)/foaf:name) ?n .\n" +
+				"  FILTER(LANG(?n) = \"\" || LANGMATCHES(LANG(?n), \"en\"))\n" +
+				"}";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void complex_service_variable_and_nested_subqueries() {
+		String q = "SELECT ?svc ?s (SUM(?c) AS ?total)\n" +
+				"WHERE {\n" +
+				"  BIND(<http://example.org/sparql> AS ?svc)\n" +
+				"  SERVICE ?svc {\n" +
+				"    SELECT ?s (COUNT(?p) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?s\n" +
+				"  }\n" +
+				"  OPTIONAL { GRAPH ?g { ?s foaf:name ?n } }\n" +
+				"  MINUS { ?s rdf:type ex:Robot }\n" +
+				"}\n" +
+				"GROUP BY ?svc ?s\n" +
+				"HAVING (SUM(?c) >= 0)\n" +
+				"ORDER BY DESC(?total)";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void complex_values_matrix_paths_and_groupby_alias() {
+		String q = "SELECT (?k AS ?key) ?person (COUNT(?o) AS ?c)\n" +
+				"WHERE {\n" +
+				"  {\n" +
+				"    VALUES (?k) { (\"foaf\") }\n" +
+				"    ?person foaf:knows/foaf:knows* ?other .\n" +
+				"  } UNION {\n" +
+				"    VALUES (?k) { (\"ex\") }\n" +
+				"    ?person ex:knows/foaf:knows* ?other .\n" +
+				"  }\n" +
+				"  ?person ?p ?o .\n" +
+				"  FILTER(?p != rdf:type)\n" +
+				"}\n" +
+				"GROUP BY (?k AS ?key) ?person\n" +
+				"ORDER BY ?key DESC(?c)\n" +
+				"LIMIT 100";
 		assertFixedPoint(q, cfg());
 	}
 }
