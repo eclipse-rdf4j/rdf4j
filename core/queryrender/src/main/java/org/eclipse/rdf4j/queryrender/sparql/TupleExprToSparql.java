@@ -122,7 +122,6 @@ public class TupleExprToSparql {
 	static {
 		Map<String, String> m = new HashMap<>();
 		m.put(FN_NS + "string-length", "STRLEN");
-		// A few common siblings (harmless, often show up in RDF4J algebra)
 		m.put(FN_NS + "lower-case", "LCASE");
 		m.put(FN_NS + "upper-case", "UCASE");
 		m.put(FN_NS + "substring", "SUBSTR");
@@ -130,6 +129,9 @@ public class TupleExprToSparql {
 		m.put(FN_NS + "concat", "CONCAT");
 		m.put(FN_NS + "replace", "REPLACE");
 		m.put(FN_NS + "encode-for-uri", "ENCODE_FOR_URI");
+		// NEW: map starts-with / ends-with to SPARQL built-ins
+		m.put(FN_NS + "starts-with", "STRSTARTS");
+		m.put(FN_NS + "ends-with", "STRENDS");
 		FN_TO_BUILTIN = Collections.unmodifiableMap(m);
 	}
 
@@ -882,8 +884,7 @@ public class TupleExprToSparql {
 				try {
 					return new BigInteger(label).toString();
 				} catch (NumberFormatException ignore) {
-					/* fall back */
-				}
+					/* fall back */ }
 			}
 
 			// Other datatypes
@@ -966,7 +967,9 @@ public class TupleExprToSparql {
 			if (a instanceof ListMemberOperator) {
 				return renderIn((ListMemberOperator) a, true); // NOT IN
 			}
-			return "!(" + renderExpr(a) + ")";
+			// Avoid double parentheses like '!((?s = ex:bob))'
+			final String inner = stripRedundantOuterParens(renderExpr(a));
+			return "!(" + inner + ")";
 		}
 
 		// Vars and constants
