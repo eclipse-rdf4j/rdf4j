@@ -9,10 +9,13 @@
  * SPDX-License-Identifier: BSD-3-Clause
  ******************************************************************************/
 
-package org.eclipse.rdf4j.sail.memory;
+package org.eclipse.rdf4j.queryrender.sparql;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +25,7 @@ import java.util.TreeSet;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -39,6 +43,7 @@ import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -53,6 +58,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Max;
 import org.eclipse.rdf4j.query.algebra.Min;
 import org.eclipse.rdf4j.query.algebra.Not;
@@ -62,6 +68,7 @@ import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Sample;
@@ -90,6 +97,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  * Design goals: - Deterministic, readable output; safe fallbacks instead of brittle "smart" guessing - Minimal,
  * dependency-free (beyond RDF4J), Java 11 compatible
  */
+@Experimental
 public class TupleExprToSparql {
 
 	// ---------------- Configuration ----------------
@@ -105,6 +113,25 @@ public class TupleExprToSparql {
 
 	private final Config cfg;
 	private final PrefixIndex prefixIndex;
+
+	private static final String FN_NS = "http://www.w3.org/2005/xpath-functions#";
+
+	/** Map XPath/XQuery function IRIs to SPARQL 1.1 built-in names. */
+	private static final Map<String, String> FN_TO_BUILTIN;
+
+	static {
+		Map<String, String> m = new HashMap<>();
+		m.put(FN_NS + "string-length", "STRLEN");
+		// A few common siblings (harmless, often show up in RDF4J algebra)
+		m.put(FN_NS + "lower-case", "LCASE");
+		m.put(FN_NS + "upper-case", "UCASE");
+		m.put(FN_NS + "substring", "SUBSTR");
+		m.put(FN_NS + "contains", "CONTAINS");
+		m.put(FN_NS + "concat", "CONCAT");
+		m.put(FN_NS + "replace", "REPLACE");
+		m.put(FN_NS + "encode-for-uri", "ENCODE_FOR_URI");
+		FN_TO_BUILTIN = Collections.unmodifiableMap(m);
+	}
 
 	public TupleExprToSparql() {
 		this(new Config());
@@ -122,6 +149,9 @@ public class TupleExprToSparql {
 
 		final Normalized n = normalize(tupleExpr);
 
+		// Hoist aggregates from WHERE and infer SELECT/GROUP as needed
+		applyAggregateHoisting(n);
+
 		// PREFIX / BASE
 		if (cfg.printPrefixes && !cfg.prefixes.isEmpty()) {
 			cfg.prefixes.forEach((pfx, ns) -> out.append("PREFIX ").append(pfx).append(": <").append(ns).append(">\n"));
@@ -135,11 +165,13 @@ public class TupleExprToSparql {
 		if (n.distinct) {
 			out.append("DISTINCT ");
 		}
+
+		boolean printedSelect = false;
+
+		// Prefer explicit Projection when available
 		if (n.projection != null) {
 			final List<ProjectionElem> elems = n.projection.getProjectionElemList().getElements();
-			if (elems.isEmpty()) {
-				out.append("*");
-			} else {
+			if (!elems.isEmpty()) {
 				for (int i = 0; i < elems.size(); i++) {
 					final ProjectionElem pe = elems.get(i);
 					final String name = pe.getProjectionAlias().orElse(pe.getName());
@@ -153,21 +185,46 @@ public class TupleExprToSparql {
 						out.append(' ');
 					}
 				}
+				printedSelect = true;
 			}
-		} else {
+		}
+
+		// If no Projection (or SELECT *), but we have assignments, synthesize header
+		if (!printedSelect && !n.selectAssignments.isEmpty()) {
+			List<String> bare = !n.groupBy.isEmpty() ? n.groupBy : n.syntheticProjectVars;
+			boolean first = true;
+			for (String v : bare) {
+				if (!first) {
+					out.append(' ');
+				}
+				out.append('?').append(v);
+				first = false;
+			}
+			for (Map.Entry<String, ValueExpr> e : n.selectAssignments.entrySet()) {
+				if (!first) {
+					out.append(' ');
+				}
+				out.append("(").append(renderExpr(e.getValue())).append(" AS ?").append(e.getKey()).append(")");
+				first = false;
+			}
+			if (first) {
+				out.append("*");
+			}
+			printedSelect = true;
+		}
+
+		if (!printedSelect) {
 			out.append("*");
 		}
 
 		// WHERE
 		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
-		final BlockPrinter bp = new BlockPrinter(out, this, cfg);
+		final BlockPrinter bp = new BlockPrinter(out, this, cfg, n);
 		bp.openBlock();
-
-		// Body
 		n.where.visit(bp);
 		bp.closeBlock();
 
-		// GROUP BY (variables only; SPARQL also allows expressions, which we omit intentionally)
+		// GROUP BY
 		if (!n.groupBy.isEmpty()) {
 			out.append("\nGROUP BY");
 			for (String v : n.groupBy) {
@@ -207,14 +264,14 @@ public class TupleExprToSparql {
 		boolean distinct = false;
 		long limit = -1, offset = -1;
 		final List<OrderElem> orderBy = new ArrayList<>();
-		final LinkedHashMap<String, ValueExpr> selectAssignments = new LinkedHashMap<>(); // name -> expr from
-		// Extension/Group
-		final List<String> groupBy = new ArrayList<>(); // variable names
+		final LinkedHashMap<String, ValueExpr> selectAssignments = new LinkedHashMap<>(); // alias -> expr
+		final List<String> groupBy = new ArrayList<>(); // explicit or synthesized
+		final List<String> syntheticProjectVars = new ArrayList<>(); // synthesized bare SELECT vars
+		boolean hadExplicitGroup = false; // true if a Group wrapper was present
 	}
 
 	/**
-	 * Peel wrappers: Slice, Distinct/Reduced, Order, Extension(above Projection) → SELECT assignments, Projection
-	 * (collect), Group (collect GROUP BY + aggregates → SELECT assignments).
+	 * Peel wrappers until fixed point. Order matters a bit only for clarity; we iterate to a fixpoint anyway.
 	 */
 	private Normalized normalize(final TupleExpr root) {
 		final Normalized n = new Normalized();
@@ -223,6 +280,12 @@ public class TupleExprToSparql {
 		boolean changed;
 		do {
 			changed = false;
+
+			if (cur instanceof QueryRoot) {
+				cur = ((QueryRoot) cur).getArg();
+				changed = true;
+				continue;
+			}
 
 			if (cur instanceof Slice) {
 				final Slice s = (Slice) cur;
@@ -254,40 +317,37 @@ public class TupleExprToSparql {
 				continue;
 			}
 
-			// SELECT-level assignments: Extension immediately above Projection.
+			// Projection (record it and peel)
+			if (cur instanceof Projection) {
+				n.projection = (Projection) cur;
+				cur = n.projection.getArg();
+				changed = true;
+				continue;
+			}
+
+			// SELECT-level assignments: top-level Extension wrappers
 			if (cur instanceof Extension) {
 				final Extension ext = (Extension) cur;
-				if (ext.getArg() instanceof Projection) {
-					for (final ExtensionElem ee : ext.getElements()) {
-						// store expr for (?alias) in SELECT
-						n.selectAssignments.put(ee.getName(), ee.getExpr());
-					}
-					cur = ext.getArg();
-					changed = true;
-					continue;
+				for (final ExtensionElem ee : ext.getElements()) {
+					n.selectAssignments.put(ee.getName(), ee.getExpr());
 				}
-				// otherwise it's a BIND inside WHERE; we'll render it via BlockPrinter
+				cur = ext.getArg();
+				changed = true;
+				continue;
 			}
 
 			// GROUP: collect GROUP BY vars and group aggregates as SELECT assignments
 			if (cur instanceof Group) {
 				final Group g = (Group) cur;
-				// group-by var names (deterministic order)
+				n.hadExplicitGroup = true;
 				final Set<String> names = new TreeSet<>(g.getGroupBindingNames());
 				n.groupBy.addAll(names);
-				// group elements (aggregates): alias -> AggregateOperator
 				for (GroupElem ge : g.getGroupElements()) {
 					n.selectAssignments.putIfAbsent(ge.getName(), ge.getOperator());
 				}
 				cur = g.getArg();
 				changed = true;
 				continue;
-			}
-
-			if (cur instanceof Projection) {
-				n.projection = (Projection) cur;
-				cur = n.projection.getArg();
-				changed = true;
 			}
 
 		} while (changed);
@@ -310,6 +370,254 @@ public class TupleExprToSparql {
 		return String.join(" ", vars);
 	}
 
+	// ---------------- Aggregate hoisting & inference ----------------
+
+	/**
+	 * Scan WHERE for aggregate BINDs; hoist them; derive GROUP BY when missing. If an explicit Group was present (even
+	 * empty), never synthesize a GROUP BY.
+	 */
+	private void applyAggregateHoisting(final Normalized n) {
+		final AggregateScan scan = new AggregateScan();
+		n.where.visit(scan);
+
+		// Promote aggregates found as BINDs inside WHERE
+		if (!scan.hoisted.isEmpty()) {
+			for (Map.Entry<String, ValueExpr> e : scan.hoisted.entrySet()) {
+				n.selectAssignments.putIfAbsent(e.getKey(), e.getValue());
+			}
+		}
+
+		// ALSO account for aggregates already present in selectAssignments (from Group/Projection)
+		boolean hasAggregates = !scan.hoisted.isEmpty();
+		for (Map.Entry<String, ValueExpr> e : n.selectAssignments.entrySet()) {
+			if (e.getValue() instanceof AggregateOperator) {
+				hasAggregates = true;
+				scan.aggregateOutputNames.add(e.getKey());
+				collectVarNames(e.getValue(), scan.aggregateArgVars);
+			}
+		}
+
+		if (!hasAggregates) {
+			return;
+		}
+
+		// If there was an explicit Group wrapper (even with empty grouping), DO NOT synthesize grouping.
+		if (n.hadExplicitGroup) {
+			return;
+		}
+
+		// If GROUP BY is missing, try projection-driven grouping first
+		if (n.groupBy.isEmpty() && n.projection != null && n.projection.getProjectionElemList() != null) {
+			final List<String> gb = new ArrayList<>();
+			for (ProjectionElem pe : n.projection.getProjectionElemList().getElements()) {
+				final String name = pe.getProjectionAlias().orElse(pe.getName());
+				if (name != null && !name.isEmpty() && !n.selectAssignments.containsKey(name)) {
+					gb.add(name);
+				}
+			}
+			if (!gb.isEmpty()) {
+				n.groupBy.addAll(gb);
+				return; // done
+			}
+		}
+
+		// Otherwise infer from usage: exclude aggregate outputs and their argument vars
+		if (n.groupBy.isEmpty()) {
+			Set<String> candidates = new TreeSet<>(scan.varCounts.keySet());
+			candidates.removeAll(scan.aggregateOutputNames);
+			candidates.removeAll(scan.aggregateArgVars);
+
+			// Prefer join keys (appear in >1 triple positions)
+			List<String> multiUse = candidates.stream()
+					.filter(v -> scan.varCounts.getOrDefault(v, 0) > 1)
+					.sorted()
+					.collect(Collectors.toList());
+
+			List<String> chosen;
+			if (!multiUse.isEmpty()) {
+				chosen = multiUse;
+			} else {
+				// Pick a single best variable: subject > object > predicate (by count), then lexicographic
+				chosen = new ArrayList<>(1);
+				if (!candidates.isEmpty()) {
+					String best = candidates.stream().sorted((a, b) -> {
+						int as = scan.subjCounts.getOrDefault(a, 0);
+						int bs = scan.subjCounts.getOrDefault(b, 0);
+						if (as != bs) {
+							return Integer.compare(bs, as);
+						}
+						int ao = scan.objCounts.getOrDefault(a, 0);
+						int bo = scan.objCounts.getOrDefault(b, 0);
+						if (ao != bo) {
+							return Integer.compare(bo, ao);
+						}
+						int ap = scan.predCounts.getOrDefault(a, 0);
+						int bp = scan.predCounts.getOrDefault(b, 0);
+						if (ap != bp) {
+							return Integer.compare(bp, ap);
+						}
+						return a.compareTo(b);
+					}).findFirst().orElse(null);
+					if (best != null) {
+						chosen.add(best);
+					}
+				}
+			}
+
+			n.syntheticProjectVars.clear();
+			n.syntheticProjectVars.addAll(chosen);
+
+			// If there is no explicit Projection, we must also output these bare vars
+			if (n.projection == null || n.projection.getProjectionElemList().getElements().isEmpty()) {
+				n.groupBy.clear();
+				n.groupBy.addAll(n.syntheticProjectVars);
+			}
+		}
+	}
+
+	/** Collector for aggregate BINDs and variable usage/roles in BGPs. */
+	private static final class AggregateScan extends AbstractQueryModelVisitor<RuntimeException> {
+		final LinkedHashMap<String, ValueExpr> hoisted = new LinkedHashMap<>();
+		final Map<String, Integer> varCounts = new HashMap<>();
+		final Map<String, Integer> subjCounts = new HashMap<>();
+		final Map<String, Integer> predCounts = new HashMap<>();
+		final Map<String, Integer> objCounts = new HashMap<>();
+		final Set<String> aggregateArgVars = new HashSet<>();
+		final Set<String> aggregateOutputNames = new HashSet<>();
+
+		@Override
+		public void meet(StatementPattern sp) {
+			count(sp.getSubjectVar(), subjCounts);
+			count(sp.getPredicateVar(), predCounts);
+			count(sp.getObjectVar(), objCounts);
+		}
+
+		@Override
+		public void meet(Extension ext) {
+			// Traverse the inner pattern first
+			ext.getArg().visit(this);
+
+			for (ExtensionElem ee : ext.getElements()) {
+				ValueExpr expr = ee.getExpr();
+				if (expr instanceof AggregateOperator) {
+					hoisted.putIfAbsent(ee.getName(), expr);
+					aggregateOutputNames.add(ee.getName());
+					collectVarNames(expr, aggregateArgVars);
+				}
+			}
+		}
+
+		private void count(Var v, Map<String, Integer> roleMap) {
+			if (v == null || v.hasValue()) {
+				return;
+			}
+			final String name = v.getName();
+			if (name == null || name.isEmpty()) {
+				return;
+			}
+			varCounts.merge(name, 1, Integer::sum);
+			roleMap.merge(name, 1, Integer::sum);
+		}
+	}
+
+	/** Recursive variable collector used for aggregate argument analysis. */
+	private static void collectVarNames(ValueExpr e, Set<String> acc) {
+		if (e == null) {
+			return;
+		}
+		if (e instanceof Var) {
+			final Var v = (Var) e;
+			if (!v.hasValue() && v.getName() != null && !v.getName().isEmpty()) {
+				acc.add(v.getName());
+			}
+			return;
+		}
+		if (e instanceof ValueConstant) {
+			return;
+		}
+
+		if (e instanceof Not) {
+			collectVarNames(((Not) e).getArg(), acc);
+			return;
+		}
+		if (e instanceof Bound) {
+			collectVarNames(((Bound) e).getArg(), acc);
+			return;
+		}
+		if (e instanceof Str) {
+			collectVarNames(((Str) e).getArg(), acc);
+			return;
+		}
+		if (e instanceof Datatype) {
+			collectVarNames(((Datatype) e).getArg(), acc);
+			return;
+		}
+		if (e instanceof Lang) {
+			collectVarNames(((Lang) e).getArg(), acc);
+			return;
+		}
+		if (e instanceof IsURI) {
+			collectVarNames(((IsURI) e).getArg(), acc);
+			return;
+		}
+		if (e instanceof IsLiteral) {
+			collectVarNames(((IsLiteral) e).getArg(), acc);
+			return;
+		}
+		if (e instanceof IsBNode) {
+			collectVarNames(((IsBNode) e).getArg(), acc);
+			return;
+		}
+		if (e instanceof And) {
+			collectVarNames(((And) e).getLeftArg(), acc);
+			collectVarNames(((And) e).getRightArg(), acc);
+			return;
+		}
+		if (e instanceof Or) {
+			collectVarNames(((Or) e).getLeftArg(), acc);
+			collectVarNames(((Or) e).getRightArg(), acc);
+			return;
+		}
+		if (e instanceof Compare) {
+			collectVarNames(((Compare) e).getLeftArg(), acc);
+			collectVarNames(((Compare) e).getRightArg(), acc);
+			return;
+		}
+		if (e instanceof SameTerm) {
+			collectVarNames(((SameTerm) e).getLeftArg(), acc);
+			collectVarNames(((SameTerm) e).getRightArg(), acc);
+			return;
+		}
+		if (e instanceof LangMatches) {
+			collectVarNames(((LangMatches) e).getLeftArg(), acc);
+			collectVarNames(((LangMatches) e).getRightArg(), acc);
+			return;
+		}
+		if (e instanceof Regex) {
+			final Regex r = (Regex) e;
+			collectVarNames(r.getArg(), acc);
+			collectVarNames(r.getPatternArg(), acc);
+			if (r.getFlagsArg() != null) {
+				collectVarNames(r.getFlagsArg(), acc);
+			}
+			return;
+		}
+		if (e instanceof FunctionCall) {
+			for (ValueExpr a : ((FunctionCall) e).getArgs()) {
+				collectVarNames(a, acc);
+			}
+			return;
+		}
+		if (e instanceof ListMemberOperator) {
+			final List<ValueExpr> args = ((ListMemberOperator) e).getArguments();
+			if (args != null) {
+				for (ValueExpr a : args) {
+					collectVarNames(a, acc);
+				}
+			}
+		}
+	}
+
 	// ---------------- Block/Node printer ----------------
 
 	private static final class BlockPrinter extends AbstractQueryModelVisitor<RuntimeException> {
@@ -317,12 +625,16 @@ public class TupleExprToSparql {
 		private final TupleExprToSparql r;
 		private final Config cfg;
 		private final String indentUnit;
+		@SuppressWarnings("unused")
+		private final Normalized norm;
 		private int level = 0;
 
-		BlockPrinter(final StringBuilder out, final TupleExprToSparql renderer, final Config cfg) {
+		BlockPrinter(final StringBuilder out, final TupleExprToSparql renderer, final Config cfg,
+				final Normalized norm) {
 			this.out = out;
 			this.r = renderer;
 			this.cfg = cfg;
+			this.norm = norm;
 			this.indentUnit = cfg.indent == null ? "  " : cfg.indent;
 		}
 
@@ -380,7 +692,9 @@ public class TupleExprToSparql {
 			openBlock();
 			lj.getRightArg().visit(this);
 			if (lj.getCondition() != null) {
-				line("FILTER (" + r.renderExpr(lj.getCondition()) + ")");
+				String cond = r.renderExpr(lj.getCondition());
+				cond = TupleExprToSparql.stripRedundantOuterParens(cond);
+				line("FILTER (" + cond + ")");
 			}
 			closeBlock();
 			newline();
@@ -405,15 +719,21 @@ public class TupleExprToSparql {
 		@Override
 		public void meet(final Filter filter) {
 			filter.getArg().visit(this);
-			line("FILTER (" + r.renderExpr(filter.getCondition()) + ")");
+			String cond = r.renderExpr(filter.getCondition());
+			cond = TupleExprToSparql.stripRedundantOuterParens(cond); // ensure exactly one pair of parens
+			line("FILTER (" + cond + ")");
 		}
 
 		@Override
 		public void meet(final Extension ext) {
-			// BIND inside WHERE (should not contain aggregates in valid SPARQL)
+			// Print only non-aggregate BINDs; aggregates were hoisted to SELECT (if needed)
 			ext.getArg().visit(this);
 			for (final ExtensionElem ee : ext.getElements()) {
-				line("BIND(" + r.renderExpr(ee.getExpr()) + " AS ?" + ee.getName() + ")");
+				final ValueExpr expr = ee.getExpr();
+				if (expr instanceof AggregateOperator) {
+					continue;
+				}
+				line("BIND(" + r.renderExpr(expr) + " AS ?" + ee.getName() + ")");
 			}
 		}
 
@@ -474,8 +794,10 @@ public class TupleExprToSparql {
 			final String subj = r.renderVarOrValue(p.getSubjectVar());
 			final String obj = r.renderVarOrValue(p.getObjectVar());
 			final String path = r.renderPathAtom(p.getPathExpression());
+
+			// Cross-version safe min/max handling
 			final long min = p.getMinLength();
-			final long max = -1; // RDF4J uses -1 for unbounded
+			final long max = getMaxLengthSafe(p);
 
 			final String q = quantifier(min, max);
 			final String pathAtom = (path != null) ? path : "/* complex-path */";
@@ -512,6 +834,18 @@ public class TupleExprToSparql {
 			}
 			return "{" + min + "," + max + "}";
 		}
+
+		private static long getMaxLengthSafe(final ArbitraryLengthPath p) {
+			try {
+				final java.lang.reflect.Method m = ArbitraryLengthPath.class.getMethod("getMaxLength");
+				final Object v = m.invoke(p);
+				if (v instanceof Number) {
+					return ((Number) v).longValue();
+				}
+			} catch (ReflectiveOperationException ignore) {
+			}
+			return -1L;
+		}
 	}
 
 	// ---------------- Rendering helpers (prefix-aware) ----------------
@@ -531,15 +865,34 @@ public class TupleExprToSparql {
 			return renderIRI((IRI) val);
 		} else if (val instanceof Literal) {
 			final Literal lit = (Literal) val;
-			final String escaped = escapeLiteral(lit.getLabel());
+
+			// Language-tagged strings: always quoted@lang
 			if (lit.getLanguage().isPresent()) {
-				return "\"" + escaped + "\"@" + lit.getLanguage().get();
+				return "\"" + escapeLiteral(lit.getLabel()) + "\"@" + lit.getLanguage().get();
 			}
+
 			final IRI dt = lit.getDatatype();
-			if (dt != null && !XSD.STRING.equals(dt)) {
-				return "\"" + escaped + "\"^^" + renderIRI(dt);
+			final String label = lit.getLabel();
+
+			// Canonical tokens for core datatypes
+			if (XSD.BOOLEAN.equals(dt)) {
+				return ("1".equals(label) || "true".equalsIgnoreCase(label)) ? "true" : "false";
 			}
-			return "\"" + escaped + "\"";
+			if (XSD.INTEGER.equals(dt)) {
+				try {
+					return new BigInteger(label).toString();
+				} catch (NumberFormatException ignore) {
+					/* fall back */
+				}
+			}
+
+			// Other datatypes
+			if (dt != null && !XSD.STRING.equals(dt)) {
+				return "\"" + escapeLiteral(label) + "\"^^" + renderIRI(dt);
+			}
+
+			// Plain string
+			return "\"" + escapeLiteral(label) + "\"";
 		} else if (val instanceof BNode) {
 			return "_:" + ((BNode) val).getID();
 		}
@@ -599,9 +952,21 @@ public class TupleExprToSparql {
 			return "()";
 		}
 
-		// Aggregates first (they're ValueExprs in RDF4J)
+		// Aggregates
 		if (e instanceof AggregateOperator) {
 			return renderAggregate((AggregateOperator) e);
+		}
+
+		// Special NOT handling
+		if (e instanceof Not) {
+			final ValueExpr a = ((Not) e).getArg();
+			if (a instanceof Exists) {
+				return "NOT " + renderExists((Exists) a);
+			}
+			if (a instanceof ListMemberOperator) {
+				return renderIn((ListMemberOperator) a, true); // NOT IN
+			}
+			return "!(" + renderExpr(a) + ")";
 		}
 
 		// Vars and constants
@@ -613,13 +978,17 @@ public class TupleExprToSparql {
 			return renderValue(((ValueConstant) e).getValue());
 		}
 
+		// EXISTS
+		if (e instanceof Exists) {
+			return renderExists((Exists) e);
+		}
+
+		// IN list
+		if (e instanceof ListMemberOperator) {
+			return renderIn((ListMemberOperator) e, false);
+		}
+
 		// Unary
-		if (e instanceof Not) {
-			return "!(" + renderExpr(((Not) e).getArg()) + ")";
-		}
-		if (e instanceof Bound) {
-			return "BOUND(" + renderExpr(((Bound) e).getArg()) + ")";
-		}
 		if (e instanceof Str) {
 			return "STR(" + renderExpr(((Str) e).getArg()) + ")";
 		}
@@ -628,6 +997,9 @@ public class TupleExprToSparql {
 		}
 		if (e instanceof Lang) {
 			return "LANG(" + renderExpr(((Lang) e).getArg()) + ")";
+		}
+		if (e instanceof Bound) {
+			return "BOUND(" + renderExpr(((Bound) e).getArg()) + ")";
 		}
 		if (e instanceof IsURI) {
 			return "isIRI(" + renderExpr(((IsURI) e).getArg()) + ")";
@@ -639,7 +1011,7 @@ public class TupleExprToSparql {
 			return "isBlank(" + renderExpr(((IsBNode) e).getArg()) + ")";
 		}
 
-		// Binary / ternary
+		// Binary/ternary
 		if (e instanceof And) {
 			final And a = (And) e;
 			return "(" + renderExpr(a.getLeftArg()) + " && " + renderExpr(a.getRightArg()) + ")";
@@ -671,14 +1043,45 @@ public class TupleExprToSparql {
 			return "REGEX(" + term + ", " + patt + ")";
 		}
 
-		// Generic function call
+		// Function calls: map known IRIs to built-in names
 		if (e instanceof FunctionCall) {
 			final FunctionCall f = (FunctionCall) e;
 			final String args = f.getArgs().stream().map(this::renderExpr).collect(Collectors.joining(", "));
+			final String builtin = FN_TO_BUILTIN.get(f.getURI());
+			if (builtin != null) {
+				return builtin + "(" + args + ")";
+			}
 			return "<" + f.getURI() + ">(" + args + ")";
 		}
 
 		return "/* unsupported-expr:" + e.getClass().getSimpleName() + " */";
+	}
+
+	/** EXISTS { ... } */
+	private String renderExists(final Exists ex) {
+		final String group = renderInlineGroup(ex.getSubQuery());
+		return "EXISTS " + group;
+	}
+
+	/** Render (?x [NOT] IN (a, b, c)) from ListMemberOperator. */
+	private String renderIn(final ListMemberOperator in, final boolean negate) {
+		final List<ValueExpr> args = in.getArguments();
+		if (args == null || args.isEmpty()) {
+			return "/* invalid IN */";
+		}
+		final String left = renderExpr(args.get(0));
+		final String rest = args.stream().skip(1).map(this::renderExpr).collect(Collectors.joining(", "));
+		return "(" + left + (negate ? " NOT IN (" : " IN (") + rest + "))";
+	}
+
+	/** Use BlockPrinter to render a subpattern inline for EXISTS. */
+	private String renderInlineGroup(final TupleExpr pattern) {
+		final StringBuilder sb = new StringBuilder(64);
+		final BlockPrinter bp = new BlockPrinter(sb, this, cfg, null);
+		bp.openBlock();
+		pattern.visit(bp);
+		bp.closeBlock();
+		return sb.toString().replace('\n', ' ').replaceAll("\\s+", " ").trim();
 	}
 
 	private static String op(final CompareOp op) {
@@ -737,15 +1140,11 @@ public class TupleExprToSparql {
 			}
 			sb.append(renderExpr(a.getArg()));
 
-			// getSeparator() returns ValueExpr in your RDF4J
 			final ValueExpr sepExpr = a.getSeparator();
-			final String sepLex = extractSeparatorLiteral(sepExpr); // returns null if not a plain literal
-
-			// SPARQL requires a string literal here; only print when we have one
+			final String sepLex = extractSeparatorLiteral(sepExpr);
 			if (sepLex != null) {
 				sb.append("; SEPARATOR=").append('"').append(escapeLiteral(sepLex)).append('"');
-			} /* else: omit to keep the output valid SPARQL */
-
+			}
 			sb.append(")");
 			return sb.toString();
 		}
@@ -757,7 +1156,6 @@ public class TupleExprToSparql {
 		if (expr == null) {
 			return null;
 		}
-
 		if (expr instanceof ValueConstant) {
 			final Value v = ((ValueConstant) expr).getValue();
 			if (v instanceof Literal) {
@@ -771,29 +1169,50 @@ public class TupleExprToSparql {
 				return ((Literal) var.getValue()).getLabel();
 			}
 		}
-		// Anything else (e.g., a non-literal expression) would not be legal in SPARQL here.
 		return null;
 	}
 
 	/**
-	 * Render a simple path atom from ArbitraryLengthPath#getPathExpression(): supports IRI constants and plain
-	 * variables; returns null for complex composites.
+	 * Render a simple path atom from ArbitraryLengthPath#getPathExpression(): supports SP with constant predicate;
+	 * returns null for complex composites.
 	 */
 	private String renderPathAtom(final TupleExpr pathExpr) {
-		if (pathExpr instanceof Var) {
-			final Var v = (Var) pathExpr;
-			if (v.hasValue() && v.getValue() instanceof IRI) {
-				return renderIRI((IRI) v.getValue());
-			}
-			return "?" + v.getName();
-		}
-		if (pathExpr instanceof ValueConstant) {
-			final Value v = ((ValueConstant) pathExpr).getValue();
-			if (v instanceof IRI) {
-				return renderIRI((IRI) v);
+		if (pathExpr instanceof StatementPattern) {
+			final StatementPattern sp = (StatementPattern) pathExpr;
+			final Var pred = sp.getPredicateVar();
+			if (pred != null && pred.hasValue() && pred.getValue() instanceof IRI) {
+				return renderIRI((IRI) pred.getValue());
 			}
 		}
 		return null;
+	}
+
+	// ---------------- Small string utility ----------------
+
+	/** Remove exactly one redundant outer set of parentheses, if the whole string is wrapped by a single pair. */
+	private static String stripRedundantOuterParens(final String s) {
+		if (s == null) {
+			return null;
+		}
+		String t = s.trim();
+		if (t.length() >= 2 && t.charAt(0) == '(' && t.charAt(t.length() - 1) == ')') {
+			int depth = 0;
+			for (int i = 0; i < t.length(); i++) {
+				char ch = t.charAt(i);
+				if (ch == '(') {
+					depth++;
+				} else if (ch == ')') {
+					depth--;
+				}
+				if (depth == 0 && i < t.length() - 1) {
+					// Outer '(' closes before the end → not a single wrapping pair
+					return t;
+				}
+			}
+			// Outer pair wraps the entire string → strip one layer
+			return t.substring(1, t.length() - 1).trim();
+		}
+		return t;
 	}
 
 	// ---------------- Prefix compaction index ----------------
