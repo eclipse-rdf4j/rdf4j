@@ -379,4 +379,292 @@ public class TupleExprToSparqlTest {
 		assertSameSparqlQuery(q, cfg());
 	}
 
+	// =========================
+	// ===== New test cases ====
+	// =========================
+
+	// --- Negation: NOT EXISTS & MINUS ---
+
+	@Test
+	void filter_not_exists() {
+		String q = "SELECT ?s\n" +
+				"WHERE {\n" +
+				"  ?s ?p ?o .\n" +
+				"  FILTER (NOT EXISTS { ?s foaf:name ?n . })\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void minus_set_difference() {
+		String q = "SELECT ?s\n" +
+				"WHERE {\n" +
+				"  ?s ?p ?o .\n" +
+				"  MINUS { ?s foaf:name ?n }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	// --- Property paths (sequence, alternation, inverse, NPS, grouping) ---
+
+	@Test
+	void property_paths_sequence_and_alternation() {
+		String q = "SELECT ?x ?name WHERE { ?x (ex:knows/foaf:knows)|(foaf:knows/ex:knows) ?y . ?y foaf:name ?name }";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void property_paths_inverse() {
+		String q = "SELECT ?x ?y WHERE { ?x ^foaf:knows ?y }";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void property_paths_negated_property_set() {
+		String q = "SELECT ?x ?y WHERE { ?x !(rdf:type|^rdf:type) ?y }";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void property_paths_grouping_precedence() {
+		String q = "SELECT ?x ?y WHERE { ?x (ex:knows/ (foaf:knows|^foaf:knows) ) ?y }";
+		assertFixedPoint(q, cfg());
+	}
+
+	// --- Assignment forms: SELECT (expr AS ?v), GROUP BY (expr AS ?v) ---
+
+	@Test
+	void select_projection_expression_alias() {
+		String q = "SELECT (?age + 1 AS ?age1)\n" +
+				"WHERE { ?s ex:age ?age . }";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void group_by_with_alias_and_having() {
+		String q = "SELECT ?name (COUNT(?s) AS ?c)\n" +
+				"WHERE {\n" +
+				"  ?s foaf:name ?n .\n" +
+				"  BIND(STR(?n) AS ?name)\n" +
+				"}\n" +
+				"GROUP BY (?n AS ?name)\n" +
+				"HAVING (COUNT(?s) > 1)\n" +
+				"ORDER BY DESC(?c)";
+		assertFixedPoint(q, cfg());
+	}
+
+	// --- Aggregates: MIN/MAX/AVG/SAMPLE + HAVING ---
+
+	@Test
+	void aggregates_min_max_avg_sample_having() {
+		String q = "SELECT ?s (MIN(?o) AS ?minO) (MAX(?o) AS ?maxO) (AVG(?o) AS ?avgO) (SAMPLE(?o) AS ?anyO)\n" +
+				"WHERE { ?s ?p ?o . }\n" +
+				"GROUP BY ?s\n" +
+				"HAVING (COUNT(?o) >= 1)";
+		assertFixedPoint(q, cfg());
+	}
+
+	// --- Subquery with aggregate and scope ---
+
+	@Test
+	void subquery_with_aggregate_and_having() {
+		String q = "SELECT ?y ?minName WHERE {\n" +
+				"  ex:alice foaf:knows ?y .\n" +
+				"  {\n" +
+				"    SELECT ?y (MIN(?name) AS ?minName)\n" +
+				"    WHERE { ?y foaf:name ?name . }\n" +
+				"    GROUP BY ?y\n" +
+				"    HAVING (MIN(?name) >= \"A\")\n" +
+				"  }\n" +
+				"}";
+		assertFixedPoint(q, cfg());
+	}
+
+	// --- GRAPH with IRI and variable ---
+
+	@Test
+	void graph_iri_and_variable() {
+		String q = "SELECT ?g ?s WHERE {\n" +
+				"  GRAPH ex:g1 { ?s ?p ?o }\n" +
+				"  GRAPH ?g   { ?s ?p ?o }\n" +
+				"}";
+		assertFixedPoint(q, cfg());
+	}
+
+	// --- Federation: SERVICE (no SILENT) and variable endpoint ---
+
+	@Test
+	void service_without_silent_fixed_point() {
+		String q = "SELECT * WHERE { SERVICE <http://example.org/sparql> { ?s ?p ?o } }";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void service_variable_endpoint_fixed_point() {
+		String q = "SELECT * WHERE { SERVICE ?svc { ?s ?p ?o } }";
+		assertFixedPoint(q, cfg());
+	}
+
+	// --- Solution modifiers: REDUCED; ORDER BY expression; OFFSET-only; LIMIT-only ---
+
+	@Test
+	void select_reduced_modifier() {
+		String q = "SELECT REDUCED ?s\n" +
+				"WHERE {\n" +
+				"  ?s ?p ?o .\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void order_by_expression_and_by_aggregate_alias() {
+		String q = "SELECT ?n (COUNT(?s) AS ?c)\n" +
+				"WHERE { ?s foaf:name ?n }\n" +
+				"GROUP BY ?n\n" +
+				"ORDER BY LCASE(?n) DESC(?c)";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void offset_only() {
+		String q = "SELECT ?s ?p ?o\n" +
+				"WHERE {\n" +
+				"  ?s ?p ?o .\n" +
+				"}\n" +
+				"OFFSET 5";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void limit_only_zero_and_positive() {
+		String q1 = "SELECT ?s ?p ?o\n" +
+				"WHERE {\n" +
+				"  ?s ?p ?o .\n" +
+				"}\n" +
+				"LIMIT 0";
+		String q2 = "SELECT ?s ?p ?o\n" +
+				"WHERE {\n" +
+				"  ?s ?p ?o .\n" +
+				"}\n" +
+				"LIMIT 3";
+		assertSameSparqlQuery(q1, cfg());
+		assertSameSparqlQuery(q2, cfg());
+	}
+
+	// --- Query forms: ASK, CONSTRUCT ---
+
+	@Test
+	void ask_query_fixed_point() {
+		String q = "ASK WHERE { ?s ?p ?o }";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void construct_query_fixed_point() {
+		String q = "CONSTRUCT { ?s ?p ?o }\n" +
+				"WHERE     { ?s ?p ?o }";
+		assertFixedPoint(q, cfg());
+	}
+
+	// --- Expressions & built-ins ---
+
+	@Test
+	void functional_forms_and_rdf_term_tests() {
+		String q = "SELECT ?ok1 ?ok2 ?ok3 ?ok4\n" +
+				"WHERE {\n" +
+				"  VALUES (?x) { (1) }\n" +
+				"  BIND(IRI(CONCAT(\"http://ex/\", \"alice\")) AS ?iri)\n" +
+				"  BIND(BNODE() AS ?b)\n" +
+				"  BIND(STRDT(\"2020-01-01\", xsd:date) AS ?d)\n" +
+				"  BIND(STRLANG(\"hi\", \"en\") AS ?l)\n" +
+				"  BIND(IF(BOUND(?iri), true, false) AS ?ok1)\n" +
+				"  BIND(COALESCE(?missing, ?x) AS ?ok2)\n" +
+				"  BIND(sameTerm(?iri, IRI(\"http://ex/alice\")) AS ?ok3)\n" +
+				"  BIND((isIRI(?iri) && isBlank(?b) && isLiteral(?l) && isNumeric(?x)) AS ?ok4)\n" +
+				"}";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void string_functions_concat_substr_replace_encode() {
+		String q = "SELECT ?a ?b ?c ?d\n" +
+				"WHERE {\n" +
+				"  VALUES (?n) { (\"Alice\") }\n" +
+				"  BIND(CONCAT(?n, \" \", \"Doe\") AS ?a)\n" +
+				"  BIND(SUBSTR(?n, 2) AS ?b)\n" +
+				"  BIND(REPLACE(?n, \"A\", \"a\") AS ?c)\n" +
+				"  BIND(ENCODE_FOR_URI(?n) AS ?d)\n" +
+				"}";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void numeric_datetime_hash_and_random_fixed_point() {
+		String q = "SELECT ?r ?now ?y ?tz ?abs ?ceil ?floor ?round ?md5\n" +
+				"WHERE {\n" +
+				"  VALUES (?x) { (\"abc\") }\n" +
+				"  BIND(RAND() AS ?r)\n" +
+				"  BIND(NOW() AS ?now)\n" +
+				"  BIND(YEAR(?now) AS ?y)\n" +
+				"  BIND(TZ(?now) AS ?tz)\n" +
+				"  BIND(ABS(-2.5) AS ?abs)\n" +
+				"  BIND(CEIL(2.1) AS ?ceil)\n" +
+				"  BIND(FLOOR(2.9) AS ?floor)\n" +
+				"  BIND(ROUND(2.5) AS ?round)\n" +
+				"  BIND(MD5(?x) AS ?md5)\n" +
+				"}";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void uuid_and_struuid_fixed_point() {
+		String q = "SELECT (UUID() AS ?u) (STRUUID() AS ?su)\n" +
+				"WHERE {\n" +
+				"}";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void not_in_and_bound() {
+		String q = "SELECT ?s WHERE {\n" +
+				"  VALUES ?s { ex:alice ex:bob ex:carol }\n" +
+				"  OPTIONAL { ?s foaf:nick ?nick }\n" +
+				"  FILTER(BOUND(?nick) || (?s NOT IN (ex:bob)))\n" +
+				"}";
+		assertFixedPoint(q, cfg());
+	}
+
+	// --- VALUES short form and empty edge case ---
+
+	@Test
+	void values_single_var_short_form() {
+		String q = "SELECT ?s\n" +
+				"WHERE {\n" +
+				"  VALUES (?s) {\n" +
+				"    (ex:alice)\n" +
+				"    (ex:bob)\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void values_empty_block_fixed_point() {
+		String q = "SELECT * WHERE { VALUES ?s { } }";
+		assertFixedPoint(q, cfg());
+	}
+
+	// --- Syntactic sugar: blank node property list and collections ---
+
+	@Test
+	void blank_node_property_list_fixed_point() {
+		String q = "SELECT ?n WHERE { [] foaf:name ?n . }";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void collections_fixed_point() {
+		String q = "SELECT ?el WHERE { (1 2 3) rdf:rest*/rdf:first ?el }";
+		assertFixedPoint(q, cfg());
+	}
 }
