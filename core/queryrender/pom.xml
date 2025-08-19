@@ -27,13 +27,12 @@
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-queryparser-sparql</artifactId>
+			<artifactId>rdf4j-queryalgebra-evaluation</artifactId>
 			<version>${project.version}</version>
-			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-queryalgebra-evaluation</artifactId>
+			<artifactId>rdf4j-queryparser-sparql</artifactId>
 			<version>${project.version}</version>
 			<scope>test</scope>
 		</dependency>
