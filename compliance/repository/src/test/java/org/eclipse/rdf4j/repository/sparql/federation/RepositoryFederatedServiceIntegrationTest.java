@@ -340,6 +340,16 @@ public class RepositoryFederatedServiceIntegrationTest {
 		}
 	}
 
+	@Test
+	public void test_ValuesClause() {
+
+		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
+
+		String query = "SELECT ?var WHERE { SERVICE <urn:dummy> { VALUES ?var { 'val1' 'val2' } ?s ?p ?var  } }";
+
+		assertResultEquals(evaluateQuery(query), "var", Lists.newArrayList(l("val1")));
+	}
+
 	private void addData(Repository repo, Collection<? extends Statement> m) {
 		try (RepositoryConnection conn = repo.getConnection()) {
 			conn.add(m);
