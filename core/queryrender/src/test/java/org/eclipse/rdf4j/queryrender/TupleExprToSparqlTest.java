@@ -838,4 +838,16 @@ public class TupleExprToSparqlTest {
 				"LIMIT 100";
 		assertFixedPoint(q, cfg());
 	}
+
+	@Test
+	void groupByAlias() {
+		String q = "SELECT ?predicate\n" +
+				"WHERE {\n" +
+				" ?a ?b ?c .\n" +
+				"}\n" +
+				"GROUP BY (?b AS ?predicate)\n" +
+				"ORDER BY ?predicate\n" +
+				"LIMIT 100";
+		assertFixedPoint(q, cfg());
+	}
 }
