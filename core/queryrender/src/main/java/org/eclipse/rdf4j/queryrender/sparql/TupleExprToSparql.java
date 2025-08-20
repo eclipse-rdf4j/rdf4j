@@ -11,24 +11,6 @@
 
 package org.eclipse.rdf4j.queryrender.sparql;
 
-import java.math.BigDecimal;
-import java.math.BigInteger;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Deque;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -40,6 +22,7 @@ import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Avg;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Coalesce;
@@ -95,6 +78,24 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * TupleExprToSparql: render RDF4J algebra back into SPARQL text.
@@ -213,7 +214,7 @@ public class TupleExprToSparql {
 		m.put(FN_NS + "timezone-from-dateTime", "TIMEZONE");
 
 		// --- Bare SPARQL built-ins RDF4J may surface as "URIs" ---
-		for (String k : new String[] {
+		for (String k : new String[]{
 				"RAND", "NOW",
 				"ABS", "CEIL", "FLOOR", "ROUND",
 				"YEAR", "MONTH", "DAY", "HOURS", "MINUTES", "SECONDS", "TZ", "TIMEZONE",
@@ -270,7 +271,7 @@ public class TupleExprToSparql {
 
 	/** DESCRIBE query (top-level). If describeAll==true, ignore describeTerms and render DESCRIBE *. */
 	public String renderDescribe(final TupleExpr tupleExpr, final List<ValueExpr> describeTerms,
-			final boolean describeAll, final DatasetView dataset) {
+								 final boolean describeAll, final DatasetView dataset) {
 		final StringBuilder out = new StringBuilder(256);
 		final Normalized n = normalize(tupleExpr);
 		printPrologueAndDataset(out, dataset);
@@ -317,7 +318,7 @@ public class TupleExprToSparql {
 
 	/** CONSTRUCT query (top-level). Template is a list of triple patterns (context respected when present). */
 	public String renderConstruct(final TupleExpr whereTree, final List<StatementPattern> template,
-			final DatasetView dataset) {
+								  final DatasetView dataset) {
 		final StringBuilder out = new StringBuilder(256);
 		final Normalized n = normalize(whereTree);
 		printPrologueAndDataset(out, dataset);
@@ -388,8 +389,8 @@ public class TupleExprToSparql {
 	}
 
 	private String renderSelectInternal(final TupleExpr tupleExpr,
-			final RenderMode mode,
-			final DatasetView dataset) {
+										final RenderMode mode,
+										final DatasetView dataset) {
 		final StringBuilder out = new StringBuilder(256);
 		final Normalized n = normalize(tupleExpr);
 
@@ -1133,7 +1134,7 @@ public class TupleExprToSparql {
 		private int level = 0;
 
 		BlockPrinter(final StringBuilder out, final TupleExprToSparql renderer, final Config cfg,
-				final Normalized norm) {
+					 final Normalized norm) {
 			this.out = out;
 			this.r = renderer;
 			this.cfg = cfg;
@@ -1547,23 +1548,23 @@ public class TupleExprToSparql {
 		for (int i = 0; i < s.length(); i++) {
 			final char c = s.charAt(i);
 			switch (c) {
-			case '\\':
-				b.append("\\\\");
-				break;
-			case '\"':
-				b.append("\\\"");
-				break;
-			case '\n':
-				b.append("\\n");
-				break;
-			case '\r':
-				b.append("\\r");
-				break;
-			case '\t':
-				b.append("\\t");
-				break;
-			default:
-				b.append(c);
+				case '\\':
+					b.append("\\\\");
+					break;
+				case '\"':
+					b.append("\\\"");
+					break;
+				case '\n':
+					b.append("\\n");
+					break;
+				case '\r':
+					b.append("\\r");
+					break;
+				case '\t':
+					b.append("\\t");
+					break;
+				default:
+					b.append(c);
 			}
 		}
 		return b.toString();
@@ -1721,6 +1722,16 @@ public class TupleExprToSparql {
 			return "<" + uri + ">(" + args + ")";
 		}
 
+		// BNODE() / BNODE(<expr>)
+		if (e instanceof BNodeGenerator) {
+			final BNodeGenerator bg = (BNodeGenerator) e;
+			final ValueExpr id = bg.getNodeIdExpr(); // may be null for BNODE()
+			if (id == null) {
+				return "BNODE()";
+			}
+			return "BNODE(" + renderExpr(id) + ")";
+		}
+
 		handleUnsupported("unsupported expr: " + e.getClass().getSimpleName());
 		return ""; // unreachable in strict mode
 	}
@@ -1773,20 +1784,20 @@ public class TupleExprToSparql {
 
 	private static String op(final CompareOp op) {
 		switch (op) {
-		case EQ:
-			return "=";
-		case NE:
-			return "!=";
-		case LT:
-			return "<";
-		case LE:
-			return "<=";
-		case GT:
-			return ">";
-		case GE:
-			return ">=";
-		default:
-			return "/*?*/";
+			case EQ:
+				return "=";
+			case NE:
+				return "!=";
+			case LT:
+				return "<";
+			case LE:
+				return "<=";
+			case GT:
+				return ">";
+			case GE:
+				return ">=";
+			default:
+				return "/*?*/";
 		}
 	}
 
