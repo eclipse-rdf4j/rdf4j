@@ -73,6 +73,12 @@ public class FilterByPredicate implements PlanNode {
 			}
 
 			void calculateNext() {
+
+				if (Thread.currentThread().isInterrupted()) {
+					close();
+					return;
+				}
+
 				if (filterOnPredicates == null) {
 					if (!parentIterator.hasNext()) {
 						return;
@@ -92,6 +98,11 @@ public class FilterByPredicate implements PlanNode {
 				}
 
 				while (next == null && parentIterator.hasNext()) {
+					if (Thread.currentThread().isInterrupted()) {
+						close();
+						return;
+					}
+
 					ValidationTuple temp = parentIterator.next();
 
 					Value subject = temp.getActiveTarget();

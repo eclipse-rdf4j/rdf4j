@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShape;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.InterruptedSailException;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.eclipse.rdf4j.sail.shacl.results.lazy.LazyValidationReport;
 import org.eclipse.rdf4j.sail.shacl.results.lazy.ValidationResultIterator;
@@ -121,6 +122,10 @@ public class ShaclValidator {
 				.filter(ShapeValidationContainer::hasPlanNode)
 				.map(ShapeValidationContainer::performValidation)
 				.collect(Collectors.toList());
+
+		if (Thread.currentThread().isInterrupted()) {
+			throw new InterruptedSailException("Thread was interrupted during validation.");
+		}
 
 		return new LazyValidationReport(collect, 10000);
 
