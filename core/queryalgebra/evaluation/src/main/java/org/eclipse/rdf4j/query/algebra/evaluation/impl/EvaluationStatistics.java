@@ -134,8 +134,8 @@ public class EvaluationStatistics {
 		@Override
 		public void meet(ArbitraryLengthPath node) {
 			long suffix = uniqueIdSuffix.getAndIncrement();
-			final Var pathVar = new Var(
-					"_anon_" + uniqueIdPrefix + suffix + RANDOMIZE_LENGTH[(int) (suffix % RANDOMIZE_LENGTH.length)],
+			final Var pathVar = Var.of(
+					"_anon_path_" + uniqueIdPrefix + suffix + RANDOMIZE_LENGTH[(int) (suffix % RANDOMIZE_LENGTH.length)],
 					true);
 			// cardinality of ALP is determined based on the cost of a
 			// single ?s ?p ?o ?c pattern where ?p is unbound, compensating for the fact that

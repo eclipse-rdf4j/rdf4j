@@ -115,7 +115,7 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 							funcCall.addResultVar(sp.getObjectVar());
 							if (spec.getDistanceVar() != null) {
 								funcCall.addArg(new ValueConstant(LuceneSailSchema.DISTANCE));
-								funcCall.addResultVar(new Var(spec.getDistanceVar()));
+								funcCall.addResultVar(Var.of(spec.getDistanceVar()));
 							}
 							if (spec.getContextVar() != null) {
 								Resource context = (Resource) spec.getContextVar().getValue();
