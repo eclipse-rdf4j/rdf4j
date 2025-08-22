@@ -24,7 +24,7 @@ public final class VarRenamer {
 				if (!var.hasValue()) {
 					String nn = mapping.get(var.getName());
 					if (nn != null && !nn.equals(var.getName())) {
-						var.replaceWith(new Var(nn, var.getValue(), var.isAnonymous(), var.isConstant()));
+						var.replaceWith(Var.of(nn, var.getValue(), var.isAnonymous(), var.isConstant()));
 					}
 				}
 			}

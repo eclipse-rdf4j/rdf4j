@@ -305,31 +305,7 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 
 	@Override
 	public Var clone() {
-		Var var = Holder.PROVIDER.cloneVar(this);
-		var.setVariableScopeChange(this.isVariableScopeChange());
-		return var;
-	}
-
-	/**
-	 * Extension hook for subclasses to participate in {@link #equals(Object)} while preserving symmetry with other
-	 * {@link Var} instances.
-	 */
-	protected boolean spiEquals(Var other) {
-		return anonymous == other.anonymous
-				&& !(name == null && other.name != null || value == null && other.value != null)
-				&& Objects.equals(name, other.name) && Objects.equals(value, other.value);
-	}
-
-	/**
-	 * Extension hook for subclasses to contribute additional state to {@link #hashCode()} while reusing the cached hash
-	 * storage in {@link Var}.
-	 */
-	protected int spiHashCode() {
-		int result = 1;
-		result = 31 * result + (name == null ? 0 : name.hashCode());
-		result = 31 * result + (value == null ? 0 : value.hashCode());
-		result = 31 * result + Boolean.hashCode(anonymous);
-		return result;
+		return Var.of(name, value, anonymous, constant);
 	}
 
 	/**
