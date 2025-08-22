@@ -50,11 +50,10 @@ public class EvaluationStatistics {
 	// Pre-built strings for lengths 0 through 9
 	private static final String[] RANDOMIZE_LENGTH = new String[10];
 	static {
-		Random r = new Random();
 		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i <= 9; i++) {
 			RANDOMIZE_LENGTH[i] = sb.toString();
-			sb.append(r.nextInt(9));
+			sb.append(i);
 		}
 	}
 
@@ -135,7 +134,8 @@ public class EvaluationStatistics {
 		public void meet(ArbitraryLengthPath node) {
 			long suffix = uniqueIdSuffix.getAndIncrement();
 			final Var pathVar = Var.of(
-					"_anon_path_" + uniqueIdPrefix + suffix + RANDOMIZE_LENGTH[(int) (suffix % RANDOMIZE_LENGTH.length)],
+					"_anon_path_" + uniqueIdPrefix + suffix
+							+ RANDOMIZE_LENGTH[(int) (suffix % RANDOMIZE_LENGTH.length)],
 					true);
 			// cardinality of ALP is determined based on the cost of a
 			// single ?s ?p ?o ?c pattern where ?p is unbound, compensating for the fact that

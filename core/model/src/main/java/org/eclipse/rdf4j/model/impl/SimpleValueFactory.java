@@ -52,12 +52,12 @@ public class SimpleValueFactory extends AbstractValueFactory {
 
 	// Pre-built strings for lengths 0 through 9
 	private static final String[] RANDOMIZE_LENGTH = new String[10];
+
 	static {
-		Random r = new Random();
 		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i <= 9; i++) {
 			RANDOMIZE_LENGTH[i] = sb.toString();
-			sb.append(r.nextInt(9));
+			sb.append(i);
 		}
 	}
 
@@ -143,7 +143,11 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	@Override
 	public BNode createBNode() {
 		long l = uniqueIdSuffix.incrementAndGet();
-		return createBNode(uniqueIdPrefix + l + RANDOMIZE_LENGTH[(int) (l % 9)]);
+		// reverse the string representation of the long to ensure that the BNode IDs are not monotonically increasing
+		StringBuilder sb = new StringBuilder(Long.toString(l));
+		sb.reverse();
+		sb.append(uniqueIdPrefix).append(RANDOMIZE_LENGTH[(int) (l % 9)]);
+		return createBNode(sb.toString());
 	}
 
 	/**
