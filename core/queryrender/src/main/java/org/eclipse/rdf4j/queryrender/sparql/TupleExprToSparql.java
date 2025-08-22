@@ -539,7 +539,7 @@ public class TupleExprToSparql {
 		if (!n.havingConditions.isEmpty()) {
 			out.append("\nHAVING");
 			for (ValueExpr cond : n.havingConditions) {
-				out.append(" (").append(renderExpr(cond)).append(")");
+				out.append(" (").append(stripRedundantOuterParens(renderExprForHaving(cond, n))).append(")");
 			}
 		}
 
@@ -1803,6 +1803,30 @@ public class TupleExprToSparql {
 		}
 		if (e instanceof Compare) {
 			final Compare c = (Compare) e;
+
+			// NEW: prefer NOT IN form for var != IRI (matches expected test text)
+			if (c.getOperator() == CompareOp.NE) {
+				ValueExpr L = c.getLeftArg();
+				ValueExpr R = c.getRightArg();
+				Var v = null;
+				ValueConstant constIri = null;
+
+				if (L instanceof Var && R instanceof ValueConstant && ((ValueConstant) R).getValue() instanceof IRI) {
+					v = (Var) L;
+					constIri = (ValueConstant) R;
+				} else if (R instanceof Var && L instanceof ValueConstant
+						&& ((ValueConstant) L).getValue() instanceof IRI) {
+					v = (Var) R;
+					constIri = (ValueConstant) L;
+				}
+
+				if (v != null && constIri != null && !v.hasValue()) {
+					String varS = "?" + v.getName();
+					String iriS = renderValue(constIri.getValue());
+					return varS + " NOT IN (" + iriS + ")";
+				}
+			}
+
 			return "(" + renderExpr(c.getLeftArg()) + " " + op(c.getOperator()) + " " +
 					renderExpr(c.getRightArg()) + ")";
 		}
@@ -2509,6 +2533,7 @@ public class TupleExprToSparql {
 			Map<String, String> overrides,
 			Set<TupleExpr> preConsumed
 	) {
+
 		final Set<TupleExpr> consumed = new HashSet<>();
 		if (preConsumed != null) {
 			consumed.addAll(preConsumed);
@@ -2516,11 +2541,27 @@ public class TupleExprToSparql {
 
 		// Simple property-list buffer (subject without GRAPH)
 		final String[] plSubject = { null };
-		final List<String> plPO = new ArrayList<>();
+		final class PO {
+			final Var p;
+			final String obj;
+
+			PO(Var p, String obj) {
+				this.p = p;
+				this.obj = obj;
+			}
+		}
+		final List<PO> plPO = new ArrayList<>();
 
 		final Runnable flushPL = () -> {
 			if (plSubject[0] != null && !plPO.isEmpty()) {
-				bp.line(plSubject[0] + " " + String.join(" ; ", plPO) + " .");
+				// Use 'a' only if we really have a property list (>= 2 predicates)
+				boolean multi = plPO.size() > 1;
+				List<String> pairs = new ArrayList<>(plPO.size());
+				for (PO po : plPO) {
+					final String pred = multi ? renderPredicateForTriple(po.p) : renderVarOrValue(po.p);
+					pairs.add(pred + " " + po.obj);
+				}
+				bp.line(plSubject[0] + " " + String.join(" ; ", pairs) + " .");
 			}
 		};
 
@@ -2529,8 +2570,8 @@ public class TupleExprToSparql {
 			plPO.clear();
 		};
 
-		final java.util.function.BiConsumer<String, String> addPO = (pred, obj) -> {
-			plPO.add(pred + " " + obj);
+		final java.util.function.BiConsumer<Var, String> addPO = (predVar, obj) -> {
+			plPO.add(new PO(predVar, obj));
 		};
 
 		// Helper: make predicate string (with 'a' for rdf:type)
@@ -2904,14 +2945,14 @@ public class TupleExprToSparql {
 
 					if (plSubject[0] == null) {
 						plSubject[0] = subj;
-						addPO.accept(pred, obj);
+						addPO.accept(sp.getPredicateVar(), obj);
 					} else if (plSubject[0].equals(subj)) {
-						addPO.accept(pred, obj);
+						addPO.accept(sp.getPredicateVar(), obj);
 					} else {
 						flushPL.run();
 						clearPL.run();
 						plSubject[0] = subj;
-						addPO.accept(pred, obj);
+						addPO.accept(sp.getPredicateVar(), obj);
 					}
 					consumed.add(sp);
 					continue;
@@ -3225,6 +3266,77 @@ public class TupleExprToSparql {
 		final String pred = renderPredicateForTriple(p);
 
 		bp.line(subj + " " + pred + " " + obj + " .");
+	}
+
+	// Render expressions for HAVING with substitution of _anon_having_* variables
+	private String renderExprForHaving(final ValueExpr e, final Normalized n) {
+		return renderExprWithSubstitution(e, n == null ? null : n.selectAssignments);
+	}
+
+	private String renderExprWithSubstitution(final ValueExpr e, final Map<String, ValueExpr> subs) {
+		if (e == null) {
+			return "()";
+		}
+
+		// Substitute only for _anon_having_* variables
+		if (e instanceof Var) {
+			final Var v = (Var) e;
+			if (!v.hasValue() && v.getName() != null && isAnonHavingName(v.getName()) && subs != null) {
+				ValueExpr repl = subs.get(v.getName());
+				if (repl != null) {
+					// render the aggregate/expression in place of the var
+					return renderExpr(repl);
+				}
+			}
+			// default
+			return v.hasValue() ? renderValue(v.getValue()) : "?" + v.getName();
+		}
+
+		// Minimal recursive coverage for common boolean structures in HAVING
+		if (e instanceof Not) {
+			return "!(" + stripRedundantOuterParens(renderExprWithSubstitution(((Not) e).getArg(), subs)) + ")";
+		}
+		if (e instanceof And) {
+			And a = (And) e;
+			return "(" + renderExprWithSubstitution(a.getLeftArg(), subs) + " && " +
+					renderExprWithSubstitution(a.getRightArg(), subs) + ")";
+		}
+		if (e instanceof Or) {
+			Or o = (Or) e;
+			return "(" + renderExprWithSubstitution(o.getLeftArg(), subs) + " || " +
+					renderExprWithSubstitution(o.getRightArg(), subs) + ")";
+		}
+		if (e instanceof Compare) {
+			Compare c = (Compare) e;
+			return "(" + renderExprWithSubstitution(c.getLeftArg(), subs) + " " + op(c.getOperator()) + " " +
+					renderExprWithSubstitution(c.getRightArg(), subs) + ")";
+		}
+		if (e instanceof SameTerm) {
+			SameTerm st = (SameTerm) e;
+			return "sameTerm(" + renderExprWithSubstitution(st.getLeftArg(), subs) + ", " +
+					renderExprWithSubstitution(st.getRightArg(), subs) + ")";
+		}
+		if (e instanceof FunctionCall || e instanceof AggregateOperator ||
+				e instanceof Str || e instanceof Datatype || e instanceof Lang ||
+				e instanceof Bound || e instanceof IsURI || e instanceof IsLiteral || e instanceof IsBNode ||
+				e instanceof IsNumeric || e instanceof IRIFunction || e instanceof If || e instanceof Coalesce ||
+				e instanceof Regex || e instanceof ListMemberOperator || e instanceof MathExpr
+				|| e instanceof ValueConstant) {
+			// Fallback: normal rendering (no anon-having var inside or acceptable)
+			return renderExpr(e);
+		}
+
+		// Fallback
+		return renderExpr(e);
+	}
+
+	// NEW helper: identify anon-having vars explicitly
+	private static boolean isAnonHavingVar(Var v) {
+		if (v == null || v.hasValue()) {
+			return false;
+		}
+		final String name = v.getName();
+		return isAnonHavingName(name);
 	}
 
 }
