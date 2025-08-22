@@ -170,7 +170,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 			// Replace SameTerm-filter with an Extension, the old variable name
 			// might still be relevant to nodes higher in the tree
 			Extension extension = new Extension(filter.getArg());
-			extension.addElement(new ExtensionElem(new Var(newVar.getName()), oldVar.getName()));
+			extension.addElement(new ExtensionElem(Var.of(newVar.getName()), oldVar.getName()));
 			filter.replaceWith(extension);
 		}
 
@@ -292,7 +292,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Var var) {
 			if (var.getName().equals(varName)) {
-				var.replaceWith(new Var(varName, value, var.isAnonymous(), var.isConstant()));
+				var.replaceWith(Var.of(varName, value, var.isAnonymous(), var.isConstant()));
 			}
 		}
 	}

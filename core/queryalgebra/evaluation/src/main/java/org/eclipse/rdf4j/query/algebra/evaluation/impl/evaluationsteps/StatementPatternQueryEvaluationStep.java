@@ -174,30 +174,30 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		Value value = var.getValue();
 		if (value.isIRI()) {
-			return new Var(var.getName(), valueFactory.createIRI(value.stringValue()));
+			return Var.of(var.getName(), valueFactory.createIRI(value.stringValue()));
 		} else if (value.isBNode()) {
-			return new Var(var.getName(), valueFactory.createBNode(value.stringValue()));
+			return Var.of(var.getName(), valueFactory.createBNode(value.stringValue()));
 		} else if (value.isLiteral()) {
 			// preserve label + (language | datatype)
 			Literal lit = (Literal) value;
 
 			// If the literal has a language tag, recreate it with the same language
 			if (lit.getLanguage().isPresent()) {
-				return new Var(var.getName(), valueFactory.createLiteral(lit.getLabel(), lit.getLanguage().get()));
+				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel(), lit.getLanguage().get()));
 			}
 
 			CoreDatatype coreDatatype = lit.getCoreDatatype();
 			if (coreDatatype != CoreDatatype.NONE) {
 				// If the literal has a core datatype, recreate it with the same core datatype
-				return new Var(var.getName(), valueFactory.createLiteral(lit.getLabel(), coreDatatype));
+				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel(), coreDatatype));
 			}
 
 			// Otherwise, preserve the datatype (falls back to xsd:string if none)
 			IRI dt = lit.getDatatype();
 			if (dt != null) {
-				return new Var(var.getName(), valueFactory.createLiteral(lit.getLabel(), dt));
+				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel(), dt));
 			} else {
-				return new Var(var.getName(), valueFactory.createLiteral(lit.getLabel()));
+				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel()));
 			}
 		}
 
