@@ -1060,16 +1060,28 @@ public class TupleExprToSparqlTest {
 	void mega_service_graph_interleaved_with_subselects() {
 		String q = "SELECT ?s ?g (SUM(?c) AS ?total)\n" +
 				"WHERE {\n" +
-				"  VALUES ?svc { <http://example.org/sparql> }\n" +
-				"  GRAPH ?g {\n" +
-				"    SERVICE ?svc {\n" +
+				"  VALUES (?svc) {\n" +
+				"    (<http://example.org/sparql>)\n" +
+				"  }\n" +
+				"  SERVICE ?svc {\n" +
+				"    {\n" +
 				"      SELECT ?s (COUNT(?p) AS ?c)\n" +
-				"      WHERE { ?s ?p ?o . FILTER(?p != rdf:type) }\n" +
+				"      WHERE {\n" +
+				"        GRAPH ?g {\n" +
+				"          ?s ?p ?o .\n" +
+				"        }\n" +
+				"        FILTER (?p != rdf:type)\n" +
+				"      }\n" +
 				"      GROUP BY ?s\n" +
 				"    }\n" +
 				"  }\n" +
-				"  OPTIONAL { ?s foaf:name ?n FILTER(LANGMATCHES(LANG(?n), \"en\")) }\n" +
-				"  MINUS { ?s rdf:type ex:Robot }\n" +
+				"  OPTIONAL {\n" +
+				"    ?s foaf:name ?n .\n" +
+				"    FILTER (LANGMATCHES(LANG(?n), \"en\"))\n" +
+				"  }\n" +
+				"  MINUS {\n" +
+				"    ?s a ex:Robot .\n" +
+				"  }\n" +
 				"}\n" +
 				"GROUP BY ?s ?g\n" +
 				"HAVING (SUM(?c) >= 0)\n" +
