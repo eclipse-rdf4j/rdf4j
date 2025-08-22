@@ -60,7 +60,7 @@ public class BlankNodeVarProcessor extends AbstractASTVisitor {
 		private final Set<String> usedBNodeIDs = new HashSet<>();
 
 		private String createAnonVarName() {
-			return "_anon_" + anonVarNo++;
+			return "_anon_bnode_" + anonVarNo++;
 		}
 
 		public Set<String> getUsedBNodeIDs() {
