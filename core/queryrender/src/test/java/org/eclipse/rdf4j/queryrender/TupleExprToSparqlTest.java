@@ -739,7 +739,7 @@ public class TupleExprToSparqlTest {
 				"    (\"B\")\n" +
 				"  }\n" +
 				"  {\n" +
-				"    ?s rdf:type foaf:Person .\n" +
+				"    ?s a foaf:Person .\n" +
 				"    OPTIONAL {\n" +
 				"      ?s rdfs:label ?label .\n" +
 				"      FILTER (LANGMATCHES(LANG(?label), \"en\"))\n" +
@@ -753,7 +753,10 @@ public class TupleExprToSparqlTest {
 				"  }\n" +
 				"  {\n" +
 				"    SELECT ?s (COUNT(?o) AS ?innerC)\n" +
-				"    WHERE { ?s ?p ?o . FILTER(?p NOT IN (rdf:type)) }\n" +
+				"    WHERE {\n" +
+				"      ?s ?p ?o .\n" +
+				"      FILTER (?p NOT IN (rdf:type))\n" +
+				"    }\n" +
 				"    GROUP BY ?s\n" +
 				"    HAVING (COUNT(?o) >= 0)\n" +
 				"  }\n" +
@@ -770,7 +773,13 @@ public class TupleExprToSparqlTest {
 		String q = "SELECT ?u ?g (COUNT(DISTINCT ?p) AS ?pc)\n" +
 				"WHERE {\n" +
 				"  SERVICE <http://example.org/sparql> {\n" +
-				"    SELECT ?u ?p WHERE { ?u ?p ?o . FILTER(?p NOT IN (rdf:type)) }\n" +
+				"    {\n" +
+				"      SELECT ?u ?p\n" +
+				"      WHERE {\n" +
+				"        ?u ?p ?o .\n" +
+				"        FILTER (?p NOT IN (rdf:type))\n" +
+				"      }\n" +
+				"    }\n" +
 				"  }\n" +
 				"  GRAPH ?g { ?u !(foaf:knows|ex:age) ?any }\n" +
 				"  FILTER EXISTS { GRAPH ?g { ?u foaf:name ?n } }\n" +
@@ -792,10 +801,9 @@ public class TupleExprToSparqlTest {
 				"  GRAPH ?g {\n" +
 				"    ?s foaf:name ?n .\n" +
 				"  }\n" +
-				"  FILTER EXISTS {\n" +
-				"    SELECT ?s WHERE { ?s foaf:knows ?t } GROUP BY ?s HAVING (COUNT(?t) > 1)\n" +
-				"  }\n" +
-				"  FILTER NOT EXISTS { ?s ex:blockedBy ?b }\n" +
+				"  FILTER (EXISTS { { SELECT ?s WHERE { ?s foaf:knows ?t . } GROUP BY ?s HAVING (COUNT(?t) > 1) } })\n"
+				+
+				"  FILTER (NOT EXISTS { ?s ex:blockedBy ?b . })\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
 	}
@@ -1070,7 +1078,7 @@ public class TupleExprToSparqlTest {
 				"        GRAPH ?g {\n" +
 				"          ?s ?p ?o .\n" +
 				"        }\n" +
-				"        FILTER (?p != rdf:type)\n" +
+				"        FILTER (?p NOT IN (rdf:type))\n" +
 				"      }\n" +
 				"      GROUP BY ?s\n" +
 				"    }\n" +
@@ -1145,16 +1153,25 @@ public class TupleExprToSparqlTest {
 
 	@Test
 	void mega_scoped_variables_and_aliasing_across_subqueries() {
-		String q = "SELECT ?s ?bestName ?deg WHERE {\n" +
+		String q = "SELECT ?s ?bestName ?deg\n" +
+				"WHERE {\n" +
 				"  {\n" +
 				"    SELECT ?s (MIN(?n) AS ?bestName)\n" +
-				"    WHERE { ?s foaf:name ?n }\n" +
+				"    WHERE {\n" +
+				"      ?s foaf:name ?n .\n" +
+				"    }\n" +
 				"    GROUP BY ?s\n" +
 				"  }\n" +
 				"  OPTIONAL {\n" +
-				"    SELECT ?s (COUNT(?o) AS ?deg) WHERE { ?s foaf:knows ?o } GROUP BY ?s\n" +
+				"    {\n" +
+				"      SELECT ?s (COUNT(?o) AS ?deg)\n" +
+				"      WHERE {\n" +
+				"        ?s foaf:knows ?o .\n" +
+				"      }\n" +
+				"      GROUP BY ?s\n" +
+				"    }\n" +
 				"  }\n" +
-				"  FILTER(BOUND(?bestName))\n" +
+				"  FILTER (BOUND(?bestName))\n" +
 				"}\n" +
 				"ORDER BY ?bestName ?s";
 		assertSameSparqlQuery(q, cfg());
