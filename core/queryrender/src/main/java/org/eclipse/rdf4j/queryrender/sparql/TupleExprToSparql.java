@@ -2155,20 +2155,255 @@ public class TupleExprToSparql {
 	// (1) Fuse rdf:rest{m,n}*/rdf:first into one path step (with collection overrides),
 	// (2) Rebuild linear chains whose internal nodes are named _anon_path_…,
 	// (3) (Fallback) Negated-set sandwich guarded by _anon_path_ predicate var.
-	private boolean tryRenderBestEffortPathChain(
-			final List<TupleExpr> nodes,
-			final BlockPrinter bp,
-			final Map<String, String> overrides,
-			final Set<TupleExpr> preConsumed
-	) {
-		final Set<TupleExpr> already = (preConsumed == null) ? Collections.emptySet() : preConsumed;
 
-		// ---- (1) Fuse rdf:rest{m,n}*/rdf:first ----
+// Best-effort reconstruction of path-shaped join fragments.
+// Supported fusions (only when safe, and guided by "_anon_path_" hints):
+//   A) SP + ALP:   ?s  p1  ?mid .   ?mid  inner{m,n}  ?o     →   ?s  (p1 / inner{m,n})  ?o .
+//   B) ALP + SP:   ?s  inner{m,n}  ?mid .   ?mid  p1  ?o     →   ?s  (inner{m,n} / p1)  ?o .
+// Also keeps:
+//   C) Negated-set chain:  ^P1 / !(a|b|...) / P3
+//   D) RDF Collection fuse: ( … ) rdf:rest*/rdf:first ?el
+
+	private boolean tryRenderBestEffortPathChain(
+			List<TupleExpr> nodes,
+			BlockPrinter bp,
+			Map<String, String> overrides,
+			Set<TupleExpr> preConsumed
+	) {
+		// Guard helper
+		final java.util.function.Predicate<TupleExpr> skip = n -> preConsumed != null && preConsumed.contains(n);
+
+		// ------------------------------------------------------------
+		// (A) Fuse "SP + ALP" into a sequence p1 / inner{m,n}
+		// ------------------------------------------------------------
+		final List<StatementPattern> spList = new ArrayList<>();
+		final List<ArbitraryLengthPath> alpList = new ArrayList<>();
+
+		for (TupleExpr n : nodes) {
+			if (skip.test(n)) {
+				continue;
+			}
+			if (n instanceof StatementPattern) {
+				// Only constant-IRI predicates are eligible for a path atom
+				final StatementPattern sp = (StatementPattern) n;
+				final Var pv = sp.getPredicateVar();
+				if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
+					spList.add(sp);
+				}
+			} else if (n instanceof ArbitraryLengthPath) {
+				alpList.add((ArbitraryLengthPath) n);
+			}
+		}
+
+		// Try SP + ALP (sp endpoint matches alp subject)
+		for (StatementPattern sp : spList) {
+			final Var pVar = sp.getPredicateVar();
+			final IRI pIri = (IRI) pVar.getValue();
+
+			final Var spS = sp.getSubjectVar();
+			final Var spO = sp.getObjectVar();
+			final Var ctxSp = getContextVarSafe(sp);
+
+			for (ArbitraryLengthPath alp : alpList) {
+				if (!contextsCompatible(ctxSp, getContextVarSafe(alp))) {
+					continue;
+				}
+
+				final Var aS = alp.getSubjectVar();
+				final Var aO = alp.getObjectVar();
+
+				// mid var = the side of SP that equals ALP's subject
+				final boolean forward = sameVar(spO, aS);
+				final boolean inverse = !forward && sameVar(spS, aS);
+				if (!forward && !inverse) {
+					continue;
+				}
+				final Var mid = forward ? spO : spS;
+
+				// Be conservative: only rewrite when the bridge var is a parser-marked path helper
+				if (!isAnonPathVar(mid)) {
+					continue;
+				}
+
+				// Parse inner atom/alt relative to ALP(s,o)
+				final PathNode inner = parseAPathInner(alp.getPathExpression(), aS, aO);
+				if (inner == null) {
+					continue;
+				}
+
+				// Safety: mid must not be used elsewhere outside the to-be-consumed pair
+				final String midName = freeVarName(mid);
+				if (midName != null) {
+					final Set<TupleExpr> consumed = new HashSet<>();
+					consumed.add(sp);
+					consumed.add(alp);
+					if (preConsumed != null) {
+						consumed.addAll(preConsumed);
+					}
+
+					final Set<String> externalUse = new HashSet<>();
+					for (TupleExpr n : nodes) {
+						if (!consumed.contains(n)) {
+							collectFreeVars(n, externalUse);
+						}
+					}
+					if (externalUse.contains(midName)) {
+						continue; // leaks → do not rewrite
+					}
+				}
+
+				// Compose path: step1 (possibly inverse) then quantified inner
+				final PathNode step1 = new PathAtom(pIri, inverse);
+				final long min = alp.getMinLength();
+				final long max = getMaxLengthSafe(alp);
+				final PathNode q = new PathQuant(inner, min, max);
+				final PathNode seq = new PathSeq(java.util.Arrays.asList(step1, q));
+
+				// Endpoints
+				final Var start = forward ? spS : spO;
+				final Var end = aO;
+
+				// Subject/object with collection override
+				final String subjStr = renderPossiblyOverridden(start, overrides);
+				final String objStr = renderPossiblyOverridden(end, overrides);
+				final String triple = subjStr + " " + seq.render() + " " + objStr + " .";
+
+				// Emit (respect GRAPH)
+				if (ctxSp != null) {
+					bp.line("GRAPH " + renderVarOrValue(ctxSp) + " { " + triple + " }");
+				} else {
+					bp.line(triple);
+				}
+
+				// Print remainder (skipping consumed pair)
+				final Set<TupleExpr> consumed = new HashSet<>();
+				consumed.add(sp);
+				consumed.add(alp);
+				if (preConsumed != null) {
+					consumed.addAll(preConsumed);
+				}
+
+				for (TupleExpr n : nodes) {
+					if (consumed.contains(n)) {
+						continue;
+					}
+					if (n instanceof StatementPattern) {
+						printStatementWithOverrides((StatementPattern) n, overrides, bp);
+					} else {
+						n.visit(bp);
+					}
+				}
+				return true;
+			}
+		}
+
+		// ------------------------------------------------------------
+		// (B) Fuse "ALP + SP" into a sequence inner{m,n} / p1 (symmetric)
+		// ------------------------------------------------------------
+		for (ArbitraryLengthPath alp : alpList) {
+			final Var aS = alp.getSubjectVar();
+			final Var aO = alp.getObjectVar();
+			final Var ctxAlp = getContextVarSafe(alp);
+
+			final PathNode inner = parseAPathInner(alp.getPathExpression(), aS, aO);
+			if (inner == null) {
+				continue;
+			}
+
+			for (StatementPattern sp : spList) {
+				if (!contextsCompatible(ctxAlp, getContextVarSafe(sp))) {
+					continue;
+				}
+
+				final Var spS = sp.getSubjectVar();
+				final Var spO = sp.getObjectVar();
+				final Var pVar = sp.getPredicateVar();
+				final IRI pIri = (IRI) pVar.getValue();
+
+				// mid var = ALP's object, must match either side of SP
+				final boolean forwardStep2 = sameVar(aO, spS); // mid --p1--> end
+				final boolean inverseStep2 = !forwardStep2 && sameVar(aO, spO); // end --p1--> mid
+				if (!forwardStep2 && !inverseStep2) {
+					continue;
+				}
+				final Var mid = aO;
+
+				if (!isAnonPathVar(mid)) {
+					continue;
+				}
+
+				// Safety: mid must not leak outside the pair
+				final String midName = freeVarName(mid);
+				if (midName != null) {
+					final Set<TupleExpr> consumed = new HashSet<>();
+					consumed.add(alp);
+					consumed.add(sp);
+					if (preConsumed != null) {
+						consumed.addAll(preConsumed);
+					}
+
+					final Set<String> externalUse = new HashSet<>();
+					for (TupleExpr n : nodes) {
+						if (!consumed.contains(n)) {
+							collectFreeVars(n, externalUse);
+						}
+					}
+					if (externalUse.contains(midName)) {
+						continue;
+					}
+				}
+
+				// Compose path: quantified inner then step2 (maybe inverse)
+				final long min = alp.getMinLength();
+				final long max = getMaxLengthSafe(alp);
+				final PathNode q = new PathQuant(inner, min, max);
+				final PathNode step2 = new PathAtom(pIri, inverseStep2);
+				final PathNode seq = new PathSeq(java.util.Arrays.asList(q, step2));
+
+				// Endpoints
+				final Var start = aS;
+				final Var end = forwardStep2 ? spO : spS;
+
+				// Emit
+				final String subjStr = renderPossiblyOverridden(start, overrides);
+				final String objStr = renderPossiblyOverridden(end, overrides);
+				final String triple = subjStr + " " + seq.render() + " " + objStr + " .";
+
+				if (ctxAlp != null) {
+					bp.line("GRAPH " + renderVarOrValue(ctxAlp) + " { " + triple + " }");
+				} else {
+					bp.line(triple);
+				}
+
+				final Set<TupleExpr> consumed = new HashSet<>();
+				consumed.add(alp);
+				consumed.add(sp);
+				if (preConsumed != null) {
+					consumed.addAll(preConsumed);
+				}
+
+				for (TupleExpr n : nodes) {
+					if (consumed.contains(n)) {
+						continue;
+					}
+					if (n instanceof StatementPattern) {
+						printStatementWithOverrides((StatementPattern) n, overrides, bp);
+					} else {
+						n.visit(bp);
+					}
+				}
+				return true;
+			}
+		}
+
+		// ------------------------------------------------------------
+		// (D) Fuse rdf:rest{m,n}*/rdf:first (no parentheses around the sequence)
+		// ------------------------------------------------------------
 		ArbitraryLengthPath restPath = null;
 		StatementPattern firstTriple = null;
 
 		for (TupleExpr n : nodes) {
-			if (already.contains(n)) {
+			if (skip.test(n)) {
 				continue;
 			}
 			if (n instanceof ArbitraryLengthPath) {
@@ -2190,7 +2425,7 @@ public class TupleExprToSparql {
 		}
 		if (restPath != null) {
 			for (TupleExpr n : nodes) {
-				if (already.contains(n)) {
+				if (skip.test(n)) {
 					continue;
 				}
 				if (!(n instanceof StatementPattern)) {
@@ -2208,7 +2443,6 @@ public class TupleExprToSparql {
 					continue;
 				}
 
-				// prefer explicit helper names on mid, but not required
 				final Var mid = sp.getSubjectVar();
 				if (mid != null && mid.getName() != null) {
 					if (!(isAnonCollectionVar(mid) || isAnonPathVar(mid))) {
@@ -2227,6 +2461,8 @@ public class TupleExprToSparql {
 			final long min = restPath.getMinLength();
 			final long max = getMaxLengthSafe(restPath);
 			final String q = quantifier(min, max);
+
+			// NOTE: no wrapping parentheses around the plain sequence:
 			final String fused = renderIRI(RDF.REST) + q + "/" + renderIRI(RDF.FIRST);
 
 			final String s = renderPossiblyOverridden(restPath.getSubjectVar(), overrides);
@@ -2259,163 +2495,147 @@ public class TupleExprToSparql {
 			return true;
 		}
 
-		// ---- (2) General linear chain with _anon_path_ internal nodes ----
-		final List<StatementPattern> chainEdges = new ArrayList<>();
-		for (TupleExpr n : nodes) {
-			if (already.contains(n)) {
-				continue;
-			}
-			if (!(n instanceof StatementPattern)) {
-				continue;
-			}
-			final StatementPattern sp = (StatementPattern) n;
+		// ------------------------------------------------------------
+		// (C) Negated-property-set triple: ^P1 / !(a|b|...) / P3
+		// (unchanged from previous version; preserves IRI order in the set)
+		// ------------------------------------------------------------
+		{
+			// ---- gather candidate edges and filters ----
+			final List<Edge> edges = new ArrayList<>();
+			final Map<String, NegatedSet> negByVar = new HashMap<>();
+			final Map<String, Filter> filterByVar = new HashMap<>();
 
-			// Constant IRI predicate only
-			final Var pv = sp.getPredicateVar();
-			if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
-				continue;
-			}
-
-			// must touch at least one _anon_path_ var
-			if (!(isAnonPathVar(sp.getSubjectVar()) || isAnonPathVar(sp.getObjectVar()))) {
-				continue;
-			}
-
-			chainEdges.add(sp);
-		}
-
-		if (!chainEdges.isEmpty()) {
-			// Build adjacency by variable name
-			final Map<String, List<StatementPattern>> incident = new HashMap<>();
-			final Map<String, Var> varByName = new HashMap<>();
-			for (StatementPattern sp : chainEdges) {
-				final Var s = sp.getSubjectVar(), o = sp.getObjectVar();
-				if (s != null && !s.hasValue() && s.getName() != null) {
-					varByName.putIfAbsent(s.getName(), s);
-					incident.computeIfAbsent(s.getName(), k -> new ArrayList<>()).add(sp);
+			for (TupleExpr n : nodes) {
+				if (skip.test(n)) {
+					continue;
 				}
-				if (o != null && !o.hasValue() && o.getName() != null) {
-					varByName.putIfAbsent(o.getName(), o);
-					incident.computeIfAbsent(o.getName(), k -> new ArrayList<>()).add(sp);
-				}
-			}
 
-			// Find endpoints: degree 1 and NOT _anon_path_
-			final List<Var> endpoints = new ArrayList<>();
-			for (Map.Entry<String, List<StatementPattern>> e : incident.entrySet()) {
-				final String name = e.getKey();
-				final int deg = e.getValue().size();
-				final Var v = varByName.get(name);
-				if (deg == 1 && !isAnonPathVar(v)) {
-					endpoints.add(v);
-				}
-			}
+				if (n instanceof StatementPattern) {
+					edges.add(new Edge((StatementPattern) n, n, false));
+				} else if (n instanceof Filter) {
+					final Filter f = (Filter) n;
 
-			if (endpoints.size() == 2) {
-				// Context compatibility
-				Var commonCtx = null;
-				boolean ctxOk = true;
-				for (StatementPattern sp : chainEdges) {
-					Var c = getContextVarSafe(sp);
-					if (c == null) {
-						continue;
+					if (f.getArg() instanceof StatementPattern) {
+						edges.add(new Edge((StatementPattern) f.getArg(), f, true));
 					}
-					if (commonCtx == null) {
-						commonCtx = c;
-					} else if (!contextsCompatible(commonCtx, c)) {
-						ctxOk = false;
-						break;
+					final NegatedSet ns = parseNegatedSet(f.getCondition());
+					if (ns != null && ns.varName != null && !ns.iris.isEmpty()) {
+						final NegatedSet fixed = new NegatedSet(ns.varName, f);
+						fixed.iris.addAll(ns.iris);
+						negByVar.put(ns.varName, fixed);
+						filterByVar.put(ns.varName, f);
 					}
 				}
-				if (ctxOk) {
-					final Var start = endpoints.get(0);
-					final Var end = endpoints.get(1);
+			}
 
-					// Each internal _anon_path_ var must have degree 2
-					boolean simple = true;
-					for (Map.Entry<String, List<StatementPattern>> e : incident.entrySet()) {
-						final Var v = varByName.get(e.getKey());
-						if (isAnonPathVar(v)) {
-							if (e.getValue().size() != 2) {
-								simple = false;
+			if (edges.size() >= 3) {
+				// middle edge (predicate is a free var with a negated set)
+				Edge mid = null;
+				for (Edge e : edges) {
+					if (e.p != null && !e.p.hasValue()) {
+						final String name = e.p.getName();
+						if (name != null && negByVar.containsKey(name)) {
+							mid = e;
+							break;
+						}
+					}
+				}
+				if (mid != null) {
+					Edge e1 = null, e3 = null;
+
+					for (Edge e : edges) {
+						if (e == mid) {
+							continue;
+						}
+						if (e.p != null && e.p.hasValue() && e.p.getValue() instanceof IRI) {
+							if (sameVar(e.s, mid.s) || sameVar(e.o, mid.s)) {
+								e1 = e;
 								break;
 							}
 						}
 					}
-
-					if (simple) {
-						// Order edges by walking from start to end
-						final List<StatementPattern> ordered = new ArrayList<>();
-						final Set<StatementPattern> used = new HashSet<>();
-						Var cur = start;
-
-						while (!sameVar(cur, end)) {
-							final List<StatementPattern> inc = incident.getOrDefault(cur.getName(),
-									Collections.emptyList());
-							StatementPattern nextEdge = null;
-							for (StatementPattern sp : inc) {
-								if (!used.contains(sp)) {
-									nextEdge = sp;
+					if (e1 != null) {
+						for (Edge e : edges) {
+							if (e == mid || e == e1) {
+								continue;
+							}
+							if (e.p != null && e.p.hasValue() && e.p.getValue() instanceof IRI) {
+								if (sameVar(e.s, mid.o) || sameVar(e.o, mid.o)) {
+									e3 = e;
 									break;
 								}
 							}
-							if (nextEdge == null) {
-								simple = false;
-								break;
-							}
-							used.add(nextEdge);
-							ordered.add(nextEdge);
+						}
+					}
 
-							// advance
-							final Var ns = nextEdge.getSubjectVar(), no = nextEdge.getObjectVar();
-							cur = sameVar(cur, ns) ? no : ns;
-							if (cur == null || cur.hasValue() || cur.getName() == null) {
-								simple = false;
+					if (e1 != null && e3 != null &&
+							contextsCompatible(e1.sp.getContextVar(), mid.sp.getContextVar()) &&
+							contextsCompatible(mid.sp.getContextVar(), e3.sp.getContextVar())) {
+
+						final Var commonCtx = e1.sp.getContextVar() != null ? e1.sp.getContextVar()
+								: (mid.sp.getContextVar() != null ? mid.sp.getContextVar() : e3.sp.getContextVar());
+
+						final boolean step1Inverse = sameVar(e1.s, mid.s);
+						final boolean step3Inverse = !sameVar(e3.s, mid.o); // true if mid.o == e3.o (then ^)
+
+						final Var startVar = step1Inverse ? e1.o : e1.s;
+						final Var endVar = step3Inverse ? e3.s : e3.o;
+
+						final String midS = freeVarName(mid.s);
+						final String midO = freeVarName(mid.o);
+						final String midP = freeVarName(mid.p);
+
+						final Set<String> internal = new HashSet<>();
+						if (midS != null && !midS.equals(freeVarName(startVar)) && !midS.equals(freeVarName(endVar))) {
+							internal.add(midS);
+						}
+						if (midO != null && !midO.equals(freeVarName(startVar)) && !midO.equals(freeVarName(endVar))) {
+							internal.add(midO);
+						}
+						if (midP != null) {
+							internal.add(midP);
+						}
+
+						final Set<TupleExpr> consumed = new HashSet<>();
+						consumed.add(e1.container);
+						consumed.add(mid.container);
+						consumed.add(e3.container);
+						final Filter negFilter = (midP != null) ? filterByVar.get(midP) : null;
+						if (negFilter != null) {
+							consumed.add(negFilter);
+						}
+						if (preConsumed != null) {
+							consumed.addAll(preConsumed);
+						}
+
+						final Set<String> externalUse = new HashSet<>();
+						for (TupleExpr n : nodes) {
+							if (!consumed.contains(n)) {
+								collectFreeVars(n, externalUse);
+							}
+						}
+						boolean leaks = false;
+						for (String v : internal) {
+							if (externalUse.contains(v)) {
+								leaks = true;
 								break;
 							}
 						}
+						if (!leaks) {
+							final NegatedSet ns = (midP != null) ? negByVar.get(midP) : null;
+							if (ns != null && !ns.iris.isEmpty()) {
+								final String p1 = renderVarOrValue(e1.p);
+								final String p3 = renderVarOrValue(e3.p);
+								final String step1 = (step1Inverse ? "^" : "") + p1;
+								final String step3 = (step3Inverse ? "^" : "") + p3;
+								final String step2 = "!(" + ns.iris.stream()
+										.map(this::renderIRI)
+										.collect(java.util.stream.Collectors.joining("|")) + ")";
+								final String path = "(" + step1 + "/" + step2 + "/" + step3 + ")";
 
-						if (simple && ordered.size() == chainEdges.size()) {
-							// Internal vars must not leak outside
-							final Set<String> internal = new HashSet<>();
-							for (String nm : incident.keySet()) {
-								final Var v = varByName.get(nm);
-								if (isAnonPathVar(v)) {
-									internal.add(nm);
-								}
-							}
-							final Set<TupleExpr> consumed = new HashSet<>(ordered);
-							if (preConsumed != null) {
-								consumed.addAll(preConsumed);
-							}
-							final Set<String> external = new HashSet<>();
-							for (TupleExpr n : nodes) {
-								if (!consumed.contains(n)) {
-									collectFreeVars(n, external);
-								}
-							}
-							boolean leaks = false;
-							for (String nm : internal) {
-								if (external.contains(nm)) {
-									leaks = true;
-									break;
-								}
-							}
-							if (!leaks) {
-								// Build path expression
-								final List<String> steps = new ArrayList<>(ordered.size());
-								Var pos = start;
-								for (StatementPattern sp : ordered) {
-									final boolean forward = sameVar(pos, sp.getSubjectVar());
-									final IRI iri = (IRI) sp.getPredicateVar().getValue();
-									steps.add((forward ? "" : "^") + renderIRI(iri));
-									pos = forward ? sp.getObjectVar() : sp.getSubjectVar();
-								}
-								final String pathExpr = String.join("/", steps);
-
-								final String subj = renderPossiblyOverridden(start, overrides);
-								final String obj = renderPossiblyOverridden(end, overrides);
-								final String triple = subj + " " + pathExpr + " " + obj + " .";
+								final String subjStr = renderPossiblyOverridden(startVar, overrides);
+								final String objStr = renderPossiblyOverridden(endVar, overrides);
+								final String triple = subjStr + " " + path + " " + objStr + " .";
 
 								if (commonCtx != null) {
 									bp.line("GRAPH " + renderVarOrValue(commonCtx) + " { " + triple + " }");
@@ -2441,145 +2661,13 @@ public class TupleExprToSparql {
 			}
 		}
 
-		// ---- (3) Negated-set sandwich guarded by _anon_path_ predicate var ----
-		{
-			final List<Edge> edges = new ArrayList<>();
-			final Map<String, NegatedSet> negByVar = new HashMap<>();
-			final Map<String, Filter> filterByVar = new HashMap<>();
-
-			for (TupleExpr n : nodes) {
-				if (already.contains(n)) {
-					continue;
-				}
-
-				if (n instanceof StatementPattern) {
-					edges.add(new Edge((StatementPattern) n, n, false));
-				} else if (n instanceof Filter) {
-					final Filter f = (Filter) n;
-
-					if (f.getArg() instanceof StatementPattern) {
-						edges.add(new Edge((StatementPattern) f.getArg(), f, true));
-					}
-
-					final NegatedSet ns = parseNegatedSet(f.getCondition());
-					if (ns != null && ns.varName != null && !ns.iris.isEmpty()) {
-						final NegatedSet fixed = new NegatedSet(ns.varName, f);
-						fixed.iris.addAll(ns.iris);
-						negByVar.put(ns.varName, fixed);
-						filterByVar.put(ns.varName, f);
-					}
-				}
-			}
-
-			if (edges.size() >= 3) {
-				Edge mid = null;
-				for (Edge e : edges) {
-					if (e.p != null && !e.p.hasValue() && e.p.getName() != null
-							&& isAnonPathVar(e.p) && negByVar.containsKey(e.p.getName())) {
-						mid = e;
-						break;
-					}
-				}
-				if (mid != null) {
-					Edge e1 = null, e3 = null;
-					for (Edge e : edges) {
-						if (e == mid) {
-							continue;
-						}
-						if (e.p != null && e.p.hasValue() && e.p.getValue() instanceof IRI) {
-							if (sameVar(e.s, mid.s) || sameVar(e.o, mid.s)) {
-								e1 = e;
-								break;
-							}
-						}
-					}
-					for (Edge e : edges) {
-						if (e == mid || e == e1) {
-							continue;
-						}
-						if (e.p != null && e.p.hasValue() && e.p.getValue() instanceof IRI) {
-							if (sameVar(e.s, mid.o) || sameVar(e.o, mid.o)) {
-								e3 = e;
-								break;
-							}
-						}
-					}
-					if (e1 != null && e3 != null) {
-						Var ctx1 = e1.sp.getContextVar();
-						Var ctx2 = mid.sp.getContextVar();
-						Var ctx3 = e3.sp.getContextVar();
-						if (contextsCompatible(ctx1, ctx2) && contextsCompatible(ctx2, ctx3)) {
-							final boolean inv1 = sameVar(e1.s, mid.s); // start ←mid.s => ^P1
-							final boolean inv3 = !sameVar(e3.s, mid.o); // mid.o ←? => ^P3 if e3.o == mid.o
-
-							final Var start = inv1 ? e1.o : e1.s;
-							final Var end = inv3 ? e3.s : e3.o;
-
-							// internal vars must not leak
-							final Set<TupleExpr> consumed = new HashSet<>();
-							consumed.add(e1.container);
-							consumed.add(e3.container);
-							consumed.add(mid.container);
-							Filter negF = filterByVar.get(mid.p.getName());
-							if (negF != null) {
-								consumed.add(negF);
-							}
-							if (preConsumed != null) {
-								consumed.addAll(preConsumed);
-							}
-
-							final Set<String> external = new HashSet<>();
-							for (TupleExpr n : nodes) {
-								if (!consumed.contains(n)) {
-									collectFreeVars(n, external);
-								}
-							}
-							final String midS = freeVarName(mid.s), midO = freeVarName(mid.o),
-									midP = freeVarName(mid.p);
-							boolean leaks = (midS != null && !Objects.equals(midS, freeVarName(start))
-									&& !Objects.equals(midS, freeVarName(end)) && external.contains(midS))
-									|| (midO != null && !Objects.equals(midO, freeVarName(start))
-											&& !Objects.equals(midO, freeVarName(end)) && external.contains(midO))
-									|| (midP != null && external.contains(midP));
-							if (!leaks) {
-								final NegatedSet ns = negByVar.get(mid.p.getName());
-								final String step1 = (inv1 ? "^" : "") + renderVarOrValue(e1.p);
-								final String step3 = (inv3 ? "^" : "") + renderVarOrValue(e3.p);
-								final String step2 = "!("
-										+ ns.iris.stream().map(this::renderIRI).collect(Collectors.joining("|")) + ")";
-								final String path = "(" + step1 + "/" + step2 + "/" + step3 + ")";
-
-								final String s = renderPossiblyOverridden(start, overrides);
-								final String o = renderPossiblyOverridden(end, overrides);
-								final Var ctx = ctx1 != null ? ctx1 : (ctx2 != null ? ctx2 : ctx3);
-
-								if (ctx != null) {
-									bp.line("GRAPH " + renderVarOrValue(ctx) + " { " + s + " " + path + " " + o
-											+ " . }");
-								} else {
-									bp.line(s + " " + path + " " + o + " .");
-								}
-
-								for (TupleExpr n : nodes) {
-									if (consumed.contains(n)) {
-										continue;
-									}
-									if (n instanceof StatementPattern) {
-										printStatementWithOverrides((StatementPattern) n, overrides, bp);
-									} else {
-										n.visit(bp);
-									}
-								}
-								return true;
-							}
-						}
-					}
-				}
-			}
-		}
-
-		// No rewrite applied
+		// No special rewrite performed.
 		return false;
+	}
+
+	private static boolean isAnonHavingVar(Var v) {
+		final String n = freeVarName(v);
+		return n != null && n.startsWith("_anon_having_");
 	}
 
 	/**
