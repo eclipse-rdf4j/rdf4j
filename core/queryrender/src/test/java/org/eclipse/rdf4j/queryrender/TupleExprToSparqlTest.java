@@ -880,7 +880,7 @@ public class TupleExprToSparqlTest {
 	void groupByAlias() {
 		String q = "SELECT ?predicate\n" +
 				"WHERE {\n" +
-				" ?a ?b ?c .\n" +
+				"  ?a ?b ?c .\n" +
 				"}\n" +
 				"GROUP BY (?b AS ?predicate)\n" +
 				"ORDER BY ?predicate\n" +

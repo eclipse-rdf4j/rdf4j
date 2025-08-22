@@ -2227,7 +2227,7 @@ public class TupleExprToSparql {
 			final long min = restPath.getMinLength();
 			final long max = getMaxLengthSafe(restPath);
 			final String q = quantifier(min, max);
-			final String fused = "(" + renderIRI(RDF.REST) + q + "/" + renderIRI(RDF.FIRST) + ")";
+			final String fused = renderIRI(RDF.REST) + q + "/" + renderIRI(RDF.FIRST);
 
 			final String s = renderPossiblyOverridden(restPath.getSubjectVar(), overrides);
 			final String o = renderPossiblyOverridden(firstTriple.getObjectVar(), overrides);
