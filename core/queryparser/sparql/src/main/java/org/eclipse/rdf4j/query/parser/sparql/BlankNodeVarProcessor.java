@@ -63,14 +63,6 @@ public class BlankNodeVarProcessor extends AbstractASTVisitor {
 			return "_anon_bnode_" + anonVarNo++;
 		}
 
-		private String createAnonUserVarName() {
-			return "_anon_user_bnode_" + anonVarNo++;
-		}
-
-		private String createAnonCollectionVarName() {
-			return "_anon_collection_" + anonVarNo++;
-		}
-
 		public Set<String> getUsedBNodeIDs() {
 			usedBNodeIDs.addAll(conversionMap.keySet());
 			return Collections.unmodifiableSet(usedBNodeIDs);
