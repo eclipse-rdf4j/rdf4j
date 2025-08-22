@@ -335,6 +335,43 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		return new Var("_anon_" + uniqueIdPrefix + l + RANDOMIZE_LENGTH[(int) (l % RANDOMIZE_LENGTH.length)], true);
 	}
 
+	protected Var createAnonCollectionVar() {
+		// dashes ('-') in the generated UUID are replaced with underscores so
+		// the
+		// varname
+		// remains compatible with the SPARQL grammar. See SES-2310.
+		long l = uniqueIdSuffix.incrementAndGet();
+		return new Var("_anon_collection_" + uniqueIdPrefix + l + RANDOMIZE_LENGTH[(int) (l % RANDOMIZE_LENGTH.length)],
+				true);
+	}
+
+	protected Var createAnonHavingVar() {
+		// dashes ('-') in the generated UUID are replaced with underscores so
+		// the
+		// varname
+		// remains compatible with the SPARQL grammar. See SES-2310.
+		long l = uniqueIdSuffix.incrementAndGet();
+		return new Var("_anon_having_" + uniqueIdPrefix + l + RANDOMIZE_LENGTH[(int) (l % RANDOMIZE_LENGTH.length)],
+				true);
+	}
+
+	/**
+	 * Creates an anonymous Var specifically for use in SPARQL path expressions. The generated variable name will
+	 * contain <code>_path_</code> to allow easier identification of variables that were introduced while parsing
+	 * property paths.
+	 *
+	 * @return an anonymous Var with a unique, randomly generated, variable name that contains <code>_path_</code>
+	 */
+	protected Var createAnonPathVar() {
+		// dashes ('-') in the generated UUID are replaced with underscores so
+		// the
+		// varname
+		// remains compatible with the SPARQL grammar. See SES-2310.
+		long l = uniqueIdSuffix.incrementAndGet();
+		return new Var("_anon_path_" + uniqueIdPrefix + l + RANDOMIZE_LENGTH[(int) (l % RANDOMIZE_LENGTH.length)],
+				true);
+	}
+
 	private FunctionCall createFunctionCall(String uri, SimpleNode node, int minArgs, int maxArgs)
 			throws VisitorException {
 		FunctionCall functionCall = new FunctionCall(uri);
@@ -1474,7 +1511,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			ASTPathElt pathElement = pathElements.get(i);
 
 			pathSequenceContext.startVar = i == 0 ? subjVar : mapValueExprToVar(pathSequenceContext.endVar);
-			pathSequenceContext.endVar = createAnonPathVar(false);
+			pathSequenceContext.endVar = createAnonPathVar();
 
 			TupleExpr elementExpresion = (TupleExpr) pathElement.jjtAccept(this, pathSequenceContext);
 
@@ -1491,7 +1528,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 						Var objectVar = mapValueExprToVar(objectItem);
 						Var replacement = objectVar;
 						if (objectVar.equals(subjVar)) { // corner case for cyclic expressions, see SES-1685
-							replacement = createAnonPathVar(false);
+							replacement = createAnonPathVar();
 						}
 						TupleExpr copy = elementExpresion.clone();
 						copy.visit(new VarReplacer(pathSequenceContext.endVar, replacement));
@@ -1505,7 +1542,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 					// nested sequence, replace endVar with parent endVar
 					Var replacement = parentEndVar;
 					if (parentEndVar.equals(subjVar)) { // corner case for cyclic expressions, see SES-1685
-						replacement = createAnonPathVar(false);
+						replacement = createAnonPathVar();
 					}
 					TupleExpr copy = elementExpresion.clone();
 					copy.visit(new VarReplacer(pathSequenceContext.endVar, replacement));
@@ -1575,7 +1612,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	private TupleExpr createTupleExprForNegatedPropertySets(List<PropertySetElem> nps,
 			PathSequenceContext pathSequenceContext) {
 		Var subjVar = pathSequenceContext.startVar;
-		Var predVar = createAnonPathVar(nps.size() == 1 && nps.get(0).isInverse());
+		Var predVar = createAnonPathVar();
 		Var endVar = pathSequenceContext.endVar;
 
 		ValueExpr filterCondition = null;

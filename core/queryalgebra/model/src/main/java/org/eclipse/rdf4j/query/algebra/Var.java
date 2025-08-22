@@ -96,15 +96,6 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	 * ========================= Constructors (existing API) =========================
 	 */
 
-	/**
-	 * @deprecated since 5.1.5, use {@link #of(String, Value, boolean, boolean)} instead. Constructor will be made
-	 *             protected, subclasses may still use this method to instantiate themselves.
-	 * @param name
-	 * @param value
-	 * @param anonymous
-	 * @param constant
-	 */
-	@Deprecated(since = "5.1.5", forRemoval = true)
 	public Var(String name, Value value, boolean anonymous, boolean constant) {
 		this.name = name;
 		this.value = value;
@@ -167,9 +158,8 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	 *
 	 * <p>
 	 * <strong>Important:</strong> Implementations must not call {@code Var.of(...)} from within
-	 * {@link #newVar(String, Value, boolean, boolean)} or {@link #cloneVar(Var)} to avoid infinite recursion. Call a
-	 * constructor directly (e.g., {@code return new CustomVar(...); }). Returned instances from both methods must
-	 * remain consistent with {@link Var#equals(Object)} and {@link Var#hashCode()}.
+	 * {@link #newVar(String, Value, boolean, boolean)} to avoid infinite recursion. Call a constructor directly (e.g.,
+	 * {@code return new CustomVar(...); }).
 	 * </p>
 	 */
 	@FunctionalInterface
@@ -178,20 +168,57 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 		 * Mirror of the primary 4-argument {@link Var} constructor.
 		 */
 		Var newVar(String name, Value value, boolean anonymous, boolean constant);
+	}
 
-		/**
-		 * Creates a copy of the supplied {@link Var}. Implementations should ensure the clone is consistent with
-		 * {@link #equals(Object)} and {@link #hashCode()} for the concrete {@code Var} subtype they produce.
-		 * <p>
-		 * <strong>Important:</strong> Implementations must not call {@code Var.of(...)} from within this method to
-		 * avoid infinite recursion. Call a constructor or factory that does not delegate back to
-		 * {@link Var#of(String)}.
-		 * </p>
-		 */
-		default Var cloneVar(Var original) {
-			return newVar(original.getName(), original.getValue(), original.isAnonymous(), original.isConstant());
+	/*
+	 * ========================= Provider bootstrap (lazy, fast) =========================
+	 */
+
+	private static final class Holder {
+		private static final Provider DEFAULT = new Provider() {
+			@Override
+			public Var newVar(String name, Value value, boolean anonymous, boolean constant) {
+				return new Var(name, value, anonymous, constant);
+			}
+		};
+
+		static final Provider PROVIDER = initProvider();
+
+		private static Provider initProvider() {
+			// 1) Explicit override via system property (FQCN of Var.Provider)
+			String fqcn = System.getProperty(PROVIDER_PROPERTY);
+			if (fqcn != null && !fqcn.isEmpty()) {
+				try {
+					Class<?> cls = Class.forName(fqcn, true, Var.class.getClassLoader());
+					if (Provider.class.isAssignableFrom(cls)) {
+						@SuppressWarnings("unchecked")
+						Class<? extends Provider> pcls = (Class<? extends Provider>) cls;
+						return pcls.getDeclaredConstructor().newInstance();
+					}
+					// Fall through to discovery if class does not implement Provider
+				} catch (Throwable t) {
+					// Swallow and fall back to discovery; avoid linking to any logging framework here.
+				}
+			}
+
+			// 2) ServiceLoader discovery: pick the first provider found
+			try {
+				ServiceLoader<Provider> loader = ServiceLoader.load(Provider.class);
+				for (Provider p : loader) {
+					return p; // first one wins
+				}
+			} catch (Throwable t) {
+				// ignore and fall back
+			}
+
+			// 3) Fallback: direct construction
+			return DEFAULT;
 		}
 	}
+
+	/*
+	 * ========================= Accessors and behavior =========================
+	 */
 
 	public boolean isAnonymous() {
 		return anonymous;
