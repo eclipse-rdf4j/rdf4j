@@ -123,8 +123,7 @@ public class TupleExprToSparqlTest {
 	void basic_select_bgp() {
 		String q = "SELECT ?s ?name\n" +
 				"WHERE {\n" +
-				"  ?s rdf:type foaf:Person .\n" +
-				"  ?s foaf:name ?name .\n" +
+				"  ?s a foaf:Person ; foaf:name ?name .\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
 	}
