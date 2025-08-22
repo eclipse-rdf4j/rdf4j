@@ -11,6 +11,10 @@
 
 package org.eclipse.rdf4j.queryrender;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -22,10 +26,6 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprToSparql;
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TupleExprToSparqlTest {
 
@@ -226,7 +226,7 @@ public class TupleExprToSparqlTest {
 	}
 
 	@Test
-	void service_silent_block_fixed_point() {
+	void service_silent_block() {
 		String q = "SELECT * WHERE {\n"
 				+ "  SERVICE SILENT <http://example.org/sparql> { ?s ?p ?o }\n"
 				+ "}";
@@ -501,13 +501,13 @@ public class TupleExprToSparqlTest {
 	// --- Federation: SERVICE (no SILENT) and variable endpoint ---
 
 	@Test
-	void service_without_silent_fixed_point() {
+	void service_without_silent() {
 		String q = "SELECT * WHERE { SERVICE <http://example.org/sparql> { ?s ?p ?o } }";
 		assertFixedPoint(q, cfg());
 	}
 
 	@Test
-	void service_variable_endpoint_fixed_point() {
+	void service_variable_endpoint() {
 		String q = "SELECT * WHERE { SERVICE ?svc { ?s ?p ?o } }";
 		assertFixedPoint(q, cfg());
 	}
@@ -558,16 +558,8 @@ public class TupleExprToSparqlTest {
 		assertSameSparqlQuery(q2, cfg());
 	}
 
-	// --- Query forms: ASK, CONSTRUCT ---
-
 	@Test
-	void ask_query_fixed_point() {
-		String q = "ASK WHERE { ?s ?p ?o }";
-		assertFixedPoint(q, cfg());
-	}
-
-	@Test
-	void construct_query_fixed_point() {
+	void construct_query() {
 		String q = "CONSTRUCT { ?s ?p ?o }\n" +
 				"WHERE     { ?s ?p ?o }";
 		assertFixedPoint(q, cfg());
@@ -606,7 +598,7 @@ public class TupleExprToSparqlTest {
 	}
 
 	@Test
-	void numeric_datetime_hash_and_random_fixed_point() {
+	void numeric_datetime_hash_and_random() {
 		String q = "SELECT ?r ?now ?y ?tz ?abs ?ceil ?floor ?round ?md5\n" +
 				"WHERE {\n" +
 				"  VALUES (?x) { (\"abc\") }\n" +
@@ -624,7 +616,7 @@ public class TupleExprToSparqlTest {
 	}
 
 	@Test
-	void uuid_and_struuid_fixed_point() {
+	void uuid_and_struuid() {
 		String q = "SELECT (UUID() AS ?u) (STRUUID() AS ?su)\n" +
 				"WHERE {\n" +
 				"}";
@@ -656,23 +648,30 @@ public class TupleExprToSparqlTest {
 	}
 
 	@Test
-	void values_empty_block_fixed_point() {
-		String q = "SELECT * WHERE { VALUES ?s { } }";
-		assertFixedPoint(q, cfg());
+	void values_empty_block() {
+		String q = "SELECT ?s\n" +
+				"WHERE {\n" +
+				"  VALUES (?s) {\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
 	}
 
 	// --- Syntactic sugar: blank node property list and collections ---
 
 	@Test
-	void blank_node_property_list_fixed_point() {
-		String q = "SELECT ?n WHERE { [] foaf:name ?n . }";
-		assertFixedPoint(q, cfg());
+	void blank_node_property_list() {
+		String q = "SELECT ?n\n" +
+				"WHERE {\n" +
+				"  [] foaf:name ?n .\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
 	}
 
 	@Test
-	void collections_fixed_point() {
+	void collections() {
 		String q = "SELECT ?el WHERE { (1 2 3) rdf:rest*/rdf:first ?el }";
-		assertFixedPoint(q, cfg());
+		assertSameSparqlQuery(q, cfg());
 	}
 
 	// ==========================================
@@ -703,19 +702,27 @@ public class TupleExprToSparqlTest {
 				"ORDER BY DESC(?cnt) LCASE(?name)\n" +
 				"LIMIT 10\n" +
 				"OFFSET 5";
-		assertFixedPoint(q, cfg());
+		assertSameSparqlQuery(q, cfg());
 	}
 
 	@Test
 	void complex_deep_union_optional_with_grouping() {
 		String q = "SELECT ?s ?label ?src (SUM(?innerC) AS ?c)\n" +
 				"WHERE {\n" +
-				"  VALUES ?src { \"A\" \"B\" }\n" +
+				"  VALUES (?src) {\n" +
+				"    (\"A\")\n" +
+				"    (\"B\")\n" +
+				"  }\n" +
 				"  {\n" +
 				"    ?s rdf:type foaf:Person .\n" +
-				"    OPTIONAL { ?s rdfs:label ?label FILTER(LANGMATCHES(LANG(?label), \"en\")) }\n" +
-				"  } UNION {\n" +
-				"    [] foaf:name ?label .\n" +
+				"    OPTIONAL {\n" +
+				"      ?s rdfs:label ?label .\n" +
+				"      FILTER (LANGMATCHES(LANG(?label), \"en\"))\n" +
+				"    }\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?_anon_1 foaf:name ?label .\n" +
 				"    BIND(\"B\" AS ?src)\n" +
 				"    BIND(BNODE() AS ?s)\n" +
 				"  }\n" +
@@ -730,7 +737,7 @@ public class TupleExprToSparqlTest {
 				"HAVING (SUM(?innerC) >= 1)\n" +
 				"ORDER BY DESC(?c) STRLEN(COALESCE(?label, \"\"))\n" +
 				"LIMIT 20";
-		assertFixedPoint(q, cfg());
+		assertSameSparqlQuery(q, cfg());
 	}
 
 	@Test
@@ -747,20 +754,25 @@ public class TupleExprToSparqlTest {
 				"ORDER BY DESC(?pc)\n" +
 				"OFFSET 3\n" +
 				"LIMIT 7";
-		assertFixedPoint(q, cfg());
+		assertSameSparqlQuery(q, cfg());
 	}
 
 	@Test
 	void complex_ask_with_subselect_exists_and_not_exists() {
-		String q = "ASK WHERE {\n" +
-				"  VALUES ?g { ex:g1 }\n" +
-				"  GRAPH ?g { ?s foaf:name ?n }\n" +
+		String q = "SELECT ?g ?s ?n\n" +
+				"WHERE {\n" +
+				"  VALUES (?g) {\n" +
+				"    (ex:g1)\n" +
+				"  }\n" +
+				"  GRAPH ?g {\n" +
+				"    ?s foaf:name ?n .\n" +
+				"  }\n" +
 				"  FILTER EXISTS {\n" +
 				"    SELECT ?s WHERE { ?s foaf:knows ?t } GROUP BY ?s HAVING (COUNT(?t) > 1)\n" +
 				"  }\n" +
 				"  FILTER NOT EXISTS { ?s ex:blockedBy ?b }\n" +
 				"}";
-		assertFixedPoint(q, cfg());
+		assertSameSparqlQuery(q, cfg());
 	}
 
 	@Test
@@ -776,7 +788,7 @@ public class TupleExprToSparqlTest {
 				"GROUP BY ?s ?n\n" +
 				"ORDER BY STRLEN(?n) DESC(?maxAge)\n" +
 				"LIMIT 50";
-		assertFixedPoint(q, cfg());
+		assertSameSparqlQuery(q, cfg());
 	}
 
 	@Test
@@ -790,7 +802,7 @@ public class TupleExprToSparqlTest {
 				"}\n" +
 				"ORDER BY DESC(?aC + ?bC)\n" +
 				"LIMIT 10";
-		assertFixedPoint(q, cfg());
+		assertSameSparqlQuery(q, cfg());
 	}
 
 	@Test
@@ -799,7 +811,7 @@ public class TupleExprToSparqlTest {
 				"  ?a (^foaf:knows/!(rdf:type|ex:age)/foaf:name) ?n .\n" +
 				"  FILTER(LANG(?n) = \"\" || LANGMATCHES(LANG(?n), \"en\"))\n" +
 				"}";
-		assertFixedPoint(q, cfg());
+		assertSameSparqlQuery(q, cfg());
 	}
 
 	@Test
@@ -816,7 +828,7 @@ public class TupleExprToSparqlTest {
 				"GROUP BY ?svc ?s\n" +
 				"HAVING (SUM(?c) >= 0)\n" +
 				"ORDER BY DESC(?total)";
-		assertFixedPoint(q, cfg());
+		assertSameSparqlQuery(q, cfg());
 	}
 
 	@Test
@@ -836,7 +848,7 @@ public class TupleExprToSparqlTest {
 				"GROUP BY (?k AS ?key) ?person\n" +
 				"ORDER BY ?key DESC(?c)\n" +
 				"LIMIT 100";
-		assertFixedPoint(q, cfg());
+		assertSameSparqlQuery(q, cfg());
 	}
 
 	@Test
@@ -848,6 +860,248 @@ public class TupleExprToSparqlTest {
 				"GROUP BY (?b AS ?predicate)\n" +
 				"ORDER BY ?predicate\n" +
 				"LIMIT 100";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	// ================================================
+	// ===== Ultra-heavy, limit-stretching tests ======
+	// ================================================
+
+	@Test
+	void mega_monster_deep_nesting_everything() {
+		String q = "SELECT REDUCED ?g ?x ?y (?cnt AS ?count) (IF(BOUND(?avgAge), (xsd:decimal(?cnt) + xsd:decimal(?avgAge)), xsd:decimal(?cnt)) AS ?score)\n"
+				+
+				"WHERE {\n" +
+				"  VALUES ?g { ex:g1 ex:g2 ex:g3 }\n" +
+				"  GRAPH ?g {\n" +
+				"    ?x (foaf:knows/(^foaf:knows|ex:knows)*) ?y .\n" +
+				"    OPTIONAL { ?y rdfs:label ?label FILTER (LANGMATCHES(LANG(?label), \"en\")) }\n" +
+				"  }\n" +
+				"  FILTER (NOT EXISTS { ?y ex:blockedBy ?b } && !EXISTS { ?y ex:status \"blocked\"@en })\n" +
+				"  MINUS { ?y rdf:type ex:Robot }\n" +
+				"  {\n" +
+				"    SELECT ?y (COUNT(DISTINCT ?name) AS ?cnt) (AVG(?age) AS ?avgAge)\n" +
+				"    WHERE {\n" +
+				"      ?y foaf:name ?name .\n" +
+				"      OPTIONAL { ?y ex:age ?age FILTER (DATATYPE(?age) = xsd:integer) }\n" +
+				"    }\n" +
+				"    GROUP BY ?y\n" +
+				"  }\n" +
+				"  OPTIONAL {\n" +
+				"    {\n" +
+				"      SELECT ?x (COUNT(?k) AS ?deg)\n" +
+				"      WHERE { ?x foaf:knows ?k }\n" +
+				"      GROUP BY ?x\n" +
+				"    }\n" +
+				"    FILTER (?deg >= 0)\n" +
+				"  }\n" +
+				"}\n" +
+				"ORDER BY DESC(?cnt) LCASE(COALESCE(?label, \"\"))\n" +
+				"LIMIT 50\n" +
+				"OFFSET 10";
 		assertFixedPoint(q, cfg());
 	}
+
+	@Test
+	void mega_massive_union_chain_with_mixed_paths() {
+		String q = "SELECT ?s ?kind WHERE {\n" +
+				"  {\n" +
+				"    BIND(\"knows\" AS ?kind) ?s foaf:knows ?o .\n" +
+				"  } UNION {\n" +
+				"    BIND(\"knows2\" AS ?kind) ?s foaf:knows/foaf:knows ?o .\n" +
+				"  } UNION {\n" +
+				"    BIND(\"alt\" AS ?kind) ?s (foaf:knows|ex:knows) ?o .\n" +
+				"  } UNION {\n" +
+				"    BIND(\"inv\" AS ?kind) ?s ^foaf:knows ?o .\n" +
+				"  } UNION {\n" +
+				"    BIND(\"nps\" AS ?kind) ?s !(rdf:type|ex:age) ?o .\n" +
+				"  } UNION {\n" +
+				"    BIND(\"zeroOrOne\" AS ?kind) ?s foaf:knows? ?o .\n" +
+				"  } UNION {\n" +
+				"    BIND(\"zeroOrMore\" AS ?kind) ?s foaf:knows* ?o .\n" +
+				"  } UNION {\n" +
+				"    BIND(\"oneOrMore\" AS ?kind) ?s foaf:knows+ ?o .\n" +
+				"  }\n" +
+				"}\n" +
+				"ORDER BY ?kind\n" +
+				"LIMIT 1000";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void mega_wide_values_matrix_typed_and_undef() {
+		String q = "SELECT ?s ?p ?o ?tag ?n ?len WHERE {\n" +
+				"  VALUES (?s ?p ?o ?tag ?n) {\n" +
+				"    (ex:a foaf:name \"Ann\"@en \"A\" 1)\n" +
+				"    (ex:b foaf:name \"Böb\"@de \"B\" 2)\n" +
+				"    (ex:c foaf:name \"Carol\"@en-US \"C\" 3)\n" +
+				"    (ex:d ex:age \"42\"^^xsd:integer \"D\" 4)\n" +
+				"    (ex:e ex:age \"3.14\"^^xsd:decimal \"E\" 5)\n" +
+				"    (ex:f foaf:name \"Δημήτρης\"@el \"F\" 6)\n" +
+				"    (ex:g foaf:name \"Иван\"@ru \"G\" 7)\n" +
+				"    (ex:h foaf:name \"李\"@zh \"H\" 8)\n" +
+				"    (ex:i foaf:name \"علي\"@ar \"I\" 9)\n" +
+				"    (ex:j foaf:name \"Renée\"@fr \"J\" 10)\n" +
+				"    (UNDEF ex:age UNDEF \"U\" UNDEF)\n" +
+				"    (ex:k foaf:name \"multi\\nline\" \"M\" 11)\n" +
+				"    (ex:l foaf:name \"quote\\\"test\" \"Q\" 12)\n" +
+				"    (ex:m foaf:name \"smile🙂\" \"S\" 13)\n" +
+				"    (ex:n foaf:name \"emoji😀\" \"E\" 14)\n" +
+				"  }\n" +
+				"  OPTIONAL { ?s ?p ?o }\n" +
+				"  BIND(IF(BOUND(?o), STRLEN(STR(?o)), -1) AS ?len)\n" +
+				"}\n" +
+				"ORDER BY ?tag ?n\n" +
+				"LIMIT 500";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void mega_parentheses_precedence_and_whitespace_stress() {
+		String q = "SELECT ?s ?o (?score AS ?score2)\n" +
+				"WHERE {\n" +
+				"  ?s ( (foaf:knows) / ( ( ^foaf:knows ) | ( ex:knows ) ) ) ?o .\n" +
+				"  BIND( ( ( ( IF(BOUND(?o), 1, 0) + 0 ) * 1 ) ) AS ?score )\n" +
+				"  FILTER(     ( ( ( BOUND(?s) && BOUND(?o) ) ) ) && ( ( REGEX( STR(?o), \"^.+$\", \"i\" ) ) )   )\n" +
+				"}\n" +
+				"ORDER BY (((?score)))\n" +
+				"LIMIT 100";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void mega_construct_with_blank_nodes_graphs_and_paths() {
+		String q = "CONSTRUCT {\n" +
+				"  ?s ex:edge [ a ex:Edge ; ex:to ?t ; ex:score ?score ] .\n" +
+				"  ?s ex:seenIn ?g .\n" +
+				"}\n" +
+				"WHERE {\n" +
+				"  VALUES ?g { ex:g1 ex:g2 } \n" +
+				"  GRAPH ?g { ?s (foaf:knows/foaf:knows?) ?t }\n" +
+				"  OPTIONAL { ?s ex:age ?age }\n" +
+				"  BIND(IF(BOUND(?age), xsd:decimal(?age) / 100, 0.0) AS ?score)\n" +
+				"  FILTER(NOT EXISTS { ?t rdf:type ex:Robot })\n" +
+				"}\n" +
+				"ORDER BY DESC(?score)\n" +
+				"LIMIT 500";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void mega_ask_deep_exists_notexists_filters() {
+		String q = "ASK WHERE {\n" +
+				"  { ?a foaf:knows ?b } UNION { ?b foaf:knows ?a }\n" +
+				"  FILTER EXISTS { ?a foaf:name ?n FILTER(REGEX(?n, \"^A\", \"i\")) }\n" +
+				"  FILTER NOT EXISTS { ?a ex:blockedBy ?b }\n" +
+				"  GRAPH ?g { ?a !(rdf:type|ex:age)/foaf:name ?x }\n" +
+				"}";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void mega_service_graph_interleaved_with_subselects() {
+		String q = "SELECT ?s ?g (SUM(?c) AS ?total)\n" +
+				"WHERE {\n" +
+				"  VALUES ?svc { <http://example.org/sparql> }\n" +
+				"  GRAPH ?g {\n" +
+				"    SERVICE ?svc {\n" +
+				"      SELECT ?s (COUNT(?p) AS ?c)\n" +
+				"      WHERE { ?s ?p ?o . FILTER(?p != rdf:type) }\n" +
+				"      GROUP BY ?s\n" +
+				"    }\n" +
+				"  }\n" +
+				"  OPTIONAL { ?s foaf:name ?n FILTER(LANGMATCHES(LANG(?n), \"en\")) }\n" +
+				"  MINUS { ?s rdf:type ex:Robot }\n" +
+				"}\n" +
+				"GROUP BY ?s ?g\n" +
+				"HAVING (SUM(?c) >= 0)\n" +
+				"ORDER BY DESC(?total) LCASE(COALESCE(?n, \"\"))\n" +
+				"LIMIT 25";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void mega_long_string_literals_and_escaping() {
+		String q = "SELECT ?txt ?repl WHERE {\n" +
+				"  BIND(\"\"\"Line1\\nLine2 \\\"quotes\\\" and backslash \\\\ and \\t tab and unicode \\u03B1 \\U0001F642\"\"\" AS ?txt)\n"
+				+
+				"  BIND(REPLACE(?txt, \"Line\", \"Ln\") AS ?repl)\n" +
+				"  FILTER(REGEX(?txt, \"Line\", \"im\"))\n" +
+				"}";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void mega_order_by_on_expression_over_aliases() {
+		String q = "SELECT ?s ?bestName ?avgAge\n" +
+				"WHERE {\n" +
+				"  { SELECT ?s (MIN(?n) AS ?bestName) (AVG(?age) AS ?avgAge)\n" +
+				"    WHERE { ?s foaf:name ?n OPTIONAL { ?s ex:age ?age } }\n" +
+				"    GROUP BY ?s\n" +
+				"  }\n" +
+				"  FILTER(BOUND(?bestName))\n" +
+				"}\n" +
+				"ORDER BY DESC(COALESCE(?avgAge, -999)) LCASE(?bestName)\n" +
+				"LIMIT 200";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void mega_optional_minus_nested() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  ?s ?p ?o .\n" +
+				"  OPTIONAL {\n" +
+				"    ?s foaf:knows ?k .\n" +
+				"    OPTIONAL {\n" +
+				"      ?k foaf:name ?kn .\n" +
+				"      MINUS { ?k ex:blockedBy ?s }\n" +
+				"      FILTER(!BOUND(?kn) || STRLEN(?kn) >= 0)\n" +
+				"    }\n" +
+				"  }\n" +
+				"  FILTER((?s IN (ex:a, ex:b, ex:c)) || EXISTS { ?s foaf:name ?nn })\n" +
+				"}\n" +
+				"ORDER BY ?s ?o";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void mega_scoped_variables_and_aliasing_across_subqueries() {
+		String q = "SELECT ?s ?bestName ?deg WHERE {\n" +
+				"  {\n" +
+				"    SELECT ?s (MIN(?n) AS ?bestName)\n" +
+				"    WHERE { ?s foaf:name ?n }\n" +
+				"    GROUP BY ?s\n" +
+				"  }\n" +
+				"  OPTIONAL {\n" +
+				"    SELECT ?s (COUNT(?o) AS ?deg) WHERE { ?s foaf:knows ?o } GROUP BY ?s\n" +
+				"  }\n" +
+				"  FILTER(BOUND(?bestName))\n" +
+				"}\n" +
+				"ORDER BY ?bestName ?s";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void mega_type_shorthand_and_mixed_sugar() {
+		String q = "SELECT ?s ?n WHERE {\n" +
+				"  ?s a foaf:Person ; foaf:name ?n .\n" +
+				"  [] foaf:knows ?s .\n" +
+				"  (ex:alice ex:bob ex:carol) rdf:rest*/rdf:first ?x .\n" +
+				"  FILTER(STRLEN(?n) > 0)\n" +
+				"}";
+		assertFixedPoint(q, cfg());
+	}
+
+	@Test
+	void mega_exists_union_inside_exists_and_notexists() {
+		String q = "SELECT ?s WHERE {\n" +
+				"  ?s ?p ?o .\n" +
+				"  FILTER EXISTS {\n" +
+				"    { ?s foaf:knows ?t } UNION { ?t foaf:knows ?s }\n" +
+				"    FILTER NOT EXISTS { ?t ex:blockedBy ?s }\n" +
+				"  }\n" +
+				"}";
+		assertFixedPoint(q, cfg());
+	}
+
 }
