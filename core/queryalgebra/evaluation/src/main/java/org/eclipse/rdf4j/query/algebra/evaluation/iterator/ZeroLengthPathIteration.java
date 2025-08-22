@@ -173,7 +173,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 	}
 
 	public Var createAnonVar(String varName) {
-		return new Var(varName, true);
+		return Var.of(varName, true);
 	}
 
 	@Override

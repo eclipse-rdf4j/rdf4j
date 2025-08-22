@@ -77,8 +77,8 @@ public class ZeroLengthPathIterationTest {
 		MapBindingSet bindings = new MapBindingSet();
 		bindings.addBinding("a", RDF.FIRST);
 
-		Var subjectVar = new Var("x");
-		Var objVar = new Var("y");
+		Var subjectVar = Var.of("x");
+		Var objVar = Var.of("y");
 		try (ZeroLengthPathIteration zlp = new ZeroLengthPathIteration(evaluator, subjectVar, objVar, null, null, null,
 				bindings, new QueryEvaluationContext.Minimal(null))) {
 			BindingSet result = zlp.getNextElement();
