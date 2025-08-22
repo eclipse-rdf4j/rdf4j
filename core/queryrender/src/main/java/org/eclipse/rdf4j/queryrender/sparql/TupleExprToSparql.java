@@ -190,6 +190,8 @@ public class TupleExprToSparql {
 	private static final String ANON_COLLECTION_PREFIX = "_anon_collection_";
 	private static final String ANON_PATH_PREFIX = "_anon_path_";
 	private static final String ANON_HAVING_PREFIX = "_anon_having_";
+	/** Anonymous blank node variables (originating from [] in the original query). */
+	private static final String ANON_BNODE_PREFIX = "_anon_bnode_";
 
 	private static boolean isAnonCollectionVar(Var v) {
 		return v != null && !v.hasValue() && v.getName() != null && v.getName().startsWith(ANON_COLLECTION_PREFIX);
@@ -201,6 +203,28 @@ public class TupleExprToSparql {
 
 	private static boolean isAnonHavingName(String name) {
 		return name != null && name.startsWith(ANON_HAVING_PREFIX);
+	}
+
+	/** Identify anonymous blank-node placeholder variables (to render as "[]"). */
+	private static boolean isAnonBNodeVar(Var v) {
+		if (v == null || v.hasValue()) {
+			return false;
+		}
+		final String name = v.getName();
+		if (name == null || !name.startsWith(ANON_BNODE_PREFIX)) {
+			return false;
+		}
+		// Prefer to check Var#isAnonymous() when available (older/newer RDF4J compatibility via reflection)
+		try {
+			java.lang.reflect.Method m = Var.class.getMethod("isAnonymous");
+			Object r = m.invoke(v);
+			if (r instanceof Boolean) {
+				return ((Boolean) r).booleanValue();
+			}
+		} catch (ReflectiveOperationException ignore) {
+			// If reflection fails, fall back to name-prefix heuristic only.
+		}
+		return true;
 	}
 
 	static {
@@ -1517,6 +1541,10 @@ public class TupleExprToSparql {
 		if (v.hasValue()) {
 			return renderValue(v.getValue());
 		}
+		// Render anonymous blank-node placeholder variables as "[]"
+		if (isAnonBNodeVar(v)) {
+			return "[]";
+		}
 		return "?" + v.getName();
 	}
 
@@ -2161,7 +2189,7 @@ public class TupleExprToSparql {
 //   A) SP + ALP:   ?s  p1  ?mid .   ?mid  inner{m,n}  ?o     →   ?s  (p1 / inner{m,n})  ?o .
 //   B) ALP + SP:   ?s  inner{m,n}  ?mid .   ?mid  p1  ?o     →   ?s  (inner{m,n} / p1)  ?o .
 // Also keeps:
-//   C) Negated-set chain:  ^P1 / !(a|b|...) / P3
+//   C) Negated-set chain: ^P1 / !(a|b|...) / P3
 //   D) RDF Collection fuse: ( … ) rdf:rest*/rdf:first ?el
 
 	private boolean tryRenderBestEffortPathChain(
