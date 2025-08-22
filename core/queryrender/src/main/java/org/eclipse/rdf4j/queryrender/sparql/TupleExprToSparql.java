@@ -11,12 +11,10 @@
 
 package org.eclipse.rdf4j.queryrender.sparql;
 
-import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
@@ -28,9 +26,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
-import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -85,7 +80,6 @@ import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
-import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Regex;
@@ -222,7 +216,7 @@ public class TupleExprToSparql {
 		}
 		// Prefer Var#isAnonymous() when present; fall back to prefix heuristic
 		try {
-			Method m = Var.class.getMethod("isAnonymous");
+			java.lang.reflect.Method m = Var.class.getMethod("isAnonymous");
 			Object r = m.invoke(v);
 			if (r instanceof Boolean) {
 				return ((Boolean) r).booleanValue();
@@ -292,16 +286,19 @@ public class TupleExprToSparql {
 
 	/** Backward-compatible: render as SELECT query (no dataset). */
 	public String render(final TupleExpr tupleExpr) {
+		suppressedSubselects.clear();
 		return renderSelectInternal(tupleExpr, RenderMode.TOP_LEVEL_SELECT, null);
 	}
 
 	/** SELECT with dataset (FROM/FROM NAMED). */
 	public String render(final TupleExpr tupleExpr, final DatasetView dataset) {
+		suppressedSubselects.clear();
 		return renderSelectInternal(tupleExpr, RenderMode.TOP_LEVEL_SELECT, dataset);
 	}
 
 	/** ASK query (top-level). */
 	public String renderAsk(final TupleExpr tupleExpr, final DatasetView dataset) {
+		suppressedSubselects.clear();
 		final StringBuilder out = new StringBuilder(256);
 		final Normalized n = normalize(tupleExpr);
 		// Prologue
@@ -319,6 +316,7 @@ public class TupleExprToSparql {
 	/** DESCRIBE query (top-level). If describeAll==true, ignore describeTerms and render DESCRIBE *. */
 	public String renderDescribe(final TupleExpr tupleExpr, final List<ValueExpr> describeTerms,
 			final boolean describeAll, final DatasetView dataset) {
+		suppressedSubselects.clear();
 		final StringBuilder out = new StringBuilder(256);
 		final Normalized n = normalize(tupleExpr);
 		printPrologueAndDataset(out, dataset);
@@ -366,6 +364,7 @@ public class TupleExprToSparql {
 	/** CONSTRUCT query (top-level). Template is a list of triple patterns (context respected when present). */
 	public String renderConstruct(final TupleExpr whereTree, final List<StatementPattern> template,
 			final DatasetView dataset) {
+		suppressedSubselects.clear();
 		final StringBuilder out = new StringBuilder(256);
 		final Normalized n = normalize(whereTree);
 		printPrologueAndDataset(out, dataset);
@@ -1187,6 +1186,24 @@ public class TupleExprToSparql {
 
 	// ---------------- Block/Node printer ----------------
 
+	/** Projections that must be suppressed (already rewritten into path). */
+	private final Set<Object> suppressedSubselects = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+	private void suppressProjectionSubselect(final TupleExpr container) {
+		if (container instanceof Projection) {
+			suppressedSubselects.add(container);
+		} else if (container instanceof Distinct) {
+			TupleExpr arg = ((Distinct) container).getArg();
+			if (arg instanceof Projection) {
+				suppressedSubselects.add(arg);
+			}
+		}
+	}
+
+	private boolean isProjectionSuppressed(final Projection p) {
+		return suppressedSubselects.contains(p);
+	}
+
 	private final class BlockPrinter extends AbstractQueryModelVisitor<RuntimeException> {
 		private final StringBuilder out;
 		private final TupleExprToSparql r;
@@ -1260,7 +1277,10 @@ public class TupleExprToSparql {
 
 		@Override
 		public void meet(final Projection p) {
-			// Nested Projection inside WHERE => subselect
+			// Nested Projection inside WHERE => subselect (unless it has been consumed by path fusion)
+			if (r.isProjectionSuppressed(p)) {
+				return;
+			}
 			String sub = r.renderSubselect(p);
 			indent();
 			raw("{");
@@ -1461,7 +1481,7 @@ public class TupleExprToSparql {
 		}
 
 		@Override
-		public void meetOther(final QueryModelNode node) {
+		public void meetOther(final org.eclipse.rdf4j.query.algebra.QueryModelNode node) {
 			r.handleUnsupported("unsupported node in WHERE: " + node.getClass().getSimpleName());
 		}
 
@@ -1489,7 +1509,7 @@ public class TupleExprToSparql {
 
 	private static long getMaxLengthSafe(final ArbitraryLengthPath p) {
 		try {
-			final Method m = ArbitraryLengthPath.class.getMethod("getMaxLength");
+			final java.lang.reflect.Method m = ArbitraryLengthPath.class.getMethod("getMaxLength");
 			final Object v = m.invoke(p);
 			if (v instanceof Number) {
 				return ((Number) v).longValue();
@@ -1541,7 +1561,7 @@ public class TupleExprToSparql {
 
 	private static Var getContextVarSafe(StatementPattern sp) {
 		try {
-			Method m = StatementPattern.class.getMethod("getContextVar");
+			java.lang.reflect.Method m = StatementPattern.class.getMethod("getContextVar");
 			Object ctx = m.invoke(sp);
 			if (ctx instanceof Var) {
 				return (Var) ctx;
@@ -1959,6 +1979,7 @@ public class TupleExprToSparql {
 			final Value v = ((ValueConstant) expr).getValue();
 			if (v instanceof Literal) {
 				Literal lit = (Literal) v;
+				// Only accept plain strings / xsd:string (spec)
 				IRI dt = lit.getDatatype();
 				if (dt == null || XSD.STRING.equals(dt)) {
 					return lit.getLabel();
@@ -2043,12 +2064,15 @@ public class TupleExprToSparql {
 		return Objects.equals(a.getName(), b.getName());
 	}
 
+	/**
+	 * Flatten a ValueExpr that is a conjunction into its left-to-right terms.
+	 */
 	private static List<ValueExpr> flattenAnd(ValueExpr e) {
 		List<ValueExpr> out = new ArrayList<>();
+		Deque<ValueExpr> stack = new ArrayDeque<>();
 		if (e == null) {
 			return out;
 		}
-		Deque<ValueExpr> stack = new ArrayDeque<>();
 		stack.push(e);
 		while (!stack.isEmpty()) {
 			ValueExpr cur = stack.pop();
@@ -2261,7 +2285,7 @@ public class TupleExprToSparql {
 		if (e == null) {
 			return;
 		}
-		e.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+		e.visit(new org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
 			private void add(Var v) {
 				final String n = freeVarName(v);
 				if (n != null) {
@@ -2325,7 +2349,7 @@ public class TupleExprToSparql {
 
 	@SuppressWarnings("unused")
 	private static Set<String> globalVarsToPreserve(final Normalized n) {
-		final Set<String> s = new HashSet<>();
+		final Set<String> s = new java.util.HashSet<>();
 		if (n == null) {
 			return s;
 		}
@@ -2333,7 +2357,7 @@ public class TupleExprToSparql {
 		if (n.projection != null && n.projection.getProjectionElemList() != null) {
 			for (ProjectionElem pe : n.projection.getProjectionElemList().getElements()) {
 				final String name = pe.getProjectionAlias().orElse(pe.getName());
-				if (name != null && !n.selectAssignments.containsKey(name)) {
+				if (name != null && !name.isEmpty() && !n.selectAssignments.containsKey(name)) {
 					s.add(name);
 				}
 			}
@@ -2505,15 +2529,15 @@ public class TupleExprToSparql {
 			plPO.clear();
 		};
 
-		final BiConsumer<String, String> addPO = (pred, obj) -> {
+		final java.util.function.BiConsumer<String, String> addPO = (pred, obj) -> {
 			plPO.add(pred + " " + obj);
 		};
 
 		// Helper: make predicate string (with 'a' for rdf:type)
-		final Function<Var, String> predStr = this::renderPredicateForTriple;
+		final java.util.function.Function<Var, String> predStr = this::renderPredicateForTriple;
 
 		// Helper: external use check for bridge variable
-		final BiFunction<Set<TupleExpr>, String, Boolean> leaksOutside = (toConsume, varName) -> {
+		final java.util.function.BiFunction<Set<TupleExpr>, String, Boolean> leaksOutside = (toConsume, varName) -> {
 			if (varName == null) {
 				return false;
 			}
@@ -2539,6 +2563,7 @@ public class TupleExprToSparql {
 			// ---- Z: zero-or-one projection at position i ----
 			final ZeroOrOneProj z = parseZeroOrOneProjectionNode(cur);
 			if (z != null) {
+				boolean fusedZ = false;
 				// find a following SP that uses z.end as subject or object
 				for (int j = i + 1; j < nodes.size(); j++) {
 					final TupleExpr cand = nodes.get(j);
@@ -2576,7 +2601,7 @@ public class TupleExprToSparql {
 
 					final PathNode opt = new PathQuant(new PathAtom(z.pred, false), 0, 1);
 					final PathNode step2 = new PathAtom(p2Iri, inverse);
-					final PathNode seq = new PathSeq(Arrays.asList(opt, step2));
+					final PathNode seq = new PathSeq(java.util.Arrays.asList(opt, step2));
 
 					final String subjStr = renderPossiblyOverridden(z.start, overrides);
 					final String objStr = renderPossiblyOverridden(forward ? o2 : s2, overrides);
@@ -2584,9 +2609,15 @@ public class TupleExprToSparql {
 
 					consumed.add(z.container);
 					consumed.add(sp2);
-					continue; // proceed with next i
+					suppressProjectionSubselect(z.container);
+					fusedZ = true;
+					break; // stop scanning j; we'll skip fallback for i
 				}
 
+				// could not fuse -> print subselect block as-is
+				if (fusedZ) {
+					continue; // move to next i
+				}
 				// could not fuse -> print subselect block as-is
 				flushPL.run();
 				clearPL.run();
@@ -2708,7 +2739,7 @@ public class TupleExprToSparql {
 						final long max = getMaxLengthSafe(alp);
 						final PathNode q = new PathQuant(inner, min, max);
 						final PathNode step2 = new PathAtom(pIri, inverseStep2);
-						final PathNode seq = new PathSeq(Arrays.asList(q, step2));
+						final PathNode seq = new PathSeq(java.util.Arrays.asList(q, step2));
 
 						final Var start = aS;
 						final Var end = forwardStep2 ? spO : spS;
@@ -2782,7 +2813,7 @@ public class TupleExprToSparql {
 							final long min = alp.getMinLength();
 							final long max = getMaxLengthSafe(alp);
 							final PathNode q = new PathQuant(inner, min, max);
-							final PathNode seq = new PathSeq(Arrays.asList(step1, q));
+							final PathNode seq = new PathSeq(java.util.Arrays.asList(step1, q));
 
 							final Var start = forward ? spS : spO;
 							final Var end = aO;
@@ -2828,7 +2859,7 @@ public class TupleExprToSparql {
 
 							final PathNode step1 = new PathAtom((IRI) pVar.getValue(), inverse);
 							final PathNode opt = new PathQuant(new PathAtom(z2.pred, false), 0, 1);
-							final PathNode seq = new PathSeq(Arrays.asList(step1, opt));
+							final PathNode seq = new PathSeq(java.util.Arrays.asList(step1, opt));
 
 							final Var start = inverse ? sp.getObjectVar() : sp.getSubjectVar();
 							final Var end = z2.end;
@@ -2839,6 +2870,7 @@ public class TupleExprToSparql {
 
 							consumed.add(sp);
 							consumed.add(z2.container);
+							suppressProjectionSubselect(z2.container);
 							break;
 						}
 						if (consumed.contains(sp)) {
@@ -3174,7 +3206,7 @@ public class TupleExprToSparql {
 
 	private static Var getContextVarSafe(Object node) {
 		try {
-			Method m = node.getClass().getMethod("getContextVar");
+			java.lang.reflect.Method m = node.getClass().getMethod("getContextVar");
 			Object v = m.invoke(node);
 			return (v instanceof Var) ? (Var) v : null;
 		} catch (ReflectiveOperationException ignore) {
