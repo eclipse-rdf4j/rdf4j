@@ -20,34 +20,34 @@ public class AbstractQueryModelNodeTest {
 	public void getCardinalityString() {
 
 		{
-			StatementPattern statementPattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			StatementPattern statementPattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 			String cardinalityString = statementPattern.toHumanReadableNumber(statementPattern.getResultSizeEstimate());
 			assertEquals("UNKNOWN", cardinalityString);
 		}
 
 		{
-			StatementPattern statementPattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			StatementPattern statementPattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 			statementPattern.setResultSizeEstimate(1234);
 			String cardinalityString = statementPattern.toHumanReadableNumber(statementPattern.getResultSizeEstimate());
 			assertEquals("1.2K", cardinalityString);
 		}
 
 		{
-			StatementPattern statementPattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			StatementPattern statementPattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 			statementPattern.setResultSizeEstimate(1910000);
 			String cardinalityString = statementPattern.toHumanReadableNumber(statementPattern.getResultSizeEstimate());
 			assertEquals("1.9M", cardinalityString);
 		}
 
 		{
-			StatementPattern statementPattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			StatementPattern statementPattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 			statementPattern.setResultSizeEstimate(1990000);
 			String cardinalityString = statementPattern.toHumanReadableNumber(statementPattern.getResultSizeEstimate());
 			assertEquals("2.0M", cardinalityString);
 		}
 
 		{
-			StatementPattern statementPattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			StatementPattern statementPattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 			statementPattern.setResultSizeEstimate(912000);
 			String cardinalityString = statementPattern.toHumanReadableNumber(statementPattern.getResultSizeEstimate());
 			assertEquals("912.0K", cardinalityString);

@@ -249,7 +249,7 @@ public final class FactorOptionalOptimizer implements QueryOptimizer {
 				String n = var.getName();
 				String nn = rename.get(n);
 				if (nn != null && !nn.equals(n)) {
-					Var var1 = new Var(nn, var.getValue(), var.isAnonymous(), var.isConstant());
+					Var var1 = Var.of(nn, var.getValue(), var.isAnonymous(), var.isConstant());
 					var.replaceWith(var1);
 				}
 			}

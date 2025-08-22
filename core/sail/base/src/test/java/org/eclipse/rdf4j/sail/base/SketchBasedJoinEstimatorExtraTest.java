@@ -157,14 +157,14 @@ public class SketchBasedJoinEstimatorExtraTest {
 		fullRebuild();
 
 		StatementPattern left = new StatementPattern(
-				new Var("s"),
-				new Var("p1", p1),
-				new Var("o1", o1));
+				Var.of("s"),
+				Var.of("p1", p1),
+				Var.of("o1", o1));
 
 		StatementPattern right = new StatementPattern(
-				new Var("s"),
-				new Var("p2", p2),
-				new Var("o1", o1));
+				Var.of("s"),
+				Var.of("p2", p2),
+				Var.of("o1", o1));
 
 		double card = est.cardinality(new Join(left, right));
 
@@ -177,8 +177,8 @@ public class SketchBasedJoinEstimatorExtraTest {
 		sailStore.add(stmt(s1, p1, o1));
 		fullRebuild();
 
-		StatementPattern left = new StatementPattern(new Var("s1"), new Var("p1", p1), new Var("o1", o1));
-		StatementPattern right = new StatementPattern(new Var("s2"), new Var("p1", p1), new Var("o1", o1));
+		StatementPattern left = new StatementPattern(Var.of("s1"), Var.of("p1", p1), Var.of("o1", o1));
+		StatementPattern right = new StatementPattern(Var.of("s2"), Var.of("p1", p1), Var.of("o1", o1));
 
 		double card = est.cardinality(new Join(left, right));
 

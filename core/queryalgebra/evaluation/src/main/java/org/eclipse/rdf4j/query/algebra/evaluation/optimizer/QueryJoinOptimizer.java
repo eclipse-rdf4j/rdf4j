@@ -751,7 +751,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				Set<Var> varsUsedInOtherExpressions = varFreqMap.keySet();
 
 				for (String assuredBindingName : tupleExpr.getAssuredBindingNames()) {
-					if (varsUsedInOtherExpressions.contains(new Var(assuredBindingName))) {
+					if (varsUsedInOtherExpressions.contains(Var.of(assuredBindingName))) {
 						return 0;
 					}
 				}

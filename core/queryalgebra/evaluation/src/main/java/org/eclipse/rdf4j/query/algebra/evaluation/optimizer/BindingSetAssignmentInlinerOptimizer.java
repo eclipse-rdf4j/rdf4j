@@ -64,7 +64,7 @@ public class BindingSetAssignmentInlinerOptimizer implements QueryOptimizer {
 		public void meet(Var var) {
 			if (bindingSet != null && bindingSet.hasBinding(var.getName())) {
 				Value replacementValue = bindingSet.getValue(var.getName());
-				var.replaceWith(new Var(var.getName(), replacementValue, var.isAnonymous(), var.isConstant()));
+				var.replaceWith(Var.of(var.getName(), replacementValue, var.isAnonymous(), var.isConstant()));
 			}
 		}
 

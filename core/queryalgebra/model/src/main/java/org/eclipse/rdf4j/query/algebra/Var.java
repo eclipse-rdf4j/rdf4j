@@ -287,7 +287,7 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 
 	@Override
 	public Var clone() {
-		return new Var(name, value, anonymous, constant);
+		return Var.of(name, value, anonymous, constant);
 	}
 
 	/**

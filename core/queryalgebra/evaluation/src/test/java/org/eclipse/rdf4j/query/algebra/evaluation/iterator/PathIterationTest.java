@@ -72,9 +72,9 @@ public class PathIterationTest {
 	public void zeroHop() {
 		// SELECT * WHERE { ?subClass rdfs:subClassOf+ ?superClass }
 
-		Var startVar = new Var("subClass");
-		Var endVar = new Var("superClass");
-		TupleExpr pathExpression = new StatementPattern(startVar, new Var("lala", RDFS.SUBCLASSOF, true, true), endVar);
+		Var startVar = Var.of("subClass");
+		Var endVar = Var.of("superClass");
+		TupleExpr pathExpression = new StatementPattern(startVar, Var.of("lala", RDFS.SUBCLASSOF, true, true), endVar);
 		Var contextVar = null;
 		long minLength = 0;
 		BindingSet bindings = new QueryBindingSet();
@@ -117,9 +117,9 @@ public class PathIterationTest {
 	public void oneHop() {
 		// SELECT * WHERE { ?subClass rdfs:subClassOf+ ?superClass }
 
-		Var startVar = new Var("subClass");
-		Var endVar = new Var("superClass");
-		TupleExpr pathExpression = new StatementPattern(startVar, new Var("lala", RDFS.SUBCLASSOF, true, true), endVar);
+		Var startVar = Var.of("subClass");
+		Var endVar = Var.of("superClass");
+		TupleExpr pathExpression = new StatementPattern(startVar, Var.of("lala", RDFS.SUBCLASSOF, true, true), endVar);
 		Var contextVar = null;
 		long minLength = 1;
 		// Expected
@@ -140,9 +140,9 @@ public class PathIterationTest {
 	public void oneHopStartConstant() {
 		// SELECT * WHERE { ?subClass rdfs:subClassOf+ ?superClass }
 
-		Var startVar = new Var("subClass", one, true, true);
-		Var endVar = new Var("superClass");
-		TupleExpr pathExpression = new StatementPattern(startVar, new Var("lala", RDFS.SUBCLASSOF, true, true), endVar);
+		Var startVar = Var.of("subClass", one, true, true);
+		Var endVar = Var.of("superClass");
+		TupleExpr pathExpression = new StatementPattern(startVar, Var.of("lala", RDFS.SUBCLASSOF, true, true), endVar);
 		Var contextVar = null;
 		long minLength = 1;
 		BindingSet bindings = new QueryBindingSet();

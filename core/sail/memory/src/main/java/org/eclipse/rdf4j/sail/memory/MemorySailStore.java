@@ -726,14 +726,14 @@ class MemorySailStore implements SailStore {
 				observations = new HashSet<>();
 			}
 			if (contexts == null) {
-				observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj),
-						new Var("g", null)));
+				observations.add(new StatementPattern(Var.of("s", subj), Var.of("p", pred), Var.of("o", obj),
+						Var.of("g", null)));
 			} else if (contexts.length == 0) {
-				observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj)));
+				observations.add(new StatementPattern(Var.of("s", subj), Var.of("p", pred), Var.of("o", obj)));
 			} else {
 				for (Resource ctx : contexts) {
-					observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj),
-							new Var("g", ctx)));
+					observations.add(new StatementPattern(Var.of("s", subj), Var.of("p", pred), Var.of("o", obj),
+							Var.of("g", ctx)));
 				}
 			}
 		}

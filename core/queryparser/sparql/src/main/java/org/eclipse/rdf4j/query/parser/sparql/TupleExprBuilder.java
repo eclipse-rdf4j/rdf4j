@@ -332,7 +332,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// varname
 		// remains compatible with the SPARQL grammar. See SES-2310.
 		long l = uniqueIdSuffix.incrementAndGet();
-		return new Var("_anon_" + uniqueIdPrefix + l + RANDOMIZE_LENGTH[(int) (l % RANDOMIZE_LENGTH.length)], true);
+		return Var.of("_anon_" + uniqueIdPrefix + l + RANDOMIZE_LENGTH[(int) (l % RANDOMIZE_LENGTH.length)], true);
 	}
 
 	protected Var createAnonCollectionVar() {
@@ -341,7 +341,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// varname
 		// remains compatible with the SPARQL grammar. See SES-2310.
 		long l = uniqueIdSuffix.incrementAndGet();
-		return new Var("_anon_collection_" + uniqueIdPrefix + l + RANDOMIZE_LENGTH[(int) (l % RANDOMIZE_LENGTH.length)],
+		return Var.of("_anon_collection_" + uniqueIdPrefix + l + RANDOMIZE_LENGTH[(int) (l % RANDOMIZE_LENGTH.length)],
 				true);
 	}
 
@@ -351,7 +351,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// varname
 		// remains compatible with the SPARQL grammar. See SES-2310.
 		long l = uniqueIdSuffix.incrementAndGet();
-		return new Var("_anon_having_" + uniqueIdPrefix + l + RANDOMIZE_LENGTH[(int) (l % RANDOMIZE_LENGTH.length)],
+		return Var.of("_anon_having_" + uniqueIdPrefix + l + RANDOMIZE_LENGTH[(int) (l % RANDOMIZE_LENGTH.length)],
 				true);
 	}
 
@@ -368,7 +368,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// varname
 		// remains compatible with the SPARQL grammar. See SES-2310.
 		long l = uniqueIdSuffix.incrementAndGet();
-		return new Var("_anon_path_" + uniqueIdPrefix + l + RANDOMIZE_LENGTH[(int) (l % RANDOMIZE_LENGTH.length)],
+		return Var.of("_anon_path_" + uniqueIdPrefix + l + RANDOMIZE_LENGTH[(int) (l % RANDOMIZE_LENGTH.length)],
 				true);
 	}
 
@@ -2432,7 +2432,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Var visit(ASTVar node, Object data) throws VisitorException {
-		return new Var(node.getName(), node.isAnonymous());
+		return Var.of(node.getName(), node.isAnonymous());
 	}
 
 	@Override
