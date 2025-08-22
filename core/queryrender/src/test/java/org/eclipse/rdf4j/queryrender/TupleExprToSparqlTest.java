@@ -80,9 +80,9 @@ public class TupleExprToSparqlTest {
 
 	/** Round-trip twice and assert the renderer is a fixed point (idempotent). */
 	private String assertFixedPoint(String sparql, TupleExprToSparql.Config cfg) {
-		System.out.println("Original SPARQL query:\n" + sparql);
+		System.out.println("# Original SPARQL query\n" + sparql + "\n");
 		TupleExpr tupleExpr = parseAlgebra(SPARQL_PREFIX + sparql);
-		System.out.println("TupleExpr:\n" + tupleExpr);
+		System.out.println("# Original TupleExpr\n" + tupleExpr + "\n");
 		String r1 = render(SPARQL_PREFIX + sparql, cfg);
 		String r2;
 		try {
@@ -109,8 +109,8 @@ public class TupleExprToSparqlTest {
 
 		} catch (Throwable t) {
 			System.out.println("\n\n\n");
-			System.out.println("Original SPARQL query:\n" + sparql);
-			System.out.println("TupleExpr:\n" + tupleExpr);
+			System.out.println("# Original SPARQL query\n" + sparql + "\n");
+			System.out.println("# Original TupleExpr\n" + tupleExpr + "\n");
 
 			assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + sparql);
 
