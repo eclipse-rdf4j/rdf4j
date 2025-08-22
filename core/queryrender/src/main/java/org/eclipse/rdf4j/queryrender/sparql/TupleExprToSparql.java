@@ -214,7 +214,7 @@ public class TupleExprToSparql {
 		if (name == null || !name.startsWith(ANON_BNODE_PREFIX)) {
 			return false;
 		}
-		// Prefer to check Var#isAnonymous() when available (older/newer RDF4J compatibility via reflection)
+		// Prefer to check Var#isAnonymous() when available (compat via reflection)
 		try {
 			java.lang.reflect.Method m = Var.class.getMethod("isAnonymous");
 			Object r = m.invoke(v);
@@ -1262,7 +1262,7 @@ public class TupleExprToSparql {
 
 		@Override
 		public void meet(final Projection p) {
-			// Nested Projection inside WHERE => subselect
+			// Nested Projection inside WHERE => subselect (default); actual fusion handled in Join visitor.
 			String sub = r.renderSubselect(p);
 			// Print it as a properly indented block
 			indent();
@@ -1541,7 +1541,7 @@ public class TupleExprToSparql {
 		if (v.hasValue()) {
 			return renderValue(v.getValue());
 		}
-		// Render anonymous blank-node placeholder variables as "[]"
+		// Anonymous blank-node placeholder variables are rendered as "[]"
 		if (isAnonBNodeVar(v)) {
 			return "[]";
 		}
@@ -2179,18 +2179,99 @@ public class TupleExprToSparql {
 		return false;
 	}
 
+	// ---- NEW: zero-or-one path ( ? ) reconstruction helpers ----
+
+	private static final class ZeroOrOneProj {
+		final Var start; // left endpoint
+		final Var end; // right endpoint (the _anon_path_ var)
+		final IRI pred; // the IRI for the optional step
+		final TupleExpr container; // the Projection/Distinct subtree node to consume
+
+		ZeroOrOneProj(Var start, Var end, IRI pred, TupleExpr container) {
+			this.start = start;
+			this.end = end;
+			this.pred = pred;
+			this.container = container;
+		}
+	}
+
+	/**
+	 * Detects a subselect pattern encoding a zero-or-one property step: (Distinct?) Projection( Union(
+	 * ZeroLengthPath(?s, ?mid), StatementPattern(?s, :p, ?mid) ) ) where ?mid is an _anon_path_* variable. Returns a
+	 * parsed spec or null.
+	 */
+	private ZeroOrOneProj parseZeroOrOneProjectionNode(TupleExpr node) {
+		if (node == null) {
+			return null;
+		}
+		TupleExpr cur = node;
+		// Peel DISTINCT wrapper if present
+		if (cur instanceof Distinct) {
+			cur = ((Distinct) cur).getArg();
+		}
+		if (!(cur instanceof Projection)) {
+			return null;
+		}
+		TupleExpr arg = ((Projection) cur).getArg();
+		// Expect a Union of two leaves
+		List<TupleExpr> leaves = new ArrayList<>();
+		if (arg instanceof Union) {
+			flattenUnion(arg, leaves);
+		} else {
+			return null;
+		}
+		if (leaves.size() != 2) {
+			return null;
+		}
+
+		ZeroLengthPath zlp = null;
+		StatementPattern sp = null;
+
+		for (TupleExpr leaf : leaves) {
+			if (leaf instanceof ZeroLengthPath) {
+				zlp = (ZeroLengthPath) leaf;
+			} else if (leaf instanceof StatementPattern) {
+				StatementPattern cand = (StatementPattern) leaf;
+				Var pv = cand.getPredicateVar();
+				if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+					return null;
+				}
+				sp = cand;
+			} else {
+				return null;
+			}
+		}
+
+		if (zlp == null || sp == null) {
+			return null;
+		}
+
+		// Both branches must connect the same endpoints (?s, ?mid)
+		if (!(sameVar(zlp.getSubjectVar(), sp.getSubjectVar()) && sameVar(zlp.getObjectVar(), sp.getObjectVar()))) {
+			return null;
+		}
+
+		Var s = zlp.getSubjectVar();
+		Var mid = zlp.getObjectVar();
+
+		// Rely on _anon_path_ var to ensure safety
+		if (!isAnonPathVar(mid)) {
+			return null;
+		}
+
+		Var p = sp.getPredicateVar();
+		IRI iri = (IRI) p.getValue();
+
+		return new ZeroOrOneProj(s, mid, iri, node);
+	}
+
 	// Best-effort reconstruction pipeline:
 	// (1) Fuse rdf:rest{m,n}*/rdf:first into one path step (with collection overrides),
 	// (2) Rebuild linear chains whose internal nodes are named _anon_path_…,
 	// (3) (Fallback) Negated-set sandwich guarded by _anon_path_ predicate var.
+	// (4) NEW: Reassemble zero-or-one subselects (_anon_path_ bridge) into "?".
 
 // Best-effort reconstruction of path-shaped join fragments.
-// Supported fusions (only when safe, and guided by "_anon_path_" hints):
-//   A) SP + ALP:   ?s  p1  ?mid .   ?mid  inner{m,n}  ?o     →   ?s  (p1 / inner{m,n})  ?o .
-//   B) ALP + SP:   ?s  inner{m,n}  ?mid .   ?mid  p1  ?o     →   ?s  (inner{m,n} / p1)  ?o .
-// Also keeps:
-//   C) Negated-set chain: ^P1 / !(a|b|...) / P3
-//   D) RDF Collection fuse: ( … ) rdf:rest*/rdf:first ?el
 
 	private boolean tryRenderBestEffortPathChain(
 			List<TupleExpr> nodes,
@@ -2425,6 +2506,169 @@ public class TupleExprToSparql {
 		}
 
 		// ------------------------------------------------------------
+		// (Z) NEW: Fuse "ZeroOrOneProj (+/-) SP" into a sequence p? / p1 or p1 / p?
+		// ------------------------------------------------------------
+		final List<ZeroOrOneProj> zoList = new ArrayList<>();
+		for (TupleExpr n : nodes) {
+			if (skip.test(n)) {
+				continue;
+			}
+			ZeroOrOneProj z = parseZeroOrOneProjectionNode(n);
+			if (z != null) {
+				zoList.add(z);
+			}
+		}
+
+		// (Z1) ZeroOrOneProj followed by SP using its end var as subject/object
+		for (ZeroOrOneProj z : zoList) {
+			for (StatementPattern sp2 : spList) {
+				// context: only allow when SP has no context (safe baseline)
+				if (getContextVarSafe(sp2) != null) {
+					continue;
+				}
+				final Var s2 = sp2.getSubjectVar();
+				final Var o2 = sp2.getObjectVar();
+				final Var p2 = sp2.getPredicateVar();
+				if (p2 == null || !p2.hasValue() || !(p2.getValue() instanceof IRI)) {
+					continue;
+				}
+				final IRI p2Iri = (IRI) p2.getValue();
+
+				final boolean forward = sameVar(z.end, s2);
+				final boolean inverse = !forward && sameVar(z.end, o2);
+				if (!forward && !inverse) {
+					continue;
+				}
+
+				// Safety: the _anon_path_ var must not leak outside the to-be-consumed pair
+				final String bridge = freeVarName(z.end);
+				if (bridge != null) {
+					final Set<TupleExpr> consumed = new HashSet<>();
+					consumed.add(z.container);
+					consumed.add(sp2);
+					if (preConsumed != null) {
+						consumed.addAll(preConsumed);
+					}
+					final Set<String> externalUse = new HashSet<>();
+					for (TupleExpr n : nodes) {
+						if (!consumed.contains(n)) {
+							collectFreeVars(n, externalUse);
+						}
+					}
+					if (externalUse.contains(bridge)) {
+						continue;
+					}
+				}
+
+				// Build p? / ( ^?p2 )?
+				final PathNode opt = new PathQuant(new PathAtom(z.pred, false), 0, 1); // ex:knows?
+				final PathNode step2 = new PathAtom(p2Iri, inverse); // forward or ^p2
+				final PathNode seq = new PathSeq(java.util.Arrays.asList(opt, step2));
+
+				final Var start = z.start;
+				final Var end = forward ? o2 : s2;
+
+				final String subjStr = renderPossiblyOverridden(start, overrides);
+				final String objStr = renderPossiblyOverridden(end, overrides);
+				final String triple = subjStr + " " + seq.render() + " " + objStr + " .";
+
+				bp.line(triple);
+
+				// emit remainder
+				final Set<TupleExpr> consumed = new HashSet<>();
+				consumed.add(z.container);
+				consumed.add(sp2);
+				if (preConsumed != null) {
+					consumed.addAll(preConsumed);
+				}
+				for (TupleExpr n : nodes) {
+					if (consumed.contains(n)) {
+						continue;
+					}
+					if (n instanceof StatementPattern) {
+						printStatementWithOverrides((StatementPattern) n, overrides, bp);
+					} else {
+						n.visit(bp);
+					}
+				}
+				return true;
+			}
+		}
+
+		// (Z2) SP followed by ZeroOrOneProj (sequence p1 / p?)
+		for (StatementPattern sp1 : spList) {
+			if (getContextVarSafe(sp1) != null) {
+				continue;
+			}
+			final Var s1 = sp1.getSubjectVar();
+			final Var o1 = sp1.getObjectVar();
+			final Var p1 = sp1.getPredicateVar();
+			if (p1 == null || !p1.hasValue() || !(p1.getValue() instanceof IRI)) {
+				continue;
+			}
+			final IRI p1Iri = (IRI) p1.getValue();
+
+			for (ZeroOrOneProj z : zoList) {
+				final boolean forward = sameVar(o1, z.start);
+				final boolean inverse = !forward && sameVar(s1, z.start);
+				if (!forward && !inverse) {
+					continue;
+				}
+
+				// Safety: the join var z.start must not leak outside the pair
+				final String bridge = freeVarName(z.start);
+				if (bridge != null) {
+					final Set<TupleExpr> consumed = new HashSet<>();
+					consumed.add(sp1);
+					consumed.add(z.container);
+					if (preConsumed != null) {
+						consumed.addAll(preConsumed);
+					}
+					final Set<String> externalUse = new HashSet<>();
+					for (TupleExpr n : nodes) {
+						if (!consumed.contains(n)) {
+							collectFreeVars(n, externalUse);
+						}
+					}
+					if (externalUse.contains(bridge)) {
+						continue;
+					}
+				}
+
+				final PathNode step1 = new PathAtom(p1Iri, inverse);
+				final PathNode opt = new PathQuant(new PathAtom(z.pred, false), 0, 1);
+				final PathNode seq = new PathSeq(java.util.Arrays.asList(step1, opt));
+
+				final Var start = inverse ? o1 : s1;
+				final Var end = z.end;
+
+				final String subjStr = renderPossiblyOverridden(start, overrides);
+				final String objStr = renderPossiblyOverridden(end, overrides);
+				final String triple = subjStr + " " + seq.render() + " " + objStr + " .";
+
+				bp.line(triple);
+
+				final Set<TupleExpr> consumed = new HashSet<>();
+				consumed.add(sp1);
+				consumed.add(z.container);
+				if (preConsumed != null) {
+					consumed.addAll(preConsumed);
+				}
+				for (TupleExpr n : nodes) {
+					if (consumed.contains(n)) {
+						continue;
+					}
+					if (n instanceof StatementPattern) {
+						printStatementWithOverrides((StatementPattern) n, overrides, bp);
+					} else {
+						n.visit(bp);
+					}
+				}
+				return true;
+			}
+		}
+
+		// ------------------------------------------------------------
 		// (D) Fuse rdf:rest{m,n}*/rdf:first (no parentheses around the sequence)
 		// ------------------------------------------------------------
 		ArbitraryLengthPath restPath = null;
@@ -2525,7 +2769,6 @@ public class TupleExprToSparql {
 
 		// ------------------------------------------------------------
 		// (C) Negated-property-set triple: ^P1 / !(a|b|...) / P3
-		// (unchanged from previous version; preserves IRI order in the set)
 		// ------------------------------------------------------------
 		{
 			// ---- gather candidate edges and filters ----
