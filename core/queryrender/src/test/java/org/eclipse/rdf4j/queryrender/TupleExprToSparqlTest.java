@@ -67,6 +67,14 @@ public class TupleExprToSparqlTest {
 
 	private String render(String sparql, TupleExprToSparql.Config cfg) {
 		TupleExpr algebra = parseAlgebra(sparql);
+		if (sparql.contains("ASK")) {
+			return new TupleExprToSparql(cfg).renderAsk(algebra, null);
+		}
+
+		if (sparql.contains("DESCRIBE")) {
+			return new TupleExprToSparql(cfg).renderAsk(algebra, null);
+		}
+
 		return new TupleExprToSparql(cfg).render(algebra);
 	}
 
@@ -670,7 +678,10 @@ public class TupleExprToSparqlTest {
 
 	@Test
 	void collections() {
-		String q = "SELECT ?el WHERE { (1 2 3) rdf:rest*/rdf:first ?el }";
+		String q = "SELECT ?el\n" +
+				"WHERE {\n" +
+				"  (1 2 3) rdf:rest*/rdf:first ?el .\n" +
+				"}";
 		assertSameSparqlQuery(q, cfg());
 	}
 
@@ -780,10 +791,12 @@ public class TupleExprToSparqlTest {
 		String q = "SELECT ?s (CONCAT(LCASE(STR(?n)), \"-\", STRUUID()) AS ?tag) (MAX(?age) AS ?maxAge)\n" +
 				"WHERE {\n" +
 				"  ?s foaf:name ?n .\n" +
-				"  OPTIONAL { ?s ex:age ?age }\n" +
-				"  FILTER(STRLEN(?n) > 1 && (isLiteral(?n) || BOUND(?n)))\n" +
-				"  FILTER(REPLACE(?n, \"A\", \"a\") != ?n || ?s IN (ex:alice, ex:bob))\n" +
-				"  FILTER(DATATYPE(?age) = xsd:integer || !BOUND(?age))\n" +
+				"  OPTIONAL {\n" +
+				"    ?s ex:age ?age .\n" +
+				"  }\n" +
+				"  FILTER ((STRLEN(?n) > 1) && (isLiteral(?n) || BOUND(?n)))\n" +
+				"  FILTER ((REPLACE(?n, \"A\", \"a\") != ?n) || (?s IN (ex:alice, ex:bob)))\n" +
+				"  FILTER ((DATATYPE(?age) = xsd:integer) || !(BOUND(?age)))\n" +
 				"}\n" +
 				"GROUP BY ?s ?n\n" +
 				"ORDER BY STRLEN(?n) DESC(?maxAge)\n" +
@@ -795,12 +808,24 @@ public class TupleExprToSparqlTest {
 	void complex_mutual_knows_with_degree_subqueries() {
 		String q = "SELECT ?a ?b ?aC ?bC\n" +
 				"WHERE {\n" +
-				"  { SELECT ?a (COUNT(?ka) AS ?aC) WHERE { ?a foaf:knows ?ka } GROUP BY ?a }\n" +
-				"  { SELECT ?b (COUNT(?kb) AS ?bC) WHERE { ?b foaf:knows ?kb } GROUP BY ?b }\n" +
+				"  {\n" +
+				"    SELECT ?a (COUNT(?ka) AS ?aC)\n" +
+				"    WHERE {\n" +
+				"      ?a foaf:knows ?ka .\n" +
+				"    }\n" +
+				"    GROUP BY ?a\n" +
+				"  }\n" +
+				"  {\n" +
+				"    SELECT ?b (COUNT(?kb) AS ?bC)\n" +
+				"    WHERE {\n" +
+				"      ?b foaf:knows ?kb .\n" +
+				"    }\n" +
+				"    GROUP BY ?b\n" +
+				"  }\n" +
 				"  ?a foaf:knows ?b .\n" +
-				"  FILTER EXISTS { ?b foaf:knows ?a }\n" +
+				"  FILTER (EXISTS { ?b foaf:knows ?a . })\n" +
 				"}\n" +
-				"ORDER BY DESC(?aC + ?bC)\n" +
+				"ORDER BY DESC((?aC + ?bC))\n" +
 				"LIMIT 10";
 		assertSameSparqlQuery(q, cfg());
 	}
