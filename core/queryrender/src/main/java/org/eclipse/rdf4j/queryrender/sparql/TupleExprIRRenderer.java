@@ -1304,6 +1304,19 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(final Projection p) {
+			// Special-case: detect RDF4J's subselect expansion of a simple zero-or-one path and
+			// render it as a compact property path triple instead of a subselect block.
+			{
+				final ZeroOrOneDirect z1 = r.parseZeroOrOneProjectionDirect(p);
+				if (z1 != null) {
+					final String s = r.renderVarOrValue(z1.start);
+					final String o = r.renderVarOrValue(z1.end);
+					final String path = new PathQuant(new PathAtom(z1.pred, false), 0, 1).render();
+					line(s + " " + path + " " + o + " .");
+					return;
+				}
+			}
+
 			// Nested Projection inside WHERE => subselect (unless it has been consumed by path fusion)
 			if (r.isProjectionSuppressed(p)) {
 				return;
@@ -1374,18 +1387,20 @@ public class TupleExprIRRenderer {
 				return;
 			}
 
-			indent();
-			openBlock();
-			printSubtreeWithBestEffort(union.getLeftArg());
-			closeBlock();
-			newline();
-			indent();
-			line("UNION");
-			indent();
-			openBlock();
-			printSubtreeWithBestEffort(union.getRightArg());
-			closeBlock();
-			newline();
+			// Flatten nested UNION chains to print a clean, single-level sequence of branches
+			final List<TupleExpr> branches = new ArrayList<>();
+			flattenUnion(union, branches);
+			for (int i = 0; i < branches.size(); i++) {
+				indent();
+				openBlock();
+				printSubtreeWithBestEffort(branches.get(i));
+				closeBlock();
+				newline();
+				if (i + 1 < branches.size()) {
+					indent();
+					line("UNION");
+				}
+			}
 		}
 
 		private void printSubtreeWithBestEffort(final TupleExpr subtree) {
@@ -1433,7 +1448,6 @@ public class TupleExprIRRenderer {
 			final String oStr = r.renderVarOrValue(obj);
 			final String alt = new PathAlt(
 					iris.stream().map(iri -> new PathAtom(iri, false)).collect(Collectors.toList())).render();
-			indent();
 			line(sStr + " " + (iris.size() > 1 ? "(" + alt + ")" : alt) + " " + oStr + " .");
 			return true;
 		}
@@ -2298,6 +2312,93 @@ public class TupleExprIRRenderer {
 		IRI iri = (IRI) p.getValue();
 
 		return new ZeroOrOneProj(s, mid, iri, node);
+	}
+
+	/**
+	 * Lightweight recognizer for RDF4J's subselect expansion of a simple zero-or-one path.
+	 *
+	 * Matches the common "SELECT ?s ?o WHERE { { FILTER sameTerm(?s, ?o) } UNION { ?s
+	 * <p>
+	 * ?o . } }" shape (optionally wrapped in DISTINCT), and returns start/end vars and predicate. Unlike
+	 * {@link #parseZeroOrOneProjectionNode(TupleExpr)}, this variant does not require an anonymous _anon_path_* bridge
+	 * var because it is not intended for chain fusion, only for rendering a standalone "?s
+	 * <p>
+	 * ? ?o" triple.
+	 */
+	private static final class ZeroOrOneDirect {
+		final Var start; // subject
+		final Var end; // object
+		final IRI pred; // predicate IRI
+		final TupleExpr container; // the Projection (possibly under Distinct)
+
+		ZeroOrOneDirect(Var start, Var end, IRI pred, TupleExpr container) {
+			this.start = start;
+			this.end = end;
+			this.pred = pred;
+			this.container = container;
+		}
+	}
+
+	private ZeroOrOneDirect parseZeroOrOneProjectionDirect(TupleExpr node) {
+		if (node == null) {
+			return null;
+		}
+		TupleExpr cur = node;
+		if (cur instanceof Distinct) {
+			cur = ((Distinct) cur).getArg();
+		}
+		if (!(cur instanceof Projection)) {
+			return null;
+		}
+		TupleExpr arg = ((Projection) cur).getArg();
+		List<TupleExpr> leaves = new ArrayList<>();
+		if (arg instanceof Union) {
+			flattenUnion(arg, leaves);
+		} else {
+			return null;
+		}
+		if (leaves.size() != 2) {
+			return null;
+		}
+
+		ZeroLengthPath zlp = null;
+		StatementPattern sp = null;
+
+		for (TupleExpr leaf : leaves) {
+			if (leaf instanceof ZeroLengthPath) {
+				zlp = (ZeroLengthPath) leaf;
+			} else if (leaf instanceof StatementPattern) {
+				StatementPattern cand = (StatementPattern) leaf;
+				Var pv = cand.getPredicateVar();
+				if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+					return null;
+				}
+				sp = cand;
+			} else {
+				return null;
+			}
+		}
+
+		if (zlp == null || sp == null) {
+			return null;
+		}
+
+		// subjects and objects must line up
+		if (!(sameVar(zlp.getSubjectVar(), sp.getSubjectVar()) && sameVar(zlp.getObjectVar(), sp.getObjectVar()))) {
+			return null;
+		}
+
+		Var s = zlp.getSubjectVar();
+		Var o = zlp.getObjectVar();
+		// No GRAPH contexts involved for a safe rewrite
+		if (getContextVarSafe(zlp) != null || getContextVarSafe(sp) != null) {
+			return null;
+		}
+
+		Var p = sp.getPredicateVar();
+		IRI iri = (IRI) p.getValue();
+
+		return new ZeroOrOneDirect(s, o, iri, node);
 	}
 
 	/** Flatten a Union tree preserving left-to-right order. */
