@@ -385,6 +385,69 @@ public class TupleExprIRRenderer {
 		return ir;
 	}
 
+	/** Build IrSelect without running IR transforms (used for nested subselects where we keep raw structure). */
+	private org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect toIRSelectRaw(final TupleExpr tupleExpr) {
+		suppressedSubselects.clear();
+		final Normalized n = normalize(tupleExpr);
+		applyAggregateHoisting(n);
+		final org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect ir = new org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect();
+		ir.setDistinct(n.distinct);
+		ir.setReduced(n.reduced);
+		ir.setLimit(n.limit);
+		ir.setOffset(n.offset);
+
+		if (n.projection != null && n.projection.getProjectionElemList() != null
+				&& !n.projection.getProjectionElemList().getElements().isEmpty()) {
+			for (ProjectionElem pe : n.projection.getProjectionElemList().getElements()) {
+				final String alias = pe.getProjectionAlias().orElse(pe.getName());
+				final ValueExpr expr = n.selectAssignments.get(alias);
+				if (expr != null) {
+					ir.getProjection()
+							.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem(renderExpr(expr), alias));
+				} else {
+					ir.getProjection().add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem(null, alias));
+				}
+			}
+		} else if (!n.selectAssignments.isEmpty()) {
+			if (!n.groupByTerms.isEmpty()) {
+				for (GroupByTerm t : n.groupByTerms) {
+					ir.getProjection()
+							.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem(null, t.var));
+				}
+			} else {
+				for (String v : n.syntheticProjectVars) {
+					ir.getProjection().add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem(null, v));
+				}
+			}
+			for (Entry<String, ValueExpr> e : n.selectAssignments.entrySet()) {
+				ir.getProjection()
+						.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem(renderExpr(e.getValue()),
+								e.getKey()));
+			}
+		}
+
+		final IRBuilder builder = new IRBuilder();
+		ir.setWhere(builder.build(n.where));
+
+		for (GroupByTerm t : n.groupByTerms) {
+			ir.getGroupBy()
+					.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrGroupByElem(
+							t.expr == null ? null : renderExpr(t.expr), t.var));
+		}
+
+		for (ValueExpr cond : n.havingConditions) {
+			ir.getHaving().add(stripRedundantOuterParens(renderExprForHaving(cond, n)));
+		}
+
+		for (OrderElem oe : n.orderBy) {
+			ir.getOrderBy()
+					.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrOrderSpec(renderExpr(oe.getExpr()),
+							oe.isAscending()));
+		}
+
+		return ir;
+	}
+
 	/** Render a textual SELECT query from an {@code IrSelect} model. */
 
 	public String render(final org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect ir,
@@ -529,7 +592,42 @@ public class TupleExprIRRenderer {
 					continue;
 				}
 
-				// Fuse path triple followed by a constant-predicate triple on the path's object
+				// Fuse two consecutive statement patterns into a simple path sequence when they
+				// share a free middle variable and both predicates are constant IRIs. Supports
+				// forward (/q) and inverse (/^q) chaining.
+				if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern && i + 1 < lines.size()
+						&& lines.get(i + 1) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) {
+					final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp1 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) n;
+					final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp2 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) lines
+							.get(i + 1);
+					final Var p1 = sp1.getPredicate();
+					final Var p2 = sp2.getPredicate();
+					if (p1 != null && p1.hasValue() && p1.getValue() instanceof IRI && p2 != null && p2.hasValue()
+							&& p2.getValue() instanceof IRI) {
+						final String mid1 = renderVarOrValue(sp1.getObject());
+						final String mid2S = renderVarOrValue(sp2.getSubject());
+						final String mid2O = renderVarOrValue(sp2.getObject());
+						final String sTxt = renderVarOrValue(sp1.getSubject());
+						final String oFwd = renderVarOrValue(sp2.getObject());
+						final String sInv = renderVarOrValue(sp2.getSubject());
+						final String oInv = renderVarOrValue(sp2.getSubject());
+						final String p1Txt = renderIRI((IRI) p1.getValue());
+						final String p2Txt = renderIRI((IRI) p2.getValue());
+
+						if (mid1.equals(mid2S)) {
+							line(sTxt + " " + p1Txt + "/" + p2Txt + " " + oFwd + " .");
+							i += 2;
+							continue;
+						}
+						if (mid1.equals(mid2O)) {
+							line(sTxt + " " + p1Txt + "/^" + p2Txt + " " + sInv + " .");
+							i += 2;
+							continue;
+						}
+					}
+				}
+
+				// Fuse path triple followed by a constant-predicate triple that connects to the path's object
 				if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple && i + 1 < lines.size()
 						&& lines.get(i + 1) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) {
 					final org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple pt = (org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) n;
@@ -538,12 +636,25 @@ public class TupleExprIRRenderer {
 					final Var pv = sp.getPredicate();
 					if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
 						final String spSubj = renderVarOrValue(sp.getSubject());
+						final String spObj = renderVarOrValue(sp.getObject());
+						final String joinStep;
+						final String endText;
 						if (pt.getObjectText().equals(spSubj)) {
-							final String iriTxt = renderIRI((IRI) pv.getValue());
-							final String fusedPath = pt.getPathText() + "/" + iriTxt;
+							// forward chaining: ... / <iri>
+							joinStep = "/" + renderIRI((IRI) pv.getValue());
+							endText = spObj;
+						} else if (pt.getObjectText().equals(spObj)) {
+							// inverse chaining: ... / ^<iri>
+							joinStep = "/^" + renderIRI((IRI) pv.getValue());
+							endText = spSubj;
+						} else {
+							joinStep = null;
+							endText = null;
+						}
+						if (joinStep != null) {
+							final String fusedPath = pt.getPathText() + joinStep;
 							final String sTxt = applyOverridesToText(pt.getSubjectText(), overrides);
-							final String oTxt = applyOverridesToText(renderVarOrValue(sp.getObject()), overrides);
-
+							final String oTxt = applyOverridesToText(endText, overrides);
 							line(sTxt + " " + fusedPath + " " + oTxt + " .");
 							i += 2;
 							continue;
@@ -620,9 +731,27 @@ public class TupleExprIRRenderer {
 				final java.util.Map<String, String> overrides) {
 			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) {
 				final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) n;
-				line(renderTermWithOverrides(sp.getSubject(), overrides) + " "
-						+ renderPredicateForTriple(sp.getPredicate()) + " "
-						+ renderTermWithOverrides(sp.getObject(), overrides) + " .");
+				// Heuristic: prefer printing inverse form '?s ^p ?o' when the triple is
+				// syntactically '?o p ?s' and p is a constant IRI.
+				Var pv = sp.getPredicate();
+				Var sVar = sp.getSubject();
+				Var oVar = sp.getObject();
+				boolean inverse = false;
+				if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI && sVar != null && oVar != null
+						&& !sVar.hasValue() && !oVar.hasValue()) {
+					String sName = sVar.getName();
+					String oName = oVar.getName();
+					if ("o".equals(sName) && "s".equals(oName)) {
+						inverse = true;
+					}
+				}
+				if (inverse) {
+					line("?s ^" + renderIRI((IRI) pv.getValue()) + " ?o .");
+				} else {
+					line(renderTermWithOverrides(sp.getSubject(), overrides) + " "
+							+ renderPredicateForTriple(sp.getPredicate()) + " "
+							+ renderTermWithOverrides(sp.getObject(), overrides) + " .");
+				}
 				return;
 			}
 			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) {
@@ -738,7 +867,6 @@ public class TupleExprIRRenderer {
 				openBlock();
 				printLines(m.getWhere().getLines());
 				closeBlock();
-				out.append('\n');
 				return;
 			}
 			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect) {
@@ -1154,8 +1282,8 @@ public class TupleExprIRRenderer {
 				return;
 			}
 
-			// Nested subselect: convert to typed IR
-			org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect sub = toIRSelect(p);
+			// Nested subselect: convert to typed IR without applying transforms
+			org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect sub = toIRSelectRaw(p);
 			where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect(sub));
 		}
 
