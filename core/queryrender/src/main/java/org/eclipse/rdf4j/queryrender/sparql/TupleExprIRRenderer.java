@@ -592,38 +592,22 @@ public class TupleExprIRRenderer {
 					continue;
 				}
 
-				// Fuse two consecutive statement patterns into a simple path sequence when they
-				// share a free middle variable and both predicates are constant IRIs. Supports
-				// forward (/q) and inverse (/^q) chaining.
-				if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern && i + 1 < lines.size()
-						&& lines.get(i + 1) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) {
-					final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp1 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) n;
-					final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp2 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) lines
-							.get(i + 1);
-					final Var p1 = sp1.getPredicate();
-					final Var p2 = sp2.getPredicate();
-					if (p1 != null && p1.hasValue() && p1.getValue() instanceof IRI && p2 != null && p2.hasValue()
-							&& p2.getValue() instanceof IRI) {
-						final String mid1 = renderVarOrValue(sp1.getObject());
-						final String mid2S = renderVarOrValue(sp2.getSubject());
-						final String mid2O = renderVarOrValue(sp2.getObject());
-						final String sTxt = renderVarOrValue(sp1.getSubject());
-						final String oFwd = renderVarOrValue(sp2.getObject());
-						final String sInv = renderVarOrValue(sp2.getSubject());
-						final String oInv = renderVarOrValue(sp2.getSubject());
-						final String p1Txt = renderIRI((IRI) p1.getValue());
-						final String p2Txt = renderIRI((IRI) p2.getValue());
-
-						if (mid1.equals(mid2S)) {
-							line(sTxt + " " + p1Txt + "/" + p2Txt + " " + oFwd + " .");
-							i += 2;
-							continue;
-						}
-						if (mid1.equals(mid2O)) {
-							line(sTxt + " " + p1Txt + "/^" + p2Txt + " " + sInv + " .");
-							i += 2;
-							continue;
-						}
+				// Recursive path reconstruction using parser-provided _anon_path_* bridge variables.
+				if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) {
+					int consumedCount = tryChainPathFrom(lines, i);
+					if (consumedCount > 0) {
+						i += consumedCount;
+						continue;
+					}
+					int consumedSPPT = tryFuseSpThenPath(lines, i);
+					if (consumedSPPT > 0) {
+						i += consumedSPPT;
+						continue;
+					}
+					int consumedNpsChain = tryFuseInverseNpsChain(lines, i);
+					if (consumedNpsChain > 0) {
+						i += consumedNpsChain;
+						continue;
 					}
 				}
 
@@ -693,7 +677,42 @@ public class TupleExprIRRenderer {
 
 				// Property-list grouping for consecutive triples with identical subjects
 				if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) {
+					// Pattern: SP with anon-path predicate + following FILTER NOT IN -> NPS triple
+					if (i + 1 < lines.size()
+							&& lines.get(i + 1) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) {
+						final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) n;
+						final Var pv = sp.getPredicate();
+						if (pv != null && !pv.hasValue() && pv.getName() != null
+								&& pv.getName().startsWith(ANON_PATH_PREFIX)) {
+							final String cond = ((org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) lines.get(i + 1))
+									.getConditionText();
+							final String joined = parseNotInList(cond, pv.getName());
+							if (joined != null) {
+								flushPL.run();
+								final String sTxt = renderTermWithOverrides(sp.getSubject(), overrides);
+								final String oTxt = renderTermWithOverrides(sp.getObject(), overrides);
+								line(sTxt + " !(" + joined + ") " + oTxt + " .");
+								i += 2;
+								continue;
+							}
+						}
+					}
 					org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) n;
+					// Prefer inverse print '?s ^p ?o' for the specific pattern '?o p ?s' with constant IRI
+					Var pv0 = sp.getPredicate();
+					Var s0 = sp.getSubject();
+					Var o0 = sp.getObject();
+					if (pv0 != null && pv0.hasValue() && pv0.getValue() instanceof IRI && s0 != null && o0 != null
+							&& !s0.hasValue() && !o0.hasValue()) {
+						String sName0 = s0.getName();
+						String oName0 = o0.getName();
+						if ("o".equals(sName0) && "s".equals(oName0)) {
+							flushPL.run();
+							line("?s ^" + renderIRI((IRI) pv0.getValue()) + " ?o .");
+							i++;
+							continue;
+						}
+					}
 					final String subj = renderTermWithOverrides(sp.getSubject(), overrides);
 					final String obj = renderTermWithOverrides(sp.getObject(), overrides);
 					if (plSubjectTmp == null) {
@@ -725,6 +744,277 @@ public class TupleExprIRRenderer {
 				i++;
 			}
 			flushPL.run();
+		}
+
+		private String parseNotInList(final String condText, final String varName) {
+			if (condText == null || varName == null)
+				return null;
+			java.util.regex.Matcher m = java.util.regex.Pattern
+					.compile("(?i)\\?" + java.util.regex.Pattern.quote(varName)
+							+ "\\s+NOT\\s+IN\\s*\\(([^)]*)\\)")
+					.matcher(condText);
+			if (!m.find())
+				return null;
+			String inner = m.group(1);
+			java.util.List<String> tokens = new java.util.ArrayList<>();
+			for (String t : inner.split(",")) {
+				String tok = t.trim();
+				if (tok.isEmpty())
+					continue;
+				// Normalize via renderer: if <...> convert to prefixed when possible
+				if (tok.startsWith("<") && tok.endsWith(">")) {
+					String iri = tok.substring(1, tok.length() - 1);
+					try {
+						org.eclipse.rdf4j.model.IRI v = org.eclipse.rdf4j.model.impl.SimpleValueFactory.getInstance()
+								.createIRI(iri);
+						tokens.add(renderIRI(v));
+						continue;
+					} catch (IllegalArgumentException ignore) {
+					}
+				}
+				// assume already-rendered or prefixed
+				tokens.add(tok);
+			}
+			// Stable preference: put rdf:* before others, then lexical
+			tokens.sort((a, b) -> {
+				boolean ar = a.startsWith("rdf:");
+				boolean br = b.startsWith("rdf:");
+				if (ar != br)
+					return ar ? -1 : 1; // rdf: first
+				return a.compareTo(b);
+			});
+			return String.join("|", tokens);
+		}
+
+		/**
+		 * Attempt to start a path chain at position i by following consecutive statement patterns that share an
+		 * _anon_path_* bridge var. Builds a fused path triple and returns how many input lines were consumed. Returns 0
+		 * if no chain was emitted.
+		 */
+		private int tryChainPathFrom(final java.util.List<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> lines,
+				int i) {
+			if (i >= lines.size()) {
+				return 0;
+			}
+			if (!(lines.get(i) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern)) {
+				return 0;
+			}
+			final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp0 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) lines
+					.get(i);
+			final Var p0 = sp0.getPredicate();
+			if (p0 == null || !p0.hasValue() || !(p0.getValue() instanceof IRI)) {
+				return 0;
+			}
+			// Determine initial direction and middle var
+			Var mid = null;
+			boolean startForward = false; // true when chain is ?s p ?mid
+			if (isAnonPathVar(sp0.getObject())) {
+				mid = sp0.getObject();
+				startForward = true;
+			} else if (isAnonPathVar(sp0.getSubject())) {
+				mid = sp0.getSubject();
+				startForward = false;
+			} else {
+				return 0; // no _anon_path_* bridge
+			}
+
+			final String start = renderVarOrValue(startForward ? sp0.getSubject() : sp0.getObject());
+			final java.util.List<String> parts = new java.util.ArrayList<>();
+			parts.add(renderIRI((IRI) p0.getValue()));
+			if (!startForward) {
+				parts.set(0, "^" + parts.get(0));
+			}
+
+			int j = i + 1;
+			Var cur = mid;
+			String end = null;
+			while (j < lines.size()) {
+				org.eclipse.rdf4j.queryrender.sparql.ir.IrNode n = lines.get(j);
+				if (!(n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern)) {
+					break;
+				}
+				org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) n;
+				Var p = sp.getPredicate();
+				if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
+					break;
+				}
+				boolean forward = sameVar(cur, sp.getSubject());
+				boolean inverse = sameVar(cur, sp.getObject());
+				if (!forward && !inverse) {
+					break;
+				}
+				String step = renderIRI((IRI) p.getValue());
+				if (inverse) {
+					step = "^" + step;
+				}
+				parts.add(step);
+				Var nextVar = forward ? sp.getObject() : sp.getSubject();
+				if (isAnonPathVar(nextVar)) {
+					cur = nextVar; // continue chaining
+					j++;
+					continue;
+				}
+				end = renderVarOrValue(nextVar);
+				j++;
+				break; // chain terminated at a concrete end var/value
+			}
+
+			if (end == null) {
+				return 0;
+			}
+			// Emit fused path triple
+			if (plSubjectTmp != null && !plPairsTmp.isEmpty()) {
+				java.util.List<String> partsOut = new java.util.ArrayList<>(plPairsTmp.size());
+				for (java.util.AbstractMap.SimpleEntry<Var, String> e : plPairsTmp) {
+					partsOut.add(renderPredicateForTriple(e.getKey()) + " " + e.getValue());
+				}
+				line(plSubjectTmp + " " + String.join(" ; ", partsOut) + " .");
+				plSubjectTmp = null;
+				plPairsTmp.clear();
+			}
+			String fused = String.join("/", parts);
+			line(start + " " + fused + " " + end + " .");
+			return j - i; // lines consumed
+		}
+
+		// Fuse SP + IrPathTriple when joined by an _anon_path_* var.
+		private int tryFuseSpThenPath(final java.util.List<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> lines,
+				int i) {
+			if (i + 1 >= lines.size())
+				return 0;
+			if (!(lines.get(i) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern))
+				return 0;
+			if (!(lines.get(i + 1) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple))
+				return 0;
+			final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) lines
+					.get(i);
+			final org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple pt = (org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) lines
+					.get(i + 1);
+			Var p = sp.getPredicate();
+			if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI))
+				return 0;
+			String bridge = renderVarOrValue(sp.getObject());
+			if (bridge.equals(pt.getSubjectText())) {
+				String fused = renderIRI((IRI) p.getValue()) + "/" + pt.getPathText();
+				String sTxt = renderVarOrValue(sp.getSubject());
+				String oTxt = pt.getObjectText();
+				// flush any pending PL
+				if (plSubjectTmp != null && !plPairsTmp.isEmpty()) {
+					java.util.List<String> partsOut = new java.util.ArrayList<>(plPairsTmp.size());
+					for (java.util.AbstractMap.SimpleEntry<Var, String> e : plPairsTmp) {
+						partsOut.add(renderPredicateForTriple(e.getKey()) + " " + e.getValue());
+					}
+					line(plSubjectTmp + " " + String.join(" ; ", partsOut) + " .");
+					plSubjectTmp = null;
+					plPairsTmp.clear();
+				}
+				line(sTxt + " " + fused + " " + oTxt + " .");
+				return 2;
+			}
+			String bridge2 = renderVarOrValue(sp.getSubject());
+			if (bridge2.equals(pt.getObjectText())) {
+				String fused = pt.getPathText() + "/^" + renderIRI((IRI) p.getValue());
+				String sTxt = pt.getSubjectText();
+				String oTxt = renderVarOrValue(sp.getObject());
+				if (plSubjectTmp != null && !plPairsTmp.isEmpty()) {
+					java.util.List<String> partsOut = new java.util.ArrayList<>(plPairsTmp.size());
+					for (java.util.AbstractMap.SimpleEntry<Var, String> e : plPairsTmp) {
+						partsOut.add(renderPredicateForTriple(e.getKey()) + " " + e.getValue());
+					}
+					line(plSubjectTmp + " " + String.join(" ; ", partsOut) + " .");
+					plSubjectTmp = null;
+					plPairsTmp.clear();
+				}
+				line(sTxt + " " + fused + " " + oTxt + " .");
+				return 2;
+			}
+			return 0;
+		}
+
+		private int tryFuseInverseNpsChain(final java.util.List<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> lines,
+				int i) {
+			if (i + 3 >= lines.size())
+				return 0;
+			if (!(lines.get(i) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern))
+				return 0;
+			final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp1 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) lines
+					.get(i);
+			Var p1 = sp1.getPredicate();
+			if (p1 == null || !p1.hasValue() || !(p1.getValue() instanceof IRI))
+				return 0;
+			Var mid1 = sp1.getSubject();
+			Var outer1 = sp1.getObject();
+			boolean firstInverse = true;
+			if (isAnonPathVar(outer1) && !isAnonPathVar(mid1)) {
+				Var tmp = outer1;
+				outer1 = mid1;
+				mid1 = tmp;
+				firstInverse = false;
+			}
+			if (!isAnonPathVar(mid1) || isAnonPathVar(outer1))
+				return 0;
+			if (!(lines.get(i + 1) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern))
+				return 0;
+			final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp2 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) lines
+					.get(i + 1);
+			if (!sameVar(mid1, sp2.getSubject()))
+				return 0;
+			Var pv = sp2.getPredicate();
+			if (pv == null || pv.hasValue() || pv.getName() == null || !pv.getName().startsWith(ANON_PATH_PREFIX))
+				return 0;
+			Var mid2 = sp2.getObject();
+			if (!isAnonPathVar(mid2))
+				return 0;
+			if (!(lines.get(i + 2) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter))
+				return 0;
+			final org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter f = (org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) lines
+					.get(i + 2);
+			final String cond = f.getConditionText();
+			if (cond == null || !cond.contains(pv.getName()))
+				return 0;
+			java.util.regex.Matcher m = java.util.regex.Pattern
+					.compile("(?i)\\?" + java.util.regex.Pattern.quote(pv.getName()) + "\\s+NOT\\s+IN\\s*\\(([^)]*)\\)")
+					.matcher(cond);
+			if (!m.find())
+				return 0;
+			String inner = m.group(1);
+			java.util.List<String> items = new java.util.ArrayList<>();
+			for (String t : inner.split(",")) {
+				items.add(t.trim());
+			}
+			if (!(lines.get(i + 3) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern))
+				return 0;
+			final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp3 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) lines
+					.get(i + 3);
+			if (!sameVar(mid2, sp3.getSubject()))
+				return 0;
+			Var p3 = sp3.getPredicate();
+			if (p3 == null || !p3.hasValue() || !(p3.getValue() instanceof IRI))
+				return 0;
+			Var outer2 = sp3.getObject();
+			if (isAnonPathVar(outer2))
+				return 0;
+			String start = renderVarOrValue(outer1);
+			java.util.List<String> parts = new java.util.ArrayList<>();
+			String step1 = renderIRI((IRI) p1.getValue());
+			if (firstInverse)
+				step1 = "^" + step1;
+			parts.add(step1);
+			parts.add("!(" + String.join("|", items) + ")");
+			parts.add(renderIRI((IRI) p3.getValue()));
+			String end = renderVarOrValue(outer2);
+			// flush PL
+			if (plSubjectTmp != null && !plPairsTmp.isEmpty()) {
+				java.util.List<String> partsOut = new java.util.ArrayList<>(plPairsTmp.size());
+				for (java.util.AbstractMap.SimpleEntry<Var, String> e : plPairsTmp) {
+					partsOut.add(renderPredicateForTriple(e.getKey()) + " " + e.getValue());
+				}
+				line(plSubjectTmp + " " + String.join(" ; ", partsOut) + " .");
+				plSubjectTmp = null;
+				plPairsTmp.clear();
+			}
+			line(start + " (" + String.join("/", parts) + ") " + end + " .");
+			return 4;
 		}
 
 		private void printNode(final org.eclipse.rdf4j.queryrender.sparql.ir.IrNode n,
