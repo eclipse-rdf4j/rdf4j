@@ -876,6 +876,9 @@ public class TupleExprIRRendererTest {
 				"ORDER BY DESC(?pc)\n" +
 				"LIMIT 7\n" +
 				"OFFSET 3";
+
+		collections();
+
 		assertSameSparqlQuery(q, cfg());
 	}
 
@@ -1186,10 +1189,79 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?g ?a ?x\n" +
 				"WHERE {\n" +
 				"  GRAPH ?g {\n" +
-				"    ?a !(rdf:type|ex:age)/foaf:name ?x .\n" +
+				"    ?a !(rdf:type | ex:age)/foaf:name ?x .\n" +
 				"  }\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void nps_fusion_graph_filter_graph_not_in_forward() {
+		String expanded = "SELECT ?g ?a ?x\n" +
+				"WHERE {\n" +
+				"  GRAPH ?g {\n" +
+				"    ?a ?p ?m .\n" +
+				"  }\n" +
+				"  FILTER (?p NOT IN (rdf:type, ex:age))\n" +
+				"  GRAPH ?g {\n" +
+				"    ?m foaf:name ?x .\n" +
+				"  }\n" +
+				"}";
+
+		String fused = "SELECT ?g ?a ?x\n" +
+				"WHERE {\n" +
+				"  GRAPH ?g {\n" +
+				"    ?a !(rdf:type | ex:age)/foaf:name ?x .\n" +
+				"  }\n" +
+				"}";
+
+		String rendered = render(SPARQL_PREFIX + expanded, cfg());
+		assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + fused);
+	}
+
+	@Test
+	void nps_fusion_graph_filter_graph_ineq_chain_inverse() {
+		String expanded = "SELECT ?g ?a ?x\n" +
+				"WHERE {\n" +
+				"  GRAPH ?g {\n" +
+				"    ?a ?p ?m .\n" +
+				"  }\n" +
+				"  FILTER ((?p != rdf:type) && (?p != ex:age))\n" +
+				"  GRAPH ?g {\n" +
+				"    ?x foaf:name ?m .\n" +
+				"  }\n" +
+				"}";
+
+		String fused = "SELECT ?g ?a ?x\n" +
+				"WHERE {\n" +
+				"  GRAPH ?g {\n" +
+				"    ?a !(rdf:type | ex:age)/^foaf:name ?x .\n" +
+				"  }\n" +
+				"}";
+
+		String rendered = render(SPARQL_PREFIX + expanded, cfg());
+		assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + fused);
+	}
+
+	@Test
+	void nps_fusion_graph_filter_only() {
+		String expanded = "SELECT ?g ?a ?m\n" +
+				"WHERE {\n" +
+				"  GRAPH ?g {\n" +
+				"    ?a ?p ?m .\n" +
+				"  }\n" +
+				"  FILTER (?p NOT IN (rdf:type, ex:age))\n" +
+				"}";
+
+		String fused = "SELECT ?g ?a ?m\n" +
+				"WHERE {\n" +
+				"  GRAPH ?g {\n" +
+				"    ?a !(rdf:type | ex:age) ?m .\n" +
+				"  }\n" +
+				"}";
+
+		String rendered = render(SPARQL_PREFIX + expanded, cfg());
+		assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + fused);
 	}
 
 	@Test
