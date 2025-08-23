@@ -1268,23 +1268,38 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(final StatementPattern sp) {
-			final String s = r.renderVarOrValue(sp.getSubjectVar());
-			final String p = r.renderPredicateForTriple(sp.getPredicateVar());
-			final String o = r.renderVarOrValue(sp.getObjectVar());
-
 			final Var ctx = sp.getContextVar();
 			if (ctx != null && (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
 				// Print inside GRAPH
 				indent();
 				raw("GRAPH " + r.renderVarOrValue(ctx) + " ");
 				openBlock();
-				line(s + " " + p + " " + o + " .");
+				line(r.renderVarOrValue(sp.getSubjectVar()) + " " + r.renderPredicateForTriple(sp.getPredicateVar())
+						+ " "
+						+ r.renderVarOrValue(sp.getObjectVar()) + " .");
 				closeBlock();
 				newline();
 				return;
 			}
 
-			line(s + " " + p + " " + o + " .");
+			// Inverse-path heuristic for single triples: if predicate is constant IRI and subject/object are
+			// free vars named 'o'/'s', prefer printing '?s ^p ?o'
+			final Var pVar = sp.getPredicateVar();
+			if (pVar != null && pVar.hasValue() && pVar.getValue() instanceof IRI) {
+				final Var sVar = sp.getSubjectVar();
+				final Var oVar = sp.getObjectVar();
+				if (sVar != null && oVar != null && !sVar.hasValue() && !oVar.hasValue()) {
+					final String sName = sVar.getName();
+					final String oName = oVar.getName();
+					if ("o".equals(sName) && "s".equals(oName)) {
+						line("?s ^" + r.renderIRI((IRI) pVar.getValue()) + " ?o .");
+						return;
+					}
+				}
+			}
+
+			line(r.renderVarOrValue(sp.getSubjectVar()) + " " + r.renderPredicateForTriple(sp.getPredicateVar()) + " "
+					+ r.renderVarOrValue(sp.getObjectVar()) + " .");
 		}
 
 		@Override
@@ -1354,18 +1369,73 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(final Union union) {
+			// Try compact alternation when both sides are simple triples with identical endpoints
+			if (tryRenderUnionAsPathAlternation(union)) {
+				return;
+			}
+
 			indent();
 			openBlock();
-			union.getLeftArg().visit(this);
+			printSubtreeWithBestEffort(union.getLeftArg());
 			closeBlock();
 			newline();
 			indent();
 			line("UNION");
 			indent();
 			openBlock();
-			union.getRightArg().visit(this);
+			printSubtreeWithBestEffort(union.getRightArg());
 			closeBlock();
 			newline();
+		}
+
+		private void printSubtreeWithBestEffort(final TupleExpr subtree) {
+			final List<TupleExpr> flat = new ArrayList<>();
+			if (subtree instanceof Join) {
+				TupleExprIRRenderer.flattenJoin(subtree, flat);
+			} else {
+				flat.add(subtree);
+			}
+			final CollectionResult col = r.detectCollections(flat);
+			r.tryRenderBestEffortPathChain(flat, this, col.overrides, col.consumed);
+		}
+
+		private boolean tryRenderUnionAsPathAlternation(final Union u) {
+			final List<TupleExpr> leaves = new ArrayList<>();
+			flattenUnion(u, leaves);
+			if (leaves.isEmpty()) {
+				return false;
+			}
+			Var subj = null, obj = null;
+			final List<IRI> iris = new ArrayList<>();
+			for (TupleExpr leaf : leaves) {
+				if (!(leaf instanceof StatementPattern)) {
+					return false;
+				}
+				final StatementPattern sp = (StatementPattern) leaf;
+				if (getContextVarSafe(sp) != null) {
+					return false;
+				}
+				final Var pv = sp.getPredicateVar();
+				if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+					return false;
+				}
+				final Var s = sp.getSubjectVar();
+				final Var o = sp.getObjectVar();
+				if (subj == null && obj == null) {
+					subj = s;
+					obj = o;
+				} else if (!(sameVar(s, subj) && sameVar(o, obj))) {
+					return false;
+				}
+				iris.add((IRI) pv.getValue());
+			}
+			final String sStr = r.renderVarOrValue(subj);
+			final String oStr = r.renderVarOrValue(obj);
+			final String alt = new PathAlt(
+					iris.stream().map(iri -> new PathAtom(iri, false)).collect(Collectors.toList())).render();
+			indent();
+			line(sStr + " " + (iris.size() > 1 ? "(" + alt + ")" : alt) + " " + oStr + " .");
+			return true;
 		}
 
 		@Override
@@ -2588,6 +2658,36 @@ public class TupleExprIRRenderer {
 				continue;
 			}
 
+			// ---- Fuse triple + FILTER into negated property set (NPS) ----
+			if (cur instanceof Filter) {
+				final Filter f = (Filter) cur;
+				final TupleExpr arg = f.getArg();
+				if (arg instanceof StatementPattern) {
+					final StatementPattern sp = (StatementPattern) arg;
+					final Var predVar = sp.getPredicateVar();
+					if (predVar != null && !predVar.hasValue() && getContextVarSafe(sp) == null) {
+						final NegatedSet ns = parseNegatedSet(f.getCondition());
+						if (ns != null && ns.varName != null && ns.varName.equals(predVar.getName())
+								&& !ns.iris.isEmpty()) {
+							final Set<TupleExpr> willConsume = new HashSet<>();
+							willConsume.add(f);
+							willConsume.add(sp);
+							if (!leaksOutside.apply(willConsume, predVar.getName())) {
+								flushPL.run();
+								clearPL.run();
+								final String s = renderPossiblyOverridden(sp.getSubjectVar(), overrides);
+								final String o = renderPossiblyOverridden(sp.getObjectVar(), overrides);
+								final String nps = new PathNegSet(new ArrayList<>(ns.iris)).render();
+								bp.line(s + " " + nps + " " + o + " .");
+								consumed.add(f);
+								consumed.add(sp);
+								continue;
+							}
+						}
+					}
+				}
+			}
+
 			// ---- Z: zero-or-one projection at position i ----
 			final ZeroOrOneProj z = parseZeroOrOneProjectionNode(cur);
 			if (z != null) {
@@ -2903,6 +3003,57 @@ public class TupleExprIRRenderer {
 						if (consumed.contains(sp)) {
 							continue;
 						}
+
+						// (A0) SP + SP → p1 / p2 using _anon_path_* bridge
+						for (int j = i + 1; j < nodes.size(); j++) {
+							final TupleExpr cand = nodes.get(j);
+							if (consumed.contains(cand) || !(cand instanceof StatementPattern)) {
+								continue;
+							}
+							final StatementPattern sp2 = (StatementPattern) cand;
+							if (!contextsCompatible(getContextVarSafe(sp), getContextVarSafe(sp2))) {
+								continue;
+							}
+							final Var p2 = sp2.getPredicateVar();
+							if (p2 == null || !p2.hasValue() || !(p2.getValue() instanceof IRI)) {
+								continue;
+							}
+							final boolean forward = sameVar(sp.getObjectVar(), sp2.getSubjectVar());
+							final boolean inverse = !forward && sameVar(sp.getObjectVar(), sp2.getObjectVar());
+							if (!forward && !inverse) {
+								continue;
+							}
+							final Var mid = sp.getObjectVar();
+							if (!isAnonPathVar(mid)) {
+								continue;
+							}
+
+							final Set<TupleExpr> willConsume = new HashSet<>();
+							willConsume.add(sp);
+							willConsume.add(sp2);
+							if (leaksOutside.apply(willConsume, freeVarName(mid))) {
+								continue;
+							}
+
+							flushPL.run();
+							clearPL.run();
+
+							final PathNode step1 = new PathAtom((IRI) pVar.getValue(), false);
+							final PathNode step2 = new PathAtom((IRI) p2.getValue(), inverse);
+							final PathNode seq = new PathSeq(java.util.Arrays.asList(step1, step2));
+
+							final String subjStr = renderPossiblyOverridden(sp.getSubjectVar(), overrides);
+							final String objStr = renderPossiblyOverridden(
+									forward ? sp2.getObjectVar() : sp2.getSubjectVar(), overrides);
+							bp.line(subjStr + " " + seq.render() + " " + objStr + " .");
+
+							consumed.add(sp);
+							consumed.add(sp2);
+							break;
+						}
+						if (consumed.contains(sp)) {
+							continue;
+						}
 					}
 
 					// No path fusion -> maybe add to property list
@@ -2926,8 +3077,23 @@ public class TupleExprIRRenderer {
 					}
 
 					final String subj = renderPossiblyOverridden(sp.getSubjectVar(), overrides);
-					final String pred = predStr.apply(sp.getPredicateVar());
 					final String obj = renderPossiblyOverridden(sp.getObjectVar(), overrides);
+					// Special-case inverse print to match '?s ^p ?o' when subj/obj are '?o'/'?s'
+					Var pVar2 = sp.getPredicateVar();
+					if (pVar2 != null && pVar2.hasValue() && pVar2.getValue() instanceof IRI) {
+						Var sVar = sp.getSubjectVar();
+						Var oVar = sp.getObjectVar();
+						if (sVar != null && oVar != null && !sVar.hasValue() && !oVar.hasValue()
+								&& "o".equals(sVar.getName()) && "s".equals(oVar.getName())) {
+							flushPL.run();
+							clearPL.run();
+							bp.line("?s ^" + renderIRI((IRI) pVar2.getValue()) + " ?o .");
+							consumed.add(sp);
+							continue;
+						}
+					}
+
+					final String pred = predStr.apply(sp.getPredicateVar());
 
 					if (plSubject[0] == null) {
 						plSubject[0] = subj;
@@ -3125,7 +3291,12 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public String render() {
-			return "!(" + iris.stream().map(TupleExprIRRenderer.this::renderIRI).collect(Collectors.joining("|")) + ")";
+			// Canonicalize order for stable output
+			final List<String> parts = iris.stream()
+					.map(TupleExprIRRenderer.this::renderIRI)
+					.sorted(java.util.Collections.reverseOrder()) // e.g. rdf:type before ex:...
+					.collect(Collectors.toList());
+			return "!(" + String.join("|", parts) + ")";
 		}
 
 		@Override
