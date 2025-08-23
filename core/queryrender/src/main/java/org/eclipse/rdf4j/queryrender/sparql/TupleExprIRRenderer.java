@@ -2955,8 +2955,8 @@ public class TupleExprIRRenderer {
 
 						final PathNode step1 = new PathAtom((IRI) p1.getValue(), step1Inverse);
 						final java.util.List<IRI> npsIris = new ArrayList<>(ns.iris);
-						// For chained path readability, print negated set in ascending prefix order
-						npsIris.sort(java.util.Comparator.comparing(TupleExprIRRenderer.this::renderIRI));
+						// Heuristic: reverse flattened AND order to match original textual NPS order
+						java.util.Collections.reverse(npsIris);
 						final PathNode npsNode = new PathNegSet(npsIris);
 						final List<PathNode> parts = new ArrayList<>();
 						parts.add(step1);
@@ -3537,10 +3537,9 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public String render() {
-			// Canonicalize order for stable output (rdf:type often first)
+			// Preserve encounter order (closest to original query intent)
 			final List<String> parts = iris.stream()
 					.map(TupleExprIRRenderer.this::renderIRI)
-					.sorted(java.util.Collections.reverseOrder())
 					.collect(Collectors.toList());
 			return "!(" + String.join("|", parts) + ")";
 		}
