@@ -96,17 +96,30 @@ public class TupleExprIRRendererTest {
 //		String rendered = assertFixedPoint(original, cfg);
 		sparql = sparql.trim();
 
-		TupleExpr tupleExpr = parseAlgebra(SPARQL_PREFIX + sparql);
-		String rendered = render(SPARQL_PREFIX + sparql, cfg);
+
 
 		try {
+			TupleExpr tupleExpr = parseAlgebra(SPARQL_PREFIX + sparql);
+			String rendered = render(SPARQL_PREFIX + sparql, cfg);
 			assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + sparql);
 
 		} catch (Throwable t) {
+			String rendered;
+			TupleExpr tupleExpr = parseAlgebra(SPARQL_PREFIX + sparql);
 			System.out.println("\n\n\n");
 			System.out.println("# Original SPARQL query\n" + sparql + "\n");
 			System.out.println("# Original TupleExpr\n" + tupleExpr + "\n");
 
+			try {
+				cfg.debugIR = true;
+				System.out.println("# Re-rendering with IR debug enabled for this failing test\n");
+				// Trigger debug prints from the renderer
+				rendered = render(SPARQL_PREFIX + sparql, cfg);
+			} finally {
+				cfg.debugIR = false;
+			}
+
+			// Fail (again) with the original comparison so the test result is correct
 			assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + sparql);
 
 		}

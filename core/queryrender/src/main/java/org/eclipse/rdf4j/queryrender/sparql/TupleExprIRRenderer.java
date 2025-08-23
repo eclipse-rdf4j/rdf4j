@@ -178,7 +178,7 @@ public class TupleExprIRRenderer {
 		public boolean canonicalWhitespace = true;
 		public String baseIRI = null;
 		public LinkedHashMap<String, String> prefixes = new LinkedHashMap<>();
-		public boolean debugIR = true; // print IR before and after transforms
+		public boolean debugIR = false; // print IR before and after transforms
 
 		// Flags
 		public boolean strict = true; // throw on unsupported
