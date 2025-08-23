@@ -755,7 +755,7 @@ public class TupleExprToSparqlTest {
 				"    SELECT ?s (COUNT(?o) AS ?innerC)\n" +
 				"    WHERE {\n" +
 				"      ?s ?p ?o .\n" +
-				"      FILTER (?p NOT IN (rdf:type))\n" +
+				"      FILTER (?p != rdf:type)\n" +
 				"    }\n" +
 				"    GROUP BY ?s\n" +
 				"    HAVING (COUNT(?o) >= 0)\n" +
