@@ -43,11 +43,11 @@ public final class IrTransforms {
 		select.setWhere(applyPaths(select.getWhere(), r));
 		// Collections: replace anon collection heads with textual collection, when derivable (best-effort)
 		select.setWhere(applyCollections(select.getWhere(), r));
-		// Final layout normalization: fold OPTIONAL { GRAPH g { ... } [FILTER ...] } into prior GRAPH g { ... OPTIONAL
-		// { ... } }
-		if (select.getWhere() != null) {
-			foldOptionalIntoGraph(select.getWhere().getLines());
-		}
+		// NOTE: Do not fold OPTIONAL { GRAPH g { ... } [FILTER ...] } into a preceding GRAPH g { ... }
+		// block. Tests expect OPTIONAL blocks to remain at the outer level with an inner GRAPH
+		// when appropriate. Keeping the original structure also avoids over-aggressive rewriting
+		// that can surprise users. If desired later, this could be reintroduced behind a
+		// configuration flag.
 		// HAVING: currently handled by renderer’s substitution; can be lifted later
 	}
 
