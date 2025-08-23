@@ -322,7 +322,7 @@ public class TupleExprIRRenderer {
 		bp.openBlock();
 		n.where.visit(bp);
 		bp.closeBlock();
-		return out.toString().trim();
+		return mergeAdjacentGraphBlocks(out.toString()).trim();
 	}
 
 	/** DESCRIBE query (top-level). If describeAll==true, ignore describeTerms and render DESCRIBE *. */
@@ -370,7 +370,7 @@ public class TupleExprIRRenderer {
 			out.append("\nOFFSET ").append(n.offset);
 		}
 
-		return out.toString().trim();
+		return mergeAdjacentGraphBlocks(out.toString()).trim();
 	}
 
 	/** CONSTRUCT query (top-level). Template is a list of triple patterns (context respected when present). */
@@ -439,7 +439,7 @@ public class TupleExprIRRenderer {
 			out.append("\nOFFSET ").append(n.offset);
 		}
 
-		return out.toString().trim();
+		return mergeAdjacentGraphBlocks(out.toString()).trim();
 	}
 
 	// ---------------- Core SELECT and subselect ----------------
@@ -576,7 +576,7 @@ public class TupleExprIRRenderer {
 			out.append("\nOFFSET ").append(n.offset);
 		}
 
-		return out.toString().trim();
+		return mergeAdjacentGraphBlocks(out.toString()).trim();
 	}
 
 	private void printPrologueAndDataset(final StringBuilder out, final DatasetView dataset) {
@@ -1201,6 +1201,9 @@ public class TupleExprIRRenderer {
 	/** Projections that must be suppressed (already rewritten into path). */
 	private final Set<Object> suppressedSubselects = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
+	/** Unions that must be suppressed (already rewritten into alternation path). */
+	private final Set<Object> suppressedUnions = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
 	private void suppressProjectionSubselect(final TupleExpr container) {
 		if (container instanceof Projection) {
 			suppressedSubselects.add(container);
@@ -1216,6 +1219,14 @@ public class TupleExprIRRenderer {
 		return suppressedSubselects.contains(p);
 	}
 
+	private void suppressUnion(final TupleExpr u) {
+		suppressedUnions.add(u);
+	}
+
+	private boolean isUnionSuppressed(final Union u) {
+		return suppressedUnions.contains(u);
+	}
+
 	private final class BlockPrinter extends AbstractQueryModelVisitor<RuntimeException> {
 		private final StringBuilder out;
 		private final TupleExprIRRenderer r;
@@ -1224,6 +1235,9 @@ public class TupleExprIRRenderer {
 		private final Normalized norm;
 		private final String indentUnit;
 		private int level = 0;
+		// Persistent GRAPH grouping across multiple IR passes
+		private String openGraphRef = null;
+		private final java.util.List<String> openGraphLines = new java.util.ArrayList<>();
 		private final boolean suppressGraph; // when true, print triples without wrapping GRAPH even if context present
 
 		BlockPrinter(final StringBuilder out, final TupleExprIRRenderer renderer, final Config cfg,
@@ -1253,6 +1267,15 @@ public class TupleExprIRRenderer {
 		}
 
 		void closeBlock() {
+			// Always flush any pending GRAPH grouping when closing a block to keep
+			// GRAPH content scoped inside the current block (e.g., OPTIONAL, UNION branches, SERVICE).
+			flushOpenGraph();
+			level--;
+			indent();
+			out.append("}");
+		}
+
+		void closeBlockDirect() {
 			level--;
 			indent();
 			out.append("}");
@@ -1266,6 +1289,43 @@ public class TupleExprIRRenderer {
 
 		void raw(final String s) {
 			out.append(s);
+		}
+
+		void emitGraphLine(final String graphRef, final String text) {
+			final boolean plain = text.endsWith(" .");
+			if (!plain) {
+				flushOpenGraph();
+				line(text);
+				return;
+			}
+			if (graphRef == null) {
+				flushOpenGraph();
+				line(text);
+				return;
+			}
+			if (openGraphRef == null) {
+				openGraphRef = graphRef;
+			}
+			if (!openGraphRef.equals(graphRef)) {
+				flushOpenGraph();
+				openGraphRef = graphRef;
+			}
+			openGraphLines.add(text);
+		}
+
+		void flushOpenGraph() {
+			if (openGraphRef != null && !openGraphLines.isEmpty()) {
+				indent();
+				raw("GRAPH " + openGraphRef + " ");
+				openBlock();
+				for (String ln : openGraphLines) {
+					line(ln);
+				}
+				closeBlockDirect();
+				newline();
+			}
+			openGraphLines.clear();
+			openGraphRef = null;
 		}
 
 		void newline() {
@@ -1283,15 +1343,10 @@ public class TupleExprIRRenderer {
 			final Var ctx = sp.getContextVar();
 			if (!suppressGraph && ctx != null
 					&& (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
-				// Print inside GRAPH
-				indent();
-				raw("GRAPH " + r.renderVarOrValue(ctx) + " ");
-				openBlock();
-				line(r.renderVarOrValue(sp.getSubjectVar()) + " " + r.renderPredicateForTriple(sp.getPredicateVar())
-						+ " "
-						+ r.renderVarOrValue(sp.getObjectVar()) + " .");
-				closeBlock();
-				newline();
+				final String triple = r.renderVarOrValue(sp.getSubjectVar()) + " "
+						+ r.renderPredicateForTriple(sp.getPredicateVar()) + " "
+						+ r.renderVarOrValue(sp.getObjectVar()) + " .";
+				emitGraphLine(r.renderVarOrValue(ctx), triple);
 				return;
 			}
 
@@ -1335,6 +1390,8 @@ public class TupleExprIRRenderer {
 				return;
 			}
 			String sub = r.renderSubselect(p);
+			// Ensure any pending GRAPH block is closed before starting a subselect block
+			flushOpenGraph();
 			indent();
 			raw("{");
 			newline();
@@ -1380,6 +1437,8 @@ public class TupleExprIRRenderer {
 		@Override
 		public void meet(final LeftJoin lj) {
 			lj.getLeftArg().visit(this);
+			// Flush any pending GRAPH lines from the outer scope before opening OPTIONAL block
+			flushOpenGraph();
 			indent();
 			raw("OPTIONAL ");
 			openBlock();
@@ -1387,6 +1446,7 @@ public class TupleExprIRRenderer {
 			if (lj.getCondition() != null) {
 				String cond = r.renderExpr(lj.getCondition());
 				cond = TupleExprIRRenderer.stripRedundantOuterParens(cond);
+				flushOpenGraph();
 				line("FILTER (" + cond + ")");
 			}
 			closeBlock();
@@ -1395,6 +1455,9 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(final Union union) {
+			if (r.isUnionSuppressed(union)) {
+				return;
+			}
 			// Try compact alternation when both sides are simple triples with identical endpoints
 			if (tryRenderUnionAsPathAlternation(union)) {
 				return;
@@ -1404,6 +1467,8 @@ public class TupleExprIRRenderer {
 			final List<TupleExpr> branches = new ArrayList<>();
 			flattenUnion(union, branches);
 			for (int i = 0; i < branches.size(); i++) {
+				// Flush any pending GRAPH group before starting a new UNION branch block
+				flushOpenGraph();
 				indent();
 				openBlock();
 				printSubtreeWithBestEffort(branches.get(i));
@@ -1467,12 +1532,7 @@ public class TupleExprIRRenderer {
 					iris.stream().map(iri -> new PathAtom(iri, false)).collect(Collectors.toList())).render();
 			final String triple = sStr + " " + (iris.size() > 1 ? "(" + alt + ")" : alt) + " " + oStr + " .";
 			if (ctxRef != null && (ctxRef.hasValue() || (ctxRef.getName() != null && !ctxRef.getName().isEmpty()))) {
-				indent();
-				raw("GRAPH " + r.renderVarOrValue(ctxRef) + " ");
-				openBlock();
-				line(triple);
-				closeBlock();
-				newline();
+				emitGraphLine(r.renderVarOrValue(ctxRef), triple);
 			} else {
 				line(triple);
 			}
@@ -1482,6 +1542,8 @@ public class TupleExprIRRenderer {
 		@Override
 		public void meet(final Difference diff) {
 			diff.getLeftArg().visit(this);
+			// Flush any pending GRAPH group before starting MINUS block
+			flushOpenGraph();
 			indent();
 			raw("MINUS ");
 			openBlock();
@@ -1495,6 +1557,7 @@ public class TupleExprIRRenderer {
 			filter.getArg().visit(this);
 			String cond = r.renderExpr(filter.getCondition());
 			cond = TupleExprIRRenderer.stripRedundantOuterParens(cond);
+			flushOpenGraph();
 			line("FILTER (" + cond + ")");
 		}
 
@@ -1512,6 +1575,8 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(final Service svc) {
+			// Flush any pending GRAPH lines from outer scope before entering SERVICE block
+			flushOpenGraph();
 			indent();
 			raw("SERVICE ");
 			if (svc.isSilent()) {
@@ -1526,6 +1591,8 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(final BindingSetAssignment bsa) {
+			// Flush before starting VALUES block to avoid mixing into GRAPH groups
+			flushOpenGraph();
 			List<String> names = new ArrayList<>(bsa.getBindingNames());
 			if (!cfg.valuesPreserveOrder) {
 				Collections.sort(names);
@@ -1587,12 +1654,7 @@ public class TupleExprIRRenderer {
 
 			if (!suppressGraph && ctx != null
 					&& (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
-				indent();
-				raw("GRAPH " + r.renderVarOrValue(ctx) + " ");
-				openBlock();
-				line(triple);
-				closeBlock();
-				newline();
+				emitGraphLine(r.renderVarOrValue(ctx), triple);
 			} else {
 				line(triple);
 			}
@@ -2807,94 +2869,8 @@ public class TupleExprIRRenderer {
 			Set<TupleExpr> preConsumed
 	) {
 
-		// Lightweight IR grouping: buffer emitted lines with an optional GRAPH ref
-		final class EmittedLine {
-			final String graphRef; // null if default graph
-			final String text; // must be a single logical line (with or without trailing dot)
-
-			EmittedLine(String graphRef, String text) {
-				this.graphRef = graphRef;
-				this.text = text;
-			}
-		}
-
-		final java.util.List<EmittedLine> outBuf = new java.util.ArrayList<>();
-
-		final java.util.function.Consumer<Void> flushOutBuf = (v) -> {
-			String curGraph = null;
-			java.util.List<String> group = new java.util.ArrayList<>();
-			for (EmittedLine el : outBuf) {
-				boolean isPlainLine = el.text.endsWith(" .");
-				if (!isPlainLine) {
-					// flush any open group
-					if (!group.isEmpty()) {
-						if (curGraph == null) {
-							for (String line : group) {
-								bp.line(line);
-							}
-						} else {
-							bp.indent();
-							bp.raw("GRAPH " + curGraph + " ");
-							bp.openBlock();
-							for (String line : group) {
-								bp.line(line);
-							}
-							bp.closeBlock();
-							bp.newline();
-						}
-						group.clear();
-						curGraph = null;
-					}
-					// print directive as-is
-					bp.line(el.text);
-					continue;
-				}
-				if (!java.util.Objects.equals(curGraph, el.graphRef)) {
-					// flush prior
-					if (!group.isEmpty()) {
-						if (curGraph == null) {
-							for (String line : group) {
-								bp.line(line);
-							}
-						} else {
-							bp.indent();
-							bp.raw("GRAPH " + curGraph + " ");
-							bp.openBlock();
-							for (String line : group) {
-								bp.line(line);
-							}
-							bp.closeBlock();
-							bp.newline();
-						}
-						group.clear();
-					}
-					curGraph = el.graphRef;
-				}
-				group.add(el.text);
-			}
-			// flush remaining
-			if (!group.isEmpty()) {
-				if (curGraph == null) {
-					for (String line : group) {
-						bp.line(line);
-					}
-				} else {
-					bp.indent();
-					bp.raw("GRAPH " + curGraph + " ");
-					bp.openBlock();
-					for (String line : group) {
-						bp.line(line);
-					}
-					bp.closeBlock();
-					bp.newline();
-				}
-			}
-			outBuf.clear();
-		};
-
-		final java.util.function.BiConsumer<String, String> emitLine = (graphRef, text) -> {
-			outBuf.add(new EmittedLine(graphRef, text));
-		};
+		// Reuse BlockPrinter's persistent GRAPH grouping
+		final java.util.function.BiConsumer<String, String> emitLine = bp::emitGraphLine;
 
 		final Set<TupleExpr> consumed = new HashSet<>();
 		if (preConsumed != null) {
@@ -3111,7 +3087,117 @@ public class TupleExprIRRenderer {
 				}
 				flushPL.run();
 				clearPL.run();
-				flushOutBuf.accept(null);
+				bp.flushOpenGraph();
+				cur.visit(bp);
+				consumed.add(cur);
+				continue;
+			}
+
+			// ---- UNION alternation followed by chaining SP via _anon_path_* bridge ----
+			if (cur instanceof Union) {
+				final List<TupleExpr> leaves = new ArrayList<>();
+				flattenUnion(cur, leaves);
+				if (!leaves.isEmpty()) {
+					Var subj = null, mid = null;
+					Var ctxRef = null;
+					final List<IRI> iris = new ArrayList<>();
+					boolean ok = true;
+					for (TupleExpr leaf : leaves) {
+						if (!(leaf instanceof StatementPattern)) {
+							ok = false;
+							break;
+						}
+						final StatementPattern sp = (StatementPattern) leaf;
+						Var ctx = getContextVarSafe(sp);
+						if (ctxRef == null) {
+							ctxRef = ctx;
+						} else if (!contextsCompatible(ctxRef, ctx)) {
+							ok = false;
+							break;
+						}
+						Var pv = sp.getPredicateVar();
+						if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+							ok = false;
+							break;
+						}
+						Var s = sp.getSubjectVar();
+						Var o = sp.getObjectVar();
+						if (subj == null && mid == null) {
+							subj = s;
+							mid = o;
+						} else if (!(sameVar(subj, s) && sameVar(mid, o))) {
+							ok = false;
+							break;
+						}
+						iris.add((IRI) pv.getValue());
+					}
+					if (ok && isAnonPathVar(mid)) {
+						// look ahead for chaining SP using mid as subject or object
+						for (int j = i + 1; j < nodes.size(); j++) {
+							final TupleExpr cand = nodes.get(j);
+							if (consumed.contains(cand) || !(cand instanceof StatementPattern)) {
+								continue;
+							}
+							final StatementPattern sp2 = (StatementPattern) cand;
+							if (!contextsCompatible(ctxRef, getContextVarSafe(sp2))) {
+								continue;
+							}
+							final Var p2 = sp2.getPredicateVar();
+							if (p2 == null || !p2.hasValue() || !(p2.getValue() instanceof IRI)) {
+								continue;
+							}
+							final boolean forward = sameVar(mid, sp2.getSubjectVar());
+							final boolean inverse = !forward && sameVar(mid, sp2.getObjectVar());
+							if (!forward && !inverse) {
+								continue;
+							}
+
+							flushPL.run();
+							clearPL.run();
+
+							final PathNode alt = new PathAlt(
+									iris.stream().map(iri -> new PathAtom(iri, false)).collect(Collectors.toList()));
+							final PathNode step2 = new PathAtom((IRI) p2.getValue(), inverse);
+							final PathNode seq = new PathSeq(java.util.Arrays.asList(alt, step2));
+
+							final String gRef = (ctxRef == null) ? null : renderVarOrValue(ctxRef);
+							final String subjStr = renderPossiblyOverridden(subj, overrides);
+							final Var endVar = forward ? sp2.getObjectVar() : sp2.getSubjectVar();
+							final String objStr = renderPossiblyOverridden(endVar, overrides);
+							emitLine.accept(gRef, subjStr + " " + seq.render() + " " + objStr + " .");
+
+							// Opportunistically emit a trailing triple connected to endVar within the same GRAPH
+							for (int k = j + 1; k < nodes.size(); k++) {
+								final TupleExpr maybe = nodes.get(k);
+								if (consumed.contains(maybe) || !(maybe instanceof StatementPattern)) {
+									continue;
+								}
+								final StatementPattern sp3 = (StatementPattern) maybe;
+								if (!contextsCompatible(ctxRef, getContextVarSafe(sp3))) {
+									continue;
+								}
+								if (sameVar(endVar, sp3.getSubjectVar())) {
+									final String t = renderPossiblyOverridden(sp3.getSubjectVar(), overrides) + " "
+											+ predStr.apply(sp3.getPredicateVar()) + " "
+											+ renderPossiblyOverridden(sp3.getObjectVar(), overrides) + " .";
+									emitLine.accept(gRef, t);
+									consumed.add(sp3);
+									break;
+								}
+							}
+
+							consumed.add(cur);
+							suppressUnion(cur);
+							consumed.add(sp2);
+							continue; // move to next i
+						}
+					}
+				}
+
+				// fallback: print via BlockPrinter
+				flushPL.run();
+				clearPL.run();
+				bp.flushOpenGraph();
 				cur.visit(bp);
 				consumed.add(cur);
 				continue;
@@ -3655,7 +3741,7 @@ public class TupleExprIRRenderer {
 					}
 				}
 			} else {
-				flushOutBuf.accept(null);
+				bp.flushOpenGraph();
 				cur.visit(bp);
 			}
 			consumed.add(cur);
@@ -3664,7 +3750,7 @@ public class TupleExprIRRenderer {
 		// flush tail property list and any buffered grouped lines
 		flushPL.run();
 		clearPL.run();
-		flushOutBuf.accept(null);
+		bp.flushOpenGraph();
 
 		return true;
 	}
@@ -4083,5 +4169,21 @@ public class TupleExprIRRenderer {
 		}
 		final String name = v.getName();
 		return isAnonHavingName(name);
+	}
+
+	// Merge adjacent identical GRAPH blocks to improve grouping when IR emits across passes
+	private static String mergeAdjacentGraphBlocks(final String s) {
+		String prev;
+		String cur = s;
+		final Pattern p = Pattern.compile(
+				"GRAPH\\s+([^\\s]+)\\s*\\{\\s*([\\s\\S]*?)\\s*\\}\\s*GRAPH\\s+\\1\\s*\\{\\s*([\\s\\S]*?)\\s*\\}",
+				Pattern.MULTILINE);
+		int guard = 0;
+		do {
+			prev = cur;
+			cur = p.matcher(prev).replaceFirst("GRAPH $1 {\n$2\n$3\n}");
+			guard++;
+		} while (!cur.equals(prev) && guard < 50);
+		return cur;
 	}
 }

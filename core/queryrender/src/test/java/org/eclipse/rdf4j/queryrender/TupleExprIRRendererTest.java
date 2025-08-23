@@ -729,6 +729,29 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
+	void morePathInGraph() {
+		String q = "SELECT REDUCED ?g ?y (?cnt AS ?count) (COALESCE(?avgAge, -1) AS ?ageOrMinus1)\n" +
+				"WHERE {\n" +
+				"  VALUES (?g) {\n" +
+				"    (ex:g1)\n" +
+				"    (ex:g2)\n" +
+				"  }\n" +
+				"  GRAPH ?g {\n" +
+				"    ?x (foaf:knows|ex:knows)/^foaf:knows ?y .\n" +
+				"    ?y foaf:name ?name .\n" +
+				"  }\n" +
+				"  OPTIONAL {\n" +
+				"    ?y ex:age ?age .\n" +
+				"    FILTER (?age >= 21)\n" +
+				"  }\n" +
+				"}\n" +
+				"ORDER BY DESC(?cnt) LCASE(?name)\n" +
+				"LIMIT 10\n" +
+				"OFFSET 5";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
 	void complex_deep_union_optional_with_grouping() {
 		String q = "SELECT ?s ?label ?src (SUM(?innerC) AS ?c)\n" +
 				"WHERE {\n" +
