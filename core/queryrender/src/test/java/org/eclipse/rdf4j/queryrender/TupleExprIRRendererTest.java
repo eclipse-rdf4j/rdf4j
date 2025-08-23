@@ -1083,6 +1083,17 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
+	void path_in_graph() {
+		String q = "SELECT ?g ?a ?x\n" +
+				"WHERE {\n" +
+				"  GRAPH ?g {\n" +
+				"    ?a !(rdf:type|ex:age)/foaf:name ?x.\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
 	void mega_service_graph_interleaved_with_subselects() {
 		String q = "SELECT ?s ?g (SUM(?c) AS ?total)\n" +
 				"WHERE {\n" +
