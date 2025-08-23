@@ -1096,7 +1096,7 @@ public class TupleExprIRRendererTest {
 				"        GRAPH ?g {\n" +
 				"          ?s ?p ?o .\n" +
 				"        }\n" +
-				"        FILTER (?p NOT IN (rdf:type))\n" +
+				"        FILTER (?p NOT IN (rdf:type, ex:type))\n" +
 				"      }\n" +
 				"      GROUP BY ?s\n" +
 				"    }\n" +
