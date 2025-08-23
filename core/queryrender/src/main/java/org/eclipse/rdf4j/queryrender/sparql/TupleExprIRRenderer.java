@@ -775,15 +775,17 @@ public class TupleExprIRRenderer {
 				// assume already-rendered or prefixed
 				tokens.add(tok);
 			}
-			// Stable preference: put rdf:* before others, then lexical
-			tokens.sort((a, b) -> {
-				boolean ar = a.startsWith("rdf:");
-				boolean br = b.startsWith("rdf:");
-				if (ar != br)
-					return ar ? -1 : 1; // rdf: first
-				return a.compareTo(b);
-			});
-			return String.join("|", tokens);
+			// Canonicalize order with rdf:* first, then keep remaining in original order
+			java.util.List<String> rdfFirst = new java.util.ArrayList<>();
+			java.util.List<String> rest = new java.util.ArrayList<>();
+			for (String t : tokens) {
+				if (t.startsWith("rdf:"))
+					rdfFirst.add(t);
+				else
+					rest.add(t);
+			}
+			rdfFirst.addAll(rest);
+			return String.join("|", rdfFirst);
 		}
 
 		/**
@@ -982,6 +984,8 @@ public class TupleExprIRRenderer {
 			for (String t : inner.split(",")) {
 				items.add(t.trim());
 			}
+			// Reverse the NOT IN order to match original path alternation order
+			java.util.Collections.reverse(items);
 			if (!(lines.get(i + 3) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern))
 				return 0;
 			final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp3 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) lines
