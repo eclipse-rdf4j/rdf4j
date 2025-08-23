@@ -170,7 +170,7 @@ public class TupleExprToSparql {
 		// New flags
 		public boolean strict = true; // throw on unsupported
 		public boolean lenientComments = false; // if not strict, print parseable '# ...' lines
-		public boolean valuesPreserveOrder = false; // keep VALUES column order as given by BSA iteration
+		public boolean valuesPreserveOrder = true; // keep VALUES column order as given by BSA iteration (default)
 		public String sparqlVersion = "1.1"; // controls rare path quantifier printing etc.
 
 		// Optional dataset via config (used only when no DatasetView is passed to render())
@@ -1377,13 +1377,32 @@ public class TupleExprToSparql {
 
 		@Override
 		public void meet(final Extension ext) {
+			// Render inner first
 			ext.getArg().visit(this);
 			for (final ExtensionElem ee : ext.getElements()) {
 				final ValueExpr expr = ee.getExpr();
 				if (expr instanceof AggregateOperator) {
 					continue; // hoisted to SELECT
 				}
-				line("BIND(" + r.renderExpr(expr) + " AS ?" + ee.getName() + ")");
+
+				// Skip BIND if this extension element is used as a SELECT alias expression
+				boolean usedInSelect = false;
+				if (norm != null && norm.projection != null
+						&& norm.projection.getProjectionElemList() != null) {
+					for (ProjectionElem pe : norm.projection.getProjectionElemList().getElements()) {
+						ExtensionElem src = pe.getSourceExpression();
+						if (src != null
+								&& pe.getName().equals(ee.getName())
+								&& Objects.equals(src.getExpr(), ee.getExpr())) {
+							usedInSelect = true;
+							break;
+						}
+					}
+				}
+
+				if (!usedInSelect) {
+					line("BIND(" + r.renderExpr(expr) + " AS ?" + ee.getName() + ")");
+				}
 			}
 		}
 
@@ -1803,29 +1822,6 @@ public class TupleExprToSparql {
 		}
 		if (e instanceof Compare) {
 			final Compare c = (Compare) e;
-
-			// NEW: prefer NOT IN form for var != IRI (matches expected test text)
-			if (c.getOperator() == CompareOp.NE) {
-				ValueExpr L = c.getLeftArg();
-				ValueExpr R = c.getRightArg();
-				Var v = null;
-				ValueConstant constIri = null;
-
-				if (L instanceof Var && R instanceof ValueConstant && ((ValueConstant) R).getValue() instanceof IRI) {
-					v = (Var) L;
-					constIri = (ValueConstant) R;
-				} else if (R instanceof Var && L instanceof ValueConstant
-						&& ((ValueConstant) L).getValue() instanceof IRI) {
-					v = (Var) R;
-					constIri = (ValueConstant) L;
-				}
-
-				if (v != null && constIri != null && !v.hasValue()) {
-					String varS = "?" + v.getName();
-					String iriS = renderValue(constIri.getValue());
-					return varS + " NOT IN (" + iriS + ")";
-				}
-			}
 
 			return "(" + renderExpr(c.getLeftArg()) + " " + op(c.getOperator()) + " " +
 					renderExpr(c.getRightArg()) + ")";

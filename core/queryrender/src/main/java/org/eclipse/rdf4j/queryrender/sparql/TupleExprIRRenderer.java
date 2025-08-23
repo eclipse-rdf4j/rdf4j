@@ -11,504 +11,116 @@
 
 package org.eclipse.rdf4j.queryrender.sparql;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.AggregateOperator;
+import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.Avg;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Coalesce;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Datatype;
+import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupConcat;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.IRIFunction;
+import org.eclipse.rdf4j.query.algebra.If;
+import org.eclipse.rdf4j.query.algebra.IsBNode;
+import org.eclipse.rdf4j.query.algebra.IsLiteral;
+import org.eclipse.rdf4j.query.algebra.IsNumeric;
+import org.eclipse.rdf4j.query.algebra.IsURI;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lang;
+import org.eclipse.rdf4j.query.algebra.LangMatches;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
+import org.eclipse.rdf4j.query.algebra.Max;
+import org.eclipse.rdf4j.query.algebra.Min;
+import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Regex;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
+import org.eclipse.rdf4j.query.algebra.Sample;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.parser.ParsedQuery;
-import org.eclipse.rdf4j.query.parser.QueryParserUtil;
-import org.eclipse.rdf4j.queryrender.VarNameNormalizer;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IRTextPrinter;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
-import org.eclipse.rdf4j.queryrender.sparql.util.TermRenderer;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
- * TupleExprIRRenderer: user-facing façade to convert RDF4J algebra back into SPARQL text.
+ * TupleExprIRRenderer: render RDF4J algebra back into SPARQL text.
  *
- * <p>
- * Conversion of {@link TupleExpr} into a textual IR and expression rendering is delegated to
- * {@link TupleExprToIrConverter}. This class orchestrates IR transforms and printing, and provides a small
- * configuration surface and convenience entrypoints.
- * </p>
- *
- * Features:
- *
- * <ul>
- * <li>SELECT / ASK / DESCRIBE / CONSTRUCT forms</li>
- * <li>BGPs, OPTIONALs, UNIONs, MINUS, GRAPH, SERVICE, VALUES</li>
- * <li>Property paths, plus safe best-effort reassembly for simple cases</li>
- * <li>Aggregates, GROUP BY, HAVING (with _anon_having_* substitution)</li>
- * <li>Subselects in WHERE</li>
- * <li>ORDER BY, LIMIT, OFFSET</li>
- * <li>Prefix compaction and nice formatting</li>
- * </ul>
- *
- * How it works (big picture):
- * <ul>
- * <li>Normalize the TupleExpr (peel Order/Slice/Distinct/etc., detect HAVING) into a lightweight {@code Normalized}
- * carrier.</li>
- * <li>Build a textual Intermediate Representation (IR) that mirrors SPARQL’s shape: a header (projection), a list-like
- * WHERE block ({@link IrBGP}), and trailing modifiers. The IR tries to be a straightforward, low-logic mirror of the
- * TupleExpr tree.</li>
- * <li>Run a small, ordered pipeline of IR transforms ({@link IrTransforms}) that are deliberately side‑effect‑free and
- * compositional. Each transform is narrowly scoped (e.g., property path fusions, negated property sets, collections)
- * and uses simple heuristics like only fusing across parser‑generated bridge variables named with the
- * {@code _anon_path_} prefix.</li>
- * <li>Print the transformed IR using a tiny printer interface ({@link IrPrinter}) that centralizes indentation, IRI
- * compaction, and child printing.</li>
- * </ul>
- *
- * Policy/decisions:
- * <ul>
- * <li>Do <b>not</b> rewrite a single inequality {@code ?p != <iri>} into {@code ?p NOT IN (<iri>)}. Only reconstruct
- * NOT IN when multiple {@code !=} terms share the same variable.</li>
- * <li>Do <b>not</b> fuse {@code ?s ?p ?o . FILTER (?p != <iri>)} into a negated path {@code ?s !(<iri>) ?o}.</li>
- * <li>Use {@code a} for {@code rdf:type} consistently, incl. inside property lists.</li>
- * </ul>
- *
- * Naming hints from the RDF4J parser:
- * <ul>
- * <li>{@code _anon_path_*}: anonymous intermediate variables introduced when parsing property paths. Transforms only
- * compose chains across these bridge variables to avoid altering user bindings.</li>
- * <li>{@code _anon_having_*}: marks variables synthesized for HAVING extraction.</li>
- * <li>{@code _anon_bnode_*}: placeholder variables for [] that should render as an empty blank node.</li>
- * </ul>
+ * Supported (SPARQL 1.1 + practical extras): - SELECT [DISTINCT|REDUCED] vars | * - WHERE with BGPs
+ * (StatementPattern/Join), OPTIONAL (LeftJoin), UNION, FILTER, BIND (Extension) - MINUS (Difference) - GRAPH, SERVICE
+ * [SILENT] - VALUES (BindingSetAssignment) - Property paths: ArbitraryLengthPath (+, *, ?, {m,n}) + best-effort
+ * reassembly from flat BGPs - Aggregates in SELECT (COUNT, SUM, AVG, MIN, MAX, SAMPLE, GROUP_CONCAT) - GROUP BY &
+ * HAVING (with _anon_having_* substitution) - Subqueries in WHERE ({ SELECT ... WHERE { ... } ... }) - ORDER BY, LIMIT,
+ * OFFSET - Dataset clauses: FROM / FROM NAMED (top-level only) - Prefix compaction + PN_LOCAL acceptance -
+ * Deterministic pretty output
  */
 @Experimental
 public class TupleExprIRRenderer {
-	private static final Logger log = LoggerFactory.getLogger(TupleExprIRRenderer.class);
 
 	// ---------------- Public API helpers ----------------
 
-	// ---------------- Configuration ----------------
-	/** Anonymous blank node variables (originating from [] in the original query). */
-
-	private final Config cfg;
-	private final PrefixIndex prefixIndex;
-	private final Map<String, String> userBnodeLabels = new LinkedHashMap<>();
-	private final Map<String, String> anonBnodeLabels = new LinkedHashMap<>();
-	private int bnodeCounter = 1;
-	private static final String USER_BNODE_PREFIX = "_anon_user_bnode_";
-	private static final String ANON_BNODE_PREFIX = "_anon_bnode_";
-
-	public TupleExprIRRenderer() {
-		this(new Config());
+	/** Which high-level form to render. */
+	public enum QueryForm {
+		SELECT,
+		ASK,
+		DESCRIBE,
+		CONSTRUCT
 	}
-
-	public TupleExprIRRenderer(final Config cfg) {
-		this.cfg = cfg == null ? new Config() : cfg;
-		this.prefixIndex = new PrefixIndex(this.cfg.prefixes);
-	}
-
-	public void reset() {
-		userBnodeLabels.clear();
-		anonBnodeLabels.clear();
-		bnodeCounter = 1;
-	}
-
-	// ---------------- Experimental textual IR API ----------------
-
-	// Package-private accessors for the converter
-	Config getConfig() {
-		return cfg;
-	}
-
-	/**
-	 * Build a best‑effort textual IR for a SELECT‑form query.
-	 *
-	 * Steps:
-	 * <ol>
-	 * <li>Normalize the TupleExpr (gather LIMIT/OFFSET/ORDER, peel wrappers, detect HAVING candidates).</li>
-	 * <li>Translate the remaining WHERE tree into an IR block ({@link IrBGP}) with simple, explicit nodes (statement
-	 * patterns, path triples, filters, graphs, unions, etc.).</li>
-	 * <li>Apply the ordered IR transform pipeline ({@link IrTransforms#transformUsingChildren}) to perform
-	 * purely-textual best‑effort fusions (paths, NPS, collections, property lists) while preserving user variable
-	 * bindings.</li>
-	 * <li>Populate IR header sections (projection, group by, having, order by) from normalized metadata.</li>
-	 * </ol>
-	 *
-	 * The method intentionally keeps TupleExpr → IR logic simple; most nontrivial decisions live in transform passes
-	 * for clarity and testability.
-	 */
-	public IrSelect toIRSelect(final TupleExpr tupleExpr) {
-		// Build raw IR (no transforms) via the converter
-		IrSelect ir = new TupleExprToIrConverter(this).toIRSelect(tupleExpr);
-		if (cfg.debugIR) {
-			System.out.println("# IR (raw)\n" + IrDebug.dump(ir));
-		}
-		// Transform IR, including nested subselects, then apply top-level grouping preservation
-		IrSelect transformed = transformIrRecursively(ir);
-		// Preserve explicit grouping braces around a single‑element WHERE when the original algebra
-		// indicated a variable scope change at the root of the query.
-		if (transformed != null && transformed.getWhere() != null
-				&& transformed.getWhere().getLines() != null
-				&& transformed.getWhere().getLines().size() == 1
-				&& TupleExprToIrConverter.hasExplicitRootScope(tupleExpr)) {
-			final IrNode only = transformed.getWhere().getLines().get(0);
-			if (only instanceof IrStatementPattern || only instanceof IrPathTriple || only instanceof IrGraph
-					|| only instanceof IrSubSelect) {
-				transformed.getWhere().setNewScope(true);
-			}
-		}
-		if (cfg.debugIR) {
-			System.out.println("# IR (transformed)\n" + IrDebug.dump(transformed));
-		}
-		return transformed;
-	}
-
-	/** Build IR without applying IR transforms (raw). Useful for tests and debugging. */
-	public IrSelect toIRSelectRaw(final TupleExpr tupleExpr) {
-		return TupleExprToIrConverter.toIRSelectRaw(tupleExpr, this, false);
-	}
-
-	/** Dump raw IR (JSON) for debugging/tests. */
-	public String dumpIRRaw(final TupleExpr tupleExpr) {
-		return IrDebug.dump(toIRSelectRaw(tupleExpr));
-	}
-
-	/** Dump transformed IR (JSON) for debugging/tests. */
-	public String dumpIRTransformed(final TupleExpr tupleExpr) {
-		return IrDebug.dump(toIRSelect(tupleExpr));
-	}
-
-	/** Render a textual SELECT query from an {@code IrSelect} model. */
-
-	// ---------------- Rendering helpers (prefix-aware) ----------------
-	public String render(final IrSelect ir,
-			final DatasetView dataset, final boolean subselect) {
-		final StringBuilder out = new StringBuilder(256);
-		if (!subselect) {
-			printPrologueAndDataset(out, dataset);
-		}
-		IRTextPrinter printer = new IRTextPrinter(out, this::convertVarToString, cfg);
-		ir.print(printer);
-		return out.toString().trim();
-	}
-
-	// Recursively apply the transformer pipeline to a select and any nested subselects.
-	private IrSelect transformIrRecursively(final IrSelect select) {
-		if (select == null) {
-			return null;
-		}
-		// First, transform the WHERE using standard pipeline
-		IrSelect top = IrTransforms.transformUsingChildren(select, this);
-		// Then, transform nested subselects via a child-mapping pass
-		IrNode mapped = top.transformChildren(child -> {
-			if (child instanceof IrBGP) {
-				// descend into BGP lines to replace IrSubSelects
-				IrBGP bgp = (IrBGP) child;
-				IrBGP nb = new IrBGP(!bgp.getLines().isEmpty() && bgp.isNewScope());
-				nb.setNewScope(bgp.isNewScope());
-				for (IrNode ln : bgp.getLines()) {
-					if (ln instanceof IrSubSelect) {
-						IrSubSelect ss = (IrSubSelect) ln;
-						IrSelect subSel = ss.getSelect();
-						IrSelect subTx = transformIrRecursively(subSel);
-						nb.add(new IrSubSelect(subTx, ss.isNewScope()));
-					} else {
-						nb.add(ln);
-					}
-				}
-				return nb;
-			}
-			return child;
-		});
-		return (IrSelect) mapped;
-	}
-
-	/** Backward-compatible: render as SELECT query (no dataset). */
-	public String render(final TupleExpr tupleExpr) {
-		return renderSelectInternal(tupleExpr, RenderMode.TOP_LEVEL_SELECT, null);
-	}
-
-	/** SELECT with dataset (FROM/FROM NAMED). */
-	public String render(final TupleExpr tupleExpr, final DatasetView dataset) {
-		return renderSelectInternal(tupleExpr, RenderMode.TOP_LEVEL_SELECT, dataset);
-	}
-
-	/** ASK query (top-level). */
-	public String renderAsk(final TupleExpr tupleExpr, final DatasetView dataset) {
-		// Build IR (including transforms) and then print only the WHERE block using the IR printer.
-		reset();
-		BNodeValidator.validate(tupleExpr, cfg);
-		final StringBuilder out = new StringBuilder(256);
-		final IrSelect ir = toIRSelect(tupleExpr);
-		// Prologue
-		printPrologueAndDataset(out, dataset);
-		out.append("ASK");
-		// WHERE (from IR)
-		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
-		new IRTextPrinter(out, this::convertVarToString, cfg).printWhere(ir.getWhere());
-		String rendered = out.toString().trim();
-		verifyRoundTrip(tupleExpr, rendered);
-		return rendered;
-	}
-
-	private String renderSelectInternal(final TupleExpr tupleExpr,
-			final RenderMode mode,
-			final DatasetView dataset) {
-		reset();
-		BNodeValidator.validate(tupleExpr, cfg);
-		final IrSelect ir = toIRSelect(tupleExpr);
-		final boolean asSub = mode == RenderMode.SUBSELECT;
-		String rendered = render(ir, dataset, asSub);
-//		verifyRoundTrip(tupleExpr, rendered);
-		return rendered;
-	}
-
-	private void verifyRoundTrip(final TupleExpr original, final String rendered) {
-		if (!cfg.verifyRoundTrip || original == null || rendered == null || rendered.isEmpty()) {
-			return;
-		}
-
-		try {
-			ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, rendered, null);
-			String expected = VarNameNormalizer.normalizeVars(original.toString());
-			String actual = VarNameNormalizer.normalizeVars(parsed.getTupleExpr().toString());
-			if (!expected.equals(actual)) {
-				String message = "Rendered SPARQL does not round-trip to the original TupleExpr."
-						+ "\n# Rendered query\n" + rendered
-						+ "\n# Original TupleExpr (normalized)\n" + expected
-						+ "\n# Round-tripped TupleExpr (normalized)\n" + actual
-						+ "\n# Diff (original -> round-tripped)\n" + diffText(expected, actual);
-				throw new IllegalStateException(message);
-			}
-		} catch (IllegalStateException e) {
-			throw e;
-		} catch (Exception e) {
-			log.error("Unexpected error while round-tripping TupleExpr. original={}, rendered={}",
-					original, rendered, e);
-			throw new IllegalStateException("Failed to verify rendered SPARQL against the original TupleExpr", e);
-		}
-	}
-
-	// diff the two strings to help debugging
-	private String diffText(String expected, String actual) {
-		List<String> expLines = List.of(expected.split("\\R", -1));
-		List<String> actLines = List.of(actual.split("\\R", -1));
-
-		int max = Math.max(expLines.size(), actLines.size());
-		StringBuilder sb = new StringBuilder(256);
-		for (int i = 0; i < max; i++) {
-			String el = i < expLines.size() ? expLines.get(i) : "<missing>";
-			String al = i < actLines.size() ? actLines.get(i) : "<missing>";
-			if (!el.trim().equals(al.trim())) {
-				sb.append("line ").append(i + 1).append(":\n");
-				sb.append("- ").append(el).append('\n');
-				sb.append("+ ").append(al).append('\n');
-				int common = commonPrefixLength(el, al);
-				if (common < Math.min(el.length(), al.length())) {
-					sb.append("  ").append(" ".repeat(common)).append("^\n");
-				}
-			}
-			if (sb.length() > 1024) {
-				sb.append("... diff truncated ...");
-				break;
-			}
-		}
-		return sb.length() == 0 ? "<no visible diff>" : sb.toString();
-	}
-
-	private int commonPrefixLength(String a, String b) {
-		int limit = Math.min(a.length(), b.length());
-		int i = 0;
-		while (i < limit && a.charAt(i) == b.charAt(i)) {
-			i++;
-		}
-		return i;
-	}
-
-	// ---- Validation: reject illegal blank node placements before rendering ----
-	private static final class BNodeValidator extends AbstractQueryModelVisitor<RuntimeException> {
-		private final Config cfg;
-
-		private BNodeValidator(Config cfg) {
-			this.cfg = cfg == null ? new Config() : cfg;
-		}
-
-		static void validate(TupleExpr expr, Config cfg) {
-			if (expr == null || cfg == null || !cfg.failOnIllegalBNodes) {
-				return;
-			}
-			expr.visit(new BNodeValidator(cfg));
-		}
-
-		@Override
-		public void meet(BindingSetAssignment node) {
-			if (cfg.allowBNodesInValues) {
-				return;
-			}
-			for (BindingSet bs : node.getBindingSets()) {
-				for (String name : bs.getBindingNames()) {
-					Value v = bs.getValue(name);
-					if (v instanceof BNode) {
-						throw new IllegalArgumentException("Blank nodes in VALUES are not supported: binding '" + name
-								+ "' -> " + v);
-					}
-				}
-			}
-		}
-
-		@Override
-		public void meet(StatementPattern sp) {
-			// StatementPattern positions allow anonymous bnodes (subject/object). Predicate bnodes are illegal but
-			// should not occur after parsing; keep tolerant to avoid overblocking.
-		}
-
-		@Override
-		public void meet(Var var) {
-			if (!var.isAnonymous()) {
-				return;
-			}
-			String name = var.getName();
-			if (name == null) {
-				return;
-			}
-
-			assert !name.startsWith("anon_");
-
-			if (name.startsWith("_anon_bnode_") || name.startsWith("_anon_user_bnode_")) {
-				throw new IllegalArgumentException("Anonymous blank node used in expression context: " + name);
-			}
-		}
-
-		@Override
-		public void meet(ValueConstant node) {
-			if (node.getValue() instanceof BNode) {
-				throw new IllegalArgumentException("Blank node literal in expression context is not supported: "
-						+ node.getValue());
-			}
-		}
-	}
-
-	private void printPrologueAndDataset(final StringBuilder out, final DatasetView dataset) {
-		if (cfg.printPrefixes && !cfg.prefixes.isEmpty()) {
-			cfg.prefixes.forEach((pfx, ns) -> out.append("PREFIX ").append(pfx).append(": <").append(ns).append(">\n"));
-		}
-		// FROM / FROM NAMED (top-level only)
-		final List<IRI> dgs = dataset != null ? dataset.defaultGraphs : cfg.defaultGraphs;
-		final List<IRI> ngs = dataset != null ? dataset.namedGraphs : cfg.namedGraphs;
-		for (IRI iri : dgs) {
-			out.append("FROM ").append(convertIRIToString(iri)).append("\n");
-		}
-		for (IRI iri : ngs) {
-			out.append("FROM NAMED ").append(convertIRIToString(iri)).append("\n");
-		}
-	}
-
-	String convertVarToString(final Var v) {
-		if (v == null) {
-			return "?_";
-		}
-		if (v.hasValue()) {
-			return convertValueToString(v.getValue());
-		}
-
-		// Anonymous blank node placeholder variables originating from [] should render as [].
-		if (v.isAnonymous() && v.getName() != null && v.getName().startsWith(ANON_BNODE_PREFIX)) {
-
-			if (cfg.preserveAnonBNodeIdentity) {
-				return "_:" + anonBnodeLabels.computeIfAbsent(v.getName(),
-						TupleExprIRRenderer::deriveStableLabelFromName);
-			}
-			return "[]";
-		}
-		// User-specified blank nodes (_:bnode1) are encoded with the _anon_user_bnode_ prefix; restore the label.
-		if (v.isAnonymous() && v.getName() != null && v.getName().startsWith(USER_BNODE_PREFIX)) {
-
-			String existing = userBnodeLabels.get(v.getName());
-			if (existing == null) {
-				if (cfg.preserveUserBNodeLabels || cfg.deterministicBNodeLabels) {
-					existing = deriveStableLabelFromName(v.getName());
-				} else {
-					existing = "bnode" + bnodeCounter++;
-				}
-				userBnodeLabels.put(v.getName(), existing);
-			}
-			return "_:" + existing;
-		}
-		// Path bridge variables (_anon_path_*) must render as regular variables so they can be
-		// shared across UNION branches without violating blank-node scoping rules during parsing.
-		if (v.isAnonymous() && v.getName() != null && v.getName().startsWith("_anon_path_")) {
-			return "?" + v.getName();
-		}
-
-		if (v.isAnonymous() && !v.isConstant()) {
-			return "_:" + v.getName();
-		}
-		return "?" + v.getName();
-	}
-
-	public String convertValueToString(final Value val) {
-		return TermRenderer.convertValueToString(val, prefixIndex, cfg.usePrefixCompaction);
-	}
-
-	private static String deriveStableLabelFromName(String name) {
-		if (name == null) {
-			return "bnode";
-		}
-		String trimmed = name;
-
-		assert !trimmed.startsWith("anon_");
-
-		if (trimmed.startsWith(USER_BNODE_PREFIX)) {
-			trimmed = trimmed.substring(USER_BNODE_PREFIX.length());
-		} else if (trimmed.startsWith(ANON_BNODE_PREFIX)) {
-			trimmed = trimmed.substring(ANON_BNODE_PREFIX.length());
-		}
-
-		if (trimmed.isEmpty()) {
-			return "bnode";
-		}
-
-		if (trimmed.matches("[A-Za-z0-9_-]+")) {
-			return trimmed.startsWith("bnode") ? trimmed : "bnode" + trimmed;
-		}
-
-		return "bnode" + Integer.toHexString(trimmed.hashCode());
-	}
-
-	// ---- Aggregates ----
-
-	public String convertIRIToString(final IRI iri) {
-		return TermRenderer.convertIRIToString(iri, prefixIndex, cfg.usePrefixCompaction);
-	}
-
-	/**
-	 * Convert a Var to a compact IRI string when it is bound to a constant IRI; otherwise return null. Centralizes a
-	 * common pattern used by IR nodes and helpers to avoid duplicate null/instance checks.
-	 */
-	public String convertVarIriToString(final Var v) {
-		if (v != null && v.hasValue() && v.getValue() instanceof IRI) {
-			return convertIRIToString((IRI) v.getValue());
-		}
-		return null;
-	}
-
-	// NOTE: NOT IN reconstruction moved into NormalizeFilterNotInTransform.
 
 	/** Rendering context: top-level query vs nested subselect. */
 	private enum RenderMode {
@@ -522,39 +134,2881 @@ public class TupleExprIRRenderer {
 		public final List<IRI> namedGraphs = new ArrayList<>();
 
 		public DatasetView addDefault(IRI iri) {
-			if (iri != null) {
+			if (iri != null)
 				defaultGraphs.add(iri);
-			}
 			return this;
 		}
 
 		public DatasetView addNamed(IRI iri) {
-			if (iri != null) {
+			if (iri != null)
 				namedGraphs.add(iri);
-			}
 			return this;
 		}
 	}
 
-	public static final class Config {
-		public final String indent = "  ";
-		public final boolean printPrefixes = true;
-		public final boolean usePrefixCompaction = true;
-		public final boolean canonicalWhitespace = true;
-		public boolean verifyRoundTrip = true; // parse rendered SPARQL and compare to original TupleExpr
-		public final LinkedHashMap<String, String> prefixes = new LinkedHashMap<>();
-		// Flags
-		// Optional dataset (top-level only) if you never pass a DatasetView at render().
-		// These are rarely used, but offered for completeness.
-		public final List<IRI> defaultGraphs = new ArrayList<>();
-		public final List<IRI> namedGraphs = new ArrayList<>();
-		public boolean debugIR = false; // print IR before and after transforms
-		public boolean valuesPreserveOrder = false; // keep VALUES column order as given by BSA iteration
-		public boolean preserveUserBNodeLabels = false; // derive stable labels from parser placeholder
-		public boolean deterministicBNodeLabels = false; // stable mapping independent of traversal order
-		public boolean preserveAnonBNodeIdentity = false; // render repeated [] as the same _:label
-		public boolean failOnIllegalBNodes = true; // reject bnodes in VALUES or expression contexts
-		public boolean allowBNodesInValues = false; // override to allow (non-standard) bnodes in VALUES
+	/** Unchecked exception in strict mode. */
+	public static final class SparqlRenderingException extends RuntimeException {
+		public SparqlRenderingException(String msg) {
+			super(msg);
+		}
 	}
 
+	// ---------------- Configuration ----------------
+
+	private final RenderStyle style;
+	private final PrefixIndex prefixIndex;
+
+	private static final String FN_NS = "http://www.w3.org/2005/xpath-functions#";
+
+	/** Map of function identifier (either bare name or full IRI) → SPARQL built-in name. */
+	private static final Map<String, String> BUILTIN;
+
+	// ---- Parser naming hints ----
+	private static final String ANON_COLLECTION_PREFIX = "_anon_collection_";
+	private static final String ANON_PATH_PREFIX = "_anon_path_";
+	private static final String ANON_HAVING_PREFIX = "_anon_having_";
+	private static final String ANON_BNODE_PREFIX = "_anon_bnode_";
+
+	private static boolean isAnonCollectionVar(Var v) {
+		return v != null && !v.hasValue() && v.getName() != null && v.getName().startsWith(ANON_COLLECTION_PREFIX);
+	}
+
+	private static boolean isAnonPathVar(Var v) {
+		return v != null && !v.hasValue() && v.getName() != null && v.getName().startsWith(ANON_PATH_PREFIX);
+	}
+
+	private static boolean isAnonHavingName(String name) {
+		return name != null && name.startsWith(ANON_HAVING_PREFIX);
+	}
+
+	private static boolean isAnonBNodeVar(Var v) {
+		if (v == null || v.hasValue())
+			return false;
+		final String name = v.getName();
+		if (name == null || !name.startsWith(ANON_BNODE_PREFIX))
+			return false;
+		try {
+			java.lang.reflect.Method m = Var.class.getMethod("isAnonymous");
+			Object r = m.invoke(v);
+			if (r instanceof Boolean)
+				return ((Boolean) r).booleanValue();
+		} catch (ReflectiveOperationException ignore) {
+		}
+		return true;
+	}
+
+	static {
+		Map<String, String> m = new HashMap<>();
+		// --- XPath/XQuery IRIs → SPARQL built-ins ---
+		m.put(FN_NS + "string-length", "STRLEN");
+		m.put(FN_NS + "lower-case", "LCASE");
+		m.put(FN_NS + "upper-case", "UCASE");
+		m.put(FN_NS + "substring", "SUBSTR");
+		m.put(FN_NS + "contains", "CONTAINS");
+		m.put(FN_NS + "concat", "CONCAT");
+		m.put(FN_NS + "replace", "REPLACE");
+		m.put(FN_NS + "encode-for-uri", "ENCODE_FOR_URI");
+		m.put(FN_NS + "starts-with", "STRSTARTS");
+		m.put(FN_NS + "ends-with", "STRENDS");
+		m.put(FN_NS + "numeric-abs", "ABS");
+		m.put(FN_NS + "numeric-ceil", "CEIL");
+		m.put(FN_NS + "numeric-floor", "FLOOR");
+		m.put(FN_NS + "numeric-round", "ROUND");
+		m.put(FN_NS + "year-from-dateTime", "YEAR");
+		m.put(FN_NS + "month-from-dateTime", "MONTH");
+		m.put(FN_NS + "day-from-dateTime", "DAY");
+		m.put(FN_NS + "hours-from-dateTime", "HOURS");
+		m.put(FN_NS + "minutes-from-dateTime", "MINUTES");
+		m.put(FN_NS + "seconds-from-dateTime", "SECONDS");
+		m.put(FN_NS + "timezone-from-dateTime", "TIMEZONE");
+
+		// --- Bare SPARQL built-ins RDF4J may surface as "URIs" ---
+		for (String k : new String[] {
+				"RAND", "NOW",
+				"ABS", "CEIL", "FLOOR", "ROUND",
+				"YEAR", "MONTH", "DAY", "HOURS", "MINUTES", "SECONDS", "TZ", "TIMEZONE",
+				"MD5", "SHA1", "SHA224", "SHA256", "SHA384", "SHA512",
+				"UCASE", "LCASE", "SUBSTR", "STRLEN", "CONTAINS", "CONCAT", "REPLACE", "ENCODE_FOR_URI",
+				"STRSTARTS", "STRENDS", "STRBEFORE", "STRAFTER",
+				"REGEX",
+				"UUID", "STRUUID",
+				"STRDT", "STRLANG", "BNODE",
+				"URI" // alias -> IRI
+		}) {
+			m.put(k, k);
+		}
+		BUILTIN = Collections.unmodifiableMap(m);
+	}
+
+	public TupleExprIRRenderer() {
+		this(new RenderStyle());
+	}
+
+	public TupleExprIRRenderer(final RenderStyle style) {
+		this.style = (style == null) ? new RenderStyle() : style;
+		this.prefixIndex = new PrefixIndex(this.style.prefixes);
+	}
+
+	// ---------------- Public entry points ----------------
+
+	/** Backward-compatible: render as SELECT query (no dataset). */
+	public String render(final TupleExpr tupleExpr) {
+		suppressedSubselects.clear();
+		return renderSelectInternal(tupleExpr, RenderMode.TOP_LEVEL_SELECT, null);
+	}
+
+	/** SELECT with dataset (FROM/FROM NAMED). */
+	public String render(final TupleExpr tupleExpr, final DatasetView dataset) {
+		suppressedSubselects.clear();
+		return renderSelectInternal(tupleExpr, RenderMode.TOP_LEVEL_SELECT, dataset);
+	}
+
+	/** ASK query (top-level). */
+	public String renderAsk(final TupleExpr tupleExpr, final DatasetView dataset) {
+		suppressedSubselects.clear();
+		final StringBuilder out = new StringBuilder(256);
+		final Normalized n = normalize(tupleExpr);
+		printPrologueAndDataset(out, dataset);
+		out.append("ASK");
+		out.append(style.canonicalWhitespace ? "\nWHERE " : " WHERE ");
+		final BlockPrinter bp = new BlockPrinter(out, this, style, n);
+		bp.openBlock();
+		n.where.visit(bp);
+		bp.closeBlock();
+		return out.toString().trim();
+	}
+
+	/** DESCRIBE query (top-level). */
+	public String renderDescribe(final TupleExpr tupleExpr, final List<ValueExpr> describeTerms,
+			final boolean describeAll, final DatasetView dataset) {
+		suppressedSubselects.clear();
+		final StringBuilder out = new StringBuilder(256);
+		final Normalized n = normalize(tupleExpr);
+		printPrologueAndDataset(out, dataset);
+		out.append("DESCRIBE ");
+		if (describeAll || describeTerms == null || describeTerms.isEmpty()) {
+			out.append("*");
+		} else {
+			boolean first = true;
+			for (ValueExpr t : describeTerms) {
+				if (!first)
+					out.append(' ');
+				out.append(renderDescribeTerm(t));
+				first = false;
+			}
+		}
+		out.append(style.canonicalWhitespace ? "\nWHERE " : " WHERE ");
+		final BlockPrinter bp = new BlockPrinter(out, this, style, n);
+		bp.openBlock();
+		n.where.visit(bp);
+		bp.closeBlock();
+		// Solution modifiers allowed
+		if (!n.orderBy.isEmpty()) {
+			out.append("\nORDER BY");
+			for (final OrderElem oe : n.orderBy) {
+				final String expr = renderExpr(oe.getExpr());
+				if (oe.isAscending())
+					out.append(' ').append(expr);
+				else
+					out.append(" DESC(").append(expr).append(')');
+			}
+		}
+		if (n.limit >= 0)
+			out.append("\nLIMIT ").append(n.limit);
+		if (n.offset >= 0)
+			out.append("\nOFFSET ").append(n.offset);
+		return out.toString().trim();
+	}
+
+	/** CONSTRUCT query (top-level). */
+	public String renderConstruct(final TupleExpr whereTree, final List<StatementPattern> template,
+			final DatasetView dataset) {
+		suppressedSubselects.clear();
+		final StringBuilder out = new StringBuilder(256);
+		final Normalized n = normalize(whereTree);
+		printPrologueAndDataset(out, dataset);
+
+		// Template
+		out.append("CONSTRUCT ");
+		final StringBuilder tmpl = new StringBuilder();
+		final BlockPrinter bpT = new BlockPrinter(tmpl, this, style, n);
+		bpT.openBlock();
+		if (template == null || template.isEmpty()) {
+			fail("CONSTRUCT template is empty");
+		} else {
+			for (StatementPattern sp : template) {
+				Var c = getContextVarSafe(sp);
+				if (c != null) {
+					bpT.indent();
+					bpT.raw("GRAPH " + renderVarOrValue(c) + " ");
+					bpT.openBlock();
+					bpT.line(renderVarOrValue(sp.getSubjectVar()) + " " +
+							renderVarOrValue(sp.getPredicateVar()) + " " +
+							renderVarOrValue(sp.getObjectVar()) + " .");
+					bpT.closeBlock();
+					bpT.newline();
+				} else {
+					bpT.line(renderVarOrValue(sp.getSubjectVar()) + " " +
+							renderVarOrValue(sp.getPredicateVar()) + " " +
+							renderVarOrValue(sp.getObjectVar()) + " .");
+				}
+			}
+		}
+		bpT.closeBlock();
+		out.append(tmpl);
+
+		// WHERE
+		out.append(style.canonicalWhitespace ? "\nWHERE " : " WHERE ");
+		final BlockPrinter bp = new BlockPrinter(out, this, style, n);
+		bp.openBlock();
+		n.where.visit(bp);
+		bp.closeBlock();
+
+		// Modifiers
+		if (!n.orderBy.isEmpty()) {
+			out.append("\nORDER BY");
+			for (final OrderElem oe : n.orderBy) {
+				final String expr = renderExpr(oe.getExpr());
+				if (oe.isAscending())
+					out.append(' ').append(expr);
+				else
+					out.append(" DESC(").append(expr).append(')');
+			}
+		}
+		if (n.limit >= 0)
+			out.append("\nLIMIT ").append(n.limit);
+		if (n.offset >= 0)
+			out.append("\nOFFSET ").append(n.offset);
+
+		return out.toString().trim();
+	}
+
+	// ---------------- Core SELECT and subselect ----------------
+
+	private String renderSubselect(final TupleExpr subtree) {
+		return renderSelectInternal(subtree, RenderMode.SUBSELECT, null);
+	}
+
+	private String renderSelectInternal(final TupleExpr tupleExpr,
+			final RenderMode mode,
+			final DatasetView dataset) {
+		final StringBuilder out = new StringBuilder(256);
+		final Normalized n = normalize(tupleExpr);
+		applyAggregateHoisting(n);
+
+		// Prologue + Dataset for TOP_LEVEL only
+		if (mode == RenderMode.TOP_LEVEL_SELECT) {
+			printPrologueAndDataset(out, dataset);
+		}
+
+		// SELECT
+		out.append("SELECT ");
+		if (n.distinct)
+			out.append("DISTINCT ");
+		else if (n.reduced)
+			out.append("REDUCED ");
+
+		boolean printedSelect = false;
+
+		// Prefer explicit Projection when available
+		if (n.projection != null) {
+			final List<ProjectionElem> elems = n.projection.getProjectionElemList().getElements();
+			if (!elems.isEmpty()) {
+				for (int i = 0; i < elems.size(); i++) {
+					final ProjectionElem pe = elems.get(i);
+					final String name = pe.getProjectionAlias().orElse(pe.getName());
+					final ValueExpr expr = n.selectAssignments.get(name);
+					if (expr != null) {
+						out.append("(").append(renderExpr(expr)).append(" AS ?").append(name).append(")");
+					} else {
+						out.append("?").append(name);
+					}
+					if (i + 1 < elems.size())
+						out.append(' ');
+				}
+				printedSelect = true;
+			}
+		}
+
+		// If no Projection (or SELECT *), but we have assignments, synthesize header
+		if (!printedSelect && !n.selectAssignments.isEmpty()) {
+			final List<String> bareVars = new ArrayList<>();
+			if (!n.groupByTerms.isEmpty()) {
+				for (GroupByTerm t : n.groupByTerms)
+					bareVars.add(t.var);
+			} else {
+				bareVars.addAll(n.syntheticProjectVars);
+			}
+
+			boolean first = true;
+			for (String v : bareVars) {
+				if (!first)
+					out.append(' ');
+				out.append('?').append(v);
+				first = false;
+			}
+			for (Map.Entry<String, ValueExpr> e : n.selectAssignments.entrySet()) {
+				if (!first)
+					out.append(' ');
+				out.append("(").append(renderExpr(e.getValue())).append(" AS ?").append(e.getKey()).append(")");
+				first = false;
+			}
+			if (first)
+				out.append("*");
+			printedSelect = true;
+		}
+		if (!printedSelect)
+			out.append("*");
+
+		// WHERE
+		out.append(style.canonicalWhitespace ? "\nWHERE " : " WHERE ");
+		final BlockPrinter bp = new BlockPrinter(out, this, style, n);
+		bp.openBlock();
+		n.where.visit(bp);
+		bp.closeBlock();
+
+		// GROUP BY
+		if (!n.groupByTerms.isEmpty()) {
+			out.append("\nGROUP BY");
+			for (GroupByTerm t : n.groupByTerms) {
+				if (t.expr == null)
+					out.append(' ').append('?').append(t.var);
+				else
+					out.append(" (").append(renderExpr(t.expr)).append(" AS ?").append(t.var).append(")");
+			}
+		}
+
+		// HAVING
+		if (!n.havingConditions.isEmpty()) {
+			out.append("\nHAVING");
+			for (ValueExpr cond : n.havingConditions) {
+				out.append(" (").append(stripRedundantOuterParens(renderExprForHaving(cond, n))).append(")");
+			}
+		}
+
+		// ORDER BY
+		if (!n.orderBy.isEmpty()) {
+			out.append("\nORDER BY");
+			for (final OrderElem oe : n.orderBy) {
+				final String expr = renderExpr(oe.getExpr());
+				if (oe.isAscending())
+					out.append(' ').append(expr);
+				else
+					out.append(" DESC(").append(expr).append(')');
+			}
+		}
+
+		// LIMIT/OFFSET
+		if (n.limit >= 0)
+			out.append("\nLIMIT ").append(n.limit);
+		if (n.offset >= 0)
+			out.append("\nOFFSET ").append(n.offset);
+
+		return out.toString().trim();
+	}
+
+	private void printPrologueAndDataset(final StringBuilder out, final DatasetView dataset) {
+		if (style.printPrefixes && !style.prefixes.isEmpty()) {
+			style.prefixes
+					.forEach((pfx, ns) -> out.append("PREFIX ").append(pfx).append(": <").append(ns).append(">\n"));
+		}
+		if (style.baseIRI != null && !style.baseIRI.isEmpty()) {
+			out.append("BASE <").append(style.baseIRI).append(">\n");
+		}
+		// FROM / FROM NAMED (top-level only)
+		final List<IRI> dgs = dataset != null ? dataset.defaultGraphs : style.defaultGraphs;
+		final List<IRI> ngs = dataset != null ? dataset.namedGraphs : style.namedGraphs;
+		if (dgs != null)
+			for (IRI iri : dgs)
+				out.append("FROM ").append(renderIRI(iri)).append("\n");
+		if (ngs != null)
+			for (IRI iri : ngs)
+				out.append("FROM NAMED ").append(renderIRI(iri)).append("\n");
+	}
+
+	// ---------------- Normalization shell ----------------
+
+	private static final class GroupByTerm {
+		final String var; // ?var
+		final ValueExpr expr; // null => plain ?var; otherwise (expr AS ?var)
+
+		GroupByTerm(String var, ValueExpr expr) {
+			this.var = var;
+			this.expr = expr;
+		}
+	}
+
+	private static final class Normalized {
+		Projection projection; // SELECT vars/exprs
+		TupleExpr where; // WHERE pattern (group peeled)
+		boolean distinct = false;
+		boolean reduced = false;
+		long limit = -1, offset = -1;
+		final List<OrderElem> orderBy = new ArrayList<>();
+		final LinkedHashMap<String, ValueExpr> selectAssignments = new LinkedHashMap<>(); // alias -> expr
+		final List<GroupByTerm> groupByTerms = new ArrayList<>();
+		final List<String> syntheticProjectVars = new ArrayList<>();
+		final List<ValueExpr> havingConditions = new ArrayList<>();
+		boolean hadExplicitGroup = false;
+		final Set<String> groupByVarNames = new LinkedHashSet<>();
+		final Set<String> aggregateOutputNames = new LinkedHashSet<>();
+	}
+
+	/** Peel wrappers until fixed point, with special handling for Filter(Group(...)) → HAVING. */
+	private Normalized normalize(final TupleExpr root) {
+		final Normalized n = new Normalized();
+		TupleExpr cur = root;
+
+		boolean changed;
+		do {
+			changed = false;
+
+			if (cur instanceof QueryRoot) {
+				cur = ((QueryRoot) cur).getArg();
+				changed = true;
+				continue;
+			}
+			if (cur instanceof Slice) {
+				final Slice s = (Slice) cur;
+				n.limit = s.getLimit();
+				n.offset = s.getOffset();
+				cur = s.getArg();
+				changed = true;
+				continue;
+			}
+			if (cur instanceof Distinct) {
+				n.distinct = true;
+				cur = ((Distinct) cur).getArg();
+				changed = true;
+				continue;
+			}
+			if (cur instanceof Reduced) {
+				n.reduced = true;
+				cur = ((Reduced) cur).getArg();
+				changed = true;
+				continue;
+			}
+			if (cur instanceof Order) {
+				final Order o = (Order) cur;
+				n.orderBy.addAll(o.getElements());
+				cur = o.getArg();
+				changed = true;
+				continue;
+			}
+
+			// Filter -> HAVING promotion
+			if (cur instanceof Filter) {
+				final Filter f = (Filter) cur;
+				final TupleExpr arg = f.getArg();
+
+				// Marker-based: any _anon_having_* var -> HAVING
+				{
+					Set<String> fv = freeVars(f.getCondition());
+					boolean hasHavingMarker = false;
+					for (String vn : fv) {
+						if (isAnonHavingName(vn)) {
+							hasHavingMarker = true;
+							break;
+						}
+					}
+					if (hasHavingMarker) {
+						n.havingConditions.add(f.getCondition());
+						cur = f.getArg();
+						changed = true;
+						continue;
+					}
+				}
+
+				// Group underneath
+				if (arg instanceof Group) {
+					final Group g = (Group) arg;
+					n.hadExplicitGroup = true;
+
+					n.groupByVarNames.clear();
+					n.groupByVarNames.addAll(new LinkedHashSet<>(g.getGroupBindingNames()));
+
+					TupleExpr afterGroup = g.getArg();
+					Map<String, ValueExpr> groupAliases = new LinkedHashMap<>();
+					while (afterGroup instanceof Extension) {
+						final Extension ext = (Extension) afterGroup;
+						for (ExtensionElem ee : ext.getElements()) {
+							if (n.groupByVarNames.contains(ee.getName())) {
+								groupAliases.put(ee.getName(), ee.getExpr());
+							}
+						}
+						afterGroup = ext.getArg();
+						changed = true;
+					}
+
+					n.groupByTerms.clear();
+					for (String nm : n.groupByVarNames) {
+						n.groupByTerms.add(new GroupByTerm(nm, groupAliases.getOrDefault(nm, null)));
+					}
+
+					for (GroupElem ge : g.getGroupElements()) {
+						n.selectAssignments.putIfAbsent(ge.getName(), ge.getOperator());
+						n.aggregateOutputNames.add(ge.getName());
+					}
+
+					ValueExpr cond = f.getCondition();
+					if (containsAggregate(cond) || isHavingCandidate(cond, n.groupByVarNames, n.aggregateOutputNames)) {
+						n.havingConditions.add(cond);
+						cur = afterGroup;
+						changed = true;
+						continue;
+					} else {
+						cur = new Filter(afterGroup, cond);
+						changed = true;
+						continue;
+					}
+				}
+
+				// Aggregate filter at top-level → HAVING
+				if (containsAggregate(f.getCondition())) {
+					n.havingConditions.add(f.getCondition());
+					cur = f.getArg();
+					changed = true;
+					continue;
+				}
+			}
+
+			// Projection (record & peel)
+			if (cur instanceof Projection) {
+				n.projection = (Projection) cur;
+				cur = n.projection.getArg();
+				changed = true;
+				continue;
+			}
+
+			// SELECT-level assignments
+			if (cur instanceof Extension) {
+				final Extension ext = (Extension) cur;
+				for (final ExtensionElem ee : ext.getElements()) {
+					n.selectAssignments.put(ee.getName(), ee.getExpr());
+				}
+				cur = ext.getArg();
+				changed = true;
+				continue;
+			}
+
+			// GROUP outside Filter
+			if (cur instanceof Group) {
+				final Group g = (Group) cur;
+				n.hadExplicitGroup = true;
+
+				n.groupByVarNames.clear();
+				n.groupByVarNames.addAll(new LinkedHashSet<>(g.getGroupBindingNames()));
+
+				TupleExpr afterGroup = g.getArg();
+				Map<String, ValueExpr> groupAliases = new LinkedHashMap<>();
+				while (afterGroup instanceof Extension) {
+					final Extension ext = (Extension) afterGroup;
+					for (ExtensionElem ee : ext.getElements()) {
+						if (n.groupByVarNames.contains(ee.getName())) {
+							groupAliases.put(ee.getName(), ee.getExpr());
+						}
+					}
+					afterGroup = ext.getArg();
+					changed = true;
+				}
+				n.groupByTerms.clear();
+				for (String nm : n.groupByVarNames) {
+					n.groupByTerms.add(new GroupByTerm(nm, groupAliases.getOrDefault(nm, null)));
+				}
+				for (GroupElem ge : g.getGroupElements()) {
+					n.selectAssignments.putIfAbsent(ge.getName(), ge.getOperator());
+					n.aggregateOutputNames.add(ge.getName());
+				}
+				cur = afterGroup;
+				changed = true;
+				continue;
+			}
+		} while (changed);
+
+		n.where = cur;
+		return n;
+	}
+
+	private boolean isHavingCandidate(ValueExpr cond, Set<String> groupVars, Set<String> aggregateAliasVars) {
+		Set<String> free = freeVars(cond);
+		if (free.isEmpty())
+			return true; // constant condition → valid HAVING
+		Set<String> allowed = new HashSet<>(groupVars);
+		allowed.addAll(aggregateAliasVars);
+		return allowed.containsAll(free);
+	}
+
+	// ---------------- Aggregate hoisting & inference ----------------
+
+	private void applyAggregateHoisting(final Normalized n) {
+		final AggregateScan scan = new AggregateScan();
+		n.where.visit(scan);
+
+		// Promote aggregates found as BINDs inside WHERE
+		if (!scan.hoisted.isEmpty()) {
+			for (Map.Entry<String, ValueExpr> e : scan.hoisted.entrySet()) {
+				n.selectAssignments.putIfAbsent(e.getKey(), e.getValue());
+			}
+		}
+
+		boolean hasAggregates = !scan.hoisted.isEmpty();
+		for (Map.Entry<String, ValueExpr> e : n.selectAssignments.entrySet()) {
+			if (e.getValue() instanceof AggregateOperator) {
+				hasAggregates = true;
+				scan.aggregateOutputNames.add(e.getKey());
+				collectVarNames(e.getValue(), scan.aggregateArgVars);
+			}
+		}
+		if (!hasAggregates)
+			return;
+		if (n.hadExplicitGroup)
+			return;
+
+		// Projection-driven grouping
+		if (n.groupByTerms.isEmpty() && n.projection != null && n.projection.getProjectionElemList() != null) {
+			final List<GroupByTerm> terms = new ArrayList<>();
+			for (ProjectionElem pe : n.projection.getProjectionElemList().getElements()) {
+				final String name = pe.getProjectionAlias().orElse(pe.getName());
+				if (name != null && !name.isEmpty() && !n.selectAssignments.containsKey(name)) {
+					terms.add(new GroupByTerm(name, null));
+				}
+			}
+			if (!terms.isEmpty()) {
+				n.groupByTerms.addAll(terms);
+				return;
+			}
+		}
+
+		// Usage-based inference
+		if (n.groupByTerms.isEmpty()) {
+			Set<String> candidates = new LinkedHashSet<>(scan.varCounts.keySet());
+			candidates.removeAll(scan.aggregateOutputNames);
+			candidates.removeAll(scan.aggregateArgVars);
+
+			List<String> multiUse = candidates.stream()
+					.filter(v -> scan.varCounts.getOrDefault(v, 0) > 1)
+					.collect(Collectors.toList());
+
+			List<String> chosen;
+			if (!multiUse.isEmpty()) {
+				chosen = multiUse;
+			} else {
+				chosen = new ArrayList<>(1);
+				if (!candidates.isEmpty()) {
+					String best = candidates.stream().sorted((a, b) -> {
+						int as = scan.subjCounts.getOrDefault(a, 0);
+						int bs = scan.subjCounts.getOrDefault(b, 0);
+						if (as != bs)
+							return Integer.compare(bs, as);
+						int ao = scan.objCounts.getOrDefault(a, 0);
+						int bo = scan.objCounts.getOrDefault(b, 0);
+						if (ao != bo)
+							return Integer.compare(bo, ao);
+						int ap = scan.predCounts.getOrDefault(a, 0);
+						int bp = scan.predCounts.getOrDefault(b, 0);
+						if (ap != bp)
+							return Integer.compare(bp, ap);
+						return a.compareTo(b);
+					}).findFirst().orElse(null);
+					if (best != null)
+						chosen.add(best);
+				}
+			}
+
+			n.syntheticProjectVars.clear();
+			n.syntheticProjectVars.addAll(chosen);
+
+			if (n.projection == null || n.projection.getProjectionElemList().getElements().isEmpty()) {
+				n.groupByTerms.clear();
+				for (String v : n.syntheticProjectVars) {
+					n.groupByTerms.add(new GroupByTerm(v, null));
+				}
+			}
+		}
+	}
+
+	private static final class AggregateScan extends AbstractQueryModelVisitor<RuntimeException> {
+		final LinkedHashMap<String, ValueExpr> hoisted = new LinkedHashMap<>();
+		final Map<String, Integer> varCounts = new HashMap<>();
+		final Map<String, Integer> subjCounts = new HashMap<>();
+		final Map<String, Integer> predCounts = new HashMap<>();
+		final Map<String, Integer> objCounts = new HashMap<>();
+		final Set<String> aggregateArgVars = new HashSet<>();
+		final Set<String> aggregateOutputNames = new HashSet<>();
+
+		@Override
+		public void meet(StatementPattern sp) {
+			count(sp.getSubjectVar(), subjCounts);
+			count(sp.getPredicateVar(), predCounts);
+			count(sp.getObjectVar(), objCounts);
+		}
+
+		@Override
+		public void meet(Projection subqueryProjection) {
+			/* do not descend into subselects */ }
+
+		@Override
+		public void meet(Extension ext) {
+			ext.getArg().visit(this);
+			for (ExtensionElem ee : ext.getElements()) {
+				ValueExpr expr = ee.getExpr();
+				if (expr instanceof AggregateOperator) {
+					hoisted.putIfAbsent(ee.getName(), expr);
+					aggregateOutputNames.add(ee.getName());
+					collectVarNames(expr, aggregateArgVars);
+				}
+			}
+		}
+
+		private void count(Var v, Map<String, Integer> roleMap) {
+			if (v == null || v.hasValue())
+				return;
+			final String name = v.getName();
+			if (name == null || name.isEmpty())
+				return;
+			varCounts.merge(name, 1, Integer::sum);
+			roleMap.merge(name, 1, Integer::sum);
+		}
+	}
+
+	// ---------------- Utilities: vars, aggregates, free vars ----------------
+
+	private static boolean containsAggregate(ValueExpr e) {
+		if (e == null)
+			return false;
+		if (e instanceof AggregateOperator)
+			return true;
+		if (e instanceof Not)
+			return containsAggregate(((Not) e).getArg());
+		if (e instanceof Bound)
+			return containsAggregate(((Bound) e).getArg());
+		if (e instanceof Str)
+			return containsAggregate(((Str) e).getArg());
+		if (e instanceof Datatype)
+			return containsAggregate(((Datatype) e).getArg());
+		if (e instanceof Lang)
+			return containsAggregate(((Lang) e).getArg());
+		if (e instanceof IsURI)
+			return containsAggregate(((IsURI) e).getArg());
+		if (e instanceof IsLiteral)
+			return containsAggregate(((IsLiteral) e).getArg());
+		if (e instanceof IsBNode)
+			return containsAggregate(((IsBNode) e).getArg());
+		if (e instanceof IsNumeric)
+			return containsAggregate(((IsNumeric) e).getArg());
+		if (e instanceof IRIFunction)
+			return containsAggregate(((IRIFunction) e).getArg());
+		if (e instanceof If) {
+			If iff = (If) e;
+			return containsAggregate(iff.getCondition()) || containsAggregate(iff.getResult())
+					|| containsAggregate(iff.getAlternative());
+		}
+		if (e instanceof Coalesce) {
+			for (ValueExpr a : ((Coalesce) e).getArguments())
+				if (containsAggregate(a))
+					return true;
+			return false;
+		}
+		if (e instanceof FunctionCall) {
+			for (ValueExpr a : ((FunctionCall) e).getArgs())
+				if (containsAggregate(a))
+					return true;
+			return false;
+		}
+		if (e instanceof And)
+			return containsAggregate(((And) e).getLeftArg()) || containsAggregate(((And) e).getRightArg());
+		if (e instanceof Or)
+			return containsAggregate(((Or) e).getLeftArg()) || containsAggregate(((Or) e).getRightArg());
+		if (e instanceof Compare)
+			return containsAggregate(((Compare) e).getLeftArg()) || containsAggregate(((Compare) e).getRightArg());
+		if (e instanceof SameTerm)
+			return containsAggregate(((SameTerm) e).getLeftArg()) || containsAggregate(((SameTerm) e).getRightArg());
+		if (e instanceof LangMatches)
+			return containsAggregate(((LangMatches) e).getLeftArg())
+					|| containsAggregate(((LangMatches) e).getRightArg());
+		if (e instanceof Regex) {
+			Regex r = (Regex) e;
+			return containsAggregate(r.getArg()) || containsAggregate(r.getPatternArg())
+					|| (r.getFlagsArg() != null && containsAggregate(r.getFlagsArg()));
+		}
+		if (e instanceof ListMemberOperator) {
+			for (ValueExpr a : ((ListMemberOperator) e).getArguments())
+				if (containsAggregate(a))
+					return true;
+			return false;
+		}
+		if (e instanceof MathExpr)
+			return containsAggregate(((MathExpr) e).getLeftArg()) || containsAggregate(((MathExpr) e).getRightArg());
+		return false;
+	}
+
+	private static Set<String> freeVars(ValueExpr e) {
+		Set<String> out = new HashSet<>();
+		collectVarNames(e, out);
+		return out;
+	}
+
+	private static void collectVarNames(ValueExpr e, Set<String> acc) {
+		if (e == null)
+			return;
+		if (e instanceof Var) {
+			final Var v = (Var) e;
+			if (!v.hasValue() && v.getName() != null && !v.getName().isEmpty())
+				acc.add(v.getName());
+			return;
+		}
+		if (e instanceof ValueConstant)
+			return;
+
+		if (e instanceof Not) {
+			collectVarNames(((Not) e).getArg(), acc);
+			return;
+		}
+		if (e instanceof Bound) {
+			collectVarNames(((Bound) e).getArg(), acc);
+			return;
+		}
+		if (e instanceof Str) {
+			collectVarNames(((Str) e).getArg(), acc);
+			return;
+		}
+		if (e instanceof Datatype) {
+			collectVarNames(((Datatype) e).getArg(), acc);
+			return;
+		}
+		if (e instanceof Lang) {
+			collectVarNames(((Lang) e).getArg(), acc);
+			return;
+		}
+		if (e instanceof IsURI) {
+			collectVarNames(((IsURI) e).getArg(), acc);
+			return;
+		}
+		if (e instanceof IsLiteral) {
+			collectVarNames(((IsLiteral) e).getArg(), acc);
+			return;
+		}
+		if (e instanceof IsBNode) {
+			collectVarNames(((IsBNode) e).getArg(), acc);
+			return;
+		}
+		if (e instanceof IsNumeric) {
+			collectVarNames(((IsNumeric) e).getArg(), acc);
+			return;
+		}
+		if (e instanceof IRIFunction) {
+			collectVarNames(((IRIFunction) e).getArg(), acc);
+			return;
+		}
+
+		if (e instanceof And) {
+			collectVarNames(((And) e).getLeftArg(), acc);
+			collectVarNames(((And) e).getRightArg(), acc);
+			return;
+		}
+		if (e instanceof Or) {
+			collectVarNames(((Or) e).getLeftArg(), acc);
+			collectVarNames(((Or) e).getRightArg(), acc);
+			return;
+		}
+		if (e instanceof Compare) {
+			collectVarNames(((Compare) e).getLeftArg(), acc);
+			collectVarNames(((Compare) e).getRightArg(), acc);
+			return;
+		}
+		if (e instanceof SameTerm) {
+			collectVarNames(((SameTerm) e).getLeftArg(), acc);
+			collectVarNames(((SameTerm) e).getRightArg(), acc);
+			return;
+		}
+		if (e instanceof LangMatches) {
+			collectVarNames(((LangMatches) e).getLeftArg(), acc);
+			collectVarNames(((LangMatches) e).getRightArg(), acc);
+			return;
+		}
+		if (e instanceof Regex) {
+			final Regex r = (Regex) e;
+			collectVarNames(r.getArg(), acc);
+			collectVarNames(r.getPatternArg(), acc);
+			if (r.getFlagsArg() != null)
+				collectVarNames(r.getFlagsArg(), acc);
+			return;
+		}
+		if (e instanceof FunctionCall) {
+			for (ValueExpr a : ((FunctionCall) e).getArgs())
+				collectVarNames(a, acc);
+			return;
+		}
+		if (e instanceof ListMemberOperator) {
+			final List<ValueExpr> args = ((ListMemberOperator) e).getArguments();
+			if (args != null)
+				for (ValueExpr a : args)
+					collectVarNames(a, acc);
+			return;
+		}
+		if (e instanceof MathExpr) {
+			collectVarNames(((MathExpr) e).getLeftArg(), acc);
+			collectVarNames(((MathExpr) e).getRightArg(), acc);
+			return;
+		}
+		if (e instanceof If) {
+			final If iff = (If) e;
+			collectVarNames(iff.getCondition(), acc);
+			collectVarNames(iff.getResult(), acc);
+			collectVarNames(iff.getAlternative(), acc);
+			return;
+		}
+		if (e instanceof Coalesce) {
+			for (ValueExpr a : ((Coalesce) e).getArguments())
+				collectVarNames(a, acc);
+		}
+	}
+
+	// ---------------- Block/Node printer ----------------
+
+	/** Projections that must be suppressed (already rewritten into path). */
+	private final Set<Object> suppressedSubselects = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+	private void suppressProjectionSubselect(final TupleExpr container) {
+		if (container instanceof Projection) {
+			suppressedSubselects.add(container);
+		} else if (container instanceof Distinct) {
+			TupleExpr arg = ((Distinct) container).getArg();
+			if (arg instanceof Projection)
+				suppressedSubselects.add(arg);
+		}
+	}
+
+	private boolean isProjectionSuppressed(final Projection p) {
+		return suppressedSubselects.contains(p);
+	}
+
+	private final class BlockPrinter extends AbstractQueryModelVisitor<RuntimeException> {
+		private final StringBuilder out;
+		private final TupleExprIRRenderer r;
+		private final RenderStyle style;
+		@SuppressWarnings("unused")
+		private final Normalized norm;
+		private final String indentUnit;
+		private int level = 0;
+
+		BlockPrinter(final StringBuilder out, final TupleExprIRRenderer renderer, final RenderStyle style,
+				final Normalized norm) {
+			this.out = out;
+			this.r = renderer;
+			this.style = style;
+			this.norm = norm;
+			this.indentUnit = style.indent == null ? "  " : style.indent;
+		}
+
+		void openBlock() {
+			out.append("{");
+			newline();
+			level++;
+		}
+
+		void closeBlock() {
+			level--;
+			indent();
+			out.append("}");
+		}
+
+		void line(final String s) {
+			indent();
+			out.append(s);
+			newline();
+		}
+
+		void raw(final String s) {
+			out.append(s);
+		}
+
+		void newline() {
+			out.append('\n');
+		}
+
+		void indent() {
+			for (int i = 0; i < level; i++)
+				out.append(indentUnit);
+		}
+
+		@Override
+		public void meet(final StatementPattern sp) {
+			final String s = r.renderVarOrValue(sp.getSubjectVar());
+			final String p = r.renderPredicateForTriple(sp.getPredicateVar());
+			final String o = r.renderVarOrValue(sp.getObjectVar());
+
+			final Var ctx = sp.getContextVar();
+			if (ctx != null && (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
+				indent();
+				raw("GRAPH " + r.renderVarOrValue(ctx) + " ");
+				openBlock();
+				line(s + " " + p + " " + o + " .");
+				closeBlock();
+				newline();
+				return;
+			}
+			line(s + " " + p + " " + o + " .");
+		}
+
+		@Override
+		public void meet(final Projection p) {
+			// Nested Projection inside WHERE => subselect (unless it has been consumed by path fusion)
+			if (r.isProjectionSuppressed(p))
+				return;
+			String sub = r.renderSubselect(p);
+			indent();
+			raw("{");
+			newline();
+			level++;
+			for (String ln : sub.split("\\R", -1)) {
+				indent();
+				raw(ln);
+				newline();
+			}
+			level--;
+			indent();
+			raw("}");
+			newline();
+		}
+
+		@Override
+		public void meet(final Join join) {
+			// Flatten subtree
+			final List<TupleExpr> flat = new ArrayList<>();
+			TupleExprIRRenderer.flattenJoin(join, flat);
+
+			// Detect RDF collections -> overrides & consumed
+			final CollectionResult col = r.detectCollections(flat);
+
+			// Ordered pass with rewrites + property list compaction
+			if (r.tryRenderBestEffortPathChain(flat, this, col.overrides, col.consumed))
+				return;
+
+			// Fallback: print remaining nodes
+			for (TupleExpr n : flat) {
+				if (col.consumed.contains(n))
+					continue;
+				if (n instanceof StatementPattern)
+					printStatementWithOverrides((StatementPattern) n, col.overrides, this);
+				else
+					n.visit(this);
+			}
+		}
+
+		@Override
+		public void meet(final LeftJoin lj) {
+			lj.getLeftArg().visit(this);
+			indent();
+			raw("OPTIONAL ");
+			openBlock();
+			lj.getRightArg().visit(this);
+			if (lj.getCondition() != null) {
+				String cond = r.renderExpr(lj.getCondition());
+				cond = TupleExprIRRenderer.stripRedundantOuterParens(cond);
+				line("FILTER (" + cond + ")");
+			}
+			closeBlock();
+			newline();
+		}
+
+		@Override
+		public void meet(final Union union) {
+			indent();
+			openBlock();
+			union.getLeftArg().visit(this);
+			closeBlock();
+			newline();
+			indent();
+			line("UNION");
+			indent();
+			openBlock();
+			union.getRightArg().visit(this);
+			closeBlock();
+			newline();
+		}
+
+		@Override
+		public void meet(final Difference diff) {
+			diff.getLeftArg().visit(this);
+			indent();
+			raw("MINUS ");
+			openBlock();
+			diff.getRightArg().visit(this);
+			closeBlock();
+			newline();
+		}
+
+		@Override
+		public void meet(final Filter filter) {
+			// --- NEGATED PROPERTY SET REWRITE ---
+			// Pattern: WHERE { ?s ?p ?o . FILTER (?p != iri && ?p != iri2 && ...) }
+			// => WHERE { ?s !(iri|iri2|...) ?o . }
+			if (filter.getArg() instanceof StatementPattern) {
+				final StatementPattern sp = (StatementPattern) filter.getArg();
+				final Var pv = sp.getPredicateVar();
+				if (pv != null && !pv.hasValue()) {
+					final NegatedSet ns = r.parseNegatedSet(filter.getCondition());
+					if (ns != null && ns.varName != null && ns.varName.equals(pv.getName())
+							&& getContextVarSafe(sp) == null) {
+						final String subj = r.renderVarOrValue(sp.getSubjectVar());
+						final String obj = r.renderVarOrValue(sp.getObjectVar());
+						final String inner = ns.iris.stream().map(r::renderIRI).collect(Collectors.joining("|"));
+						line(subj + " !(" + inner + ") " + obj + " .");
+						return; // Filter fully absorbed
+					}
+				}
+			}
+
+			// Default behavior: print arg then FILTER
+			filter.getArg().visit(this);
+			String cond = r.renderExpr(filter.getCondition());
+			cond = TupleExprIRRenderer.stripRedundantOuterParens(cond);
+			line("FILTER (" + cond + ")");
+		}
+
+		@Override
+		public void meet(final Extension ext) {
+			ext.getArg().visit(this);
+			for (final ExtensionElem ee : ext.getElements()) {
+				final ValueExpr expr = ee.getExpr();
+				if (expr instanceof AggregateOperator)
+					continue; // hoisted to SELECT
+				line("BIND(" + r.renderExpr(expr) + " AS ?" + ee.getName() + ")");
+			}
+		}
+
+		@Override
+		public void meet(final Service svc) {
+			indent();
+			raw("SERVICE ");
+			if (svc.isSilent())
+				raw("SILENT ");
+			raw(r.renderVarOrValue(svc.getServiceRef()) + " ");
+			openBlock();
+			svc.getArg().visit(this);
+			closeBlock();
+			newline();
+		}
+
+		@Override
+		public void meet(final BindingSetAssignment bsa) {
+			List<String> names = new ArrayList<>(bsa.getBindingNames());
+			if (!style.valuesPreserveOrder)
+				Collections.sort(names);
+
+			indent();
+			if (names.isEmpty()) {
+				raw("VALUES () ");
+				openBlock();
+				int rows = getRows(bsa);
+				for (int i = 0; i < rows; i++) {
+					indent();
+					raw("()");
+					newline();
+				}
+				closeBlock();
+				newline();
+				return;
+			}
+			final String head = names.stream().map(n -> "?" + n).collect(Collectors.joining(" "));
+			raw("VALUES (" + head + ") ");
+			openBlock();
+			for (final BindingSet bs : bsa.getBindingSets()) {
+				indent();
+				raw("(");
+				for (int i = 0; i < names.size(); i++) {
+					final String n = names.get(i);
+					final Value v = bs.getValue(n);
+					raw(v == null ? "UNDEF" : r.renderValue(v));
+					if (i + 1 < names.size())
+						raw(" ");
+				}
+				raw(")");
+				newline();
+			}
+			closeBlock();
+			newline();
+		}
+
+		@Override
+		public void meet(final ArbitraryLengthPath p) {
+			final String subj = r.renderVarOrValue(p.getSubjectVar());
+			final String obj = r.renderVarOrValue(p.getObjectVar());
+			final Var ctx = getContextVarSafe(p);
+
+			final PathNode inner = r.parseAPathInner(p.getPathExpression(), p.getSubjectVar(), p.getObjectVar());
+			if (inner == null) {
+				r.handleUnsupported("complex ArbitraryLengthPath without simple/alternation atom");
+				return;
+			}
+			final long min = p.getMinLength();
+			final long max = getMaxLengthSafe(p);
+			final PathNode q = new PathQuant(inner, min, max);
+
+			final String expr = (q.prec() < PREC_SEQ ? "(" + q.render() + ")" : q.render());
+			final String triple = subj + " " + expr + " " + obj + " .";
+
+			if (ctx != null && (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
+				indent();
+				raw("GRAPH " + r.renderVarOrValue(ctx) + " ");
+				openBlock();
+				line(triple);
+				closeBlock();
+				newline();
+			} else {
+				line(triple);
+			}
+		}
+
+		@Override
+		public void meet(final ZeroLengthPath p) {
+			line("FILTER (sameTerm(" + r.renderVarOrValue(p.getSubjectVar()) + ", " +
+					r.renderVarOrValue(p.getObjectVar()) + "))");
+		}
+
+		@Override
+		public void meetOther(final org.eclipse.rdf4j.query.algebra.QueryModelNode node) {
+			r.handleUnsupported("unsupported node in WHERE: " + node.getClass().getSimpleName());
+		}
+	}
+
+	private static String quantifier(final long min, final long max) {
+		final boolean unbounded = max < 0 || max == Integer.MAX_VALUE;
+		if (min == 0 && unbounded)
+			return "*";
+		if (min == 1 && unbounded)
+			return "+";
+		if (min == 0 && max == 1)
+			return "?";
+		if (unbounded)
+			return "{" + min + ",}";
+		if (min == max)
+			return "{" + min + "}";
+		return "{" + min + "," + max + "}";
+	}
+
+	private static long getMaxLengthSafe(final ArbitraryLengthPath p) {
+		try {
+			final java.lang.reflect.Method m = ArbitraryLengthPath.class.getMethod("getMaxLength");
+			final Object v = m.invoke(p);
+			if (v instanceof Number)
+				return ((Number) v).longValue();
+		} catch (ReflectiveOperationException ignore) {
+		}
+		return -1L;
+	}
+
+	private static int getRows(BindingSetAssignment bsa) {
+		Iterable<BindingSet> bindingSets = bsa.getBindingSets();
+		if (bindingSets instanceof List)
+			return ((List<BindingSet>) bindingSets).size();
+		if (bindingSets instanceof Set)
+			return ((Set<BindingSet>) bindingSets).size();
+		int count = 0;
+		for (BindingSet bs : bindingSets)
+			count++;
+		return count;
+	}
+
+	// ---------------- Rendering helpers (prefix-aware) ----------------
+
+	private String renderVarOrValue(final Var v) {
+		if (v == null)
+			return "?_";
+		if (v.hasValue())
+			return renderValue(v.getValue());
+		if (isAnonBNodeVar(v))
+			return "[]"; // blank-node placeholder variable
+		return "?" + v.getName();
+	}
+
+	private String renderPredicateForTriple(final Var p) {
+		if (p != null && p.hasValue() && p.getValue() instanceof IRI && RDF.TYPE.equals(p.getValue())) {
+			if (style.typeAlias == RenderStyle.TypeAlias.NEVER)
+				return renderVarOrValue(p);
+			if (style.typeAlias == RenderStyle.TypeAlias.ALWAYS)
+				return "a";
+			// SMART: treat as 'a' in normal triple/property-list contexts
+			return "a";
+		}
+		return renderVarOrValue(p);
+	}
+
+	private static Var getContextVarSafe(StatementPattern sp) {
+		try {
+			java.lang.reflect.Method m = StatementPattern.class.getMethod("getContextVar");
+			Object ctx = m.invoke(sp);
+			if (ctx instanceof Var)
+				return (Var) ctx;
+		} catch (ReflectiveOperationException ignore) {
+		}
+		return null;
+	}
+
+	private String renderValue(final Value val) {
+		if (val instanceof IRI) {
+			return renderIRI((IRI) val);
+		} else if (val instanceof Literal) {
+			final Literal lit = (Literal) val;
+			if (lit.getLanguage().isPresent()) {
+				return "\"" + escapeLiteral(lit.getLabel()) + "\"@" + lit.getLanguage().get();
+			}
+			final IRI dt = lit.getDatatype();
+			final String label = lit.getLabel();
+			if (XSD.BOOLEAN.equals(dt)) {
+				return ("1".equals(label) || "true".equalsIgnoreCase(label)) ? "true" : "false";
+			}
+			if (XSD.INTEGER.equals(dt)) {
+				try {
+					return new BigInteger(label).toString();
+				} catch (NumberFormatException ignore) {
+				}
+			}
+			if (XSD.DECIMAL.equals(dt)) {
+				try {
+					return new BigDecimal(label).toPlainString();
+				} catch (NumberFormatException ignore) {
+				}
+			}
+			if (dt != null && !XSD.STRING.equals(dt)) {
+				return "\"" + escapeLiteral(label) + "\"^^" + renderIRI(dt);
+			}
+			return "\"" + escapeLiteral(label) + "\"";
+		} else if (val instanceof BNode) {
+			return "_:" + ((BNode) val).getID();
+		}
+		return "\"" + escapeLiteral(String.valueOf(val)) + "\"";
+	}
+
+	private String renderIRI(final IRI iri) {
+		final String s = iri.stringValue();
+		if (style.usePrefixCompaction) {
+			final PrefixHit hit = prefixIndex.longestMatch(s);
+			if (hit != null) {
+				final String local = s.substring(hit.namespace.length());
+				if (isPN_LOCAL(local))
+					return hit.prefix + ":" + local;
+			}
+		}
+		return "<" + s + ">";
+	}
+
+	// Rough PN_LOCAL acceptance + “no trailing dot”
+	private static final Pattern PN_LOCAL_CHUNK = Pattern.compile("(?:%[0-9A-Fa-f]{2}|[-\\p{L}\\p{N}_\\u00B7]|:)+");
+
+	private boolean isPN_LOCAL(final String s) {
+		if (s == null || s.isEmpty())
+			return false;
+		if (s.charAt(s.length() - 1) == '.')
+			return false; // no trailing dot
+		char first = s.charAt(0);
+		if (!(first == ':' || Character.isLetter(first) || first == '_' || first == Character.MIN_VALUE
+				|| Character.isDigit(first))) {
+			// Character.MIN_VALUE guard avoids accidental false negatives in very rare cases
+		}
+		if (!(first == ':' || Character.isLetter(first) || first == '_' || Character.isDigit(first)))
+			return false;
+		int i = 0;
+		boolean needChunk = true;
+		while (i < s.length()) {
+			int j = i;
+			while (j < s.length() && s.charAt(j) != '.')
+				j++;
+			String chunk = s.substring(i, j);
+			if (needChunk && chunk.isEmpty())
+				return false;
+			if (!chunk.isEmpty() && !PN_LOCAL_CHUNK.matcher(chunk).matches())
+				return false;
+			i = j + 1;
+			needChunk = false;
+		}
+		return true;
+	}
+
+	private static String escapeLiteral(final String s) {
+		final StringBuilder b = new StringBuilder(Math.max(16, s.length()));
+		for (int i = 0; i < s.length(); i++) {
+			final char c = s.charAt(i);
+			switch (c) {
+			case '\\':
+				b.append("\\\\");
+				break;
+			case '\"':
+				b.append("\\\"");
+				break;
+			case '\n':
+				b.append("\\n");
+				break;
+			case '\r':
+				b.append("\\r");
+				break;
+			case '\t':
+				b.append("\\t");
+				break;
+			default:
+				b.append(c);
+			}
+		}
+		return b.toString();
+	}
+
+	/** Expression renderer with aggregate + functional-form support. */
+	private String renderExpr(final ValueExpr e) {
+		if (e == null)
+			return "()";
+
+		// Aggregates
+		if (e instanceof AggregateOperator)
+			return renderAggregate((AggregateOperator) e);
+
+		// Special NOT handling
+		if (e instanceof Not) {
+			final ValueExpr a = ((Not) e).getArg();
+			if (a instanceof Exists)
+				return "NOT " + renderExists((Exists) a);
+			if (a instanceof ListMemberOperator)
+				return renderIn((ListMemberOperator) a, true); // NOT IN
+			final String inner = stripRedundantOuterParens(renderExpr(a));
+			return "!(" + inner + ")";
+		}
+
+		// Vars and constants
+		if (e instanceof Var) {
+			final Var v = (Var) e;
+			return v.hasValue() ? renderValue(v.getValue()) : "?" + v.getName();
+		}
+		if (e instanceof ValueConstant)
+			return renderValue(((ValueConstant) e).getValue());
+
+		// Functional forms
+		if (e instanceof If) {
+			final If iff = (If) e;
+			return "IF(" + renderExpr(iff.getCondition()) + ", " + renderExpr(iff.getResult()) + ", "
+					+ renderExpr(iff.getAlternative()) + ")";
+		}
+		if (e instanceof Coalesce) {
+			final List<ValueExpr> args = ((Coalesce) e).getArguments();
+			final String s = args.stream().map(this::renderExpr).collect(Collectors.joining(", "));
+			return "COALESCE(" + s + ")";
+		}
+		if (e instanceof IRIFunction)
+			return "IRI(" + renderExpr(((IRIFunction) e).getArg()) + ")";
+		if (e instanceof IsNumeric)
+			return "isNumeric(" + renderExpr(((IsNumeric) e).getArg()) + ")";
+
+		// EXISTS
+		if (e instanceof Exists)
+			return renderExists((Exists) e);
+
+		// IN list
+		if (e instanceof ListMemberOperator)
+			return renderIn((ListMemberOperator) e, false);
+
+		// Unary basics
+		if (e instanceof Str)
+			return "STR(" + renderExpr(((Str) e).getArg()) + ")";
+		if (e instanceof Datatype)
+			return "DATATYPE(" + renderExpr(((Datatype) e).getArg()) + ")";
+		if (e instanceof Lang)
+			return "LANG(" + renderExpr(((Lang) e).getArg()) + ")";
+		if (e instanceof Bound)
+			return "BOUND(" + renderExpr(((Bound) e).getArg()) + ")";
+		if (e instanceof IsURI)
+			return "isIRI(" + renderExpr(((IsURI) e).getArg()) + ")";
+		if (e instanceof IsLiteral)
+			return "isLiteral(" + renderExpr(((IsLiteral) e).getArg()) + ")";
+		if (e instanceof IsBNode)
+			return "isBlank(" + renderExpr(((IsBNode) e).getArg()) + ")";
+
+		// Math expressions
+		if (e instanceof MathExpr) {
+			final MathExpr me = (MathExpr) e;
+			// unary minus: (0 - x)
+			if (me.getOperator() == MathOp.MINUS &&
+					me.getLeftArg() instanceof ValueConstant &&
+					((ValueConstant) me.getLeftArg()).getValue() instanceof Literal) {
+				Literal l = (Literal) ((ValueConstant) me.getLeftArg()).getValue();
+				if ("0".equals(l.getLabel()))
+					return "(-" + renderExpr(me.getRightArg()) + ")";
+			}
+			return "(" + renderExpr(me.getLeftArg()) + " " + mathOp(me.getOperator()) + " "
+					+ renderExpr(me.getRightArg()) + ")";
+		}
+
+		// Binary/ternary
+		if (e instanceof And) {
+			final And a = (And) e;
+			return "(" + renderExpr(a.getLeftArg()) + " && " + renderExpr(a.getRightArg()) + ")";
+		}
+		if (e instanceof Or) {
+			final Or o = (Or) e;
+			return "(" + renderExpr(o.getLeftArg()) + " || " + renderExpr(o.getRightArg()) + ")";
+		}
+		if (e instanceof Compare) {
+			final Compare c = (Compare) e;
+
+			// Preference for NOT IN form for var != IRI (matches some expected normalizations)
+			if (c.getOperator() == CompareOp.NE) {
+				ValueExpr L = c.getLeftArg(), R = c.getRightArg();
+				Var v = null;
+				ValueConstant constIri = null;
+				if (L instanceof Var && R instanceof ValueConstant && ((ValueConstant) R).getValue() instanceof IRI) {
+					v = (Var) L;
+					constIri = (ValueConstant) R;
+				} else if (R instanceof Var && L instanceof ValueConstant
+						&& ((ValueConstant) L).getValue() instanceof IRI) {
+					v = (Var) R;
+					constIri = (ValueConstant) L;
+				}
+				if (v != null && constIri != null && !v.hasValue()) {
+					String varS = "?" + v.getName();
+					String iriS = renderValue(constIri.getValue());
+					return varS + " NOT IN (" + iriS + ")";
+				}
+			}
+			return "(" + renderExpr(c.getLeftArg()) + " " + op(c.getOperator()) + " " + renderExpr(c.getRightArg())
+					+ ")";
+		}
+		if (e instanceof SameTerm) {
+			final SameTerm st = (SameTerm) e;
+			return "sameTerm(" + renderExpr(st.getLeftArg()) + ", " + renderExpr(st.getRightArg()) + ")";
+		}
+		if (e instanceof LangMatches) {
+			final LangMatches lm = (LangMatches) e;
+			return "LANGMATCHES(" + renderExpr(lm.getLeftArg()) + ", " + renderExpr(lm.getRightArg()) + ")";
+		}
+		if (e instanceof Regex) {
+			final Regex r = (Regex) e;
+			final String term = renderExpr(r.getArg());
+			final String patt = renderExpr(r.getPatternArg());
+			if (r.getFlagsArg() != null)
+				return "REGEX(" + term + ", " + patt + ", " + renderExpr(r.getFlagsArg()) + ")";
+			return "REGEX(" + term + ", " + patt + ")";
+		}
+
+		// Function calls: map known bare names or IRIs to built-in names
+		if (e instanceof FunctionCall) {
+			final FunctionCall f = (FunctionCall) e;
+			final String args = f.getArgs().stream().map(this::renderExpr).collect(Collectors.joining(", "));
+			final String uri = f.getURI();
+			String builtin = BUILTIN.get(uri);
+			if (builtin == null && uri != null)
+				builtin = BUILTIN.get(uri.toUpperCase(Locale.ROOT));
+			if (builtin != null) {
+				if ("URI".equals(builtin))
+					return "IRI(" + args + ")";
+				return builtin + "(" + args + ")";
+			}
+			return "<" + uri + ">(" + args + ")";
+		}
+
+		// BNODE() / BNODE(<expr>)
+		if (e instanceof BNodeGenerator) {
+			final BNodeGenerator bg = (BNodeGenerator) e;
+			final ValueExpr id = bg.getNodeIdExpr(); // may be null
+			if (id == null)
+				return "BNODE()";
+			return "BNODE(" + renderExpr(id) + ")";
+		}
+
+		handleUnsupported("unsupported expr: " + e.getClass().getSimpleName());
+		return ""; // unreachable in strict mode
+	}
+
+	private static String mathOp(final MathOp op) {
+		if (op == MathOp.PLUS)
+			return "+";
+		if (op == MathOp.MINUS)
+			return "-";
+		try {
+			if (op.name().equals("MULTIPLY") || op.name().equals("TIMES"))
+				return "*";
+		} catch (Throwable ignore) {
+		}
+		if (op == MathOp.DIVIDE)
+			return "/";
+		return "?";
+	}
+
+	/** EXISTS { ... } */
+	private String renderExists(final Exists ex) {
+		final String group = renderInlineGroup(ex.getSubQuery());
+		return "EXISTS " + group;
+	}
+
+	/** Render (?x [NOT] IN (a, b, c)) from ListMemberOperator. */
+	private String renderIn(final ListMemberOperator in, final boolean negate) {
+		final List<ValueExpr> args = in.getArguments();
+		if (args == null || args.isEmpty())
+			return "/* invalid IN */";
+		final String left = renderExpr(args.get(0));
+		final String rest = args.stream().skip(1).map(this::renderExpr).collect(Collectors.joining(", "));
+		return "(" + left + (negate ? " NOT IN (" : " IN (") + rest + "))";
+	}
+
+	/** Use BlockPrinter to render a subpattern inline for EXISTS. */
+	private String renderInlineGroup(final TupleExpr pattern) {
+		final StringBuilder sb = new StringBuilder(64);
+		final BlockPrinter bp = new BlockPrinter(sb, this, style, null);
+		bp.openBlock();
+		pattern.visit(bp);
+		bp.closeBlock();
+		return sb.toString().replace('\n', ' ').replaceAll("\\s+", " ").trim();
+	}
+
+	private static String op(final CompareOp op) {
+		switch (op) {
+		case EQ:
+			return "=";
+		case NE:
+			return "!=";
+		case LT:
+			return "<";
+		case LE:
+			return "<=";
+		case GT:
+			return ">";
+		case GE:
+			return ">=";
+		default:
+			return "/*?*/";
+		}
+	}
+
+	// ---- Aggregates ----
+
+	private String renderAggregate(final AggregateOperator op) {
+		if (op instanceof Count) {
+			final Count c = (Count) op;
+			final String inner = (c.getArg() == null) ? "*" : renderExpr(c.getArg());
+			return "COUNT(" + (c.isDistinct() && c.getArg() != null ? "DISTINCT " : "") + inner + ")";
+		}
+		if (op instanceof Sum) {
+			final Sum a = (Sum) aop(op);
+			return "SUM(" + (a.isDistinct() ? "DISTINCT " : "") + renderExpr(a.getArg()) + ")";
+		}
+		if (op instanceof Avg) {
+			final Avg a = (Avg) aop(op);
+			return "AVG(" + (a.isDistinct() ? "DISTINCT " : "") + renderExpr(a.getArg()) + ")";
+		}
+		if (op instanceof Min) {
+			final Min a = (Min) aop(op);
+			return "MIN(" + (a.isDistinct() ? "DISTINCT " : "") + renderExpr(a.getArg()) + ")";
+		}
+		if (op instanceof Max) {
+			final Max a = (Max) aop(op);
+			return "MAX(" + (a.isDistinct() ? "DISTINCT " : "") + renderExpr(a.getArg()) + ")";
+		}
+		if (op instanceof Sample) {
+			final Sample a = (Sample) aop(op);
+			return "SAMPLE(" + (a.isDistinct() ? "DISTINCT " : "") + renderExpr(a.getArg()) + ")";
+		}
+		if (op instanceof GroupConcat) {
+			final GroupConcat a = (GroupConcat) op;
+			final StringBuilder sb = new StringBuilder();
+			sb.append("GROUP_CONCAT(");
+			if (a.isDistinct())
+				sb.append("DISTINCT ");
+			sb.append(renderExpr(a.getArg()));
+			final ValueExpr sepExpr = a.getSeparator();
+			final String sepLex = extractSeparatorLiteral(sepExpr);
+			if (sepLex != null) {
+				sb.append("; SEPARATOR=").append('"').append(escapeLiteral(sepLex)).append('"');
+			}
+			sb.append(")");
+			return sb.toString();
+		}
+		handleUnsupported("unsupported aggregate: " + op.getClass().getSimpleName());
+		return "";
+	}
+
+	private static AggregateOperator aop(AggregateOperator op) {
+		return op;
+	}
+
+	/** Returns the lexical form if the expr is a plain string literal; otherwise null. */
+	private String extractSeparatorLiteral(final ValueExpr expr) {
+		if (expr == null)
+			return null;
+		if (expr instanceof ValueConstant) {
+			final Value v = ((ValueConstant) expr).getValue();
+			if (v instanceof Literal) {
+				Literal lit = (Literal) v;
+				IRI dt = lit.getDatatype();
+				if (dt == null || XSD.STRING.equals(dt))
+					return lit.getLabel();
+			}
+			return null;
+		}
+		if (expr instanceof Var) {
+			final Var var = (Var) expr;
+			if (var.hasValue() && var.getValue() instanceof Literal) {
+				Literal lit = (Literal) var.getValue();
+				IRI dt = lit.getDatatype();
+				if (dt == null || XSD.STRING.equals(dt))
+					return lit.getLabel();
+			}
+		}
+		return null;
+	}
+
+	// ---------------- Best-effort path reassembly from BGP+FILTER ----------------
+
+	static void flattenJoin(TupleExpr expr, List<TupleExpr> out) {
+		if (expr instanceof Join) {
+			final Join j = (Join) expr;
+			flattenJoin(j.getLeftArg(), out);
+			flattenJoin(j.getRightArg(), out);
+		} else {
+			out.add(expr);
+		}
+	}
+
+	private static final class Edge {
+		final StatementPattern sp;
+		final Var s, p, o;
+		final TupleExpr container; // either the SP itself, or its wrapping Filter
+		final boolean fromFilter; // true if the SP came from Filter#getArg()
+
+		Edge(StatementPattern sp, TupleExpr container, boolean fromFilter) {
+			this.sp = sp;
+			this.s = sp.getSubjectVar();
+			this.p = sp.getPredicateVar();
+			this.o = sp.getObjectVar();
+			this.container = container;
+			this.fromFilter = fromFilter;
+		}
+	}
+
+	private static final class NegatedSet {
+		final List<IRI> iris = new ArrayList<>();
+		final Filter filterNode;
+		final String varName;
+
+		NegatedSet(String varName, Filter filterNode) {
+			this.varName = varName;
+			this.filterNode = filterNode;
+		}
+	}
+
+	private static boolean sameVar(Var a, Var b) {
+		if (a == null || b == null)
+			return false;
+		if (a.hasValue() || b.hasValue())
+			return false;
+		return Objects.equals(a.getName(), b.getName());
+	}
+
+	/** Flatten a ValueExpr that is a conjunction into its left-to-right terms. */
+	private static List<ValueExpr> flattenAnd(ValueExpr e) {
+		List<ValueExpr> out = new ArrayList<>();
+		Deque<ValueExpr> stack = new ArrayDeque<>();
+		if (e == null)
+			return out;
+		stack.push(e);
+		while (!stack.isEmpty()) {
+			ValueExpr cur = stack.pop();
+			if (cur instanceof And) {
+				And a = (And) cur;
+				stack.push(a.getRightArg());
+				stack.push(a.getLeftArg());
+			} else {
+				out.add(cur);
+			}
+		}
+		return out;
+	}
+
+	private NegatedSet parseNegatedSet(ValueExpr cond) {
+		List<ValueExpr> terms = flattenAnd(cond);
+		if (terms.isEmpty())
+			return null;
+
+		String varName = null;
+		List<IRI> iris = new ArrayList<>();
+
+		for (ValueExpr t : terms) {
+			if (!(t instanceof Compare))
+				return null;
+			Compare c = (Compare) t;
+			if (c.getOperator() != CompareOp.NE)
+				return null;
+
+			IRI iri = null;
+			String name = null;
+
+			ValueExpr L = c.getLeftArg();
+			ValueExpr R = c.getRightArg();
+
+			if (L instanceof Var && R instanceof ValueConstant && ((ValueConstant) R).getValue() instanceof IRI) {
+				name = ((Var) L).getName();
+				iri = (IRI) ((ValueConstant) R).getValue();
+			} else if (R instanceof Var && L instanceof ValueConstant
+					&& ((ValueConstant) L).getValue() instanceof IRI) {
+				name = ((Var) R).getName();
+				iri = (IRI) ((ValueConstant) L).getValue();
+			} else {
+				return null;
+			}
+			if (name == null || iri == null)
+				return null;
+			if (varName == null)
+				varName = name;
+			else if (!Objects.equals(varName, name))
+				return null;
+			iris.add(iri);
+		}
+		if (varName == null || iris.isEmpty())
+			return null;
+
+		NegatedSet ns = new NegatedSet(varName, null);
+		ns.iris.addAll(iris);
+		return ns;
+	}
+
+	// ---- zero-or-one path ( ? ) reconstruction helpers ----
+
+	private static final class ZeroOrOneProj {
+		final Var start; // left endpoint
+		final Var end; // right endpoint (the _anon_path_ var)
+		final IRI pred; // IRI for the optional step
+		final TupleExpr container; // the Projection/Distinct subtree node to consume
+
+		ZeroOrOneProj(Var start, Var end, IRI pred, TupleExpr container) {
+			this.start = start;
+			this.end = end;
+			this.pred = pred;
+			this.container = container;
+		}
+	}
+
+	private ZeroOrOneProj parseZeroOrOneProjectionNode(TupleExpr node) {
+		if (node == null)
+			return null;
+		TupleExpr cur = node;
+		if (cur instanceof Distinct)
+			cur = ((Distinct) cur).getArg();
+		if (!(cur instanceof Projection))
+			return null;
+		TupleExpr arg = ((Projection) cur).getArg();
+		List<TupleExpr> leaves = new ArrayList<>();
+		if (arg instanceof Union)
+			flattenUnion(arg, leaves);
+		else
+			return null;
+		if (leaves.size() != 2)
+			return null;
+
+		ZeroLengthPath zlp = null;
+		StatementPattern sp = null;
+
+		for (TupleExpr leaf : leaves) {
+			if (leaf instanceof ZeroLengthPath) {
+				zlp = (ZeroLengthPath) leaf;
+			} else if (leaf instanceof StatementPattern) {
+				StatementPattern cand = (StatementPattern) leaf;
+				Var pv = cand.getPredicateVar();
+				if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI))
+					return null;
+				sp = cand;
+			} else {
+				return null;
+			}
+		}
+		if (zlp == null || sp == null)
+			return null;
+
+		if (!(sameVar(zlp.getSubjectVar(), sp.getSubjectVar()) && sameVar(zlp.getObjectVar(), sp.getObjectVar())))
+			return null;
+
+		Var s = zlp.getSubjectVar();
+		Var mid = zlp.getObjectVar();
+		if (!isAnonPathVar(mid))
+			return null;
+
+		Var p = sp.getPredicateVar();
+		IRI iri = (IRI) p.getValue();
+
+		return new ZeroOrOneProj(s, mid, iri, node);
+	}
+
+	/** Flatten a Union tree preserving left-to-right order. */
+	private static void flattenUnion(TupleExpr e, List<TupleExpr> out) {
+		if (e instanceof Union) {
+			Union u = (Union) e;
+			flattenUnion(u.getLeftArg(), out);
+			flattenUnion(u.getRightArg(), out);
+		} else {
+			out.add(e);
+		}
+	}
+
+	private PathNode parseAPathInner(final TupleExpr innerExpr, final Var subj, final Var obj) {
+		if (innerExpr instanceof StatementPattern) {
+			PathNode n = parseAtomicFromStatement((StatementPattern) innerExpr, subj, obj);
+			if (n != null)
+				return n;
+		}
+		if (innerExpr instanceof Union) {
+			List<TupleExpr> branches = new ArrayList<>();
+			flattenUnion(innerExpr, branches);
+			List<PathNode> alts = new ArrayList<>(branches.size());
+			for (TupleExpr b : branches) {
+				if (!(b instanceof StatementPattern))
+					return null;
+				PathNode n = parseAtomicFromStatement((StatementPattern) b, subj, obj);
+				if (n == null)
+					return null;
+				alts.add(n);
+			}
+			return new PathAlt(alts);
+		}
+		return null;
+	}
+
+	private PathNode parseAtomicFromStatement(final StatementPattern sp, final Var subj, final Var obj) {
+		final Var p = sp.getPredicateVar();
+		if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI))
+			return null;
+		final IRI iri = (IRI) p.getValue();
+		final Var ss = sp.getSubjectVar();
+		final Var oo = sp.getObjectVar();
+
+		if (sameVar(ss, subj) && sameVar(oo, obj))
+			return new PathAtom(iri, false);
+		if (sameVar(ss, obj) && sameVar(oo, subj))
+			return new PathAtom(iri, true);
+		return null;
+	}
+
+	private static String freeVarName(Var v) {
+		if (v == null || v.hasValue())
+			return null;
+		final String n = v.getName();
+		return (n == null || n.isEmpty()) ? null : n;
+	}
+
+	private static void collectFreeVars(final TupleExpr e, final Set<String> out) {
+		if (e == null)
+			return;
+		e.visit(new org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
+			private void add(Var v) {
+				final String n = freeVarName(v);
+				if (n != null)
+					out.add(n);
+			}
+
+			@Override
+			public void meet(StatementPattern sp) {
+				add(sp.getSubjectVar());
+				add(sp.getPredicateVar());
+				add(sp.getObjectVar());
+				add(getContextVarSafe(sp));
+			}
+
+			@Override
+			public void meet(Filter f) {
+				if (f.getCondition() != null)
+					collectVarNames(f.getCondition(), out);
+				f.getArg().visit(this);
+			}
+
+			@Override
+			public void meet(LeftJoin lj) {
+				lj.getLeftArg().visit(this);
+				lj.getRightArg().visit(this);
+				if (lj.getCondition() != null)
+					collectVarNames(lj.getCondition(), out);
+			}
+
+			@Override
+			public void meet(Join j) {
+				j.getLeftArg().visit(this);
+				j.getRightArg().visit(this);
+			}
+
+			@Override
+			public void meet(Union u) {
+				u.getLeftArg().visit(this);
+				u.getRightArg().visit(this);
+			}
+
+			@Override
+			public void meet(Extension ext) {
+				for (ExtensionElem ee : ext.getElements())
+					collectVarNames(ee.getExpr(), out);
+				ext.getArg().visit(this);
+			}
+
+			@Override
+			public void meet(ArbitraryLengthPath p) {
+				add(p.getSubjectVar());
+				add(p.getObjectVar());
+				add(getContextVarSafe(p));
+			}
+		});
+	}
+
+	@SuppressWarnings("unused")
+	private static Set<String> globalVarsToPreserve(final Normalized n) {
+		final Set<String> s = new java.util.HashSet<>();
+		if (n == null)
+			return s;
+		if (n.projection != null && n.projection.getProjectionElemList() != null) {
+			for (ProjectionElem pe : n.projection.getProjectionElemList().getElements()) {
+				final String name = pe.getProjectionAlias().orElse(pe.getName());
+				if (name != null && !name.isEmpty() && !n.selectAssignments.containsKey(name))
+					s.add(name);
+			}
+		}
+		s.addAll(n.groupByVarNames);
+		for (OrderElem oe : n.orderBy)
+			collectVarNames(oe.getExpr(), s);
+		for (ValueExpr ve : n.selectAssignments.values())
+			collectVarNames(ve, s);
+		return s;
+	}
+
+	private static final class CollectionResult {
+		final Map<String, String> overrides = new HashMap<>();
+		final Set<TupleExpr> consumed = new HashSet<>();
+	}
+
+	private CollectionResult detectCollections(final List<TupleExpr> nodes) {
+		final CollectionResult res = new CollectionResult();
+
+		final Map<String, StatementPattern> firstByS = new LinkedHashMap<>();
+		final Map<String, StatementPattern> restByS = new LinkedHashMap<>();
+
+		for (TupleExpr n : nodes) {
+			if (!(n instanceof StatementPattern))
+				continue;
+			final StatementPattern sp = (StatementPattern) n;
+			final Var s = sp.getSubjectVar(), p = sp.getPredicateVar();
+			final String sName = freeVarName(s);
+			if (sName == null)
+				continue;
+			if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI))
+				continue;
+
+			final IRI pred = (IRI) p.getValue();
+			if (RDF.FIRST.equals(pred))
+				firstByS.put(sName, sp);
+			else if (RDF.REST.equals(pred))
+				restByS.put(sName, sp);
+		}
+
+		if (firstByS.isEmpty() || restByS.isEmpty())
+			return res;
+
+		final List<String> candidateHeads = new ArrayList<>();
+		for (String s : firstByS.keySet())
+			if (s != null && s.startsWith(ANON_COLLECTION_PREFIX))
+				candidateHeads.add(s);
+		if (candidateHeads.isEmpty()) {
+			for (String s : firstByS.keySet())
+				if (restByS.containsKey(s))
+					candidateHeads.add(s);
+		}
+
+		for (String head : candidateHeads) {
+			final List<String> items = new ArrayList<>();
+			final Set<String> spine = new LinkedHashSet<>();
+			final Set<TupleExpr> localConsumed = new LinkedHashSet<>();
+
+			String cur = head;
+			boolean ok = true;
+			int guard = 0;
+
+			while (ok) {
+				if (++guard > 10000) {
+					ok = false;
+					break;
+				}
+				final StatementPattern f = firstByS.get(cur);
+				final StatementPattern r = restByS.get(cur);
+				if (f == null || r == null) {
+					ok = false;
+					break;
+				}
+
+				localConsumed.add(f);
+				localConsumed.add(r);
+				spine.add(cur);
+				items.add(renderVarOrValue(f.getObjectVar()));
+
+				final Var ro = r.getObjectVar();
+				if (ro == null) {
+					ok = false;
+					break;
+				}
+				if (ro.hasValue()) {
+					if (!(ro.getValue() instanceof IRI) || !RDF.NIL.equals(ro.getValue()))
+						ok = false;
+					break; // done
+				}
+				cur = ro.getName();
+				if (cur == null || cur.isEmpty()) {
+					ok = false;
+					break;
+				}
+				if (spine.contains(cur)) {
+					ok = false;
+					break;
+				}
+			}
+
+			if (!ok || items.isEmpty())
+				continue;
+
+			final Set<String> external = new HashSet<>();
+			for (TupleExpr n : nodes) {
+				if (!localConsumed.contains(n))
+					collectFreeVars(n, external);
+			}
+			boolean leaks = false;
+			for (String v : spine) {
+				if (!Objects.equals(v, head) && external.contains(v)) {
+					leaks = true;
+					break;
+				}
+			}
+			if (leaks)
+				continue;
+
+			final String coll = "(" + String.join(" ", items) + ")";
+			res.overrides.put(head, coll);
+			res.consumed.addAll(localConsumed);
+		}
+		return res;
+	}
+
+	// ---------------- Ordered best-effort reconstruction + property list ----------------
+
+	private boolean tryRenderBestEffortPathChain(
+			List<TupleExpr> nodes,
+			BlockPrinter bp,
+			Map<String, String> overrides,
+			Set<TupleExpr> preConsumed
+	) {
+		final Set<TupleExpr> consumed = new HashSet<>();
+		if (preConsumed != null)
+			consumed.addAll(preConsumed);
+
+		// Simple property-list buffer (subject without GRAPH)
+		final String[] plSubject = { null };
+		final class PO {
+			final Var p;
+			final String obj;
+
+			PO(Var p, String obj) {
+				this.p = p;
+				this.obj = obj;
+			}
+		}
+		final List<PO> plPO = new ArrayList<>();
+
+		final Runnable flushPL = () -> {
+			if (plSubject[0] != null && !plPO.isEmpty()) {
+				boolean multi = plPO.size() > 1;
+				List<String> pairs = new ArrayList<>(plPO.size());
+				for (PO po : plPO) {
+					final String pred = multi ? renderPredicateForTriple(po.p) : renderVarOrValue(po.p);
+					pairs.add(pred + " " + po.obj);
+				}
+				bp.line(plSubject[0] + " " + String.join(" ; ", pairs) + " .");
+			}
+		};
+		final Runnable clearPL = () -> {
+			plSubject[0] = null;
+			plPO.clear();
+		};
+		final java.util.function.BiConsumer<Var, String> addPO = (predVar, obj) -> plPO.add(new PO(predVar, obj));
+		final java.util.function.Function<Var, String> predStr = this::renderPredicateForTriple;
+
+		final java.util.function.BiFunction<Set<TupleExpr>, String, Boolean> leaksOutside = (toConsume, varName) -> {
+			if (varName == null)
+				return false;
+			final Set<TupleExpr> cons = new HashSet<>(toConsume);
+			if (preConsumed != null)
+				cons.addAll(preConsumed);
+			final Set<String> externalUse = new HashSet<>();
+			for (TupleExpr n : nodes)
+				if (!cons.contains(n))
+					collectFreeVars(n, externalUse);
+			return externalUse.contains(varName);
+		};
+
+		for (int i = 0; i < nodes.size(); i++) {
+			final TupleExpr cur = nodes.get(i);
+			if (consumed.contains(cur))
+				continue;
+
+			// ---- Z: zero-or-one projection at position i ----
+			final ZeroOrOneProj z = parseZeroOrOneProjectionNode(cur);
+			if (z != null) {
+				boolean fusedZ = false;
+				for (int j = i + 1; j < nodes.size(); j++) {
+					final TupleExpr cand = nodes.get(j);
+					if (consumed.contains(cand) || !(cand instanceof StatementPattern))
+						continue;
+					final StatementPattern sp2 = (StatementPattern) cand;
+					if (getContextVarSafe(sp2) != null)
+						continue; // conservative across GRAPH
+					final Var s2 = sp2.getSubjectVar();
+					final Var o2 = sp2.getObjectVar();
+					final Var p2 = sp2.getPredicateVar();
+					if (p2 == null || !p2.hasValue() || !(p2.getValue() instanceof IRI))
+						continue;
+					final IRI p2Iri = (IRI) p2.getValue();
+
+					final boolean forward = sameVar(z.end, s2);
+					final boolean inverse = !forward && sameVar(z.end, o2);
+					if (!forward && !inverse)
+						continue;
+
+					final String bridge = freeVarName(z.end);
+					final Set<TupleExpr> willConsume = new HashSet<>();
+					willConsume.add(z.container);
+					willConsume.add(sp2);
+					if (leaksOutside.apply(willConsume, bridge))
+						continue;
+
+					flushPL.run();
+					clearPL.run();
+
+					final PathNode opt = new PathQuant(new PathAtom(z.pred, false), 0, 1);
+					final PathNode step2 = new PathAtom(p2Iri, inverse);
+					final PathNode seq = new PathSeq(java.util.Arrays.asList(opt, step2));
+
+					final String subjStr = renderPossiblyOverridden(z.start, overrides);
+					final String objStr = renderPossiblyOverridden(forward ? o2 : s2, overrides);
+					bp.line(subjStr + " " + seq.render() + " " + objStr + " .");
+
+					consumed.add(z.container);
+					consumed.add(sp2);
+					suppressProjectionSubselect(z.container);
+					fusedZ = true;
+					break;
+				}
+				if (fusedZ)
+					continue;
+				flushPL.run();
+				clearPL.run();
+				cur.visit(bp);
+				consumed.add(cur);
+				continue;
+			}
+
+			// ---- ALP anchored rewrites (A/B + D) ----
+			if (cur instanceof ArbitraryLengthPath) {
+				final ArbitraryLengthPath alp = (ArbitraryLengthPath) cur;
+
+				// (D) rdf:rest{m,n}*/rdf:first fusion (anchored at ALP)
+				StatementPattern firstTriple = null;
+				{
+					TupleExpr inner = alp.getPathExpression();
+					if (inner instanceof StatementPattern) {
+						StatementPattern atom = (StatementPattern) inner;
+						Var pv = atom.getPredicateVar();
+						if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI
+								&& RDF.REST.equals(pv.getValue())) {
+							for (int j = i + 1; j < nodes.size(); j++) {
+								final TupleExpr cand = nodes.get(j);
+								if (consumed.contains(cand) || !(cand instanceof StatementPattern))
+									continue;
+								final StatementPattern sp = (StatementPattern) cand;
+								final Var pv2 = sp.getPredicateVar();
+								if (pv2 == null || !pv2.hasValue() || !(pv2.getValue() instanceof IRI)
+										|| !RDF.FIRST.equals(pv2.getValue()))
+									continue;
+								if (!sameVar(alp.getObjectVar(), sp.getSubjectVar()))
+									continue;
+								final Var mid = sp.getSubjectVar();
+								if (mid != null && mid.getName() != null) {
+									if (!(isAnonCollectionVar(mid) || isAnonPathVar(mid)))
+										continue;
+								}
+								if (!contextsCompatible(getContextVarSafe(alp), getContextVarSafe(sp)))
+									continue;
+								firstTriple = sp;
+								break;
+							}
+						}
+					}
+				}
+				if (firstTriple != null) {
+					flushPL.run();
+					clearPL.run();
+
+					final long min = alp.getMinLength();
+					final long max = getMaxLengthSafe(alp);
+					final String q = quantifier(min, max);
+					final String fused = renderIRI(RDF.REST) + q + "/" + renderIRI(RDF.FIRST);
+					final String s = renderPossiblyOverridden(alp.getSubjectVar(), overrides);
+					final String o = renderPossiblyOverridden(firstTriple.getObjectVar(), overrides);
+
+					final Var ctx = getContextVarSafe(alp);
+					if (ctx != null)
+						bp.line("GRAPH " + renderVarOrValue(ctx) + " { " + s + " " + fused + " " + o + " . }");
+					else
+						bp.line(s + " " + fused + " " + o + " .");
+					consumed.add(alp);
+					consumed.add(firstTriple);
+					continue;
+				}
+
+				// (B) ALP + SP → inner{m,n} / p1
+				final Var aS = alp.getSubjectVar();
+				final Var aO = alp.getObjectVar();
+				final Var ctxAlp = getContextVarSafe(alp);
+				final PathNode inner = parseAPathInner(alp.getPathExpression(), aS, aO);
+				if (inner != null) {
+					for (int j = i + 1; j < nodes.size(); j++) {
+						final TupleExpr cand = nodes.get(j);
+						if (consumed.contains(cand) || !(cand instanceof StatementPattern))
+							continue;
+						final StatementPattern sp = (StatementPattern) cand;
+						if (!contextsCompatible(ctxAlp, getContextVarSafe(sp)))
+							continue;
+						final Var spS = sp.getSubjectVar();
+						final Var spO = sp.getObjectVar();
+						final Var pVar = sp.getPredicateVar();
+						if (pVar == null || !pVar.hasValue() || !(pVar.getValue() instanceof IRI))
+							continue;
+						final IRI pIri = (IRI) pVar.getValue();
+
+						final boolean forwardStep2 = sameVar(aO, spS);
+						final boolean inverseStep2 = !forwardStep2 && sameVar(aO, spO);
+						if (!forwardStep2 && !inverseStep2)
+							continue;
+						final Var mid = aO;
+						if (!isAnonPathVar(mid))
+							continue;
+
+						final String midName = freeVarName(mid);
+						final Set<TupleExpr> willConsume = new HashSet<>();
+						willConsume.add(alp);
+						willConsume.add(sp);
+						if (leaksOutside.apply(willConsume, midName))
+							continue;
+
+						flushPL.run();
+						clearPL.run();
+
+						final long min = alp.getMinLength();
+						final long max = getMaxLengthSafe(alp);
+						final PathNode q = new PathQuant(inner, min, max);
+						final PathNode step2 = new PathAtom(pIri, inverseStep2);
+						final PathNode seq = new PathSeq(java.util.Arrays.asList(q, step2));
+
+						final Var start = aS;
+						final Var end = forwardStep2 ? spO : spS;
+
+						final String subjStr = renderPossiblyOverridden(start, overrides);
+						final String objStr = renderPossiblyOverridden(end, overrides);
+						bp.line(subjStr + " " + seq.render() + " " + objStr + " .");
+
+						consumed.add(alp);
+						consumed.add(sp);
+						break;
+					}
+					if (consumed.contains(alp))
+						continue;
+				}
+			}
+
+			// ---- SP anchored rewrites (A and Z2) ----
+			if (cur instanceof StatementPattern) {
+				final StatementPattern sp = (StatementPattern) cur;
+				if (!consumed.contains(sp)) {
+					// (A) SP + ALP → p1 / inner{m,n}
+					final Var pVar = sp.getPredicateVar();
+					if (pVar != null && pVar.hasValue() && pVar.getValue() instanceof IRI) {
+						final IRI pIri = (IRI) pVar.getValue();
+						final Var spS = sp.getSubjectVar();
+						final Var spO = sp.getObjectVar();
+						final Var ctxSp = getContextVarSafe(sp);
+
+						boolean fused = false;
+						for (int j = i + 1; j < nodes.size(); j++) {
+							final TupleExpr cand = nodes.get(j);
+							if (consumed.contains(cand) || !(cand instanceof ArbitraryLengthPath))
+								continue;
+							final ArbitraryLengthPath alp = (ArbitraryLengthPath) cand;
+							if (!contextsCompatible(ctxSp, getContextVarSafe(alp)))
+								continue;
+							final Var aS = alp.getSubjectVar();
+							final Var aO = alp.getObjectVar();
+
+							final boolean forward = sameVar(spO, aS);
+							final boolean inverse = !forward && sameVar(spS, aS);
+							if (!forward && !inverse)
+								continue;
+							final Var mid = forward ? spO : spS;
+							if (!isAnonPathVar(mid))
+								continue;
+
+							final PathNode inner = parseAPathInner(alp.getPathExpression(), aS, aO);
+							if (inner == null)
+								continue;
+
+							final String midName = freeVarName(mid);
+							final Set<TupleExpr> willConsume = new HashSet<>();
+							willConsume.add(sp);
+							willConsume.add(alp);
+							if (leaksOutside.apply(willConsume, midName))
+								continue;
+
+							flushPL.run();
+							clearPL.run();
+
+							final PathNode step1 = new PathAtom(pIri, inverse);
+							final long min = alp.getMinLength();
+							final long max = getMaxLengthSafe(alp);
+							final PathNode q = new PathQuant(inner, min, max);
+							final PathNode seq = new PathSeq(java.util.Arrays.asList(step1, q));
+
+							final Var start = forward ? spS : spO;
+							final Var end = aO;
+
+							final String subjStr = renderPossiblyOverridden(start, overrides);
+							final String objStr = renderPossiblyOverridden(end, overrides);
+							bp.line(subjStr + " " + seq.render() + " " + objStr + " .");
+
+							consumed.add(sp);
+							consumed.add(alp);
+							fused = true;
+							break;
+						}
+						if (fused)
+							continue;
+
+						// (Z2) SP + ZeroOrOneProj → p1 / p?
+						for (int j = i + 1; j < nodes.size(); j++) {
+							if (consumed.contains(nodes.get(j)))
+								continue;
+							final ZeroOrOneProj z2 = parseZeroOrOneProjectionNode(nodes.get(j));
+							if (z2 == null)
+								continue;
+							final boolean forward = sameVar(sp.getObjectVar(), z2.start);
+							final boolean inverse = !forward && sameVar(sp.getSubjectVar(), z2.start);
+							if (!forward && !inverse)
+								continue;
+
+							final String bridge = freeVarName(z2.start);
+							final Set<TupleExpr> willConsume = new HashSet<>();
+							willConsume.add(sp);
+							willConsume.add(z2.container);
+							if (leaksOutside.apply(willConsume, bridge))
+								continue;
+
+							flushPL.run();
+							clearPL.run();
+
+							final PathNode step1 = new PathAtom((IRI) pVar.getValue(), inverse);
+							final PathNode opt = new PathQuant(new PathAtom(z2.pred, false), 0, 1);
+							final PathNode seq = new PathSeq(java.util.Arrays.asList(step1, opt));
+
+							final Var start = inverse ? sp.getObjectVar() : sp.getSubjectVar();
+							final Var end = z2.end;
+
+							final String subjStr = renderPossiblyOverridden(start, overrides);
+							final String objStr = renderPossiblyOverridden(end, overrides);
+							bp.line(subjStr + " " + seq.render() + " " + objStr + " .");
+
+							consumed.add(sp);
+							consumed.add(z2.container);
+							suppressProjectionSubselect(z2.container);
+							break;
+						}
+						if (consumed.contains(sp))
+							continue;
+					}
+
+					// No path fusion -> maybe add to property list
+					final Var ctx = getContextVarSafe(sp);
+					if (ctx != null && (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
+						flushPL.run();
+						clearPL.run();
+						String s = renderVarOrValue(ctx);
+						String subj = renderPossiblyOverridden(sp.getSubjectVar(), overrides);
+						String pred = predStr.apply(sp.getPredicateVar());
+						String obj = renderPossiblyOverridden(sp.getObjectVar(), overrides);
+						bp.indent();
+						bp.raw("GRAPH " + s + " ");
+						bp.openBlock();
+						bp.line(subj + " " + pred + " " + obj + " .");
+						bp.closeBlock();
+						bp.newline();
+						consumed.add(sp);
+						continue;
+					}
+
+					final String subj = renderPossiblyOverridden(sp.getSubjectVar(), overrides);
+					final String pred = predStr.apply(sp.getPredicateVar());
+					final String obj = renderPossiblyOverridden(sp.getObjectVar(), overrides);
+
+					if (plSubject[0] == null) {
+						plSubject[0] = subj;
+						addPO.accept(sp.getPredicateVar(), obj);
+					} else if (plSubject[0].equals(subj)) {
+						addPO.accept(sp.getPredicateVar(), obj);
+					} else {
+						flushPL.run();
+						clearPL.run();
+						plSubject[0] = subj;
+						addPO.accept(sp.getPredicateVar(), obj);
+					}
+					consumed.add(sp);
+					continue;
+				}
+			}
+
+			// ---- Fallback ----
+			flushPL.run();
+			clearPL.run();
+			cur.visit(bp);
+			consumed.add(cur);
+		}
+
+		// flush tail property list
+		flushPL.run();
+		clearPL.run();
+
+		return true;
+	}
+
+	private String renderPossiblyOverridden(final Var v, final Map<String, String> overrides) {
+		final String n = freeVarName(v);
+		if (n != null && overrides != null) {
+			final String ov = overrides.get(n);
+			if (ov != null)
+				return ov;
+		}
+		return renderVarOrValue(v);
+	}
+
+	/**
+	 * Context compatibility: equal if both null; if both values -> same value; if both free vars -> same name; else
+	 * incompatible.
+	 */
+	private static boolean contextsCompatible(final Var a, final Var b) {
+		if (a == b)
+			return true;
+		if (a == null || b == null)
+			return false;
+		if (a.hasValue() && b.hasValue())
+			return Objects.equals(a.getValue(), b.getValue());
+		if (!a.hasValue() && !b.hasValue())
+			return Objects.equals(a.getName(), b.getName());
+		return false;
+	}
+
+	static String stripRedundantOuterParens(final String s) {
+		if (s == null)
+			return null;
+		String t = s.trim();
+		if (t.length() >= 2 && t.charAt(0) == '(' && t.charAt(t.length() - 1) == ')') {
+			int depth = 0;
+			for (int i = 0; i < t.length(); i++) {
+				char ch = t.charAt(i);
+				if (ch == '(')
+					depth++;
+				else if (ch == ')')
+					depth--;
+				if (depth == 0 && i < t.length() - 1)
+					return t;
+			}
+			return t.substring(1, t.length() - 1).trim();
+		}
+		return t;
+	}
+
+	private String renderDescribeTerm(ValueExpr t) {
+		if (t instanceof Var) {
+			Var v = (Var) t;
+			if (!v.hasValue())
+				return "?" + v.getName();
+			if (v.getValue() instanceof IRI)
+				return renderIRI((IRI) v.getValue());
+		}
+		if (t instanceof ValueConstant && ((ValueConstant) t).getValue() instanceof IRI) {
+			return renderIRI((IRI) ((ValueConstant) t).getValue());
+		}
+		handleUnsupported("DESCRIBE term must be variable or IRI");
+		return "";
+	}
+
+	private void handleUnsupported(String message) {
+		if (style.strict)
+			throw new SparqlRenderingException(message);
+		if (style.lenientComments) {
+			/* place to add comments if we ever want */ }
+	}
+
+	private void fail(String message) {
+		if (style.strict)
+			throw new SparqlRenderingException(message);
+	}
+
+	// ---------------- Prefix compaction index ----------------
+
+	private static final class PrefixHit {
+		final String prefix;
+		final String namespace;
+
+		PrefixHit(String p, String n) {
+			prefix = p;
+			namespace = n;
+		}
+	}
+
+	private static final class PrefixIndex {
+		private final List<Map.Entry<String, String>> entries;
+
+		PrefixIndex(final Map<String, String> prefixes) {
+			final List<Map.Entry<String, String>> list = new ArrayList<>();
+			if (prefixes != null)
+				list.addAll(prefixes.entrySet());
+			list.sort((a, b) -> Integer.compare(b.getValue().length(), a.getValue().length()));
+			this.entries = Collections.unmodifiableList(list);
+		}
+
+		PrefixHit longestMatch(final String iri) {
+			if (iri == null)
+				return null;
+			for (final Map.Entry<String, String> e : entries) {
+				final String ns = e.getValue();
+				if (iri.startsWith(ns))
+					return new PrefixHit(e.getKey(), ns);
+			}
+			return null;
+		}
+	}
+
+	// ---------------- Property Path Mini-AST ----------------
+
+	private interface PathNode {
+		String render();
+
+		int prec();
+	}
+
+	private static final int PREC_ALT = 1;
+	private static final int PREC_SEQ = 2;
+	private static final int PREC_ATOM = 3;
+
+	private final class PathAtom implements PathNode {
+		final IRI iri;
+		final boolean inverse;
+
+		PathAtom(IRI iri, boolean inverse) {
+			this.iri = iri;
+			this.inverse = inverse;
+		}
+
+		@Override
+		public String render() {
+			return (inverse ? "^" : "") + renderIRI(iri);
+		}
+
+		@Override
+		public int prec() {
+			return PREC_ATOM;
+		}
+	}
+
+	@SuppressWarnings("unused")
+	private final class PathNegSet implements PathNode {
+		final List<IRI> iris;
+
+		PathNegSet(List<IRI> iris) {
+			this.iris = iris;
+		}
+
+		@Override
+		public String render() {
+			return "!(" + iris.stream().map(TupleExprIRRenderer.this::renderIRI).collect(Collectors.joining("|")) + ")";
+		}
+
+		@Override
+		public int prec() {
+			return PREC_ATOM;
+		}
+	}
+
+	private final class PathSeq implements PathNode {
+		final List<PathNode> parts;
+
+		PathSeq(List<PathNode> parts) {
+			this.parts = parts;
+		}
+
+		@Override
+		public String render() {
+			List<String> ss = new ArrayList<>(parts.size());
+			for (PathNode p : parts) {
+				boolean needParens = p.prec() < PREC_SEQ;
+				ss.add(needParens ? "(" + p.render() + ")" : p.render());
+			}
+			return String.join("/", ss);
+		}
+
+		@Override
+		public int prec() {
+			return PREC_SEQ;
+		}
+	}
+
+	private final class PathAlt implements PathNode {
+		final List<PathNode> alts;
+
+		PathAlt(List<PathNode> alts) {
+			this.alts = alts;
+		}
+
+		@Override
+		public String render() {
+			List<String> ss = new ArrayList<>(alts.size());
+			for (PathNode p : alts) {
+				boolean needParens = p.prec() < PREC_ALT;
+				ss.add(needParens ? "(" + p.render() + ")" : p.render());
+			}
+			return String.join("|", ss);
+		}
+
+		@Override
+		public int prec() {
+			return PREC_ALT;
+		}
+	}
+
+	private static final class PathQuant implements PathNode {
+		final PathNode inner;
+		final long min, max;
+
+		PathQuant(PathNode inner, long min, long max) {
+			this.inner = inner;
+			this.min = min;
+			this.max = max;
+		}
+
+		@Override
+		public String render() {
+			String q = quantifier(min, max);
+			boolean needParens = inner.prec() < PREC_ATOM;
+			return (needParens ? "(" + inner.render() + ")" : inner.render()) + q;
+		}
+
+		@Override
+		public int prec() {
+			return PREC_ATOM;
+		}
+	}
+
+	private PathNode invertPath(PathNode p) {
+		if (p instanceof PathAtom) {
+			PathAtom a = (PathAtom) p;
+			return new PathAtom(a.iri, !a.inverse);
+		}
+		if (p instanceof PathNegSet)
+			return p;
+		if (p instanceof PathSeq) {
+			List<PathNode> parts = ((PathSeq) p).parts;
+			List<PathNode> inv = new ArrayList<>(parts.size());
+			for (int i = parts.size() - 1; i >= 0; i--)
+				inv.add(invertPath(parts.get(i)));
+			return new PathSeq(inv);
+		}
+		if (p instanceof PathAlt) {
+			List<PathNode> alts = ((PathAlt) p).alts;
+			List<PathNode> inv = alts.stream().map(this::invertPath).collect(Collectors.toList());
+			return new PathAlt(inv);
+		}
+		if (p instanceof PathQuant) {
+			PathQuant q = (PathQuant) p;
+			return new PathQuant(invertPath(q.inner), q.min, q.max);
+		}
+		return p;
+	}
+
+	private static Var getContextVarSafe(Object node) {
+		try {
+			java.lang.reflect.Method m = node.getClass().getMethod("getContextVar");
+			Object v = m.invoke(node);
+			return (v instanceof Var) ? (Var) v : null;
+		} catch (ReflectiveOperationException ignore) {
+			return null;
+		}
+	}
+
+	private void printStatementWithOverrides(final StatementPattern sp, final Map<String, String> overrides,
+			final BlockPrinter bp) {
+		final Var s = sp.getSubjectVar(), p = sp.getPredicateVar(), o = sp.getObjectVar();
+		final String sName = freeVarName(s), oName = freeVarName(o);
+
+		final String subj = (sName != null && overrides.containsKey(sName)) ? overrides.get(sName)
+				: renderVarOrValue(s);
+		final String obj = (oName != null && overrides.containsKey(oName)) ? overrides.get(oName) : renderVarOrValue(o);
+		final String pred = renderPredicateForTriple(p);
+
+		bp.line(subj + " " + pred + " " + obj + " .");
+	}
+
+	// Render expressions for HAVING with substitution of _anon_having_* variables
+	private String renderExprForHaving(final ValueExpr e, final Normalized n) {
+		return renderExprWithSubstitution(e, n == null ? null : n.selectAssignments);
+	}
+
+	private String renderExprWithSubstitution(final ValueExpr e, final Map<String, ValueExpr> subs) {
+		if (e == null)
+			return "()";
+		if (e instanceof Var) {
+			final Var v = (Var) e;
+			if (!v.hasValue() && v.getName() != null && isAnonHavingName(v.getName()) && subs != null) {
+				ValueExpr repl = subs.get(v.getName());
+				if (repl != null)
+					return renderExpr(repl); // inline the aggregate/expression
+			}
+			return v.hasValue() ? renderValue(v.getValue()) : "?" + v.getName();
+		}
+
+		// Minimal recursive coverage for common boolean structures in HAVING
+		if (e instanceof Not)
+			return "!(" + stripRedundantOuterParens(renderExprWithSubstitution(((Not) e).getArg(), subs)) + ")";
+		if (e instanceof And) {
+			And a = (And) e;
+			return "(" + renderExprWithSubstitution(a.getLeftArg(), subs) + " && " +
+					renderExprWithSubstitution(a.getRightArg(), subs) + ")";
+		}
+		if (e instanceof Or) {
+			Or o = (Or) e;
+			return "(" + renderExprWithSubstitution(o.getLeftArg(), subs) + " || " +
+					renderExprWithSubstitution(o.getRightArg(), subs) + ")";
+		}
+		if (e instanceof Compare) {
+			Compare c = (Compare) e;
+			return "(" + renderExprWithSubstitution(c.getLeftArg(), subs) + " " + op(c.getOperator()) + " " +
+					renderExprWithSubstitution(c.getRightArg(), subs) + ")";
+		}
+		if (e instanceof SameTerm) {
+			SameTerm st = (SameTerm) e;
+			return "sameTerm(" + renderExprWithSubstitution(st.getLeftArg(), subs) + ", " +
+					renderExprWithSubstitution(st.getRightArg(), subs) + ")";
+		}
+
+		// Fallback: normal rendering
+		return renderExpr(e);
+	}
+
+	// NEW helper: identify anon-having vars explicitly
+	@SuppressWarnings("unused")
+	private static boolean isAnonHavingVar(Var v) {
+		if (v == null || v.hasValue())
+			return false;
+		final String name = v.getName();
+		return isAnonHavingName(name);
+	}
 }
