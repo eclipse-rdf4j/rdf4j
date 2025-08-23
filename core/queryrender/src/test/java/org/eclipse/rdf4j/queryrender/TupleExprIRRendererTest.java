@@ -24,12 +24,10 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
-import org.eclipse.rdf4j.queryrender.sparql.RenderStyle;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
-import org.eclipse.rdf4j.queryrender.sparql.TupleExprToSparql;
 import org.junit.jupiter.api.Test;
 
-public class TupleExprToSparqlTest {
+public class TupleExprIRRendererTest {
 
 	private static final String EX = "http://ex/";
 
@@ -40,18 +38,15 @@ public class TupleExprToSparqlTest {
 			"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n";
 
 	// Shared renderer config with canonical whitespace and useful prefixes.
-	private static TupleExprToSparql.Config cfg() {
-		TupleExprToSparql.Config cfg = new TupleExprToSparql.Config();
-		cfg.canonicalWhitespace = true;
-		cfg.printPrefixes = true;
-		cfg.usePrefixCompaction = true;
-		cfg.prefixes.put("rdf", RDF.NAMESPACE);
-		cfg.prefixes.put("rdfs", RDFS.NAMESPACE);
-		cfg.prefixes.put("foaf", FOAF.NAMESPACE);
-		cfg.prefixes.put("ex", EX);
-		cfg.prefixes.put("xsd", XSD.NAMESPACE);
-		cfg.baseIRI = null;
-		return cfg;
+	private static TupleExprIRRenderer.Config cfg() {
+		TupleExprIRRenderer.Config style = new TupleExprIRRenderer.Config();
+		style.prefixes.put("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#");
+		style.prefixes.put("rdfs", "http://www.w3.org/2000/01/rdf-schema#");
+		style.prefixes.put("foaf", "http://xmlns.com/foaf/0.1/");
+		style.prefixes.put("ex", "http://ex/");
+		style.prefixes.put("xsd", "http://www.w3.org/2001/XMLSchema#");
+		style.valuesPreserveOrder = true;
+		return style;
 	}
 
 	// ---------- Helpers ----------
@@ -67,33 +62,21 @@ public class TupleExprToSparqlTest {
 
 	}
 
-	private String render(String sparql, TupleExprToSparql.Config cfg) {
+	private String render(String sparql, TupleExprIRRenderer.Config cfg) {
 		TupleExpr algebra = parseAlgebra(sparql);
 		if (sparql.contains("ASK")) {
-			return new TupleExprToSparql(cfg).renderAsk(algebra, null);
+			return new TupleExprIRRenderer(cfg).renderAsk(algebra, null);
 		}
 
 		if (sparql.contains("DESCRIBE")) {
-			return new TupleExprToSparql(cfg).renderAsk(algebra, null);
+			return new TupleExprIRRenderer(cfg).renderAsk(algebra, null);
 		}
 
-		RenderStyle style = new RenderStyle();
-		style.prefixes.put("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#");
-		style.prefixes.put("rdfs", "http://www.w3.org/2000/01/rdf-schema#");
-		style.prefixes.put("foaf", "http://xmlns.com/foaf/0.1/");
-		style.prefixes.put("ex", "http://ex/");
-		style.prefixes.put("xsd", "http://www.w3.org/2001/XMLSchema#");
-		style.typeAlias = RenderStyle.TypeAlias.SMART; // keep rdf:type instead of 'a' when desired
-		style.valuesPreserveOrder = true;
-
-		TupleExprIRRenderer r = new TupleExprIRRenderer(style);
-
-//		return new TupleExprToSparql(cfg).render(algebra);
-		return r.render(algebra, null);
+		return new TupleExprIRRenderer(cfg).render(algebra, null);
 	}
 
 	/** Round-trip twice and assert the renderer is a fixed point (idempotent). */
-	private String assertFixedPoint(String sparql, TupleExprToSparql.Config cfg) {
+	private String assertFixedPoint(String sparql, TupleExprIRRenderer.Config cfg) {
 		System.out.println("# Original SPARQL query\n" + sparql + "\n");
 		TupleExpr tupleExpr = parseAlgebra(SPARQL_PREFIX + sparql);
 		System.out.println("# Original TupleExpr\n" + tupleExpr + "\n");
@@ -112,7 +95,7 @@ public class TupleExprToSparqlTest {
 	}
 
 	/** Assert semantic equivalence by comparing result rows (order-insensitive). */
-	private void assertSameSparqlQuery(String sparql, TupleExprToSparql.Config cfg) {
+	private void assertSameSparqlQuery(String sparql, TupleExprIRRenderer.Config cfg) {
 //		String rendered = assertFixedPoint(original, cfg);
 
 		TupleExpr tupleExpr = parseAlgebra(SPARQL_PREFIX + sparql);
