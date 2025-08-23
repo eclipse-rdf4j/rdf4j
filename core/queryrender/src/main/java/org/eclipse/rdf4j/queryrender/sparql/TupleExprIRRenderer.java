@@ -1507,7 +1507,49 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(final Filter f) {
-			f.getArg().visit(this);
+			// Try to order FILTER before a trailing subselect when the condition only mentions
+			// variables already bound by the head of the join (to match expected formatting).
+			final TupleExpr arg = f.getArg();
+			Projection trailingProj = null;
+			java.util.List<TupleExpr> head = null;
+			if (arg instanceof Join) {
+				final java.util.List<TupleExpr> flat = new java.util.ArrayList<>();
+				TupleExprIRRenderer.flattenJoin(arg, flat);
+				if (!flat.isEmpty()) {
+					TupleExpr last = flat.get(flat.size() - 1);
+					// recognize Distinct->Projection or plain Projection
+					if (last instanceof Projection) {
+						trailingProj = (Projection) last;
+					} else if (last instanceof Distinct && ((Distinct) last).getArg() instanceof Projection) {
+						trailingProj = (Projection) ((Distinct) last).getArg();
+					}
+					if (trailingProj != null) {
+						head = new java.util.ArrayList<>(flat);
+						head.remove(head.size() - 1);
+					}
+				}
+			}
+
+			if (trailingProj != null && head != null) {
+				final java.util.Set<String> headVars = new java.util.LinkedHashSet<>();
+				for (TupleExpr n : head) {
+					collectFreeVars(n, headVars);
+				}
+				final java.util.Set<String> condVars = freeVars(f.getCondition());
+				if (headVars.containsAll(condVars)) {
+					// Emit head, then FILTER, then subselect
+					for (TupleExpr n : head) {
+						n.visit(this);
+					}
+					final String cond = stripRedundantOuterParens(renderExpr(f.getCondition()));
+					where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter(cond));
+					trailingProj.visit(this);
+					return;
+				}
+			}
+
+			// Default order: argument followed by the FILTER line
+			arg.visit(this);
 			final String cond = stripRedundantOuterParens(renderExpr(f.getCondition()));
 			where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter(cond));
 		}
@@ -2785,26 +2827,18 @@ public class TupleExprIRRenderer {
 			}
 
 			if (trailingProj != null && head != null) {
-				// Decide dependency: if filter mentions variables produced by subselect, keep default order
-				final java.util.Set<String> produced = new java.util.LinkedHashSet<>();
-				if (trailingProj.getProjectionElemList() != null) {
-					for (ProjectionElem pe : trailingProj.getProjectionElemList().getElements()) {
-						final String name = pe.getProjectionAlias().orElse(pe.getName());
-						if (name != null && !name.isEmpty()) {
-							produced.add(name);
-						}
-					}
+				// Decide dependency based on what variables are already available from the head (left part of the
+				// join).
+				// If the filter's variables are all bound by the head, we can safely print the FILTER before the
+				// trailing subselect regardless of overlapping projection names.
+				final java.util.Set<String> headVars = new java.util.LinkedHashSet<>();
+				for (TupleExpr n : head) {
+					collectFreeVars(n, headVars);
 				}
 				final java.util.Set<String> condVars = freeVars(filter.getCondition());
-				boolean dependsOnSubselect = false;
-				for (String v : condVars) {
-					if (produced.contains(v)) {
-						dependsOnSubselect = true;
-						break;
-					}
-				}
+				final boolean canMoveBefore = headVars.containsAll(condVars);
 
-				if (!dependsOnSubselect) {
+				if (canMoveBefore) {
 					// Print head first, then FILTER, then trailing subselect
 					final CollectionResult col = r.detectCollections(head);
 					r.tryRenderBestEffortPathChain(head, this, col.overrides, col.consumed);

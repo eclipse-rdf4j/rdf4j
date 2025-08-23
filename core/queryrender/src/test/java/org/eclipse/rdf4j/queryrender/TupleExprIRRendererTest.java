@@ -715,27 +715,30 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT REDUCED ?g ?y (?cnt AS ?count) (COALESCE(?avgAge, -1) AS ?ageOrMinus1)\n" +
 				"WHERE {\n" +
 				"  VALUES (?g) {\n" +
-				"  (ex:g1)\n" +
-				"  (ex:g2)\n" +
+				"    (ex:g1)\n" +
+				"    (ex:g2)\n" +
 				"  }\n" +
 				"  GRAPH ?g {\n" +
 				"    ?x (foaf:knows|ex:knows)/^foaf:knows ?y .\n" +
 				"    ?y foaf:name ?name .\n" +
 				"  }\n" +
 				"  OPTIONAL {\n" +
-				"  GRAPH ?g {\n" +
-				"    ?y ex:age ?age .\n" +
-				"  }\n" +
-				"  FILTER (?age >= 21)\n" +
+				"    GRAPH ?g {\n" +
+				"      ?y ex:age ?age .\n" +
+				"    }\n" +
+				"    FILTER (?age >= 21)\n" +
 				"  }\n" +
 				"  MINUS {\n" +
-				"   ?y a ex:Robot }\n" +
-				"  FILTER (NOT EXISTS { ?y foaf:nick ?nick FILTER(STRLEN(?nick) > 0) })\n" +
+				"    ?y a ex:Robot .\n" +
+				"  }\n" +
+				"  FILTER (NOT EXISTS { ?y foaf:nick ?nick . FILTER (STRLEN(?nick) > 0) })\n" +
 				"  {\n" +
 				"    SELECT ?y (COUNT(DISTINCT ?name) AS ?cnt) (AVG(?age) AS ?avgAge)\n" +
 				"    WHERE {\n" +
 				"      ?y foaf:name ?name .\n" +
-				"      OPTIONAL { ?y ex:age ?age }\n" +
+				"      OPTIONAL {\n" +
+				"        ?y ex:age ?age .\n" +
+				"      }\n" +
 				"    }\n" +
 				"    GROUP BY ?y\n" +
 				"  }\n" +
