@@ -776,7 +776,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
 	void testMoreGraph2() {
 		String q = "SELECT REDUCED ?g ?y (?cnt AS ?count) (COALESCE(?avgAge, -1) AS ?ageOrMinus1)\n" +
 				"WHERE {\n" +
@@ -1045,7 +1044,11 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT REDUCED ?g ?x ?y (?cnt AS ?count) (IF(BOUND(?avgAge), (xsd:decimal(?cnt) + xsd:decimal(?avgAge)), xsd:decimal(?cnt)) AS ?score)\n"
 				+
 				"WHERE {\n" +
-				"  VALUES ?g { ex:g1 ex:g2 ex:g3 }\n" +
+				"  VALUES (?g) {\n" +
+				"    (ex:g1)\n" +
+				"    (ex:g2)\n" +
+				"    (ex:g3)\n" +
+				"  }\n" +
 				"  GRAPH ?g {\n" +
 				"    ?x (foaf:knows/(^foaf:knows|ex:knows)*) ?y .\n" +
 				"    OPTIONAL { ?y rdfs:label ?label FILTER (LANGMATCHES(LANG(?label), \"en\")) }\n" +
@@ -1068,6 +1071,32 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"    FILTER (?deg >= 0)\n" +
 				"  }\n" +
+				"}\n" +
+				"ORDER BY DESC(?cnt) LCASE(COALESCE(?label, \"\"))\n" +
+				"LIMIT 50\n" +
+				"OFFSET 10";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void mega_monster_deep_nesting_everything_simple() {
+		String q = "SELECT REDUCED ?g ?x ?y (?cnt AS ?count) (IF(BOUND(?avgAge), (xsd:decimal(?cnt) + xsd:decimal(?avgAge)), xsd:decimal(?cnt)) AS ?score)\n"
+				+
+				"WHERE {\n" +
+				"  VALUES (?g) {\n" +
+				"    (ex:g1)\n" +
+				"    (ex:g2)\n" +
+				"    (ex:g3)\n" +
+				"  }\n" +
+				"  GRAPH ?g {\n" +
+				"    ?x (foaf:knows/(^foaf:knows|ex:knows)*) ?y .\n" +
+				"    OPTIONAL {\n" +
+				"      ?y rdfs:label ?label .\n" +
+				"    }\n" +
+				"    FILTER (LANGMATCHES(LANG(?label), \"en\"))\n" +
+				"  }\n" +
+
+				"  FILTER (NOT EXISTS { ?y ex:blockedBy ?b . } && NOT EXISTS { ?y ex:status \"blocked\"@en . })\n" +
 				"}\n" +
 				"ORDER BY DESC(?cnt) LCASE(COALESCE(?label, \"\"))\n" +
 				"LIMIT 50\n" +
