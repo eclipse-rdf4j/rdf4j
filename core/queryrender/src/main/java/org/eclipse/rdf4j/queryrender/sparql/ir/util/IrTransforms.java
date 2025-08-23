@@ -95,6 +95,8 @@ public final class IrTransforms {
 						merged.add(in.get(i + 2));
 						consumedFilter = true;
 					}
+					// Debug marker (harmless): indicate we applied the merge
+					// System.out.println("# IrTransforms: merged OPTIONAL into preceding GRAPH");
 					out.add(new IrGraph(g.getGraph(), merged));
 					i += consumedFilter ? 2 : 1;
 					continue;
