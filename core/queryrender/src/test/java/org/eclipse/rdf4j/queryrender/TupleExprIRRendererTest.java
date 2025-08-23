@@ -62,14 +62,14 @@ public class TupleExprIRRendererTest {
 	private String render(String sparql, TupleExprIRRenderer.Config cfg) {
 		TupleExpr algebra = parseAlgebra(sparql);
 		if (sparql.contains("ASK")) {
-			return new TupleExprIRRenderer(cfg).renderAsk(algebra, null);
+			return new TupleExprIRRenderer(cfg).renderAsk(algebra, null).trim();
 		}
 
 		if (sparql.contains("DESCRIBE")) {
-			return new TupleExprIRRenderer(cfg).renderAsk(algebra, null);
+			return new TupleExprIRRenderer(cfg).renderAsk(algebra, null).trim();
 		}
 
-		return new TupleExprIRRenderer(cfg).render(algebra, null);
+		return new TupleExprIRRenderer(cfg).render(algebra, null).trim();
 	}
 
 	/** Round-trip twice and assert the renderer is a fixed point (idempotent). */
@@ -94,6 +94,7 @@ public class TupleExprIRRendererTest {
 	/** Assert semantic equivalence by comparing result rows (order-insensitive). */
 	private void assertSameSparqlQuery(String sparql, TupleExprIRRenderer.Config cfg) {
 //		String rendered = assertFixedPoint(original, cfg);
+		sparql = sparql.trim();
 
 		TupleExpr tupleExpr = parseAlgebra(SPARQL_PREFIX + sparql);
 		String rendered = render(SPARQL_PREFIX + sparql, cfg);
@@ -710,8 +711,14 @@ public class TupleExprIRRendererTest {
 				"    ?x (foaf:knows|ex:knows)/^foaf:knows ?y .\n" +
 				"    ?y foaf:name ?name .\n" +
 				"  }\n" +
-				"  OPTIONAL { ?y ex:age ?age FILTER(?age >= 21) }\n" +
-				"  MINUS { ?y a ex:Robot }\n" +
+				"  OPTIONAL {\n" +
+				"  GRAPH ?g {\n" +
+				"    ?y ex:age ?age .\n" +
+				"  }\n" +
+				"  FILTER (?age >= 21)\n" +
+				"  }\n" +
+				"  MINUS {\n" +
+				"   ?y a ex:Robot }\n" +
 				"  FILTER (NOT EXISTS { ?y foaf:nick ?nick FILTER(STRLEN(?nick) > 0) })\n" +
 				"  {\n" +
 				"    SELECT ?y (COUNT(DISTINCT ?name) AS ?cnt) (AVG(?age) AS ?avgAge)\n" +
@@ -725,6 +732,64 @@ public class TupleExprIRRendererTest {
 				"ORDER BY DESC(?cnt) LCASE(?name)\n" +
 				"LIMIT 10\n" +
 				"OFFSET 5";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testMoreGraph1() {
+		String q = "SELECT REDUCED ?g ?y (?cnt AS ?count) (COALESCE(?avgAge, -1) AS ?ageOrMinus1)\n" +
+				"WHERE {\n" +
+				"  VALUES (?g) {\n" +
+				"    (ex:g1)\n" +
+				"    (ex:g2)\n" +
+				"  }\n" +
+				"  GRAPH ?g {\n" +
+				"    ?x (foaf:knows|ex:knows)/^foaf:knows ?y .\n" +
+				"    ?y foaf:name ?name .\n" +
+				"  }\n" +
+				"  OPTIONAL {\n" +
+				"    GRAPH ?g {\n" +
+				"      ?y ex:age ?age .\n" +
+				"    }\n" +
+				"    FILTER (?age >= 21)\n" +
+				"  }\n" +
+				"  MINUS {\n" +
+				"    ?y a ex:Robot .\n" +
+				"  }\n" +
+				"  FILTER (NOT EXISTS { ?y foaf:nick ?nick . FILTER (STRLEN(?nick) > 0) })\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testMoreGraph2() {
+		String q = "SELECT REDUCED ?g ?y (?cnt AS ?count) (COALESCE(?avgAge, -1) AS ?ageOrMinus1)\n" +
+				"WHERE {\n" +
+				"  VALUES (?g) {\n" +
+				"    (ex:g1)\n" +
+				"    (ex:g2)\n" +
+				"  }\n" +
+				"  GRAPH ?g {\n" +
+				"    ?x (foaf:knows|ex:knows)/^foaf:knows ?y .\n" +
+				"    ?y foaf:name ?name .\n" +
+				"  }\n" +
+				"  OPTIONAL {\n" +
+				"    GRAPH ?g {\n" +
+				"      ?y ex:age ?age .\n" +
+				"    }\n" +
+				"    FILTER (?age >= 21)\n" +
+				"  }\n" +
+				"  MINUS {\n" +
+				"    ?y a ex:Robot .\n" +
+				"  }\n" +
+				"  FILTER (NOT EXISTS { ?y foaf:nick ?nick . FILTER (STRLEN(?nick) > 0) })\n" +
+				"  {\n" +
+				"    SELECT ?y ?name\n" +
+				"    WHERE {\n" +
+				"      ?y foaf:name ?name .\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
 		assertSameSparqlQuery(q, cfg());
 	}
 
