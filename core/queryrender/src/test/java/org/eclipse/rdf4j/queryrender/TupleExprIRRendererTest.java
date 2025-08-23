@@ -15,10 +15,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.eclipse.rdf4j.model.vocabulary.FOAF;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -967,23 +963,46 @@ public class TupleExprIRRendererTest {
 
 	@Test
 	void mega_massive_union_chain_with_mixed_paths() {
-		String q = "SELECT ?s ?kind WHERE {\n" +
+		String q = "SELECT ?s ?kind\n" +
+				"WHERE {\n" +
 				"  {\n" +
-				"    BIND(\"knows\" AS ?kind) ?s foaf:knows ?o .\n" +
-				"  } UNION {\n" +
-				"    BIND(\"knows2\" AS ?kind) ?s foaf:knows/foaf:knows ?o .\n" +
-				"  } UNION {\n" +
-				"    BIND(\"alt\" AS ?kind) ?s (foaf:knows|ex:knows) ?o .\n" +
-				"  } UNION {\n" +
-				"    BIND(\"inv\" AS ?kind) ?s ^foaf:knows ?o .\n" +
-				"  } UNION {\n" +
-				"    BIND(\"nps\" AS ?kind) ?s !(rdf:type|ex:age) ?o .\n" +
-				"  } UNION {\n" +
-				"    BIND(\"zeroOrOne\" AS ?kind) ?s foaf:knows? ?o .\n" +
-				"  } UNION {\n" +
-				"    BIND(\"zeroOrMore\" AS ?kind) ?s foaf:knows* ?o .\n" +
-				"  } UNION {\n" +
-				"    BIND(\"oneOrMore\" AS ?kind) ?s foaf:knows+ ?o .\n" +
+				"    BIND(\"knows\" AS ?kind)\n" +
+				"    ?s foaf:knows ?o .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    BIND(\"knows2\" AS ?kind)\n" +
+				"    ?s foaf:knows/foaf:knows ?o .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    BIND(\"alt\" AS ?kind)\n" +
+				"    ?s (foaf:knows|ex:knows) ?o .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    BIND(\"inv\" AS ?kind)\n" +
+				"    ?s ^foaf:knows ?o .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    BIND(\"nps\" AS ?kind)\n" +
+				"    ?s !(rdf:type|ex:age) ?o .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    BIND(\"zeroOrOne\" AS ?kind)\n" +
+				"    ?s foaf:knows? ?o .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    BIND(\"zeroOrMore\" AS ?kind)\n" +
+				"    ?s foaf:knows* ?o .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    BIND(\"oneOrMore\" AS ?kind)\n" +
+				"    ?s foaf:knows+ ?o .\n" +
 				"  }\n" +
 				"}\n" +
 				"ORDER BY ?kind\n" +
