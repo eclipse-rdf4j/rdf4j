@@ -699,7 +699,7 @@ public class TupleExprIRRendererTest {
 	// ==========================================
 
 	@Test
-	@Disabled
+//	@Disabled
 	void complex_kitchen_sink_paths_graphs_subqueries() {
 		String q = "SELECT REDUCED ?g ?y (?cnt AS ?count) (COALESCE(?avgAge, -1) AS ?ageOrMinus1)\n" +
 				"WHERE {\n" +
@@ -762,7 +762,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
+//	@Disabled
 	void testMoreGraph2() {
 		String q = "SELECT REDUCED ?g ?y (?cnt AS ?count) (COALESCE(?avgAge, -1) AS ?ageOrMinus1)\n" +
 				"WHERE {\n" +
@@ -1026,7 +1026,7 @@ public class TupleExprIRRendererTest {
 	// ================================================
 
 	@Test
-	@Disabled
+//	@Disabled
 	void mega_monster_deep_nesting_everything() {
 		String q = "SELECT REDUCED ?g ?x ?y (?cnt AS ?count) (IF(BOUND(?avgAge), (xsd:decimal(?cnt) + xsd:decimal(?avgAge)), xsd:decimal(?cnt)) AS ?score)\n"
 				+
@@ -1141,13 +1141,13 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
-	void mega_parentheses_precedence_and_whitespace_stress() {
+//	@Disabled
+	void mega_parentheses_precedence() {
 		String q = "SELECT ?s ?o (?score AS ?score2)\n" +
 				"WHERE {\n" +
-				"  ?s ( (foaf:knows) / ( ( ^foaf:knows ) | ( ex:knows ) ) ) ?o .\n" +
-				"  BIND( ( ( ( IF(BOUND(?o), 1, 0) + 0 ) * 1 ) ) AS ?score )\n" +
-				"  FILTER(     ( ( ( BOUND(?s) && BOUND(?o) ) ) ) && ( ( REGEX( STR(?o), \"^.+$\", \"i\" ) ) )   )\n" +
+				"  ?s ((foaf:knows)/((^foaf:knows )|ex:knows)) ?o .\n" +
+				"  BIND(((IF(BOUND(?o), 1, 0) + 0) * 1) AS ?score)\n" +
+				"  FILTER ((BOUND(?s) && BOUND(?o)) && REGEX(STR(?o), \"^.+$\", \"i\"))\n" +
 				"}\n" +
 				"ORDER BY ?score\n" +
 				"LIMIT 100";
@@ -1190,7 +1190,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?g ?a ?x\n" +
 				"WHERE {\n" +
 				"  GRAPH ?g {\n" +
-				"    ?a !(rdf:type | ex:age)/foaf:name ?x .\n" +
+				"    ?a !(rdf:type|ex:age)/foaf:name ?x .\n" +
 				"  }\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
@@ -1212,7 +1212,7 @@ public class TupleExprIRRendererTest {
 		String fused = "SELECT ?g ?a ?x\n" +
 				"WHERE {\n" +
 				"  GRAPH ?g {\n" +
-				"    ?a !(rdf:type | ex:age)/foaf:name ?x .\n" +
+				"    ?a !(rdf:type|ex:age)/foaf:name ?x .\n" +
 				"  }\n" +
 				"}";
 
@@ -1236,7 +1236,7 @@ public class TupleExprIRRendererTest {
 		String fused = "SELECT ?g ?a ?x\n" +
 				"WHERE {\n" +
 				"  GRAPH ?g {\n" +
-				"    ?a !(rdf:type | ex:age)/^foaf:name ?x .\n" +
+				"    ?a !(rdf:type|ex:age)/^foaf:name ?x .\n" +
 				"  }\n" +
 				"}";
 
@@ -1257,7 +1257,7 @@ public class TupleExprIRRendererTest {
 		String fused = "SELECT ?g ?a ?m\n" +
 				"WHERE {\n" +
 				"  GRAPH ?g {\n" +
-				"    ?a !(rdf:type | ex:age) ?m .\n" +
+				"    ?a !(rdf:type|ex:age) ?m .\n" +
 				"  }\n" +
 				"}";
 
