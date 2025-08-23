@@ -849,7 +849,7 @@ public class TupleExprIRRendererTest {
 	void complex_path_inverse_and_negated_set_mix() {
 		String q = "SELECT ?a ?n\n" +
 				"WHERE {\n" +
-				"  ?a (^foaf:knows/!(ex:age|rdf:type)/foaf:name) ?n .\n" +
+				"  ?a (^foaf:knows/!(ex:knows|rdf:type|ex:helps|rdf:subject)/foaf:name) ?n .\n" +
 				"  FILTER ((LANG(?n) = \"\") || LANGMATCHES(LANG(?n), \"en\"))\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
