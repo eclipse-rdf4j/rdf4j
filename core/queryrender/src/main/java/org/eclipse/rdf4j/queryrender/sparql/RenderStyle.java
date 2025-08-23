@@ -51,7 +51,7 @@ public final class RenderStyle {
 	public boolean lenientComments = false;
 
 	/** Keep VALUES column order as produced by BSA iteration (otherwise sort). */
-	public boolean valuesPreserveOrder = false;
+	public boolean valuesPreserveOrder = true;
 
 	/** SPARQL version string ("1.1" default). */
 	public String sparqlVersion = "1.1";
