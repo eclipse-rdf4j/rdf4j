@@ -10,80 +10,31 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
-import java.util.HashSet;
-import java.util.Set;
-
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 
 /**
  * Textual IR node for a simple triple pattern line.
  */
-public class IrStatementPattern extends IrTripleLike {
-
+public class IrStatementPattern extends IrNode {
+	private final Var subject;
 	private final Var predicate;
+	private final Var object;
 
-	public IrStatementPattern(Var subject, Var predicate, Var object, boolean newScope) {
-		super(subject, object, newScope);
+	public IrStatementPattern(Var subject, Var predicate, Var object) {
+		this.subject = subject;
 		this.predicate = predicate;
+		this.object = object;
+	}
+
+	public Var getSubject() {
+		return subject;
 	}
 
 	public Var getPredicate() {
 		return predicate;
 	}
 
-	@Override
-	public String getPredicateOrPathText(TupleExprIRRenderer r) {
-		Var pv = getPredicate();
-		if (isRdfTypePredicate(pv)) {
-			return "a";
-		}
-		return r.convertVarIriToString(pv);
-	}
-
-	@Override
-	public void print(IrPrinter p) {
-		p.startLine();
-		if (getSubjectOverride() != null) {
-			getSubjectOverride().print(p);
-		} else {
-			p.append(p.convertVarToString(getSubject()));
-		}
-		final String predText = isRdfTypePredicate(getPredicate()) ? "a" : p.convertVarToString(getPredicate());
-		p.append(" " + predText + " ");
-
-		if (getObjectOverride() != null) {
-			getObjectOverride().print(p);
-		} else {
-			p.append(p.convertVarToString(getObject()));
-		}
-		p.append(" .");
-		p.endLine();
-	}
-
-	@Override
-	public String toString() {
-		return "IrStatementPattern{" +
-				"subject=" + subject +
-				", subjectOverride=" + subjectOverride +
-				", predicate=" + predicate +
-				", object=" + object +
-				", objectOverride=" + objectOverride +
-				'}';
-	}
-
-	@Override
-	public Set<Var> getVars() {
-		HashSet<Var> out = new HashSet<>(super.getVars());
-		if (predicate != null) {
-			out.add(predicate);
-		}
-		return out;
-	}
-
-	private static boolean isRdfTypePredicate(Var v) {
-		return v != null && v.hasValue() && v.getValue() instanceof IRI && RDF.TYPE.equals(v.getValue());
+	public Var getObject() {
+		return object;
 	}
 }

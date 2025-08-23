@@ -17,14 +17,16 @@ public class IrBind extends IrNode {
 	private final String exprText;
 	private final String varName;
 
-	public IrBind(String exprText, String varName, boolean newScope) {
-		super(newScope);
+	public IrBind(String exprText, String varName) {
 		this.exprText = exprText;
 		this.varName = varName;
 	}
 
-	@Override
-	public void print(IrPrinter p) {
-		p.line("BIND(" + exprText + " AS ?" + varName + ")");
+	public String getExprText() {
+		return exprText;
+	}
+
+	public String getVarName() {
+		return varName;
 	}
 }

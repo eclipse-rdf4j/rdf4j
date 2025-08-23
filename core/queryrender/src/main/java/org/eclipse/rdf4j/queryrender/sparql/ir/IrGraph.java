@@ -10,71 +10,25 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
-import java.util.HashSet;
-import java.util.Set;
-import java.util.function.UnaryOperator;
-
 import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
  * Textual IR node representing a GRAPH block with an inner group.
- *
- * The graph reference is modelled as a {@link Var} so it can be either a bound IRI (rendered via {@code <...>} or
- * prefix) or an unbound variable name. The body is a nested {@link IrBGP}.
  */
 public class IrGraph extends IrNode {
 	private final Var graph;
-	private final IrBGP bgp;
+	private final IrWhere where;
 
-	public IrGraph(Var graph, IrBGP bgp, boolean newScope) {
-		super(newScope);
+	public IrGraph(Var graph, IrWhere where) {
 		this.graph = graph;
-		this.bgp = bgp;
+		this.where = where;
 	}
 
 	public Var getGraph() {
 		return graph;
 	}
 
-	public IrBGP getWhere() {
-		return bgp;
-	}
-
-	@Override
-	public void print(IrPrinter p) {
-		p.startLine();
-		p.append("GRAPH " + p.convertVarToString(getGraph()) + " ");
-		IrBGP inner = getWhere();
-		if (inner != null) {
-			inner.print(p); // IrBGP prints braces
-		} else {
-			p.openBlock();
-			p.closeBlock();
-		}
-	}
-
-	@Override
-	public IrNode transformChildren(UnaryOperator<IrNode> op) {
-		IrBGP newWhere = this.bgp;
-		if (newWhere != null) {
-			IrNode t = op.apply(newWhere);
-			t = t.transformChildren(op);
-			if (t instanceof IrBGP) {
-				newWhere = (IrBGP) t;
-			}
-		}
-		return new IrGraph(this.graph, newWhere, this.isNewScope());
-	}
-
-	@Override
-	public Set<Var> getVars() {
-		HashSet<Var> out = new HashSet<>();
-		if (graph != null) {
-			out.add(graph);
-		}
-		if (bgp != null) {
-			out.addAll(bgp.getVars());
-		}
-		return out;
+	public IrWhere getWhere() {
+		return where;
 	}
 }

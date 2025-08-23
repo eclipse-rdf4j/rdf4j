@@ -16,22 +16,11 @@ package org.eclipse.rdf4j.queryrender.sparql.ir;
 public class IrText extends IrNode {
 	private final String text;
 
-	public IrText(String text, boolean newScope) {
-		super(newScope);
+	public IrText(String text) {
 		this.text = text;
 	}
 
 	public String getText() {
 		return text;
-	}
-
-	@Override
-	public void print(IrPrinter p) {
-		if (text == null) {
-			return;
-		}
-		for (String ln : text.split("\\R", -1)) {
-			p.line(ln);
-		}
 	}
 }

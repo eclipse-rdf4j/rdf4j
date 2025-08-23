@@ -10,8 +10,22 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
- * Base class for textual SPARQL Intermediate Representation (IR) nodes.
+ * Textual IR for a WHERE/group block: ordered list of lines/nodes.
  */
-public abstract class IrNode {
+public class IrWhere extends IrNode {
+	private final List<IrNode> lines = new ArrayList<>();
+
+	public List<IrNode> getLines() {
+		return lines;
+	}
+
+	public void add(IrNode node) {
+		if (node != null) {
+			lines.add(node);
+		}
+	}
 }
