@@ -1197,6 +1197,235 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg());
 	}
 
+	// ==========================
+	// ===== New unit tests =====
+	// ==========================
+
+	@Test
+	void filter_before_trailing_subselect_movable() {
+		String q = "SELECT ?s\n" +
+				"WHERE {\n" +
+				"  ?s a foaf:Person .\n" +
+				"  FILTER (BOUND(?s))\n" +
+				"  {\n" +
+				"    SELECT ?x\n" +
+				"    WHERE { ?x a ex:Thing }\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void filter_after_trailing_subselect_depends_on_subselect() {
+		String q = "SELECT ?x\n" +
+				"WHERE {\n" +
+				"  ?s a foaf:Person .\n" +
+				"  {\n" +
+				"    SELECT ?x\n" +
+				"    WHERE { ?x a ex:Thing }\n" +
+				"  }\n" +
+				"  FILTER (?x = ?x)\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void graph_optional_merge_plain_body_expected_shape() {
+		String q = "SELECT ?g ?s ?label\n" +
+				"WHERE {\n" +
+				"  GRAPH ?g {\n" +
+				"    ?s a foaf:Person .\n" +
+				"    OPTIONAL {\n" +
+				"      ?s rdfs:label ?label .\n" +
+				"    }\n" +
+				"    FILTER (LANGMATCHES(LANG(?label), \"en\"))\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void graph_optional_inner_graph_same_expected_shape() {
+		String q = "SELECT ?g ?s ?label\n" +
+				"WHERE {\n" +
+				"  GRAPH ?g {\n" +
+				"    ?s a foaf:Person .\n" +
+				"    OPTIONAL {\n" +
+				"      ?s rdfs:label ?label .\n" +
+				"    }\n" +
+				"    FILTER (LANGMATCHES(LANG(?label), \"en\"))\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void graph_optional_inner_graph_mismatch_no_merge_expected_shape() {
+		String q = "SELECT ?g ?h ?s ?label\n" +
+				"WHERE {\n" +
+				"  GRAPH ?g {\n" +
+				"    ?s a foaf:Person .\n" +
+				"  }\n" +
+				"  OPTIONAL {\n" +
+				"    GRAPH ?h {\n" +
+				"      ?s rdfs:label ?label .\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void values_empty_parentheses_rows() {
+		String q = "SELECT ?s\n" +
+				"WHERE {\n" +
+				"  VALUES () {\n" +
+				"    ()\n" +
+				"    ()\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void function_fallback_decimal_prefix_compaction() {
+		String q = "SELECT (?cnt AS ?c) (xsd:decimal(?cnt) AS ?d)\n" +
+				"WHERE {\n" +
+				"  VALUES (?cnt) {\n" +
+				"    (1)\n" +
+				"    (2)\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void function_fallback_unknown_prefixed_kept() {
+		String q = "SELECT (ex:score(?x, ?y) AS ?s)\n" +
+				"WHERE {\n" +
+				"  ?x ex:knows ?y .\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void inverse_triple_heuristic_print_caret() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  ?s ^ex:knows ?o .\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void property_list_with_a_and_multiple_preds() {
+		String q = "SELECT ?s ?name ?age\n" +
+				"WHERE {\n" +
+				"  ?s a ex:Person ; foaf:name ?name ; ex:age ?age .\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void union_branches_to_path_alternation() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  ?s (foaf:knows|ex:knows) ?o .\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void nps_via_not_in() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  ?s ?p ?o .\n" +
+				"  FILTER (?p NOT IN (rdf:type, ex:age))\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void nps_via_inequalities() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  ?s ?p ?o .\n" +
+				"  FILTER (?p NOT IN (rdf:type, ex:age))\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void service_silent_block_layout() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  SERVICE SILENT ?svc {\n" +
+				"    ?s ?p ?o .\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void ask_basic_bgp() {
+		String q = "ASK\n" +
+				"WHERE {\n" +
+				"  ?s a foaf:Person .\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void order_by_mixed_vars_and_exprs() {
+		String q = "SELECT ?x ?name\n" +
+				"WHERE {\n" +
+				"  ?x foaf:name ?name .\n" +
+				"}\n" +
+				"ORDER BY ?x DESC(?name)";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void graph_merge_with_following_filter_inside_group() {
+		String q = "SELECT ?g ?s ?label\n" +
+				"WHERE {\n" +
+				"  GRAPH ?g {\n" +
+				"    ?s a foaf:Person .\n" +
+				"    OPTIONAL {\n" +
+				"      ?s rdfs:label ?label .\n" +
+				"    }\n" +
+				"    FILTER (STRLEN(STR(?label)) >= 0)\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void values_with_undef_mixed() {
+		String q = "SELECT ?s ?p ?o\n" +
+				"WHERE {\n" +
+				"  VALUES (?s ?p ?o) {\n" +
+				"    (ex:a ex:age 42)\n" +
+				"    (UNDEF ex:age UNDEF)\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void optional_outside_graph_when_complex_body() {
+		String q = "SELECT ?g ?s ?label ?nick\n" +
+				"WHERE {\n" +
+				"  GRAPH ?g { ?s a foaf:Person }\n" +
+				"  OPTIONAL {\n" +
+				"    ?s rdfs:label ?label .\n" +
+				"    FILTER (?label != \"\")\n" +
+				"    OPTIONAL { ?s foaf:nick ?nick }\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
 	@Test
 	@Disabled
 	void mega_construct_with_blank_nodes_graphs_and_paths() {
