@@ -99,6 +99,9 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+
 /**
  * TupleExprIRRenderer: render RDF4J algebra back into SPARQL text (via a compact internal normalization/IR step), with:
  *
@@ -174,6 +177,7 @@ public class TupleExprIRRenderer {
 		public boolean canonicalWhitespace = true;
 		public String baseIRI = null;
 		public LinkedHashMap<String, String> prefixes = new LinkedHashMap<>();
+		public boolean debugIR = true; // print IR before and after transforms
 
 		// Flags
 		public boolean strict = true; // throw on unsupported
@@ -347,6 +351,17 @@ public class TupleExprIRRenderer {
 		final IRBuilder builder = new IRBuilder();
 		ir.setWhere(builder.build(n.where));
 
+		if (cfg.debugIR) {
+			System.out.println("# IR (raw)\n" + org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug.dump(ir));
+		}
+
+		// Transformations: paths/collections/having
+		org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms.applyAll(ir, this);
+
+		if (cfg.debugIR) {
+			System.out.println("# IR (transformed)\n" + org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug.dump(ir));
+		}
+
 		// GROUP BY
 		for (GroupByTerm t : n.groupByTerms) {
 			ir.getGroupBy()
@@ -512,6 +527,28 @@ public class TupleExprIRRenderer {
 					i++;
 					continue;
 				}
+
+				// Fuse path triple followed by a constant-predicate triple on the path's object
+				if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple && i + 1 < lines.size()
+						&& lines.get(i + 1) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) {
+					final org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple pt = (org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) n;
+					final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) lines
+							.get(i + 1);
+					final Var pv = sp.getPredicate();
+					if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
+						final String spSubj = renderVarOrValue(sp.getSubject());
+						if (pt.getObjectText().equals(spSubj)) {
+							final String iriTxt = renderIRI((IRI) pv.getValue());
+							final String fusedPath = pt.getPathText() + "/" + iriTxt;
+							final String sTxt = applyOverridesToText(pt.getSubjectText(), overrides);
+							final String oTxt = applyOverridesToText(renderVarOrValue(sp.getObject()), overrides);
+
+							line(sTxt + " " + fusedPath + " " + oTxt + " .");
+							i += 2;
+							continue;
+						}
+					}
+				}
 				// Merge consecutive GRAPH blocks with same graph term
 				if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph) {
 					flushPL.run();
@@ -590,7 +627,9 @@ public class TupleExprIRRenderer {
 			}
 			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) {
 				final org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple pt = (org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) n;
-				line(pt.getSubjectText() + " " + pt.getPathText() + " " + pt.getObjectText() + " .");
+				final String sTxt = applyOverridesToText(pt.getSubjectText(), overrides);
+				final String oTxt = applyOverridesToText(pt.getObjectText(), overrides);
+				line(sTxt + " " + pt.getPathText() + " " + oTxt + " .");
 				return;
 			}
 			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph) {
@@ -731,6 +770,23 @@ public class TupleExprIRRenderer {
 			}
 			// Fallback (should not normally happen): print a comment line
 			line("# unknown IR node: " + n.getClass().getSimpleName());
+		}
+
+		private String applyOverridesToText(final String termText, final java.util.Map<String, String> overrides) {
+			if (termText == null) {
+				return termText;
+			}
+			if (overrides == null || overrides.isEmpty()) {
+				return termText;
+			}
+			if (termText.startsWith("?")) {
+				final String name = termText.substring(1);
+				final String repl = overrides.get(name);
+				if (repl != null) {
+					return repl;
+				}
+			}
+			return termText;
 		}
 
 		private String renderTermWithOverrides(final Var v, final java.util.Map<String, String> overrides) {
@@ -1117,7 +1173,7 @@ public class TupleExprIRRenderer {
 			final long max = getMaxLengthSafe(p);
 			final PathNode q = new PathQuant(inner, min, max);
 			final String expr = (q.prec() < PREC_SEQ ? "(" + q.render() + ")" : q.render());
-			where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrText(subj + " " + expr + " " + obj + " ."));
+			where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple(subj, expr, obj));
 		}
 
 		@Override
@@ -2545,7 +2601,7 @@ public class TupleExprIRRenderer {
 		return null;
 	}
 
-	private String renderValue(final Value val) {
+	public String renderValue(final Value val) {
 		if (val instanceof IRI) {
 			return renderIRI((IRI) val);
 		} else if (val instanceof Literal) {
@@ -2589,7 +2645,7 @@ public class TupleExprIRRenderer {
 		return "\"" + escapeLiteral(String.valueOf(val)) + "\"";
 	}
 
-	private String renderIRI(final IRI iri) {
+	public String renderIRI(final IRI iri) {
 		final String s = iri.stringValue();
 		if (cfg.usePrefixCompaction) {
 			final PrefixHit hit = prefixIndex.longestMatch(s);
