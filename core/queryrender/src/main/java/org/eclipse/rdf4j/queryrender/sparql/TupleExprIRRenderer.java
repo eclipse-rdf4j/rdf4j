@@ -1292,6 +1292,13 @@ public class TupleExprIRRenderer {
 		}
 
 		void emitGraphLine(final String graphRef, final String text) {
+			// When suppressGraph is enabled (used by a temporary printer to inline
+			// subtrees detected to share a single GRAPH context), never create or
+			// buffer GRAPH groupings here. Just emit the given text as a normal line.
+			if (suppressGraph) {
+				line(text);
+				return;
+			}
 			final boolean plain = text.endsWith(" .");
 			if (!plain) {
 				flushOpenGraph();
@@ -1554,11 +1561,74 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(final Filter filter) {
-			filter.getArg().visit(this);
+			// Prefer printing FILTER before a trailing subselect when the filter does not depend on
+			// variables produced by that subselect.
+			final TupleExpr arg = filter.getArg();
+			Projection trailingProj = null;
+			List<TupleExpr> head = null;
+			if (arg instanceof Join) {
+				final List<TupleExpr> flat = new ArrayList<>();
+				TupleExprIRRenderer.flattenJoin(arg, flat);
+				if (!flat.isEmpty()) {
+					TupleExpr last = flat.get(flat.size() - 1);
+					Projection maybe = extractProjection(last);
+					if (maybe != null && !r.isProjectionSuppressed(maybe)) {
+						trailingProj = maybe;
+						head = new ArrayList<>(flat);
+						head.remove(head.size() - 1);
+					}
+				}
+			}
+
+			if (trailingProj != null && head != null) {
+				// Decide dependency: if filter mentions variables produced by subselect, keep default order
+				final java.util.Set<String> produced = new java.util.LinkedHashSet<>();
+				if (trailingProj.getProjectionElemList() != null) {
+					for (ProjectionElem pe : trailingProj.getProjectionElemList().getElements()) {
+						final String name = pe.getProjectionAlias().orElse(pe.getName());
+						if (name != null && !name.isEmpty()) {
+							produced.add(name);
+						}
+					}
+				}
+				final java.util.Set<String> condVars = freeVars(filter.getCondition());
+				boolean dependsOnSubselect = false;
+				for (String v : condVars) {
+					if (produced.contains(v)) {
+						dependsOnSubselect = true;
+						break;
+					}
+				}
+
+				if (!dependsOnSubselect) {
+					// Print head first, then FILTER, then trailing subselect
+					final CollectionResult col = r.detectCollections(head);
+					r.tryRenderBestEffortPathChain(head, this, col.overrides, col.consumed);
+					String cond = r.renderExpr(filter.getCondition());
+					cond = TupleExprIRRenderer.stripRedundantOuterParens(cond);
+					flushOpenGraph();
+					line("FILTER (" + cond + ")");
+					trailingProj.visit(this);
+					return;
+				}
+			}
+
+			// Default: print argument, then the FILTER
+			arg.visit(this);
 			String cond = r.renderExpr(filter.getCondition());
 			cond = TupleExprIRRenderer.stripRedundantOuterParens(cond);
 			flushOpenGraph();
 			line("FILTER (" + cond + ")");
+		}
+
+		private Projection extractProjection(TupleExpr node) {
+			if (node instanceof Projection) {
+				return (Projection) node;
+			}
+			if (node instanceof Distinct && ((Distinct) node).getArg() instanceof Projection) {
+				return (Projection) ((Distinct) node).getArg();
+			}
+			return null;
 		}
 
 		@Override
@@ -2938,6 +3008,8 @@ public class TupleExprIRRenderer {
 				continue;
 			}
 
+			// (no special-case: Filters are handled either via fusion above or via BlockPrinter.meet(Filter))
+
 			// ---- Fuse triple + FILTER into negated property set (NPS) ----
 			if (cur instanceof Filter) {
 				final Filter f = (Filter) cur;
@@ -3771,6 +3843,7 @@ public class TupleExprIRRenderer {
 		class GraphCtxScan extends AbstractQueryModelVisitor<RuntimeException> {
 			Var ctxRef = null;
 			boolean conflict = false;
+			boolean sawNoCtx = false; // true if we encountered any triple/path without a context
 
 			@Override
 			public void meet(StatementPattern sp) {
@@ -3796,6 +3869,7 @@ public class TupleExprIRRenderer {
 					return;
 				}
 				if (c == null) {
+					sawNoCtx = true;
 					return;
 				}
 				if (ctxRef == null) {
@@ -3808,7 +3882,7 @@ public class TupleExprIRRenderer {
 
 		GraphCtxScan scan = new GraphCtxScan();
 		subtree.visit(scan);
-		if (scan.conflict || scan.ctxRef == null) {
+		if (scan.conflict || scan.ctxRef == null || scan.sawNoCtx) {
 			return null;
 		}
 		return renderVarOrValue(scan.ctxRef);
