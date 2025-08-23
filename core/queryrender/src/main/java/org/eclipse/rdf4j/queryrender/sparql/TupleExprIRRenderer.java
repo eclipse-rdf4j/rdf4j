@@ -1890,6 +1890,11 @@ public class TupleExprIRRenderer {
 
 		// Binary/ternary
 		if (e instanceof And) {
+			// Try to reconstruct NOT IN from a conjunction of "?v != const" terms
+			final String maybeNotIn = tryRenderNotInFromAnd(e);
+			if (maybeNotIn != null) {
+				return maybeNotIn;
+			}
 			final And a = (And) e;
 			return "(" + renderExpr(a.getLeftArg()) + " && " + renderExpr(a.getRightArg()) + ")";
 		}
@@ -1951,6 +1956,57 @@ public class TupleExprIRRenderer {
 
 		handleUnsupported("unsupported expr: " + e.getClass().getSimpleName());
 		return ""; // unreachable in strict mode
+	}
+
+	/**
+	 * Best-effort reconstruction of "?v NOT IN (c1, c2, ...)" from a flattened And-expression of Compare(!=) terms
+	 * against the same variable. Returns null if the expression does not match this pattern, or if it only contains a
+	 * single inequality (we avoid rewriting a single term).
+	 */
+	private String tryRenderNotInFromAnd(final ValueExpr expr) {
+		final java.util.List<ValueExpr> terms = flattenAnd(expr);
+		if (terms.isEmpty()) {
+			return null;
+		}
+		Var var = null;
+		final java.util.List<Value> constants = new java.util.ArrayList<>();
+		for (ValueExpr t : terms) {
+			if (!(t instanceof Compare)) {
+				return null;
+			}
+			final Compare c = (Compare) t;
+			if (c.getOperator() != CompareOp.NE) {
+				return null;
+			}
+			final ValueExpr L = c.getLeftArg();
+			final ValueExpr R = c.getRightArg();
+			Var v = null;
+			Value val = null;
+			if (L instanceof Var && R instanceof ValueConstant) {
+				v = (Var) L;
+				val = ((ValueConstant) R).getValue();
+			} else if (R instanceof Var && L instanceof ValueConstant) {
+				v = (Var) R;
+				val = ((ValueConstant) L).getValue();
+			} else {
+				return null;
+			}
+			if (v == null || v.hasValue() || val == null) {
+				return null;
+			}
+			if (var == null) {
+				var = v;
+			} else if (!Objects.equals(var.getName(), v.getName())) {
+				return null; // different variables involved
+			}
+			constants.add(val);
+		}
+		if (constants.size() < 2) {
+			return null; // don't rewrite a single inequality into NOT IN
+		}
+		final String head = var.hasValue() ? renderValue(var.getValue()) : ("?" + var.getName());
+		final String list = constants.stream().map(this::renderValue).collect(Collectors.joining(", "));
+		return head + " NOT IN (" + list + ")";
 	}
 
 	private static String mathOp(final MathOp op) {
