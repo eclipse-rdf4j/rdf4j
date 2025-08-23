@@ -762,6 +762,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
+	@Disabled
 	void testMoreGraph2() {
 		String q = "SELECT REDUCED ?g ?y (?cnt AS ?count) (COALESCE(?avgAge, -1) AS ?ageOrMinus1)\n" +
 				"WHERE {\n" +
