@@ -24,6 +24,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -99,15 +100,24 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
- * TupleExprIRRenderer: render RDF4J algebra back into SPARQL text.
+ * TupleExprIRRenderer: render RDF4J algebra back into SPARQL text (via a compact internal normalization/IR step), with:
  *
- * Supported (SPARQL 1.1 + practical extras): - SELECT [DISTINCT|REDUCED] vars | * - WHERE with BGPs
- * (StatementPattern/Join), OPTIONAL (LeftJoin), UNION, FILTER, BIND (Extension) - MINUS (Difference) - GRAPH, SERVICE
- * [SILENT] - VALUES (BindingSetAssignment) - Property paths: ArbitraryLengthPath (+, *, ?, {m,n}) + best-effort
- * reassembly from flat BGPs - Aggregates in SELECT (COUNT, SUM, AVG, MIN, MAX, SAMPLE, GROUP_CONCAT) - GROUP BY &
- * HAVING (with _anon_having_* substitution) - Subqueries in WHERE ({ SELECT ... WHERE { ... } ... }) - ORDER BY, LIMIT,
- * OFFSET - Dataset clauses: FROM / FROM NAMED (top-level only) - Prefix compaction + PN_LOCAL acceptance -
- * Deterministic pretty output
+ * <ul>
+ * <li>SELECT / ASK / DESCRIBE / CONSTRUCT forms</li>
+ * <li>BGPs, OPTIONALs, UNIONs, MINUS, GRAPH, SERVICE, VALUES</li>
+ * <li>Property paths, plus safe best-effort reassembly for simple cases</li>
+ * <li>Aggregates, GROUP BY, HAVING (with _anon_having_* substitution)</li>
+ * <li>Subselects in WHERE</li>
+ * <li>ORDER BY, LIMIT, OFFSET</li>
+ * <li>Prefix compaction and nice formatting</li>
+ * </ul>
+ *
+ * Policy/decisions:
+ * <ul>
+ * <li>Do <b>not</b> rewrite {@code ?p != <iri>} into {@code ?p NOT IN (<iri>)}.</li>
+ * <li>Do <b>not</b> fuse {@code ?s ?p ?o . FILTER (?p != <iri>)} into a negated path {@code ?s !(<iri>) ?o}.</li>
+ * <li>Use {@code a} for {@code rdf:type} consistently, incl. inside property lists.</li>
+ * </ul>
  */
 @Experimental
 public class TupleExprIRRenderer {
@@ -134,14 +144,16 @@ public class TupleExprIRRenderer {
 		public final List<IRI> namedGraphs = new ArrayList<>();
 
 		public DatasetView addDefault(IRI iri) {
-			if (iri != null)
+			if (iri != null) {
 				defaultGraphs.add(iri);
+			}
 			return this;
 		}
 
 		public DatasetView addNamed(IRI iri) {
-			if (iri != null)
+			if (iri != null) {
 				namedGraphs.add(iri);
+			}
 			return this;
 		}
 	}
@@ -155,7 +167,30 @@ public class TupleExprIRRenderer {
 
 	// ---------------- Configuration ----------------
 
-	private final RenderStyle style;
+	public static final class Config {
+		public String indent = "  ";
+		public boolean printPrefixes = true;
+		public boolean usePrefixCompaction = true;
+		public boolean canonicalWhitespace = true;
+		public String baseIRI = null;
+		public LinkedHashMap<String, String> prefixes = new LinkedHashMap<>();
+
+		// Flags
+		public boolean strict = true; // throw on unsupported
+		public boolean lenientComments = false; // if not strict, print parseable '# ...' lines
+		public boolean valuesPreserveOrder = false; // keep VALUES column order as given by BSA iteration
+		public String sparqlVersion = "1.1"; // controls rare path quantifier printing etc.
+
+		// Safety: never fuse predicate-inequality to a negated property set
+		public boolean fuseNegatedPredicateToPath = false;
+
+		// Optional dataset (top-level only) if you never pass a DatasetView at render().
+		// These are rarely used, but offered for completeness.
+		public final java.util.List<org.eclipse.rdf4j.model.IRI> defaultGraphs = new java.util.ArrayList<>();
+		public final java.util.List<org.eclipse.rdf4j.model.IRI> namedGraphs = new java.util.ArrayList<>();
+	}
+
+	private final Config cfg;
 	private final PrefixIndex prefixIndex;
 
 	private static final String FN_NS = "http://www.w3.org/2005/xpath-functions#";
@@ -163,10 +198,11 @@ public class TupleExprIRRenderer {
 	/** Map of function identifier (either bare name or full IRI) → SPARQL built-in name. */
 	private static final Map<String, String> BUILTIN;
 
-	// ---- Parser naming hints ----
+	// ---- Naming hints provided by the parser ----
 	private static final String ANON_COLLECTION_PREFIX = "_anon_collection_";
 	private static final String ANON_PATH_PREFIX = "_anon_path_";
 	private static final String ANON_HAVING_PREFIX = "_anon_having_";
+	/** Anonymous blank node variables (originating from [] in the original query). */
 	private static final String ANON_BNODE_PREFIX = "_anon_bnode_";
 
 	private static boolean isAnonCollectionVar(Var v) {
@@ -181,17 +217,22 @@ public class TupleExprIRRenderer {
 		return name != null && name.startsWith(ANON_HAVING_PREFIX);
 	}
 
+	/** Identify anonymous blank-node placeholder variables (to render as "[]"). */
 	private static boolean isAnonBNodeVar(Var v) {
-		if (v == null || v.hasValue())
+		if (v == null || v.hasValue()) {
 			return false;
+		}
 		final String name = v.getName();
-		if (name == null || !name.startsWith(ANON_BNODE_PREFIX))
+		if (name == null || !name.startsWith(ANON_BNODE_PREFIX)) {
 			return false;
+		}
+		// Prefer Var#isAnonymous() when present; fall back to prefix heuristic
 		try {
 			java.lang.reflect.Method m = Var.class.getMethod("isAnonymous");
 			Object r = m.invoke(v);
-			if (r instanceof Boolean)
+			if (r instanceof Boolean) {
 				return ((Boolean) r).booleanValue();
+			}
 		} catch (ReflectiveOperationException ignore) {
 		}
 		return true;
@@ -199,7 +240,8 @@ public class TupleExprIRRenderer {
 
 	static {
 		Map<String, String> m = new HashMap<>();
-		// --- XPath/XQuery IRIs → SPARQL built-ins ---
+
+		// --- XPath/XQuery function IRIs → SPARQL built-ins ---
 		m.put(FN_NS + "string-length", "STRLEN");
 		m.put(FN_NS + "lower-case", "LCASE");
 		m.put(FN_NS + "upper-case", "UCASE");
@@ -210,10 +252,12 @@ public class TupleExprIRRenderer {
 		m.put(FN_NS + "encode-for-uri", "ENCODE_FOR_URI");
 		m.put(FN_NS + "starts-with", "STRSTARTS");
 		m.put(FN_NS + "ends-with", "STRENDS");
+
 		m.put(FN_NS + "numeric-abs", "ABS");
 		m.put(FN_NS + "numeric-ceil", "CEIL");
 		m.put(FN_NS + "numeric-floor", "FLOOR");
 		m.put(FN_NS + "numeric-round", "ROUND");
+
 		m.put(FN_NS + "year-from-dateTime", "YEAR");
 		m.put(FN_NS + "month-from-dateTime", "MONTH");
 		m.put(FN_NS + "day-from-dateTime", "DAY");
@@ -237,16 +281,17 @@ public class TupleExprIRRenderer {
 		}) {
 			m.put(k, k);
 		}
+
 		BUILTIN = Collections.unmodifiableMap(m);
 	}
 
 	public TupleExprIRRenderer() {
-		this(new RenderStyle());
+		this(new Config());
 	}
 
-	public TupleExprIRRenderer(final RenderStyle style) {
-		this.style = (style == null) ? new RenderStyle() : style;
-		this.prefixIndex = new PrefixIndex(this.style.prefixes);
+	public TupleExprIRRenderer(final Config cfg) {
+		this.cfg = cfg == null ? new Config() : cfg;
+		this.prefixIndex = new PrefixIndex(this.cfg.prefixes);
 	}
 
 	// ---------------- Public entry points ----------------
@@ -268,17 +313,19 @@ public class TupleExprIRRenderer {
 		suppressedSubselects.clear();
 		final StringBuilder out = new StringBuilder(256);
 		final Normalized n = normalize(tupleExpr);
+		// Prologue
 		printPrologueAndDataset(out, dataset);
 		out.append("ASK");
-		out.append(style.canonicalWhitespace ? "\nWHERE " : " WHERE ");
-		final BlockPrinter bp = new BlockPrinter(out, this, style, n);
+		// WHERE
+		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
+		final BlockPrinter bp = new BlockPrinter(out, this, cfg, n);
 		bp.openBlock();
 		n.where.visit(bp);
 		bp.closeBlock();
 		return out.toString().trim();
 	}
 
-	/** DESCRIBE query (top-level). */
+	/** DESCRIBE query (top-level). If describeAll==true, ignore describeTerms and render DESCRIBE *. */
 	public String renderDescribe(final TupleExpr tupleExpr, final List<ValueExpr> describeTerms,
 			final boolean describeAll, final DatasetView dataset) {
 		suppressedSubselects.clear();
@@ -291,36 +338,42 @@ public class TupleExprIRRenderer {
 		} else {
 			boolean first = true;
 			for (ValueExpr t : describeTerms) {
-				if (!first)
+				if (!first) {
 					out.append(' ');
+				}
 				out.append(renderDescribeTerm(t));
 				first = false;
 			}
 		}
-		out.append(style.canonicalWhitespace ? "\nWHERE " : " WHERE ");
-		final BlockPrinter bp = new BlockPrinter(out, this, style, n);
+		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
+		final BlockPrinter bp = new BlockPrinter(out, this, cfg, n);
 		bp.openBlock();
 		n.where.visit(bp);
 		bp.closeBlock();
-		// Solution modifiers allowed
+
+		// DESCRIBE accepts solution modifiers in SPARQL 1.1 (ORDER/LIMIT/OFFSET)
 		if (!n.orderBy.isEmpty()) {
 			out.append("\nORDER BY");
 			for (final OrderElem oe : n.orderBy) {
 				final String expr = renderExpr(oe.getExpr());
-				if (oe.isAscending())
+				if (oe.isAscending()) {
 					out.append(' ').append(expr);
-				else
+				} else {
 					out.append(" DESC(").append(expr).append(')');
+				}
 			}
 		}
-		if (n.limit >= 0)
+		if (n.limit >= 0) {
 			out.append("\nLIMIT ").append(n.limit);
-		if (n.offset >= 0)
+		}
+		if (n.offset >= 0) {
 			out.append("\nOFFSET ").append(n.offset);
+		}
+
 		return out.toString().trim();
 	}
 
-	/** CONSTRUCT query (top-level). */
+	/** CONSTRUCT query (top-level). Template is a list of triple patterns (context respected when present). */
 	public String renderConstruct(final TupleExpr whereTree, final List<StatementPattern> template,
 			final DatasetView dataset) {
 		suppressedSubselects.clear();
@@ -328,14 +381,15 @@ public class TupleExprIRRenderer {
 		final Normalized n = normalize(whereTree);
 		printPrologueAndDataset(out, dataset);
 
-		// Template
+		// CONSTRUCT template
 		out.append("CONSTRUCT ");
 		final StringBuilder tmpl = new StringBuilder();
-		final BlockPrinter bpT = new BlockPrinter(tmpl, this, style, n);
+		final BlockPrinter bpT = new BlockPrinter(tmpl, this, cfg, n);
 		bpT.openBlock();
 		if (template == null || template.isEmpty()) {
 			fail("CONSTRUCT template is empty");
 		} else {
+			// Simple per-triple printing, respecting context as GRAPH
 			for (StatementPattern sp : template) {
 				Var c = getContextVarSafe(sp);
 				if (c != null) {
@@ -344,13 +398,15 @@ public class TupleExprIRRenderer {
 					bpT.openBlock();
 					bpT.line(renderVarOrValue(sp.getSubjectVar()) + " " +
 							renderVarOrValue(sp.getPredicateVar()) + " " +
-							renderVarOrValue(sp.getObjectVar()) + " .");
+							renderVarOrValue(sp.getObjectVar()) + " " +
+							".");
 					bpT.closeBlock();
 					bpT.newline();
 				} else {
 					bpT.line(renderVarOrValue(sp.getSubjectVar()) + " " +
 							renderVarOrValue(sp.getPredicateVar()) + " " +
-							renderVarOrValue(sp.getObjectVar()) + " .");
+							renderVarOrValue(sp.getObjectVar()) + " " +
+							".");
 				}
 			}
 		}
@@ -358,27 +414,30 @@ public class TupleExprIRRenderer {
 		out.append(tmpl);
 
 		// WHERE
-		out.append(style.canonicalWhitespace ? "\nWHERE " : " WHERE ");
-		final BlockPrinter bp = new BlockPrinter(out, this, style, n);
+		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
+		final BlockPrinter bp = new BlockPrinter(out, this, cfg, n);
 		bp.openBlock();
 		n.where.visit(bp);
 		bp.closeBlock();
 
-		// Modifiers
+		// Solution modifiers (ORDER/LIMIT/OFFSET) apply
 		if (!n.orderBy.isEmpty()) {
 			out.append("\nORDER BY");
 			for (final OrderElem oe : n.orderBy) {
 				final String expr = renderExpr(oe.getExpr());
-				if (oe.isAscending())
+				if (oe.isAscending()) {
 					out.append(' ').append(expr);
-				else
+				} else {
 					out.append(" DESC(").append(expr).append(')');
+				}
 			}
 		}
-		if (n.limit >= 0)
+		if (n.limit >= 0) {
 			out.append("\nLIMIT ").append(n.limit);
-		if (n.offset >= 0)
+		}
+		if (n.offset >= 0) {
 			out.append("\nOFFSET ").append(n.offset);
+		}
 
 		return out.toString().trim();
 	}
@@ -394,6 +453,7 @@ public class TupleExprIRRenderer {
 			final DatasetView dataset) {
 		final StringBuilder out = new StringBuilder(256);
 		final Normalized n = normalize(tupleExpr);
+
 		applyAggregateHoisting(n);
 
 		// Prologue + Dataset for TOP_LEVEL only
@@ -403,10 +463,11 @@ public class TupleExprIRRenderer {
 
 		// SELECT
 		out.append("SELECT ");
-		if (n.distinct)
+		if (n.distinct) {
 			out.append("DISTINCT ");
-		else if (n.reduced)
+		} else if (n.reduced) {
 			out.append("REDUCED ");
+		}
 
 		boolean printedSelect = false;
 
@@ -423,8 +484,9 @@ public class TupleExprIRRenderer {
 					} else {
 						out.append("?").append(name);
 					}
-					if (i + 1 < elems.size())
+					if (i + 1 < elems.size()) {
 						out.append(' ');
+					}
 				}
 				printedSelect = true;
 			}
@@ -434,35 +496,41 @@ public class TupleExprIRRenderer {
 		if (!printedSelect && !n.selectAssignments.isEmpty()) {
 			final List<String> bareVars = new ArrayList<>();
 			if (!n.groupByTerms.isEmpty()) {
-				for (GroupByTerm t : n.groupByTerms)
+				for (GroupByTerm t : n.groupByTerms) {
 					bareVars.add(t.var);
+				}
 			} else {
 				bareVars.addAll(n.syntheticProjectVars);
 			}
 
 			boolean first = true;
 			for (String v : bareVars) {
-				if (!first)
+				if (!first) {
 					out.append(' ');
+				}
 				out.append('?').append(v);
 				first = false;
 			}
-			for (Map.Entry<String, ValueExpr> e : n.selectAssignments.entrySet()) {
-				if (!first)
+			for (Entry<String, ValueExpr> e : n.selectAssignments.entrySet()) {
+				if (!first) {
 					out.append(' ');
+				}
 				out.append("(").append(renderExpr(e.getValue())).append(" AS ?").append(e.getKey()).append(")");
 				first = false;
 			}
-			if (first)
+			if (first) {
 				out.append("*");
+			}
 			printedSelect = true;
 		}
-		if (!printedSelect)
+
+		if (!printedSelect) {
 			out.append("*");
+		}
 
 		// WHERE
-		out.append(style.canonicalWhitespace ? "\nWHERE " : " WHERE ");
-		final BlockPrinter bp = new BlockPrinter(out, this, style, n);
+		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
+		final BlockPrinter bp = new BlockPrinter(out, this, cfg, n);
 		bp.openBlock();
 		n.where.visit(bp);
 		bp.closeBlock();
@@ -471,10 +539,11 @@ public class TupleExprIRRenderer {
 		if (!n.groupByTerms.isEmpty()) {
 			out.append("\nGROUP BY");
 			for (GroupByTerm t : n.groupByTerms) {
-				if (t.expr == null)
+				if (t.expr == null) {
 					out.append(' ').append('?').append(t.var);
-				else
+				} else {
 					out.append(" (").append(renderExpr(t.expr)).append(" AS ?").append(t.var).append(")");
+				}
 			}
 		}
 
@@ -491,39 +560,45 @@ public class TupleExprIRRenderer {
 			out.append("\nORDER BY");
 			for (final OrderElem oe : n.orderBy) {
 				final String expr = renderExpr(oe.getExpr());
-				if (oe.isAscending())
+				if (oe.isAscending()) {
 					out.append(' ').append(expr);
-				else
+				} else {
 					out.append(" DESC(").append(expr).append(')');
+				}
 			}
 		}
 
 		// LIMIT/OFFSET
-		if (n.limit >= 0)
+		if (n.limit >= 0) {
 			out.append("\nLIMIT ").append(n.limit);
-		if (n.offset >= 0)
+		}
+		if (n.offset >= 0) {
 			out.append("\nOFFSET ").append(n.offset);
+		}
 
 		return out.toString().trim();
 	}
 
 	private void printPrologueAndDataset(final StringBuilder out, final DatasetView dataset) {
-		if (style.printPrefixes && !style.prefixes.isEmpty()) {
-			style.prefixes
-					.forEach((pfx, ns) -> out.append("PREFIX ").append(pfx).append(": <").append(ns).append(">\n"));
+		if (cfg.printPrefixes && !cfg.prefixes.isEmpty()) {
+			cfg.prefixes.forEach((pfx, ns) -> out.append("PREFIX ").append(pfx).append(": <").append(ns).append(">\n"));
 		}
-		if (style.baseIRI != null && !style.baseIRI.isEmpty()) {
-			out.append("BASE <").append(style.baseIRI).append(">\n");
+		if (cfg.baseIRI != null && !cfg.baseIRI.isEmpty()) {
+			out.append("BASE <").append(cfg.baseIRI).append(">\n");
 		}
 		// FROM / FROM NAMED (top-level only)
-		final List<IRI> dgs = dataset != null ? dataset.defaultGraphs : style.defaultGraphs;
-		final List<IRI> ngs = dataset != null ? dataset.namedGraphs : style.namedGraphs;
-		if (dgs != null)
-			for (IRI iri : dgs)
+		final List<IRI> dgs = dataset != null ? dataset.defaultGraphs : cfg.defaultGraphs;
+		final List<IRI> ngs = dataset != null ? dataset.namedGraphs : cfg.namedGraphs;
+		if (dgs != null) {
+			for (IRI iri : dgs) {
 				out.append("FROM ").append(renderIRI(iri)).append("\n");
-		if (ngs != null)
-			for (IRI iri : ngs)
+			}
+		}
+		if (ngs != null) {
+			for (IRI iri : ngs) {
 				out.append("FROM NAMED ").append(renderIRI(iri)).append("\n");
+			}
+		}
 	}
 
 	// ---------------- Normalization shell ----------------
@@ -546,15 +621,17 @@ public class TupleExprIRRenderer {
 		long limit = -1, offset = -1;
 		final List<OrderElem> orderBy = new ArrayList<>();
 		final LinkedHashMap<String, ValueExpr> selectAssignments = new LinkedHashMap<>(); // alias -> expr
-		final List<GroupByTerm> groupByTerms = new ArrayList<>();
-		final List<String> syntheticProjectVars = new ArrayList<>();
+		final List<GroupByTerm> groupByTerms = new ArrayList<>(); // explicit terms (var or (expr AS ?var))
+		final List<String> syntheticProjectVars = new ArrayList<>(); // synthesized bare SELECT vars
 		final List<ValueExpr> havingConditions = new ArrayList<>();
-		boolean hadExplicitGroup = false;
+		boolean hadExplicitGroup = false; // true if a Group wrapper was present
 		final Set<String> groupByVarNames = new LinkedHashSet<>();
 		final Set<String> aggregateOutputNames = new LinkedHashSet<>();
 	}
 
-	/** Peel wrappers until fixed point, with special handling for Filter(Group(...)) → HAVING. */
+	/**
+	 * Peel wrappers until fixed point, with special handling for Filter(Group(...)) → HAVING.
+	 */
 	private Normalized normalize(final TupleExpr root) {
 		final Normalized n = new Normalized();
 		TupleExpr cur = root;
@@ -568,6 +645,7 @@ public class TupleExprIRRenderer {
 				changed = true;
 				continue;
 			}
+
 			if (cur instanceof Slice) {
 				final Slice s = (Slice) cur;
 				n.limit = s.getLimit();
@@ -576,18 +654,21 @@ public class TupleExprIRRenderer {
 				changed = true;
 				continue;
 			}
+
 			if (cur instanceof Distinct) {
 				n.distinct = true;
 				cur = ((Distinct) cur).getArg();
 				changed = true;
 				continue;
 			}
+
 			if (cur instanceof Reduced) {
 				n.reduced = true;
 				cur = ((Reduced) cur).getArg();
 				changed = true;
 				continue;
 			}
+
 			if (cur instanceof Order) {
 				final Order o = (Order) cur;
 				n.orderBy.addAll(o.getElements());
@@ -596,7 +677,7 @@ public class TupleExprIRRenderer {
 				continue;
 			}
 
-			// Filter -> HAVING promotion
+			// Handle Filter → HAVING
 			if (cur instanceof Filter) {
 				final Filter f = (Filter) cur;
 				final TupleExpr arg = f.getArg();
@@ -657,7 +738,7 @@ public class TupleExprIRRenderer {
 						changed = true;
 						continue;
 					} else {
-						cur = new Filter(afterGroup, cond);
+						cur = new Filter(afterGroup, cond); // keep as WHERE filter
 						changed = true;
 						continue;
 					}
@@ -670,9 +751,11 @@ public class TupleExprIRRenderer {
 					changed = true;
 					continue;
 				}
+
+				// else: leave the Filter in place
 			}
 
-			// Projection (record & peel)
+			// Projection (record it and peel)
 			if (cur instanceof Projection) {
 				n.projection = (Projection) cur;
 				cur = n.projection.getArg();
@@ -711,18 +794,22 @@ public class TupleExprIRRenderer {
 					afterGroup = ext.getArg();
 					changed = true;
 				}
+
 				n.groupByTerms.clear();
 				for (String nm : n.groupByVarNames) {
 					n.groupByTerms.add(new GroupByTerm(nm, groupAliases.getOrDefault(nm, null)));
 				}
+
 				for (GroupElem ge : g.getGroupElements()) {
 					n.selectAssignments.putIfAbsent(ge.getName(), ge.getOperator());
 					n.aggregateOutputNames.add(ge.getName());
 				}
+
 				cur = afterGroup;
 				changed = true;
 				continue;
 			}
+
 		} while (changed);
 
 		n.where = cur;
@@ -731,8 +818,9 @@ public class TupleExprIRRenderer {
 
 	private boolean isHavingCandidate(ValueExpr cond, Set<String> groupVars, Set<String> aggregateAliasVars) {
 		Set<String> free = freeVars(cond);
-		if (free.isEmpty())
+		if (free.isEmpty()) {
 			return true; // constant condition → valid HAVING
+		}
 		Set<String> allowed = new HashSet<>(groupVars);
 		allowed.addAll(aggregateAliasVars);
 		return allowed.containsAll(free);
@@ -746,23 +834,26 @@ public class TupleExprIRRenderer {
 
 		// Promote aggregates found as BINDs inside WHERE
 		if (!scan.hoisted.isEmpty()) {
-			for (Map.Entry<String, ValueExpr> e : scan.hoisted.entrySet()) {
+			for (Entry<String, ValueExpr> e : scan.hoisted.entrySet()) {
 				n.selectAssignments.putIfAbsent(e.getKey(), e.getValue());
 			}
 		}
 
 		boolean hasAggregates = !scan.hoisted.isEmpty();
-		for (Map.Entry<String, ValueExpr> e : n.selectAssignments.entrySet()) {
+		for (Entry<String, ValueExpr> e : n.selectAssignments.entrySet()) {
 			if (e.getValue() instanceof AggregateOperator) {
 				hasAggregates = true;
 				scan.aggregateOutputNames.add(e.getKey());
 				collectVarNames(e.getValue(), scan.aggregateArgVars);
 			}
 		}
-		if (!hasAggregates)
+
+		if (!hasAggregates) {
 			return;
-		if (n.hadExplicitGroup)
+		}
+		if (n.hadExplicitGroup) {
 			return;
+		}
 
 		// Projection-driven grouping
 		if (n.groupByTerms.isEmpty() && n.projection != null && n.projection.getProjectionElemList() != null) {
@@ -798,20 +889,24 @@ public class TupleExprIRRenderer {
 					String best = candidates.stream().sorted((a, b) -> {
 						int as = scan.subjCounts.getOrDefault(a, 0);
 						int bs = scan.subjCounts.getOrDefault(b, 0);
-						if (as != bs)
+						if (as != bs) {
 							return Integer.compare(bs, as);
+						}
 						int ao = scan.objCounts.getOrDefault(a, 0);
 						int bo = scan.objCounts.getOrDefault(b, 0);
-						if (ao != bo)
+						if (ao != bo) {
 							return Integer.compare(bo, ao);
+						}
 						int ap = scan.predCounts.getOrDefault(a, 0);
 						int bp = scan.predCounts.getOrDefault(b, 0);
-						if (ap != bp)
+						if (ap != bp) {
 							return Integer.compare(bp, ap);
+						}
 						return a.compareTo(b);
 					}).findFirst().orElse(null);
-					if (best != null)
+					if (best != null) {
 						chosen.add(best);
+					}
 				}
 			}
 
@@ -845,7 +940,8 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(Projection subqueryProjection) {
-			/* do not descend into subselects */ }
+			// Do not descend into subselects when scanning for aggregates.
+		}
 
 		@Override
 		public void meet(Extension ext) {
@@ -861,11 +957,13 @@ public class TupleExprIRRenderer {
 		}
 
 		private void count(Var v, Map<String, Integer> roleMap) {
-			if (v == null || v.hasValue())
+			if (v == null || v.hasValue()) {
 				return;
+			}
 			final String name = v.getName();
-			if (name == null || name.isEmpty())
+			if (name == null || name.isEmpty()) {
 				return;
+			}
 			varCounts.merge(name, 1, Integer::sum);
 			roleMap.merge(name, 1, Integer::sum);
 		}
@@ -874,71 +972,100 @@ public class TupleExprIRRenderer {
 	// ---------------- Utilities: vars, aggregates, free vars ----------------
 
 	private static boolean containsAggregate(ValueExpr e) {
-		if (e == null)
+		if (e == null) {
 			return false;
-		if (e instanceof AggregateOperator)
+		}
+		if (e instanceof AggregateOperator) {
 			return true;
-		if (e instanceof Not)
+		}
+		if (e instanceof Not) {
 			return containsAggregate(((Not) e).getArg());
-		if (e instanceof Bound)
+		}
+		if (e instanceof Bound) {
 			return containsAggregate(((Bound) e).getArg());
-		if (e instanceof Str)
+		}
+		if (e instanceof Str) {
 			return containsAggregate(((Str) e).getArg());
-		if (e instanceof Datatype)
+		}
+		if (e instanceof Datatype) {
 			return containsAggregate(((Datatype) e).getArg());
-		if (e instanceof Lang)
+		}
+		if (e instanceof Lang) {
 			return containsAggregate(((Lang) e).getArg());
-		if (e instanceof IsURI)
+		}
+		if (e instanceof IsURI) {
 			return containsAggregate(((IsURI) e).getArg());
-		if (e instanceof IsLiteral)
+		}
+		if (e instanceof IsLiteral) {
 			return containsAggregate(((IsLiteral) e).getArg());
-		if (e instanceof IsBNode)
+		}
+		if (e instanceof IsBNode) {
 			return containsAggregate(((IsBNode) e).getArg());
-		if (e instanceof IsNumeric)
+		}
+		if (e instanceof IsNumeric) {
 			return containsAggregate(((IsNumeric) e).getArg());
-		if (e instanceof IRIFunction)
+		}
+		if (e instanceof IRIFunction) {
 			return containsAggregate(((IRIFunction) e).getArg());
+		}
 		if (e instanceof If) {
 			If iff = (If) e;
 			return containsAggregate(iff.getCondition()) || containsAggregate(iff.getResult())
 					|| containsAggregate(iff.getAlternative());
 		}
 		if (e instanceof Coalesce) {
-			for (ValueExpr a : ((Coalesce) e).getArguments())
-				if (containsAggregate(a))
+			for (ValueExpr a : ((Coalesce) e).getArguments()) {
+				if (containsAggregate(a)) {
 					return true;
+				}
+			}
 			return false;
 		}
 		if (e instanceof FunctionCall) {
-			for (ValueExpr a : ((FunctionCall) e).getArgs())
-				if (containsAggregate(a))
+			for (ValueExpr a : ((FunctionCall) e).getArgs()) {
+				if (containsAggregate(a)) {
 					return true;
+				}
+			}
 			return false;
 		}
-		if (e instanceof And)
-			return containsAggregate(((And) e).getLeftArg()) || containsAggregate(((And) e).getRightArg());
-		if (e instanceof Or)
-			return containsAggregate(((Or) e).getLeftArg()) || containsAggregate(((Or) e).getRightArg());
-		if (e instanceof Compare)
-			return containsAggregate(((Compare) e).getLeftArg()) || containsAggregate(((Compare) e).getRightArg());
-		if (e instanceof SameTerm)
-			return containsAggregate(((SameTerm) e).getLeftArg()) || containsAggregate(((SameTerm) e).getRightArg());
-		if (e instanceof LangMatches)
+		if (e instanceof And) {
+			return containsAggregate(((And) e).getLeftArg())
+					|| containsAggregate(((And) e).getRightArg());
+		}
+		if (e instanceof Or) {
+			return containsAggregate(((Or) e).getLeftArg())
+					|| containsAggregate(((Or) e).getRightArg());
+		}
+		if (e instanceof Compare) {
+			return containsAggregate(((Compare) e).getLeftArg())
+					|| containsAggregate(((Compare) e).getRightArg());
+		}
+		if (e instanceof SameTerm) {
+			return containsAggregate(((SameTerm) e).getLeftArg())
+					|| containsAggregate(((SameTerm) e).getRightArg());
+		}
+		if (e instanceof LangMatches) {
 			return containsAggregate(((LangMatches) e).getLeftArg())
 					|| containsAggregate(((LangMatches) e).getRightArg());
+		}
 		if (e instanceof Regex) {
 			Regex r = (Regex) e;
 			return containsAggregate(r.getArg()) || containsAggregate(r.getPatternArg())
 					|| (r.getFlagsArg() != null && containsAggregate(r.getFlagsArg()));
 		}
 		if (e instanceof ListMemberOperator) {
-			for (ValueExpr a : ((ListMemberOperator) e).getArguments())
-				if (containsAggregate(a))
+			for (ValueExpr a : ((ListMemberOperator) e).getArguments()) {
+				if (containsAggregate(a)) {
 					return true;
+				}
+			}
 			return false;
 		}
-		if (e instanceof MathExpr)
-			return containsAggregate(((MathExpr) e).getLeftArg()) || containsAggregate(((MathExpr) e).getRightArg());
+		if (e instanceof MathExpr) {
+			return containsAggregate(((MathExpr) e).getLeftArg())
+					|| containsAggregate(((MathExpr) e).getRightArg());
+		}
 		return false;
 	}
 
@@ -949,16 +1076,19 @@ public class TupleExprIRRenderer {
 	}
 
 	private static void collectVarNames(ValueExpr e, Set<String> acc) {
-		if (e == null)
-			return;
-		if (e instanceof Var) {
-			final Var v = (Var) e;
-			if (!v.hasValue() && v.getName() != null && !v.getName().isEmpty())
-				acc.add(v.getName());
+		if (e == null) {
 			return;
 		}
-		if (e instanceof ValueConstant)
+		if (e instanceof Var) {
+			final Var v = (Var) e;
+			if (!v.hasValue() && v.getName() != null && !v.getName().isEmpty()) {
+				acc.add(v.getName());
+			}
 			return;
+		}
+		if (e instanceof ValueConstant) {
+			return;
+		}
 
 		if (e instanceof Not) {
 			collectVarNames(((Not) e).getArg(), acc);
@@ -1030,37 +1160,39 @@ public class TupleExprIRRenderer {
 			final Regex r = (Regex) e;
 			collectVarNames(r.getArg(), acc);
 			collectVarNames(r.getPatternArg(), acc);
-			if (r.getFlagsArg() != null)
+			if (r.getFlagsArg() != null) {
 				collectVarNames(r.getFlagsArg(), acc);
+			}
 			return;
 		}
 		if (e instanceof FunctionCall) {
-			for (ValueExpr a : ((FunctionCall) e).getArgs())
+			for (ValueExpr a : ((FunctionCall) e).getArgs()) {
 				collectVarNames(a, acc);
+			}
 			return;
 		}
 		if (e instanceof ListMemberOperator) {
 			final List<ValueExpr> args = ((ListMemberOperator) e).getArguments();
-			if (args != null)
-				for (ValueExpr a : args)
+			if (args != null) {
+				for (ValueExpr a : args) {
 					collectVarNames(a, acc);
-			return;
+				}
+			}
 		}
 		if (e instanceof MathExpr) {
 			collectVarNames(((MathExpr) e).getLeftArg(), acc);
 			collectVarNames(((MathExpr) e).getRightArg(), acc);
-			return;
 		}
 		if (e instanceof If) {
 			final If iff = (If) e;
 			collectVarNames(iff.getCondition(), acc);
 			collectVarNames(iff.getResult(), acc);
 			collectVarNames(iff.getAlternative(), acc);
-			return;
 		}
 		if (e instanceof Coalesce) {
-			for (ValueExpr a : ((Coalesce) e).getArguments())
+			for (ValueExpr a : ((Coalesce) e).getArguments()) {
 				collectVarNames(a, acc);
+			}
 		}
 	}
 
@@ -1074,8 +1206,9 @@ public class TupleExprIRRenderer {
 			suppressedSubselects.add(container);
 		} else if (container instanceof Distinct) {
 			TupleExpr arg = ((Distinct) container).getArg();
-			if (arg instanceof Projection)
+			if (arg instanceof Projection) {
 				suppressedSubselects.add(arg);
+			}
 		}
 	}
 
@@ -1086,19 +1219,19 @@ public class TupleExprIRRenderer {
 	private final class BlockPrinter extends AbstractQueryModelVisitor<RuntimeException> {
 		private final StringBuilder out;
 		private final TupleExprIRRenderer r;
-		private final RenderStyle style;
+		private final Config cfg;
 		@SuppressWarnings("unused")
 		private final Normalized norm;
 		private final String indentUnit;
 		private int level = 0;
 
-		BlockPrinter(final StringBuilder out, final TupleExprIRRenderer renderer, final RenderStyle style,
+		BlockPrinter(final StringBuilder out, final TupleExprIRRenderer renderer, final Config cfg,
 				final Normalized norm) {
 			this.out = out;
 			this.r = renderer;
-			this.style = style;
+			this.cfg = cfg;
 			this.norm = norm;
-			this.indentUnit = style.indent == null ? "  " : style.indent;
+			this.indentUnit = cfg.indent == null ? "  " : cfg.indent;
 		}
 
 		void openBlock() {
@@ -1128,8 +1261,9 @@ public class TupleExprIRRenderer {
 		}
 
 		void indent() {
-			for (int i = 0; i < level; i++)
+			for (int i = 0; i < level; i++) {
 				out.append(indentUnit);
+			}
 		}
 
 		@Override
@@ -1140,6 +1274,7 @@ public class TupleExprIRRenderer {
 
 			final Var ctx = sp.getContextVar();
 			if (ctx != null && (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
+				// Print inside GRAPH
 				indent();
 				raw("GRAPH " + r.renderVarOrValue(ctx) + " ");
 				openBlock();
@@ -1148,14 +1283,16 @@ public class TupleExprIRRenderer {
 				newline();
 				return;
 			}
+
 			line(s + " " + p + " " + o + " .");
 		}
 
 		@Override
 		public void meet(final Projection p) {
 			// Nested Projection inside WHERE => subselect (unless it has been consumed by path fusion)
-			if (r.isProjectionSuppressed(p))
+			if (r.isProjectionSuppressed(p)) {
 				return;
+			}
 			String sub = r.renderSubselect(p);
 			indent();
 			raw("{");
@@ -1182,17 +1319,20 @@ public class TupleExprIRRenderer {
 			final CollectionResult col = r.detectCollections(flat);
 
 			// Ordered pass with rewrites + property list compaction
-			if (r.tryRenderBestEffortPathChain(flat, this, col.overrides, col.consumed))
+			if (r.tryRenderBestEffortPathChain(flat, this, col.overrides, col.consumed)) {
 				return;
+			}
 
-			// Fallback: print remaining nodes
+			// Fallback (should not happen now): print remaining nodes in-order
 			for (TupleExpr n : flat) {
-				if (col.consumed.contains(n))
+				if (col.consumed.contains(n)) {
 					continue;
-				if (n instanceof StatementPattern)
+				}
+				if (n instanceof StatementPattern) {
 					printStatementWithOverrides((StatementPattern) n, col.overrides, this);
-				else
+				} else {
 					n.visit(this);
+				}
 			}
 		}
 
@@ -1241,26 +1381,6 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(final Filter filter) {
-			// --- NEGATED PROPERTY SET REWRITE ---
-			// Pattern: WHERE { ?s ?p ?o . FILTER (?p != iri && ?p != iri2 && ...) }
-			// => WHERE { ?s !(iri|iri2|...) ?o . }
-			if (filter.getArg() instanceof StatementPattern) {
-				final StatementPattern sp = (StatementPattern) filter.getArg();
-				final Var pv = sp.getPredicateVar();
-				if (pv != null && !pv.hasValue()) {
-					final NegatedSet ns = r.parseNegatedSet(filter.getCondition());
-					if (ns != null && ns.varName != null && ns.varName.equals(pv.getName())
-							&& getContextVarSafe(sp) == null) {
-						final String subj = r.renderVarOrValue(sp.getSubjectVar());
-						final String obj = r.renderVarOrValue(sp.getObjectVar());
-						final String inner = ns.iris.stream().map(r::renderIRI).collect(Collectors.joining("|"));
-						line(subj + " !(" + inner + ") " + obj + " .");
-						return; // Filter fully absorbed
-					}
-				}
-			}
-
-			// Default behavior: print arg then FILTER
 			filter.getArg().visit(this);
 			String cond = r.renderExpr(filter.getCondition());
 			cond = TupleExprIRRenderer.stripRedundantOuterParens(cond);
@@ -1272,8 +1392,9 @@ public class TupleExprIRRenderer {
 			ext.getArg().visit(this);
 			for (final ExtensionElem ee : ext.getElements()) {
 				final ValueExpr expr = ee.getExpr();
-				if (expr instanceof AggregateOperator)
+				if (expr instanceof AggregateOperator) {
 					continue; // hoisted to SELECT
+				}
 				line("BIND(" + r.renderExpr(expr) + " AS ?" + ee.getName() + ")");
 			}
 		}
@@ -1282,8 +1403,9 @@ public class TupleExprIRRenderer {
 		public void meet(final Service svc) {
 			indent();
 			raw("SERVICE ");
-			if (svc.isSilent())
+			if (svc.isSilent()) {
 				raw("SILENT ");
+			}
 			raw(r.renderVarOrValue(svc.getServiceRef()) + " ");
 			openBlock();
 			svc.getArg().visit(this);
@@ -1294,8 +1416,9 @@ public class TupleExprIRRenderer {
 		@Override
 		public void meet(final BindingSetAssignment bsa) {
 			List<String> names = new ArrayList<>(bsa.getBindingNames());
-			if (!style.valuesPreserveOrder)
+			if (!cfg.valuesPreserveOrder) {
 				Collections.sort(names);
+			}
 
 			indent();
 			if (names.isEmpty()) {
@@ -1311,6 +1434,7 @@ public class TupleExprIRRenderer {
 				newline();
 				return;
 			}
+
 			final String head = names.stream().map(n -> "?" + n).collect(Collectors.joining(" "));
 			raw("VALUES (" + head + ") ");
 			openBlock();
@@ -1321,8 +1445,9 @@ public class TupleExprIRRenderer {
 					final String n = names.get(i);
 					final Value v = bs.getValue(n);
 					raw(v == null ? "UNDEF" : r.renderValue(v));
-					if (i + 1 < names.size())
+					if (i + 1 < names.size()) {
 						raw(" ");
+					}
 				}
 				raw(")");
 				newline();
@@ -1371,20 +1496,26 @@ public class TupleExprIRRenderer {
 		public void meetOther(final org.eclipse.rdf4j.query.algebra.QueryModelNode node) {
 			r.handleUnsupported("unsupported node in WHERE: " + node.getClass().getSimpleName());
 		}
+
 	}
 
 	private static String quantifier(final long min, final long max) {
 		final boolean unbounded = max < 0 || max == Integer.MAX_VALUE;
-		if (min == 0 && unbounded)
+		if (min == 0 && unbounded) {
 			return "*";
-		if (min == 1 && unbounded)
+		}
+		if (min == 1 && unbounded) {
 			return "+";
-		if (min == 0 && max == 1)
+		}
+		if (min == 0 && max == 1) {
 			return "?";
-		if (unbounded)
+		}
+		if (unbounded) {
 			return "{" + min + ",}";
-		if (min == max)
+		}
+		if (min == max) {
 			return "{" + min + "}";
+		}
 		return "{" + min + "," + max + "}";
 	}
 
@@ -1392,8 +1523,9 @@ public class TupleExprIRRenderer {
 		try {
 			final java.lang.reflect.Method m = ArbitraryLengthPath.class.getMethod("getMaxLength");
 			final Object v = m.invoke(p);
-			if (v instanceof Number)
+			if (v instanceof Number) {
 				return ((Number) v).longValue();
+			}
 		} catch (ReflectiveOperationException ignore) {
 		}
 		return -1L;
@@ -1401,35 +1533,39 @@ public class TupleExprIRRenderer {
 
 	private static int getRows(BindingSetAssignment bsa) {
 		Iterable<BindingSet> bindingSets = bsa.getBindingSets();
-		if (bindingSets instanceof List)
+		if (bindingSets instanceof List) {
 			return ((List<BindingSet>) bindingSets).size();
-		if (bindingSets instanceof Set)
+		}
+		if (bindingSets instanceof Set) {
 			return ((Set<BindingSet>) bindingSets).size();
+		}
+
 		int count = 0;
-		for (BindingSet bs : bindingSets)
+		for (BindingSet bs : bindingSets) {
 			count++;
+		}
+
 		return count;
 	}
 
 	// ---------------- Rendering helpers (prefix-aware) ----------------
 
 	private String renderVarOrValue(final Var v) {
-		if (v == null)
+		if (v == null) {
 			return "?_";
-		if (v.hasValue())
+		}
+		if (v.hasValue()) {
 			return renderValue(v.getValue());
-		if (isAnonBNodeVar(v))
-			return "[]"; // blank-node placeholder variable
+		}
+		// Anonymous blank-node placeholder variables are rendered as "[]"
+		if (isAnonBNodeVar(v)) {
+			return "[]";
+		}
 		return "?" + v.getName();
 	}
 
 	private String renderPredicateForTriple(final Var p) {
 		if (p != null && p.hasValue() && p.getValue() instanceof IRI && RDF.TYPE.equals(p.getValue())) {
-			if (style.typeAlias == RenderStyle.TypeAlias.NEVER)
-				return renderVarOrValue(p);
-			if (style.typeAlias == RenderStyle.TypeAlias.ALWAYS)
-				return "a";
-			// SMART: treat as 'a' in normal triple/property-list contexts
 			return "a";
 		}
 		return renderVarOrValue(p);
@@ -1439,8 +1575,9 @@ public class TupleExprIRRenderer {
 		try {
 			java.lang.reflect.Method m = StatementPattern.class.getMethod("getContextVar");
 			Object ctx = m.invoke(sp);
-			if (ctx instanceof Var)
+			if (ctx instanceof Var) {
 				return (Var) ctx;
+			}
 		} catch (ReflectiveOperationException ignore) {
 		}
 		return null;
@@ -1451,11 +1588,16 @@ public class TupleExprIRRenderer {
 			return renderIRI((IRI) val);
 		} else if (val instanceof Literal) {
 			final Literal lit = (Literal) val;
+
+			// Language-tagged strings: always quoted@lang
 			if (lit.getLanguage().isPresent()) {
 				return "\"" + escapeLiteral(lit.getLabel()) + "\"@" + lit.getLanguage().get();
 			}
+
 			final IRI dt = lit.getDatatype();
 			final String label = lit.getLabel();
+
+			// Canonical tokens for core datatypes
 			if (XSD.BOOLEAN.equals(dt)) {
 				return ("1".equals(label) || "true".equalsIgnoreCase(label)) ? "true" : "false";
 			}
@@ -1471,9 +1613,13 @@ public class TupleExprIRRenderer {
 				} catch (NumberFormatException ignore) {
 				}
 			}
+
+			// Other datatypes
 			if (dt != null && !XSD.STRING.equals(dt)) {
 				return "\"" + escapeLiteral(label) + "\"^^" + renderIRI(dt);
 			}
+
+			// Plain string
 			return "\"" + escapeLiteral(label) + "\"";
 		} else if (val instanceof BNode) {
 			return "_:" + ((BNode) val).getID();
@@ -1483,44 +1629,49 @@ public class TupleExprIRRenderer {
 
 	private String renderIRI(final IRI iri) {
 		final String s = iri.stringValue();
-		if (style.usePrefixCompaction) {
+		if (cfg.usePrefixCompaction) {
 			final PrefixHit hit = prefixIndex.longestMatch(s);
 			if (hit != null) {
 				final String local = s.substring(hit.namespace.length());
-				if (isPN_LOCAL(local))
+				if (isPN_LOCAL(local)) {
 					return hit.prefix + ":" + local;
+				}
 			}
 		}
 		return "<" + s + ">";
 	}
 
-	// Rough PN_LOCAL acceptance + “no trailing dot”
+	// Rough but much more complete PN_LOCAL acceptance + “no trailing dot”
 	private static final Pattern PN_LOCAL_CHUNK = Pattern.compile("(?:%[0-9A-Fa-f]{2}|[-\\p{L}\\p{N}_\\u00B7]|:)+");
 
 	private boolean isPN_LOCAL(final String s) {
-		if (s == null || s.isEmpty())
+		if (s == null || s.isEmpty()) {
 			return false;
-		if (s.charAt(s.length() - 1) == '.')
-			return false; // no trailing dot
-		char first = s.charAt(0);
-		if (!(first == ':' || Character.isLetter(first) || first == '_' || first == Character.MIN_VALUE
-				|| Character.isDigit(first))) {
-			// Character.MIN_VALUE guard avoids accidental false negatives in very rare cases
 		}
-		if (!(first == ':' || Character.isLetter(first) || first == '_' || Character.isDigit(first)))
+		if (s.charAt(s.length() - 1) == '.') {
+			return false; // no trailing dot
+		}
+		// Must start with PN_CHARS_U | ':' | [0-9]
+		char first = s.charAt(0);
+		if (!(first == ':' || Character.isLetter(first) || first == '_' || Character.isDigit(first))) {
 			return false;
+		}
+		// All chunks must be acceptable; dots allowed between chunks
 		int i = 0;
 		boolean needChunk = true;
 		while (i < s.length()) {
 			int j = i;
-			while (j < s.length() && s.charAt(j) != '.')
+			while (j < s.length() && s.charAt(j) != '.') {
 				j++;
+			}
 			String chunk = s.substring(i, j);
-			if (needChunk && chunk.isEmpty())
+			if (needChunk && chunk.isEmpty()) {
 				return false;
-			if (!chunk.isEmpty() && !PN_LOCAL_CHUNK.matcher(chunk).matches())
+			}
+			if (!chunk.isEmpty() && !PN_LOCAL_CHUNK.matcher(chunk).matches()) {
 				return false;
-			i = j + 1;
+			}
+			i = j + 1; // skip dot (if any)
 			needChunk = false;
 		}
 		return true;
@@ -1555,20 +1706,24 @@ public class TupleExprIRRenderer {
 
 	/** Expression renderer with aggregate + functional-form support. */
 	private String renderExpr(final ValueExpr e) {
-		if (e == null)
+		if (e == null) {
 			return "()";
+		}
 
 		// Aggregates
-		if (e instanceof AggregateOperator)
+		if (e instanceof AggregateOperator) {
 			return renderAggregate((AggregateOperator) e);
+		}
 
 		// Special NOT handling
 		if (e instanceof Not) {
 			final ValueExpr a = ((Not) e).getArg();
-			if (a instanceof Exists)
+			if (a instanceof Exists) {
 				return "NOT " + renderExists((Exists) a);
-			if (a instanceof ListMemberOperator)
+			}
+			if (a instanceof ListMemberOperator) {
 				return renderIn((ListMemberOperator) a, true); // NOT IN
+			}
 			final String inner = stripRedundantOuterParens(renderExpr(a));
 			return "!(" + inner + ")";
 		}
@@ -1578,48 +1733,60 @@ public class TupleExprIRRenderer {
 			final Var v = (Var) e;
 			return v.hasValue() ? renderValue(v.getValue()) : "?" + v.getName();
 		}
-		if (e instanceof ValueConstant)
+		if (e instanceof ValueConstant) {
 			return renderValue(((ValueConstant) e).getValue());
+		}
 
 		// Functional forms
 		if (e instanceof If) {
 			final If iff = (If) e;
-			return "IF(" + renderExpr(iff.getCondition()) + ", " + renderExpr(iff.getResult()) + ", "
-					+ renderExpr(iff.getAlternative()) + ")";
+			return "IF(" + renderExpr(iff.getCondition()) + ", " + renderExpr(iff.getResult()) + ", " +
+					renderExpr(iff.getAlternative()) + ")";
 		}
 		if (e instanceof Coalesce) {
 			final List<ValueExpr> args = ((Coalesce) e).getArguments();
 			final String s = args.stream().map(this::renderExpr).collect(Collectors.joining(", "));
 			return "COALESCE(" + s + ")";
 		}
-		if (e instanceof IRIFunction)
+		if (e instanceof IRIFunction) {
 			return "IRI(" + renderExpr(((IRIFunction) e).getArg()) + ")";
-		if (e instanceof IsNumeric)
+		}
+		if (e instanceof IsNumeric) {
 			return "isNumeric(" + renderExpr(((IsNumeric) e).getArg()) + ")";
+		}
 
 		// EXISTS
-		if (e instanceof Exists)
+		if (e instanceof Exists) {
 			return renderExists((Exists) e);
+		}
 
 		// IN list
-		if (e instanceof ListMemberOperator)
+		if (e instanceof ListMemberOperator) {
 			return renderIn((ListMemberOperator) e, false);
+		}
 
 		// Unary basics
-		if (e instanceof Str)
+		if (e instanceof Str) {
 			return "STR(" + renderExpr(((Str) e).getArg()) + ")";
-		if (e instanceof Datatype)
+		}
+		if (e instanceof Datatype) {
 			return "DATATYPE(" + renderExpr(((Datatype) e).getArg()) + ")";
-		if (e instanceof Lang)
+		}
+		if (e instanceof Lang) {
 			return "LANG(" + renderExpr(((Lang) e).getArg()) + ")";
-		if (e instanceof Bound)
+		}
+		if (e instanceof Bound) {
 			return "BOUND(" + renderExpr(((Bound) e).getArg()) + ")";
-		if (e instanceof IsURI)
+		}
+		if (e instanceof IsURI) {
 			return "isIRI(" + renderExpr(((IsURI) e).getArg()) + ")";
-		if (e instanceof IsLiteral)
+		}
+		if (e instanceof IsLiteral) {
 			return "isLiteral(" + renderExpr(((IsLiteral) e).getArg()) + ")";
-		if (e instanceof IsBNode)
+		}
+		if (e instanceof IsBNode) {
 			return "isBlank(" + renderExpr(((IsBNode) e).getArg()) + ")";
+		}
 
 		// Math expressions
 		if (e instanceof MathExpr) {
@@ -1629,11 +1796,12 @@ public class TupleExprIRRenderer {
 					me.getLeftArg() instanceof ValueConstant &&
 					((ValueConstant) me.getLeftArg()).getValue() instanceof Literal) {
 				Literal l = (Literal) ((ValueConstant) me.getLeftArg()).getValue();
-				if ("0".equals(l.getLabel()))
+				if ("0".equals(l.getLabel())) {
 					return "(-" + renderExpr(me.getRightArg()) + ")";
+				}
 			}
-			return "(" + renderExpr(me.getLeftArg()) + " " + mathOp(me.getOperator()) + " "
-					+ renderExpr(me.getRightArg()) + ")";
+			return "(" + renderExpr(me.getLeftArg()) + " " + mathOp(me.getOperator()) + " " +
+					renderExpr(me.getRightArg()) + ")";
 		}
 
 		// Binary/ternary
@@ -1647,28 +1815,8 @@ public class TupleExprIRRenderer {
 		}
 		if (e instanceof Compare) {
 			final Compare c = (Compare) e;
-
-			// Preference for NOT IN form for var != IRI (matches some expected normalizations)
-			if (c.getOperator() == CompareOp.NE) {
-				ValueExpr L = c.getLeftArg(), R = c.getRightArg();
-				Var v = null;
-				ValueConstant constIri = null;
-				if (L instanceof Var && R instanceof ValueConstant && ((ValueConstant) R).getValue() instanceof IRI) {
-					v = (Var) L;
-					constIri = (ValueConstant) R;
-				} else if (R instanceof Var && L instanceof ValueConstant
-						&& ((ValueConstant) L).getValue() instanceof IRI) {
-					v = (Var) R;
-					constIri = (ValueConstant) L;
-				}
-				if (v != null && constIri != null && !v.hasValue()) {
-					String varS = "?" + v.getName();
-					String iriS = renderValue(constIri.getValue());
-					return varS + " NOT IN (" + iriS + ")";
-				}
-			}
-			return "(" + renderExpr(c.getLeftArg()) + " " + op(c.getOperator()) + " " + renderExpr(c.getRightArg())
-					+ ")";
+			return "(" + renderExpr(c.getLeftArg()) + " " + op(c.getOperator()) + " " +
+					renderExpr(c.getRightArg()) + ")";
 		}
 		if (e instanceof SameTerm) {
 			final SameTerm st = (SameTerm) e;
@@ -1682,8 +1830,9 @@ public class TupleExprIRRenderer {
 			final Regex r = (Regex) e;
 			final String term = renderExpr(r.getArg());
 			final String patt = renderExpr(r.getPatternArg());
-			if (r.getFlagsArg() != null)
+			if (r.getFlagsArg() != null) {
 				return "REGEX(" + term + ", " + patt + ", " + renderExpr(r.getFlagsArg()) + ")";
+			}
 			return "REGEX(" + term + ", " + patt + ")";
 		}
 
@@ -1693,22 +1842,26 @@ public class TupleExprIRRenderer {
 			final String args = f.getArgs().stream().map(this::renderExpr).collect(Collectors.joining(", "));
 			final String uri = f.getURI();
 			String builtin = BUILTIN.get(uri);
-			if (builtin == null && uri != null)
+			if (builtin == null && uri != null) {
 				builtin = BUILTIN.get(uri.toUpperCase(Locale.ROOT));
+			}
 			if (builtin != null) {
-				if ("URI".equals(builtin))
+				if ("URI".equals(builtin)) {
 					return "IRI(" + args + ")";
+				}
 				return builtin + "(" + args + ")";
 			}
+			// Fallback: render as IRI call
 			return "<" + uri + ">(" + args + ")";
 		}
 
 		// BNODE() / BNODE(<expr>)
 		if (e instanceof BNodeGenerator) {
 			final BNodeGenerator bg = (BNodeGenerator) e;
-			final ValueExpr id = bg.getNodeIdExpr(); // may be null
-			if (id == null)
+			final ValueExpr id = bg.getNodeIdExpr(); // may be null for BNODE()
+			if (id == null) {
 				return "BNODE()";
+			}
 			return "BNODE(" + renderExpr(id) + ")";
 		}
 
@@ -1717,17 +1870,21 @@ public class TupleExprIRRenderer {
 	}
 
 	private static String mathOp(final MathOp op) {
-		if (op == MathOp.PLUS)
+		if (op == MathOp.PLUS) {
 			return "+";
-		if (op == MathOp.MINUS)
+		}
+		if (op == MathOp.MINUS) {
 			return "-";
+		}
 		try {
-			if (op.name().equals("MULTIPLY") || op.name().equals("TIMES"))
+			if (op.name().equals("MULTIPLY") || op.name().equals("TIMES")) {
 				return "*";
+			}
 		} catch (Throwable ignore) {
 		}
-		if (op == MathOp.DIVIDE)
+		if (op == MathOp.DIVIDE) {
 			return "/";
+		}
 		return "?";
 	}
 
@@ -1740,8 +1897,9 @@ public class TupleExprIRRenderer {
 	/** Render (?x [NOT] IN (a, b, c)) from ListMemberOperator. */
 	private String renderIn(final ListMemberOperator in, final boolean negate) {
 		final List<ValueExpr> args = in.getArguments();
-		if (args == null || args.isEmpty())
+		if (args == null || args.isEmpty()) {
 			return "/* invalid IN */";
+		}
 		final String left = renderExpr(args.get(0));
 		final String rest = args.stream().skip(1).map(this::renderExpr).collect(Collectors.joining(", "));
 		return "(" + left + (negate ? " NOT IN (" : " IN (") + rest + "))";
@@ -1750,7 +1908,7 @@ public class TupleExprIRRenderer {
 	/** Use BlockPrinter to render a subpattern inline for EXISTS. */
 	private String renderInlineGroup(final TupleExpr pattern) {
 		final StringBuilder sb = new StringBuilder(64);
-		final BlockPrinter bp = new BlockPrinter(sb, this, style, null);
+		final BlockPrinter bp = new BlockPrinter(sb, this, cfg, null);
 		bp.openBlock();
 		pattern.visit(bp);
 		bp.closeBlock();
@@ -1785,31 +1943,32 @@ public class TupleExprIRRenderer {
 			return "COUNT(" + (c.isDistinct() && c.getArg() != null ? "DISTINCT " : "") + inner + ")";
 		}
 		if (op instanceof Sum) {
-			final Sum a = (Sum) aop(op);
+			final Sum a = (Sum) op;
 			return "SUM(" + (a.isDistinct() ? "DISTINCT " : "") + renderExpr(a.getArg()) + ")";
 		}
 		if (op instanceof Avg) {
-			final Avg a = (Avg) aop(op);
+			final Avg a = (Avg) op;
 			return "AVG(" + (a.isDistinct() ? "DISTINCT " : "") + renderExpr(a.getArg()) + ")";
 		}
 		if (op instanceof Min) {
-			final Min a = (Min) aop(op);
+			final Min a = (Min) op;
 			return "MIN(" + (a.isDistinct() ? "DISTINCT " : "") + renderExpr(a.getArg()) + ")";
 		}
 		if (op instanceof Max) {
-			final Max a = (Max) aop(op);
+			final Max a = (Max) op;
 			return "MAX(" + (a.isDistinct() ? "DISTINCT " : "") + renderExpr(a.getArg()) + ")";
 		}
 		if (op instanceof Sample) {
-			final Sample a = (Sample) aop(op);
+			final Sample a = (Sample) op;
 			return "SAMPLE(" + (a.isDistinct() ? "DISTINCT " : "") + renderExpr(a.getArg()) + ")";
 		}
 		if (op instanceof GroupConcat) {
 			final GroupConcat a = (GroupConcat) op;
 			final StringBuilder sb = new StringBuilder();
 			sb.append("GROUP_CONCAT(");
-			if (a.isDistinct())
+			if (a.isDistinct()) {
 				sb.append("DISTINCT ");
+			}
 			sb.append(renderExpr(a.getArg()));
 			final ValueExpr sepExpr = a.getSeparator();
 			final String sepLex = extractSeparatorLiteral(sepExpr);
@@ -1823,21 +1982,20 @@ public class TupleExprIRRenderer {
 		return "";
 	}
 
-	private static AggregateOperator aop(AggregateOperator op) {
-		return op;
-	}
-
 	/** Returns the lexical form if the expr is a plain string literal; otherwise null. */
 	private String extractSeparatorLiteral(final ValueExpr expr) {
-		if (expr == null)
+		if (expr == null) {
 			return null;
+		}
 		if (expr instanceof ValueConstant) {
 			final Value v = ((ValueConstant) expr).getValue();
 			if (v instanceof Literal) {
 				Literal lit = (Literal) v;
+				// Only accept plain strings / xsd:string (spec)
 				IRI dt = lit.getDatatype();
-				if (dt == null || XSD.STRING.equals(dt))
+				if (dt == null || XSD.STRING.equals(dt)) {
 					return lit.getLabel();
+				}
 			}
 			return null;
 		}
@@ -1846,8 +2004,24 @@ public class TupleExprIRRenderer {
 			if (var.hasValue() && var.getValue() instanceof Literal) {
 				Literal lit = (Literal) var.getValue();
 				IRI dt = lit.getDatatype();
-				if (dt == null || XSD.STRING.equals(dt))
+				if (dt == null || XSD.STRING.equals(dt)) {
 					return lit.getLabel();
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Extract a simple predicate IRI from the path expression (StatementPattern with constant predicate).
+	 */
+	@SuppressWarnings("unused")
+	private String renderPathAtom(final TupleExpr pathExpr) {
+		if (pathExpr instanceof StatementPattern) {
+			final StatementPattern sp = (StatementPattern) pathExpr;
+			final Var pred = sp.getPredicateVar();
+			if (pred != null && pred.hasValue() && pred.getValue() instanceof IRI) {
+				return renderIRI((IRI) pred.getValue());
 			}
 		}
 		return null;
@@ -1855,7 +2029,7 @@ public class TupleExprIRRenderer {
 
 	// ---------------- Best-effort path reassembly from BGP+FILTER ----------------
 
-	static void flattenJoin(TupleExpr expr, List<TupleExpr> out) {
+	private static void flattenJoin(TupleExpr expr, List<TupleExpr> out) {
 		if (expr instanceof Join) {
 			final Join j = (Join) expr;
 			flattenJoin(j.getLeftArg(), out);
@@ -1893,19 +2067,24 @@ public class TupleExprIRRenderer {
 	}
 
 	private static boolean sameVar(Var a, Var b) {
-		if (a == null || b == null)
+		if (a == null || b == null) {
 			return false;
-		if (a.hasValue() || b.hasValue())
+		}
+		if (a.hasValue() || b.hasValue()) {
 			return false;
+		}
 		return Objects.equals(a.getName(), b.getName());
 	}
 
-	/** Flatten a ValueExpr that is a conjunction into its left-to-right terms. */
+	/**
+	 * Flatten a ValueExpr that is a conjunction into its left-to-right terms.
+	 */
 	private static List<ValueExpr> flattenAnd(ValueExpr e) {
 		List<ValueExpr> out = new ArrayList<>();
 		Deque<ValueExpr> stack = new ArrayDeque<>();
-		if (e == null)
+		if (e == null) {
 			return out;
+		}
 		stack.push(e);
 		while (!stack.isEmpty()) {
 			ValueExpr cur = stack.pop();
@@ -1922,18 +2101,21 @@ public class TupleExprIRRenderer {
 
 	private NegatedSet parseNegatedSet(ValueExpr cond) {
 		List<ValueExpr> terms = flattenAnd(cond);
-		if (terms.isEmpty())
+		if (terms.isEmpty()) {
 			return null;
+		}
 
 		String varName = null;
 		List<IRI> iris = new ArrayList<>();
 
 		for (ValueExpr t : terms) {
-			if (!(t instanceof Compare))
+			if (!(t instanceof Compare)) {
 				return null;
+			}
 			Compare c = (Compare) t;
-			if (c.getOperator() != CompareOp.NE)
+			if (c.getOperator() != CompareOp.NE) {
 				return null;
+			}
 
 			IRI iri = null;
 			String name = null;
@@ -1951,28 +2133,33 @@ public class TupleExprIRRenderer {
 			} else {
 				return null;
 			}
-			if (name == null || iri == null)
+
+			if (name == null || iri == null) {
 				return null;
-			if (varName == null)
+			}
+			if (varName == null) {
 				varName = name;
-			else if (!Objects.equals(varName, name))
+			} else if (!Objects.equals(varName, name)) {
 				return null;
+			}
 			iris.add(iri);
 		}
-		if (varName == null || iris.isEmpty())
+
+		if (varName == null || iris.isEmpty()) {
 			return null;
+		}
 
 		NegatedSet ns = new NegatedSet(varName, null);
 		ns.iris.addAll(iris);
 		return ns;
 	}
 
-	// ---- zero-or-one path ( ? ) reconstruction helpers ----
+	// ---- NEW: zero-or-one path ( ? ) reconstruction helpers ----
 
 	private static final class ZeroOrOneProj {
 		final Var start; // left endpoint
 		final Var end; // right endpoint (the _anon_path_ var)
-		final IRI pred; // IRI for the optional step
+		final IRI pred; // the IRI for the optional step
 		final TupleExpr container; // the Projection/Distinct subtree node to consume
 
 		ZeroOrOneProj(Var start, Var end, IRI pred, TupleExpr container) {
@@ -1984,21 +2171,26 @@ public class TupleExprIRRenderer {
 	}
 
 	private ZeroOrOneProj parseZeroOrOneProjectionNode(TupleExpr node) {
-		if (node == null)
+		if (node == null) {
 			return null;
+		}
 		TupleExpr cur = node;
-		if (cur instanceof Distinct)
+		if (cur instanceof Distinct) {
 			cur = ((Distinct) cur).getArg();
-		if (!(cur instanceof Projection))
+		}
+		if (!(cur instanceof Projection)) {
 			return null;
+		}
 		TupleExpr arg = ((Projection) cur).getArg();
 		List<TupleExpr> leaves = new ArrayList<>();
-		if (arg instanceof Union)
+		if (arg instanceof Union) {
 			flattenUnion(arg, leaves);
-		else
+		} else {
 			return null;
-		if (leaves.size() != 2)
+		}
+		if (leaves.size() != 2) {
 			return null;
+		}
 
 		ZeroLengthPath zlp = null;
 		StatementPattern sp = null;
@@ -2009,23 +2201,28 @@ public class TupleExprIRRenderer {
 			} else if (leaf instanceof StatementPattern) {
 				StatementPattern cand = (StatementPattern) leaf;
 				Var pv = cand.getPredicateVar();
-				if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI))
+				if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
 					return null;
+				}
 				sp = cand;
 			} else {
 				return null;
 			}
 		}
-		if (zlp == null || sp == null)
-			return null;
 
-		if (!(sameVar(zlp.getSubjectVar(), sp.getSubjectVar()) && sameVar(zlp.getObjectVar(), sp.getObjectVar())))
+		if (zlp == null || sp == null) {
 			return null;
+		}
+
+		if (!(sameVar(zlp.getSubjectVar(), sp.getSubjectVar()) && sameVar(zlp.getObjectVar(), sp.getObjectVar()))) {
+			return null;
+		}
 
 		Var s = zlp.getSubjectVar();
 		Var mid = zlp.getObjectVar();
-		if (!isAnonPathVar(mid))
+		if (!isAnonPathVar(mid)) {
 			return null;
+		}
 
 		Var p = sp.getPredicateVar();
 		IRI iri = (IRI) p.getValue();
@@ -2047,19 +2244,22 @@ public class TupleExprIRRenderer {
 	private PathNode parseAPathInner(final TupleExpr innerExpr, final Var subj, final Var obj) {
 		if (innerExpr instanceof StatementPattern) {
 			PathNode n = parseAtomicFromStatement((StatementPattern) innerExpr, subj, obj);
-			if (n != null)
+			if (n != null) {
 				return n;
+			}
 		}
 		if (innerExpr instanceof Union) {
 			List<TupleExpr> branches = new ArrayList<>();
 			flattenUnion(innerExpr, branches);
 			List<PathNode> alts = new ArrayList<>(branches.size());
 			for (TupleExpr b : branches) {
-				if (!(b instanceof StatementPattern))
+				if (!(b instanceof StatementPattern)) {
 					return null;
+				}
 				PathNode n = parseAtomicFromStatement((StatementPattern) b, subj, obj);
-				if (n == null)
+				if (n == null) {
 					return null;
+				}
 				alts.add(n);
 			}
 			return new PathAlt(alts);
@@ -2069,34 +2269,40 @@ public class TupleExprIRRenderer {
 
 	private PathNode parseAtomicFromStatement(final StatementPattern sp, final Var subj, final Var obj) {
 		final Var p = sp.getPredicateVar();
-		if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI))
+		if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
 			return null;
+		}
 		final IRI iri = (IRI) p.getValue();
 		final Var ss = sp.getSubjectVar();
 		final Var oo = sp.getObjectVar();
 
-		if (sameVar(ss, subj) && sameVar(oo, obj))
+		if (sameVar(ss, subj) && sameVar(oo, obj)) {
 			return new PathAtom(iri, false);
-		if (sameVar(ss, obj) && sameVar(oo, subj))
+		}
+		if (sameVar(ss, obj) && sameVar(oo, subj)) {
 			return new PathAtom(iri, true);
+		}
 		return null;
 	}
 
 	private static String freeVarName(Var v) {
-		if (v == null || v.hasValue())
+		if (v == null || v.hasValue()) {
 			return null;
+		}
 		final String n = v.getName();
 		return (n == null || n.isEmpty()) ? null : n;
 	}
 
 	private static void collectFreeVars(final TupleExpr e, final Set<String> out) {
-		if (e == null)
+		if (e == null) {
 			return;
+		}
 		e.visit(new org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
 			private void add(Var v) {
 				final String n = freeVarName(v);
-				if (n != null)
+				if (n != null) {
 					out.add(n);
+				}
 			}
 
 			@Override
@@ -2109,8 +2315,9 @@ public class TupleExprIRRenderer {
 
 			@Override
 			public void meet(Filter f) {
-				if (f.getCondition() != null)
+				if (f.getCondition() != null) {
 					collectVarNames(f.getCondition(), out);
+				}
 				f.getArg().visit(this);
 			}
 
@@ -2118,8 +2325,9 @@ public class TupleExprIRRenderer {
 			public void meet(LeftJoin lj) {
 				lj.getLeftArg().visit(this);
 				lj.getRightArg().visit(this);
-				if (lj.getCondition() != null)
+				if (lj.getCondition() != null) {
 					collectVarNames(lj.getCondition(), out);
+				}
 			}
 
 			@Override
@@ -2136,8 +2344,9 @@ public class TupleExprIRRenderer {
 
 			@Override
 			public void meet(Extension ext) {
-				for (ExtensionElem ee : ext.getElements())
+				for (ExtensionElem ee : ext.getElements()) {
 					collectVarNames(ee.getExpr(), out);
+				}
 				ext.getArg().visit(this);
 			}
 
@@ -2153,20 +2362,25 @@ public class TupleExprIRRenderer {
 	@SuppressWarnings("unused")
 	private static Set<String> globalVarsToPreserve(final Normalized n) {
 		final Set<String> s = new java.util.HashSet<>();
-		if (n == null)
+		if (n == null) {
 			return s;
+		}
+
 		if (n.projection != null && n.projection.getProjectionElemList() != null) {
 			for (ProjectionElem pe : n.projection.getProjectionElemList().getElements()) {
 				final String name = pe.getProjectionAlias().orElse(pe.getName());
-				if (name != null && !name.isEmpty() && !n.selectAssignments.containsKey(name))
+				if (name != null && !name.isEmpty() && !n.selectAssignments.containsKey(name)) {
 					s.add(name);
+				}
 			}
 		}
 		s.addAll(n.groupByVarNames);
-		for (OrderElem oe : n.orderBy)
+		for (OrderElem oe : n.orderBy) {
 			collectVarNames(oe.getExpr(), s);
-		for (ValueExpr ve : n.selectAssignments.values())
+		}
+		for (ValueExpr ve : n.selectAssignments.values()) {
 			collectVarNames(ve, s);
+		}
 		return s;
 	}
 
@@ -2182,34 +2396,43 @@ public class TupleExprIRRenderer {
 		final Map<String, StatementPattern> restByS = new LinkedHashMap<>();
 
 		for (TupleExpr n : nodes) {
-			if (!(n instanceof StatementPattern))
+			if (!(n instanceof StatementPattern)) {
 				continue;
+			}
 			final StatementPattern sp = (StatementPattern) n;
 			final Var s = sp.getSubjectVar(), p = sp.getPredicateVar();
 			final String sName = freeVarName(s);
-			if (sName == null)
+			if (sName == null) {
 				continue;
-			if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI))
+			}
+			if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
 				continue;
+			}
 
 			final IRI pred = (IRI) p.getValue();
-			if (RDF.FIRST.equals(pred))
+			if (RDF.FIRST.equals(pred)) {
 				firstByS.put(sName, sp);
-			else if (RDF.REST.equals(pred))
+			} else if (RDF.REST.equals(pred)) {
 				restByS.put(sName, sp);
+			}
 		}
 
-		if (firstByS.isEmpty() || restByS.isEmpty())
+		if (firstByS.isEmpty() || restByS.isEmpty()) {
 			return res;
+		}
 
 		final List<String> candidateHeads = new ArrayList<>();
-		for (String s : firstByS.keySet())
-			if (s != null && s.startsWith(ANON_COLLECTION_PREFIX))
+		for (String s : firstByS.keySet()) {
+			if (s != null && s.startsWith(ANON_COLLECTION_PREFIX)) {
 				candidateHeads.add(s);
+			}
+		}
 		if (candidateHeads.isEmpty()) {
-			for (String s : firstByS.keySet())
-				if (restByS.containsKey(s))
+			for (String s : firstByS.keySet()) {
+				if (restByS.containsKey(s)) {
 					candidateHeads.add(s);
+				}
+			}
 		}
 
 		for (String head : candidateHeads) {
@@ -2226,6 +2449,7 @@ public class TupleExprIRRenderer {
 					ok = false;
 					break;
 				}
+
 				final StatementPattern f = firstByS.get(cur);
 				final StatementPattern r = restByS.get(cur);
 				if (f == null || r == null) {
@@ -2244,8 +2468,9 @@ public class TupleExprIRRenderer {
 					break;
 				}
 				if (ro.hasValue()) {
-					if (!(ro.getValue() instanceof IRI) || !RDF.NIL.equals(ro.getValue()))
+					if (!(ro.getValue() instanceof IRI) || !RDF.NIL.equals(ro.getValue())) {
 						ok = false;
+					}
 					break; // done
 				}
 				cur = ro.getName();
@@ -2259,13 +2484,15 @@ public class TupleExprIRRenderer {
 				}
 			}
 
-			if (!ok || items.isEmpty())
+			if (!ok || items.isEmpty()) {
 				continue;
+			}
 
 			final Set<String> external = new HashSet<>();
 			for (TupleExpr n : nodes) {
-				if (!localConsumed.contains(n))
+				if (!localConsumed.contains(n)) {
 					collectFreeVars(n, external);
+				}
 			}
 			boolean leaks = false;
 			for (String v : spine) {
@@ -2274,13 +2501,15 @@ public class TupleExprIRRenderer {
 					break;
 				}
 			}
-			if (leaks)
+			if (leaks) {
 				continue;
+			}
 
 			final String coll = "(" + String.join(" ", items) + ")";
 			res.overrides.put(head, coll);
 			res.consumed.addAll(localConsumed);
 		}
+
 		return res;
 	}
 
@@ -2292,9 +2521,11 @@ public class TupleExprIRRenderer {
 			Map<String, String> overrides,
 			Set<TupleExpr> preConsumed
 	) {
+
 		final Set<TupleExpr> consumed = new HashSet<>();
-		if (preConsumed != null)
+		if (preConsumed != null) {
 			consumed.addAll(preConsumed);
+		}
 
 		// Simple property-list buffer (subject without GRAPH)
 		final String[] plSubject = { null };
@@ -2311,69 +2542,87 @@ public class TupleExprIRRenderer {
 
 		final Runnable flushPL = () -> {
 			if (plSubject[0] != null && !plPO.isEmpty()) {
-				boolean multi = plPO.size() > 1;
+				// Always use renderPredicateForTriple to keep 'a' for rdf:type
 				List<String> pairs = new ArrayList<>(plPO.size());
 				for (PO po : plPO) {
-					final String pred = multi ? renderPredicateForTriple(po.p) : renderVarOrValue(po.p);
+					final String pred = renderPredicateForTriple(po.p);
 					pairs.add(pred + " " + po.obj);
 				}
 				bp.line(plSubject[0] + " " + String.join(" ; ", pairs) + " .");
 			}
 		};
+
 		final Runnable clearPL = () -> {
 			plSubject[0] = null;
 			plPO.clear();
 		};
-		final java.util.function.BiConsumer<Var, String> addPO = (predVar, obj) -> plPO.add(new PO(predVar, obj));
+
+		final java.util.function.BiConsumer<Var, String> addPO = (predVar, obj) -> {
+			plPO.add(new PO(predVar, obj));
+		};
+
+		// Helper: make predicate string (with 'a' for rdf:type)
 		final java.util.function.Function<Var, String> predStr = this::renderPredicateForTriple;
 
+		// Helper: external use check for bridge variable
 		final java.util.function.BiFunction<Set<TupleExpr>, String, Boolean> leaksOutside = (toConsume, varName) -> {
-			if (varName == null)
+			if (varName == null) {
 				return false;
+			}
 			final Set<TupleExpr> cons = new HashSet<>(toConsume);
-			if (preConsumed != null)
+			if (preConsumed != null) {
 				cons.addAll(preConsumed);
+			}
 			final Set<String> externalUse = new HashSet<>();
-			for (TupleExpr n : nodes)
-				if (!cons.contains(n))
+			for (TupleExpr n : nodes) {
+				if (!cons.contains(n)) {
 					collectFreeVars(n, externalUse);
+				}
+			}
 			return externalUse.contains(varName);
 		};
 
 		for (int i = 0; i < nodes.size(); i++) {
 			final TupleExpr cur = nodes.get(i);
-			if (consumed.contains(cur))
+			if (consumed.contains(cur)) {
 				continue;
+			}
 
 			// ---- Z: zero-or-one projection at position i ----
 			final ZeroOrOneProj z = parseZeroOrOneProjectionNode(cur);
 			if (z != null) {
 				boolean fusedZ = false;
+				// find a following SP that uses z.end as subject or object
 				for (int j = i + 1; j < nodes.size(); j++) {
 					final TupleExpr cand = nodes.get(j);
-					if (consumed.contains(cand) || !(cand instanceof StatementPattern))
+					if (consumed.contains(cand) || !(cand instanceof StatementPattern)) {
 						continue;
+					}
 					final StatementPattern sp2 = (StatementPattern) cand;
-					if (getContextVarSafe(sp2) != null)
-						continue; // conservative across GRAPH
+					if (getContextVarSafe(sp2) != null) {
+						continue; // be conservative across GRAPH
+					}
 					final Var s2 = sp2.getSubjectVar();
 					final Var o2 = sp2.getObjectVar();
 					final Var p2 = sp2.getPredicateVar();
-					if (p2 == null || !p2.hasValue() || !(p2.getValue() instanceof IRI))
+					if (p2 == null || !p2.hasValue() || !(p2.getValue() instanceof IRI)) {
 						continue;
+					}
 					final IRI p2Iri = (IRI) p2.getValue();
 
 					final boolean forward = sameVar(z.end, s2);
 					final boolean inverse = !forward && sameVar(z.end, o2);
-					if (!forward && !inverse)
+					if (!forward && !inverse) {
 						continue;
+					}
 
 					final String bridge = freeVarName(z.end);
 					final Set<TupleExpr> willConsume = new HashSet<>();
 					willConsume.add(z.container);
 					willConsume.add(sp2);
-					if (leaksOutside.apply(willConsume, bridge))
+					if (leaksOutside.apply(willConsume, bridge)) {
 						continue;
+					}
 
 					flushPL.run();
 					clearPL.run();
@@ -2390,10 +2639,13 @@ public class TupleExprIRRenderer {
 					consumed.add(sp2);
 					suppressProjectionSubselect(z.container);
 					fusedZ = true;
-					break;
+					break; // stop scanning j; we'll skip fallback for i
 				}
-				if (fusedZ)
-					continue;
+
+				// could not fuse -> print subselect block as-is
+				if (fusedZ) {
+					continue; // move to next i
+				}
 				flushPL.run();
 				clearPL.run();
 				cur.visit(bp);
@@ -2401,7 +2653,7 @@ public class TupleExprIRRenderer {
 				continue;
 			}
 
-			// ---- ALP anchored rewrites (A/B + D) ----
+			// ---- ALP anchored rewrites (A/B + D) at position i ----
 			if (cur instanceof ArbitraryLengthPath) {
 				final ArbitraryLengthPath alp = (ArbitraryLengthPath) cur;
 
@@ -2414,24 +2666,30 @@ public class TupleExprIRRenderer {
 						Var pv = atom.getPredicateVar();
 						if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI
 								&& RDF.REST.equals(pv.getValue())) {
+							// find following rdf:first whose subject == alp.object
 							for (int j = i + 1; j < nodes.size(); j++) {
 								final TupleExpr cand = nodes.get(j);
-								if (consumed.contains(cand) || !(cand instanceof StatementPattern))
+								if (consumed.contains(cand) || !(cand instanceof StatementPattern)) {
 									continue;
+								}
 								final StatementPattern sp = (StatementPattern) cand;
 								final Var pv2 = sp.getPredicateVar();
 								if (pv2 == null || !pv2.hasValue() || !(pv2.getValue() instanceof IRI)
-										|| !RDF.FIRST.equals(pv2.getValue()))
+										|| !RDF.FIRST.equals(pv2.getValue())) {
 									continue;
-								if (!sameVar(alp.getObjectVar(), sp.getSubjectVar()))
+								}
+								if (!sameVar(alp.getObjectVar(), sp.getSubjectVar())) {
 									continue;
+								}
 								final Var mid = sp.getSubjectVar();
 								if (mid != null && mid.getName() != null) {
-									if (!(isAnonCollectionVar(mid) || isAnonPathVar(mid)))
+									if (!(isAnonCollectionVar(mid) || isAnonPathVar(mid))) {
 										continue;
+									}
 								}
-								if (!contextsCompatible(getContextVarSafe(alp), getContextVarSafe(sp)))
+								if (!contextsCompatible(getContextVarSafe(alp), getContextVarSafe(sp))) {
 									continue;
+								}
 								firstTriple = sp;
 								break;
 							}
@@ -2450,10 +2708,11 @@ public class TupleExprIRRenderer {
 					final String o = renderPossiblyOverridden(firstTriple.getObjectVar(), overrides);
 
 					final Var ctx = getContextVarSafe(alp);
-					if (ctx != null)
-						bp.line("GRAPH " + renderVarOrValue(ctx) + " { " + s + " " + fused + " " + o + " . }");
-					else
+					if (ctx != null) {
+						bp.line("GRAPH " + renderVarOrValue(ctx) + " { " + s + " " + fused + " " + o + " " + ". }");
+					} else {
 						bp.line(s + " " + fused + " " + o + " .");
+					}
 					consumed.add(alp);
 					consumed.add(firstTriple);
 					continue;
@@ -2467,32 +2726,38 @@ public class TupleExprIRRenderer {
 				if (inner != null) {
 					for (int j = i + 1; j < nodes.size(); j++) {
 						final TupleExpr cand = nodes.get(j);
-						if (consumed.contains(cand) || !(cand instanceof StatementPattern))
+						if (consumed.contains(cand) || !(cand instanceof StatementPattern)) {
 							continue;
+						}
 						final StatementPattern sp = (StatementPattern) cand;
-						if (!contextsCompatible(ctxAlp, getContextVarSafe(sp)))
+						if (!contextsCompatible(ctxAlp, getContextVarSafe(sp))) {
 							continue;
+						}
 						final Var spS = sp.getSubjectVar();
 						final Var spO = sp.getObjectVar();
 						final Var pVar = sp.getPredicateVar();
-						if (pVar == null || !pVar.hasValue() || !(pVar.getValue() instanceof IRI))
+						if (pVar == null || !pVar.hasValue() || !(pVar.getValue() instanceof IRI)) {
 							continue;
+						}
 						final IRI pIri = (IRI) pVar.getValue();
 
 						final boolean forwardStep2 = sameVar(aO, spS);
 						final boolean inverseStep2 = !forwardStep2 && sameVar(aO, spO);
-						if (!forwardStep2 && !inverseStep2)
+						if (!forwardStep2 && !inverseStep2) {
 							continue;
+						}
 						final Var mid = aO;
-						if (!isAnonPathVar(mid))
+						if (!isAnonPathVar(mid)) {
 							continue;
+						}
 
 						final String midName = freeVarName(mid);
 						final Set<TupleExpr> willConsume = new HashSet<>();
 						willConsume.add(alp);
 						willConsume.add(sp);
-						if (leaksOutside.apply(willConsume, midName))
+						if (leaksOutside.apply(willConsume, midName)) {
 							continue;
+						}
 
 						flushPL.run();
 						clearPL.run();
@@ -2514,12 +2779,13 @@ public class TupleExprIRRenderer {
 						consumed.add(sp);
 						break;
 					}
-					if (consumed.contains(alp))
+					if (consumed.contains(alp)) {
 						continue;
+					}
 				}
 			}
 
-			// ---- SP anchored rewrites (A and Z2) ----
+			// ---- SP anchored rewrites (A and Z2) at position i ----
 			if (cur instanceof StatementPattern) {
 				final StatementPattern sp = (StatementPattern) cur;
 				if (!consumed.contains(sp)) {
@@ -2534,32 +2800,38 @@ public class TupleExprIRRenderer {
 						boolean fused = false;
 						for (int j = i + 1; j < nodes.size(); j++) {
 							final TupleExpr cand = nodes.get(j);
-							if (consumed.contains(cand) || !(cand instanceof ArbitraryLengthPath))
+							if (consumed.contains(cand) || !(cand instanceof ArbitraryLengthPath)) {
 								continue;
+							}
 							final ArbitraryLengthPath alp = (ArbitraryLengthPath) cand;
-							if (!contextsCompatible(ctxSp, getContextVarSafe(alp)))
+							if (!contextsCompatible(ctxSp, getContextVarSafe(alp))) {
 								continue;
+							}
 							final Var aS = alp.getSubjectVar();
 							final Var aO = alp.getObjectVar();
 
 							final boolean forward = sameVar(spO, aS);
 							final boolean inverse = !forward && sameVar(spS, aS);
-							if (!forward && !inverse)
+							if (!forward && !inverse) {
 								continue;
+							}
 							final Var mid = forward ? spO : spS;
-							if (!isAnonPathVar(mid))
+							if (!isAnonPathVar(mid)) {
 								continue;
+							}
 
 							final PathNode inner = parseAPathInner(alp.getPathExpression(), aS, aO);
-							if (inner == null)
+							if (inner == null) {
 								continue;
+							}
 
 							final String midName = freeVarName(mid);
 							final Set<TupleExpr> willConsume = new HashSet<>();
 							willConsume.add(sp);
 							willConsume.add(alp);
-							if (leaksOutside.apply(willConsume, midName))
+							if (leaksOutside.apply(willConsume, midName)) {
 								continue;
+							}
 
 							flushPL.run();
 							clearPL.run();
@@ -2582,27 +2854,32 @@ public class TupleExprIRRenderer {
 							fused = true;
 							break;
 						}
-						if (fused)
+						if (fused) {
 							continue;
+						}
 
 						// (Z2) SP + ZeroOrOneProj → p1 / p?
 						for (int j = i + 1; j < nodes.size(); j++) {
-							if (consumed.contains(nodes.get(j)))
+							if (consumed.contains(nodes.get(j))) {
 								continue;
+							}
 							final ZeroOrOneProj z2 = parseZeroOrOneProjectionNode(nodes.get(j));
-							if (z2 == null)
+							if (z2 == null) {
 								continue;
+							}
 							final boolean forward = sameVar(sp.getObjectVar(), z2.start);
 							final boolean inverse = !forward && sameVar(sp.getSubjectVar(), z2.start);
-							if (!forward && !inverse)
+							if (!forward && !inverse) {
 								continue;
+							}
 
 							final String bridge = freeVarName(z2.start);
 							final Set<TupleExpr> willConsume = new HashSet<>();
 							willConsume.add(sp);
 							willConsume.add(z2.container);
-							if (leaksOutside.apply(willConsume, bridge))
+							if (leaksOutside.apply(willConsume, bridge)) {
 								continue;
+							}
 
 							flushPL.run();
 							clearPL.run();
@@ -2623,8 +2900,9 @@ public class TupleExprIRRenderer {
 							suppressProjectionSubselect(z2.container);
 							break;
 						}
-						if (consumed.contains(sp))
+						if (consumed.contains(sp)) {
 							continue;
+						}
 					}
 
 					// No path fusion -> maybe add to property list
@@ -2632,6 +2910,7 @@ public class TupleExprIRRenderer {
 					if (ctx != null && (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
 						flushPL.run();
 						clearPL.run();
+						// GRAPH block
 						String s = renderVarOrValue(ctx);
 						String subj = renderPossiblyOverridden(sp.getSubjectVar(), overrides);
 						String pred = predStr.apply(sp.getPredicateVar());
@@ -2666,7 +2945,7 @@ public class TupleExprIRRenderer {
 				}
 			}
 
-			// ---- Fallback ----
+			// ---- Fallback for other node types ----
 			flushPL.run();
 			clearPL.run();
 			cur.visit(bp);
@@ -2684,8 +2963,9 @@ public class TupleExprIRRenderer {
 		final String n = freeVarName(v);
 		if (n != null && overrides != null) {
 			final String ov = overrides.get(n);
-			if (ov != null)
+			if (ov != null) {
 				return ov;
+			}
 		}
 		return renderVarOrValue(v);
 	}
@@ -2695,31 +2975,38 @@ public class TupleExprIRRenderer {
 	 * incompatible.
 	 */
 	private static boolean contextsCompatible(final Var a, final Var b) {
-		if (a == b)
+		if (a == b) {
 			return true;
-		if (a == null || b == null)
+		}
+		if (a == null || b == null) {
 			return false;
-		if (a.hasValue() && b.hasValue())
+		}
+		if (a.hasValue() && b.hasValue()) {
 			return Objects.equals(a.getValue(), b.getValue());
-		if (!a.hasValue() && !b.hasValue())
+		}
+		if (!a.hasValue() && !b.hasValue()) {
 			return Objects.equals(a.getName(), b.getName());
+		}
 		return false;
 	}
 
 	static String stripRedundantOuterParens(final String s) {
-		if (s == null)
+		if (s == null) {
 			return null;
+		}
 		String t = s.trim();
 		if (t.length() >= 2 && t.charAt(0) == '(' && t.charAt(t.length() - 1) == ')') {
 			int depth = 0;
 			for (int i = 0; i < t.length(); i++) {
 				char ch = t.charAt(i);
-				if (ch == '(')
+				if (ch == '(') {
 					depth++;
-				else if (ch == ')')
+				} else if (ch == ')') {
 					depth--;
-				if (depth == 0 && i < t.length() - 1)
+				}
+				if (depth == 0 && i < t.length() - 1) {
 					return t;
+				}
 			}
 			return t.substring(1, t.length() - 1).trim();
 		}
@@ -2729,10 +3016,12 @@ public class TupleExprIRRenderer {
 	private String renderDescribeTerm(ValueExpr t) {
 		if (t instanceof Var) {
 			Var v = (Var) t;
-			if (!v.hasValue())
+			if (!v.hasValue()) {
 				return "?" + v.getName();
-			if (v.getValue() instanceof IRI)
+			}
+			if (v.getValue() instanceof IRI) {
 				return renderIRI((IRI) v.getValue());
+			}
 		}
 		if (t instanceof ValueConstant && ((ValueConstant) t).getValue() instanceof IRI) {
 			return renderIRI((IRI) ((ValueConstant) t).getValue());
@@ -2742,15 +3031,18 @@ public class TupleExprIRRenderer {
 	}
 
 	private void handleUnsupported(String message) {
-		if (style.strict)
+		if (cfg.strict) {
 			throw new SparqlRenderingException(message);
-		if (style.lenientComments) {
-			/* place to add comments if we ever want */ }
+		}
+		if (cfg.lenientComments) {
+			// no-op (could add comments in lenient mode)
+		}
 	}
 
 	private void fail(String message) {
-		if (style.strict)
+		if (cfg.strict) {
 			throw new SparqlRenderingException(message);
+		}
 	}
 
 	// ---------------- Prefix compaction index ----------------
@@ -2759,30 +3051,33 @@ public class TupleExprIRRenderer {
 		final String prefix;
 		final String namespace;
 
-		PrefixHit(String p, String n) {
-			prefix = p;
-			namespace = n;
+		PrefixHit(final String prefix, final String namespace) {
+			this.prefix = prefix;
+			this.namespace = namespace;
 		}
 	}
 
 	private static final class PrefixIndex {
-		private final List<Map.Entry<String, String>> entries;
+		private final List<Entry<String, String>> entries;
 
 		PrefixIndex(final Map<String, String> prefixes) {
-			final List<Map.Entry<String, String>> list = new ArrayList<>();
-			if (prefixes != null)
+			final List<Entry<String, String>> list = new ArrayList<>();
+			if (prefixes != null) {
 				list.addAll(prefixes.entrySet());
+			}
 			list.sort((a, b) -> Integer.compare(b.getValue().length(), a.getValue().length()));
 			this.entries = Collections.unmodifiableList(list);
 		}
 
 		PrefixHit longestMatch(final String iri) {
-			if (iri == null)
+			if (iri == null) {
 				return null;
-			for (final Map.Entry<String, String> e : entries) {
+			}
+			for (final Entry<String, String> e : entries) {
 				final String ns = e.getValue();
-				if (iri.startsWith(ns))
+				if (iri.startsWith(ns)) {
 					return new PrefixHit(e.getKey(), ns);
+				}
 			}
 			return null;
 		}
@@ -2913,13 +3208,15 @@ public class TupleExprIRRenderer {
 			PathAtom a = (PathAtom) p;
 			return new PathAtom(a.iri, !a.inverse);
 		}
-		if (p instanceof PathNegSet)
+		if (p instanceof PathNegSet) {
 			return p;
+		}
 		if (p instanceof PathSeq) {
 			List<PathNode> parts = ((PathSeq) p).parts;
 			List<PathNode> inv = new ArrayList<>(parts.size());
-			for (int i = parts.size() - 1; i >= 0; i--)
+			for (int i = parts.size() - 1; i >= 0; i--) {
 				inv.add(invertPath(parts.get(i)));
+			}
 			return new PathSeq(inv);
 		}
 		if (p instanceof PathAlt) {
@@ -2963,21 +3260,28 @@ public class TupleExprIRRenderer {
 	}
 
 	private String renderExprWithSubstitution(final ValueExpr e, final Map<String, ValueExpr> subs) {
-		if (e == null)
+		if (e == null) {
 			return "()";
+		}
+
+		// Substitute only for _anon_having_* variables
 		if (e instanceof Var) {
 			final Var v = (Var) e;
 			if (!v.hasValue() && v.getName() != null && isAnonHavingName(v.getName()) && subs != null) {
 				ValueExpr repl = subs.get(v.getName());
-				if (repl != null)
-					return renderExpr(repl); // inline the aggregate/expression
+				if (repl != null) {
+					// render the aggregate/expression in place of the var
+					return renderExpr(repl);
+				}
 			}
+			// default
 			return v.hasValue() ? renderValue(v.getValue()) : "?" + v.getName();
 		}
 
 		// Minimal recursive coverage for common boolean structures in HAVING
-		if (e instanceof Not)
+		if (e instanceof Not) {
 			return "!(" + stripRedundantOuterParens(renderExprWithSubstitution(((Not) e).getArg(), subs)) + ")";
+		}
 		if (e instanceof And) {
 			And a = (And) e;
 			return "(" + renderExprWithSubstitution(a.getLeftArg(), subs) + " && " +
@@ -2998,16 +3302,25 @@ public class TupleExprIRRenderer {
 			return "sameTerm(" + renderExprWithSubstitution(st.getLeftArg(), subs) + ", " +
 					renderExprWithSubstitution(st.getRightArg(), subs) + ")";
 		}
+		if (e instanceof FunctionCall || e instanceof AggregateOperator ||
+				e instanceof Str || e instanceof Datatype || e instanceof Lang ||
+				e instanceof Bound || e instanceof IsURI || e instanceof IsLiteral || e instanceof IsBNode ||
+				e instanceof IsNumeric || e instanceof IRIFunction || e instanceof If || e instanceof Coalesce ||
+				e instanceof Regex || e instanceof ListMemberOperator || e instanceof MathExpr
+				|| e instanceof ValueConstant) {
+			// Fallback: normal rendering (no anon-having var inside or acceptable)
+			return renderExpr(e);
+		}
 
-		// Fallback: normal rendering
+		// Fallback
 		return renderExpr(e);
 	}
 
 	// NEW helper: identify anon-having vars explicitly
-	@SuppressWarnings("unused")
 	private static boolean isAnonHavingVar(Var v) {
-		if (v == null || v.hasValue())
+		if (v == null || v.hasValue()) {
 			return false;
+		}
 		final String name = v.getName();
 		return isAnonHavingName(name);
 	}
