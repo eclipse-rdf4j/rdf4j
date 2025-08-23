@@ -43,12 +43,123 @@ public final class IrTransforms {
 		select.setWhere(applyPaths(select.getWhere(), r));
 		// Collections: replace anon collection heads with textual collection, when derivable (best-effort)
 		select.setWhere(applyCollections(select.getWhere(), r));
+		// Merge a plain OPTIONAL body into a preceding GRAPH group when safe, and pull an immediate
+		// following FILTER into that GRAPH group as well.
+		select.setWhere(mergeOptionalIntoPrecedingGraph(select.getWhere()));
 		// NOTE: Do not fold OPTIONAL { GRAPH g { ... } [FILTER ...] } into a preceding GRAPH g { ... }
 		// block. Tests expect OPTIONAL blocks to remain at the outer level with an inner GRAPH
 		// when appropriate. Keeping the original structure also avoids over-aggressive rewriting
 		// that can surprise users. If desired later, this could be reintroduced behind a
 		// configuration flag.
 		// HAVING: currently handled by renderer’s substitution; can be lifted later
+	}
+
+	/**
+	 * Merge pattern: GRAPH ?g { ... } OPTIONAL { <simple lines without GRAPH> } [FILTER (...)] into: GRAPH ?g { ...
+	 * OPTIONAL { ... } [FILTER (...)] }
+	 *
+	 * Only merges when the OPTIONAL body consists solely of simple leaf lines that are valid inside a GRAPH block
+	 * (IrStatementPattern or IrPathTriple). This avoids altering other cases where tests expect the OPTIONAL to stay
+	 * outside or include its own inner GRAPH.
+	 */
+	private static IrWhere mergeOptionalIntoPrecedingGraph(IrWhere where) {
+		if (where == null)
+			return null;
+		final java.util.List<IrNode> in = where.getLines();
+		final java.util.List<IrNode> out = new java.util.ArrayList<>();
+		for (int i = 0; i < in.size(); i++) {
+			IrNode n = in.get(i);
+			if (n instanceof IrGraph && i + 1 < in.size() && in.get(i + 1) instanceof IrOptional) {
+				IrGraph g = (IrGraph) n;
+				IrOptional opt = (IrOptional) in.get(i + 1);
+				IrWhere ow = opt.getWhere();
+				IrWhere simpleOw = null;
+				if (isSimpleOptionalBody(ow)) {
+					simpleOw = ow;
+				} else if (ow != null && ow.getLines().size() == 1 && ow.getLines().get(0) instanceof IrGraph) {
+					// Handle OPTIONAL { GRAPH ?g { simple } } → OPTIONAL { simple } when graph matches
+					IrGraph inner = (IrGraph) ow.getLines().get(0);
+					if (sameVar(g.getGraph(), inner.getGraph()) && isSimpleOptionalBody(inner.getWhere())) {
+						simpleOw = inner.getWhere();
+					}
+				}
+				if (simpleOw != null) {
+					// Build merged graph body
+					IrWhere merged = new IrWhere();
+					for (IrNode gl : g.getWhere().getLines()) {
+						merged.add(gl);
+					}
+					merged.add(new IrOptional(simpleOw));
+					boolean consumedFilter = false;
+					if (i + 2 < in.size() && in.get(i + 2) instanceof IrFilter) {
+						merged.add(in.get(i + 2));
+						consumedFilter = true;
+					}
+					out.add(new IrGraph(g.getGraph(), merged));
+					i += consumedFilter ? 2 : 1;
+					continue;
+				}
+			}
+			// Recurse into containers
+			if (n instanceof IrWhere || n instanceof IrGraph || n instanceof IrOptional || n instanceof IrUnion
+					|| n instanceof IrMinus || n instanceof IrService || n instanceof IrSubSelect) {
+				n = transformNodeForMerge(n);
+			}
+			out.add(n);
+		}
+		IrWhere res = new IrWhere();
+		out.forEach(res::add);
+		return res;
+	}
+
+	private static boolean isSimpleOptionalBody(IrWhere ow) {
+		if (ow == null)
+			return false;
+		if (ow.getLines().isEmpty())
+			return false;
+		for (IrNode ln : ow.getLines()) {
+			if (!(ln instanceof IrStatementPattern || ln instanceof IrPathTriple)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static IrNode transformNodeForMerge(IrNode n) {
+		if (n instanceof IrWhere) {
+			return mergeOptionalIntoPrecedingGraph((IrWhere) n);
+		}
+		if (n instanceof IrGraph) {
+			IrGraph g = (IrGraph) n;
+			return new IrGraph(g.getGraph(), mergeOptionalIntoPrecedingGraph(g.getWhere()));
+		}
+		if (n instanceof IrOptional) {
+			IrOptional o = (IrOptional) n;
+			return new IrOptional(mergeOptionalIntoPrecedingGraph(o.getWhere()));
+		}
+		if (n instanceof IrUnion) {
+			IrUnion u = (IrUnion) n;
+			IrUnion out = new IrUnion();
+			for (IrWhere b : u.getBranches()) {
+				out.addBranch(mergeOptionalIntoPrecedingGraph(b));
+			}
+			return out;
+		}
+		if (n instanceof IrMinus) {
+			IrMinus m = (IrMinus) n;
+			return new IrMinus(mergeOptionalIntoPrecedingGraph(m.getWhere()));
+		}
+		if (n instanceof IrService) {
+			IrService s = (IrService) n;
+			return new IrService(s.getServiceRefText(), s.isSilent(), mergeOptionalIntoPrecedingGraph(s.getWhere()));
+		}
+		if (n instanceof IrSubSelect) {
+			IrSubSelect ss = (IrSubSelect) n;
+			IrSelect sel = ss.getSelect();
+			sel.setWhere(mergeOptionalIntoPrecedingGraph(sel.getWhere()));
+			return ss;
+		}
+		return n;
 	}
 
 	/**
