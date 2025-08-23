@@ -2969,7 +2969,7 @@ public class TupleExprIRRenderer {
 				if (arg instanceof StatementPattern) {
 					final StatementPattern sp = (StatementPattern) arg;
 					final Var predVar = sp.getPredicateVar();
-					if (predVar != null && !predVar.hasValue() && getContextVarSafe(sp) == null) {
+					if (predVar != null && !predVar.hasValue()) {
 						final NegatedSet ns = parseNegatedSet(f.getCondition());
 						if (ns != null && ns.varName != null && ns.varName.equals(predVar.getName())
 								&& !ns.iris.isEmpty()) {
@@ -2981,12 +2981,69 @@ public class TupleExprIRRenderer {
 								clearPL.run();
 								final String s = renderPossiblyOverridden(sp.getSubjectVar(), overrides);
 								final String o = renderPossiblyOverridden(sp.getObjectVar(), overrides);
-								final String nps = new PathNegSet(new ArrayList<>(ns.iris)).render();
 								final Var ctx = getContextVarSafe(sp);
 								final String gRef = (ctx == null) ? null : renderVarOrValue(ctx);
-								emitLine.accept(gRef, s + " " + nps + " " + o + " .");
-								consumed.add(f);
-								consumed.add(sp);
+
+								// Try to chain NPS with a following constant-predicate triple using the object as
+								// bridge
+								boolean chained = false;
+								for (int j = i + 1; j < nodes.size(); j++) {
+									final TupleExpr cand2 = nodes.get(j);
+									if (consumed.contains(cand2) || !(cand2 instanceof StatementPattern)) {
+										continue;
+									}
+									final StatementPattern sp2 = (StatementPattern) cand2;
+									final Var p2 = sp2.getPredicateVar();
+									if (p2 == null || !p2.hasValue() || !(p2.getValue() instanceof IRI)) {
+										continue;
+									}
+									if (!contextsCompatible(ctx, getContextVarSafe(sp2))) {
+										continue;
+									}
+									final Var mid = sp.getObjectVar();
+									final boolean forward = sameVar(mid, sp2.getSubjectVar());
+									final boolean inverse = !forward && sameVar(mid, sp2.getObjectVar());
+									if (!forward && !inverse) {
+										continue;
+									}
+
+									final java.util.List<IRI> npsList = new ArrayList<>(ns.iris);
+									// Preserve original textual order for AND-of-inequalities: flattenAnd returns
+									// left-to-right.
+									// For NOT IN, keep argument order as-is.
+									if (!(f.getCondition() instanceof Not
+											&& ((Not) f.getCondition()).getArg() instanceof ListMemberOperator)) {
+										// AND-of-!= case may come reversed from algebra; try to match original text by
+										// reversing once.
+										java.util.Collections.reverse(npsList);
+									}
+									final PathNode nps = new PathNegSet(npsList);
+									final PathNode step2 = new PathAtom((IRI) p2.getValue(), inverse);
+									final PathNode seq = new PathSeq(java.util.Arrays.asList(nps, step2));
+
+									final String subjStr = s;
+									final String objStr = renderPossiblyOverridden(
+											forward ? sp2.getObjectVar() : sp2.getSubjectVar(), overrides);
+									emitLine.accept(gRef, subjStr + " " + seq.render() + " " + objStr + " .");
+
+									consumed.add(f);
+									consumed.add(sp);
+									consumed.add(sp2);
+									chained = true;
+									break;
+								}
+
+								if (!chained) {
+									final java.util.List<IRI> npsList = new ArrayList<>(ns.iris);
+									if (!(f.getCondition() instanceof Not
+											&& ((Not) f.getCondition()).getArg() instanceof ListMemberOperator)) {
+										java.util.Collections.reverse(npsList);
+									}
+									final String nps = new PathNegSet(npsList).render();
+									emitLine.accept(gRef, s + " " + nps + " " + o + " .");
+									consumed.add(f);
+									consumed.add(sp);
+								}
 								continue;
 							}
 						}
@@ -3175,8 +3232,11 @@ public class TupleExprIRRenderer {
 
 						final PathNode step1 = new PathAtom((IRI) p1.getValue(), step1Inverse);
 						final java.util.List<IRI> npsIris = new ArrayList<>(ns.iris);
-						// Heuristic: reverse flattened AND order to match original textual NPS order
-						java.util.Collections.reverse(npsIris);
+						// Reverse only for AND-of-!= (not for NOT IN)
+						if (!(f.getCondition() instanceof Not
+								&& ((Not) f.getCondition()).getArg() instanceof ListMemberOperator)) {
+							java.util.Collections.reverse(npsIris);
+						}
 						final PathNode npsNode = new PathNegSet(npsIris);
 						final List<PathNode> parts = new ArrayList<>();
 						parts.add(step1);
@@ -3822,7 +3882,6 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public String render() {
-			// Preserve encounter order (closest to original query intent)
 			final List<String> parts = iris.stream()
 					.map(TupleExprIRRenderer.this::renderIRI)
 					.collect(Collectors.toList());

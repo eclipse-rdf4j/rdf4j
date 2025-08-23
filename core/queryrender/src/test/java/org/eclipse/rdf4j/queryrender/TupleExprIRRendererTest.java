@@ -779,8 +779,10 @@ public class TupleExprIRRendererTest {
 				"      }\n" +
 				"    }\n" +
 				"  }\n" +
-				"  GRAPH ?g { ?u !(foaf:knows|ex:age) ?any }\n" +
-				"  FILTER (EXISTS { GRAPH ?g { ?u foaf:name ?n . } })\n\n" +
+				"  GRAPH ?g {\n" +
+				"    ?u !(ex:age|foaf:knows) ?any .\n" +
+				"  }\n" +
+				"  FILTER (EXISTS { GRAPH ?g { ?u foaf:name ?n . } })\n" +
 				"}\n" +
 				"GROUP BY ?u ?g\n" +
 				"ORDER BY DESC(?pc)\n" +
@@ -1096,7 +1098,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?g ?a ?x\n" +
 				"WHERE {\n" +
 				"  GRAPH ?g {\n" +
-				"    ?a !(rdf:type|ex:age)/foaf:name ?x.\n" +
+				"    ?a !(rdf:type|ex:age)/foaf:name ?x .\n" +
 				"  }\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
