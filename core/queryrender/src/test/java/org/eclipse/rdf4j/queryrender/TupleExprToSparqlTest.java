@@ -24,6 +24,8 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.queryrender.sparql.RenderStyle;
+import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprToSparql;
 import org.junit.jupiter.api.Test;
 
@@ -75,7 +77,19 @@ public class TupleExprToSparqlTest {
 			return new TupleExprToSparql(cfg).renderAsk(algebra, null);
 		}
 
-		return new TupleExprToSparql(cfg).render(algebra);
+		RenderStyle style = new RenderStyle();
+		style.prefixes.put("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#");
+		style.prefixes.put("rdfs", "http://www.w3.org/2000/01/rdf-schema#");
+		style.prefixes.put("foaf", "http://xmlns.com/foaf/0.1/");
+		style.prefixes.put("ex", "http://ex/");
+		style.prefixes.put("xsd", "http://www.w3.org/2001/XMLSchema#");
+		style.typeAlias = RenderStyle.TypeAlias.SMART; // keep rdf:type instead of 'a' when desired
+		style.valuesPreserveOrder = true;
+
+		TupleExprIRRenderer r = new TupleExprIRRenderer(style);
+
+//		return new TupleExprToSparql(cfg).render(algebra);
+		return r.render(algebra, null);
 	}
 
 	/** Round-trip twice and assert the renderer is a fixed point (idempotent). */
@@ -996,13 +1010,14 @@ public class TupleExprToSparqlTest {
 
 	@Test
 	void mega_wide_values_matrix_typed_and_undef() {
-		String q = "SELECT ?s ?p ?o ?tag ?n ?len WHERE {\n" +
+		String q = "SELECT ?s ?p ?o ?tag ?n (IF(BOUND(?o), STRLEN(STR(?o)), -1) AS ?len)\n" +
+				"WHERE {\n" +
 				"  VALUES (?s ?p ?o ?tag ?n) {\n" +
 				"    (ex:a foaf:name \"Ann\"@en \"A\" 1)\n" +
 				"    (ex:b foaf:name \"Böb\"@de \"B\" 2)\n" +
 				"    (ex:c foaf:name \"Carol\"@en-US \"C\" 3)\n" +
-				"    (ex:d ex:age \"42\"^^xsd:integer \"D\" 4)\n" +
-				"    (ex:e ex:age \"3.14\"^^xsd:decimal \"E\" 5)\n" +
+				"    (ex:d ex:age 42 \"D\" 4)\n" +
+				"    (ex:e ex:age 3.14 \"E\" 5)\n" +
 				"    (ex:f foaf:name \"Δημήτρης\"@el \"F\" 6)\n" +
 				"    (ex:g foaf:name \"Иван\"@ru \"G\" 7)\n" +
 				"    (ex:h foaf:name \"李\"@zh \"H\" 8)\n" +
@@ -1011,11 +1026,12 @@ public class TupleExprToSparqlTest {
 				"    (UNDEF ex:age UNDEF \"U\" UNDEF)\n" +
 				"    (ex:k foaf:name \"multi\\nline\" \"M\" 11)\n" +
 				"    (ex:l foaf:name \"quote\\\"test\" \"Q\" 12)\n" +
-				"    (ex:m foaf:name \"smile🙂\" \"S\" 13)\n" +
-				"    (ex:n foaf:name \"emoji😀\" \"E\" 14)\n" +
+				"    (ex:m foaf:name \"smile\uD83D\uDE42\" \"S\" 13)\n" +
+				"    (ex:n foaf:name \"emoji\uD83D\uDE00\" \"E\" 14)\n" +
 				"  }\n" +
-				"  OPTIONAL { ?s ?p ?o }\n" +
-				"  BIND(IF(BOUND(?o), STRLEN(STR(?o)), -1) AS ?len)\n" +
+				"  OPTIONAL {\n" +
+				"    ?s ?p ?o .\n" +
+				"  }\n" +
 				"}\n" +
 				"ORDER BY ?tag ?n\n" +
 				"LIMIT 500";
