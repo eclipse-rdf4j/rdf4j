@@ -1220,7 +1220,7 @@ public class TupleExprIRRenderer {
 		private final StringBuilder out;
 		private final TupleExprIRRenderer r;
 		private final Config cfg;
-		@SuppressWarnings("unused")
+
 		private final Normalized norm;
 		private final String indentUnit;
 		private int level = 0;
@@ -2099,7 +2099,7 @@ public class TupleExprIRRenderer {
 	/**
 	 * Extract a simple predicate IRI from the path expression (StatementPattern with constant predicate).
 	 */
-	@SuppressWarnings("unused")
+
 	private String renderPathAtom(final TupleExpr pathExpr) {
 		if (pathExpr instanceof StatementPattern) {
 			final StatementPattern sp = (StatementPattern) pathExpr;
@@ -2530,7 +2530,6 @@ public class TupleExprIRRenderer {
 		});
 	}
 
-	@SuppressWarnings("unused")
 	private static Set<String> globalVarsToPreserve(final Normalized n) {
 		final Set<String> s = new java.util.HashSet<>();
 		if (n == null) {
@@ -2852,6 +2851,150 @@ public class TupleExprIRRenderer {
 				cur.visit(bp);
 				consumed.add(cur);
 				continue;
+			}
+
+			// ---- SP anchored rewrites with a Negated Property Set (NPS) at position i ----
+			if (cur instanceof StatementPattern) {
+				final StatementPattern sp1 = (StatementPattern) cur;
+				final Var p1 = sp1.getPredicateVar();
+				if (p1 != null && p1.hasValue() && p1.getValue() instanceof IRI) {
+					// Try to fuse SP + (Filter SP with != IRIs) [+ optional trailing SP]
+					for (int j = i + 1; j < nodes.size(); j++) {
+						final TupleExpr midNode = nodes.get(j);
+						if (consumed.contains(midNode) || !(midNode instanceof Filter)) {
+							continue;
+						}
+						final Filter f = (Filter) midNode;
+						if (!(f.getArg() instanceof StatementPattern)) {
+							continue;
+						}
+						final StatementPattern spNps = (StatementPattern) f.getArg();
+						final Var pVarNps = spNps.getPredicateVar();
+						if (pVarNps == null || pVarNps.hasValue() || getContextVarSafe(spNps) != null) {
+							continue;
+						}
+						final NegatedSet ns = parseNegatedSet(f.getCondition());
+						if (ns == null || ns.varName == null || !ns.varName.equals(pVarNps.getName())
+								|| ns.iris.isEmpty()) {
+							continue;
+						}
+
+						// Determine chaining orientation using anonymous bridge var alignment
+						final Var s1 = sp1.getSubjectVar(), o1 = sp1.getObjectVar();
+						final Var sN = spNps.getSubjectVar(), oN = spNps.getObjectVar();
+
+						Var bridge = null;
+						boolean step1Inverse = false;
+						Var chainStart = null;
+						Var chainMid = null;
+						// Match on NPS start
+						if (sameVar(o1, sN)) {
+							bridge = o1;
+							step1Inverse = false;
+							chainStart = s1;
+							chainMid = oN;
+						} else if (sameVar(s1, sN)) {
+							bridge = s1;
+							step1Inverse = true;
+							chainStart = o1;
+							chainMid = oN;
+						}
+						// Or match on NPS end
+						else if (sameVar(o1, oN)) {
+							bridge = o1;
+							step1Inverse = false;
+							chainStart = s1;
+							chainMid = sN;
+						} else if (sameVar(s1, oN)) {
+							bridge = s1;
+							step1Inverse = true;
+							chainStart = o1;
+							chainMid = sN;
+						}
+
+						if (bridge == null || !isAnonPathVar(bridge)) {
+							continue;
+						}
+
+						// Optionally look for a trailing SP to create a 3-step chain
+						StatementPattern sp3 = null;
+						int kChosen = -1;
+						for (int k = j + 1; k < nodes.size(); k++) {
+							final TupleExpr cand = nodes.get(k);
+							if (consumed.contains(cand) || !(cand instanceof StatementPattern)) {
+								continue;
+							}
+							final StatementPattern spt = (StatementPattern) cand;
+							final Var p3 = spt.getPredicateVar();
+							if (p3 == null || !p3.hasValue() || !(p3.getValue() instanceof IRI)) {
+								continue;
+							}
+							// Must connect to chainMid
+							if (sameVar(chainMid, spt.getSubjectVar()) || sameVar(chainMid, spt.getObjectVar())) {
+								sp3 = spt;
+								kChosen = k;
+								break;
+							}
+						}
+
+						// Determine victim set and check for var leakage
+						final Set<TupleExpr> willConsume = new HashSet<>();
+						willConsume.add(sp1);
+						willConsume.add(f);
+						willConsume.add(spNps);
+						if (sp3 != null) {
+							willConsume.add(sp3);
+						}
+						if (leaksOutside.apply(willConsume, freeVarName(bridge))) {
+							continue;
+						}
+
+						// Build path: step1 / !(ns) [/ step3]
+						flushPL.run();
+						clearPL.run();
+
+						final PathNode step1 = new PathAtom((IRI) p1.getValue(), step1Inverse);
+						final java.util.List<IRI> npsIris = new ArrayList<>(ns.iris);
+						// For chained path readability, print negated set in ascending prefix order
+						npsIris.sort(java.util.Comparator.comparing(TupleExprIRRenderer.this::renderIRI));
+						final PathNode npsNode = new PathNegSet(npsIris);
+						final List<PathNode> parts = new ArrayList<>();
+						parts.add(step1);
+						parts.add(npsNode);
+						Var chainEnd = chainMid;
+						if (sp3 != null) {
+							final Var p3 = sp3.getPredicateVar();
+							final boolean inv3 = sameVar(chainMid, sp3.getObjectVar());
+							parts.add(new PathAtom((IRI) p3.getValue(), inv3));
+							chainEnd = inv3 ? sp3.getSubjectVar() : sp3.getObjectVar();
+						}
+						final PathNode seq = new PathSeq(parts);
+						boolean needsOuterParens = false;
+						for (PathNode pn : parts) {
+							if (pn instanceof PathNegSet) {
+								needsOuterParens = true;
+								break;
+							}
+							if (pn instanceof PathAtom && ((PathAtom) pn).inverse) {
+								needsOuterParens = true;
+								break;
+							}
+						}
+
+						final String subjStr = renderPossiblyOverridden(chainStart, overrides);
+						final String objStr = renderPossiblyOverridden(chainEnd, overrides);
+						final String renderedPath = needsOuterParens ? "(" + seq.render() + ")" : seq.render();
+						bp.line(subjStr + " " + renderedPath + " " + objStr + " .");
+
+						consumed.add(sp1);
+						consumed.add(f);
+						consumed.add(spNps);
+						if (sp3 != null) {
+							consumed.add(sp3);
+						}
+						continue; // move to next i; cur handled
+					}
+				}
 			}
 
 			// ---- ALP anchored rewrites (A/B + D) at position i ----
@@ -3213,6 +3356,9 @@ public class TupleExprIRRenderer {
 			}
 
 			// ---- Fallback for other node types ----
+			if (consumed.contains(cur)) {
+				continue;
+			}
 			flushPL.run();
 			clearPL.run();
 			cur.visit(bp);
@@ -3382,7 +3528,6 @@ public class TupleExprIRRenderer {
 		}
 	}
 
-	@SuppressWarnings("unused")
 	private final class PathNegSet implements PathNode {
 		final List<IRI> iris;
 
@@ -3392,10 +3537,10 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public String render() {
-			// Canonicalize order for stable output
+			// Canonicalize order for stable output (rdf:type often first)
 			final List<String> parts = iris.stream()
 					.map(TupleExprIRRenderer.this::renderIRI)
-					.sorted(java.util.Collections.reverseOrder()) // e.g. rdf:type before ex:...
+					.sorted(java.util.Collections.reverseOrder())
 					.collect(Collectors.toList());
 			return "!(" + String.join("|", parts) + ")";
 		}
