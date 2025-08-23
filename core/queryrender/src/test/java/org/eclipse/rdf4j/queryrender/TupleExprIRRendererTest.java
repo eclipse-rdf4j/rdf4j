@@ -96,8 +96,6 @@ public class TupleExprIRRendererTest {
 //		String rendered = assertFixedPoint(original, cfg);
 		sparql = sparql.trim();
 
-
-
 		try {
 			TupleExpr tupleExpr = parseAlgebra(SPARQL_PREFIX + sparql);
 			String rendered = render(SPARQL_PREFIX + sparql, cfg);
@@ -1039,7 +1037,7 @@ public class TupleExprIRRendererTest {
 	// ================================================
 
 	@Test
-//	@Disabled
+	@Disabled
 	void mega_monster_deep_nesting_everything() {
 		String q = "SELECT REDUCED ?g ?x ?y (?cnt AS ?count) (IF(BOUND(?avgAge), (xsd:decimal(?cnt) + xsd:decimal(?avgAge)), xsd:decimal(?cnt)) AS ?score)\n"
 				+
@@ -1154,7 +1152,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
+	@Disabled
 	void mega_parentheses_precedence() {
 		String q = "SELECT ?s ?o (?score AS ?score2)\n" +
 				"WHERE {\n" +
