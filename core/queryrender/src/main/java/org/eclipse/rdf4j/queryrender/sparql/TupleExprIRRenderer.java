@@ -3338,8 +3338,18 @@ public class TupleExprIRRenderer {
 				}
 				return builtin + "(" + args + ")";
 			}
-			// Fallback: render as IRI call
-			return "<" + uri + ">(" + args + ")";
+			// Fallback: render as IRI call with prefix compaction if available
+			if (uri != null) {
+				try {
+					org.eclipse.rdf4j.model.IRI iri = org.eclipse.rdf4j.model.impl.SimpleValueFactory.getInstance()
+							.createIRI(uri);
+					return renderIRI(iri) + "(" + args + ")";
+				} catch (IllegalArgumentException ignore) {
+					// keep angle-bracketed IRI if parsing fails
+					return "<" + uri + ">(" + args + ")";
+				}
+			}
+			return "()"; // unreachable
 		}
 
 		// BNODE() / BNODE(<expr>)
