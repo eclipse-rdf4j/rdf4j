@@ -1,3 +1,4 @@
+
 /*******************************************************************************
  * Copyright (c) 2025 Eclipse RDF4J contributors.
  *
@@ -575,7 +576,6 @@ public class TupleExprIRRenderer {
 					openBlock();
 					printLines(mergedLines); // recursive property-list compaction inside
 					closeBlock();
-					out.append('\n');
 					i = j;
 					continue;
 				}
@@ -666,7 +666,6 @@ public class TupleExprIRRenderer {
 					openBlock();
 					printLines(branches.get(i).getLines());
 					closeBlock();
-					out.append('\n');
 					if (i + 1 < branches.size()) {
 						indent();
 						line("UNION");
@@ -685,7 +684,6 @@ public class TupleExprIRRenderer {
 						out.append("()\n");
 					}
 					closeBlock();
-					out.append('\n');
 				} else {
 					out.append("VALUES (");
 					for (int i = 0; i < v.getVarNames().size(); i++) {
@@ -731,7 +729,6 @@ public class TupleExprIRRenderer {
 				openBlock();
 				printLines(svc.getWhere().getLines());
 				closeBlock();
-				out.append('\n');
 				return;
 			}
 			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus) {
@@ -1146,6 +1143,17 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(final Projection p) {
+			// Try RDF4J's zero-or-one path subselect expansion
+			ZeroOrOneDirect z1 = parseZeroOrOneProjectionDirect(p);
+			if (z1 != null) {
+				final String s = renderVarOrValue(z1.start);
+				final String o = renderVarOrValue(z1.end);
+				final PathNode q = new PathQuant(new PathAtom(z1.pred, false), 0, 1);
+				final String expr = q.render();
+				where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple(s, expr, o));
+				return;
+			}
+
 			// Nested subselect: convert to typed IR
 			org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect sub = toIRSelect(p);
 			where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect(sub));
