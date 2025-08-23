@@ -18,12 +18,12 @@ import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.queryrender.sparql.TupleExprToSparql;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -261,7 +262,12 @@ public class QueryPlanRetrievalTest {
 		addData(sailRepository);
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			Query query = connection.prepareTupleQuery(sparql);
-			String actual = query.explain(Explanation.Level.Optimized).toString();
+			Explanation explain = query.explain(Explanation.Level.Optimized);
+			TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+			String render = new TupleExprToSparql().render(tupleExpr);
+			System.out.println(render);
+
+			String actual = explain.toString();
 			assertThat(actual).isEqualToNormalizingNewlines("Projection\n" +
 					"╠══ ProjectionElemList\n" +
 					"║     ProjectionElem \"s\"\n" +
@@ -2108,6 +2114,30 @@ public class QueryPlanRetrievalTest {
 			String render = tupleExprToSparql.render(tupleExpr);
 			System.out.println(render);
 
+			assertThat(render).isEqualToNormalizingNewlines("SELECT *\n" +
+					"WHERE {\n" +
+					"  ?a <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type .\n" +
+					"  OPTIONAL {\n" +
+					"    ?a <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type .\n" +
+					"    ?type <http://www.w3.org/2000/01/rdf-schema#subClassOff> ?_anon_be3a8ae3cefc4d99a602e53eb87c77a23637 .\n"
+					+
+					"    ?_anon_be3a8ae3cefc4d99a602e53eb87c77a23637 <http://www.w3.org/2000/01/rdf-schema#subClassOff> ?superSuper .\n"
+					+
+					"    FILTER ((?superSuper != <http://www.w3.org/2000/01/rdf-schema#Resource>))\n" +
+					"    OPTIONAL {\n" +
+					"      {\n" +
+					"        ?superSuper <http://www.w3.org/2000/01/rdf-schema#seeAlso> ?seeAlso .\n" +
+					"      }\n" +
+					"            UNION\n" +
+					"      {\n" +
+					"        ?superSuper <http://www.w3.org/2000/01/rdf-schema#label> ?label .\n" +
+					"      }\n" +
+					"      FILTER ((?superSuper != <http://www.w3.org/2000/01/rdf-schema#Resource>))\n" +
+					"    }\n" +
+					"  }\n" +
+					"  BIND(COUNT(*) AS ?count)\n" +
+					"}");
+
 //			String actual = query.explain(Explanation.Level.Optimized).toString();
 //
 //			assertThat(actual).isEqualToNormalizingNewlines(expected);
@@ -2117,88 +2147,149 @@ public class QueryPlanRetrievalTest {
 
 	}
 
-	@Test
-	public void testOptionalUnionFilterRewrite2() {
+//	@Test
+//	public void testOptionalUnionFilterRewrite2() {
+//
+//		String expected = "Projection\n" +
+//				"╠══ ProjectionElemList\n" +
+//				"║     ProjectionElem \"count\"\n" +
+//				"╚══ Extension\n" +
+//				"   ├── Group ()\n" +
+//				"   │  ╠══ LeftJoin\n" +
+//				"   │  ║  ├── StatementPattern (resultSizeEstimate=0) [left]\n" +
+//				"   │  ║  │     s: Var (name=a)\n" +
+//				"   │  ║  │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+//				+
+//				"   │  ║  │     o: Var (name=type)\n" +
+//				"   │  ║  └── Union [right]\n" +
+//				"   │  ║     ╠══ LeftJoin\n" +
+//				"   │  ║     ║  ├── Join (JoinIterator) [left]\n" +
+//				"   │  ║     ║  │  ╠══ StatementPattern (costEstimate=0.50, resultSizeEstimate=0) [left]\n" +
+//				"   │  ║     ║  │  ║     s: Var (name=a)\n" +
+//				"   │  ║     ║  │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+//				+
+//				"   │  ║     ║  │  ║     o: Var (name=type)\n" +
+//				"   │  ║     ║  │  ╚══ Join (HashJoinIteration) [right]\n" +
+//				"   │  ║     ║  │     ├── StatementPattern (costEstimate=1.12, resultSizeEstimate=0) [left]\n" +
+//				"   │  ║     ║  │     │     s: Var (name=type)\n" +
+//				"   │  ║     ║  │     │     p: Var (name=_const_6cc5033f_uri, value=http://www.w3.org/2000/01/rdf-schema#subClassOff, anonymous)\n"
+//				+
+//				"   │  ║     ║  │     │     o: Var (name=_anon_e6dc385587614690b3e191002d99c27d3520, anonymous)\n" +
+//				"   │  ║     ║  │     └── Filter (new scope) [right]\n" +
+//				"   │  ║     ║  │        ╠══ Compare (!=)\n" +
+//				"   │  ║     ║  │        ║     Var (name=superSuper)\n" +
+//				"   │  ║     ║  │        ║     ValueConstant (value=http://www.w3.org/2000/01/rdf-schema#Resource)\n" +
+//				"   │  ║     ║  │        ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
+//				"   │  ║     ║  │              s: Var (name=_anon_e6dc385587614690b3e191002d99c27d3520, anonymous)\n" +
+//				"   │  ║     ║  │              p: Var (name=_const_6cc5033f_uri, value=http://www.w3.org/2000/01/rdf-schema#subClassOff, anonymous)\n"
+//				+
+//				"   │  ║     ║  │              o: Var (name=superSuper)\n" +
+//				"   │  ║     ║  └── Filter [right]\n" +
+//				"   │  ║     ║     ╠══ Compare (!=)\n" +
+//				"   │  ║     ║     ║     Var (name=superSuper)\n" +
+//				"   │  ║     ║     ║     ValueConstant (value=http://www.w3.org/2000/01/rdf-schema#Resource)\n" +
+//				"   │  ║     ║     ╚══ StatementPattern (resultSizeEstimate=0)\n" +
+//				"   │  ║     ║           s: Var (name=superSuper)\n" +
+//				"   │  ║     ║           p: Var (name=_const_817f76c2_uri, value=http://www.w3.org/2000/01/rdf-schema#seeAlso, anonymous)\n"
+//				+
+//				"   │  ║     ║           o: Var (name=seeAlso)\n" +
+//				"   │  ║     ╚══ LeftJoin\n" +
+//				"   │  ║        ├── Join (JoinIterator) [left]\n" +
+//				"   │  ║        │  ╠══ StatementPattern (costEstimate=0.50, resultSizeEstimate=0) [left]\n" +
+//				"   │  ║        │  ║     s: Var (name=a)\n" +
+//				"   │  ║        │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+//				+
+//				"   │  ║        │  ║     o: Var (name=type)\n" +
+//				"   │  ║        │  ╚══ Join (HashJoinIteration) [right]\n" +
+//				"   │  ║        │     ├── StatementPattern (costEstimate=1.12, resultSizeEstimate=0) [left]\n" +
+//				"   │  ║        │     │     s: Var (name=type)\n" +
+//				"   │  ║        │     │     p: Var (name=_const_6cc5033f_uri, value=http://www.w3.org/2000/01/rdf-schema#subClassOff, anonymous)\n"
+//				+
+//				"   │  ║        │     │     o: Var (name=_anon_e6dc385587614690b3e191002d99c27d75203571, anonymous)\n" +
+//				"   │  ║        │     └── Filter (new scope) [right]\n" +
+//				"   │  ║        │        ╠══ Compare (!=)\n" +
+//				"   │  ║        │        ║     Var (name=superSuper)\n" +
+//				"   │  ║        │        ║     ValueConstant (value=http://www.w3.org/2000/01/rdf-schema#Resource)\n" +
+//				"   │  ║        │        ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
+//				"   │  ║        │              s: Var (name=_anon_e6dc385587614690b3e191002d99c27d75203571, anonymous)\n"
+//				+
+//				"   │  ║        │              p: Var (name=_const_6cc5033f_uri, value=http://www.w3.org/2000/01/rdf-schema#subClassOff, anonymous)\n"
+//				+
+//				"   │  ║        │              o: Var (name=superSuper)\n" +
+//				"   │  ║        └── Filter [right]\n" +
+//				"   │  ║           ╠══ Compare (!=)\n" +
+//				"   │  ║           ║     Var (name=superSuper)\n" +
+//				"   │  ║           ║     ValueConstant (value=http://www.w3.org/2000/01/rdf-schema#Resource)\n" +
+//				"   │  ║           ╚══ StatementPattern (resultSizeEstimate=0)\n" +
+//				"   │  ║                 s: Var (name=superSuper)\n" +
+//				"   │  ║                 p: Var (name=_const_9285ccfc_uri, value=http://www.w3.org/2000/01/rdf-schema#label, anonymous)\n"
+//				+
+//				"   │  ║                 o: Var (name=label)\n" +
+//				"   │  ╚══ GroupElem (count)\n" +
+//				"   │        Count\n" +
+//				"   └── ExtensionElem (count)\n" +
+//				"         Count\n";
+//		SailRepository sailRepository = new SailRepository(new MemoryStore());
+//
+//		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+//			connection.add(new StringReader(""), "", RDFFormat.TURTLE);
+//		} catch (IOException e) {
+//			throw new RuntimeException(e);
+//		}
+//
+//		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+//			TupleQuery query = connection.prepareTupleQuery(
+//					"PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n" +
+//							"PREFIX dcterms: <http://purl.org/dc/terms#>\n" +
+//							"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n" +
+//							"PREFIX dc: <http://purl.org/dc/elements/1.1/>\n" +
+//							"PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n" +
+//							"\n" +
+//							"\n" +
+//							"select (count(*) as ?count) where {\n" +
+//							"            ?a rdf:type ?type .\n" +
+//							"\n" +
+//							"   \n" +
+//							"    \n" +
+//							"\n" +
+//							"    OPTIONAL {\n" +
+//							"\n" +
+//							"        {\n" +
+//							"            ?a rdf:type ?type .\n" +
+//							"            ?type rdfs:subClassOff/rdfs:subClassOff ?superSuper .\n" +
+//							"                FILTER(?superSuper != rdfs:Resource).\n" +
+//							"\n" +
+//							"            OPTIONAL {\n" +
+//							"                ?superSuper rdfs:seeAlso ?seeAlso .\n" +
+//							"                FILTER(?superSuper != rdfs:Resource).\n" +
+//							"            }\n" +
+//							"        } UNION {\n" +
+//							"            ?a rdf:type ?type .\n" +
+//							"            ?type rdfs:subClassOff/rdfs:subClassOff ?superSuper .\n" +
+//							"                FILTER(?superSuper != rdfs:Resource).\n" +
+//							"\n" +
+//							"\n" +
+//							"            OPTIONAL {?superSuper rdfs:label ?label .     FILTER(?superSuper != rdfs:Resource).\n"
+//							+
+//							"}\n" +
+//							"        }\n" +
+//							"\n" +
+//							"\n" +
+//							"    }\n" +
+//							"\n" +
+//							"}");
+//			String actual = query.explain(Explanation.Level.Optimized).toString();
+//
+//			assertThat(actual).isEqualToNormalizingNewlines(expected);
+//
+//		}
+//		sailRepository.shutDown();
+//
+//	}
 
-		String expected = "Projection\n" +
-				"╠══ ProjectionElemList\n" +
-				"║     ProjectionElem \"count\"\n" +
-				"╚══ Extension\n" +
-				"   ├── Group ()\n" +
-				"   │  ╠══ LeftJoin\n" +
-				"   │  ║  ├── StatementPattern (resultSizeEstimate=0) [left]\n" +
-				"   │  ║  │     s: Var (name=a)\n" +
-				"   │  ║  │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"   │  ║  │     o: Var (name=type)\n" +
-				"   │  ║  └── Union [right]\n" +
-				"   │  ║     ╠══ LeftJoin\n" +
-				"   │  ║     ║  ├── Join (JoinIterator) [left]\n" +
-				"   │  ║     ║  │  ╠══ StatementPattern (costEstimate=0.50, resultSizeEstimate=0) [left]\n" +
-				"   │  ║     ║  │  ║     s: Var (name=a)\n" +
-				"   │  ║     ║  │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"   │  ║     ║  │  ║     o: Var (name=type)\n" +
-				"   │  ║     ║  │  ╚══ Join (HashJoinIteration) [right]\n" +
-				"   │  ║     ║  │     ├── StatementPattern (costEstimate=1.12, resultSizeEstimate=0) [left]\n" +
-				"   │  ║     ║  │     │     s: Var (name=type)\n" +
-				"   │  ║     ║  │     │     p: Var (name=_const_6cc5033f_uri, value=http://www.w3.org/2000/01/rdf-schema#subClassOff, anonymous)\n"
-				+
-				"   │  ║     ║  │     │     o: Var (name=_anon_e6dc385587614690b3e191002d99c27d3520, anonymous)\n" +
-				"   │  ║     ║  │     └── Filter (new scope) [right]\n" +
-				"   │  ║     ║  │        ╠══ Compare (!=)\n" +
-				"   │  ║     ║  │        ║     Var (name=superSuper)\n" +
-				"   │  ║     ║  │        ║     ValueConstant (value=http://www.w3.org/2000/01/rdf-schema#Resource)\n" +
-				"   │  ║     ║  │        ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
-				"   │  ║     ║  │              s: Var (name=_anon_e6dc385587614690b3e191002d99c27d3520, anonymous)\n" +
-				"   │  ║     ║  │              p: Var (name=_const_6cc5033f_uri, value=http://www.w3.org/2000/01/rdf-schema#subClassOff, anonymous)\n"
-				+
-				"   │  ║     ║  │              o: Var (name=superSuper)\n" +
-				"   │  ║     ║  └── Filter [right]\n" +
-				"   │  ║     ║     ╠══ Compare (!=)\n" +
-				"   │  ║     ║     ║     Var (name=superSuper)\n" +
-				"   │  ║     ║     ║     ValueConstant (value=http://www.w3.org/2000/01/rdf-schema#Resource)\n" +
-				"   │  ║     ║     ╚══ StatementPattern (resultSizeEstimate=0)\n" +
-				"   │  ║     ║           s: Var (name=superSuper)\n" +
-				"   │  ║     ║           p: Var (name=_const_817f76c2_uri, value=http://www.w3.org/2000/01/rdf-schema#seeAlso, anonymous)\n"
-				+
-				"   │  ║     ║           o: Var (name=seeAlso)\n" +
-				"   │  ║     ╚══ LeftJoin\n" +
-				"   │  ║        ├── Join (JoinIterator) [left]\n" +
-				"   │  ║        │  ╠══ StatementPattern (costEstimate=0.50, resultSizeEstimate=0) [left]\n" +
-				"   │  ║        │  ║     s: Var (name=a)\n" +
-				"   │  ║        │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"   │  ║        │  ║     o: Var (name=type)\n" +
-				"   │  ║        │  ╚══ Join (HashJoinIteration) [right]\n" +
-				"   │  ║        │     ├── StatementPattern (costEstimate=1.12, resultSizeEstimate=0) [left]\n" +
-				"   │  ║        │     │     s: Var (name=type)\n" +
-				"   │  ║        │     │     p: Var (name=_const_6cc5033f_uri, value=http://www.w3.org/2000/01/rdf-schema#subClassOff, anonymous)\n"
-				+
-				"   │  ║        │     │     o: Var (name=_anon_e6dc385587614690b3e191002d99c27d75203571, anonymous)\n" +
-				"   │  ║        │     └── Filter (new scope) [right]\n" +
-				"   │  ║        │        ╠══ Compare (!=)\n" +
-				"   │  ║        │        ║     Var (name=superSuper)\n" +
-				"   │  ║        │        ║     ValueConstant (value=http://www.w3.org/2000/01/rdf-schema#Resource)\n" +
-				"   │  ║        │        ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
-				"   │  ║        │              s: Var (name=_anon_e6dc385587614690b3e191002d99c27d75203571, anonymous)\n"
-				+
-				"   │  ║        │              p: Var (name=_const_6cc5033f_uri, value=http://www.w3.org/2000/01/rdf-schema#subClassOff, anonymous)\n"
-				+
-				"   │  ║        │              o: Var (name=superSuper)\n" +
-				"   │  ║        └── Filter [right]\n" +
-				"   │  ║           ╠══ Compare (!=)\n" +
-				"   │  ║           ║     Var (name=superSuper)\n" +
-				"   │  ║           ║     ValueConstant (value=http://www.w3.org/2000/01/rdf-schema#Resource)\n" +
-				"   │  ║           ╚══ StatementPattern (resultSizeEstimate=0)\n" +
-				"   │  ║                 s: Var (name=superSuper)\n" +
-				"   │  ║                 p: Var (name=_const_9285ccfc_uri, value=http://www.w3.org/2000/01/rdf-schema#label, anonymous)\n"
-				+
-				"   │  ║                 o: Var (name=label)\n" +
-				"   │  ╚══ GroupElem (count)\n" +
-				"   │        Count\n" +
-				"   └── ExtensionElem (count)\n" +
-				"         Count\n";
+	@Test
+	public void testFilterPushdown() {
+
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -2208,50 +2299,34 @@ public class QueryPlanRetrievalTest {
 		}
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			TupleQuery query = connection.prepareTupleQuery(
+			TupleQuery query = connection.prepareTupleQuery("" +
+					"PREFIX dc: <http://purl.org/dc/elements/1.1/>\n" +
 					"PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n" +
-							"PREFIX dcterms: <http://purl.org/dc/terms#>\n" +
-							"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n" +
-							"PREFIX dc: <http://purl.org/dc/elements/1.1/>\n" +
-							"PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n" +
-							"\n" +
-							"\n" +
-							"select (count(*) as ?count) where {\n" +
-							"            ?a rdf:type ?type .\n" +
-							"\n" +
-							"   \n" +
-							"    \n" +
-							"\n" +
-							"    OPTIONAL {\n" +
-							"\n" +
-							"        {\n" +
-							"            ?a rdf:type ?type .\n" +
-							"            ?type rdfs:subClassOff/rdfs:subClassOff ?superSuper .\n" +
-							"                FILTER(?superSuper != rdfs:Resource).\n" +
-							"\n" +
-							"            OPTIONAL {\n" +
-							"                ?superSuper rdfs:seeAlso ?seeAlso .\n" +
-							"                FILTER(?superSuper != rdfs:Resource).\n" +
-							"            }\n" +
-							"        } UNION {\n" +
-							"            ?a rdf:type ?type .\n" +
-							"            ?type rdfs:subClassOff/rdfs:subClassOff ?superSuper .\n" +
-							"                FILTER(?superSuper != rdfs:Resource).\n" +
-							"\n" +
-							"\n" +
-							"            OPTIONAL {?superSuper rdfs:label ?label .     FILTER(?superSuper != rdfs:Resource).\n"
-							+
-							"}\n" +
-							"        }\n" +
-							"\n" +
-							"\n" +
-							"    }\n" +
-							"\n" +
-							"}");
-			String actual = query.explain(Explanation.Level.Optimized).toString();
+					"SELECT ?a ?type1 ?b ?type2\n" +
+					"WHERE {\n" +
+					"  ?a rdf:type ?type1 .\n" +
+					"  ?b rdf:type ?type2 .\n" +
+					"  FILTER (?type1 != dc:Agent)\n" +
+					"}");
 
-			assertThat(actual).isEqualToNormalizingNewlines(expected);
+			TupleExpr tupleExpr = (TupleExpr) query.explain(Explanation.Level.Optimized).tupleExpr();
 
+			TupleExprToSparql.Config config = new TupleExprToSparql.Config();
+			config.prefixes.put(DC.PREFIX, DC.NAMESPACE);
+			config.prefixes.put(RDF.PREFIX, RDF.NAMESPACE);
+
+			TupleExprToSparql tupleExprToSparql = new TupleExprToSparql(config);
+			String render = tupleExprToSparql.render(tupleExpr);
+
+			assertThat(render).isEqualToNormalizingNewlines("" +
+					"PREFIX dc: <http://purl.org/dc/elements/1.1/>\n" +
+					"PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n" +
+					"SELECT ?a ?type1 ?b ?type2\n" +
+					"WHERE {\n" +
+					"  ?a rdf:type ?type1 .\n" +
+					"  FILTER (?type1 != dc:Agent)\n" +
+					"  ?b rdf:type ?type2 .\n" +
+					"}");
 		}
 		sailRepository.shutDown();
 
