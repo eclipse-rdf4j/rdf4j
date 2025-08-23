@@ -294,6 +294,847 @@ public class TupleExprIRRenderer {
 		this.prefixIndex = new PrefixIndex(this.cfg.prefixes);
 	}
 
+	// ---------------- Experimental textual IR API ----------------
+
+	/**
+	 * Build a best-effort textual IR for a SELECT-form query. The IR mirrors how the query looks textually (projection
+	 * header, a list-like WHERE group, and trailing modifiers). This does not affect the normal rendering path; it is
+	 * provided to consumers that prefer a structured representation.
+	 */
+	public org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect toIRSelect(final TupleExpr tupleExpr) {
+		suppressedSubselects.clear();
+		final Normalized n = normalize(tupleExpr);
+		applyAggregateHoisting(n);
+		final org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect ir = new org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect();
+		ir.setDistinct(n.distinct);
+		ir.setReduced(n.reduced);
+		ir.setLimit(n.limit);
+		ir.setOffset(n.offset);
+
+		// Projection header
+		if (n.projection != null && n.projection.getProjectionElemList() != null
+				&& !n.projection.getProjectionElemList().getElements().isEmpty()) {
+			for (ProjectionElem pe : n.projection.getProjectionElemList().getElements()) {
+				final String alias = pe.getProjectionAlias().orElse(pe.getName());
+				final ValueExpr expr = n.selectAssignments.get(alias);
+				if (expr != null) {
+					ir.getProjection()
+							.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem(renderExpr(expr), alias));
+				} else {
+					ir.getProjection().add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem(null, alias));
+				}
+			}
+		} else if (!n.selectAssignments.isEmpty()) {
+			// Synthesize: group-by vars first (if any), then explicit assignments
+			if (!n.groupByTerms.isEmpty()) {
+				for (GroupByTerm t : n.groupByTerms) {
+					ir.getProjection()
+							.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem(null, t.var));
+				}
+			} else {
+				for (String v : n.syntheticProjectVars) {
+					ir.getProjection().add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem(null, v));
+				}
+			}
+			for (Entry<String, ValueExpr> e : n.selectAssignments.entrySet()) {
+				ir.getProjection()
+						.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem(renderExpr(e.getValue()),
+								e.getKey()));
+			}
+		}
+
+		// WHERE as textual-IR
+		final IRBuilder builder = new IRBuilder();
+		ir.setWhere(builder.build(n.where));
+
+		// GROUP BY
+		for (GroupByTerm t : n.groupByTerms) {
+			ir.getGroupBy()
+					.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrGroupByElem(
+							t.expr == null ? null : renderExpr(t.expr), t.var));
+		}
+
+		// HAVING
+		for (ValueExpr cond : n.havingConditions) {
+			ir.getHaving().add(stripRedundantOuterParens(renderExprForHaving(cond, n)));
+		}
+
+		// ORDER BY
+		for (OrderElem oe : n.orderBy) {
+			ir.getOrderBy()
+					.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrOrderSpec(renderExpr(oe.getExpr()),
+							oe.isAscending()));
+		}
+
+		return ir;
+	}
+
+	/** Render a textual SELECT query from an {@code IrSelect} model. */
+
+	public String render(final org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect ir,
+			final DatasetView dataset) {
+		return render(ir, dataset, false);
+	}
+
+	public String render(final org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect ir,
+			final DatasetView dataset, final boolean subselect) {
+		final StringBuilder out = new StringBuilder(256);
+		if (!subselect) {
+			printPrologueAndDataset(out, dataset);
+		}
+		// SELECT header
+		out.append("SELECT ");
+		if (ir.isDistinct()) {
+			out.append("DISTINCT ");
+		} else if (ir.isReduced()) {
+			out.append("REDUCED ");
+		}
+		if (ir.getProjection().isEmpty()) {
+			out.append("*");
+		} else {
+			for (int i = 0; i < ir.getProjection().size(); i++) {
+				final org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem it = ir.getProjection().get(i);
+				if (it.getExprText() == null) {
+					out.append('?').append(it.getVarName());
+				} else {
+					out.append('(').append(it.getExprText()).append(" AS ?").append(it.getVarName()).append(')');
+				}
+				if (i + 1 < ir.getProjection().size()) {
+					out.append(' ');
+				}
+			}
+		}
+
+		// WHERE block
+		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
+		new IRTextPrinter(out).printWhere(ir.getWhere());
+
+		// GROUP BY
+		if (!ir.getGroupBy().isEmpty()) {
+			if (out.length() == 0 || out.charAt(out.length() - 1) != '\n') {
+				out.append('\n');
+			}
+			out.append("GROUP BY");
+			for (org.eclipse.rdf4j.queryrender.sparql.ir.IrGroupByElem g : ir.getGroupBy()) {
+				if (g.getExprText() == null) {
+					out.append(' ').append('?').append(g.getVarName());
+				} else {
+					out.append(" (").append(g.getExprText()).append(" AS ?").append(g.getVarName()).append(")");
+				}
+			}
+		}
+
+		// HAVING
+		if (!ir.getHaving().isEmpty()) {
+			if (out.length() == 0 || out.charAt(out.length() - 1) != '\n') {
+				out.append('\n');
+			}
+			out.append("HAVING");
+			for (String cond : ir.getHaving()) {
+				out.append(" (").append(cond).append(")");
+			}
+		}
+
+		// ORDER BY
+		if (!ir.getOrderBy().isEmpty()) {
+			if (out.length() == 0 || out.charAt(out.length() - 1) != '\n') {
+				out.append('\n');
+			}
+			out.append("ORDER BY");
+			for (org.eclipse.rdf4j.queryrender.sparql.ir.IrOrderSpec o : ir.getOrderBy()) {
+				if (o.isAscending()) {
+					out.append(' ').append(o.getExprText());
+				} else {
+					out.append(" DESC(").append(o.getExprText()).append(')');
+				}
+			}
+		}
+
+		if (ir.getLimit() >= 0) {
+			if (out.length() == 0 || out.charAt(out.length() - 1) != '\n') {
+				out.append('\n');
+			}
+			out.append("LIMIT ").append(ir.getLimit());
+		}
+		if (ir.getOffset() >= 0) {
+			if (out.length() == 0 || out.charAt(out.length() - 1) != '\n') {
+				out.append('\n');
+			}
+			out.append("OFFSET ").append(ir.getOffset());
+		}
+
+		return mergeAdjacentGraphBlocks(out.toString()).trim();
+	}
+
+	/** Simple IR→text pretty-printer using renderer helpers. */
+	private final class IRTextPrinter {
+		private final StringBuilder out;
+		private int level = 0;
+		private final String indentUnit = (cfg.indent == null) ? "  " : cfg.indent;
+		// temp buffers for prop-list aggregation
+		private String plSubjectTmp = null;
+		private final java.util.List<java.util.AbstractMap.SimpleEntry<Var, String>> plPairsTmp = new java.util.ArrayList<>();
+
+		IRTextPrinter(StringBuilder out) {
+			this.out = out;
+		}
+
+		void printWhere(final org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere w) {
+			openBlock();
+			printLines(w.getLines());
+			closeBlock();
+		}
+
+		private void printLines(final java.util.List<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> lines) {
+			int i = 0;
+			plSubjectTmp = null;
+			plPairsTmp.clear();
+
+			final java.util.Map<String, String> overrides = detectCollections(lines);
+			final java.util.Set<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> consumed = detectCollectionConsumed(
+					lines);
+
+			Runnable flushPL = () -> {
+				if (plSubjectTmp != null && !plPairsTmp.isEmpty()) {
+					java.util.List<String> parts = new java.util.ArrayList<>(plPairsTmp.size());
+					for (java.util.AbstractMap.SimpleEntry<Var, String> e : plPairsTmp) {
+						parts.add(renderPredicateForTriple(e.getKey()) + " " + e.getValue());
+					}
+					line(plSubjectTmp + " " + String.join(" ; ", parts) + " .");
+				}
+				plSubjectTmp = null;
+				plPairsTmp.clear();
+			};
+
+			while (i < lines.size()) {
+				org.eclipse.rdf4j.queryrender.sparql.ir.IrNode n = lines.get(i);
+				if (consumed.contains(n)) {
+					i++;
+					continue;
+				}
+				// Merge consecutive GRAPH blocks with same graph term
+				if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph) {
+					flushPL.run();
+					org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph g = (org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph) n;
+					Var gref = g.getGraph();
+					// Collect subsequent IrGraph with same ref
+					java.util.List<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> mergedLines = new java.util.ArrayList<>();
+					mergedLines.addAll(g.getWhere().getLines());
+					int j = i + 1;
+					while (j < lines.size()
+							&& lines.get(j) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph) {
+						org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph g2 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph) lines
+								.get(j);
+						Var gref2 = g2.getGraph();
+						if (!sameVar(gref, gref2)) {
+							break;
+						}
+						mergedLines.addAll(g2.getWhere().getLines());
+						j++;
+					}
+					// Print merged GRAPH block
+					indent();
+					out.append("GRAPH ").append(renderVarOrValue(gref)).append(' ');
+					openBlock();
+					printLines(mergedLines); // recursive property-list compaction inside
+					closeBlock();
+					out.append('\n');
+					i = j;
+					continue;
+				}
+
+				// Property-list grouping for consecutive triples with identical subjects
+				if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) {
+					org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) n;
+					final String subj = renderTermWithOverrides(sp.getSubject(), overrides);
+					final String obj = renderTermWithOverrides(sp.getObject(), overrides);
+					if (plSubjectTmp == null) {
+						plSubjectTmp = subj;
+					}
+					if (!plSubjectTmp.equals(subj)) {
+						flushPL.run();
+						plSubjectTmp = subj;
+					}
+					plPairsTmp.add(new java.util.AbstractMap.SimpleEntry<>(sp.getPredicate(), obj));
+					i++;
+					// If next line is not a triple with same subject, flush now
+					boolean flushNow = true;
+					if (i < lines.size()
+							&& lines.get(i) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) {
+						org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp2 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) lines
+								.get(i);
+						flushNow = !renderTermWithOverrides(sp2.getSubject(), overrides).equals(plSubjectTmp);
+					}
+					if (flushNow) {
+						flushPL.run();
+					}
+					continue;
+				}
+
+				// Any other node flushes pending property list and prints the node
+				flushPL.run();
+				printNode(n, overrides);
+				i++;
+			}
+			flushPL.run();
+		}
+
+		private void printNode(final org.eclipse.rdf4j.queryrender.sparql.ir.IrNode n,
+				final java.util.Map<String, String> overrides) {
+			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) {
+				final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) n;
+				line(renderTermWithOverrides(sp.getSubject(), overrides) + " "
+						+ renderPredicateForTriple(sp.getPredicate()) + " "
+						+ renderTermWithOverrides(sp.getObject(), overrides) + " .");
+				return;
+			}
+			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) {
+				final org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple pt = (org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) n;
+				line(pt.getSubjectText() + " " + pt.getPathText() + " " + pt.getObjectText() + " .");
+				return;
+			}
+			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph) {
+				final org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph g = (org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph) n;
+				indent();
+				out.append("GRAPH ").append(renderVarOrValue(g.getGraph())).append(' ');
+				openBlock();
+				for (org.eclipse.rdf4j.queryrender.sparql.ir.IrNode ln : g.getWhere().getLines()) {
+					printNode(ln, overrides);
+				}
+				closeBlock();
+				return;
+			}
+			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional) {
+				indent();
+				out.append("OPTIONAL ");
+				openBlock();
+				for (org.eclipse.rdf4j.queryrender.sparql.ir.IrNode ln : ((org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional) n)
+						.getWhere()
+						.getLines()) {
+					printNode(ln, overrides);
+				}
+				closeBlock();
+				return;
+			}
+			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion) {
+				if (tryRenderUnionAsPath((org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion) n, overrides)) {
+					return;
+				}
+				final java.util.List<org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere> branches = ((org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion) n)
+						.getBranches();
+				for (int i = 0; i < branches.size(); i++) {
+					indent();
+					openBlock();
+					printLines(branches.get(i).getLines());
+					closeBlock();
+					out.append('\n');
+					if (i + 1 < branches.size()) {
+						indent();
+						line("UNION");
+					}
+				}
+				return;
+			}
+			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrValues) {
+				final org.eclipse.rdf4j.queryrender.sparql.ir.IrValues v = (org.eclipse.rdf4j.queryrender.sparql.ir.IrValues) n;
+				indent();
+				if (v.getVarNames().isEmpty()) {
+					out.append("VALUES () ");
+					openBlock();
+					for (int i = 0; i < v.getRows().size(); i++) {
+						indent();
+						out.append("()\n");
+					}
+					closeBlock();
+					out.append('\n');
+				} else {
+					out.append("VALUES (");
+					for (int i = 0; i < v.getVarNames().size(); i++) {
+						if (i > 0) {
+							out.append(' ');
+						}
+						out.append('?').append(v.getVarNames().get(i));
+					}
+					out.append(") ");
+					openBlock();
+					for (java.util.List<String> row : v.getRows()) {
+						indent();
+						out.append('(');
+						for (int i = 0; i < row.size(); i++) {
+							if (i > 0) {
+								out.append(' ');
+							}
+							out.append(row.get(i));
+						}
+						out.append(")\n");
+					}
+					closeBlock();
+				}
+				return;
+			}
+			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrBind) {
+				final org.eclipse.rdf4j.queryrender.sparql.ir.IrBind b = (org.eclipse.rdf4j.queryrender.sparql.ir.IrBind) n;
+				line("BIND(" + b.getExprText() + " AS ?" + b.getVarName() + ")");
+				return;
+			}
+			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) {
+				line("FILTER (" + ((org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) n).getConditionText() + ")");
+				return;
+			}
+			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrService) {
+				final org.eclipse.rdf4j.queryrender.sparql.ir.IrService svc = (org.eclipse.rdf4j.queryrender.sparql.ir.IrService) n;
+				indent();
+				out.append("SERVICE ");
+				if (svc.isSilent()) {
+					out.append("SILENT ");
+				}
+				out.append(svc.getServiceRefText()).append(' ');
+				openBlock();
+				printLines(svc.getWhere().getLines());
+				closeBlock();
+				out.append('\n');
+				return;
+			}
+			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus) {
+				final org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus m = (org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus) n;
+				indent();
+				out.append("MINUS ");
+				openBlock();
+				printLines(m.getWhere().getLines());
+				closeBlock();
+				out.append('\n');
+				return;
+			}
+			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect) {
+				final org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect ss = (org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect) n;
+				final String text = TupleExprIRRenderer.this.render(ss.getSelect(), null, true);
+				indent();
+				out.append("{").append('\n');
+				level++;
+				for (String ln : text.split("\\R", -1)) {
+					indent();
+					out.append(ln).append('\n');
+				}
+				level--;
+				indent();
+				out.append("}");
+				out.append('\n');
+				return;
+			}
+			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrText) {
+				final String text = ((org.eclipse.rdf4j.queryrender.sparql.ir.IrText) n).getText();
+				for (String ln : text.split("\\R", -1)) {
+					indent();
+					out.append(ln).append('\n');
+				}
+				return;
+			}
+			// Fallback (should not normally happen): print a comment line
+			line("# unknown IR node: " + n.getClass().getSimpleName());
+		}
+
+		private String renderTermWithOverrides(final Var v, final java.util.Map<String, String> overrides) {
+			if (v == null) {
+				return "?_";
+			}
+			if (!v.hasValue() && v.getName() != null && overrides != null) {
+				final String repl = overrides.get(v.getName());
+				if (repl != null) {
+					return repl;
+				}
+			}
+			return renderVarOrValue(v);
+		}
+
+		private boolean tryRenderUnionAsPath(final org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion u,
+				final java.util.Map<String, String> overrides) {
+			final java.util.List<org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere> branches = u.getBranches();
+			if (branches.isEmpty()) {
+				return false;
+			}
+			Var subj = null, obj = null;
+			final java.util.List<String> iris = new java.util.ArrayList<>();
+			for (org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere b : branches) {
+				if (b.getLines().size() != 1
+						|| !(b.getLines()
+								.get(0) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern)) {
+					return false;
+				}
+				final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) b
+						.getLines()
+						.get(0);
+				Var pv = sp.getPredicate();
+				if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+					return false;
+				}
+				Var s = sp.getSubject();
+				Var o = sp.getObject();
+				if (subj == null && obj == null) {
+					subj = s;
+					obj = o;
+				} else if (!(sameVar(subj, s) && sameVar(obj, o))) {
+					return false;
+				}
+				iris.add(renderIRI((IRI) pv.getValue()));
+			}
+			String sStr = renderTermWithOverrides(subj, overrides);
+			String oStr = renderTermWithOverrides(obj, overrides);
+			String path = iris.size() == 1 ? iris.get(0) : "(" + String.join("|", iris) + ")";
+			line(sStr + " " + path + " " + oStr + " .");
+			return true;
+		}
+
+		private java.util.Map<String, String> detectCollections(
+				final java.util.List<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> nodes) {
+			final java.util.Map<String, String> overrides = new java.util.HashMap<>();
+			final java.util.Map<String, org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern> firstByS = new java.util.LinkedHashMap<>();
+			final java.util.Map<String, org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern> restByS = new java.util.LinkedHashMap<>();
+
+			for (org.eclipse.rdf4j.queryrender.sparql.ir.IrNode n : nodes) {
+				if (!(n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern)) {
+					continue;
+				}
+				final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) n;
+				final Var s = sp.getSubject();
+				final Var p = sp.getPredicate();
+				final String sName = freeVarName(s);
+				if (sName == null) {
+					continue;
+				}
+				if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
+					continue;
+				}
+				final IRI pred = (IRI) p.getValue();
+				if (RDF.FIRST.equals(pred)) {
+					firstByS.put(sName, sp);
+				} else if (RDF.REST.equals(pred)) {
+					restByS.put(sName, sp);
+				}
+			}
+
+			if (firstByS.isEmpty() || restByS.isEmpty()) {
+				return overrides;
+			}
+
+			final java.util.List<String> candidateHeads = new java.util.ArrayList<>();
+			for (String s : firstByS.keySet()) {
+				if (s != null && s.startsWith(ANON_COLLECTION_PREFIX)) {
+					candidateHeads.add(s);
+				}
+			}
+			if (candidateHeads.isEmpty()) {
+				for (String s : firstByS.keySet()) {
+					if (restByS.containsKey(s)) {
+						candidateHeads.add(s);
+					}
+				}
+			}
+
+			for (String head : candidateHeads) {
+				final java.util.List<String> items = new java.util.ArrayList<>();
+				final java.util.Set<String> spine = new java.util.LinkedHashSet<>();
+
+				String cur = head;
+				boolean ok = true;
+				int guard = 0;
+
+				while (ok) {
+					if (++guard > 10000) {
+						ok = false;
+						break;
+					}
+					final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern f = firstByS.get(cur);
+					final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern r = restByS.get(cur);
+					if (f == null || r == null) {
+						ok = false;
+						break;
+					}
+					spine.add(cur);
+					items.add(renderVarOrValue(f.getObject()));
+					final Var ro = r.getObject();
+					if (ro == null) {
+						ok = false;
+						break;
+					}
+					if (ro.hasValue()) {
+						if (!(ro.getValue() instanceof IRI) || !RDF.NIL.equals(ro.getValue())) {
+							ok = false;
+						}
+						break;
+					}
+					cur = ro.getName();
+					if (cur == null || cur.isEmpty() || spine.contains(cur)) {
+						ok = false;
+						break;
+					}
+				}
+
+				if (!ok || items.isEmpty()) {
+					continue;
+				}
+
+				// Basic leak check: ignore if interior spine names are used by other triples in this block
+				final java.util.Set<String> external = new java.util.LinkedHashSet<>();
+				for (org.eclipse.rdf4j.queryrender.sparql.ir.IrNode n : nodes) {
+					if (!(n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern)) {
+						continue;
+					}
+					final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) n;
+					final String sN = freeVarName(sp.getSubject());
+					final String oN = freeVarName(sp.getObject());
+					final String pN = freeVarName(sp.getPredicate());
+					if (sN != null && !spine.contains(sN)) {
+						external.add(sN);
+					}
+					if (oN != null && !spine.contains(oN)) {
+						external.add(oN);
+					}
+					if (pN != null && !spine.contains(pN)) {
+						external.add(pN);
+					}
+				}
+				boolean leaks = false;
+				for (String v : spine) {
+					if (!v.equals(head) && external.contains(v)) {
+						leaks = true;
+						break;
+					}
+				}
+				if (leaks) {
+					continue;
+				}
+
+				overrides.put(head, "(" + String.join(" ", items) + ")");
+			}
+
+			return overrides;
+		}
+
+		private java.util.Set<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> detectCollectionConsumed(
+				final java.util.List<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> nodes) {
+			final java.util.Set<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> consumed = new java.util.LinkedHashSet<>();
+			final java.util.Map<String, org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern> firstByS = new java.util.LinkedHashMap<>();
+			final java.util.Map<String, org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern> restByS = new java.util.LinkedHashMap<>();
+
+			for (org.eclipse.rdf4j.queryrender.sparql.ir.IrNode n : nodes) {
+				if (!(n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern)) {
+					continue;
+				}
+				final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) n;
+				final String sName = freeVarName(sp.getSubject());
+				final Var p = sp.getPredicate();
+				if (sName == null || p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
+					continue;
+				}
+				final IRI pred = (IRI) p.getValue();
+				if (RDF.FIRST.equals(pred)) {
+					firstByS.put(sName, sp);
+				} else if (RDF.REST.equals(pred)) {
+					restByS.put(sName, sp);
+				}
+			}
+
+			final java.util.Set<String> heads = new java.util.LinkedHashSet<>(firstByS.keySet());
+			heads.retainAll(restByS.keySet());
+			for (String h : heads) {
+				String cur = h;
+				int guard = 0;
+				while (true) {
+					if (++guard > 10000) {
+						break;
+					}
+					final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern f = firstByS.get(cur);
+					final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern r = restByS.get(cur);
+					if (f == null || r == null) {
+						break;
+					}
+					consumed.add(f);
+					consumed.add(r);
+					final Var ro = r.getObject();
+					if (ro == null || ro.hasValue()) {
+						break;
+					}
+					cur = ro.getName();
+					if (cur == null || cur.isEmpty()) {
+						break;
+					}
+				}
+			}
+			return consumed;
+		}
+
+		private void indent() {
+			for (int i = 0; i < level; i++) {
+				out.append(indentUnit);
+			}
+		}
+
+		private void line(String s) {
+			indent();
+			out.append(s).append('\n');
+		}
+
+		private void openBlock() {
+			out.append('{').append('\n');
+			level++;
+		}
+
+		private void closeBlock() {
+			level--;
+			indent();
+			out.append('}').append('\n');
+		}
+	}
+
+	/** Build a linear textual-IR for a TupleExpr WHERE tree (best effort). */
+	private final class IRBuilder extends AbstractQueryModelVisitor<RuntimeException> {
+		private final org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere where = new org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere();
+
+		org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere build(final TupleExpr t) {
+			if (t != null) {
+				t.visit(this);
+			}
+			return where;
+		}
+
+		@Override
+		public void meet(final StatementPattern sp) {
+			final Var ctx = getContextVarSafe(sp);
+			final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern node = new org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern(
+					sp.getSubjectVar(), sp.getPredicateVar(),
+					sp.getObjectVar());
+			if (ctx != null && (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
+				org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere inner = new org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere();
+				inner.add(node);
+				where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph(ctx, inner));
+			} else {
+				where.add(node);
+			}
+		}
+
+		@Override
+		public void meet(final Join join) {
+			join.getLeftArg().visit(this);
+			join.getRightArg().visit(this);
+		}
+
+		@Override
+		public void meet(final LeftJoin lj) {
+			lj.getLeftArg().visit(this);
+			final IRBuilder rightBuilder = new IRBuilder();
+			final org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere right = rightBuilder.build(lj.getRightArg());
+			if (lj.getCondition() != null) {
+				final String cond = stripRedundantOuterParens(renderExpr(lj.getCondition()));
+				right.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter(cond));
+			}
+			where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional(right));
+		}
+
+		@Override
+		public void meet(final Filter f) {
+			f.getArg().visit(this);
+			final String cond = stripRedundantOuterParens(renderExpr(f.getCondition()));
+			where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter(cond));
+		}
+
+		@Override
+		public void meet(final Union u) {
+			final java.util.List<TupleExpr> branches = new java.util.ArrayList<>();
+			flattenUnion(u, branches);
+			final org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion irU = new org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion();
+			for (TupleExpr b : branches) {
+				IRBuilder bld = new IRBuilder();
+				irU.addBranch(bld.build(b));
+			}
+			where.add(irU);
+		}
+
+		@Override
+		public void meet(final Service svc) {
+			IRBuilder inner = new IRBuilder();
+			org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere w = inner.build(svc.getArg());
+			where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrService(renderVarOrValue(svc.getServiceRef()),
+					svc.isSilent(), w));
+		}
+
+		@Override
+		public void meet(final BindingSetAssignment bsa) {
+			org.eclipse.rdf4j.queryrender.sparql.ir.IrValues v = new org.eclipse.rdf4j.queryrender.sparql.ir.IrValues();
+			java.util.List<String> names = new java.util.ArrayList<>(bsa.getBindingNames());
+			if (!cfg.valuesPreserveOrder) {
+				java.util.Collections.sort(names);
+			}
+			v.getVarNames().addAll(names);
+			for (BindingSet bs : bsa.getBindingSets()) {
+				java.util.List<String> row = new java.util.ArrayList<>(names.size());
+				for (String nm : names) {
+					org.eclipse.rdf4j.model.Value val = bs.getValue(nm);
+					row.add(val == null ? "UNDEF" : renderValue(val));
+				}
+				v.getRows().add(row);
+			}
+			where.add(v);
+		}
+
+		@Override
+		public void meet(final Extension ext) {
+			ext.getArg().visit(this);
+			for (ExtensionElem ee : ext.getElements()) {
+				final ValueExpr expr = ee.getExpr();
+				if (expr instanceof AggregateOperator) {
+					continue; // hoisted to SELECT
+				}
+				where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrBind(renderExpr(expr), ee.getName()));
+			}
+		}
+
+		@Override
+		public void meet(final Projection p) {
+			// Nested subselect: convert to typed IR
+			org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect sub = toIRSelect(p);
+			where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect(sub));
+		}
+
+		@Override
+		public void meet(final Difference diff) {
+			// Print left side in sequence, then add a MINUS block for the right
+			diff.getLeftArg().visit(this);
+			IRBuilder right = new IRBuilder();
+			org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere rightWhere = right.build(diff.getRightArg());
+			where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus(rightWhere));
+		}
+
+		@Override
+		public void meet(final ArbitraryLengthPath p) {
+			final String subj = renderVarOrValue(p.getSubjectVar());
+			final String obj = renderVarOrValue(p.getObjectVar());
+			final PathNode inner = parseAPathInner(p.getPathExpression(), p.getSubjectVar(), p.getObjectVar());
+			if (inner == null) {
+				where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrText("# unsupported path"));
+				return;
+			}
+			final long min = p.getMinLength();
+			final long max = getMaxLengthSafe(p);
+			final PathNode q = new PathQuant(inner, min, max);
+			final String expr = (q.prec() < PREC_SEQ ? "(" + q.render() + ")" : q.render());
+			where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrText(subj + " " + expr + " " + obj + " ."));
+		}
+
+		@Override
+		public void meet(final ZeroLengthPath p) {
+			where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrText(
+					"FILTER (sameTerm(" + renderVarOrValue(p.getSubjectVar()) + ", "
+							+ renderVarOrValue(p.getObjectVar())
+							+ "))"));
+		}
+
+		@Override
+		public void meetOther(final org.eclipse.rdf4j.query.algebra.QueryModelNode node) {
+			where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrText("# unsupported node: "
+					+ node.getClass().getSimpleName()));
+		}
+	}
+
 	// ---------------- Public entry points ----------------
 
 	/** Backward-compatible: render as SELECT query (no dataset). */
@@ -451,132 +1292,9 @@ public class TupleExprIRRenderer {
 	private String renderSelectInternal(final TupleExpr tupleExpr,
 			final RenderMode mode,
 			final DatasetView dataset) {
-		final StringBuilder out = new StringBuilder(256);
-		final Normalized n = normalize(tupleExpr);
-
-		applyAggregateHoisting(n);
-
-		// Prologue + Dataset for TOP_LEVEL only
-		if (mode == RenderMode.TOP_LEVEL_SELECT) {
-			printPrologueAndDataset(out, dataset);
-		}
-
-		// SELECT
-		out.append("SELECT ");
-		if (n.distinct) {
-			out.append("DISTINCT ");
-		} else if (n.reduced) {
-			out.append("REDUCED ");
-		}
-
-		boolean printedSelect = false;
-
-		// Prefer explicit Projection when available
-		if (n.projection != null) {
-			final List<ProjectionElem> elems = n.projection.getProjectionElemList().getElements();
-			if (!elems.isEmpty()) {
-				for (int i = 0; i < elems.size(); i++) {
-					final ProjectionElem pe = elems.get(i);
-					final String name = pe.getProjectionAlias().orElse(pe.getName());
-					final ValueExpr expr = n.selectAssignments.get(name);
-					if (expr != null) {
-						out.append("(").append(renderExpr(expr)).append(" AS ?").append(name).append(")");
-					} else {
-						out.append("?").append(name);
-					}
-					if (i + 1 < elems.size()) {
-						out.append(' ');
-					}
-				}
-				printedSelect = true;
-			}
-		}
-
-		// If no Projection (or SELECT *), but we have assignments, synthesize header
-		if (!printedSelect && !n.selectAssignments.isEmpty()) {
-			final List<String> bareVars = new ArrayList<>();
-			if (!n.groupByTerms.isEmpty()) {
-				for (GroupByTerm t : n.groupByTerms) {
-					bareVars.add(t.var);
-				}
-			} else {
-				bareVars.addAll(n.syntheticProjectVars);
-			}
-
-			boolean first = true;
-			for (String v : bareVars) {
-				if (!first) {
-					out.append(' ');
-				}
-				out.append('?').append(v);
-				first = false;
-			}
-			for (Entry<String, ValueExpr> e : n.selectAssignments.entrySet()) {
-				if (!first) {
-					out.append(' ');
-				}
-				out.append("(").append(renderExpr(e.getValue())).append(" AS ?").append(e.getKey()).append(")");
-				first = false;
-			}
-			if (first) {
-				out.append("*");
-			}
-			printedSelect = true;
-		}
-
-		if (!printedSelect) {
-			out.append("*");
-		}
-
-		// WHERE
-		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
-		final BlockPrinter bp = new BlockPrinter(out, this, cfg, n);
-		bp.openBlock();
-		n.where.visit(bp);
-		bp.closeBlock();
-
-		// GROUP BY
-		if (!n.groupByTerms.isEmpty()) {
-			out.append("\nGROUP BY");
-			for (GroupByTerm t : n.groupByTerms) {
-				if (t.expr == null) {
-					out.append(' ').append('?').append(t.var);
-				} else {
-					out.append(" (").append(renderExpr(t.expr)).append(" AS ?").append(t.var).append(")");
-				}
-			}
-		}
-
-		// HAVING
-		if (!n.havingConditions.isEmpty()) {
-			out.append("\nHAVING");
-			for (ValueExpr cond : n.havingConditions) {
-				out.append(" (").append(stripRedundantOuterParens(renderExprForHaving(cond, n))).append(")");
-			}
-		}
-
-		// ORDER BY
-		if (!n.orderBy.isEmpty()) {
-			out.append("\nORDER BY");
-			for (final OrderElem oe : n.orderBy) {
-				final String expr = renderExpr(oe.getExpr());
-				if (oe.isAscending()) {
-					out.append(' ').append(expr);
-				} else {
-					out.append(" DESC(").append(expr).append(')');
-				}
-			}
-		}
-
-		// LIMIT/OFFSET
-		if (n.limit >= 0) {
-			out.append("\nLIMIT ").append(n.limit);
-		}
-		if (n.offset >= 0) {
-			out.append("\nOFFSET ").append(n.offset);
-		}
-
-		return mergeAdjacentGraphBlocks(out.toString()).trim();
+		final org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect ir = toIRSelect(tupleExpr);
+		final boolean asSub = (mode == RenderMode.SUBSELECT);
+		return render(ir, dataset, asSub);
 	}
 
 	private void printPrologueAndDataset(final StringBuilder out, final DatasetView dataset) {
