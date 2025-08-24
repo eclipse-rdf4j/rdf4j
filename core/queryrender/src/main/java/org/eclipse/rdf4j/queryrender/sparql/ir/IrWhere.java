@@ -28,4 +28,11 @@ public class IrWhere extends IrNode {
 			lines.add(node);
 		}
 	}
+
+	@Override
+	public void print(IrPrinter p) {
+		p.openBlock();
+		p.printLines(lines);
+		p.closeBlock();
+	}
 }

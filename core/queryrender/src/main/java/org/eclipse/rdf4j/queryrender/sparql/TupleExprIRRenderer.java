@@ -560,9 +560,12 @@ public class TupleExprIRRenderer {
 		}
 
 		public void printWhere(final org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere w) {
-			openBlock();
-			printLines(w.getLines());
-			closeBlock();
+			if (w == null) {
+				openBlock();
+				closeBlock();
+				return;
+			}
+			w.print(this);
 		}
 
 		public void printLines(final java.util.List<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> lines) {
