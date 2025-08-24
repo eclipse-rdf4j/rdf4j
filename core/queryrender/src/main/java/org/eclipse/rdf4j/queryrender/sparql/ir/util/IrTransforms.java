@@ -475,6 +475,105 @@ public final class IrTransforms {
 				continue;
 			}
 
+			// If this is a UNION, allow direct NPS rewrite in its branches (demo of primitives)
+			if (n instanceof IrUnion) {
+				final IrUnion u = (IrUnion) n;
+				final IrUnion u2 = new IrUnion();
+				for (IrBGP b : u.getBranches()) {
+					u2.addBranch(rewriteSimpleNpsOnly(b, r));
+				}
+				out.add(u2);
+				continue;
+			}
+
+			// Pattern C2 (non-GRAPH): SP(var p) followed by FILTER on that var, with surrounding constant triples:
+			// S -(const k1)-> A ; S -(var p)-> M ; FILTER (?p NOT IN (...)) ; M -(const k2)-> E
+			// Fuse to: A (^k1 / !(...) / k2) E
+			if (n instanceof IrStatementPattern && i + 1 < in.size() && in.get(i + 1) instanceof IrFilter) {
+				final IrStatementPattern spVar = (IrStatementPattern) n;
+				final Var pVar = spVar.getPredicate();
+				final IrFilter f2 = (IrFilter) in.get(i + 1);
+				final NsText ns2 = parseNegatedSetText(f2.getConditionText());
+				if (pVar != null && !pVar.hasValue() && pVar.getName() != null && ns2 != null
+						&& pVar.getName().equals(ns2.varName) && !ns2.items.isEmpty()) {
+					IrStatementPattern k1 = null;
+					boolean k1Inverse = false;
+					String startText = null;
+					for (int j = 0; j < in.size(); j++) {
+						if (j == i)
+							continue;
+						final IrNode cand = in.get(j);
+						if (!(cand instanceof IrStatementPattern))
+							continue;
+						final IrStatementPattern sp = (IrStatementPattern) cand;
+						final Var pv = sp.getPredicate();
+						if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI))
+							continue;
+						if (sameVar(sp.getSubject(), spVar.getSubject()) && !isAnonPathVar(sp.getObject())) {
+							k1 = sp;
+							k1Inverse = true;
+							startText = varOrValue(sp.getObject(), r);
+							break;
+						}
+						if (sameVar(sp.getObject(), spVar.getSubject()) && !isAnonPathVar(sp.getSubject())) {
+							k1 = sp;
+							k1Inverse = false;
+							startText = varOrValue(sp.getSubject(), r);
+							break;
+						}
+					}
+
+					IrStatementPattern k2 = null;
+					boolean k2Inverse = false;
+					String endText = null;
+					for (int j = i + 2; j < in.size(); j++) {
+						final IrNode cand = in.get(j);
+						if (!(cand instanceof IrStatementPattern))
+							continue;
+						final IrStatementPattern sp = (IrStatementPattern) cand;
+						final Var pv = sp.getPredicate();
+						if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI))
+							continue;
+						if (sameVar(sp.getSubject(), spVar.getObject()) && !isAnonPathVar(sp.getObject())) {
+							k2 = sp;
+							k2Inverse = false;
+							endText = varOrValue(sp.getObject(), r);
+							break;
+						}
+						if (sameVar(sp.getObject(), spVar.getObject()) && !isAnonPathVar(sp.getSubject())) {
+							k2 = sp;
+							k2Inverse = true;
+							endText = varOrValue(sp.getSubject(), r);
+							break;
+						}
+					}
+
+					if (k1 != null && k2 != null && startText != null && endText != null) {
+						final String k1Step = r.renderIRI((IRI) k1.getPredicate().getValue());
+						final String k2Step = r.renderIRI((IRI) k2.getPredicate().getValue());
+						final java.util.List<String> rev = new java.util.ArrayList<>(ns2.items);
+						java.util.Collections.reverse(rev);
+						final String nps = "!(" + String.join("|", rev) + ")";
+						final String path = (k1Inverse ? "^" + k1Step : k1Step) + "/" + nps + "/"
+								+ (k2Inverse ? "^" + k2Step : k2Step);
+						out.add(new IrPathTriple(startText, "(" + path + ")", endText));
+						// Remove any earlier-emitted k1 (if it appeared before this position)
+						for (int rm = out.size() - 1; rm >= 0; rm--) {
+							if (out.get(rm) == k1) {
+								out.remove(rm);
+								break;
+							}
+						}
+						consumed.add(spVar);
+						consumed.add(in.get(i + 1));
+						consumed.add(k1);
+						consumed.add(k2);
+						i += 1; // skip filter
+						continue;
+					}
+				}
+			}
+
 			// No fusion matched: now recurse into containers (to apply NPS deeper) and add
 			// Be conservative: do not rewrite inside SERVICE or nested subselects.
 			if (n instanceof IrBGP || n instanceof IrGraph || n instanceof IrOptional || n instanceof IrUnion
@@ -491,6 +590,50 @@ public final class IrTransforms {
 
 		final IrBGP res = new IrBGP();
 		out.forEach(res::add);
+		return res;
+	}
+
+	// Within a union branch, compact a simple var-predicate + NOT IN filter to a negated property set path triple.
+	private static IrBGP rewriteSimpleNpsOnly(IrBGP bgp, TupleExprIRRenderer r) {
+		if (bgp == null)
+			return null;
+		final java.util.List<IrNode> in = bgp.getLines();
+		final java.util.List<IrNode> out = new java.util.ArrayList<>();
+		final java.util.Set<IrNode> consumed = new java.util.HashSet<>();
+		for (int i = 0; i < in.size(); i++) {
+			IrNode n = in.get(i);
+			if (consumed.contains(n))
+				continue;
+			if (n instanceof IrStatementPattern && i + 1 < in.size() && in.get(i + 1) instanceof IrFilter) {
+				final IrStatementPattern sp = (IrStatementPattern) n;
+				final Var pVar = sp.getPredicate();
+				final IrFilter f = (IrFilter) in.get(i + 1);
+				final NsText ns = parseNegatedSetText(f.getConditionText());
+				if (pVar != null && !pVar.hasValue() && pVar.getName() != null && ns != null
+						&& pVar.getName().equals(ns.varName) && !ns.items.isEmpty()) {
+					final String sTxt = varOrValue(sp.getSubject(), r);
+					final String oTxt = varOrValue(sp.getObject(), r);
+					final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
+					out.add(new IrPathTriple(sTxt, nps, oTxt));
+					consumed.add(sp);
+					consumed.add(in.get(i + 1));
+					i += 1;
+					continue;
+				}
+			}
+			// Recurse into nested containers conservatively
+			n = n.transformChildren(child -> {
+				if (child instanceof IrBGP)
+					return rewriteSimpleNpsOnly((IrBGP) child, r);
+				return child;
+			});
+			out.add(n);
+		}
+		final IrBGP res = new IrBGP();
+		for (IrNode n : out) {
+			if (!consumed.contains(n))
+				res.add(n);
+		}
 		return res;
 	}
 
