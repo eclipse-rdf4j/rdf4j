@@ -20,7 +20,11 @@ import com.google.gson.ExclusionStrategy;
 import com.google.gson.FieldAttributes;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonDeserializationContext;
+import com.google.gson.JsonDeserializer;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
 import com.google.gson.JsonPrimitive;
 import com.google.gson.JsonSerializationContext;
 import com.google.gson.JsonSerializer;
@@ -42,9 +46,34 @@ public final class IrDebug {
 		}
 	}
 
+	static class ClassNameAdapter<T> implements JsonSerializer<T>, JsonDeserializer<T> {
+		@Override
+		public JsonElement serialize(T src, Type typeOfSrc, JsonSerializationContext context) {
+			JsonObject obj = new JsonObject();
+			obj.addProperty("class", src.getClass().getName());
+			obj.add("data", context.serialize(src));
+			return obj;
+		}
+
+		@Override
+		public T deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context)
+				throws JsonParseException {
+			JsonObject obj = json.getAsJsonObject();
+			String className = obj.get("class").getAsString();
+			try {
+				Class<?> clazz = Class.forName(className);
+				return context.deserialize(obj.get("data"), clazz);
+			} catch (ClassNotFoundException e) {
+				throw new JsonParseException(e);
+			}
+		}
+	}
+
 	public static String dump(IrNode node) {
+
 		Gson gson = new GsonBuilder().setPrettyPrinting()
 				.registerTypeAdapter(Var.class, new VarSerializer())
+				.registerTypeAdapter(IrNode.class, new ClassNameAdapter<IrNode>())
 				.setExclusionStrategies(new ExclusionStrategy() {
 					@Override
 					public boolean shouldSkipField(FieldAttributes f) {
@@ -60,6 +89,7 @@ public final class IrDebug {
 						return false;
 					}
 				})
+
 				.create();
 		return gson.toJson(node);
 	}
