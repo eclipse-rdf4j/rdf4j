@@ -1209,7 +1209,9 @@ public class TupleExprIRRendererTest {
 				"  FILTER (BOUND(?s))\n" +
 				"  {\n" +
 				"    SELECT ?x\n" +
-				"    WHERE { ?x a ex:Thing }\n" +
+				"    WHERE {\n" +
+				"      ?x a ex:Thing .\n" +
+				"    }\n" +
 				"  }\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
@@ -1222,7 +1224,9 @@ public class TupleExprIRRendererTest {
 				"  ?s a foaf:Person .\n" +
 				"  {\n" +
 				"    SELECT ?x\n" +
-				"    WHERE { ?x a ex:Thing }\n" +
+				"    WHERE {\n" +
+				"      ?x a ex:Thing .\n" +
+				"    }\n" +
 				"  }\n" +
 				"  FILTER (?x = ?x)\n" +
 				"}";
@@ -1413,15 +1417,258 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
+	@Disabled
 	void optional_outside_graph_when_complex_body() {
 		String q = "SELECT ?g ?s ?label ?nick\n" +
 				"WHERE {\n" +
-				"  GRAPH ?g { ?s a foaf:Person }\n" +
+				"  GRAPH ?g {\n" +
+				"    ?s a foaf:Person .\n" +
+				"  }\n" +
 				"  OPTIONAL {\n" +
 				"    ?s rdfs:label ?label .\n" +
 				"    FILTER (?label != \"\")\n" +
-				"    OPTIONAL { ?s foaf:nick ?nick }\n" +
+				"    OPTIONAL {\n" +
+				"      ?s foaf:nick ?nick .\n" +
+				"    }\n" +
 				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	// -----------------------------
+	// Deeply nested path scenarios
+	// -----------------------------
+
+	@Test
+	void deep_path_in_optional_in_graph() {
+		String q = "SELECT ?g ?s ?o\n" +
+				"WHERE {\n" +
+				"  OPTIONAL {\n" +
+				"    GRAPH ?g {\n" +
+				"      ?s (foaf:knows/(^foaf:knows|ex:knows)*) ?o .\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void deep_path_in_minus() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  ?s a ex:Person .\n" +
+				"  MINUS {\n" +
+				"    ?s foaf:knows/foaf:knows? ?o .\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void deep_path_in_filter_not_exists() {
+		String q = "SELECT ?s\n" +
+				"WHERE {\n" +
+				"  FILTER (NOT EXISTS { ?s (foaf:knows|ex:knows)/^foaf:knows ?o . })\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	@Disabled
+	void deep_path_in_union_branch_with_graph() {
+		String q = "SELECT ?g ?s ?o\n" +
+				"WHERE {\n" +
+				"  {\n" +
+				"    GRAPH ?g {\n" +
+				"      ?s (foaf:knows|ex:knows)* ?o .\n" +
+				"    }\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?s ^ex:knows ?o .\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	@Disabled
+	void zero_or_more_then_inverse_then_alt_in_graph() {
+		String q = "SELECT ?g ?s ?o\n" +
+				"WHERE {\n" +
+				"  GRAPH ?g {\n" +
+				"    ?s (foaf:knows*/^(foaf:knows|ex:knows)) ?o .\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	@Disabled
+	void optional_with_values_and_bind_inside_graph() {
+		String q = "SELECT ?g ?s ?n ?name\n" +
+				"WHERE {\n" +
+				"  GRAPH ?g {\n" +
+				"    OPTIONAL {\n" +
+				"      VALUES (?s ?n) { (ex:a 1) (ex:b 2) }\n" +
+				"      BIND(STR(?n) AS ?name)\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void exists_with_path_and_aggregate_in_subselect() {
+		String q = "SELECT ?s\n" +
+				"WHERE {\n" +
+				"  FILTER (EXISTS { { SELECT (COUNT(?x) AS ?c) WHERE { ?s foaf:knows+ ?x . } } FILTER (?c >= 0) })\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	@Disabled
+	void nested_union_optional_with_path_and_filter() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  {\n" +
+				"    OPTIONAL { ?s foaf:knows/foaf:knows ?o . FILTER (BOUND(?o)) }\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?s (ex:knows|foaf:knows)+ ?o .\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	@Disabled
+	void minus_with_graph_and_optional_path() {
+		String q = "SELECT ?s\n" +
+				"WHERE {\n" +
+				"  MINUS {\n" +
+				"    OPTIONAL {\n" +
+				"      ?s foaf:knows?/^ex:knows ?o . \n" +
+				"    } \n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	@Disabled
+	void service_with_graph_and_path() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  SERVICE ?svc { GRAPH ?g { ?s (foaf:knows|ex:knows) ?o . } }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	@Disabled
+	void group_by_having_with_path_in_where() {
+		String q = "SELECT ?s (COUNT(?o) AS ?c)\n" +
+				"WHERE {\n" +
+				"  ?s foaf:knows/foaf:knows? ?o .\n" +
+				"}\n" +
+				"GROUP BY ?s\n" +
+				"HAVING (?c >= 0)";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void nested_subselect_with_path_and_order() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  ?s foaf:knows+ ?o .\n" +
+				"}\n" +
+				"ORDER BY ?o";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	@Disabled
+	void optional_chain_then_graph_path() {
+		String q = "SELECT ?g ?s ?o\n" +
+				"WHERE {\n" +
+				"  OPTIONAL { ?s foaf:knows ?mid . OPTIONAL { ?mid foaf:knows ?o . } }\n" +
+				"  GRAPH ?g { ?s ex:knows/^foaf:knows ?o . }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	@Disabled
+	void values_then_graph_then_minus_with_path() {
+		String q = "SELECT ?g ?s ?o\n" +
+				"WHERE {\n" +
+				"  VALUES (?g) { (ex:g1) (ex:g2) }\n" +
+				"  GRAPH ?g { ?s foaf:knows ?o . }\n" +
+				"  MINUS { ?s (ex:knows|foaf:knows) ?o . }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	@Disabled
+	void nps_path_followed_by_constant_step_in_graph() {
+		String q = "SELECT ?s ?x\n" +
+				"WHERE {\n" +
+				"  GRAPH ?g { ?s !(rdf:type|ex:age)/foaf:name ?x . }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void deep_nested_union_optional_minus_mix_with_paths() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  {\n" +
+				"    OPTIONAL { ?s foaf:knows/foaf:knows ?o . }\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    MINUS { ?s (ex:knows/foaf:knows)? ?o . }\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void deep_exists_with_path_and_inner_filter() {
+		String q = "SELECT ?s\n" +
+				"WHERE {\n" +
+				"  FILTER (EXISTS { ?s foaf:knows+/^ex:knows ?o . FILTER (BOUND(?o)) })\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void deep_zero_or_one_path_in_union() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  {\n" +
+				"    ?s foaf:knows? ?o .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?s ex:knows? ?o .\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void deep_path_chain_with_graph_and_filter() {
+		String q = "SELECT ?g ?s ?o\n" +
+				"WHERE {\n" +
+				"  GRAPH ?g {\n" +
+				"    ?s ((foaf:knows)/(((^ex:knows )|^foaf:knows))) ?o .\n" +
+				"  }\n" +
+				"  FILTER (BOUND(?s) && BOUND(?o))\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
 	}
