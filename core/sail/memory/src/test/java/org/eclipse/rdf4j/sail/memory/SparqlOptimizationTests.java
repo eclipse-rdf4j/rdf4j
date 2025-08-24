@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
-import org.eclipse.rdf4j.queryrender.sparql.TupleExprToSparql;
+import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -34,10 +34,10 @@ import org.junit.jupiter.api.Test;
 
 /**
  * End-to-end optimizer tests: - For each optimization: a SAFE test (rewrite should happen) and an UNSAFE test (rewrite
- * must NOT happen). - Queries are rendered from the optimized TupleExpr using TupleExprToSparql (as in user example).
+ * must NOT happen). - Queries are rendered from the optimized TupleExpr using TupleExprIRRenderer (as in user example).
  *
  * Assumptions: - Your optimizer runs inside RDF4J's optimization pipeline so that Explanation.Level.Optimized reflects
- * the rewrite. - TupleExprToSparql exists on classpath (same utility you used in the sample).
+ * the rewrite. - TupleExprIRRenderer exists on classpath (same utility you used in the sample).
  */
 public class SparqlOptimizationTests {
 
@@ -65,9 +65,9 @@ public class SparqlOptimizationTests {
 			TupleQuery query = cx.prepareTupleQuery(sparql);
 			TupleExpr tupleExpr = (TupleExpr) query.explain(Explanation.Level.Optimized).tupleExpr();
 
-			TupleExprToSparql.Config cfg = new TupleExprToSparql.Config();
+			TupleExprIRRenderer.Config cfg = new TupleExprIRRenderer.Config();
 			PREFIXES.forEach((p, ns) -> cfg.prefixes.put(p, ns));
-			TupleExprToSparql renderer = new TupleExprToSparql(cfg);
+			TupleExprIRRenderer renderer = new TupleExprIRRenderer(cfg);
 			rendered = renderer.render(tupleExpr);
 		} catch (Exception e) {
 			System.out.println("Failed to render query:\n" + sparql + "\n");

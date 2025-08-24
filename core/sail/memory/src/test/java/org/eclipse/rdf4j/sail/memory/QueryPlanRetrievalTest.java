@@ -33,7 +33,7 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
-import org.eclipse.rdf4j.queryrender.sparql.TupleExprToSparql;
+import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -264,7 +264,7 @@ public class QueryPlanRetrievalTest {
 			Query query = connection.prepareTupleQuery(sparql);
 			Explanation explain = query.explain(Explanation.Level.Optimized);
 			TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
-			String render = new TupleExprToSparql().render(tupleExpr);
+			String render = new TupleExprIRRenderer().render(tupleExpr);
 			System.out.println(render);
 
 			String actual = explain.toString();
@@ -2110,7 +2110,7 @@ public class QueryPlanRetrievalTest {
 							"}");
 
 			TupleExpr tupleExpr = (TupleExpr) query.explain(Explanation.Level.Optimized).tupleExpr();
-			TupleExprToSparql tupleExprToSparql = new TupleExprToSparql();
+			TupleExprIRRenderer tupleExprToSparql = new TupleExprIRRenderer();
 			String render = tupleExprToSparql.render(tupleExpr);
 			System.out.println(render);
 
@@ -2311,11 +2311,11 @@ public class QueryPlanRetrievalTest {
 
 			TupleExpr tupleExpr = (TupleExpr) query.explain(Explanation.Level.Optimized).tupleExpr();
 
-			TupleExprToSparql.Config config = new TupleExprToSparql.Config();
+			TupleExprIRRenderer.Config config = new TupleExprIRRenderer.Config();
 			config.prefixes.put(DC.PREFIX, DC.NAMESPACE);
 			config.prefixes.put(RDF.PREFIX, RDF.NAMESPACE);
 
-			TupleExprToSparql tupleExprToSparql = new TupleExprToSparql(config);
+			TupleExprIRRenderer tupleExprToSparql = new TupleExprIRRenderer(config);
 			String render = tupleExprToSparql.render(tupleExpr);
 
 			assertThat(render).isEqualToNormalizingNewlines("" +

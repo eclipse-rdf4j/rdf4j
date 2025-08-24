@@ -477,10 +477,9 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	String renderPattern(StatementPattern thePattern) throws Exception {
-		StringBuffer sb = new StringBuffer();
-		sb.append(renderValueExpr(thePattern.getSubjectVar())).append(" ");
-		sb.append(renderValueExpr(thePattern.getPredicateVar())).append(" ");
-		sb.append(renderValueExpr(thePattern.getObjectVar())).append(".").append(System.lineSeparator());
-		return sb.toString();
+		String sb = renderValueExpr(thePattern.getSubjectVar()) + " " +
+				renderValueExpr(thePattern.getPredicateVar()) + " " +
+				renderValueExpr(thePattern.getObjectVar()) + "." + System.lineSeparator();
+		return sb;
 	}
 }

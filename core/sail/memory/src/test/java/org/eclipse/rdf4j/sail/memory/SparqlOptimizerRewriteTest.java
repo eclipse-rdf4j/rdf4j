@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
-import org.eclipse.rdf4j.queryrender.sparql.TupleExprToSparql;
+import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -60,10 +60,10 @@ public class SparqlOptimizerRewriteTest {
 			TupleQuery query = connection.prepareTupleQuery(sparql);
 			TupleExpr tupleExpr = (TupleExpr) query.explain(Explanation.Level.Unoptimized).tupleExpr();
 
-			TupleExprToSparql.Config config = new TupleExprToSparql.Config();
+			TupleExprIRRenderer.Config config = new TupleExprIRRenderer.Config();
 			defaultPrefixes().forEach((k, v) -> config.prefixes.put(k, v));
 
-			TupleExprToSparql tupleExprToSparql = new TupleExprToSparql(config);
+			TupleExprIRRenderer tupleExprToSparql = new TupleExprIRRenderer(config);
 			rendered = tupleExprToSparql.render(tupleExpr);
 		}
 		sailRepository.shutDown();

@@ -17,7 +17,20 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
-import org.eclipse.rdf4j.queryrender.sparql.ir.*;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrPropertyList;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrText;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
 /**
  * IR transformation pipeline (best-effort). Keep it simple and side-effect free when possible.
@@ -155,8 +168,7 @@ public final class IrTransforms {
 			}
 		}
 
-		for (int i = 0; i < in.size(); i++) {
-			IrNode n = in.get(i);
+		for (IrNode n : in) {
 			if (removed.contains(n))
 				continue;
 
@@ -166,7 +178,7 @@ public final class IrTransforms {
 				if (bridge != null && bridge.startsWith("?")) {
 					IrStatementPattern join = null;
 					boolean inverse = true; // prefer inverse tail (?y p ?mid) => '^p'
-					final java.util.List<IrStatementPattern> byObj = byObject.get(bridge);
+					final List<IrStatementPattern> byObj = byObject.get(bridge);
 					if (byObj != null) {
 						for (IrStatementPattern sp : byObj) {
 							if (!removed.contains(sp)) {
@@ -177,7 +189,7 @@ public final class IrTransforms {
 						}
 					}
 					if (join == null) {
-						final java.util.List<IrStatementPattern> bySub = bySubject.get(bridge);
+						final List<IrStatementPattern> bySub = bySubject.get(bridge);
 						if (bySub != null) {
 							for (IrStatementPattern sp : bySub) {
 								if (!removed.contains(sp)) {
@@ -741,7 +753,7 @@ public final class IrTransforms {
 			return null;
 		IrBGP b1 = u.getBranches().get(0);
 		IrBGP b2 = u.getBranches().get(1);
-		IrBGP filterBranch = null, chainBranch = null;
+		IrBGP filterBranch, chainBranch;
 		// Identify which branch is the sameTerm filter
 		if (isSameTermFilterBranch(b1)) {
 			filterBranch = b1;
@@ -946,8 +958,8 @@ public final class IrTransforms {
 				return null;
 			java.util.regex.Matcher ml = pLeft.matcher(term);
 			java.util.regex.Matcher mr = pRight.matcher(term);
-			String vName = null;
-			String iriTxt = null;
+			String vName;
+			String iriTxt;
 			if (ml.find()) {
 				vName = ml.group("var");
 				iriTxt = ml.group("iri");
@@ -1197,7 +1209,7 @@ public final class IrTransforms {
 					Var p0 = sp0.getPredicate();
 					if (p0 != null && p0.hasValue() && p0.getValue() instanceof IRI) {
 						// Identify bridge var and start/end side
-						Var mid = null;
+						Var mid;
 						boolean startForward;
 						if (isAnonPathVar(sp0.getObject())) {
 							mid = sp0.getObject();
@@ -1219,7 +1231,7 @@ public final class IrTransforms {
 								if (!ok)
 									break;
 								IrNode only = (b.getLines().size() == 1) ? b.getLines().get(0) : null;
-								IrStatementPattern spX = null;
+								IrStatementPattern spX;
 								if (only instanceof IrGraph) {
 									IrGraph gX = (IrGraph) only;
 									if (gX.getWhere() == null || gX.getWhere().getLines().size() != 1
@@ -1540,7 +1552,7 @@ public final class IrTransforms {
 						if (!allPt)
 							break;
 						IrNode only = (b.getLines().size() == 1) ? b.getLines().get(0) : null;
-						IrPathTriple pt = null;
+						IrPathTriple pt;
 						if (only instanceof IrPathTriple) {
 							pt = (IrPathTriple) only;
 						} else if (only instanceof IrGraph) {
@@ -1601,8 +1613,8 @@ public final class IrTransforms {
 								ok2 = false;
 								break;
 							}
-							String step = null;
-							String sTxtCandidate = null;
+							String step;
+							String sTxtCandidate;
 							// post triple is ?end postPred ?mid
 							if (sameVar(sp.getSubject(), post.getObject())) {
 								step = "^" + r.renderIRI((IRI) pv.getValue());
@@ -1986,57 +1998,6 @@ public final class IrTransforms {
 		return res;
 	}
 
-	// Move OPTIONAL { GRAPH ?g { ... } [FILTER ...] } to be inside a preceding GRAPH ?g { ... } block when they
-	// refer to the same graph, so we print as GRAPH ?g { ... OPTIONAL { ... } } to match expected formatting.
-	private static void foldOptionalIntoGraph(java.util.List<IrNode> lines) {
-		for (int i = 0; i + 1 < lines.size(); i++) {
-			IrNode a = lines.get(i);
-			IrNode b = lines.get(i + 1);
-			if (!(a instanceof IrGraph) || !(b instanceof IrOptional))
-				continue;
-			IrGraph g = (IrGraph) a;
-			IrOptional opt = (IrOptional) b;
-			IrBGP ow = opt.getWhere();
-			if (ow == null || ow.getLines().isEmpty())
-				continue;
-			// optional body must be exactly GRAPH ?g { X } plus optional extra FILTERs
-			IrGraph innerGraph = null;
-			java.util.List<IrNode> extra = new java.util.ArrayList<>();
-			for (IrNode ln : ow.getLines()) {
-				if (ln instanceof IrGraph && innerGraph == null) {
-					innerGraph = (IrGraph) ln;
-				} else if (ln instanceof IrFilter) {
-					extra.add(ln);
-				} else {
-					innerGraph = null;
-					break;
-				}
-			}
-			if (innerGraph == null)
-				continue;
-			if (!sameVar(g.getGraph(), innerGraph.getGraph()))
-				continue;
-			// Build new OPTIONAL body using innerGraph content + any extra filters
-			IrBGP newOptBody = new IrBGP();
-			for (IrNode ln : innerGraph.getWhere().getLines()) {
-				newOptBody.add(ln);
-			}
-			for (IrNode ln : extra) {
-				newOptBody.add(ln);
-			}
-			// Append OPTIONAL to the end of the outer GRAPH body
-			IrBGP newGraphBody = new IrBGP();
-			for (IrNode ln : g.getWhere().getLines()) {
-				newGraphBody.add(ln);
-			}
-			newGraphBody.add(new IrOptional(newOptBody));
-			lines.set(i, new IrGraph(g.getGraph(), newGraphBody));
-			lines.remove(i + 1);
-			// stay at same index for potential further folds
-			i--;
-		}
-	}
-
 	// Render a list of IRI tokens (either prefixed like "rdf:type" or <iri>) as a spaced " | "-joined list,
 	// with a stable, preference-biased ordering: primarily by prefix name descending (so "rdf:" before "ex:"),
 	// then by the full rendered text, to keep output deterministic.
@@ -2069,16 +2030,6 @@ public final class IrTransforms {
 			return a.compareTo(b);
 		});
 		return String.join("|", rendered);
-	}
-
-	private static String prefixOf(String renderedIri) {
-		if (renderedIri == null)
-			return "";
-		int idx = renderedIri.indexOf(':');
-		if (idx > 0 && !renderedIri.startsWith("<")) {
-			return renderedIri.substring(0, idx);
-		}
-		return "";
 	}
 
 	private static IrBGP applyCollections(IrBGP bgp, TupleExprIRRenderer r) {
@@ -2184,16 +2135,6 @@ public final class IrTransforms {
 		IrBGP res = new IrBGP();
 		out.forEach(res::add);
 		return res;
-	}
-
-	private static IrNode transformNode(IrNode node, TupleExprIRRenderer r, boolean fusePaths, boolean collections) {
-		// Backwards-compatible wrapper: use function-style child transforms on immediate IrWhere children
-		return node.transformChildren(child -> {
-			if (child instanceof IrBGP) {
-				return fusePaths ? applyPaths((IrBGP) child, r) : applyCollections((IrBGP) child, r);
-			}
-			return child;
-		});
 	}
 
 	private static String varOrValue(Var v, TupleExprIRRenderer r) {
