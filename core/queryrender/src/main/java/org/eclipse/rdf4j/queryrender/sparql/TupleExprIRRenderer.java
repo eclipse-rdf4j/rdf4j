@@ -99,9 +99,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 
 /**
  * TupleExprIRRenderer: render RDF4J algebra back into SPARQL text (via a compact internal normalization/IR step), with:
@@ -550,16 +548,13 @@ public class TupleExprIRRenderer {
 		private final StringBuilder out;
 		private int level = 0;
 		private final String indentUnit = (cfg.indent == null) ? "  " : cfg.indent;
-		// temp buffers for prop-list aggregation
-		private String plSubjectTmp = null;
-		private final java.util.List<java.util.AbstractMap.SimpleEntry<Var, String>> plPairsTmp = new java.util.ArrayList<>();
 		private java.util.Map<String, String> currentOverrides = java.util.Collections.emptyMap();
 
 		IRTextPrinter(StringBuilder out) {
 			this.out = out;
 		}
 
-		public void printWhere(final org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere w) {
+		public void printWhere(final IrBGP w) {
 			if (w == null) {
 				openBlock();
 				closeBlock();
@@ -569,194 +564,12 @@ public class TupleExprIRRenderer {
 		}
 
 		public void printLines(final java.util.List<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> lines) {
-			int i = 0;
-			plSubjectTmp = null;
-			plPairsTmp.clear();
-
-			final java.util.Map<String, String> overrides = detectCollections(lines);
-			final java.util.Set<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> consumed = detectCollectionConsumed(
-					lines);
-			this.currentOverrides = overrides;
-
-			Runnable flushPL = () -> {
-				if (plSubjectTmp != null && !plPairsTmp.isEmpty()) {
-					java.util.List<String> parts = new java.util.ArrayList<>(plPairsTmp.size());
-					for (java.util.AbstractMap.SimpleEntry<Var, String> e : plPairsTmp) {
-						parts.add(renderPredicateForTriple(e.getKey()) + " " + e.getValue());
-					}
-					line(plSubjectTmp + " " + String.join(" ; ", parts) + " .");
-				}
-				plSubjectTmp = null;
-				plPairsTmp.clear();
-			};
-
-			while (i < lines.size()) {
-				org.eclipse.rdf4j.queryrender.sparql.ir.IrNode n = lines.get(i);
-				if (consumed.contains(n)) {
-					i++;
-					continue;
-				}
-
-				// Recursive path reconstruction using parser-provided _anon_path_* bridge variables.
-				if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) {
-					int consumedCount = tryChainPathFrom(lines, i);
-					if (consumedCount > 0) {
-						i += consumedCount;
-						continue;
-					}
-					int consumedSPPT = tryFuseSpThenPath(lines, i);
-					if (consumedSPPT > 0) {
-						i += consumedSPPT;
-						continue;
-					}
-					int consumedNpsChain = tryFuseInverseNpsChain(lines, i);
-					if (consumedNpsChain > 0) {
-						i += consumedNpsChain;
-						continue;
-					}
-				}
-
-				// Fuse path triple followed by a constant-predicate triple that connects to the path's object
-				if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple && i + 1 < lines.size()
-						&& lines.get(i + 1) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) {
-					final org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple pt = (org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) n;
-					final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) lines
-							.get(i + 1);
-					final Var pv = sp.getPredicate();
-					if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
-						final String spSubj = renderVarOrValue(sp.getSubject());
-						final String spObj = renderVarOrValue(sp.getObject());
-						final String joinStep;
-						final String endText;
-						if (pt.getObjectText().equals(spSubj)) {
-							// forward chaining: ... / <iri>
-							joinStep = "/" + renderIRI((IRI) pv.getValue());
-							endText = spObj;
-						} else if (pt.getObjectText().equals(spObj)) {
-							// inverse chaining: ... / ^<iri>
-							joinStep = "/^" + renderIRI((IRI) pv.getValue());
-							endText = spSubj;
-						} else {
-							joinStep = null;
-							endText = null;
-						}
-						if (joinStep != null) {
-							final String fusedPath = pt.getPathText() + joinStep;
-							final String sTxt = applyOverridesToText(pt.getSubjectText(), overrides);
-							final String oTxt = applyOverridesToText(endText, overrides);
-							line(sTxt + " " + fusedPath + " " + oTxt + " .");
-							i += 2;
-							continue;
-						}
-					}
-				}
-				// Merge consecutive GRAPH blocks with same graph term
-				if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph) {
-					flushPL.run();
-					org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph g = (org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph) n;
-					Var gref = g.getGraph();
-					// Collect subsequent IrGraph with same ref
-					java.util.List<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> mergedLines = new java.util.ArrayList<>();
-					mergedLines.addAll(g.getWhere().getLines());
-					int j = i + 1;
-					while (j < lines.size()
-							&& lines.get(j) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph) {
-						org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph g2 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph) lines
-								.get(j);
-						Var gref2 = g2.getGraph();
-						if (!sameVar(gref, gref2)) {
-							break;
-						}
-						mergedLines.addAll(g2.getWhere().getLines());
-						j++;
-					}
-					// Print merged GRAPH block
-					indent();
-					out.append("GRAPH ").append(renderVarOrValue(gref)).append(' ');
-					openBlock();
-					printLines(mergedLines); // recursive property-list compaction inside
-					closeBlock();
-					i = j;
-					continue;
-				}
-
-				// Property-list grouping for consecutive triples with identical subjects
-				if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) {
-					// Pattern: SP with anon-path predicate + following FILTER NOT IN -> NPS triple
-					if (i + 1 < lines.size()
-							&& lines.get(i + 1) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) {
-						final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) n;
-						final Var pv = sp.getPredicate();
-						if (pv != null && !pv.hasValue() && pv.getName() != null
-								&& pv.getName().startsWith(ANON_PATH_PREFIX)) {
-							final String cond = ((org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) lines.get(i + 1))
-									.getConditionText();
-							final String joined = parseNotInList(cond, pv.getName());
-							if (joined != null) {
-								flushPL.run();
-								final String sTxt = renderTermWithOverrides(sp.getSubject(), overrides);
-								final String oTxt = renderTermWithOverrides(sp.getObject(), overrides);
-								line(sTxt + " !(" + joined + ") " + oTxt + " .");
-								i += 2;
-								continue;
-							}
-						}
-					}
-					org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) n;
-					// Prefer inverse print '?s ^p ?o' for the specific pattern '?o p ?s' with constant IRI
-					Var pv0 = sp.getPredicate();
-					Var s0 = sp.getSubject();
-					Var o0 = sp.getObject();
-					if (pv0 != null && pv0.hasValue() && pv0.getValue() instanceof IRI && s0 != null && o0 != null
-							&& !s0.hasValue() && !o0.hasValue()) {
-						String sName0 = s0.getName();
-						String oName0 = o0.getName();
-						if ("o".equals(sName0) && "s".equals(oName0)) {
-							flushPL.run();
-							line("?s ^" + renderIRI((IRI) pv0.getValue()) + " ?o .");
-							i++;
-							continue;
-						}
-					}
-					final String subj = renderTermWithOverrides(sp.getSubject(), overrides);
-					final String obj = renderTermWithOverrides(sp.getObject(), overrides);
-					if (plSubjectTmp == null) {
-						plSubjectTmp = subj;
-					}
-					if (!plSubjectTmp.equals(subj)) {
-						flushPL.run();
-						plSubjectTmp = subj;
-					}
-					plPairsTmp.add(new java.util.AbstractMap.SimpleEntry<>(sp.getPredicate(), obj));
-					i++;
-					// If next line is not a triple with same subject, flush now
-					boolean flushNow = true;
-					if (i < lines.size()
-							&& lines.get(i) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) {
-						org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp2 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) lines
-								.get(i);
-						flushNow = !renderTermWithOverrides(sp2.getSubject(), overrides).equals(plSubjectTmp);
-					}
-					if (flushNow) {
-						flushPL.run();
-					}
-					continue;
-				}
-
-				// If this is a UNION that can be rendered as a simple alternation path, do so now
-				if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion) {
-					if (tryRenderUnionAsPath((org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion) n, overrides)) {
-						i++;
-						continue;
-					}
-				}
-
-				// Any other node flushes pending property list and prints the node
-				flushPL.run();
-				printNodeViaIr(n);
-				i++;
+			if (lines == null) {
+				return;
 			}
-			flushPL.run();
+			for (org.eclipse.rdf4j.queryrender.sparql.ir.IrNode n : lines) {
+				printNodeViaIr(n);
+			}
 		}
 
 		private void printNodeViaIr(final org.eclipse.rdf4j.queryrender.sparql.ir.IrNode n) {
@@ -805,238 +618,7 @@ public class TupleExprIRRenderer {
 			return String.join("|", rdfFirst);
 		}
 
-		/**
-		 * Attempt to start a path chain at position i by following consecutive statement patterns that share an
-		 * _anon_path_* bridge var. Builds a fused path triple and returns how many input lines were consumed. Returns 0
-		 * if no chain was emitted.
-		 */
-		private int tryChainPathFrom(final java.util.List<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> lines,
-				int i) {
-			if (i >= lines.size()) {
-				return 0;
-			}
-			if (!(lines.get(i) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern)) {
-				return 0;
-			}
-			final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp0 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) lines
-					.get(i);
-			final Var p0 = sp0.getPredicate();
-			if (p0 == null || !p0.hasValue() || !(p0.getValue() instanceof IRI)) {
-				return 0;
-			}
-			// Determine initial direction and middle var
-			Var mid = null;
-			boolean startForward = false; // true when chain is ?s p ?mid
-			if (isAnonPathVar(sp0.getObject())) {
-				mid = sp0.getObject();
-				startForward = true;
-			} else if (isAnonPathVar(sp0.getSubject())) {
-				mid = sp0.getSubject();
-				startForward = false;
-			} else {
-				return 0; // no _anon_path_* bridge
-			}
-
-			final String start = renderVarOrValue(startForward ? sp0.getSubject() : sp0.getObject());
-			final java.util.List<String> parts = new java.util.ArrayList<>();
-			parts.add(renderIRI((IRI) p0.getValue()));
-			if (!startForward) {
-				parts.set(0, "^" + parts.get(0));
-			}
-
-			int j = i + 1;
-			Var cur = mid;
-			String end = null;
-			while (j < lines.size()) {
-				org.eclipse.rdf4j.queryrender.sparql.ir.IrNode n = lines.get(j);
-				if (!(n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern)) {
-					break;
-				}
-				org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) n;
-				Var p = sp.getPredicate();
-				if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
-					break;
-				}
-				boolean forward = sameVar(cur, sp.getSubject());
-				boolean inverse = sameVar(cur, sp.getObject());
-				if (!forward && !inverse) {
-					break;
-				}
-				String step = renderIRI((IRI) p.getValue());
-				if (inverse) {
-					step = "^" + step;
-				}
-				parts.add(step);
-				Var nextVar = forward ? sp.getObject() : sp.getSubject();
-				if (isAnonPathVar(nextVar)) {
-					cur = nextVar; // continue chaining
-					j++;
-					continue;
-				}
-				end = renderVarOrValue(nextVar);
-				j++;
-				break; // chain terminated at a concrete end var/value
-			}
-
-			if (end == null) {
-				return 0;
-			}
-			// Emit fused path triple
-			if (plSubjectTmp != null && !plPairsTmp.isEmpty()) {
-				java.util.List<String> partsOut = new java.util.ArrayList<>(plPairsTmp.size());
-				for (java.util.AbstractMap.SimpleEntry<Var, String> e : plPairsTmp) {
-					partsOut.add(renderPredicateForTriple(e.getKey()) + " " + e.getValue());
-				}
-				line(plSubjectTmp + " " + String.join(" ; ", partsOut) + " .");
-				plSubjectTmp = null;
-				plPairsTmp.clear();
-			}
-			String fused = String.join("/", parts);
-			line(start + " " + fused + " " + end + " .");
-			return j - i; // lines consumed
-		}
-
-		// Fuse SP + IrPathTriple when joined by an _anon_path_* var.
-		private int tryFuseSpThenPath(final java.util.List<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> lines,
-				int i) {
-			if (i + 1 >= lines.size())
-				return 0;
-			if (!(lines.get(i) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern))
-				return 0;
-			if (!(lines.get(i + 1) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple))
-				return 0;
-			final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) lines
-					.get(i);
-			final org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple pt = (org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) lines
-					.get(i + 1);
-			Var p = sp.getPredicate();
-			if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI))
-				return 0;
-			String bridge = renderVarOrValue(sp.getObject());
-			if (bridge.equals(pt.getSubjectText())) {
-				String fused = renderIRI((IRI) p.getValue()) + "/" + pt.getPathText();
-				String sTxt = renderVarOrValue(sp.getSubject());
-				String oTxt = pt.getObjectText();
-				// flush any pending PL
-				if (plSubjectTmp != null && !plPairsTmp.isEmpty()) {
-					java.util.List<String> partsOut = new java.util.ArrayList<>(plPairsTmp.size());
-					for (java.util.AbstractMap.SimpleEntry<Var, String> e : plPairsTmp) {
-						partsOut.add(renderPredicateForTriple(e.getKey()) + " " + e.getValue());
-					}
-					line(plSubjectTmp + " " + String.join(" ; ", partsOut) + " .");
-					plSubjectTmp = null;
-					plPairsTmp.clear();
-				}
-				line(sTxt + " " + fused + " " + oTxt + " .");
-				return 2;
-			}
-			String bridge2 = renderVarOrValue(sp.getSubject());
-			if (bridge2.equals(pt.getObjectText())) {
-				String fused = pt.getPathText() + "/^" + renderIRI((IRI) p.getValue());
-				String sTxt = pt.getSubjectText();
-				String oTxt = renderVarOrValue(sp.getObject());
-				if (plSubjectTmp != null && !plPairsTmp.isEmpty()) {
-					java.util.List<String> partsOut = new java.util.ArrayList<>(plPairsTmp.size());
-					for (java.util.AbstractMap.SimpleEntry<Var, String> e : plPairsTmp) {
-						partsOut.add(renderPredicateForTriple(e.getKey()) + " " + e.getValue());
-					}
-					line(plSubjectTmp + " " + String.join(" ; ", partsOut) + " .");
-					plSubjectTmp = null;
-					plPairsTmp.clear();
-				}
-				line(sTxt + " " + fused + " " + oTxt + " .");
-				return 2;
-			}
-			return 0;
-		}
-
-		private int tryFuseInverseNpsChain(final java.util.List<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> lines,
-				int i) {
-			if (i + 3 >= lines.size())
-				return 0;
-			if (!(lines.get(i) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern))
-				return 0;
-			final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp1 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) lines
-					.get(i);
-			Var p1 = sp1.getPredicate();
-			if (p1 == null || !p1.hasValue() || !(p1.getValue() instanceof IRI))
-				return 0;
-			Var mid1 = sp1.getSubject();
-			Var outer1 = sp1.getObject();
-			boolean firstInverse = true;
-			if (isAnonPathVar(outer1) && !isAnonPathVar(mid1)) {
-				Var tmp = outer1;
-				outer1 = mid1;
-				mid1 = tmp;
-				firstInverse = false;
-			}
-			if (!isAnonPathVar(mid1) || isAnonPathVar(outer1))
-				return 0;
-			if (!(lines.get(i + 1) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern))
-				return 0;
-			final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp2 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) lines
-					.get(i + 1);
-			if (!sameVar(mid1, sp2.getSubject()))
-				return 0;
-			Var pv = sp2.getPredicate();
-			if (pv == null || pv.hasValue() || pv.getName() == null || !pv.getName().startsWith(ANON_PATH_PREFIX))
-				return 0;
-			Var mid2 = sp2.getObject();
-			if (!isAnonPathVar(mid2))
-				return 0;
-			if (!(lines.get(i + 2) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter))
-				return 0;
-			final org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter f = (org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) lines
-					.get(i + 2);
-			final String cond = f.getConditionText();
-			if (cond == null || !cond.contains(pv.getName()))
-				return 0;
-			java.util.regex.Matcher m = java.util.regex.Pattern
-					.compile("(?i)\\?" + java.util.regex.Pattern.quote(pv.getName()) + "\\s+NOT\\s+IN\\s*\\(([^)]*)\\)")
-					.matcher(cond);
-			if (!m.find())
-				return 0;
-			String inner = m.group(1);
-			java.util.List<String> items = new java.util.ArrayList<>();
-			for (String t : inner.split(",")) {
-				items.add(t.trim());
-			}
-			// Reverse the NOT IN order to match original path alternation order
-			java.util.Collections.reverse(items);
-			if (!(lines.get(i + 3) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern))
-				return 0;
-			final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp3 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) lines
-					.get(i + 3);
-			if (!sameVar(mid2, sp3.getSubject()))
-				return 0;
-			Var p3 = sp3.getPredicate();
-			if (p3 == null || !p3.hasValue() || !(p3.getValue() instanceof IRI))
-				return 0;
-			Var outer2 = sp3.getObject();
-			if (isAnonPathVar(outer2))
-				return 0;
-			String start = renderVarOrValue(outer1);
-			java.util.List<String> parts = new java.util.ArrayList<>();
-			String step1 = renderIRI((IRI) p1.getValue());
-			if (firstInverse)
-				step1 = "^" + step1;
-			parts.add(step1);
-			parts.add("!(" + String.join("|", items) + ")");
-			parts.add(renderIRI((IRI) p3.getValue()));
-			String end = renderVarOrValue(outer2);
-			// flush PL
-			if (plSubjectTmp != null && !plPairsTmp.isEmpty()) {
-				java.util.List<String> partsOut = new java.util.ArrayList<>(plPairsTmp.size());
-				for (java.util.AbstractMap.SimpleEntry<Var, String> e : plPairsTmp) {
-					partsOut.add(renderPredicateForTriple(e.getKey()) + " " + e.getValue());
-				}
-				line(plSubjectTmp + " " + String.join(" ; ", partsOut) + " .");
-				plSubjectTmp = null;
-				plPairsTmp.clear();
-			}
-			line(start + " (" + String.join("/", parts) + ") " + end + " .");
-			return 4;
-		}
+		// (legacy printing-time fusions removed; transforms handle path/collection rewrites)
 
 		private void printNode(final org.eclipse.rdf4j.queryrender.sparql.ir.IrNode n,
 				final java.util.Map<String, String> overrides) {
@@ -1084,7 +666,7 @@ public class TupleExprIRRenderer {
 				return;
 			}
 			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional) {
-				final org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere ow = ((org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional) n)
+				final IrBGP ow = ((org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional) n)
 						.getWhere();
 				// Compact single-line OPTIONAL when the body consists of a single simple line
 				if (ow != null && ow.getLines().size() == 1) {
@@ -1130,7 +712,7 @@ public class TupleExprIRRenderer {
 				if (tryRenderUnionAsPath((org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion) n, overrides)) {
 					return;
 				}
-				final java.util.List<org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere> branches = ((org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion) n)
+				final java.util.List<IrBGP> branches = ((org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion) n)
 						.getBranches();
 				for (int i = 0; i < branches.size(); i++) {
 					indent();
@@ -1204,7 +786,7 @@ public class TupleExprIRRenderer {
 			}
 			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus) {
 				final org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus m = (org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus) n;
-				final org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere mw = m.getWhere();
+				final IrBGP mw = m.getWhere();
 				if (mw != null && mw.getLines().size() == 1) {
 					final org.eclipse.rdf4j.queryrender.sparql.ir.IrNode only = mw.getLines().get(0);
 					if (only instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple
@@ -1311,13 +893,13 @@ public class TupleExprIRRenderer {
 
 		private boolean tryRenderUnionAsPath(final org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion u,
 				final java.util.Map<String, String> overrides) {
-			final java.util.List<org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere> branches = u.getBranches();
+			final java.util.List<IrBGP> branches = u.getBranches();
 			if (branches.isEmpty()) {
 				return false;
 			}
 			Var subj = null, obj = null;
 			final java.util.List<String> iris = new java.util.ArrayList<>();
-			for (org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere b : branches) {
+			for (IrBGP b : branches) {
 				if (b.getLines().size() != 1
 						|| !(b.getLines()
 								.get(0) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern)) {
@@ -1589,9 +1171,9 @@ public class TupleExprIRRenderer {
 
 	/** Build a linear textual-IR for a TupleExpr WHERE tree (best effort). */
 	private final class IRBuilder extends AbstractQueryModelVisitor<RuntimeException> {
-		private final org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere where = new org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere();
+		private final IrBGP where = new IrBGP();
 
-		org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere build(final TupleExpr t) {
+		IrBGP build(final TupleExpr t) {
 			if (t != null) {
 				t.visit(this);
 			}
@@ -1605,7 +1187,7 @@ public class TupleExprIRRenderer {
 					sp.getSubjectVar(), sp.getPredicateVar(),
 					sp.getObjectVar());
 			if (ctx != null && (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
-				org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere inner = new org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere();
+				IrBGP inner = new IrBGP();
 				inner.add(node);
 				where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph(ctx, inner));
 			} else {
@@ -1623,7 +1205,7 @@ public class TupleExprIRRenderer {
 		public void meet(final LeftJoin lj) {
 			lj.getLeftArg().visit(this);
 			final IRBuilder rightBuilder = new IRBuilder();
-			final org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere right = rightBuilder.build(lj.getRightArg());
+			final IrBGP right = rightBuilder.build(lj.getRightArg());
 			if (lj.getCondition() != null) {
 				final String cond = stripRedundantOuterParens(renderExpr(lj.getCondition()));
 				right.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter(cond));
@@ -1695,7 +1277,7 @@ public class TupleExprIRRenderer {
 		@Override
 		public void meet(final Service svc) {
 			IRBuilder inner = new IRBuilder();
-			org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere w = inner.build(svc.getArg());
+			IrBGP w = inner.build(svc.getArg());
 			where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrService(renderVarOrValue(svc.getServiceRef()),
 					svc.isSilent(), w));
 		}
@@ -1874,7 +1456,7 @@ public class TupleExprIRRenderer {
 			// Print left side in sequence, then add a MINUS block for the right
 			diff.getLeftArg().visit(this);
 			IRBuilder right = new IRBuilder();
-			org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere rightWhere = right.build(diff.getRightArg());
+			IrBGP rightWhere = right.build(diff.getRightArg());
 			where.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus(rightWhere));
 		}
 

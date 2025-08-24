@@ -17,16 +17,20 @@ import java.util.List;
  * Textual IR node representing a UNION with multiple branches.
  */
 public class IrUnion extends IrNode {
-	private final List<IrWhere> branches = new ArrayList<>();
+	private List<IrBGP> branches = new ArrayList<>();
 
-	public List<IrWhere> getBranches() {
+	public List<IrBGP> getBranches() {
 		return branches;
 	}
 
-	public void addBranch(IrWhere w) {
+	public void addBranch(IrBGP w) {
 		if (w != null) {
 			branches.add(w);
 		}
+	}
+
+	public void setBranches(List<IrBGP> newBranches) {
+		this.branches = (newBranches == null) ? new ArrayList<>() : new ArrayList<>(newBranches);
 	}
 
 	@Override
@@ -43,5 +47,15 @@ public class IrUnion extends IrNode {
 				p.popIndent();
 			}
 		}
+	}
+
+	@Override
+	public IrNode transformChildren(java.util.function.UnaryOperator<IrNode> op) {
+		IrUnion u = new IrUnion();
+		for (IrBGP b : this.branches) {
+			IrNode t = op.apply(b);
+			u.addBranch(t instanceof IrBGP ? (IrBGP) t : b);
+		}
+		return u;
 	}
 }
