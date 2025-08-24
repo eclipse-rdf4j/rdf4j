@@ -33,14 +33,6 @@ public final class IrTransforms {
 		return v != null && !v.hasValue() && v.getName() != null && v.getName().startsWith(ANON_PATH_PREFIX);
 	}
 
-	/**
-	 * Do not use this method. All transformations should be applied after the IR is fully built by using the
-	 * transformChildren methods and passing in a function.
-	 *
-	 * @param select
-	 * @param r
-	 */
-	@Deprecated
 	public static IrSelect transformUsingChildren(IrSelect select, TupleExprIRRenderer r) {
 		if (select == null)
 			return null;
@@ -48,16 +40,16 @@ public final class IrTransforms {
 		return (IrSelect) select.transformChildren(child -> {
 			if (child instanceof IrBGP) {
 				IrBGP w = (IrBGP) child;
+				w = applyCollections(w, r);
 				w = applyNegatedPropertySet(w, r);
-				w = normalizeZeroOrOneSubselect(w, r);
 				w = applyPaths(w, r);
 				// Merge adjacent GRAPH blocks with the same graph ref so that downstream fusers see a single body
 				w = coalesceAdjacentGraphs(w);
 				// Collections and options later; first ensure path alternations are extended when possible
 				w = mergeOptionalIntoPrecedingGraph(w);
 				w = fuseAltInverseTailBGP(w, r);
-				w = applyCollections(w, r);
 				w = applyPropertyLists(w, r);
+				w = normalizeZeroOrOneSubselect(w, r);
 				return w;
 			}
 			return child;
