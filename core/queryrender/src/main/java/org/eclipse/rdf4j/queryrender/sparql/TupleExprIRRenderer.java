@@ -354,8 +354,10 @@ public class TupleExprIRRenderer {
 			System.out.println("# IR (raw)\n" + org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug.dump(ir));
 		}
 
-		// Transformations: paths/collections/having
-		org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms.applyAll(ir, this);
+		// Transformations: use function-style child transforms on BGPs (paths/collections/etc.)
+		final org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect irTransformed = org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms
+				.transformUsingChildren(ir, this);
+		ir.setWhere(irTransformed.getWhere());
 
 		if (cfg.debugIR) {
 			System.out.println("# IR (transformed)\n" + org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug.dump(ir));
