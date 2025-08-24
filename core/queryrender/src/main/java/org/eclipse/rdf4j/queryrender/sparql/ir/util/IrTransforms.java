@@ -51,6 +51,8 @@ public final class IrTransforms {
 				w = applyNegatedPropertySet(w, r);
 				w = normalizeZeroOrOneSubselect(w, r);
 				w = applyPaths(w, r);
+				// Merge adjacent GRAPH blocks with the same graph ref so that downstream fusers see a single body
+				w = coalesceAdjacentGraphs(w);
 				// Collections and options later; first ensure path alternations are extended when possible
 				w = mergeOptionalIntoPrecedingGraph(w);
 				w = fuseAltInverseTailBGP(w, r);
@@ -62,42 +64,142 @@ public final class IrTransforms {
 		});
 	}
 
+	/** Merge sequences of adjacent IrGraph blocks with identical graph ref into a single IrGraph. */
+	private static IrBGP coalesceAdjacentGraphs(IrBGP bgp) {
+		if (bgp == null)
+			return null;
+		final java.util.List<IrNode> in = bgp.getLines();
+		final java.util.List<IrNode> out = new java.util.ArrayList<>();
+		for (int i = 0; i < in.size(); i++) {
+			IrNode n = in.get(i);
+			if (n instanceof IrGraph) {
+				final IrGraph g1 = (IrGraph) n;
+				final IrBGP merged = new IrBGP();
+				// start with g1 inner lines
+				if (g1.getWhere() != null) {
+					g1.getWhere().getLines().forEach(merged::add);
+				}
+				int j = i + 1;
+				while (j < in.size() && (in.get(j) instanceof IrGraph)) {
+					final IrGraph gj = (IrGraph) in.get(j);
+					if (!sameVar(g1.getGraph(), gj.getGraph()))
+						break;
+					if (gj.getWhere() != null) {
+						gj.getWhere().getLines().forEach(merged::add);
+					}
+					j++;
+				}
+				out.add(new IrGraph(g1.getGraph(), merged));
+				i = j - 1;
+				continue;
+			}
+
+			// Recurse into containers
+			if (n instanceof IrOptional) {
+				final IrOptional o = (IrOptional) n;
+				out.add(new IrOptional(coalesceAdjacentGraphs(o.getWhere())));
+				continue;
+			}
+			if (n instanceof IrMinus) {
+				final IrMinus m = (IrMinus) n;
+				out.add(new IrMinus(coalesceAdjacentGraphs(m.getWhere())));
+				continue;
+			}
+			if (n instanceof IrUnion) {
+				final IrUnion u = (IrUnion) n;
+				final IrUnion u2 = new IrUnion();
+				for (IrBGP b : u.getBranches()) {
+					u2.addBranch(coalesceAdjacentGraphs(b));
+				}
+				out.add(u2);
+				continue;
+			}
+			if (n instanceof IrService) {
+				final IrService s = (IrService) n;
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(), coalesceAdjacentGraphs(s.getWhere())));
+				continue;
+			}
+			out.add(n);
+		}
+		final IrBGP res = new IrBGP();
+		out.forEach(res::add);
+		return res;
+	}
+
 	// Fuse a PathTriple with alternation on its path followed by an inverse tail triple using the same mid var,
 	// e.g., ?x (a|b) ?mid . ?y foaf:knows ?mid . => ?x (a|b)/^foaf:knows ?y
+	/**
+	 * Fuse a path triple whose object is a bridge var with a constant-IRI tail triple that also uses the bridge var,
+	 * producing a new path with an added '/^p' or '/p' segment. This version indexes join candidates and works inside
+	 * GRAPH bodies as well. It is conservative: only constant predicate tails are fused and containers are preserved.
+	 */
 	private static IrBGP fuseAltInverseTailBGP(IrBGP bgp, TupleExprIRRenderer r) {
 		if (bgp == null)
 			return null;
-		java.util.List<IrNode> in = bgp.getLines();
-		java.util.List<IrNode> out = new java.util.ArrayList<>();
-		java.util.Set<IrNode> removed = new java.util.HashSet<>();
+
+		final java.util.List<IrNode> in = bgp.getLines();
+		final java.util.List<IrNode> out = new java.util.ArrayList<>();
+		final java.util.Set<IrNode> removed = new java.util.HashSet<>();
+
+		// Build index of potential tail-join SPs keyed by the bridge var text ("?name"). We store both
+		// subject-joins and object-joins, and prefer object-join (inverse tail) to match expectations.
+		final java.util.Map<String, java.util.List<IrStatementPattern>> bySubject = new java.util.HashMap<>();
+		final java.util.Map<String, java.util.List<IrStatementPattern>> byObject = new java.util.HashMap<>();
+		for (IrNode n : in) {
+			if (!(n instanceof IrStatementPattern))
+				continue;
+			final IrStatementPattern sp = (IrStatementPattern) n;
+			final Var pv = sp.getPredicate();
+			if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI))
+				continue;
+			// Only index when the non-bridge end is not an anon_path_* var (safety)
+			final String sTxt = varOrValue(sp.getSubject(), r);
+			final String oTxt = varOrValue(sp.getObject(), r);
+			if (sp.getObject() != null && !isAnonPathVar(sp.getSubject()) && oTxt != null && oTxt.startsWith("?")) {
+				byObject.computeIfAbsent(oTxt, k -> new java.util.ArrayList<>()).add(sp);
+			}
+			if (sp.getSubject() != null && !isAnonPathVar(sp.getObject()) && sTxt != null && sTxt.startsWith("?")) {
+				bySubject.computeIfAbsent(sTxt, k -> new java.util.ArrayList<>()).add(sp);
+			}
+		}
+
 		for (int i = 0; i < in.size(); i++) {
 			IrNode n = in.get(i);
 			if (removed.contains(n))
 				continue;
+
 			if (n instanceof IrPathTriple) {
 				IrPathTriple pt = (IrPathTriple) n;
-				String path = pt.getPathText();
-				String obj = pt.getObjectText();
-				if (path != null && obj != null && obj.startsWith("?")) {
+				final String bridge = pt.getObjectText();
+				if (bridge != null && bridge.startsWith("?")) {
 					IrStatementPattern join = null;
-					for (int j = i + 1; j < in.size(); j++) {
-						IrNode m = in.get(j);
-						if (!(m instanceof IrStatementPattern))
-							continue;
-						IrStatementPattern sp = (IrStatementPattern) m;
-						Var pv = sp.getPredicate();
-						if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI))
-							continue;
-						String oTxt = varOrValue(sp.getObject(), r);
-						if (obj.equals(oTxt)) {
-							join = sp;
-							break;
+					boolean inverse = true; // prefer inverse tail (?y p ?mid) => '^p'
+					final java.util.List<IrStatementPattern> byObj = byObject.get(bridge);
+					if (byObj != null) {
+						for (IrStatementPattern sp : byObj) {
+							if (!removed.contains(sp)) {
+								join = sp;
+								inverse = true;
+								break;
+							}
+						}
+					}
+					if (join == null) {
+						final java.util.List<IrStatementPattern> bySub = bySubject.get(bridge);
+						if (bySub != null) {
+							for (IrStatementPattern sp : bySub) {
+								if (!removed.contains(sp)) {
+									join = sp;
+									inverse = false;
+									break;
+								}
+							}
 						}
 					}
 					if (join != null) {
-						String step = r.renderIRI((IRI) join.getPredicate().getValue());
-						String newPath = path + "/^" + step;
-						String newEnd = varOrValue(join.getSubject(), r);
+						final String step = r.renderIRI((IRI) join.getPredicate().getValue());
+						final String newPath = pt.getPathText() + "/" + (inverse ? "^" : "") + step;
+						final String newEnd = varOrValue(inverse ? join.getSubject() : join.getObject(), r);
 						pt = new IrPathTriple(pt.getSubjectText(), newPath, newEnd);
 						removed.add(join);
 					}
@@ -105,44 +207,47 @@ public final class IrTransforms {
 				out.add(pt);
 				continue;
 			}
+
+			// Recurse into containers
 			if (n instanceof IrGraph) {
-				IrGraph g = (IrGraph) n;
+				final IrGraph g = (IrGraph) n;
 				out.add(new IrGraph(g.getGraph(), fuseAltInverseTailBGP(g.getWhere(), r)));
 				continue;
 			}
 			if (n instanceof IrOptional) {
-				IrOptional o = (IrOptional) n;
+				final IrOptional o = (IrOptional) n;
 				out.add(new IrOptional(fuseAltInverseTailBGP(o.getWhere(), r)));
 				continue;
 			}
 			if (n instanceof IrMinus) {
-				IrMinus m = (IrMinus) n;
+				final IrMinus m = (IrMinus) n;
 				out.add(new IrMinus(fuseAltInverseTailBGP(m.getWhere(), r)));
 				continue;
 			}
 			if (n instanceof IrUnion) {
-				IrUnion u = (IrUnion) n;
-				IrUnion u2 = new IrUnion();
-				for (IrBGP b : u.getBranches())
+				final IrUnion u = (IrUnion) n;
+				final IrUnion u2 = new IrUnion();
+				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(fuseAltInverseTailBGP(b, r));
+				}
 				out.add(u2);
 				continue;
 			}
 			if (n instanceof IrService) {
-				IrService s = (IrService) n;
+				final IrService s = (IrService) n;
 				out.add(new IrService(s.getServiceRefText(), s.isSilent(), fuseAltInverseTailBGP(s.getWhere(), r)));
 				continue;
 			}
-			if (n instanceof IrSubSelect) {
-				out.add(n);
-				continue;
-			}
+			// Subselects: keep as-is
 			out.add(n);
 		}
-		IrBGP res = new IrBGP();
-		for (IrNode n2 : out)
-			if (!removed.contains(n2))
+
+		final IrBGP res = new IrBGP();
+		for (IrNode n2 : out) {
+			if (!removed.contains(n2)) {
 				res.add(n2);
+			}
+		}
 		return res;
 	}
 
@@ -243,9 +348,15 @@ public final class IrTransforms {
 
 		final List<IrNode> in = bgp.getLines();
 		final List<IrNode> out = new ArrayList<>();
+		final java.util.Set<IrNode> consumed = new java.util.LinkedHashSet<>();
 
 		for (int i = 0; i < in.size(); i++) {
 			IrNode n = in.get(i);
+			if (consumed.contains(n)) {
+				continue;
+			}
+
+			// (global NOT IN → NPS rewrite intentionally not applied; see specific GRAPH fusions below)
 
 			// Pattern A: GRAPH, FILTER, [GRAPH]
 			if (n instanceof IrGraph && i + 1 < in.size() && in.get(i + 1) instanceof IrFilter) {
@@ -1244,7 +1355,7 @@ public final class IrTransforms {
 		res = joinPathWithLaterSp(res, r);
 		// Fuse forward SP to anon mid, followed by inverse tail to same mid (e.g. / ^foaf:knows)
 		res = fuseForwardThenInverseTail(res, r);
-		// Fuse alternation path + inverse tail in the same BGP (especially inside GRAPH)
+		// Fuse alternation path + (inverse) tail in the same BGP (especially inside GRAPH)
 		res = fuseAltInverseTailBGP(res, r);
 		// Normalize inner GRAPH bodies again for PT+SP fusions
 		res = normalizeGraphInnerPaths(res, r);
@@ -1258,7 +1369,11 @@ public final class IrTransforms {
 		for (IrNode n : bgp.getLines()) {
 			if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				out.add(new IrGraph(g.getGraph(), joinPathWithLaterSp(g.getWhere(), r)));
+				IrBGP inner = g.getWhere();
+				inner = fuseAdjacentPtThenSp(inner, r);
+				inner = joinPathWithLaterSp(inner, r);
+				inner = fuseAltInverseTailBGP(inner, r);
+				out.add(new IrGraph(g.getGraph(), inner));
 			} else if (n instanceof IrBGP || n instanceof IrOptional || n instanceof IrMinus || n instanceof IrUnion
 					|| n instanceof IrService) {
 				n = n.transformChildren(child -> {
@@ -1270,6 +1385,72 @@ public final class IrTransforms {
 			} else {
 				out.add(n);
 			}
+		}
+		IrBGP res = new IrBGP();
+		out.forEach(res::add);
+		return res;
+	}
+
+	private static IrBGP fuseAdjacentPtThenSp(IrBGP bgp, TupleExprIRRenderer r) {
+		if (bgp == null)
+			return null;
+		java.util.List<IrNode> in = bgp.getLines();
+		java.util.List<IrNode> out = new java.util.ArrayList<>();
+		for (int i = 0; i < in.size(); i++) {
+			IrNode n = in.get(i);
+			if (i + 1 < in.size() && n instanceof IrPathTriple && in.get(i + 1) instanceof IrStatementPattern) {
+				IrPathTriple pt = (IrPathTriple) n;
+				IrStatementPattern sp = (IrStatementPattern) in.get(i + 1);
+				Var pv = sp.getPredicate();
+				if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
+					String bridge = pt.getObjectText();
+					String sTxt = varOrValue(sp.getSubject(), r);
+					String oTxt = varOrValue(sp.getObject(), r);
+					if (bridge != null && bridge.startsWith("?")) {
+						if (bridge.equals(sTxt)) {
+							String fused = pt.getPathText() + "/" + r.renderIRI((IRI) pv.getValue());
+							out.add(new IrPathTriple(pt.getSubjectText(), fused, oTxt));
+							i += 1;
+							continue;
+						} else if (bridge.equals(oTxt)) {
+							String fused = pt.getPathText() + "/^" + r.renderIRI((IRI) pv.getValue());
+							out.add(new IrPathTriple(pt.getSubjectText(), fused, sTxt));
+							i += 1;
+							continue;
+						}
+					}
+				}
+			}
+			// Recurse into containers
+			if (n instanceof IrGraph) {
+				IrGraph g = (IrGraph) n;
+				out.add(new IrGraph(g.getGraph(), fuseAdjacentPtThenSp(g.getWhere(), r)));
+				continue;
+			}
+			if (n instanceof IrOptional) {
+				IrOptional o = (IrOptional) n;
+				out.add(new IrOptional(fuseAdjacentPtThenSp(o.getWhere(), r)));
+				continue;
+			}
+			if (n instanceof IrMinus) {
+				IrMinus m = (IrMinus) n;
+				out.add(new IrMinus(fuseAdjacentPtThenSp(m.getWhere(), r)));
+				continue;
+			}
+			if (n instanceof IrUnion) {
+				IrUnion u = (IrUnion) n;
+				IrUnion u2 = new IrUnion();
+				for (IrBGP b : u.getBranches())
+					u2.addBranch(fuseAdjacentPtThenSp(b, r));
+				out.add(u2);
+				continue;
+			}
+			if (n instanceof IrService) {
+				IrService s = (IrService) n;
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(), fuseAdjacentPtThenSp(s.getWhere(), r)));
+				continue;
+			}
+			out.add(n);
 		}
 		IrBGP res = new IrBGP();
 		out.forEach(res::add);
