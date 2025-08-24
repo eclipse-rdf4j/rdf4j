@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.query.algebra;
 
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
 
@@ -161,7 +162,7 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 
 	@Override
 	public Set<String> getAssuredBindingNames() {
-		Set<String> bindingNames = new HashSet<>(8);
+		Set<String> bindingNames = new LinkedHashSet<>(8);
 
 		if (subjectVar != null) {
 			bindingNames.add(subjectVar.getName());
