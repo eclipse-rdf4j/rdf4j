@@ -2076,14 +2076,29 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
 	void deep_union_path_5() {
 		String q = "SELECT ?s ?o\n" +
 				"WHERE {\n" +
-				"  { { ?s (foaf:knows/foaf:knows|ex:knows/^ex:knows) ?o . } UNION { ?s ^foaf:knows/(foaf:knows|ex:knows) ?o . } }\n"
+				"  {\n " +
+				"		{ \n" +
+				"		?s (foaf:knows/foaf:knows|ex:knows/^ex:knows) ?o . \n" +
+				"		} \n" +
+				"			UNION \n" +
+				"		{\n" +
+				"			?s ^foaf:knows/(foaf:knows|ex:knows) ?o . \n" +
+				"		}\n" +
+				"  }\n"
 				+
 				"    UNION\n" +
-				"  { { ?s !(rdf:type|ex:age) ?o . } UNION { ?s foaf:knows? ?o . } }\n" +
+				"  { \n" +
+				"		{ \n" +
+				"			?s !(rdf:type|ex:age) ?o . \n" +
+				"		}\n" +
+				"			UNION\n" +
+				"		{\n" +
+				"			 ?s foaf:knows? ?o .\n" +
+				"	 	}\n" +
+				"	}\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
 	}
