@@ -31,36 +31,11 @@ public class IrMinus extends IrNode {
 	@Override
 	public void print(IrPrinter p) {
 		IrBGP ow = getWhere();
-		if (ow != null && ow.getLines().size() == 1) {
-			IrNode only = ow.getLines().get(0);
-			if (only instanceof IrPathTriple || only instanceof IrStatementPattern) {
-				StringBuilder sb = new StringBuilder();
-				sb.append("MINUS { ");
-				if (only instanceof IrPathTriple) {
-					IrPathTriple pt = (IrPathTriple) only;
-					sb.append(p.applyOverridesToText(pt.getSubjectText()))
-							.append(' ')
-							.append(pt.getPathText())
-							.append(' ')
-							.append(p.applyOverridesToText(pt.getObjectText()))
-							.append(" . ");
-				} else {
-					IrStatementPattern sp = (IrStatementPattern) only;
-					sb.append(p.renderTermWithOverrides(sp.getSubject()))
-							.append(' ')
-							.append(p.renderPredicateForTriple(sp.getPredicate()))
-							.append(' ')
-							.append(p.renderTermWithOverrides(sp.getObject()))
-							.append(" . ");
-				}
-				sb.append('}');
-				p.line(sb.toString());
-				return;
-			}
-		}
 		p.line("MINUS {");
 		p.pushIndent();
-		p.printLines(ow.getLines());
+		if (ow != null) {
+			p.printLines(ow.getLines());
+		}
 		p.popIndent();
 		p.line("}");
 	}
