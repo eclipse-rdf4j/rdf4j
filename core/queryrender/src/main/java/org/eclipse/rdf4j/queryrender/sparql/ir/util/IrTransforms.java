@@ -39,6 +39,35 @@ public final class IrTransforms {
 	private IrTransforms() {
 	}
 
+	/** Replace IrUnion nodes with a single branch by their contents to avoid extraneous braces. */
+	private static IrBGP flattenSingletonUnions(IrBGP bgp) {
+		if (bgp == null)
+			return null;
+		final java.util.List<IrNode> out = new java.util.ArrayList<>();
+		for (IrNode n : bgp.getLines()) {
+			// Recurse first
+			n = n.transformChildren(child -> {
+				if (child instanceof IrBGP)
+					return flattenSingletonUnions((IrBGP) child);
+				return child;
+			});
+			if (n instanceof IrUnion) {
+				IrUnion u = (IrUnion) n;
+				if (u.getBranches().size() == 1) {
+					IrBGP only = u.getBranches().get(0);
+					for (IrNode ln : only.getLines()) {
+						out.add(ln);
+					}
+					continue;
+				}
+			}
+			out.add(n);
+		}
+		IrBGP res = new IrBGP();
+		out.forEach(res::add);
+		return res;
+	}
+
 	// Local copy of parser's _anon_path_ naming hint for safe path fusions
 	private static final String ANON_PATH_PREFIX = "_anon_path_";
 
@@ -63,6 +92,7 @@ public final class IrTransforms {
 				// Collections and options later; first ensure path alternations are extended when possible
 				w = mergeOptionalIntoPrecedingGraph(w);
 				w = fuseAltInverseTailBGP(w, r);
+				w = flattenSingletonUnions(w);
 				// Reorder OPTIONAL-level filters before nested OPTIONALs when safe (variable-availability heuristic)
 				w = reorderFiltersInOptionalBodies(w, r);
 				w = applyPropertyLists(w, r);
@@ -1553,8 +1583,8 @@ public final class IrTransforms {
 								if (alts.size() == 2 && alts.get(0).startsWith("^")) {
 									altTxt = "(" + alts.get(0) + " )|" + alts.get(1);
 								}
-								// Parenthesize both sides for stability in precedence-sensitive tests
-								String pathTxt = "((" + first + ")/((" + altTxt + ")))";
+								// Parenthesize only the alternation side; leave the first step bare to match expected
+								String pathTxt = "(" + first + ")/(" + altTxt + ")";
 
 								IrPathTriple fused = new IrPathTriple(startTxt, pathTxt, endTxt);
 								if (graphRef != null) {
@@ -1633,7 +1663,7 @@ public final class IrTransforms {
 								first = "^" + first;
 							}
 							if (midTxt.equals(pt.getSubjectText())) {
-								String fused = "(" + first + "/" + pt.getPathText() + ")";
+								String fused = first + "/" + pt.getPathText();
 								IrBGP newInner = new IrBGP();
 								newInner.add(new IrPathTriple(sideTxt, fused, pt.getObjectText()));
 								// copy any leftover inner lines except sp0
@@ -1799,7 +1829,144 @@ public final class IrTransforms {
 					}
 					if (ok && startTxt != null && endTxt != null && !seqs.isEmpty()) {
 						final String alt = (seqs.size() == 1) ? seqs.get(0) : String.join("|", seqs);
-						out.add(new IrPathTriple(startTxt, "(" + alt + ")", endTxt));
+						out.add(new IrPathTriple(startTxt, alt, endTxt));
+						continue;
+					}
+				}
+
+				// 2b: Partial 2-step subset merge. If some (>=2) branches are exactly two-SP chains with
+				// identical endpoints, merge those into one IrPathTriple and keep the remaining branches
+				// as-is. This preserves grouping like "{ {A|B} UNION {C} }" when the union has A, B, and C
+				// but only A and B are plain two-step sequences.
+				{
+					final java.util.List<Integer> idx = new java.util.ArrayList<>();
+					String startTxt = null, endTxt = null;
+					final java.util.List<String> seqs = new java.util.ArrayList<>();
+					for (int bi = 0; bi < u.getBranches().size(); bi++) {
+						IrBGP b = u.getBranches().get(bi);
+						if (b.getLines().size() != 2 || !(b.getLines().get(0) instanceof IrStatementPattern)
+								|| !(b.getLines().get(1) instanceof IrStatementPattern)) {
+							continue;
+						}
+						final IrStatementPattern a = (IrStatementPattern) b.getLines().get(0);
+						final IrStatementPattern c = (IrStatementPattern) b.getLines().get(1);
+						final Var ap = a.getPredicate(), cp = c.getPredicate();
+						if (ap == null || !ap.hasValue() || !(ap.getValue() instanceof IRI) || cp == null
+								|| !cp.hasValue() || !(cp.getValue() instanceof IRI)) {
+							continue;
+						}
+						Var mid = null, startVar = null, endVar = null;
+						boolean firstForward = false, secondForward = false;
+						if (isAnonPathVar(a.getObject()) && sameVar(a.getObject(), c.getSubject())) {
+							mid = a.getObject();
+							startVar = a.getSubject();
+							endVar = c.getObject();
+							firstForward = true;
+							secondForward = true;
+						} else if (isAnonPathVar(a.getSubject()) && sameVar(a.getSubject(), c.getObject())) {
+							mid = a.getSubject();
+							startVar = a.getObject();
+							endVar = c.getSubject();
+							firstForward = false;
+							secondForward = false;
+						} else if (isAnonPathVar(a.getObject()) && sameVar(a.getObject(), c.getObject())) {
+							mid = a.getObject();
+							startVar = a.getSubject();
+							endVar = c.getSubject();
+							firstForward = true;
+							secondForward = false;
+						} else if (isAnonPathVar(a.getSubject()) && sameVar(a.getSubject(), c.getSubject())) {
+							mid = a.getSubject();
+							startVar = a.getObject();
+							endVar = c.getObject();
+							firstForward = false;
+							secondForward = true;
+						}
+						if (mid == null) {
+							continue;
+						}
+						final String sTxt = varOrValue(startVar, r);
+						final String eTxt = varOrValue(endVar, r);
+						final String step1 = (firstForward ? "" : "^") + r.renderIRI((IRI) ap.getValue());
+						final String step2 = (secondForward ? "" : "^") + r.renderIRI((IRI) cp.getValue());
+						final String seq = step1 + "/" + step2;
+						if (startTxt == null && endTxt == null) {
+							startTxt = sTxt;
+							endTxt = eTxt;
+						} else if (!(startTxt.equals(sTxt) && endTxt.equals(eTxt))) {
+							continue;
+						}
+						idx.add(bi);
+						seqs.add(seq);
+					}
+					if (idx.size() >= 2) {
+						final String alt = String.join("|", seqs);
+						final IrPathTriple fused = new IrPathTriple(startTxt, alt, endTxt);
+						// Rebuild union branches: fused + the non-merged ones (in original order)
+						final IrUnion u2 = new IrUnion();
+						IrBGP fusedBgp = new IrBGP();
+						fusedBgp.add(fused);
+						u2.addBranch(fusedBgp);
+						for (int bi = 0; bi < u.getBranches().size(); bi++) {
+							if (!idx.contains(bi)) {
+								u2.addBranch(u.getBranches().get(bi));
+							}
+						}
+						out.add(u2);
+						continue;
+					}
+				}
+
+				// 2c: Partial merge of IrPathTriple branches (no inner alternation). If there are >=2 branches where
+				// each
+				// is a simple IrPathTriple without inner alternation or quantifiers and they share identical endpoints,
+				// fuse them into a single alternation path, keeping remaining branches intact.
+				{
+					String sTxt = null, oTxt = null;
+					final java.util.List<Integer> idx = new java.util.ArrayList<>();
+					final java.util.List<String> basePaths = new java.util.ArrayList<>();
+					for (int bi = 0; bi < u.getBranches().size(); bi++) {
+						IrBGP b = u.getBranches().get(bi);
+						if (b.getLines().size() != 1)
+							continue;
+						IrNode only = b.getLines().get(0);
+						IrPathTriple pt = null;
+						if (only instanceof IrPathTriple) {
+							pt = (IrPathTriple) only;
+						} else if (only instanceof IrGraph) {
+							IrGraph g = (IrGraph) only;
+							if (g.getWhere() != null && g.getWhere().getLines().size() == 1
+									&& g.getWhere().getLines().get(0) instanceof IrPathTriple) {
+								pt = (IrPathTriple) g.getWhere().getLines().get(0);
+							}
+						}
+						if (pt == null)
+							continue;
+						final String ptxt = pt.getPathText();
+						if (ptxt.contains("|") || ptxt.contains("?") || ptxt.contains("*") || ptxt.contains("+"))
+							continue; // skip inner alternation or quantifier
+						if (sTxt == null && oTxt == null) {
+							sTxt = pt.getSubjectText();
+							oTxt = pt.getObjectText();
+						} else if (!(sTxt.equals(pt.getSubjectText()) && oTxt.equals(pt.getObjectText()))) {
+							continue;
+						}
+						idx.add(bi);
+						basePaths.add(ptxt);
+					}
+					if (idx.size() >= 2) {
+						final String alt = String.join("|", basePaths);
+						final IrPathTriple fused = new IrPathTriple(sTxt, alt, oTxt);
+						final IrUnion u2 = new IrUnion();
+						IrBGP fusedBgp = new IrBGP();
+						fusedBgp.add(fused);
+						u2.addBranch(fusedBgp);
+						for (int bi = 0; bi < u.getBranches().size(); bi++) {
+							if (!idx.contains(bi)) {
+								u2.addBranch(u.getBranches().get(bi));
+							}
+						}
+						out.add(u2);
 						continue;
 					}
 				}
@@ -1840,15 +2007,21 @@ public final class IrTransforms {
 						paths.add(pt.getPathText());
 					}
 					boolean hasQuantifier = false;
+					boolean hasInnerAlternation = false;
 					for (String ptxt : paths) {
 						if (ptxt.contains("?") || ptxt.contains("*") || ptxt.contains("+")) {
 							hasQuantifier = true;
 							break;
 						}
+						if (ptxt.contains("|")) {
+							hasInnerAlternation = true;
+						}
 					}
-					if (allPt && sTxt != null && oTxt != null && !paths.isEmpty() && !hasQuantifier) {
+					// Only merge when there are no quantifiers and no inner alternation groups inside each path
+					if (allPt && sTxt != null && oTxt != null && !paths.isEmpty() && !hasQuantifier
+							&& !hasInnerAlternation) {
 						final String alt = (paths.size() == 1) ? paths.get(0) : String.join("|", paths);
-						out.add(new IrPathTriple(sTxt, "(" + alt + ")", oTxt));
+						out.add(new IrPathTriple(sTxt, alt, oTxt));
 						continue;
 					}
 				}
