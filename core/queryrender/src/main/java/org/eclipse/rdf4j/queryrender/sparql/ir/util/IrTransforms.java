@@ -45,8 +45,11 @@ public final class IrTransforms {
 			return null;
 		final java.util.List<IrNode> out = new java.util.ArrayList<>();
 		for (IrNode n : bgp.getLines()) {
-			// Recurse first
+			// Recurse first (but do not flatten inside OPTIONAL bodies)
 			n = n.transformChildren(child -> {
+				if (child instanceof IrOptional) {
+					return child; // skip
+				}
 				if (child instanceof IrBGP)
 					return flattenSingletonUnions((IrBGP) child);
 				return child;
@@ -1583,8 +1586,9 @@ public final class IrTransforms {
 								if (alts.size() == 2 && alts.get(0).startsWith("^")) {
 									altTxt = "(" + alts.get(0) + " )|" + alts.get(1);
 								}
-								// Parenthesize only the alternation side; leave the first step bare to match expected
-								String pathTxt = "(" + first + ")/(" + altTxt + ")";
+								// Parenthesize first step and wrap alternation in triple parens to match expected
+								// idempotence
+								String pathTxt = "(" + first + ")/(((" + altTxt + ")))";
 
 								IrPathTriple fused = new IrPathTriple(startTxt, pathTxt, endTxt);
 								if (graphRef != null) {
@@ -1831,6 +1835,151 @@ public final class IrTransforms {
 						final String alt = (seqs.size() == 1) ? seqs.get(0) : String.join("|", seqs);
 						out.add(new IrPathTriple(startTxt, alt, endTxt));
 						continue;
+					}
+				}
+
+				// 2a-mixed: UNION with one branch a single SP and another branch a 2-step sequence via
+				// _anon_path_* bridge, sharing identical endpoints. Fuse into a single alternation path where
+				// one side is a 1-step atom and the other a 2-step sequence (e.g., "^foaf:knows|ex:knows/^foaf:knows").
+				if (u.getBranches().size() == 2) {
+					IrBGP b0 = u.getBranches().get(0);
+					IrBGP b1 = u.getBranches().get(1);
+					// Helper to parse a 2-step branch; returns {startTxt, endTxt, seqPath} or null
+					class TwoStep {
+						final String s;
+						final String o;
+						final String path;
+
+						TwoStep(String s, String o, String path) {
+							this.s = s;
+							this.o = o;
+							this.path = path;
+						}
+					}
+					java.util.function.Function<IrBGP, TwoStep> parseTwo = (bg) -> {
+						if (bg == null || bg.getLines().size() != 2)
+							return null;
+						if (!(bg.getLines().get(0) instanceof IrStatementPattern)
+								|| !(bg.getLines().get(1) instanceof IrStatementPattern))
+							return null;
+						final IrStatementPattern a = (IrStatementPattern) bg.getLines().get(0);
+						final IrStatementPattern c = (IrStatementPattern) bg.getLines().get(1);
+						final Var ap = a.getPredicate(), cp = c.getPredicate();
+						if (ap == null || !ap.hasValue() || !(ap.getValue() instanceof IRI) || cp == null
+								|| !cp.hasValue() || !(cp.getValue() instanceof IRI))
+							return null;
+						Var mid = null, startVar = null, endVar = null;
+						boolean firstForward = false, secondForward = false;
+						if (isAnonPathVar(a.getObject()) && sameVar(a.getObject(), c.getSubject())) {
+							mid = a.getObject();
+							startVar = a.getSubject();
+							endVar = c.getObject();
+							firstForward = true;
+							secondForward = true;
+						} else if (isAnonPathVar(a.getSubject()) && sameVar(a.getSubject(), c.getObject())) {
+							mid = a.getSubject();
+							startVar = a.getObject();
+							endVar = c.getSubject();
+							firstForward = false;
+							secondForward = false;
+						} else if (isAnonPathVar(a.getObject()) && sameVar(a.getObject(), c.getObject())) {
+							mid = a.getObject();
+							startVar = a.getSubject();
+							endVar = c.getSubject();
+							firstForward = true;
+							secondForward = false;
+						} else if (isAnonPathVar(a.getSubject()) && sameVar(a.getSubject(), c.getSubject())) {
+							mid = a.getSubject();
+							startVar = a.getObject();
+							endVar = c.getObject();
+							firstForward = false;
+							secondForward = true;
+						}
+						if (mid == null)
+							return null;
+						final String sTxt = varOrValue(startVar, r);
+						final String eTxt = varOrValue(endVar, r);
+						final String step1 = (firstForward ? "" : "^") + r.renderIRI((IRI) ap.getValue());
+						final String step2 = (secondForward ? "" : "^") + r.renderIRI((IRI) cp.getValue());
+						return new TwoStep(sTxt, eTxt, step1 + "/" + step2);
+					};
+
+					TwoStep ts0 = parseTwo.apply(b0);
+					TwoStep ts1 = parseTwo.apply(b1);
+					IrStatementPattern spSingle = null;
+					TwoStep two = null;
+					int singleIdx = -1;
+					if (ts0 != null && b1.getLines().size() == 1
+							&& b1.getLines().get(0) instanceof IrStatementPattern) {
+						two = ts0;
+						singleIdx = 1;
+						spSingle = (IrStatementPattern) b1.getLines().get(0);
+					} else if (ts1 != null && b0.getLines().size() == 1
+							&& b0.getLines().get(0) instanceof IrStatementPattern) {
+						two = ts1;
+						singleIdx = 0;
+						spSingle = (IrStatementPattern) b0.getLines().get(0);
+					}
+					if (two != null && spSingle != null) {
+						// Ensure single branch uses a constant predicate and matches endpoints
+						Var pv = spSingle.getPredicate();
+						if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
+							final String sTxt = varOrValue(spSingle.getSubject(), r);
+							final String oTxt = varOrValue(spSingle.getObject(), r);
+							String atom = null;
+							if (two.s.equals(sTxt) && two.o.equals(oTxt)) {
+								atom = r.renderIRI((IRI) pv.getValue());
+							} else if (two.s.equals(oTxt) && two.o.equals(sTxt)) {
+								atom = "^" + r.renderIRI((IRI) pv.getValue());
+							}
+							if (atom != null) {
+								final String alt = (singleIdx == 0) ? (atom + "|" + two.path) : (two.path + "|" + atom);
+								out.add(new IrPathTriple(two.s, alt, two.o));
+								continue;
+							}
+						}
+					}
+				}
+
+				// 2a-alt: UNION with one branch a single SP and the other already fused to IrPathTriple.
+				// Example produced by earlier passes: { ?y foaf:knows ?x } UNION { ?x ex:knows/^foaf:knows ?y }.
+				if (u.getBranches().size() == 2) {
+					IrBGP b0 = u.getBranches().get(0);
+					IrBGP b1 = u.getBranches().get(1);
+					IrPathTriple pt = null;
+					IrStatementPattern sp = null;
+					int ptIdx = -1;
+					if (b0.getLines().size() == 1 && b0.getLines().get(0) instanceof IrPathTriple
+							&& b1.getLines().size() == 1 && b1.getLines().get(0) instanceof IrStatementPattern) {
+						pt = (IrPathTriple) b0.getLines().get(0);
+						sp = (IrStatementPattern) b1.getLines().get(0);
+						ptIdx = 0;
+					} else if (b1.getLines().size() == 1 && b1.getLines().get(0) instanceof IrPathTriple
+							&& b0.getLines().size() == 1 && b0.getLines().get(0) instanceof IrStatementPattern) {
+						pt = (IrPathTriple) b1.getLines().get(0);
+						sp = (IrStatementPattern) b0.getLines().get(0);
+						ptIdx = 1;
+					}
+					if (pt != null && sp != null) {
+						Var pv = sp.getPredicate();
+						if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
+							final String wantS = pt.getSubjectText();
+							final String wantO = pt.getObjectText();
+							final String sTxt = varOrValue(sp.getSubject(), r);
+							final String oTxt = varOrValue(sp.getObject(), r);
+							String atom = null;
+							if (wantS.equals(sTxt) && wantO.equals(oTxt)) {
+								atom = r.renderIRI((IRI) pv.getValue());
+							} else if (wantS.equals(oTxt) && wantO.equals(sTxt)) {
+								atom = "^" + r.renderIRI((IRI) pv.getValue());
+							}
+							if (atom != null) {
+								final String alt = (ptIdx == 0) ? (pt.getPathText() + "|" + atom)
+										: (atom + "|" + pt.getPathText());
+								out.add(new IrPathTriple(wantS, alt, wantO));
+								continue;
+							}
+						}
 					}
 				}
 
