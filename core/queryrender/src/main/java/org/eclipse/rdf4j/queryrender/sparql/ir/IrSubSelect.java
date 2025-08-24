@@ -45,6 +45,7 @@ public class IrSubSelect extends IrNode {
 		IrSelect newSel = this.select;
 		if (newSel != null) {
 			IrNode t = op.apply(newSel);
+			t = t.transformChildren(op);
 			if (t instanceof IrSelect) {
 				newSel = (IrSelect) t;
 			} else if (newSel.getWhere() != null) {
