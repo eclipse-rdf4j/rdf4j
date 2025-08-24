@@ -1924,4 +1924,168 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg());
 	}
 
+	// -------- New deep nested OPTIONAL path tests --------
+
+	@Test
+	void deep_optional_path_1() {
+		String q = "SELECT ?s ?n\n" +
+				"WHERE {\n" +
+				"  OPTIONAL {\n" +
+				"    OPTIONAL {\n" +
+				"      OPTIONAL {\n" +
+				"        ?s ((^foaf:knows)/((foaf:knows|ex:knows)))/foaf:name ?n .\n" +
+				"        FILTER (LANGMATCHES(LANG(?n), \"en\"))\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void deep_optional_path_2() {
+		String q = "SELECT ?x ?y\n" +
+				"WHERE {\n" +
+				"  OPTIONAL {\n" +
+				"    ?x (^foaf:knows|ex:knows)/^foaf:knows ?y .\n" +
+				"    FILTER (?x != ?y)\n" +
+				"    OPTIONAL {\n" +
+				"      ?y (foaf:knows|ex:knows)/foaf:knows ?x .\n" +
+				"      FILTER (BOUND(?x))\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void deep_optional_path_3() {
+		String q = "SELECT ?a ?n\n" +
+				"WHERE {\n" +
+				"  OPTIONAL {\n" +
+				"    ?a (^foaf:knows/!(ex:knows|rdf:type|ex:helps|rdf:subject)/foaf:name) ?n .\n" +
+				"    FILTER ((LANG(?n) = \"\") || LANGMATCHES(LANG(?n), \"en\"))\n" +
+				"    OPTIONAL {\n" +
+				"      ?a foaf:knows+ ?_anon_1 .\n" +
+				"      FILTER (BOUND(?_anon_1))\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void deep_optional_path_4() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  OPTIONAL {\n" +
+				"    OPTIONAL {\n" +
+				"      ?s (foaf:knows/foaf:knows|ex:knows/^ex:knows) ?o .\n" +
+				"      FILTER (?s != ?o)\n" +
+				"    }\n" +
+				"    FILTER (BOUND(?s))\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void deep_optional_path_5() {
+		String q = "SELECT ?g ?s ?n\n" +
+				"WHERE {\n" +
+				"  OPTIONAL {\n" +
+				"    OPTIONAL {\n" +
+				"      ?s (foaf:knows|ex:knows)/^foaf:knows/(foaf:name|^foaf:name) ?n .\n" +
+				"      FILTER (STRLEN(STR(?n)) >= 0)\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	// -------- New deep nested UNION path tests --------
+
+	@Test
+	void deep_union_path_1() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  {\n" +
+				"    ?s (foaf:knows|ex:knows)/^foaf:knows ?o .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?s ((^foaf:knows)/((foaf:knows|ex:knows))) ?o .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    OPTIONAL {\n" +
+				"      ?s foaf:knows ?x .\n" +
+				"      ?x foaf:name ?_n .\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	@Disabled
+	void deep_union_path_2() {
+		String q = "SELECT ?a ?n\n" +
+				"WHERE {\n" +
+				"  { ?a (^foaf:knows/foaf:knows)/foaf:name ?n . }\n" +
+				"    UNION\n" +
+				"  { { ?a (foaf:knows|ex:knows) ?_x . } UNION { ?_x ^foaf:knows ?a . } OPTIONAL { ?_x foaf:name ?n . } }\n"
+				+
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	@Disabled
+	void deep_union_path_3() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  { { ?s foaf:knows/foaf:knows ?o . } UNION { ?s (ex:knows|^ex:knows) ?o . } }\n" +
+				"    UNION\n" +
+				"  { { ?s ^foaf:knows ?o . } UNION { ?s !(rdf:type|ex:age) ?o . } }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void deep_union_path_4() {
+		String q = "SELECT ?g ?s ?o\n" +
+				"WHERE {\n" +
+				"  {\n" +
+				"    ?s (foaf:knows|ex:knows)/^foaf:knows ?o .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    OPTIONAL {\n" +
+				"      ?s foaf:knows+ ?o .\n" +
+				"    }\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    OPTIONAL {\n" +
+				"      ?s !(rdf:type|ex:age)/foaf:name ?_n .\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	@Disabled
+	void deep_union_path_5() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  { { ?s (foaf:knows/foaf:knows|ex:knows/^ex:knows) ?o . } UNION { ?s ^foaf:knows/(foaf:knows|ex:knows) ?o . } }\n"
+				+
+				"    UNION\n" +
+				"  { { ?s !(rdf:type|ex:age) ?o . } UNION { ?s foaf:knows? ?o . } }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
 }
