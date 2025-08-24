@@ -14,4 +14,9 @@ package org.eclipse.rdf4j.queryrender.sparql.ir;
  * Base class for textual SPARQL Intermediate Representation (IR) nodes.
  */
 public abstract class IrNode {
+
+	/** Default no-op printing; concrete nodes override. */
+	public void print(IrPrinter p) {
+		p.line("# unknown IR node: " + getClass().getSimpleName());
+	}
 }

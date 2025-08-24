@@ -39,6 +39,8 @@ public final class IrTransforms {
 		// Negated property set (NPS): fuse GRAPH + triple + FILTER + GRAPH into an NPS path
 		// Run early so later path/collection transforms can build on it
 		select.setWhere(applyNegatedPropertySet(select.getWhere(), r));
+		// Normalize: convert subselect-based zero-or-one expansions into a compact path triple
+		select.setWhere(normalizeZeroOrOneSubselect(select.getWhere(), r));
 		// Paths: fuse rest*/first pattern when present as (IrPathTriple + StatementPattern)
 		select.setWhere(applyPaths(select.getWhere(), r));
 		// Collections: replace anon collection heads with textual collection, when derivable (best-effort)
@@ -324,6 +326,162 @@ public final class IrTransforms {
 		}
 	}
 
+	/**
+	 * Normalize RDF4J's subselect-based expansion of zero-or-one paths into a compact IrPathTriple.
+	 *
+	 * Matches IrSubSelect where the inner select WHERE consists of a single IrUnion with two branches: one branch with
+	 * a single IrText line equal to "FILTER (sameTerm(?s, ?o))", and the other branch a sequence of IrStatementPattern
+	 * lines forming a chain from ?s to ?o via _anon_path_* variables. The result is an IrPathTriple "?s (seq)? ?o".
+	 */
+	private static IrWhere normalizeZeroOrOneSubselect(IrWhere where, TupleExprIRRenderer r) {
+		if (where == null)
+			return null;
+		final java.util.List<IrNode> out = new java.util.ArrayList<>();
+		for (IrNode n : where.getLines()) {
+			IrNode transformed = n;
+			if (n instanceof IrSubSelect) {
+				IrPathTriple pt = tryRewriteZeroOrOne((IrSubSelect) n, r);
+				if (pt != null) {
+					transformed = pt;
+				}
+			}
+			// Recurse into containers
+			if (transformed instanceof IrWhere) {
+				transformed = normalizeZeroOrOneSubselect((IrWhere) transformed, r);
+			} else if (transformed instanceof IrGraph) {
+				IrGraph g = (IrGraph) transformed;
+				transformed = new IrGraph(g.getGraph(), normalizeZeroOrOneSubselect(g.getWhere(), r));
+			} else if (transformed instanceof IrOptional) {
+				IrOptional o = (IrOptional) transformed;
+				transformed = new IrOptional(normalizeZeroOrOneSubselect(o.getWhere(), r));
+			} else if (transformed instanceof IrMinus) {
+				IrMinus m = (IrMinus) transformed;
+				transformed = new IrMinus(normalizeZeroOrOneSubselect(m.getWhere(), r));
+			} else if (transformed instanceof IrService) {
+				IrService s = (IrService) transformed;
+				transformed = new IrService(s.getServiceRefText(), s.isSilent(),
+						normalizeZeroOrOneSubselect(s.getWhere(), r));
+			} else if (transformed instanceof IrUnion) {
+				IrUnion u = (IrUnion) transformed;
+				IrUnion u2 = new IrUnion();
+				for (IrWhere b : u.getBranches()) {
+					u2.addBranch(normalizeZeroOrOneSubselect(b, r));
+				}
+				transformed = u2;
+			}
+			out.add(transformed);
+		}
+		IrWhere res = new IrWhere();
+		out.forEach(res::add);
+		return res;
+	}
+
+	private static IrPathTriple tryRewriteZeroOrOne(IrSubSelect ss, TupleExprIRRenderer r) {
+		IrSelect sel = ss.getSelect();
+		if (sel == null || sel.getWhere() == null)
+			return null;
+		java.util.List<IrNode> inner = sel.getWhere().getLines();
+		if (inner.size() != 1 || !(inner.get(0) instanceof IrUnion))
+			return null;
+		IrUnion u = (IrUnion) inner.get(0);
+		if (u.getBranches().size() != 2)
+			return null;
+		IrWhere b1 = u.getBranches().get(0);
+		IrWhere b2 = u.getBranches().get(1);
+		IrWhere filterBranch = null, chainBranch = null;
+		// Identify which branch is the sameTerm filter
+		if (isSameTermFilterBranch(b1)) {
+			filterBranch = b1;
+			chainBranch = b2;
+		} else if (isSameTermFilterBranch(b2)) {
+			filterBranch = b2;
+			chainBranch = b1;
+		} else {
+			return null;
+		}
+		String[] so = parseSameTermVars(((IrText) filterBranch.getLines().get(0)).getText());
+		if (so == null)
+			return null;
+		final String sName = so[0], oName = so[1];
+		// Collect simple SPs in the chain branch
+		java.util.List<IrStatementPattern> sps = new java.util.ArrayList<>();
+		for (IrNode ln : chainBranch.getLines()) {
+			if (ln instanceof IrStatementPattern) {
+				sps.add((IrStatementPattern) ln);
+			} else {
+				return null; // be conservative
+			}
+		}
+		if (sps.isEmpty())
+			return null;
+		// Walk from ?s to ?o via _anon_path_* vars
+		Var cur = varNamed(sName);
+		Var goal = varNamed(oName);
+		java.util.List<String> steps = new java.util.ArrayList<>();
+		java.util.Set<IrStatementPattern> used = new java.util.LinkedHashSet<>();
+		int guard = 0;
+		while (!sameVar(cur, goal)) {
+			if (++guard > 10000)
+				return null;
+			boolean advanced = false;
+			for (IrStatementPattern sp : sps) {
+				if (used.contains(sp))
+					continue;
+				Var p = sp.getPredicate();
+				if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI))
+					continue;
+				String step = r.renderIRI((IRI) p.getValue());
+				Var sub = sp.getSubject();
+				Var oo = sp.getObject();
+				if (sameVar(cur, sub) && (isAnonPathVar(oo) || sameVar(oo, goal))) {
+					steps.add(step);
+					cur = oo;
+					used.add(sp);
+					advanced = true;
+					break;
+				} else if (sameVar(cur, oo) && (isAnonPathVar(sub) || sameVar(sub, goal))) {
+					steps.add("^" + step);
+					cur = sub;
+					used.add(sp);
+					advanced = true;
+					break;
+				}
+			}
+			if (!advanced)
+				return null;
+		}
+		if (used.size() != sps.size() || steps.isEmpty())
+			return null;
+		final String sTxt = "?" + sName;
+		final String oTxt = "?" + oName;
+		final String seq = (steps.size() == 1) ? steps.get(0) : String.join("/", steps);
+		final String expr = "(" + seq + ")?";
+		return new IrPathTriple(sTxt, expr, oTxt);
+	}
+
+	private static boolean isSameTermFilterBranch(IrWhere b) {
+		return b != null && b.getLines().size() == 1 && b.getLines().get(0) instanceof IrText
+				&& parseSameTermVars(((IrText) b.getLines().get(0)).getText()) != null;
+	}
+
+	private static String[] parseSameTermVars(String text) {
+		if (text == null)
+			return null;
+		java.util.regex.Matcher m = java.util.regex.Pattern
+				.compile(
+						"(?i)\\s*FILTER\\s*\\(\\s*sameTerm\\s*\\(\\s*\\?(?<s>[A-Za-z_][\\w]*)\\s*,\\s*\\?(?<o>[A-Za-z_][\\w]*)\\s*\\)\\s*\\)\\s*")
+				.matcher(text);
+		if (!m.matches())
+			return null;
+		return new String[] { m.group("s"), m.group("o") };
+	}
+
+	private static Var varNamed(String name) {
+		if (name == null)
+			return null;
+		return new Var(name);
+	}
+
 	private static final class MatchTriple {
 		final IrNode node;
 		final Var subject;
@@ -475,6 +633,28 @@ public final class IrTransforms {
 			IrNode n = in.get(i);
 			// Recurse first
 			n = transformNode(n, r, true, false);
+
+			// ---- Simple SP + SP over an _anon_path_* bridge → fuse into a single path triple ----
+			if (n instanceof IrStatementPattern && i + 1 < in.size() && in.get(i + 1) instanceof IrStatementPattern) {
+				IrStatementPattern a = (IrStatementPattern) n;
+				IrStatementPattern b = (IrStatementPattern) in.get(i + 1);
+				Var ap = a.getPredicate(), bp = b.getPredicate();
+				if (ap != null && ap.hasValue() && ap.getValue() instanceof IRI && bp != null && bp.hasValue()
+						&& bp.getValue() instanceof IRI) {
+					Var as = a.getSubject(), ao = a.getObject();
+					Var bs = b.getSubject(), bo = b.getObject();
+					// forward-forward: ?s p1 ?x . ?x p2 ?o
+					if (isAnonPathVar(ao) && sameVar(ao, bs)) {
+						String sTxt = varOrValue(as, r);
+						String oTxt = varOrValue(bo, r);
+						String p1 = r.renderIRI((IRI) ap.getValue());
+						String p2 = r.renderIRI((IRI) bp.getValue());
+						out.add(new IrPathTriple(sTxt, p1 + "/" + p2, oTxt));
+						i += 1; // consume next
+						continue;
+					}
+				}
+			}
 
 			// ---- GRAPH/SP followed by UNION over bridge var → fused path inside GRAPH ----
 			if ((n instanceof IrGraph || n instanceof IrStatementPattern) && i + 1 < in.size()
