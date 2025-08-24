@@ -760,6 +760,21 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(final Union u) {
+			// Heuristic: if both operands are UNIONs, preserve grouping as two top-level branches
+			// each of which may contain its own inner UNION. Otherwise, flatten the UNION chain
+			// into a single IrUnion with N simple branches.
+			final boolean leftIsU = u.getLeftArg() instanceof Union;
+			final boolean rightIsU = u.getRightArg() instanceof Union;
+			if (leftIsU && rightIsU) {
+				final org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion irU = new org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion();
+				IRBuilder left = new IRBuilder();
+				irU.addBranch(left.build(u.getLeftArg()));
+				IRBuilder right = new IRBuilder();
+				irU.addBranch(right.build(u.getRightArg()));
+				where.add(irU);
+				return;
+			}
+
 			final java.util.List<TupleExpr> branches = new java.util.ArrayList<>();
 			flattenUnion(u, branches);
 			final org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion irU = new org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion();
