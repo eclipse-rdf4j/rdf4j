@@ -1194,7 +1194,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
+//	@Disabled
 	void mega_parentheses_precedence() {
 		String q = "SELECT ?s ?o (?score AS ?score2)\n" +
 				"WHERE {\n" +
@@ -1427,7 +1427,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
+//	@Disabled
 	void optional_outside_graph_when_complex_body() {
 		String q = "SELECT ?g ?s ?label ?nick\n" +
 				"WHERE {\n" +
@@ -1484,7 +1484,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
+//	@Disabled
 	void deep_path_in_union_branch_with_graph() {
 		String q = "SELECT ?g ?s ?o\n" +
 				"WHERE {\n" +
@@ -1502,7 +1502,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
+//	@Disabled
 	void zero_or_more_then_inverse_then_alt_in_graph() {
 		String q = "SELECT ?g ?s ?o\n" +
 				"WHERE {\n" +
@@ -1514,7 +1514,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
+//	@Disabled
 	void optional_with_values_and_bind_inside_graph() {
 		String q = "SELECT ?g ?s ?n ?name\n" +
 				"WHERE {\n" +
@@ -1538,7 +1538,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
+//	@Disabled
 	void nested_union_optional_with_path_and_filter() {
 		String q = "SELECT ?s ?o\n" +
 				"WHERE {\n" +
@@ -1554,7 +1554,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
+//	@Disabled
 	void minus_with_graph_and_optional_path() {
 		String q = "SELECT ?s\n" +
 				"WHERE {\n" +
@@ -1568,7 +1568,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
+//	@Disabled
 	void service_with_graph_and_path() {
 		String q = "SELECT ?s ?o\n" +
 				"WHERE {\n" +
@@ -1578,7 +1578,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
+//	@Disabled
 	void group_by_having_with_path_in_where() {
 		String q = "SELECT ?s (COUNT(?o) AS ?c)\n" +
 				"WHERE {\n" +
@@ -1600,18 +1600,25 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
+//	@Disabled
 	void optional_chain_then_graph_path() {
 		String q = "SELECT ?g ?s ?o\n" +
 				"WHERE {\n" +
-				"  OPTIONAL { ?s foaf:knows ?mid . OPTIONAL { ?mid foaf:knows ?o . } }\n" +
-				"  GRAPH ?g { ?s ex:knows/^foaf:knows ?o . }\n" +
+				"  OPTIONAL {\n" +
+				"    ?s foaf:knows ?mid .\n" +
+				"    OPTIONAL {\n" +
+				"      ?mid foaf:knows ?o .\n" +
+				"    }\n" +
+				"  }\n" +
+				"  GRAPH ?g {\n" +
+				"    ?s ex:knows/^foaf:knows ?o ." +
+				"  }\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
 	}
 
 	@Test
-	@Disabled
+//	@Disabled
 	void values_then_graph_then_minus_with_path() {
 		String q = "SELECT ?g ?s ?o\n" +
 				"WHERE {\n" +
@@ -1623,7 +1630,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
+//	@Disabled
 	void nps_path_followed_by_constant_step_in_graph() {
 		String q = "SELECT ?s ?x\n" +
 				"WHERE {\n" +
