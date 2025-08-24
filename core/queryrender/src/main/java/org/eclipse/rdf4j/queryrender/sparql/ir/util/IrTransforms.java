@@ -61,21 +61,21 @@ public final class IrTransforms {
 	 * OPTIONAL { ... } [FILTER (...)] }
 	 *
 	 * Only merges when the OPTIONAL body consists solely of simple leaf lines that are valid inside a GRAPH block
-	 * (IrStatementPattern or IrPathTriple). This avoids altering other cases where tests expect the OPTIONAL to stay
+	 * (IrStatementPattern or IrPathTriple). This avoids altering other cases bgp tests expect the OPTIONAL to stay
 	 * outside or include its own inner GRAPH.
 	 */
-	private static IrWhere mergeOptionalIntoPrecedingGraph(IrWhere where) {
-		if (where == null)
+	private static IrBGP mergeOptionalIntoPrecedingGraph(IrBGP bgp) {
+		if (bgp == null)
 			return null;
-		final java.util.List<IrNode> in = where.getLines();
+		final java.util.List<IrNode> in = bgp.getLines();
 		final java.util.List<IrNode> out = new java.util.ArrayList<>();
 		for (int i = 0; i < in.size(); i++) {
 			IrNode n = in.get(i);
 			if (n instanceof IrGraph && i + 1 < in.size() && in.get(i + 1) instanceof IrOptional) {
 				IrGraph g = (IrGraph) n;
 				IrOptional opt = (IrOptional) in.get(i + 1);
-				IrWhere ow = opt.getWhere();
-				IrWhere simpleOw = null;
+				IrBGP ow = opt.getWhere();
+				IrBGP simpleOw = null;
 				if (isSimpleOptionalBody(ow)) {
 					simpleOw = ow;
 				} else if (ow != null && ow.getLines().size() == 1 && ow.getLines().get(0) instanceof IrGraph) {
@@ -87,7 +87,7 @@ public final class IrTransforms {
 				}
 				if (simpleOw != null) {
 					// Build merged graph body
-					IrWhere merged = new IrWhere();
+					IrBGP merged = new IrBGP();
 					for (IrNode gl : g.getWhere().getLines()) {
 						merged.add(gl);
 					}
@@ -105,18 +105,18 @@ public final class IrTransforms {
 				}
 			}
 			// Recurse into containers
-			if (n instanceof IrWhere || n instanceof IrGraph || n instanceof IrOptional || n instanceof IrUnion
+			if (n instanceof IrBGP || n instanceof IrGraph || n instanceof IrOptional || n instanceof IrUnion
 					|| n instanceof IrMinus || n instanceof IrService || n instanceof IrSubSelect) {
 				n = transformNodeForMerge(n);
 			}
 			out.add(n);
 		}
-		IrWhere res = new IrWhere();
+		IrBGP res = new IrBGP();
 		out.forEach(res::add);
 		return res;
 	}
 
-	private static boolean isSimpleOptionalBody(IrWhere ow) {
+	private static boolean isSimpleOptionalBody(IrBGP ow) {
 		if (ow == null)
 			return false;
 		if (ow.getLines().isEmpty())
@@ -130,40 +130,12 @@ public final class IrTransforms {
 	}
 
 	private static IrNode transformNodeForMerge(IrNode n) {
-		if (n instanceof IrWhere) {
-			return mergeOptionalIntoPrecedingGraph((IrWhere) n);
-		}
-		if (n instanceof IrGraph) {
-			IrGraph g = (IrGraph) n;
-			return new IrGraph(g.getGraph(), mergeOptionalIntoPrecedingGraph(g.getWhere()));
-		}
-		if (n instanceof IrOptional) {
-			IrOptional o = (IrOptional) n;
-			return new IrOptional(mergeOptionalIntoPrecedingGraph(o.getWhere()));
-		}
-		if (n instanceof IrUnion) {
-			IrUnion u = (IrUnion) n;
-			IrUnion out = new IrUnion();
-			for (IrWhere b : u.getBranches()) {
-				out.addBranch(mergeOptionalIntoPrecedingGraph(b));
+		return n.transformChildren(child -> {
+			if (child instanceof IrBGP) {
+				return mergeOptionalIntoPrecedingGraph((IrBGP) child);
 			}
-			return out;
-		}
-		if (n instanceof IrMinus) {
-			IrMinus m = (IrMinus) n;
-			return new IrMinus(mergeOptionalIntoPrecedingGraph(m.getWhere()));
-		}
-		if (n instanceof IrService) {
-			IrService s = (IrService) n;
-			return new IrService(s.getServiceRefText(), s.isSilent(), mergeOptionalIntoPrecedingGraph(s.getWhere()));
-		}
-		if (n instanceof IrSubSelect) {
-			IrSubSelect ss = (IrSubSelect) n;
-			IrSelect sel = ss.getSelect();
-			sel.setWhere(mergeOptionalIntoPrecedingGraph(sel.getWhere()));
-			return ss;
-		}
-		return n;
+			return child;
+		});
 	}
 
 	/**
@@ -175,11 +147,11 @@ public final class IrTransforms {
 	 * predicate variable, and optionally chains to an immediately following GRAPH with the same graph term and a
 	 * constant predicate triple that reuses the first triple's object as a bridge.
 	 */
-	private static IrWhere applyNegatedPropertySet(IrWhere where, TupleExprIRRenderer r) {
-		if (where == null)
+	private static IrBGP applyNegatedPropertySet(IrBGP bgp, TupleExprIRRenderer r) {
+		if (bgp == null)
 			return null;
 
-		final List<IrNode> in = where.getLines();
+		final List<IrNode> in = bgp.getLines();
 		final List<IrNode> out = new ArrayList<>();
 
 		for (int i = 0; i < in.size(); i++) {
@@ -215,7 +187,7 @@ public final class IrTransforms {
 				}
 
 				// Build new GRAPH with fused path triple + any leftover lines from original inner graphs
-				final IrWhere newInner = new IrWhere();
+				final IrBGP newInner = new IrBGP();
 
 				final String subj = varOrValue(mt1.subject, r);
 				final String obj = varOrValue(mt1.object, r);
@@ -276,7 +248,7 @@ public final class IrTransforms {
 					continue;
 				}
 
-				final IrWhere newInner = new IrWhere();
+				final IrBGP newInner = new IrBGP();
 				final String subj = varOrValue(mt1.subject, r);
 				final String obj = varOrValue(mt1.object, r);
 				final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
@@ -304,19 +276,24 @@ public final class IrTransforms {
 
 			// No fusion matched: now recurse into containers (to apply NPS deeper) and add
 			// Be conservative: do not rewrite inside SERVICE or nested subselects.
-			if (n instanceof IrWhere || n instanceof IrGraph || n instanceof IrOptional || n instanceof IrUnion
-					|| n instanceof IrMinus /* || n instanceof IrService || n instanceof IrSubSelect */ ) {
-				n = transformNode(n, r, false, false);
+			if (n instanceof IrBGP || n instanceof IrGraph || n instanceof IrOptional || n instanceof IrUnion
+					|| n instanceof IrMinus /* || n instanceof IrService || n instanceof IrSubSelect */) {
+				n = n.transformChildren(child -> {
+					if (child instanceof IrBGP) {
+						return applyNegatedPropertySet((IrBGP) child, r);
+					}
+					return child;
+				});
 			}
 			out.add(n);
 		}
 
-		final IrWhere res = new IrWhere();
+		final IrBGP res = new IrBGP();
 		out.forEach(res::add);
 		return res;
 	}
 
-	private static void copyAllExcept(IrWhere from, IrWhere to, IrNode except) {
+	private static void copyAllExcept(IrBGP from, IrBGP to, IrNode except) {
 		if (from == null)
 			return;
 		for (IrNode ln : from.getLines()) {
@@ -329,15 +306,15 @@ public final class IrTransforms {
 	/**
 	 * Normalize RDF4J's subselect-based expansion of zero-or-one paths into a compact IrPathTriple.
 	 *
-	 * Matches IrSubSelect where the inner select WHERE consists of a single IrUnion with two branches: one branch with
-	 * a single IrText line equal to "FILTER (sameTerm(?s, ?o))", and the other branch a sequence of IrStatementPattern
+	 * Matches IrSubSelect bgp the inner select WHERE consists of a single IrUnion with two branches: one branch with a
+	 * single IrText line equal to "FILTER (sameTerm(?s, ?o))", and the other branch a sequence of IrStatementPattern
 	 * lines forming a chain from ?s to ?o via _anon_path_* variables. The result is an IrPathTriple "?s (seq)? ?o".
 	 */
-	private static IrWhere normalizeZeroOrOneSubselect(IrWhere where, TupleExprIRRenderer r) {
-		if (where == null)
+	private static IrBGP normalizeZeroOrOneSubselect(IrBGP bgp, TupleExprIRRenderer r) {
+		if (bgp == null)
 			return null;
 		final java.util.List<IrNode> out = new java.util.ArrayList<>();
-		for (IrNode n : where.getLines()) {
+		for (IrNode n : bgp.getLines()) {
 			IrNode transformed = n;
 			if (n instanceof IrSubSelect) {
 				IrPathTriple pt = tryRewriteZeroOrOne((IrSubSelect) n, r);
@@ -345,33 +322,16 @@ public final class IrTransforms {
 					transformed = pt;
 				}
 			}
-			// Recurse into containers
-			if (transformed instanceof IrWhere) {
-				transformed = normalizeZeroOrOneSubselect((IrWhere) transformed, r);
-			} else if (transformed instanceof IrGraph) {
-				IrGraph g = (IrGraph) transformed;
-				transformed = new IrGraph(g.getGraph(), normalizeZeroOrOneSubselect(g.getWhere(), r));
-			} else if (transformed instanceof IrOptional) {
-				IrOptional o = (IrOptional) transformed;
-				transformed = new IrOptional(normalizeZeroOrOneSubselect(o.getWhere(), r));
-			} else if (transformed instanceof IrMinus) {
-				IrMinus m = (IrMinus) transformed;
-				transformed = new IrMinus(normalizeZeroOrOneSubselect(m.getWhere(), r));
-			} else if (transformed instanceof IrService) {
-				IrService s = (IrService) transformed;
-				transformed = new IrService(s.getServiceRefText(), s.isSilent(),
-						normalizeZeroOrOneSubselect(s.getWhere(), r));
-			} else if (transformed instanceof IrUnion) {
-				IrUnion u = (IrUnion) transformed;
-				IrUnion u2 = new IrUnion();
-				for (IrWhere b : u.getBranches()) {
-					u2.addBranch(normalizeZeroOrOneSubselect(b, r));
+			// Recurse into containers using transformChildren
+			transformed = transformed.transformChildren(child -> {
+				if (child instanceof IrBGP) {
+					return normalizeZeroOrOneSubselect((IrBGP) child, r);
 				}
-				transformed = u2;
-			}
+				return child;
+			});
 			out.add(transformed);
 		}
-		IrWhere res = new IrWhere();
+		IrBGP res = new IrBGP();
 		out.forEach(res::add);
 		return res;
 	}
@@ -386,9 +346,9 @@ public final class IrTransforms {
 		IrUnion u = (IrUnion) inner.get(0);
 		if (u.getBranches().size() != 2)
 			return null;
-		IrWhere b1 = u.getBranches().get(0);
-		IrWhere b2 = u.getBranches().get(1);
-		IrWhere filterBranch = null, chainBranch = null;
+		IrBGP b1 = u.getBranches().get(0);
+		IrBGP b2 = u.getBranches().get(1);
+		IrBGP filterBranch = null, chainBranch = null;
 		// Identify which branch is the sameTerm filter
 		if (isSameTermFilterBranch(b1)) {
 			filterBranch = b1;
@@ -459,7 +419,7 @@ public final class IrTransforms {
 		return new IrPathTriple(sTxt, expr, oTxt);
 	}
 
-	private static boolean isSameTermFilterBranch(IrWhere b) {
+	private static boolean isSameTermFilterBranch(IrBGP b) {
 		return b != null && b.getLines().size() == 1 && b.getLines().get(0) instanceof IrText
 				&& parseSameTermVars(((IrText) b.getLines().get(0)).getText()) != null;
 	}
@@ -496,7 +456,7 @@ public final class IrTransforms {
 		}
 	}
 
-	private static MatchTriple findTripleWithPredicateVar(IrWhere w, String varName) {
+	private static MatchTriple findTripleWithPredicateVar(IrBGP w, String varName) {
 		if (w == null || varName == null)
 			return null;
 		for (IrNode ln : w.getLines()) {
@@ -511,7 +471,7 @@ public final class IrTransforms {
 		return null;
 	}
 
-	private static MatchTriple findTripleWithConstPredicateReusingObject(IrWhere w, Var obj) {
+	private static MatchTriple findTripleWithConstPredicateReusingObject(IrBGP w, Var obj) {
 		if (w == null || obj == null)
 			return null;
 		for (IrNode ln : w.getLines()) {
@@ -624,15 +584,20 @@ public final class IrTransforms {
 		return null;
 	}
 
-	private static IrWhere applyPaths(IrWhere where, TupleExprIRRenderer r) {
-		if (where == null)
+	private static IrBGP applyPaths(IrBGP bgp, TupleExprIRRenderer r) {
+		if (bgp == null)
 			return null;
 		List<IrNode> out = new ArrayList<>();
-		List<IrNode> in = where.getLines();
+		List<IrNode> in = bgp.getLines();
 		for (int i = 0; i < in.size(); i++) {
 			IrNode n = in.get(i);
-			// Recurse first
-			n = transformNode(n, r, true, false);
+			// Recurse first using function-style child transform
+			n = n.transformChildren(child -> {
+				if (child instanceof IrBGP) {
+					return applyPaths((IrBGP) child, r);
+				}
+				return child;
+			});
 
 			// ---- Simple SP + SP over an _anon_path_* bridge → fuse into a single path triple ----
 			if (n instanceof IrStatementPattern && i + 1 < in.size() && in.get(i + 1) instanceof IrStatementPattern) {
@@ -652,6 +617,32 @@ public final class IrTransforms {
 						out.add(new IrPathTriple(sTxt, p1 + "/" + p2, oTxt));
 						i += 1; // consume next
 						continue;
+					}
+				}
+
+				// ---- Fuse an IrPathTriple followed by a constant-predicate SP that connects to the path's object ----
+				if (n instanceof IrPathTriple && i + 1 < in.size() && in.get(i + 1) instanceof IrStatementPattern) {
+					IrPathTriple pt = (IrPathTriple) n;
+					IrStatementPattern sp = (IrStatementPattern) in.get(i + 1);
+					Var pv = sp.getPredicate();
+					if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
+						final String spSubj = varOrValue(sp.getSubject(), r);
+						final String spObj = varOrValue(sp.getObject(), r);
+						String joinStep = null;
+						String endText = null;
+						if (pt.getObjectText().equals(spSubj)) {
+							joinStep = "/" + r.renderIRI((IRI) pv.getValue());
+							endText = spObj;
+						} else if (pt.getObjectText().equals(spObj)) {
+							joinStep = "/^" + r.renderIRI((IRI) pv.getValue());
+							endText = spSubj;
+						}
+						if (joinStep != null) {
+							final String fusedPath = pt.getPathText() + joinStep;
+							out.add(new IrPathTriple(pt.getSubjectText(), fusedPath, endText));
+							i += 1; // consume next
+							continue;
+						}
 					}
 				}
 			}
@@ -694,7 +685,7 @@ public final class IrTransforms {
 							java.util.List<String> alts = new java.util.ArrayList<>();
 							Var unionGraphRef = null; // if branches are GRAPHed, ensure same ref
 							boolean ok = !u.getBranches().isEmpty();
-							for (IrWhere b : u.getBranches()) {
+							for (IrBGP b : u.getBranches()) {
 								if (!ok)
 									break;
 								IrNode only = (b.getLines().size() == 1) ? b.getLines().get(0) : null;
@@ -763,11 +754,11 @@ public final class IrTransforms {
 
 								IrPathTriple fused = new IrPathTriple(startTxt, pathTxt, endTxt);
 								if (graphRef != null) {
-									IrWhere inner = new IrWhere();
+									IrBGP inner = new IrBGP();
 									// copy any remaining lines from original inner GRAPH except sp0
 									copyAllExcept(((IrGraph) n).getWhere(), inner, sp0);
 									// place the fused path first to match common style
-									IrWhere reordered = new IrWhere();
+									IrBGP reordered = new IrBGP();
 									reordered.add(fused);
 									for (IrNode ln : inner.getLines()) {
 										reordered.add(ln);
@@ -787,7 +778,7 @@ public final class IrTransforms {
 			// ---- GRAPH/SP followed by PathTriple over the bridge → fuse inside GRAPH ----
 			if (n instanceof IrGraph && i + 1 < in.size() && in.get(i + 1) instanceof IrPathTriple) {
 				IrGraph g = (IrGraph) n;
-				IrWhere inner = g.getWhere();
+				IrBGP inner = g.getWhere();
 				if (inner != null && inner.getLines().size() == 1
 						&& inner.getLines().get(0) instanceof IrStatementPattern) {
 					IrStatementPattern sp0 = (IrStatementPattern) inner.getLines().get(0);
@@ -806,7 +797,7 @@ public final class IrTransforms {
 							}
 							if (midTxt.equals(pt.getSubjectText())) {
 								String fused = "(" + first + "/" + pt.getPathText() + ")";
-								IrWhere newInner = new IrWhere();
+								IrBGP newInner = new IrBGP();
 								newInner.add(new IrPathTriple(sideTxt, fused, pt.getObjectText()));
 								// copy any leftover inner lines except sp0
 								copyAllExcept(inner, newInner, sp0);
@@ -832,7 +823,7 @@ public final class IrTransforms {
 				Var subj = null, obj = null, graphRef = null;
 				final java.util.List<String> iris = new java.util.ArrayList<>();
 				boolean ok = !u.getBranches().isEmpty();
-				for (IrWhere b : u.getBranches()) {
+				for (IrBGP b : u.getBranches()) {
 					if (!ok)
 						break;
 					IrNode line = (b.getLines().size() == 1) ? b.getLines().get(0) : null;
@@ -902,7 +893,7 @@ public final class IrTransforms {
 					final String pathTxt = (iris.size() == 1) ? iris.get(0) : "(" + String.join("|", iris) + ")";
 					IrPathTriple pt = new IrPathTriple(sTxt, pathTxt, oTxt);
 					if (graphRef != null) {
-						IrWhere inner = new IrWhere();
+						IrBGP inner = new IrBGP();
 						inner.add(pt);
 						out.add(new IrGraph(graphRef, inner));
 					} else {
@@ -928,7 +919,7 @@ public final class IrTransforms {
 			}
 			out.add(n);
 		}
-		IrWhere res = new IrWhere();
+		IrBGP res = new IrBGP();
 		out.forEach(res::add);
 		return res;
 	}
@@ -943,7 +934,7 @@ public final class IrTransforms {
 				continue;
 			IrGraph g = (IrGraph) a;
 			IrOptional opt = (IrOptional) b;
-			IrWhere ow = opt.getWhere();
+			IrBGP ow = opt.getWhere();
 			if (ow == null || ow.getLines().isEmpty())
 				continue;
 			// optional body must be exactly GRAPH ?g { X } plus optional extra FILTERs
@@ -964,7 +955,7 @@ public final class IrTransforms {
 			if (!sameVar(g.getGraph(), innerGraph.getGraph()))
 				continue;
 			// Build new OPTIONAL body using innerGraph content + any extra filters
-			IrWhere newOptBody = new IrWhere();
+			IrBGP newOptBody = new IrBGP();
 			for (IrNode ln : innerGraph.getWhere().getLines()) {
 				newOptBody.add(ln);
 			}
@@ -972,7 +963,7 @@ public final class IrTransforms {
 				newOptBody.add(ln);
 			}
 			// Append OPTIONAL to the end of the outer GRAPH body
-			IrWhere newGraphBody = new IrWhere();
+			IrBGP newGraphBody = new IrBGP();
 			for (IrNode ln : g.getWhere().getLines()) {
 				newGraphBody.add(ln);
 			}
@@ -1028,13 +1019,13 @@ public final class IrTransforms {
 		return "";
 	}
 
-	private static IrWhere applyCollections(IrWhere where, TupleExprIRRenderer r) {
-		if (where == null)
+	private static IrBGP applyCollections(IrBGP bgp, TupleExprIRRenderer r) {
+		if (bgp == null)
 			return null;
 		// Collect FIRST/REST triples by subject
 		final java.util.Map<String, IrStatementPattern> firstByS = new java.util.LinkedHashMap<>();
 		final java.util.Map<String, IrStatementPattern> restByS = new java.util.LinkedHashMap<>();
-		for (IrNode n : where.getLines()) {
+		for (IrNode n : bgp.getLines()) {
 			if (!(n instanceof IrStatementPattern))
 				continue;
 			IrStatementPattern sp = (IrStatementPattern) n;
@@ -1105,7 +1096,7 @@ public final class IrTransforms {
 
 		// Rewrite lines: remove consumed, replace head var in path subjects
 		List<IrNode> out = new ArrayList<>();
-		for (IrNode n : where.getLines()) {
+		for (IrNode n : bgp.getLines()) {
 			if (consumed.contains(n))
 				continue;
 			if (n instanceof IrPathTriple) {
@@ -1117,58 +1108,30 @@ public final class IrTransforms {
 						n = new IrPathTriple(repl, pt.getPathText(), pt.getObjectText());
 					}
 				}
-			} else if (n instanceof IrWhere || n instanceof IrGraph || n instanceof IrOptional || n instanceof IrUnion
+			} else if (n instanceof IrBGP || n instanceof IrGraph || n instanceof IrOptional || n instanceof IrUnion
 					|| n instanceof IrMinus || n instanceof IrService || n instanceof IrSubSelect) {
-				n = transformNode(n, r, false, true);
+				n = n.transformChildren(child -> {
+					if (child instanceof IrBGP) {
+						return applyCollections((IrBGP) child, r);
+					}
+					return child;
+				});
 			}
 			out.add(n);
 		}
-		IrWhere res = new IrWhere();
+		IrBGP res = new IrBGP();
 		out.forEach(res::add);
 		return res;
 	}
 
 	private static IrNode transformNode(IrNode node, TupleExprIRRenderer r, boolean fusePaths, boolean collections) {
-		if (node instanceof IrWhere) {
-			IrWhere w = (IrWhere) node;
-			return fusePaths ? applyPaths(w, r) : applyCollections(w, r);
-		}
-		if (node instanceof IrGraph) {
-			IrGraph g = (IrGraph) node;
-			IrWhere inner = (IrWhere) transformNode(g.getWhere(), r, fusePaths, collections);
-			return new IrGraph(g.getGraph(), inner);
-		}
-		if (node instanceof IrOptional) {
-			IrOptional o = (IrOptional) node;
-			IrWhere inner = (IrWhere) transformNode(o.getWhere(), r, fusePaths, collections);
-			return new IrOptional(inner);
-		}
-		if (node instanceof IrUnion) {
-			IrUnion u = (IrUnion) node;
-			IrUnion out = new IrUnion();
-			for (IrWhere b : u.getBranches()) {
-				out.addBranch((IrWhere) transformNode(b, r, fusePaths, collections));
+		// Backwards-compatible wrapper: use function-style child transforms on immediate IrWhere children
+		return node.transformChildren(child -> {
+			if (child instanceof IrBGP) {
+				return fusePaths ? applyPaths((IrBGP) child, r) : applyCollections((IrBGP) child, r);
 			}
-			return out;
-		}
-		if (node instanceof IrMinus) {
-			IrMinus m = (IrMinus) node;
-			return new IrMinus((IrWhere) transformNode(m.getWhere(), r, fusePaths, collections));
-		}
-		if (node instanceof IrService) {
-			IrService s = (IrService) node;
-			return new IrService(s.getServiceRefText(), s.isSilent(),
-					(IrWhere) transformNode(s.getWhere(), r, fusePaths, collections));
-		}
-		if (node instanceof IrSubSelect) {
-			// Recurse into nested select
-			IrSubSelect ss = (IrSubSelect) node;
-			IrSelect sel = ss.getSelect();
-			sel.setWhere((IrWhere) transformNode(sel.getWhere(), r, fusePaths, collections));
-			return ss;
-		}
-		// Leaf or simple node: return as-is
-		return node;
+			return child;
+		});
 	}
 
 	private static String varOrValue(Var v, TupleExprIRRenderer r) {

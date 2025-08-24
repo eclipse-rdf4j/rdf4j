@@ -19,4 +19,13 @@ public abstract class IrNode {
 	public void print(IrPrinter p) {
 		p.line("# unknown IR node: " + getClass().getSimpleName());
 	}
+
+	/**
+	 * Function-style child transformation hook. Default is a no-op for leaf nodes. Implementations in container nodes
+	 * should return a new instance with immediate children replaced by op.apply(child). Implementations must not mutate
+	 * this.
+	 */
+	public IrNode transformChildren(java.util.function.UnaryOperator<IrNode> op) {
+		return this;
+	}
 }
