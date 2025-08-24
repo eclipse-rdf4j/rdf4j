@@ -235,14 +235,12 @@ public class SPARQLQueryRenderTest {
 
 	@Test
 	public void renderConstruct() throws Exception {
-		StringBuffer sb = new StringBuffer();
-		sb.append("construct  {").append(lineSeparator);
-		sb.append("  ?s ?p ?o.").append(lineSeparator);
-		sb.append("}").append(lineSeparator);
-		sb.append("where {").append(lineSeparator);
-		sb.append("  ?s ?p ?o.").append(lineSeparator);
-		sb.append("}");
-		String query = sb.toString();
+		String query = "construct  {" + lineSeparator +
+				"  ?s ?p ?o." + lineSeparator +
+				"}" + lineSeparator +
+				"where {" + lineSeparator +
+				"  ?s ?p ?o." + lineSeparator +
+				"}";
 		executeRenderTest(query, query);
 	}
 

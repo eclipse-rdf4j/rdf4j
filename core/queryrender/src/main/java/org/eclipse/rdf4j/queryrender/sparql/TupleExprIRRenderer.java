@@ -1,4 +1,3 @@
-
 /*******************************************************************************
  * Copyright (c) 2025 Eclipse RDF4J contributors.
  *
@@ -16,6 +15,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
@@ -126,14 +126,6 @@ public class TupleExprIRRenderer {
 
 	// ---------------- Public API helpers ----------------
 
-	/** Which high-level form to render. */
-	public enum QueryForm {
-		SELECT,
-		ASK,
-		DESCRIBE,
-		CONSTRUCT
-	}
-
 	/** Rendering context: top-level query vs nested subselect. */
 	private enum RenderMode {
 		TOP_LEVEL_SELECT,
@@ -170,22 +162,16 @@ public class TupleExprIRRenderer {
 	// ---------------- Configuration ----------------
 
 	public static final class Config {
-		public String indent = "  ";
-		public boolean printPrefixes = true;
-		public boolean usePrefixCompaction = true;
-		public boolean canonicalWhitespace = true;
-		public String baseIRI = null;
-		public LinkedHashMap<String, String> prefixes = new LinkedHashMap<>();
+		public final String indent = "  ";
+		public final boolean printPrefixes = true;
+		public final boolean usePrefixCompaction = true;
+		public final boolean canonicalWhitespace = true;
+		public final LinkedHashMap<String, String> prefixes = new LinkedHashMap<>();
 		public boolean debugIR = false; // print IR before and after transforms
 
 		// Flags
-		public boolean strict = true; // throw on unsupported
-		public boolean lenientComments = false; // if not strict, print parseable '# ...' lines
+		public final boolean strict = true; // throw on unsupported
 		public boolean valuesPreserveOrder = false; // keep VALUES column order as given by BSA iteration
-		public String sparqlVersion = "1.1"; // controls rare path quantifier printing etc.
-
-		// Safety: never fuse predicate-inequality to a negated property set
-		public boolean fuseNegatedPredicateToPath = false;
 
 		// Optional dataset (top-level only) if you never pass a DatasetView at render().
 		// These are rarely used, but offered for completeness.
@@ -234,7 +220,7 @@ public class TupleExprIRRenderer {
 			java.lang.reflect.Method m = Var.class.getMethod("isAnonymous");
 			Object r = m.invoke(v);
 			if (r instanceof Boolean) {
-				return ((Boolean) r).booleanValue();
+				return (Boolean) r;
 			}
 		} catch (ReflectiveOperationException ignore) {
 		}
@@ -549,8 +535,8 @@ public class TupleExprIRRenderer {
 	private final class IRTextPrinter implements org.eclipse.rdf4j.queryrender.sparql.ir.IrPrinter {
 		private final StringBuilder out;
 		private int level = 0;
-		private final String indentUnit = (cfg.indent == null) ? "  " : cfg.indent;
-		private java.util.Map<String, String> currentOverrides = java.util.Collections.emptyMap();
+		private final String indentUnit = cfg.indent;
+		private final java.util.Map<String, String> currentOverrides = java.util.Collections.emptyMap();
 
 		IRTextPrinter(StringBuilder out) {
 			this.out = out;
@@ -578,280 +564,7 @@ public class TupleExprIRRenderer {
 			n.print(this);
 		}
 
-		private String parseNotInList(final String condText, final String varName) {
-			if (condText == null || varName == null)
-				return null;
-			java.util.regex.Matcher m = java.util.regex.Pattern
-					.compile("(?i)\\?" + java.util.regex.Pattern.quote(varName)
-							+ "\\s+NOT\\s+IN\\s*\\(([^)]*)\\)")
-					.matcher(condText);
-			if (!m.find())
-				return null;
-			String inner = m.group(1);
-			java.util.List<String> tokens = new java.util.ArrayList<>();
-			for (String t : inner.split(",")) {
-				String tok = t.trim();
-				if (tok.isEmpty())
-					continue;
-				// Normalize via renderer: if <...> convert to prefixed when possible
-				if (tok.startsWith("<") && tok.endsWith(">")) {
-					String iri = tok.substring(1, tok.length() - 1);
-					try {
-						org.eclipse.rdf4j.model.IRI v = org.eclipse.rdf4j.model.impl.SimpleValueFactory.getInstance()
-								.createIRI(iri);
-						tokens.add(renderIRI(v));
-						continue;
-					} catch (IllegalArgumentException ignore) {
-					}
-				}
-				// assume already-rendered or prefixed
-				tokens.add(tok);
-			}
-			// Canonicalize order with rdf:* first, then keep remaining in original order
-			java.util.List<String> rdfFirst = new java.util.ArrayList<>();
-			java.util.List<String> rest = new java.util.ArrayList<>();
-			for (String t : tokens) {
-				if (t.startsWith("rdf:"))
-					rdfFirst.add(t);
-				else
-					rest.add(t);
-			}
-			rdfFirst.addAll(rest);
-			return String.join("|", rdfFirst);
-		}
-
 		// (legacy printing-time fusions removed; transforms handle path/collection rewrites)
-
-		private void printNode(final org.eclipse.rdf4j.queryrender.sparql.ir.IrNode n,
-				final java.util.Map<String, String> overrides) {
-			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) {
-				final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) n;
-				// Heuristic: prefer printing inverse form '?s ^p ?o' when the triple is
-				// syntactically '?o p ?s' and p is a constant IRI.
-				Var pv = sp.getPredicate();
-				Var sVar = sp.getSubject();
-				Var oVar = sp.getObject();
-				boolean inverse = false;
-				if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI && sVar != null && oVar != null
-						&& !sVar.hasValue() && !oVar.hasValue()) {
-					String sName = sVar.getName();
-					String oName = oVar.getName();
-					if ("o".equals(sName) && "s".equals(oName)) {
-						inverse = true;
-					}
-				}
-				if (inverse) {
-					line("?s ^" + renderIRI((IRI) pv.getValue()) + " ?o .");
-				} else {
-					line(renderTermWithOverrides(sp.getSubject(), overrides) + " "
-							+ renderPredicateForTriple(sp.getPredicate()) + " "
-							+ renderTermWithOverrides(sp.getObject(), overrides) + " .");
-				}
-				return;
-			}
-			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) {
-				final org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple pt = (org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) n;
-				final String sTxt = applyOverridesToText(pt.getSubjectText(), overrides);
-				final String oTxt = applyOverridesToText(pt.getObjectText(), overrides);
-				line(sTxt + " " + pt.getPathText() + " " + oTxt + " .");
-				return;
-			}
-			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph) {
-				final org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph g = (org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph) n;
-				indent();
-				out.append("GRAPH ").append(renderVarOrValue(g.getGraph())).append(' ');
-				openBlock();
-				for (org.eclipse.rdf4j.queryrender.sparql.ir.IrNode ln : g.getWhere().getLines()) {
-					printNode(ln, overrides);
-				}
-				closeBlock();
-				return;
-			}
-			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional) {
-				final IrBGP ow = ((org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional) n)
-						.getWhere();
-				// Compact single-line OPTIONAL when the body consists of a single simple line
-				if (ow != null && ow.getLines().size() == 1) {
-					final org.eclipse.rdf4j.queryrender.sparql.ir.IrNode only = ow.getLines().get(0);
-					if (only instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple
-							|| only instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) {
-						indent();
-						out.append("OPTIONAL { ");
-						// inline print the single node
-						if (only instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) {
-							final org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple pt = (org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) only;
-							final String sTxt = applyOverridesToText(pt.getSubjectText(), overrides);
-							final String oTxt = applyOverridesToText(pt.getObjectText(), overrides);
-							out.append(sTxt)
-									.append(' ')
-									.append(pt.getPathText())
-									.append(' ')
-									.append(oTxt)
-									.append(" . ");
-						} else {
-							final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) only;
-							out.append(renderTermWithOverrides(sp.getSubject(), overrides))
-									.append(' ')
-									.append(renderPredicateForTriple(sp.getPredicate()))
-									.append(' ')
-									.append(renderTermWithOverrides(sp.getObject(), overrides))
-									.append(" . ");
-						}
-						out.append('}').append('\n');
-						return;
-					}
-				}
-				indent();
-				out.append("OPTIONAL ");
-				openBlock();
-				for (org.eclipse.rdf4j.queryrender.sparql.ir.IrNode ln : ow.getLines()) {
-					printNode(ln, overrides);
-				}
-				closeBlock();
-				return;
-			}
-			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion) {
-				if (tryRenderUnionAsPath((org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion) n, overrides)) {
-					return;
-				}
-				final java.util.List<IrBGP> branches = ((org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion) n)
-						.getBranches();
-				for (int i = 0; i < branches.size(); i++) {
-					indent();
-					openBlock();
-					printLines(branches.get(i).getLines());
-					closeBlock();
-					if (i + 1 < branches.size()) {
-						indent();
-						line("UNION");
-					}
-				}
-				return;
-			}
-			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrValues) {
-				final org.eclipse.rdf4j.queryrender.sparql.ir.IrValues v = (org.eclipse.rdf4j.queryrender.sparql.ir.IrValues) n;
-				indent();
-				if (v.getVarNames().isEmpty()) {
-					out.append("VALUES () ");
-					openBlock();
-					for (int i = 0; i < v.getRows().size(); i++) {
-						indent();
-						out.append("()\n");
-					}
-					closeBlock();
-				} else {
-					out.append("VALUES (");
-					for (int i = 0; i < v.getVarNames().size(); i++) {
-						if (i > 0) {
-							out.append(' ');
-						}
-						out.append('?').append(v.getVarNames().get(i));
-					}
-					out.append(") ");
-					openBlock();
-					for (java.util.List<String> row : v.getRows()) {
-						indent();
-						out.append('(');
-						for (int i = 0; i < row.size(); i++) {
-							if (i > 0) {
-								out.append(' ');
-							}
-							out.append(row.get(i));
-						}
-						out.append(")\n");
-					}
-					closeBlock();
-				}
-				return;
-			}
-			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrBind) {
-				final org.eclipse.rdf4j.queryrender.sparql.ir.IrBind b = (org.eclipse.rdf4j.queryrender.sparql.ir.IrBind) n;
-				line("BIND(" + b.getExprText() + " AS ?" + b.getVarName() + ")");
-				return;
-			}
-			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) {
-				line("FILTER (" + ((org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) n).getConditionText() + ")");
-				return;
-			}
-			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrService) {
-				final org.eclipse.rdf4j.queryrender.sparql.ir.IrService svc = (org.eclipse.rdf4j.queryrender.sparql.ir.IrService) n;
-				indent();
-				out.append("SERVICE ");
-				if (svc.isSilent()) {
-					out.append("SILENT ");
-				}
-				out.append(svc.getServiceRefText()).append(' ');
-				openBlock();
-				printLines(svc.getWhere().getLines());
-				closeBlock();
-				return;
-			}
-			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus) {
-				final org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus m = (org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus) n;
-				final IrBGP mw = m.getWhere();
-				if (mw != null && mw.getLines().size() == 1) {
-					final org.eclipse.rdf4j.queryrender.sparql.ir.IrNode only = mw.getLines().get(0);
-					if (only instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple
-							|| only instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) {
-						indent();
-						out.append("MINUS { ");
-						if (only instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) {
-							final org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple pt = (org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) only;
-							final String sTxt = applyOverridesToText(pt.getSubjectText(), overrides);
-							final String oTxt = applyOverridesToText(pt.getObjectText(), overrides);
-							out.append(sTxt)
-									.append(' ')
-									.append(pt.getPathText())
-									.append(' ')
-									.append(oTxt)
-									.append(" . ");
-						} else {
-							final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) only;
-							out.append(renderTermWithOverrides(sp.getSubject(), overrides))
-									.append(' ')
-									.append(renderPredicateForTriple(sp.getPredicate()))
-									.append(' ')
-									.append(renderTermWithOverrides(sp.getObject(), overrides))
-									.append(" . ");
-						}
-						out.append('}').append('\n');
-						return;
-					}
-				}
-				indent();
-				out.append("MINUS ");
-				openBlock();
-				printLines(m.getWhere().getLines());
-				closeBlock();
-				return;
-			}
-			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect) {
-				final org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect ss = (org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect) n;
-				final String text = TupleExprIRRenderer.this.render(ss.getSelect(), null, true);
-				indent();
-				out.append("{").append('\n');
-				level++;
-				for (String ln : text.split("\\R", -1)) {
-					indent();
-					out.append(ln).append('\n');
-				}
-				level--;
-				indent();
-				out.append("}");
-				out.append('\n');
-				return;
-			}
-			if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrText) {
-				final String text = ((org.eclipse.rdf4j.queryrender.sparql.ir.IrText) n).getText();
-				for (String ln : text.split("\\R", -1)) {
-					indent();
-					out.append(ln).append('\n');
-				}
-				return;
-			}
-			// Fallback (should not normally happen): print a comment line
-			line("# unknown IR node: " + n.getClass().getSimpleName());
-		}
 
 		private String applyOverridesToText(final String termText, final java.util.Map<String, String> overrides) {
 			if (termText == null) {
@@ -893,227 +606,8 @@ public class TupleExprIRRenderer {
 			return renderTermWithOverrides(v, this.currentOverrides);
 		}
 
-		private boolean tryRenderUnionAsPath(final org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion u,
-				final java.util.Map<String, String> overrides) {
-			final java.util.List<IrBGP> branches = u.getBranches();
-			if (branches.isEmpty()) {
-				return false;
-			}
-			Var subj = null, obj = null;
-			final java.util.List<String> iris = new java.util.ArrayList<>();
-			for (IrBGP b : branches) {
-				if (b.getLines().size() != 1
-						|| !(b.getLines()
-								.get(0) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern)) {
-					return false;
-				}
-				final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) b
-						.getLines()
-						.get(0);
-				Var pv = sp.getPredicate();
-				if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
-					return false;
-				}
-				Var s = sp.getSubject();
-				Var o = sp.getObject();
-				if (subj == null && obj == null) {
-					subj = s;
-					obj = o;
-				} else if (!(sameVar(subj, s) && sameVar(obj, o))) {
-					return false;
-				}
-				iris.add(renderIRI((IRI) pv.getValue()));
-			}
-			String sStr = renderTermWithOverrides(subj, overrides);
-			String oStr = renderTermWithOverrides(obj, overrides);
-			String path = iris.size() == 1 ? iris.get(0) : "(" + String.join("|", iris) + ")";
-			line(sStr + " " + path + " " + oStr + " .");
-			return true;
-		}
-
-		private java.util.Map<String, String> detectCollections(
-				final java.util.List<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> nodes) {
-			final java.util.Map<String, String> overrides = new java.util.HashMap<>();
-			final java.util.Map<String, org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern> firstByS = new java.util.LinkedHashMap<>();
-			final java.util.Map<String, org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern> restByS = new java.util.LinkedHashMap<>();
-
-			for (org.eclipse.rdf4j.queryrender.sparql.ir.IrNode n : nodes) {
-				if (!(n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern)) {
-					continue;
-				}
-				final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) n;
-				final Var s = sp.getSubject();
-				final Var p = sp.getPredicate();
-				final String sName = freeVarName(s);
-				if (sName == null) {
-					continue;
-				}
-				if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
-					continue;
-				}
-				final IRI pred = (IRI) p.getValue();
-				if (RDF.FIRST.equals(pred)) {
-					firstByS.put(sName, sp);
-				} else if (RDF.REST.equals(pred)) {
-					restByS.put(sName, sp);
-				}
-			}
-
-			if (firstByS.isEmpty() || restByS.isEmpty()) {
-				return overrides;
-			}
-
-			final java.util.List<String> candidateHeads = new java.util.ArrayList<>();
-			for (String s : firstByS.keySet()) {
-				if (s != null && s.startsWith(ANON_COLLECTION_PREFIX)) {
-					candidateHeads.add(s);
-				}
-			}
-			if (candidateHeads.isEmpty()) {
-				for (String s : firstByS.keySet()) {
-					if (restByS.containsKey(s)) {
-						candidateHeads.add(s);
-					}
-				}
-			}
-
-			for (String head : candidateHeads) {
-				final java.util.List<String> items = new java.util.ArrayList<>();
-				final java.util.Set<String> spine = new java.util.LinkedHashSet<>();
-
-				String cur = head;
-				boolean ok = true;
-				int guard = 0;
-
-				while (ok) {
-					if (++guard > 10000) {
-						ok = false;
-						break;
-					}
-					final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern f = firstByS.get(cur);
-					final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern r = restByS.get(cur);
-					if (f == null || r == null) {
-						ok = false;
-						break;
-					}
-					spine.add(cur);
-					items.add(renderVarOrValue(f.getObject()));
-					final Var ro = r.getObject();
-					if (ro == null) {
-						ok = false;
-						break;
-					}
-					if (ro.hasValue()) {
-						if (!(ro.getValue() instanceof IRI) || !RDF.NIL.equals(ro.getValue())) {
-							ok = false;
-						}
-						break;
-					}
-					cur = ro.getName();
-					if (cur == null || cur.isEmpty() || spine.contains(cur)) {
-						ok = false;
-						break;
-					}
-				}
-
-				if (!ok || items.isEmpty()) {
-					continue;
-				}
-
-				// Basic leak check: ignore if interior spine names are used by other triples in this block
-				final java.util.Set<String> external = new java.util.LinkedHashSet<>();
-				for (org.eclipse.rdf4j.queryrender.sparql.ir.IrNode n : nodes) {
-					if (!(n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern)) {
-						continue;
-					}
-					final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) n;
-					final String sN = freeVarName(sp.getSubject());
-					final String oN = freeVarName(sp.getObject());
-					final String pN = freeVarName(sp.getPredicate());
-					if (sN != null && !spine.contains(sN)) {
-						external.add(sN);
-					}
-					if (oN != null && !spine.contains(oN)) {
-						external.add(oN);
-					}
-					if (pN != null && !spine.contains(pN)) {
-						external.add(pN);
-					}
-				}
-				boolean leaks = false;
-				for (String v : spine) {
-					if (!v.equals(head) && external.contains(v)) {
-						leaks = true;
-						break;
-					}
-				}
-				if (leaks) {
-					continue;
-				}
-
-				overrides.put(head, "(" + String.join(" ", items) + ")");
-			}
-
-			return overrides;
-		}
-
-		private java.util.Set<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> detectCollectionConsumed(
-				final java.util.List<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> nodes) {
-			final java.util.Set<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> consumed = new java.util.LinkedHashSet<>();
-			final java.util.Map<String, org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern> firstByS = new java.util.LinkedHashMap<>();
-			final java.util.Map<String, org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern> restByS = new java.util.LinkedHashMap<>();
-
-			for (org.eclipse.rdf4j.queryrender.sparql.ir.IrNode n : nodes) {
-				if (!(n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern)) {
-					continue;
-				}
-				final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern sp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern) n;
-				final String sName = freeVarName(sp.getSubject());
-				final Var p = sp.getPredicate();
-				if (sName == null || p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
-					continue;
-				}
-				final IRI pred = (IRI) p.getValue();
-				if (RDF.FIRST.equals(pred)) {
-					firstByS.put(sName, sp);
-				} else if (RDF.REST.equals(pred)) {
-					restByS.put(sName, sp);
-				}
-			}
-
-			final java.util.Set<String> heads = new java.util.LinkedHashSet<>(firstByS.keySet());
-			heads.retainAll(restByS.keySet());
-			for (String h : heads) {
-				String cur = h;
-				int guard = 0;
-				while (true) {
-					if (++guard > 10000) {
-						break;
-					}
-					final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern f = firstByS.get(cur);
-					final org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern r = restByS.get(cur);
-					if (f == null || r == null) {
-						break;
-					}
-					consumed.add(f);
-					consumed.add(r);
-					final Var ro = r.getObject();
-					if (ro == null || ro.hasValue()) {
-						break;
-					}
-					cur = ro.getName();
-					if (cur == null || cur.isEmpty()) {
-						break;
-					}
-				}
-			}
-			return consumed;
-		}
-
 		private void indent() {
-			for (int i = 0; i < level; i++) {
-				out.append(indentUnit);
-			}
+			out.append(indentUnit.repeat(Math.max(0, level)));
 		}
 
 		@Override
@@ -1240,7 +734,7 @@ public class TupleExprIRRenderer {
 				}
 			}
 
-			if (trailingProj != null && head != null) {
+			if (trailingProj != null) {
 				final java.util.Set<String> headVars = new java.util.LinkedHashSet<>();
 				for (TupleExpr n : head) {
 					collectFreeVars(n, headVars);
@@ -1450,7 +944,7 @@ public class TupleExprIRRenderer {
 			if (steps.isEmpty()) {
 				return null;
 			}
-			return (steps.size() == 1) ? steps.get(0) : new PathSeq(new java.util.ArrayList<>(steps));
+			return (steps.size() == 1) ? steps.get(0) : new PathSeq(new ArrayList<>(steps));
 		}
 
 		@Override
@@ -1517,127 +1011,10 @@ public class TupleExprIRRenderer {
 		out.append("ASK");
 		// WHERE
 		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
-		final BlockPrinter bp = new BlockPrinter(out, this, cfg, n);
+		final BlockPrinter bp = new BlockPrinter(out, this, cfg);
 		bp.openBlock();
 		n.where.visit(bp);
 		bp.closeBlock();
-		return mergeAdjacentGraphBlocks(out.toString()).trim();
-	}
-
-	/** DESCRIBE query (top-level). If describeAll==true, ignore describeTerms and render DESCRIBE *. */
-	public String renderDescribe(final TupleExpr tupleExpr, final List<ValueExpr> describeTerms,
-			final boolean describeAll, final DatasetView dataset) {
-		suppressedSubselects.clear();
-		final StringBuilder out = new StringBuilder(256);
-		final Normalized n = normalize(tupleExpr);
-		printPrologueAndDataset(out, dataset);
-		out.append("DESCRIBE ");
-		if (describeAll || describeTerms == null || describeTerms.isEmpty()) {
-			out.append("*");
-		} else {
-			boolean first = true;
-			for (ValueExpr t : describeTerms) {
-				if (!first) {
-					out.append(' ');
-				}
-				out.append(renderDescribeTerm(t));
-				first = false;
-			}
-		}
-		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
-		final BlockPrinter bp = new BlockPrinter(out, this, cfg, n);
-		bp.openBlock();
-		n.where.visit(bp);
-		bp.closeBlock();
-
-		// DESCRIBE accepts solution modifiers in SPARQL 1.1 (ORDER/LIMIT/OFFSET)
-		if (!n.orderBy.isEmpty()) {
-			out.append("\nORDER BY");
-			for (final OrderElem oe : n.orderBy) {
-				final String expr = renderExpr(oe.getExpr());
-				if (oe.isAscending()) {
-					out.append(' ').append(expr);
-				} else {
-					out.append(" DESC(").append(expr).append(')');
-				}
-			}
-		}
-		if (n.limit >= 0) {
-			out.append("\nLIMIT ").append(n.limit);
-		}
-		if (n.offset >= 0) {
-			out.append("\nOFFSET ").append(n.offset);
-		}
-
-		return mergeAdjacentGraphBlocks(out.toString()).trim();
-	}
-
-	/** CONSTRUCT query (top-level). Template is a list of triple patterns (context respected when present). */
-	public String renderConstruct(final TupleExpr whereTree, final List<StatementPattern> template,
-			final DatasetView dataset) {
-		suppressedSubselects.clear();
-		final StringBuilder out = new StringBuilder(256);
-		final Normalized n = normalize(whereTree);
-		printPrologueAndDataset(out, dataset);
-
-		// CONSTRUCT template
-		out.append("CONSTRUCT ");
-		final StringBuilder tmpl = new StringBuilder();
-		final BlockPrinter bpT = new BlockPrinter(tmpl, this, cfg, n);
-		bpT.openBlock();
-		if (template == null || template.isEmpty()) {
-			fail("CONSTRUCT template is empty");
-		} else {
-			// Simple per-triple printing, respecting context as GRAPH
-			for (StatementPattern sp : template) {
-				Var c = getContextVarSafe(sp);
-				if (c != null) {
-					bpT.indent();
-					bpT.raw("GRAPH " + renderVarOrValue(c) + " ");
-					bpT.openBlock();
-					bpT.line(renderVarOrValue(sp.getSubjectVar()) + " " +
-							renderVarOrValue(sp.getPredicateVar()) + " " +
-							renderVarOrValue(sp.getObjectVar()) + " " +
-							".");
-					bpT.closeBlock();
-					bpT.newline();
-				} else {
-					bpT.line(renderVarOrValue(sp.getSubjectVar()) + " " +
-							renderVarOrValue(sp.getPredicateVar()) + " " +
-							renderVarOrValue(sp.getObjectVar()) + " " +
-							".");
-				}
-			}
-		}
-		bpT.closeBlock();
-		out.append(tmpl);
-
-		// WHERE
-		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
-		final BlockPrinter bp = new BlockPrinter(out, this, cfg, n);
-		bp.openBlock();
-		n.where.visit(bp);
-		bp.closeBlock();
-
-		// Solution modifiers (ORDER/LIMIT/OFFSET) apply
-		if (!n.orderBy.isEmpty()) {
-			out.append("\nORDER BY");
-			for (final OrderElem oe : n.orderBy) {
-				final String expr = renderExpr(oe.getExpr());
-				if (oe.isAscending()) {
-					out.append(' ').append(expr);
-				} else {
-					out.append(" DESC(").append(expr).append(')');
-				}
-			}
-		}
-		if (n.limit >= 0) {
-			out.append("\nLIMIT ").append(n.limit);
-		}
-		if (n.offset >= 0) {
-			out.append("\nOFFSET ").append(n.offset);
-		}
-
 		return mergeAdjacentGraphBlocks(out.toString()).trim();
 	}
 
@@ -1659,21 +1036,14 @@ public class TupleExprIRRenderer {
 		if (cfg.printPrefixes && !cfg.prefixes.isEmpty()) {
 			cfg.prefixes.forEach((pfx, ns) -> out.append("PREFIX ").append(pfx).append(": <").append(ns).append(">\n"));
 		}
-		if (cfg.baseIRI != null && !cfg.baseIRI.isEmpty()) {
-			out.append("BASE <").append(cfg.baseIRI).append(">\n");
-		}
 		// FROM / FROM NAMED (top-level only)
 		final List<IRI> dgs = dataset != null ? dataset.defaultGraphs : cfg.defaultGraphs;
 		final List<IRI> ngs = dataset != null ? dataset.namedGraphs : cfg.namedGraphs;
-		if (dgs != null) {
-			for (IRI iri : dgs) {
-				out.append("FROM ").append(renderIRI(iri)).append("\n");
-			}
+		for (IRI iri : dgs) {
+			out.append("FROM ").append(renderIRI(iri)).append("\n");
 		}
-		if (ngs != null) {
-			for (IRI iri : ngs) {
-				out.append("FROM NAMED ").append(renderIRI(iri)).append("\n");
-			}
+		for (IRI iri : ngs) {
+			out.append("FROM NAMED ").append(renderIRI(iri)).append("\n");
 		}
 	}
 
@@ -1794,7 +1164,6 @@ public class TupleExprIRRenderer {
 							}
 						}
 						afterGroup = ext.getArg();
-						changed = true;
 					}
 
 					n.groupByTerms.clear();
@@ -1868,7 +1237,6 @@ public class TupleExprIRRenderer {
 						}
 					}
 					afterGroup = ext.getArg();
-					changed = true;
 				}
 
 				n.groupByTerms.clear();
@@ -1883,7 +1251,6 @@ public class TupleExprIRRenderer {
 
 				cur = afterGroup;
 				changed = true;
-				continue;
 			}
 
 		} while (changed);
@@ -1962,7 +1329,7 @@ public class TupleExprIRRenderer {
 			} else {
 				chosen = new ArrayList<>(1);
 				if (!candidates.isEmpty()) {
-					String best = candidates.stream().sorted((a, b) -> {
+					candidates.stream().min((a, b) -> {
 						int as = scan.subjCounts.getOrDefault(a, 0);
 						int bs = scan.subjCounts.getOrDefault(b, 0);
 						if (as != bs) {
@@ -1979,10 +1346,7 @@ public class TupleExprIRRenderer {
 							return Integer.compare(bp, ap);
 						}
 						return a.compareTo(b);
-					}).findFirst().orElse(null);
-					if (best != null) {
-						chosen.add(best);
-					}
+					}).ifPresent(chosen::add);
 				}
 			}
 
@@ -2308,7 +1672,6 @@ public class TupleExprIRRenderer {
 		private final TupleExprIRRenderer r;
 		private final Config cfg;
 
-		private final Normalized norm;
 		private final String indentUnit;
 		private int level = 0;
 		// Persistent GRAPH grouping across multiple IR passes
@@ -2316,23 +1679,20 @@ public class TupleExprIRRenderer {
 		private final java.util.List<String> openGraphLines = new java.util.ArrayList<>();
 		private final boolean suppressGraph; // when true, print triples without wrapping GRAPH even if context present
 
-		BlockPrinter(final StringBuilder out, final TupleExprIRRenderer renderer, final Config cfg,
-				final Normalized norm) {
+		BlockPrinter(final StringBuilder out, final TupleExprIRRenderer renderer, final Config cfg) {
 			this.out = out;
 			this.r = renderer;
 			this.cfg = cfg;
-			this.norm = norm;
-			this.indentUnit = cfg.indent == null ? "  " : cfg.indent;
+			this.indentUnit = cfg.indent;
 			this.suppressGraph = false;
 		}
 
 		BlockPrinter(final StringBuilder out, final TupleExprIRRenderer renderer, final Config cfg,
-				final Normalized norm, final boolean suppressGraph) {
+				final boolean suppressGraph) {
 			this.out = out;
 			this.r = renderer;
 			this.cfg = cfg;
-			this.norm = norm;
-			this.indentUnit = cfg.indent == null ? "  " : cfg.indent;
+			this.indentUnit = cfg.indent;
 			this.suppressGraph = suppressGraph;
 		}
 
@@ -2416,9 +1776,7 @@ public class TupleExprIRRenderer {
 		}
 
 		void indent() {
-			for (int i = 0; i < level; i++) {
-				out.append(indentUnit);
-			}
+			out.append(indentUnit.repeat(Math.max(0, level)));
 		}
 
 		@Override
@@ -2592,7 +1950,7 @@ public class TupleExprIRRenderer {
 				final Var ctx = getContextVarSafe(sp);
 				if (ctxRef == null) {
 					ctxRef = ctx;
-				} else if (!contextsCompatible(ctxRef, ctx)) {
+				} else if (contextsIncompatible(ctxRef, ctx)) {
 					return false;
 				}
 				final Var pv = sp.getPredicateVar();
@@ -2656,7 +2014,7 @@ public class TupleExprIRRenderer {
 				}
 			}
 
-			if (trailingProj != null && head != null) {
+			if (trailingProj != null) {
 				// Decide dependency based on what variables are already available from the head (left part of the
 				// join).
 				// If the filter's variables are all bound by the head, we can safely print the FILTER before the
@@ -2853,7 +2211,7 @@ public class TupleExprIRRenderer {
 		}
 
 		int count = 0;
-		for (BindingSet bs : bindingSets) {
+		for (BindingSet ignored : bindingSets) {
 			count++;
 		}
 
@@ -3218,8 +2576,8 @@ public class TupleExprIRRenderer {
 			}
 			final ValueExpr L = c.getLeftArg();
 			final ValueExpr R = c.getRightArg();
-			Var v = null;
-			Value val = null;
+			Var v;
+			Value val;
 			if (L instanceof Var && R instanceof ValueConstant) {
 				v = (Var) L;
 				val = ((ValueConstant) R).getValue();
@@ -3229,7 +2587,7 @@ public class TupleExprIRRenderer {
 			} else {
 				return null;
 			}
-			if (v == null || v.hasValue() || val == null) {
+			if (v.hasValue() || val == null) {
 				return null;
 			}
 			if (var == null) {
@@ -3286,7 +2644,7 @@ public class TupleExprIRRenderer {
 	/** Use BlockPrinter to render a subpattern inline for EXISTS. */
 	private String renderInlineGroup(final TupleExpr pattern) {
 		final StringBuilder sb = new StringBuilder(64);
-		final BlockPrinter bp = new BlockPrinter(sb, this, cfg, null);
+		final BlockPrinter bp = new BlockPrinter(sb, this, cfg);
 		bp.openBlock();
 		pattern.visit(bp);
 		bp.closeBlock();
@@ -3394,17 +2752,6 @@ public class TupleExprIRRenderer {
 	 * Extract a simple predicate IRI from the path expression (StatementPattern with constant predicate).
 	 */
 
-	private String renderPathAtom(final TupleExpr pathExpr) {
-		if (pathExpr instanceof StatementPattern) {
-			final StatementPattern sp = (StatementPattern) pathExpr;
-			final Var pred = sp.getPredicateVar();
-			if (pred != null && pred.hasValue() && pred.getValue() instanceof IRI) {
-				return renderIRI((IRI) pred.getValue());
-			}
-		}
-		return null;
-	}
-
 	// ---------------- Best-effort path reassembly from BGP+FILTER ----------------
 
 	private static void flattenJoin(TupleExpr expr, List<TupleExpr> out) {
@@ -3414,22 +2761,6 @@ public class TupleExprIRRenderer {
 			flattenJoin(j.getRightArg(), out);
 		} else {
 			out.add(expr);
-		}
-	}
-
-	private static final class Edge {
-		final StatementPattern sp;
-		final Var s, p, o;
-		final TupleExpr container; // either the SP itself, or its wrapping Filter
-		final boolean fromFilter; // true if the SP came from Filter#getArg()
-
-		Edge(StatementPattern sp, TupleExpr container, boolean fromFilter) {
-			this.sp = sp;
-			this.s = sp.getSubjectVar();
-			this.p = sp.getPredicateVar();
-			this.o = sp.getObjectVar();
-			this.container = container;
-			this.fromFilter = fromFilter;
 		}
 	}
 
@@ -3526,8 +2857,8 @@ public class TupleExprIRRenderer {
 				return null;
 			}
 
-			IRI iri = null;
-			String name = null;
+			IRI iri;
+			String name;
 
 			ValueExpr L = c.getLeftArg();
 			ValueExpr R = c.getRightArg();
@@ -3552,10 +2883,6 @@ public class TupleExprIRRenderer {
 				return null;
 			}
 			iris.add(iri);
-		}
-
-		if (varName == null || iris.isEmpty()) {
-			return null;
 		}
 
 		NegatedSet ns = new NegatedSet(varName, null);
@@ -3793,7 +3120,7 @@ public class TupleExprIRRenderer {
 		if (e == null) {
 			return;
 		}
-		e.visit(new org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
+		e.visit(new org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<>() {
 			private void add(Var v) {
 				final String n = freeVarName(v);
 				if (n != null) {
@@ -3853,30 +3180,6 @@ public class TupleExprIRRenderer {
 				add(getContextVarSafe(p));
 			}
 		});
-	}
-
-	private static Set<String> globalVarsToPreserve(final Normalized n) {
-		final Set<String> s = new java.util.HashSet<>();
-		if (n == null) {
-			return s;
-		}
-
-		if (n.projection != null && n.projection.getProjectionElemList() != null) {
-			for (ProjectionElem pe : n.projection.getProjectionElemList().getElements()) {
-				final String name = pe.getProjectionAlias().orElse(pe.getName());
-				if (name != null && !name.isEmpty() && !n.selectAssignments.containsKey(name)) {
-					s.add(name);
-				}
-			}
-		}
-		s.addAll(n.groupByVarNames);
-		for (OrderElem oe : n.orderBy) {
-			collectVarNames(oe.getExpr(), s);
-		}
-		for (ValueExpr ve : n.selectAssignments.values()) {
-			collectVarNames(ve, s);
-		}
-		return s;
 	}
 
 	private static final class CollectionResult {
@@ -3939,7 +3242,7 @@ public class TupleExprIRRenderer {
 			boolean ok = true;
 			int guard = 0;
 
-			while (ok) {
+			while (true) {
 				if (++guard > 10000) {
 					ok = false;
 					break;
@@ -3979,7 +3282,7 @@ public class TupleExprIRRenderer {
 				}
 			}
 
-			if (!ok || items.isEmpty()) {
+			if (!ok) {
 				continue;
 			}
 
@@ -4123,7 +3426,7 @@ public class TupleExprIRRenderer {
 									if (p2 == null || !p2.hasValue() || !(p2.getValue() instanceof IRI)) {
 										continue;
 									}
-									if (!contextsCompatible(ctx, getContextVarSafe(sp2))) {
+									if (contextsIncompatible(ctx, getContextVarSafe(sp2))) {
 										continue;
 									}
 									final Var mid = sp.getObjectVar();
@@ -4145,7 +3448,7 @@ public class TupleExprIRRenderer {
 									}
 									final PathNode nps = new PathNegSet(npsList);
 									final PathNode step2 = new PathAtom((IRI) p2.getValue(), inverse);
-									final PathNode seq = new PathSeq(java.util.Arrays.asList(nps, step2));
+									final PathNode seq = new PathSeq(Arrays.asList(nps, step2));
 
 									final String subjStr = s;
 									final String objStr = renderPossiblyOverridden(
@@ -4218,7 +3521,7 @@ public class TupleExprIRRenderer {
 
 					final PathNode opt = new PathQuant(new PathAtom(z.pred, false), 0, 1);
 					final PathNode step2 = new PathAtom(p2Iri, inverse);
-					final PathNode seq = new PathSeq(java.util.Arrays.asList(opt, step2));
+					final PathNode seq = new PathSeq(Arrays.asList(opt, step2));
 
 					final String subjStr = renderPossiblyOverridden(z.start, overrides);
 					final String objStr = renderPossiblyOverridden(forward ? o2 : s2, overrides);
@@ -4261,7 +3564,7 @@ public class TupleExprIRRenderer {
 						Var ctx = getContextVarSafe(sp);
 						if (ctxRef == null) {
 							ctxRef = ctx;
-						} else if (!contextsCompatible(ctxRef, ctx)) {
+						} else if (contextsIncompatible(ctxRef, ctx)) {
 							ok = false;
 							break;
 						}
@@ -4289,7 +3592,7 @@ public class TupleExprIRRenderer {
 								continue;
 							}
 							final StatementPattern sp2 = (StatementPattern) cand;
-							if (!contextsCompatible(ctxRef, getContextVarSafe(sp2))) {
+							if (contextsIncompatible(ctxRef, getContextVarSafe(sp2))) {
 								continue;
 							}
 							final Var p2 = sp2.getPredicateVar();
@@ -4308,7 +3611,7 @@ public class TupleExprIRRenderer {
 							final PathNode alt = new PathAlt(
 									iris.stream().map(iri -> new PathAtom(iri, false)).collect(Collectors.toList()));
 							final PathNode step2 = new PathAtom((IRI) p2.getValue(), inverse);
-							final PathNode seq = new PathSeq(java.util.Arrays.asList(alt, step2));
+							final PathNode seq = new PathSeq(Arrays.asList(alt, step2));
 
 							final String gRef = (ctxRef == null) ? null : renderVarOrValue(ctxRef);
 							final String subjStr = renderPossiblyOverridden(subj, overrides);
@@ -4323,7 +3626,7 @@ public class TupleExprIRRenderer {
 									continue;
 								}
 								final StatementPattern sp3 = (StatementPattern) maybe;
-								if (!contextsCompatible(ctxRef, getContextVarSafe(sp3))) {
+								if (contextsIncompatible(ctxRef, getContextVarSafe(sp3))) {
 									continue;
 								}
 								if (sameVar(endVar, sp3.getSubjectVar())) {
@@ -4339,7 +3642,7 @@ public class TupleExprIRRenderer {
 							consumed.add(cur);
 							suppressUnion(cur);
 							consumed.add(sp2);
-							continue; // move to next i
+							// move to next i
 						}
 					}
 				}
@@ -4387,7 +3690,7 @@ public class TupleExprIRRenderer {
 						Var ctx1 = getContextVarSafe(sp1);
 						Var ctxN = getContextVarSafe(spNps);
 						if (ctx1 != null || ctxN != null) {
-							if (!contextsCompatible(ctx1, ctxN)) {
+							if (contextsIncompatible(ctx1, ctxN)) {
 								continue;
 							}
 						}
@@ -4421,13 +3724,12 @@ public class TupleExprIRRenderer {
 							chainMid = sN;
 						}
 
-						if (bridge == null || !isAnonPathVar(bridge)) {
+						if (!isAnonPathVar(bridge)) {
 							continue;
 						}
 
 						// Optionally look for a trailing SP to create a 3-step chain
 						StatementPattern sp3 = null;
-						int kChosen = -1;
 						for (int k = j + 1; k < nodes.size(); k++) {
 							final TupleExpr cand = nodes.get(k);
 							if (consumed.contains(cand) || !(cand instanceof StatementPattern)) {
@@ -4435,7 +3737,7 @@ public class TupleExprIRRenderer {
 							}
 							final StatementPattern spt = (StatementPattern) cand;
 							// Check context compatibility if any
-							if (!contextsCompatible(getContextVarSafe(sp1), getContextVarSafe(spt))) {
+							if (contextsIncompatible(getContextVarSafe(sp1), getContextVarSafe(spt))) {
 								continue;
 							}
 							final Var p3 = spt.getPredicateVar();
@@ -4445,7 +3747,6 @@ public class TupleExprIRRenderer {
 							// Must connect to chainMid
 							if (sameVar(chainMid, spt.getSubjectVar()) || sameVar(chainMid, spt.getObjectVar())) {
 								sp3 = spt;
-								kChosen = k;
 								break;
 							}
 						}
@@ -4511,7 +3812,7 @@ public class TupleExprIRRenderer {
 						if (sp3 != null) {
 							consumed.add(sp3);
 						}
-						continue; // move to next i; cur handled
+						// move to next i; cur handled
 					}
 				}
 			}
@@ -4550,7 +3851,7 @@ public class TupleExprIRRenderer {
 										continue;
 									}
 								}
-								if (!contextsCompatible(getContextVarSafe(alp), getContextVarSafe(sp))) {
+								if (contextsIncompatible(getContextVarSafe(alp), getContextVarSafe(sp))) {
 									continue;
 								}
 								firstTriple = sp;
@@ -4590,7 +3891,7 @@ public class TupleExprIRRenderer {
 							continue;
 						}
 						final StatementPattern sp = (StatementPattern) cand;
-						if (!contextsCompatible(ctxAlp, getContextVarSafe(sp))) {
+						if (contextsIncompatible(ctxAlp, getContextVarSafe(sp))) {
 							continue;
 						}
 						final Var spS = sp.getSubjectVar();
@@ -4626,7 +3927,7 @@ public class TupleExprIRRenderer {
 						final long max = getMaxLengthSafe(alp);
 						final PathNode q = new PathQuant(inner, min, max);
 						final PathNode step2 = new PathAtom(pIri, inverseStep2);
-						final PathNode seq = new PathSeq(java.util.Arrays.asList(q, step2));
+						final PathNode seq = new PathSeq(Arrays.asList(q, step2));
 
 						final Var start = aS;
 						final Var end = forwardStep2 ? spO : spS;
@@ -4665,7 +3966,7 @@ public class TupleExprIRRenderer {
 								continue;
 							}
 							final ArbitraryLengthPath alp = (ArbitraryLengthPath) cand;
-							if (!contextsCompatible(ctxSp, getContextVarSafe(alp))) {
+							if (contextsIncompatible(ctxSp, getContextVarSafe(alp))) {
 								continue;
 							}
 							final Var aS = alp.getSubjectVar();
@@ -4701,7 +4002,7 @@ public class TupleExprIRRenderer {
 							final long min = alp.getMinLength();
 							final long max = getMaxLengthSafe(alp);
 							final PathNode q = new PathQuant(inner, min, max);
-							final PathNode seq = new PathSeq(java.util.Arrays.asList(step1, q));
+							final PathNode seq = new PathSeq(Arrays.asList(step1, q));
 
 							final Var start = forward ? spS : spO;
 							final Var end = aO;
@@ -4749,7 +4050,7 @@ public class TupleExprIRRenderer {
 
 							final PathNode step1 = new PathAtom((IRI) pVar.getValue(), inverse);
 							final PathNode opt = new PathQuant(new PathAtom(z2.pred, false), 0, 1);
-							final PathNode seq = new PathSeq(java.util.Arrays.asList(step1, opt));
+							final PathNode seq = new PathSeq(Arrays.asList(step1, opt));
 
 							final Var start = inverse ? sp.getObjectVar() : sp.getSubjectVar();
 							final Var end = z2.end;
@@ -4776,7 +4077,7 @@ public class TupleExprIRRenderer {
 								continue;
 							}
 							final StatementPattern sp2 = (StatementPattern) cand;
-							if (!contextsCompatible(getContextVarSafe(sp), getContextVarSafe(sp2))) {
+							if (contextsIncompatible(getContextVarSafe(sp), getContextVarSafe(sp2))) {
 								continue;
 							}
 							final Var p2 = sp2.getPredicateVar();
@@ -4805,7 +4106,7 @@ public class TupleExprIRRenderer {
 
 							final PathNode step1 = new PathAtom((IRI) pVar.getValue(), false);
 							final PathNode step2 = new PathAtom((IRI) p2.getValue(), inverse);
-							final PathNode seq = new PathSeq(java.util.Arrays.asList(step1, step2));
+							final PathNode seq = new PathSeq(Arrays.asList(step1, step2));
 
 							final String subjStr = renderPossiblyOverridden(sp.getSubjectVar(), overrides);
 							final String objStr = renderPossiblyOverridden(
@@ -4853,8 +4154,6 @@ public class TupleExprIRRenderer {
 						}
 					}
 
-					final String pred = predStr.apply(sp.getPredicateVar());
-
 					if (plSubject[0] == null) {
 						plSubject[0] = subj;
 						addPO.accept(sp.getPredicateVar(), obj);
@@ -4882,7 +4181,7 @@ public class TupleExprIRRenderer {
 			if (subGraphRef != null) {
 				final StringBuilder tmp = new StringBuilder();
 				// Suppress GRAPH wrappers when we know the group
-				final BlockPrinter tmpBp = new BlockPrinter(tmp, this, cfg, null, true);
+				final BlockPrinter tmpBp = new BlockPrinter(tmp, this, cfg, true);
 				cur.visit(tmpBp);
 				for (String ln : tmp.toString().split("\\R")) {
 					String s = ln.stripLeading();
@@ -4952,7 +4251,7 @@ public class TupleExprIRRenderer {
 				}
 				if (ctxRef == null) {
 					ctxRef = c;
-				} else if (!contextsCompatible(ctxRef, c)) {
+				} else if (contextsIncompatible(ctxRef, c)) {
 					conflict = true;
 				}
 			}
@@ -4970,20 +4269,20 @@ public class TupleExprIRRenderer {
 	 * Context compatibility: equal if both null; if both values -> same value; if both free vars -> same name; else
 	 * incompatible.
 	 */
-	private static boolean contextsCompatible(final Var a, final Var b) {
+	private static boolean contextsIncompatible(final Var a, final Var b) {
 		if (a == b) {
-			return true;
-		}
-		if (a == null || b == null) {
 			return false;
 		}
+		if (a == null || b == null) {
+			return true;
+		}
 		if (a.hasValue() && b.hasValue()) {
-			return Objects.equals(a.getValue(), b.getValue());
+			return !Objects.equals(a.getValue(), b.getValue());
 		}
 		if (!a.hasValue() && !b.hasValue()) {
-			return Objects.equals(a.getName(), b.getName());
+			return !Objects.equals(a.getName(), b.getName());
 		}
-		return false;
+		return true;
 	}
 
 	static String stripRedundantOuterParens(final String s) {
@@ -5009,33 +4308,7 @@ public class TupleExprIRRenderer {
 		return t;
 	}
 
-	private String renderDescribeTerm(ValueExpr t) {
-		if (t instanceof Var) {
-			Var v = (Var) t;
-			if (!v.hasValue()) {
-				return "?" + v.getName();
-			}
-			if (v.getValue() instanceof IRI) {
-				return renderIRI((IRI) v.getValue());
-			}
-		}
-		if (t instanceof ValueConstant && ((ValueConstant) t).getValue() instanceof IRI) {
-			return renderIRI((IRI) ((ValueConstant) t).getValue());
-		}
-		handleUnsupported("DESCRIBE term must be variable or IRI");
-		return "";
-	}
-
 	private void handleUnsupported(String message) {
-		if (cfg.strict) {
-			throw new SparqlRenderingException(message);
-		}
-		if (cfg.lenientComments) {
-			// no-op (could add comments in lenient mode)
-		}
-	}
-
-	private void fail(String message) {
 		if (cfg.strict) {
 			throw new SparqlRenderingException(message);
 		}
@@ -5132,7 +4405,7 @@ public class TupleExprIRRenderer {
 		}
 	}
 
-	private final class PathSeq implements PathNode {
+	private static final class PathSeq implements PathNode {
 		final List<PathNode> parts;
 
 		PathSeq(List<PathNode> parts) {
@@ -5155,7 +4428,7 @@ public class TupleExprIRRenderer {
 		}
 	}
 
-	private final class PathAlt implements PathNode {
+	private static final class PathAlt implements PathNode {
 		final List<PathNode> alts;
 
 		PathAlt(List<PathNode> alts) {
@@ -5199,34 +4472,6 @@ public class TupleExprIRRenderer {
 		public int prec() {
 			return PREC_ATOM;
 		}
-	}
-
-	private PathNode invertPath(PathNode p) {
-		if (p instanceof PathAtom) {
-			PathAtom a = (PathAtom) p;
-			return new PathAtom(a.iri, !a.inverse);
-		}
-		if (p instanceof PathNegSet) {
-			return p;
-		}
-		if (p instanceof PathSeq) {
-			List<PathNode> parts = ((PathSeq) p).parts;
-			List<PathNode> inv = new ArrayList<>(parts.size());
-			for (int i = parts.size() - 1; i >= 0; i--) {
-				inv.add(invertPath(parts.get(i)));
-			}
-			return new PathSeq(inv);
-		}
-		if (p instanceof PathAlt) {
-			List<PathNode> alts = ((PathAlt) p).alts;
-			List<PathNode> inv = alts.stream().map(this::invertPath).collect(Collectors.toList());
-			return new PathAlt(inv);
-		}
-		if (p instanceof PathQuant) {
-			PathQuant q = (PathQuant) p;
-			return new PathQuant(invertPath(q.inner), q.min, q.max);
-		}
-		return p;
 	}
 
 	private static Var getContextVarSafe(Object node) {
@@ -5314,21 +4559,12 @@ public class TupleExprIRRenderer {
 		return renderExpr(e);
 	}
 
-	// NEW helper: identify anon-having vars explicitly
-	private static boolean isAnonHavingVar(Var v) {
-		if (v == null || v.hasValue()) {
-			return false;
-		}
-		final String name = v.getName();
-		return isAnonHavingName(name);
-	}
-
 	// Merge adjacent identical GRAPH blocks to improve grouping when IR emits across passes
 	private static String mergeAdjacentGraphBlocks(final String s) {
 		String prev;
 		String cur = s;
 		final Pattern p = Pattern.compile(
-				"GRAPH\\s+([^\\s]+)\\s*\\{\\s*([\\s\\S]*?)\\s*\\}\\s*GRAPH\\s+\\1\\s*\\{\\s*([\\s\\S]*?)\\s*\\}",
+				"GRAPH\\s+([^\\s]+)\\s*\\{\\s*([\\s\\S]*?)\\s*}\\s*GRAPH\\s+\\1\\s*\\{\\s*([\\s\\S]*?)\\s*}",
 				Pattern.MULTILINE);
 		int guard = 0;
 		do {

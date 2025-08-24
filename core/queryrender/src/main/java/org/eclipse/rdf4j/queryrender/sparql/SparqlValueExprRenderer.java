@@ -98,7 +98,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * {@inheritDoc}
 	 */
 	@Override
-	public void meet(Var theVar) throws Exception {
+	public void meet(Var theVar) {
 		if (theVar.isAnonymous() && !theVar.hasValue()) {
 			mBuffer.append("?").append(BaseTupleExprRenderer.scrubVarName(theVar.getName()));
 		} else if (theVar.hasValue()) {
@@ -112,7 +112,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * {@inheritDoc}
 	 */
 	@Override
-	public void meet(BNodeGenerator theGen) throws Exception {
+	public void meet(BNodeGenerator theGen) {
 		mBuffer.append(theGen.getSignature());
 	}
 
@@ -192,7 +192,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * {@inheritDoc}
 	 */
 	@Override
-	public void meet(ValueConstant theVal) throws Exception {
+	public void meet(ValueConstant theVal) {
 		mBuffer.append(RenderUtils.toSPARQL(theVal.getValue()));
 	}
 
