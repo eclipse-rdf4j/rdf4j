@@ -16,8 +16,8 @@ import java.util.List;
 /**
  * Textual IR for a WHERE/group block: ordered list of lines/nodes.
  */
-public class IrWhere extends IrNode {
-	private final List<IrNode> lines = new ArrayList<>();
+public class IrBGP extends IrNode {
+	private List<IrNode> lines = new ArrayList<>();
 
 	public List<IrNode> getLines() {
 		return lines;
@@ -29,10 +29,24 @@ public class IrWhere extends IrNode {
 		}
 	}
 
+	public void setLines(List<IrNode> newLines) {
+		this.lines = (newLines == null) ? new ArrayList<>() : new ArrayList<>(newLines);
+	}
+
 	@Override
 	public void print(IrPrinter p) {
 		p.openBlock();
 		p.printLines(lines);
 		p.closeBlock();
+	}
+
+	@Override
+	public IrNode transformChildren(java.util.function.UnaryOperator<IrNode> op) {
+		IrBGP w = new IrBGP();
+		for (IrNode ln : this.lines) {
+			IrNode t = op.apply(ln);
+			w.add(t == null ? ln : t);
+		}
+		return w;
 	}
 }
