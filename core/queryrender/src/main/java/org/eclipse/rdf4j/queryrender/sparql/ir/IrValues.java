@@ -31,12 +31,13 @@ public class IrValues extends IrNode {
 	@Override
 	public void print(IrPrinter p) {
 		if (varNames.isEmpty()) {
-			p.raw("VALUES () ");
-			p.openBlock();
+			p.line("VALUES () {");
+			p.pushIndent();
 			for (int i = 0; i < rows.size(); i++) {
 				p.line("()");
 			}
-			p.closeBlock();
+			p.popIndent();
+			p.line("}");
 			return;
 		}
 		StringBuilder head = new StringBuilder();
@@ -46,9 +47,9 @@ public class IrValues extends IrNode {
 				head.append(' ');
 			head.append('?').append(varNames.get(i));
 		}
-		head.append(") ");
-		p.raw(head.toString());
-		p.openBlock();
+		head.append(") {");
+		p.line(head.toString());
+		p.pushIndent();
 		for (java.util.List<String> row : rows) {
 			StringBuilder sb = new StringBuilder();
 			sb.append('(');
@@ -60,6 +61,7 @@ public class IrValues extends IrNode {
 			sb.append(')');
 			p.line(sb.toString());
 		}
-		p.closeBlock();
+		p.popIndent();
+		p.line("}");
 	}
 }

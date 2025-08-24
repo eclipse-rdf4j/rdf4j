@@ -14,19 +14,23 @@ package org.eclipse.rdf4j.queryrender.sparql.ir;
  * Textual IR node for an OPTIONAL block.
  */
 public class IrOptional extends IrNode {
-	private final IrWhere where;
+	private IrBGP bgp;
 
-	public IrOptional(IrWhere where) {
-		this.where = where;
+	public IrOptional(IrBGP bgp) {
+		this.bgp = bgp;
 	}
 
-	public IrWhere getWhere() {
-		return where;
+	public IrBGP getWhere() {
+		return bgp;
+	}
+
+	public void setWhere(IrBGP bgp) {
+		this.bgp = bgp;
 	}
 
 	@Override
 	public void print(IrPrinter p) {
-		IrWhere ow = getWhere();
+		IrBGP ow = getWhere();
 		if (ow != null && ow.getLines().size() == 1) {
 			IrNode only = ow.getLines().get(0);
 			if (only instanceof IrPathTriple || only instanceof IrStatementPattern) {
@@ -54,9 +58,22 @@ public class IrOptional extends IrNode {
 				return;
 			}
 		}
-		p.raw("OPTIONAL ");
-		p.openBlock();
+		p.line("OPTIONAL {");
+		p.pushIndent();
 		p.printLines(ow.getLines());
-		p.closeBlock();
+		p.popIndent();
+		p.line("}");
+	}
+
+	@Override
+	public IrNode transformChildren(java.util.function.UnaryOperator<IrNode> op) {
+		IrBGP newWhere = this.bgp;
+		if (newWhere != null) {
+			IrNode t = op.apply(newWhere);
+			if (t instanceof IrBGP) {
+				newWhere = (IrBGP) t;
+			}
+		}
+		return new IrOptional(newWhere);
 	}
 }

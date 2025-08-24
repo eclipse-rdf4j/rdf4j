@@ -37,7 +37,7 @@ public interface IrPrinter {
 	// Child printing helpers
 	void printLines(List<IrNode> lines);
 
-	void printWhere(IrWhere where);
+	void printWhere(IrBGP bgp);
 
 	// Rendering helpers
 	String renderVarOrValue(Var v);

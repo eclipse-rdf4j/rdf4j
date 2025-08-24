@@ -16,12 +16,12 @@ package org.eclipse.rdf4j.queryrender.sparql.ir;
 public class IrService extends IrNode {
 	private final String serviceRefText;
 	private final boolean silent;
-	private final IrWhere where;
+	private IrBGP bgp;
 
-	public IrService(String serviceRefText, boolean silent, IrWhere where) {
+	public IrService(String serviceRefText, boolean silent, IrBGP bgp) {
 		this.serviceRefText = serviceRefText;
 		this.silent = silent;
-		this.where = where;
+		this.bgp = bgp;
 	}
 
 	public String getServiceRefText() {
@@ -32,20 +32,38 @@ public class IrService extends IrNode {
 		return silent;
 	}
 
-	public IrWhere getWhere() {
-		return where;
+	public IrBGP getWhere() {
+		return bgp;
+	}
+
+	public void setWhere(IrBGP bgp) {
+		this.bgp = bgp;
 	}
 
 	@Override
 	public void print(IrPrinter p) {
-		p.raw("SERVICE ");
+		StringBuilder sb = new StringBuilder();
+		sb.append("SERVICE ");
 		if (silent) {
-			p.raw("SILENT ");
+			sb.append("SILENT ");
 		}
-		p.raw(serviceRefText);
-		p.raw(" ");
-		p.openBlock();
-		p.printLines(where.getLines());
-		p.closeBlock();
+		sb.append(serviceRefText).append(" {");
+		p.line(sb.toString());
+		p.pushIndent();
+		p.printLines(bgp.getLines());
+		p.popIndent();
+		p.line("}");
+	}
+
+	@Override
+	public IrNode transformChildren(java.util.function.UnaryOperator<IrNode> op) {
+		IrBGP newWhere = this.bgp;
+		if (newWhere != null) {
+			IrNode t = op.apply(newWhere);
+			if (t instanceof IrBGP) {
+				newWhere = (IrBGP) t;
+			}
+		}
+		return new IrService(this.serviceRefText, this.silent, newWhere);
 	}
 }

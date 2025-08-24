@@ -20,7 +20,7 @@ public class IrSelect extends IrNode {
 	private boolean distinct;
 	private boolean reduced;
 	private final List<IrProjectionItem> projection = new ArrayList<>();
-	private IrWhere where;
+	private IrBGP where;
 	private final List<IrGroupByElem> groupBy = new ArrayList<>();
 	private final List<String> having = new ArrayList<>();
 	private final List<IrOrderSpec> orderBy = new ArrayList<>();
@@ -47,12 +47,12 @@ public class IrSelect extends IrNode {
 		return projection;
 	}
 
-	public IrWhere getWhere() {
+	public IrBGP getWhere() {
 		return where;
 	}
 
-	public void setWhere(IrWhere where) {
-		this.where = where;
+	public void setWhere(IrBGP bgp) {
+		this.where = bgp;
 	}
 
 	public List<IrGroupByElem> getGroupBy() {
@@ -81,5 +81,27 @@ public class IrSelect extends IrNode {
 
 	public void setOffset(long offset) {
 		this.offset = offset;
+	}
+
+	@Override
+	public IrNode transformChildren(java.util.function.UnaryOperator<IrNode> op) {
+		IrBGP newWhere = this.where;
+		if (newWhere != null) {
+			IrNode t = op.apply(newWhere);
+			if (t instanceof IrBGP) {
+				newWhere = (IrBGP) t;
+			}
+		}
+		IrSelect copy = new IrSelect();
+		copy.setDistinct(this.distinct);
+		copy.setReduced(this.reduced);
+		copy.getProjection().addAll(this.projection);
+		copy.setWhere(newWhere);
+		copy.getGroupBy().addAll(this.groupBy);
+		copy.getHaving().addAll(this.having);
+		copy.getOrderBy().addAll(this.orderBy);
+		copy.setLimit(this.limit);
+		copy.setOffset(this.offset);
+		return copy;
 	}
 }

@@ -11,31 +11,10 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir.util;
 
 import java.lang.reflect.Type;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrBind;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrGroupByElem;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrOrderSpec;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrText;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrWhere;
 
 import com.google.gson.ExclusionStrategy;
 import com.google.gson.FieldAttributes;
