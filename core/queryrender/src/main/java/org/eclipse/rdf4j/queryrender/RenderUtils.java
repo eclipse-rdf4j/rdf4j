@@ -54,7 +54,7 @@ public final class RenderUtils {
 	public static StringBuilder toSPARQL(Value value, StringBuilder builder) {
 		if (value instanceof IRI) {
 			IRI aURI = (IRI) value;
-			builder.append("<").append(aURI.toString()).append(">");
+			builder.append("<").append(aURI).append(">");
 		} else if (value instanceof BNode) {
 			builder.append("_:").append(((BNode) value).getID());
 		} else if (value instanceof Literal) {
