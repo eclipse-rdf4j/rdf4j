@@ -28,4 +28,5 @@ public abstract class IrNode {
 	public IrNode transformChildren(java.util.function.UnaryOperator<IrNode> op) {
 		return this;
 	}
+
 }
