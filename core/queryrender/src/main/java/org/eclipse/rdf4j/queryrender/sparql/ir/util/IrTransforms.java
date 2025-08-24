@@ -93,6 +93,7 @@ public final class IrTransforms {
 				// Merge adjacent GRAPH blocks with the same graph ref so that downstream fusers see a single body
 				w = coalesceAdjacentGraphs(w);
 				// Collections and options later; first ensure path alternations are extended when possible
+				// Merge OPTIONAL into preceding GRAPH only when it is clearly a single-step adjunct and safe.
 				w = mergeOptionalIntoPrecedingGraph(w);
 				w = fuseAltInverseTailBGP(w, r);
 				w = flattenSingletonUnions(w);
@@ -567,6 +568,14 @@ public final class IrTransforms {
 			IrNode n = in.get(i);
 			if (n instanceof IrGraph && i + 1 < in.size() && in.get(i + 1) instanceof IrOptional) {
 				IrGraph g = (IrGraph) n;
+				// Only merge when the preceding GRAPH has a single simple line. This preserves cases where the
+				// original query intentionally kept OPTIONAL outside the GRAPH that already groups multiple lines.
+				final IrBGP gInner = g.getWhere();
+				if (gInner == null || gInner.getLines().size() != 1) {
+					// do not merge; keep original placement
+					out.add(n);
+					continue;
+				}
 				IrOptional opt = (IrOptional) in.get(i + 1);
 				IrBGP ow = opt.getWhere();
 				IrBGP simpleOw = null;
@@ -578,6 +587,44 @@ public final class IrTransforms {
 					if (sameVar(g.getGraph(), inner.getGraph()) && isSimpleOptionalBody(inner.getWhere())) {
 						simpleOw = inner.getWhere();
 					}
+				} else if (ow != null && ow.getLines().size() >= 1) {
+					// Handle OPTIONAL bodies that contain exactly one GRAPH ?g { simple } plus one or more FILTER
+					// lines.
+					// Merge into the preceding GRAPH and keep the FILTER(s) inside the OPTIONAL block.
+					IrGraph innerGraph = null;
+					final java.util.List<IrFilter> filters = new java.util.ArrayList<>();
+					boolean ok = true;
+					for (IrNode ln : ow.getLines()) {
+						if (ln instanceof IrGraph) {
+							if (innerGraph != null) {
+								ok = false; // more than one graph inside OPTIONAL -> bail
+								break;
+							}
+							innerGraph = (IrGraph) ln;
+							if (!sameVar(g.getGraph(), innerGraph.getGraph())) {
+								ok = false;
+								break;
+							}
+							continue;
+						}
+						if (ln instanceof IrFilter) {
+							filters.add((IrFilter) ln);
+							continue;
+						}
+						ok = false; // unexpected node type inside OPTIONAL body
+						break;
+					}
+					if (ok && innerGraph != null && isSimpleOptionalBody(innerGraph.getWhere())) {
+						IrBGP body = new IrBGP();
+						// simple triples/paths first, then original FILTER lines
+						for (IrNode gln : innerGraph.getWhere().getLines()) {
+							body.add(gln);
+						}
+						for (IrFilter fl : filters) {
+							body.add(fl);
+						}
+						simpleOw = body;
+					}
 				}
 				if (simpleOw != null) {
 					// Build merged graph body
@@ -586,15 +633,10 @@ public final class IrTransforms {
 						merged.add(gl);
 					}
 					merged.add(new IrOptional(simpleOw));
-					boolean consumedFilter = false;
-					if (i + 2 < in.size() && in.get(i + 2) instanceof IrFilter) {
-						merged.add(in.get(i + 2));
-						consumedFilter = true;
-					}
 					// Debug marker (harmless): indicate we applied the merge
 					// System.out.println("# IrTransforms: merged OPTIONAL into preceding GRAPH");
 					out.add(new IrGraph(g.getGraph(), merged));
-					i += consumedFilter ? 2 : 1;
+					i += 1;
 					continue;
 				}
 			}

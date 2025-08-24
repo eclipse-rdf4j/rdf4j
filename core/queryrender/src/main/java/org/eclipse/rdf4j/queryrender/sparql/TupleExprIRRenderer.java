@@ -4271,6 +4271,16 @@ public class TupleExprIRRenderer {
 			}
 
 			@Override
+			public void meet(Filter f) {
+				// Presence of a FILTER in the subtree means we should not inline the entire subtree
+				// under a single GRAPH grouping to avoid accidentally scoping the FILTER inside GRAPH.
+				sawNoCtx = true;
+				if (f.getArg() != null) {
+					f.getArg().visit(this);
+				}
+			}
+
+			@Override
 			public void meet(ArbitraryLengthPath p) {
 				Var c = getContextVarSafe(p);
 				mergeCtx(c);
@@ -4281,6 +4291,12 @@ public class TupleExprIRRenderer {
 			@Override
 			public void meet(Projection subqueryProjection) {
 				// Do not descend into subselects – treat as opaque
+			}
+
+			@Override
+			public void meet(BindingSetAssignment b) {
+				// Values/bindings are outside of GRAPH scoping for rendering purposes
+				sawNoCtx = true;
 			}
 
 			private void mergeCtx(Var c) {
