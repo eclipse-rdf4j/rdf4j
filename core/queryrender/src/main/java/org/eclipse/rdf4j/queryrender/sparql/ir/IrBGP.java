@@ -45,6 +45,7 @@ public class IrBGP extends IrNode {
 		IrBGP w = new IrBGP();
 		for (IrNode ln : this.lines) {
 			IrNode t = op.apply(ln);
+			t = t.transformChildren(op);
 			w.add(t == null ? ln : t);
 		}
 		return w;

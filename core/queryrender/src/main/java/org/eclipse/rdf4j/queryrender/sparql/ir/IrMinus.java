@@ -45,6 +45,7 @@ public class IrMinus extends IrNode {
 		IrBGP newWhere = this.bgp;
 		if (newWhere != null) {
 			IrNode t = op.apply(newWhere);
+			t = t.transformChildren(op);
 			if (t instanceof IrBGP) {
 				newWhere = (IrBGP) t;
 			}

@@ -54,6 +54,7 @@ public class IrUnion extends IrNode {
 		IrUnion u = new IrUnion();
 		for (IrBGP b : this.branches) {
 			IrNode t = op.apply(b);
+			t = t.transformChildren(op);
 			u.addBranch(t instanceof IrBGP ? (IrBGP) t : b);
 		}
 		return u;
