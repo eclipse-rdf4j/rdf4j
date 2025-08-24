@@ -27,4 +27,39 @@ public class IrValues extends IrNode {
 	public List<List<String>> getRows() {
 		return rows;
 	}
+
+	@Override
+	public void print(IrPrinter p) {
+		if (varNames.isEmpty()) {
+			p.raw("VALUES () ");
+			p.openBlock();
+			for (int i = 0; i < rows.size(); i++) {
+				p.line("()");
+			}
+			p.closeBlock();
+			return;
+		}
+		StringBuilder head = new StringBuilder();
+		head.append("VALUES (");
+		for (int i = 0; i < varNames.size(); i++) {
+			if (i > 0)
+				head.append(' ');
+			head.append('?').append(varNames.get(i));
+		}
+		head.append(") ");
+		p.raw(head.toString());
+		p.openBlock();
+		for (java.util.List<String> row : rows) {
+			StringBuilder sb = new StringBuilder();
+			sb.append('(');
+			for (int i = 0; i < row.size(); i++) {
+				if (i > 0)
+					sb.append(' ');
+				sb.append(row.get(i));
+			}
+			sb.append(')');
+			p.line(sb.toString());
+		}
+		p.closeBlock();
+	}
 }

@@ -35,4 +35,17 @@ public class IrService extends IrNode {
 	public IrWhere getWhere() {
 		return where;
 	}
+
+	@Override
+	public void print(IrPrinter p) {
+		p.raw("SERVICE ");
+		if (silent) {
+			p.raw("SILENT ");
+		}
+		p.raw(serviceRefText);
+		p.raw(" ");
+		p.openBlock();
+		p.printLines(where.getLines());
+		p.closeBlock();
+	}
 }

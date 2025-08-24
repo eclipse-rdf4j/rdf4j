@@ -23,4 +23,16 @@ public class IrSubSelect extends IrNode {
 	public IrSelect getSelect() {
 		return select;
 	}
+
+	@Override
+	public void print(IrPrinter p) {
+		final String text = p.renderSubselect(select);
+		p.raw("{\n");
+		p.pushIndent();
+		for (String ln : text.split("\\R", -1)) {
+			p.line(ln);
+		}
+		p.popIndent();
+		p.line("}");
+	}
 }

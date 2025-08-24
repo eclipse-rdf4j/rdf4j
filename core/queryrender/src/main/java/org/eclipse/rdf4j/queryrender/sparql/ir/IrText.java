@@ -23,4 +23,14 @@ public class IrText extends IrNode {
 	public String getText() {
 		return text;
 	}
+
+	@Override
+	public void print(IrPrinter p) {
+		if (text == null) {
+			return;
+		}
+		for (String ln : text.split("\\R", -1)) {
+			p.line(ln);
+		}
+	}
 }

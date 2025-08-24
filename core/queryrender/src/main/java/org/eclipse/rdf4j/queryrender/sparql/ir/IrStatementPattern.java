@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
@@ -36,5 +37,27 @@ public class IrStatementPattern extends IrNode {
 
 	public Var getObject() {
 		return object;
+	}
+
+	@Override
+	public void print(IrPrinter p) {
+		Var pv = getPredicate();
+		Var sVar = getSubject();
+		Var oVar = getObject();
+		boolean inverse = false;
+		if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI && sVar != null && oVar != null
+				&& !sVar.hasValue() && !oVar.hasValue()) {
+			String sName = sVar.getName();
+			String oName = oVar.getName();
+			if ("o".equals(sName) && "s".equals(oName)) {
+				inverse = true;
+			}
+		}
+		if (inverse) {
+			p.line("?s ^" + p.renderIRI((IRI) pv.getValue()) + " ?o .");
+		} else {
+			p.line(p.renderTermWithOverrides(getSubject()) + " " + p.renderPredicateForTriple(getPredicate()) + " "
+					+ p.renderTermWithOverrides(getObject()) + " .");
+		}
 	}
 }

@@ -23,4 +23,9 @@ public class IrFilter extends IrNode {
 	public String getConditionText() {
 		return conditionText;
 	}
+
+	@Override
+	public void print(IrPrinter p) {
+		p.line("FILTER (" + conditionText + ")");
+	}
 }

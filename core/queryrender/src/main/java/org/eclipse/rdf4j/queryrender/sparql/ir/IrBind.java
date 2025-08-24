@@ -29,4 +29,9 @@ public class IrBind extends IrNode {
 	public String getVarName() {
 		return varName;
 	}
+
+	@Override
+	public void print(IrPrinter p) {
+		p.line("BIND(" + exprText + " AS ?" + varName + ")");
+	}
 }

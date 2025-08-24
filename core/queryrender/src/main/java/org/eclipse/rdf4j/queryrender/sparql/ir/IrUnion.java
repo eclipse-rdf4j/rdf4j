@@ -28,4 +28,20 @@ public class IrUnion extends IrNode {
 			branches.add(w);
 		}
 	}
+
+	@Override
+	public void print(IrPrinter p) {
+		for (int i = 0; i < branches.size(); i++) {
+			p.line("{");
+			p.pushIndent();
+			p.printLines(branches.get(i).getLines());
+			p.popIndent();
+			p.line("}");
+			if (i + 1 < branches.size()) {
+				p.pushIndent();
+				p.line("UNION");
+				p.popIndent();
+			}
+		}
+	}
 }
