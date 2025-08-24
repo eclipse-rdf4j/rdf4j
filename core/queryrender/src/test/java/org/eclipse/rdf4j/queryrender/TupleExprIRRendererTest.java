@@ -1627,11 +1627,15 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?o\n" +
 				"WHERE {\n" +
 				"  {\n" +
-				"    OPTIONAL { ?s foaf:knows/foaf:knows ?o . }\n" +
+				"    OPTIONAL {\n" +
+				"      ?s foaf:knows/foaf:knows ?o .\n" +
+				"    }\n" +
 				"  }\n" +
 				"    UNION\n" +
 				"  {\n" +
-				"    MINUS { ?s (ex:knows/foaf:knows)? ?o . }\n" +
+				"    MINUS {\n" +
+				"      ?s (ex:knows/foaf:knows)? ?o .\n" +
+				"    }\n" +
 				"  }\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
