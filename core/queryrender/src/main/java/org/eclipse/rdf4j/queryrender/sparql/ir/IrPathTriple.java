@@ -36,4 +36,11 @@ public class IrPathTriple extends IrNode {
 	public String getObjectText() {
 		return objectText;
 	}
+
+	@Override
+	public void print(IrPrinter p) {
+		final String sTxt = p.applyOverridesToText(subjectText);
+		final String oTxt = p.applyOverridesToText(objectText);
+		p.line(sTxt + " " + pathText + " " + oTxt + " .");
+	}
 }

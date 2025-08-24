@@ -31,4 +31,14 @@ public class IrGraph extends IrNode {
 	public IrWhere getWhere() {
 		return where;
 	}
+
+	@Override
+	public void print(IrPrinter p) {
+		p.raw("GRAPH ");
+		p.raw(p.renderVarOrValue(getGraph()));
+		p.raw(" ");
+		p.openBlock();
+		p.printLines(getWhere().getLines());
+		p.closeBlock();
+	}
 }
