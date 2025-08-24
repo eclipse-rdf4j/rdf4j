@@ -131,7 +131,7 @@ public class TupleExprIRRendererTest {
 				"WHERE {\n" +
 				"  ?s a foaf:Person ; foaf:name ?name .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertFixedPoint(q, cfg());
 	}
 
 	@Test
@@ -141,7 +141,7 @@ public class TupleExprIRRendererTest {
 				"  ?s foaf:name ?name .\n" +
 				"  FILTER ((?name != \"Zed\") && REGEX(?name, \"a\", \"i\"))\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertFixedPoint(q, cfg());
 	}
 
 	@Test
