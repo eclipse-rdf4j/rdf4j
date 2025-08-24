@@ -43,17 +43,17 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	/**
 	 * A map of the extensions specified in the query.
 	 */
-	protected Map<String, ValueExpr> mExtensions = new HashMap<>();
+	protected final Map<String, ValueExpr> mExtensions = new HashMap<>();
 
 	/**
 	 * The list of elements include in the projection of the query
 	 */
-	protected List<ProjectionElemList> mProjection = new ArrayList<>();
+	protected final List<ProjectionElemList> mProjection = new ArrayList<>();
 
 	/**
 	 * The elements specified in the order by clause of the query
 	 */
-	protected List<OrderElem> mOrdering = new ArrayList<>();
+	protected final List<OrderElem> mOrdering = new ArrayList<>();
 
 	/**
 	 * Whether or not the query is distinct
