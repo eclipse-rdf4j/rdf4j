@@ -97,6 +97,8 @@ public final class IrTransforms {
 				w = fusePathPlusTailAlternationUnion(w, r);
 				// Merge adjacent GRAPH blocks with the same graph ref so that downstream fusers see a single body
 				w = coalesceAdjacentGraphs(w);
+				// Now that adjacent GRAPHs are coalesced, normalize inner GRAPH bodies for SP/PT fusions
+				w = normalizeGraphInnerPaths(w, r);
 				// Collections and options later; first ensure path alternations are extended when possible
 				// Merge OPTIONAL into preceding GRAPH only when it is clearly a single-step adjunct and safe.
 				w = mergeOptionalIntoPrecedingGraph(w);
@@ -2344,7 +2346,9 @@ public final class IrTransforms {
 			if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
 				IrBGP inner = g.getWhere();
+				// Support both PT-then-SP and SP-then-PT fusions inside GRAPH bodies
 				inner = fuseAdjacentPtThenSp(inner, r);
+				inner = fuseAdjacentSpThenPt(inner, r);
 				inner = joinPathWithLaterSp(inner, r);
 				inner = fuseAltInverseTailBGP(inner, r);
 				out.add(new IrGraph(g.getGraph(), inner));
