@@ -14,11 +14,11 @@ import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
 
-public final class ApplyPathsFixedPointTransform {
-	private ApplyPathsFixedPointTransform() {
+public final class ApplyPropertyListsTransform {
+	private ApplyPropertyListsTransform() {
 	}
 
 	public static IrBGP apply(IrBGP bgp, TupleExprIRRenderer r) {
-		return IrTransforms.applyPathsFixedPoint(bgp, r);
+		return IrTransforms.applyPropertyLists(bgp, r);
 	}
 }
