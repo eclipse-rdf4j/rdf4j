@@ -18,6 +18,8 @@ Nice to know:
 DO NOT CHANGE ANYTHING ABOVE THIS LINE.
 -----------------------------------------------------------
 
+Try first to make your changes to the classes within package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform. To fix the unsupported path expression I want you to try to create a new IrTransform that specifically targets this case, and simplify the TupleExprIRRenderer so that it doesn't need so much logic for handling paths. You will need to build out the IR with more nodes. 
+
 Take a look at the following test:
 
 ```java
