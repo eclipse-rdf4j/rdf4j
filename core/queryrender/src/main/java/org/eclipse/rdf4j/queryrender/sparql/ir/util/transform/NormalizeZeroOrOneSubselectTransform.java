@@ -181,4 +181,11 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 				&& parseSameTermVars(((IrText) b.getLines().get(0)).getText()) != null;
 	}
 
+	public static Var varNamed(String name) {
+		if (name == null) {
+			return null;
+		}
+		return new Var(name);
+	}
+
 }
