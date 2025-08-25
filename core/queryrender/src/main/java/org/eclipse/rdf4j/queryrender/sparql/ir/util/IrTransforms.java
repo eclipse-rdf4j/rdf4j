@@ -176,10 +176,85 @@ public final class IrTransforms {
 				w = reorderFiltersInOptionalBodies(w, r);
 				w = applyPropertyLists(w, r);
 				w = normalizeZeroOrOneSubselect(w, r);
+				// Ensure bare NPS triples use a stable subject/object orientation for idempotence
+				w = canonicalizeBareNpsOrientation(w);
 				return w;
 			}
 			return child;
 		});
+	}
+
+	/**
+	 * Canonicalize simple negated property set triples by choosing a stable subject/object order based on variable
+	 * names, inverting each NPS member when flipping. This avoids r1/r2 oscillation when the parser changes path
+	 * orientation across round-trips.
+	 */
+	private static IrBGP canonicalizeBareNpsOrientation(IrBGP bgp) {
+		if (bgp == null) {
+			return null;
+		}
+		final List<IrNode> out = new ArrayList<>();
+		for (IrNode n : bgp.getLines()) {
+			if (n instanceof IrPathTriple) {
+				IrPathTriple pt = (IrPathTriple) n;
+				final String path = pt.getPathText();
+				if (path != null) {
+					final String s = safeVarName(pt.getSubject());
+					final String o = safeVarName(pt.getObject());
+					if (s != null && o != null && path.startsWith("!(") && path.endsWith(")") && s.compareTo(o) > 0) {
+						final String inv = invertNegatedPropertySet(path);
+						if (inv != null) {
+							out.add(new IrPathTriple(pt.getObject(), inv, pt.getSubject()));
+							continue;
+						}
+					}
+				}
+			}
+			// Recurse into containers
+			if (n instanceof IrGraph) {
+				IrGraph g = (IrGraph) n;
+				out.add(new IrGraph(g.getGraph(), canonicalizeBareNpsOrientation(g.getWhere())));
+				continue;
+			}
+			if (n instanceof IrOptional) {
+				IrOptional o = (IrOptional) n;
+				out.add(new IrOptional(canonicalizeBareNpsOrientation(o.getWhere())));
+				continue;
+			}
+			if (n instanceof IrMinus) {
+				IrMinus m = (IrMinus) n;
+				out.add(new IrMinus(canonicalizeBareNpsOrientation(m.getWhere())));
+				continue;
+			}
+			if (n instanceof IrUnion) {
+				IrUnion u = (IrUnion) n;
+				IrUnion u2 = new IrUnion();
+				u2.setNewScope(u.isNewScope());
+				for (IrBGP b : u.getBranches()) {
+					u2.addBranch(canonicalizeBareNpsOrientation(b));
+				}
+				out.add(u2);
+				continue;
+			}
+			if (n instanceof IrService) {
+				IrService s = (IrService) n;
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(),
+						canonicalizeBareNpsOrientation(s.getWhere())));
+				continue;
+			}
+			out.add(n);
+		}
+		IrBGP res = new IrBGP();
+		out.forEach(res::add);
+		return res;
+	}
+
+	private static String safeVarName(Var v) {
+		if (v == null || v.hasValue()) {
+			return null;
+		}
+		final String n = v.getName();
+		return (n == null || n.isEmpty()) ? null : n;
 	}
 
 	/**
