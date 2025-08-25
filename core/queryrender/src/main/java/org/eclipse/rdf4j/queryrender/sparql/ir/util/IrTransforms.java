@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyNegatedProper
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyPathsFixedPointTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyPropertyListsTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CanonicalizeBareNpsOrientationTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CanonicalizeGroupedTailStepTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CoalesceAdjacentGraphsTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FlattenSingletonUnionsTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseAltInverseTailBGPTransform;
@@ -67,6 +68,8 @@ public final class IrTransforms {
 					w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
 
 					w = ApplyPathsFixedPointTransform.apply(w, r);
+
+					// (disabled) Late normalization of grouped tail steps; we prefer structural fixes
 
 					return w;
 				}
