@@ -2195,6 +2195,15 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
+	void nested_paths_extreme_1_simple2_1() {
+		String q = "SELECT ?s ?n\n" +
+				"WHERE {\n" +
+				"  ?s (ex:knows1|ex:knows2)* ?n .\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
 	void nested_paths_extreme_1_simple3() {
 		String q = "SELECT ?s ?n\n" +
 				"WHERE {\n" +
