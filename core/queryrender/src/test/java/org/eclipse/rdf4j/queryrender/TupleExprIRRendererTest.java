@@ -2177,7 +2177,18 @@ public class TupleExprIRRendererTest {
 	void nested_paths_extreme_1_simple() {
 		String q = "SELECT ?s ?n\n" +
 				"WHERE {\n" +
-				"  ?s foaf:knows/^foaf:knows | !(rdf:type|^rdf:type)/ex:knows? ?n" +
+				"  ?s foaf:knows/^foaf:knows | !(rdf:type|^rdf:type)/ex:knows? ?n .\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void nested_paths_extreme_1_simpleGraph() {
+		String q = "SELECT ?s ?n\n" +
+				"WHERE {\n" +
+				"  GRAPH ?g {\n" +
+				"    ?s foaf:knows/^foaf:knows | !(rdf:type|^rdf:type)/ex:knows? ?n .\n" +
+				"  }\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
 	}
