@@ -1409,6 +1409,17 @@ public final class IrTransforms {
 			return null;
 		}
 		final String sName = so[0], oName = so[1];
+
+		// Fast-path: if earlier passes have already fused the chain into a single IrPathTriple,
+		// and its endpoints match ?s and ?o, simply wrap the path with '?'.
+		if (chainBranch.getLines().size() == 1 && chainBranch.getLines().get(0) instanceof IrPathTriple) {
+			IrPathTriple pt = (IrPathTriple) chainBranch.getLines().get(0);
+			if (sameVar(varNamed(sName), pt.getSubject()) && sameVar(varNamed(oName), pt.getObject())) {
+				final String expr = "(" + pt.getPathText() + ")?";
+				return new IrPathTriple(pt.getSubject(), expr, pt.getObject());
+			}
+			// If orientation is reversed or endpoints differ, conservatively skip.
+		}
 		// Collect simple SPs in the chain branch
 		List<IrStatementPattern> sps = new ArrayList<>();
 		for (IrNode ln : chainBranch.getLines()) {
