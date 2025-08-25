@@ -105,6 +105,8 @@ public final class IrTransforms {
 		return (IrSelect) select.transformChildren(child -> {
 			if (child instanceof IrBGP) {
 				IrBGP w = (IrBGP) child;
+				w = coalesceAdjacentGraphs(w);
+
 				w = applyCollections(w, r);
 				w = applyNegatedPropertySet(w, r);
 				w = applyPaths(w, r);
@@ -1859,8 +1861,9 @@ public final class IrTransforms {
 			// preserving branch order and GRAPH context when present. This enables
 			// subsequent chaining with a following constant-predicate triple via
 			// IRTextPrinter's path fusion (pt + SP -> pt/IRI).
-			if (n instanceof IrUnion) {
+			if (n instanceof IrUnion && !((IrUnion) n).isNewScope()) {
 				IrUnion u = (IrUnion) n;
+
 				// Collect branches that are either:
 				// - a single IrStatementPattern, or
 				// - a single IrGraph whose inner body is a single IrStatementPattern,

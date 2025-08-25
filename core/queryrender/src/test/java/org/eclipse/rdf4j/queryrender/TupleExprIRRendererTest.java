@@ -1579,14 +1579,14 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
-	void group_by_having_with_path_in_where() {
+//	@Disabled
+	void group_by_filter_with_path_in_where() {
 		String q = "SELECT ?s (COUNT(?o) AS ?c)\n" +
 				"WHERE {\n" +
 				"  ?s foaf:knows/foaf:knows? ?o .\n" +
+				"  FILTER (?c >= 0)\n" +
 				"}\n" +
-				"GROUP BY ?s\n" +
-				"HAVING (?c >= 0)";
+				"GROUP BY ?s";
 		assertSameSparqlQuery(q, cfg());
 	}
 
@@ -1601,7 +1601,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
+//	@Disabled
 	void optional_chain_then_graph_path() {
 		String q = "SELECT ?g ?s ?o\n" +
 				"WHERE {\n" +
@@ -2046,14 +2046,26 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
+//	@Disabled
 	void deep_union_path_2() {
 		String q = "SELECT ?a ?n\n" +
 				"WHERE {\n" +
-				"  { ?a (^foaf:knows/foaf:knows)/foaf:name ?n . }\n" +
+				"  {\n" +
+				"    ?a ^foaf:knows/foaf:knows/foaf:name ?n .\n" +
+				"  }\n" +
 				"    UNION\n" +
-				"  { { ?a (foaf:knows|ex:knows) ?_x . } UNION { ?_x ^foaf:knows ?a . } OPTIONAL { ?_x foaf:name ?n . } }\n"
-				+
+				"  {  \n" +
+				"    { \n" +
+				"      ?a foaf:knows|ex:knows ?_x . \n" +
+				"    } \n" +
+				"      UNION \n" +
+				"    {\n" +
+				"      ?_x ^foaf:knows ?a .\n" +
+				"    } \n" +
+				"    OPTIONAL {\n" +
+				"      ?_x foaf:name ?n .\n" +
+				"    }\n" +
+				"  }\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
 	}
