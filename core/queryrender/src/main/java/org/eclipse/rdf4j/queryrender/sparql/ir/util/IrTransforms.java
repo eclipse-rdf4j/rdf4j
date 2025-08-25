@@ -56,6 +56,11 @@ public final class IrTransforms {
 			});
 			if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
+				// Do not fold an explicit UNION (new scope) into a single path triple
+				if (u.isNewScope()) {
+					out.add(u);
+					continue;
+				}
 				if (u.getBranches().size() == 1) {
 					IrBGP only = u.getBranches().get(0);
 					for (IrNode ln : only.getLines()) {
@@ -270,6 +275,11 @@ public final class IrTransforms {
 			if (i + 1 < in.size() && n instanceof IrPathTriple && in.get(i + 1) instanceof IrUnion) {
 				IrPathTriple pt = (IrPathTriple) n;
 				IrUnion u = (IrUnion) in.get(i + 1);
+				// Do not merge across a UNION that represents an original query UNION (new scope)
+				if (u.isNewScope()) {
+					out.add(n);
+					continue;
+				}
 				// Analyze two-branch union where each branch is a single SP (or GRAPH with single SP)
 				if (u.getBranches().size() == 2) {
 					final BranchTriple b1 = getSingleBranchSp(u.getBranches().get(0));
@@ -409,6 +419,7 @@ public final class IrTransforms {
 			if (n instanceof IrUnion) {
 				final IrUnion u = (IrUnion) n;
 				final IrUnion u2 = new IrUnion();
+				u2.setNewScope(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(coalesceAdjacentGraphs(b));
 				}
@@ -527,6 +538,7 @@ public final class IrTransforms {
 			if (n instanceof IrUnion) {
 				final IrUnion u = (IrUnion) n;
 				final IrUnion u2 = new IrUnion();
+				u2.setNewScope(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(fuseAltInverseTailBGP(b, r));
 				}
@@ -820,6 +832,7 @@ public final class IrTransforms {
 			if (n instanceof IrUnion) {
 				final IrUnion u = (IrUnion) n;
 				final IrUnion u2 = new IrUnion();
+				u2.setNewScope(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(rewriteSimpleNpsOnly(b, r));
 				}
@@ -1526,6 +1539,11 @@ public final class IrTransforms {
 			if ((n instanceof IrGraph || n instanceof IrStatementPattern) && i + 1 < in.size()
 					&& in.get(i + 1) instanceof IrUnion) {
 				IrUnion u = (IrUnion) in.get(i + 1);
+				// Respect explicit UNION scopes: do not merge into path when UNION has new scope
+				if (u.isNewScope()) {
+					out.add(n);
+					continue;
+				}
 				Var graphRef = null;
 				IrStatementPattern sp0 = null;
 				if (n instanceof IrGraph) {
@@ -2095,6 +2113,7 @@ public final class IrTransforms {
 						final IrPathTriple fused = new IrPathTriple(startTxt, alt, endTxt);
 						// Rebuild union branches: fused + the non-merged ones (in original order)
 						final IrUnion u2 = new IrUnion();
+						u2.setNewScope(u.isNewScope());
 						IrBGP fusedBgp = new IrBGP();
 						fusedBgp.add(fused);
 						u2.addBranch(fusedBgp);
@@ -2395,6 +2414,7 @@ public final class IrTransforms {
 			if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
 				IrUnion u2 = new IrUnion();
+				u2.setNewScope(u.isNewScope());
 				for (IrBGP b : u.getBranches())
 					u2.addBranch(fuseAdjacentPtThenSp(b, r));
 				out.add(u2);
@@ -2516,6 +2536,7 @@ public final class IrTransforms {
 			if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
 				IrUnion u2 = new IrUnion();
+				u2.setNewScope(u.isNewScope());
 				for (IrBGP b : u.getBranches())
 					u2.addBranch(joinPathWithLaterSp(b, r));
 				out.add(u2);
@@ -2600,6 +2621,7 @@ public final class IrTransforms {
 			if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
 				IrUnion u2 = new IrUnion();
+				u2.setNewScope(u.isNewScope());
 				for (IrBGP b : u.getBranches())
 					u2.addBranch(fuseForwardThenInverseTail(b, r));
 				out.add(u2);

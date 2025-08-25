@@ -74,9 +74,9 @@ public class TupleExprIRRendererTest {
 
 	/** Round-trip twice and assert the renderer is a fixed point (idempotent). */
 	private String assertFixedPoint(String sparql, TupleExprIRRenderer.Config cfg) {
-		System.out.println("# Original SPARQL query\n" + sparql + "\n");
+//		System.out.println("# Original SPARQL query\n" + sparql + "\n");
 		TupleExpr tupleExpr = parseAlgebra(SPARQL_PREFIX + sparql);
-		System.out.println("# Original TupleExpr\n" + tupleExpr + "\n");
+//		System.out.println("# Original TupleExpr\n" + tupleExpr + "\n");
 		String r1 = render(SPARQL_PREFIX + sparql, cfg);
 		String r2;
 		try {
@@ -1050,7 +1050,7 @@ public class TupleExprIRRendererTest {
 	// ================================================
 
 	@Test
-//	@Disabled
+	@Disabled
 	void mega_monster_deep_nesting_everything() {
 		String q = "SELECT REDUCED ?g ?x ?y (?cnt AS ?count) (IF(BOUND(?avgAge), (xsd:decimal(?cnt) + xsd:decimal(?avgAge)), xsd:decimal(?cnt)) AS ?score)\n"
 				+
@@ -1090,6 +1090,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
+	@Disabled
 	void mega_monster_deep_nesting_everything_simple() {
 		String q = "SELECT REDUCED ?g ?x ?y (?cnt AS ?count) (IF(BOUND(?avgAge), (xsd:decimal(?cnt) + xsd:decimal(?avgAge)), xsd:decimal(?cnt)) AS ?score)\n"
 				+

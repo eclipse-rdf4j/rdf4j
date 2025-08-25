@@ -794,6 +794,7 @@ public class TupleExprIRRenderer {
 			final boolean rightIsU = u.getRightArg() instanceof Union;
 			if (leftIsU && rightIsU) {
 				final IrUnion irU = new IrUnion();
+				irU.setNewScope(u.isVariableScopeChange());
 				IRBuilder left = new IRBuilder();
 				irU.addBranch(left.build(u.getLeftArg()));
 				IRBuilder right = new IRBuilder();
@@ -805,6 +806,7 @@ public class TupleExprIRRenderer {
 			final List<TupleExpr> branches = new ArrayList<>();
 			flattenUnion(u, branches);
 			final IrUnion irU = new IrUnion();
+			irU.setNewScope(u.isVariableScopeChange());
 			for (TupleExpr b : branches) {
 				IRBuilder bld = new IRBuilder();
 				irU.addBranch(bld.build(b));
@@ -1011,7 +1013,16 @@ public class TupleExprIRRenderer {
 			final long max = getMaxLengthSafe(p);
 			final PathNode q = new PathQuant(inner, min, max);
 			final String expr = (q.prec() < PREC_SEQ ? "(" + q.render() + ")" : q.render());
-			where.add(new IrPathTriple(subj, expr, obj));
+
+			final IrPathTriple pt = new IrPathTriple(subj, expr, obj);
+			final Var ctx = getContextVarSafe(p);
+			if (ctx != null && (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
+				IrBGP innerBgp = new IrBGP();
+				innerBgp.add(pt);
+				where.add(new IrGraph(ctx, innerBgp));
+			} else {
+				where.add(pt);
+			}
 		}
 
 		@Override
