@@ -11,12 +11,13 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 
 /**
  * Textual IR node for a property path triple: subject, path expression, object. Values are kept as rendered strings to
  * allow alternation, sequences, and quantifiers.
  */
-public class IrPathTriple extends IrNode {
+public class IrPathTriple extends IrTripleLike {
 	private final Var subject;
 	private final String pathText;
 	private final Var object;
@@ -37,6 +38,11 @@ public class IrPathTriple extends IrNode {
 
 	public Var getObject() {
 		return object;
+	}
+
+	@Override
+	public String getPredicateOrPathText(TupleExprIRRenderer r) {
+		return pathText;
 	}
 
 	@Override
