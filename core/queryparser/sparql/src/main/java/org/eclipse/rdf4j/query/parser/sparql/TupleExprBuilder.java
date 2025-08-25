@@ -1446,7 +1446,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				}
 			}
 
-			// when using union to execute path expressions, the scope does not not change
+			// when using union to execute path expressions, the scope does not change
 			union.setVariableScopeChange(false);
 			return union;
 		}

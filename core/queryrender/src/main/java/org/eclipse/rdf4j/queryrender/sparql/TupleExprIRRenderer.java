@@ -3110,8 +3110,23 @@ public class TupleExprIRRenderer {
 	private static void flattenUnion(TupleExpr e, List<TupleExpr> out) {
 		if (e instanceof Union) {
 			Union u = (Union) e;
-			flattenUnion(u.getLeftArg(), out);
-			flattenUnion(u.getRightArg(), out);
+			if (u.isVariableScopeChange()) {
+
+				if (u.getLeftArg() instanceof Union && !((Union) u.getLeftArg()).isVariableScopeChange()) {
+					out.add(u.getLeftArg());
+				} else {
+					flattenUnion(u.getLeftArg(), out);
+				}
+				if (u.getRightArg() instanceof Union && !((Union) u.getRightArg()).isVariableScopeChange()) {
+					out.add(u.getRightArg());
+				} else {
+					flattenUnion(u.getRightArg(), out);
+				}
+			} else {
+				flattenUnion(u.getLeftArg(), out);
+				flattenUnion(u.getRightArg(), out);
+			}
+
 		} else {
 			out.add(e);
 		}
