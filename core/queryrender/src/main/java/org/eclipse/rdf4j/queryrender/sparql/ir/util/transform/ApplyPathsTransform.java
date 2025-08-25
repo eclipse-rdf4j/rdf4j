@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrTripleLike;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeZeroOrOneSubselectTransform;
 
 public final class ApplyPathsTransform extends BaseTransform {
 	private ApplyPathsTransform() {
@@ -45,6 +46,14 @@ public final class ApplyPathsTransform extends BaseTransform {
 		List<IrNode> in = bgp.getLines();
 		for (int i = 0; i < in.size(); i++) {
 			IrNode n = in.get(i);
+			// Try to normalize a zero-or-one subselect into a path triple early
+			if (n instanceof IrSubSelect) {
+				IrPathTriple pt = NormalizeZeroOrOneSubselectTransform.tryRewriteZeroOrOne((IrSubSelect) n, r);
+				if (pt != null) {
+					out.add(pt);
+					continue;
+				}
+			}
 			// Recurse first using function-style child transform
 			n = n.transformChildren(child -> {
 				if (child instanceof IrBGP) {
@@ -1144,6 +1153,8 @@ public final class ApplyPathsTransform extends BaseTransform {
 		out.forEach(res::add);
 		// Prefer fusing PT-SP-PT into PT + ( ^p / PT ) before other linear fusions
 		res = fusePtSpPtSequence(res, r);
+		// Orient bare NPS for better chaining with following triples
+		res = orientBareNpsForNext(res);
 		// Adjacent SP then PT fusion pass (catch corner cases that slipped earlier)
 		res = fuseAdjacentSpThenPt(res, r);
 		// Newly: Adjacent PT then PT fusion

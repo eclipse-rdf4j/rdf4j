@@ -2272,7 +2272,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?n\n" +
 				"WHERE {\n" +
 				"  {\n" +
-				"    ?s (((ex:a|^ex:b)/(ex:c/foaf:knows)? )*/(^ex:d/(ex:e|^ex:f)+))/foaf:name ?n .\n" +
+				"    ?s (((ex:a|^ex:b)/(ex:c/foaf:knows)?)*)/(^ex:d/(ex:e|^ex:f)+)/foaf:name ?n .\n" +
 				"  }\n" +
 				"    UNION\n" +
 				"  {\n" +
