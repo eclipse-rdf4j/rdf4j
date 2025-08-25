@@ -148,6 +148,15 @@ public final class ApplyPathsTransform extends BaseTransform {
 								out.add(new IrPathTriple(pt1.getSubject(), fused, sp.getObject()));
 								i += 1;
 								continue;
+							} else if (sameVar(sp.getSubject(), pt1.getSubject()) && isAnonPathVar(sp.getSubject())
+									&& isAnonPathVar(sp.getObject())) {
+								// New case: SP shares its subject with the PT's subject.
+								// Build ^p / (pt) starting from SP.object, enabling later PT-then-PT fusion with
+								// a preceding path ending at SP.object.
+								String fused = "^" + r.renderIRI((IRI) p1.getValue()) + "/" + pt1.getPathText();
+								out.add(new IrPathTriple(sp.getObject(), fused, pt1.getObject()));
+								i += 1;
+								continue;
 							}
 						}
 
@@ -180,6 +189,16 @@ public final class ApplyPathsTransform extends BaseTransform {
 
 				// ---- Fuse an IrPathTriple followed by a constant-predicate SP that connects to the path's object ----
 				if (n instanceof IrPathTriple && i + 1 < in.size() && in.get(i + 1) instanceof IrStatementPattern) {
+					// If there is a preceding SP that likely wants to fuse with this PT first, defer this PT+SP fusion.
+					if (i - 1 >= 0 && in.get(i - 1) instanceof IrStatementPattern) {
+						IrStatementPattern spPrev = (IrStatementPattern) in.get(i - 1);
+						IrPathTriple thisPt = (IrPathTriple) n;
+						if (sameVar(spPrev.getSubject(), thisPt.getSubject())
+								|| sameVar(spPrev.getObject(), thisPt.getSubject())) {
+							out.add(n);
+							continue;
+						}
+					}
 					IrPathTriple pt = (IrPathTriple) n;
 					IrStatementPattern sp = (IrStatementPattern) in.get(i + 1);
 					Var pv = sp.getPredicate();
@@ -190,14 +209,30 @@ public final class ApplyPathsTransform extends BaseTransform {
 							out.add(n);
 							continue;
 						}
+						// Lookahead: if there is a following IrPathTriple that shares the join end of this PT+SP,
+						// defer fusion to allow the SP+PT rule to construct a grouped right-hand path. This yields
+						// ((... )*/(^ex:d/(...)+)) grouping before appending a tail like /foaf:name.
+						if (i + 2 < in.size() && in.get(i + 2) instanceof IrPathTriple) {
+							IrPathTriple pt2 = (IrPathTriple) in.get(i + 2);
+							Var candidateEnd = null;
+							if (sameVar(pt.getObject(), sp.getSubject())) {
+								candidateEnd = sp.getObject();
+							} else if (sameVar(pt.getObject(), sp.getObject())) {
+								candidateEnd = sp.getSubject();
+							}
+							if (candidateEnd != null
+									&& (sameVar(candidateEnd, pt2.getSubject())
+											|| sameVar(candidateEnd, pt2.getObject()))) {
+								// Defer; do not consume SP here
+								out.add(n);
+								continue;
+							}
+						}
 						String joinStep = null;
 						Var endVar = null;
 						if (sameVar(pt.getObject(), sp.getSubject())) {
 							joinStep = "/" + r.renderIRI((IRI) pv.getValue());
 							endVar = sp.getObject();
-						} else if (sameVar(pt.getObject(), sp.getObject())) {
-							joinStep = "/^" + r.renderIRI((IRI) pv.getValue());
-							endVar = sp.getSubject();
 						}
 						if (joinStep != null) {
 							final String fusedPath = pt.getPathText() + joinStep;
@@ -211,6 +246,16 @@ public final class ApplyPathsTransform extends BaseTransform {
 
 			// ---- Fuse an IrPathTriple followed by a constant-predicate SP that connects to the path's object ----
 			if (n instanceof IrPathTriple && i + 1 < in.size() && in.get(i + 1) instanceof IrStatementPattern) {
+				// If there is a preceding SP that likely wants to fuse with this PT first, defer this PT+SP fusion.
+				if (i - 1 >= 0 && in.get(i - 1) instanceof IrStatementPattern) {
+					IrStatementPattern spPrev = (IrStatementPattern) in.get(i - 1);
+					IrPathTriple thisPt = (IrPathTriple) n;
+					if (sameVar(spPrev.getSubject(), thisPt.getSubject())
+							|| sameVar(spPrev.getObject(), thisPt.getSubject())) {
+						out.add(n);
+						continue;
+					}
+				}
 				IrPathTriple pt = (IrPathTriple) n;
 				IrStatementPattern sp = (IrStatementPattern) in.get(i + 1);
 				Var pv = sp.getPredicate();
@@ -226,9 +271,6 @@ public final class ApplyPathsTransform extends BaseTransform {
 					if (sameVar(pt.getObject(), sp.getSubject())) {
 						joinStep = "/" + r.renderIRI((IRI) pv.getValue());
 						endVar2 = sp.getObject();
-					} else if (sameVar(pt.getObject(), sp.getObject())) {
-						joinStep = "/^" + r.renderIRI((IRI) pv.getValue());
-						endVar2 = sp.getSubject();
 					}
 					if (joinStep != null) {
 						final String fusedPath = pt.getPathText() + joinStep;
@@ -1100,6 +1142,8 @@ public final class ApplyPathsTransform extends BaseTransform {
 		}
 		IrBGP res = new IrBGP();
 		out.forEach(res::add);
+		// Prefer fusing PT-SP-PT into PT + ( ^p / PT ) before other linear fusions
+		res = fusePtSpPtSequence(res, r);
 		// Adjacent SP then PT fusion pass (catch corner cases that slipped earlier)
 		res = fuseAdjacentSpThenPt(res, r);
 		// Newly: Adjacent PT then PT fusion
