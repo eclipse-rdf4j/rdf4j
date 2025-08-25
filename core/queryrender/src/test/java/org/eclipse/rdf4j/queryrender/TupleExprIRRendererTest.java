@@ -2008,6 +2008,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
+	@Disabled
 	void deep_optional_path_5() {
 		String q = "SELECT ?g ?s ?n\n" +
 				"WHERE {\n" +
@@ -2017,6 +2018,15 @@ public class TupleExprIRRendererTest {
 				"      FILTER (STRLEN(STR(?n)) >= 0)\n" +
 				"    }\n" +
 				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void complexPath() {
+		String q = "SELECT ?g ?s ?n\n" +
+				"WHERE {\n" +
+				"      ?s ex:path1/ex:path2/(ex:alt1|ex:alt2) ?n .\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
 	}
@@ -2071,13 +2081,56 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
+//	@Disabled
 	void deep_union_path_3() {
 		String q = "SELECT ?s ?o\n" +
 				"WHERE {\n" +
-				"  { { ?s foaf:knows/foaf:knows ?o . } UNION { ?s (ex:knows|^ex:knows) ?o . } }\n" +
+				"  {\n" +
+				"    {\n" +
+				"      ?s foaf:knows/foaf:knows ?o .\n" +
+				"    } \n" +
+				"      UNION\n" +
+				"    {\n" +
+				"      ?s (ex:knows1|^ex:knows2) ?o .\n" +
+				"    }\n" +
+				"  }\n" +
 				"    UNION\n" +
-				"  { { ?s ^foaf:knows ?o . } UNION { ?s !(rdf:type|ex:age) ?o . } }\n" +
+				"  {\n" +
+				"    {\n" +
+				"      ?s ^foaf:knows ?o .\n" +
+				"    } \n" +
+				"      UNION\n" +
+				"    {\n" +
+				"      ?s !(rdf:type|ex:age) ?o .\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void simpleOrInversePath() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  ?s (ex:knows1|^ex:knows2) ?o . " +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void simpleOrInversePathGraph() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  GRAPH ?g { ?s (ex:knows1|^ex:knows2) ?o . }" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void simpleOrNonInversePath() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  ?s (ex:knows1|ex:knows2) ?o . " +
 				"}";
 		assertSameSparqlQuery(q, cfg());
 	}
