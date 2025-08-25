@@ -10,14 +10,53 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
+import java.util.ArrayList;
+import java.util.List;
 
-public final class FlattenSingletonUnionsTransform {
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
+
+public final class FlattenSingletonUnionsTransform extends BaseTransform {
 	private FlattenSingletonUnionsTransform() {
 	}
 
 	public static IrBGP apply(IrBGP bgp) {
-		return IrTransforms.flattenSingletonUnions(bgp);
+		if (bgp == null) {
+			return null;
+		}
+		final List<IrNode> out = new ArrayList<>();
+		for (IrNode n : bgp.getLines()) {
+			// Recurse first (but do not flatten inside OPTIONAL bodies)
+			n = n.transformChildren(child -> {
+				if (child instanceof IrOptional) {
+					return child; // skip
+				}
+				if (child instanceof IrBGP) {
+					return apply((IrBGP) child);
+				}
+				return child;
+			});
+			if (n instanceof IrUnion) {
+				IrUnion u = (IrUnion) n;
+				// Do not fold an explicit UNION (new scope) into a single path triple
+				if (u.isNewScope()) {
+					out.add(u);
+					continue;
+				}
+				if (u.getBranches().size() == 1) {
+					IrBGP only = u.getBranches().get(0);
+					for (IrNode ln : only.getLines()) {
+						out.add(ln);
+					}
+					continue;
+				}
+			}
+			out.add(n);
+		}
+		IrBGP res = new IrBGP();
+		out.forEach(res::add);
+		return res;
 	}
 }

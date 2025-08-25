@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 /**
