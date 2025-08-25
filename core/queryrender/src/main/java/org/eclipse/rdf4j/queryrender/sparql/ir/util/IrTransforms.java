@@ -2794,6 +2794,36 @@ public final class IrTransforms {
 					out.add(new IrPathTriple(a.getSubject(), fusedPath, b.getSubject()));
 					i += 1; // consume b
 				} else {
+					// Additional cases: the bridge variable occurs as the subject of the first path triple.
+					Var aSubj = a.getSubject();
+					if (aSubj != null && isAnonPathVar(aSubj)) {
+						// Case: a.subject == b.subject -> compose by inverting 'a' and chaining forward with 'b'
+						if (sameVar(aSubj, b.getSubject())) {
+							String aPath = a.getPathText();
+							String left = invertNegatedPropertySet(aPath);
+							if (left == null) {
+								left = "^(" + aPath + ")";
+							}
+							String fusedPath = left + "/(" + b.getPathText() + ")";
+							out.add(new IrPathTriple(a.getObject(), fusedPath, b.getObject()));
+							i += 1; // consume b
+							continue;
+						}
+
+						// Case: a.subject == b.object -> compose by inverting both 'a' and 'b'
+						if (sameVar(aSubj, b.getObject())) {
+							String aPath = a.getPathText();
+							String left = invertNegatedPropertySet(aPath);
+							if (left == null) {
+								left = "^(" + aPath + ")";
+							}
+							String right = "^(" + b.getPathText() + ")";
+							String fusedPath = left + "/" + right;
+							out.add(new IrPathTriple(a.getObject(), fusedPath, b.getSubject()));
+							i += 1; // consume b
+							continue;
+						}
+					}
 					out.add(n);
 				}
 			} else {
