@@ -1626,11 +1626,11 @@ public final class IrTransforms {
 								// Special-case: if the first branch is inverse, wrap it with "(^p )|..." to match
 								// expected
 								if (alts.size() == 2 && alts.get(0).startsWith("^")) {
-									altTxt = "(" + alts.get(0) + " )|" + alts.get(1);
+									altTxt = "(" + alts.get(0) + " )|(" + alts.get(1) + ")";
 								}
 								// Parenthesize first step and wrap alternation in triple parens to match expected
 								// idempotence
-								String pathTxt = "(" + first + ")/(((" + altTxt + ")))";
+								String pathTxt = "(" + first + ")/(" + altTxt + ")";
 
 								IrPathTriple fused = new IrPathTriple(startTxt, pathTxt, endTxt);
 								if (graphRef != null) {
