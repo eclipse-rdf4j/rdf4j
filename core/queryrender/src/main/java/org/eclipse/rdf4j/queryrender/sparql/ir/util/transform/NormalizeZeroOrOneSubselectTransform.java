@@ -71,20 +71,21 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 			return null;
 		}
 		IrUnion u = (IrUnion) inner.get(0);
-		if (u.getBranches().size() != 2) {
-			return null;
+		// Accept unions with >=2 branches: exactly one sameTerm filter branch, remaining branches must be
+		// single-step statement patterns that connect ?s and ?o in forward or inverse direction.
+		IrBGP filterBranch = null;
+		List<IrBGP> stepBranches = new ArrayList<>();
+		for (IrBGP b : u.getBranches()) {
+			if (isSameTermFilterBranch(b)) {
+				if (filterBranch != null) {
+					return null; // more than one sameTerm branch
+				}
+				filterBranch = b;
+			} else {
+				stepBranches.add(b);
+			}
 		}
-		IrBGP b1 = u.getBranches().get(0);
-		IrBGP b2 = u.getBranches().get(1);
-		IrBGP filterBranch, chainBranch;
-		// Identify which branch is the sameTerm filter
-		if (isSameTermFilterBranch(b1)) {
-			filterBranch = b1;
-			chainBranch = b2;
-		} else if (isSameTermFilterBranch(b2)) {
-			filterBranch = b2;
-			chainBranch = b1;
-		} else {
+		if (filterBranch == null || stepBranches.isEmpty()) {
 			return null;
 		}
 		String[] so = parseSameTermVars(((IrText) filterBranch.getLines().get(0)).getText());
@@ -93,84 +94,49 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		}
 		final String sName = so[0], oName = so[1];
 
-		// Fast-path: if earlier passes have already fused the chain into a single IrPathTriple,
-		// and its endpoints match ?s and ?o, simply wrap the path with '?'.
-		if (chainBranch.getLines().size() == 1 && chainBranch.getLines().get(0) instanceof IrPathTriple) {
-			IrPathTriple pt = (IrPathTriple) chainBranch.getLines().get(0);
-			if (sameVar(varNamed(sName), pt.getSubject()) && sameVar(varNamed(oName), pt.getObject())) {
-				final String expr = "(" + pt.getPathText() + ")?";
-				return new IrPathTriple(pt.getSubject(), expr, pt.getObject());
+		// Collect simple single-step patterns from the non-filter branches
+		final List<String> steps = new ArrayList<>();
+		for (IrBGP b : stepBranches) {
+			if (b.getLines().size() != 1) {
+				return null;
 			}
-			// If orientation is reversed or endpoints differ, conservatively skip.
-		}
-		// Collect simple SPs in the chain branch. Accept either bare IrStatementPattern lines
-		// or a single IrStatementPattern wrapped in a GRAPH block (common in parsed queries
-		// with FROM NAMED / GRAPH context). All lines must be simple SPs; if anything else is
-		// encountered we conservatively bail out.
-		List<IrStatementPattern> sps = new ArrayList<>();
-		for (IrNode ln : chainBranch.getLines()) {
+			IrNode ln = b.getLines().get(0);
+			IrStatementPattern sp;
 			if (ln instanceof IrStatementPattern) {
-				sps.add((IrStatementPattern) ln);
-				continue;
-			}
-			if (ln instanceof IrGraph) {
-				IrGraph g = (IrGraph) ln;
-				if (g.getWhere() != null && g.getWhere().getLines().size() == 1
-						&& g.getWhere().getLines().get(0) instanceof IrStatementPattern) {
-					sps.add((IrStatementPattern) g.getWhere().getLines().get(0));
+				sp = (IrStatementPattern) ln;
+			} else if (ln instanceof IrGraph && ((IrGraph) ln).getWhere() != null
+					&& ((IrGraph) ln).getWhere().getLines().size() == 1
+					&& ((IrGraph) ln).getWhere().getLines().get(0) instanceof IrStatementPattern) {
+				sp = (IrStatementPattern) ((IrGraph) ln).getWhere().getLines().get(0);
+			} else if (ln instanceof IrPathTriple) {
+				// already fused; accept as-is
+				IrPathTriple pt = (IrPathTriple) ln;
+				if (sameVar(varNamed(sName), pt.getSubject()) && sameVar(varNamed(oName), pt.getObject())) {
+					steps.add(pt.getPathText());
 					continue;
 				}
-			}
-			return null; // be conservative
-		}
-		if (sps.isEmpty()) {
-			return null;
-		}
-		// Walk from ?s to ?o via _anon_path_* vars
-		Var cur = varNamed(sName);
-		Var goal = varNamed(oName);
-		List<String> steps = new ArrayList<>();
-		Set<IrStatementPattern> used = new LinkedHashSet<>();
-		int guard = 0;
-		while (!sameVar(cur, goal)) {
-			if (++guard > 10000) {
+				return null;
+			} else {
 				return null;
 			}
-			boolean advanced = false;
-			for (IrStatementPattern sp : sps) {
-				if (used.contains(sp)) {
-					continue;
-				}
-				Var p = sp.getPredicate();
-				if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
-					continue;
-				}
-				String step = r.renderIRI((IRI) p.getValue());
-				Var sub = sp.getSubject();
-				Var oo = sp.getObject();
-				if (sameVar(cur, sub) && (isAnonPathVar(oo) || sameVar(oo, goal))) {
-					steps.add(step);
-					cur = oo;
-					used.add(sp);
-					advanced = true;
-					break;
-				} else if (sameVar(cur, oo) && (isAnonPathVar(sub) || sameVar(sub, goal))) {
-					steps.add("^" + step);
-					cur = sub;
-					used.add(sp);
-					advanced = true;
-					break;
-				}
+			Var p = sp.getPredicate();
+			if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
+				return null;
 			}
-			if (!advanced) {
+			String step = r.renderIRI((IRI) p.getValue());
+			if (sameVar(varNamed(sName), sp.getSubject()) && sameVar(varNamed(oName), sp.getObject())) {
+				steps.add(step);
+			} else if (sameVar(varNamed(sName), sp.getObject()) && sameVar(varNamed(oName), sp.getSubject())) {
+				steps.add("^" + step);
+			} else {
 				return null;
 			}
 		}
-		if (used.size() != sps.size() || steps.isEmpty()) {
+		if (steps.isEmpty()) {
 			return null;
 		}
-		final String seq = (steps.size() == 1) ? steps.get(0) : String.join("/", steps);
-		final String expr = "(" + seq + ")?";
+		final String innerAlt = (steps.size() == 1) ? steps.get(0) : ("(" + String.join("|", steps) + ")");
+		final String expr = "(" + innerAlt + ")?";
 		return new IrPathTriple(varNamed(sName), expr, varNamed(oName));
 	}
 

@@ -156,6 +156,81 @@ public class BaseTransform {
 		return res;
 	}
 
+	/**
+	 * Re-orient a bare negated property set path "!(...)" so that its object matches the subject of the immediately
+	 * following triple when possible, enabling chaining: prefer s !(...) ?x when the next line starts with ?x ...
+	 */
+	public static IrBGP orientBareNpsForNext(IrBGP bgp) {
+		if (bgp == null) {
+			return null;
+		}
+		List<IrNode> in = bgp.getLines();
+		List<IrNode> out = new ArrayList<>();
+		for (int i = 0; i < in.size(); i++) {
+			IrNode n = in.get(i);
+			if (n instanceof IrPathTriple) {
+				IrPathTriple pt = (IrPathTriple) n;
+				String ptxt = pt.getPathText();
+				if (ptxt != null) {
+					String s = ptxt.trim();
+					if (s.startsWith("!(") && s.endsWith(")")) {
+						Var nextSubj = null;
+						if (i + 1 < in.size()) {
+							IrNode nn = in.get(i + 1);
+							if (nn instanceof IrStatementPattern) {
+								nextSubj = ((IrStatementPattern) nn).getSubject();
+							} else if (nn instanceof IrPathTriple) {
+								nextSubj = ((IrPathTriple) nn).getSubject();
+							}
+						}
+						if (nextSubj != null && sameVar(pt.getSubject(), nextSubj)
+								&& !sameVar(pt.getObject(), nextSubj)) {
+							String inv = invertNegatedPropertySet(s);
+							pt = new IrPathTriple(pt.getObject(), inv, pt.getSubject());
+						}
+					}
+				}
+				out.add(pt);
+				continue;
+			}
+			// Recurse
+			if (n instanceof IrGraph) {
+				IrGraph g = (IrGraph) n;
+				out.add(new IrGraph(g.getGraph(), orientBareNpsForNext(g.getWhere())));
+				continue;
+			}
+			if (n instanceof IrOptional) {
+				IrOptional o = (IrOptional) n;
+				out.add(new IrOptional(orientBareNpsForNext(o.getWhere())));
+				continue;
+			}
+			if (n instanceof IrMinus) {
+				IrMinus m = (IrMinus) n;
+				out.add(new IrMinus(orientBareNpsForNext(m.getWhere())));
+				continue;
+			}
+			if (n instanceof IrUnion) {
+				IrUnion u = (IrUnion) n;
+				IrUnion u2 = new IrUnion();
+				u2.setNewScope(u.isNewScope());
+				for (IrBGP b : u.getBranches()) {
+					u2.addBranch(orientBareNpsForNext(b));
+				}
+				out.add(u2);
+				continue;
+			}
+			if (n instanceof IrService) {
+				IrService s = (IrService) n;
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(), orientBareNpsForNext(s.getWhere())));
+				continue;
+			}
+			out.add(n);
+		}
+		IrBGP res = new IrBGP();
+		out.forEach(res::add);
+		return res;
+	}
+
 	public static IrBGP fuseAdjacentSpThenPt(IrBGP bgp, TupleExprIRRenderer r) {
 		if (bgp == null) {
 			return null;
