@@ -10,9 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
-import java.util.HashSet;
-import java.util.Set;
-
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 
@@ -22,48 +19,11 @@ import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
  */
 public abstract class IrTripleLike extends IrNode {
 
-	final Var subject;
-	IrNode subjectOverride;
-	final Var object;
-	IrNode objectOverride;
+	/** Subject variable (may be a Var with or without value). */
+	public abstract Var getSubject();
 
-	public IrTripleLike(Var subject, Var object, boolean newScope) {
-		super(newScope);
-		this.subject = subject;
-		this.object = object;
-	}
-
-	public IrTripleLike(Var subject, IrNode subjectOverride, Var object, IrNode objectOverride, boolean newScope) {
-		super(newScope);
-		this.subjectOverride = subjectOverride;
-		this.subject = subject;
-		this.object = object;
-		this.objectOverride = objectOverride;
-	}
-
-	public Var getSubject() {
-		return subject;
-	}
-
-	public Var getObject() {
-		return object;
-	}
-
-	public IrNode getSubjectOverride() {
-		return subjectOverride;
-	}
-
-	public void setSubjectOverride(IrNode subjectOverride) {
-		this.subjectOverride = subjectOverride;
-	}
-
-	public IrNode getObjectOverride() {
-		return objectOverride;
-	}
-
-	public void setObjectOverride(IrNode objectOverride) {
-		this.objectOverride = objectOverride;
-	}
+	/** Object variable (may be a Var with or without value). */
+	public abstract Var getObject();
 
 	/**
 	 * Render the predicate or path as compact textual IR suitable for inclusion in a property path.
@@ -75,22 +35,4 @@ public abstract class IrTripleLike extends IrNode {
 	 * statement pattern).
 	 */
 	public abstract String getPredicateOrPathText(TupleExprIRRenderer r);
-
-	@Override
-	public Set<Var> getVars() {
-		HashSet<Var> out = new HashSet<>();
-		if (subject != null) {
-			out.add(subject);
-		}
-		if (object != null) {
-			out.add(object);
-		}
-		if (subjectOverride != null) {
-			out.addAll(subjectOverride.getVars());
-		}
-		if (objectOverride != null) {
-			out.addAll(objectOverride.getVars());
-		}
-		return out;
-	}
 }
