@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
@@ -84,5 +85,13 @@ public final class CanonicalizeBareNpsOrientationTransform extends BaseTransform
 		IrBGP res = new IrBGP();
 		out.forEach(res::add);
 		return res;
+	}
+
+	public static String safeVarName(Var v) {
+		if (v == null || v.hasValue()) {
+			return null;
+		}
+		final String n = v.getName();
+		return (n == null || n.isEmpty()) ? null : n;
 	}
 }
