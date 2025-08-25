@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -49,5 +50,12 @@ public class IrBGP extends IrNode {
 			w.add(t == null ? ln : t);
 		}
 		return w;
+	}
+
+	@Override
+	public String toString() {
+		return "IrBGP{" +
+				"lines=" + Arrays.toString(lines.toArray()) +
+				'}';
 	}
 }

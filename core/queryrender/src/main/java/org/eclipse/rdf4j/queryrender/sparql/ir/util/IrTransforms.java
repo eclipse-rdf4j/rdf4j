@@ -1904,8 +1904,14 @@ public final class IrTransforms {
 							subj = s;
 							obj = o;
 						} else if (!(sameVar(subj, s) && sameVar(obj, o))) {
-							ok = false;
-							break;
+							if (sameVar(subj, o) && sameVar(obj, s)) {
+								// inverse path
+								iris.add("^" + r.renderIRI((IRI) p.getValue()));
+								continue;
+							} else {
+								ok = false;
+								break;
+							}
 						}
 						iris.add(r.renderIRI((IRI) p.getValue()));
 					} else if (line instanceof IrStatementPattern) {
@@ -1926,8 +1932,15 @@ public final class IrTransforms {
 							subj = s;
 							obj = o;
 						} else if (!(sameVar(subj, s) && sameVar(obj, o))) {
-							ok = false;
-							break;
+							if (sameVar(subj, o) && sameVar(obj, s)) {
+								// inverse path
+								iris.add("^" + r.renderIRI((IRI) p.getValue()));
+								continue;
+							} else {
+								ok = false;
+								break;
+							}
+
 						}
 						iris.add(r.renderIRI((IRI) p.getValue()));
 					} else {

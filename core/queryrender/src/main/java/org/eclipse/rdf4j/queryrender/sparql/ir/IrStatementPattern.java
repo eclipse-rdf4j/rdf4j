@@ -60,4 +60,13 @@ public class IrStatementPattern extends IrNode {
 					+ p.renderTermWithOverrides(getObject()) + " .");
 		}
 	}
+
+	@Override
+	public String toString() {
+		return "IrStatementPattern{" +
+				"subject=" + subject +
+				", predicate=" + predicate +
+				", object=" + object +
+				'}';
+	}
 }
