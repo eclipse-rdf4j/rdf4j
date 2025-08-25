@@ -78,8 +78,15 @@ public class IrUnion extends IrNode {
 
 	@Override
 	public String toString() {
+		StringBuilder sb = new StringBuilder();
+		for (IrBGP branch : branches) {
+			sb.append("  ");
+			sb.append(branch);
+			sb.append("\n");
+		}
+
 		return "IrUnion{" +
-				"branches=" + Arrays.toString(branches.toArray()) +
+				"branches=\n" + sb.toString() +
 				", newScope=" + newScope +
 				'}';
 	}
