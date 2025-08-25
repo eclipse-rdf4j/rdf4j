@@ -465,8 +465,11 @@ public class TupleExprIRRendererTest {
 
 	@Test
 	void property_paths_negated_property_set() {
-		String q = "SELECT ?x ?y WHERE { ?x !(rdf:type|^rdf:type) ?y }";
-		assertFixedPoint(q, cfg());
+		String q = "SELECT ?x ?y\n" +
+				"WHERE {\n" +
+				"  ?x !(rdf:type|^rdf:type) ?y .\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
 	}
 
 	@Test
@@ -2178,6 +2181,24 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?n\n" +
 				"WHERE {\n" +
 				"  ?s foaf:knows/^foaf:knows | !(rdf:type|^rdf:type)/ex:knows? ?n .\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void nested_paths_extreme_1_simple2() {
+		String q = "SELECT ?s ?n\n" +
+				"WHERE {\n" +
+				"  ?s (ex:knows1/ex:knows2)* ?n .\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void nested_paths_extreme_1_simple3() {
+		String q = "SELECT ?s ?n\n" +
+				"WHERE {\n" +
+				"  ?s (ex:knows1/ex:knows2)+ ?n .\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
 	}
