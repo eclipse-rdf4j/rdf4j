@@ -124,12 +124,12 @@ public class TupleExprIRRendererTest {
 
 			TupleExpr actual = parseAlgebra(rendered);
 
-			assertThat(VarNameNormalizer.normalizeVars(actual.toString()))
-					.as("Algebra after rendering must be identical to original")
-					.isEqualTo(VarNameNormalizer.normalizeVars(expected.toString()));
+//			assertThat(VarNameNormalizer.normalizeVars(actual.toString()))
+//					.as("Algebra after rendering must be identical to original")
+//					.isEqualTo(VarNameNormalizer.normalizeVars(expected.toString()));
 
 			// Fail (again) with the original comparison so the test result is correct
-//			assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + sparql);
+			assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + sparql);
 
 		}
 	}
@@ -1104,8 +1104,8 @@ public class TupleExprIRRendererTest {
 				"    OPTIONAL {\n" +
 				"      ?y rdfs:label ?label .\n" +
 				"    }\n" +
-				"    FILTER (LANGMATCHES(LANG(?label), \"en\"))\n" +
 				"  }\n" +
+				"  FILTER (LANGMATCHES(LANG(?label), \"en\"))\n" +
 				"  FILTER (NOT EXISTS { ?y ex:blockedBy ?b . } && NOT EXISTS { ?y ex:status \"blocked\"@en . })\n" +
 				"}\n" +
 				"ORDER BY DESC(?cnt) LCASE(COALESCE(?label, \"\"))\n" +
@@ -1611,7 +1611,7 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"  GRAPH ?g {\n" +
-				"    ?s ex:knows/^foaf:knows ?o ." +
+				"    ?s ex:knows/^foaf:knows ?o .\n" +
 				"  }\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
