@@ -957,11 +957,13 @@ public class TupleExprIRRenderer {
 				}
 				boolean advanced = false;
 				for (StatementPattern sp : sps) {
-					if (used.contains(sp))
+					if (used.contains(sp)) {
 						continue;
+					}
 					Var pv = sp.getPredicateVar();
-					if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI))
+					if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
 						continue;
+					}
 					Var ss = sp.getSubjectVar();
 					Var oo = sp.getObjectVar();
 					if (sameVar(cur, ss) && (isAnonPathVar(oo) || sameVar(oo, o))) {
@@ -2806,7 +2808,6 @@ public class TupleExprIRRenderer {
 	 */
 
 	// ---------------- Best-effort path reassembly from BGP+FILTER ----------------
-
 	private static void flattenJoin(TupleExpr expr, List<TupleExpr> out) {
 		if (expr instanceof Join) {
 			final Join j = (Join) expr;
