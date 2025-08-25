@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
@@ -23,16 +24,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
-/**
- * Fuse a path triple followed by a UNION of two single-step tail triples into a single path with an alternation tail.
- *
- * Shape: - Input: PT: ?s P ?mid . UNION of two branches that each connect ?mid to the same end variable via constant
- * predicates in opposite directions (forward/inverse), optionally GRAPH-wrapped with the same graph ref. - Output: ?s
- * P/(p|^p) ?end .
- *
- * Notes: - Does not fuse across UNIONs marked as new scope (explicit user UNIONs). - Requires the bridge variable
- * (?mid) to be an {@code _anon_path_*} var so we never eliminate user-visible vars.
- */
 public class FusePathPlusTailAlternationUnionTransform extends BaseTransform {
 
 	private FusePathPlusTailAlternationUnionTransform() {
@@ -58,7 +49,7 @@ public class FusePathPlusTailAlternationUnionTransform extends BaseTransform {
 				IrPathTriple pt = (IrPathTriple) n;
 				IrUnion u = (IrUnion) in.get(i + 1);
 				// Do not merge across a UNION that represents an original query UNION (new scope)
-				if (BaseTransform.unionIsExplicitAndAllBranchesScoped(u)) {
+				if (u.isNewScope()) {
 					out.add(n);
 					continue;
 				}
@@ -78,13 +69,8 @@ public class FusePathPlusTailAlternationUnionTransform extends BaseTransform {
 						if (j1 != null && j2 != null && j1.iri.equals(j2.iri) && sameVar(j1.end, j2.end)
 								&& j1.inverse != j2.inverse) {
 							final String step = j1.iri; // renderer already compacted IRI
-							// Preserve original UNION branch order and their orientation
-							final String left = (j1.inverse ? "^" : "") + step;
-							final String right = (j2.inverse ? "^" : "") + step;
-							final String fusedPath = pt.getPathText() + "/(" + left + "|" + right + ")";
-							IrPathTriple np = new IrPathTriple(pt.getSubject(), fusedPath, j1.end, false,
-									pt.getPathVars());
-							out.add(np);
+							final String fusedPath = pt.getPathText() + "/(" + step + "|^" + step + ")";
+							out.add(new IrPathTriple(pt.getSubject(), fusedPath, j1.end));
 							i += 1; // consume union
 							continue;
 						}
@@ -93,7 +79,9 @@ public class FusePathPlusTailAlternationUnionTransform extends BaseTransform {
 			}
 			out.add(n);
 		}
-		return BaseTransform.bgpWithLines(bgp, out);
+		IrBGP res = new IrBGP();
+		out.forEach(res::add);
+		return res;
 
 	}
 
@@ -112,18 +100,18 @@ public class FusePathPlusTailAlternationUnionTransform extends BaseTransform {
 			return null;
 		}
 		Var pv = bt.sp.getPredicate();
-		if (!isConstantIriPredicate(bt.sp)) {
+		if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
 			return null;
 		}
 		Var sVar = bt.sp.getSubject();
 		Var oVar = bt.sp.getObject();
 		if (sameVar(midVar, sVar)) {
 			// forward: mid p ?end
-			return new TripleJoin(iri(pv, r), oVar, false);
+			return new TripleJoin(r.renderIRI((IRI) pv.getValue()), oVar, false);
 		}
 		if (sameVar(midVar, oVar)) {
 			// inverse: ?end p mid
-			return new TripleJoin(iri(pv, r), sVar, true);
+			return new TripleJoin(r.renderIRI((IRI) pv.getValue()), sVar, true);
 		}
 		return null;
 	}

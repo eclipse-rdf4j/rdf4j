@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
@@ -25,10 +26,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
-/**
- * Within GRAPH bodies, normalize local triple/path shapes by fusing adjacent PT/SP/PT patterns and performing
- * conservative tail joins. This helps later UNION/path fusers see a stable inner structure.
- */
 public final class ApplyNormalizeGraphInnerPathsTransform extends BaseTransform {
 	private ApplyNormalizeGraphInnerPathsTransform() {
 	}
@@ -49,16 +46,23 @@ public final class ApplyNormalizeGraphInnerPathsTransform extends BaseTransform 
 				inner = fuseAdjacentPtThenPt(inner);
 				inner = joinPathWithLaterSp(inner, r);
 				inner = fuseAltInverseTailBGP(inner, r);
-				out.add(new IrGraph(g.getGraph(), inner, g.isNewScope()));
+				out.add(new IrGraph(g.getGraph(), inner));
 			} else if (n instanceof IrBGP || n instanceof IrOptional || n instanceof IrMinus || n instanceof IrUnion
 					|| n instanceof IrService) {
-				IrNode rec = BaseTransform.rewriteContainers(n, child -> apply(child, r));
-				out.add(rec);
+				n = n.transformChildren(child -> {
+					if (child instanceof IrBGP) {
+						return apply((IrBGP) child, r);
+					}
+					return child;
+				});
+				out.add(n);
 			} else {
 				out.add(n);
 			}
 		}
-		return BaseTransform.bgpWithLines(bgp, out);
+		IrBGP res = new IrBGP();
+		out.forEach(res::add);
+		return res;
 
 	}
 
@@ -74,21 +78,17 @@ public final class ApplyNormalizeGraphInnerPathsTransform extends BaseTransform 
 				IrPathTriple pt = (IrPathTriple) n;
 				IrStatementPattern sp = (IrStatementPattern) in.get(i + 1);
 				Var pv = sp.getPredicate();
-				if (isConstantIriPredicate(sp)) {
+				if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
 					Var bridge = pt.getObject();
 					if (isAnonPathVar(bridge)) {
 						if (sameVar(bridge, sp.getSubject())) {
-							String fused = pt.getPathText() + "/" + iri(pv, r);
-							IrPathTriple np = new IrPathTriple(pt.getSubject(), fused, sp.getObject(), false,
-									pt.getPathVars());
-							out.add(np);
+							String fused = "(" + pt.getPathText() + ")/(" + r.renderIRI((IRI) pv.getValue()) + ")";
+							out.add(new IrPathTriple(pt.getSubject(), fused, sp.getObject()));
 							i += 1;
 							continue;
 						} else if (sameVar(bridge, sp.getObject())) {
-							String fused = pt.getPathText() + "/^" + iri(pv, r);
-							IrPathTriple np2 = new IrPathTriple(pt.getSubject(), fused, sp.getSubject(), false,
-									pt.getPathVars());
-							out.add(np2);
+							String fused = "(" + pt.getPathText() + ")/^(" + r.renderIRI((IRI) pv.getValue()) + ")";
+							out.add(new IrPathTriple(pt.getSubject(), fused, sp.getSubject()));
 							i += 1;
 							continue;
 						}
@@ -96,9 +96,25 @@ public final class ApplyNormalizeGraphInnerPathsTransform extends BaseTransform 
 				}
 			}
 			// Recurse into containers
+			if (n instanceof IrGraph) {
+				IrGraph g = (IrGraph) n;
+				out.add(new IrGraph(g.getGraph(), fuseAdjacentPtThenSp(g.getWhere(), r)));
+				continue;
+			}
+			if (n instanceof IrOptional) {
+				IrOptional o = (IrOptional) n;
+				out.add(new IrOptional(fuseAdjacentPtThenSp(o.getWhere(), r)));
+				continue;
+			}
+			if (n instanceof IrMinus) {
+				IrMinus m = (IrMinus) n;
+				out.add(new IrMinus(fuseAdjacentPtThenSp(m.getWhere(), r)));
+				continue;
+			}
 			if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
-				IrUnion u2 = new IrUnion(u.isNewScope());
+				IrUnion u2 = new IrUnion();
+				u2.setNewScope(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
 					IrBGP nb = fuseAdjacentPtThenSp(b, r);
 					nb = fuseAdjacentSpThenPt(nb, r);
@@ -110,10 +126,16 @@ public final class ApplyNormalizeGraphInnerPathsTransform extends BaseTransform 
 				out.add(u2);
 				continue;
 			}
-			IrNode rec = BaseTransform.rewriteContainers(n, child -> fuseAdjacentPtThenSp(child, r));
-			out.add(rec);
+			if (n instanceof IrService) {
+				IrService s = (IrService) n;
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(), fuseAdjacentPtThenSp(s.getWhere(), r)));
+				continue;
+			}
+			out.add(n);
 		}
-		return BaseTransform.bgpWithLines(bgp, out);
+		IrBGP res = new IrBGP();
+		out.forEach(res::add);
+		return res;
 	}
 
 }
