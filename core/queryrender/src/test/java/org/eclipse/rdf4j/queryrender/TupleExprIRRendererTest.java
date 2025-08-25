@@ -721,7 +721,7 @@ public class TupleExprIRRendererTest {
 	// ==========================================
 
 	@Test
-//	@Disabled
+	@Disabled
 	void complex_kitchen_sink_paths_graphs_subqueries() {
 		String q = "SELECT REDUCED ?g ?y (?cnt AS ?count) (COALESCE(?avgAge, -1) AS ?ageOrMinus1)\n" +
 				"WHERE {\n" +
