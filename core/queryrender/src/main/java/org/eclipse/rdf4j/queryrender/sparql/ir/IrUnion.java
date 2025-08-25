@@ -18,6 +18,8 @@ import java.util.List;
  */
 public class IrUnion extends IrNode {
 	private List<IrBGP> branches = new ArrayList<>();
+	// True when this UNION originates from an explicit SPARQL UNION that introduces a new variable scope
+	private boolean newScope;
 
 	public List<IrBGP> getBranches() {
 		return branches;
@@ -31,6 +33,14 @@ public class IrUnion extends IrNode {
 
 	public void setBranches(List<IrBGP> newBranches) {
 		this.branches = (newBranches == null) ? new ArrayList<>() : new ArrayList<>(newBranches);
+	}
+
+	public boolean isNewScope() {
+		return newScope;
+	}
+
+	public void setNewScope(boolean newScope) {
+		this.newScope = newScope;
 	}
 
 	@Override
@@ -52,6 +62,7 @@ public class IrUnion extends IrNode {
 	@Override
 	public IrNode transformChildren(java.util.function.UnaryOperator<IrNode> op) {
 		IrUnion u = new IrUnion();
+		u.setNewScope(this.newScope);
 		for (IrBGP b : this.branches) {
 			IrNode t = op.apply(b);
 			t = t.transformChildren(op);
