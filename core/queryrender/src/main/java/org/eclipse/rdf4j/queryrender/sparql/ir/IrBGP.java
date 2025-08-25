@@ -24,14 +24,14 @@ public class IrBGP extends IrNode {
 		return lines;
 	}
 
+	public void setLines(List<IrNode> newLines) {
+		this.lines = (newLines == null) ? new ArrayList<>() : new ArrayList<>(newLines);
+	}
+
 	public void add(IrNode node) {
 		if (node != null) {
 			lines.add(node);
 		}
-	}
-
-	public void setLines(List<IrNode> newLines) {
-		this.lines = (newLines == null) ? new ArrayList<>() : new ArrayList<>(newLines);
 	}
 
 	@Override

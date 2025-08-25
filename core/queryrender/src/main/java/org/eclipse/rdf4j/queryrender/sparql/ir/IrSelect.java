@@ -17,13 +17,13 @@ import java.util.List;
  * Textual IR for a SELECT query.
  */
 public class IrSelect extends IrNode {
-	private boolean distinct;
-	private boolean reduced;
 	private final List<IrProjectionItem> projection = new ArrayList<>();
-	private IrBGP where;
 	private final List<IrGroupByElem> groupBy = new ArrayList<>();
 	private final List<String> having = new ArrayList<>();
 	private final List<IrOrderSpec> orderBy = new ArrayList<>();
+	private boolean distinct;
+	private boolean reduced;
+	private IrBGP where;
 	private long limit = -1;
 	private long offset = -1;
 
