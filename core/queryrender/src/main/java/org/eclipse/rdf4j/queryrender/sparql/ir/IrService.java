@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import java.util.function.UnaryOperator;
+
 /**
  * Textual IR node for a SERVICE block.
  */
@@ -56,7 +58,7 @@ public class IrService extends IrNode {
 	}
 
 	@Override
-	public IrNode transformChildren(java.util.function.UnaryOperator<IrNode> op) {
+	public IrNode transformChildren(UnaryOperator<IrNode> op) {
 		IrBGP newWhere = this.bgp;
 		if (newWhere != null) {
 			IrNode t = op.apply(newWhere);

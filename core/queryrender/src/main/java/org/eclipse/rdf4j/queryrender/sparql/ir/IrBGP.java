@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.queryrender.sparql.ir;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.UnaryOperator;
 
 /**
  * Textual IR for a WHERE/group block: ordered list of lines/nodes.
@@ -42,7 +43,7 @@ public class IrBGP extends IrNode {
 	}
 
 	@Override
-	public IrNode transformChildren(java.util.function.UnaryOperator<IrNode> op) {
+	public IrNode transformChildren(UnaryOperator<IrNode> op) {
 		IrBGP w = new IrBGP();
 		for (IrNode ln : this.lines) {
 			IrNode t = op.apply(ln);
