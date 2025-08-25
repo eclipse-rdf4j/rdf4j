@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrText;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrTripleLike;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
 /**
@@ -107,6 +108,41 @@ public final class IrTransforms {
 		}
 		final String name = text.substring(1);
 		return name.startsWith(ANON_PATH_PREFIX);
+	}
+
+	/**
+	 * If the given path text is a negated property set of the form !(a|b|...), return a version where each member is
+	 * inverted by toggling the leading '^' (i.e., a -> ^a, ^a -> a). Returns null when the input is not a simple NPS.
+	 */
+	private static String invertNegatedPropertySet(String npsText) {
+		if (npsText == null) {
+			return null;
+		}
+		String s = npsText.trim();
+		if (!s.startsWith("!(") || !s.endsWith(")")) {
+			return null;
+		}
+		String inner = s.substring(2, s.length() - 1);
+		if (inner.isEmpty()) {
+			return s;
+		}
+		String[] toks = inner.split("\\|");
+		List<String> out = new ArrayList<>(toks.length);
+		for (String tok : toks) {
+			String t = tok.trim();
+			if (t.isEmpty()) {
+				continue;
+			}
+			if (t.startsWith("^")) {
+				out.add(t.substring(1));
+			} else {
+				out.add("^" + t);
+			}
+		}
+		if (out.isEmpty()) {
+			return s; // fallback: unchanged
+		}
+		return "!(" + String.join("|", out) + ")";
 	}
 
 	public static IrSelect transformUsingChildren(IrSelect select, TupleExprIRRenderer r) {
@@ -1102,6 +1138,29 @@ public final class IrTransforms {
 					continue;
 				}
 			}
+			// Variant: GRAPH ... followed by FILTER inside the same branch -> rewrite to GRAPH with NPS triple
+			if (n instanceof IrGraph && i + 1 < in.size() && in.get(i + 1) instanceof IrFilter) {
+				final IrGraph g = (IrGraph) n;
+				final IrFilter f = (IrFilter) in.get(i + 1);
+				final NsText ns = parseNegatedSetText(f.getConditionText());
+				if (ns != null && ns.varName != null && !ns.items.isEmpty() && g.getWhere() != null
+						&& g.getWhere().getLines().size() == 1
+						&& g.getWhere().getLines().get(0) instanceof IrStatementPattern) {
+					final IrStatementPattern sp = (IrStatementPattern) g.getWhere().getLines().get(0);
+					final Var pVar = sp.getPredicate();
+					if (pVar != null && !pVar.hasValue() && pVar.getName() != null
+							&& pVar.getName().equals(ns.varName)) {
+						final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
+						final IrBGP newInner = new IrBGP();
+						newInner.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
+						out.add(new IrGraph(g.getGraph(), newInner));
+						consumed.add(g);
+						consumed.add(in.get(i + 1));
+						i += 1;
+						continue;
+					}
+				}
+			}
 			// Recurse into nested containers conservatively
 			n = n.transformChildren(child -> {
 				if (child instanceof IrBGP) {
@@ -1876,126 +1935,132 @@ public final class IrTransforms {
 			if (n instanceof IrGraph && i + 1 < in.size() && in.get(i + 1) instanceof IrPathTriple) {
 				IrGraph g = (IrGraph) n;
 				IrBGP inner = g.getWhere();
-				if (inner != null && inner.getLines().size() == 1
-						&& inner.getLines().get(0) instanceof IrStatementPattern) {
-					IrStatementPattern sp0 = (IrStatementPattern) inner.getLines().get(0);
-					Var p0 = sp0.getPredicate();
-					if (p0 != null && p0.hasValue() && p0.getValue() instanceof IRI) {
-						Var mid = isAnonPathVar(sp0.getObject()) ? sp0.getObject()
-								: (isAnonPathVar(sp0.getSubject()) ? sp0.getSubject() : null);
-						if (mid != null) {
-							IrPathTriple pt = (IrPathTriple) in.get(i + 1);
-							boolean forward = mid == sp0.getObject();
-							Var sideVar = forward ? sp0.getSubject() : sp0.getObject();
-							String first = r.renderIRI((IRI) p0.getValue());
-							if (!forward) {
-								first = "^" + first;
+				if (inner != null && inner.getLines().size() == 1) {
+					IrNode innerOnly = inner.getLines().get(0);
+					IrPathTriple pt = (IrPathTriple) in.get(i + 1);
+					// Case A: inner is a simple SP; reuse existing logic
+					if (innerOnly instanceof IrStatementPattern) {
+						IrStatementPattern sp0 = (IrStatementPattern) innerOnly;
+						Var p0 = sp0.getPredicate();
+						if (p0 != null && p0.hasValue() && p0.getValue() instanceof IRI) {
+							Var mid = isAnonPathVar(sp0.getObject()) ? sp0.getObject()
+									: (isAnonPathVar(sp0.getSubject()) ? sp0.getSubject() : null);
+							if (mid != null) {
+								boolean forward = mid == sp0.getObject();
+								Var sideVar = forward ? sp0.getSubject() : sp0.getObject();
+								String first = r.renderIRI((IRI) p0.getValue());
+								if (!forward) {
+									first = "^" + first;
+								}
+								if (sameVar(mid, pt.getSubject())) {
+									String fused = first + "/" + pt.getPathText();
+									IrBGP newInner = new IrBGP();
+									newInner.add(new IrPathTriple(sideVar, fused, pt.getObject()));
+									// copy any leftover inner lines except sp0
+									copyAllExcept(inner, newInner, sp0);
+									out.add(new IrGraph(g.getGraph(), newInner));
+									i += 1; // consume the path triple
+									continue;
+								}
 							}
-							if (sameVar(mid, pt.getSubject())) {
-								String fused = first + "/" + pt.getPathText();
-								IrBGP newInner = new IrBGP();
-								newInner.add(new IrPathTriple(sideVar, fused, pt.getObject()));
-								// copy any leftover inner lines except sp0
-								copyAllExcept(inner, newInner, sp0);
-								out.add(new IrGraph(g.getGraph(), newInner));
-								i += 1; // consume the path triple
-								continue;
-							}
+						}
+					}
+					// Case B: inner is already a path triple -> fuse with outer PT when they bridge
+					if (innerOnly instanceof IrPathTriple) {
+						IrPathTriple pt0 = (IrPathTriple) innerOnly;
+						if (sameVar(pt0.getObject(), pt.getSubject())) {
+							String fused = "(" + pt0.getPathText() + ")/(" + pt.getPathText() + ")";
+							IrBGP newInner = new IrBGP();
+							newInner.add(new IrPathTriple(pt0.getSubject(), fused, pt.getObject()));
+							out.add(new IrGraph(g.getGraph(), newInner));
+							i += 1; // consume the path triple
+							continue;
 						}
 					}
 				}
 			}
 
-			// Rewrite UNION alternation of simple triples into a single IrPathTriple,
-			// preserving branch order and GRAPH context when present. This enables
-			// subsequent chaining with a following constant-predicate triple via
-			// IRTextPrinter's path fusion (pt + SP -> pt/IRI).
+			// Rewrite UNION alternation of simple triples (and already-fused path triples) into a single
+			// IrPathTriple, preserving branch order and GRAPH context when present. This enables
+			// subsequent chaining with a following constant-predicate triple via pt + SP -> pt/IRI.
 			if (n instanceof IrUnion && !((IrUnion) n).isNewScope()) {
 				IrUnion u = (IrUnion) n;
 
-				// Collect branches that are either:
-				// - a single IrStatementPattern, or
-				// - a single IrGraph whose inner body is a single IrStatementPattern,
-				// with identical subject/object and (if present) identical graph ref.
 				Var subj = null, obj = null, graphRef = null;
-				final List<String> iris = new ArrayList<>();
+				final List<String> parts = new ArrayList<>();
 				boolean ok = !u.getBranches().isEmpty();
 				for (IrBGP b : u.getBranches()) {
 					if (!ok) {
 						break;
 					}
-					IrNode line = (b.getLines().size() == 1) ? b.getLines().get(0) : null;
-					if (line instanceof IrGraph) {
-						IrGraph g = (IrGraph) line;
-						// branch must contain exactly 1 SP inside the GRAPH
+					final IrNode only = (b.getLines().size() == 1) ? b.getLines().get(0) : null;
+					IrTripleLike tl = null;
+					Var branchGraph = null;
+					if (only instanceof IrGraph) {
+						IrGraph g = (IrGraph) only;
 						if (g.getWhere() == null || g.getWhere().getLines().size() != 1
-								|| !(g.getWhere().getLines().get(0) instanceof IrStatementPattern)) {
+								|| !(g.getWhere().getLines().get(0) instanceof IrTripleLike)) {
 							ok = false;
 							break;
 						}
-						IrStatementPattern sp = (IrStatementPattern) g.getWhere().getLines().get(0);
-						// graph must be consistent across branches
-						if (graphRef == null) {
-							graphRef = g.getGraph();
-						} else if (!sameVar(graphRef, g.getGraph())) {
-							ok = false;
-							break;
-						}
-						// collect piece
-						Var p = sp.getPredicate();
-						if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
-							ok = false;
-							break;
-						}
-						Var s = sp.getSubject();
-						Var o = sp.getObject();
-						if (subj == null && obj == null) {
-							subj = s;
-							obj = o;
-						} else if (!(sameVar(subj, s) && sameVar(obj, o))) {
-							if (sameVar(subj, o) && sameVar(obj, s)) {
-								// inverse path
-								iris.add("^" + r.renderIRI((IRI) p.getValue()));
-								continue;
-							} else {
-								ok = false;
-								break;
-							}
-						}
-						iris.add(r.renderIRI((IRI) p.getValue()));
-					} else if (line instanceof IrStatementPattern) {
-						if (graphRef != null) {
-							// mixture of GRAPH and non-GRAPH branches -> abort
-							ok = false;
-							break;
-						}
-						IrStatementPattern sp = (IrStatementPattern) line;
-						Var p = sp.getPredicate();
-						if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
-							ok = false;
-							break;
-						}
-						Var s = sp.getSubject();
-						Var o = sp.getObject();
-						if (subj == null && obj == null) {
-							subj = s;
-							obj = o;
-						} else if (!(sameVar(subj, s) && sameVar(obj, o))) {
-							if (sameVar(subj, o) && sameVar(obj, s)) {
-								// inverse path
-								iris.add("^" + r.renderIRI((IRI) p.getValue()));
-								continue;
-							} else {
-								ok = false;
-								break;
-							}
-
-						}
-						iris.add(r.renderIRI((IRI) p.getValue()));
+						tl = (IrTripleLike) g.getWhere().getLines().get(0);
+						branchGraph = g.getGraph();
+					} else if (only instanceof IrTripleLike) {
+						tl = (IrTripleLike) only;
 					} else {
 						ok = false;
 						break;
 					}
+
+					// Graph consistency across branches
+					if (branchGraph != null) {
+						if (graphRef == null) {
+							graphRef = branchGraph;
+						} else if (!sameVar(graphRef, branchGraph)) {
+							ok = false;
+							break;
+						}
+					} else if (graphRef != null) {
+						// mixture of GRAPH and non-GRAPH branches -> abort
+						ok = false;
+						break;
+					}
+
+					final Var s = tl.getSubject();
+					final Var o = tl.getObject();
+					if (subj == null && obj == null) {
+						subj = s;
+						obj = o;
+					}
+					String piece = tl.getPredicateOrPathText(r);
+					if (piece == null) {
+						ok = false;
+						break;
+					}
+					if (!(sameVar(subj, s) && sameVar(obj, o))) {
+						// allow inversion only for simple statement patterns; inverting an arbitrary path is not
+						// supported here. Special case: if the path is a negated property set, invert each member
+						// inside the NPS to preserve semantics, e.g., !(a|b) with reversed endpoints -> !(^a|^b).
+						if (sameVar(subj, o) && sameVar(obj, s)) {
+							if (tl instanceof IrStatementPattern) {
+								piece = "^" + piece;
+							} else if (tl instanceof IrPathTriple) {
+								String inv = invertNegatedPropertySet(piece);
+								if (inv == null) {
+									ok = false;
+									break;
+								}
+								piece = inv;
+							} else {
+								ok = false;
+								break;
+							}
+						} else {
+							ok = false;
+							break;
+						}
+					}
+					parts.add(piece);
 				}
 
 				// Second form: UNION of 2-step sequences that share the same endpoints via an _anon_path_* bridge var
@@ -2473,9 +2538,57 @@ public final class IrTransforms {
 					}
 				}
 
-				if (ok && !iris.isEmpty()) {
-					final String pathTxt = (iris.size() == 1) ? iris.get(0) : "(" + String.join("|", iris) + ")";
-					IrPathTriple pt = new IrPathTriple(subj, pathTxt, obj);
+				if (ok && !parts.isEmpty()) {
+					String pathTxt;
+					boolean allNps = true;
+					for (String ptxt : parts) {
+						String sPart = ptxt == null ? null : ptxt.trim();
+						if (sPart == null || !sPart.startsWith("!(") || !sPart.endsWith(")")) {
+							allNps = false;
+							break;
+						}
+					}
+					if (allNps) {
+						// Merge into a single NPS by unioning inner members
+						java.util.Set<String> members = new java.util.LinkedHashSet<>();
+						for (String ptxt : parts) {
+							String inner = ptxt.substring(2, ptxt.length() - 1);
+							if (inner.isEmpty()) {
+								continue;
+							}
+							for (String tok : inner.split("\\|")) {
+								String t = tok.trim();
+								if (!t.isEmpty()) {
+									members.add(t);
+								}
+							}
+						}
+						pathTxt = "!(" + String.join("|", members) + ")";
+					} else {
+						pathTxt = (parts.size() == 1) ? parts.get(0) : "(" + String.join("|", parts) + ")";
+					}
+					// For NPS we may want to orient the merged path so that it can chain with an immediate
+					// following triple (e.g., NPS/next). If the next line uses one of our endpoints, flip to
+					// ensure pt.object equals next.subject when safe.
+					Var subjOut = subj, objOut = obj;
+					IrNode next = (i + 1 < in.size()) ? in.get(i + 1) : null;
+					if (next != null) {
+						Var nSubj = null;
+						if (next instanceof IrStatementPattern) {
+							nSubj = ((IrStatementPattern) next).getSubject();
+						} else if (next instanceof IrPathTriple) {
+							nSubj = ((IrPathTriple) next).getSubject();
+						}
+						if (nSubj != null && pathTxt.startsWith("!(")) {
+							if (sameVar(subjOut, nSubj) && !sameVar(objOut, nSubj)) {
+								// prefer orientation so that object bridges to next.subject
+								Var tmp = subjOut;
+								subjOut = objOut;
+								objOut = tmp;
+							}
+						}
+					}
+					IrPathTriple pt = new IrPathTriple(subjOut, pathTxt, objOut);
 					if (graphRef != null) {
 						IrBGP inner = new IrBGP();
 						inner.add(pt);
@@ -2639,7 +2752,12 @@ public final class IrTransforms {
 				IrUnion u2 = new IrUnion();
 				u2.setNewScope(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
-					u2.addBranch(fuseAdjacentPtThenSp(b, r));
+					IrBGP nb = fuseAdjacentPtThenSp(b, r);
+					nb = fuseAdjacentSpThenPt(nb, r);
+					nb = fuseAdjacentPtThenPt(nb);
+					nb = joinPathWithLaterSp(nb, r);
+					nb = fuseAltInverseTailBGP(nb, r);
+					u2.addBranch(nb);
 				}
 				out.add(u2);
 				continue;
