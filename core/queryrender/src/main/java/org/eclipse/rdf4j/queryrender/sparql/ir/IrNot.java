@@ -10,16 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
-import java.util.function.UnaryOperator;
-
 /**
  * Structured FILTER body representing logical NOT applied to an inner body (e.g., NOT EXISTS {...}).
  */
 public class IrNot extends IrNode {
-	private final IrNode inner;
+	private IrNode inner;
 
-	public IrNot(IrNode inner, boolean newScope) {
-		super(newScope);
+	public IrNot(IrNode inner) {
 		this.inner = inner;
 	}
 
@@ -27,24 +24,18 @@ public class IrNot extends IrNode {
 		return inner;
 	}
 
-	@Override
-	public void print(IrPrinter p) {
-		p.append("NOT ");
-		if (inner != null) {
-			inner.print(p);
-		} else {
-			p.endLine();
-		}
+	public void setInner(IrNode inner) {
+		this.inner = inner;
 	}
 
 	@Override
-	public IrNode transformChildren(UnaryOperator<IrNode> op) {
+	public IrNode transformChildren(java.util.function.UnaryOperator<IrNode> op) {
 		IrNode n = this.inner;
 		if (n != null) {
 			IrNode t = op.apply(n);
 			t = t.transformChildren(op);
 			n = t;
 		}
-		return new IrNot(n, this.isNewScope());
+		return new IrNot(n);
 	}
 }

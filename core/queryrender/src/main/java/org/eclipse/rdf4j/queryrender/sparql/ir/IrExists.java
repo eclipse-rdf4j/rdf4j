@@ -10,20 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
-import java.util.Collections;
-import java.util.Set;
-import java.util.function.UnaryOperator;
-
-import org.eclipse.rdf4j.query.algebra.Var;
-
 /**
  * Structured FILTER body for an EXISTS { ... } block holding a raw BGP.
  */
 public class IrExists extends IrNode {
-	private final IrBGP where;
+	private IrBGP where;
 
-	public IrExists(IrBGP where, boolean newScope) {
-		super(newScope);
+	public IrExists(IrBGP where) {
 		this.where = where;
 	}
 
@@ -31,21 +24,12 @@ public class IrExists extends IrNode {
 		return where;
 	}
 
-	@Override
-	public void print(IrPrinter p) {
-		// EXISTS keyword, then delegate braces to inner IrBGP. Do not start a new line here so
-		// that callers (e.g., IrFilter) can render "... . FILTER EXISTS {" on a single line.
-		p.append("EXISTS ");
-		if (where != null) {
-			where.print(p);
-		} else {
-			p.openBlock();
-			p.closeBlock();
-		}
+	public void setWhere(IrBGP where) {
+		this.where = where;
 	}
 
 	@Override
-	public IrNode transformChildren(UnaryOperator<IrNode> op) {
+	public IrNode transformChildren(java.util.function.UnaryOperator<IrNode> op) {
 		IrBGP newWhere = this.where;
 		if (newWhere != null) {
 			IrNode t = op.apply(newWhere);
@@ -54,11 +38,6 @@ public class IrExists extends IrNode {
 				newWhere = (IrBGP) t;
 			}
 		}
-		return new IrExists(newWhere, this.isNewScope());
-	}
-
-	@Override
-	public Set<Var> getVars() {
-		return where == null ? Collections.emptySet() : where.getVars();
+		return new IrExists(newWhere);
 	}
 }
