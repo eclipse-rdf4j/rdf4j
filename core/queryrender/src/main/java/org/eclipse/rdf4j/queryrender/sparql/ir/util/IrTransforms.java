@@ -2628,12 +2628,12 @@ public final class IrTransforms {
 						}
 						String sTxt = varOrValue(sp.getSubject(), r);
 						String oTxt = varOrValue(sp.getObject(), r);
-						if (objText.equals(sTxt) && !isAnonPathVar(sp.getObject())) {
+						if (objText.equals(sTxt) && isAnonPathVar(sp.getObject())) {
 							join = sp;
 							inverse = false;
 							break;
 						}
-						if (objText.equals(oTxt) && !isAnonPathVar(sp.getSubject())) {
+						if (objText.equals(oTxt) && isAnonPathVar(sp.getSubject())) {
 							join = sp;
 							inverse = true;
 							break;
