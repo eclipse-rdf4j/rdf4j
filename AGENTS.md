@@ -4,6 +4,8 @@
 
 This is a large multi-module Maven project. Building and testing the entire repository can take considerable time. It's not unusual for test execution to take 5–10 minutes per module.
 
+Take your time. You have a lot more time than you think :)
+
 ## Build
 - Always invoke Maven in offline mode using the `-o` flag.
 - Occasionally, you may need online access to download dependencies or plugins. When Maven requires internet access, omit `-o`.
