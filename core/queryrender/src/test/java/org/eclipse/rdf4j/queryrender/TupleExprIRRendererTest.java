@@ -2165,7 +2165,6 @@ public class TupleExprIRRendererTest {
 	// -------- Additional SELECT tests with deeper, more nested paths --------
 
 	@Test
-	@Disabled
 	void nested_paths_extreme_1() {
 		String q = "SELECT ?s ?n\n" +
 				"WHERE {\n" +

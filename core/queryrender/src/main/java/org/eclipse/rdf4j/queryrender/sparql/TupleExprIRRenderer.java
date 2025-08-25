@@ -938,65 +938,9 @@ public class TupleExprIRRenderer {
 
 		// Build a PathNode sequence from a JOIN chain that connects s -> o via _anon_path_* variables.
 		// Accepts forward or inverse steps; allows the last step to directly reach the endpoint 'o'.
-		private PathNode buildPathSequenceFromChain(TupleExpr chain, Var s, Var o) {
-			List<TupleExpr> flat = new ArrayList<>();
-			TupleExprIRRenderer.flattenJoin(chain, flat);
-			List<StatementPattern> sps = new ArrayList<>();
-			for (TupleExpr t : flat) {
-				if (t instanceof StatementPattern) {
-					sps.add((StatementPattern) t);
-				} else {
-					return null; // only simple statement patterns supported here
-				}
-			}
-			if (sps.isEmpty()) {
-				return null;
-			}
-			List<PathAtom> steps = new ArrayList<>();
-			Var cur = s;
-			Set<StatementPattern> used = new LinkedHashSet<>();
-			int guard = 0;
-			while (!sameVar(cur, o)) {
-				if (++guard > 10000) {
-					return null;
-				}
-				boolean advanced = false;
-				for (StatementPattern sp : sps) {
-					if (used.contains(sp)) {
-						continue;
-					}
-					Var pv = sp.getPredicateVar();
-					if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
-						continue;
-					}
-					Var ss = sp.getSubjectVar();
-					Var oo = sp.getObjectVar();
-					if (sameVar(cur, ss) && (isAnonPathVar(oo) || sameVar(oo, o))) {
-						steps.add(new PathAtom((IRI) pv.getValue(), false));
-						cur = oo;
-						used.add(sp);
-						advanced = true;
-						break;
-					} else if (sameVar(cur, oo) && (isAnonPathVar(ss) || sameVar(ss, o))) {
-						steps.add(new PathAtom((IRI) pv.getValue(), true));
-						cur = ss;
-						used.add(sp);
-						advanced = true;
-						break;
-					}
-				}
-				if (!advanced) {
-					return null;
-				}
-			}
-			if (used.size() != sps.size()) {
-				return null; // extra statements not part of the chain
-			}
-			if (steps.isEmpty()) {
-				return null;
-			}
-			return (steps.size() == 1) ? steps.get(0) : new PathSeq(new ArrayList<>(steps));
-		}
+		// Note: this method was moved to the outer class to be reusable from multiple contexts.
+		// The inner logic remains unchanged.
+		// See: TupleExprIRRenderer#buildPathSequenceFromChain
 
 		@Override
 		public void meet(final Difference diff) {
@@ -3181,6 +3125,16 @@ public class TupleExprIRRenderer {
 			}
 			return new PathAlt(alts);
 		}
+
+		// Best-effort: handle a simple sequence subpath represented as a Join/chain of StatementPatterns
+		// connecting subj -> obj via _anon_path_* bridge variables (or directly to obj on the last step).
+		// This reuses buildPathSequenceFromChain which already enforces strict linearity and constant IRI steps.
+		{
+			PathNode seq = buildPathSequenceFromChain(innerExpr, subj, obj);
+			if (seq != null) {
+				return seq;
+			}
+		}
 		return null;
 	}
 
@@ -3200,6 +3154,68 @@ public class TupleExprIRRenderer {
 			return new PathAtom(iri, true);
 		}
 		return null;
+	}
+
+	// Build a PathNode sequence from a JOIN chain that connects s -> o via _anon_path_* variables.
+	// Accepts forward or inverse steps; allows the last step to directly reach the endpoint 'o'.
+	private PathNode buildPathSequenceFromChain(TupleExpr chain, Var s, Var o) {
+		List<TupleExpr> flat = new ArrayList<>();
+		TupleExprIRRenderer.flattenJoin(chain, flat);
+		List<StatementPattern> sps = new ArrayList<>();
+		for (TupleExpr t : flat) {
+			if (t instanceof StatementPattern) {
+				sps.add((StatementPattern) t);
+			} else {
+				return null; // only simple statement patterns supported here
+			}
+		}
+		if (sps.isEmpty()) {
+			return null;
+		}
+		List<PathAtom> steps = new ArrayList<>();
+		Var cur = s;
+		Set<StatementPattern> used = new LinkedHashSet<>();
+		int guard = 0;
+		while (!sameVar(cur, o)) {
+			if (++guard > 10000) {
+				return null;
+			}
+			boolean advanced = false;
+			for (StatementPattern sp : sps) {
+				if (used.contains(sp)) {
+					continue;
+				}
+				Var pv = sp.getPredicateVar();
+				if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+					continue;
+				}
+				Var ss = sp.getSubjectVar();
+				Var oo = sp.getObjectVar();
+				if (sameVar(cur, ss) && (isAnonPathVar(oo) || sameVar(oo, o))) {
+					steps.add(new PathAtom((IRI) pv.getValue(), false));
+					cur = oo;
+					used.add(sp);
+					advanced = true;
+					break;
+				} else if (sameVar(cur, oo) && (isAnonPathVar(ss) || sameVar(ss, o))) {
+					steps.add(new PathAtom((IRI) pv.getValue(), true));
+					cur = ss;
+					used.add(sp);
+					advanced = true;
+					break;
+				}
+			}
+			if (!advanced) {
+				return null;
+			}
+		}
+		if (used.size() != sps.size()) {
+			return null; // extra statements not part of the chain
+		}
+		if (steps.isEmpty()) {
+			return null;
+		}
+		return (steps.size() == 1) ? steps.get(0) : new PathSeq(new ArrayList<>(steps));
 	}
 
 	private static String freeVarName(Var v) {
