@@ -1904,7 +1904,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
 	void mega_exists_union_inside_exists_and_notexists() {
 		String q = "SELECT ?s\n" +
 				"WHERE {\n" +
@@ -2269,7 +2268,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
 	void nested_paths_extreme_4_union_mixed_mods() {
 		String q = "SELECT ?s ?n\n" +
 				"WHERE {\n" +
