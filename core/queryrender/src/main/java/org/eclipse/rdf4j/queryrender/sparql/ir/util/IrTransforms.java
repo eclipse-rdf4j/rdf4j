@@ -176,8 +176,11 @@ public final class IrTransforms {
 				w = reorderFiltersInOptionalBodies(w, r);
 				w = applyPropertyLists(w, r);
 				w = normalizeZeroOrOneSubselect(w, r);
+
 				// Ensure bare NPS triples use a stable subject/object orientation for idempotence
 				w = canonicalizeBareNpsOrientation(w);
+				w = applyPathsFixedPoint(w, r);
+
 				return w;
 			}
 			return child;

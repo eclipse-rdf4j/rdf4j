@@ -877,24 +877,6 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(final Projection p) {
-			// Try RDF4J's zero-or-one path subselect expansion (simple IRI case)
-			ZeroOrOneDirect z1 = parseZeroOrOneProjectionDirect(p);
-			if (z1 != null) {
-				final PathNode q = new PathQuant(new PathAtom(z1.pred, false), 0, 1);
-				final String expr = q.render();
-				where.add(new IrPathTriple(z1.start, expr, z1.end));
-				return;
-			}
-
-			// Try a more general zero-or-one path expansion where the non-zero-length branch is a
-			// chain/sequence of constant IRI steps (ex:knows/foaf:knows)? represented as a JOIN of
-			// StatementPatterns. We detect: SELECT ?s ?o WHERE { { FILTER sameTerm(?s,?o) } UNION { chain } }
-			// and convert to a single IrPathTriple with a "?" quantifier on the sequence.
-			if (tryParseZeroOrOneSequenceProjection(p)) {
-				return;
-			}
-
-			// Nested subselect: convert to typed IR without applying transforms
 			IrSelect sub = toIRSelectRaw(p);
 			where.add(new IrSubSelect(sub));
 		}
