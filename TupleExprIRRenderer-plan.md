@@ -22,13 +22,16 @@ Take a look at the following test:
 
 ```java
 	@Test
-	void nested_paths_extreme_1_simple() {
-		String q = "SELECT ?s ?n\n" +
-				"WHERE {\n" +
-				"  ?s foaf:knows/^foaf:knows | !(rdf:type|^rdf:type)/ex:knows? ?n .\n" +
-				"}";
+    void nested_paths_extreme_1_simpleGraph() {
+	    String q = "SELECT ?s ?n\n" +
+			"WHERE {\n" +
+			"  GRAPH ?g {\n" +
+			"    ?s foaf:knows/^foaf:knows | !(rdf:type|^rdf:type)/ex:knows? ?n .\n" +
+			"  }\n" +
+			"}";
 		assertSameSparqlQuery(q, cfg());
-	}
+    }
+
 ```
 
 The test fails with:
@@ -37,7 +40,9 @@ The test fails with:
 # Original SPARQL query
 SELECT ?s ?n
 WHERE {
-  ?s foaf:knows/^foaf:knows | !(rdf:type|^rdf:type)/ex:knows? ?n .
+  GRAPH ?g {
+    ?s foaf:knows/^foaf:knows | !(rdf:type|^rdf:type)/ex:knows? ?n .
+  }
 }
 
 # Original TupleExpr
@@ -48,45 +53,52 @@ QueryRoot
          ProjectionElem "n"
       Union
          Join
-            StatementPattern
+            StatementPattern FROM NAMED CONTEXT
                Var (name=s)
                Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
-               Var (name=_anon_path_041a9792e0fd0a24e1fa7a5784fbf23630701234, anonymous)
-            StatementPattern
+               Var (name=_anon_path_918e721d4866b2b47fda7b77a15e8a98352, anonymous)
+               Var (name=g)
+            StatementPattern FROM NAMED CONTEXT
                Var (name=n)
                Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
-               Var (name=_anon_path_041a9792e0fd0a24e1fa7a5784fbf23630701234, anonymous)
+               Var (name=_anon_path_918e721d4866b2b47fda7b77a15e8a98352, anonymous)
+               Var (name=g)
          Join
             Union
                Filter
                   Compare (!=)
-                     Var (name=_anon_path_341a9792e0fd0a24e1fa7a5784fbf23630701234567, anonymous)
+                     Var (name=_anon_path_228e721d4866b2b47fda7b77a15e8a98352012, anonymous)
                      ValueConstant (value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type)
-                  StatementPattern
-                     Var (name=_anon_path_241a9792e0fd0a24e1fa7a5784fbf2363070123456, anonymous)
-                     Var (name=_anon_path_341a9792e0fd0a24e1fa7a5784fbf23630701234567, anonymous)
+                  StatementPattern FROM NAMED CONTEXT
+                     Var (name=_anon_path_128e721d4866b2b47fda7b77a15e8a9835201, anonymous)
+                     Var (name=_anon_path_228e721d4866b2b47fda7b77a15e8a98352012, anonymous)
                      Var (name=s)
+                     Var (name=g)
                Filter
                   Compare (!=)
-                     Var (name=_anon_path_341a9792e0fd0a24e1fa7a5784fbf23630701234567, anonymous)
+                     Var (name=_anon_path_228e721d4866b2b47fda7b77a15e8a98352012, anonymous)
                      ValueConstant (value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type)
-                  StatementPattern
+                  StatementPattern FROM NAMED CONTEXT
                      Var (name=s)
-                     Var (name=_anon_path_341a9792e0fd0a24e1fa7a5784fbf23630701234567, anonymous)
-                     Var (name=_anon_path_241a9792e0fd0a24e1fa7a5784fbf2363070123456, anonymous)
+                     Var (name=_anon_path_228e721d4866b2b47fda7b77a15e8a98352012, anonymous)
+                     Var (name=_anon_path_128e721d4866b2b47fda7b77a15e8a9835201, anonymous)
+                     Var (name=g)
             Distinct
                Projection
                   ProjectionElemList
-                     ProjectionElem "_anon_path_241a9792e0fd0a24e1fa7a5784fbf2363070123456"
+                     ProjectionElem "_anon_path_128e721d4866b2b47fda7b77a15e8a9835201"
                      ProjectionElem "n"
+                     ProjectionElem "g"
                   Union
-                     ZeroLengthPath
-                        Var (name=_anon_path_241a9792e0fd0a24e1fa7a5784fbf2363070123456, anonymous)
+                     ZeroLengthPath FROM NAMED CONTEXT
+                        Var (name=_anon_path_128e721d4866b2b47fda7b77a15e8a9835201, anonymous)
                         Var (name=n)
-                     StatementPattern
-                        Var (name=_anon_path_241a9792e0fd0a24e1fa7a5784fbf2363070123456, anonymous)
+                        Var (name=g)
+                     StatementPattern FROM NAMED CONTEXT
+                        Var (name=_anon_path_128e721d4866b2b47fda7b77a15e8a9835201, anonymous)
                         Var (name=_const_36a43afe_uri, value=http://ex/knows, anonymous)
                         Var (name=n)
+                        Var (name=g)
 
 
 
@@ -113,19 +125,39 @@ QueryRoot
             {
               "lines": [
                 {
-                  "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern",
+                  "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph",
                   "data": {
-                    "subject": "Var (name: s)\n",
-                    "predicate": "Var (name: _const_531c5f7d_uri, value: http://xmlns.com/foaf/0.1/knows, anonymous)\n",
-                    "object": "Var (name: _anon_path_541a9792e0fd0a24e1fa7a5784fbf2363070, anonymous)\n"
+                    "graph": "Var (name: g)\n",
+                    "bgp": {
+                      "lines": [
+                        {
+                          "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern",
+                          "data": {
+                            "subject": "Var (name: s)\n",
+                            "predicate": "Var (name: _const_531c5f7d_uri, value: http://xmlns.com/foaf/0.1/knows, anonymous)\n",
+                            "object": "Var (name: _anon_path_428e721d4866b2b47fda7b77a15e8a9835201234, anonymous)\n"
+                          }
+                        }
+                      ]
+                    }
                   }
                 },
                 {
-                  "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern",
+                  "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph",
                   "data": {
-                    "subject": "Var (name: n)\n",
-                    "predicate": "Var (name: _const_531c5f7d_uri, value: http://xmlns.com/foaf/0.1/knows, anonymous)\n",
-                    "object": "Var (name: _anon_path_541a9792e0fd0a24e1fa7a5784fbf2363070, anonymous)\n"
+                    "graph": "Var (name: g)\n",
+                    "bgp": {
+                      "lines": [
+                        {
+                          "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern",
+                          "data": {
+                            "subject": "Var (name: n)\n",
+                            "predicate": "Var (name: _const_531c5f7d_uri, value: http://xmlns.com/foaf/0.1/knows, anonymous)\n",
+                            "object": "Var (name: _anon_path_428e721d4866b2b47fda7b77a15e8a9835201234, anonymous)\n"
+                          }
+                        }
+                      ]
+                    }
                   }
                 }
               ]
@@ -139,17 +171,27 @@ QueryRoot
                       {
                         "lines": [
                           {
-                            "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern",
+                            "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph",
                             "data": {
-                              "subject": "Var (name: _anon_path_741a9792e0fd0a24e1fa7a5784fbf236307012, anonymous)\n",
-                              "predicate": "Var (name: _anon_path_841a9792e0fd0a24e1fa7a5784fbf2363070123, anonymous)\n",
-                              "object": "Var (name: s)\n"
+                              "graph": "Var (name: g)\n",
+                              "bgp": {
+                                "lines": [
+                                  {
+                                    "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern",
+                                    "data": {
+                                      "subject": "Var (name: _anon_path_628e721d4866b2b47fda7b77a15e8a983520123456, anonymous)\n",
+                                      "predicate": "Var (name: _anon_path_728e721d4866b2b47fda7b77a15e8a9835201234567, anonymous)\n",
+                                      "object": "Var (name: s)\n"
+                                    }
+                                  }
+                                ]
+                              }
                             }
                           },
                           {
                             "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter",
                             "data": {
-                              "conditionText": "?_anon_path_841a9792e0fd0a24e1fa7a5784fbf2363070123 !\u003d rdf:type"
+                              "conditionText": "?_anon_path_728e721d4866b2b47fda7b77a15e8a9835201234567 !\u003d rdf:type"
                             }
                           }
                         ]
@@ -157,17 +199,27 @@ QueryRoot
                       {
                         "lines": [
                           {
-                            "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern",
+                            "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph",
                             "data": {
-                              "subject": "Var (name: s)\n",
-                              "predicate": "Var (name: _anon_path_841a9792e0fd0a24e1fa7a5784fbf2363070123, anonymous)\n",
-                              "object": "Var (name: _anon_path_741a9792e0fd0a24e1fa7a5784fbf236307012, anonymous)\n"
+                              "graph": "Var (name: g)\n",
+                              "bgp": {
+                                "lines": [
+                                  {
+                                    "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern",
+                                    "data": {
+                                      "subject": "Var (name: s)\n",
+                                      "predicate": "Var (name: _anon_path_728e721d4866b2b47fda7b77a15e8a9835201234567, anonymous)\n",
+                                      "object": "Var (name: _anon_path_628e721d4866b2b47fda7b77a15e8a983520123456, anonymous)\n"
+                                    }
+                                  }
+                                ]
+                              }
                             }
                           },
                           {
                             "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter",
                             "data": {
-                              "conditionText": "?_anon_path_841a9792e0fd0a24e1fa7a5784fbf2363070123 !\u003d rdf:type"
+                              "conditionText": "?_anon_path_728e721d4866b2b47fda7b77a15e8a9835201234567 !\u003d rdf:type"
                             }
                           }
                         ]
@@ -184,10 +236,13 @@ QueryRoot
                       "reduced": false,
                       "projection": [
                         {
-                          "varName": "_anon_path_741a9792e0fd0a24e1fa7a5784fbf236307012"
+                          "varName": "_anon_path_628e721d4866b2b47fda7b77a15e8a983520123456"
                         },
                         {
                           "varName": "n"
+                        },
+                        {
+                          "varName": "g"
                         }
                       ],
                       "where": {
@@ -201,7 +256,7 @@ QueryRoot
                                     {
                                       "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrText",
                                       "data": {
-                                        "text": "FILTER (sameTerm(?_anon_path_741a9792e0fd0a24e1fa7a5784fbf236307012, ?n))"
+                                        "text": "FILTER (sameTerm(?_anon_path_628e721d4866b2b47fda7b77a15e8a983520123456, ?n))"
                                       }
                                     }
                                   ]
@@ -209,11 +264,21 @@ QueryRoot
                                 {
                                   "lines": [
                                     {
-                                      "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern",
+                                      "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph",
                                       "data": {
-                                        "subject": "Var (name: _anon_path_741a9792e0fd0a24e1fa7a5784fbf236307012, anonymous)\n",
-                                        "predicate": "Var (name: _const_36a43afe_uri, value: http://ex/knows, anonymous)\n",
-                                        "object": "Var (name: n)\n"
+                                        "graph": "Var (name: g)\n",
+                                        "bgp": {
+                                          "lines": [
+                                            {
+                                              "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern",
+                                              "data": {
+                                                "subject": "Var (name: _anon_path_628e721d4866b2b47fda7b77a15e8a983520123456, anonymous)\n",
+                                                "predicate": "Var (name: _const_36a43afe_uri, value: http://ex/knows, anonymous)\n",
+                                                "object": "Var (name: n)\n"
+                                              }
+                                            }
+                                          ]
+                                        }
                                       }
                                     }
                                   ]
@@ -267,11 +332,21 @@ QueryRoot
             {
               "lines": [
                 {
-                  "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple",
+                  "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph",
                   "data": {
-                    "subject": "Var (name: s)\n",
-                    "pathText": "foaf:knows/^foaf:knows",
-                    "object": "Var (name: n)\n"
+                    "graph": "Var (name: g)\n",
+                    "bgp": {
+                      "lines": [
+                        {
+                          "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple",
+                          "data": {
+                            "subject": "Var (name: s)\n",
+                            "pathText": "foaf:knows/^foaf:knows",
+                            "object": "Var (name: n)\n"
+                          }
+                        }
+                      ]
+                    }
                   }
                 }
               ]
@@ -279,19 +354,90 @@ QueryRoot
             {
               "lines": [
                 {
-                  "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple",
+                  "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph",
                   "data": {
-                    "subject": "Var (name: _anon_path_741a9792e0fd0a24e1fa7a5784fbf236307012, anonymous)\n",
-                    "pathText": "!(rdf:type|^rdf:type)",
-                    "object": "Var (name: s)\n"
+                    "graph": "Var (name: g)\n",
+                    "bgp": {
+                      "lines": [
+                        {
+                          "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple",
+                          "data": {
+                            "subject": "Var (name: _anon_path_628e721d4866b2b47fda7b77a15e8a983520123456, anonymous)\n",
+                            "pathText": "!(rdf:type|^rdf:type)",
+                            "object": "Var (name: s)\n"
+                          }
+                        }
+                      ]
+                    }
                   }
                 },
                 {
-                  "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple",
+                  "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect",
                   "data": {
-                    "subject": "Var (name: _anon_path_741a9792e0fd0a24e1fa7a5784fbf236307012)\n",
-                    "pathText": "(ex:knows)?",
-                    "object": "Var (name: n)\n"
+                    "select": {
+                      "distinct": false,
+                      "reduced": false,
+                      "projection": [
+                        {
+                          "varName": "_anon_path_628e721d4866b2b47fda7b77a15e8a983520123456"
+                        },
+                        {
+                          "varName": "n"
+                        },
+                        {
+                          "varName": "g"
+                        }
+                      ],
+                      "where": {
+                        "lines": [
+                          {
+                            "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion",
+                            "data": {
+                              "branches": [
+                                {
+                                  "lines": [
+                                    {
+                                      "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrText",
+                                      "data": {
+                                        "text": "FILTER (sameTerm(?_anon_path_628e721d4866b2b47fda7b77a15e8a983520123456, ?n))"
+                                      }
+                                    }
+                                  ]
+                                },
+                                {
+                                  "lines": [
+                                    {
+                                      "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph",
+                                      "data": {
+                                        "graph": "Var (name: g)\n",
+                                        "bgp": {
+                                          "lines": [
+                                            {
+                                              "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern",
+                                              "data": {
+                                                "subject": "Var (name: _anon_path_628e721d4866b2b47fda7b77a15e8a983520123456, anonymous)\n",
+                                                "predicate": "Var (name: _const_36a43afe_uri, value: http://ex/knows, anonymous)\n",
+                                                "object": "Var (name: n)\n"
+                                              }
+                                            }
+                                          ]
+                                        }
+                                      }
+                                    }
+                                  ]
+                                }
+                              ],
+                              "newScope": false
+                            }
+                          }
+                        ]
+                      },
+                      "groupBy": [],
+                      "having": [],
+                      "orderBy": [],
+                      "limit": -1,
+                      "offset": -1
+                    }
                   }
                 }
               ]
@@ -318,12 +464,29 @@ PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 SELECT ?s ?n
 WHERE {
   {
-    ?s foaf:knows/^foaf:knows ?n .
+    GRAPH ?g {
+      ?s foaf:knows/^foaf:knows ?n .
+    }
   }
     UNION
   {
-    ?_anon_path_741a9792e0fd0a24e1fa7a5784fbf236307012 !(rdf:type|^rdf:type) ?s .
-    ?_anon_path_741a9792e0fd0a24e1fa7a5784fbf236307012 (ex:knows)? ?n .
+    GRAPH ?g {
+      ?_anon_path_628e721d4866b2b47fda7b77a15e8a983520123456 !(rdf:type|^rdf:type) ?s .
+    }
+    {
+      SELECT ?_anon_path_628e721d4866b2b47fda7b77a15e8a983520123456 ?n ?g
+      WHERE {
+        {
+          FILTER (sameTerm(?_anon_path_628e721d4866b2b47fda7b77a15e8a983520123456, ?n))
+        }
+          UNION
+        {
+          GRAPH ?g {
+            ?_anon_path_628e721d4866b2b47fda7b77a15e8a983520123456 ex:knows ?n .
+          }
+        }
+      }
+    }
   }
 }
 
@@ -338,12 +501,29 @@ PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 SELECT ?s ?n
 WHERE {
   {
-    ?s foaf:knows/^foaf:knows ?n .
+    GRAPH ?g {
+      ?s foaf:knows/^foaf:knows ?n .
+    }
   }
     UNION
   {
-    ?_anon_path_741a9792e0fd0a24e1fa7a5784fbf236307012 !(rdf:type|^rdf:type) ?s .
-    ?_anon_path_741a9792e0fd0a24e1fa7a5784fbf236307012 (ex:knows)? ?n .
+    GRAPH ?g {
+      ?_anon_path_628e721d4866b2b47fda7b77a15e8a983520123456 !(rdf:type|^rdf:type) ?s .
+    }
+    {
+      SELECT ?_anon_path_628e721d4866b2b47fda7b77a15e8a983520123456 ?n ?g
+      WHERE {
+        {
+          FILTER (sameTerm(?_anon_path_628e721d4866b2b47fda7b77a15e8a983520123456, ?n))
+        }
+          UNION
+        {
+          GRAPH ?g {
+            ?_anon_path_628e721d4866b2b47fda7b77a15e8a983520123456 ex:knows ?n .
+          }
+        }
+      }
+    }
   }
 }"
 to be equal to:
@@ -354,6 +534,8 @@ PREFIX ex: <http://ex/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 SELECT ?s ?n
 WHERE {
-  ?s foaf:knows/^foaf:knows | !(rdf:type|^rdf:type)/ex:knows? ?n .
+  GRAPH ?g {
+    ?s foaf:knows/^foaf:knows | !(rdf:type|^rdf:type)/ex:knows? ?n .
+  }
 }"
 ```
