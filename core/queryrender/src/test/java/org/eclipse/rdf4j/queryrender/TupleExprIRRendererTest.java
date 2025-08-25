@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 public class TupleExprIRRendererTest {
@@ -1994,6 +1995,27 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg());
 	}
 
+	@Test
+	void complexPathUnionOptionalScope() {
+		String q = "SELECT ?g ?s ?n\n" +
+				"WHERE {\n" +
+				"  {\n" +
+				"    ?s ex:path1/ex:path2 ?o .\n" +
+				"    OPTIONAL {\n" +
+				"      ?s (ex:alt1|ex:alt2) ?n .\n" +
+				"    }\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?s ex:path1/ex:path2 ?o .\n" +
+				"    OPTIONAL {\n" +
+				"      ?s (ex:alt3|ex:alt4) ?n .\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
 	// -------- New deep nested UNION path tests --------
 
 	@Test
@@ -2142,6 +2164,87 @@ public class TupleExprIRRendererTest {
 				"      ?s foaf:knows? ?o .\n" +
 				"    }\n" +
 				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	// -------- Additional SELECT tests with deeper, more nested paths --------
+
+	@Test
+	@Disabled
+	void nested_paths_extreme_1() {
+		String q = "SELECT ?s ?n\n" +
+				"WHERE {\n" +
+				"  ?s ((foaf:knows/^foaf:knows | !(rdf:type|^rdf:type)/ex:knows?)\n" +
+				"      /((ex:colleagueOf|^ex:colleagueOf)/(ex:knows/foaf:knows)?)*\n" +
+				"      /(^ex:knows/(ex:knows|^ex:knows)+))/foaf:name ?n .\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void nested_paths_extreme_1_simple() {
+		String q = "SELECT ?s ?n\n" +
+				"WHERE {\n" +
+				"  ?s foaf:knows/^foaf:knows | !(rdf:type|^rdf:type)/ex:knows? ?n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	@Disabled
+	void nested_paths_extreme_2_optional_and_graph() {
+		String q = "SELECT ?g ?s ?n\n" +
+				"WHERE {\n" +
+				"  GRAPH ?g {\n" +
+				"    ?s ((ex:p1|^ex:p2)+/(!(ex:p3|^ex:p4))? /((ex:p5|^ex:p6)/(foaf:knows|^foaf:knows))*) ?y .\n" +
+				"  }\n" +
+				"  OPTIONAL {\n" +
+				"    ?y (^foaf:knows/(ex:p7|^ex:p8)?/((ex:p9/foaf:knows)|(^ex:p10/ex:p11))) ?z .\n" +
+				"  }\n" +
+				"  ?z foaf:name ?n .\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	@Disabled
+	void nested_paths_extreme_3_subquery_exists() {
+		String q = "SELECT ?s\n" +
+				"WHERE {\n" +
+				"  FILTER (EXISTS {\n" +
+				"    SELECT ?s\n" +
+				"    WHERE { ?s ((ex:p1|^ex:p2)/(!(rdf:type|^rdf:type))*/ex:p3?) ?o . }\n" +
+				"    GROUP BY ?s\n" +
+				"    HAVING (COUNT(?o) >= 0)\n" +
+				"  })\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	@Disabled
+	void nested_paths_extreme_4_union_mixed_mods() {
+		String q = "SELECT ?s ?n\n" +
+				"WHERE {\n" +
+				"  {\n" +
+				"    ?s (((ex:a|^ex:b)/(ex:c/foaf:knows)? )*/(^ex:d/(ex:e|^ex:f)+))/foaf:name ?n .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?s ((!(ex:g|^ex:h)/(ex:i|^ex:j)?)/((ex:k/foaf:knows)|(^ex:l/ex:m)))/foaf:name ?n .\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	@Disabled
+	void nested_paths_extreme_5_grouped_repetition() {
+		String q = "SELECT ?s ?n\n" +
+				"WHERE {\n" +
+				"  ?s (((ex:pA|^ex:pB)/(ex:pC|^ex:pD))*/(^ex:pE/(ex:pF|^ex:pG)+)/(ex:pH/foaf:knows)?)/foaf:name ?n .\n"
+				+
 				"}";
 		assertSameSparqlQuery(q, cfg());
 	}
