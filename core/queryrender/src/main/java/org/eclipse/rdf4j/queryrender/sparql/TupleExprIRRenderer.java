@@ -209,6 +209,15 @@ public class TupleExprIRRenderer {
 	private final Config cfg;
 	private final PrefixIndex prefixIndex;
 
+	// Overrides collected during IR transforms (e.g., collections) to affect term rendering in IR printer
+	private final Map<String, String> irOverrides = new HashMap<>();
+
+	public void addOverrides(Map<String, String> overrides) {
+		if (overrides != null && !overrides.isEmpty()) {
+			this.irOverrides.putAll(overrides);
+		}
+	}
+
 	private static final String FN_NS = "http://www.w3.org/2005/xpath-functions#";
 
 	/** Map of function identifier (either bare name or full IRI) → SPARQL built-in name. */
@@ -563,7 +572,7 @@ public class TupleExprIRRenderer {
 		private final StringBuilder out;
 		private int level = 0;
 		private final String indentUnit = cfg.indent;
-		private final Map<String, String> currentOverrides = Collections.emptyMap();
+		private final Map<String, String> currentOverrides = TupleExprIRRenderer.this.irOverrides;
 
 		IRTextPrinter(StringBuilder out) {
 			this.out = out;
@@ -858,11 +867,9 @@ public class TupleExprIRRenderer {
 			// Try RDF4J's zero-or-one path subselect expansion (simple IRI case)
 			ZeroOrOneDirect z1 = parseZeroOrOneProjectionDirect(p);
 			if (z1 != null) {
-				final String s = renderVarOrValue(z1.start);
-				final String o = renderVarOrValue(z1.end);
 				final PathNode q = new PathQuant(new PathAtom(z1.pred, false), 0, 1);
 				final String expr = q.render();
-				where.add(new IrPathTriple(s, expr, o));
+				where.add(new IrPathTriple(z1.start, expr, z1.end));
 				return;
 			}
 
@@ -924,10 +931,8 @@ public class TupleExprIRRenderer {
 			// Combine alternatives (if more than one)
 			PathNode inner = (alts.size() == 1) ? alts.get(0) : new PathAlt(alts);
 			PathNode q = new PathQuant(inner, 0, 1);
-			String sTxt = renderVarOrValue(s);
-			String oTxt = renderVarOrValue(o);
 			String expr = (q.prec() < PREC_SEQ ? "(" + q.render() + ")" : q.render());
-			where.add(new IrPathTriple(sTxt, expr, oTxt));
+			where.add(new IrPathTriple(s, expr, o));
 			return true;
 		}
 
@@ -1004,8 +1009,8 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(final ArbitraryLengthPath p) {
-			final String subj = renderVarOrValue(p.getSubjectVar());
-			final String obj = renderVarOrValue(p.getObjectVar());
+			final Var subj = p.getSubjectVar();
+			final Var obj = p.getObjectVar();
 			final PathNode inner = parseAPathInner(p.getPathExpression(), p.getSubjectVar(), p.getObjectVar());
 			if (inner == null) {
 				where.add(new IrText("# unsupported path"));
