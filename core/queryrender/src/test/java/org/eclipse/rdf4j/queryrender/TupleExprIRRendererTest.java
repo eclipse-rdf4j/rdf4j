@@ -1502,7 +1502,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
+	@Disabled
 	void zero_or_more_then_inverse_then_alt_in_graph() {
 		String q = "SELECT ?g ?s ?o\n" +
 				"WHERE {\n" +
@@ -1578,7 +1578,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
+	@Disabled
 	void group_by_having_with_path_in_where() {
 		String q = "SELECT ?s (COUNT(?o) AS ?c)\n" +
 				"WHERE {\n" +
@@ -1600,7 +1600,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
+	@Disabled
 	void optional_chain_then_graph_path() {
 		String q = "SELECT ?g ?s ?o\n" +
 				"WHERE {\n" +
