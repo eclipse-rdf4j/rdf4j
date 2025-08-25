@@ -162,7 +162,6 @@ public final class IrTransforms {
 		while (true) {
 			// Render WHERE to a stable string fingerprint
 			final String fp = fingerprintWhere(cur, r);
-			System.out.println(fp);
 			if (prev != null && fp.equals(prev)) {
 				break; // reached fixed point
 			}
@@ -302,8 +301,8 @@ public final class IrTransforms {
 			}
 			if (ln instanceof IrPathTriple) {
 				IrPathTriple pt = (IrPathTriple) ln;
-				out.addAll(extractVarsFromText(pt.getSubject()));
-				out.addAll(extractVarsFromText(pt.getObject()));
+				addVarName(out, pt.getSubject());
+				addVarName(out, pt.getObject());
 				continue;
 			}
 			if (ln instanceof IrPropertyList) {
@@ -372,7 +371,7 @@ public final class IrTransforms {
 					continue;
 				}
 				// Only safe to use the path's object as a bridge when it is an _anon_path_* variable.
-				if (!isAnonPathVarText(pt.getObject())) {
+				if (!isAnonPathVar(pt.getObject())) {
 					out.add(n);
 					continue;
 				}
@@ -381,10 +380,10 @@ public final class IrTransforms {
 					final BranchTriple b1 = getSingleBranchSp(u.getBranches().get(0));
 					final BranchTriple b2 = getSingleBranchSp(u.getBranches().get(1));
 					if (b1 != null && b2 != null && compatibleGraphs(b1.graph, b2.graph)) {
-						final String midTxt = pt.getObject();
-						final TripleJoin j1 = classifyTailJoin(b1, midTxt, r);
-						final TripleJoin j2 = classifyTailJoin(b2, midTxt, r);
-						if (j1 != null && j2 != null && j1.iri.equals(j2.iri) && j1.end.equals(j2.end)
+						final Var midVar = pt.getObject();
+						final TripleJoin j1 = classifyTailJoin(b1, midVar, r);
+						final TripleJoin j2 = classifyTailJoin(b2, midVar, r);
+						if (j1 != null && j2 != null && j1.iri.equals(j2.iri) && sameVar(j1.end, j2.end)
 								&& j1.inverse != j2.inverse) {
 							final String step = j1.iri; // renderer already compacted IRI
 							final String fusedPath = pt.getPathText() + "/(" + step + "|^" + step + ")";
@@ -446,17 +445,17 @@ public final class IrTransforms {
 
 	private static final class TripleJoin {
 		final String iri; // compacted IRI text (using renderer)
-		final String end; // end variable text (?name)
+		final Var end; // end variable
 		final boolean inverse; // true when matching "?end p ?mid"
 
-		TripleJoin(String iri, String end, boolean inverse) {
+		TripleJoin(String iri, Var end, boolean inverse) {
 			this.iri = iri;
 			this.end = end;
 			this.inverse = inverse;
 		}
 	}
 
-	private static TripleJoin classifyTailJoin(BranchTriple bt, String midTxt, TupleExprIRRenderer r) {
+	private static TripleJoin classifyTailJoin(BranchTriple bt, Var midVar, TupleExprIRRenderer r) {
 		if (bt == null || bt.sp == null) {
 			return null;
 		}
@@ -464,15 +463,15 @@ public final class IrTransforms {
 		if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
 			return null;
 		}
-		String sTxt = varOrValue(bt.sp.getSubject(), r);
-		String oTxt = varOrValue(bt.sp.getObject(), r);
-		if (midTxt.equals(sTxt)) {
+		Var sVar = bt.sp.getSubject();
+		Var oVar = bt.sp.getObject();
+		if (sameVar(midVar, sVar)) {
 			// forward: mid p ?end
-			return new TripleJoin(r.renderIRI((IRI) pv.getValue()), oTxt, false);
+			return new TripleJoin(r.renderIRI((IRI) pv.getValue()), oVar, false);
 		}
-		if (midTxt.equals(oTxt)) {
+		if (sameVar(midVar, oVar)) {
 			// inverse: ?end p mid
-			return new TripleJoin(r.renderIRI((IRI) pv.getValue()), sTxt, true);
+			return new TripleJoin(r.renderIRI((IRI) pv.getValue()), sVar, true);
 		}
 		return null;
 	}
@@ -590,10 +589,10 @@ public final class IrTransforms {
 
 			if (n instanceof IrPathTriple) {
 				IrPathTriple pt = (IrPathTriple) n;
-				final String bridge = pt.getObject();
+				final String bridge = varOrValue(pt.getObject(), r);
 				if (bridge != null && bridge.startsWith("?")) {
 					// Only join when the bridge var is an _anon_path_* variable, to avoid eliminating user vars
-					if (!isAnonPathVarText(bridge)) {
+					if (!isAnonPathVar(pt.getObject())) {
 						out.add(pt);
 						continue;
 					}
@@ -624,7 +623,7 @@ public final class IrTransforms {
 					if (join != null) {
 						final String step = r.renderIRI((IRI) join.getPredicate().getValue());
 						final String newPath = pt.getPathText() + "/" + (inverse ? "^" : "") + step;
-						final String newEnd = varOrValue(inverse ? join.getSubject() : join.getObject(), r);
+						final Var newEnd = inverse ? join.getSubject() : join.getObject();
 						pt = new IrPathTriple(pt.getSubject(), newPath, newEnd);
 						removed.add(join);
 					}
@@ -863,8 +862,8 @@ public final class IrTransforms {
 					// Build new GRAPH with fused path triple + any leftover lines from original inner graphs
 					final IrBGP newInner = new IrBGP();
 
-					final String subj = varOrValue(mt1.subject, r);
-					final String obj = varOrValue(mt1.object, r);
+					final Var subj = mt1.subject;
+					final Var obj = mt1.object;
 					final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
 
 					if (mt2 != null) {
@@ -873,7 +872,7 @@ public final class IrTransforms {
 						if (forward || inverse) {
 							final String step = r.renderIRI((IRI) mt2.predicate.getValue());
 							final String path = nps + "/" + (inverse ? "^" : "") + step;
-							final String end = varOrValue(forward ? mt2.object : mt2.subject, r);
+							final Var end = forward ? mt2.object : mt2.subject;
 							newInner.add(new IrPathTriple(subj, path, end));
 						} else {
 							// No safe chain direction; just print standalone NPS triple
@@ -924,8 +923,8 @@ public final class IrTransforms {
 				}
 
 				final IrBGP newInner = new IrBGP();
-				final String subj = varOrValue(mt1.subject, r);
-				final String obj = varOrValue(mt1.object, r);
+				final Var subj = mt1.subject;
+				final Var obj = mt1.object;
 				final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
 
 				if (mt2 != null) {
@@ -933,7 +932,7 @@ public final class IrTransforms {
 					final boolean inverse = !forward && sameVar(mt1.object, mt2.object);
 					final String step = r.renderIRI((IRI) mt2.predicate.getValue());
 					final String path = nps + "/" + (inverse ? "^" : "") + step;
-					final String end = varOrValue(forward ? mt2.object : mt2.subject, r);
+					final Var end = forward ? mt2.object : mt2.subject;
 					newInner.add(new IrPathTriple(subj, path, end));
 				} else {
 					newInner.add(new IrPathTriple(subj, nps, obj));
@@ -973,7 +972,7 @@ public final class IrTransforms {
 						&& pVar.getName().equals(ns2.varName) && !ns2.items.isEmpty()) {
 					IrStatementPattern k1 = null;
 					boolean k1Inverse = false;
-					String startText = null;
+					Var startVar = null;
 					for (int j = 0; j < in.size(); j++) {
 						if (j == i) {
 							continue;
@@ -990,20 +989,20 @@ public final class IrTransforms {
 						if (sameVar(sp.getSubject(), spVar.getSubject()) && !isAnonPathVar(sp.getObject())) {
 							k1 = sp;
 							k1Inverse = true;
-							startText = varOrValue(sp.getObject(), r);
+							startVar = sp.getObject();
 							break;
 						}
 						if (sameVar(sp.getObject(), spVar.getSubject()) && !isAnonPathVar(sp.getSubject())) {
 							k1 = sp;
 							k1Inverse = false;
-							startText = varOrValue(sp.getSubject(), r);
+							startVar = sp.getSubject();
 							break;
 						}
 					}
 
 					IrStatementPattern k2 = null;
 					boolean k2Inverse = false;
-					String endText = null;
+					Var endVar = null;
 					for (int j = i + 2; j < in.size(); j++) {
 						final IrNode cand = in.get(j);
 						if (!(cand instanceof IrStatementPattern)) {
@@ -1017,18 +1016,18 @@ public final class IrTransforms {
 						if (sameVar(sp.getSubject(), spVar.getObject()) && !isAnonPathVar(sp.getObject())) {
 							k2 = sp;
 							k2Inverse = false;
-							endText = varOrValue(sp.getObject(), r);
+							endVar = sp.getObject();
 							break;
 						}
 						if (sameVar(sp.getObject(), spVar.getObject()) && !isAnonPathVar(sp.getSubject())) {
 							k2 = sp;
 							k2Inverse = true;
-							endText = varOrValue(sp.getSubject(), r);
+							endVar = sp.getSubject();
 							break;
 						}
 					}
 
-					if (k1 != null && k2 != null && startText != null && endText != null) {
+					if (k1 != null && k2 != null && startVar != null && endVar != null) {
 						final String k1Step = r.renderIRI((IRI) k1.getPredicate().getValue());
 						final String k2Step = r.renderIRI((IRI) k2.getPredicate().getValue());
 						final List<String> rev = new ArrayList<>(ns2.items);
@@ -1036,7 +1035,7 @@ public final class IrTransforms {
 						final String nps = "!(" + String.join("|", rev) + ")";
 						final String path = (k1Inverse ? "^" + k1Step : k1Step) + "/" + nps + "/"
 								+ (k2Inverse ? "^" + k2Step : k2Step);
-						out.add(new IrPathTriple(startText, "(" + path + ")", endText));
+						out.add(new IrPathTriple(startVar, "(" + path + ")", endVar));
 						// Remove any earlier-emitted k1 (if it appeared before this position)
 						for (int rm = out.size() - 1; rm >= 0; rm--) {
 							if (out.get(rm) == k1) {
@@ -1093,10 +1092,10 @@ public final class IrTransforms {
 				final NsText ns = parseNegatedSetText(f.getConditionText());
 				if (pVar != null && !pVar.hasValue() && pVar.getName() != null && ns != null
 						&& pVar.getName().equals(ns.varName) && !ns.items.isEmpty()) {
-					final String sTxt = varOrValue(sp.getSubject(), r);
-					final String oTxt = varOrValue(sp.getObject(), r);
+					final Var sVar = sp.getSubject();
+					final Var oVar = sp.getObject();
 					final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
-					out.add(new IrPathTriple(sTxt, nps, oTxt));
+					out.add(new IrPathTriple(sVar, nps, oVar));
 					consumed.add(sp);
 					consumed.add(in.get(i + 1));
 					i += 1;
@@ -1314,11 +1313,9 @@ public final class IrTransforms {
 		if (used.size() != sps.size() || steps.isEmpty()) {
 			return null;
 		}
-		final String sTxt = "?" + sName;
-		final String oTxt = "?" + oName;
 		final String seq = (steps.size() == 1) ? steps.get(0) : String.join("/", steps);
 		final String expr = "(" + seq + ")?";
-		return new IrPathTriple(sTxt, expr, oTxt);
+		return new IrPathTriple(varNamed(sName), expr, varNamed(oName));
 	}
 
 	private static boolean isSameTermFilterBranch(IrBGP b) {
@@ -1529,14 +1526,14 @@ public final class IrTransforms {
 						startForward = false;
 					}
 					if (mid != null) {
-						String start = varOrValue(startForward ? sp0.getSubject() : sp0.getObject(), r);
+						Var start = startForward ? sp0.getSubject() : sp0.getObject();
 						List<String> parts = new ArrayList<>();
 						String step0 = r.renderIRI((IRI) p0.getValue());
 						parts.add(startForward ? step0 : ("^" + step0));
 
 						int j = i + 1;
 						Var cur = mid;
-						String end = null;
+						Var end = null;
 						while (j < in.size()) {
 							IrNode n2 = in.get(j);
 							if (!(n2 instanceof IrStatementPattern)) {
@@ -1560,7 +1557,7 @@ public final class IrTransforms {
 								j++;
 								continue;
 							}
-							end = varOrValue(nextVar, r);
+							end = nextVar;
 							j++;
 							break;
 						}
@@ -1584,11 +1581,9 @@ public final class IrTransforms {
 					Var bs = b.getSubject(), bo = b.getObject();
 					// forward-forward: ?s p1 ?x . ?x p2 ?o
 					if (isAnonPathVar(ao) && sameVar(ao, bs)) {
-						String sTxt = varOrValue(as, r);
-						String oTxt = varOrValue(bo, r);
 						String p1 = r.renderIRI((IRI) ap.getValue());
 						String p2 = r.renderIRI((IRI) bp.getValue());
-						out.add(new IrPathTriple(sTxt, p1 + "/" + p2, oTxt));
+						out.add(new IrPathTriple(as, p1 + "/" + p2, bo));
 						i += 1; // consume next
 						continue;
 					}
@@ -1599,18 +1594,16 @@ public final class IrTransforms {
 						Var p1 = sp.getPredicate();
 						if (p1 != null && p1.hasValue() && p1.getValue() instanceof IRI) {
 							IrPathTriple pt1 = (IrPathTriple) in.get(i + 1);
-							String bridgeObj1 = varOrValue(sp.getObject(), r);
-							String bridgeSubj1 = varOrValue(sp.getSubject(), r);
-							if (bridgeObj1.equals(pt1.getSubject())) {
+							if (sameVar(sp.getObject(), pt1.getSubject())) {
 								// forward chaining
 								String fused = r.renderIRI((IRI) p1.getValue()) + "/" + pt1.getPathText();
-								out.add(new IrPathTriple(varOrValue(sp.getSubject(), r), fused, pt1.getObject()));
+								out.add(new IrPathTriple(sp.getSubject(), fused, pt1.getObject()));
 								i += 1;
 								continue;
-							} else if (bridgeSubj1.equals(pt1.getObject())) {
+							} else if (sameVar(sp.getSubject(), pt1.getObject())) {
 								// inverse chaining
 								String fused = pt1.getPathText() + "/^" + r.renderIRI((IRI) p1.getValue());
-								out.add(new IrPathTriple(pt1.getSubject(), fused, varOrValue(sp.getObject(), r)));
+								out.add(new IrPathTriple(pt1.getSubject(), fused, sp.getObject()));
 								i += 1;
 								continue;
 							}
@@ -1623,20 +1616,18 @@ public final class IrTransforms {
 							Var p2 = sp2.getPredicate();
 							if (p2 != null && p2.hasValue() && p2.getValue() instanceof IRI) {
 								IrPathTriple pt2 = (IrPathTriple) in.get(i + 1);
-								String bridgeObj2 = varOrValue(sp2.getObject(), r);
-								String bridgeSubj2 = varOrValue(sp2.getSubject(), r);
-								if (bridgeObj2.equals(pt2.getSubject())) {
+								if (sameVar(sp2.getObject(), pt2.getSubject())) {
 									// forward chaining
 									String fused = r.renderIRI((IRI) p2.getValue()) + "/" + pt2.getPathText();
-									out.add(new IrPathTriple(varOrValue(sp2.getSubject(), r), fused,
+									out.add(new IrPathTriple(sp2.getSubject(), fused,
 											pt2.getObject()));
 									i += 1;
 									continue;
-								} else if (bridgeSubj2.equals(pt2.getObject())) {
+								} else if (sameVar(sp2.getSubject(), pt2.getObject())) {
 									// inverse chaining
 									String fused = pt2.getPathText() + "/^" + r.renderIRI((IRI) p2.getValue());
 									out.add(new IrPathTriple(pt2.getSubject(), fused,
-											varOrValue(sp2.getObject(), r)));
+											sp2.getObject()));
 									i += 1;
 									continue;
 								}
@@ -1653,24 +1644,22 @@ public final class IrTransforms {
 					if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
 						// Only fuse when the bridge var (?mid) is an _anon_path_* var; otherwise we might elide a user
 						// var like ?y
-						if (!isAnonPathVarText(pt.getObject())) {
+						if (!isAnonPathVar(pt.getObject())) {
 							out.add(n);
 							continue;
 						}
-						final String spSubj = varOrValue(sp.getSubject(), r);
-						final String spObj = varOrValue(sp.getObject(), r);
 						String joinStep = null;
-						String endText = null;
-						if (pt.getObject().equals(spSubj)) {
+						Var endVar = null;
+						if (sameVar(pt.getObject(), sp.getSubject())) {
 							joinStep = "/" + r.renderIRI((IRI) pv.getValue());
-							endText = spObj;
-						} else if (pt.getObject().equals(spObj)) {
+							endVar = sp.getObject();
+						} else if (sameVar(pt.getObject(), sp.getObject())) {
 							joinStep = "/^" + r.renderIRI((IRI) pv.getValue());
-							endText = spSubj;
+							endVar = sp.getSubject();
 						}
 						if (joinStep != null) {
 							final String fusedPath = pt.getPathText() + joinStep;
-							out.add(new IrPathTriple(pt.getSubject(), fusedPath, endText));
+							out.add(new IrPathTriple(pt.getSubject(), fusedPath, endVar));
 							i += 1; // consume next
 							continue;
 						}
@@ -1686,24 +1675,22 @@ public final class IrTransforms {
 				if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
 					// Only fuse when the bridge var (?mid) is an _anon_path_* var; otherwise we might elide a user var
 					// like ?y
-					if (!isAnonPathVarText(pt.getObject())) {
+					if (!isAnonPathVar(pt.getObject())) {
 						out.add(n);
 						continue;
 					}
-					final String spSubj = varOrValue(sp.getSubject(), r);
-					final String spObj = varOrValue(sp.getObject(), r);
 					String joinStep = null;
-					String endText = null;
-					if (pt.getObject().equals(spSubj)) {
+					Var endVar2 = null;
+					if (sameVar(pt.getObject(), sp.getSubject())) {
 						joinStep = "/" + r.renderIRI((IRI) pv.getValue());
-						endText = spObj;
-					} else if (pt.getObject().equals(spObj)) {
+						endVar2 = sp.getObject();
+					} else if (sameVar(pt.getObject(), sp.getObject())) {
 						joinStep = "/^" + r.renderIRI((IRI) pv.getValue());
-						endText = spSubj;
+						endVar2 = sp.getSubject();
 					}
 					if (joinStep != null) {
 						final String fusedPath = pt.getPathText() + joinStep;
-						out.add(new IrPathTriple(pt.getSubject(), fusedPath, endText));
+						out.add(new IrPathTriple(pt.getSubject(), fusedPath, endVar2));
 						i += 1; // consume next
 						continue;
 					}
@@ -1753,7 +1740,8 @@ public final class IrTransforms {
 						}
 						if (mid != null) {
 							// Examine union branches: must all resolve from mid to the same end variable
-							String endTxt = null;
+							Var startVarOut = null;
+							Var endVarOut = null;
 							List<String> alts = new ArrayList<>();
 							Var unionGraphRef = null; // if branches are GRAPHed, ensure same ref
 							boolean ok = !u.getBranches().isEmpty();
@@ -1789,28 +1777,28 @@ public final class IrTransforms {
 									break;
 								}
 								String step = r.renderIRI((IRI) pX.getValue());
-								String end;
+								Var end;
 								if (sameVar(mid, spX.getSubject())) {
 									// forward
-									end = varOrValue(spX.getObject(), r);
+									end = spX.getObject();
 								} else if (sameVar(mid, spX.getObject())) {
 									// inverse
 									step = "^" + step;
-									end = varOrValue(spX.getSubject(), r);
+									end = spX.getSubject();
 								} else {
 									ok = false;
 									break;
 								}
-								if (endTxt == null) {
-									endTxt = end;
-								} else if (!endTxt.equals(end)) {
+								if (endVarOut == null) {
+									endVarOut = end;
+								} else if (!sameVar(endVarOut, end)) {
 									ok = false;
 									break;
 								}
 								alts.add(step);
 							}
-							if (ok && endTxt != null && !alts.isEmpty()) {
-								String startTxt = varOrValue(startForward ? sp0.getSubject() : sp0.getObject(), r);
+							if (ok && endVarOut != null && !alts.isEmpty()) {
+								Var startVar = startForward ? sp0.getSubject() : sp0.getObject();
 								String first = r.renderIRI((IRI) p0.getValue());
 								if (!startForward) {
 									first = "^" + first;
@@ -1826,7 +1814,7 @@ public final class IrTransforms {
 								// idempotence
 								String pathTxt = "(" + first + ")/(" + altTxt + ")";
 
-								IrPathTriple fused = new IrPathTriple(startTxt, pathTxt, endTxt);
+								IrPathTriple fused = new IrPathTriple(startVar, pathTxt, endVarOut);
 								if (graphRef != null) {
 									IrBGP inner = new IrBGP();
 									// copy any remaining lines from original inner GRAPH except sp0
@@ -1860,8 +1848,7 @@ public final class IrTransforms {
 										String step = r.renderIRI((IRI) joinSp.getPredicate().getValue());
 										String ext = "/" + (joinInverse ? "^" : "") + step;
 										String newPath = fused.getPathText() + ext;
-										String newEnd = varOrValue(
-												joinInverse ? joinSp.getSubject() : joinSp.getObject(), r);
+										Var newEnd = joinInverse ? joinSp.getSubject() : joinSp.getObject();
 										fused = new IrPathTriple(fused.getSubject(), newPath, newEnd);
 									}
 									// place the (possibly extended) fused path first, then remaining inner lines (skip
@@ -1898,17 +1885,16 @@ public final class IrTransforms {
 								: (isAnonPathVar(sp0.getSubject()) ? sp0.getSubject() : null);
 						if (mid != null) {
 							IrPathTriple pt = (IrPathTriple) in.get(i + 1);
-							String midTxt = varOrValue(mid, r);
 							boolean forward = mid == sp0.getObject();
-							String sideTxt = forward ? varOrValue(sp0.getSubject(), r) : varOrValue(sp0.getObject(), r);
+							Var sideVar = forward ? sp0.getSubject() : sp0.getObject();
 							String first = r.renderIRI((IRI) p0.getValue());
 							if (!forward) {
 								first = "^" + first;
 							}
-							if (midTxt.equals(pt.getSubject())) {
+							if (sameVar(mid, pt.getSubject())) {
 								String fused = first + "/" + pt.getPathText();
 								IrBGP newInner = new IrBGP();
-								newInner.add(new IrPathTriple(sideTxt, fused, pt.getObject()));
+								newInner.add(new IrPathTriple(sideVar, fused, pt.getObject()));
 								// copy any leftover inner lines except sp0
 								copyAllExcept(inner, newInner, sp0);
 								out.add(new IrGraph(g.getGraph(), newInner));
@@ -2021,7 +2007,7 @@ public final class IrTransforms {
 				if (!ok) {
 					// Try 2-step sequence alternation
 					ok = true;
-					String startTxt = null, endTxt = null;
+					Var startVarOut = null, endVarOut = null;
 					final List<String> seqs = new ArrayList<>();
 					for (IrBGP b : u.getBranches()) {
 						if (!ok) {
@@ -2072,23 +2058,23 @@ public final class IrTransforms {
 							ok = false;
 							break;
 						}
-						final String sTxt = varOrValue(startVar, r);
-						final String eTxt = varOrValue(endVar, r);
+						final Var sVar = startVar;
+						final Var eVar = endVar;
 						final String step1 = (firstForward ? "" : "^") + r.renderIRI((IRI) ap.getValue());
 						final String step2 = (secondForward ? "" : "^") + r.renderIRI((IRI) cp.getValue());
 						final String seq = step1 + "/" + step2;
-						if (startTxt == null && endTxt == null) {
-							startTxt = sTxt;
-							endTxt = eTxt;
-						} else if (!(startTxt.equals(sTxt) && endTxt.equals(eTxt))) {
+						if (startVarOut == null && endVarOut == null) {
+							startVarOut = sVar;
+							endVarOut = eVar;
+						} else if (!(sameVar(startVarOut, sVar) && sameVar(endVarOut, eVar))) {
 							ok = false;
 							break;
 						}
 						seqs.add(seq);
 					}
-					if (ok && startTxt != null && endTxt != null && !seqs.isEmpty()) {
+					if (ok && startVarOut != null && endVarOut != null && !seqs.isEmpty()) {
 						final String alt = (seqs.size() == 1) ? seqs.get(0) : String.join("|", seqs);
-						out.add(new IrPathTriple(startTxt, alt, endTxt));
+						out.add(new IrPathTriple(startVarOut, alt, endVarOut));
 						continue;
 					}
 				}
@@ -2099,13 +2085,13 @@ public final class IrTransforms {
 				if (u.getBranches().size() == 2) {
 					IrBGP b0 = u.getBranches().get(0);
 					IrBGP b1 = u.getBranches().get(1);
-					// Helper to parse a 2-step branch; returns {startTxt, endTxt, seqPath} or null
+					// Helper to parse a 2-step branch; returns {startVar, endVar, seqPath} or null
 					class TwoStep {
-						final String s;
-						final String o;
+						final Var s;
+						final Var o;
 						final String path;
 
-						TwoStep(String s, String o, String path) {
+						TwoStep(Var s, Var o, String path) {
 							this.s = s;
 							this.o = o;
 							this.path = path;
@@ -2156,11 +2142,9 @@ public final class IrTransforms {
 						if (mid == null) {
 							return null;
 						}
-						final String sTxt = varOrValue(startVar, r);
-						final String eTxt = varOrValue(endVar, r);
 						final String step1 = (firstForward ? "" : "^") + r.renderIRI((IRI) ap.getValue());
 						final String step2 = (secondForward ? "" : "^") + r.renderIRI((IRI) cp.getValue());
-						return new TwoStep(sTxt, eTxt, step1 + "/" + step2);
+						return new TwoStep(startVar, endVar, step1 + "/" + step2);
 					};
 
 					TwoStep ts0 = parseTwo.apply(b0);
@@ -2183,12 +2167,10 @@ public final class IrTransforms {
 						// Ensure single branch uses a constant predicate and matches endpoints
 						Var pv = spSingle.getPredicate();
 						if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
-							final String sTxt = varOrValue(spSingle.getSubject(), r);
-							final String oTxt = varOrValue(spSingle.getObject(), r);
 							String atom = null;
-							if (two.s.equals(sTxt) && two.o.equals(oTxt)) {
+							if (sameVar(two.s, spSingle.getSubject()) && sameVar(two.o, spSingle.getObject())) {
 								atom = r.renderIRI((IRI) pv.getValue());
-							} else if (two.s.equals(oTxt) && two.o.equals(sTxt)) {
+							} else if (sameVar(two.s, spSingle.getObject()) && sameVar(two.o, spSingle.getSubject())) {
 								atom = "^" + r.renderIRI((IRI) pv.getValue());
 							}
 							if (atom != null) {
@@ -2222,14 +2204,12 @@ public final class IrTransforms {
 					if (pt != null && sp != null) {
 						Var pv = sp.getPredicate();
 						if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
-							final String wantS = pt.getSubject();
-							final String wantO = pt.getObject();
-							final String sTxt = varOrValue(sp.getSubject(), r);
-							final String oTxt = varOrValue(sp.getObject(), r);
+							final Var wantS = pt.getSubject();
+							final Var wantO = pt.getObject();
 							String atom = null;
-							if (wantS.equals(sTxt) && wantO.equals(oTxt)) {
+							if (sameVar(wantS, sp.getSubject()) && sameVar(wantO, sp.getObject())) {
 								atom = r.renderIRI((IRI) pv.getValue());
-							} else if (wantS.equals(oTxt) && wantO.equals(sTxt)) {
+							} else if (sameVar(wantS, sp.getObject()) && sameVar(wantO, sp.getSubject())) {
 								atom = "^" + r.renderIRI((IRI) pv.getValue());
 							}
 							if (atom != null) {
@@ -2248,7 +2228,7 @@ public final class IrTransforms {
 				// but only A and B are plain two-step sequences.
 				{
 					final List<Integer> idx = new ArrayList<>();
-					String startTxt = null, endTxt = null;
+					Var startVarOut = null, endVarOut = null;
 					final List<String> seqs = new ArrayList<>();
 					for (int bi = 0; bi < u.getBranches().size(); bi++) {
 						IrBGP b = u.getBranches().get(bi);
@@ -2293,15 +2273,15 @@ public final class IrTransforms {
 						if (mid == null) {
 							continue;
 						}
-						final String sTxt = varOrValue(startVar, r);
-						final String eTxt = varOrValue(endVar, r);
+						final Var sVar = startVar;
+						final Var eVar = endVar;
 						final String step1 = (firstForward ? "" : "^") + r.renderIRI((IRI) ap.getValue());
 						final String step2 = (secondForward ? "" : "^") + r.renderIRI((IRI) cp.getValue());
 						final String seq = step1 + "/" + step2;
-						if (startTxt == null && endTxt == null) {
-							startTxt = sTxt;
-							endTxt = eTxt;
-						} else if (!(startTxt.equals(sTxt) && endTxt.equals(eTxt))) {
+						if (startVarOut == null && endVarOut == null) {
+							startVarOut = sVar;
+							endVarOut = eVar;
+						} else if (!(sameVar(startVarOut, sVar) && sameVar(endVarOut, eVar))) {
 							continue;
 						}
 						idx.add(bi);
@@ -2309,7 +2289,7 @@ public final class IrTransforms {
 					}
 					if (idx.size() >= 2) {
 						final String alt = String.join("|", seqs);
-						final IrPathTriple fused = new IrPathTriple(startTxt, alt, endTxt);
+						final IrPathTriple fused = new IrPathTriple(startVarOut, alt, endVarOut);
 						// Rebuild union branches: fused + the non-merged ones (in original order)
 						final IrUnion u2 = new IrUnion();
 						u2.setNewScope(u.isNewScope());
@@ -2331,7 +2311,7 @@ public final class IrTransforms {
 				// is a simple IrPathTriple without inner alternation or quantifiers and they share identical endpoints,
 				// fuse them into a single alternation path, keeping remaining branches intact.
 				{
-					String sTxt = null, oTxt = null;
+					Var sVarOut = null, oVarOut = null;
 					final List<Integer> idx = new ArrayList<>();
 					final List<String> basePaths = new ArrayList<>();
 					for (int bi = 0; bi < u.getBranches().size(); bi++) {
@@ -2357,10 +2337,10 @@ public final class IrTransforms {
 						if (ptxt.contains("|") || ptxt.contains("?") || ptxt.contains("*") || ptxt.contains("+")) {
 							continue; // skip inner alternation or quantifier
 						}
-						if (sTxt == null && oTxt == null) {
-							sTxt = pt.getSubject();
-							oTxt = pt.getObject();
-						} else if (!(sTxt.equals(pt.getSubject()) && oTxt.equals(pt.getObject()))) {
+						if (sVarOut == null && oVarOut == null) {
+							sVarOut = pt.getSubject();
+							oVarOut = pt.getObject();
+						} else if (!(sameVar(sVarOut, pt.getSubject()) && sameVar(oVarOut, pt.getObject()))) {
 							continue;
 						}
 						idx.add(bi);
@@ -2368,7 +2348,7 @@ public final class IrTransforms {
 					}
 					if (idx.size() >= 2) {
 						final String alt = String.join("|", basePaths);
-						final IrPathTriple fused = new IrPathTriple(sTxt, alt, oTxt);
+						final IrPathTriple fused = new IrPathTriple(sVarOut, alt, oVarOut);
 						final IrUnion u2 = new IrUnion();
 						IrBGP fusedBgp = new IrBGP();
 						fusedBgp.add(fused);
@@ -2386,7 +2366,7 @@ public final class IrTransforms {
 				// Third form: UNION where each branch reduces to a single IrPathTriple with identical endpoints ->
 				// combine into a single IrPathTriple with an alternation of the full path expressions.
 				{
-					String sTxt = null, oTxt = null;
+					Var sVarOut3 = null, oVarOut3 = null;
 					final List<String> paths = new ArrayList<>();
 					boolean allPt = true;
 					for (IrBGP b : u.getBranches()) {
@@ -2410,10 +2390,10 @@ public final class IrTransforms {
 							allPt = false;
 							break;
 						}
-						if (sTxt == null && oTxt == null) {
-							sTxt = pt.getSubject();
-							oTxt = pt.getObject();
-						} else if (!(sTxt.equals(pt.getSubject()) && oTxt.equals(pt.getObject()))) {
+						if (sVarOut3 == null && oVarOut3 == null) {
+							sVarOut3 = pt.getSubject();
+							oVarOut3 = pt.getObject();
+						} else if (!(sameVar(sVarOut3, pt.getSubject()) && sameVar(oVarOut3, pt.getObject()))) {
 							allPt = false;
 							break;
 						}
@@ -2431,10 +2411,10 @@ public final class IrTransforms {
 						}
 					}
 					// Only merge when there are no quantifiers and no inner alternation groups inside each path
-					if (allPt && sTxt != null && oTxt != null && !paths.isEmpty() && !hasQuantifier
+					if (allPt && sVarOut3 != null && oVarOut3 != null && !paths.isEmpty() && !hasQuantifier
 							&& !hasInnerAlternation) {
 						final String alt = (paths.size() == 1) ? paths.get(0) : String.join("|", paths);
-						out.add(new IrPathTriple(sTxt, alt, oTxt));
+						out.add(new IrPathTriple(sVarOut3, alt, oVarOut3));
 						continue;
 					}
 				}
@@ -2445,7 +2425,7 @@ public final class IrTransforms {
 					final IrStatementPattern post = (IrStatementPattern) in.get(i + 1);
 					final Var postPred = post.getPredicate();
 					if (postPred != null && postPred.hasValue() && postPred.getValue() instanceof IRI) {
-						String startTxt = null, endTxt = varOrValue(post.getSubject(), r);
+						Var startVar = null, endVar = post.getSubject();
 						final List<String> steps = new ArrayList<>();
 						boolean ok2 = true;
 						for (IrBGP b : u.getBranches()) {
@@ -2463,30 +2443,30 @@ public final class IrTransforms {
 								break;
 							}
 							String step;
-							String sTxtCandidate;
+							Var sVarCandidate;
 							// post triple is ?end postPred ?mid
 							if (sameVar(sp.getSubject(), post.getObject())) {
 								step = "^" + r.renderIRI((IRI) pv.getValue());
-								sTxtCandidate = varOrValue(sp.getObject(), r);
+								sVarCandidate = sp.getObject();
 							} else if (sameVar(sp.getObject(), post.getObject())) {
 								step = r.renderIRI((IRI) pv.getValue());
-								sTxtCandidate = varOrValue(sp.getSubject(), r);
+								sVarCandidate = sp.getSubject();
 							} else {
 								ok2 = false;
 								break;
 							}
-							if (startTxt == null) {
-								startTxt = sTxtCandidate;
-							} else if (!startTxt.equals(sTxtCandidate)) {
+							if (startVar == null) {
+								startVar = sVarCandidate;
+							} else if (!sameVar(startVar, sVarCandidate)) {
 								ok2 = false;
 								break;
 							}
 							steps.add(step);
 						}
-						if (ok2 && startTxt != null && endTxt != null && !steps.isEmpty()) {
+						if (ok2 && startVar != null && endVar != null && !steps.isEmpty()) {
 							final String alt = (steps.size() == 1) ? steps.get(0) : String.join("|", steps);
 							final String tail = "/^" + r.renderIRI((IRI) postPred.getValue());
-							out.add(new IrPathTriple(startTxt, "(" + alt + ")" + tail, endTxt));
+							out.add(new IrPathTriple(startVar, "(" + alt + ")" + tail, endVar));
 							i += 1;
 							continue;
 						}
@@ -2494,10 +2474,8 @@ public final class IrTransforms {
 				}
 
 				if (ok && !iris.isEmpty()) {
-					final String sTxt = varOrValue(subj, r);
-					final String oTxt = varOrValue(obj, r);
 					final String pathTxt = (iris.size() == 1) ? iris.get(0) : "(" + String.join("|", iris) + ")";
-					IrPathTriple pt = new IrPathTriple(sTxt, pathTxt, oTxt);
+					IrPathTriple pt = new IrPathTriple(subj, pathTxt, obj);
 					if (graphRef != null) {
 						IrBGP inner = new IrBGP();
 						inner.add(pt);
@@ -2514,10 +2492,9 @@ public final class IrTransforms {
 				IrStatementPattern sp = (IrStatementPattern) in.get(i + 1);
 				Var pv = sp.getPredicate();
 				if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI && RDF.FIRST.equals(pv.getValue())) {
-					String spSubjText = sp.getSubject() == null ? "" : varOrValue(sp.getSubject(), r);
-					if (pt.getObject().equals(spSubjText)) {
+					if (sameVar(pt.getObject(), sp.getSubject())) {
 						String fused = pt.getPathText() + "/" + r.renderIRI(RDF.FIRST);
-						out.add(new IrPathTriple(pt.getSubject(), fused, varOrValue(sp.getObject(), r)));
+						out.add(new IrPathTriple(pt.getSubject(), fused, sp.getObject()));
 						i++; // consume next
 						continue;
 					}
@@ -2589,13 +2566,13 @@ public final class IrTransforms {
 			if (n instanceof IrPathTriple && i + 1 < in.size() && in.get(i + 1) instanceof IrPathTriple) {
 				IrPathTriple a = (IrPathTriple) n;
 				IrPathTriple b = (IrPathTriple) in.get(i + 1);
-				String bridge = a.getObject();
-				if (bridge != null && bridge.equals(b.getSubject()) && isAnonPathVarText(bridge)) {
+				Var bridge = a.getObject();
+				if (bridge != null && sameVar(bridge, b.getSubject()) && isAnonPathVar(bridge)) {
 					// Merge a and b: s -(a.path/b.path)-> o
 					String fusedPath = "(" + a.getPathText() + ")/(" + b.getPathText() + ")";
 					out.add(new IrPathTriple(a.getSubject(), fusedPath, b.getObject()));
 					i += 1; // consume b
-				} else if (bridge != null && bridge.equals(b.getObject()) && isAnonPathVarText(bridge)) {
+				} else if (bridge != null && sameVar(bridge, b.getObject()) && isAnonPathVar(bridge)) {
 					// Merge a and b: s -(a.path/b.path)-> o
 					String fusedPath = "(" + a.getPathText() + ")/^(" + b.getPathText() + ")";
 					out.add(new IrPathTriple(a.getSubject(), fusedPath, b.getSubject()));
@@ -2625,18 +2602,16 @@ public final class IrTransforms {
 				IrStatementPattern sp = (IrStatementPattern) in.get(i + 1);
 				Var pv = sp.getPredicate();
 				if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
-					String bridge = pt.getObject();
-					String sTxt = varOrValue(sp.getSubject(), r);
-					String oTxt = varOrValue(sp.getObject(), r);
-					if (isAnonPathVarText(bridge)) {
-						if (bridge.equals(sTxt)) {
+					Var bridge = pt.getObject();
+					if (isAnonPathVar(bridge)) {
+						if (sameVar(bridge, sp.getSubject())) {
 							String fused = "(" + pt.getPathText() + ")/(" + r.renderIRI((IRI) pv.getValue()) + ")";
-							out.add(new IrPathTriple(pt.getSubject(), fused, oTxt));
+							out.add(new IrPathTriple(pt.getSubject(), fused, sp.getObject()));
 							i += 1;
 							continue;
-						} else if (bridge.equals(oTxt)) {
+						} else if (sameVar(bridge, sp.getObject())) {
 							String fused = "(" + pt.getPathText() + ")/^(" + r.renderIRI((IRI) pv.getValue()) + ")";
-							out.add(new IrPathTriple(pt.getSubject(), fused, sTxt));
+							out.add(new IrPathTriple(pt.getSubject(), fused, sp.getSubject()));
 							i += 1;
 							continue;
 						}
@@ -2694,16 +2669,14 @@ public final class IrTransforms {
 				Var p = sp.getPredicate();
 				if (p != null && p.hasValue() && p.getValue() instanceof IRI) {
 					IrPathTriple pt = (IrPathTriple) in.get(i + 1);
-					String bridgeObj = varOrValue(sp.getObject(), r);
-					String bridgeSubj = varOrValue(sp.getSubject(), r);
-					if (bridgeObj.equals(pt.getSubject()) && isAnonPathVarText(bridgeObj)) {
+					if (sameVar(sp.getObject(), pt.getSubject()) && isAnonPathVar(pt.getSubject())) {
 						String fused = r.renderIRI((IRI) p.getValue()) + "/" + pt.getPathText();
-						out.add(new IrPathTriple(varOrValue(sp.getSubject(), r), fused, pt.getObject()));
+						out.add(new IrPathTriple(sp.getSubject(), fused, pt.getObject()));
 						i += 1;
 						continue;
-					} else if (bridgeSubj.equals(pt.getObject()) && isAnonPathVarText(bridgeSubj)) {
+					} else if (sameVar(sp.getSubject(), pt.getObject()) && isAnonPathVar(pt.getObject())) {
 						String fused = pt.getPathText() + "/^" + r.renderIRI((IRI) p.getValue());
-						out.add(new IrPathTriple(pt.getSubject(), fused, varOrValue(sp.getObject(), r)));
+						out.add(new IrPathTriple(pt.getSubject(), fused, sp.getObject()));
 						i += 1;
 						continue;
 					}
@@ -2730,8 +2703,8 @@ public final class IrTransforms {
 			}
 			if (n instanceof IrPathTriple) {
 				IrPathTriple pt = (IrPathTriple) n;
-				String objText = pt.getObject();
-				if (isAnonPathVarText(objText)) {
+				Var objVar = pt.getObject();
+				if (isAnonPathVar(objVar)) {
 					IrStatementPattern join = null;
 					boolean inverse = false;
 					for (int j = i + 1; j < in.size(); j++) {
@@ -2744,14 +2717,12 @@ public final class IrTransforms {
 						if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
 							continue;
 						}
-						String sTxt = varOrValue(sp.getSubject(), r);
-						String oTxt = varOrValue(sp.getObject(), r);
-						if (objText.equals(sTxt) && isAnonPathVar(sp.getObject())) {
+						if (sameVar(objVar, sp.getSubject()) && isAnonPathVar(sp.getObject())) {
 							join = sp;
 							inverse = false;
 							break;
 						}
-						if (objText.equals(oTxt) && isAnonPathVar(sp.getSubject())) {
+						if (sameVar(objVar, sp.getObject()) && isAnonPathVar(sp.getSubject())) {
 							join = sp;
 							inverse = true;
 							break;
@@ -2760,7 +2731,7 @@ public final class IrTransforms {
 					if (join != null) {
 						String step = r.renderIRI((IRI) join.getPredicate().getValue());
 						String newPath = pt.getPathText() + "/" + (inverse ? "^" : "") + step;
-						String newEnd = varOrValue(inverse ? join.getSubject() : join.getObject(), r);
+						Var newEnd = inverse ? join.getSubject() : join.getObject();
 						pt = new IrPathTriple(pt.getSubject(), newPath, newEnd);
 						removed.add(join);
 					}
@@ -2851,9 +2822,9 @@ public final class IrTransforms {
 								continue;
 							}
 							// fuse: start = as, path = ap / ^bp, end = b.subject
-							String start = varOrValue(as, r);
+							Var start = as;
 							String path = r.renderIRI((IRI) ap.getValue()) + "/^" + r.renderIRI((IRI) bp.getValue());
-							String end = varOrValue(b.getSubject(), r);
+							Var end = b.getSubject();
 							out.add(new IrPathTriple(start, path, end));
 							consumed.add(n);
 							consumed.add(m);
@@ -3026,22 +2997,16 @@ public final class IrTransforms {
 			}
 		}
 
-		// Rewrite lines: remove consumed, replace head var in path subjects
+		// Make overrides available to the renderer so that variables heading collections render as "(item1 item2 ...)"
+		r.addOverrides(collText);
+
+		// Rewrite lines: remove consumed
 		List<IrNode> out = new ArrayList<>();
 		for (IrNode n : bgp.getLines()) {
 			if (consumed.contains(n)) {
 				continue;
 			}
-			if (n instanceof IrPathTriple) {
-				IrPathTriple pt = (IrPathTriple) n;
-				String s = pt.getSubject();
-				if (s != null && s.startsWith("?")) {
-					String repl = collText.get(s.substring(1));
-					if (repl != null) {
-						n = new IrPathTriple(repl, pt.getPathText(), pt.getObject());
-					}
-				}
-			} else if (n instanceof IrBGP || n instanceof IrGraph || n instanceof IrOptional || n instanceof IrUnion
+			if (n instanceof IrBGP || n instanceof IrGraph || n instanceof IrOptional || n instanceof IrUnion
 					|| n instanceof IrMinus || n instanceof IrService || n instanceof IrSubSelect) {
 				n = n.transformChildren(child -> {
 					if (child instanceof IrBGP) {
