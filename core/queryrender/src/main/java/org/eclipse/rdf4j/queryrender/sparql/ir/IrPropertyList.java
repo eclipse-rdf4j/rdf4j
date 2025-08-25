@@ -19,23 +19,6 @@ import org.eclipse.rdf4j.query.algebra.Var;
  * Textual IR node for a property-list triple, supporting semicolon and comma short-hand.
  */
 public class IrPropertyList extends IrNode {
-	public static final class Item {
-		private final Var predicate;
-		private final List<Var> objects = new ArrayList<>();
-
-		public Item(Var predicate) {
-			this.predicate = predicate;
-		}
-
-		public Var getPredicate() {
-			return predicate;
-		}
-
-		public List<Var> getObjects() {
-			return objects;
-		}
-	}
-
 	private final Var subject;
 	private final List<Item> items = new ArrayList<>();
 
@@ -71,5 +54,22 @@ public class IrPropertyList extends IrNode {
 			parts.add(pred + " " + objTxt);
 		}
 		p.line(subj + " " + String.join(" ; ", parts) + " .");
+	}
+
+	public static final class Item {
+		private final Var predicate;
+		private final List<Var> objects = new ArrayList<>();
+
+		public Item(Var predicate) {
+			this.predicate = predicate;
+		}
+
+		public Var getPredicate() {
+			return predicate;
+		}
+
+		public List<Var> getObjects() {
+			return objects;
+		}
 	}
 }

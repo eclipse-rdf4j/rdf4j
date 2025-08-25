@@ -530,4 +530,28 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 		return String.join("|", rendered);
 	}
 
+	public static final class NsText {
+		public final String varName;
+		public final List<String> items;
+
+		NsText(String varName, List<String> items) {
+			this.varName = varName;
+			this.items = items;
+		}
+	}
+
+	public static final class MatchTriple {
+		public final IrNode node;
+		public final Var subject;
+		public final Var predicate;
+		public final Var object;
+
+		MatchTriple(IrNode node, Var s, Var p, Var o) {
+			this.node = node;
+			this.subject = s;
+			this.predicate = p;
+			this.object = o;
+		}
+	}
+
 }

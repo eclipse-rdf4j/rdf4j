@@ -43,8 +43,9 @@ public class IrValues extends IrNode {
 		StringBuilder head = new StringBuilder();
 		head.append("VALUES (");
 		for (int i = 0; i < varNames.size(); i++) {
-			if (i > 0)
+			if (i > 0) {
 				head.append(' ');
+			}
 			head.append('?').append(varNames.get(i));
 		}
 		head.append(") {");
@@ -54,8 +55,9 @@ public class IrValues extends IrNode {
 			StringBuilder sb = new StringBuilder();
 			sb.append('(');
 			for (int i = 0; i < row.size(); i++) {
-				if (i > 0)
+				if (i > 0) {
 					sb.append(' ');
+				}
 				sb.append(row.get(i));
 			}
 			sb.append(')');

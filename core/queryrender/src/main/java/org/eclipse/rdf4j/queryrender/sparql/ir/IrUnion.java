@@ -29,14 +29,14 @@ public class IrUnion extends IrNode {
 		return branches;
 	}
 
+	public void setBranches(List<IrBGP> newBranches) {
+		this.branches = (newBranches == null) ? new ArrayList<>() : new ArrayList<>(newBranches);
+	}
+
 	public void addBranch(IrBGP w) {
 		if (w != null) {
 			branches.add(w);
 		}
-	}
-
-	public void setBranches(List<IrBGP> newBranches) {
-		this.branches = (newBranches == null) ? new ArrayList<>() : new ArrayList<>(newBranches);
 	}
 
 	public boolean isNewScope() {
@@ -85,7 +85,7 @@ public class IrUnion extends IrNode {
 		}
 
 		return "IrUnion{" +
-				"branches=\n" + sb.toString() +
+				"branches=\n" + sb +
 				", newScope=" + newScope +
 				'}';
 	}

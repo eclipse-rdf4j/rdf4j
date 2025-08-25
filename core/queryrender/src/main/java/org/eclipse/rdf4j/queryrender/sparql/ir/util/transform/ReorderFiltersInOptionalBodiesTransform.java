@@ -15,6 +15,8 @@ import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
@@ -167,6 +169,28 @@ public final class ReorderFiltersInOptionalBodiesTransform extends BaseTransform
 			}
 		}
 		return out;
+	}
+
+	public static Set<String> extractVarsFromText(String s) {
+		final Set<String> out = new LinkedHashSet<>();
+		if (s == null) {
+			return out;
+		}
+		Matcher m = Pattern.compile("\\?([A-Za-z_][\\w]*)").matcher(s);
+		while (m.find()) {
+			out.add(m.group(1));
+		}
+		return out;
+	}
+
+	public static void addVarName(Set<String> out, Var v) {
+		if (v == null || v.hasValue()) {
+			return;
+		}
+		final String n = v.getName();
+		if (n != null && !n.isEmpty()) {
+			out.add(n);
+		}
 	}
 
 }

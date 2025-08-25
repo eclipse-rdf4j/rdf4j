@@ -14,13 +14,10 @@ package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -264,14 +261,6 @@ public class BaseTransform {
 		return v != null && !v.hasValue() && v.getName() != null && v.getName().startsWith(ANON_PATH_PREFIX);
 	}
 
-	public static String safeVarName(Var v) {
-		if (v == null || v.hasValue()) {
-			return null;
-		}
-		final String n = v.getName();
-		return (n == null || n.isEmpty()) ? null : n;
-	}
-
 	/**
 	 * If the given path text is a negated property set of the form !(a|b|...), return a version where each member is
 	 * inverted by toggling the leading '^' (i.e., a -> ^a, ^a -> a). Returns null when the input is not a simple NPS.
@@ -447,59 +436,6 @@ public class BaseTransform {
 			return r.renderValue(v.getValue());
 		}
 		return "?" + v.getName();
-	}
-
-	public static Var varNamed(String name) {
-		if (name == null) {
-			return null;
-		}
-		return new Var(name);
-	}
-
-	public static void addVarName(Set<String> out, Var v) {
-		if (v == null || v.hasValue()) {
-			return;
-		}
-		final String n = v.getName();
-		if (n != null && !n.isEmpty()) {
-			out.add(n);
-		}
-	}
-
-	public static Set<String> extractVarsFromText(String s) {
-		final Set<String> out = new LinkedHashSet<>();
-		if (s == null) {
-			return out;
-		}
-		Matcher m = Pattern.compile("\\?([A-Za-z_][\\w]*)").matcher(s);
-		while (m.find()) {
-			out.add(m.group(1));
-		}
-		return out;
-	}
-
-	public static final class MatchTriple {
-		public final IrNode node;
-		public final Var subject;
-		public final Var predicate;
-		public final Var object;
-
-		MatchTriple(IrNode node, Var s, Var p, Var o) {
-			this.node = node;
-			this.subject = s;
-			this.predicate = p;
-			this.object = o;
-		}
-	}
-
-	public static final class NsText {
-		public final String varName;
-		public final List<String> items;
-
-		NsText(String varName, List<String> items) {
-			this.varName = varName;
-			this.items = items;
-		}
 	}
 
 }
