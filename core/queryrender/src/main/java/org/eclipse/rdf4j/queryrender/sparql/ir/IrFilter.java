@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import java.util.function.UnaryOperator;
+
 /**
  * Textual IR node for a FILTER line.
  */
@@ -80,7 +82,7 @@ public class IrFilter extends IrNode {
 	}
 
 	@Override
-	public IrNode transformChildren(java.util.function.UnaryOperator<IrNode> op) {
+	public IrNode transformChildren(UnaryOperator<IrNode> op) {
 		if (body == null) {
 			return this;
 		}

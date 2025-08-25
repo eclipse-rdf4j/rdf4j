@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
@@ -102,14 +103,25 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 			}
 			// If orientation is reversed or endpoints differ, conservatively skip.
 		}
-		// Collect simple SPs in the chain branch
+		// Collect simple SPs in the chain branch. Accept either bare IrStatementPattern lines
+		// or a single IrStatementPattern wrapped in a GRAPH block (common in parsed queries
+		// with FROM NAMED / GRAPH context). All lines must be simple SPs; if anything else is
+		// encountered we conservatively bail out.
 		List<IrStatementPattern> sps = new ArrayList<>();
 		for (IrNode ln : chainBranch.getLines()) {
 			if (ln instanceof IrStatementPattern) {
 				sps.add((IrStatementPattern) ln);
-			} else {
-				return null; // be conservative
+				continue;
 			}
+			if (ln instanceof IrGraph) {
+				IrGraph g = (IrGraph) ln;
+				if (g.getWhere() != null && g.getWhere().getLines().size() == 1
+						&& g.getWhere().getLines().get(0) instanceof IrStatementPattern) {
+					sps.add((IrStatementPattern) g.getWhere().getLines().get(0));
+					continue;
+				}
+			}
+			return null; // be conservative
 		}
 		if (sps.isEmpty()) {
 			return null;
