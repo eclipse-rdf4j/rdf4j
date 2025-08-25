@@ -104,11 +104,13 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBind;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrExists;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGroupByElem;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrNot;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrOrderSpec;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
@@ -706,15 +708,15 @@ public class TupleExprIRRenderer {
 				final Exists ex = (Exists) ((Not) condExpr).getArg();
 				IRBuilder inner = new IRBuilder();
 				IrBGP bgp = inner.build(ex.getSubQuery());
-				return new IrFilter(new org.eclipse.rdf4j.queryrender.sparql.ir.IrNot(
-						new org.eclipse.rdf4j.queryrender.sparql.ir.IrExists(bgp)));
+				return new IrFilter(new IrNot(
+						new IrExists(bgp)));
 			}
 			// EXISTS {...}
 			if (condExpr instanceof Exists) {
 				final Exists ex = (Exists) condExpr;
 				IRBuilder inner = new IRBuilder();
 				IrBGP bgp = inner.build(ex.getSubQuery());
-				return new IrFilter(new org.eclipse.rdf4j.queryrender.sparql.ir.IrExists(bgp));
+				return new IrFilter(new IrExists(bgp));
 			}
 			// Fallback: plain textual condition
 			final String cond = stripRedundantOuterParens(renderExpr(condExpr));

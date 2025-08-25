@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.queryrender.sparql.ir;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.UnaryOperator;
 
 /**
  * Textual IR node representing a UNION with multiple branches.
@@ -64,7 +65,7 @@ public class IrUnion extends IrNode {
 	}
 
 	@Override
-	public IrNode transformChildren(java.util.function.UnaryOperator<IrNode> op) {
+	public IrNode transformChildren(UnaryOperator<IrNode> op) {
 		IrUnion u = new IrUnion();
 		u.setNewScope(this.newScope);
 		for (IrBGP b : this.branches) {

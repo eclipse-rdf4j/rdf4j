@@ -10,7 +10,11 @@
  ******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
+
+import org.eclipse.rdf4j.model.IRI;
 
 /**
  * Public configuration for TupleExprIRRenderer. Kept minimal and deterministic (LinkedHashMap for prefixes).
@@ -61,6 +65,6 @@ public final class RenderStyle {
 
 	// Optional dataset (top-level only) if you never pass a DatasetView at render().
 	// These are rarely used, but offered for completeness.
-	public final java.util.List<org.eclipse.rdf4j.model.IRI> defaultGraphs = new java.util.ArrayList<>();
-	public final java.util.List<org.eclipse.rdf4j.model.IRI> namedGraphs = new java.util.ArrayList<>();
+	public final List<IRI> defaultGraphs = new ArrayList<>();
+	public final List<IRI> namedGraphs = new ArrayList<>();
 }

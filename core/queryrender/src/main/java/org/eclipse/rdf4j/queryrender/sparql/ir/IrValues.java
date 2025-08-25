@@ -51,7 +51,7 @@ public class IrValues extends IrNode {
 		head.append(") {");
 		p.line(head.toString());
 		p.pushIndent();
-		for (java.util.List<String> row : rows) {
+		for (List<String> row : rows) {
 			StringBuilder sb = new StringBuilder();
 			sb.append('(');
 			for (int i = 0; i < row.size(); i++) {
