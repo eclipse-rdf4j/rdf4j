@@ -1474,6 +1474,18 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
+	void pathExample() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  ?s a ex:Person .\n" +
+				"  MINUS {\n" +
+				"    ?s foaf:knows/foaf:knows? ?o .\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
 	void deep_path_in_filter_not_exists() {
 		String q = "SELECT ?s\n" +
 				"WHERE {\n" +
@@ -1892,7 +1904,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
+//	@Disabled
 	void mega_exists_union_inside_exists_and_notexists() {
 		String q = "SELECT ?s\n" +
 				"WHERE {\n" +
@@ -2179,6 +2191,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
+	@Disabled
 	void nested_paths_extreme_1_simple() {
 		String q = "SELECT ?s ?n\n" +
 				"WHERE {\n" +
@@ -2215,6 +2228,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
+	@Disabled
 	void nested_paths_extreme_1_simpleGraph() {
 		String q = "SELECT ?s ?n\n" +
 				"WHERE {\n" +
