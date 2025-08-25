@@ -15,17 +15,106 @@ package org.eclipse.rdf4j.queryrender.sparql.ir;
  */
 public class IrFilter extends IrNode {
 	private final String conditionText;
+	// Optional structured body (e.g., EXISTS { ... } or NOT EXISTS { ... })
+	private final IrNode body;
 
 	public IrFilter(String conditionText) {
 		this.conditionText = conditionText;
+		this.body = null;
+	}
+
+	public IrFilter(IrNode body) {
+		this.conditionText = null;
+		this.body = body;
 	}
 
 	public String getConditionText() {
 		return conditionText;
 	}
 
+	public IrNode getBody() {
+		return body;
+	}
+
 	@Override
 	public void print(IrPrinter p) {
-		p.line("FILTER (" + conditionText + ")");
+		if (body == null) {
+			p.line("FILTER (" + conditionText + ")");
+			return;
+		}
+
+		// Structured bodies: EXISTS { ... } and NOT EXISTS { ... }
+		if (body instanceof IrExists) {
+			IrExists ex = (IrExists) body;
+			printExists(p, false, ex.getWhere());
+			return;
+		}
+		if (body instanceof IrNot) {
+			IrNot n = (IrNot) body;
+			IrNode inner = n.getInner();
+			if (inner instanceof IrExists) {
+				IrExists ex = (IrExists) inner;
+				printExists(p, true, ex.getWhere());
+				return;
+			}
+		}
+
+		// Fallback: print the inner as raw text if it is IrText
+		if (body instanceof IrText) {
+			p.line("FILTER (" + ((IrText) body).getText() + ")");
+			return;
+		}
+		// Unknown body type: just print a comment
+		p.line("# unsupported FILTER body: " + body.getClass().getSimpleName());
+	}
+
+	private void printExists(IrPrinter p, boolean negated, IrBGP where) {
+		String head = negated ? "FILTER (NOT EXISTS {" : "FILTER (EXISTS {";
+		p.line(head);
+		p.pushIndent();
+		if (where != null) {
+			p.printLines(where.getLines());
+		}
+		p.popIndent();
+		p.line("})");
+	}
+
+	@Override
+	public IrNode transformChildren(java.util.function.UnaryOperator<IrNode> op) {
+		if (body == null) {
+			return this;
+		}
+		// Transform nested BGP inside EXISTS (possibly under NOT)
+		if (body instanceof IrExists) {
+			IrExists ex = (IrExists) body;
+			IrBGP inner = ex.getWhere();
+			if (inner != null) {
+				IrNode t = op.apply(inner);
+				t = t.transformChildren(op);
+				if (t instanceof IrBGP) {
+					inner = (IrBGP) t;
+				}
+			}
+			return new IrFilter(new IrExists(inner));
+		}
+		if (body instanceof IrNot) {
+			IrNot n = (IrNot) body;
+			IrNode innerNode = n.getInner();
+			if (innerNode instanceof IrExists) {
+				IrExists ex = (IrExists) innerNode;
+				IrBGP inner = ex.getWhere();
+				if (inner != null) {
+					IrNode t = op.apply(inner);
+					t = t.transformChildren(op);
+					if (t instanceof IrBGP) {
+						inner = (IrBGP) t;
+					}
+				}
+				return new IrFilter(new IrNot(new IrExists(inner)));
+			}
+			// Unknown NOT inner: keep as-is
+			return new IrFilter(new IrNot(innerNode));
+		}
+		return this;
 	}
 }

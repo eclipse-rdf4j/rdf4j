@@ -697,6 +697,30 @@ public class TupleExprIRRenderer {
 	private final class IRBuilder extends AbstractQueryModelVisitor<RuntimeException> {
 		private final IrBGP where = new IrBGP();
 
+		private IrFilter buildFilterFromCondition(final ValueExpr condExpr) {
+			if (condExpr == null) {
+				return new IrFilter((String) null);
+			}
+			// NOT EXISTS {...}
+			if (condExpr instanceof Not && ((Not) condExpr).getArg() instanceof Exists) {
+				final Exists ex = (Exists) ((Not) condExpr).getArg();
+				IRBuilder inner = new IRBuilder();
+				IrBGP bgp = inner.build(ex.getSubQuery());
+				return new IrFilter(new org.eclipse.rdf4j.queryrender.sparql.ir.IrNot(
+						new org.eclipse.rdf4j.queryrender.sparql.ir.IrExists(bgp)));
+			}
+			// EXISTS {...}
+			if (condExpr instanceof Exists) {
+				final Exists ex = (Exists) condExpr;
+				IRBuilder inner = new IRBuilder();
+				IrBGP bgp = inner.build(ex.getSubQuery());
+				return new IrFilter(new org.eclipse.rdf4j.queryrender.sparql.ir.IrExists(bgp));
+			}
+			// Fallback: plain textual condition
+			final String cond = stripRedundantOuterParens(renderExpr(condExpr));
+			return new IrFilter(cond);
+		}
+
 		IrBGP build(final TupleExpr t) {
 			if (t != null) {
 				t.visit(this);
@@ -731,8 +755,7 @@ public class TupleExprIRRenderer {
 			final IRBuilder rightBuilder = new IRBuilder();
 			final IrBGP right = rightBuilder.build(lj.getRightArg());
 			if (lj.getCondition() != null) {
-				final String cond = stripRedundantOuterParens(renderExpr(lj.getCondition()));
-				right.add(new IrFilter(cond));
+				right.add(buildFilterFromCondition(lj.getCondition()));
 			}
 			where.add(new IrOptional(right));
 		}
@@ -773,8 +796,7 @@ public class TupleExprIRRenderer {
 					for (TupleExpr n : head) {
 						n.visit(this);
 					}
-					final String cond = stripRedundantOuterParens(renderExpr(f.getCondition()));
-					where.add(new IrFilter(cond));
+					where.add(buildFilterFromCondition(f.getCondition()));
 					trailingProj.visit(this);
 					return;
 				}
@@ -782,8 +804,7 @@ public class TupleExprIRRenderer {
 
 			// Default order: argument followed by the FILTER line
 			arg.visit(this);
-			final String cond = stripRedundantOuterParens(renderExpr(f.getCondition()));
-			where.add(new IrFilter(cond));
+			where.add(buildFilterFromCondition(f.getCondition()));
 		}
 
 		@Override

@@ -382,6 +382,11 @@ public final class IrTransforms {
 				continue;
 			}
 			final String txt = ((IrFilter) f).getConditionText();
+			// Structured filter bodies (e.g., EXISTS) have no condition text; do not reorder them.
+			if (txt == null) {
+				unsafeFilters.add(f);
+				continue;
+			}
 			final Set<String> fv = extractVarsFromText(txt);
 			if (avail.containsAll(fv)) {
 				safeFilters.add(f);
@@ -944,9 +949,10 @@ public final class IrTransforms {
 				final IrGraph g1 = (IrGraph) n;
 				final IrFilter f = (IrFilter) in.get(i + 1);
 
-				if (f.getConditionText().contains(ANON_PATH_PREFIX)) {
+				final String condText = f.getConditionText();
+				if (condText != null && condText.contains(ANON_PATH_PREFIX)) {
 
-					final NsText ns = parseNegatedSetText(f.getConditionText());
+					final NsText ns = parseNegatedSetText(condText);
 					if (ns == null || ns.varName == null || ns.items.isEmpty()) {
 						out.add(n);
 						continue;
@@ -1013,7 +1019,12 @@ public final class IrTransforms {
 				final IrGraph g2 = (IrGraph) in.get(i + 1);
 				final IrFilter f = (IrFilter) in.get(i + 2);
 
-				final NsText ns = parseNegatedSetText(f.getConditionText());
+				final String condText2 = f.getConditionText();
+				if (condText2 == null) {
+					out.add(n);
+					continue;
+				}
+				final NsText ns = parseNegatedSetText(condText2);
 				if (ns == null || ns.varName == null || ns.items.isEmpty()) {
 					out.add(n);
 					continue;
@@ -1078,7 +1089,8 @@ public final class IrTransforms {
 				final IrStatementPattern spVar = (IrStatementPattern) n;
 				final Var pVar = spVar.getPredicate();
 				final IrFilter f2 = (IrFilter) in.get(i + 1);
-				final NsText ns2 = parseNegatedSetText(f2.getConditionText());
+				final String condText3 = f2.getConditionText();
+				final NsText ns2 = condText3 == null ? null : parseNegatedSetText(condText3);
 				if (pVar != null && !pVar.hasValue() && pVar.getName() != null && ns2 != null
 						&& pVar.getName().equals(ns2.varName) && !ns2.items.isEmpty()) {
 					IrStatementPattern k1 = null;
@@ -1200,7 +1212,8 @@ public final class IrTransforms {
 				final IrStatementPattern sp = (IrStatementPattern) n;
 				final Var pVar = sp.getPredicate();
 				final IrFilter f = (IrFilter) in.get(i + 1);
-				final NsText ns = parseNegatedSetText(f.getConditionText());
+				final String condText4 = f.getConditionText();
+				final NsText ns = condText4 == null ? null : parseNegatedSetText(condText4);
 				if (pVar != null && !pVar.hasValue() && pVar.getName() != null && ns != null
 						&& pVar.getName().equals(ns.varName) && !ns.items.isEmpty()) {
 					final Var sVar = sp.getSubject();
@@ -1217,7 +1230,8 @@ public final class IrTransforms {
 			if (n instanceof IrGraph && i + 1 < in.size() && in.get(i + 1) instanceof IrFilter) {
 				final IrGraph g = (IrGraph) n;
 				final IrFilter f = (IrFilter) in.get(i + 1);
-				final NsText ns = parseNegatedSetText(f.getConditionText());
+				final String condText5 = f.getConditionText();
+				final NsText ns = condText5 == null ? null : parseNegatedSetText(condText5);
 				if (ns != null && ns.varName != null && !ns.items.isEmpty() && g.getWhere() != null
 						&& g.getWhere().getLines().size() == 1
 						&& g.getWhere().getLines().get(0) instanceof IrStatementPattern) {
