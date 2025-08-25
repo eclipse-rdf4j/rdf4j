@@ -41,8 +41,9 @@ public final class IrTransforms {
 
 	/** Replace IrUnion nodes with a single branch by their contents to avoid extraneous braces. */
 	private static IrBGP flattenSingletonUnions(IrBGP bgp) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		final java.util.List<IrNode> out = new java.util.ArrayList<>();
 		for (IrNode n : bgp.getLines()) {
 			// Recurse first (but do not flatten inside OPTIONAL bodies)
@@ -50,8 +51,9 @@ public final class IrTransforms {
 				if (child instanceof IrOptional) {
 					return child; // skip
 				}
-				if (child instanceof IrBGP)
+				if (child instanceof IrBGP) {
 					return flattenSingletonUnions((IrBGP) child);
+				}
 				return child;
 			});
 			if (n instanceof IrUnion) {
@@ -83,9 +85,22 @@ public final class IrTransforms {
 		return v != null && !v.hasValue() && v.getName() != null && v.getName().startsWith(ANON_PATH_PREFIX);
 	}
 
+	// Same check, but for textual IR variables like "?_anon_path_xxx"
+	private static boolean isAnonPathVarText(String text) {
+		if (text == null) {
+			return false;
+		}
+		if (!text.startsWith("?")) {
+			return false;
+		}
+		final String name = text.substring(1);
+		return name.startsWith(ANON_PATH_PREFIX);
+	}
+
 	public static IrSelect transformUsingChildren(IrSelect select, TupleExprIRRenderer r) {
-		if (select == null)
+		if (select == null) {
 			return null;
+		}
 		// Use transformChildren to rewrite WHERE/BGPs functionally in a single pass order
 		return (IrSelect) select.transformChildren(child -> {
 			if (child instanceof IrBGP) {
@@ -116,8 +131,9 @@ public final class IrTransforms {
 
 	/** Move IrFilter lines inside OPTIONAL bodies so they precede nested OPTIONAL lines when it is safe. */
 	private static IrBGP reorderFiltersInOptionalBodies(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		final java.util.List<IrNode> out = new java.util.ArrayList<>();
 		for (IrNode n : bgp.getLines()) {
 			if (n instanceof IrOptional) {
@@ -134,8 +150,9 @@ public final class IrTransforms {
 			}
 			// Recurse into other containers conservatively
 			n = n.transformChildren(child -> {
-				if (child instanceof IrBGP)
+				if (child instanceof IrBGP) {
 					return reorderFiltersInOptionalBodies((IrBGP) child, r);
+				}
 				return child;
 			});
 			out.add(n);
@@ -146,8 +163,9 @@ public final class IrTransforms {
 	}
 
 	private static IrBGP reorderFiltersWithin(IrBGP inner, TupleExprIRRenderer r) {
-		if (inner == null)
+		if (inner == null) {
 			return null;
+		}
 		final java.util.List<IrNode> lines = inner.getLines();
 		int firstOpt = -1;
 		for (int i = 0; i < lines.size(); i++) {
@@ -165,17 +183,19 @@ public final class IrTransforms {
 		// collect filters from head and tail
 		final java.util.List<IrNode> newHead = new java.util.ArrayList<>();
 		for (IrNode ln : head) {
-			if (ln instanceof IrFilter)
+			if (ln instanceof IrFilter) {
 				filters.add(ln);
-			else
+			} else {
 				newHead.add(ln);
+			}
 		}
 		final java.util.List<IrNode> newTail = new java.util.ArrayList<>();
 		for (IrNode ln : tail) {
-			if (ln instanceof IrFilter)
+			if (ln instanceof IrFilter) {
 				filters.add(ln);
-			else
+			} else {
 				newTail.add(ln);
+			}
 		}
 		if (filters.isEmpty()) {
 			return inner;
@@ -208,8 +228,9 @@ public final class IrTransforms {
 
 	private static java.util.Set<String> collectVarsFromLines(java.util.List<IrNode> lines, TupleExprIRRenderer r) {
 		final java.util.Set<String> out = new java.util.LinkedHashSet<>();
-		if (lines == null)
+		if (lines == null) {
 			return out;
+		}
 		for (IrNode ln : lines) {
 			if (ln instanceof IrStatementPattern) {
 				IrStatementPattern sp = (IrStatementPattern) ln;
@@ -227,8 +248,9 @@ public final class IrTransforms {
 				IrPropertyList pl = (IrPropertyList) ln;
 				addVarName(out, pl.getSubject());
 				for (IrPropertyList.Item it : pl.getItems()) {
-					for (Var v : it.getObjects())
+					for (Var v : it.getObjects()) {
 						addVarName(out, v);
+					}
 				}
 				continue;
 			}
@@ -242,17 +264,20 @@ public final class IrTransforms {
 	}
 
 	private static void addVarName(java.util.Set<String> out, Var v) {
-		if (v == null || v.hasValue())
+		if (v == null || v.hasValue()) {
 			return;
+		}
 		final String n = v.getName();
-		if (n != null && !n.isEmpty())
+		if (n != null && !n.isEmpty()) {
 			out.add(n);
+		}
 	}
 
 	private static java.util.Set<String> extractVarsFromText(String s) {
 		final java.util.Set<String> out = new java.util.LinkedHashSet<>();
-		if (s == null)
+		if (s == null) {
 			return out;
+		}
 		java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\?([A-Za-z_][\\w]*)").matcher(s);
 		while (m.find()) {
 			out.add(m.group(1));
@@ -262,16 +287,18 @@ public final class IrTransforms {
 
 	/** Fuse pattern: IrPathTriple pt; IrUnion u of two opposite-direction constant tail triples to same end var. */
 	private static IrBGP fusePathPlusTailAlternationUnion(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		final java.util.List<IrNode> in = bgp.getLines();
 		final java.util.List<IrNode> out = new java.util.ArrayList<>();
 		for (int i = 0; i < in.size(); i++) {
 			IrNode n = in.get(i);
 			// Recurse first
 			n = n.transformChildren(child -> {
-				if (child instanceof IrBGP)
+				if (child instanceof IrBGP) {
 					return fusePathPlusTailAlternationUnion((IrBGP) child, r);
+				}
 				return child;
 			});
 			if (i + 1 < in.size() && n instanceof IrPathTriple && in.get(i + 1) instanceof IrUnion) {
@@ -279,6 +306,11 @@ public final class IrTransforms {
 				IrUnion u = (IrUnion) in.get(i + 1);
 				// Do not merge across a UNION that represents an original query UNION (new scope)
 				if (u.isNewScope()) {
+					out.add(n);
+					continue;
+				}
+				// Only safe to use the path's object as a bridge when it is an _anon_path_* variable.
+				if (!isAnonPathVarText(pt.getObjectText())) {
 					out.add(n);
 					continue;
 				}
@@ -319,10 +351,12 @@ public final class IrTransforms {
 	}
 
 	private static BranchTriple getSingleBranchSp(IrBGP branch) {
-		if (branch == null)
+		if (branch == null) {
 			return null;
-		if (branch.getLines().size() != 1)
+		}
+		if (branch.getLines().size() != 1) {
 			return null;
+		}
 		IrNode only = branch.getLines().get(0);
 		if (only instanceof IrStatementPattern) {
 			return new BranchTriple(null, (IrStatementPattern) only);
@@ -339,10 +373,12 @@ public final class IrTransforms {
 	}
 
 	private static boolean compatibleGraphs(Var a, Var b) {
-		if (a == null && b == null)
+		if (a == null && b == null) {
 			return true;
-		if (a == null || b == null)
+		}
+		if (a == null || b == null) {
 			return false;
+		}
 		return sameVar(a, b);
 	}
 
@@ -359,11 +395,13 @@ public final class IrTransforms {
 	}
 
 	private static TripleJoin classifyTailJoin(BranchTriple bt, String midTxt, TupleExprIRRenderer r) {
-		if (bt == null || bt.sp == null)
+		if (bt == null || bt.sp == null) {
 			return null;
+		}
 		Var pv = bt.sp.getPredicate();
-		if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI))
+		if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
 			return null;
+		}
 		String sTxt = varOrValue(bt.sp.getSubject(), r);
 		String oTxt = varOrValue(bt.sp.getObject(), r);
 		if (midTxt.equals(sTxt)) {
@@ -379,8 +417,9 @@ public final class IrTransforms {
 
 	/** Merge sequences of adjacent IrGraph blocks with identical graph ref into a single IrGraph. */
 	private static IrBGP coalesceAdjacentGraphs(IrBGP bgp) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		final java.util.List<IrNode> in = bgp.getLines();
 		final java.util.List<IrNode> out = new java.util.ArrayList<>();
 		for (int i = 0; i < in.size(); i++) {
@@ -395,8 +434,9 @@ public final class IrTransforms {
 				int j = i + 1;
 				while (j < in.size() && (in.get(j) instanceof IrGraph)) {
 					final IrGraph gj = (IrGraph) in.get(j);
-					if (!sameVar(g1.getGraph(), gj.getGraph()))
+					if (!sameVar(g1.getGraph(), gj.getGraph())) {
 						break;
+					}
 					if (gj.getWhere() != null) {
 						gj.getWhere().getLines().forEach(merged::add);
 					}
@@ -442,14 +482,16 @@ public final class IrTransforms {
 
 	// Fuse a PathTriple with alternation on its path followed by an inverse tail triple using the same mid var,
 	// e.g., ?x (a|b) ?mid . ?y foaf:knows ?mid . => ?x (a|b)/^foaf:knows ?y
+
 	/**
 	 * Fuse a path triple whose object is a bridge var with a constant-IRI tail triple that also uses the bridge var,
 	 * producing a new path with an added '/^p' or '/p' segment. This version indexes join candidates and works inside
 	 * GRAPH bodies as well. It is conservative: only constant predicate tails are fused and containers are preserved.
 	 */
 	private static IrBGP fuseAltInverseTailBGP(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 
 		final java.util.List<IrNode> in = bgp.getLines();
 		final java.util.List<IrNode> out = new java.util.ArrayList<>();
@@ -460,12 +502,14 @@ public final class IrTransforms {
 		final java.util.Map<String, java.util.List<IrStatementPattern>> bySubject = new java.util.HashMap<>();
 		final java.util.Map<String, java.util.List<IrStatementPattern>> byObject = new java.util.HashMap<>();
 		for (IrNode n : in) {
-			if (!(n instanceof IrStatementPattern))
+			if (!(n instanceof IrStatementPattern)) {
 				continue;
+			}
 			final IrStatementPattern sp = (IrStatementPattern) n;
 			final Var pv = sp.getPredicate();
-			if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI))
+			if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
 				continue;
+			}
 			// Only index when the non-bridge end is not an anon_path_* var (safety)
 			final String sTxt = varOrValue(sp.getSubject(), r);
 			final String oTxt = varOrValue(sp.getObject(), r);
@@ -478,13 +522,19 @@ public final class IrTransforms {
 		}
 
 		for (IrNode n : in) {
-			if (removed.contains(n))
+			if (removed.contains(n)) {
 				continue;
+			}
 
 			if (n instanceof IrPathTriple) {
 				IrPathTriple pt = (IrPathTriple) n;
 				final String bridge = pt.getObjectText();
 				if (bridge != null && bridge.startsWith("?")) {
+					// Only join when the bridge var is an _anon_path_* variable, to avoid eliminating user vars
+					if (!isAnonPathVarText(bridge)) {
+						out.add(pt);
+						continue;
+					}
 					IrStatementPattern join = null;
 					boolean inverse = true; // prefer inverse tail (?y p ?mid) => '^p'
 					final List<IrStatementPattern> byObj = byObject.get(bridge);
@@ -574,8 +624,9 @@ public final class IrTransforms {
 	 * outside or include its own inner GRAPH.
 	 */
 	private static IrBGP mergeOptionalIntoPrecedingGraph(IrBGP bgp) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		final java.util.List<IrNode> in = bgp.getLines();
 		final java.util.List<IrNode> out = new java.util.ArrayList<>();
 		for (int i = 0; i < in.size(); i++) {
@@ -667,10 +718,12 @@ public final class IrTransforms {
 	}
 
 	private static boolean isSimpleOptionalBody(IrBGP ow) {
-		if (ow == null)
+		if (ow == null) {
 			return false;
-		if (ow.getLines().isEmpty())
+		}
+		if (ow.getLines().isEmpty()) {
 			return false;
+		}
 		for (IrNode ln : ow.getLines()) {
 			if (!(ln instanceof IrStatementPattern || ln instanceof IrPathTriple)) {
 				return false;
@@ -698,8 +751,9 @@ public final class IrTransforms {
 	 * constant predicate triple that reuses the first triple's object as a bridge.
 	 */
 	private static IrBGP applyNegatedPropertySet(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 
 		final List<IrNode> in = bgp.getLines();
 		final List<IrNode> out = new ArrayList<>();
@@ -856,15 +910,18 @@ public final class IrTransforms {
 					boolean k1Inverse = false;
 					String startText = null;
 					for (int j = 0; j < in.size(); j++) {
-						if (j == i)
+						if (j == i) {
 							continue;
+						}
 						final IrNode cand = in.get(j);
-						if (!(cand instanceof IrStatementPattern))
+						if (!(cand instanceof IrStatementPattern)) {
 							continue;
+						}
 						final IrStatementPattern sp = (IrStatementPattern) cand;
 						final Var pv = sp.getPredicate();
-						if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI))
+						if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
 							continue;
+						}
 						if (sameVar(sp.getSubject(), spVar.getSubject()) && !isAnonPathVar(sp.getObject())) {
 							k1 = sp;
 							k1Inverse = true;
@@ -884,12 +941,14 @@ public final class IrTransforms {
 					String endText = null;
 					for (int j = i + 2; j < in.size(); j++) {
 						final IrNode cand = in.get(j);
-						if (!(cand instanceof IrStatementPattern))
+						if (!(cand instanceof IrStatementPattern)) {
 							continue;
+						}
 						final IrStatementPattern sp = (IrStatementPattern) cand;
 						final Var pv = sp.getPredicate();
-						if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI))
+						if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
 							continue;
+						}
 						if (sameVar(sp.getSubject(), spVar.getObject()) && !isAnonPathVar(sp.getObject())) {
 							k2 = sp;
 							k2Inverse = false;
@@ -951,15 +1010,17 @@ public final class IrTransforms {
 
 	// Within a union branch, compact a simple var-predicate + NOT IN filter to a negated property set path triple.
 	private static IrBGP rewriteSimpleNpsOnly(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		final java.util.List<IrNode> in = bgp.getLines();
 		final java.util.List<IrNode> out = new java.util.ArrayList<>();
 		final java.util.Set<IrNode> consumed = new java.util.HashSet<>();
 		for (int i = 0; i < in.size(); i++) {
 			IrNode n = in.get(i);
-			if (consumed.contains(n))
+			if (consumed.contains(n)) {
 				continue;
+			}
 			if (n instanceof IrStatementPattern && i + 1 < in.size() && in.get(i + 1) instanceof IrFilter) {
 				final IrStatementPattern sp = (IrStatementPattern) n;
 				final Var pVar = sp.getPredicate();
@@ -979,41 +1040,47 @@ public final class IrTransforms {
 			}
 			// Recurse into nested containers conservatively
 			n = n.transformChildren(child -> {
-				if (child instanceof IrBGP)
+				if (child instanceof IrBGP) {
 					return rewriteSimpleNpsOnly((IrBGP) child, r);
+				}
 				return child;
 			});
 			out.add(n);
 		}
 		final IrBGP res = new IrBGP();
 		for (IrNode n : out) {
-			if (!consumed.contains(n))
+			if (!consumed.contains(n)) {
 				res.add(n);
+			}
 		}
 		return res;
 	}
 
 	private static void copyAllExcept(IrBGP from, IrBGP to, IrNode except) {
-		if (from == null)
+		if (from == null) {
 			return;
+		}
 		for (IrNode ln : from.getLines()) {
-			if (ln == except)
+			if (ln == except) {
 				continue;
+			}
 			to.add(ln);
 		}
 	}
 
 	private static IrBGP applyPropertyLists(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		java.util.List<IrNode> in = bgp.getLines();
 		java.util.List<IrNode> out = new java.util.ArrayList<>();
 		for (int i = 0; i < in.size(); i++) {
 			IrNode n = in.get(i);
 			// Recurse
 			n = n.transformChildren(child -> {
-				if (child instanceof IrBGP)
+				if (child instanceof IrBGP) {
 					return applyPropertyLists((IrBGP) child, r);
+				}
 				return child;
 			});
 			if (n instanceof IrStatementPattern) {
@@ -1024,8 +1091,9 @@ public final class IrTransforms {
 				int j = i;
 				while (j < in.size() && in.get(j) instanceof IrStatementPattern) {
 					IrStatementPattern spj = (IrStatementPattern) in.get(j);
-					if (!sameVar(subj, spj.getSubject()))
+					if (!sameVar(subj, spj.getSubject())) {
 						break;
+					}
 					Var pj = spj.getPredicate();
 					String key;
 					if (pj != null && pj.hasValue() && pj.getValue() instanceof IRI) {
@@ -1046,8 +1114,9 @@ public final class IrTransforms {
 						&& map.values().iterator().next().getObjects().size() > 1;
 				if (multiPred || hasComma) {
 					IrPropertyList pl = new IrPropertyList(subj);
-					for (IrPropertyList.Item it : map.values())
+					for (IrPropertyList.Item it : map.values()) {
 						pl.addItem(it);
+					}
 					out.add(pl);
 					i = j - 1;
 					continue;
@@ -1068,8 +1137,9 @@ public final class IrTransforms {
 	 * lines forming a chain from ?s to ?o via _anon_path_* variables. The result is an IrPathTriple "?s (seq)? ?o".
 	 */
 	private static IrBGP normalizeZeroOrOneSubselect(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		final java.util.List<IrNode> out = new java.util.ArrayList<>();
 		for (IrNode n : bgp.getLines()) {
 			IrNode transformed = n;
@@ -1095,14 +1165,17 @@ public final class IrTransforms {
 
 	private static IrPathTriple tryRewriteZeroOrOne(IrSubSelect ss, TupleExprIRRenderer r) {
 		IrSelect sel = ss.getSelect();
-		if (sel == null || sel.getWhere() == null)
+		if (sel == null || sel.getWhere() == null) {
 			return null;
+		}
 		java.util.List<IrNode> inner = sel.getWhere().getLines();
-		if (inner.size() != 1 || !(inner.get(0) instanceof IrUnion))
+		if (inner.size() != 1 || !(inner.get(0) instanceof IrUnion)) {
 			return null;
+		}
 		IrUnion u = (IrUnion) inner.get(0);
-		if (u.getBranches().size() != 2)
+		if (u.getBranches().size() != 2) {
 			return null;
+		}
 		IrBGP b1 = u.getBranches().get(0);
 		IrBGP b2 = u.getBranches().get(1);
 		IrBGP filterBranch, chainBranch;
@@ -1117,8 +1190,9 @@ public final class IrTransforms {
 			return null;
 		}
 		String[] so = parseSameTermVars(((IrText) filterBranch.getLines().get(0)).getText());
-		if (so == null)
+		if (so == null) {
 			return null;
+		}
 		final String sName = so[0], oName = so[1];
 		// Collect simple SPs in the chain branch
 		java.util.List<IrStatementPattern> sps = new java.util.ArrayList<>();
@@ -1129,8 +1203,9 @@ public final class IrTransforms {
 				return null; // be conservative
 			}
 		}
-		if (sps.isEmpty())
+		if (sps.isEmpty()) {
 			return null;
+		}
 		// Walk from ?s to ?o via _anon_path_* vars
 		Var cur = varNamed(sName);
 		Var goal = varNamed(oName);
@@ -1138,15 +1213,18 @@ public final class IrTransforms {
 		java.util.Set<IrStatementPattern> used = new java.util.LinkedHashSet<>();
 		int guard = 0;
 		while (!sameVar(cur, goal)) {
-			if (++guard > 10000)
+			if (++guard > 10000) {
 				return null;
+			}
 			boolean advanced = false;
 			for (IrStatementPattern sp : sps) {
-				if (used.contains(sp))
+				if (used.contains(sp)) {
 					continue;
+				}
 				Var p = sp.getPredicate();
-				if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI))
+				if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
 					continue;
+				}
 				String step = r.renderIRI((IRI) p.getValue());
 				Var sub = sp.getSubject();
 				Var oo = sp.getObject();
@@ -1164,11 +1242,13 @@ public final class IrTransforms {
 					break;
 				}
 			}
-			if (!advanced)
+			if (!advanced) {
 				return null;
+			}
 		}
-		if (used.size() != sps.size() || steps.isEmpty())
+		if (used.size() != sps.size() || steps.isEmpty()) {
 			return null;
+		}
 		final String sTxt = "?" + sName;
 		final String oTxt = "?" + oName;
 		final String seq = (steps.size() == 1) ? steps.get(0) : String.join("/", steps);
@@ -1182,20 +1262,23 @@ public final class IrTransforms {
 	}
 
 	private static String[] parseSameTermVars(String text) {
-		if (text == null)
+		if (text == null) {
 			return null;
+		}
 		java.util.regex.Matcher m = java.util.regex.Pattern
 				.compile(
 						"(?i)\\s*FILTER\\s*\\(\\s*sameTerm\\s*\\(\\s*\\?(?<s>[A-Za-z_][\\w]*)\\s*,\\s*\\?(?<o>[A-Za-z_][\\w]*)\\s*\\)\\s*\\)\\s*")
 				.matcher(text);
-		if (!m.matches())
+		if (!m.matches()) {
 			return null;
+		}
 		return new String[] { m.group("s"), m.group("o") };
 	}
 
 	private static Var varNamed(String name) {
-		if (name == null)
+		if (name == null) {
 			return null;
+		}
 		return new Var(name);
 	}
 
@@ -1214,8 +1297,9 @@ public final class IrTransforms {
 	}
 
 	private static MatchTriple findTripleWithPredicateVar(IrBGP w, String varName) {
-		if (w == null || varName == null)
+		if (w == null || varName == null) {
 			return null;
+		}
 		for (IrNode ln : w.getLines()) {
 			if (ln instanceof IrStatementPattern) {
 				IrStatementPattern sp = (IrStatementPattern) ln;
@@ -1229,14 +1313,16 @@ public final class IrTransforms {
 	}
 
 	private static MatchTriple findTripleWithConstPredicateReusingObject(IrBGP w, Var obj) {
-		if (w == null || obj == null)
+		if (w == null || obj == null) {
 			return null;
+		}
 		for (IrNode ln : w.getLines()) {
 			if (ln instanceof IrStatementPattern) {
 				IrStatementPattern sp = (IrStatementPattern) ln;
 				Var p = sp.getPredicate();
-				if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI))
+				if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
 					continue;
+				}
 				if (sameVar(obj, sp.getSubject()) || sameVar(obj, sp.getObject())) {
 					return new MatchTriple(ln, sp.getSubject(), sp.getPredicate(), sp.getObject());
 				}
@@ -1246,10 +1332,12 @@ public final class IrTransforms {
 	}
 
 	private static boolean sameVar(Var a, Var b) {
-		if (a == null || b == null)
+		if (a == null || b == null) {
 			return false;
-		if (a.hasValue() || b.hasValue())
+		}
+		if (a.hasValue() || b.hasValue()) {
 			return false;
+		}
 		return java.util.Objects.equals(a.getName(), b.getName());
 	}
 
@@ -1265,8 +1353,9 @@ public final class IrTransforms {
 
 	/** Parse either "?p NOT IN (a, b, ...)" or a conjunction of inequalities into a negated property set. */
 	private static NsText parseNegatedSetText(final String condText) {
-		if (condText == null)
+		if (condText == null) {
 			return null;
+		}
 		final String s = condText.trim();
 
 		// Prefer explicit NOT IN form first
@@ -1279,8 +1368,9 @@ public final class IrTransforms {
 			java.util.List<String> items = new java.util.ArrayList<>();
 			for (String t : inner.split(",")) {
 				String tok = t.trim();
-				if (tok.isEmpty())
+				if (tok.isEmpty()) {
 					continue;
+				}
 				// Accept IRIs (either <...> or prefixed name form)
 				if (tok.startsWith("<") || tok.matches("[A-Za-z_][\\w.-]*:[^\\s,()]+")) {
 					items.add(tok);
@@ -1306,8 +1396,9 @@ public final class IrTransforms {
 				.compile("[\\s()]*(?<iri>[^\\s()]+)\\s*!=\\s*\\?(?<var>[A-Za-z_][\\w]*)[\\s()]*");
 		for (String part : parts) {
 			String term = part.trim();
-			if (term.isEmpty())
+			if (term.isEmpty()) {
 				return null;
+			}
 			java.util.regex.Matcher ml = pLeft.matcher(term);
 			java.util.regex.Matcher mr = pRight.matcher(term);
 			String vName;
@@ -1321,8 +1412,9 @@ public final class IrTransforms {
 			} else {
 				return null;
 			}
-			if (vName == null || vName.isEmpty())
+			if (vName == null || vName.isEmpty()) {
 				return null;
+			}
 			// accept only IRIs
 			String tok = iriTxt;
 			if (!(tok.startsWith("<") || tok.matches("[A-Za-z_][\\w.-]*:[^\\s,()]+"))) {
@@ -1342,8 +1434,9 @@ public final class IrTransforms {
 	}
 
 	private static IrBGP applyPaths(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		List<IrNode> out = new ArrayList<>();
 		List<IrNode> in = bgp.getLines();
 		for (int i = 0; i < in.size(); i++) {
@@ -1381,16 +1474,19 @@ public final class IrTransforms {
 						String end = null;
 						while (j < in.size()) {
 							IrNode n2 = in.get(j);
-							if (!(n2 instanceof IrStatementPattern))
+							if (!(n2 instanceof IrStatementPattern)) {
 								break;
+							}
 							IrStatementPattern sp = (IrStatementPattern) n2;
 							Var pv = sp.getPredicate();
-							if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI))
+							if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
 								break;
+							}
 							boolean forward = sameVar(cur, sp.getSubject());
 							boolean inverse = sameVar(cur, sp.getObject());
-							if (!forward && !inverse)
+							if (!forward && !inverse) {
 								break;
+							}
 							String step = r.renderIRI((IRI) pv.getValue());
 							parts.add(inverse ? ("^" + step) : step);
 							Var nextVar = forward ? sp.getObject() : sp.getSubject();
@@ -1490,6 +1586,12 @@ public final class IrTransforms {
 					IrStatementPattern sp = (IrStatementPattern) in.get(i + 1);
 					Var pv = sp.getPredicate();
 					if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
+						// Only fuse when the bridge var (?mid) is an _anon_path_* var; otherwise we might elide a user
+						// var like ?y
+						if (!isAnonPathVarText(pt.getObjectText())) {
+							out.add(n);
+							continue;
+						}
 						final String spSubj = varOrValue(sp.getSubject(), r);
 						final String spObj = varOrValue(sp.getObject(), r);
 						String joinStep = null;
@@ -1517,6 +1619,12 @@ public final class IrTransforms {
 				IrStatementPattern sp = (IrStatementPattern) in.get(i + 1);
 				Var pv = sp.getPredicate();
 				if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
+					// Only fuse when the bridge var (?mid) is an _anon_path_* var; otherwise we might elide a user var
+					// like ?y
+					if (!isAnonPathVarText(pt.getObjectText())) {
+						out.add(n);
+						continue;
+					}
 					final String spSubj = varOrValue(sp.getSubject(), r);
 					final String spObj = varOrValue(sp.getObject(), r);
 					String joinStep = null;
@@ -1585,8 +1693,9 @@ public final class IrTransforms {
 							Var unionGraphRef = null; // if branches are GRAPHed, ensure same ref
 							boolean ok = !u.getBranches().isEmpty();
 							for (IrBGP b : u.getBranches()) {
-								if (!ok)
+								if (!ok) {
 									break;
+								}
 								IrNode only = (b.getLines().size() == 1) ? b.getLines().get(0) : null;
 								IrStatementPattern spX;
 								if (only instanceof IrGraph) {
@@ -1662,12 +1771,14 @@ public final class IrTransforms {
 									IrStatementPattern joinSp = null;
 									boolean joinInverse = false;
 									for (IrNode ln : inner.getLines()) {
-										if (!(ln instanceof IrStatementPattern))
+										if (!(ln instanceof IrStatementPattern)) {
 											continue;
+										}
 										IrStatementPattern spj = (IrStatementPattern) ln;
 										Var pj = spj.getPredicate();
-										if (pj == null || !pj.hasValue() || !(pj.getValue() instanceof IRI))
+										if (pj == null || !pj.hasValue() || !(pj.getValue() instanceof IRI)) {
 											continue;
+										}
 										if (sameVar(mid, spj.getSubject()) && !isAnonPathVar(spj.getObject())) {
 											joinSp = spj;
 											joinInverse = false;
@@ -1692,8 +1803,9 @@ public final class IrTransforms {
 									// consumed sp0 and joinSp)
 									reordered.add(fused);
 									for (IrNode ln : inner.getLines()) {
-										if (ln == joinSp)
+										if (ln == joinSp) {
 											continue;
+										}
 										reordered.add(ln);
 									}
 									out.add(new IrGraph(graphRef, reordered));
@@ -1757,8 +1869,9 @@ public final class IrTransforms {
 				final java.util.List<String> iris = new java.util.ArrayList<>();
 				boolean ok = !u.getBranches().isEmpty();
 				for (IrBGP b : u.getBranches()) {
-					if (!ok)
+					if (!ok) {
 						break;
+					}
 					IrNode line = (b.getLines().size() == 1) ? b.getLines().get(0) : null;
 					if (line instanceof IrGraph) {
 						IrGraph g = (IrGraph) line;
@@ -1832,8 +1945,9 @@ public final class IrTransforms {
 					String startTxt = null, endTxt = null;
 					final java.util.List<String> seqs = new java.util.ArrayList<>();
 					for (IrBGP b : u.getBranches()) {
-						if (!ok)
+						if (!ok) {
 							break;
+						}
 						if (b.getLines().size() != 2 || !(b.getLines().get(0) instanceof IrStatementPattern)
 								|| !(b.getLines().get(1) instanceof IrStatementPattern)) {
 							ok = false;
@@ -1919,17 +2033,20 @@ public final class IrTransforms {
 						}
 					}
 					java.util.function.Function<IrBGP, TwoStep> parseTwo = (bg) -> {
-						if (bg == null || bg.getLines().size() != 2)
+						if (bg == null || bg.getLines().size() != 2) {
 							return null;
+						}
 						if (!(bg.getLines().get(0) instanceof IrStatementPattern)
-								|| !(bg.getLines().get(1) instanceof IrStatementPattern))
+								|| !(bg.getLines().get(1) instanceof IrStatementPattern)) {
 							return null;
+						}
 						final IrStatementPattern a = (IrStatementPattern) bg.getLines().get(0);
 						final IrStatementPattern c = (IrStatementPattern) bg.getLines().get(1);
 						final Var ap = a.getPredicate(), cp = c.getPredicate();
 						if (ap == null || !ap.hasValue() || !(ap.getValue() instanceof IRI) || cp == null
-								|| !cp.hasValue() || !(cp.getValue() instanceof IRI))
+								|| !cp.hasValue() || !(cp.getValue() instanceof IRI)) {
 							return null;
+						}
 						Var mid = null, startVar = null, endVar = null;
 						boolean firstForward = false, secondForward = false;
 						if (isAnonPathVar(a.getObject()) && sameVar(a.getObject(), c.getSubject())) {
@@ -1957,8 +2074,9 @@ public final class IrTransforms {
 							firstForward = false;
 							secondForward = true;
 						}
-						if (mid == null)
+						if (mid == null) {
 							return null;
+						}
 						final String sTxt = varOrValue(startVar, r);
 						final String eTxt = varOrValue(endVar, r);
 						final String step1 = (firstForward ? "" : "^") + r.renderIRI((IRI) ap.getValue());
@@ -2139,8 +2257,9 @@ public final class IrTransforms {
 					final java.util.List<String> basePaths = new java.util.ArrayList<>();
 					for (int bi = 0; bi < u.getBranches().size(); bi++) {
 						IrBGP b = u.getBranches().get(bi);
-						if (b.getLines().size() != 1)
+						if (b.getLines().size() != 1) {
 							continue;
+						}
 						IrNode only = b.getLines().get(0);
 						IrPathTriple pt = null;
 						if (only instanceof IrPathTriple) {
@@ -2152,11 +2271,13 @@ public final class IrTransforms {
 								pt = (IrPathTriple) g.getWhere().getLines().get(0);
 							}
 						}
-						if (pt == null)
+						if (pt == null) {
 							continue;
+						}
 						final String ptxt = pt.getPathText();
-						if (ptxt.contains("|") || ptxt.contains("?") || ptxt.contains("*") || ptxt.contains("+"))
+						if (ptxt.contains("|") || ptxt.contains("?") || ptxt.contains("*") || ptxt.contains("+")) {
 							continue; // skip inner alternation or quantifier
+						}
 						if (sTxt == null && oTxt == null) {
 							sTxt = pt.getSubjectText();
 							oTxt = pt.getObjectText();
@@ -2190,8 +2311,9 @@ public final class IrTransforms {
 					final java.util.List<String> paths = new java.util.ArrayList<>();
 					boolean allPt = true;
 					for (IrBGP b : u.getBranches()) {
-						if (!allPt)
+						if (!allPt) {
 							break;
+						}
 						IrNode only = (b.getLines().size() == 1) ? b.getLines().get(0) : null;
 						IrPathTriple pt;
 						if (only instanceof IrPathTriple) {
@@ -2248,8 +2370,9 @@ public final class IrTransforms {
 						final java.util.List<String> steps = new java.util.ArrayList<>();
 						boolean ok2 = true;
 						for (IrBGP b : u.getBranches()) {
-							if (!ok2)
+							if (!ok2) {
 								break;
+							}
 							if (b.getLines().size() != 1 || !(b.getLines().get(0) instanceof IrStatementPattern)) {
 								ok2 = false;
 								break;
@@ -2339,8 +2462,9 @@ public final class IrTransforms {
 	}
 
 	private static IrBGP normalizeGraphInnerPaths(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		java.util.List<IrNode> out = new java.util.ArrayList<>();
 		for (IrNode n : bgp.getLines()) {
 			if (n instanceof IrGraph) {
@@ -2355,8 +2479,9 @@ public final class IrTransforms {
 			} else if (n instanceof IrBGP || n instanceof IrOptional || n instanceof IrMinus || n instanceof IrUnion
 					|| n instanceof IrService) {
 				n = n.transformChildren(child -> {
-					if (child instanceof IrBGP)
+					if (child instanceof IrBGP) {
 						return normalizeGraphInnerPaths((IrBGP) child, r);
+					}
 					return child;
 				});
 				out.add(n);
@@ -2370,8 +2495,9 @@ public final class IrTransforms {
 	}
 
 	private static IrBGP fuseAdjacentPtThenSp(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		java.util.List<IrNode> in = bgp.getLines();
 		java.util.List<IrNode> out = new java.util.ArrayList<>();
 		for (int i = 0; i < in.size(); i++) {
@@ -2419,8 +2545,9 @@ public final class IrTransforms {
 				IrUnion u = (IrUnion) n;
 				IrUnion u2 = new IrUnion();
 				u2.setNewScope(u.isNewScope());
-				for (IrBGP b : u.getBranches())
+				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(fuseAdjacentPtThenSp(b, r));
+				}
 				out.add(u2);
 				continue;
 			}
@@ -2437,8 +2564,9 @@ public final class IrTransforms {
 	}
 
 	private static IrBGP fuseAdjacentSpThenPt(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		java.util.List<IrNode> in = bgp.getLines();
 		java.util.List<IrNode> out = new java.util.ArrayList<>();
 		for (int i = 0; i < in.size(); i++) {
@@ -2471,15 +2599,17 @@ public final class IrTransforms {
 	}
 
 	private static IrBGP joinPathWithLaterSp(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		java.util.List<IrNode> in = new java.util.ArrayList<>(bgp.getLines());
 		java.util.List<IrNode> out = new java.util.ArrayList<>();
 		java.util.Set<IrNode> removed = new java.util.HashSet<>();
 		for (int i = 0; i < in.size(); i++) {
 			IrNode n = in.get(i);
-			if (removed.contains(n))
+			if (removed.contains(n)) {
 				continue;
+			}
 			if (n instanceof IrPathTriple) {
 				IrPathTriple pt = (IrPathTriple) n;
 				String objText = pt.getObjectText();
@@ -2488,12 +2618,14 @@ public final class IrTransforms {
 					boolean inverse = false;
 					for (int j = i + 1; j < in.size(); j++) {
 						IrNode m = in.get(j);
-						if (!(m instanceof IrStatementPattern))
+						if (!(m instanceof IrStatementPattern)) {
 							continue;
+						}
 						IrStatementPattern sp = (IrStatementPattern) m;
 						Var pv = sp.getPredicate();
-						if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI))
+						if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
 							continue;
+						}
 						String sTxt = varOrValue(sp.getSubject(), r);
 						String oTxt = varOrValue(sp.getObject(), r);
 						if (objText.equals(sTxt) && !isAnonPathVar(sp.getObject())) {
@@ -2541,8 +2673,9 @@ public final class IrTransforms {
 				IrUnion u = (IrUnion) n;
 				IrUnion u2 = new IrUnion();
 				u2.setNewScope(u.isNewScope());
-				for (IrBGP b : u.getBranches())
+				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(joinPathWithLaterSp(b, r));
+				}
 				out.add(u2);
 				continue;
 			}
@@ -2558,22 +2691,26 @@ public final class IrTransforms {
 			out.add(n);
 		}
 		IrBGP res = new IrBGP();
-		for (IrNode n2 : out)
-			if (!removed.contains(n2))
+		for (IrNode n2 : out) {
+			if (!removed.contains(n2)) {
 				res.add(n2);
+			}
+		}
 		return res;
 	}
 
 	private static IrBGP fuseForwardThenInverseTail(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		java.util.List<IrNode> in = bgp.getLines();
 		java.util.List<IrNode> out = new java.util.ArrayList<>();
 		java.util.Set<IrNode> consumed = new java.util.HashSet<>();
 		for (int i = 0; i < in.size(); i++) {
 			IrNode n = in.get(i);
-			if (consumed.contains(n))
+			if (consumed.contains(n)) {
 				continue;
+			}
 			if (n instanceof IrStatementPattern) {
 				IrStatementPattern a = (IrStatementPattern) n;
 				Var ap = a.getPredicate();
@@ -2584,14 +2721,17 @@ public final class IrTransforms {
 						// find SP2 with subject endVar and object = ao
 						for (int j = i + 1; j < in.size(); j++) {
 							IrNode m = in.get(j);
-							if (!(m instanceof IrStatementPattern))
+							if (!(m instanceof IrStatementPattern)) {
 								continue;
+							}
 							IrStatementPattern b = (IrStatementPattern) m;
 							Var bp = b.getPredicate();
-							if (bp == null || !bp.hasValue() || !(bp.getValue() instanceof IRI))
+							if (bp == null || !bp.hasValue() || !(bp.getValue() instanceof IRI)) {
 								continue;
-							if (!sameVar(ao, b.getObject()))
+							}
+							if (!sameVar(ao, b.getObject())) {
 								continue;
+							}
 							// fuse: start = as, path = ap / ^bp, end = b.subject
 							String start = varOrValue(as, r);
 							String path = r.renderIRI((IRI) ap.getValue()) + "/^" + r.renderIRI((IRI) bp.getValue());
@@ -2601,8 +2741,9 @@ public final class IrTransforms {
 							consumed.add(m);
 							break;
 						}
-						if (consumed.contains(n))
+						if (consumed.contains(n)) {
 							continue;
+						}
 					}
 				}
 			}
@@ -2626,8 +2767,9 @@ public final class IrTransforms {
 				IrUnion u = (IrUnion) n;
 				IrUnion u2 = new IrUnion();
 				u2.setNewScope(u.isNewScope());
-				for (IrBGP b : u.getBranches())
+				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(fuseForwardThenInverseTail(b, r));
+				}
 				out.add(u2);
 				continue;
 			}
@@ -2644,9 +2786,11 @@ public final class IrTransforms {
 			out.add(n);
 		}
 		IrBGP res = new IrBGP();
-		for (IrNode n : out)
-			if (!consumed.contains(n))
+		for (IrNode n : out) {
+			if (!consumed.contains(n)) {
 				res.add(n);
+			}
+		}
 		return res;
 	}
 
@@ -2677,27 +2821,31 @@ public final class IrTransforms {
 		rendered.sort((a, b) -> {
 			boolean ar = a.startsWith("rdf:");
 			boolean br = b.startsWith("rdf:");
-			if (ar != br)
+			if (ar != br) {
 				return ar ? -1 : 1;
+			}
 			return a.compareTo(b);
 		});
 		return String.join("|", rendered);
 	}
 
 	private static IrBGP applyCollections(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		// Collect FIRST/REST triples by subject
 		final java.util.Map<String, IrStatementPattern> firstByS = new java.util.LinkedHashMap<>();
 		final java.util.Map<String, IrStatementPattern> restByS = new java.util.LinkedHashMap<>();
 		for (IrNode n : bgp.getLines()) {
-			if (!(n instanceof IrStatementPattern))
+			if (!(n instanceof IrStatementPattern)) {
 				continue;
+			}
 			IrStatementPattern sp = (IrStatementPattern) n;
 			Var s = sp.getSubject();
 			Var p = sp.getPredicate();
-			if (s == null || p == null || s.getName() == null || !p.hasValue() || !(p.getValue() instanceof IRI))
+			if (s == null || p == null || s.getName() == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
 				continue;
+			}
 			IRI pred = (IRI) p.getValue();
 			if (RDF.FIRST.equals(pred)) {
 				firstByS.put(s.getName(), sp);
@@ -2710,8 +2858,9 @@ public final class IrTransforms {
 		final java.util.Set<IrNode> consumed = new java.util.LinkedHashSet<>();
 
 		for (String head : firstByS.keySet()) {
-			if (head == null || (!head.startsWith("_anon_collection_") && !restByS.containsKey(head)))
+			if (head == null || (!head.startsWith("_anon_collection_") && !restByS.containsKey(head))) {
 				continue;
+			}
 			java.util.List<String> items = new java.util.ArrayList<>();
 			java.util.Set<String> spine = new java.util.LinkedHashSet<>();
 			String cur = head;
@@ -2762,8 +2911,9 @@ public final class IrTransforms {
 		// Rewrite lines: remove consumed, replace head var in path subjects
 		List<IrNode> out = new ArrayList<>();
 		for (IrNode n : bgp.getLines()) {
-			if (consumed.contains(n))
+			if (consumed.contains(n)) {
 				continue;
+			}
 			if (n instanceof IrPathTriple) {
 				IrPathTriple pt = (IrPathTriple) n;
 				String s = pt.getSubjectText();
@@ -2790,10 +2940,12 @@ public final class IrTransforms {
 	}
 
 	private static String varOrValue(Var v, TupleExprIRRenderer r) {
-		if (v == null)
+		if (v == null) {
 			return "?_";
-		if (v.hasValue())
+		}
+		if (v.hasValue()) {
 			return r.renderValue(v.getValue());
+		}
 		return "?" + v.getName();
 	}
 }
