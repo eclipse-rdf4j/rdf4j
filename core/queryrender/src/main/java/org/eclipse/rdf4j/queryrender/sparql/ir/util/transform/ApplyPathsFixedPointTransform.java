@@ -43,6 +43,7 @@ public final class ApplyPathsFixedPointTransform extends BaseTransform {
 			next = CoalesceAdjacentGraphsTransform.apply(next);
 			// Now that adjacent GRAPHs are coalesced, normalize inner GRAPH bodies for SP/PT fusions
 			next = ApplyNormalizeGraphInnerPathsTransform.apply(next, r);
+			// (disabled) Canonicalize grouping around split middle steps; rely on structural fusions instead
 			cur = next;
 		}
 		return cur;

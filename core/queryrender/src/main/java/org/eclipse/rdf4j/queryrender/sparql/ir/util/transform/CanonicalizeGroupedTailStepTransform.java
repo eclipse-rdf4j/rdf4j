@@ -15,9 +15,14 @@ import java.util.List;
 
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
 /**
  * Normalize grouping of a final tail step like "/foaf:name" so that it appears outside the top-level grouped PT/PT
@@ -42,25 +47,38 @@ public final class CanonicalizeGroupedTailStepTransform extends BaseTransform {
 			if (n instanceof IrPathTriple) {
 				IrPathTriple pt = (IrPathTriple) n;
 				String ptxt = pt.getPathText();
-				// First: move a final tail step out of the right-hand group when safe:
-				// (LEFT)/((RIGHT/tail)) -> ((LEFT)/(RIGHT))/tail
-				String afterTail = rewriteGroupedTail(ptxt);
-				// Second: normalize split-middle grouping like ((L)/(M))/((R)) -> ((L)/(M/(R)))
-				String rew = rewriteFuseSplitMiddle(afterTail);
+				String rew = rewriteFuseSplitMiddle(ptxt);
 				if (!rew.equals(ptxt)) {
-					IrPathTriple np = new IrPathTriple(pt.getSubject(), rew, pt.getObject(), pt.isNewScope(),
-							pt.getPathVars());
-					m = np;
+					m = new IrPathTriple(pt.getSubject(), rew, pt.getObject());
 				}
+			} else if (n instanceof IrGraph) {
+				IrGraph g = (IrGraph) n;
+				m = new IrGraph(g.getGraph(), apply(g.getWhere(), r));
+			} else if (n instanceof IrOptional) {
+				IrOptional o = (IrOptional) n;
+				m = new IrOptional(apply(o.getWhere(), r));
+			} else if (n instanceof IrMinus) {
+				IrMinus mi = (IrMinus) n;
+				m = new IrMinus(apply(mi.getWhere(), r));
+			} else if (n instanceof IrUnion) {
+				IrUnion u = (IrUnion) n;
+				IrUnion u2 = new IrUnion();
+				u2.setNewScope(u.isNewScope());
+				for (IrBGP b : u.getBranches()) {
+					u2.addBranch(apply(b, r));
+				}
+				m = u2;
+			} else if (n instanceof IrService) {
+				IrService s = (IrService) n;
+				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), r));
 			} else if (n instanceof IrSubSelect) {
 				// keep as-is
-			} else {
-				// Generic recursion into containers
-				m = BaseTransform.rewriteContainers(n, child -> apply(child, r));
 			}
 			out.add(m);
 		}
-		return BaseTransform.bgpWithLines(bgp, out);
+		IrBGP res = new IrBGP();
+		out.forEach(res::add);
+		return res;
 	}
 
 	/**
@@ -93,12 +111,6 @@ public final class CanonicalizeGroupedTailStepTransform extends BaseTransform {
 			return s;
 		}
 		String right = rightWithParens.substring(1, rightWithParens.length() - 1);
-		// Safety: only rewrite when MID is a simple step/group without quantifier. Rewriting
-		// a quantified middle part like "(!(a|^b)? )" is error-prone and can lead to
-		// mismatched parentheses or semantics changes in rare shapes.
-		if (mid.indexOf('?') >= 0 || mid.indexOf('*') >= 0 || mid.indexOf('+') >= 0) {
-			return s;
-		}
 		// Build fused: ((LEFT)/(MID/(RIGHT)))
 		return "((" + left + ")/(" + mid + "/(" + right + ")))";
 	}
