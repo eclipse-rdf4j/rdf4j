@@ -44,6 +44,17 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrText;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrTripleLike;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyCollectionsTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyNegatedPropertySetTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyPathsFixedPointTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyPropertyListsTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CanonicalizeBareNpsOrientationTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CoalesceAdjacentGraphsTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FlattenSingletonUnionsTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseAltInverseTailBGPTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.MergeOptionalIntoPrecedingGraphTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeZeroOrOneSubselectTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ReorderFiltersInOptionalBodiesTransform;
 
 /**
  * IR transformation pipeline (best-effort). Keep it simple and side-effect free when possible.
@@ -53,7 +64,7 @@ public final class IrTransforms {
 	}
 
 	/** Replace IrUnion nodes with a single branch by their contents to avoid extraneous braces. */
-	private static IrBGP flattenSingletonUnions(IrBGP bgp) {
+	public static IrBGP flattenSingletonUnions(IrBGP bgp) {
 		if (bgp == null) {
 			return null;
 		}
@@ -92,14 +103,14 @@ public final class IrTransforms {
 	}
 
 	// Local copy of parser's _anon_path_ naming hint for safe path fusions
-	private static final String ANON_PATH_PREFIX = "_anon_path_";
+	public static final String ANON_PATH_PREFIX = "_anon_path_";
 
-	private static boolean isAnonPathVar(Var v) {
+	public static boolean isAnonPathVar(Var v) {
 		return v != null && !v.hasValue() && v.getName() != null && v.getName().startsWith(ANON_PATH_PREFIX);
 	}
 
 	// Same check, but for textual IR variables like "?_anon_path_xxx"
-	private static boolean isAnonPathVarText(String text) {
+	public static boolean isAnonPathVarText(String text) {
 		if (text == null) {
 			return false;
 		}
@@ -114,7 +125,7 @@ public final class IrTransforms {
 	 * If the given path text is a negated property set of the form !(a|b|...), return a version where each member is
 	 * inverted by toggling the leading '^' (i.e., a -> ^a, ^a -> a). Returns null when the input is not a simple NPS.
 	 */
-	private static String invertNegatedPropertySet(String npsText) {
+	public static String invertNegatedPropertySet(String npsText) {
 		if (npsText == null) {
 			return null;
 		}
@@ -156,29 +167,29 @@ public final class IrTransforms {
 			irNode = select.transformChildren(child -> {
 				if (child instanceof IrBGP) {
 					IrBGP w = (IrBGP) child;
-					w = normalizeZeroOrOneSubselect(w, r);
-					w = coalesceAdjacentGraphs(w);
-					w = applyCollections(w, r);
-					w = applyNegatedPropertySet(w, r);
-					w = normalizeZeroOrOneSubselect(w, r);
+					w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
+					w = CoalesceAdjacentGraphsTransform.apply(w);
+					w = ApplyCollectionsTransform.apply(w, r);
+					w = ApplyNegatedPropertySetTransform.apply(w, r);
+					w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
 
-					w = applyPathsFixedPoint(w, r);
+					w = ApplyPathsFixedPointTransform.apply(w, r);
 
 					// Collections and options later; first ensure path alternations are extended when possible
 					// Merge OPTIONAL into preceding GRAPH only when it is clearly a single-step adjunct and safe.
-					w = mergeOptionalIntoPrecedingGraph(w);
-					w = fuseAltInverseTailBGP(w, r);
-					w = flattenSingletonUnions(w);
+					w = MergeOptionalIntoPrecedingGraphTransform.apply(w);
+					w = FuseAltInverseTailBGPTransform.apply(w, r);
+					w = FlattenSingletonUnionsTransform.apply(w);
 					// Reorder OPTIONAL-level filters before nested OPTIONALs when safe (variable-availability
 					// heuristic)
-					w = reorderFiltersInOptionalBodies(w, r);
-					w = applyPropertyLists(w, r);
+					w = ReorderFiltersInOptionalBodiesTransform.apply(w, r);
+					w = ApplyPropertyListsTransform.apply(w, r);
 
 					// Ensure bare NPS triples use a stable subject/object orientation for idempotence
-					w = canonicalizeBareNpsOrientation(w);
-					w = normalizeZeroOrOneSubselect(w, r);
+					w = CanonicalizeBareNpsOrientationTransform.apply(w);
+					w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
 
-					w = applyPathsFixedPoint(w, r);
+					w = ApplyPathsFixedPointTransform.apply(w, r);
 
 					return w;
 				}
@@ -194,7 +205,7 @@ public final class IrTransforms {
 	 * names, inverting each NPS member when flipping. This avoids r1/r2 oscillation when the parser changes path
 	 * orientation across round-trips.
 	 */
-	private static IrBGP canonicalizeBareNpsOrientation(IrBGP bgp) {
+	public static IrBGP canonicalizeBareNpsOrientation(IrBGP bgp) {
 		if (bgp == null) {
 			return null;
 		}
@@ -254,7 +265,7 @@ public final class IrTransforms {
 		return res;
 	}
 
-	private static String safeVarName(Var v) {
+	public static String safeVarName(Var v) {
 		if (v == null || v.hasValue()) {
 			return null;
 		}
@@ -268,7 +279,7 @@ public final class IrTransforms {
 	 * We detect convergence by rendering the WHERE block as text using the renderer's IR printer. This is conservative
 	 * but robust across small object identity changes in IR nodes.
 	 */
-	private static IrBGP applyPathsFixedPoint(IrBGP bgp, TupleExprIRRenderer r) {
+	public static IrBGP applyPathsFixedPoint(IrBGP bgp, TupleExprIRRenderer r) {
 		if (bgp == null) {
 			return null;
 		}
@@ -299,7 +310,7 @@ public final class IrTransforms {
 	}
 
 	/** Build a stable text fingerprint of a WHERE block for fixed-point detection. */
-	private static String fingerprintWhere(IrBGP where, TupleExprIRRenderer r) {
+	public static String fingerprintWhere(IrBGP where, TupleExprIRRenderer r) {
 		final IrSelect tmp = new IrSelect();
 		tmp.setWhere(where);
 		// Render as a subselect to avoid prologue/dataset noise; header is constant (SELECT *)
@@ -307,7 +318,7 @@ public final class IrTransforms {
 	}
 
 	/** Move IrFilter lines inside OPTIONAL bodies so they precede nested OPTIONAL lines when it is safe. */
-	private static IrBGP reorderFiltersInOptionalBodies(IrBGP bgp, TupleExprIRRenderer r) {
+	public static IrBGP reorderFiltersInOptionalBodies(IrBGP bgp, TupleExprIRRenderer r) {
 		if (bgp == null) {
 			return null;
 		}
@@ -339,7 +350,7 @@ public final class IrTransforms {
 		return res;
 	}
 
-	private static IrBGP reorderFiltersWithin(IrBGP inner, TupleExprIRRenderer r) {
+	public static IrBGP reorderFiltersWithin(IrBGP inner, TupleExprIRRenderer r) {
 		if (inner == null) {
 			return null;
 		}
@@ -408,7 +419,7 @@ public final class IrTransforms {
 		return res;
 	}
 
-	private static Set<String> collectVarsFromLines(List<IrNode> lines, TupleExprIRRenderer r) {
+	public static Set<String> collectVarsFromLines(List<IrNode> lines, TupleExprIRRenderer r) {
 		final Set<String> out = new LinkedHashSet<>();
 		if (lines == null) {
 			return out;
@@ -445,7 +456,7 @@ public final class IrTransforms {
 		return out;
 	}
 
-	private static void addVarName(Set<String> out, Var v) {
+	public static void addVarName(Set<String> out, Var v) {
 		if (v == null || v.hasValue()) {
 			return;
 		}
@@ -455,7 +466,7 @@ public final class IrTransforms {
 		}
 	}
 
-	private static Set<String> extractVarsFromText(String s) {
+	public static Set<String> extractVarsFromText(String s) {
 		final Set<String> out = new LinkedHashSet<>();
 		if (s == null) {
 			return out;
@@ -468,7 +479,7 @@ public final class IrTransforms {
 	}
 
 	/** Fuse pattern: IrPathTriple pt; IrUnion u of two opposite-direction constant tail triples to same end var. */
-	private static IrBGP fusePathPlusTailAlternationUnion(IrBGP bgp, TupleExprIRRenderer r) {
+	public static IrBGP fusePathPlusTailAlternationUnion(IrBGP bgp, TupleExprIRRenderer r) {
 		if (bgp == null) {
 			return null;
 		}
@@ -522,7 +533,7 @@ public final class IrTransforms {
 		return res;
 	}
 
-	private static final class BranchTriple {
+	public static final class BranchTriple {
 		final Var graph; // may be null
 		final IrStatementPattern sp;
 
@@ -532,7 +543,7 @@ public final class IrTransforms {
 		}
 	}
 
-	private static BranchTriple getSingleBranchSp(IrBGP branch) {
+	public static BranchTriple getSingleBranchSp(IrBGP branch) {
 		if (branch == null) {
 			return null;
 		}
@@ -554,7 +565,7 @@ public final class IrTransforms {
 		return null;
 	}
 
-	private static boolean compatibleGraphs(Var a, Var b) {
+	public static boolean compatibleGraphs(Var a, Var b) {
 		if (a == null && b == null) {
 			return true;
 		}
@@ -564,7 +575,7 @@ public final class IrTransforms {
 		return sameVar(a, b);
 	}
 
-	private static final class TripleJoin {
+	public static final class TripleJoin {
 		final String iri; // compacted IRI text (using renderer)
 		final Var end; // end variable
 		final boolean inverse; // true when matching "?end p ?mid"
@@ -576,7 +587,7 @@ public final class IrTransforms {
 		}
 	}
 
-	private static TripleJoin classifyTailJoin(BranchTriple bt, Var midVar, TupleExprIRRenderer r) {
+	public static TripleJoin classifyTailJoin(BranchTriple bt, Var midVar, TupleExprIRRenderer r) {
 		if (bt == null || bt.sp == null) {
 			return null;
 		}
@@ -598,7 +609,7 @@ public final class IrTransforms {
 	}
 
 	/** Merge sequences of adjacent IrGraph blocks with identical graph ref into a single IrGraph. */
-	private static IrBGP coalesceAdjacentGraphs(IrBGP bgp) {
+	public static IrBGP coalesceAdjacentGraphs(IrBGP bgp) {
 		if (bgp == null) {
 			return null;
 		}
@@ -670,7 +681,7 @@ public final class IrTransforms {
 	 * producing a new path with an added '/^p' or '/p' segment. This version indexes join candidates and works inside
 	 * GRAPH bodies as well. It is conservative: only constant predicate tails are fused and containers are preserved.
 	 */
-	private static IrBGP fuseAltInverseTailBGP(IrBGP bgp, TupleExprIRRenderer r) {
+	public static IrBGP fuseAltInverseTailBGP(IrBGP bgp, TupleExprIRRenderer r) {
 		if (bgp == null) {
 			return null;
 		}
@@ -805,7 +816,7 @@ public final class IrTransforms {
 	 * (IrStatementPattern or IrPathTriple). This avoids altering other cases bgp tests expect the OPTIONAL to stay
 	 * outside or include its own inner GRAPH.
 	 */
-	private static IrBGP mergeOptionalIntoPrecedingGraph(IrBGP bgp) {
+	public static IrBGP mergeOptionalIntoPrecedingGraph(IrBGP bgp) {
 		if (bgp == null) {
 			return null;
 		}
@@ -899,7 +910,7 @@ public final class IrTransforms {
 		return res;
 	}
 
-	private static boolean isSimpleOptionalBody(IrBGP ow) {
+	public static boolean isSimpleOptionalBody(IrBGP ow) {
 		if (ow == null) {
 			return false;
 		}
@@ -914,7 +925,7 @@ public final class IrTransforms {
 		return true;
 	}
 
-	private static IrNode transformNodeForMerge(IrNode n) {
+	public static IrNode transformNodeForMerge(IrNode n) {
 		return n.transformChildren(child -> {
 			if (child instanceof IrBGP) {
 				return mergeOptionalIntoPrecedingGraph((IrBGP) child);
@@ -932,7 +943,7 @@ public final class IrTransforms {
 	 * predicate variable, and optionally chains to an immediately following GRAPH with the same graph term and a
 	 * constant predicate triple that reuses the first triple's object as a bridge.
 	 */
-	private static IrBGP applyNegatedPropertySet(IrBGP bgp, TupleExprIRRenderer r) {
+	public static IrBGP applyNegatedPropertySet(IrBGP bgp, TupleExprIRRenderer r) {
 		if (bgp == null) {
 			return null;
 		}
@@ -1201,7 +1212,7 @@ public final class IrTransforms {
 	}
 
 	// Within a union branch, compact a simple var-predicate + NOT IN filter to a negated property set path triple.
-	private static IrBGP rewriteSimpleNpsOnly(IrBGP bgp, TupleExprIRRenderer r) {
+	public static IrBGP rewriteSimpleNpsOnly(IrBGP bgp, TupleExprIRRenderer r) {
 		if (bgp == null) {
 			return null;
 		}
@@ -1273,7 +1284,7 @@ public final class IrTransforms {
 		return res;
 	}
 
-	private static void copyAllExcept(IrBGP from, IrBGP to, IrNode except) {
+	public static void copyAllExcept(IrBGP from, IrBGP to, IrNode except) {
 		if (from == null) {
 			return;
 		}
@@ -1285,7 +1296,7 @@ public final class IrTransforms {
 		}
 	}
 
-	private static IrBGP applyPropertyLists(IrBGP bgp, TupleExprIRRenderer r) {
+	public static IrBGP applyPropertyLists(IrBGP bgp, TupleExprIRRenderer r) {
 		if (bgp == null) {
 			return null;
 		}
@@ -1353,7 +1364,7 @@ public final class IrTransforms {
 	 * single IrText line equal to "FILTER (sameTerm(?s, ?o))", and the other branch a sequence of IrStatementPattern
 	 * lines forming a chain from ?s to ?o via _anon_path_* variables. The result is an IrPathTriple "?s (seq)? ?o".
 	 */
-	private static IrBGP normalizeZeroOrOneSubselect(IrBGP bgp, TupleExprIRRenderer r) {
+	public static IrBGP normalizeZeroOrOneSubselect(IrBGP bgp, TupleExprIRRenderer r) {
 		if (bgp == null) {
 			return null;
 		}
@@ -1380,7 +1391,7 @@ public final class IrTransforms {
 		return res;
 	}
 
-	private static IrPathTriple tryRewriteZeroOrOne(IrSubSelect ss, TupleExprIRRenderer r) {
+	public static IrPathTriple tryRewriteZeroOrOne(IrSubSelect ss, TupleExprIRRenderer r) {
 		IrSelect sel = ss.getSelect();
 		if (sel == null || sel.getWhere() == null) {
 			return null;
@@ -1482,12 +1493,12 @@ public final class IrTransforms {
 		return new IrPathTriple(varNamed(sName), expr, varNamed(oName));
 	}
 
-	private static boolean isSameTermFilterBranch(IrBGP b) {
+	public static boolean isSameTermFilterBranch(IrBGP b) {
 		return b != null && b.getLines().size() == 1 && b.getLines().get(0) instanceof IrText
 				&& parseSameTermVars(((IrText) b.getLines().get(0)).getText()) != null;
 	}
 
-	private static String[] parseSameTermVars(String text) {
+	public static String[] parseSameTermVars(String text) {
 		if (text == null) {
 			return null;
 		}
@@ -1501,14 +1512,14 @@ public final class IrTransforms {
 		return new String[] { m.group("s"), m.group("o") };
 	}
 
-	private static Var varNamed(String name) {
+	public static Var varNamed(String name) {
 		if (name == null) {
 			return null;
 		}
 		return new Var(name);
 	}
 
-	private static final class MatchTriple {
+	public static final class MatchTriple {
 		final IrNode node;
 		final Var subject;
 		final Var predicate;
@@ -1522,7 +1533,7 @@ public final class IrTransforms {
 		}
 	}
 
-	private static MatchTriple findTripleWithPredicateVar(IrBGP w, String varName) {
+	public static MatchTriple findTripleWithPredicateVar(IrBGP w, String varName) {
 		if (w == null || varName == null) {
 			return null;
 		}
@@ -1538,7 +1549,7 @@ public final class IrTransforms {
 		return null;
 	}
 
-	private static MatchTriple findTripleWithConstPredicateReusingObject(IrBGP w, Var obj) {
+	public static MatchTriple findTripleWithConstPredicateReusingObject(IrBGP w, Var obj) {
 		if (w == null || obj == null) {
 			return null;
 		}
@@ -1557,7 +1568,7 @@ public final class IrTransforms {
 		return null;
 	}
 
-	private static boolean sameVar(Var a, Var b) {
+	public static boolean sameVar(Var a, Var b) {
 		if (a == null || b == null) {
 			return false;
 		}
@@ -1567,7 +1578,7 @@ public final class IrTransforms {
 		return Objects.equals(a.getName(), b.getName());
 	}
 
-	private static final class NsText {
+	public static final class NsText {
 		final String varName;
 		final List<String> items;
 
@@ -1578,7 +1589,7 @@ public final class IrTransforms {
 	}
 
 	/** Parse either "?p NOT IN (a, b, ...)" or a conjunction of inequalities into a negated property set. */
-	private static NsText parseNegatedSetText(final String condText) {
+	public static NsText parseNegatedSetText(final String condText) {
 		if (condText == null) {
 			return null;
 		}
@@ -1659,7 +1670,7 @@ public final class IrTransforms {
 		return null;
 	}
 
-	private static IrBGP applyPaths(IrBGP bgp, TupleExprIRRenderer r) {
+	public static IrBGP applyPaths(IrBGP bgp, TupleExprIRRenderer r) {
 		if (bgp == null) {
 			return null;
 		}
@@ -2737,7 +2748,7 @@ public final class IrTransforms {
 		return res;
 	}
 
-	private static IrBGP normalizeGraphInnerPaths(IrBGP bgp, TupleExprIRRenderer r) {
+	public static IrBGP normalizeGraphInnerPaths(IrBGP bgp, TupleExprIRRenderer r) {
 		if (bgp == null) {
 			return null;
 		}
@@ -2773,7 +2784,7 @@ public final class IrTransforms {
 	}
 
 	/** Fuse adjacent IrPathTriple nodes when the first's object equals the second's subject. */
-	private static IrBGP fuseAdjacentPtThenPt(IrBGP bgp) {
+	public static IrBGP fuseAdjacentPtThenPt(IrBGP bgp) {
 		if (bgp == null) {
 			return null;
 		}
@@ -2837,7 +2848,7 @@ public final class IrTransforms {
 		return res;
 	}
 
-	private static IrBGP fuseAdjacentPtThenSp(IrBGP bgp, TupleExprIRRenderer r) {
+	public static IrBGP fuseAdjacentPtThenSp(IrBGP bgp, TupleExprIRRenderer r) {
 		if (bgp == null) {
 			return null;
 		}
@@ -2909,7 +2920,7 @@ public final class IrTransforms {
 		return res;
 	}
 
-	private static IrBGP fuseAdjacentSpThenPt(IrBGP bgp, TupleExprIRRenderer r) {
+	public static IrBGP fuseAdjacentSpThenPt(IrBGP bgp, TupleExprIRRenderer r) {
 		if (bgp == null) {
 			return null;
 		}
@@ -2942,7 +2953,7 @@ public final class IrTransforms {
 		return res;
 	}
 
-	private static IrBGP joinPathWithLaterSp(IrBGP bgp, TupleExprIRRenderer r) {
+	public static IrBGP joinPathWithLaterSp(IrBGP bgp, TupleExprIRRenderer r) {
 		if (bgp == null) {
 			return null;
 		}
@@ -3041,7 +3052,7 @@ public final class IrTransforms {
 		return res;
 	}
 
-	private static IrBGP fuseForwardThenInverseTail(IrBGP bgp, TupleExprIRRenderer r) {
+	public static IrBGP fuseForwardThenInverseTail(IrBGP bgp, TupleExprIRRenderer r) {
 		if (bgp == null) {
 			return null;
 		}
@@ -3139,7 +3150,7 @@ public final class IrTransforms {
 	// Render a list of IRI tokens (either prefixed like "rdf:type" or <iri>) as a spaced " | "-joined list,
 	// with a stable, preference-biased ordering: primarily by prefix name descending (so "rdf:" before "ex:"),
 	// then by the full rendered text, to keep output deterministic.
-	private static String joinIrisWithPreferredOrder(List<String> tokens, TupleExprIRRenderer r) {
+	public static String joinIrisWithPreferredOrder(List<String> tokens, TupleExprIRRenderer r) {
 		List<String> rendered = new ArrayList<>(tokens.size());
 		for (String tok : tokens) {
 			String t = tok == null ? "" : tok.trim();
@@ -3171,7 +3182,7 @@ public final class IrTransforms {
 		return String.join("|", rendered);
 	}
 
-	private static IrBGP applyCollections(IrBGP bgp, TupleExprIRRenderer r) {
+	public static IrBGP applyCollections(IrBGP bgp, TupleExprIRRenderer r) {
 		if (bgp == null) {
 			return null;
 		}
@@ -3275,7 +3286,7 @@ public final class IrTransforms {
 		return res;
 	}
 
-	private static String varOrValue(Var v, TupleExprIRRenderer r) {
+	public static String varOrValue(Var v, TupleExprIRRenderer r) {
 		if (v == null) {
 			return "?_";
 		}
