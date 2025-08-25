@@ -31,11 +31,36 @@ import com.google.gson.JsonSerializer;
 
 /** Lightweight IR debug printer using Gson pretty printing. */
 public final class IrDebug {
+	private final static Set<String> ignore = Set.of("parent", "costEstimate", "totalTimeNanosActual", "cardinality",
+			"cachedHashCode", "isVariableScopeChange", "resultSizeEstimate", "resultSizeActual");
+
 	private IrDebug() {
 	}
 
-	private final static Set<String> ignore = Set.of("parent", "costEstimate", "totalTimeNanosActual", "cardinality",
-			"cachedHashCode", "isVariableScopeChange", "resultSizeEstimate", "resultSizeActual");
+	public static String dump(IrNode node) {
+
+		Gson gson = new GsonBuilder().setPrettyPrinting()
+				.registerTypeAdapter(Var.class, new VarSerializer())
+				.registerTypeAdapter(IrNode.class, new ClassNameAdapter<IrNode>())
+				.setExclusionStrategies(new ExclusionStrategy() {
+					@Override
+					public boolean shouldSkipField(FieldAttributes f) {
+						// Exclude any field literally named "parent"
+
+						return ignore.contains(f.getName());
+
+					}
+
+					@Override
+					public boolean shouldSkipClass(Class<?> clazz) {
+						// We don't want to skip entire classes, so return false
+						return false;
+					}
+				})
+
+				.create();
+		return gson.toJson(node);
+	}
 
 	static class VarSerializer implements JsonSerializer<Var> {
 		@Override
@@ -67,30 +92,5 @@ public final class IrDebug {
 				throw new JsonParseException(e);
 			}
 		}
-	}
-
-	public static String dump(IrNode node) {
-
-		Gson gson = new GsonBuilder().setPrettyPrinting()
-				.registerTypeAdapter(Var.class, new VarSerializer())
-				.registerTypeAdapter(IrNode.class, new ClassNameAdapter<IrNode>())
-				.setExclusionStrategies(new ExclusionStrategy() {
-					@Override
-					public boolean shouldSkipField(FieldAttributes f) {
-						// Exclude any field literally named "parent"
-
-						return ignore.contains(f.getName());
-
-					}
-
-					@Override
-					public boolean shouldSkipClass(Class<?> clazz) {
-						// We don't want to skip entire classes, so return false
-						return false;
-					}
-				})
-
-				.create();
-		return gson.toJson(node);
 	}
 }
