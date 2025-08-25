@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.queryrender.sparql.ir;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.UnaryOperator;
 
 /**
  * Textual IR for a SELECT query.
@@ -84,7 +85,7 @@ public class IrSelect extends IrNode {
 	}
 
 	@Override
-	public IrNode transformChildren(java.util.function.UnaryOperator<IrNode> op) {
+	public IrNode transformChildren(UnaryOperator<IrNode> op) {
 		IrBGP newWhere = this.where;
 		if (newWhere != null) {
 			IrNode t = op.apply(newWhere);

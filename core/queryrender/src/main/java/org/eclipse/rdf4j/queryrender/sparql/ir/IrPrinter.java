@@ -52,5 +52,5 @@ public interface IrPrinter {
 	String renderTermWithOverrides(Var v);
 
 	// Render a nested subselect as text
-	String renderSubselect(org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect select);
+	String renderSubselect(IrSelect select);
 }
