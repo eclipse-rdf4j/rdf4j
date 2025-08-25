@@ -149,42 +149,44 @@ public final class IrTransforms {
 		if (select == null) {
 			return null;
 		}
-		// Use transformChildren to rewrite WHERE/BGPs functionally in a single pass order
-		return (IrSelect) select.transformChildren(child -> {
-			if (child instanceof IrBGP) {
-				IrBGP w = (IrBGP) child;
-				w = coalesceAdjacentGraphs(w);
 
-				w = applyCollections(w, r);
-				w = applyNegatedPropertySet(w, r);
-				w = applyPaths(w, r);
-				// Fuse a path followed by UNION of opposite-direction tail triples into an alternation tail
-				w = fusePathPlusTailAlternationUnion(w, r);
-				// Merge adjacent GRAPH blocks with the same graph ref so that downstream fusers see a single body
-				w = coalesceAdjacentGraphs(w);
-				// Now that adjacent GRAPHs are coalesced, normalize inner GRAPH bodies for SP/PT fusions
-				w = normalizeGraphInnerPaths(w, r);
+		IrNode irNode = null;
+		for (int i = 0; i < 100; i++) {
+			// Use transformChildren to rewrite WHERE/BGPs functionally in a single pass order
+			irNode = select.transformChildren(child -> {
+				if (child instanceof IrBGP) {
+					IrBGP w = (IrBGP) child;
+					w = normalizeZeroOrOneSubselect(w, r);
+					w = coalesceAdjacentGraphs(w);
+					w = applyCollections(w, r);
+					w = applyNegatedPropertySet(w, r);
+					w = normalizeZeroOrOneSubselect(w, r);
 
-				w = applyPathsFixedPoint(w, r);
+					w = applyPathsFixedPoint(w, r);
 
-				// Collections and options later; first ensure path alternations are extended when possible
-				// Merge OPTIONAL into preceding GRAPH only when it is clearly a single-step adjunct and safe.
-				w = mergeOptionalIntoPrecedingGraph(w);
-				w = fuseAltInverseTailBGP(w, r);
-				w = flattenSingletonUnions(w);
-				// Reorder OPTIONAL-level filters before nested OPTIONALs when safe (variable-availability heuristic)
-				w = reorderFiltersInOptionalBodies(w, r);
-				w = applyPropertyLists(w, r);
-				w = normalizeZeroOrOneSubselect(w, r);
+					// Collections and options later; first ensure path alternations are extended when possible
+					// Merge OPTIONAL into preceding GRAPH only when it is clearly a single-step adjunct and safe.
+					w = mergeOptionalIntoPrecedingGraph(w);
+					w = fuseAltInverseTailBGP(w, r);
+					w = flattenSingletonUnions(w);
+					// Reorder OPTIONAL-level filters before nested OPTIONALs when safe (variable-availability
+					// heuristic)
+					w = reorderFiltersInOptionalBodies(w, r);
+					w = applyPropertyLists(w, r);
 
-				// Ensure bare NPS triples use a stable subject/object orientation for idempotence
-				w = canonicalizeBareNpsOrientation(w);
-				w = applyPathsFixedPoint(w, r);
+					// Ensure bare NPS triples use a stable subject/object orientation for idempotence
+					w = canonicalizeBareNpsOrientation(w);
+					w = normalizeZeroOrOneSubselect(w, r);
 
-				return w;
-			}
-			return child;
-		});
+					w = applyPathsFixedPoint(w, r);
+
+					return w;
+				}
+				return child;
+			});
+		}
+
+		return (IrSelect) irNode;
 	}
 
 	/**
@@ -2653,7 +2655,7 @@ public final class IrTransforms {
 					}
 					if (allNps) {
 						// Merge into a single NPS by unioning inner members
-						java.util.Set<String> members = new java.util.LinkedHashSet<>();
+						Set<String> members = new LinkedHashSet<>();
 						for (String ptxt : parts) {
 							String inner = ptxt.substring(2, ptxt.length() - 1);
 							if (inner.isEmpty()) {
