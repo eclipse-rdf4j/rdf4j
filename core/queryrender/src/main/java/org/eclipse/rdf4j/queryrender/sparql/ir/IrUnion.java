@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -20,6 +21,10 @@ public class IrUnion extends IrNode {
 	private List<IrBGP> branches = new ArrayList<>();
 	// True when this UNION originates from an explicit SPARQL UNION that introduces a new variable scope
 	private boolean newScope;
+
+	public IrUnion() {
+		super();
+	}
 
 	public List<IrBGP> getBranches() {
 		return branches;
@@ -69,5 +74,13 @@ public class IrUnion extends IrNode {
 			u.addBranch(t instanceof IrBGP ? (IrBGP) t : b);
 		}
 		return u;
+	}
+
+	@Override
+	public String toString() {
+		return "IrUnion{" +
+				"branches=" + Arrays.toString(branches.toArray()) +
+				", newScope=" + newScope +
+				'}';
 	}
 }
