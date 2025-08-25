@@ -192,7 +192,7 @@ public class TupleExprIRRenderer {
 		public final boolean usePrefixCompaction = true;
 		public final boolean canonicalWhitespace = true;
 		public final LinkedHashMap<String, String> prefixes = new LinkedHashMap<>();
-		public boolean debugIR = false; // print IR before and after transforms
+		public boolean debugIR = true; // print IR before and after transforms
 
 		// Flags
 		public final boolean strict = true; // throw on unsupported
@@ -2921,6 +2921,20 @@ public class TupleExprIRRenderer {
 			return new PathAlt(alts);
 		}
 
+		// Special handling: inner is a sequence (Join) where the first part is an alternation of
+		// single-step edges from 'subj' to an _anon_path_* mid var, and the second part is a
+		// zero-or-one subpath expressed as a Projection/Union (ZeroLengthPath | chain of SPs).
+		// This shape is produced by the SPARQL parser for expressions like
+		// ( (ex:a|^ex:b) / (ex:c/foaf:knows)? )
+		// We conservatively detect and build a PathSeq for this case so that the surrounding
+		// ArbitraryLengthPath can apply a '*' quantifier without losing semantics.
+		if (innerExpr instanceof Join) {
+			PathNode seq = tryParseJoinOfUnionAndZeroOrOne(innerExpr, subj);
+			if (seq != null) {
+				return seq;
+			}
+		}
+
 		// Best-effort: handle a simple sequence subpath represented as a Join/chain of StatementPatterns
 		// connecting subj -> obj via _anon_path_* bridge variables (or directly to obj on the last step).
 		// This reuses buildPathSequenceFromChain which already enforces strict linearity and constant IRI steps.
@@ -2931,6 +2945,149 @@ public class TupleExprIRRenderer {
 			}
 		}
 		return null;
+	}
+
+	/** Result holder for parsing a UNION of two single-step StatementPatterns that start at 'subj'. */
+	private static final class FirstStepUnion {
+		final Var mid;
+		final PathNode node;
+
+		FirstStepUnion(Var mid, PathNode node) {
+			this.mid = mid;
+			this.node = node;
+		}
+	}
+
+	/** Try to parse a UNION whose leaves are single-step StatementPatterns from subj to a shared mid var. */
+	private FirstStepUnion parseFirstStepUnion(final TupleExpr e, final Var subj) {
+		List<TupleExpr> leaves = new ArrayList<>();
+		flattenUnion(e, leaves);
+		if (leaves.isEmpty()) {
+			return null;
+		}
+		List<PathNode> alts = new ArrayList<>();
+		Var mid = null;
+		for (TupleExpr leaf : leaves) {
+			if (!(leaf instanceof StatementPattern)) {
+				return null;
+			}
+			StatementPattern sp = (StatementPattern) leaf;
+			Var p = sp.getPredicateVar();
+			if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
+				return null;
+			}
+			Var ss = sp.getSubjectVar();
+			Var oo = sp.getObjectVar();
+			boolean forward = sameVar(ss, subj) && isAnonPathVar(oo);
+			boolean inverse = sameVar(oo, subj) && isAnonPathVar(ss);
+			if (!forward && !inverse) {
+				return null;
+			}
+			Var localMid = forward ? oo : ss;
+			if (mid == null) {
+				mid = localMid;
+			} else if (!sameVar(mid, localMid)) {
+				return null; // branches don't share the same mid var
+			}
+			PathNode atom = new PathAtom((IRI) p.getValue(), inverse);
+			alts.add(atom);
+		}
+		if (alts.isEmpty() || mid == null) {
+			return null;
+		}
+		PathNode n = (alts.size() == 1) ? alts.get(0) : new PathAlt(alts);
+		return new FirstStepUnion(mid, n);
+	}
+
+	/** Result of parsing a Projection encoding a zero-or-one chain. */
+	private static final class ZeroOrOneNode {
+		final Var s;
+		final Var o;
+		final PathNode node;
+
+		ZeroOrOneNode(Var s, Var o, PathNode node) {
+			this.s = s;
+			this.o = o;
+			this.node = node;
+		}
+	}
+
+	/**
+	 * Try to parse a Projection that represents a zero-or-one sequence, i.e., a UNION of a ZeroLengthPath branch and a
+	 * chain of StatementPatterns from ?s to ?o. Returns the endpoints (?s, ?o) and a PathNode rendering "(seq)?".
+	 */
+	private ZeroOrOneNode parseZeroOrOneProjectionNode(final TupleExpr e) {
+		TupleExpr cur = e;
+		// Allow an extra DISTINCT wrapper around the projection
+		if (cur instanceof Distinct) {
+			cur = ((Distinct) cur).getArg();
+		}
+		if (!(cur instanceof Projection)) {
+			return null;
+		}
+		Projection proj = (Projection) cur;
+		TupleExpr arg = proj.getArg();
+		List<TupleExpr> leaves = new ArrayList<>();
+		flattenUnion(arg, leaves);
+		if (leaves.size() < 2) {
+			return null;
+		}
+		ZeroLengthPath zlp = null;
+		List<TupleExpr> nonZero = new ArrayList<>();
+		for (TupleExpr leaf : leaves) {
+			if (leaf instanceof ZeroLengthPath) {
+				if (zlp != null) {
+					return null; // more than one zero-length branch
+				}
+				zlp = (ZeroLengthPath) leaf;
+			} else {
+				nonZero.add(leaf);
+			}
+		}
+		if (zlp == null || nonZero.isEmpty()) {
+			return null;
+		}
+		Var s = zlp.getSubjectVar();
+		Var o = zlp.getObjectVar();
+		if (s == null || o == null) {
+			return null;
+		}
+		List<PathNode> seqs = new ArrayList<>();
+		for (TupleExpr branch : nonZero) {
+			PathNode seq = buildPathSequenceFromChain(branch, s, o);
+			if (seq == null) {
+				return null;
+			}
+			seqs.add(seq);
+		}
+		PathNode inner = (seqs.size() == 1) ? seqs.get(0) : new PathAlt(seqs);
+		PathNode q = new PathQuant(inner, 0, 1);
+		return new ZeroOrOneNode(s, o, q);
+	}
+
+	/** Try to parse a Join that is a sequence of (first-step union) then (zero-or-one projection). */
+	private PathNode tryParseJoinOfUnionAndZeroOrOne(final TupleExpr expr, final Var subj) {
+		List<TupleExpr> flat = new ArrayList<>();
+		flattenJoin(expr, flat);
+		if (flat.size() != 2) {
+			return null;
+		}
+		TupleExpr a = flat.get(0);
+		TupleExpr b = flat.get(1);
+		FirstStepUnion u = (a instanceof Union) ? parseFirstStepUnion(a, subj) : null;
+		ZeroOrOneNode z = parseZeroOrOneProjectionNode(b);
+		if (u == null || z == null) {
+			return null;
+		}
+		// Check that the zero-or-one starts at the mid var produced by the first-step union
+		if (!sameVar(u.mid, z.s)) {
+			return null;
+		}
+		// Combine into a sequence
+		List<PathNode> parts = new ArrayList<>(2);
+		parts.add(u.node);
+		parts.add(z.node);
+		return new PathSeq(parts);
 	}
 
 	private PathNode parseAtomicFromStatement(final StatementPattern sp, final Var subj, final Var obj) {

@@ -115,6 +115,47 @@ public class BaseTransform {
 		return res;
 	}
 
+	/**
+	 * Fuse a three-line sequence: IrPathTriple (A), IrStatementPattern (B), IrPathTriple (C) into A then ( ^B.p / C ).
+	 *
+	 * Pattern constraints: - A.object equals B.object (inverse join candidate) and A.object is an _anon_path_* var. -
+	 * B.subject equals C.subject and both B.subject and B.object are _anon_path_* vars.
+	 */
+	public static IrBGP fusePtSpPtSequence(IrBGP bgp, TupleExprIRRenderer r) {
+		if (bgp == null) {
+			return null;
+		}
+		List<IrNode> in = bgp.getLines();
+		List<IrNode> out = new ArrayList<>();
+		for (int i = 0; i < in.size(); i++) {
+			IrNode a = in.get(i);
+			if (a instanceof IrPathTriple && i + 2 < in.size() && in.get(i + 1) instanceof IrStatementPattern
+					&& in.get(i + 2) instanceof IrPathTriple) {
+				IrPathTriple ptA = (IrPathTriple) a;
+				IrStatementPattern spB = (IrStatementPattern) in.get(i + 1);
+				IrPathTriple ptC = (IrPathTriple) in.get(i + 2);
+				Var bPred = spB.getPredicate();
+				if (bPred != null && bPred.hasValue() && bPred.getValue() instanceof IRI) {
+					if (sameVar(ptA.getObject(), spB.getObject()) && isAnonPathVar(ptA.getObject())
+							&& sameVar(spB.getSubject(), ptC.getSubject()) && isAnonPathVar(spB.getSubject())
+							&& isAnonPathVar(spB.getObject())) {
+						String fusedPath = "^" + r.renderIRI((IRI) bPred.getValue()) + "/" + ptC.getPathText();
+						IrPathTriple d = new IrPathTriple(spB.getObject(), fusedPath, ptC.getObject());
+						// Keep A; then D replaces B and C
+						out.add(ptA);
+						out.add(d);
+						i += 2; // consume B and C
+						continue;
+					}
+				}
+			}
+			out.add(a);
+		}
+		IrBGP res = new IrBGP();
+		out.forEach(res::add);
+		return res;
+	}
+
 	public static IrBGP fuseAdjacentSpThenPt(IrBGP bgp, TupleExprIRRenderer r) {
 		if (bgp == null) {
 			return null;
@@ -175,6 +216,16 @@ public class BaseTransform {
 						Var pv = sp.getPredicate();
 						if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
 							continue;
+						}
+						// If this SP is immediately followed by a PathTriple that shares SP.subject as its subject,
+						// prefer the later SP+PT fusion instead of attaching the SP here. This preserves canonical
+						// grouping like ...*/(^ex:d/(...)).
+						if (j + 1 < in.size() && in.get(j + 1) instanceof IrPathTriple) {
+							IrPathTriple nextPt = (IrPathTriple) in.get(j + 1);
+							if (sameVar(sp.getSubject(), nextPt.getSubject())
+									|| sameVar(sp.getObject(), nextPt.getSubject())) {
+								continue; // skip this SP; allow SP+PT rule to handle
+							}
 						}
 						if (sameVar(objVar, sp.getSubject()) && isAnonPathVar(sp.getObject())) {
 							join = sp;
