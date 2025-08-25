@@ -1019,9 +1019,29 @@ public class TupleExprIRRenderer {
 			final long min = p.getMinLength();
 			final long max = getMaxLengthSafe(p);
 			final PathNode q = new PathQuant(inner, min, max);
-			final String expr = (q.prec() < PREC_SEQ ? "(" + q.render() + ")" : q.render());
+			String expr = (q.prec() < PREC_SEQ ? "(" + q.render() + ")" : q.render());
 
-			final IrPathTriple pt = new IrPathTriple(subj, expr, obj);
+			// Canonicalize bare NPS orientation for idempotence: if expr is a simple negated
+			// property set "!(...)" without additional sequencing/quantifiers, pick a stable
+			// subject/object order based on variable names; when flipping, invert each member in
+			// the NPS (a <-> ^a). This avoids subject/object oscillation across round-trips.
+			Var subjOut = subj, objOut = obj;
+			if (expr.startsWith("!(") && expr.endsWith(")") && min == 1 && max == 1) {
+				final String sName = freeVarName(subj);
+				final String oName = freeVarName(obj);
+				if (sName != null && oName != null) {
+					// Choose ascending order of variable names as canonical subject/object
+					final boolean shouldFlip = sName.compareTo(oName) > 0;
+					if (shouldFlip) {
+						expr = invertNegatedPropertySet(expr);
+						// swap endpoints
+						subjOut = obj;
+						objOut = subj;
+					}
+				}
+			}
+
+			final IrPathTriple pt = new IrPathTriple(subjOut, expr, objOut);
 			final Var ctx = getContextVarSafe(p);
 			if (ctx != null && (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
 				IrBGP innerBgp = new IrBGP();
@@ -3188,6 +3208,35 @@ public class TupleExprIRRenderer {
 		}
 		final String n = v.getName();
 		return (n == null || n.isEmpty()) ? null : n;
+	}
+
+	// Invert each member of a negated property set: !(a|^b|c) -> !(^a|b|^c)
+	private static String invertNegatedPropertySet(String npsText) {
+		if (npsText == null) {
+			return null;
+		}
+		String s = npsText.trim();
+		if (!s.startsWith("!(") || !s.endsWith(")")) {
+			return s;
+		}
+		String inner = s.substring(2, s.length() - 1);
+		if (inner.isEmpty()) {
+			return s;
+		}
+		String[] toks = inner.split("\\|");
+		List<String> out = new ArrayList<>(toks.length);
+		for (String tok : toks) {
+			String t = tok.trim();
+			if (t.isEmpty()) {
+				continue;
+			}
+			if (t.startsWith("^")) {
+				out.add(t.substring(1));
+			} else {
+				out.add("^" + t);
+			}
+		}
+		return "!(" + String.join("|", out) + ")";
 	}
 
 	private static void collectFreeVars(final TupleExpr e, final Set<String> out) {
