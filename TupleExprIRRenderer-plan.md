@@ -19,3 +19,8 @@ DO NOT CHANGE ANYTHING ABOVE THIS LINE.
 
 Add your plan here:
 
+1. Make sure that the scope variable from the TupleExpr is passed down to the IR nodes during the TupleExpr → textual IR conversion.
+2. Make sure that IR transformations for SPARQL paths that merge UNIONs check the scope variable. If the UNION has a new scope, it should not be merged since it indicates an original UNION in the query.
+3. Change the code if necessary to ensure that the scope variable is preserved and correctly used in all relevant IR nodes and transformations.
+4. Run the TupleExprIRRendererTest to see if the changes have resolved the failures.
+5. Update this plan with any additional steps taken or issues encountered during the process.
