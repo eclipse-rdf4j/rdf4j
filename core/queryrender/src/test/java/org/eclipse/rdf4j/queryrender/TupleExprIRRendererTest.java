@@ -2227,7 +2227,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
 	void nested_paths_extreme_1_simpleGraph() {
 		String q = "SELECT ?s ?n\n" +
 				"WHERE {\n" +
