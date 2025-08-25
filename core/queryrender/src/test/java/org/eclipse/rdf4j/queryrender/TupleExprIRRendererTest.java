@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 public class TupleExprIRRendererTest {
@@ -721,7 +720,6 @@ public class TupleExprIRRendererTest {
 	// ==========================================
 
 	@Test
-	@Disabled
 	void complex_kitchen_sink_paths_graphs_subqueries() {
 		String q = "SELECT REDUCED ?g ?y (?cnt AS ?count) (COALESCE(?avgAge, -1) AS ?ageOrMinus1)\n" +
 				"WHERE {\n" +
@@ -1050,7 +1048,6 @@ public class TupleExprIRRendererTest {
 	// ================================================
 
 	@Test
-	@Disabled
 	void mega_monster_deep_nesting_everything() {
 		String q = "SELECT REDUCED ?g ?x ?y (?cnt AS ?count) (IF(BOUND(?avgAge), (xsd:decimal(?cnt) + xsd:decimal(?avgAge)), xsd:decimal(?cnt)) AS ?score)\n"
 				+
@@ -1090,7 +1087,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
 	void mega_monster_deep_nesting_everything_simple() {
 		String q = "SELECT REDUCED ?g ?x ?y (?cnt AS ?count) (IF(BOUND(?avgAge), (xsd:decimal(?cnt) + xsd:decimal(?avgAge)), xsd:decimal(?cnt)) AS ?score)\n"
 				+
@@ -1195,7 +1191,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
 	void mega_parentheses_precedence() {
 		String q = "SELECT ?s ?o (?score AS ?score2)\n" +
 				"WHERE {\n" +
@@ -1428,7 +1423,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
 	void optional_outside_graph_when_complex_body() {
 		String q = "SELECT ?g ?s ?label ?nick\n" +
 				"WHERE {\n" +
@@ -1485,7 +1479,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
 	void deep_path_in_union_branch_with_graph() {
 		String q = "SELECT ?g ?s ?o\n" +
 				"WHERE {\n" +
@@ -1503,7 +1496,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
 	void zero_or_more_then_inverse_then_alt_in_graph() {
 		String q = "SELECT ?g ?s ?o\n" +
 				"WHERE {\n" +
@@ -1515,7 +1507,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
 	void optional_with_values_and_bind_inside_graph() {
 		String q = "SELECT ?g ?s ?n ?name\n" +
 				"WHERE {\n" +
@@ -1539,7 +1530,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
 	void nested_union_optional_with_path_and_filter() {
 		String q = "SELECT ?s ?o\n" +
 				"WHERE {\n" +
@@ -1555,7 +1545,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
 	void minus_with_graph_and_optional_path() {
 		String q = "SELECT ?s\n" +
 				"WHERE {\n" +
@@ -1569,7 +1558,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
 	void service_with_graph_and_path() {
 		String q = "SELECT ?s ?o\n" +
 				"WHERE {\n" +
@@ -1579,7 +1567,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
 	void group_by_filter_with_path_in_where() {
 		String q = "SELECT ?s (COUNT(?o) AS ?c)\n" +
 				"WHERE {\n" +
@@ -1601,7 +1588,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
 	void optional_chain_then_graph_path() {
 		String q = "SELECT ?g ?s ?o\n" +
 				"WHERE {\n" +
@@ -1619,7 +1605,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
 	void values_then_graph_then_minus_with_path() {
 		String q = "SELECT ?g ?s ?o\n" +
 				"WHERE {\n" +
@@ -1631,7 +1616,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
 	void nps_path_followed_by_constant_step_in_graph() {
 		String q = "SELECT ?s ?x\n" +
 				"WHERE {\n" +
@@ -1696,26 +1680,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
-	void mega_construct_with_blank_nodes_graphs_and_paths() {
-		String q = "CONSTRUCT {\n" +
-				"  ?s ex:edge [ a ex:Edge ; ex:to ?t ; ex:score ?score ] .\n" +
-				"  ?s ex:seenIn ?g .\n" +
-				"}\n" +
-				"WHERE {\n" +
-				"  VALUES ?g { ex:g1 ex:g2 } \n" +
-				"  GRAPH ?g { ?s (foaf:knows/foaf:knows?) ?t }\n" +
-				"  OPTIONAL { ?s ex:age ?age }\n" +
-				"  BIND(IF(BOUND(?age), xsd:decimal(?age) / 100, 0.0) AS ?score)\n" +
-				"  FILTER(NOT EXISTS { ?t rdf:type ex:Robot })\n" +
-				"}\n" +
-				"ORDER BY DESC(?score)\n" +
-				"LIMIT 500";
-		assertSameSparqlQuery(q, cfg());
-	}
-
-	@Test
-	@Disabled
 	void mega_ask_deep_exists_notexists_filters() {
 		String q = "ASK WHERE {\n" +
 				"  { ?a foaf:knows ?b } UNION { ?b foaf:knows ?a }\n" +
@@ -2008,7 +1972,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
 	void deep_optional_path_5() {
 		String q = "SELECT ?g ?s ?n\n" +
 				"WHERE {\n" +
@@ -2056,7 +2019,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
 	void deep_union_path_2() {
 		String q = "SELECT ?a ?n\n" +
 				"WHERE {\n" +
@@ -2081,7 +2043,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
 	void deep_union_path_3() {
 		String q = "SELECT ?s ?o\n" +
 				"WHERE {\n" +
