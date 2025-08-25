@@ -15,18 +15,18 @@ package org.eclipse.rdf4j.queryrender.sparql.ir;
  * allow alternation, sequences, and quantifiers.
  */
 public class IrPathTriple extends IrNode {
-	private final String subjectText;
+	private final String subject;
 	private final String pathText;
-	private final String objectText;
+	private final String object;
 
-	public IrPathTriple(String subjectText, String pathText, String objectText) {
-		this.subjectText = subjectText;
+	public IrPathTriple(String subject, String pathText, String object) {
+		this.subject = subject;
 		this.pathText = pathText;
-		this.objectText = objectText;
+		this.object = object;
 	}
 
 	public String getSubject() {
-		return subjectText;
+		return subject;
 	}
 
 	public String getPathText() {
@@ -34,13 +34,13 @@ public class IrPathTriple extends IrNode {
 	}
 
 	public String getObject() {
-		return objectText;
+		return object;
 	}
 
 	@Override
 	public void print(IrPrinter p) {
-		final String sTxt = p.applyOverridesToText(subjectText);
-		final String oTxt = p.applyOverridesToText(objectText);
+		final String sTxt = p.applyOverridesToText(subject);
+		final String oTxt = p.applyOverridesToText(object);
 		p.line(sTxt + " " + pathText + " " + oTxt + " .");
 	}
 }
