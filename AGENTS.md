@@ -19,7 +19,7 @@ This is a large multi-module Maven project. Building and testing the entire repo
 - Maven stores all build output in each module's `target/` directory. You can usually ignore these directories.
 
 ## Code Formatting
-- This project has strict code formatting requirements. Always run the automatic formatter before executing tests or finalizing your code:
+- This project has strict code formatting requirements. Always run the super fast automatic formatter before finalizing your code:
 ```bash
 mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format
 ```
