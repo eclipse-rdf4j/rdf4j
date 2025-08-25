@@ -1715,15 +1715,8 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		String fused = "SELECT ?g ?a ?x\n" +
-				"WHERE {\n" +
-				"  GRAPH ?g {\n" +
-				"    ?a !(rdf:type|ex:age)/foaf:name ?x .\n" +
-				"  }\n" +
-				"}";
+		assertSameSparqlQuery(expanded, cfg());
 
-		String rendered = render(SPARQL_PREFIX + expanded, cfg());
-		assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + fused);
 	}
 
 	@Test
@@ -1739,15 +1732,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		String fused = "SELECT ?g ?a ?x\n" +
-				"WHERE {\n" +
-				"  GRAPH ?g {\n" +
-				"    ?a !(rdf:type|ex:age)/^foaf:name ?x .\n" +
-				"  }\n" +
-				"}";
-
-		String rendered = render(SPARQL_PREFIX + expanded, cfg());
-		assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + fused);
+		assertSameSparqlQuery(expanded, cfg());
 	}
 
 	@Test
@@ -1760,15 +1745,21 @@ public class TupleExprIRRendererTest {
 				"  FILTER (?p NOT IN (rdf:type, ex:age))\n" +
 				"}";
 
-		String fused = "SELECT ?g ?a ?m\n" +
+		assertSameSparqlQuery(expanded, cfg());
+
+	}
+
+	@Test
+	void nps_fusion_graph_filter_only2() {
+		String expanded = "SELECT *\n" +
 				"WHERE {\n" +
 				"  GRAPH ?g {\n" +
 				"    ?a !(rdf:type|ex:age) ?m .\n" +
 				"  }\n" +
 				"}";
 
-		String rendered = render(SPARQL_PREFIX + expanded, cfg());
-		assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + fused);
+		assertSameSparqlQuery(expanded, cfg());
+
 	}
 
 	@Test

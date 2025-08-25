@@ -128,6 +128,9 @@ public final class IrTransforms {
 				w = coalesceAdjacentGraphs(w);
 				// Now that adjacent GRAPHs are coalesced, normalize inner GRAPH bodies for SP/PT fusions
 				w = normalizeGraphInnerPaths(w, r);
+
+				w = applyPathsFixedPoint(w, r);
+
 				// Collections and options later; first ensure path alternations are extended when possible
 				// Merge OPTIONAL into preceding GRAPH only when it is clearly a single-step adjunct and safe.
 				w = mergeOptionalIntoPrecedingGraph(w);
@@ -141,6 +144,51 @@ public final class IrTransforms {
 			}
 			return child;
 		});
+	}
+
+	/**
+	 * Apply path-related transforms repeatedly until a fixed point is reached (or a safety cap is hit).
+	 *
+	 * We detect convergence by rendering the WHERE block as text using the renderer's IR printer. This is conservative
+	 * but robust across small object identity changes in IR nodes.
+	 */
+	private static IrBGP applyPathsFixedPoint(IrBGP bgp, TupleExprIRRenderer r) {
+		if (bgp == null) {
+			return null;
+		}
+		String prev = null;
+		IrBGP cur = bgp;
+		int guard = 0;
+		while (true) {
+			// Render WHERE to a stable string fingerprint
+			final String fp = fingerprintWhere(cur, r);
+			System.out.println(fp);
+			if (prev != null && fp.equals(prev)) {
+				break; // reached fixed point
+			}
+			if (++guard > 12) { // safety to avoid infinite cycling
+				break;
+			}
+			prev = fp;
+			// Single iteration: apply path fusions and normalizations that can unlock each other
+			IrBGP next = applyPaths(cur, r);
+			// Fuse a path followed by UNION of opposite-direction tail triples into an alternation tail
+			next = fusePathPlusTailAlternationUnion(next, r);
+			// Merge adjacent GRAPH blocks with the same graph ref so that downstream fusers see a single body
+			next = coalesceAdjacentGraphs(next);
+			// Now that adjacent GRAPHs are coalesced, normalize inner GRAPH bodies for SP/PT fusions
+			next = normalizeGraphInnerPaths(next, r);
+			cur = next;
+		}
+		return cur;
+	}
+
+	/** Build a stable text fingerprint of a WHERE block for fixed-point detection. */
+	private static String fingerprintWhere(IrBGP where, TupleExprIRRenderer r) {
+		final IrSelect tmp = new IrSelect();
+		tmp.setWhere(where);
+		// Render as a subselect to avoid prologue/dataset noise; header is constant (SELECT *)
+		return r.render(tmp, null, true);
 	}
 
 	/** Move IrFilter lines inside OPTIONAL bodies so they precede nested OPTIONAL lines when it is safe. */
@@ -786,63 +834,66 @@ public final class IrTransforms {
 				final IrGraph g1 = (IrGraph) n;
 				final IrFilter f = (IrFilter) in.get(i + 1);
 
-				final NsText ns = parseNegatedSetText(f.getConditionText());
-				if (ns == null || ns.varName == null || ns.items.isEmpty()) {
-					out.add(n);
-					continue;
-				}
+				if (f.getConditionText().contains(ANON_PATH_PREFIX)) {
 
-				// Find triple inside first GRAPH that uses the filtered predicate variable
-				final MatchTriple mt1 = findTripleWithPredicateVar(g1.getWhere(), ns.varName);
-				if (mt1 == null) {
-					out.add(n);
-					continue;
-				}
-
-				// Try to chain with immediately following GRAPH having the same graph ref
-				boolean consumedG2 = false;
-				MatchTriple mt2 = null;
-				if (i + 2 < in.size() && in.get(i + 2) instanceof IrGraph) {
-					final IrGraph g2 = (IrGraph) in.get(i + 2);
-					if (sameVar(g1.getGraph(), g2.getGraph())) {
-						mt2 = findTripleWithConstPredicateReusingObject(g2.getWhere(), mt1.object);
-						consumedG2 = (mt2 != null);
+					final NsText ns = parseNegatedSetText(f.getConditionText());
+					if (ns == null || ns.varName == null || ns.items.isEmpty()) {
+						out.add(n);
+						continue;
 					}
-				}
 
-				// Build new GRAPH with fused path triple + any leftover lines from original inner graphs
-				final IrBGP newInner = new IrBGP();
+					// Find triple inside first GRAPH that uses the filtered predicate variable
+					final MatchTriple mt1 = findTripleWithPredicateVar(g1.getWhere(), ns.varName);
+					if (mt1 == null) {
+						out.add(n);
+						continue;
+					}
 
-				final String subj = varOrValue(mt1.subject, r);
-				final String obj = varOrValue(mt1.object, r);
-				final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
+					// Try to chain with immediately following GRAPH having the same graph ref
+					boolean consumedG2 = false;
+					MatchTriple mt2 = null;
+					if (i + 2 < in.size() && in.get(i + 2) instanceof IrGraph) {
+						final IrGraph g2 = (IrGraph) in.get(i + 2);
+						if (sameVar(g1.getGraph(), g2.getGraph())) {
+							mt2 = findTripleWithConstPredicateReusingObject(g2.getWhere(), mt1.object);
+							consumedG2 = (mt2 != null);
+						}
+					}
 
-				if (mt2 != null) {
-					final boolean forward = sameVar(mt1.object, mt2.subject);
-					final boolean inverse = !forward && sameVar(mt1.object, mt2.object);
-					if (forward || inverse) {
-						final String step = r.renderIRI((IRI) mt2.predicate.getValue());
-						final String path = nps + "/" + (inverse ? "^" : "") + step;
-						final String end = varOrValue(forward ? mt2.object : mt2.subject, r);
-						newInner.add(new IrPathTriple(subj, path, end));
+					// Build new GRAPH with fused path triple + any leftover lines from original inner graphs
+					final IrBGP newInner = new IrBGP();
+
+					final String subj = varOrValue(mt1.subject, r);
+					final String obj = varOrValue(mt1.object, r);
+					final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
+
+					if (mt2 != null) {
+						final boolean forward = sameVar(mt1.object, mt2.subject);
+						final boolean inverse = !forward && sameVar(mt1.object, mt2.object);
+						if (forward || inverse) {
+							final String step = r.renderIRI((IRI) mt2.predicate.getValue());
+							final String path = nps + "/" + (inverse ? "^" : "") + step;
+							final String end = varOrValue(forward ? mt2.object : mt2.subject, r);
+							newInner.add(new IrPathTriple(subj, path, end));
+						} else {
+							// No safe chain direction; just print standalone NPS triple
+							newInner.add(new IrPathTriple(subj, nps, obj));
+						}
 					} else {
-						// No safe chain direction; just print standalone NPS triple
 						newInner.add(new IrPathTriple(subj, nps, obj));
 					}
-				} else {
-					newInner.add(new IrPathTriple(subj, nps, obj));
-				}
 
-				// Preserve any other lines inside g1 and g2 except the consumed triples
-				copyAllExcept(g1.getWhere(), newInner, mt1.node);
-				if (consumedG2) {
-					final IrGraph g2 = (IrGraph) in.get(i + 2);
-					copyAllExcept(g2.getWhere(), newInner, mt2.node);
-				}
+					// Preserve any other lines inside g1 and g2 except the consumed triples
+					copyAllExcept(g1.getWhere(), newInner, mt1.node);
+					if (consumedG2) {
+						final IrGraph g2 = (IrGraph) in.get(i + 2);
+						copyAllExcept(g2.getWhere(), newInner, mt2.node);
+					}
 
-				out.add(new IrGraph(g1.getGraph(), newInner));
-				i += consumedG2 ? 2 : 1; // also consume the filter at i+1 and optionally g2 at i+2
-				continue;
+					out.add(new IrGraph(g1.getGraph(), newInner));
+					i += consumedG2 ? 2 : 1; // also consume the filter at i+1 and optionally g2 at i+2
+					continue;
+				}
 			}
 
 			// Pattern B: GRAPH, GRAPH, FILTER (common ordering from IR builder)
@@ -2577,14 +2628,14 @@ public final class IrTransforms {
 					String bridge = pt.getObjectText();
 					String sTxt = varOrValue(sp.getSubject(), r);
 					String oTxt = varOrValue(sp.getObject(), r);
-					if (bridge != null && bridge.startsWith("?")) {
+					if (isAnonPathVarText(bridge)) {
 						if (bridge.equals(sTxt)) {
-							String fused = pt.getPathText() + "/" + r.renderIRI((IRI) pv.getValue());
+							String fused = "(" + pt.getPathText() + ")/(" + r.renderIRI((IRI) pv.getValue()) + ")";
 							out.add(new IrPathTriple(pt.getSubjectText(), fused, oTxt));
 							i += 1;
 							continue;
 						} else if (bridge.equals(oTxt)) {
-							String fused = pt.getPathText() + "/^" + r.renderIRI((IRI) pv.getValue());
+							String fused = "(" + pt.getPathText() + ")/^(" + r.renderIRI((IRI) pv.getValue()) + ")";
 							out.add(new IrPathTriple(pt.getSubjectText(), fused, sTxt));
 							i += 1;
 							continue;
@@ -2645,12 +2696,12 @@ public final class IrTransforms {
 					IrPathTriple pt = (IrPathTriple) in.get(i + 1);
 					String bridgeObj = varOrValue(sp.getObject(), r);
 					String bridgeSubj = varOrValue(sp.getSubject(), r);
-					if (bridgeObj.equals(pt.getSubjectText())) {
+					if (bridgeObj.equals(pt.getSubjectText()) && isAnonPathVarText(bridgeObj)) {
 						String fused = r.renderIRI((IRI) p.getValue()) + "/" + pt.getPathText();
 						out.add(new IrPathTriple(varOrValue(sp.getSubject(), r), fused, pt.getObjectText()));
 						i += 1;
 						continue;
-					} else if (bridgeSubj.equals(pt.getObjectText())) {
+					} else if (bridgeSubj.equals(pt.getObjectText()) && isAnonPathVarText(bridgeSubj)) {
 						String fused = pt.getPathText() + "/^" + r.renderIRI((IRI) p.getValue());
 						out.add(new IrPathTriple(pt.getSubjectText(), fused, varOrValue(sp.getObject(), r)));
 						i += 1;
@@ -2680,7 +2731,7 @@ public final class IrTransforms {
 			if (n instanceof IrPathTriple) {
 				IrPathTriple pt = (IrPathTriple) n;
 				String objText = pt.getObjectText();
-				if (objText != null && objText.startsWith("?")) {
+				if (isAnonPathVarText(objText)) {
 					IrStatementPattern join = null;
 					boolean inverse = false;
 					for (int j = i + 1; j < in.size(); j++) {
@@ -2796,7 +2847,7 @@ public final class IrTransforms {
 							if (bp == null || !bp.hasValue() || !(bp.getValue() instanceof IRI)) {
 								continue;
 							}
-							if (!sameVar(ao, b.getObject())) {
+							if (!sameVar(ao, b.getObject()) || !isAnonPathVar(b.getObject())) {
 								continue;
 							}
 							// fuse: start = as, path = ap / ^bp, end = b.subject
