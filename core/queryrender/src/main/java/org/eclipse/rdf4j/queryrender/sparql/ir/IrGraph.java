@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import java.util.function.UnaryOperator;
+
 import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
@@ -50,7 +52,7 @@ public class IrGraph extends IrNode {
 	}
 
 	@Override
-	public IrNode transformChildren(java.util.function.UnaryOperator<IrNode> op) {
+	public IrNode transformChildren(UnaryOperator<IrNode> op) {
 		IrBGP newWhere = this.bgp;
 		if (newWhere != null) {
 			IrNode t = op.apply(newWhere);

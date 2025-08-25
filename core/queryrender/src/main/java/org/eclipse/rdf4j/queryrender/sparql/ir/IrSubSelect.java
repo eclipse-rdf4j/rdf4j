@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import java.util.function.UnaryOperator;
+
 /**
  * Textual IR node for a nested subselect inside WHERE.
  */
@@ -41,7 +43,7 @@ public class IrSubSelect extends IrNode {
 	}
 
 	@Override
-	public IrNode transformChildren(java.util.function.UnaryOperator<IrNode> op) {
+	public IrNode transformChildren(UnaryOperator<IrNode> op) {
 		IrSelect newSel = this.select;
 		if (newSel != null) {
 			IrNode t = op.apply(newSel);

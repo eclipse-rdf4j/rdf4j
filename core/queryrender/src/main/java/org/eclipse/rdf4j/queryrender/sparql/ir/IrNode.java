@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import java.util.function.UnaryOperator;
+
 /**
  * Base class for textual SPARQL Intermediate Representation (IR) nodes.
  */
@@ -25,7 +27,7 @@ public abstract class IrNode {
 	 * should return a new instance with immediate children replaced by op.apply(child). Implementations must not mutate
 	 * this.
 	 */
-	public IrNode transformChildren(java.util.function.UnaryOperator<IrNode> op) {
+	public IrNode transformChildren(UnaryOperator<IrNode> op) {
 		return this;
 	}
 
