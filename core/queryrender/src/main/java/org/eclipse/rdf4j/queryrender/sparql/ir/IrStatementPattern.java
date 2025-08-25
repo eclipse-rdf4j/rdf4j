@@ -12,11 +12,12 @@ package org.eclipse.rdf4j.queryrender.sparql.ir;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 
 /**
  * Textual IR node for a simple triple pattern line.
  */
-public class IrStatementPattern extends IrNode {
+public class IrStatementPattern extends IrTripleLike {
 	private final Var subject;
 	private final Var predicate;
 	private final Var object;
@@ -37,6 +38,15 @@ public class IrStatementPattern extends IrNode {
 
 	public Var getObject() {
 		return object;
+	}
+
+	@Override
+	public String getPredicateOrPathText(TupleExprIRRenderer r) {
+		Var pv = getPredicate();
+		if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
+			return r.renderIRI((IRI) pv.getValue());
+		}
+		return null;
 	}
 
 	@Override
