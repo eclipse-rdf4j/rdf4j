@@ -12,13 +12,47 @@ package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
 
-public final class ApplyPathsFixedPointTransform {
+public final class ApplyPathsFixedPointTransform extends BaseTransform {
 	private ApplyPathsFixedPointTransform() {
 	}
 
 	public static IrBGP apply(IrBGP bgp, TupleExprIRRenderer r) {
-		return IrTransforms.applyPathsFixedPoint(bgp, r);
+		if (bgp == null) {
+			return null;
+		}
+		String prev = null;
+		IrBGP cur = bgp;
+		int guard = 0;
+		while (true) {
+			// Render WHERE to a stable string fingerprint
+			final String fp = fingerprintWhere(cur, r);
+			if (fp.equals(prev)) {
+				break; // reached fixed point
+			}
+			if (++guard > 12) { // safety to avoid infinite cycling
+				break;
+			}
+			prev = fp;
+			// Single iteration: apply path fusions and normalizations that can unlock each other
+			IrBGP next = ApplyPathsTransform.apply(cur, r);
+			// Fuse a path followed by UNION of opposite-direction tail triples into an alternation tail
+			next = FusePathPlusTailAlternationUnionTransform.apply(next, r);
+			// Merge adjacent GRAPH blocks with the same graph ref so that downstream fusers see a single body
+			next = CoalesceAdjacentGraphsTransform.apply(next);
+			// Now that adjacent GRAPHs are coalesced, normalize inner GRAPH bodies for SP/PT fusions
+			next = ApplyNormalizeGraphInnerPathsTransform.apply(next, r);
+			cur = next;
+		}
+		return cur;
+	}
+
+	/** Build a stable text fingerprint of a WHERE block for fixed-point detection. */
+	public static String fingerprintWhere(IrBGP where, TupleExprIRRenderer r) {
+		final IrSelect tmp = new IrSelect();
+		tmp.setWhere(where);
+		// Render as a subselect to avoid prologue/dataset noise; header is constant (SELECT *)
+		return r.render(tmp, null, true);
 	}
 }
