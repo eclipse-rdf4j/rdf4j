@@ -12,15 +12,42 @@ Keep these in your context.
 
 Nice to know:
  - Variables generated during SPARQL parsing typically have a prefix that tells you why they were generated. Such as the prefixes "_anon_path_" or "_anon_collection_" or "_anon_having_".
- - When a UNION is created because of a SPARQL path, the union does not have a new scope. If it has a new scope, then it means that there was a UNION in the original query.
 
 DO NOT CHANGE ANYTHING ABOVE THIS LINE.
 -----------------------------------------------------------
 
-Add your plan here:
+There are two failing tests.
 
-1. Make sure that the scope variable from the TupleExpr is passed down to the IR nodes during the TupleExpr → textual IR conversion.
-2. Make sure that IR transformations for SPARQL paths that merge UNIONs check the scope variable. If the UNION has a new scope, it should not be merged since it indicates an original UNION in the query.
-3. Change the code if necessary to ensure that the scope variable is preserved and correctly used in all relevant IR nodes and transformations.
-4. Run the TupleExprIRRendererTest to see if the changes have resolved the failures.
-5. Update this plan with any additional steps taken or issues encountered during the process.
+ - deep_exists_with_path_and_inner_filter()
+ - deep_path_in_filter_not_exists()
+
+You can see the raw IR from one of the tests:
+
+```json
+{
+  "distinct": false,
+  "reduced": false,
+  "projection": [
+    {
+      "varName": "s"
+    }
+  ],
+  "where": {
+    "lines": [
+      {
+        "class": "org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter",
+        "data": {
+          "conditionText": "EXISTS { ?s foaf:knows+ ?_anon_path_6511cce654c441d34c76919d0b25afbaa4120123 . ?o ex:knows ?_anon_path_6511cce654c441d34c76919d0b25afbaa4120123 . FILTER (BOUND(?o)) }"
+        }
+      }
+    ]
+  },
+  "groupBy": [],
+  "having": [],
+  "orderBy": [],
+  "limit": -1,
+  "offset": -1
+}
+```
+
+You can see that we need to extend the IrFilter class to allow it to have a body which can be a simple IrFilterBodyText, IrNot and IrExists node (you need to make this) with a BGP, because we need to store the raw bgp inside the EXISTS, so that we can apply the path transform to it.
