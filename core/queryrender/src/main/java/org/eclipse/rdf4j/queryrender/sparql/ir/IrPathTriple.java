@@ -25,7 +25,7 @@ public class IrPathTriple extends IrNode {
 		this.objectText = objectText;
 	}
 
-	public String getSubjectText() {
+	public String getSubject() {
 		return subjectText;
 	}
 
@@ -33,7 +33,7 @@ public class IrPathTriple extends IrNode {
 		return pathText;
 	}
 
-	public String getObjectText() {
+	public String getObject() {
 		return objectText;
 	}
 
