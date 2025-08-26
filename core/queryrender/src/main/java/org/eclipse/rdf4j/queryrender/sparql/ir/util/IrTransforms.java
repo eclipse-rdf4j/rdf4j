@@ -75,6 +75,17 @@ public final class IrTransforms {
 					// Normalize NPS member order after late inversions introduced by path fusions
 					w = NormalizeNpsMemberOrderTransform.apply(w);
 
+					// Late pass: re-apply NPS fusion now that earlier transforms may have
+					// reordered FILTERs/triples to be adjacent (e.g., GRAPH …, FILTER …, GRAPH …).
+					// This catches cases like Graph + NOT IN + Graph that only become adjacent
+					// after other rewrites.
+					w = ApplyNegatedPropertySetTransform.apply(w, r);
+
+					// One more path fixed-point to allow newly formed path triples to fuse further
+					w = ApplyPathsFixedPointTransform.apply(w, r);
+					// And normalize member order again for stability
+					w = NormalizeNpsMemberOrderTransform.apply(w);
+
 					// Light string-level path parentheses simplification for readability/idempotence
 					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.SimplifyPathParensTransform.apply(w);
 
