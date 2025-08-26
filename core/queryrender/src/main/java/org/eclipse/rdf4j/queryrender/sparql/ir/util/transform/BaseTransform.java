@@ -37,6 +37,8 @@ public class BaseTransform {
 
 	// Local copy of parser's _anon_path_ naming hint for safe path fusions
 	public static final String ANON_PATH_PREFIX = "_anon_path_";
+	// Additional hint used by the parser for inverse-oriented anonymous path variables.
+	public static final String ANON_PATH_INVERSE_PREFIX = "_anon_path_inverse_";
 
 	// --------------- Path text helpers: add parens only when needed ---------------
 
@@ -469,7 +471,16 @@ public class BaseTransform {
 	}
 
 	public static boolean isAnonPathVar(Var v) {
-		return v != null && !v.hasValue() && v.getName() != null && v.getName().startsWith(ANON_PATH_PREFIX);
+		if (v == null || v.hasValue()) {
+			return false;
+		}
+		String n = v.getName();
+		return n != null && (n.startsWith(ANON_PATH_PREFIX) || n.startsWith(ANON_PATH_INVERSE_PREFIX));
+	}
+
+	/** True when the anonymous path var explicitly encodes inverse orientation. */
+	public static boolean isAnonPathInverseVar(Var v) {
+		return v != null && !v.hasValue() && v.getName() != null && v.getName().startsWith(ANON_PATH_INVERSE_PREFIX);
 	}
 
 	/**
