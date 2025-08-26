@@ -11,7 +11,7 @@ Take your time. You have a lot more time than you think :)
 - Occasionally, you may need online access to download dependencies or plugins. When Maven requires internet access, omit `-o`.
 - To build the entire project without running tests:
   ```bash
-  mvn -o verify -DskipTests
+  mvn -o install -Pquick
   ```
 - To build the project and run all tests:
   ```bash
@@ -29,11 +29,10 @@ mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format
 ```
 
 ## Running Tests
-- To test a specific module, use the `-pl` option. Example for running the SHACL tests:
+- To test a specific module, use the `-pl` option (never use `-am` when running tests, if compilation fails then first build the project before running tests). Example for running the SHACL tests:
   ```bash
   mvn -o -pl core/sail/shacl test
   ```
-- Running from a module subdirectory is also possible; remember to include `-o`.
 
 ## Pre-commit checklist
 Before finalizing your work, make sure the following commands succeed:
