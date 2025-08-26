@@ -45,23 +45,33 @@ public final class FuseUnionOfSimpleTriplesTransform extends BaseTransform {
 			IrNode m = n;
 			if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
-				Fused f = tryFuseUnion(u, r);
-				if (f != null) {
-					if (f.graph != null) {
-						IrBGP inner = new IrBGP();
-						inner.add(new IrPathTriple(f.s, String.join("|", f.steps), f.o));
-						m = new IrGraph(f.graph, inner);
-					} else {
-						m = new IrPathTriple(f.s, String.join("|", f.steps), f.o);
-					}
-				} else {
-					// Recurse into branches
+				// Preserve explicit UNION (new variable scope) as-is; do not fuse into a single path alternation.
+				if (u.isNewScope()) {
 					IrUnion u2 = new IrUnion();
 					u2.setNewScope(u.isNewScope());
 					for (IrBGP b : u.getBranches()) {
 						u2.addBranch(apply(b, r));
 					}
 					m = u2;
+				} else {
+					Fused f = tryFuseUnion(u, r);
+					if (f != null) {
+						if (f.graph != null) {
+							IrBGP inner = new IrBGP();
+							inner.add(new IrPathTriple(f.s, String.join("|", f.steps), f.o));
+							m = new IrGraph(f.graph, inner);
+						} else {
+							m = new IrPathTriple(f.s, String.join("|", f.steps), f.o);
+						}
+					} else {
+						// Recurse into branches
+						IrUnion u2 = new IrUnion();
+						u2.setNewScope(u.isNewScope());
+						for (IrBGP b : u.getBranches()) {
+							u2.addBranch(apply(b, r));
+						}
+						m = u2;
+					}
 				}
 			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
