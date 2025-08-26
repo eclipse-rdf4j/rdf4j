@@ -74,45 +74,93 @@ public final class FuseAltInverseTailBGPTransform extends BaseTransform {
 
 			if (n instanceof IrPathTriple) {
 				IrPathTriple pt = (IrPathTriple) n;
-				final String bridge = varOrValue(pt.getObject(), r);
-				if (bridge != null && bridge.startsWith("?")) {
-					// Only join when the bridge var is an _anon_path_* variable, to avoid eliminating user vars
-					if (!isAnonPathVar(pt.getObject())) {
-						out.add(pt);
-						continue;
+
+				// 1) Try to fuse a HEAD step using a leading SP that shares the path subject
+				final String headBridge = varOrValue(pt.getSubject(), r);
+				if (headBridge != null && headBridge.startsWith("?") && isAnonPathVar(pt.getSubject())) {
+					IrStatementPattern headJoin = null;
+					boolean headInverse = true; // prefer ^p when SP is (?mid p ?x)
+					final List<IrStatementPattern> headBySub = bySubject.get(headBridge);
+					if (headBySub != null) {
+						for (IrStatementPattern sp : headBySub) {
+							if (removed.contains(sp)) {
+								continue;
+							}
+							// Constant predicate only
+							if (sp.getPredicate() == null || !sp.getPredicate().hasValue()
+									|| !(sp.getPredicate().getValue() instanceof IRI)) {
+								continue;
+							}
+							headJoin = sp;
+							headInverse = true; // (?mid p ?x) => ^p/ ... starting from ?x
+							break;
+						}
 					}
-					IrStatementPattern join = null;
-					boolean inverse = true; // prefer inverse tail (?y p ?mid) => '^p'
-					final List<IrStatementPattern> byObj = byObject.get(bridge);
-					if (byObj != null) {
-						for (IrStatementPattern sp : byObj) {
-							if (!removed.contains(sp)) {
-								join = sp;
-								inverse = true;
+					if (headJoin == null) {
+						final List<IrStatementPattern> headByObj = byObject.get(headBridge);
+						if (headByObj != null) {
+							for (IrStatementPattern sp : headByObj) {
+								if (removed.contains(sp)) {
+									continue;
+								}
+								if (sp.getPredicate() == null || !sp.getPredicate().hasValue()
+										|| !(sp.getPredicate().getValue() instanceof IRI)) {
+									continue;
+								}
+								headJoin = sp;
+								headInverse = false; // (?x p ?mid) => p/ ... starting from ?x
 								break;
 							}
 						}
 					}
-					if (join == null) {
-						final List<IrStatementPattern> bySub = bySubject.get(bridge);
-						if (bySub != null) {
-							for (IrStatementPattern sp : bySub) {
+					if (headJoin != null) {
+						final String step = r.renderIRI((IRI) headJoin.getPredicate().getValue());
+						final String prefix = (headInverse ? "^" : "") + step + "/";
+						final Var newStart = headInverse ? headJoin.getObject() : headJoin.getSubject();
+						pt = new IrPathTriple(newStart, prefix + pt.getPathText(), pt.getObject());
+						removed.add(headJoin);
+					}
+				}
+
+				// 2) Try to fuse a TAIL step using a trailing SP that shares the path object
+				final String tailBridge = varOrValue(pt.getObject(), r);
+				if (tailBridge != null && tailBridge.startsWith("?")) {
+					// Only join when the bridge var is an _anon_path_* variable, to avoid eliminating user vars
+					if (isAnonPathVar(pt.getObject())) {
+						IrStatementPattern join = null;
+						boolean inverse = true; // prefer inverse tail (?y p ?mid) => '^p'
+						final List<IrStatementPattern> byObj = byObject.get(tailBridge);
+						if (byObj != null) {
+							for (IrStatementPattern sp : byObj) {
 								if (!removed.contains(sp)) {
 									join = sp;
-									inverse = false;
+									inverse = true;
 									break;
 								}
 							}
 						}
-					}
-					if (join != null) {
-						final String step = r.renderIRI((IRI) join.getPredicate().getValue());
-						final String newPath = pt.getPathText() + "/" + (inverse ? "^" : "") + step;
-						final Var newEnd = inverse ? join.getSubject() : join.getObject();
-						pt = new IrPathTriple(pt.getSubject(), newPath, newEnd);
-						removed.add(join);
+						if (join == null) {
+							final List<IrStatementPattern> bySub = bySubject.get(tailBridge);
+							if (bySub != null) {
+								for (IrStatementPattern sp : bySub) {
+									if (!removed.contains(sp)) {
+										join = sp;
+										inverse = false;
+										break;
+									}
+								}
+							}
+						}
+						if (join != null) {
+							final String step = r.renderIRI((IRI) join.getPredicate().getValue());
+							final String newPath = pt.getPathText() + "/" + (inverse ? "^" : "") + step;
+							final Var newEnd = inverse ? join.getSubject() : join.getObject();
+							pt = new IrPathTriple(pt.getSubject(), newPath, newEnd);
+							removed.add(join);
+						}
 					}
 				}
+
 				out.add(pt);
 				continue;
 			}

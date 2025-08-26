@@ -158,11 +158,10 @@ public final class ApplyPathsTransform extends BaseTransform {
 								out.add(new IrPathTriple(pt1.getSubject(), fused, sp.getObject()));
 								i += 1;
 								continue;
-							} else if (sameVar(sp.getSubject(), pt1.getSubject()) && isAnonPathVar(sp.getSubject())
-									&& isAnonPathVar(sp.getObject())) {
-								// New case: SP shares its subject with the PT's subject.
-								// Build ^p / (pt) starting from SP.object, enabling later PT-then-PT fusion with
-								// a preceding path ending at SP.object.
+							} else if (sameVar(sp.getSubject(), pt1.getSubject()) && isAnonPathVar(sp.getSubject())) {
+								// SP and PT share their subject (an _anon_path_* bridge). Prefix the PT with an inverse
+								// step from the SP and start from SP.object (which may be a user var like ?y).
+								// This preserves bindings while eliminating the extra bridging triple.
 								String fused = "^" + r.renderIRI((IRI) p1.getValue()) + "/" + pt1.getPathText();
 								out.add(new IrPathTriple(sp.getObject(), fused, pt1.getObject()));
 								i += 1;
