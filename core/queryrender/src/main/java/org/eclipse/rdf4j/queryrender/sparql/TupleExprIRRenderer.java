@@ -2631,10 +2631,11 @@ public class TupleExprIRRenderer {
 	 * single inequality (we avoid rewriting a single term).
 	 */
 	private String tryRenderNotInFromAnd(final ValueExpr expr) {
-		final List<ValueExpr> terms = flattenAnd(expr);
+		final List<ValueExpr> terms = new ArrayList<>(flattenAnd(expr));
 		if (terms.isEmpty()) {
 			return null;
 		}
+
 		Var var = null;
 		final List<Value> constants = new ArrayList<>();
 		for (ValueExpr t : terms) {
