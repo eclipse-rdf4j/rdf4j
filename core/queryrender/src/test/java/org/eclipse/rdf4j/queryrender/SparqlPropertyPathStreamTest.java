@@ -236,7 +236,7 @@ public class SparqlPropertyPathStreamTest {
 //					.isEqualTo(VarNameNormalizer.normalizeVars(expected.toString()));
 
 			// Fail (again) with the original comparison so the test result is correct
-			assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + sparql);
+			assertThat(rendered).isEqualToNormalizingNewlines(sparql);
 
 		}
 	}

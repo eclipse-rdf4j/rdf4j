@@ -42,10 +42,6 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 			return null;
 		}
 
-		// Pre-pass: rewrite the simplest SP(var p) + FILTER (!= / NOT IN) into a single NPS path triple,
-		// both at top-level and in nested BGPs (handled via transformChildren below).
-		bgp = rewriteSimpleNpsOnly(bgp, r);
-
 		final List<IrNode> in = bgp.getLines();
 		final List<IrNode> out = new ArrayList<>();
 		final Set<IrNode> consumed = new LinkedHashSet<>();
@@ -283,12 +279,46 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				final IrFilter f = (IrFilter) in.get(i + 1);
 				final String condText = f.getConditionText();
 				final NsText ns = condText == null ? null : parseNegatedSetText(condText);
-				if (pVar != null && BaseTransform.isAnonPathVar(pVar) && ns != null
+
+				// If a constant tail triple immediately follows (forming !^a/step pattern), defer to S1+tail rule.
+				boolean hasTail = (i + 2 < in.size() && in.get(i + 2) instanceof IrStatementPattern
+						&& ((IrStatementPattern) in.get(i + 2)).getPredicate() != null
+						&& ((IrStatementPattern) in.get(i + 2)).getPredicate().hasValue());
+
+				if (!hasTail && pVar != null && BaseTransform.isAnonPathVar(pVar) && ns != null
 						&& pVar.getName().equals(ns.varName) && !ns.items.isEmpty()) {
 					final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
 					out.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
 					i += 1; // consume filter
 					continue;
+				}
+			}
+
+			// Simple Pattern S1+tail (non-GRAPH): SP(var p) + FILTER on that var + SP(tail)
+			// If tail shares the SP subject (bridge), fuse to: (sp.object) /( !(^items) / tail.p ) (tail.object)
+			if (n instanceof IrStatementPattern && i + 2 < in.size() && in.get(i + 1) instanceof IrFilter
+					&& in.get(i + 2) instanceof IrStatementPattern) {
+				final IrStatementPattern sp = (IrStatementPattern) n; // X ?p S or S ?p X
+				final Var pVar = sp.getPredicate();
+				final IrFilter f = (IrFilter) in.get(i + 1);
+				final String condText = f.getConditionText();
+				final NsText ns = condText == null ? null : parseNegatedSetText(condText);
+				final IrStatementPattern tail = (IrStatementPattern) in.get(i + 2);
+				if (pVar != null && BaseTransform.isAnonPathVar(pVar) && ns != null && pVar.getName() != null
+						&& pVar.getName().equals(ns.varName) && !ns.items.isEmpty()) {
+					// Require tail to have a constant predicate and reuse the SP subject as its subject
+					final Var tp = tail.getPredicate();
+					if (tp != null && tp.hasValue() && tp.getValue() instanceof IRI
+							&& BaseTransform.sameVar(sp.getSubject(), tail.getSubject())) {
+						// Build !(items) and invert members to !(^items)
+						final String base = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
+						final String inv = invertNegatedPropertySet(base);
+						final String step = r.renderIRI((IRI) tp.getValue());
+						final String path = inv + "/" + step;
+						out.add(new IrPathTriple(sp.getObject(), path, tail.getObject()));
+						i += 2; // consume filter and tail
+						continue;
+					}
 				}
 			}
 

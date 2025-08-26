@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
@@ -116,6 +117,51 @@ public final class ApplyPathsTransform extends BaseTransform {
 						if (end != null) {
 							out.add(new IrPathTriple(start, String.join("/", parts), end));
 							i = j - 1; // advance past consumed
+							continue;
+						}
+					}
+				}
+			}
+
+			// ---- Special: SP(var p) + FILTER (?p != c[, ...]) + SP(const tail) -> oriented NPS/const chain ----
+			if (n instanceof IrStatementPattern && i + 2 < in.size() && in.get(i + 1) instanceof IrFilter
+					&& in.get(i + 2) instanceof IrStatementPattern) {
+				IrStatementPattern spA = (IrStatementPattern) n; // A ?p M or M ?p A
+				Var pA = spA.getPredicate();
+				if (pA != null && !pA.hasValue() && pA.getName() != null && isAnonPathVar(pA)) {
+					IrFilter flt = (IrFilter) in.get(i + 1);
+					String cond = flt.getConditionText();
+					org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyNegatedPropertySetTransform.NsText ns = ApplyNegatedPropertySetTransform
+							.parseNegatedSetText(cond);
+					IrStatementPattern spB = (IrStatementPattern) in.get(i + 2);
+					Var pB = spB.getPredicate();
+					if (ns != null && ns.varName != null && ns.varName.equals(pA.getName()) && pB != null
+							&& pB.hasValue()
+							&& pB.getValue() instanceof IRI) {
+						Var midA;
+						boolean startForward;
+						if (isAnonPathVar(spA.getObject())) {
+							midA = spA.getObject();
+							startForward = true; // A -(?p)-> M
+						} else if (isAnonPathVar(spA.getSubject())) {
+							midA = spA.getSubject();
+							startForward = false; // M -(?p)-> A
+						} else {
+							midA = null;
+							startForward = true;
+						}
+						if (midA != null && sameVar(midA, spB.getSubject())) {
+							// Build NPS part; invert members when the first step is inverse
+							String members = ApplyNegatedPropertySetTransform.joinIrisWithPreferredOrder(ns.items, r);
+							String nps = "!(" + members + ")";
+							if (!startForward) {
+								nps = invertNegatedPropertySet(nps);
+							}
+							String tail = r.renderIRI((IRI) pB.getValue());
+							Var startVar = startForward ? spA.getSubject() : spA.getObject();
+							Var endVar = spB.getObject();
+							out.add(new IrPathTriple(startVar, nps + "/" + tail, endVar));
+							i += 2;
 							continue;
 						}
 					}
