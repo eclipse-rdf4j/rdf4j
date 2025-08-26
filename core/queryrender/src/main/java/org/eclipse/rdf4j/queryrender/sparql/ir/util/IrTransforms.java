@@ -54,6 +54,9 @@ public final class IrTransforms {
 
 					w = ApplyPathsFixedPointTransform.apply(w, r);
 
+					// Normalize NPS member order for stable, expected text
+					w = NormalizeNpsMemberOrderTransform.apply(w);
+
 					// Collections and options later; first ensure path alternations are extended when possible
 					// Merge OPTIONAL into preceding GRAPH only when it is clearly a single-step adjunct and safe.
 					w = MergeOptionalIntoPrecedingGraphTransform.apply(w);
@@ -73,7 +76,9 @@ public final class IrTransforms {
 					// (skip) string-level path parentheses simplification; keep structurally safe output
 					// (skip) final NPS member order normalization to preserve original order
 
-					// (disabled) Late normalization of grouped tail steps
+					// Late normalization of grouped tail steps: ensure a final tail like "/foaf:name"
+					// is rendered outside the right-hand grouping when safe
+					w = CanonicalizeGroupedTailStepTransform.apply(w, r);
 
 					return w;
 				}

@@ -37,6 +37,8 @@ public final class ApplyPathsFixedPointTransform extends BaseTransform {
 			prev = fp;
 			// Single iteration: apply path fusions and normalizations that can unlock each other
 			IrBGP next = ApplyPathsTransform.apply(cur, r);
+			// Fuse a pure UNION of simple triples (possibly GRAPH-wrapped) to a single alternation path
+			next = FuseUnionOfSimpleTriplesTransform.apply(next, r);
 			// Fuse a path followed by UNION of opposite-direction tail triples into an alternation tail
 			next = FusePathPlusTailAlternationUnionTransform.apply(next, r);
 			// Fuse a pre-path triple followed by a UNION of two tail branches into a single alternation tail

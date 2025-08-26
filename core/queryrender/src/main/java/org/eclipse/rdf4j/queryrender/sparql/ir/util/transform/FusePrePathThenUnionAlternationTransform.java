@@ -77,7 +77,7 @@ public final class FusePrePathThenUnionAlternationTransform extends BaseTransfor
 				Tail t1 = parseTail(u.getBranches().get(1), mid, r);
 				if (t0 != null && t1 != null && sameVar(t0.end, t1.end)) {
 					String alt = (t0.path.equals(t1.path)) ? t0.path : ("(" + t0.path + "|" + t1.path + ")");
-					String preTxt = pre.getPathText();
+					String preTxt = normalizePrePrefix(pre.getPathText());
 					String fused = preTxt + "/" + alt;
 					Var endVar = t0.end;
 					// Try to also consume an immediate tail triple (e.g., foaf:name) so that it appears outside the
@@ -198,6 +198,32 @@ public final class FusePrePathThenUnionAlternationTransform extends BaseTransfor
 
 	// Normalize a common pre-path shape: ((!(A)))/(((B))?) → (!(A)/(B)?)
 	static String normalizePrePrefix(String s) {
-		return s;
+		if (s == null)
+			return null;
+		String t = s.trim();
+		if (!t.startsWith("((")) {
+			return t;
+		}
+		int sep = t.indexOf(")/(");
+		if (sep <= 0) {
+			return t;
+		}
+		String left = t.substring(2, sep); // content inside the leading "(("
+		String rightWithParens = t.substring(sep + 2);
+		// If right side is double-parenthesized with an optional quantifier, collapse one layer:
+		// "((X))?" -> "(X)?" and "((X))" -> "(X)".
+		if (rightWithParens.length() >= 2 && rightWithParens.charAt(0) == '(') {
+			// Case: ends with ")?" and also has an extra ")" before the '?'
+			if (rightWithParens.endsWith(")?") && rightWithParens.length() >= 3
+					&& rightWithParens.charAt(rightWithParens.length() - 3) == ')') {
+				String inner = rightWithParens.substring(1, rightWithParens.length() - 3);
+				rightWithParens = "(" + inner + ")?";
+			} else if (rightWithParens.charAt(rightWithParens.length() - 1) == ')') {
+				// Collapse a single outer pair of parentheses
+				String inner = rightWithParens.substring(1, rightWithParens.length() - 1);
+				rightWithParens = "(" + inner + ")";
+			}
+		}
+		return "((" + left + ")/" + rightWithParens;
 	}
 }

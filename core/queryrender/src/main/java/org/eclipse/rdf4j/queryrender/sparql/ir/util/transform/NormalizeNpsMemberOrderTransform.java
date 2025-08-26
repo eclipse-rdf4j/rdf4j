@@ -120,6 +120,7 @@ public final class NormalizeNpsMemberOrderTransform extends BaseTransform {
 				.map(String::trim)
 				.filter(t -> !t.isEmpty())
 				.toArray(String[]::new);
+		// Enforce canonical order: non-inverse first, then prefer rdf:* before others, then lexicographic by IRI text
 		Arrays.sort(toks, new Comparator<String>() {
 			@Override
 			public int compare(String a, String b) {
@@ -130,12 +131,12 @@ public final class NormalizeNpsMemberOrderTransform extends BaseTransform {
 				}
 				String aa = ia ? a.substring(1) : a;
 				String bb = ib ? b.substring(1) : b;
-				int c = aa.compareTo(bb);
-				if (c != 0)
-					return c;
-				if (ia == ib)
-					return 0;
-				return ia ? 1 : -1;
+				boolean ardf = aa.startsWith("rdf:");
+				boolean brdf = bb.startsWith("rdf:");
+				if (ardf != brdf) {
+					return ardf ? -1 : 1; // rdf:* first
+				}
+				return aa.compareTo(bb);
 			}
 		});
 		return String.join("|", toks);
