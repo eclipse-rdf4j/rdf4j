@@ -956,8 +956,8 @@ public class TupleExprIRRenderer {
 			final Var obj = p.getObjectVar();
 			final PathNode inner = parseAPathInner(p.getPathExpression(), p.getSubjectVar(), p.getObjectVar());
 			if (inner == null) {
-				where.add(new IrText("# unsupported path"));
-				return;
+				throw new IllegalStateException(
+						"Failed to parse ArbitraryLengthPath inner expression: " + p.getPathExpression());
 			}
 			final long min = p.getMinLength();
 			final long max = getMaxLengthSafe(p);
@@ -2909,6 +2909,12 @@ public class TupleExprIRRenderer {
 			}
 		}
 		if (innerExpr instanceof Union) {
+			// Special-case: UNION of Filter( ?p != <iri> ) around a single-step triple encodes a negated property set
+			// possibly with forward/inverse members, as produced by the parser for !(iri|^iri).
+			PathNode nps = tryParseNegatedPropertySetFromUnion(innerExpr, subj, obj);
+			if (nps != null) {
+				return nps;
+			}
 			List<TupleExpr> branches = new ArrayList<>();
 			flattenUnion(innerExpr, branches);
 			List<PathNode> alts = new ArrayList<>(branches.size());
@@ -2949,6 +2955,63 @@ public class TupleExprIRRenderer {
 			}
 		}
 		return null;
+	}
+
+	/** Try to parse a UNION of Filter+StatementPattern branches representing a negated property set. */
+	private PathNode tryParseNegatedPropertySetFromUnion(final TupleExpr expr, final Var subj, final Var obj) {
+		List<TupleExpr> leaves = new ArrayList<>();
+		flattenUnion(expr, leaves);
+		if (leaves.isEmpty()) {
+			return null;
+		}
+		List<PathNode> members = new ArrayList<>();
+		for (TupleExpr leaf : leaves) {
+			if (!(leaf instanceof Filter)) {
+				return null; // require Filter wrapping the single triple
+			}
+			Filter f = (Filter) leaf;
+			if (!(f.getArg() instanceof StatementPattern)) {
+				return null;
+			}
+			StatementPattern sp = (StatementPattern) f.getArg();
+			// Condition must be a simple inequality between a Var and a constant IRI
+			if (!(f.getCondition() instanceof Compare)) {
+				return null;
+			}
+			Compare cmp = (Compare) f.getCondition();
+			if (cmp.getOperator() != CompareOp.NE) {
+				return null;
+			}
+			Var pv = null;
+			IRI bad = null;
+			if (cmp.getLeftArg() instanceof Var && cmp.getRightArg() instanceof ValueConstant
+					&& ((ValueConstant) cmp.getRightArg()).getValue() instanceof IRI) {
+				pv = (Var) cmp.getLeftArg();
+				bad = (IRI) ((ValueConstant) cmp.getRightArg()).getValue();
+			} else if (cmp.getRightArg() instanceof Var && cmp.getLeftArg() instanceof ValueConstant
+					&& ((ValueConstant) cmp.getLeftArg()).getValue() instanceof IRI) {
+				pv = (Var) cmp.getRightArg();
+				bad = (IRI) ((ValueConstant) cmp.getLeftArg()).getValue();
+			} else {
+				return null;
+			}
+			// The triple must use the same predicate variable being compared
+			if (!sameVar(sp.getPredicateVar(), pv)) {
+				return null;
+			}
+			// Orientation: either subj --?pv--> obj, or obj --?pv--> subj
+			boolean forward = sameVar(sp.getSubjectVar(), subj) && sameVar(sp.getObjectVar(), obj);
+			boolean inverse = sameVar(sp.getSubjectVar(), obj) && sameVar(sp.getObjectVar(), subj);
+			if (!forward && !inverse) {
+				return null;
+			}
+			members.add(new PathAtom(bad, inverse));
+		}
+		if (members.isEmpty()) {
+			return null;
+		}
+		PathNode inner = (members.size() == 1) ? members.get(0) : new PathAlt(members);
+		return new PathNeg(inner);
 	}
 
 	/** Result holder for parsing a UNION of two single-step StatementPatterns that start at 'subj'. */
@@ -3742,6 +3805,26 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public int prec() {
+			return PREC_ATOM;
+		}
+	}
+
+	/** Negated property set wrapper: renders as !(inner). */
+	private static final class PathNeg implements PathNode {
+		final PathNode inner;
+
+		PathNeg(PathNode inner) {
+			this.inner = inner;
+		}
+
+		@Override
+		public String render() {
+			return "!(" + (inner == null ? "" : inner.render()) + ")";
+		}
+
+		@Override
+		public int prec() {
+			// SPARQL treats a property set as an atomic path component
 			return PREC_ATOM;
 		}
 	}
