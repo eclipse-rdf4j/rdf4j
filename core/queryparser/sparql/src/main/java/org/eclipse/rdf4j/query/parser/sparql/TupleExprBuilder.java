@@ -1663,14 +1663,14 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				if (filterConditionInverse == null) {
 					filterConditionInverse = compare;
 				} else {
-					filterConditionInverse = new And(compare, filterConditionInverse);
+					filterConditionInverse = new And(filterConditionInverse, compare);
 				}
 			} else {
 				Compare compare = new Compare(predVar.clone(), predicate, CompareOp.NE);
 				if (filterCondition == null) {
 					filterCondition = compare;
 				} else {
-					filterCondition = new And(compare, filterCondition);
+					filterCondition = new And(filterCondition, compare);
 				}
 			}
 		}
