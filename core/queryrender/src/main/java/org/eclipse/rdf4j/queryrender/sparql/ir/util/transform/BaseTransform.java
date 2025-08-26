@@ -174,19 +174,16 @@ public class BaseTransform {
 				if (ptxt != null) {
 					String s = ptxt.trim();
 					if (s.startsWith("!(") && s.endsWith(")")) {
-						Var nextSubj = null;
-						if (i + 1 < in.size()) {
-							IrNode nn = in.get(i + 1);
-							if (nn instanceof IrStatementPattern) {
-								nextSubj = ((IrStatementPattern) nn).getSubject();
-							} else if (nn instanceof IrPathTriple) {
-								nextSubj = ((IrPathTriple) nn).getSubject();
+						// Only orient NPS to chain with a non-NPS following path triple
+						if (i + 1 < in.size() && in.get(i + 1) instanceof IrPathTriple) {
+							IrPathTriple nn = (IrPathTriple) in.get(i + 1);
+							String nextTxt = nn.getPathText();
+							boolean nextIsNps = nextTxt != null && nextTxt.trim().startsWith("!(");
+							if (!nextIsNps && sameVar(pt.getSubject(), nn.getSubject())
+									&& !sameVar(pt.getObject(), nn.getSubject())) {
+								String inv = invertNegatedPropertySet(s);
+								pt = new IrPathTriple(pt.getObject(), inv, pt.getSubject());
 							}
-						}
-						if (nextSubj != null && sameVar(pt.getSubject(), nextSubj)
-								&& !sameVar(pt.getObject(), nextSubj)) {
-							String inv = invertNegatedPropertySet(s);
-							pt = new IrPathTriple(pt.getObject(), inv, pt.getSubject());
 						}
 					}
 				}
