@@ -99,7 +99,7 @@ public class TupleExprIRRendererTest {
 		try {
 			TupleExpr expected = parseAlgebra(SPARQL_PREFIX + sparql);
 			String rendered = render(SPARQL_PREFIX + sparql, cfg);
-			System.out.println(rendered + "\n\n\n");
+//			System.out.println(rendered + "\n\n\n");
 			TupleExpr actual = parseAlgebra(rendered);
 			assertThat(VarNameNormalizer.normalizeVars(actual.toString()))
 					.as("Algebra after rendering must be identical to original")
@@ -2256,15 +2256,19 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
+//	@Disabled
 	void nested_paths_extreme_3_subquery_exists() {
 		String q = "SELECT ?s\n" +
 				"WHERE {\n" +
 				"  FILTER (EXISTS {\n" +
-				"    SELECT ?s\n" +
-				"    WHERE { ?s ((ex:p1|^ex:p2)/(!(rdf:type|^rdf:type))*/ex:p3?) ?o . }\n" +
+				"    {\n" +
+				"      SELECT ?s\n" +
+				"      WHERE {\n" +
+				"        ?s (ex:p1|^ex:p2)/(!(rdf:type|^rdf:type))*/ex:p3? ?o .\n" +
+				"      }\n" +
 				"    GROUP BY ?s\n" +
 				"    HAVING (COUNT(?o) >= 0)\n" +
+				"  }\n" +
 				"  })\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
