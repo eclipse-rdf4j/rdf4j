@@ -38,7 +38,7 @@ public class SparqlPropertyPathStreamTest {
 	private static final int MAX_DEPTH = 3;
 
 	/** Upper bound on total positive tests (across all skeletons and WS variants). */
-	private static final int MAX_TESTS = 200;
+	private static final int MAX_TESTS = 500;
 
 	/** Upper bound on total negative tests. */
 	private static final int MAX_NEG_TESTS = 300;
