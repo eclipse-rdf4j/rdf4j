@@ -99,6 +99,7 @@ public class TupleExprIRRendererTest {
 		try {
 			TupleExpr expected = parseAlgebra(SPARQL_PREFIX + sparql);
 			String rendered = render(SPARQL_PREFIX + sparql, cfg);
+			System.out.println(rendered + "\n\n\n");
 			TupleExpr actual = parseAlgebra(rendered);
 			assertThat(VarNameNormalizer.normalizeVars(actual.toString()))
 					.as("Algebra after rendering must be identical to original")

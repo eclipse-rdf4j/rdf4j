@@ -395,17 +395,16 @@ public final class ApplyPathsTransform extends BaseTransform {
 								Var startVar = startForward ? sp0.getSubject() : sp0.getObject();
 								String first = r.renderIRI((IRI) p0.getValue());
 								if (!startForward) {
-									first = "^( " + first + " )";
+									first = "^" + first;
 								}
 								// Alternation preserves UNION branch order
 
-								String altTxt = alts.stream()
-										.map(a -> "( " + a + " )")
-										.collect(Collectors.joining(" | "));
+								String altTxt = (alts.size() == 1) ? alts.get(0)
+										: ("(" + String.join("|", alts) + ")");
 
 								// Parenthesize first step and wrap alternation in triple parens to match expected
 								// idempotence
-								String pathTxt = "(" + first + ")/(" + altTxt + ")";
+								String pathTxt = first + "/" + altTxt;
 
 								IrPathTriple fused = new IrPathTriple(startVar, pathTxt, endVarOut);
 								if (graphRef != null) {

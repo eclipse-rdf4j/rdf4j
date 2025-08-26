@@ -35,6 +35,11 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 
 	private static final Pattern DOUBLE_WRAP_NPS = Pattern.compile("\\(\\(\\(!\\([^()]*\\)\\)\\)\\)");
 	private static final Pattern TRIPLE_WRAP_OPTIONAL = Pattern.compile("\\(\\(\\(([^()]+)\\)\\)\\?\\)\\)");
+	// Reduce double parens around a simple segment: ((...)) -> (...)
+	private static final Pattern DOUBLE_PARENS_SEGMENT = Pattern.compile("\\(\\(([^()]+)\\)\\)");
+	// Drop parens around a simple sequence when immediately followed by '/': (a/b)/ -> a/b/
+	private static final Pattern PARENS_AROUND_SEQ_BEFORE_SLASH = Pattern
+			.compile("\\(([^()|]+/[^()|]+)\\)(?=/)");
 
 	public static IrBGP apply(IrBGP bgp) {
 		if (bgp == null)
@@ -89,6 +94,8 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			prev = cur;
 			cur = DOUBLE_WRAP_NPS.matcher(cur).replaceAll("(!$1)");
 			cur = TRIPLE_WRAP_OPTIONAL.matcher(cur).replaceAll("(($1)?)");
+			cur = DOUBLE_PARENS_SEGMENT.matcher(cur).replaceAll("($1)");
+			cur = PARENS_AROUND_SEQ_BEFORE_SLASH.matcher(cur).replaceAll("$1");
 		} while (!cur.equals(prev) && ++guard < 5);
 		return cur;
 	}

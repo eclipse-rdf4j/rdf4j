@@ -38,6 +38,94 @@ public class BaseTransform {
 	// Local copy of parser's _anon_path_ naming hint for safe path fusions
 	public static final String ANON_PATH_PREFIX = "_anon_path_";
 
+	// --------------- Path text helpers: add parens only when needed ---------------
+
+	/** Return true if the string has the given character at top level (not inside parentheses). */
+	public static boolean hasTopLevel(final String s, final char ch) {
+		if (s == null)
+			return false;
+		final String t = s.trim();
+		int depth = 0;
+		for (int i = 0; i < t.length(); i++) {
+			char c = t.charAt(i);
+			if (c == '(') {
+				depth++;
+			} else if (c == ')') {
+				depth--;
+			} else if (c == ch && depth == 0) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** True if the text is wrapped by a single pair of outer parentheses. */
+	public static boolean isWrapped(final String s) {
+		if (s == null)
+			return false;
+		final String t = s.trim();
+		if (t.length() < 2 || t.charAt(0) != '(' || t.charAt(t.length() - 1) != ')')
+			return false;
+		int depth = 0;
+		for (int i = 0; i < t.length(); i++) {
+			char c = t.charAt(i);
+			if (c == '(')
+				depth++;
+			else if (c == ')')
+				depth--;
+			if (depth == 0 && i < t.length() - 1)
+				return false; // closes too early
+		}
+		return true;
+	}
+
+	/** Rough atomic check for a property path text: no top-level '|' or '/', NPS, or already wrapped. */
+	public static boolean isAtomicPathText(final String s) {
+		if (s == null)
+			return true;
+		final String t = s.trim();
+		if (t.isEmpty())
+			return true;
+		if (isWrapped(t))
+			return true;
+		if (t.startsWith("!("))
+			return true; // negated property set is atomic
+		if (t.startsWith("^")) {
+			final String rest = t.substring(1).trim();
+			// ^IRI or ^( ... )
+			return rest.startsWith("(") || (!hasTopLevel(rest, '|') && !hasTopLevel(rest, '/'));
+		}
+		return !hasTopLevel(t, '|') && !hasTopLevel(t, '/');
+	}
+
+	/**
+	 * When using a part inside a sequence with '/', only wrap it if it contains a top-level alternation '|'.
+	 */
+	public static String wrapForSequence(final String part) {
+		if (part == null)
+			return null;
+		final String t = part.trim();
+		if (isWrapped(t) || !hasTopLevel(t, '|'))
+			return t;
+		return "(" + t + ")";
+	}
+
+	/** Prefix with '^', wrapping if the inner is not atomic. */
+	public static String wrapForInverse(final String inner) {
+		if (inner == null)
+			return "^()";
+		final String t = inner.trim();
+		return "^" + (isAtomicPathText(t) ? t : ("(" + t + ")"));
+	}
+
+	/** Apply a quantifier to a path, wrapping only when the inner is not atomic. */
+	public static String applyQuantifier(final String inner, final char quant) {
+		if (inner == null)
+			return "()" + quant;
+		final String t = inner.trim();
+		return (isAtomicPathText(t) ? t : ("(" + t + ")")) + quant;
+	}
+
 	public static void copyAllExcept(IrBGP from, IrBGP to, IrNode except) {
 		if (from == null) {
 			return;
@@ -64,12 +152,12 @@ public class BaseTransform {
 				IrPathTriple b = (IrPathTriple) in.get(i + 1);
 				Var bridge = a.getObject();
 				if (sameVar(bridge, b.getSubject()) && isAnonPathVar(bridge)) {
-					// Merge a and b: s -(a.path/b.path)-> o
+					// Merge a and b: s -(a.path/b.path)-> o. Keep explicit grouping to enable later canonicalization.
 					String fusedPath = "(" + a.getPathText() + ")/(" + b.getPathText() + ")";
 					out.add(new IrPathTriple(a.getSubject(), fusedPath, b.getObject()));
 					i += 1; // consume b
 				} else if (sameVar(bridge, b.getObject()) && isAnonPathVar(bridge)) {
-					// Merge a and b: s -(a.path/b.path)-> o
+					// Merge a and b with inverse join on b. Keep explicit grouping.
 					String fusedPath = "(" + a.getPathText() + ")/^(" + b.getPathText() + ")";
 					out.add(new IrPathTriple(a.getSubject(), fusedPath, b.getSubject()));
 					i += 1; // consume b
@@ -82,9 +170,9 @@ public class BaseTransform {
 							String aPath = a.getPathText();
 							String left = invertNegatedPropertySet(aPath);
 							if (left == null) {
-								left = "^(" + aPath + ")";
+								left = wrapForInverse(aPath);
 							}
-							String fusedPath = left + "/(" + b.getPathText() + ")";
+							String fusedPath = left + "/" + wrapForSequence(b.getPathText());
 							out.add(new IrPathTriple(a.getObject(), fusedPath, b.getObject()));
 							i += 1; // consume b
 							continue;
@@ -95,9 +183,9 @@ public class BaseTransform {
 							String aPath = a.getPathText();
 							String left = invertNegatedPropertySet(aPath);
 							if (left == null) {
-								left = "^(" + aPath + ")";
+								left = wrapForInverse(aPath);
 							}
-							String right = "^(" + b.getPathText() + ")";
+							String right = wrapForInverse(b.getPathText());
 							String fusedPath = left + "/" + right;
 							out.add(new IrPathTriple(a.getObject(), fusedPath, b.getSubject()));
 							i += 1; // consume b

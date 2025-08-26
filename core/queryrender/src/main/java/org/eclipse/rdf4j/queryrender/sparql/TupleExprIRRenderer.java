@@ -528,7 +528,7 @@ public class TupleExprIRRenderer {
 			}
 			out.append("HAVING");
 			for (String cond : ir.getHaving()) {
-				out.append(" (").append(cond).append(")");
+				out.append(' ').append(asConstraint(cond));
 			}
 		}
 
@@ -998,9 +998,10 @@ public class TupleExprIRRenderer {
 		@Override
 		public void meet(final ZeroLengthPath p) {
 			where.add(new IrText(
-					"FILTER (sameTerm(" + renderVarOrValue(p.getSubjectVar()) + ", "
-							+ renderVarOrValue(p.getObjectVar())
-							+ "))"));
+					"FILTER " + TupleExprIRRenderer.asConstraint(
+							"sameTerm(" + renderVarOrValue(p.getSubjectVar()) + ", "
+									+ renderVarOrValue(p.getObjectVar())
+									+ ")")));
 		}
 
 		@Override
@@ -1882,7 +1883,7 @@ public class TupleExprIRRenderer {
 				String cond = r.renderExpr(lj.getCondition());
 				cond = TupleExprIRRenderer.stripRedundantOuterParens(cond);
 				flushOpenGraph();
-				line("FILTER (" + cond + ")");
+				line("FILTER " + TupleExprIRRenderer.asConstraint(cond));
 			}
 			closeBlock();
 			newline();
@@ -2023,7 +2024,7 @@ public class TupleExprIRRenderer {
 					String cond = r.renderExpr(filter.getCondition());
 					cond = TupleExprIRRenderer.stripRedundantOuterParens(cond);
 					flushOpenGraph();
-					line("FILTER (" + cond + ")");
+					line("FILTER " + TupleExprIRRenderer.asConstraint(cond));
 					trailingProj.visit(this);
 					return;
 				}
@@ -2034,7 +2035,7 @@ public class TupleExprIRRenderer {
 			String cond = r.renderExpr(filter.getCondition());
 			cond = TupleExprIRRenderer.stripRedundantOuterParens(cond);
 			flushOpenGraph();
-			line("FILTER (" + cond + ")");
+			line("FILTER " + TupleExprIRRenderer.asConstraint(cond));
 		}
 
 		private Projection extractProjection(TupleExpr node) {
@@ -2148,8 +2149,9 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(final ZeroLengthPath p) {
-			line("FILTER (sameTerm(" + r.renderVarOrValue(p.getSubjectVar()) + ", " +
-					r.renderVarOrValue(p.getObjectVar()) + "))");
+			line("FILTER " + TupleExprIRRenderer.asConstraint(
+					"sameTerm(" + r.renderVarOrValue(p.getSubjectVar()) + ", " + r.renderVarOrValue(p.getObjectVar())
+							+ ")"));
 		}
 
 		@Override
@@ -3445,6 +3447,56 @@ public class TupleExprIRRenderer {
 			return t.substring(1, t.length() - 1).trim();
 		}
 		return t;
+	}
+
+	/**
+	 * Ensure a text snippet is valid as a SPARQL Constraint (used in FILTER/HAVING). If it already looks like a
+	 * function/built-in call (e.g., isIRI(?x), REGEX(...), EXISTS { ... }), or is already bracketted, it is returned as
+	 * is. Otherwise, wrap it in parentheses.
+	 */
+	public static String asConstraint(final String s) {
+		if (s == null) {
+			return "()";
+		}
+		final String t = s.trim();
+		if (t.isEmpty()) {
+			return "()";
+		}
+		// Already parenthesized and spanning full expression
+		if (t.charAt(0) == '(' && t.charAt(t.length() - 1) == ')') {
+			int depth = 0;
+			for (int i = 0; i < t.length(); i++) {
+				char ch = t.charAt(i);
+				if (ch == '(')
+					depth++;
+				else if (ch == ')')
+					depth--;
+				if (depth == 0 && i < t.length() - 1) {
+					// closing too early -> not a single outer pair
+					break;
+				}
+				if (i == t.length() - 1 && depth == 0) {
+					return t; // single outer pair spans whole string
+				}
+			}
+		}
+
+		// EXISTS / NOT EXISTS { ... }
+		if (t.startsWith("EXISTS ") || t.startsWith("NOT EXISTS ")) {
+			return t;
+		}
+
+		// Function/built-in-like call: head(...) with no whitespace in head
+		int lpar = t.indexOf('(');
+		if (lpar > 0 && t.endsWith(")")) {
+			String head = t.substring(0, lpar).trim();
+			if (!head.isEmpty() && head.indexOf(' ') < 0) {
+				return t;
+			}
+		}
+
+		// Otherwise, bracket to form a valid Constraint
+		return "(" + t + ")";
 	}
 
 	/**
