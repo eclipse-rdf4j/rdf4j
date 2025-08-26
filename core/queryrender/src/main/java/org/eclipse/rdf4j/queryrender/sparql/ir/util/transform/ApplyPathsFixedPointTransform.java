@@ -45,6 +45,8 @@ public final class ApplyPathsFixedPointTransform extends BaseTransform {
 			next = FusePrePathThenUnionAlternationTransform.apply(next, r);
 			// Merge adjacent GRAPH blocks with the same graph ref so that downstream fusers see a single body
 			next = CoalesceAdjacentGraphsTransform.apply(next);
+			// Within UNIONs, partially fuse compatible path-triple branches into a single alternation branch
+			next = FuseUnionOfPathTriplesPartialTransform.apply(next, r);
 			// Now that adjacent GRAPHs are coalesced, normalize inner GRAPH bodies for SP/PT fusions
 			next = ApplyNormalizeGraphInnerPathsTransform.apply(next, r);
 			// (disabled) Canonicalize grouping around split middle steps
