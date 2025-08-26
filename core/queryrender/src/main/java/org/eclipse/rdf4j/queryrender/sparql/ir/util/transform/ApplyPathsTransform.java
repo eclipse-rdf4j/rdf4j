@@ -781,6 +781,99 @@ public final class ApplyPathsTransform extends BaseTransform {
 					}
 				}
 
+				// 2a-mixed-two: one branch is a simple IrPathTriple representing exactly two constant steps
+				// without quantifiers/alternation, and the other branch is exactly two SPs via an _anon_path_* mid,
+				// sharing identical endpoints. Fuse into a single alternation path.
+				if (u.getBranches().size() == 2) {
+					class TwoLike {
+						final Var s;
+						final Var o;
+						final String path;
+
+						TwoLike(Var s, Var o, String path) {
+							this.s = s;
+							this.o = o;
+							this.path = path;
+						}
+					}
+					Function<IrBGP, TwoLike> parseTwoLike = (bg) -> {
+						if (bg == null || bg.getLines().isEmpty())
+							return null;
+						IrNode only = (bg.getLines().size() == 1) ? bg.getLines().get(0) : null;
+						if (only instanceof IrPathTriple) {
+							IrPathTriple pt = (IrPathTriple) only;
+							String ptxt = pt.getPathText();
+							if (ptxt == null || ptxt.contains("|") || ptxt.contains("?") || ptxt.contains("*")
+									|| ptxt.contains("+")) {
+								return null;
+							}
+							int slash = ptxt.indexOf('/');
+							if (slash < 0)
+								return null; // not a two-step path
+							String left = ptxt.substring(0, slash).trim();
+							String right = ptxt.substring(slash + 1).trim();
+							if (left.isEmpty() || right.isEmpty())
+								return null;
+							return new TwoLike(pt.getSubject(), pt.getObject(), left + "/" + right);
+						}
+						if (bg.getLines().size() == 2 && bg.getLines().get(0) instanceof IrStatementPattern
+								&& bg.getLines().get(1) instanceof IrStatementPattern) {
+							IrStatementPattern a = (IrStatementPattern) bg.getLines().get(0);
+							IrStatementPattern c = (IrStatementPattern) bg.getLines().get(1);
+							Var ap = a.getPredicate(), cp = c.getPredicate();
+							if (ap == null || !ap.hasValue() || !(ap.getValue() instanceof IRI) || cp == null
+									|| !cp.hasValue() || !(cp.getValue() instanceof IRI)) {
+								return null;
+							}
+							Var mid = null, sVar = null, oVar = null;
+							boolean firstForward = false, secondForward = false;
+							if (isAnonPathVar(a.getObject()) && sameVar(a.getObject(), c.getSubject())) {
+								mid = a.getObject();
+								sVar = a.getSubject();
+								oVar = c.getObject();
+								firstForward = true;
+								secondForward = true;
+							} else if (isAnonPathVar(a.getSubject()) && sameVar(a.getSubject(), c.getObject())) {
+								mid = a.getSubject();
+								sVar = a.getObject();
+								oVar = c.getSubject();
+								firstForward = false;
+								secondForward = false;
+							} else if (isAnonPathVar(a.getObject()) && sameVar(a.getObject(), c.getObject())) {
+								mid = a.getObject();
+								sVar = a.getSubject();
+								oVar = c.getSubject();
+								firstForward = true;
+								secondForward = false;
+							} else if (isAnonPathVar(a.getSubject()) && sameVar(a.getSubject(), c.getSubject())) {
+								mid = a.getSubject();
+								sVar = a.getObject();
+								oVar = c.getObject();
+								firstForward = false;
+								secondForward = true;
+							}
+							if (mid == null)
+								return null;
+							String step1 = (firstForward ? "" : "^") + r.renderIRI((IRI) ap.getValue());
+							String step2 = (secondForward ? "" : "^") + r.renderIRI((IRI) cp.getValue());
+							return new TwoLike(sVar, oVar, step1 + "/" + step2);
+						}
+						return null;
+					};
+					IrBGP b0 = u.getBranches().get(0);
+					IrBGP b1 = u.getBranches().get(1);
+					TwoLike t0 = parseTwoLike.apply(b0);
+					TwoLike t1 = parseTwoLike.apply(b1);
+					if (t0 != null && t1 != null) {
+						// Ensure endpoints match (forward); if reversed, skip this case for safety.
+						if (sameVar(t0.s, t1.s) && sameVar(t0.o, t1.o)) {
+							String alt = ("(" + t0.path + ")|(" + t1.path + ")");
+							out.add(new IrPathTriple(t0.s, alt, t0.o));
+							continue;
+						}
+					}
+				}
+
 				// 2a-alt: UNION with one branch a single SP and the other already fused to IrPathTriple.
 				// Example produced by earlier passes: { ?y foaf:knows ?x } UNION { ?x ex:knows/^foaf:knows ?y }.
 				if (u.getBranches().size() == 2) {
@@ -812,8 +905,8 @@ public final class ApplyPathsTransform extends BaseTransform {
 								atom = "^" + r.renderIRI((IRI) pv.getValue());
 							}
 							if (atom != null) {
-								final String alt = (ptIdx == 0) ? (pt.getPathText() + "|" + atom)
-										: (atom + "|" + pt.getPathText());
+								final String alt = (ptIdx == 0) ? ("(" + pt.getPathText() + ")|(" + atom + ")")
+										: ("(" + atom + ")|(" + pt.getPathText() + ")");
 								out.add(new IrPathTriple(wantS, alt, wantO));
 								continue;
 							}
