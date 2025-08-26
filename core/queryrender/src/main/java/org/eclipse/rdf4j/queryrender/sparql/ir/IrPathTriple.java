@@ -49,6 +49,8 @@ public class IrPathTriple extends IrTripleLike {
 	public void print(IrPrinter p) {
 		final String sTxt = p.renderTermWithOverrides(subject);
 		final String oTxt = p.renderTermWithOverrides(object);
-		p.line(sTxt + " " + pathText + " " + oTxt + " .");
+		final String path = p.applyOverridesToText(pathText);
+		final String trimmed = TupleExprIRRenderer.stripRedundantOuterParens(path);
+		p.line(sTxt + " " + trimmed + " " + oTxt + " .");
 	}
 }
