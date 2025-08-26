@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrExists;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
@@ -50,6 +51,22 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 			IrNode n = in.get(i);
 			if (consumed.contains(n)) {
 				continue;
+			}
+
+			// Normalize simple var+FILTER patterns inside EXISTS blocks early so nested shapes
+			// can fuse into !(...) as expected by streaming tests.
+			if (n instanceof IrFilter) {
+				final IrFilter fNode = (IrFilter) n;
+				if (fNode.getBody() instanceof IrExists) {
+					final IrExists ex = (IrExists) fNode.getBody();
+					IrBGP inner = ex.getWhere();
+					if (inner != null) {
+						inner = rewriteSimpleNpsOnly(inner, r);
+						out.add(new IrFilter(new IrExists(inner)));
+						i += 0;
+						continue;
+					}
+				}
 			}
 
 			// (global NOT IN → NPS rewrite intentionally not applied; see specific GRAPH fusions below)

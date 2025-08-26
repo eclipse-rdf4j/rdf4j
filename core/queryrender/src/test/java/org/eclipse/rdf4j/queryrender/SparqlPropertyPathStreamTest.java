@@ -357,10 +357,10 @@ public class SparqlPropertyPathStreamTest {
 
 	/** SPARQL PathNegatedPropertySet: only IRI or ^IRI elements (no 'a', no composed paths). */
 	private static final class NegatedSet implements PathNode {
-		final List<PathNode> elems; // each elem must be Atom(!= 'a') or Inverse(Atom(!='a'))
+		final ArrayList<PathNode> elems; // each elem must be Atom(!= 'a') or Inverse(Atom(!='a'))
 
 		NegatedSet(List<PathNode> elems) {
-			this.elems = elems;
+			this.elems = new ArrayList<>(elems);
 		}
 
 		public Prec prec() {
@@ -509,6 +509,7 @@ public class SparqlPropertyPathStreamTest {
 				maybeParen(inner, sb, Prec.PREFIX, compactSingleNeg);
 			} else if (n instanceof NegatedSet) {
 				NegatedSet ns = (NegatedSet) n;
+				ns.elems.sort(Comparator.comparing(Object::toString)); // deterministic order
 				if (compactSingleNeg && ns.elems.size() == 1
 						&& (ns.elems.get(0) instanceof Atom || ns.elems.get(0) instanceof Inverse)) {
 					sb.append("!");
