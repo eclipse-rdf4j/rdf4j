@@ -125,6 +125,13 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyCollectionsTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyNegatedPropertySetTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyPropertyListsTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CanonicalizeBareNpsOrientationTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CoalesceAdjacentGraphsTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeNpsMemberOrderTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeZeroOrOneSubselectTransform;
 
 /**
  * TupleExprIRRenderer: render RDF4J algebra back into SPARQL text (via a compact internal normalization/IR step), with:
@@ -1992,11 +1999,11 @@ public class TupleExprIRRenderer {
 		}
 
 		private void printSubtreeWithBestEffort(final TupleExpr subtree) {
-			final List<TupleExpr> flat = new ArrayList<>();
-			if (subtree instanceof Join) {
-				TupleExprIRRenderer.flattenJoin(subtree, flat);
-			} else {
-				flat.add(subtree);
+			// Best-effort fallback: delegate to the standard visitor to print the subtree.
+			// This ensures UNION branches render their contents (e.g., simple triples, GRAPH blocks,
+			// nested joins) using the same logic as top-level WHERE printing.
+			if (subtree != null) {
+				subtree.visit(this);
 			}
 		}
 
