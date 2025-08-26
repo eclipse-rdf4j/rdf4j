@@ -165,9 +165,17 @@ public class BaseTransform {
 					// Additional cases: the bridge variable occurs as the subject of the first path triple.
 					Var aSubj = a.getSubject();
 					if (isAnonPathVar(aSubj)) {
+						// Avoid inverting NPS members: if 'a' is a bare negated property set, do not
+						// attempt subject-shared composition which requires inverting 'a'. Leave to other
+						// fusers that do not alter the NPS text.
+						String aPath = a.getPathText();
+						boolean aIsNps = aPath != null && aPath.trim().startsWith("!(");
+						if (aIsNps) {
+							out.add(n);
+							continue;
+						}
 						// Case: a.subject == b.subject -> compose by inverting 'a' and chaining forward with 'b'
 						if (sameVar(aSubj, b.getSubject())) {
-							String aPath = a.getPathText();
 							String left = invertNegatedPropertySet(aPath);
 							if (left == null) {
 								left = wrapForInverse(aPath);
@@ -180,7 +188,6 @@ public class BaseTransform {
 
 						// Case: a.subject == b.object -> compose by inverting both 'a' and 'b'
 						if (sameVar(aSubj, b.getObject())) {
-							String aPath = a.getPathText();
 							String left = invertNegatedPropertySet(aPath);
 							if (left == null) {
 								left = wrapForInverse(aPath);
@@ -262,17 +269,10 @@ public class BaseTransform {
 				if (ptxt != null) {
 					String s = ptxt.trim();
 					if (s.startsWith("!(") && s.endsWith(")")) {
-						// Only orient NPS to chain with a non-NPS following path triple
-						if (i + 1 < in.size() && in.get(i + 1) instanceof IrPathTriple) {
-							IrPathTriple nn = (IrPathTriple) in.get(i + 1);
-							String nextTxt = nn.getPathText();
-							boolean nextIsNps = nextTxt != null && nextTxt.trim().startsWith("!(");
-							if (!nextIsNps && sameVar(pt.getSubject(), nn.getSubject())
-									&& !sameVar(pt.getObject(), nn.getSubject())) {
-								String inv = invertNegatedPropertySet(s);
-								pt = new IrPathTriple(pt.getObject(), inv, pt.getSubject());
-							}
-						}
+						// Do not re-orient bare NPS here. Flipping NPS to chain with the following
+						// triple inverts individual members (ex:g <-> ^ex:g), which breaks
+						// idempotence on round-trips. Other fusion passes can still chain without
+						// altering the NPS semantics.
 					}
 				}
 				out.add(pt);
