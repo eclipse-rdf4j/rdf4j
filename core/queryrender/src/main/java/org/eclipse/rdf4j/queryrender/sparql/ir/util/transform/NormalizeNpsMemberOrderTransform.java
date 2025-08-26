@@ -12,8 +12,8 @@ package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
@@ -26,9 +26,8 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
 /**
- * Normalize members inside negated property sets within path texts for stability. Currently preserves original member
- * order from the source while ensuring consistent token formatting. If future requirements need a specific ordering
- * (e.g., non-inverse before inverse, then lexical), that logic can be implemented in reorderMembers().
+ * Normalize the order of members inside negated property sets within path texts for stability. Members are ordered by:
+ * - non-inverse before inverse - lexical order by IRI string (after removing leading '^')
  */
 public final class NormalizeNpsMemberOrderTransform extends BaseTransform {
 
@@ -47,43 +46,41 @@ public final class NormalizeNpsMemberOrderTransform extends BaseTransform {
 				String ptxt = pt.getPathText();
 				String rew = reorderAllNps(ptxt);
 				if (!rew.equals(ptxt)) {
-					IrPathTriple np = new IrPathTriple(pt.getSubject(), rew, pt.getObject(), pt.isNewScope(),
-							pt.getPathVars());
-					m = np;
+					m = new IrPathTriple(pt.getSubject(), rew, pt.getObject());
 				}
 			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				m = new IrGraph(g.getGraph(), apply(g.getWhere()), g.isNewScope());
+				m = new IrGraph(g.getGraph(), apply(g.getWhere()));
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere()), o.isNewScope());
-				no.setNewScope(o.isNewScope());
-				m = no;
+				m = new IrOptional(apply(o.getWhere()));
 			} else if (n instanceof IrMinus) {
 				IrMinus mi = (IrMinus) n;
-				m = new IrMinus(apply(mi.getWhere()), mi.isNewScope());
+				m = new IrMinus(apply(mi.getWhere()));
 			} else if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
-				IrUnion u2 = new IrUnion(u.isNewScope());
+				IrUnion u2 = new IrUnion();
+				u2.setNewScope(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(apply(b));
 				}
 				m = u2;
 			} else if (n instanceof IrService) {
 				IrService s = (IrService) n;
-				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere()), s.isNewScope());
+				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere()));
 			} else if (n instanceof IrSubSelect) {
 				// keep as-is
 			}
 			out.add(m);
 		}
-		return BaseTransform.bgpWithLines(bgp, out);
+		IrBGP res = new IrBGP();
+		out.forEach(res::add);
+		return res;
 	}
 
 	static String reorderAllNps(String path) {
-		if (path == null || path.indexOf('!') < 0) {
+		if (path == null || path.indexOf('!') < 0)
 			return path;
-		}
 		String s = path;
 		StringBuilder out = new StringBuilder(s.length());
 		int i = 0;
@@ -99,11 +96,10 @@ public final class NormalizeNpsMemberOrderTransform extends BaseTransform {
 			int depth = 1;
 			while (j < s.length() && depth > 0) {
 				char c = s.charAt(j++);
-				if (c == '(') {
+				if (c == '(')
 					depth++;
-				} else if (c == ')') {
+				else if (c == ')')
 					depth--;
-				}
 			}
 			if (depth != 0) {
 				// unmatched, bail out
@@ -120,21 +116,44 @@ public final class NormalizeNpsMemberOrderTransform extends BaseTransform {
 	}
 
 	static String reorderMembers(String inner) {
-		class Tok {
-			final String text; // original token (may start with '^')
-
-			Tok(String t) {
-				this.text = t;
-			}
-		}
-
-		List<Tok> toks = Arrays.stream(inner.split("\\|"))
+		String[] toks = Arrays.stream(inner.split("\\|"))
 				.map(String::trim)
 				.filter(t -> !t.isEmpty())
-				.map(Tok::new)
-				.collect(Collectors.toList());
-
-		return toks.stream().map(t -> t.text).collect(Collectors.joining("|"));
+				.toArray(String[]::new);
+		Arrays.sort(toks, new Comparator<String>() {
+			@Override
+			public int compare(String a, String b) {
+				boolean ia = a.startsWith("^");
+				boolean ib = b.startsWith("^");
+				if (ia != ib) {
+					return ia ? 1 : -1; // non-inverse first
+				}
+				String aa = ia ? a.substring(1) : a;
+				String bb = ib ? b.substring(1) : b;
+				int c = aa.compareTo(bb);
+				if (c != 0)
+					return c;
+				if (ia == ib)
+					return 0;
+				return ia ? 1 : -1;
+			}
+		});
+		return String.join("|", toks);
 	}
 
+	static String invertMembers(String inner) {
+		String[] toks = Arrays.stream(inner.split("\\|"))
+				.map(String::trim)
+				.filter(t -> !t.isEmpty())
+				.toArray(String[]::new);
+		for (int i = 0; i < toks.length; i++) {
+			String t = toks[i];
+			if (t.startsWith("^")) {
+				toks[i] = t.substring(1);
+			} else {
+				toks[i] = "^" + t;
+			}
+		}
+		return String.join("|", toks);
+	}
 }

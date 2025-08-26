@@ -39,11 +39,13 @@ public final class ApplyPathsFixedPointTransform extends BaseTransform {
 			IrBGP next = ApplyPathsTransform.apply(cur, r);
 			// Fuse a path followed by UNION of opposite-direction tail triples into an alternation tail
 			next = FusePathPlusTailAlternationUnionTransform.apply(next, r);
+			// Fuse a pre-path triple followed by a UNION of two tail branches into a single alternation tail
+			next = FusePrePathThenUnionAlternationTransform.apply(next, r);
 			// Merge adjacent GRAPH blocks with the same graph ref so that downstream fusers see a single body
 			next = CoalesceAdjacentGraphsTransform.apply(next);
 			// Now that adjacent GRAPHs are coalesced, normalize inner GRAPH bodies for SP/PT fusions
 			next = ApplyNormalizeGraphInnerPathsTransform.apply(next, r);
-			// (disabled) Canonicalize grouping around split middle steps; rely on structural fusions instead
+			// (disabled) Canonicalize grouping around split middle steps
 			cur = next;
 		}
 		return cur;
