@@ -375,6 +375,8 @@ public class TupleExprIRRenderer {
 				.transformUsingChildren(ir, this);
 		ir.setWhere(irTransformed.getWhere());
 
+		// Keep explicit projection as parsed; do not downgrade to SELECT * implicitly
+
 		if (cfg.debugIR) {
 			System.out.println("# IR (transformed)\n" + IrDebug.dump(ir));
 		}
