@@ -255,7 +255,8 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				continue;
 			}
 
-			// If this is a UNION, allow direct NPS rewrite in its branches (demo of primitives)
+			// If this is a UNION, allow direct NPS rewrite in its branches (demo of primitives),
+			// then normalize orientation so both branches use the same NPS form when applicable.
 			if (n instanceof IrUnion) {
 				final IrUnion u = (IrUnion) n;
 				final IrUnion u2 = new IrUnion();
@@ -263,6 +264,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(rewriteSimpleNpsOnly(b, r));
 				}
+
 				out.add(u2);
 				continue;
 			}
@@ -451,6 +453,49 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 		return res;
 	}
 
+	private static IrPathTriple onlyPathTriple(IrBGP b) {
+		if (b == null || b.getLines().size() != 1) {
+			return null;
+		}
+		IrNode n = b.getLines().get(0);
+		if (n instanceof IrPathTriple) {
+			return (IrPathTriple) n;
+		}
+		if (n instanceof IrGraph) {
+			IrGraph g = (IrGraph) n;
+			if (g.getWhere() != null && g.getWhere().getLines().size() == 1
+					&& g.getWhere().getLines().get(0) instanceof IrPathTriple) {
+				return (IrPathTriple) g.getWhere().getLines().get(0);
+			}
+		}
+		return null;
+	}
+
+	private static boolean isBareNps(String path) {
+		if (path == null) {
+			return false;
+		}
+		String s = path.trim();
+		return s.startsWith("!(") && s.endsWith(")") && s.indexOf('/') < 0 && s.indexOf('|') >= 0
+				|| s.startsWith("!(") && s.endsWith(")");
+	}
+
+	private static boolean innerHasCaret(String path) {
+		String inner = innerOf(path);
+		return inner != null && inner.indexOf('^') >= 0;
+	}
+
+	private static String innerOf(String path) {
+		if (path == null) {
+			return null;
+		}
+		String s = path.trim();
+		if (!s.startsWith("!(") || !s.endsWith(")")) {
+			return null;
+		}
+		return s.substring(2, s.length() - 1);
+	}
+
 	// Within a union branch, compact a simple var-predicate + NOT IN filter to a negated property set path triple.
 	public static IrBGP rewriteSimpleNpsOnly(IrBGP bgp, TupleExprIRRenderer r) {
 		if (bgp == null) {
@@ -472,9 +517,16 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				final NsText ns = condText4 == null ? null : parseNegatedSetText(condText4);
 				if (pVar != null && BaseTransform.isAnonPathVar(pVar) && ns != null
 						&& pVar.getName().equals(ns.varName) && !ns.items.isEmpty()) {
-					final Var sVar = sp.getSubject();
-					final Var oVar = sp.getObject();
-					final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
+					String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
+					final boolean inv = BaseTransform.isAnonPathInverseVar(pVar);
+					if (inv) {
+						String maybe = invertNegatedPropertySet(nps);
+						if (maybe != null) {
+							nps = maybe;
+						}
+					}
+					final Var sVar = inv ? sp.getObject() : sp.getSubject();
+					final Var oVar = inv ? sp.getSubject() : sp.getObject();
 					out.add(new IrPathTriple(sVar, nps, oVar));
 					consumed.add(sp);
 					consumed.add(in.get(i + 1));
@@ -495,9 +547,18 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 					final Var pVar = sp.getPredicate();
 					if (pVar != null && BaseTransform.isAnonPathVar(pVar)
 							&& pVar.getName().equals(ns.varName)) {
-						final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
+						String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
+						final boolean inv = BaseTransform.isAnonPathInverseVar(pVar);
+						if (inv) {
+							String maybe = invertNegatedPropertySet(nps);
+							if (maybe != null) {
+								nps = maybe;
+							}
+						}
 						final IrBGP newInner = new IrBGP();
-						newInner.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
+						final Var sVar = inv ? sp.getObject() : sp.getSubject();
+						final Var oVar = inv ? sp.getSubject() : sp.getObject();
+						newInner.add(new IrPathTriple(sVar, nps, oVar));
 						out.add(new IrGraph(g.getGraph(), newInner));
 						consumed.add(g);
 						consumed.add(in.get(i + 1));

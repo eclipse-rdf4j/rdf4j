@@ -17,9 +17,12 @@ import java.util.Map;
 
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrExists;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrNot;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem;
@@ -104,6 +107,19 @@ public final class CanonicalizeNpsByProjectionTransform extends BaseTransform {
 			} else if (n instanceof IrUnion) {
 				// Do not alter orientation inside UNION branches; preserve branch subjects/objects.
 				m = n;
+			} else if (n instanceof IrFilter) {
+				// Descend into FILTER EXISTS / NOT EXISTS bodies to canonicalize inner NPS orientation
+				IrFilter f = (IrFilter) n;
+				if (f.getBody() instanceof IrExists) {
+					IrExists ex = (IrExists) f.getBody();
+					m = new IrFilter(new IrExists(apply(ex.getWhere(), select)));
+				} else if (f.getBody() instanceof IrNot && ((IrNot) f.getBody()).getInner() instanceof IrExists) {
+					IrNot not = (IrNot) f.getBody();
+					IrExists ex = (IrExists) not.getInner();
+					m = new IrFilter(new IrNot(new IrExists(apply(ex.getWhere(), select))));
+				} else {
+					m = n;
+				}
 			} else if (n instanceof IrService) {
 				IrService s = (IrService) n;
 				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), select));
