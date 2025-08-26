@@ -41,6 +41,12 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 	private static final Pattern PARENS_AROUND_SEQ_BEFORE_SLASH = Pattern
 			.compile("\\(([^()|]+/[^()|]+)\\)(?=/)");
 
+	// Compact single-member negated property set: !(^p) -> !^p, !(p) -> !p
+	private static final Pattern COMPACT_NPS_SINGLE_INVERSE = Pattern
+			.compile("!\\(\\s*(\\^[^()|/\\s]+)\\s*\\)");
+	private static final Pattern COMPACT_NPS_SINGLE = Pattern
+			.compile("!\\(\\s*([^()|/\\s]+)\\s*\\)");
+
 	public static IrBGP apply(IrBGP bgp) {
 		if (bgp == null)
 			return null;
@@ -96,6 +102,9 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			cur = TRIPLE_WRAP_OPTIONAL.matcher(cur).replaceAll("(($1)?)");
 			cur = DOUBLE_PARENS_SEGMENT.matcher(cur).replaceAll("($1)");
 			cur = PARENS_AROUND_SEQ_BEFORE_SLASH.matcher(cur).replaceAll("$1");
+			// Compact a single-member NPS
+			cur = COMPACT_NPS_SINGLE_INVERSE.matcher(cur).replaceAll("!$1");
+			cur = COMPACT_NPS_SINGLE.matcher(cur).replaceAll("!$1");
 		} while (!cur.equals(prev) && ++guard < 5);
 		return cur;
 	}
