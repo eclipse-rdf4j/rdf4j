@@ -43,9 +43,11 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 
 	// Compact single-member negated property set: !(^p) -> !^p, !(p) -> !p
 	private static final Pattern COMPACT_NPS_SINGLE_INVERSE = Pattern
-			.compile("!\\(\\s*(\\^[^()|/\\s]+)\\s*\\)");
+			// !(^<iri>) or !(^prefixed)
+			.compile("!\\(\\s*(\\^\\s*(?:<[^>]+>|[^()|/\\s]+))\\s*\\)");
 	private static final Pattern COMPACT_NPS_SINGLE = Pattern
-			.compile("!\\(\\s*([^()|/\\s]+)\\s*\\)");
+			// !(<iri>) or !(prefixed)
+			.compile("!\\(\\s*((?:<[^>]+>|[^()|/\\s]+))\\s*\\)");
 
 	public static IrBGP apply(IrBGP bgp) {
 		if (bgp == null)
