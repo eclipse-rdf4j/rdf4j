@@ -23,6 +23,16 @@ Nice to know:
 DO NOT CHANGE ANYTHING ABOVE THIS LINE.
 -----------------------------------------------------------
 
+# Current task
 I want you to work on reducing the use of "(" and ")" in the generated SPARQL queries. Create a helper method that will determine if parentheses are needed by checking if the current expression is simple enough to not require them or if it already has them. 
 
 As a last step when printing the IrPathTriple you can trim any unnecessary parentheses around the path.
+
+# Overall plan
+TODO
+
+# Step by step plan
+TODO
+
+# Work log
+TODO
