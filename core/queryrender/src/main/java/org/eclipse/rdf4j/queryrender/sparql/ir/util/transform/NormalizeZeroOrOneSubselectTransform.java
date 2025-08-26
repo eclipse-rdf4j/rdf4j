@@ -136,7 +136,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 			return null;
 		}
 		final String innerAlt = (steps.size() == 1) ? steps.get(0) : ("(" + String.join("|", steps) + ")");
-		final String expr = "(" + innerAlt + ")?";
+		final String expr = BaseTransform.applyQuantifier(innerAlt, '?');
 		return new IrPathTriple(varNamed(sName), expr, varNamed(oName));
 	}
 
@@ -146,7 +146,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		}
 		Matcher m = Pattern
 				.compile(
-						"(?i)\\s*FILTER\\s*\\(\\s*sameTerm\\s*\\(\\s*\\?(?<s>[A-Za-z_][\\w]*)\\s*,\\s*\\?(?<o>[A-Za-z_][\\w]*)\\s*\\)\\s*\\)\\s*")
+						"(?i)\\s*FILTER\\s*(?:\\(\\s*)?sameTerm\\s*\\(\\s*\\?(?<s>[A-Za-z_][\\w]*)\\s*,\\s*\\?(?<o>[A-Za-z_][\\w]*)\\s*\\)\\s*(?:\\)\\s*)?")
 				.matcher(text);
 		if (!m.matches()) {
 			return null;
