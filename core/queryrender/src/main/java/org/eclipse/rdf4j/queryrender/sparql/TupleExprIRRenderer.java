@@ -3862,7 +3862,6 @@ public class TupleExprIRRenderer {
 			if (prefixes != null) {
 				list.addAll(prefixes.entrySet());
 			}
-			list.sort((a, b) -> Integer.compare(b.getValue().length(), a.getValue().length()));
 			this.entries = Collections.unmodifiableList(list);
 		}
 
