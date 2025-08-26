@@ -115,6 +115,12 @@ public final class CanonicalizeGroupedTailStepTransform extends BaseTransform {
 			return s;
 		}
 		String right = rightWithParens.substring(1, rightWithParens.length() - 1);
+		// Safety: only rewrite when MID is a simple step/group without quantifier. Rewriting
+		// a quantified middle part like "(!(a|^b)? )" is error-prone and can lead to
+		// mismatched parentheses or semantics changes in rare shapes.
+		if (mid.indexOf('?') >= 0 || mid.indexOf('*') >= 0 || mid.indexOf('+') >= 0) {
+			return s;
+		}
 		// Build fused: ((LEFT)/(MID/(RIGHT)))
 		return "((" + left + ")/(" + mid + "/(" + right + ")))";
 	}
