@@ -192,7 +192,7 @@ public class TupleExprIRRenderer {
 		public final boolean usePrefixCompaction = true;
 		public final boolean canonicalWhitespace = true;
 		public final LinkedHashMap<String, String> prefixes = new LinkedHashMap<>();
-		public boolean debugIR = true; // print IR before and after transforms
+		public boolean debugIR = false; // print IR before and after transforms
 
 		// Flags
 		public final boolean strict = true; // throw on unsupported
