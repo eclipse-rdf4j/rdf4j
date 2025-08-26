@@ -67,8 +67,7 @@ public final class IrTransforms {
 					w = ReorderFiltersInOptionalBodiesTransform.apply(w, r);
 					w = ApplyPropertyListsTransform.apply(w, r);
 
-					// Ensure bare NPS triples use a stable subject/object orientation for idempotence
-					w = CanonicalizeBareNpsOrientationTransform.apply(w);
+					// Preserve original orientation of bare NPS triples to match expected algebra
 					w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
 
 					w = ApplyPathsFixedPointTransform.apply(w, r);
