@@ -1702,8 +1702,8 @@ public class TupleExprIRRendererTest {
 	void mega_ask_deep_exists_notexists_filters() {
 		String q = "ASK WHERE {\n" +
 				"  { ?a foaf:knows ?b } UNION { ?b foaf:knows ?a }\n" +
-				"  FILTER EXISTS { ?a foaf:name ?n FILTER(REGEX(?n, \"^A\", \"i\")) }\n" +
-				"  FILTER NOT EXISTS { ?a ex:blockedBy ?b }\n" +
+				"  FILTER (EXISTS { ?a foaf:name ?n . FILTER (REGEX(?n, \"^A\", \"i\")) })\n" +
+				"  FILTER (NOT EXISTS { ?a ex:blockedBy ?b . })" +
 				"  GRAPH ?g { ?a !(rdf:type|ex:age)/foaf:name ?x }\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
@@ -2181,7 +2181,6 @@ public class TupleExprIRRendererTest {
 	// -------- Additional SELECT tests with deeper, more nested paths --------
 
 	@Test
-	@Disabled
 	void nested_paths_extreme_1() {
 		String q = "SELECT ?s ?n\n" +
 				"WHERE {\n" +
