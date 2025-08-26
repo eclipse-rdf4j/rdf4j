@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -306,10 +305,18 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 
 				if (!hasTail && pVar != null && BaseTransform.isAnonPathVar(pVar) && ns != null
 						&& pVar.getName().equals(ns.varName) && !ns.items.isEmpty()) {
-					final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
-					out.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
-					i += 1; // consume filter
-					continue;
+					if (isAnonPathInverseVar(pVar)) {
+						final String nps = "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")";
+						out.add(new IrPathTriple(sp.getObject(), nps, sp.getSubject()));
+						i += 1; // consume filter
+						continue;
+					} else {
+						final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
+						out.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
+						i += 1; // consume filter
+						continue;
+					}
+
 				}
 			}
 
