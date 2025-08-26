@@ -53,7 +53,8 @@ public class TupleExprIRRendererTest {
 			ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, sparql, null);
 			return pq.getTupleExpr();
 		} catch (MalformedQueryException e) {
-			throw new MalformedQueryException("Failed to parse SPARQL query.\n### Original query ###\n" + sparql + "\n",
+			throw new MalformedQueryException(
+					"Failed to parse SPARQL query.\n###### QUERY ######\n" + sparql + "\n\n######################",
 					e);
 		}
 
@@ -2245,7 +2246,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?g ?s ?n\n" +
 				"WHERE {\n" +
 				"  GRAPH ?g {\n" +
-				"    ?s ((ex:p1|^ex:p2)+/(!(ex:p3|^ex:p4))? /((ex:p5|^ex:p6)/(foaf:knows|^foaf:knows))*) ?y .\n" +
+				"    ?s ((ex:p1|^ex:p2)+/(!(^ex:p4|ex:p3))? /((ex:p5|^ex:p6)/(foaf:knows|^foaf:knows))*) ?y .\n" +
 				"  }\n" +
 				"  OPTIONAL {\n" +
 				"    ?y (^foaf:knows/(ex:p7|^ex:p8)?/((ex:p9/foaf:knows)|(^ex:p10/ex:p11))) ?z .\n" +
