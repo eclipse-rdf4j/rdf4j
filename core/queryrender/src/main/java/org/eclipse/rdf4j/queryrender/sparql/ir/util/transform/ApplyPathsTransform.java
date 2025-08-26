@@ -123,6 +123,27 @@ public final class ApplyPathsTransform extends BaseTransform {
 				}
 			}
 
+			// ---- Simple SP(var p) + FILTER (!= / NOT IN) -> NPS triple (only for anon_path var) ----
+			if (n instanceof IrStatementPattern && i + 1 < in.size() && in.get(i + 1) instanceof IrFilter) {
+				IrStatementPattern sp = (IrStatementPattern) n;
+				Var pv = sp.getPredicate();
+				IrFilter f = (IrFilter) in.get(i + 1);
+				String condText = f.getConditionText();
+				org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyNegatedPropertySetTransform.NsText ns = ApplyNegatedPropertySetTransform
+						.parseNegatedSetText(condText);
+				// Do not apply here if there is an immediate constant tail; defer to S1+tail rule below
+				boolean hasTail = (i + 2 < in.size() && in.get(i + 2) instanceof IrStatementPattern
+						&& ((IrStatementPattern) in.get(i + 2)).getPredicate() != null
+						&& ((IrStatementPattern) in.get(i + 2)).getPredicate().hasValue());
+				if (!hasTail && pv != null && isAnonPathVar(pv) && ns != null && pv.getName() != null
+						&& pv.getName().equals(ns.varName) && !ns.items.isEmpty()) {
+					String nps = "!(" + ApplyNegatedPropertySetTransform.joinIrisWithPreferredOrder(ns.items, r) + ")";
+					out.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
+					i += 1;
+					continue;
+				}
+			}
+
 			// ---- Special: SP(var p) + FILTER (?p != c[, ...]) + SP(const tail) -> oriented NPS/const chain ----
 			if (n instanceof IrStatementPattern && i + 2 < in.size() && in.get(i + 1) instanceof IrFilter
 					&& in.get(i + 2) instanceof IrStatementPattern) {
