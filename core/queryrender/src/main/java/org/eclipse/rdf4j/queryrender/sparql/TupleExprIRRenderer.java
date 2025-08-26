@@ -125,13 +125,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyCollectionsTransform;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyNegatedPropertySetTransform;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyPropertyListsTransform;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CanonicalizeBareNpsOrientationTransform;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CoalesceAdjacentGraphsTransform;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeNpsMemberOrderTransform;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeZeroOrOneSubselectTransform;
 
 /**
  * TupleExprIRRenderer: render RDF4J algebra back into SPARQL text (via a compact internal normalization/IR step), with:
