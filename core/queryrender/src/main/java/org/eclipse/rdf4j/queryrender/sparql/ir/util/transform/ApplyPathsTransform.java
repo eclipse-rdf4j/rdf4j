@@ -1199,20 +1199,16 @@ public final class ApplyPathsTransform extends BaseTransform {
 					// ensure pt.object equals next.subject when safe.
 					Var subjOut = subj, objOut = obj;
 					IrNode next = (i + 1 < in.size()) ? in.get(i + 1) : null;
-					if (next != null) {
-						Var nSubj = null;
-						if (next instanceof IrStatementPattern) {
-							nSubj = ((IrStatementPattern) next).getSubject();
-						} else if (next instanceof IrPathTriple) {
-							nSubj = ((IrPathTriple) next).getSubject();
-						}
-						if (nSubj != null && pathTxt.startsWith("!(")) {
-							if (sameVar(subjOut, nSubj) && !sameVar(objOut, nSubj)) {
-								// prefer orientation so that object bridges to next.subject
-								Var tmp = subjOut;
-								subjOut = objOut;
-								objOut = tmp;
-							}
+					if (next instanceof IrPathTriple && pathTxt.startsWith("!(")) {
+						IrPathTriple nextPt = (IrPathTriple) next;
+						Var nSubj = nextPt.getSubject();
+						String nextTxt = nextPt.getPathText();
+						boolean nextIsNps = nextTxt != null && nextTxt.trim().startsWith("!(");
+						// Only orient NPS to chain with a non-NPS following path
+						if (!nextIsNps && nSubj != null && sameVar(subjOut, nSubj) && !sameVar(objOut, nSubj)) {
+							Var tmp = subjOut;
+							subjOut = objOut;
+							objOut = tmp;
 						}
 					}
 					IrPathTriple pt = new IrPathTriple(subjOut, pathTxt, objOut);
