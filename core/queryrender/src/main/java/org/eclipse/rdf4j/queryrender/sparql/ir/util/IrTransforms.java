@@ -71,8 +71,13 @@ public final class IrTransforms {
 					w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
 
 					w = ApplyPathsFixedPointTransform.apply(w, r);
+
 					// Normalize NPS member order after late inversions introduced by path fusions
 					w = NormalizeNpsMemberOrderTransform.apply(w);
+
+					// Canonicalize bare NPS orientation so that subject/object ordering is stable
+					// for pairs of user variables (e.g., prefer ?x !(...) ?y over ?y !(^...) ?x).
+					w = CanonicalizeBareNpsOrientationTransform.apply(w);
 
 					// Late pass: re-apply NPS fusion now that earlier transforms may have
 					// reordered FILTERs/triples to be adjacent (e.g., GRAPH …, FILTER …, GRAPH …).
@@ -91,6 +96,15 @@ public final class IrTransforms {
 					// Late normalization of grouped tail steps: ensure a final tail like "/foaf:name"
 					// is rendered outside the right-hand grouping when safe
 					w = CanonicalizeGroupedTailStepTransform.apply(w, r);
+
+					// Final orientation tweak for bare NPS using SELECT projection order when available
+					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CanonicalizeNpsByProjectionTransform
+							.apply(w, select);
+
+					// Canonicalize UNION branch order to prefer the branch whose subject matches the first
+					// projected variable (textual stability for streaming tests)
+					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CanonicalizeUnionBranchOrderTransform
+							.apply(w, select);
 
 					return w;
 				}
