@@ -411,7 +411,6 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						final String k1Step = r.renderIRI((IRI) k1.getPredicate().getValue());
 						final String k2Step = r.renderIRI((IRI) k2.getPredicate().getValue());
 						final List<String> rev = new ArrayList<>(ns2.items);
-						Collections.reverse(rev);
 						final String nps = "!(" + String.join("|", rev) + ")";
 						final String path = (k1Inverse ? "^" + k1Step : k1Step) + "/" + nps + "/"
 								+ (k2Inverse ? "^" + k2Step : k2Step);
