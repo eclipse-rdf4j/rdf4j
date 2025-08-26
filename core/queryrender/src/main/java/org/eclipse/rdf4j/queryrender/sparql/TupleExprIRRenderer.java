@@ -2385,7 +2385,7 @@ public class TupleExprIRRenderer {
 				return renderIn((ListMemberOperator) a, true); // NOT IN
 			}
 			final String inner = stripRedundantOuterParens(renderExpr(a));
-			return "!(" + inner + ")";
+			return "!" + parenthesizeIfNeeded(inner);
 		}
 
 		// Vars and constants
@@ -3424,7 +3424,7 @@ public class TupleExprIRRenderer {
 		return true;
 	}
 
-	static String stripRedundantOuterParens(final String s) {
+	public static String stripRedundantOuterParens(final String s) {
 		if (s == null) {
 			return null;
 		}
@@ -3445,6 +3445,108 @@ public class TupleExprIRRenderer {
 			return t.substring(1, t.length() - 1).trim();
 		}
 		return t;
+	}
+
+	/**
+	 * Decide if an expression should be wrapped in parentheses and return either the original expression or a
+	 * parenthesized version. Heuristic: if the expression already has surrounding parentheses or looks like a
+	 * simple/atomic term (variable, IRI, literal, number, or function call), we omit additional parentheses. Otherwise
+	 * we wrap the expression.
+	 */
+	public static String parenthesizeIfNeeded(final String expr) {
+		if (expr == null) {
+			return "()";
+		}
+		final String t = expr.trim();
+		if (t.isEmpty()) {
+			return "()";
+		}
+		// Already parenthesized: keep as-is if the outer pair spans the full expression
+		if (t.charAt(0) == '(' && t.charAt(t.length() - 1) == ')') {
+			int depth = 0;
+			boolean spans = true;
+			for (int i = 0; i < t.length(); i++) {
+				char ch = t.charAt(i);
+				if (ch == '(')
+					depth++;
+				else if (ch == ')')
+					depth--;
+				if (depth == 0 && i < t.length() - 1) {
+					spans = false;
+					break;
+				}
+			}
+			if (spans) {
+				return t;
+			}
+		}
+
+		// Atomic checks
+		// 1) Variable like ?x (no whitespace)
+		if (t.charAt(0) == '?') {
+			boolean ok = true;
+			for (int i = 1; i < t.length(); i++) {
+				char c = t.charAt(i);
+				if (!(Character.isLetterOrDigit(c) || c == '_')) {
+					ok = false;
+					break;
+				}
+			}
+			if (ok)
+				return t;
+		}
+		// 2) Angle-bracketed IRI (no spaces)
+		if (t.charAt(0) == '<' && t.endsWith(">") && t.indexOf(' ') < 0) {
+			return t;
+		}
+		// 3) Prefixed name like ex:knows (no whitespace, no parens)
+		int colon = t.indexOf(':');
+		if (colon > 0 && t.indexOf(' ') < 0 && t.indexOf('(') < 0 && t.indexOf(')') < 0) {
+			return t;
+		}
+		// 4) Literal (very rough: starts with quote)
+		if (t.charAt(0) == '"') {
+			return t;
+		}
+		// 5) Numeric literal (rough)
+		if (looksLikeNumericLiteral(t)) {
+			return t;
+		}
+		// 6) Function/built-in-like call: head(...) with no whitespace in head
+		int lpar = t.indexOf('(');
+		if (lpar > 0 && t.endsWith(")")) {
+			String head = t.substring(0, lpar);
+			boolean ok = head.indexOf(' ') < 0;
+			if (ok)
+				return t;
+		}
+
+		// Otherwise, wrap
+		return "(" + t + ")";
+	}
+
+	private static boolean looksLikeNumericLiteral(final String s) {
+		if (s == null || s.isEmpty())
+			return false;
+		int i = 0;
+		if (s.charAt(0) == '+' || s.charAt(0) == '-') {
+			i = 1;
+			if (s.length() == 1)
+				return false;
+		}
+		boolean hasDigit = false;
+		for (; i < s.length(); i++) {
+			char c = s.charAt(i);
+			if (Character.isDigit(c)) {
+				hasDigit = true;
+				continue;
+			}
+			if (c == '.' || c == 'e' || c == 'E' || c == '+' || c == '-') {
+				continue;
+			}
+			return false;
+		}
+		return hasDigit;
 	}
 
 	private void handleUnsupported(String message) {
@@ -3641,7 +3743,8 @@ public class TupleExprIRRenderer {
 
 		// Minimal recursive coverage for common boolean structures in HAVING
 		if (e instanceof Not) {
-			return "!(" + stripRedundantOuterParens(renderExprWithSubstitution(((Not) e).getArg(), subs)) + ")";
+			String inner = stripRedundantOuterParens(renderExprWithSubstitution(((Not) e).getArg(), subs));
+			return "!" + parenthesizeIfNeeded(inner);
 		}
 		if (e instanceof And) {
 			And a = (And) e;
