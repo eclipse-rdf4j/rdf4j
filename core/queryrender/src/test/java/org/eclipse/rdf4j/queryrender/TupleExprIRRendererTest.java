@@ -2241,7 +2241,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
 	void nested_paths_extreme_2_optional_and_graph() {
 		String q = "SELECT ?g ?s ?n\n" +
 				"WHERE {\n" +
@@ -2257,7 +2256,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-//	@Disabled
 	void nested_paths_extreme_3_subquery_exists() {
 		String q = "SELECT ?s\n" +
 				"WHERE {\n" +
@@ -2276,7 +2274,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
+//	@Disabled
 	void nested_paths_extreme_4_union_mixed_mods() {
 		String q = "SELECT ?s ?n\n" +
 				"WHERE {\n" +
