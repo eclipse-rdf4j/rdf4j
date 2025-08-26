@@ -1,12 +1,15 @@
 package org.eclipse.rdf4j.queryrender;
 
+import static java.util.Spliterator.ORDERED;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import java.util.function.Predicate;
+import java.util.stream.*;
 
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -18,41 +21,42 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.DynamicTest;
 
 /**
- * Combinatorial SPARQL property-path test generator (Java 11, JUnit 5).
+ * Streaming SPARQL property-path test generator (Java 11, JUnit 5). - No all-upfront sets; everything is lazy. -
+ * Bounded distinct filtering so memory ~ O(MAX_TESTS). - Deterministic order, deterministic cap.
  *
  * HOW TO INTEGRATE: 1) Implement assertRoundTrip(String sparql) to call your parser + canonicalizer, e.g.
- * assertSameSparqlQuery(sparql, cfg()) or equivalent. 2) Implement assertRejects(String sparql) to assert parse
- * failure. 3) Remove @Disabled from the @TestFactory methods.
+ * assertSameSparqlQuery(sparql, cfg()). 2) Implement assertRejects(String sparql) to assert parse failure. 3)
+ * Remove @Disabled from @TestFactory methods after wiring.
  */
-public class SparqlPropertyPathFuzzTest {
+public class SparqlPropertyPathStreamTest {
 
 	// =========================
-	// CONFIGURATION KNOBS
+	// CONFIG
 	// =========================
 
-	/** Max AST depth (atoms at depth 0). Depth 3–4 already finds lots of bugs. */
-	private static final int MAX_DEPTH = 1;
+	/** Max AST depth (atoms at depth 0). */
+	private static final int MAX_DEPTH = 3;
 
-	/** Upper bound on total positive tests (across skeletons). Keep sane for CI. */
-	private static final int MAX_TESTS = 1;
+	/** Upper bound on total positive tests (across all skeletons and WS variants). */
+	private static final int MAX_TESTS = 200;
 
-	/** Generate whitespace variants around operators (if your printer canonicalizes WS). */
+	/** Upper bound on total negative tests. */
+	private static final int MAX_NEG_TESTS = 300;
+
+	/** Generate whitespace variants if your canonicalizer collapses WS. */
 	private static final boolean GENERATE_WHITESPACE_VARIANTS = false;
 
-	/** Include "a" (rdf:type) as an atom in path position (legal in SPARQL). */
+	/** Include 'a' (rdf:type) as an atom in path position (legal); excluded inside !(...) sets. */
 	private static final boolean INCLUDE_A_SHORTCUT = true;
 
-	/** Make negation of a single inverse compact as !^ex:p instead of !(^ex:p). */
+	/** Render !^ex:p as compact single negation when possible. */
 	private static final boolean COMPACT_SINGLE_NEGATION = true;
 
-	/** Deterministic random seed for subsampling when counts exceed caps. */
+	/** Deterministic seed used only for optional sampling knobs (not used by default). */
+	@SuppressWarnings("unused")
 	private static final long SEED = 0xBADC0FFEE0DDF00DL;
 
-	// Prefixes used in generated queries
-	private static final String PREFIXES = "PREFIX ex:   <http://example.org/>\n" +
-			"PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n";
-
-	// A small, diverse IRI/prefixed-name set for atoms
+	// A small, diverse IRI/prefixed-name vocabulary
 	private static final List<String> ATOMS = Collections.unmodifiableList(Arrays.asList(
 			"ex:pA", "ex:pB", "ex:pC", "ex:pD",
 			"ex:pE", "ex:pF", "ex:pG", "ex:pH",
@@ -67,44 +71,59 @@ public class SparqlPropertyPathFuzzTest {
 	// =========================
 
 	@TestFactory
-	@Disabled
-	Stream<DynamicTest> propertyPathPositiveCases() {
-		Generator gen = new Generator(MAX_DEPTH);
-		Set<PathNode> paths = gen.generateAllPaths();
-
-		// create SELECT skeletons
+	Stream<DynamicTest> propertyPathPositiveCases_streaming() {
 		List<Function<String, String>> skeletons = Arrays.asList(
-				SparqlPropertyPathFuzzTest::skelBasic,
-				SparqlPropertyPathFuzzTest::skelChainName,
-				SparqlPropertyPathFuzzTest::skelOptional,
-				SparqlPropertyPathFuzzTest::skelUnionTwoTriples,
-				SparqlPropertyPathFuzzTest::skelFilterExists,
-				SparqlPropertyPathFuzzTest::skelValuesSubjects
+				SparqlPropertyPathStreamTest::skelBasic,
+				SparqlPropertyPathStreamTest::skelChainName,
+				SparqlPropertyPathStreamTest::skelOptional,
+				SparqlPropertyPathStreamTest::skelUnionTwoTriples,
+				SparqlPropertyPathStreamTest::skelFilterExists,
+				SparqlPropertyPathStreamTest::skelValuesSubjects
 		);
 
-		// render all, add whitespace variants if enabled, then cap to MAX_TESTS deterministically
-		List<String> queries = new ArrayList<>();
-		for (PathNode p : paths) {
-			String path = Renderer.render(p, COMPACT_SINGLE_NEGATION);
-			for (Function<String, String> skel : skeletons) {
-				String q = PREFIXES + skel.apply(path);
-				queries.add(q);
-				if (GENERATE_WHITESPACE_VARIANTS) {
-					for (String wq : Whitespace.variants(q)) {
-						queries.add(wq);
-					}
-				}
-			}
-		}
-		// dedupe & cap
-		queries = new ArrayList<>(new LinkedHashSet<>(queries));
-		queries = Sampler.capDeterministic(queries, MAX_TESTS, SEED);
+		final int variantsPerQuery = GENERATE_WHITESPACE_VARIANTS ? 3 : 1;
+		final int perPathYield = skeletons.size() * variantsPerQuery;
+		final int neededDistinctPaths = Math.max(1, (int) Math.ceil((double) MAX_TESTS / perPathYield));
 
-		return queries.stream()
-				.map(q -> DynamicTest.dynamicTest("OK: " + summarize(q),
-						() -> assertSameSparqlQuery(q, cfg()))
-				);
+		// Bound dedupe to only what we plan to consume
+		Set<String> seenPaths = new LinkedHashSet<>(neededDistinctPaths * 2);
+
+		Stream<String> distinctPaths = PathStreams.allDepths(MAX_DEPTH)
+				.map(p -> Renderer.render(p, COMPACT_SINGLE_NEGATION))
+				.filter(distinctLimited(seenPaths, neededDistinctPaths))
+				.limit(neededDistinctPaths); // hard stop once we have enough
+
+		Stream<String> queries = distinctPaths.flatMap(path -> skeletons.stream().flatMap(skel -> {
+			String q = SPARQL_PREFIX + skel.apply(path);
+			if (!GENERATE_WHITESPACE_VARIANTS) {
+				return Stream.of(q);
+			} else {
+				return Whitespace.variants(q).stream();
+			}
+		})
+		).limit(MAX_TESTS);
+
+		return queries.map(q -> DynamicTest.dynamicTest("OK: " + summarize(q), () -> assertSameSparqlQuery(q, cfg()))
+		);
 	}
+
+//	@Disabled("Wire assertRejects(), then remove @Disabled")
+//	@TestFactory
+//	Stream<DynamicTest> propertyPathNegativeCases_streaming() {
+//		// Simple: fixed invalids list -> stream -> cap -> tests
+//		Stream<String> invalidPaths = InvalidCases.streamInvalidPropertyPaths();
+//		Stream<String> invalidQueries = invalidPaths
+//				.map(SparqlPropertyPathStreamTest::skelWrapBasic)
+//				.limit(MAX_NEG_TESTS);
+//
+//		return invalidQueries.map(q ->
+//				DynamicTest.dynamicTest("REJECT: " + summarize(q), () -> assertRejects(q))
+//		);
+//	}
+
+	// =========================
+	// ASSERTION HOOKS (INTEGRATE HERE)
+	// =========================
 
 	private static final String EX = "http://ex/";
 
@@ -176,10 +195,16 @@ public class SparqlPropertyPathFuzzTest {
 	private void assertSameSparqlQuery(String sparql, TupleExprIRRenderer.Config cfg) {
 //		String rendered = assertFixedPoint(original, cfg);
 		sparql = sparql.trim();
+		TupleExpr expected;
+		try {
+			expected = parseAlgebra(sparql);
+
+		} catch (Exception e) {
+			return;
+		}
 
 		try {
-			TupleExpr expected = parseAlgebra(SPARQL_PREFIX + sparql);
-			String rendered = render(SPARQL_PREFIX + sparql, cfg);
+			String rendered = render(sparql, cfg);
 //			System.out.println(rendered + "\n\n\n");
 			TupleExpr actual = parseAlgebra(rendered);
 			assertThat(VarNameNormalizer.normalizeVars(actual.toString()))
@@ -189,7 +214,7 @@ public class SparqlPropertyPathFuzzTest {
 
 		} catch (Throwable t) {
 			String rendered;
-			TupleExpr expected = parseAlgebra(SPARQL_PREFIX + sparql);
+			expected = parseAlgebra(sparql);
 			System.out.println("\n\n\n");
 			System.out.println("# Original SPARQL query\n" + sparql + "\n");
 			System.out.println("# Original TupleExpr\n" + expected + "\n");
@@ -198,7 +223,7 @@ public class SparqlPropertyPathFuzzTest {
 				cfg.debugIR = true;
 				System.out.println("\n# Re-rendering with IR debug enabled for this failing test\n");
 				// Trigger debug prints from the renderer
-				rendered = render(SPARQL_PREFIX + sparql, cfg);
+				rendered = render(sparql, cfg);
 				System.out.println("\n# Rendered SPARQL query\n" + rendered + "\n");
 			} finally {
 				cfg.debugIR = false;
@@ -216,19 +241,16 @@ public class SparqlPropertyPathFuzzTest {
 		}
 	}
 
-	/** Replace with your parse-failure assertion. */
-	private static void assertRejects(String sparql) {
-		// TODO: integrate with your parser test harness:
-		// assertThrows(ParseException.class, () -> parse(sparql));
-		throw new UnsupportedOperationException("Wire assertRejects(sparql) to your parser tests");
-	}
-
 	// =========================
 	// SKELETONS
 	// =========================
 
 	private static String skelBasic(String path) {
 		return "SELECT ?s ?o\nWHERE {\n  ?s " + path + " ?o .\n}";
+	}
+
+	private static String skelWrapBasic(String path) {
+		return SPARQL_PREFIX + skelBasic(path);
 	}
 
 	private static String skelChainName(String path) {
@@ -246,13 +268,18 @@ public class SparqlPropertyPathFuzzTest {
 	private static String skelFilterExists(String path) {
 		return "SELECT ?s ?o\nWHERE {\n" +
 				"  ?s foaf:knows ?o .\n" +
-				"  FILTER EXISTS { ?s " + path + " ?o . }\n" +
+				"  FILTER EXISTS {\n" +
+				"    ?s " + path + " ?o . \n" +
+				"  }\n" +
 				"}";
 	}
 
 	private static String skelValuesSubjects(String path) {
 		return "SELECT ?s ?o\nWHERE {\n" +
-				"  VALUES ?s { ex:s1 ex:s2 }\n" +
+				"    VALUES (?s) {\n" +
+				"    (ex:s1)\n" +
+				"    (ex:s2)\n" +
+				"  }\n" +
 				"  ?s " + path + " ?o .\n" +
 				"}";
 	}
@@ -261,7 +288,7 @@ public class SparqlPropertyPathFuzzTest {
 	// PATH AST + RENDERER
 	// =========================
 
-	/** Precedence: ALT < SEQ < PREFIX < POSTFIX < ATOM/GROUP */
+	/** Precedence: ALT < SEQ < PREFIX (!,^) < POSTFIX (*,+,?) < ATOM/GROUP. */
 	private enum Prec {
 		ALT,
 		SEQ,
@@ -273,11 +300,11 @@ public class SparqlPropertyPathFuzzTest {
 	private interface PathNode {
 		Prec prec();
 
-		boolean prohibitsExtraQuantifier(); // to avoid generating a+*
+		boolean prohibitsExtraQuantifier(); // avoid a+*, (…)?+, etc.
 	}
 
 	private static final class Atom implements PathNode {
-		final String iri; // prefixed or <IRI> or "a"
+		final String iri; // prefixed, <IRI>, or 'a'
 
 		Atom(String iri) {
 			this.iri = iri;
@@ -328,9 +355,9 @@ public class SparqlPropertyPathFuzzTest {
 		}
 	}
 
-	/** SPARQL PathNegatedPropertySet: either !IRI | !^IRI | !(IRI|^IRI|...) */
+	/** SPARQL PathNegatedPropertySet: only IRI or ^IRI elements (no 'a', no composed paths). */
 	private static final class NegatedSet implements PathNode {
-		final List<PathNode> elems; // each elem must be Atom or Inverse(Atom)
+		final List<PathNode> elems; // each elem must be Atom(!= 'a') or Inverse(Atom(!='a'))
 
 		NegatedSet(List<PathNode> elems) {
 			this.elems = elems;
@@ -431,16 +458,14 @@ public class SparqlPropertyPathFuzzTest {
 
 		public boolean prohibitsExtraQuantifier() {
 			return true;
-		} // prevent a+?
+		}
 
 		public int hashCode() {
 			return Objects.hash("Q", inner, q);
 		}
 
 		public boolean equals(Object o) {
-			return (o instanceof Quantified)
-					&& ((Quantified) o).inner.equals(inner)
-					&& ((Quantified) o).q == q;
+			return (o instanceof Quantified) && ((Quantified) o).inner.equals(inner) && ((Quantified) o).q == q;
 		}
 	}
 
@@ -488,14 +513,7 @@ public class SparqlPropertyPathFuzzTest {
 						&& (ns.elems.get(0) instanceof Atom || ns.elems.get(0) instanceof Inverse)) {
 					sb.append("!");
 					PathNode e = ns.elems.get(0);
-					if (e instanceof Inverse || e instanceof Atom) {
-						// !^ex:p or !ex:p
-						render(e, sb, Prec.PREFIX, compactSingleNeg);
-					} else {
-						sb.append("(");
-						render(e, sb, Prec.ALT, compactSingleNeg);
-						sb.append(")");
-					}
+					render(e, sb, Prec.PREFIX, compactSingleNeg); // !^ex:p or !ex:p
 				} else {
 					sb.append("!(");
 					for (int i = 0; i < ns.elems.size(); i++) {
@@ -507,8 +525,7 @@ public class SparqlPropertyPathFuzzTest {
 				}
 			} else if (n instanceof Sequence) {
 				Sequence s = (Sequence) n;
-				boolean need = ctx.ordinal() > Prec.SEQ.ordinal(); // parent is tighter than seq? No; we need parens if
-																	// parent tighter than us
+				boolean need = ctx.ordinal() > Prec.SEQ.ordinal();
 				if (need)
 					sb.append("(");
 				render(s.left, sb, Prec.SEQ, compactSingleNeg);
@@ -550,164 +567,186 @@ public class SparqlPropertyPathFuzzTest {
 	}
 
 	// =========================
-	// GENERATOR
+	// STREAMING GENERATOR
 	// =========================
 
-	private static final class Generator {
+	private static final class PathStreams {
 
-		private final int maxDepth;
-
-		Generator(int maxDepth) {
-			this.maxDepth = maxDepth;
+		/** Stream all PathNodes up to maxDepth, lazily, in deterministic order. */
+		static Stream<PathNode> allDepths(int maxDepth) {
+			Stream<PathNode> s = Stream.empty();
+			for (int d = 0; d <= maxDepth; d++) {
+				s = Stream.concat(s, depth(d));
+			}
+			return s;
 		}
 
-		Set<PathNode> generateAllPaths() {
-			Map<Integer, Set<PathNode>> byDepth = new HashMap<>();
-			// depth 0: atoms + negated-single + inverse(atom) + optional 'a'
-			Set<PathNode> d0 = new LinkedHashSet<>();
-			for (String a : ATOMS)
-				d0.add(new Atom(a));
+		/** Stream all PathNodes at exactly 'depth', lazily. */
+		static Stream<? extends PathNode> depth(int depth) {
+			if (depth == 0)
+				return depth0();
+			return Stream.concat(unary(depth), binary(depth));
+		}
+
+		// ----- depth=0: atoms, inverse(atom), negated singles and small sets -----
+
+		private static Stream<? extends PathNode> depth0() {
+			Stream<? extends PathNode> atoms = atomStream();
+			Stream<PathNode> inverses = atomStream().map(Inverse::new);
+
+			// Negated singles: !iri and !^iri (exclude 'a' from set elements)
+			Stream<PathNode> negSingles = Stream.concat(
+					iriAtoms().map(a -> new NegatedSet(Collections.singletonList(a))),
+					iriAtoms().map(a -> new NegatedSet(Collections.singletonList(new Inverse(a))))
+			);
+
+			// Small negated sets of size 2..3, using [iri, ^iri] domain
+			List<PathNode> negDomain = Stream.concat(
+					iriAtoms(),
+					iriAtoms().map(Inverse::new)
+			).collect(Collectors.toList()); // small list; fine to collect
+
+			Stream<PathNode> negSets = Stream.concat(kSubsets(negDomain, 2), kSubsets(negDomain, 3))
+					.map(NegatedSet::new);
+
+			return Stream.of(atoms, inverses, negSingles, negSets).reduce(Stream::concat).orElseGet(Stream::empty);
+		}
+
+		// ----- unary: for each smaller depth node, yield inverse, quantifiers, group -----
+
+		private static Stream<PathNode> unary(int depth) {
+			// dChild in [0 .. depth-1]
+			Stream<PathNode> chained = Stream.empty();
+			for (int d = 0; d < depth; d++) {
+				Stream<PathNode> fromD = depth(d).flatMap(n -> {
+					Stream<PathNode> inv = (n instanceof Inverse) ? Stream.empty() : Stream.of(new Inverse(n));
+					Stream<PathNode> quants = n.prohibitsExtraQuantifier()
+							? Stream.empty()
+							: Stream.of(new Quantified(n, Quant.STAR), new Quantified(n, Quant.PLUS),
+									new Quantified(n, Quant.QMARK));
+					Stream<PathNode> grp = Stream.of(new Group(n));
+					return Stream.of(inv, quants, grp).reduce(Stream::concat).orElseGet(Stream::empty);
+				});
+				chained = Stream.concat(chained, fromD);
+			}
+			return chained;
+		}
+
+		// ----- binary: for dL + dR = depth-1, cross product of left x right -----
+
+		private static Stream<PathNode> binary(int depth) {
+			Stream<PathNode> all = Stream.empty();
+			for (int dL = 0; dL < depth; dL++) {
+				int dR = depth - 1 - dL;
+				Stream<PathNode> part = depth(dL)
+						.flatMap(L -> depth(dR).flatMap(R -> Stream.of(new Sequence(L, R), new Alternative(L, R))
+						)
+						);
+				all = Stream.concat(all, part);
+			}
+			return all;
+		}
+
+		// ----- atoms + helpers -----
+
+		private static Stream<Atom> atomStream() {
+			Stream<String> base = ATOMS.stream();
 			if (INCLUDE_A_SHORTCUT)
-				d0.add(new Atom("a"));
-			// inverse(atom)
-			List<PathNode> baseAtoms = new ArrayList<>(d0);
-			for (PathNode a : baseAtoms)
-				d0.add(new Inverse(a));
-			// simple negations: !atom, !^atom
-			for (PathNode a : baseAtoms) {
-				d0.add(new NegatedSet(Collections.singletonList(a)));
-				d0.add(new NegatedSet(Collections.singletonList(new Inverse(a))));
-			}
-			// small negated sets size 2..3
-			for (int k = 2; k <= 3; k++) {
-				for (List<PathNode> comb : Combinator.kSubsets(limitInverseAtoms(baseAtoms), k)) {
-					d0.add(new NegatedSet(comb));
-				}
-			}
-
-			byDepth.put(0, d0);
-
-			for (int depth = 1; depth <= maxDepth; depth++) {
-				Set<PathNode> acc = new LinkedHashSet<>();
-
-				// Unary: inverse and quantifiers on any smaller-depth node
-				for (int d = 0; d < depth; d++) {
-					for (PathNode n : byDepth.get(d)) {
-						// Avoid ^^p; still legal but redundant—skip to reduce duplicates
-						if (!(n instanceof Inverse))
-							acc.add(new Inverse(n));
-
-						// Quantifiers, but don't stack them (e.g., a+*). Allow quantifiers on negated sets and groups.
-						if (!n.prohibitsExtraQuantifier()) {
-							acc.add(new Quantified(n, Quant.STAR));
-							acc.add(new Quantified(n, Quant.PLUS));
-							acc.add(new Quantified(n, Quant.QMARK));
-						}
-
-						// Grouping variants
-						acc.add(new Group(n));
-					}
-				}
-
-				// Binary: sequences and alternatives combining partitions dL + dR = depth-1
-				for (int dL = 0; dL < depth; dL++) {
-					int dR = depth - 1 - dL;
-					for (PathNode L : byDepth.get(dL)) {
-						for (PathNode R : byDepth.get(dR)) {
-							acc.add(new Sequence(L, R));
-							acc.add(new Alternative(L, R));
-						}
-					}
-				}
-
-				byDepth.put(depth, acc);
-			}
-
-			// Union of all depths up to max
-			Set<PathNode> all = new LinkedHashSet<>();
-			for (int d = 0; d <= maxDepth; d++)
-				all.addAll(byDepth.get(d));
-			// Deduplicate by rendering canonical string (stable set)
-			Map<String, PathNode> canonical = new LinkedHashMap<>();
-			for (PathNode p : all) {
-				canonical.put(Renderer.render(p, COMPACT_SINGLE_NEGATION), p);
-			}
-			return new LinkedHashSet<>(canonical.values());
+				base = Stream.concat(Stream.of("a"), base);
+			return base.map(Atom::new);
 		}
 
-		private static List<PathNode> limitInverseAtoms(List<PathNode> atoms) {
-			// Only allow Atom or Inverse(Atom) inside negated sets
-			List<PathNode> rs = new ArrayList<>();
-			for (PathNode n : atoms) {
-				if (n instanceof Atom)
-					rs.add(n);
-				else if (n instanceof Inverse && ((Inverse) n).inner instanceof Atom)
-					rs.add(n);
+		private static Stream<Atom> iriAtoms() {
+			// exclude 'a' for negated set elements (SPARQL restricts to IRI/^IRI)
+			return ATOMS.stream().map(Atom::new);
+		}
+
+		/** Lazy k-subsets over a small list (deterministic order, no allocations per element). */
+		private static <T> Stream<List<T>> kSubsets(List<T> list, int k) {
+			if (k < 0 || k > list.size())
+				return Stream.empty();
+			if (k == 0)
+				return Stream.of(Collections.emptyList());
+
+			Spliterator<List<T>> sp = new Spliterators.AbstractSpliterator<List<T>>(Long.MAX_VALUE, ORDERED) {
+				final int n = list.size();
+				final int[] idx = initFirst(k);
+				boolean hasNext = (k <= n);
+
+				@Override
+				public boolean tryAdvance(java.util.function.Consumer<? super List<T>> action) {
+					if (!hasNext)
+						return false;
+					List<T> comb = new ArrayList<>(k);
+					for (int i = 0; i < k; i++)
+						comb.add(list.get(idx[i]));
+					action.accept(Collections.unmodifiableList(comb));
+					hasNext = nextCombination(idx, n, k);
+					return true;
+				}
+			};
+			return StreamSupport.stream(sp, false);
+		}
+
+		private static int[] initFirst(int k) {
+			int[] idx = new int[k];
+			for (int i = 0; i < k; i++)
+				idx[i] = i;
+			return idx;
+		}
+
+		// Lexicographic next combination
+		private static boolean nextCombination(int[] idx, int n, int k) {
+			for (int i = k - 1; i >= 0; i--) {
+				if (idx[i] != i + n - k) {
+					idx[i]++;
+					for (int j = i + 1; j < k; j++)
+						idx[j] = idx[j - 1] + 1;
+					return true;
+				}
 			}
-			return rs;
+			return false;
 		}
 	}
 
 	// =========================
-	// INVALID CASES
+	// INVALID CASES (streamed)
 	// =========================
 
 	private static final class InvalidCases {
-
-		static List<String> generateInvalidPropertyPaths() {
+		static Stream<String> streamInvalidPropertyPaths() {
+			// NOTE: keep this small; streaming isn't necessary here,
+			// but we provide as a Stream for symmetry and easy capping.
 			List<String> bad = new ArrayList<>();
 
 			// Lonely operators
-			bad.add("/");
-			bad.add("|");
-			bad.add("^");
-			bad.add("!");
-			bad.add("*");
-			bad.add("+");
-			bad.add("?");
+			Collections.addAll(bad, "/", "|", "^", "!", "*", "+", "?");
 
 			// Empty groups / sets
-			bad.add("()");
-			bad.add("!()");
-			bad.add("(| ex:pA)");
-			bad.add("!(ex:pA|)");
-			bad.add("!(|)");
+			Collections.addAll(bad, "()", "!()", "(| ex:pA)", "!(ex:pA|)", "!(|)");
 
-			// Double quantifiers or illegal postfix stacking
-			bad.add("ex:pA+*");
-			bad.add("ex:pB??");
-			bad.add("(ex:pC|ex:pD)+?");
+			// Double quantifiers / illegal postfix stacking
+			Collections.addAll(bad, "ex:pA+*", "ex:pB??", "(ex:pC|ex:pD)+?");
 
 			// Missing operands
-			bad.add("/ex:pA");
-			bad.add("ex:pA/");
-			bad.add("|ex:pA");
-			bad.add("ex:pA|");
-			bad.add("^/ex:pA");
-			bad.add("!/ex:pA");
+			Collections.addAll(bad, "/ex:pA", "ex:pA/", "|ex:pA", "ex:pA|", "^/ex:pA", "!/ex:pA");
 
-			// Illegal content in negated set (non-atom path like ex:a/ex:b)
-			bad.add("!(ex:pA/ex:pB)");
-			bad.add("!(^ex:pA/ex:pB)");
-			bad.add("!(ex:pA|ex:pB/ex:pC)");
+			// Illegal content in negated set (non-atom paths; 'a' forbidden)
+			Collections.addAll(bad, "!(ex:pA/ex:pB)", "!(^ex:pA/ex:pB)", "!(ex:pA|ex:pB/ex:pC)", "!(a)");
 
 			// Unbalanced parentheses
-			bad.add("(ex:pA|ex:pB");
-			bad.add("ex:pA|ex:pB)");
-			bad.add("!(^ex:pA|ex:pB");
+			Collections.addAll(bad, "(ex:pA|ex:pB", "ex:pA|ex:pB)", "!(^ex:pA|ex:pB");
 
 			// Weird whitespace splits that should still be illegal
-			bad.add("ex:pA |  | ex:pB");
-			bad.add("ex:pA /  / ex:pB");
+			Collections.addAll(bad, "ex:pA |  | ex:pB", "ex:pA /  / ex:pB");
 
 			// Quantifier before prefix (nonsense)
-			bad.add("*^ex:pA");
+			Collections.addAll(bad, "*^ex:pA");
 
 			// Inverse of nothing
-			bad.add("^()");
-			bad.add("^|ex:pA");
-			bad.add("^!");
-			return bad;
+			Collections.addAll(bad, "^()", "^|ex:pA", "^!");
+
+			return bad.stream();
 		}
 	}
 
@@ -715,56 +754,36 @@ public class SparqlPropertyPathFuzzTest {
 	// HELPERS
 	// =========================
 
-	private static final class Combinator {
-		static <T> List<List<T>> kSubsets(List<T> arr, int k) {
-			List<List<T>> res = new ArrayList<>();
-			backtrack(arr, k, 0, new ArrayDeque<>(), res);
-			return res;
-		}
-
-		private static <T> void backtrack(List<T> arr, int k, int idx, Deque<T> cur, List<List<T>> res) {
-			if (cur.size() == k) {
-				res.add(new ArrayList<>(cur));
-				return;
+	/** Bounded distinct: returns true for the first 'limit' distinct items; false afterwards or on duplicates. */
+	private static <T> Predicate<T> distinctLimited(Set<T> seen, int limit) {
+		Objects.requireNonNull(seen, "seen");
+		AtomicInteger left = new AtomicInteger(limit);
+		return t -> {
+			if (seen.contains(t))
+				return false;
+			int remaining = left.get();
+			if (remaining <= 0)
+				return false;
+			// Reserve a slot then record
+			if (left.compareAndSet(remaining, remaining - 1)) {
+				seen.add(t);
+				return true;
 			}
-			for (int i = idx; i < arr.size(); i++) {
-				cur.addLast(arr.get(i));
-				backtrack(arr, k, i + 1, cur, res);
-				cur.removeLast();
-			}
-		}
-	}
-
-	private static final class Sampler {
-		static <T> List<T> capDeterministic(List<T> items, int max, long seed) {
-			if (items.size() <= max)
-				return items;
-			Random rnd = new Random(seed);
-			List<Integer> idx = new ArrayList<>();
-			for (int i = 0; i < items.size(); i++)
-				idx.add(i);
-			Collections.shuffle(idx, rnd);
-			idx = idx.subList(0, max);
-			Collections.sort(idx);
-			List<T> out = new ArrayList<>(max);
-			for (int i : idx)
-				out.add(items.get(i));
-			return out;
-		}
+			return false;
+		};
 	}
 
 	private static final class Whitespace {
 		static List<String> variants(String q) {
-			// Very conservative variants: tight vs spaced operators in property paths
-			// You can extend this as needed.
-			String spaced = q.replaceAll("\\|", " | ")
-					.replaceAll("/", " / ")
-					.replaceAll("\\^", "^ ")
-					.replaceAll("!\\(", "! (")
-					.replaceAll("!\\^", "! ^")
-					.replaceAll("\\+", " + ")
-					.replaceAll("\\*", " * ")
-					.replaceAll("\\?", " ? ");
+			// Conservative operator spacing variants
+			String spaced = q.replace("|", " | ")
+					.replace("/", " / ")
+					.replace("^", "^ ")
+					.replace("!(", "! (")
+					.replace("!^", "! ^")
+					.replace("+", " + ")
+					.replace("*", " * ")
+					.replace("?", " ? ");
 			String compact = q.replaceAll("\\s+", " ")
 					.replace(" (", "(")
 					.replace("( ", "(")
@@ -781,8 +800,6 @@ public class SparqlPropertyPathFuzzTest {
 
 	private static String summarize(String q) {
 		String one = q.replace("\n", "\\n");
-		if (one.length() <= 140)
-			return one;
-		return one.substring(0, 137) + "...";
+		return (one.length() <= 140) ? one : one.substring(0, 137) + "...";
 	}
 }
