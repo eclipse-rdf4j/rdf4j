@@ -2240,7 +2240,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
+//	@Disabled
 	void nested_paths_extreme_2_optional_and_graph() {
 		String q = "SELECT ?g ?s ?n\n" +
 				"WHERE {\n" +
