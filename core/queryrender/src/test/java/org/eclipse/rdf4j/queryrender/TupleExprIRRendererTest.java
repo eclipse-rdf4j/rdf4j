@@ -2423,6 +2423,15 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
+	void notInvertedPath() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  ?s !ex:pA ?o .\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
 	void temp3() {
 		String q = "SELECT ?s ?o\n" +
 				"WHERE {\n" +
