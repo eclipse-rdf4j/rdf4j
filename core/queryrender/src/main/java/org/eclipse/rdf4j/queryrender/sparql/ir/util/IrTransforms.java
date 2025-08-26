@@ -72,9 +72,10 @@ public final class IrTransforms {
 					w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
 
 					w = ApplyPathsFixedPointTransform.apply(w, r);
+					// Normalize NPS member order after late inversions introduced by path fusions
+					w = NormalizeNpsMemberOrderTransform.apply(w);
 
 					// (skip) string-level path parentheses simplification; keep structurally safe output
-					// (skip) final NPS member order normalization to preserve original order
 
 					// Late normalization of grouped tail steps: ensure a final tail like "/foaf:name"
 					// is rendered outside the right-hand grouping when safe

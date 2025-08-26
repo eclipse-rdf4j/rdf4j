@@ -16,6 +16,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -394,15 +395,14 @@ public final class ApplyPathsTransform extends BaseTransform {
 								Var startVar = startForward ? sp0.getSubject() : sp0.getObject();
 								String first = r.renderIRI((IRI) p0.getValue());
 								if (!startForward) {
-									first = "^" + first;
+									first = "^( " + first + " )";
 								}
-								// Alternation joined without spaces
-								String altTxt = (alts.size() == 1) ? alts.get(0) : String.join("|", alts);
-								// Special-case: if the first branch is inverse, wrap it with "(^p )|..." to match
-								// expected
-								if (alts.size() == 2 && alts.get(0).startsWith("^")) {
-									altTxt = "(" + alts.get(0) + " )|(" + alts.get(1) + ")";
-								}
+								// Alternation preserves UNION branch order
+
+								String altTxt = alts.stream()
+										.map(a -> "( " + a + " )")
+										.collect(Collectors.joining(" | "));
+
 								// Parenthesize first step and wrap alternation in triple parens to match expected
 								// idempotence
 								String pathTxt = "(" + first + ")/(" + altTxt + ")";
