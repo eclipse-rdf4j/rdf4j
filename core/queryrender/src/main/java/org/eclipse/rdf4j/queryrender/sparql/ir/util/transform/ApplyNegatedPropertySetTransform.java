@@ -519,14 +519,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 		}
 		// Canonical ordering for graph-fused NPS:
 		// 1) rdf:* first, 2) then lexicographic by rendered token. No extra spaces.
-		rendered.sort((a, b) -> {
-			boolean ar = a.startsWith("rdf:");
-			boolean br = b.startsWith("rdf:");
-			if (ar != br) {
-				return ar ? -1 : 1;
-			}
-			return a.compareTo(b);
-		});
+		rendered.sort(String::compareTo);
 		return String.join("|", rendered);
 	}
 
