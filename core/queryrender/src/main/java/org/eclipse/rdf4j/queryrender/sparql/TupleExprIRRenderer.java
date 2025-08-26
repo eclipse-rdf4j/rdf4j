@@ -1109,17 +1109,15 @@ public class TupleExprIRRenderer {
 	/** ASK query (top-level). */
 	public String renderAsk(final TupleExpr tupleExpr, final DatasetView dataset) {
 		suppressedSubselects.clear();
+		// Build IR (including transforms) and then print only the WHERE block using the IR printer.
 		final StringBuilder out = new StringBuilder(256);
-		final Normalized n = normalize(tupleExpr);
+		final IrSelect ir = toIRSelect(tupleExpr);
 		// Prologue
 		printPrologueAndDataset(out, dataset);
 		out.append("ASK");
-		// WHERE
+		// WHERE (from IR)
 		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
-		final BlockPrinter bp = new BlockPrinter(out, this, cfg);
-		bp.openBlock();
-		n.where.visit(bp);
-		bp.closeBlock();
+		new IRTextPrinter(out).printWhere(ir.getWhere());
 		return mergeAdjacentGraphBlocks(out.toString()).trim();
 	}
 
