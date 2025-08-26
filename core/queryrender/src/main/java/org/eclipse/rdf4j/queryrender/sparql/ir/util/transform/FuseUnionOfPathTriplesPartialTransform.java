@@ -72,6 +72,10 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 	private static IrNode fuseUnion(IrUnion u, TupleExprIRRenderer r) {
 		if (u == null || u.getBranches().size() < 2)
 			return u;
+		// Preserve explicit UNION (new variable scope) as-is; do not fuse branches inside it.
+		if (u.isNewScope()) {
+			return u;
+		}
 		// Group candidate branches by (graphName,sName,oName) and remember a sample Var triple per group
 		class Key {
 			final String gName;
