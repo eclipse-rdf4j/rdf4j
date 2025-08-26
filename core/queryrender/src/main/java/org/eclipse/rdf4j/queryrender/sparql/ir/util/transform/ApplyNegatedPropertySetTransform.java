@@ -42,6 +42,10 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 			return null;
 		}
 
+		// Pre-pass: rewrite the simplest SP(var p) + FILTER (!= / NOT IN) into a single NPS path triple,
+		// both at top-level and in nested BGPs (handled via transformChildren below).
+		bgp = rewriteSimpleNpsOnly(bgp, r);
+
 		final List<IrNode> in = bgp.getLines();
 		final List<IrNode> out = new ArrayList<>();
 		final Set<IrNode> consumed = new LinkedHashSet<>();
@@ -54,70 +58,128 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 
 			// (global NOT IN → NPS rewrite intentionally not applied; see specific GRAPH fusions below)
 
-			// Pattern A: GRAPH, FILTER, [GRAPH]
+			// Heuristic pre-pass: move an immediately following NOT IN filter on the anon path var
+			// into the preceding GRAPH block, so that subsequent coalescing and NPS fusion can act
+			// on a contiguous GRAPH ... FILTER ... GRAPH shape.
 			if (n instanceof IrGraph && i + 1 < in.size() && in.get(i + 1) instanceof IrFilter) {
 				final IrGraph g1 = (IrGraph) n;
 				final IrFilter f = (IrFilter) in.get(i + 1);
-
-				final String condText = f.getConditionText();
-				if (condText != null && condText.contains(ANON_PATH_PREFIX)) {
-
-					final NsText ns = parseNegatedSetText(condText);
-					if (ns == null || ns.varName == null || ns.items.isEmpty()) {
-						out.add(n);
+				final String condText0 = f.getConditionText();
+				// System.out.println("# DBG pre-move scan: condText0=" + condText0);
+				final NsText ns0 = condText0 == null ? null : parseNegatedSetText(condText0);
+				if (ns0 != null && ns0.varName != null && !ns0.items.isEmpty()) {
+					final MatchTriple mt0 = findTripleWithPredicateVar(g1.getWhere(), ns0.varName);
+					if (mt0 != null) {
+						final IrBGP inner = new IrBGP();
+						// original inner lines first
+						copyAllExcept(g1.getWhere(), inner, null);
+						// then the filter moved inside
+						inner.add(f);
+						out.add(new IrGraph(g1.getGraph(), inner));
+						// System.out.println("# DBG NPS: moved NOT IN filter into preceding GRAPH");
+						i += 1; // consume moved filter
 						continue;
 					}
+				}
+			}
 
+			// Pattern A (generalized): GRAPH, [FILTER...], FILTER(NOT IN on _anon_path_), [GRAPH]
+			if (n instanceof IrGraph) {
+				final IrGraph g1 = (IrGraph) n;
+				// scan forward over consecutive FILTER lines to find an NPS filter targeting an _anon_path_ var
+				int j = i + 1;
+				NsText ns = null;
+				IrFilter npsFilter = null;
+				while (j < in.size() && in.get(j) instanceof IrFilter) {
+					final IrFilter f = (IrFilter) in.get(j);
+					final String condText = f.getConditionText();
+					if (condText != null && condText.contains(ANON_PATH_PREFIX)) {
+						final NsText cand = parseNegatedSetText(condText);
+						if (cand != null && cand.varName != null && !cand.items.isEmpty()) {
+							ns = cand;
+							npsFilter = f;
+							break; // found the NOT IN / inequality chain on the anon path var
+						}
+					}
+					j++;
+				}
+				if (ns != null) {
+					// System.out.println("# DBG NPS: Graph@" + i + " matched filter@" + j + " var=" + ns.varName + "
+					// items=" + ns.items);
 					// Find triple inside first GRAPH that uses the filtered predicate variable
 					final MatchTriple mt1 = findTripleWithPredicateVar(g1.getWhere(), ns.varName);
 					if (mt1 == null) {
+						// System.out.println("# DBG NPS: no matching triple in g1 for var=" + ns.varName);
+						// no matching triple inside g1; keep as-is
 						out.add(n);
 						continue;
 					}
 
-					// Try to chain with immediately following GRAPH having the same graph ref
+					// Optionally chain with the next GRAPH having the same graph ref after the NPS filter
 					boolean consumedG2 = false;
 					MatchTriple mt2 = null;
-					if (i + 2 < in.size() && in.get(i + 2) instanceof IrGraph) {
-						final IrGraph g2 = (IrGraph) in.get(i + 2);
-						if (sameVar(g1.getGraph(), g2.getGraph())) {
-							mt2 = findTripleWithConstPredicateReusingObject(g2.getWhere(), mt1.object);
-							consumedG2 = (mt2 != null);
+					int k = j + 1;
+					if (npsFilter != null) {
+						// Skip over any additional FILTER lines between the NPS filter and the next block
+						while (k < in.size() && in.get(k) instanceof IrFilter) {
+							k++;
+						}
+						if (k < in.size() && in.get(k) instanceof IrGraph) {
+							final IrGraph g2 = (IrGraph) in.get(k);
+							if (sameVar(g1.getGraph(), g2.getGraph())) {
+								mt2 = findTripleWithConstPredicateReusingObject(g2.getWhere(), mt1.object);
+								consumedG2 = (mt2 != null);
+							}
+						} else if (k < in.size() && in.get(k) instanceof IrStatementPattern) {
+							// Fallback: the second triple may have been emitted outside GRAPH; if it reuses the bridge
+							// var
+							// and has a constant predicate, treat it as the tail step to be fused and consume it.
+							final IrStatementPattern sp2 = (IrStatementPattern) in.get(k);
+							final Var pv = sp2.getPredicate();
+							if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
+								if (sameVar(mt1.object, sp2.getSubject()) || sameVar(mt1.object, sp2.getObject())) {
+									mt2 = new MatchTriple(sp2, sp2.getSubject(), sp2.getPredicate(), sp2.getObject());
+									consumedG2 = true;
+								}
+							}
 						}
 					}
 
 					// Build new GRAPH with fused path triple + any leftover lines from original inner graphs
 					final IrBGP newInner = new IrBGP();
-
 					final Var subj = mt1.subject;
 					final Var obj = mt1.object;
-					final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
-
+					final String npsTxt = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
 					if (mt2 != null) {
 						final boolean forward = sameVar(mt1.object, mt2.subject);
 						final boolean inverse = !forward && sameVar(mt1.object, mt2.object);
 						if (forward || inverse) {
 							final String step = r.renderIRI((IRI) mt2.predicate.getValue());
-							final String path = nps + "/" + (inverse ? "^" : "") + step;
+							final String path = npsTxt + "/" + (inverse ? "^" : "") + step;
 							final Var end = forward ? mt2.object : mt2.subject;
 							newInner.add(new IrPathTriple(subj, path, end));
 						} else {
-							// No safe chain direction; just print standalone NPS triple
-							newInner.add(new IrPathTriple(subj, nps, obj));
+							newInner.add(new IrPathTriple(subj, npsTxt, obj));
 						}
 					} else {
-						newInner.add(new IrPathTriple(subj, nps, obj));
+						newInner.add(new IrPathTriple(subj, npsTxt, obj));
 					}
-
-					// Preserve any other lines inside g1 and g2 except the consumed triples
 					copyAllExcept(g1.getWhere(), newInner, mt1.node);
 					if (consumedG2) {
-						final IrGraph g2 = (IrGraph) in.get(i + 2);
+						final IrGraph g2 = (IrGraph) in.get(k);
 						copyAllExcept(g2.getWhere(), newInner, mt2.node);
 					}
 
+					// Emit the rewritten GRAPH at the position of the first GRAPH
 					out.add(new IrGraph(g1.getGraph(), newInner));
-					i += consumedG2 ? 2 : 1; // also consume the filter at i+1 and optionally g2 at i+2
+					// Also preserve any intervening non-NPS FILTER lines between i and j
+					for (int t = i + 1; t < j; t++) {
+						out.add(in.get(t));
+					}
+					// Advance index past the consumed NPS filter and optional g2; any extra FILTERs after
+					// the NPS filter are preserved by the normal loop progression (since we didn't add them
+					// above and will hit them in subsequent iterations).
+					i = consumedG2 ? k : j;
 					continue;
 				}
 			}
@@ -192,6 +254,44 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				continue;
 			}
 
+			// Simple Pattern S2 (GRAPH): GRAPH { SP(var p) } followed by FILTER on that var -> GRAPH with NPS triple
+			if (n instanceof IrGraph && i + 1 < in.size() && in.get(i + 1) instanceof IrFilter) {
+				final IrGraph g = (IrGraph) n;
+				final IrFilter f = (IrFilter) in.get(i + 1);
+				final String condText = f.getConditionText();
+				final NsText ns = condText == null ? null : parseNegatedSetText(condText);
+				if (ns != null && g.getWhere() != null && g.getWhere().getLines().size() == 1
+						&& g.getWhere().getLines().get(0) instanceof IrStatementPattern) {
+					final IrStatementPattern sp = (IrStatementPattern) g.getWhere().getLines().get(0);
+					final Var pVar = sp.getPredicate();
+					if (pVar != null && BaseTransform.isAnonPathVar(pVar) && pVar.getName().equals(ns.varName)
+							&& !ns.items.isEmpty()) {
+						final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
+						final IrBGP newInner = new IrBGP();
+						newInner.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
+						out.add(new IrGraph(g.getGraph(), newInner));
+						i += 1; // consume filter
+						continue;
+					}
+				}
+			}
+
+			// Simple Pattern S1 (non-GRAPH): SP(var p) followed by FILTER on that var -> rewrite to NPS triple
+			if (n instanceof IrStatementPattern && i + 1 < in.size() && in.get(i + 1) instanceof IrFilter) {
+				final IrStatementPattern sp = (IrStatementPattern) n;
+				final Var pVar = sp.getPredicate();
+				final IrFilter f = (IrFilter) in.get(i + 1);
+				final String condText = f.getConditionText();
+				final NsText ns = condText == null ? null : parseNegatedSetText(condText);
+				if (pVar != null && BaseTransform.isAnonPathVar(pVar) && ns != null
+						&& pVar.getName().equals(ns.varName) && !ns.items.isEmpty()) {
+					final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
+					out.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
+					i += 1; // consume filter
+					continue;
+				}
+			}
+
 			// Pattern C2 (non-GRAPH): SP(var p) followed by FILTER on that var, with surrounding constant triples:
 			// S -(const k1)-> A ; S -(var p)-> M ; FILTER (?p NOT IN (...)) ; M -(const k2)-> E
 			// Fuse to: A (^k1 / !(...) / k2) E
@@ -201,7 +301,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				final IrFilter f2 = (IrFilter) in.get(i + 1);
 				final String condText3 = f2.getConditionText();
 				final NsText ns2 = condText3 == null ? null : parseNegatedSetText(condText3);
-				if (pVar != null && !pVar.hasValue() && pVar.getName() != null && ns2 != null
+				if (pVar != null && BaseTransform.isAnonPathVar(pVar) && ns2 != null
 						&& pVar.getName().equals(ns2.varName) && !ns2.items.isEmpty()) {
 					IrStatementPattern k1 = null;
 					boolean k1Inverse = false;
@@ -324,7 +424,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				final IrFilter f = (IrFilter) in.get(i + 1);
 				final String condText4 = f.getConditionText();
 				final NsText ns = condText4 == null ? null : parseNegatedSetText(condText4);
-				if (pVar != null && !pVar.hasValue() && pVar.getName() != null && ns != null
+				if (pVar != null && BaseTransform.isAnonPathVar(pVar) && ns != null
 						&& pVar.getName().equals(ns.varName) && !ns.items.isEmpty()) {
 					final Var sVar = sp.getSubject();
 					final Var oVar = sp.getObject();
@@ -347,7 +447,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						&& g.getWhere().getLines().get(0) instanceof IrStatementPattern) {
 					final IrStatementPattern sp = (IrStatementPattern) g.getWhere().getLines().get(0);
 					final Var pVar = sp.getPredicate();
-					if (pVar != null && !pVar.hasValue() && pVar.getName() != null
+					if (pVar != null && BaseTransform.isAnonPathVar(pVar)
 							&& pVar.getName().equals(ns.varName)) {
 						final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
 						final IrBGP newInner = new IrBGP();
