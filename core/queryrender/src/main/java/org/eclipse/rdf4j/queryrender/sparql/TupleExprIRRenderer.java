@@ -881,6 +881,10 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(final Projection p) {
+			// Try to recognize a UNION-encoded zero-or-one sequence (including negated property set cases)
+			if (tryParseZeroOrOneSequenceProjection(p)) {
+				return;
+			}
 			IrSelect sub = toIRSelectRaw(p);
 			where.add(new IrSubSelect(sub));
 		}
@@ -918,7 +922,70 @@ public class TupleExprIRRenderer {
 			if (s == null || o == null) {
 				return false;
 			}
-			// Build PathNode for each non-zero branch
+			// Two patterns supported for the non-zero branches:
+			// 1) A simple chain of constant IRI steps (from s to o) possibly via anon mid-vars.
+			// 2) A set of Filter( ?p != <iri> ) branches over single-step triples (forward/inverse) encoding
+			// a negated property set. We collapse these into !(a|^b|...).
+			// Try NPS shape first, as produced by the parser for !(ex:p3|^ex:p4).
+			List<PathNode> npsMembers = new ArrayList<>();
+			Var ctxZ = getContextVarSafe(zlp);
+			boolean npsOk = true;
+			for (TupleExpr branch : nonZero) {
+				if (!(branch instanceof Filter) || !(((Filter) branch).getArg() instanceof StatementPattern)) {
+					npsOk = false;
+					break;
+				}
+				Filter f = (Filter) branch;
+				StatementPattern sp = (StatementPattern) f.getArg();
+				// Must share same GRAPH context as zero-length branch (if any)
+				if (!Objects.equals(getContextVarSafe(sp), ctxZ)) {
+					npsOk = false;
+					break;
+				}
+				if (!(f.getCondition() instanceof Compare)
+						|| ((Compare) f.getCondition()).getOperator() != CompareOp.NE) {
+					npsOk = false;
+					break;
+				}
+				IRI bad = null;
+				Compare cmp = (Compare) f.getCondition();
+				if (cmp.getLeftArg() instanceof ValueConstant
+						&& ((ValueConstant) cmp.getLeftArg()).getValue() instanceof IRI
+						&& cmp.getRightArg() instanceof Var) {
+					bad = (IRI) ((ValueConstant) cmp.getLeftArg()).getValue();
+				} else if (cmp.getRightArg() instanceof ValueConstant
+						&& ((ValueConstant) cmp.getRightArg()).getValue() instanceof IRI
+						&& cmp.getLeftArg() instanceof Var) {
+					bad = (IRI) ((ValueConstant) cmp.getRightArg()).getValue();
+				} else {
+					npsOk = false;
+					break;
+				}
+				boolean forward = sameVar(sp.getSubjectVar(), s) && sameVar(sp.getObjectVar(), o);
+				boolean inverse = sameVar(sp.getSubjectVar(), o) && sameVar(sp.getObjectVar(), s);
+				if (!forward && !inverse) {
+					npsOk = false;
+					break;
+				}
+				npsMembers.add(new PathAtom(bad, inverse));
+			}
+			if (npsOk && !npsMembers.isEmpty()) {
+				PathNode innerAlt = (npsMembers.size() == 1) ? npsMembers.get(0) : new PathAlt(npsMembers);
+				PathNode q = new PathQuant(new PathNeg(innerAlt), 0, 1);
+				String expr = (q.prec() < PREC_SEQ ? "(" + q.render() + ")" : q.render());
+
+				IrPathTriple pt = new IrPathTriple(s, expr, o);
+				if (ctxZ != null && (ctxZ.hasValue() || (ctxZ.getName() != null && !ctxZ.getName().isEmpty()))) {
+					IrBGP innerBgp = new IrBGP();
+					innerBgp.add(pt);
+					where.add(new IrGraph(ctxZ, innerBgp));
+				} else {
+					where.add(pt);
+				}
+				return true;
+			}
+
+			// Fallback: try to parse each branch as a simple chain of constant IRI steps
 			List<PathNode> alts = new ArrayList<>();
 			for (TupleExpr branch : nonZero) {
 				PathNode seq = buildPathSequenceFromChain(branch, s, o);
@@ -927,11 +994,18 @@ public class TupleExprIRRenderer {
 				}
 				alts.add(seq);
 			}
-			// Combine alternatives (if more than one)
 			PathNode inner = (alts.size() == 1) ? alts.get(0) : new PathAlt(alts);
 			PathNode q = new PathQuant(inner, 0, 1);
 			String expr = (q.prec() < PREC_SEQ ? "(" + q.render() + ")" : q.render());
-			where.add(new IrPathTriple(s, expr, o));
+			IrPathTriple pt = new IrPathTriple(s, expr, o);
+			Var ctxZ2 = getContextVarSafe(zlp);
+			if (ctxZ2 != null && (ctxZ2.hasValue() || (ctxZ2.getName() != null && !ctxZ2.getName().isEmpty()))) {
+				IrBGP innerBgp = new IrBGP();
+				innerBgp.add(pt);
+				where.add(new IrGraph(ctxZ2, innerBgp));
+			} else {
+				where.add(pt);
+			}
 			return true;
 		}
 
@@ -2943,6 +3017,13 @@ public class TupleExprIRRenderer {
 			if (seq != null) {
 				return seq;
 			}
+			// General handling: a Join representing a sequence where each element is either a
+			// single StatementPattern step, or a UNION of such single-step alternatives. This covers
+			// patterns like ( (p|^p)/(q|^q)/r ), including the case where the final step reaches 'obj'.
+			seq = buildPathSequenceFromJoinAllowingUnions(innerExpr, subj, obj);
+			if (seq != null) {
+				return seq;
+			}
 		}
 
 		// Best-effort: handle a simple sequence subpath represented as a Join/chain of StatementPatterns
@@ -2955,6 +3036,91 @@ public class TupleExprIRRenderer {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * Build a PathNode sequence from a Join whose elements are either simple single-step StatementPatterns or UNIONs of
+	 * such single-step patterns. Each element must connect the current variable to a shared mid variable (or directly
+	 * to 'obj' on the last element). Predicates must be constant IRIs; direction is encoded via inverse flag. Context
+	 * variables (GRAPH) are ignored at this stage (handled when placing the path triple).
+	 */
+	private PathNode buildPathSequenceFromJoinAllowingUnions(final TupleExpr expr, final Var subj, final Var obj) {
+		List<TupleExpr> parts = new ArrayList<>();
+		flattenJoin(expr, parts);
+		if (parts.isEmpty()) {
+			return null;
+		}
+		Var cur = subj;
+		List<PathNode> steps = new ArrayList<>();
+		for (int i = 0; i < parts.size(); i++) {
+			TupleExpr part = parts.get(i);
+			boolean last = (i == parts.size() - 1);
+			if (part instanceof StatementPattern) {
+				StatementPattern sp = (StatementPattern) part;
+				Var pv = sp.getPredicateVar();
+				if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+					return null;
+				}
+				Var ss = sp.getSubjectVar();
+				Var oo = sp.getObjectVar();
+				if (sameVar(cur, ss) && (isAnonPathVar(oo) || (last && sameVar(oo, obj)))) {
+					steps.add(new PathAtom((IRI) pv.getValue(), false));
+					cur = oo;
+					continue;
+				} else if (sameVar(cur, oo) && (isAnonPathVar(ss) || (last && sameVar(ss, obj)))) {
+					steps.add(new PathAtom((IRI) pv.getValue(), true));
+					cur = ss;
+					continue;
+				} else {
+					return null;
+				}
+			} else if (part instanceof Union) {
+				// Each leaf must be a single-step triple from 'cur' to a shared mid var (or to 'obj' if last)
+				List<TupleExpr> leaves = new ArrayList<>();
+				flattenUnion(part, leaves);
+				if (leaves.isEmpty()) {
+					return null;
+				}
+				Var mid = null;
+				List<PathNode> alts = new ArrayList<>();
+				for (TupleExpr leaf : leaves) {
+					if (!(leaf instanceof StatementPattern)) {
+						return null;
+					}
+					StatementPattern sp = (StatementPattern) leaf;
+					Var pv = sp.getPredicateVar();
+					if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+						return null;
+					}
+					Var ss = sp.getSubjectVar();
+					Var oo = sp.getObjectVar();
+					boolean forwardOk = sameVar(cur, ss) && (isAnonPathVar(oo) || (last && sameVar(oo, obj)));
+					boolean inverseOk = sameVar(cur, oo) && (isAnonPathVar(ss) || (last && sameVar(ss, obj)));
+					if (!forwardOk && !inverseOk) {
+						return null;
+					}
+					Var localMid = forwardOk ? oo : ss;
+					if (mid == null) {
+						mid = localMid;
+					} else if (!sameVar(mid, localMid)) {
+						return null; // branches don't share the same mid var
+					}
+					alts.add(new PathAtom((IRI) pv.getValue(), inverseOk));
+				}
+				if (alts.isEmpty() || mid == null) {
+					return null;
+				}
+				steps.add(alts.size() == 1 ? alts.get(0) : new PathAlt(alts));
+				cur = mid;
+			} else {
+				return null; // unsupported element inside sequence
+			}
+		}
+		// Ensure the sequence reaches the expected object variable
+		if (!sameVar(cur, obj)) {
+			return null;
+		}
+		return steps.size() == 1 ? steps.get(0) : new PathSeq(steps);
 	}
 
 	/** Try to parse a UNION of Filter+StatementPattern branches representing a negated property set. */

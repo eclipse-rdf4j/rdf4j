@@ -33,13 +33,12 @@ public class IrSubSelect extends IrNode {
 	@Override
 	public void print(IrPrinter p) {
 		final String text = p.renderSubselect(select);
-		p.line("{");
-		p.pushIndent();
+		// Use structured block printing to ensure braces are closed before subsequent lines
+		p.openBlock();
 		for (String ln : text.split("\\R", -1)) {
 			p.line(ln);
 		}
-		p.popIndent();
-		p.line("}");
+		p.closeBlock();
 	}
 
 	@Override

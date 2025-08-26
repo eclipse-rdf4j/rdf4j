@@ -50,9 +50,9 @@ public final class MergeOptionalIntoPrecedingGraphTransform extends BaseTransfor
 				IrOptional opt = (IrOptional) in.get(i + 1);
 				IrBGP ow = opt.getWhere();
 				IrBGP simpleOw = null;
-				if (isSimpleOptionalBody(ow)) {
-					simpleOw = ow;
-				} else if (ow != null && ow.getLines().size() == 1 && ow.getLines().get(0) instanceof IrGraph) {
+				// Only merge when OPTIONAL body explicitly targets the same GRAPH context. Do not merge a plain
+				// OPTIONAL body without an explicit GRAPH wrapper; keep it outside to match original structure.
+				if (ow != null && ow.getLines().size() == 1 && ow.getLines().get(0) instanceof IrGraph) {
 					// Handle OPTIONAL { GRAPH ?g { simple } } → OPTIONAL { simple } when graph matches
 					IrGraph inner = (IrGraph) ow.getLines().get(0);
 					if (sameVar(g.getGraph(), inner.getGraph()) && isSimpleOptionalBody(inner.getWhere())) {
