@@ -71,13 +71,8 @@ public final class CanonicalizeBareNpsOrientationTransform extends BaseTransform
 				continue;
 			}
 			if (n instanceof IrUnion) {
-				IrUnion u = (IrUnion) n;
-				IrUnion u2 = new IrUnion();
-				u2.setNewScope(u.isNewScope());
-				for (IrBGP b : u.getBranches()) {
-					u2.addBranch(apply(b));
-				}
-				out.add(u2);
+				// Do not alter orientation inside UNION branches; preserve branch subjects/objects.
+				out.add(n);
 				continue;
 			}
 			if (n instanceof IrService) {
