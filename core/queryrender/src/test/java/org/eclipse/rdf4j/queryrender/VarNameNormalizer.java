@@ -43,6 +43,7 @@ public final class VarNameNormalizer {
 			"_anon_collection_",
 			"_anon_path_",
 			"_anon_having_",
+			"_anon_path_inverse_",
 			"_anon_"
 	);
 

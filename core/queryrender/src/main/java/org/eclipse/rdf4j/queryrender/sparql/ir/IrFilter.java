@@ -71,14 +71,15 @@ public class IrFilter extends IrNode {
 	}
 
 	private void printExists(IrPrinter p, boolean negated, IrBGP where) {
-		String head = negated ? "FILTER (NOT EXISTS {" : "FILTER (EXISTS {";
+		// Match expected style: no extra parentheses around EXISTS/NOT EXISTS
+		String head = negated ? "FILTER NOT EXISTS {" : "FILTER EXISTS {";
 		p.line(head);
 		p.pushIndent();
 		if (where != null) {
 			p.printLines(where.getLines());
 		}
 		p.popIndent();
-		p.line("})");
+		p.line("}");
 	}
 
 	@Override

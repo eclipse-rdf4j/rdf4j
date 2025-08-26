@@ -2400,4 +2400,37 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg());
 	}
 
+	@Test
+	void invertedPathInUnion() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  { ?s !^<http://example.org/p/I01> ?o . }\n" +
+				"  UNION\n" +
+				"  { ?o !^<http://example.org/p/I02> ?s . }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void notInvertedPathInUnion() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  { ?o !<http://example.org/p/I01> ?s . }\n" +
+				"  UNION\n" +
+				"  { ?s !<http://example.org/p/I02> ?o . }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void temp3() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  { ?s ^<http://example.org/p/I0> ?o . }\n" +
+				"  UNION\n" +
+				"  { ?o ^<http://example.org/p/I0> ?s . }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
 }

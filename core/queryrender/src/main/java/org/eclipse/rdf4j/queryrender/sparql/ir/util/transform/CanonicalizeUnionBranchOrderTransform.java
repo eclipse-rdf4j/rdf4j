@@ -73,39 +73,9 @@ public final class CanonicalizeUnionBranchOrderTransform extends BaseTransform {
 		for (IrBGP b : u.getBranches()) {
 			u2.addBranch(apply(b, select));
 		}
-		if (u2.getBranches().size() != 2) {
-			return u2;
-		}
-		String firstProj = null;
-		if (select != null && !select.getProjection().isEmpty()) {
-			firstProj = select.getProjection().get(0).getVarName();
-		}
-		if (firstProj == null || firstProj.isEmpty()) {
-			return u2;
-		}
-		// Only reorder when both branches are single IrPathTriple (optionally GRAPH-wrapped)
-		IrTripleLike tl0 = onlyTripleLike(u2.getBranches().get(0));
-		IrTripleLike tl1 = onlyTripleLike(u2.getBranches().get(1));
-		if (!(tl0 instanceof IrPathTriple) || !(tl1 instanceof IrPathTriple)) {
-			return u2;
-		}
-		String p0 = ((IrPathTriple) tl0).getPathText();
-		String p1 = ((IrPathTriple) tl1).getPathText();
-		if (p0 == null || p1 == null || !p0.trim().startsWith("!(") || !p1.trim().startsWith("!(")) {
-			return u2; // reorder only NPS cases
-		}
-		Var s0 = tl0.getSubject();
-		Var s1 = tl1.getSubject();
-		boolean b0Matches = firstProj.equals(s0.getName());
-		boolean b1Matches = firstProj.equals(s1.getName());
-		if (!b0Matches && b1Matches) {
-			// swap branches
-			IrUnion swapped = new IrUnion();
-			swapped.setNewScope(u2.isNewScope());
-			swapped.addBranch(u2.getBranches().get(1));
-			swapped.addBranch(u2.getBranches().get(0));
-			return swapped;
-		}
+		// Keep original UNION branch order. Even though UNION is semantically commutative,
+		// preserving source order stabilizes round-trip rendering and aligns with tests
+		// that expect original text structure.
 		return u2;
 	}
 
