@@ -552,6 +552,53 @@ public class BaseTransform {
 
 			if (n instanceof IrPathTriple) {
 				IrPathTriple pt = (IrPathTriple) n;
+				// HEAD fusion: if a SP shares the subject with pt and uses a constant IRI predicate, prefix ^p/ or p/
+				final String headBridge = varOrValue(pt.getSubject(), r);
+				if (headBridge != null && headBridge.startsWith("?") && isAnonPathVar(pt.getSubject())) {
+					IrStatementPattern head = null;
+					boolean headInverse = true; // (?mid p ?x) => ^p/
+					final List<IrStatementPattern> hs = bySubject.get(headBridge);
+					if (hs != null) {
+						for (IrStatementPattern sp : hs) {
+							if (removed.contains(sp)) {
+								continue;
+							}
+							if (sp.getPredicate() == null || !sp.getPredicate().hasValue()
+									|| !(sp.getPredicate().getValue() instanceof IRI)) {
+								continue;
+							}
+							head = sp;
+							headInverse = true;
+							break;
+						}
+					}
+					if (head == null) {
+						final List<IrStatementPattern> ho = byObject.get(headBridge);
+						if (ho != null) {
+							for (IrStatementPattern sp : ho) {
+								if (removed.contains(sp)) {
+									continue;
+								}
+								if (sp.getPredicate() == null || !sp.getPredicate().hasValue()
+										|| !(sp.getPredicate().getValue() instanceof IRI)) {
+									continue;
+								}
+								head = sp;
+								headInverse = false; // (?x p ?mid) => p/
+								break;
+							}
+						}
+					}
+					if (head != null) {
+						final String ptxt = r.renderIRI((IRI) head.getPredicate().getValue());
+						final String prefix = (headInverse ? "^" : "") + ptxt + "/";
+						final Var newStart = headInverse ? head.getObject() : head.getSubject();
+						pt = new IrPathTriple(newStart, prefix + pt.getPathText(), pt.getObject());
+						removed.add(head);
+					}
+				}
+
+				// TAIL fusion: attach a constant predicate SP that shares the object
 				final String bridge = varOrValue(pt.getObject(), r);
 				if (bridge != null && bridge.startsWith("?")) {
 					// Only join when the bridge var is an _anon_path_* variable, to avoid eliminating user vars
