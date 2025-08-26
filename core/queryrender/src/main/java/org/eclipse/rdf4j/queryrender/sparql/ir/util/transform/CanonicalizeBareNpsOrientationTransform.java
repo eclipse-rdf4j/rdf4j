@@ -33,27 +33,6 @@ public final class CanonicalizeBareNpsOrientationTransform extends BaseTransform
 		}
 		final List<IrNode> out = new ArrayList<>();
 		for (IrNode n : bgp.getLines()) {
-			if (n instanceof IrPathTriple) {
-				IrPathTriple pt = (IrPathTriple) n;
-				final String path = pt.getPathText();
-				if (path != null) {
-					final String s = safeVarName(pt.getSubject());
-					final String o = safeVarName(pt.getObject());
-					// Only re-orient bare NPS when both endpoints are user variables (not anon_path_* bridges).
-					// Do not flip when one side is an internal _anon_path_* var: preserve the original orientation
-					// to avoid unintended inversion of NPS members in composed paths.
-					boolean eitherAnonBridge = BaseTransform.isAnonPathVar(pt.getSubject())
-							|| BaseTransform.isAnonPathVar(pt.getObject());
-					if (!eitherAnonBridge && s != null && o != null && path.startsWith("!(")
-							&& path.endsWith(")") && s.compareTo(o) > 0) {
-						final String inv = invertNegatedPropertySet(path);
-						if (inv != null) {
-							out.add(new IrPathTriple(pt.getObject(), inv, pt.getSubject()));
-							continue;
-						}
-					}
-				}
-			}
 			// Recurse into containers
 			if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;

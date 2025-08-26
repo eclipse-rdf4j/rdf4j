@@ -475,7 +475,7 @@ public class BaseTransform {
 			return false;
 		}
 		String n = v.getName();
-		return n != null && (n.startsWith(ANON_PATH_PREFIX) || n.startsWith(ANON_PATH_INVERSE_PREFIX));
+		return n != null && (n.startsWith(ANON_PATH_PREFIX));
 	}
 
 	/** True when the anonymous path var explicitly encodes inverse orientation. */
