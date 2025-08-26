@@ -2,7 +2,7 @@
 
 **Welcome, Codex Agent!** Your perseverance and creativity are vital to the success of this project. Approach each task with determination and keep pushing forward. Even if you stumble, learn from the experience and try again. Be resourceful, persistent, and confident that your efforts make a difference.
 
-This is a large multi-module Maven project. Building and testing the entire repository can take considerable time. It's not unusual for test execution to take 5–10 minutes per module.
+This is a large multi-module Maven project. Building and testing the entire repository can take considerable time. It's not unusual for test execution to take 5-10 minutes per module, but you should run the tests anyway to ensure your changes don't break anything. Sometimes the tests don't take that long, you can run them and see how long they actually take.
 
 Take your time. You have a lot more time than you think :)
 
@@ -17,8 +17,10 @@ Take your time. You have a lot more time than you think :)
   ```bash
   mvn -o verify
   ```
-  Running all modules sequentially will take a long time.
-- Maven stores all build output in each module's `target/` directory. You can usually ignore these directories.
+
+Running all modules sequentially will take a long time.
+
+Maven stores all build output in each module's `target/` directory, `target/surefire-reports/` for test reports, and `target/failsafe-reports/` for integration test reports. When tests are failing, you should look in these directories for more information.
 
 ## Code Formatting
 - This project has strict code formatting requirements. Always run the super fast automatic formatter before finalizing your code:
