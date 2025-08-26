@@ -47,7 +47,11 @@ public final class CanonicalizeGroupedTailStepTransform extends BaseTransform {
 			if (n instanceof IrPathTriple) {
 				IrPathTriple pt = (IrPathTriple) n;
 				String ptxt = pt.getPathText();
-				String rew = rewriteFuseSplitMiddle(ptxt);
+				// First: move a final tail step out of the right-hand group when safe:
+				// (LEFT)/((RIGHT/tail)) -> ((LEFT)/(RIGHT))/tail
+				String afterTail = rewriteGroupedTail(ptxt);
+				// Second: normalize split-middle grouping like ((L)/(M))/((R)) -> ((L)/(M/(R)))
+				String rew = rewriteFuseSplitMiddle(afterTail);
 				if (!rew.equals(ptxt)) {
 					m = new IrPathTriple(pt.getSubject(), rew, pt.getObject());
 				}
