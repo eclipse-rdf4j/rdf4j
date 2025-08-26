@@ -974,8 +974,8 @@ public class TupleExprIRRendererTest {
 	void complex_path_inverse_and_negated_set_mix() {
 		String q = "SELECT ?a ?n\n" +
 				"WHERE {\n" +
-				"  ?a ^foaf:knows/!(ex:knows|rdf:type|ex:helps|rdf:subject)/foaf:name ?n .\n" +
-				"  FILTER (LANG(?n) = \"\" || LANGMATCHES(LANG(?n), \"en\"))\n" +
+				"  ?a (^foaf:knows/!(ex:helps|ex:knows|rdf:subject|rdf:type)/foaf:name) ?n .\n" +
+				"  FILTER ((LANG(?n) = \"\") || LANGMATCHES(LANG(?n), \"en\"))\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
 	}
@@ -1131,7 +1131,7 @@ public class TupleExprIRRendererTest {
 				"    UNION\n" +
 				"  {\n" +
 				"    BIND(\"alt\" AS ?kind)\n" +
-				"    ?s foaf:knows|ex:knows ?o .\n" +
+				"    ?s (foaf:knows|ex:knows) ?o .\n" +
 				"  }\n" +
 				"    UNION\n" +
 				"  {\n" +
@@ -1141,12 +1141,12 @@ public class TupleExprIRRendererTest {
 				"    UNION\n" +
 				"  {\n" +
 				"    BIND(\"nps\" AS ?kind)\n" +
-				"    ?s !(rdf:type|ex:age) ?o .\n" +
+				"    ?o !(ex:age|rdf:type) ?s .\n" +
 				"  }\n" +
 				"    UNION\n" +
 				"  {\n" +
 				"    BIND(\"zeroOrOne\" AS ?kind)\n" +
-				"    ?s foaf:knows? ?o .\n" +
+				"    ?s (foaf:knows)? ?o .\n" +
 				"  }\n" +
 				"    UNION\n" +
 				"  {\n" +
@@ -1635,7 +1635,9 @@ public class TupleExprIRRendererTest {
 	void nps_path_followed_by_constant_step_in_graph() {
 		String q = "SELECT ?s ?x\n" +
 				"WHERE {\n" +
-				"  GRAPH ?g { ?s !(rdf:type|ex:age)/foaf:name ?x . }\n" +
+				"  GRAPH ?g {\n" +
+				"    ?s !(ex:age|rdf:type)/foaf:name ?x .\n" +
+				"  }\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
 	}
@@ -1712,7 +1714,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?g ?a ?x\n" +
 				"WHERE {\n" +
 				"  GRAPH ?g {\n" +
-				"    ?a !(rdf:type|ex:age)/foaf:name ?x .\n" +
+				"    ?a !(ex:age|rdf:type)/foaf:name ?x .\n" +
 				"  }\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
@@ -1767,10 +1769,11 @@ public class TupleExprIRRendererTest {
 
 	@Test
 	void nps_fusion_graph_filter_only2() {
-		String expanded = "SELECT *\n" +
+		String expanded = "SELECT ?g ?a ?m ?n\n" +
 				"WHERE {\n" +
 				"  GRAPH ?g {\n" +
-				"    ?a !(rdf:type|ex:age) ?m .\n" +
+				"    ?a !(ex:age|^rdf:type) ?m .\n" +
+				"    ?a !(rdf:type|^ex:age) ?n .\n\n" +
 				"  }\n" +
 				"}";
 
@@ -1953,7 +1956,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?a ?n\n" +
 				"WHERE {\n" +
 				"  OPTIONAL {\n" +
-				"    ?a ^foaf:knows/!(ex:knows|rdf:type|ex:helps|rdf:subject)/foaf:name ?n .\n" +
+				"    ?a (^foaf:knows/!(ex:helps|ex:knows|rdf:subject|rdf:type)/foaf:name) ?n .\n" +
 				"    FILTER ((LANG(?n) = \"\") || LANGMATCHES(LANG(?n), \"en\"))\n" +
 				"    OPTIONAL {\n" +
 				"      ?a foaf:knows+ ?_anon_1 .\n" +
@@ -2078,7 +2081,7 @@ public class TupleExprIRRendererTest {
 				"  {\n" +
 				"    {\n" +
 				"      ?s foaf:knows/foaf:knows ?o .\n" +
-				"    } \n" +
+				"    }\n" +
 				"      UNION\n" +
 				"    {\n" +
 				"      ?s (ex:knows1|^ex:knows2) ?o .\n" +
@@ -2088,10 +2091,10 @@ public class TupleExprIRRendererTest {
 				"  {\n" +
 				"    {\n" +
 				"      ?s ^foaf:knows ?o .\n" +
-				"    } \n" +
+				"    }\n" +
 				"      UNION\n" +
 				"    {\n" +
-				"      ?s !(rdf:type|ex:age) ?o .\n" +
+				"      ?o !(ex:age|rdf:type) ?s .\n" +
 				"    }\n" +
 				"  }\n" +
 				"}";
@@ -2141,7 +2144,7 @@ public class TupleExprIRRendererTest {
 				"    UNION\n" +
 				"  {\n" +
 				"    OPTIONAL {\n" +
-				"      ?s !(rdf:type|ex:age)/foaf:name ?_n .\n" +
+				"      ?s !(ex:age|rdf:type)/foaf:name ?_n .\n" +
 				"    }\n" +
 				"  }\n" +
 				"}";
@@ -2164,7 +2167,7 @@ public class TupleExprIRRendererTest {
 				"    UNION\n" +
 				"  {\n" +
 				"    {\n" +
-				"      ?s !(rdf:type|ex:age) ?o .\n" +
+				"      ?o !(ex:age|rdf:type) ?s .\n" +
 				"    }\n" +
 				"      UNION\n" +
 				"    {\n" +
@@ -2276,7 +2279,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"    UNION\n" +
 				"  {\n" +
-				"    ?s ((!(ex:g|^ex:h)/(ex:i|^ex:j)?)/((ex:k/foaf:knows)|(^ex:l/ex:m)))/foaf:name ?n .\n" +
+				"    ?s (((!(ex:g|^ex:h))/(((ex:i|^ex:j))?))/((ex:k/foaf:knows)|(^ex:l/ex:m)))/foaf:name ?n .\n" +
 				"  }\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());

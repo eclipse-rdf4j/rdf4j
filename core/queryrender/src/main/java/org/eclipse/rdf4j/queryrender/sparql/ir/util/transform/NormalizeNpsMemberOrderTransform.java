@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
@@ -116,30 +117,13 @@ public final class NormalizeNpsMemberOrderTransform extends BaseTransform {
 	}
 
 	static String reorderMembers(String inner) {
-		String[] toks = Arrays.stream(inner.split("\\|"))
+		String collect = Arrays.stream(inner.split("\\|"))
 				.map(String::trim)
 				.filter(t -> !t.isEmpty())
-				.toArray(String[]::new);
-		// Enforce canonical order: non-inverse first, then prefer rdf:* before others, then lexicographic by IRI text
-		Arrays.sort(toks, new Comparator<String>() {
-			@Override
-			public int compare(String a, String b) {
-				boolean ia = a.startsWith("^");
-				boolean ib = b.startsWith("^");
-				if (ia != ib) {
-					return ia ? 1 : -1; // non-inverse first
-				}
-				String aa = ia ? a.substring(1) : a;
-				String bb = ib ? b.substring(1) : b;
-				boolean ardf = aa.startsWith("rdf:");
-				boolean brdf = bb.startsWith("rdf:");
-				if (ardf != brdf) {
-					return ardf ? -1 : 1; // rdf:* first
-				}
-				return aa.compareTo(bb);
-			}
-		});
-		return String.join("|", toks);
+				.sorted()
+				.collect(Collectors.joining("|"));
+
+		return collect;
 	}
 
 	static String invertMembers(String inner) {
