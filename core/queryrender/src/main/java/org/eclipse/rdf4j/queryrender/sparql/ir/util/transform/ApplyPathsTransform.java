@@ -560,14 +560,20 @@ public final class ApplyPathsTransform extends BaseTransform {
 
 					final Var s = tl.getSubject();
 					final Var o = tl.getObject();
-					if (subj == null && obj == null) {
-						subj = s;
-						obj = o;
-					}
 					String piece = tl.getPredicateOrPathText(r);
 					if (piece == null) {
 						ok = false;
 						break;
+					}
+					if (subj == null && obj == null) {
+						// Choose canonical endpoints preferring a non-anon_path_* subject when possible.
+						if (isAnonPathVar(s) && !isAnonPathVar(o)) {
+							subj = o;
+							obj = s;
+						} else {
+							subj = s;
+							obj = o;
+						}
 					}
 					if (!(sameVar(subj, s) && sameVar(obj, o))) {
 						// allow inversion only for simple statement patterns; inverting an arbitrary path is not

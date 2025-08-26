@@ -2290,6 +2290,83 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
+	void nested_paths_extreme_4_union_mixed_mods2() {
+		String q = "SELECT ?s ?n\n" +
+				"WHERE {\n" +
+				"  {\n" +
+				"    ?s (((ex:a|^ex:b)/(ex:c/foaf:knows)?)*)/(^ex:d/(ex:e|^ex:f)+)/foaf:name ?n .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?s (((!(^ex:h|ex:g))/(((ex:i|^ex:j))?))/((ex:k/foaf:knows)|(^ex:l/ex:m)))/foaf:name ?n .\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void nested_paths_extreme_4_union_mixed_mods3() {
+		String q = "SELECT ?s ?n\n" +
+				"WHERE {\n" +
+				"  {\n" +
+				"    ?s (((ex:a|^ex:b)/(ex:c/foaf:knows)?)*)/(^ex:d/(ex:e|^ex:f)+)/foaf:name ?n .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?s (((!(ex:h|^ex:g))/(((ex:i|^ex:j))?))/((ex:k/foaf:knows)|(^ex:l/ex:m)))/foaf:name ?n .\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void nested_paths_extreme_4_union_mixed_mods4() {
+		String q = "SELECT ?s ?n\n" +
+				"WHERE {\n" +
+				"  {\n" +
+				"    ?s (((ex:a|^ex:b)/(ex:c/foaf:knows)?)*)/(^ex:d/(ex:e|^ex:f)+)/foaf:name ?n .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?s (((!(^ex:g|ex:h))/(((ex:i|^ex:j))?))/((ex:k/foaf:knows)|(^ex:l/ex:m)))/foaf:name ?n .\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void nested_paths_extreme_4_union_mixed_mods5() {
+		String q = "SELECT ?s ?n\n" +
+				"WHERE {\n" +
+				"  {\n" +
+				"    ?s (^ex:g|ex:h)/foaf:name ?n .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?s !(^ex:g|ex:h)/foaf:name ?n .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?s (^ex:g|ex:h)*/foaf:name ?n .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?s (^ex:g|ex:h)+/foaf:name ?n .\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void nested_paths_extreme_4_union_mixed_mods6() {
+		String q = "SELECT ?s ?n\n" +
+				"WHERE {\n" +
+				"  ?s !(^ex:g|ex:h)/foaf:name ?n .\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
 	@Disabled
 	void nested_paths_extreme_5_grouped_repetition() {
 		String q = "SELECT ?s ?n\n" +
