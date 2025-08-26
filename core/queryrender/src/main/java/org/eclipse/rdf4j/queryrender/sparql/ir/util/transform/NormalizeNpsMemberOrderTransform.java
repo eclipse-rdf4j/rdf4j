@@ -118,7 +118,7 @@ public final class NormalizeNpsMemberOrderTransform extends BaseTransform {
 
 	static String reorderMembers(String inner) {
 		class Tok {
-			final String text; // original
+			final String text; // original token (may start with '^')
 			final String base; // without leading '^'
 			final boolean inverse;
 
