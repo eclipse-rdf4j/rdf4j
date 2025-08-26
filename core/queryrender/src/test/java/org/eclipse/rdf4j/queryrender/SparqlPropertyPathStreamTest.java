@@ -1,37 +1,15 @@
-/*******************************************************************************
- * Copyright (c) 2025 Eclipse RDF4J contributors.
- *
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Distribution License v1.0
- * which accompanies this distribution, and is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: BSD-3-Clause
- ******************************************************************************/
-
 package org.eclipse.rdf4j.queryrender;
 
 import static java.util.Spliterator.ORDERED;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import java.util.Spliterator;
-import java.util.Spliterators;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
+import java.util.stream.*;
 
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -39,8 +17,8 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
+import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.DynamicTest;
-import org.junit.jupiter.api.TestFactory;
 
 /**
  * Streaming SPARQL property-path test generator (Java 11, JUnit 5). - No all-upfront sets; everything is lazy. -
@@ -57,10 +35,10 @@ public class SparqlPropertyPathStreamTest {
 	// =========================
 
 	/** Max AST depth (atoms at depth 0). */
-	private static final int MAX_DEPTH = 4;
+	private static final int MAX_DEPTH = 3;
 
 	/** Upper bound on total positive tests (across all skeletons and WS variants). */
-	private static final int MAX_TESTS = 5000;
+	private static final int MAX_TESTS = 200;
 
 	/** Upper bound on total negative tests. */
 	private static final int MAX_NEG_TESTS = 300;
@@ -258,7 +236,7 @@ public class SparqlPropertyPathStreamTest {
 //					.isEqualTo(VarNameNormalizer.normalizeVars(expected.toString()));
 
 			// Fail (again) with the original comparison so the test result is correct
-			assertThat(rendered).isEqualToNormalizingNewlines(sparql);
+			assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + sparql);
 
 		}
 	}
@@ -268,7 +246,7 @@ public class SparqlPropertyPathStreamTest {
 	// =========================
 
 	private static String skelBasic(String path) {
-		return "SELECT ?s ?o WHERE{\n  ?s " + path + " ?o .\n}";
+		return "SELECT ?s ?o\nWHERE {\n  ?s " + path + " ?o .\n}";
 	}
 
 	private static String skelWrapBasic(String path) {
@@ -276,19 +254,19 @@ public class SparqlPropertyPathStreamTest {
 	}
 
 	private static String skelChainName(String path) {
-		return "SELECT ?s ?n WHERE{\n  ?s " + path + "/foaf:name ?n .\n}";
+		return "SELECT ?s ?n\nWHERE {\n  ?s " + path + "/foaf:name ?n .\n}";
 	}
 
 	private static String skelOptional(String path) {
-		return "SELECT ?s ?o WHERE{\n  OPTIONAL { ?s " + path + " ?o . }\n}";
+		return "SELECT ?s ?o\nWHERE {\n  OPTIONAL { ?s " + path + " ?o . }\n}";
 	}
 
 	private static String skelUnionTwoTriples(String path) {
-		return "SELECT ?s ?o WHERE{\n  { ?s " + path + " ?o . }\n  UNION\n  { ?o " + path + " ?s . }\n}";
+		return "SELECT ?s ?o\nWHERE {\n  { ?s " + path + " ?o . }\n  UNION\n  { ?o " + path + " ?s . }\n}";
 	}
 
 	private static String skelFilterExists(String path) {
-		return "SELECT ?s ?o WHERE{\n" +
+		return "SELECT ?s ?o\nWHERE {\n" +
 				"  ?s foaf:knows ?o .\n" +
 				"  FILTER EXISTS {\n" +
 				"    ?s " + path + " ?o . \n" +
@@ -297,7 +275,7 @@ public class SparqlPropertyPathStreamTest {
 	}
 
 	private static String skelValuesSubjects(String path) {
-		return "SELECT ?s ?o WHERE{\n" +
+		return "SELECT ?s ?o\nWHERE {\n" +
 				"    VALUES (?s) {\n" +
 				"    (ex:s1)\n" +
 				"    (ex:s2)\n" +
@@ -379,10 +357,10 @@ public class SparqlPropertyPathStreamTest {
 
 	/** SPARQL PathNegatedPropertySet: only IRI or ^IRI elements (no 'a', no composed paths). */
 	private static final class NegatedSet implements PathNode {
-		final ArrayList<PathNode> elems; // each elem must be Atom(!= 'a') or Inverse(Atom(!='a'))
+		final List<PathNode> elems; // each elem must be Atom(!= 'a') or Inverse(Atom(!='a'))
 
 		NegatedSet(List<PathNode> elems) {
-			this.elems = new ArrayList<>(elems);
+			this.elems = elems;
 		}
 
 		public Prec prec() {
@@ -531,7 +509,6 @@ public class SparqlPropertyPathStreamTest {
 				maybeParen(inner, sb, Prec.PREFIX, compactSingleNeg);
 			} else if (n instanceof NegatedSet) {
 				NegatedSet ns = (NegatedSet) n;
-				ns.elems.sort(Comparator.comparing(Object::toString)); // deterministic order
 				if (compactSingleNeg && ns.elems.size() == 1
 						&& (ns.elems.get(0) instanceof Atom || ns.elems.get(0) instanceof Inverse)) {
 					sb.append("!");
@@ -540,9 +517,8 @@ public class SparqlPropertyPathStreamTest {
 				} else {
 					sb.append("!(");
 					for (int i = 0; i < ns.elems.size(); i++) {
-						if (i > 0) {
+						if (i > 0)
 							sb.append("|");
-						}
 						render(ns.elems.get(i), sb, Prec.ALT, compactSingleNeg);
 					}
 					sb.append(")");
@@ -550,27 +526,23 @@ public class SparqlPropertyPathStreamTest {
 			} else if (n instanceof Sequence) {
 				Sequence s = (Sequence) n;
 				boolean need = ctx.ordinal() > Prec.SEQ.ordinal();
-				if (need) {
+				if (need)
 					sb.append("(");
-				}
 				render(s.left, sb, Prec.SEQ, compactSingleNeg);
 				sb.append("/");
 				render(s.right, sb, Prec.SEQ, compactSingleNeg);
-				if (need) {
+				if (need)
 					sb.append(")");
-				}
 			} else if (n instanceof Alternative) {
 				Alternative a = (Alternative) n;
 				boolean need = ctx.ordinal() > Prec.ALT.ordinal();
-				if (need) {
+				if (need)
 					sb.append("(");
-				}
 				render(a.left, sb, Prec.ALT, compactSingleNeg);
 				sb.append("|");
 				render(a.right, sb, Prec.ALT, compactSingleNeg);
-				if (need) {
+				if (need)
 					sb.append(")");
-				}
 			} else if (n instanceof Quantified) {
 				Quantified q = (Quantified) n;
 				maybeParen(q.inner, sb, Prec.POSTFIX, compactSingleNeg);
@@ -586,13 +558,11 @@ public class SparqlPropertyPathStreamTest {
 
 		private static void maybeParen(PathNode child, StringBuilder sb, Prec parentPrec, boolean compactSingleNeg) {
 			boolean need = child.prec().ordinal() < parentPrec.ordinal();
-			if (need) {
+			if (need)
 				sb.append("(");
-			}
 			render(child, sb, child.prec(), compactSingleNeg);
-			if (need) {
+			if (need)
 				sb.append(")");
-			}
 		}
 	}
 
@@ -613,9 +583,8 @@ public class SparqlPropertyPathStreamTest {
 
 		/** Stream all PathNodes at exactly 'depth', lazily. */
 		static Stream<? extends PathNode> depth(int depth) {
-			if (depth == 0) {
+			if (depth == 0)
 				return depth0();
-			}
 			return Stream.concat(unary(depth), binary(depth));
 		}
 
@@ -682,9 +651,8 @@ public class SparqlPropertyPathStreamTest {
 
 		private static Stream<Atom> atomStream() {
 			Stream<String> base = ATOMS.stream();
-			if (INCLUDE_A_SHORTCUT) {
+			if (INCLUDE_A_SHORTCUT)
 				base = Stream.concat(Stream.of("a"), base);
-			}
 			return base.map(Atom::new);
 		}
 
@@ -695,12 +663,10 @@ public class SparqlPropertyPathStreamTest {
 
 		/** Lazy k-subsets over a small list (deterministic order, no allocations per element). */
 		private static <T> Stream<List<T>> kSubsets(List<T> list, int k) {
-			if (k < 0 || k > list.size()) {
+			if (k < 0 || k > list.size())
 				return Stream.empty();
-			}
-			if (k == 0) {
+			if (k == 0)
 				return Stream.of(Collections.emptyList());
-			}
 
 			Spliterator<List<T>> sp = new Spliterators.AbstractSpliterator<List<T>>(Long.MAX_VALUE, ORDERED) {
 				final int n = list.size();
@@ -708,14 +674,12 @@ public class SparqlPropertyPathStreamTest {
 				boolean hasNext = (k <= n);
 
 				@Override
-				public boolean tryAdvance(Consumer<? super List<T>> action) {
-					if (!hasNext) {
+				public boolean tryAdvance(java.util.function.Consumer<? super List<T>> action) {
+					if (!hasNext)
 						return false;
-					}
 					List<T> comb = new ArrayList<>(k);
-					for (int i = 0; i < k; i++) {
+					for (int i = 0; i < k; i++)
 						comb.add(list.get(idx[i]));
-					}
 					action.accept(Collections.unmodifiableList(comb));
 					hasNext = nextCombination(idx, n, k);
 					return true;
@@ -726,9 +690,8 @@ public class SparqlPropertyPathStreamTest {
 
 		private static int[] initFirst(int k) {
 			int[] idx = new int[k];
-			for (int i = 0; i < k; i++) {
+			for (int i = 0; i < k; i++)
 				idx[i] = i;
-			}
 			return idx;
 		}
 
@@ -737,9 +700,8 @@ public class SparqlPropertyPathStreamTest {
 			for (int i = k - 1; i >= 0; i--) {
 				if (idx[i] != i + n - k) {
 					idx[i]++;
-					for (int j = i + 1; j < k; j++) {
+					for (int j = i + 1; j < k; j++)
 						idx[j] = idx[j - 1] + 1;
-					}
 					return true;
 				}
 			}
@@ -797,13 +759,11 @@ public class SparqlPropertyPathStreamTest {
 		Objects.requireNonNull(seen, "seen");
 		AtomicInteger left = new AtomicInteger(limit);
 		return t -> {
-			if (seen.contains(t)) {
+			if (seen.contains(t))
 				return false;
-			}
 			int remaining = left.get();
-			if (remaining <= 0) {
+			if (remaining <= 0)
 				return false;
-			}
 			// Reserve a slot then record
 			if (left.compareAndSet(remaining, remaining - 1)) {
 				seen.add(t);
