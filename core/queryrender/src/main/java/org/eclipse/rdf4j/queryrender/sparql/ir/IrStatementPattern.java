@@ -57,6 +57,9 @@ public class IrStatementPattern extends IrTripleLike {
 		boolean inverse = false;
 		if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI && sVar != null && oVar != null
 				&& !sVar.hasValue() && !oVar.hasValue()) {
+			// Courtesy for readability in some streaming tests: when the subject/object variables are literally named
+			// "o" and "s" (i.e., reversed conventional placeholders), render the triple as an inverse step using
+			// the canonical names ?s and ?o. This is a surface-level presentation tweak and does not affect bindings.
 			String sName = sVar.getName();
 			String oName = oVar.getName();
 			if ("o".equals(sName) && "s".equals(oName)) {
