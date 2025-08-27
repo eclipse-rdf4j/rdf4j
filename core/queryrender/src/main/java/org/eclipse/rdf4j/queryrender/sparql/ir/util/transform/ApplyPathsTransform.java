@@ -34,6 +34,14 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrTripleLike;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
+/**
+ * Fuse simple chains of constant-predicate statement patterns connected by parser-inserted bridge variables into
+ * property path triples, and handle a few local path+filter shapes (e.g., basic NPS formation) where safe.
+ *
+ * Scope and safety: - Only composes across {@code _anon_path_*} variables so user-visible bindings remain intact. -
+ * Accepts constant-predicate SPs and preserves GRAPH/OPTIONAL/UNION structure via recursion. - Leaves complex cases to
+ * later passes (fixed point), keeping this pass easy to reason about.
+ */
 public final class ApplyPathsTransform extends BaseTransform {
 	private ApplyPathsTransform() {
 	}

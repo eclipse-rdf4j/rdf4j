@@ -34,6 +34,14 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
+/**
+ * Form negated property sets (NPS) from simple shapes involving a predicate variable constrained by NOT IN or a chain
+ * of {@code !=} filters, optionally followed by a constant-predicate tail step that is fused. Also contains GRAPH-aware
+ * variants so that common IR orders like GRAPH, FILTER, GRAPH can be handled.
+ *
+ * Safety: - Requires the filtered predicate variable to be a parser-generated {@code _anon_path_*} var. - Only fuses
+ * constant-predicate tails; complex tails are left to later passes.
+ */
 public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 	private ApplyNegatedPropertySetTransform() {
 	}

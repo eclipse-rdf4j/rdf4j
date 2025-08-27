@@ -30,6 +30,11 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
+/**
+ * Fuse a path triple with adjacent constant-predicate triples that share its subject (head prefix) or object (tail
+ * suffix). Produces a single path triple with a {@code p/} or {@code /^p} segment, preferring inverse tails to match
+ * expected rendering in tests. Works inside containers and preserves UNION scope.
+ */
 public final class FuseAltInverseTailBGPTransform extends BaseTransform {
 	private FuseAltInverseTailBGPTransform() {
 	}

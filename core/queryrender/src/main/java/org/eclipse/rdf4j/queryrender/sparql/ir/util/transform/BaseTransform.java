@@ -33,6 +33,16 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
+/**
+ * Shared helpers and small utilities for IR transform passes.
+ *
+ * Conventions and invariants: - Transforms are functional: they do not mutate input nodes; instead they build new IR
+ * blocks as needed. - Path/chain fusions are conservative and only cross intermediate variables that the parser created
+ * for property paths (variable names prefixed with {@code _anon_path_}). This prevents accidental elimination or
+ * inversion of user-defined variables. - Text helpers respect property path precedence and add parentheses only when
+ * required for correctness. - Container nodes (GRAPH/OPTIONAL/MINUS/UNION/SERVICE) are preserved, and recursion uses
+ * transformChildren to keep transform code small and predictable.
+ */
 public class BaseTransform {
 
 	// Local copy of parser's _anon_path_ naming hint for safe path fusions

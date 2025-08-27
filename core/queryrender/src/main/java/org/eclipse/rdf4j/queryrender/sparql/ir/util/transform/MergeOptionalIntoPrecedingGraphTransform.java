@@ -25,6 +25,16 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
+/**
+ * Merge a simple OPTIONAL body that explicitly targets the same GRAPH as the preceding GRAPH block into that block,
+ * i.e.,
+ *
+ * GRAPH ?g { ... } OPTIONAL { GRAPH ?g { simple } }
+ *
+ * → GRAPH ?g { ... OPTIONAL { simple } }
+ *
+ * Only applies to "simple" OPTIONAL bodies to avoid changing intended scoping or reordering more complex shapes.
+ */
 public final class MergeOptionalIntoPrecedingGraphTransform extends BaseTransform {
 	private MergeOptionalIntoPrecedingGraphTransform() {
 	}

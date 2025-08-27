@@ -23,6 +23,11 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPropertyList;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 
+/**
+ * Convert runs of simple subject-equal triples into a property list form, using semicolon and comma shorthand where
+ * possible. Example: three SPs with the same subject and two objects for the same predicate become
+ * {@code ?s p1 ?a , ?b ; p2 ?c .}
+ */
 public final class ApplyPropertyListsTransform extends BaseTransform {
 	private ApplyPropertyListsTransform() {
 	}

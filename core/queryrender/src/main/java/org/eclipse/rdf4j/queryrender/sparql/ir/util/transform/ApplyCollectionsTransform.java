@@ -31,6 +31,14 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
+/**
+ * Recognize RDF collection encodings (rdf:first/rdf:rest/... rdf:nil) headed by an anonymous collection variable and
+ * rewrite them to SPARQL collection syntax in text, e.g., {@code ?s ex:list (1 2 3)}.
+ *
+ * Details: - Scans the WHERE lines for contiguous rdf:first/rdf:rest chains and records the textual value sequence. -
+ * Exposes overrides via the renderer so that the head variable prints as the compact "(item1 item2 ...)" form. -
+ * Removes the consumed rdf:first/rest triples from the IR; recursion preserves container structure.
+ */
 public final class ApplyCollectionsTransform extends BaseTransform {
 	private ApplyCollectionsTransform() {
 	}

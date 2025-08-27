@@ -29,12 +29,25 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeZeroOrOne
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ReorderFiltersInOptionalBodiesTransform;
 
 /**
- * IR transformation pipeline (best-effort). Keep it simple and side-effect free when possible.
+ * IR transformation pipeline (best-effort).
+ *
+ * Design: - Transform passes are small, focused, and avoid mutating existing nodes; they return new IR blocks. - Safety
+ * heuristics: path fusions only occur across parser-generated bridge variables (names prefixed with
+ * {@code _anon_path_}) so user-visible variables are never collapsed or inverted unexpectedly. - Ordering matters:
+ * early passes normalize obvious shapes (collections, zero-or-one, simple paths), mid passes perform fusions that can
+ * unlock each other, late passes apply readability and canonicalization tweaks (e.g., parentheses, NPS orientation).
+ *
+ * The pipeline is intentionally conservative: it prefers stable, readable output and round-trip idempotence over
+ * aggressive rewriting.
  */
 public final class IrTransforms {
 	private IrTransforms() {
 	}
 
+	/**
+	 * Apply the ordered transform pipeline to the WHERE block of a SELECT IR. This function uses
+	 * IrNode#transformChildren to descend only into BGP-like containers, keeping subselects intact.
+	 */
 	public static IrSelect transformUsingChildren(IrSelect select, TupleExprIRRenderer r) {
 		if (select == null) {
 			return null;
