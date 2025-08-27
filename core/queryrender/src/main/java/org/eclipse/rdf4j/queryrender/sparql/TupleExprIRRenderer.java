@@ -1997,13 +1997,18 @@ public class TupleExprIRRenderer {
 		return "(" + left + (negate ? " NOT IN (" : " IN (") + rest + "))";
 	}
 
-	/** Use BlockPrinter to render a subpattern inline for EXISTS. */
+	/** Render a TupleExpr group inline using IR + transforms (used by EXISTS). */
 	private String renderInlineGroup(final TupleExpr pattern) {
+		final IRBuilder ib = new IRBuilder();
+		IrBGP where = ib.build(pattern);
+		// Apply standard transforms for consistent property path and grouping rewrites
+		IrSelect tmp = new IrSelect();
+		tmp.setWhere(where);
+		final IrSelect transformed = IrTransforms.transformUsingChildren(tmp, this);
+		where = transformed.getWhere();
+
 		final StringBuilder sb = new StringBuilder(64);
-		final BlockPrinter bp = new BlockPrinter(sb, this, cfg);
-		bp.openBlock();
-		pattern.visit(bp);
-		bp.closeBlock();
+		new IRTextPrinter(sb).printWhere(where);
 		return sb.toString().replace('\n', ' ').replaceAll("\\s+", " ").trim();
 	}
 
