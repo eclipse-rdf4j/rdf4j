@@ -141,7 +141,8 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
  *
  * Policy/decisions:
  * <ul>
- * <li>Do <b>not</b> rewrite {@code ?p != <iri>} into {@code ?p NOT IN (<iri>)}.</li>
+ * <li>Do <b>not</b> rewrite a single inequality {@code ?p != <iri>} into {@code ?p NOT IN (<iri>)}. Only reconstruct
+ * NOT IN when multiple {@code !=} terms share the same variable.</li>
  * <li>Do <b>not</b> fuse {@code ?s ?p ?o . FILTER (?p != <iri>)} into a negated path {@code ?s !(<iri>) ?o}.</li>
  * <li>Use {@code a} for {@code rdf:type} consistently, incl. inside property lists.</li>
  * </ul>
