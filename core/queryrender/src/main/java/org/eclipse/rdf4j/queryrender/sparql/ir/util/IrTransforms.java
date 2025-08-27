@@ -65,6 +65,9 @@ public final class IrTransforms {
 					// Reorder OPTIONAL-level filters before nested OPTIONALs when safe (variable-availability
 					// heuristic)
 					w = ReorderFiltersInOptionalBodiesTransform.apply(w, r);
+					// Normalize chained inequalities in FILTERs to NOT IN when safe
+					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeFilterNotInTransform.apply(w,
+							r);
 					w = ApplyPropertyListsTransform.apply(w, r);
 
 					// Preserve original orientation of bare NPS triples to match expected algebra
