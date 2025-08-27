@@ -3380,10 +3380,7 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(final Projection p) {
-			// Try to recognize a UNION-encoded zero-or-one sequence (including negated property set cases)
-			if (tryParseZeroOrOneSequenceProjection(p)) {
-				return;
-			}
+			// Build a raw subselect; defer any zero-or-one/collection/path normalization to IR transforms.
 			IrSelect sub = toIRSelectRaw(p);
 			where.add(new IrSubSelect(sub));
 		}
@@ -3393,120 +3390,8 @@ public class TupleExprIRRenderer {
 		// direction). The Projection is expected to have a Union of a ZeroLengthPath and one or
 		// more non-zero branches. Each non-zero branch is parsed into a PathNode sequence and
 		// then alternated; finally a zero-or-one quantifier is applied.
-		private boolean tryParseZeroOrOneSequenceProjection(Projection proj) {
-			TupleExpr arg = proj.getArg();
-			List<TupleExpr> leaves = new ArrayList<>();
-			flattenUnion(arg, leaves);
-			// Expect at least two leaves: one ZeroLengthPath and >=1 non-zero branch
-			if (leaves.size() < 2) {
-				return false;
-			}
-			ZeroLengthPath zlp = null;
-			List<TupleExpr> nonZero = new ArrayList<>();
-			for (TupleExpr leaf : leaves) {
-				if (leaf instanceof ZeroLengthPath) {
-					if (zlp != null) {
-						return false; // more than one zero-length branch -> bail out
-					}
-					zlp = (ZeroLengthPath) leaf;
-				} else {
-					nonZero.add(leaf);
-				}
-			}
-			if (zlp == null || nonZero.isEmpty()) {
-				return false;
-			}
-			Var s = zlp.getSubjectVar();
-			Var o = zlp.getObjectVar();
-			if (s == null || o == null) {
-				return false;
-			}
-			// Two patterns supported for the non-zero branches:
-			// 1) A simple chain of constant IRI steps (from s to o) possibly via anon mid-vars.
-			// 2) A set of Filter( ?p != <iri> ) branches over single-step triples (forward/inverse) encoding
-			// a negated property set. We collapse these into !(a|^b|...).
-			// Try NPS shape first, as produced by the parser for !(ex:p3|^ex:p4).
-			List<PathNode> npsMembers = new ArrayList<>();
-			Var ctxZ = getContextVarSafe(zlp);
-			boolean npsOk = true;
-			for (TupleExpr branch : nonZero) {
-				if (!(branch instanceof Filter) || !(((Filter) branch).getArg() instanceof StatementPattern)) {
-					npsOk = false;
-					break;
-				}
-				Filter f = (Filter) branch;
-				StatementPattern sp = (StatementPattern) f.getArg();
-				// Must share same GRAPH context as zero-length branch (if any)
-				if (!Objects.equals(getContextVarSafe(sp), ctxZ)) {
-					npsOk = false;
-					break;
-				}
-				if (!(f.getCondition() instanceof Compare)
-						|| ((Compare) f.getCondition()).getOperator() != CompareOp.NE) {
-					npsOk = false;
-					break;
-				}
-				IRI bad = null;
-				Compare cmp = (Compare) f.getCondition();
-				if (cmp.getLeftArg() instanceof ValueConstant
-						&& ((ValueConstant) cmp.getLeftArg()).getValue() instanceof IRI
-						&& cmp.getRightArg() instanceof Var) {
-					bad = (IRI) ((ValueConstant) cmp.getLeftArg()).getValue();
-				} else if (cmp.getRightArg() instanceof ValueConstant
-						&& ((ValueConstant) cmp.getRightArg()).getValue() instanceof IRI
-						&& cmp.getLeftArg() instanceof Var) {
-					bad = (IRI) ((ValueConstant) cmp.getRightArg()).getValue();
-				} else {
-					npsOk = false;
-					break;
-				}
-				boolean forward = sameVar(sp.getSubjectVar(), s) && sameVar(sp.getObjectVar(), o);
-				boolean inverse = sameVar(sp.getSubjectVar(), o) && sameVar(sp.getObjectVar(), s);
-				if (!forward && !inverse) {
-					npsOk = false;
-					break;
-				}
-				npsMembers.add(new PathAtom(bad, inverse));
-			}
-			if (npsOk && !npsMembers.isEmpty()) {
-				PathNode innerAlt = (npsMembers.size() == 1) ? npsMembers.get(0) : new PathAlt(npsMembers);
-				PathNode q = new PathQuant(new PathNeg(innerAlt), 0, 1);
-				String expr = (q.prec() < PREC_SEQ ? "(" + q.render() + ")" : q.render());
-
-				IrPathTriple pt = new IrPathTriple(s, expr, o);
-				if (ctxZ != null && (ctxZ.hasValue() || (ctxZ.getName() != null && !ctxZ.getName().isEmpty()))) {
-					IrBGP innerBgp = new IrBGP();
-					innerBgp.add(pt);
-					where.add(new IrGraph(ctxZ, innerBgp));
-				} else {
-					where.add(pt);
-				}
-				return true;
-			}
-
-			// Fallback: try to parse each branch as a simple chain of constant IRI steps
-			List<PathNode> alts = new ArrayList<>();
-			for (TupleExpr branch : nonZero) {
-				PathNode seq = buildPathSequenceFromChain(branch, s, o);
-				if (seq == null) {
-					return false; // give up if any branch is not a simple chain of constant IRI steps
-				}
-				alts.add(seq);
-			}
-			PathNode inner = (alts.size() == 1) ? alts.get(0) : new PathAlt(alts);
-			PathNode q = new PathQuant(inner, 0, 1);
-			String expr = (q.prec() < PREC_SEQ ? "(" + q.render() + ")" : q.render());
-			IrPathTriple pt = new IrPathTriple(s, expr, o);
-			Var ctxZ2 = getContextVarSafe(zlp);
-			if (ctxZ2 != null && (ctxZ2.hasValue() || (ctxZ2.getName() != null && !ctxZ2.getName().isEmpty()))) {
-				IrBGP innerBgp = new IrBGP();
-				innerBgp.add(pt);
-				where.add(new IrGraph(ctxZ2, innerBgp));
-			} else {
-				where.add(pt);
-			}
-			return true;
-		}
+		// Removed: tryParseZeroOrOneSequenceProjection — handled by IR transforms
+		// (NormalizeZeroOrOneSubselectTransform)
 
 		// Build a PathNode sequence from a JOIN chain that connects s -> o via _anon_path_* variables.
 		// Accepts forward or inverse steps; allows the last step to directly reach the endpoint 'o'.
