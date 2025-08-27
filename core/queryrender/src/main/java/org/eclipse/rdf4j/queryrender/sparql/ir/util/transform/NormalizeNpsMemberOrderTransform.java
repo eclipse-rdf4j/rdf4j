@@ -26,8 +26,9 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
 /**
- * Normalize the order of members inside negated property sets within path texts for stability. Members are ordered by:
- * - non-inverse before inverse - lexical order by IRI string (after removing leading '^')
+ * Normalize members inside negated property sets within path texts for stability. Currently preserves original member
+ * order from the source while ensuring consistent token formatting. If future requirements need a specific ordering
+ * (e.g., non-inverse before inverse, then lexical), that logic can be implemented in reorderMembers().
  */
 public final class NormalizeNpsMemberOrderTransform extends BaseTransform {
 

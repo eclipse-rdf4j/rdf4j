@@ -2796,7 +2796,7 @@ public class TupleExprIRRenderer {
 			n.print(this);
 		}
 
-		// (legacy printing-time fusions removed; transforms handle path/collection rewrites)
+		// Path/collection rewrites are handled by IR transforms; IRTextPrinter only prints IR.
 
 		private String applyOverridesToText(final String termText, final Map<String, String> overrides) {
 			if (termText == null) {
