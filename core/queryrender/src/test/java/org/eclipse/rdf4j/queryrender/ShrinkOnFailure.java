@@ -1,21 +1,21 @@
 package org.eclipse.rdf4j.queryrender;
 
-import org.junit.jupiter.api.function.Executable;
-
 import static org.junit.jupiter.api.Assertions.fail;
+
+import org.junit.jupiter.api.function.Executable;
 
 /**
  * Wraps a query assertion. If it fails, runs the shrinker and rethrows with the minimized query.
  *
- * Usage inside a DynamicTest body:
- *   ShrinkOnFailure.wrap(q, () -> assertRoundTrip(q), failureOracle);
+ * Usage inside a DynamicTest body: ShrinkOnFailure.wrap(q, () -> assertRoundTrip(q), failureOracle);
  */
 public final class ShrinkOnFailure {
-	private ShrinkOnFailure(){}
+	private ShrinkOnFailure() {
+	}
 
 	public static void wrap(String query,
-							Executable assertion,
-							SparqlShrinker.FailureOracle oracle) {
+			Executable assertion,
+			SparqlShrinker.FailureOracle oracle) {
 		try {
 			assertion.execute();
 		} catch (Throwable t) {
