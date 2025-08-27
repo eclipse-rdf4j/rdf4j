@@ -1655,7 +1655,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			if (completeMatch == null) {
 				completeMatch = new Filter(patternMatchInverse, filterConditionInverse);
 			} else {
-				completeMatch = new Union(new Filter(patternMatchInverse, filterConditionInverse), completeMatch);
+				completeMatch = new Union(completeMatch, new Filter(patternMatchInverse, filterConditionInverse));
 			}
 		}
 
