@@ -1700,7 +1700,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled()
 	void mega_ask_deep_exists_notexists_filters() {
 		String q = "ASK WHERE {\n" +
 				"  { ?a foaf:knows ?b } UNION { ?b foaf:knows ?a }\n" +
