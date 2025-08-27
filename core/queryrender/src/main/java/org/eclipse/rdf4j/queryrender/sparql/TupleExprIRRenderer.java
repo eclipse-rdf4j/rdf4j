@@ -2551,129 +2551,7 @@ public class TupleExprIRRenderer {
 		return (steps.size() == 1) ? steps.get(0) : new PathSeq(new ArrayList<>(steps));
 	}
 
-	private CollectionResult detectCollections(final List<TupleExpr> nodes) {
-		final CollectionResult res = new CollectionResult();
-
-		final Map<String, StatementPattern> firstByS = new LinkedHashMap<>();
-		final Map<String, StatementPattern> restByS = new LinkedHashMap<>();
-
-		for (TupleExpr n : nodes) {
-			if (!(n instanceof StatementPattern)) {
-				continue;
-			}
-			final StatementPattern sp = (StatementPattern) n;
-			final Var s = sp.getSubjectVar(), p = sp.getPredicateVar();
-			final String sName = freeVarName(s);
-			if (sName == null) {
-				continue;
-			}
-			if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
-				continue;
-			}
-
-			final IRI pred = (IRI) p.getValue();
-			if (RDF.FIRST.equals(pred)) {
-				firstByS.put(sName, sp);
-			} else if (RDF.REST.equals(pred)) {
-				restByS.put(sName, sp);
-			}
-		}
-
-		if (firstByS.isEmpty() || restByS.isEmpty()) {
-			return res;
-		}
-
-		final List<String> candidateHeads = new ArrayList<>();
-		for (String s : firstByS.keySet()) {
-			if (s != null && s.startsWith(ANON_COLLECTION_PREFIX)) {
-				candidateHeads.add(s);
-			}
-		}
-		if (candidateHeads.isEmpty()) {
-			for (String s : firstByS.keySet()) {
-				if (restByS.containsKey(s)) {
-					candidateHeads.add(s);
-				}
-			}
-		}
-
-		for (String head : candidateHeads) {
-			final List<String> items = new ArrayList<>();
-			final Set<String> spine = new LinkedHashSet<>();
-			final Set<TupleExpr> localConsumed = new LinkedHashSet<>();
-
-			String cur = head;
-			boolean ok = true;
-			int guard = 0;
-
-			while (true) {
-				if (++guard > 10000) {
-					ok = false;
-					break;
-				}
-
-				final StatementPattern f = firstByS.get(cur);
-				final StatementPattern r = restByS.get(cur);
-				if (f == null || r == null) {
-					ok = false;
-					break;
-				}
-
-				localConsumed.add(f);
-				localConsumed.add(r);
-				spine.add(cur);
-				items.add(renderVarOrValue(f.getObjectVar()));
-
-				final Var ro = r.getObjectVar();
-				if (ro == null) {
-					ok = false;
-					break;
-				}
-				if (ro.hasValue()) {
-					if (!(ro.getValue() instanceof IRI) || !RDF.NIL.equals(ro.getValue())) {
-						ok = false;
-					}
-					break; // done
-				}
-				cur = ro.getName();
-				if (cur == null || cur.isEmpty()) {
-					ok = false;
-					break;
-				}
-				if (spine.contains(cur)) {
-					ok = false;
-					break;
-				}
-			}
-
-			if (!ok) {
-				continue;
-			}
-
-			final Set<String> external = new HashSet<>();
-			for (TupleExpr n : nodes) {
-				if (!localConsumed.contains(n)) {
-					collectFreeVars(n, external);
-				}
-			}
-			boolean leaks = false;
-			for (String v : spine) {
-				if (!Objects.equals(v, head) && external.contains(v)) {
-					leaks = true;
-					break;
-				}
-			}
-			if (leaks) {
-				continue;
-			}
-
-			final String coll = "(" + String.join(" ", items) + ")";
-			res.overrides.put(head, coll);
-			res.consumed.addAll(localConsumed);
-		}
-
-		return res;
-	}
+	// Collections are handled by IR transforms (ApplyCollectionsTransform); no TupleExpr-time detection needed.
 
 	private void handleUnsupported(String message) {
 		if (cfg.strict) {
@@ -2681,18 +2559,7 @@ public class TupleExprIRRenderer {
 		}
 	}
 
-	private void printStatementWithOverrides(final StatementPattern sp, final Map<String, String> overrides,
-			final BlockPrinter bp) {
-		final Var s = sp.getSubjectVar(), p = sp.getPredicateVar(), o = sp.getObjectVar();
-		final String sName = freeVarName(s), oName = freeVarName(o);
-
-		final String subj = (sName != null && overrides.containsKey(sName)) ? overrides.get(sName)
-				: renderVarOrValue(s);
-		final String obj = (oName != null && overrides.containsKey(oName)) ? overrides.get(oName) : renderVarOrValue(o);
-		final String pred = renderPredicateForTriple(p);
-
-		bp.line(subj + " " + pred + " " + obj + " .");
-	}
+	// Removed tuple-level collection override printing; handled via IR.
 
 	// Render expressions for HAVING with substitution of _anon_having_* variables
 	private String renderExprForHaving(final ValueExpr e, final Normalized n) {
@@ -2938,10 +2805,7 @@ public class TupleExprIRRenderer {
 		}
 	}
 
-	private static final class CollectionResult {
-		final Map<String, String> overrides = new HashMap<>();
-		final Set<TupleExpr> consumed = new HashSet<>();
-	}
+	// Former CollectionResult/collection overrides are no longer needed; collection handling moved to IR transforms.
 
 	private static final class PrefixHit {
 		final String prefix;
@@ -3616,23 +3480,11 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(final Join join) {
-			// Flatten subtree
+			// Flatten subtree and print nodes in-order; collections are handled by IR transforms.
 			final List<TupleExpr> flat = new ArrayList<>();
 			TupleExprIRRenderer.flattenJoin(join, flat);
-
-			// Detect RDF collections -> overrides & consumed
-			final CollectionResult col = r.detectCollections(flat);
-
-			// Fallback (should not happen now): print remaining nodes in-order
 			for (TupleExpr n : flat) {
-				if (col.consumed.contains(n)) {
-					continue;
-				}
-				if (n instanceof StatementPattern) {
-					printStatementWithOverrides((StatementPattern) n, col.overrides, this);
-				} else {
-					n.visit(this);
-				}
+				n.visit(this);
 			}
 		}
 
