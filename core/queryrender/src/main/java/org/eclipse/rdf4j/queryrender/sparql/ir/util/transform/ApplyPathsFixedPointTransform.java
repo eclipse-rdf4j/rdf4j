@@ -14,6 +14,12 @@ import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
 
+/**
+ * Apply path-related transforms repeatedly until the WHERE block reaches a textual fixed point. The fingerprint is
+ * computed by rendering the WHERE as a subselect so non-WHERE text does not affect convergence.
+ *
+ * Guarded to a small iteration budget to avoid accidental oscillations.
+ */
 public final class ApplyPathsFixedPointTransform extends BaseTransform {
 	private ApplyPathsFixedPointTransform() {
 	}
