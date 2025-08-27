@@ -2412,7 +2412,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	void notInvertedPathInUnion() {
+	void testNegatedPathUnion() {
 		String q = "SELECT ?s ?o\n" +
 				"WHERE {\n" +
 				"  { ?o !<http://example.org/p/I01> ?s . }\n" +
@@ -2423,7 +2423,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	void notInvertedPath() {
+	void negatedPath() {
 		String q = "SELECT ?s ?o\n" +
 				"WHERE {\n" +
 				"  ?s !ex:pA ?o .\n" +
@@ -2432,7 +2432,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	void invertedPath() {
+	void negatedInvertedPath() {
 		String q = "SELECT ?s ?o\n" +
 				"WHERE {\n" +
 				"  ?s !^ex:pA ?o .\n" +
@@ -2441,13 +2441,29 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	void temp3() {
+	void testInvertedPathUnion() {
 		String q = "SELECT ?s ?o\n" +
 				"WHERE {\n" +
 				"  { ?s ^<http://example.org/p/I0> ?o . }\n" +
 				"  UNION\n" +
 				"  { ?o ^<http://example.org/p/I0> ?s . }\n" +
 				"}";
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testUnionOrdering() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  {\n" +
+				"    ?s !(ex:pA|^ex:pB) ?o .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?o !(ex:pC|^ex:pD) ?s .\n" +
+				"  }\n" +
+				"}";
+
 		assertSameSparqlQuery(q, cfg());
 	}
 
