@@ -701,34 +701,7 @@ public class TupleExprIRRenderer {
 
 	// ---------------- Aggregate hoisting & inference ----------------
 
-	// Invert each member of a negated property set: !(a|^b|c) -> !(^a|b|^c)
-	private static String invertNegatedPropertySet(String npsText) {
-		if (npsText == null) {
-			return null;
-		}
-		String s = npsText.trim();
-		if (!s.startsWith("!(") || !s.endsWith(")")) {
-			return s;
-		}
-		String inner = s.substring(2, s.length() - 1);
-		if (inner.isEmpty()) {
-			return s;
-		}
-		String[] toks = inner.split("\\|");
-		List<String> out = new ArrayList<>(toks.length);
-		for (String tok : toks) {
-			String t = tok.trim();
-			if (t.isEmpty()) {
-				continue;
-			}
-			if (t.startsWith("^")) {
-				out.add(t.substring(1));
-			} else {
-				out.add("^" + t);
-			}
-		}
-		return "!(" + String.join("|", out) + ")";
-	}
+	// Removed invertNegatedPropertySet here; transforms use BaseTransform.invertNegatedPropertySet.
 
 	private static void collectFreeVars(final TupleExpr e, final Set<String> out) {
 		if (e == null) {
