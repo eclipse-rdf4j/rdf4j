@@ -155,7 +155,6 @@ public class TupleExprIRRenderer {
 	/** Map of function identifier (either bare name or full IRI) → SPARQL built-in name. */
 	private static final Map<String, String> BUILTIN;
 	// ---- Naming hints provided by the parser ----
-	private static final String ANON_COLLECTION_PREFIX = "_anon_collection_";
 
 	// ---------------- Configuration ----------------
 	private static final String ANON_PATH_PREFIX = "_anon_path_";
@@ -219,10 +218,7 @@ public class TupleExprIRRenderer {
 	private final PrefixIndex prefixIndex;
 	// Overrides collected during IR transforms (e.g., collections) to affect term rendering in IR printer
 	private final Map<String, String> irOverrides = new HashMap<>();
-	/** Projections that must be suppressed (already rewritten into path). */
-	private final Set<Object> suppressedSubselects = Collections.newSetFromMap(new IdentityHashMap<>());
-	/** Unions that must be suppressed (already rewritten into alternation path). */
-	private final Set<Object> suppressedUnions = Collections.newSetFromMap(new IdentityHashMap<>());
+	// Legacy suppression tracking removed; IR transforms rewrite structures directly in-place.
 
 	public TupleExprIRRenderer() {
 		this(new Config());
@@ -1043,7 +1039,6 @@ public class TupleExprIRRenderer {
 	 * provided to consumers that prefer a structured representation.
 	 */
 	public IrSelect toIRSelect(final TupleExpr tupleExpr) {
-		suppressedSubselects.clear();
 		final Normalized n = normalize(tupleExpr);
 		applyAggregateHoisting(n);
 		final IrSelect ir = new IrSelect();
@@ -1127,7 +1122,6 @@ public class TupleExprIRRenderer {
 
 	/** Build IrSelect without running IR transforms (used for nested subselects where we keep raw structure). */
 	private IrSelect toIRSelectRaw(final TupleExpr tupleExpr) {
-		suppressedSubselects.clear();
 		final Normalized n = normalize(tupleExpr);
 		applyAggregateHoisting(n);
 		final IrSelect ir = new IrSelect();
@@ -1289,19 +1283,16 @@ public class TupleExprIRRenderer {
 
 	/** Backward-compatible: render as SELECT query (no dataset). */
 	public String render(final TupleExpr tupleExpr) {
-		suppressedSubselects.clear();
 		return renderSelectInternal(tupleExpr, RenderMode.TOP_LEVEL_SELECT, null);
 	}
 
 	/** SELECT with dataset (FROM/FROM NAMED). */
 	public String render(final TupleExpr tupleExpr, final DatasetView dataset) {
-		suppressedSubselects.clear();
 		return renderSelectInternal(tupleExpr, RenderMode.TOP_LEVEL_SELECT, dataset);
 	}
 
 	/** ASK query (top-level). */
 	public String renderAsk(final TupleExpr tupleExpr, final DatasetView dataset) {
-		suppressedSubselects.clear();
 		// Build IR (including transforms) and then print only the WHERE block using the IR printer.
 		final StringBuilder out = new StringBuilder(256);
 		final IrSelect ir = toIRSelect(tupleExpr);
@@ -1626,13 +1617,7 @@ public class TupleExprIRRenderer {
 		}
 	}
 
-	private boolean isProjectionSuppressed(final Projection p) {
-		return suppressedSubselects.contains(p);
-	}
-
-	private boolean isUnionSuppressed(final Union u) {
-		return suppressedUnions.contains(u);
-	}
+// Removed legacy suppression checks; transforms rewrite or remove structures directly.
 
 	private String renderVarOrValue(final Var v) {
 		if (v == null) {
