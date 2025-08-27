@@ -13,7 +13,8 @@ package org.eclipse.rdf4j.queryrender.sparql.ir;
 import java.util.function.UnaryOperator;
 
 /**
- * Textual IR node for an OPTIONAL block.
+ * Textual IR node for an OPTIONAL block. The body is always printed with braces even when it contains a single line to
+ * keep output shape stable for subsequent transforms and tests.
  */
 public class IrOptional extends IrNode {
 	private IrBGP bgp;

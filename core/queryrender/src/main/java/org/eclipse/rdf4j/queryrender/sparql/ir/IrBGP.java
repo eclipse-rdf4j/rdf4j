@@ -17,6 +17,12 @@ import java.util.function.UnaryOperator;
 
 /**
  * Textual IR for a WHERE/group block: ordered list of lines/nodes.
+ *
+ * Semantics: - Lines typically include triples ({@link IrStatementPattern} or {@link IrPathTriple}), modifiers
+ * ({@link IrFilter}, {@link IrBind}, {@link IrValues}), and container blocks such as {@link IrGraph},
+ * {@link IrOptional}, {@link IrMinus}, {@link IrUnion}, {@link IrService}. - Order matters: most transforms preserve
+ * relative order except where a local, safe rewrite explicitly requires adjacency. - Printing is delegated to
+ * {@link IrPrinter}; indentation and braces are handled there.
  */
 public class IrBGP extends IrNode {
 	private List<IrNode> lines = new ArrayList<>();

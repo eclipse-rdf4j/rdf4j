@@ -14,6 +14,10 @@ import java.util.function.UnaryOperator;
 
 /**
  * Textual IR node for a FILTER line.
+ *
+ * Two forms are supported: - Plain condition text: {@code FILTER (<text>)} where text is already rendered by the
+ * renderer. - Structured bodies: {@link IrExists} and {@link IrNot}({@link IrExists}) to support EXISTS/NOT EXISTS
+ * blocks with a nested {@link IrBGP}. Unknown structured bodies are emitted as a comment to avoid silent misrendering.
  */
 public class IrFilter extends IrNode {
 	private final String conditionText;
