@@ -187,7 +187,7 @@ public class TupleExprIRRenderer {
 	private static final String ANON_HAVING_PREFIX = "_anon_having_";
 	/** Anonymous blank node variables (originating from [] in the original query). */
 	private static final String ANON_BNODE_PREFIX = "_anon_bnode_";
-	// Rough but much more complete PN_LOCAL acceptance + “no trailing dot”
+	// Pattern used for conservative Turtle PN_LOCAL acceptance per segment; overall check also prohibits trailing dots.
 	private static final Pattern PN_LOCAL_CHUNK = Pattern.compile("(?:%[0-9A-Fa-f]{2}|[-\\p{L}\\p{N}_\\u00B7]|:)+");
 	private static final int PREC_ALT = 1;
 	private static final int PREC_SEQ = 2;
@@ -1033,7 +1033,7 @@ public class TupleExprIRRenderer {
 	}
 
 	/**
-	 * Build a best-effort textual IR for a SELECT-form query.
+	 * Build a best‑effort textual IR for a SELECT‑form query.
 	 *
 	 * Steps:
 	 * <ol>
@@ -1345,7 +1345,11 @@ public class TupleExprIRRenderer {
 	}
 
 	/**
-	 * Peel wrappers until fixed point, with special handling for Filter(Group(...)) → HAVING.
+	 * Normalize a parsed TupleExpr into a lightweight carrier that separates header/wrappers from the WHERE tree.
+	 *
+	 * Repeatedly peels structural wrappers (QueryRoot, Slice, Distinct/Reduced, Order, Projection, Extension, Group)
+	 * while collecting metadata. Filters are handled specially so that aggregate‑related conditions are lifted into
+	 * HAVING where appropriate. The remaining tree in {@code where} is the raw WHERE pattern to translate into IR.
 	 */
 	private Normalized normalize(final TupleExpr root) {
 		final Normalized n = new Normalized();
@@ -1538,6 +1542,11 @@ public class TupleExprIRRenderer {
 		return allowed.containsAll(free);
 	}
 
+	/**
+	 * Scan the WHERE tree for aggregates used via BIND and promote them into the SELECT header, and infer GROUP BY
+	 * terms when a query uses aggregates but does not specify grouping explicitly. This keeps the rendered projection
+	 * well‑formed without introducing extra structure into the WHERE IR.
+	 */
 	private void applyAggregateHoisting(final Normalized n) {
 		final AggregateScan scan = new AggregateScan();
 		n.where.visit(scan);
@@ -2801,7 +2810,10 @@ public class TupleExprIRRenderer {
 		}
 	}
 
-	/** Simple IR→text pretty-printer using renderer helpers. */
+	/**
+	 * Simple IR→text pretty‑printer using renderer helpers. Responsible only for layout/indentation and delegating
+	 * term/IRI rendering back to the renderer; it does not perform structural rewrites (those happen in IR transforms).
+	 */
 	private final class IRTextPrinter implements IrPrinter {
 		private final StringBuilder out;
 		private final String indentUnit = cfg.indent;

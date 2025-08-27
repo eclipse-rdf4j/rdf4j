@@ -15,6 +15,10 @@ import java.util.List;
 
 /**
  * Textual IR node for a VALUES block.
+ *
+ * - {@link #varNames} lists projected variable names without '?'. - {@link #rows} holds textual terms per row; the
+ * renderer preserves the original ordering when configured to do so. - UNDEF is represented by the string literal
+ * "UNDEF" in a row position.
  */
 public class IrValues extends IrNode {
 	private final List<String> varNames = new ArrayList<>();
