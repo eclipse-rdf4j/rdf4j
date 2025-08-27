@@ -41,7 +41,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
  * for property paths (variable names prefixed with {@code _anon_path_}). This prevents accidental elimination or
  * inversion of user-defined variables. - Text helpers respect property path precedence and add parentheses only when
  * required for correctness. - Container nodes (GRAPH/OPTIONAL/MINUS/UNION/SERVICE) are preserved, and recursion uses
- * transformChildren to keep transform code small and predictable.
+ * {@code transformChildren} to keep transform code small and predictable.
  */
 public class BaseTransform {
 

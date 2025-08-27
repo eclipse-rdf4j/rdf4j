@@ -29,15 +29,15 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeZeroOrOne
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ReorderFiltersInOptionalBodiesTransform;
 
 /**
- * IR transformation pipeline (best-effort).
+ * IR transformation pipeline (best‑effort).
  *
  * Design: - Transform passes are small, focused, and avoid mutating existing nodes; they return new IR blocks. - Safety
- * heuristics: path fusions only occur across parser-generated bridge variables (names prefixed with
- * {@code _anon_path_}) so user-visible variables are never collapsed or inverted unexpectedly. - Ordering matters:
- * early passes normalize obvious shapes (collections, zero-or-one, simple paths), mid passes perform fusions that can
+ * heuristics: path fusions only occur across parser‑generated bridge variables (names prefixed with
+ * {@code _anon_path_}) so user‑visible variables are never collapsed or inverted unexpectedly. - Ordering matters:
+ * early passes normalize obvious shapes (collections, zero‑or‑one, simple paths), mid passes perform fusions that can
  * unlock each other, late passes apply readability and canonicalization tweaks (e.g., parentheses, NPS orientation).
  *
- * The pipeline is intentionally conservative: it prefers stable, readable output and round-trip idempotence over
+ * The pipeline is intentionally conservative: it prefers stable, readable output and round‑trip idempotence over
  * aggressive rewriting.
  */
 public final class IrTransforms {
@@ -54,6 +54,9 @@ public final class IrTransforms {
 		}
 
 		IrNode irNode = null;
+		// Single application of the ordered passes via transformChildren().
+		// The bounded loop is kept to make it trivial to turn this into a multi‑pass fixed‑point
+		// driver in the future; current passes aim to be idempotent in one pass.
 		for (int i = 0; i < 100; i++) {
 			// Use transformChildren to rewrite WHERE/BGPs functionally in a single pass order
 			irNode = select.transformChildren(child -> {

@@ -15,7 +15,10 @@ import java.util.List;
 import java.util.function.UnaryOperator;
 
 /**
- * Textual IR for a SELECT query.
+ * Textual IR for a SELECT query (header + WHERE + trailing modifiers).
+ *
+ * The WHERE body is an {@link IrBGP}. Header sections keep rendered expressions as text to preserve the exact surface
+ * form chosen by the renderer.
  */
 public class IrSelect extends IrNode {
 	private final List<IrProjectionItem> projection = new ArrayList<>();

@@ -16,6 +16,11 @@ import java.util.function.UnaryOperator;
 
 /**
  * Textual IR node representing a UNION with multiple branches.
+ *
+ * Notes: - Each branch is an {@link IrBGP} printed as its own braced group. The printer will insert a centered UNION
+ * line between groups to match canonical style. - {@code newScope} can be used by transforms as a hint that this UNION
+ * represents an explicit user UNION that introduced a new variable scope; some fusions avoid re-association across such
+ * boundaries.
  */
 public class IrUnion extends IrNode {
 	private List<IrBGP> branches = new ArrayList<>();

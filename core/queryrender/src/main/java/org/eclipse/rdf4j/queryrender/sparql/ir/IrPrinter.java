@@ -18,6 +18,12 @@ import org.eclipse.rdf4j.query.algebra.Var;
 /**
  * Minimal printing adapter used by IR nodes to render themselves. The implementation is provided by the
  * TupleExprIRRenderer and takes care of indentation, helper rendering, and child printing.
+ *
+ * Contract and conventions: - {@link #openBlock()} and {@link #closeBlock()} are used by nodes that need to emit a
+ * structured block with balanced braces, such as WHERE bodies and subselects. Implementations should ensure
+ * braces/indentation are balanced across these calls. - {@link #line(String)} writes a single logical line with current
+ * indentation. - Rendering helpers delegate back into the renderer so IR nodes do not duplicate value/IRI formatting
+ * logic.
  */
 public interface IrPrinter {
 

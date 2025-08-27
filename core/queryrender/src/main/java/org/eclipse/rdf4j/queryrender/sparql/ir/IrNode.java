@@ -14,6 +14,12 @@ import java.util.function.UnaryOperator;
 
 /**
  * Base class for textual SPARQL Intermediate Representation (IR) nodes.
+ *
+ * Design goals: - Keep IR nodes small and predictable; they are close to the final SPARQL surface form and
+ * intentionally avoid carrying evaluation semantics. - Favour immutability from the perspective of transforms:
+ * implementors should not mutate existing instances inside transforms but instead build new nodes as needed. - Provide
+ * a single {@link #print(IrPrinter)} entry point so pretty-printing concerns are centralized in the {@link IrPrinter}
+ * implementation.
  */
 public abstract class IrNode {
 
@@ -23,9 +29,11 @@ public abstract class IrNode {
 	}
 
 	/**
-	 * Function-style child transformation hook. Default is a no-op for leaf nodes. Implementations in container nodes
-	 * should return a new instance with immediate children replaced by op.apply(child). Implementations must not mutate
-	 * this.
+	 * Function-style child transformation hook used by the transform pipeline to descend into nested structures.
+	 *
+	 * Contract: - Leaf nodes return {@code this} unchanged. - Container nodes return a new instance with their
+	 * immediate children transformed using the provided operator. - Implementations must not mutate {@code this} or its
+	 * existing children.
 	 */
 	public IrNode transformChildren(UnaryOperator<IrNode> op) {
 		return this;

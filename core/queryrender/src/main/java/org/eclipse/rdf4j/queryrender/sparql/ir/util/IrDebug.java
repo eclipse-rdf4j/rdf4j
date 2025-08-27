@@ -29,7 +29,12 @@ import com.google.gson.JsonPrimitive;
 import com.google.gson.JsonSerializationContext;
 import com.google.gson.JsonSerializer;
 
-/** Lightweight IR debug printer using Gson pretty printing. */
+/**
+ * Lightweight IR debug printer using Gson pretty printing.
+ *
+ * Produces objects of the form {"class": "<FQN>", "data": {...}} so it is easy to see the concrete IR node type in
+ * dumps. Several noisy fields from RDF4J algebra nodes are excluded to keep output focused on relevant structure.
+ */
 public final class IrDebug {
 	private final static Set<String> ignore = Set.of("parent", "costEstimate", "totalTimeNanosActual", "cardinality",
 			"cachedHashCode", "isVariableScopeChange", "resultSizeEstimate", "resultSizeActual");
@@ -45,8 +50,7 @@ public final class IrDebug {
 				.setExclusionStrategies(new ExclusionStrategy() {
 					@Override
 					public boolean shouldSkipField(FieldAttributes f) {
-						// Exclude any field literally named "parent"
-
+						// Exclude noisy fields that do not help understanding the IR shape
 						return ignore.contains(f.getName());
 
 					}

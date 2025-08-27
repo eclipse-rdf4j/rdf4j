@@ -14,6 +14,9 @@ import java.util.function.UnaryOperator;
 
 /**
  * Textual IR node for a SERVICE block.
+ *
+ * The reference is kept as already-rendered text to allow either a variable, IRI, or complex expression (as produced by
+ * the renderer) and to preserve SILENT when present.
  */
 public class IrService extends IrNode {
 	private final String serviceRefText;

@@ -14,8 +14,11 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 
 /**
- * Textual IR node for a property path triple: subject, path expression, object. Values are kept as rendered strings to
- * allow alternation, sequences, and quantifiers.
+ * Textual IR node for a property path triple: subject, path expression, object.
+ *
+ * Path expression is stored as pre-rendered text to allow local string-level rewrites (alternation/sequence grouping,
+ * quantifiers) without needing a full AST here. Transforms are responsible for ensuring parentheses are added only when
+ * required for correctness; printing strips redundant outermost parentheses for stable output.
  */
 public class IrPathTriple extends IrTripleLike {
 	private final Var subject;

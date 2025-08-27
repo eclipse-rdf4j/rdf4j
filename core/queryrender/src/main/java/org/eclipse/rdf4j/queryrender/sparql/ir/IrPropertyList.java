@@ -16,7 +16,13 @@ import java.util.List;
 import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
- * Textual IR node for a property-list triple, supporting semicolon and comma short-hand.
+ * Textual IR node for a property-list triple, supporting semicolon and comma shorthand.
+ *
+ * Example output: "?s ex:p1 ?o1 , ?o2 ; a ex:Class ."
+ *
+ * - The {@link Item} list captures each predicate and its object list; printing takes care of rendering comma-separated
+ * objects and semicolon-separated predicates. - The renderer will compact rdf:type to 'a' consistently via
+ * {@code renderPredicateForTriple}.
  */
 public class IrPropertyList extends IrNode {
 	private final Var subject;
