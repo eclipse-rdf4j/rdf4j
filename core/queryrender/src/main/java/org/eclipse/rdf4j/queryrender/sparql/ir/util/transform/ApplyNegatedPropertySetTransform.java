@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
 public final class ApplyNegatedPropertySetTransform extends BaseTransform {
@@ -442,9 +443,10 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 			}
 
 			// No fusion matched: now recurse into containers (to apply NPS deeper) and add
-			// Be conservative: do not rewrite inside SERVICE or nested subselects.
+			// Recurse into nested subselects as well so their UNION branches can normalize,
+			// enabling later ZeroOrOne-subselect rewrite in the main pipeline.
 			if (n instanceof IrBGP || n instanceof IrGraph || n instanceof IrOptional || n instanceof IrUnion
-					|| n instanceof IrMinus /* || n instanceof IrService || n instanceof IrSubSelect */) {
+					|| n instanceof IrMinus || n instanceof IrSubSelect /* || n instanceof IrService */) {
 				n = n.transformChildren(child -> {
 					if (child instanceof IrBGP) {
 						return apply((IrBGP) child, r);
