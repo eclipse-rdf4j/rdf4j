@@ -107,7 +107,53 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			// Compact a single-member NPS
 			cur = COMPACT_NPS_SINGLE_INVERSE.matcher(cur).replaceAll("!$1");
 			cur = COMPACT_NPS_SINGLE.matcher(cur).replaceAll("!$1");
+			// Deduplicate alternation members inside parentheses when the group has no nested parentheses
+			cur = dedupeParenedAlternations(cur);
 		} while (!cur.equals(prev) && ++guard < 5);
 		return cur;
+	}
+
+	private static String dedupeParenedAlternations(String s) {
+		StringBuilder out = new StringBuilder(s.length());
+		int i = 0;
+		while (i < s.length()) {
+			int open = s.indexOf('(', i);
+			if (open < 0) {
+				out.append(s.substring(i));
+				break;
+			}
+			out.append(s, i, open);
+			int j = open + 1;
+			int depth = 1;
+			while (j < s.length() && depth > 0) {
+				char c = s.charAt(j++);
+				if (c == '(')
+					depth++;
+				else if (c == ')')
+					depth--;
+			}
+			if (depth != 0) {
+				// unmatched; append rest and break
+				out.append(s.substring(open));
+				break;
+			}
+			int close = j - 1;
+			String inner = s.substring(open + 1, close);
+			// Only dedupe when there are '|' and no nested parens inside the group (safety)
+			if (inner.indexOf('|') >= 0 && inner.indexOf('(') < 0 && inner.indexOf(')') < 0) {
+				java.util.LinkedHashSet<String> uniq = new java.util.LinkedHashSet<>();
+				for (String tok : inner.split("\\|")) {
+					String t = tok.trim();
+					if (!t.isEmpty())
+						uniq.add(t);
+				}
+				String rebuilt = String.join("|", uniq);
+				out.append('(').append(rebuilt).append(')');
+			} else {
+				out.append('(').append(inner).append(')');
+			}
+			i = close + 1;
+		}
+		return out.toString();
 	}
 }
