@@ -2504,4 +2504,14 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg());
 	}
 
+	@Test
+	void nestedSelectDistinct() {
+		String q = "SELECT ?s \n" +
+				"WHERE {\n" +
+				"  { SELECT DISTINCT ?s WHERE { ?s ex:pA ?o } ORDER BY ?s LIMIT 10 }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
 }
