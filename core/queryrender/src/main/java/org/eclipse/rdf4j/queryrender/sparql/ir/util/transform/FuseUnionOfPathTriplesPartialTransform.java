@@ -12,8 +12,10 @@ package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -95,14 +97,14 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 				if (o == null || getClass() != o.getClass())
 					return false;
 				Key key = (Key) o;
-				return java.util.Objects.equals(gName, key.gName)
-						&& java.util.Objects.equals(sName, key.sName)
-						&& java.util.Objects.equals(oName, key.oName);
+				return Objects.equals(gName, key.gName)
+						&& Objects.equals(sName, key.sName)
+						&& Objects.equals(oName, key.oName);
 			}
 
 			@Override
 			public int hashCode() {
-				return java.util.Objects.hash(gName, sName, oName);
+				return Objects.hash(gName, sName, oName);
 			}
 		}
 		class Group {
@@ -193,11 +195,18 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 			List<Integer> idxs = grp.idxs;
 			if (idxs.size() >= 2) {
 				// Merge these branches into one alternation path
-				List<String> alts = new ArrayList<>();
+				LinkedHashSet<String> alts = new LinkedHashSet<>();
 				for (int idx : idxs) {
-					alts.add(pathTexts.get(idx));
+					String t = pathTexts.get(idx);
+					if (t != null) {
+						alts.add(t);
+					}
 				}
 				String merged = String.join("|", alts);
+				// Parenthesize alternation to be safe when fused further into sequences
+				if (alts.size() > 1) {
+					merged = "(" + merged + ")";
+				}
 				IrBGP b = new IrBGP();
 				IrPathTriple mergedPt = new IrPathTriple(grp.s, merged, grp.o);
 				if (grp.g != null) {
