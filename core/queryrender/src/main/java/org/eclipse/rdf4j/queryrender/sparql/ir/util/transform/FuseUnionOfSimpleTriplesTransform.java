@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -56,12 +57,18 @@ public final class FuseUnionOfSimpleTriplesTransform extends BaseTransform {
 				} else {
 					Fused f = tryFuseUnion(u, r);
 					if (f != null) {
+						// Deduplicate and parenthesize alternation when multiple members
+						LinkedHashSet<String> alts = new LinkedHashSet<>(f.steps);
+						String alt = String.join("|", alts);
+						if (alts.size() > 1) {
+							alt = "(" + alt + ")";
+						}
 						if (f.graph != null) {
 							IrBGP inner = new IrBGP();
-							inner.add(new IrPathTriple(f.s, String.join("|", f.steps), f.o));
+							inner.add(new IrPathTriple(f.s, alt, f.o));
 							m = new IrGraph(f.graph, inner);
 						} else {
-							m = new IrPathTriple(f.s, String.join("|", f.steps), f.o);
+							m = new IrPathTriple(f.s, alt, f.o);
 						}
 					} else {
 						// Recurse into branches
