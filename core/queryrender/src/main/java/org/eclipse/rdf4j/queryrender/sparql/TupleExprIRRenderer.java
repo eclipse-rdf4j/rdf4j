@@ -2819,6 +2819,9 @@ public class TupleExprIRRenderer {
 		private final String indentUnit = cfg.indent;
 		private final Map<String, String> currentOverrides = TupleExprIRRenderer.this.irOverrides;
 		private int level = 0;
+		// Track anonymous bnode var usage and assign labels when a var is referenced more than once.
+		private final Map<String, Integer> bnodeCounts = new LinkedHashMap<>();
+		private final Map<String, String> bnodeLabels = new LinkedHashMap<>();
 
 		IRTextPrinter(StringBuilder out) {
 			this.out = out;
@@ -2830,7 +2833,66 @@ public class TupleExprIRRenderer {
 				closeBlock();
 				return;
 			}
+			// Pre-scan to count anonymous bnode variables to decide when to print labels
+			collectBnodeCounts(w);
+			assignBnodeLabels();
 			w.print(this);
+		}
+
+		private void bumpBnodeVar(Var v) {
+			if (v == null || v.hasValue())
+				return;
+			final String n = v.getName();
+			if (n == null)
+				return;
+			if (!isAnonBNodeVar(v))
+				return;
+			bnodeCounts.merge(n, 1, Integer::sum);
+		}
+
+		private void collectBnodeCounts(IrBGP w) {
+			if (w == null)
+				return;
+			for (IrNode ln : w.getLines()) {
+				if (ln instanceof IrStatementPattern) {
+					IrStatementPattern sp = (IrStatementPattern) ln;
+					bumpBnodeVar(sp.getSubject());
+					bumpBnodeVar(sp.getObject());
+				} else if (ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPropertyList) {
+					org.eclipse.rdf4j.queryrender.sparql.ir.IrPropertyList pl = (org.eclipse.rdf4j.queryrender.sparql.ir.IrPropertyList) ln;
+					bumpBnodeVar(pl.getSubject());
+					for (org.eclipse.rdf4j.queryrender.sparql.ir.IrPropertyList.Item it : pl.getItems()) {
+						for (Var ov : it.getObjects()) {
+							bumpBnodeVar(ov);
+						}
+					}
+				} else if (ln instanceof IrBGP) {
+					collectBnodeCounts((IrBGP) ln);
+				} else if (ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph) {
+					collectBnodeCounts(((org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph) ln).getWhere());
+				} else if (ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional) {
+					collectBnodeCounts(((org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional) ln).getWhere());
+				} else if (ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus) {
+					collectBnodeCounts(((org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus) ln).getWhere());
+				} else if (ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion) {
+					for (IrBGP b : ((org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion) ln).getBranches()) {
+						collectBnodeCounts(b);
+					}
+				} else if (ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrService) {
+					collectBnodeCounts(((org.eclipse.rdf4j.queryrender.sparql.ir.IrService) ln).getWhere());
+				} else if (ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect) {
+					// Do not descend into raw subselects for top-level bnode label decisions
+				}
+			}
+		}
+
+		private void assignBnodeLabels() {
+			int idx = 1;
+			for (Map.Entry<String, Integer> e : bnodeCounts.entrySet()) {
+				if (e.getValue() != null && e.getValue() > 1) {
+					bnodeLabels.put(e.getKey(), "b" + (idx++));
+				}
+			}
 		}
 
 		public void printLines(final List<IrNode> lines) {
@@ -2855,14 +2917,41 @@ public class TupleExprIRRenderer {
 			if (overrides == null || overrides.isEmpty()) {
 				return termText;
 			}
-			if (termText.startsWith("?")) {
-				final String name = termText.substring(1);
+			String out = termText;
+			// First, whole-token replacement (exact match "?name")
+			if (out.startsWith("?")) {
+				final String name = out.substring(1);
 				final String repl = overrides.get(name);
 				if (repl != null) {
-					return repl;
+					out = repl;
 				}
 			}
-			return termText;
+			// Then, replace any embedded override tokens "?name" within the text.
+			// Iterate to allow nested placeholders to expand in a few steps.
+			for (int iter = 0; iter < 4; iter++) {
+				boolean changed = false;
+				for (Map.Entry<String, String> e : overrides.entrySet()) {
+					final String needle = "?" + e.getKey();
+					if (out.contains(needle)) {
+						out = out.replace(needle, e.getValue());
+						changed = true;
+					}
+				}
+				if (!changed)
+					break;
+			}
+			// Map any remaining anonymous bnode var tokens to either [] or a stable label using precomputed counts
+			if (!bnodeCounts.isEmpty()) {
+				for (Map.Entry<String, Integer> e : bnodeCounts.entrySet()) {
+					final String needle = "?" + e.getKey();
+					if (out.contains(needle)) {
+						final String lbl = bnodeLabels.get(e.getKey());
+						final String rep = (lbl != null) ? ("_:" + lbl) : "[]";
+						out = out.replace(needle, rep);
+					}
+				}
+			}
+			return out;
 		}
 
 		@Override
@@ -2877,8 +2966,19 @@ public class TupleExprIRRenderer {
 			if (!v.hasValue() && v.getName() != null && overrides != null) {
 				final String repl = overrides.get(v.getName());
 				if (repl != null) {
-					return repl;
+					// Apply nested overrides inside the replacement text (e.g., collections inside brackets)
+					return applyOverridesToText(repl, overrides);
 				}
+			}
+			// Decide bnode rendering: if this is an anonymous bnode var referenced more than once, print a
+			// stable blank node label to preserve linking; otherwise render as []
+			if (isAnonBNodeVar(v)) {
+				final String name = v.getName();
+				final String lbl = bnodeLabels.get(name);
+				if (lbl != null) {
+					return "_:" + lbl;
+				}
+				return "[]";
 			}
 			return renderVarOrValue(v);
 		}
