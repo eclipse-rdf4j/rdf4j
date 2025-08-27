@@ -35,10 +35,10 @@ public class SparqlPropertyPathStreamTest {
 	// =========================
 
 	/** Max AST depth (atoms at depth 0). */
-	private static final int MAX_DEPTH = 3;
+	private static final int MAX_DEPTH = 4;
 
 	/** Upper bound on total positive tests (across all skeletons and WS variants). */
-	private static final int MAX_TESTS = 500;
+	private static final int MAX_TESTS = 5000;
 
 	/** Upper bound on total negative tests. */
 	private static final int MAX_NEG_TESTS = 300;
