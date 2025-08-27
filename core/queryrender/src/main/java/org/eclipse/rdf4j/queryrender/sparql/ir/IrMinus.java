@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.queryrender.sparql.ir;
 import java.util.function.UnaryOperator;
 
 /**
- * Textual IR node for a MINUS { ... } block.
+ * Textual IR node for a MINUS { ... } block. Similar to OPTIONAL and GRAPH, this is a container around a nested BGP.
  */
 public class IrMinus extends IrNode {
 	private IrBGP bgp;
