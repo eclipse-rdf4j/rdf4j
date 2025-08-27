@@ -84,6 +84,9 @@ public final class IrTransforms {
 					// Normalize chained inequalities in FILTERs to NOT IN when safe
 					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeFilterNotInTransform.apply(w,
 							r);
+					// Inline simple _anon_bnode_* object nodes as bracket property lists before grouping
+					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.InlineBNodeObjectsTransform.apply(w, r);
+					// Then group contiguous subject-equal triples into property lists
 					w = ApplyPropertyListsTransform.apply(w, r);
 
 					// Preserve original orientation of bare NPS triples to match expected algebra
