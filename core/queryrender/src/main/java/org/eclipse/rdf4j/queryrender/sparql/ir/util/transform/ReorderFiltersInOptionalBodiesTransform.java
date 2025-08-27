@@ -29,6 +29,14 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPropertyList;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 
+/**
+ * Within OPTIONAL bodies, move simple FILTER conditions earlier when all their variables are already available from
+ * preceding lines in the same OPTIONAL body. This improves readability and can unlock later fusions.
+ *
+ * Safety: - Only reorders plain text FILTER conditions; structured bodies (EXISTS/NOT EXISTS) are left in place. - A
+ * FILTER is moved only if every variable it references appears in lines preceding the first nested OPTIONAL. -
+ * Preserves container structure and recurses conservatively.
+ */
 public final class ReorderFiltersInOptionalBodiesTransform extends BaseTransform {
 	private ReorderFiltersInOptionalBodiesTransform() {
 	}
