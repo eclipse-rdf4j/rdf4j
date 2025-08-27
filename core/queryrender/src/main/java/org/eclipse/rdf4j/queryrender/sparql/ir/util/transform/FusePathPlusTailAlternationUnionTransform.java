@@ -24,6 +24,16 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
+/**
+ * Fuse a path triple followed by a UNION of two single-step tail triples into a single path with an alternation tail.
+ *
+ * Shape: - Input: PT: ?s P ?mid . UNION of two branches that each connect ?mid to the same end variable via constant
+ * predicates in opposite directions (forward/inverse), optionally GRAPH-wrapped with the same graph ref. - Output: ?s
+ * P/(p|^p) ?end .
+ *
+ * Notes: - Does not fuse across UNIONs marked as new scope (explicit user UNIONs). - Requires the bridge variable
+ * (?mid) to be an {@code _anon_path_*} var so we never eliminate user-visible vars.
+ */
 public class FusePathPlusTailAlternationUnionTransform extends BaseTransform {
 
 	private FusePathPlusTailAlternationUnionTransform() {

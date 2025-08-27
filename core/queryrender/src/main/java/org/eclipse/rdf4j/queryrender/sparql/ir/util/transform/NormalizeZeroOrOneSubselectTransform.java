@@ -28,6 +28,16 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrText;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
+/**
+ * Recognize a parsed subselect encoding of a simple zero-or-one property path between two variables and rewrite it to a
+ * compact IrPathTriple with a trailing '?' quantifier.
+ *
+ * Roughly matches a UNION containing a sameTerm(?s, ?o) branch and one or more single-step patterns connecting ?s and
+ * ?o (possibly via GRAPH or already-fused path triples). Produces {@code ?s (step1|step2|...) ? ?o}.
+ *
+ * This normalization simplifies common shapes produced by the parser for "?s (p? ) ?o" and enables subsequent path
+ * fusions.
+ */
 public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 	private NormalizeZeroOrOneSubselectTransform() {
 	}

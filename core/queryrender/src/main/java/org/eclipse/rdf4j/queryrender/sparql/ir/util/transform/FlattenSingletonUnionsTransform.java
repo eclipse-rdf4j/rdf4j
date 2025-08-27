@@ -18,6 +18,14 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
+/**
+ * Remove UNION nodes that have a single branch, effectively inlining their content. This keeps the IR compact and
+ * avoids printing unnecessary braces/UNION keywords.
+ *
+ * Safety: - Does not flatten inside OPTIONAL bodies to avoid subtle scope/precedence shifts when later transforms
+ * reorder filters and optionals. - Preserves explicit UNIONs with new variable scope (not constructed by transforms),
+ * even if they degenerate to a single branch, to respect original user structure.
+ */
 public final class FlattenSingletonUnionsTransform extends BaseTransform {
 	private FlattenSingletonUnionsTransform() {
 	}

@@ -21,6 +21,15 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
+/**
+ * Merge consecutive GRAPH blocks that reference the same graph term into a single GRAPH with a concatenated body.
+ *
+ * Purpose: - Downstream path fusers work better when a graph body is contiguous, so this pass prepares the IR by
+ * removing trivial GRAPH boundaries that arose during building or earlier rewrites.
+ *
+ * Notes: - Only merges when the graph reference variables/IRIs are identical (by variable name or value). - Preserves
+ * other containers via recursion and leaves UNION branch scopes intact.
+ */
 public final class CoalesceAdjacentGraphsTransform extends BaseTransform {
 	private CoalesceAdjacentGraphsTransform() {
 	}
