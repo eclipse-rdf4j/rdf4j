@@ -2478,4 +2478,30 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg());
 	}
 
+	@Test
+	void testBnodes2() {
+		String q = "SELECT ?s ?x\n" +
+				"WHERE {\n" +
+				"  _:bnode1 ex:pA ?s ;\n" +
+				"     ex:pB [ ex:pC ?x ] .\n" +
+				"  ?s ex:pD ( ex:Person ex:Thing ) .\n" +
+				" [] ex:pE _:bnode1 .\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testBnodes3() {
+		String q = "SELECT ?s ?x\n" +
+				"WHERE {\n" +
+				"  _:bnode1 ex:pA ?s ;\n" +
+				"     ex:pB [ ex:pC ?x; ex:pB [ex:pF _:bnode1] ] .\n" +
+				"  ?s ex:pD ( ex:Person ex:Thing ) .\n" +
+				" [] ex:pE _:bnode1 .\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
 }
