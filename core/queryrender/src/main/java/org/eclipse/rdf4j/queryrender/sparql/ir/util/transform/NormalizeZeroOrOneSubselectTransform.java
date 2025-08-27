@@ -114,6 +114,24 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 					continue;
 				}
 				return null;
+			} else if (ln instanceof IrGraph && ((IrGraph) ln).getWhere() != null
+					&& ((IrGraph) ln).getWhere().getLines().size() == 1
+					&& ((IrGraph) ln).getWhere().getLines().get(0) instanceof IrPathTriple) {
+				// GRAPH wrapper around a single fused path step (e.g., an NPS) — handle orientation
+				final IrPathTriple pt = (IrPathTriple) ((IrGraph) ln).getWhere().getLines().get(0);
+				if (sameVar(varNamed(sName), pt.getSubject()) && sameVar(varNamed(oName), pt.getObject())) {
+					steps.add(pt.getPathText());
+					continue;
+				} else if (sameVar(varNamed(sName), pt.getObject()) && sameVar(varNamed(oName), pt.getSubject())) {
+					final String inv = invertNpsIfPossible(pt.getPathText());
+					if (inv == null) {
+						return null;
+					}
+					steps.add(inv);
+					continue;
+				} else {
+					return null;
+				}
 			} else {
 				return null;
 			}
@@ -133,9 +151,57 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		if (steps.isEmpty()) {
 			return null;
 		}
-		final String innerAlt = (steps.size() == 1) ? steps.get(0) : ("(" + String.join("|", steps) + ")");
-		final String expr = BaseTransform.applyQuantifier(innerAlt, '?');
+		String exprInner;
+		// If all steps are simple negated property sets of the form !(...), merge their members into one NPS
+		boolean allNps = true;
+		List<String> npsMembers = new ArrayList<>();
+		for (String st : steps) {
+			String t = st == null ? null : st.trim();
+			if (t == null || !t.startsWith("!(") || !t.endsWith(")")) {
+				allNps = false;
+				break;
+			}
+			String innerMembers = t.substring(2, t.length() - 1).trim();
+			if (!innerMembers.isEmpty()) {
+				npsMembers.add(innerMembers);
+			}
+		}
+		if (allNps && !npsMembers.isEmpty()) {
+			exprInner = "!(" + String.join("|", npsMembers) + ")";
+		} else {
+			exprInner = (steps.size() == 1) ? steps.get(0) : ("(" + String.join("|", steps) + ")");
+		}
+		final String expr = BaseTransform.applyQuantifier(exprInner, '?');
 		return new IrPathTriple(varNamed(sName), expr, varNamed(oName));
+	}
+
+	/** Invert a negated property set: !(a|^b|c) -> !(^a|b|^c). Return null if not a simple NPS. */
+	private static String invertNpsIfPossible(String nps) {
+		if (nps == null) {
+			return null;
+		}
+		final String s = nps.trim();
+		if (!s.startsWith("!(") || !s.endsWith(")")) {
+			return null;
+		}
+		final String inner = s.substring(2, s.length() - 1);
+		if (inner.isEmpty()) {
+			return s;
+		}
+		final String[] toks = inner.split("\\|");
+		final List<String> out = new ArrayList<>(toks.length);
+		for (String tok : toks) {
+			final String t = tok.trim();
+			if (t.isEmpty()) {
+				continue;
+			}
+			if (t.startsWith("^")) {
+				out.add(t.substring(1));
+			} else {
+				out.add("^" + t);
+			}
+		}
+		return "!(" + String.join("|", out) + ")";
 	}
 
 	public static String[] parseSameTermVars(String text) {
