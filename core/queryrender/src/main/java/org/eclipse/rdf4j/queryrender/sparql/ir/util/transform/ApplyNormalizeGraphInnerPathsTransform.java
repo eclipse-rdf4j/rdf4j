@@ -26,6 +26,10 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
+/**
+ * Within GRAPH bodies, normalize local triple/path shapes by fusing adjacent PT/SP/PT patterns and performing
+ * conservative tail joins. This helps later UNION/path fusers see a stable inner structure.
+ */
 public final class ApplyNormalizeGraphInnerPathsTransform extends BaseTransform {
 	private ApplyNormalizeGraphInnerPathsTransform() {
 	}

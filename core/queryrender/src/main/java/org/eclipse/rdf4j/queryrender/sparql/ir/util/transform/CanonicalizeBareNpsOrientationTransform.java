@@ -22,6 +22,11 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
+/**
+ * Preserve or lightly canonicalize the orientation of bare negated property set triples. This pass is intentionally
+ * conservative: it does not flip NPS orientation arbitrarily and skips UNION branches to preserve original subjects and
+ * objects for readability and textual stability.
+ */
 public final class CanonicalizeBareNpsOrientationTransform extends BaseTransform {
 	private CanonicalizeBareNpsOrientationTransform() {
 	}
