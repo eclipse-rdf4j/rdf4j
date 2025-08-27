@@ -12,11 +12,18 @@ package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
 /**
  * Normalize FILTER conditions by reconstructing simple NOT IN expressions from top-level conjunctions of inequalities
@@ -41,17 +48,26 @@ public final class NormalizeFilterNotInTransform extends BaseTransform {
 				if (f.getBody() == null && f.getConditionText() != null) {
 					String rewritten = tryRewriteNotIn(f.getConditionText());
 					if (rewritten != null) {
-						IrFilter nf = new IrFilter(rewritten, f.isNewScope());
-						m = nf;
+						m = new IrFilter(rewritten);
 					}
 				}
 			}
 
-			// Recurse into containers via shared helper
-			m = BaseTransform.rewriteContainers(m, child -> NormalizeFilterNotInTransform.apply(child, r));
+			// Recurse into containers
+			m = m.transformChildren(new UnaryOperator<IrNode>() {
+				@Override
+				public IrNode apply(IrNode child) {
+					if (child instanceof IrBGP) {
+						return NormalizeFilterNotInTransform.apply((IrBGP) child, r);
+					}
+					return child;
+				}
+			});
 			out.add(m);
 		}
-		return BaseTransform.bgpWithLines(bgp, out);
+		IrBGP res = new IrBGP();
+		out.forEach(res::add);
+		return res;
 	}
 
 	// Attempt to reconstruct "?v NOT IN (a, b, ...)" from a top-level conjunction of "?v != item" terms.
@@ -208,19 +224,17 @@ public final class NormalizeFilterNotInTransform extends BaseTransform {
 			boolean ok = true;
 			for (int i = 0; i < t.length(); i++) {
 				char c = t.charAt(i);
-				if (c == '(') {
+				if (c == '(')
 					depth++;
-				} else if (c == ')') {
+				else if (c == ')')
 					depth--;
-				}
 				if (depth == 0 && i < t.length() - 1) {
 					ok = false;
 					break;
 				}
 			}
-			if (!ok) {
+			if (!ok)
 				break;
-			}
 			t = t.substring(1, t.length() - 1).trim();
 		}
 		return t;
@@ -248,11 +262,11 @@ public final class NormalizeFilterNotInTransform extends BaseTransform {
 				inStr = true;
 				continue;
 			}
-			if (c == '(') {
+			if (c == '(')
 				depth++;
-			} else if (c == ')') {
+			else if (c == ')')
 				depth--;
-			} else if (c == '&' && depth == 0) {
+			else if (c == '&' && depth == 0) {
 				// lookahead for '&&'
 				if (i + 1 < s.length() && s.charAt(i + 1) == '&') {
 					parts.add(s.substring(last, i).trim());
