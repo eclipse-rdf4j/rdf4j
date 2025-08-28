@@ -34,7 +34,7 @@ Finding a better approach to handling paths is key!
 DO NOT CHANGE ANYTHING ABOVE THIS LINE.
 -----------------------------------------------------------
 
-FILL IN BELOW!
+LOOK AT THE CODE, UNDERSTAND HOW IT WORKS, MAKE A PLAN FOR HOW YOU INTEND TO FIND THE ROOT CAUSE AND HOW TO FIX IT. THEN START WORKING.
 
 # Overall plan
 TODO

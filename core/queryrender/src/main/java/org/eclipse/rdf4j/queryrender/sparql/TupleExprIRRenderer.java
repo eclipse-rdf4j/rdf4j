@@ -91,6 +91,7 @@ import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
@@ -3145,6 +3146,17 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(final Filter f) {
+			// If this FILTER starts a new variable scope and its argument is a
+			// SingletonSet, it originates from an explicit grouped FILTER-only block
+			// in the original SPARQL (e.g., `{ FILTER EXISTS { ... } }`). In that
+			// case, wrap just the FILTER in its own group to reproduce the braces.
+			if (f.isVariableScopeChange() && f.getArg() instanceof SingletonSet) {
+				IrBGP group = new IrBGP();
+				group.add(buildFilterFromCondition(f.getCondition()));
+				where.add(group);
+				return;
+			}
+
 			// Try to order FILTER before a trailing subselect when the condition only mentions
 			// variables already bound by the head of the join (to match expected formatting).
 			final TupleExpr arg = f.getArg();
@@ -3188,6 +3200,13 @@ public class TupleExprIRRenderer {
 			// Default order: argument followed by the FILTER line
 			arg.visit(this);
 			where.add(buildFilterFromCondition(f.getCondition()));
+		}
+
+		@Override
+		public void meet(final SingletonSet s) {
+			// SingletonSet produces a single empty binding row; when encountered as the
+			// argument of a FILTER that forces a new scope, it should not emit any IR
+			// lines. Treat as a no-op in the textual IR.
 		}
 
 		@Override
