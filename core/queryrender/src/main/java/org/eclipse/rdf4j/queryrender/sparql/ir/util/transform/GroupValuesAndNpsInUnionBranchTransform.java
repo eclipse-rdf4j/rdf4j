@@ -38,9 +38,8 @@ public final class GroupValuesAndNpsInUnionBranchTransform extends BaseTransform
 	}
 
 	public static IrBGP apply(IrBGP bgp) {
-		if (bgp == null) {
+		if (bgp == null)
 			return null;
-		}
 
 		final List<IrNode> out = new ArrayList<>();
 		for (IrNode n : bgp.getLines()) {
@@ -58,11 +57,14 @@ public final class GroupValuesAndNpsInUnionBranchTransform extends BaseTransform
 			}
 		}
 
-		return BaseTransform.bgpWithLines(bgp, out);
+		IrBGP res = new IrBGP();
+		out.forEach(res::add);
+		return res;
 	}
 
 	private static IrUnion groupUnionBranches(IrUnion u) {
-		IrUnion u2 = new IrUnion(u.isNewScope());
+		IrUnion u2 = new IrUnion();
+		u2.setNewScope(u.isNewScope());
 		for (IrBGP b : u.getBranches()) {
 			IrBGP toAdd = maybeWrapBranch(b, u.isNewScope());
 			u2.addBranch(toAdd);
@@ -72,9 +74,8 @@ public final class GroupValuesAndNpsInUnionBranchTransform extends BaseTransform
 
 	// Only consider top-level lines in the branch for grouping to ensure idempotence.
 	private static IrBGP maybeWrapBranch(IrBGP branch, boolean unionNewScope) {
-		if (branch == null) {
-			return null;
-		}
+		if (branch == null)
+			return branch;
 
 		boolean hasTopValues = false;
 		boolean hasTopNegPath = false;
@@ -117,11 +118,11 @@ public final class GroupValuesAndNpsInUnionBranchTransform extends BaseTransform
 		// Only wrap for explicit UNION branches to mirror user grouping; avoid altering synthesized unions.
 		// Guard for exact simple pattern: exactly two top-level lines: one VALUES and one NPS path (or GRAPH{NPS})
 		if (unionNewScope && hasTopValues && hasTopNegPath && topCount == 2 && valuesCount == 1 && negPathCount == 1) {
-			IrBGP inner = new IrBGP(false);
+			IrBGP inner = new IrBGP();
 			for (IrNode ln : branch.getLines()) {
 				inner.add(ln);
 			}
-			IrBGP wrapped = new IrBGP(inner.isNewScope());
+			IrBGP wrapped = new IrBGP();
 			wrapped.add(inner);
 			return wrapped;
 		}
