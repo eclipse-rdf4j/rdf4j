@@ -2514,4 +2514,35 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg());
 	}
 
+
+	@Test
+	void testPathGraphFilterExists() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  ?s ex:pC ?u1 .\n" +
+				"  FILTER EXISTS {\n" +
+				"    GRAPH <http://graphs.example/g1> {\n" +
+				"      ?s !(ex:pA|^ex:pD) ?o .\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testFilterExistsForceNewScope() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  ?s ex:pC ?u1 .\n" +
+				"  { FILTER EXISTS {\n" +
+				"    GRAPH <http://graphs.example/g1> {\n" +
+				"      ?s ?b ?o .\n" +
+				"    }\n" +
+				"  } }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
 }

@@ -68,18 +68,18 @@ public class SparqlComprehensiveStreamingValidTest {
 	private static final int MAX_SERVICE_VALUES_CASES = 400;
 
 	// Extra categories to widen coverage
-	private static final int MAX_BUILTINS_CASES          = 400;
-	private static final int MAX_PROLOGUE_LEXICAL_CASES  = 200;
-	private static final int MAX_GRAPH_NEST_CASES        = 300;
-	private static final int MAX_GROUPING2_CASES         = 300;
-	private static final int MAX_SUBSELECT2_CASES        = 300;
-	private static final int MAX_CONSTRUCT_TPL_CASES     = 200;
+	private static final int MAX_BUILTINS_CASES = 400;
+	private static final int MAX_PROLOGUE_LEXICAL_CASES = 200;
+	private static final int MAX_GRAPH_NEST_CASES = 300;
+	private static final int MAX_GROUPING2_CASES = 300;
+	private static final int MAX_SUBSELECT2_CASES = 300;
+	private static final int MAX_CONSTRUCT_TPL_CASES = 200;
 
 	// Deep nesting torture tests
-	private static final int  MAX_DEEP_NEST_CASES   = 80;   // how many deep-nest queries to emit
-	private static final int  MAX_DEEP_NEST_DEPTH   = 50;   // requested depth
-	private static final int  NEST_PATH_POOL_SIZE   = 64;   // sample of property paths to pick from
-	private static final long NEST_SEED             = 0xC0DEC0DEBEEFL; // deterministic
+	private static final int MAX_DEEP_NEST_CASES = 80; // how many deep-nest queries to emit
+	private static final int MAX_DEEP_NEST_DEPTH = 2; // requested depth
+	private static final int NEST_PATH_POOL_SIZE = 64; // sample of property paths to pick from
+	private static final long NEST_SEED = 0xC0DEC0DEBEEFL; // deterministic
 
 	/** Max property-path AST depth (atoms at depth 0). */
 	private static final int MAX_PATH_DEPTH = 3;
@@ -267,6 +267,7 @@ public class SparqlComprehensiveStreamingValidTest {
 
 	/** Run the assertion, and on failure automatically shrink and rethrow with minimized query. */
 	private static void runWithShrink(String q) {
+		System.out.println(q);
 		assertRoundTrip(q);
 //		ShrinkOnFailure.wrap(q, () -> assertRoundTrip(q), failureOracle());
 	}
@@ -1150,9 +1151,10 @@ public class SparqlComprehensiveStreamingValidTest {
 // =========================================================================================
 	private static final class ExprStreams {
 
-		private static final List<String> VARS = Arrays.asList("?s","?o","?v","?name");
-		private static final List<String> NUMS = Arrays.asList("0","1","2","42","3.14","1e6");
-		private static final List<String> STRS = Arrays.asList("\"alpha\"","\"beta\"","\"A\"@en","\"3\"^^xsd:string");
+		private static final List<String> VARS = Arrays.asList("?s", "?o", "?v", "?name");
+		private static final List<String> NUMS = Arrays.asList("0", "1", "2", "42", "3.14", "1e6");
+		private static final List<String> STRS = Arrays.asList("\"alpha\"", "\"beta\"", "\"A\"@en",
+				"\"3\"^^xsd:string");
 
 		/** Small pool of expressions appropriate for SELECT ... AS ?k */
 		static List<String> selectExprPool() {
@@ -1175,7 +1177,7 @@ public class SparqlComprehensiveStreamingValidTest {
 					.map(ExprStreams::parenIfNeeded)
 					.collect(Collectors.toList());
 
-			Stream<String> asc  = pool.stream().map(e -> "ASC("  + e + ")");
+			Stream<String> asc = pool.stream().map(e -> "ASC(" + e + ")");
 			Stream<String> desc = pool.stream().map(e -> "DESC(" + e + ")");
 			Stream<String> bare = pool.stream().map(e -> "(" + e + ")");
 
@@ -1183,16 +1185,20 @@ public class SparqlComprehensiveStreamingValidTest {
 		}
 
 		/** Identity for our generated order keys. */
-		static String toOrderCondition(String key) { return key; }
+		static String toOrderCondition(String key) {
+			return key;
+		}
 
 		/** Stream pairs of distinct indices (i < j) lazily. */
 		static Stream<int[]> indexPairs(int n) {
 			Spliterator<int[]> sp = new Spliterators.AbstractSpliterator<int[]>(Long.MAX_VALUE, ORDERED) {
 				int i = 0, j = 1;
-				@Override public boolean tryAdvance(java.util.function.Consumer<? super int[]> action) {
+
+				@Override
+				public boolean tryAdvance(java.util.function.Consumer<? super int[]> action) {
 					while (i < n) {
 						if (j < n) {
-							action.accept(new int[]{i, j});
+							action.accept(new int[] { i, j });
 							j++;
 							return true;
 						} else {
@@ -1211,54 +1217,63 @@ public class SparqlComprehensiveStreamingValidTest {
 		private static Stream<String> exprStreamDepth2() {
 			// depth 0: vars, numbers, strings
 			List<String> d0 = Stream.of(
-							VARS.stream(),
-							NUMS.stream(),
-							STRS.stream()
-					).reduce(Stream::concat).orElseGet(Stream::empty)
+					VARS.stream(),
+					NUMS.stream(),
+					STRS.stream()
+			)
+					.reduce(Stream::concat)
+					.orElseGet(Stream::empty)
 					.collect(Collectors.toList());
 
 			// depth 1: unary funcs + simple binary arith
 			List<String> d1 = Stream.concat(
-					d0.stream().flatMap(e -> Stream.of(
-							"STR(" + e + ")", "STRLEN(STR(" + e + "))", "UCASE(STR(" + e + "))",
-							"ABS(" + e + ")", "ROUND(" + e + ")", "LCASE(STR(" + e + "))",
-							"COALESCE(" + e + ", 0)"
-					)),
-					cross(VARS.stream(), NUMS.stream(), (a,b) -> "(" + a + " + " + b + ")")
+					d0.stream()
+							.flatMap(e -> Stream.of(
+									"STR(" + e + ")", "STRLEN(STR(" + e + "))", "UCASE(STR(" + e + "))",
+									"ABS(" + e + ")", "ROUND(" + e + ")", "LCASE(STR(" + e + "))",
+									"COALESCE(" + e + ", 0)"
+							)),
+					cross(VARS.stream(), NUMS.stream(), (a, b) -> "(" + a + " + " + b + ")")
 			).collect(Collectors.toList());
 
 			// depth 2: IF, nested binary, casts, multi-arg COALESCE
 			List<String> d2 = Stream.concat(
-					d1.stream().flatMap(e -> Stream.of(
-							"IF(BOUND(?name), " + e + ", 0)",
-							"COALESCE(" + e + ", 1, 2)",
-							"xsd:integer(" + e + ")",
-							"(" + e + " * 2)"
-					)),
+					d1.stream()
+							.flatMap(e -> Stream.of(
+									"IF(BOUND(?name), " + e + ", 0)",
+									"COALESCE(" + e + ", 1, 2)",
+									"xsd:integer(" + e + ")",
+									"(" + e + " * 2)"
+							)),
 					// Use a fresh stream from d1 (list-backed) — NO reuse of the same stream instance
-					cross(d1.stream(), NUMS.stream(), (a,b) -> "(" + a + " - " + b + ")")
+					cross(d1.stream(), NUMS.stream(), (a, b) -> "(" + a + " - " + b + ")")
 			).collect(Collectors.toList());
 
 			return Stream.of(d0.stream(), d1.stream(), d2.stream())
-					.reduce(Stream::concat).orElseGet(Stream::empty);
+					.reduce(Stream::concat)
+					.orElseGet(Stream::empty);
 		}
 
 		private static String parenIfNeeded(String e) {
 			String t = e.trim();
-			if (t.startsWith("(")) return t;
-			if (t.contains(" ") || t.contains(",")) return "(" + t + ")";
+			if (t.startsWith("("))
+				return t;
+			if (t.contains(" ") || t.contains(","))
+				return "(" + t + ")";
 			return t;
 		}
 
 		/**
-		 * Cartesian product helper that is safe for reuse because it **materializes** the second input.
-		 * `as` is consumed once; `bs` is collected to a list and reused inside the flatMap.
+		 * Cartesian product helper that is safe for reuse because it **materializes** the second input. `as` is
+		 * consumed once; `bs` is collected to a list and reused inside the flatMap.
 		 */
-		private static <A,B> Stream<String> cross(Stream<A> as, Stream<B> bs, java.util.function.BiFunction<A,B,String> f) {
+		private static <A, B> Stream<String> cross(Stream<A> as, Stream<B> bs,
+				java.util.function.BiFunction<A, B, String> f) {
 			List<B> bl = bs.collect(Collectors.toList());
-			return as.flatMap(a -> bl.stream().map(b -> f.apply(a,b)));
+			return as.flatMap(a -> bl.stream().map(b -> f.apply(a, b)));
 		}
 	}
+
 	private static final class Whitespace {
 		static List<String> variants(String q) {
 			String spaced = q.replace("|", " | ")
@@ -1286,51 +1301,52 @@ public class SparqlComprehensiveStreamingValidTest {
 	@TestFactory
 	Stream<DynamicTest> builtins_and_functions_valid() {
 		Stream<String> queries = Stream.of(
-						// String & case funcs, regex with flags
-						"SELECT ?s ?ok WHERE {\n" +
-								"  ?s foaf:name ?name .\n" +
-								"  BIND( STRSTARTS(LCASE(STR(?name)), \"a\") AS ?ok )\n" +
-								"  FILTER( REGEX(?name, \"a+\", \"im\") )\n" +
-								"}",
+				// String & case funcs, regex with flags
+				"SELECT ?s ?ok WHERE {\n" +
+						"  ?s foaf:name ?name .\n" +
+						"  BIND( STRSTARTS(LCASE(STR(?name)), \"a\") AS ?ok )\n" +
+						"  FILTER( REGEX(?name, \"a+\", \"im\") )\n" +
+						"}",
 
-						// IN / NOT IN lists
-						"SELECT ?s WHERE {\n" +
-								"  ?s " + PREDICATES.get(0) + " ?o .\n" +
-								"  FILTER( ?o IN (1, 2, 3) )\n" +
-								"}",
-						"SELECT ?s WHERE {\n" +
-								"  ?s " + PREDICATES.get(0) + " ?o .\n" +
-								"  FILTER( ?o NOT IN (1, 2) )\n" +
-								"}",
+				// IN / NOT IN lists
+				"SELECT ?s WHERE {\n" +
+						"  ?s " + PREDICATES.get(0) + " ?o .\n" +
+						"  FILTER( ?o IN (1, 2, 3) )\n" +
+						"}",
+				"SELECT ?s WHERE {\n" +
+						"  ?s " + PREDICATES.get(0) + " ?o .\n" +
+						"  FILTER( ?o NOT IN (1, 2) )\n" +
+						"}",
 
-						// IRI/URI/ENCODE_FOR_URI, CONCAT
-						"SELECT ?s (IRI(CONCAT(\"http://example.org/\", STR(?s))) AS ?u)\n" +
-								"WHERE { VALUES ?s { ex:s1 ex:s2 } }",
-						"SELECT (ENCODE_FOR_URI(\"A B\" ) AS ?enc) (URI(\"http://example/x\") AS ?u) WHERE { }",
+				// IRI/URI/ENCODE_FOR_URI, CONCAT
+				"SELECT ?s (IRI(CONCAT(\"http://example.org/\", STR(?s))) AS ?u)\n" +
+						"WHERE { VALUES ?s { ex:s1 ex:s2 } }",
+				"SELECT (ENCODE_FOR_URI(\"A B\" ) AS ?enc) (URI(\"http://example/x\") AS ?u) WHERE { }",
 
-						// BNODE (0-arg & 1-arg), sameTerm
-						"SELECT ?b WHERE { BIND(BNODE() AS ?b) }",
-						"SELECT ?b WHERE { BIND(BNODE(\"x\") AS ?b) }",
-						"SELECT ?s WHERE { ?s " + PREDICATES.get(0) + " ?o . FILTER( sameTerm(?s, ?s) ) }",
+				// BNODE (0-arg & 1-arg), sameTerm
+				"SELECT ?b WHERE { BIND(BNODE() AS ?b) }",
+				"SELECT ?b WHERE { BIND(BNODE(\"x\") AS ?b) }",
+				"SELECT ?s WHERE { ?s " + PREDICATES.get(0) + " ?o . FILTER( sameTerm(?s, ?s) ) }",
 
-						// STRDT / STRLANG and datatype/lang tests
-						"SELECT ?s (STRDT(\"42\", xsd:integer) AS ?lit) WHERE { ?s a " + CLASSES.get(0) + " . }",
-						"SELECT ?s (STRLANG(\"hi\", \"en\") AS ?l) WHERE { ?s a " + CLASSES.get(1) + " . }",
-						"SELECT ?s WHERE { ?s foaf:name ?name . FILTER( isLiteral(?name) && ( LANG(?name) = \"\" || LANGMATCHES(LANG(?name), \"en\") ) ) }",
+				// STRDT / STRLANG and datatype/lang tests
+				"SELECT ?s (STRDT(\"42\", xsd:integer) AS ?lit) WHERE { ?s a " + CLASSES.get(0) + " . }",
+				"SELECT ?s (STRLANG(\"hi\", \"en\") AS ?l) WHERE { ?s a " + CLASSES.get(1) + " . }",
+				"SELECT ?s WHERE { ?s foaf:name ?name . FILTER( isLiteral(?name) && ( LANG(?name) = \"\" || LANGMATCHES(LANG(?name), \"en\") ) ) }",
 
-						// String functions pack
-						"SELECT ?s (REPLACE(STR(?s), \"http://\", \"\") AS ?host) (SUBSTR(\"abcdef\",2,3) AS ?sub)\n" +
-								"WHERE { VALUES ?s { <http://e/x> <http://e/y> } }",
-						"SELECT ?s WHERE { ?s foaf:name ?n . FILTER( CONTAINS(UCASE(STR(?n)), \"AL\") && STRSTARTS(STR(?n), \"A\") || STRENDS(STR(?n), \"z\") ) }",
+				// String functions pack
+				"SELECT ?s (REPLACE(STR(?s), \"http://\", \"\") AS ?host) (SUBSTR(\"abcdef\",2,3) AS ?sub)\n" +
+						"WHERE { VALUES ?s { <http://e/x> <http://e/y> } }",
+				"SELECT ?s WHERE { ?s foaf:name ?n . FILTER( CONTAINS(UCASE(STR(?n)), \"AL\") && STRSTARTS(STR(?n), \"A\") || STRENDS(STR(?n), \"z\") ) }",
 
-						// Numeric/time/hash functions
-						"SELECT (YEAR(NOW()) AS ?y) (MONTH(NOW()) AS ?m) (DAY(NOW()) AS ?d) (HOURS(NOW()) AS ?h) WHERE { }",
-						"SELECT (ABS(-2.5) AS ?a) (ROUND(3.6) AS ?r) (CEIL(3.1) AS ?c) (FLOOR(3.9) AS ?f) (RAND() AS ?rand) WHERE { }",
-						"SELECT (SHA256(\"abc\") AS ?h) (MD5(\"abc\") AS ?h2) (STRUUID() AS ?su) (UUID() AS ?u) WHERE { }",
+				// Numeric/time/hash functions
+				"SELECT (YEAR(NOW()) AS ?y) (MONTH(NOW()) AS ?m) (DAY(NOW()) AS ?d) (HOURS(NOW()) AS ?h) WHERE { }",
+				"SELECT (ABS(-2.5) AS ?a) (ROUND(3.6) AS ?r) (CEIL(3.1) AS ?c) (FLOOR(3.9) AS ?f) (RAND() AS ?rand) WHERE { }",
+				"SELECT (SHA256(\"abc\") AS ?h) (MD5(\"abc\") AS ?h2) (STRUUID() AS ?su) (UUID() AS ?u) WHERE { }",
 
-						// Numeric checks with isNumeric
-						"SELECT ?s WHERE { ?s " + PREDICATES.get(1) + " ?v . FILTER( isNumeric(?v) && ?v >= 0 ) }"
-				).map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
+				// Numeric checks with isNumeric
+				"SELECT ?s WHERE { ?s " + PREDICATES.get(1) + " ?v . FILTER( isNumeric(?v) && ?v >= 0 ) }"
+		)
+				.map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
 				.limit(MAX_BUILTINS_CASES);
 
 		return toDynamicTests("Builtins", queries);
@@ -1339,21 +1355,22 @@ public class SparqlComprehensiveStreamingValidTest {
 	@TestFactory
 	Stream<DynamicTest> prologue_and_lexical_valid() {
 		Stream<String> queries = Stream.of(
-						// Lower/mixed-case keywords; empty group
-						"select * where { }",
+				// Lower/mixed-case keywords; empty group
+				"select * where { }",
 
-						// $var mixing with ?var
-						"SELECT $s ?o WHERE { $s " + PREDICATES.get(0) + " ?o . }",
+				// $var mixing with ?var
+				"SELECT $s ?o WHERE { $s " + PREDICATES.get(0) + " ?o . }",
 
-						// Relative IRI resolved by BASE from prologue
-						"SELECT ?s ?o WHERE { ?s <rel/path> ?o . }",
+				// Relative IRI resolved by BASE from prologue
+				"SELECT ?s ?o WHERE { ?s <rel/path> ?o . }",
 
-						// Comments + escaped strings
-						"SELECT ?s WHERE {\n" +
-								"  # a friendly comment\n" +
-								"  ?s foaf:name \"multi\\nline\" .\n" +
-								"}"
-				).map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
+				// Comments + escaped strings
+				"SELECT ?s WHERE {\n" +
+						"  # a friendly comment\n" +
+						"  ?s foaf:name \"multi\\nline\" .\n" +
+						"}"
+		)
+				.map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
 				.limit(MAX_PROLOGUE_LEXICAL_CASES);
 
 		return toDynamicTests("Prologue+Lexical", queries);
@@ -1362,18 +1379,19 @@ public class SparqlComprehensiveStreamingValidTest {
 	@TestFactory
 	Stream<DynamicTest> graph_scoping_nested_valid() {
 		Stream<String> queries = Stream.of(
-						// Constant + variable GRAPH
-						"SELECT ?s WHERE {\n" +
-								"  GRAPH " + GRAPH_IRIS.get(0) + " { ?s " + PREDICATES.get(0) + " ?o }\n" +
-								"  GRAPH ?g { ?s foaf:name ?n }\n" +
-								"}",
+				// Constant + variable GRAPH
+				"SELECT ?s WHERE {\n" +
+						"  GRAPH " + GRAPH_IRIS.get(0) + " { ?s " + PREDICATES.get(0) + " ?o }\n" +
+						"  GRAPH ?g { ?s foaf:name ?n }\n" +
+						"}",
 
-						// VALUES-bound graph IRI
-						"SELECT ?g WHERE {\n" +
-								"  VALUES ?g { " + GRAPH_IRIS.get(0) + " " + GRAPH_IRIS.get(1) + " }\n" +
-								"  GRAPH ?g { ?s ?p ?o }\n" +
-								"}"
-				).map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
+				// VALUES-bound graph IRI
+				"SELECT ?g WHERE {\n" +
+						"  VALUES ?g { " + GRAPH_IRIS.get(0) + " " + GRAPH_IRIS.get(1) + " }\n" +
+						"  GRAPH ?g { ?s ?p ?o }\n" +
+						"}"
+		)
+				.map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
 				.limit(MAX_GRAPH_NEST_CASES);
 
 		return toDynamicTests("GraphScoping", queries);
@@ -1382,20 +1400,22 @@ public class SparqlComprehensiveStreamingValidTest {
 	@TestFactory
 	Stream<DynamicTest> grouping_complex_valid() {
 		Stream<String> queries = Stream.of(
-						// COUNT(*) + HAVING + ORDER BY alias
-						"SELECT ?s (COUNT(*) AS ?c) (SUM(?v) AS ?sum) WHERE {\n" +
-								"  ?s " + PREDICATES.get(1) + " ?v . OPTIONAL { ?s " + PREDICATES.get(2) + " ?w }\n" +
-								"} GROUP BY ?s HAVING (SUM(?v) > 0) ORDER BY DESC(?sum) LIMIT 5",
+				// COUNT(*) + HAVING + ORDER BY alias
+				"SELECT ?s (COUNT(*) AS ?c) (SUM(?v) AS ?sum) WHERE {\n" +
+						"  ?s " + PREDICATES.get(1) + " ?v . OPTIONAL { ?s " + PREDICATES.get(2) + " ?w }\n" +
+						"} GROUP BY ?s HAVING (SUM(?v) > 0) ORDER BY DESC(?sum) LIMIT 5",
 
-						// Group on alias of expression; ORDER BY aggregated alias
-						"SELECT (AVG(?v) AS ?avg) ?k WHERE {\n" +
-								"  ?s " + PREDICATES.get(1) + " ?v . BIND(UCASE(STR(?s)) AS ?k)\n" +
-								"} GROUP BY ?k ORDER BY ASC(?avg)",
+				// Group on alias of expression; ORDER BY aggregated alias
+				"SELECT (AVG(?v) AS ?avg) ?k WHERE {\n" +
+						"  ?s " + PREDICATES.get(1) + " ?v . BIND(UCASE(STR(?s)) AS ?k)\n" +
+						"} GROUP BY ?k ORDER BY ASC(?avg)",
 
-						// GROUP_CONCAT variant
-						"SELECT ?s (GROUP_CONCAT(STR(?o); SEPARATOR=\"|\") AS ?g) WHERE { ?s " + PREDICATES.get(0) + " ?o . }\n" +
-								"GROUP BY ?s HAVING (COUNT(?o) >= 1)"
-				).map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
+				// GROUP_CONCAT variant
+				"SELECT ?s (GROUP_CONCAT(STR(?o); SEPARATOR=\"|\") AS ?g) WHERE { ?s " + PREDICATES.get(0) + " ?o . }\n"
+						+
+						"GROUP BY ?s HAVING (COUNT(?o) >= 1)"
+		)
+				.map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
 				.limit(MAX_GROUPING2_CASES);
 
 		return toDynamicTests("Grouping2", queries);
@@ -1404,17 +1424,18 @@ public class SparqlComprehensiveStreamingValidTest {
 	@TestFactory
 	Stream<DynamicTest> subselect_with_modifiers_valid() {
 		Stream<String> queries = Stream.of(
-						// ORDER BY + LIMIT inside subselect
-						"SELECT ?s WHERE {\n" +
-								"  { SELECT DISTINCT ?s WHERE { ?s " + PREDICATES.get(0) + " ?o } ORDER BY ?s LIMIT 10 }\n" +
-								"}",
+				// ORDER BY + LIMIT inside subselect
+				"SELECT ?s WHERE {\n" +
+						"  { SELECT DISTINCT ?s WHERE { ?s " + PREDICATES.get(0) + " ?o } ORDER BY ?s LIMIT 10 }\n" +
+						"}",
 
-						// Grouped subselect feeding outer filter
-						"SELECT ?s ?c WHERE {\n" +
-								"  { SELECT ?s (COUNT(?o) AS ?c) WHERE { ?s " + PREDICATES.get(0) + " ?o } GROUP BY ?s }\n" +
-								"  FILTER(?c > 0)\n" +
-								"}"
-				).map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
+				// Grouped subselect feeding outer filter
+				"SELECT ?s ?c WHERE {\n" +
+						"  { SELECT ?s (COUNT(?o) AS ?c) WHERE { ?s " + PREDICATES.get(0) + " ?o } GROUP BY ?s }\n" +
+						"  FILTER(?c > 0)\n" +
+						"}"
+		)
+				.map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
 				.limit(MAX_SUBSELECT2_CASES);
 
 		return toDynamicTests("Subselect2", queries);
@@ -1424,18 +1445,19 @@ public class SparqlComprehensiveStreamingValidTest {
 	@TestFactory
 	Stream<DynamicTest> construct_template_bnodes_valid() {
 		Stream<String> queries = Stream.of(
-						// Template uses simple IRIs/'a' only; includes bnode property list
-						"CONSTRUCT {\n" +
-								"  ?s a " + CLASSES.get(0) + " ; " + PREDICATES.get(0) + " ?o .\n" +
-								"  [] ex:see ?s .\n" +
-								"} WHERE { ?s " + PREDICATES.get(0) + " ?o }"
-				).map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
+				// Template uses simple IRIs/'a' only; includes bnode property list
+				"CONSTRUCT {\n" +
+						"  ?s a " + CLASSES.get(0) + " ; " + PREDICATES.get(0) + " ?o .\n" +
+						"  [] ex:see ?s .\n" +
+						"} WHERE { ?s " + PREDICATES.get(0) + " ?o }"
+		)
+				.map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
 				.limit(MAX_CONSTRUCT_TPL_CASES);
 
 		return toDynamicTests("ConstructTplBNodes", queries);
 	}
 
-	@Disabled
+//	@Disabled
 	@TestFactory
 	Stream<DynamicTest> deep_nesting_torture_valid() {
 		// Sample a modest pool of property paths (list-backed, safe to reuse)
@@ -1463,24 +1485,31 @@ public class SparqlComprehensiveStreamingValidTest {
 				.collect(Collectors.toList());
 	}
 
-	/** Deep nesting builder: mixes OPTIONAL, GRAPH, SERVICE, MINUS, FILTER EXISTS, UNION, VALUES, SubSelect, and plain groups. */
+	/**
+	 * Deep nesting builder: mixes OPTIONAL, GRAPH, SERVICE, MINUS, FILTER EXISTS, UNION, VALUES, SubSelect, and plain
+	 * groups.
+	 */
 	private static final class DeepNest {
 
 		// Number of wrapper kinds we choose from (see wrapLayer switch)
 		private static final int WRAPPER_KINDS = 10;
 
 		/**
-		 * Stream 'count' queries, each with 'depth' nested layers.
-		 * Each query is built deterministically from seed+index; memory use stays O(1) per element.
+		 * Stream 'count' queries, each with 'depth' nested layers. Each query is built deterministically from
+		 * seed+index; memory use stays O(1) per element.
 		 */
 		static Stream<String> stream(int depth, int count, List<String> pathPool, long seed) {
 			Objects.requireNonNull(pathPool, "pathPool");
-			if (pathPool.isEmpty()) throw new IllegalArgumentException("pathPool must not be empty");
+			if (pathPool.isEmpty())
+				throw new IllegalArgumentException("pathPool must not be empty");
 
 			Spliterator<String> sp = new Spliterators.AbstractSpliterator<String>(count, ORDERED) {
 				int i = 0;
-				@Override public boolean tryAdvance(java.util.function.Consumer<? super String> action) {
-					if (i >= count) return false;
+
+				@Override
+				public boolean tryAdvance(java.util.function.Consumer<? super String> action) {
+					if (i >= count)
+						return false;
 
 					SplittableRandom rnd = new SplittableRandom(seed + i);
 
@@ -1506,9 +1535,9 @@ public class SparqlComprehensiveStreamingValidTest {
 		}
 
 		/**
-		 * Wrap the current body with one layer chosen by 'kind'.
-		 * Each wrapper returns a VALID GroupGraphPattern fragment wrapping 'inner'.
-		 * We deliberately add a small triple or VALUES/BIND when needed so the group is robust.
+		 * Wrap the current body with one layer chosen by 'kind'. Each wrapper returns a VALID GroupGraphPattern
+		 * fragment wrapping 'inner'. We deliberately add a small triple or VALUES/BIND when needed so the group is
+		 * robust.
 		 */
 		private static String wrapLayer(int kind, String inner, SplittableRandom rnd, int level) {
 			String p0 = PREDICATES.get(0);
@@ -1516,65 +1545,61 @@ public class SparqlComprehensiveStreamingValidTest {
 			String p2 = PREDICATES.get(2);
 			String p3 = PREDICATES.get(3);
 			String gIri = GRAPH_IRIS.get(rnd.nextInt(GRAPH_IRIS.size()));
-			String svc  = SERVICE_IRIS.get(rnd.nextInt(SERVICE_IRIS.size()));
-			String gx   = "?g" + level;   // distinct graph var per level
-			String ux   = "?u" + level;   // distinct temp var per level
-			String vx   = "?v" + level;   // distinct temp var per level
+			String svc = SERVICE_IRIS.get(rnd.nextInt(SERVICE_IRIS.size()));
+			String gx = "?g" + level; // distinct graph var per level
+			String ux = "?u" + level; // distinct temp var per level
+			String vx = "?v" + level; // distinct temp var per level
 
 			switch (kind) {
-				case 0:
-					// Plain extra braces to push nesting depth
-					// WHERE { { inner } }
-					return "{ " + inner + " }";
+			case 0:
+				// Plain extra braces to push nesting depth
+				// WHERE { { inner } }
+				return "{ " + inner + " }";
 
-				case 1:
-					// OPTIONAL { inner } alongside a simple triple
-					// WHERE { ?s p0 ?o . OPTIONAL { inner } }
-					return "{ ?s " + p0 + " ?o . OPTIONAL { " + inner + " } }";
+			case 1:
+				// OPTIONAL { inner } alongside a simple triple
+				// WHERE { ?s p0 ?o . OPTIONAL { inner } }
+				return "{ ?s " + p0 + " ?o . OPTIONAL { " + inner + " } }";
 
-				case 2:
-					// GRAPH <iri> { inner }
-					return "{ GRAPH " + gIri + " { " + inner + " } }";
+			case 2:
+				// GRAPH <iri> { inner }
+				return "{ GRAPH " + gIri + " { " + inner + " } }";
 
-				case 3:
-					// SERVICE SILENT <endpoint> { inner }
-					return "{ SERVICE SILENT " + svc + " { " + inner + " } }";
+			case 3:
+				// SERVICE SILENT <endpoint> { inner }
+				return "{ SERVICE SILENT " + svc + " { " + inner + " } }";
 
-				case 4:
-					// MINUS { inner } – keep a guard triple so group isn't empty
-					return "{ ?s " + p1 + " " + vx + " . MINUS { " + inner + " } }";
+			case 4:
+				// MINUS { inner } – keep a guard triple so group isn't empty
+				return "{ ?s " + p1 + " " + vx + " . MINUS { " + inner + " } }";
 
-				case 5:
-					// FILTER EXISTS { inner } – again add a guard triple
-					return "{ ?s " + p2 + " " + ux + " . FILTER EXISTS { " + inner + " } }";
+			case 5:
+				// FILTER EXISTS { inner } – again add a guard triple
+				return "{ ?s " + p2 + " " + ux + " . FILTER EXISTS { " + inner + " } }";
 
-				case 6:
-					// SubSelect wrapping: { SELECT ?s WHERE { inner } }
-					// Ensures ?s is projected from inside.
-					return "{ SELECT ?s WHERE { " + inner + " } }";
+			case 6:
+				// SubSelect wrapping: { SELECT ?s WHERE { inner } }
+				// Ensures ?s is projected from inside.
+				return "{ SELECT ?s WHERE { " + inner + " } }";
 
-				case 7:
-					// UNION with a simple alternate branch
-					// { { inner } UNION { ?u p3 ?v . } }
-					return "{ { " + inner + " } UNION { " + ux + " " + p3 + " " + vx + " . } }";
+			case 7:
+				// UNION with a simple alternate branch
+				// { { inner } UNION { ?u p3 ?v . } }
+				return "{ { " + inner + " } UNION { " + ux + " " + p3 + " " + vx + " . } }";
 
-				case 8:
-					// GRAPH ?gN { inner } – variable graph (safe and valid)
-					return "{ GRAPH " + gx + " { " + inner + " } }";
+			case 8:
+				// GRAPH ?gN { inner } – variable graph (safe and valid)
+				return "{ GRAPH " + gx + " { " + inner + " } }";
 
-				case 9:
-					// VALUES + inner – VALUES placed before inner inside the group
-					// VALUES doesn't need a trailing dot
-					return "{ VALUES ?s { ex:s1 ex:s2 } " + inner + " }";
+			case 9:
+				// VALUES + inner – VALUES placed before inner inside the group
+				// VALUES doesn't need a trailing dot
+				return "{ VALUES ?s { ex:s1 ex:s2 } " + inner + " }";
 
-				default:
-					return "{ " + inner + " }";
+			default:
+				return "{ " + inner + " }";
 			}
 		}
 	}
-
-
-
-
 
 }
