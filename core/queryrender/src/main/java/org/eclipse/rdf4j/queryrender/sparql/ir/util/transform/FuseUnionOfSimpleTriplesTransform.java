@@ -171,9 +171,9 @@ public final class FuseUnionOfSimpleTriplesTransform extends BaseTransform {
 				} else {
 					return null;
 				}
-				// Graph ref must be identical (both null or same var)
+				// Graph ref must be identical (both null or same var/value)
 				if ((graphRef == null && g != null) || (graphRef != null && g == null)
-						|| (graphRef != null && !sameVar(graphRef, g))) {
+						|| (graphRef != null && !sameVarOrValue(graphRef, g))) {
 					return null;
 				}
 			}
