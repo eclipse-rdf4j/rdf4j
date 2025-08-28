@@ -1051,7 +1051,7 @@ public class TupleExprIRRenderer {
 	 * for clarity and testability.
 	 */
 	public IrSelect toIRSelect(final TupleExpr tupleExpr) {
-		final Normalized n = normalize(tupleExpr);
+		final Normalized n = normalize(tupleExpr, false);
 		applyAggregateHoisting(n);
 		final IrSelect ir = new IrSelect();
 		ir.setDistinct(n.distinct);
@@ -1134,7 +1134,7 @@ public class TupleExprIRRenderer {
 
 	/** Build IrSelect without running IR transforms (used for nested subselects where we keep raw structure). */
 	private IrSelect toIRSelectRaw(final TupleExpr tupleExpr) {
-		final Normalized n = normalize(tupleExpr);
+		final Normalized n = normalize(tupleExpr, true);
 		applyAggregateHoisting(n);
 		final IrSelect ir = new IrSelect();
 		ir.setDistinct(n.distinct);
@@ -1352,6 +1352,16 @@ public class TupleExprIRRenderer {
 	 * HAVING where appropriate. The remaining tree in {@code where} is the raw WHERE pattern to translate into IR.
 	 */
 	private Normalized normalize(final TupleExpr root) {
+		return normalize(root, false);
+	}
+
+	/**
+	 * Normalize a parsed TupleExpr into a lightweight carrier, with control over whether to peel wrappers that mark a
+	 * variable-scope change. When building a nested subselect (toIRSelectRaw), we want to peel those wrappers to
+	 * capture LIMIT/OFFSET/DISTINCT/ORDER inside the subselect. When normalizing the top-level query, we should stop at
+	 * such wrappers to avoid hoisting nested modifiers.
+	 */
+	private Normalized normalize(final TupleExpr root, final boolean peelScopedWrappers) {
 		final Normalized n = new Normalized();
 		TupleExpr cur = root;
 
@@ -1367,6 +1377,12 @@ public class TupleExprIRRenderer {
 
 			if (cur instanceof Slice) {
 				final Slice s = (Slice) cur;
+				// If this Slice starts a new variable scope, it denotes a nested subselect.
+				// Only peel it if explicitly requested (building a raw subselect IR), otherwise leave
+				// it in the WHERE tree so IRBuilder can render a subselect instead of hoisting LIMIT/OFFSET.
+				if (s.isVariableScopeChange() && !peelScopedWrappers) {
+					break;
+				}
 				n.limit = s.getLimit();
 				n.offset = s.getOffset();
 				cur = s.getArg();
@@ -1375,21 +1391,34 @@ public class TupleExprIRRenderer {
 			}
 
 			if (cur instanceof Distinct) {
+				final Distinct d = (Distinct) cur;
+				// DISTINCT that changes scope belongs to a nested subselect; only peel in subselect mode.
+				if (d.isVariableScopeChange() && !peelScopedWrappers) {
+					break;
+				}
 				n.distinct = true;
-				cur = ((Distinct) cur).getArg();
+				cur = d.getArg();
 				changed = true;
 				continue;
 			}
 
 			if (cur instanceof Reduced) {
+				final Reduced r = (Reduced) cur;
+				if (r.isVariableScopeChange() && !peelScopedWrappers) {
+					break;
+				}
 				n.reduced = true;
-				cur = ((Reduced) cur).getArg();
+				cur = r.getArg();
 				changed = true;
 				continue;
 			}
 
 			if (cur instanceof Order) {
 				final Order o = (Order) cur;
+				// ORDER that starts a new scope indicates a subselect; only peel in subselect mode.
+				if (o.isVariableScopeChange() && !peelScopedWrappers) {
+					break;
+				}
 				n.orderBy.addAll(o.getElements());
 				cur = o.getArg();
 				changed = true;
@@ -3234,6 +3263,40 @@ public class TupleExprIRRenderer {
 			// Build a raw subselect; defer any zero-or-one/collection/path normalization to IR transforms.
 			IrSelect sub = toIRSelectRaw(p);
 			where.add(new IrSubSelect(sub));
+		}
+
+		@Override
+		public void meet(final Slice s) {
+			// A Slice that starts a new scope represents a nested subselect with LIMIT/OFFSET.
+			if (s.isVariableScopeChange()) {
+				IrSelect sub = toIRSelectRaw(s);
+				where.add(new IrSubSelect(sub));
+				return;
+			}
+			// Otherwise, descend normally
+			s.getArg().visit(this);
+		}
+
+		@Override
+		public void meet(final Distinct d) {
+			// DISTINCT that changes scope belongs to a nested subselect.
+			if (d.isVariableScopeChange()) {
+				IrSelect sub = toIRSelectRaw(d);
+				where.add(new IrSubSelect(sub));
+				return;
+			}
+			d.getArg().visit(this);
+		}
+
+		@Override
+		public void meet(final Order o) {
+			// ORDER that changes scope belongs to a nested subselect.
+			if (o.isVariableScopeChange()) {
+				IrSelect sub = toIRSelectRaw(o);
+				where.add(new IrSubSelect(sub));
+				return;
+			}
+			o.getArg().visit(this);
 		}
 
 		// Attempt to parse a complex zero-or-one over one or more non-zero branches (alternation),

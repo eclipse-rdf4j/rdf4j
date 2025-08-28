@@ -57,7 +57,7 @@ public final class IrTransforms {
 		// Single application of the ordered passes via transformChildren().
 		// The bounded loop is kept to make it trivial to turn this into a multi‑pass fixed‑point
 		// driver in the future; current passes aim to be idempotent in one pass.
-		for (int i = 0; i < 100; i++) {
+		for (int i = 0; i < 10; i++) {
 			// Use transformChildren to rewrite WHERE/BGPs functionally in a single pass order
 			irNode = select.transformChildren(child -> {
 				if (child instanceof IrBGP) {
