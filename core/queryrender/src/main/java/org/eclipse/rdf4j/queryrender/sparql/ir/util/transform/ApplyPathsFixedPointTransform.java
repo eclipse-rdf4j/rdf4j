@@ -49,6 +49,8 @@ public final class ApplyPathsFixedPointTransform extends BaseTransform {
 			next = FusePathPlusTailAlternationUnionTransform.apply(next, r);
 			// Fuse a pre-path triple followed by a UNION of two tail branches into a single alternation tail
 			next = FusePrePathThenUnionAlternationTransform.apply(next, r);
+			// Fuse UNION of bare-NPS path triples (optionally GRAPH-wrapped) into a single NPS with combined members
+			next = FuseUnionOfNpsBranchesTransform.apply(next, r);
 			// Merge adjacent GRAPH blocks with the same graph ref so that downstream fusers see a single body
 			next = CoalesceAdjacentGraphsTransform.apply(next);
 			// Within UNIONs, partially fuse compatible path-triple branches into a single alternation branch
