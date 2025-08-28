@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CanonicalizeGroupe
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CoalesceAdjacentGraphsTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FlattenSingletonUnionsTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseAltInverseTailBGPTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupFilterExistsWithPrecedingTriplesTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.MergeOptionalIntoPrecedingGraphTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeNpsMemberOrderTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeZeroOrOneSubselectTransform;
@@ -78,6 +79,8 @@ public final class IrTransforms {
 					w = MergeOptionalIntoPrecedingGraphTransform.apply(w);
 					w = FuseAltInverseTailBGPTransform.apply(w, r);
 					w = FlattenSingletonUnionsTransform.apply(w);
+					// Wrap preceding triple with FILTER EXISTS { { ... } } into a grouped block for stability
+					w = GroupFilterExistsWithPrecedingTriplesTransform.apply(w);
 					// Reorder OPTIONAL-level filters before nested OPTIONALs when safe (variable-availability
 					// heuristic)
 					w = ReorderFiltersInOptionalBodiesTransform.apply(w, r);
