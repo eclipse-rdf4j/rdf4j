@@ -2514,7 +2514,6 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg());
 	}
 
-
 	@Test
 	void testPathGraphFilterExists() {
 		String q = "SELECT ?s ?o\n" +

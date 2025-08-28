@@ -65,7 +65,7 @@ public final class MergeOptionalIntoPrecedingGraphTransform extends BaseTransfor
 				if (ow != null && ow.getLines().size() == 1 && ow.getLines().get(0) instanceof IrGraph) {
 					// Handle OPTIONAL { GRAPH ?g { simple } } → OPTIONAL { simple } when graph matches
 					IrGraph inner = (IrGraph) ow.getLines().get(0);
-					if (sameVar(g.getGraph(), inner.getGraph()) && isSimpleOptionalBody(inner.getWhere())) {
+					if (sameVarOrValue(g.getGraph(), inner.getGraph()) && isSimpleOptionalBody(inner.getWhere())) {
 						simpleOw = inner.getWhere();
 					}
 				} else if (ow != null && ow.getLines().size() >= 1) {
@@ -82,7 +82,7 @@ public final class MergeOptionalIntoPrecedingGraphTransform extends BaseTransfor
 								break;
 							}
 							innerGraph = (IrGraph) ln;
-							if (!sameVar(g.getGraph(), innerGraph.getGraph())) {
+							if (!sameVarOrValue(g.getGraph(), innerGraph.getGraph())) {
 								ok = false;
 								break;
 							}

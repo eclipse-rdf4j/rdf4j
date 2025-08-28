@@ -52,7 +52,7 @@ public final class CoalesceAdjacentGraphsTransform extends BaseTransform {
 				int j = i + 1;
 				while (j < in.size() && (in.get(j) instanceof IrGraph)) {
 					final IrGraph gj = (IrGraph) in.get(j);
-					if (!sameVar(g1.getGraph(), gj.getGraph())) {
+					if (!sameVarOrValue(g1.getGraph(), gj.getGraph())) {
 						break;
 					}
 					if (gj.getWhere() != null) {
