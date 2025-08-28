@@ -147,7 +147,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						}
 						if (k < in.size() && in.get(k) instanceof IrGraph) {
 							final IrGraph g2 = (IrGraph) in.get(k);
-							if (sameVar(g1.getGraph(), g2.getGraph())) {
+							if (sameVarOrValue(g1.getGraph(), g2.getGraph())) {
 								mt2 = findTripleWithConstPredicateReusingObject(g2.getWhere(), mt1.object);
 								consumedG2 = (mt2 != null);
 							}
@@ -224,7 +224,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				}
 
 				// Must be same graph term to fuse
-				if (!sameVar(g1.getGraph(), g2.getGraph())) {
+				if (!sameVarOrValue(g1.getGraph(), g2.getGraph())) {
 					out.add(n);
 					continue;
 				}

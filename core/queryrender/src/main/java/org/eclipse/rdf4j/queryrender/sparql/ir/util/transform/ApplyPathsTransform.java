@@ -426,7 +426,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 									}
 									if (unionGraphRef == null) {
 										unionGraphRef = gX.getGraph();
-									} else if (!sameVar(unionGraphRef, gX.getGraph())) {
+									} else if (!sameVarOrValue(unionGraphRef, gX.getGraph())) {
 										ok = false;
 										break;
 									}
@@ -617,11 +617,11 @@ public final class ApplyPathsTransform extends BaseTransform {
 						break;
 					}
 
-					// Graph consistency across branches
+					// Graph consistency across branches (allow constants to compare by value)
 					if (branchGraph != null) {
 						if (graphRef == null) {
 							graphRef = branchGraph;
-						} else if (!sameVar(graphRef, branchGraph)) {
+						} else if (!sameVarOrValue(graphRef, branchGraph)) {
 							ok = false;
 							break;
 						}
