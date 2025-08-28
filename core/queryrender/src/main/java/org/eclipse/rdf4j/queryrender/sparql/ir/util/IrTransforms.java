@@ -131,6 +131,11 @@ public final class IrTransforms {
 					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CanonicalizeUnionBranchOrderTransform
 							.apply(w, select);
 
+					// Preserve explicit grouping for UNION branches that combine VALUES with a negated
+					// property path triple, to maintain textual stability expected by tests.
+					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupValuesAndNpsInUnionBranchTransform
+							.apply(w);
+
 					return w;
 				}
 				return child;
