@@ -480,6 +480,25 @@ public class BaseTransform {
 		return Objects.equals(a.getName(), b.getName());
 	}
 
+	/**
+	 * True when both variables denote the same term: compares names if both are variables without value, or compares
+	 * values if both are constants. Returns false when one has a value and the other does not.
+	 */
+	public static boolean sameVarOrValue(Var a, Var b) {
+		if (a == null || b == null) {
+			return false;
+		}
+		final boolean av = a.hasValue();
+		final boolean bv = b.hasValue();
+		if (av && bv) {
+			return Objects.equals(a.getValue(), b.getValue());
+		}
+		if (!av && !bv) {
+			return Objects.equals(a.getName(), b.getName());
+		}
+		return false;
+	}
+
 	public static boolean isAnonPathVar(Var v) {
 		if (v == null || v.hasValue()) {
 			return false;
