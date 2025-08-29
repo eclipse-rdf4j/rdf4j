@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPropertyList;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
 
@@ -90,7 +89,7 @@ public final class StabilizeGroupingTransform extends BaseTransform {
 					if (qualifiesForExistsInnerGrouping(inner)) {
 						inner = wrap(inner);
 					}
-					out.add(new IrFilter(new IrExists(inner)));
+					out.add(new IrFilter(new IrExists(inner, ex.isNewScope())));
 					continue;
 				}
 				// Otherwise, keep as-is
