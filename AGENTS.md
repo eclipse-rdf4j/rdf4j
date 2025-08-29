@@ -124,6 +124,27 @@ Do not modify existing headers’ years.
   - `sed -n '1,200p' path/to/File.java`
   - `sed -n '201,400p' path/to/File.java`
 
+## Autonomy Rules (Act > Ask)
+- Default: act with assumptions. Document assumptions in your plan and final answer.
+- Keep going: chain steps without waiting for permission; send short progress updates before long actions.
+- Ask only when:
+  - Blocked by sandbox/approvals/network policy or missing secrets.
+  - The decision is destructive/irreversible, repo‑wide, or impacts public APIs.
+  - Adding dependencies, changing build profiles, or altering licensing.
+- Prefer reversible moves: take the smallest local change that unblocks progress; add/execute targeted tests to validate before expanding scope.
+- Choose defaults:
+  - Tests: start with `-pl <module>` then `-Dtest=Class#method`.
+  - Build: use `-o` quick profile; drop `-o` once to fetch missing deps, then return offline.
+  - Formatting: run formatter/impsort/xml‑format proactively before verify.
+  - Reports: read surefire/failsafe locally; expand scope only when needed.
+- Error handling:
+  - On compile/test failure: fix root cause locally, rerun targeted tests, then broaden.
+  - On flaky tests: rerun class/method, stabilize cause before repo‑wide runs.
+  - On formatting/license issues: apply prescribed commands/headers immediately.
+- Communication:
+  - Preambles: 1–2 sentences grouping upcoming actions.
+  - Updates: inform to maintain visibility; do not request permission unless in “Ask only when” above.
+
 ## Answer Template (Use This)
 - What changed: summary of approach and rationale.
 - Files touched: list file paths.
