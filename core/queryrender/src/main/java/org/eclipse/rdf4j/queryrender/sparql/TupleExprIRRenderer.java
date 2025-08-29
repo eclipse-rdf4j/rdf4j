@@ -18,13 +18,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
-import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -38,7 +35,6 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
-import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Avg;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.Bound;
@@ -47,9 +43,7 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Datatype;
-import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
-import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.IRIFunction;
@@ -58,7 +52,6 @@ import org.eclipse.rdf4j.query.algebra.IsBNode;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
 import org.eclipse.rdf4j.query.algebra.IsNumeric;
 import org.eclipse.rdf4j.query.algebra.IsURI;
-import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
@@ -68,19 +61,15 @@ import org.eclipse.rdf4j.query.algebra.Max;
 import org.eclipse.rdf4j.query.algebra.Min;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
-import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Sample;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGroupByElem;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
@@ -148,14 +137,10 @@ public class TupleExprIRRenderer {
 	// ---- Naming hints provided by the parser ----
 
 	// ---------------- Configuration ----------------
-	private static final String ANON_PATH_PREFIX = "_anon_path_";
 	/** Anonymous blank node variables (originating from [] in the original query). */
 	private static final String ANON_BNODE_PREFIX = "_anon_bnode_";
 	// Pattern used for conservative Turtle PN_LOCAL acceptance per segment; overall check also prohibits trailing dots.
 	private static final Pattern PN_LOCAL_CHUNK = Pattern.compile("(?:%[0-9A-Fa-f]{2}|[-\\p{L}\\p{N}_\\u00B7]|:)+");
-	private static final int PREC_ALT = 1;
-	private static final int PREC_SEQ = 2;
-	private static final int PREC_ATOM = 3;
 
 	static {
 		Map<String, String> m = new HashMap<>();
@@ -219,10 +204,6 @@ public class TupleExprIRRenderer {
 		this.prefixIndex = new PrefixIndex(this.cfg.prefixes);
 	}
 
-	private static boolean isAnonPathVar(Var v) {
-		return v != null && !v.hasValue() && v.getName() != null && v.getName().startsWith(ANON_PATH_PREFIX);
-	}
-
 	/** Identify anonymous blank-node placeholder variables (to render as "[]"). */
 	private static boolean isAnonBNodeVar(Var v) {
 		if (v == null || v.hasValue()) {
@@ -244,39 +225,7 @@ public class TupleExprIRRenderer {
 		return true;
 	}
 
-	private static String quantifier(final long min, final long max) {
-		final boolean unbounded = max < 0 || max == Integer.MAX_VALUE;
-		if (min == 0 && unbounded) {
-			return "*";
-		}
-		if (min == 1 && unbounded) {
-			return "+";
-		}
-		if (min == 0 && max == 1) {
-			return "?";
-		}
-		if (unbounded) {
-			return "{" + min + ",}";
-		}
-		if (min == max) {
-			return "{" + min + "}";
-		}
-		return "{" + min + "," + max + "}";
-	}
-
 	// ---------------- Experimental textual IR API ----------------
-
-	private static long getMaxLengthSafe(final ArbitraryLengthPath p) {
-		try {
-			final Method m = ArbitraryLengthPath.class.getMethod("getMaxLength");
-			final Object v = m.invoke(p);
-			if (v instanceof Number) {
-				return ((Number) v).longValue();
-			}
-		} catch (ReflectiveOperationException ignore) {
-		}
-		return -1L;
-	}
 
 	private static String escapeLiteral(final String s) {
 		final StringBuilder b = new StringBuilder(Math.max(16, s.length()));
@@ -340,59 +289,6 @@ public class TupleExprIRRenderer {
 			return ">=";
 		default:
 			return "/*?*/";
-		}
-	}
-
-	/**
-	 * Extract a simple predicate IRI from the path expression (StatementPattern with constant predicate).
-	 */
-
-	// ---------------- Best-effort path reassembly from BGP+FILTER ----------------
-	private static void flattenJoin(TupleExpr expr, List<TupleExpr> out) {
-		if (expr instanceof Join) {
-			final Join j = (Join) expr;
-			flattenJoin(j.getLeftArg(), out);
-			flattenJoin(j.getRightArg(), out);
-		} else {
-			out.add(expr);
-		}
-	}
-
-	// ---------------- Public entry points ----------------
-
-	private static boolean sameVar(Var a, Var b) {
-		if (a == null || b == null) {
-			return false;
-		}
-		if (a.hasValue() || b.hasValue()) {
-			return false;
-		}
-		return Objects.equals(a.getName(), b.getName());
-	}
-
-	/** Flatten a Union tree preserving left-to-right order. */
-	private static void flattenUnion(TupleExpr e, List<TupleExpr> out) {
-		if (e instanceof Union) {
-			Union u = (Union) e;
-			if (u.isVariableScopeChange()) {
-
-				if (u.getLeftArg() instanceof Union && !((Union) u.getLeftArg()).isVariableScopeChange()) {
-					out.add(u.getLeftArg());
-				} else {
-					flattenUnion(u.getLeftArg(), out);
-				}
-				if (u.getRightArg() instanceof Union && !((Union) u.getRightArg()).isVariableScopeChange()) {
-					out.add(u.getRightArg());
-				} else {
-					flattenUnion(u.getRightArg(), out);
-				}
-			} else {
-				flattenUnion(u.getLeftArg(), out);
-				flattenUnion(u.getRightArg(), out);
-			}
-
-		} else {
-			out.add(e);
 		}
 	}
 
@@ -625,19 +521,6 @@ public class TupleExprIRRenderer {
 
 	String renderValuePublic(final Value v) {
 		return renderValue(v);
-	}
-
-	// Helper for converter: build textual path expression for an ArbitraryLengthPath using renderer internals
-	String buildPathExprForArbitraryLengthPath(final ArbitraryLengthPath p) {
-		final PathNode inner = parseAPathInner(p.getPathExpression(), p.getSubjectVar(), p.getObjectVar());
-		if (inner == null) {
-			throw new IllegalStateException(
-					"Failed to parse ArbitraryLengthPath inner expression: " + p.getPathExpression());
-		}
-		final long min = p.getMinLength();
-		final long max = getMaxLengthSafe(p);
-		final PathNode q = new PathQuant(inner, min, max);
-		return (q.prec() < PREC_SEQ ? "(" + q.render() + ")" : q.render());
 	}
 
 	public void addOverrides(Map<String, String> overrides) {
@@ -1214,395 +1097,6 @@ public class TupleExprIRRenderer {
 		return null;
 	}
 
-	private PathNode parseAPathInner(final TupleExpr innerExpr, final Var subj, final Var obj) {
-		if (innerExpr instanceof StatementPattern) {
-			PathNode n = parseAtomicFromStatement((StatementPattern) innerExpr, subj, obj);
-			if (n != null) {
-				return n;
-			}
-		}
-		if (innerExpr instanceof Union) {
-			// Special-case: UNION of Filter( ?p != <iri> ) around a single-step triple encodes a negated property set
-			// possibly with forward/inverse members, as produced by the parser for !(iri|^iri).
-			PathNode nps = tryParseNegatedPropertySetFromUnion(innerExpr, subj, obj);
-			if (nps != null) {
-				return nps;
-			}
-			List<TupleExpr> branches = new ArrayList<>();
-			flattenUnion(innerExpr, branches);
-			List<PathNode> alts = new ArrayList<>(branches.size());
-			for (TupleExpr b : branches) {
-				if (!(b instanceof StatementPattern)) {
-					return null;
-				}
-				PathNode n = parseAtomicFromStatement((StatementPattern) b, subj, obj);
-				if (n == null) {
-					return null;
-				}
-				alts.add(n);
-			}
-			return new PathAlt(alts);
-		}
-
-		// Special handling: inner is a sequence (Join) where the first part is an alternation of
-		// single-step edges from 'subj' to an _anon_path_* mid var, and the second part is a
-		// zero-or-one subpath expressed as a Projection/Union (ZeroLengthPath | chain of SPs).
-		// This shape is produced by the SPARQL parser for expressions like
-		// ( (ex:a|^ex:b) / (ex:c/foaf:knows)? )
-		// We conservatively detect and build a PathSeq for this case so that the surrounding
-		// ArbitraryLengthPath can apply a '*' quantifier without losing semantics.
-		if (innerExpr instanceof Join) {
-			PathNode seq = tryParseJoinOfUnionAndZeroOrOne(innerExpr, subj);
-			if (seq != null) {
-				return seq;
-			}
-			// General handling: a Join representing a sequence where each element is either a
-			// single StatementPattern step, or a UNION of such single-step alternatives. This covers
-			// patterns like ( (p|^p)/(q|^q)/r ), including the case where the final step reaches 'obj'.
-			seq = buildPathSequenceFromJoinAllowingUnions(innerExpr, subj, obj);
-			if (seq != null) {
-				return seq;
-			}
-		}
-
-		// Best-effort: handle a simple sequence subpath represented as a Join/chain of StatementPatterns
-		// connecting subj -> obj via _anon_path_* bridge variables (or directly to obj on the last step).
-		// This reuses buildPathSequenceFromChain which already enforces strict linearity and constant IRI steps.
-		{
-			return buildPathSequenceFromChain(innerExpr, subj, obj);
-		}
-	}
-
-	/**
-	 * Build a PathNode sequence from a Join whose elements are either simple single-step StatementPatterns or UNIONs of
-	 * such single-step patterns. Each element must connect the current variable to a shared mid variable (or directly
-	 * to 'obj' on the last element). Predicates must be constant IRIs; direction is encoded via inverse flag. Context
-	 * variables (GRAPH) are ignored at this stage (handled when placing the path triple).
-	 */
-	private PathNode buildPathSequenceFromJoinAllowingUnions(final TupleExpr expr, final Var subj, final Var obj) {
-		List<TupleExpr> parts = new ArrayList<>();
-		flattenJoin(expr, parts);
-		if (parts.isEmpty()) {
-			return null;
-		}
-		Var cur = subj;
-		List<PathNode> steps = new ArrayList<>();
-		for (int i = 0; i < parts.size(); i++) {
-			TupleExpr part = parts.get(i);
-			boolean last = (i == parts.size() - 1);
-			if (part instanceof StatementPattern) {
-				StatementPattern sp = (StatementPattern) part;
-				Var pv = sp.getPredicateVar();
-				if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
-					return null;
-				}
-				Var ss = sp.getSubjectVar();
-				Var oo = sp.getObjectVar();
-				if (sameVar(cur, ss) && (isAnonPathVar(oo) || (last && sameVar(oo, obj)))) {
-					steps.add(new PathAtom((IRI) pv.getValue(), false));
-					cur = oo;
-				} else if (sameVar(cur, oo) && (isAnonPathVar(ss) || (last && sameVar(ss, obj)))) {
-					steps.add(new PathAtom((IRI) pv.getValue(), true));
-					cur = ss;
-				} else {
-					return null;
-				}
-			} else if (part instanceof Union) {
-				// Each leaf must be a single-step triple from 'cur' to a shared mid var (or to 'obj' if last)
-				List<TupleExpr> leaves = new ArrayList<>();
-				flattenUnion(part, leaves);
-				if (leaves.isEmpty()) {
-					return null;
-				}
-				Var mid = null;
-				List<PathNode> alts = new ArrayList<>();
-				for (TupleExpr leaf : leaves) {
-					if (!(leaf instanceof StatementPattern)) {
-						return null;
-					}
-					StatementPattern sp = (StatementPattern) leaf;
-					Var pv = sp.getPredicateVar();
-					if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
-						return null;
-					}
-					Var ss = sp.getSubjectVar();
-					Var oo = sp.getObjectVar();
-					boolean forwardOk = sameVar(cur, ss) && (isAnonPathVar(oo) || (last && sameVar(oo, obj)));
-					boolean inverseOk = sameVar(cur, oo) && (isAnonPathVar(ss) || (last && sameVar(ss, obj)));
-					if (!forwardOk && !inverseOk) {
-						return null;
-					}
-					Var localMid = forwardOk ? oo : ss;
-					if (mid == null) {
-						mid = localMid;
-					} else if (!sameVar(mid, localMid)) {
-						return null; // branches don't share the same mid var
-					}
-					alts.add(new PathAtom((IRI) pv.getValue(), inverseOk));
-				}
-				steps.add(alts.size() == 1 ? alts.get(0) : new PathAlt(alts));
-				cur = mid;
-			} else {
-				return null; // unsupported element inside sequence
-			}
-		}
-		// Ensure the sequence reaches the expected object variable
-		if (!sameVar(cur, obj)) {
-			return null;
-		}
-		return steps.size() == 1 ? steps.get(0) : new PathSeq(steps);
-	}
-
-	/** Try to parse a UNION of Filter+StatementPattern branches representing a negated property set. */
-	private PathNode tryParseNegatedPropertySetFromUnion(final TupleExpr expr, final Var subj, final Var obj) {
-		List<TupleExpr> leaves = new ArrayList<>();
-		flattenUnion(expr, leaves);
-		if (leaves.isEmpty()) {
-			return null;
-		}
-		List<PathNode> members = new ArrayList<>();
-		for (TupleExpr leaf : leaves) {
-			if (!(leaf instanceof Filter)) {
-				return null; // require Filter wrapping the single triple
-			}
-			Filter f = (Filter) leaf;
-			if (!(f.getArg() instanceof StatementPattern)) {
-				return null;
-			}
-			StatementPattern sp = (StatementPattern) f.getArg();
-			// Condition must be a simple inequality between a Var and a constant IRI
-			if (!(f.getCondition() instanceof Compare)) {
-				return null;
-			}
-			Compare cmp = (Compare) f.getCondition();
-			if (cmp.getOperator() != CompareOp.NE) {
-				return null;
-			}
-			Var pv;
-			IRI bad;
-			if (cmp.getLeftArg() instanceof Var && cmp.getRightArg() instanceof ValueConstant
-					&& ((ValueConstant) cmp.getRightArg()).getValue() instanceof IRI) {
-				pv = (Var) cmp.getLeftArg();
-				bad = (IRI) ((ValueConstant) cmp.getRightArg()).getValue();
-			} else if (cmp.getRightArg() instanceof Var && cmp.getLeftArg() instanceof ValueConstant
-					&& ((ValueConstant) cmp.getLeftArg()).getValue() instanceof IRI) {
-				pv = (Var) cmp.getRightArg();
-				bad = (IRI) ((ValueConstant) cmp.getLeftArg()).getValue();
-			} else {
-				return null;
-			}
-			// The triple must use the same predicate variable being compared
-			if (!sameVar(sp.getPredicateVar(), pv)) {
-				return null;
-			}
-			// Orientation: either subj --?pv--> obj, or obj --?pv--> subj
-			boolean forward = sameVar(sp.getSubjectVar(), subj) && sameVar(sp.getObjectVar(), obj);
-			boolean inverse = sameVar(sp.getSubjectVar(), obj) && sameVar(sp.getObjectVar(), subj);
-			if (!forward && !inverse) {
-				return null;
-			}
-			members.add(new PathAtom(bad, inverse));
-		}
-		PathNode inner = (members.size() == 1) ? members.get(0) : new PathAlt(members);
-		return new PathNeg(inner);
-	}
-
-	/** Try to parse a UNION whose leaves are single-step StatementPatterns from subj to a shared mid var. */
-	private FirstStepUnion parseFirstStepUnion(final TupleExpr e, final Var subj) {
-		List<TupleExpr> leaves = new ArrayList<>();
-		flattenUnion(e, leaves);
-		if (leaves.isEmpty()) {
-			return null;
-		}
-		List<PathNode> alts = new ArrayList<>();
-		Var mid = null;
-		for (TupleExpr leaf : leaves) {
-			if (!(leaf instanceof StatementPattern)) {
-				return null;
-			}
-			StatementPattern sp = (StatementPattern) leaf;
-			Var p = sp.getPredicateVar();
-			if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
-				return null;
-			}
-			Var ss = sp.getSubjectVar();
-			Var oo = sp.getObjectVar();
-			boolean forward = sameVar(ss, subj) && isAnonPathVar(oo);
-			boolean inverse = sameVar(oo, subj) && isAnonPathVar(ss);
-			if (!forward && !inverse) {
-				return null;
-			}
-			Var localMid = forward ? oo : ss;
-			if (mid == null) {
-				mid = localMid;
-			} else if (!sameVar(mid, localMid)) {
-				return null; // branches don't share the same mid var
-			}
-			PathNode atom = new PathAtom((IRI) p.getValue(), inverse);
-			alts.add(atom);
-		}
-		PathNode n = (alts.size() == 1) ? alts.get(0) : new PathAlt(alts);
-		return new FirstStepUnion(mid, n);
-	}
-
-	/**
-	 * Try to parse a Projection that represents a zero-or-one sequence, i.e., a UNION of a ZeroLengthPath branch and a
-	 * chain of StatementPatterns from ?s to ?o. Returns the endpoints (?s, ?o) and a PathNode rendering "(seq)?".
-	 */
-	private ZeroOrOneNode parseZeroOrOneProjectionNode(final TupleExpr e) {
-		TupleExpr cur = e;
-		// Allow an extra DISTINCT wrapper around the projection
-		if (cur instanceof Distinct) {
-			cur = ((Distinct) cur).getArg();
-		}
-		if (!(cur instanceof Projection)) {
-			return null;
-		}
-		Projection proj = (Projection) cur;
-		TupleExpr arg = proj.getArg();
-		List<TupleExpr> leaves = new ArrayList<>();
-		flattenUnion(arg, leaves);
-		if (leaves.size() < 2) {
-			return null;
-		}
-		ZeroLengthPath zlp = null;
-		List<TupleExpr> nonZero = new ArrayList<>();
-		for (TupleExpr leaf : leaves) {
-			if (leaf instanceof ZeroLengthPath) {
-				if (zlp != null) {
-					return null; // more than one zero-length branch
-				}
-				zlp = (ZeroLengthPath) leaf;
-			} else {
-				nonZero.add(leaf);
-			}
-		}
-		if (zlp == null || nonZero.isEmpty()) {
-			return null;
-		}
-		Var s = zlp.getSubjectVar();
-		Var o = zlp.getObjectVar();
-		if (s == null || o == null) {
-			return null;
-		}
-		List<PathNode> seqs = new ArrayList<>();
-		for (TupleExpr branch : nonZero) {
-			PathNode seq = buildPathSequenceFromChain(branch, s, o);
-			if (seq == null) {
-				return null;
-			}
-			seqs.add(seq);
-		}
-		PathNode inner = (seqs.size() == 1) ? seqs.get(0) : new PathAlt(seqs);
-		PathNode q = new PathQuant(inner, 0, 1);
-		return new ZeroOrOneNode(s, o, q);
-	}
-
-	/** Try to parse a Join that is a sequence of (first-step union) then (zero-or-one projection). */
-	private PathNode tryParseJoinOfUnionAndZeroOrOne(final TupleExpr expr, final Var subj) {
-		List<TupleExpr> flat = new ArrayList<>();
-		flattenJoin(expr, flat);
-		if (flat.size() != 2) {
-			return null;
-		}
-		TupleExpr a = flat.get(0);
-		TupleExpr b = flat.get(1);
-		FirstStepUnion u = (a instanceof Union) ? parseFirstStepUnion(a, subj) : null;
-		ZeroOrOneNode z = parseZeroOrOneProjectionNode(b);
-		if (u == null || z == null) {
-			return null;
-		}
-		// Check that the zero-or-one starts at the mid var produced by the first-step union
-		if (!sameVar(u.mid, z.s)) {
-			return null;
-		}
-		// Combine into a sequence
-		List<PathNode> parts = new ArrayList<>(2);
-		parts.add(u.node);
-		parts.add(z.node);
-		return new PathSeq(parts);
-	}
-
-	private PathNode parseAtomicFromStatement(final StatementPattern sp, final Var subj, final Var obj) {
-		final Var p = sp.getPredicateVar();
-		if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
-			return null;
-		}
-		final IRI iri = (IRI) p.getValue();
-		final Var ss = sp.getSubjectVar();
-		final Var oo = sp.getObjectVar();
-
-		if (sameVar(ss, subj) && sameVar(oo, obj)) {
-			return new PathAtom(iri, false);
-		}
-		if (sameVar(ss, obj) && sameVar(oo, subj)) {
-			return new PathAtom(iri, true);
-		}
-		return null;
-	}
-
-	// Build a PathNode sequence from a JOIN chain that connects s -> o via _anon_path_* variables.
-	// Accepts forward or inverse steps; allows the last step to directly reach the endpoint 'o'.
-	private PathNode buildPathSequenceFromChain(TupleExpr chain, Var s, Var o) {
-		List<TupleExpr> flat = new ArrayList<>();
-		TupleExprIRRenderer.flattenJoin(chain, flat);
-		List<StatementPattern> sps = new ArrayList<>();
-		for (TupleExpr t : flat) {
-			if (t instanceof StatementPattern) {
-				sps.add((StatementPattern) t);
-			} else {
-				return null; // only simple statement patterns supported here
-			}
-		}
-		if (sps.isEmpty()) {
-			return null;
-		}
-		List<PathAtom> steps = new ArrayList<>();
-		Var cur = s;
-		Set<StatementPattern> used = new LinkedHashSet<>();
-		int guard = 0;
-		while (!sameVar(cur, o)) {
-			if (++guard > 10000) {
-				return null;
-			}
-			boolean advanced = false;
-			for (StatementPattern sp : sps) {
-				if (used.contains(sp)) {
-					continue;
-				}
-				Var pv = sp.getPredicateVar();
-				if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
-					continue;
-				}
-				Var ss = sp.getSubjectVar();
-				Var oo = sp.getObjectVar();
-				if (sameVar(cur, ss) && (isAnonPathVar(oo) || sameVar(oo, o))) {
-					steps.add(new PathAtom((IRI) pv.getValue(), false));
-					cur = oo;
-					used.add(sp);
-					advanced = true;
-					break;
-				} else if (sameVar(cur, oo) && (isAnonPathVar(ss) || sameVar(ss, o))) {
-					steps.add(new PathAtom((IRI) pv.getValue(), true));
-					cur = ss;
-					used.add(sp);
-					advanced = true;
-					break;
-				}
-			}
-			if (!advanced) {
-				return null;
-			}
-		}
-		if (used.size() != sps.size()) {
-			return null; // extra statements not part of the chain
-		}
-		if (steps.isEmpty()) {
-			return null;
-		}
-		return (steps.size() == 1) ? steps.get(0) : new PathSeq(new ArrayList<>(steps));
-	}
-
 	// Collections are handled by IR transforms (ApplyCollectionsTransform); no TupleExpr-time detection needed.
 
 	private void handleUnsupported(String message) {
@@ -1615,12 +1109,6 @@ public class TupleExprIRRenderer {
 	private enum RenderMode {
 		TOP_LEVEL_SELECT,
 		SUBSELECT
-	}
-
-	private interface PathNode {
-		String render();
-
-		int prec();
 	}
 
 	/** Optional dataset input for FROM/FROM NAMED lines. */
@@ -1666,32 +1154,6 @@ public class TupleExprIRRenderer {
 		public boolean valuesPreserveOrder = false; // keep VALUES column order as given by BSA iteration
 	}
 
-	// ---------------- Property Path Mini-AST ----------------
-
-	/** Result holder for parsing a UNION of two single-step StatementPatterns that start at 'subj'. */
-	private static final class FirstStepUnion {
-		final Var mid;
-		final PathNode node;
-
-		FirstStepUnion(Var mid, PathNode node) {
-			this.mid = mid;
-			this.node = node;
-		}
-	}
-
-	/** Result of parsing a Projection encoding a zero-or-one chain. */
-	private static final class ZeroOrOneNode {
-		final Var s;
-		final Var o;
-		final PathNode node;
-
-		ZeroOrOneNode(Var s, Var o, PathNode node) {
-			this.s = s;
-			this.o = o;
-			this.node = node;
-		}
-	}
-
 	// Former CollectionResult/collection overrides are no longer needed; collection handling moved to IR transforms.
 
 	private static final class PrefixHit {
@@ -1726,95 +1188,6 @@ public class TupleExprIRRenderer {
 				}
 			}
 			return null;
-		}
-	}
-
-	private static final class PathSeq implements PathNode {
-		final List<PathNode> parts;
-
-		PathSeq(List<PathNode> parts) {
-			this.parts = parts;
-		}
-
-		@Override
-		public String render() {
-			List<String> ss = new ArrayList<>(parts.size());
-			for (PathNode p : parts) {
-				boolean needParens = p.prec() < PREC_SEQ;
-				ss.add(needParens ? "(" + p.render() + ")" : p.render());
-			}
-			return String.join("/", ss);
-		}
-
-		@Override
-		public int prec() {
-			return PREC_SEQ;
-		}
-	}
-
-	private static final class PathAlt implements PathNode {
-		final List<PathNode> alts;
-
-		PathAlt(List<PathNode> alts) {
-			this.alts = alts;
-		}
-
-		@Override
-		public String render() {
-			List<String> ss = new ArrayList<>(alts.size());
-			for (PathNode p : alts) {
-				boolean needParens = p.prec() < PREC_ALT;
-				ss.add(needParens ? "(" + p.render() + ")" : p.render());
-			}
-			return String.join("|", ss);
-		}
-
-		@Override
-		public int prec() {
-			return PREC_ALT;
-		}
-	}
-
-	private static final class PathQuant implements PathNode {
-		final PathNode inner;
-		final long min, max;
-
-		PathQuant(PathNode inner, long min, long max) {
-			this.inner = inner;
-			this.min = min;
-			this.max = max;
-		}
-
-		@Override
-		public String render() {
-			String q = quantifier(min, max);
-			boolean needParens = inner.prec() < PREC_ATOM;
-			return (needParens ? "(" + inner.render() + ")" : inner.render()) + q;
-		}
-
-		@Override
-		public int prec() {
-			return PREC_ATOM;
-		}
-	}
-
-	/** Negated property set wrapper: renders as !(inner). */
-	private static final class PathNeg implements PathNode {
-		final PathNode inner;
-
-		PathNeg(PathNode inner) {
-			this.inner = inner;
-		}
-
-		@Override
-		public String render() {
-			return "!(" + (inner == null ? "" : inner.render()) + ")";
-		}
-
-		@Override
-		public int prec() {
-			// SPARQL treats a property set as an atomic path component
-			return PREC_ATOM;
 		}
 	}
 
@@ -2056,26 +1429,6 @@ public class TupleExprIRRenderer {
 		@Override
 		public String renderSubselect(IrSelect select) {
 			return TupleExprIRRenderer.this.render(select, null, true);
-		}
-	}
-
-	private final class PathAtom implements PathNode {
-		final IRI iri;
-		final boolean inverse;
-
-		PathAtom(IRI iri, boolean inverse) {
-			this.iri = iri;
-			this.inverse = inverse;
-		}
-
-		@Override
-		public String render() {
-			return (inverse ? "^" : "") + renderIRI(iri);
-		}
-
-		@Override
-		public int prec() {
-			return PREC_ATOM;
 		}
 	}
 
