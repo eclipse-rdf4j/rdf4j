@@ -1,72 +1,162 @@
-# Codex Agent Guidelines
+# Codex Agent Playbook
 
-**Welcome, Codex Agent!** Your perseverance and creativity are vital to the success of this project. Approach each task with determination and keep pushing forward. Even if you stumble, learn from the experience and try again. Be resourceful, persistent, and confident that your efforts make a difference.
+Welcome, Codex Agent! Your persistence, curiosity, and craftsmanship make a difference. Take your time, work methodically, validate thoroughly, and iterate. This repository is large and tests can take time — that’s expected and supported.
 
-This is a large multi-module Maven project. Building and testing the entire repository can take considerable time. It's not unusual for test execution to take 5-10 minutes per module, but you should run the tests anyway to ensure your changes don't break anything. Sometimes the tests don't take that long, you can run them and see how long they actually take.
+## Purpose & Contract
+- Bold goal: deliver correct, minimal, well‑tested changes with clear handoff.
+- Bias to action: when inputs are ambiguous, choose a reasonable path, state assumptions, and proceed.
+- Ask only when blocked or irreversible: escalate questions only if you are truly blocked (permissions, missing deps, conflicting requirements) or a choice is high‑risk/irreversible.
+- Definition of Done:
+  - Code formatted and imports sorted.
+  - Compiles with quick profile.
+  - Relevant module tests pass; failures triaged or explained.
+  - Only necessary files changed; headers correct for new files.
+  - Clear final summary: what changed, why, where, how verified, next steps.
 
-Take your time. You have a lot more time than you think :)
+## Environment
+- JDK: 11 (see root `pom.xml` `java.version=11`).
+- Maven default: run offline using `-o` whenever possible.
+- Network: only when needed to fetch missing deps/plugins; then omit `-o`.
+- Large project: tests may take 5–10 min per module. Be patient and thorough.
 
-## Build
-- Always invoke Maven in offline mode using the `-o` flag.
-- Occasionally, you may need online access to download dependencies or plugins. When Maven requires internet access, omit `-o`.
-- To build the entire project without running tests:
-  ```bash
-  mvn -o install -Pquick
-  ```
-- To build the project and run all tests:
-  ```bash
-  mvn -o verify
-  ```
+## Quick Start (First 10 Minutes)
+1. Discover
+   - List modules: open root `pom.xml` or see “Maven Module Overview” below.
+   - Search code fast with `rg`: `rg -n "<symbol or string>"`.
+2. Build sanity
+   - Compile fast (skip tests): `mvn -o -Pquick verify -DskipTests | tail -1000`
+3. Format
+   - `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+4. Targeted tests
+   - By module: `mvn -o -pl <module> test`
+   - Single class: `mvn -o -pl <module> -Dtest=ClassName test`
+   - Single method: `mvn -o -pl <module> -Dtest=ClassName#method test`
+5. Inspect failures
+   - Unit: `<module>/target/surefire-reports/`
+   - IT: `<module>/target/failsafe-reports/`
 
-Running all modules sequentially will take a long time.
+## Working Loop
+- Plan
+  - Break task into small, verifiable steps; keep one step in progress.
+  - Share short progress updates as you switch phases.
+  - Decide and proceed autonomously; document assumptions as you go.
+- Change
+  - Make minimal, surgical edits. Keep style consistent.
+- Format
+  - `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+- Compile
+  - `mvn -o -Pquick verify -DskipTests | tail -1000`
+- Test
+  - Start with the smallest scope that exercises your change.
+- Triage
+  - Read reports; fix root cause; expand test scope only when needed.
+- Iterate
+  - Keep moving without waiting for confirmation between steps. Escalate only at blocking points. Repeat until Definition of Done is satisfied.
 
-Maven stores all build output in each module's `target/` directory, `target/surefire-reports/` for test reports, and `target/failsafe-reports/` for integration test reports. When tests are failing, you should look in these directories for more information.
+## Planning & Progress
+- Living plan: update as you learn; one active step at a time.
+- Good steps: 5–7 words each, outcome‑oriented.
+- Progress updates: one crisp sentence when switching steps or after long runs.
+- Decide early: if scope is unclear, pick the most reasonable option, note the assumption, and continue.
+- Escalate sparingly: ask only if options diverge significantly in cost/impact or you are blocked (permissions, network fetches beyond policy, missing secrets).
+- Checkpoint cadence: send updates to inform, not to request permission.
+
+## Testing Strategy
+- Prefer module tests you touched: `-pl <module>`.
+- Narrow further to a class/method for tight feedback loops.
+- Expand scope when:
+  - Your change crosses module boundaries.
+  - Failures in a neighbor module indicate integration impact.
+- Read reports:
+  - Surefire (unit): `target/surefire-reports/`
+  - Failsafe (IT): `target/failsafe-reports/`
+- Helpful flags:
+  - `-Dtest=Class#method`
+  - `-DtrimStackTrace=false`
+  - `-DskipITs` to focus on unit tests when appropriate.
+
+## Triage Playbook
+- Missing dep/plugin offline
+  - Remedy: re-run without `-o` for that step only.
+- Compilation errors
+  - Fix imports, generics, visibility; re-run quick verify with tests skipped.
+- Flaky/slow tests
+  - Run the specific failing test; read its report; stabilize cause before broad runs.
+- Formatting failures
+  - Run formatter command; re-verify.
+- License header missing
+  - Add header for new files only (see “Source File Headers”); don’t change years on existing files.
 
 ## Code Formatting
-- This project has strict code formatting requirements. Always run the super fast automatic formatter before finalizing your code:
-```bash
-mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format
-```
-
-## Running Tests
-- To test a specific module, use the `-pl` option (never use `-am` when running tests, if compilation fails then first build the project before running tests). Example for running the SHACL tests:
-  ```bash
-  mvn -o -pl core/sail/shacl test
-  ```
-
-## Pre-commit checklist
-Before finalizing your work, make sure the following commands succeed:
-1. **Format the code**
-   ```bash
-   mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format
-   ```
-2. **Check that the code compiles**
-   ```bash
-   mvn -o -Pquick verify -DskipTests | tail -1000
-   ```
-3. **Run the tests for the relevant module(s)**
-   ```bash
-   mvn -o -pl <module> test
-   ```
-   You can also run from a module subdirectory; just remember to include `-o`.
+- Always run before finalizing:
+  - `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+- Style: no wildcard imports, 120-char width, curly braces always, LF line endings.
+- New files must include the exact RDF4J header (see below).
 
 ## Source File Headers
-- All new source files must include the standard RDF4J copyright header.
-- Use the template from `CONTRIBUTING.md` exactly as provided:
-  ```
-  /*******************************************************************************
-   * Copyright (c) ${year} Eclipse RDF4J contributors.
-   *
-   * All rights reserved. This program and the accompanying materials
-   * are made available under the terms of the Eclipse Distribution License v1.0
-   * which accompanies this distribution, and is available at
-   * http://www.eclipse.org/org/documents/edl-v10.php.
-   *
-   * SPDX-License-Identifier: BSD-3-Clause
-   *******************************************************************************/
-  ```
-- Replace `${year}` with the current year for new files only.
-- Do not modify or omit any other part of the header.
+Use this header for new Java files only (replace ${year} with current year):
+
+```
+/*******************************************************************************
+ * Copyright (c) ${year} Eclipse RDF4J contributors.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ *******************************************************************************/
+```
+
+Do not modify existing headers’ years.
+
+## Pre‑Commit Checklist
+- Format: `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+- Compile: `mvn -o -Pquick verify -DskipTests | tail -1000`
+- Tests: `mvn -o -pl <module> test` (extend scope if needed)
+- Reports: zero new failures in `target/surefire-reports/` or explain remaining issues.
+
+## Navigation & Search
+- Fast file search: `rg --files`
+- Fast content search: `rg -n "<pattern>"`
+- Read big files in chunks:
+  - `sed -n '1,200p' path/to/File.java`
+  - `sed -n '201,400p' path/to/File.java`
+
+## Answer Template (Use This)
+- What changed: summary of approach and rationale.
+- Files touched: list file paths.
+- Commands run: key build/test commands.
+- Verification: which tests passed, where you checked reports.
+- Assumptions: key assumptions and autonomous decisions you made.
+- Limitations: anything left or risky edge cases.
+- Next steps: optional suggestions for follow-ups.
+
+## Mindset & Motivation
+- Thorough > fast: slow is smooth and smooth is fast.
+- You have time: long builds/tests are normal here.
+- Work visibly: keep your plan current and share progress.
+- Be curious: trace root causes; avoid band‑aids.
+- Be surgical: minimal diffs; don’t fix unrelated issues unless asked.
+- Autonomous‑first: keep making progress independently; ask only when blocked or the decision is irreversible/high‑risk.
+
+## Running Tests
+- By module:
+  - `mvn -o -pl core/sail/shacl test`
+- Entire repo:
+  - `mvn -o verify` (long; only when appropriate)
+- Useful flags:
+  - `-Dtest=ClassName`
+  - `-Dtest=ClassName#method`
+
+## Build
+- Build without tests:
+  - `mvn -o verify -Pquick`
+- Verify with tests:
+  - `mvn -o verify`
+- When offline fails due to missing deps:
+  - Re-run the exact command without `-o` once to fetch, then return to `-o`.
 
 ## Maven Module Overview
 
@@ -191,3 +281,8 @@ rdf4j: root project
 ├── bom: RDF4J Bill of Materials (BOM)
 └── assembly: Distribution bundle assembly
 ```
+
+## Safety & Boundaries
+- Don’t commit or push unless explicitly asked.
+- Don’t add new dependencies without explicit approval.
+- Use approvals sparingly: request approval only for network fetches when offline fails, destructive operations, or repo‑wide impacts. Otherwise proceed locally and continue working.
