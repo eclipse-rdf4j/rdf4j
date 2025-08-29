@@ -49,48 +49,10 @@ public class IrFilter extends IrNode {
 			return;
 		}
 
-		// Structured bodies: EXISTS { ... } and NOT EXISTS { ... }
-		if (body instanceof IrExists) {
-			IrExists ex = (IrExists) body;
-			printExists(p, false, ex.getWhere(), ex.isNewScope());
-			return;
-		}
-		if (body instanceof IrNot) {
-			IrNot n = (IrNot) body;
-			IrNode inner = n.getInner();
-			if (inner instanceof IrExists) {
-				IrExists ex = (IrExists) inner;
-				printExists(p, true, ex.getWhere(), ex.isNewScope());
-				return;
-			}
-		}
-
-		// Fallback: print the inner as raw text if it is IrText
-		if (body instanceof IrText) {
-			p.line("FILTER (" + ((IrText) body).getText() + ")");
-			return;
-		}
-		// Unknown body type: just print a comment
-		p.line("# unsupported FILTER body: " + body.getClass().getSimpleName());
-	}
-
-	private void printExists(IrPrinter p, boolean negated, IrBGP where, boolean wrapByScope) {
-		// Match expected style: no extra parentheses around EXISTS/NOT EXISTS
-		String head = negated ? "FILTER NOT EXISTS {" : "FILTER EXISTS {";
-		p.line(head);
-		p.pushIndent();
-		if (where != null) {
-			final boolean wrapInner = wrapByScope || where.isNewScope();
-			if (wrapInner) {
-				p.openBlock();
-			}
-			p.printLines(where.getLines());
-			if (wrapInner) {
-				p.closeBlock();
-			}
-		}
-		p.popIndent();
-		p.line("}");
+		// Structured body: print the FILTER prefix, then delegate rendering to the child node
+		p.startLine();
+		p.append("FILTER ");
+		body.print(p);
 	}
 
 	@Override

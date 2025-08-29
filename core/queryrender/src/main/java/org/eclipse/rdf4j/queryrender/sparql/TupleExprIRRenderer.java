@@ -1202,6 +1202,7 @@ public class TupleExprIRRenderer {
 		private final Map<String, Integer> bnodeCounts = new LinkedHashMap<>();
 		private final Map<String, String> bnodeLabels = new LinkedHashMap<>();
 		private int level = 0;
+		private boolean inlineActive = false;
 
 		IRTextPrinter(StringBuilder out) {
 			this.out = out;
@@ -1378,7 +1379,38 @@ public class TupleExprIRRenderer {
 		}
 
 		@Override
+		public void startLine() {
+			if (!inlineActive) {
+				indent();
+				inlineActive = true;
+			}
+		}
+
+		@Override
+		public void append(final String s) {
+			if (!inlineActive) {
+				// If appending at the start of a line, apply indentation first
+				int len = out.length();
+				if (len == 0 || out.charAt(len - 1) == '\n') {
+					indent();
+				}
+			}
+			out.append(s);
+		}
+
+		@Override
+		public void endLine() {
+			out.append('\n');
+			inlineActive = false;
+		}
+
+		@Override
 		public void line(String s) {
+			if (inlineActive) {
+				out.append(s).append('\n');
+				inlineActive = false;
+				return;
+			}
 			indent();
 			out.append(s).append('\n');
 		}

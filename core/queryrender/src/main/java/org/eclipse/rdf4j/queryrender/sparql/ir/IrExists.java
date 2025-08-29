@@ -32,6 +32,26 @@ public class IrExists extends IrNode {
 	}
 
 	@Override
+	public void print(IrPrinter p) {
+		// Render inline-friendly header then body
+		p.append("EXISTS {");
+		p.endLine();
+		p.pushIndent();
+		if (where != null) {
+			final boolean wrapInner = this.isNewScope() || where.isNewScope();
+			if (wrapInner) {
+				p.openBlock();
+			}
+			p.printLines(where.getLines());
+			if (wrapInner) {
+				p.closeBlock();
+			}
+		}
+		p.popIndent();
+		p.line("}");
+	}
+
+	@Override
 	public IrNode transformChildren(UnaryOperator<IrNode> op) {
 		IrBGP newWhere = this.where;
 		if (newWhere != null) {
