@@ -144,7 +144,16 @@ public final class ApplyPathsTransform extends BaseTransform {
 				if (!hasTail && pv != null && isAnonPathVar(pv) && ns != null && pv.getName() != null
 						&& pv.getName().equals(ns.varName) && !ns.items.isEmpty()) {
 					String nps = "!(" + ApplyNegatedPropertySetTransform.joinIrisWithPreferredOrder(ns.items, r) + ")";
-					out.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
+ 					// Respect inverse orientation hint on the anon path var: render as !^p and flip endpoints
+					if (isAnonPathInverseVar(pv)) {
+						String maybe = invertNegatedPropertySet(nps);
+						if (maybe != null) {
+							nps = maybe;
+						}
+						out.add(new IrPathTriple(sp.getObject(), nps, sp.getSubject()));
+					} else {
+						out.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
+					}
 					i += 1;
 					continue;
 				}
