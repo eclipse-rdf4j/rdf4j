@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.MergeOptionalIntoP
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeNpsMemberOrderTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeZeroOrOneSubselectTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ReorderFiltersInOptionalBodiesTransform;
- import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.StabilizeGroupingTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.StabilizeGroupingTransform;
 
 /**
  * IR transformation pipeline (best‑effort).
