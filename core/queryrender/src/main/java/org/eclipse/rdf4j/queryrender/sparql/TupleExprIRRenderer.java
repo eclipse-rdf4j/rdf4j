@@ -255,6 +255,36 @@ public class TupleExprIRRenderer {
 		this.prefixIndex = new PrefixIndex(this.cfg.prefixes);
 	}
 
+	// Package-private accessors for the converter
+	Config getConfig() {
+		return cfg;
+	}
+
+	String renderExprPublic(final ValueExpr e) {
+		return renderExpr(e);
+	}
+
+	String renderVarOrValuePublic(final Var v) {
+		return renderVarOrValue(v);
+	}
+
+	String renderValuePublic(final Value v) {
+		return renderValue(v);
+	}
+
+	// Helper for converter: build textual path expression for an ArbitraryLengthPath using renderer internals
+	String buildPathExprForArbitraryLengthPath(final ArbitraryLengthPath p) {
+		final PathNode inner = parseAPathInner(p.getPathExpression(), p.getSubjectVar(), p.getObjectVar());
+		if (inner == null) {
+			throw new IllegalStateException(
+					"Failed to parse ArbitraryLengthPath inner expression: " + p.getPathExpression());
+		}
+		final long min = p.getMinLength();
+		final long max = getMaxLengthSafe(p);
+		final PathNode q = new PathQuant(inner, min, max);
+		return (q.prec() < PREC_SEQ ? "(" + q.render() + ")" : q.render());
+	}
+
 	private static boolean isAnonPathVar(Var v) {
 		return v != null && !v.hasValue() && v.getName() != null && v.getName().startsWith(ANON_PATH_PREFIX);
 	}
@@ -1051,147 +1081,12 @@ public class TupleExprIRRenderer {
 	 * for clarity and testability.
 	 */
 	public IrSelect toIRSelect(final TupleExpr tupleExpr) {
-		final Normalized n = normalize(tupleExpr, false);
-		applyAggregateHoisting(n);
-		final IrSelect ir = new IrSelect();
-		ir.setDistinct(n.distinct);
-		ir.setReduced(n.reduced);
-		ir.setLimit(n.limit);
-		ir.setOffset(n.offset);
-
-		// Projection header
-		if (n.projection != null && n.projection.getProjectionElemList() != null
-				&& !n.projection.getProjectionElemList().getElements().isEmpty()) {
-			for (ProjectionElem pe : n.projection.getProjectionElemList().getElements()) {
-				final String alias = pe.getProjectionAlias().orElse(pe.getName());
-				final ValueExpr expr = n.selectAssignments.get(alias);
-				if (expr != null) {
-					ir.getProjection()
-							.add(new IrProjectionItem(renderExpr(expr), alias));
-				} else {
-					ir.getProjection().add(new IrProjectionItem(null, alias));
-				}
-			}
-		} else if (!n.selectAssignments.isEmpty()) {
-			// Synthesize: group-by vars first (if any), then explicit assignments
-			if (!n.groupByTerms.isEmpty()) {
-				for (GroupByTerm t : n.groupByTerms) {
-					ir.getProjection()
-							.add(new IrProjectionItem(null, t.var));
-				}
-			} else {
-				for (String v : n.syntheticProjectVars) {
-					ir.getProjection().add(new IrProjectionItem(null, v));
-				}
-			}
-			for (Entry<String, ValueExpr> e : n.selectAssignments.entrySet()) {
-				ir.getProjection()
-						.add(new IrProjectionItem(renderExpr(e.getValue()),
-								e.getKey()));
-			}
-		}
-
-		// WHERE as textual-IR
-		final IRBuilder builder = new IRBuilder();
-		ir.setWhere(builder.build(n.where));
-
-		if (cfg.debugIR) {
-			System.out.println("# IR (raw)\n" + IrDebug.dump(ir));
-		}
-
-		// Transformations: use function-style child transforms on BGPs (paths/collections/etc.)
-		final IrSelect irTransformed = IrTransforms
-				.transformUsingChildren(ir, this);
-		ir.setWhere(irTransformed.getWhere());
-
-		// Keep explicit projection as parsed; do not downgrade to SELECT * implicitly
-
-		if (cfg.debugIR) {
-			System.out.println("# IR (transformed)\n" + IrDebug.dump(ir));
-		}
-
-		// GROUP BY
-		for (GroupByTerm t : n.groupByTerms) {
-			ir.getGroupBy()
-					.add(new IrGroupByElem(
-							t.expr == null ? null : renderExpr(t.expr), t.var));
-		}
-
-		// HAVING
-		for (ValueExpr cond : n.havingConditions) {
-			ir.getHaving().add(stripRedundantOuterParens(renderExprForHaving(cond, n)));
-		}
-
-		// ORDER BY
-		for (OrderElem oe : n.orderBy) {
-			ir.getOrderBy()
-					.add(new IrOrderSpec(renderExpr(oe.getExpr()),
-							oe.isAscending()));
-		}
-
-		return ir;
+		return new TupleExprToIrConverter(this).toIRSelect(tupleExpr);
 	}
 
 	/** Build IrSelect without running IR transforms (used for nested subselects where we keep raw structure). */
 	private IrSelect toIRSelectRaw(final TupleExpr tupleExpr) {
-		final Normalized n = normalize(tupleExpr, true);
-		applyAggregateHoisting(n);
-		final IrSelect ir = new IrSelect();
-		ir.setDistinct(n.distinct);
-		ir.setReduced(n.reduced);
-		ir.setLimit(n.limit);
-		ir.setOffset(n.offset);
-
-		if (n.projection != null && n.projection.getProjectionElemList() != null
-				&& !n.projection.getProjectionElemList().getElements().isEmpty()) {
-			for (ProjectionElem pe : n.projection.getProjectionElemList().getElements()) {
-				final String alias = pe.getProjectionAlias().orElse(pe.getName());
-				final ValueExpr expr = n.selectAssignments.get(alias);
-				if (expr != null) {
-					ir.getProjection()
-							.add(new IrProjectionItem(renderExpr(expr), alias));
-				} else {
-					ir.getProjection().add(new IrProjectionItem(null, alias));
-				}
-			}
-		} else if (!n.selectAssignments.isEmpty()) {
-			if (!n.groupByTerms.isEmpty()) {
-				for (GroupByTerm t : n.groupByTerms) {
-					ir.getProjection()
-							.add(new IrProjectionItem(null, t.var));
-				}
-			} else {
-				for (String v : n.syntheticProjectVars) {
-					ir.getProjection().add(new IrProjectionItem(null, v));
-				}
-			}
-			for (Entry<String, ValueExpr> e : n.selectAssignments.entrySet()) {
-				ir.getProjection()
-						.add(new IrProjectionItem(renderExpr(e.getValue()),
-								e.getKey()));
-			}
-		}
-
-		final IRBuilder builder = new IRBuilder();
-		ir.setWhere(builder.build(n.where));
-
-		for (GroupByTerm t : n.groupByTerms) {
-			ir.getGroupBy()
-					.add(new IrGroupByElem(
-							t.expr == null ? null : renderExpr(t.expr), t.var));
-		}
-
-		for (ValueExpr cond : n.havingConditions) {
-			ir.getHaving().add(stripRedundantOuterParens(renderExprForHaving(cond, n)));
-		}
-
-		for (OrderElem oe : n.orderBy) {
-			ir.getOrderBy()
-					.add(new IrOrderSpec(renderExpr(oe.getExpr()),
-							oe.isAscending()));
-		}
-
-		return ir;
+		return new TupleExprToIrConverter(this).toIRSelectRaw(tupleExpr);
 	}
 
 	/** Render a textual SELECT query from an {@code IrSelect} model. */
