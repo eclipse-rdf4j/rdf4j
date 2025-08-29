@@ -300,8 +300,13 @@ public class TupleExprToIrConverter {
 				}
 			}
 
-			// Projection (record it and peel)
+			// Projection (record header once, then stop peeling so nested projections become subselects)
 			if (cur instanceof Projection) {
+				if (n.projection != null) {
+					// We've already captured the top-level SELECT header; leave this Projection in-place
+					// so it is rendered as a SUBSELECT in the WHERE by the IR builder.
+					break;
+				}
 				n.projection = (Projection) cur;
 				cur = n.projection.getArg();
 				changed = true;
