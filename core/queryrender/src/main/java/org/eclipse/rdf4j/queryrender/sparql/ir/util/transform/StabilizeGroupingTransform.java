@@ -55,6 +55,15 @@ public final class StabilizeGroupingTransform extends BaseTransform {
 				IrGraph g = (IrGraph) n;
 				IrBGP inner = apply(g.getWhere());
 				inner = maybeWrapValuesMix(inner);
+				// If GRAPH body mixes a triple-like with OPTIONAL, add inner/outer grouping only
+				// when this GRAPH is the sole line at this level (to mirror original explicit braces).
+				if (qualifiesForTripleOptionalMix(inner) && bgp.getLines().size() == 1) {
+					IrBGP innerWrapped = wrap(inner); // inner braces around triple + OPTIONAL
+					IrBGP group = new IrBGP(); // outer braces around the GRAPH itself
+					group.add(new IrGraph(g.getGraph(), innerWrapped));
+					out.add(group);
+					continue;
+				}
 				out.add(new IrGraph(g.getGraph(), inner));
 				continue;
 			}
@@ -204,6 +213,25 @@ public final class StabilizeGroupingTransform extends BaseTransform {
 			return true;
 
 		return false;
+	}
+
+	/** Return true if a block mixes a triple-like line with an OPTIONAL. */
+	private static boolean qualifiesForTripleOptionalMix(IrBGP w) {
+		if (w == null)
+			return false;
+		final List<IrNode> ls = w.getLines();
+		if (ls.size() < 2)
+			return false;
+		boolean hasTripleLike = false;
+		boolean hasOptional = false;
+		for (IrNode ln : ls) {
+			if (ln instanceof IrStatementPattern || ln instanceof IrPathTriple || ln instanceof IrPropertyList) {
+				hasTripleLike = true;
+			} else if (ln instanceof IrOptional) {
+				hasOptional = true;
+			}
+		}
+		return hasTripleLike && hasOptional;
 	}
 
 	private static boolean qualifiesForExistsInnerGrouping(IrBGP w) {
