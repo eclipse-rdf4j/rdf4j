@@ -1669,6 +1669,23 @@ public class TupleExprToIrConverter {
 
 		@Override
 		public void meet(final LeftJoin lj) {
+			if (lj.isVariableScopeChange()) {
+				IRBuilder left = new IRBuilder();
+				IrBGP wl = left.build(lj.getLeftArg());
+				IRBuilder rightBuilder = new IRBuilder();
+				IrBGP wr = rightBuilder.build(lj.getRightArg());
+				if (lj.getCondition() != null) {
+					wr.add(buildFilterFromCondition(lj.getCondition()));
+				}
+				IrBGP grp = new IrBGP();
+				for (IrNode ln : wl.getLines()) {
+					grp.add(ln);
+				}
+				grp.add(new IrOptional(wr));
+				grp.setNewScope(true);
+				where.add(grp);
+				return;
+			}
 			lj.getLeftArg().visit(this);
 			final IRBuilder rightBuilder = new IRBuilder();
 			final IrBGP right = rightBuilder.build(lj.getRightArg());
@@ -1766,7 +1783,21 @@ public class TupleExprToIrConverter {
 		public void meet(final Service svc) {
 			IRBuilder inner = new IRBuilder();
 			IrBGP w = inner.build(svc.getArg());
-			where.add(new IrService(r.renderVarOrValuePublic(svc.getServiceRef()), svc.isSilent(), w));
+			IrService irSvc = new IrService(r.renderVarOrValuePublic(svc.getServiceRef()), svc.isSilent(), w);
+			boolean scope;
+			try {
+				// Prefer explicit scope change from the algebra node when available
+				scope = (boolean) Service.class.getMethod("isVariableScopeChange").invoke(svc);
+			} catch (ReflectiveOperationException e) {
+				scope = false;
+			}
+			if (scope) {
+				IrBGP grp = new IrBGP();
+				grp.add(irSvc);
+				where.add(grp);
+			} else {
+				where.add(irSvc);
+			}
 		}
 
 		@Override
@@ -1828,10 +1859,26 @@ public class TupleExprToIrConverter {
 
 		@Override
 		public void meet(final Difference diff) {
-			diff.getLeftArg().visit(this);
+			// Build left and right in isolation so we can respect variable-scope changes by
+			// grouping them as a unit when required.
+			IRBuilder left = new IRBuilder();
+			IrBGP leftWhere = left.build(diff.getLeftArg());
 			IRBuilder right = new IRBuilder();
 			IrBGP rightWhere = right.build(diff.getRightArg());
-			where.add(new IrMinus(rightWhere));
+			if (diff.isVariableScopeChange()) {
+				IrBGP group = new IrBGP();
+				group.setNewScope(true);
+				for (org.eclipse.rdf4j.queryrender.sparql.ir.IrNode ln : leftWhere.getLines()) {
+					group.add(ln);
+				}
+				group.add(new IrMinus(rightWhere));
+				where.add(group);
+			} else {
+				for (org.eclipse.rdf4j.queryrender.sparql.ir.IrNode ln : leftWhere.getLines()) {
+					where.add(ln);
+				}
+				where.add(new IrMinus(rightWhere));
+			}
 		}
 
 		@Override

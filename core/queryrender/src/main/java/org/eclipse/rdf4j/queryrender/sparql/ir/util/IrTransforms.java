@@ -28,7 +28,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.MergeOptionalIntoP
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeNpsMemberOrderTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeZeroOrOneSubselectTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ReorderFiltersInOptionalBodiesTransform;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.StabilizeGroupingTransform;
 
 /**
  * IR transformation pipeline (best‑effort).
@@ -82,8 +81,7 @@ public final class IrTransforms {
 					w = FlattenSingletonUnionsTransform.apply(w);
 					// Wrap preceding triple with FILTER EXISTS { { ... } } into a grouped block for stability
 					w = GroupFilterExistsWithPrecedingTriplesTransform.apply(w);
-					// Stabilize grouping inside EXISTS and around VALUES mixes for textual idempotence
-					w = StabilizeGroupingTransform.apply(w);
+					// Grouping/stability is driven by explicit newScope flags in IR; avoid heuristics here.
 					// Reorder OPTIONAL-level filters before nested OPTIONALs when safe (variable-availability
 					// heuristic)
 					w = ReorderFiltersInOptionalBodiesTransform.apply(w, r);
