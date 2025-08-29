@@ -71,7 +71,7 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				IrNode body = f.getBody();
 				if (body instanceof IrExists) {
 					IrExists ex = (IrExists) body;
-					m = new IrFilter(new IrExists(applyInsideExists(ex.getWhere(), r)));
+					m = new IrFilter(new IrExists(applyInsideExists(ex.getWhere(), r), ex.isNewScope()));
 				} else {
 					m = n.transformChildren(child -> {
 						if (child instanceof IrBGP) {
@@ -216,7 +216,7 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				IrNode body = f.getBody();
 				if (body instanceof IrExists) {
 					IrExists ex = (IrExists) body;
-					m = new IrFilter(new IrExists(applyInsideExists(ex.getWhere(), r)));
+					m = new IrFilter(new IrExists(applyInsideExists(ex.getWhere(), r), ex.isNewScope()));
 				}
 			}
 			out.add(m);

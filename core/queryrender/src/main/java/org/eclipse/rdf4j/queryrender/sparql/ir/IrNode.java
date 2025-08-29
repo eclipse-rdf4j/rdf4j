@@ -27,6 +27,14 @@ public abstract class IrNode {
 
 	private boolean newScope = false;
 
+	public IrNode(boolean newScope) {
+		this.newScope = newScope;
+	}
+
+	public IrNode() {
+		this(false);
+	}
+
 	/** Default no-op printing; concrete nodes override. */
 	public void print(IrPrinter p) {
 		p.line("# unknown IR node: " + getClass().getSimpleName());

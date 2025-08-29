@@ -18,7 +18,8 @@ import java.util.function.UnaryOperator;
 public class IrExists extends IrNode {
 	private IrBGP where;
 
-	public IrExists(IrBGP where) {
+	public IrExists(IrBGP where, boolean newScope) {
+		super(newScope);
 		this.where = where;
 	}
 
@@ -40,6 +41,6 @@ public class IrExists extends IrNode {
 				newWhere = (IrBGP) t;
 			}
 		}
-		return new IrExists(newWhere);
+		return new IrExists(newWhere, this.isNewScope());
 	}
 }

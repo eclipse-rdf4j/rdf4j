@@ -44,7 +44,10 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 		int i = 0;
 		while (i < in.size()) {
 			IrNode n = in.get(i);
-			// Pattern: SP, FILTER(EXISTS { { ... } }) → { SP . FILTER EXISTS { { ... } } }
+			// Pattern: SP, FILTER(EXISTS { BODY })
+			// If BODY is explicitly grouped (i.e., IrBGP nested) OR if BODY consists of multiple
+			// lines and contains a nested FILTER EXISTS, wrap the SP and FILTER in an outer group
+			// to preserve the expected brace structure and textual stability.
 			if (i + 1 < in.size() && n instanceof IrStatementPattern && in.get(i + 1) instanceof IrFilter) {
 				IrFilter f = (IrFilter) in.get(i + 1);
 				if (f.getBody() instanceof IrExists) {
@@ -90,7 +93,7 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 				IrNode body = f2.getBody();
 				if (body instanceof IrExists) {
 					IrExists ex = (IrExists) body;
-					out.add(new IrFilter(new IrExists(apply(ex.getWhere()))));
+					out.add(new IrFilter(new IrExists(apply(ex.getWhere()), ex.isNewScope())));
 				} else {
 					out.add(n);
 				}
@@ -101,6 +104,7 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 		}
 		IrBGP res = new IrBGP();
 		out.forEach(res::add);
+		res.setNewScope(bgp.isNewScope());
 		return res;
 	}
 }
