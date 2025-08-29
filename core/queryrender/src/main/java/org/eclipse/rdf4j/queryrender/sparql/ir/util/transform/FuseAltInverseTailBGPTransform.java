@@ -211,6 +211,7 @@ public final class FuseAltInverseTailBGPTransform extends BaseTransform {
 				res.add(n2);
 			}
 		}
+		res.setNewScope(bgp.isNewScope());
 		return res;
 	}
 }

@@ -59,6 +59,7 @@ public final class GroupValuesAndNpsInUnionBranchTransform extends BaseTransform
 
 		IrBGP res = new IrBGP();
 		out.forEach(res::add);
+		res.setNewScope(bgp.isNewScope());
 		return res;
 	}
 
@@ -124,6 +125,7 @@ public final class GroupValuesAndNpsInUnionBranchTransform extends BaseTransform
 			}
 			IrBGP wrapped = new IrBGP();
 			wrapped.add(inner);
+			wrapped.setNewScope(inner.isNewScope());
 			return wrapped;
 		}
 		return branch;

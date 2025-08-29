@@ -219,6 +219,7 @@ public class BaseTransform {
 		}
 		IrBGP res = new IrBGP();
 		out.forEach(res::add);
+		res.setNewScope(bgp.isNewScope());
 		return res;
 	}
 
@@ -260,6 +261,7 @@ public class BaseTransform {
 		}
 		IrBGP res = new IrBGP();
 		out.forEach(res::add);
+		res.setNewScope(bgp.isNewScope());
 		return res;
 	}
 
@@ -325,6 +327,7 @@ public class BaseTransform {
 		}
 		IrBGP res = new IrBGP();
 		out.forEach(res::add);
+		res.setNewScope(bgp.isNewScope());
 		return res;
 	}
 
@@ -723,6 +726,7 @@ public class BaseTransform {
 				res.add(n2);
 			}
 		}
+		res.setNewScope(bgp.isNewScope());
 		return res;
 	}
 
