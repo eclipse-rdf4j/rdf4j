@@ -65,6 +65,8 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
 				m = new IrGraph(g.getGraph(), apply(g.getWhere()));
+			} else if (n instanceof IrBGP) {
+				m = apply((IrBGP) n);
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
 				m = new IrOptional(apply(o.getWhere()));
