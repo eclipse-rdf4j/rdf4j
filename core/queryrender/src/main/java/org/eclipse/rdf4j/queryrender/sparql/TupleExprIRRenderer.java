@@ -14,10 +14,8 @@ package org.eclipse.rdf4j.queryrender.sparql;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -59,9 +57,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
-import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
-import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.IRIFunction;
 import org.eclipse.rdf4j.query.algebra.If;
 import org.eclipse.rdf4j.query.algebra.IsBNode;
@@ -80,12 +76,8 @@ import org.eclipse.rdf4j.query.algebra.Min;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Order;
-import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
-import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
-import org.eclipse.rdf4j.query.algebra.QueryRoot;
-import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Sample;
@@ -123,7 +115,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrText;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
 
 /**
@@ -184,7 +175,6 @@ public class TupleExprIRRenderer {
 
 	// ---------------- Configuration ----------------
 	private static final String ANON_PATH_PREFIX = "_anon_path_";
-	private static final String ANON_HAVING_PREFIX = "_anon_having_";
 	/** Anonymous blank node variables (originating from [] in the original query). */
 	private static final String ANON_BNODE_PREFIX = "_anon_bnode_";
 	// Pattern used for conservative Turtle PN_LOCAL acceptance per segment; overall check also prohibits trailing dots.
@@ -255,45 +245,9 @@ public class TupleExprIRRenderer {
 		this.prefixIndex = new PrefixIndex(this.cfg.prefixes);
 	}
 
-	// Package-private accessors for the converter
-	Config getConfig() {
-		return cfg;
-	}
-
-	String renderExprPublic(final ValueExpr e) {
-		return renderExpr(e);
-	}
-
-	String renderVarOrValuePublic(final Var v) {
-		return renderVarOrValue(v);
-	}
-
-	String renderValuePublic(final Value v) {
-		return renderValue(v);
-	}
-
-	// Helper for converter: build textual path expression for an ArbitraryLengthPath using renderer internals
-	String buildPathExprForArbitraryLengthPath(final ArbitraryLengthPath p) {
-		final PathNode inner = parseAPathInner(p.getPathExpression(), p.getSubjectVar(), p.getObjectVar());
-		if (inner == null) {
-			throw new IllegalStateException(
-					"Failed to parse ArbitraryLengthPath inner expression: " + p.getPathExpression());
-		}
-		final long min = p.getMinLength();
-		final long max = getMaxLengthSafe(p);
-		final PathNode q = new PathQuant(inner, min, max);
-		return (q.prec() < PREC_SEQ ? "(" + q.render() + ")" : q.render());
-	}
-
 	private static boolean isAnonPathVar(Var v) {
 		return v != null && !v.hasValue() && v.getName() != null && v.getName().startsWith(ANON_PATH_PREFIX);
 	}
-
-	private static boolean isAnonHavingName(String name) {
-		return name != null && name.startsWith(ANON_HAVING_PREFIX);
-	}
-
-	// ---------------- Experimental textual IR API ----------------
 
 	/** Identify anonymous blank-node placeholder variables (to render as "[]"). */
 	private static boolean isAnonBNodeVar(Var v) {
@@ -314,104 +268,6 @@ public class TupleExprIRRenderer {
 		} catch (ReflectiveOperationException ignore) {
 		}
 		return true;
-	}
-
-	private static boolean containsAggregate(ValueExpr e) {
-		if (e == null) {
-			return false;
-		}
-		if (e instanceof AggregateOperator) {
-			return true;
-		}
-		if (e instanceof Not) {
-			return containsAggregate(((Not) e).getArg());
-		}
-		if (e instanceof Bound) {
-			return containsAggregate(((Bound) e).getArg());
-		}
-		if (e instanceof Str) {
-			return containsAggregate(((Str) e).getArg());
-		}
-		if (e instanceof Datatype) {
-			return containsAggregate(((Datatype) e).getArg());
-		}
-		if (e instanceof Lang) {
-			return containsAggregate(((Lang) e).getArg());
-		}
-		if (e instanceof IsURI) {
-			return containsAggregate(((IsURI) e).getArg());
-		}
-		if (e instanceof IsLiteral) {
-			return containsAggregate(((IsLiteral) e).getArg());
-		}
-		if (e instanceof IsBNode) {
-			return containsAggregate(((IsBNode) e).getArg());
-		}
-		if (e instanceof IsNumeric) {
-			return containsAggregate(((IsNumeric) e).getArg());
-		}
-		if (e instanceof IRIFunction) {
-			return containsAggregate(((IRIFunction) e).getArg());
-		}
-		if (e instanceof If) {
-			If iff = (If) e;
-			return containsAggregate(iff.getCondition()) || containsAggregate(iff.getResult())
-					|| containsAggregate(iff.getAlternative());
-		}
-		if (e instanceof Coalesce) {
-			for (ValueExpr a : ((Coalesce) e).getArguments()) {
-				if (containsAggregate(a)) {
-					return true;
-				}
-			}
-			return false;
-		}
-		if (e instanceof FunctionCall) {
-			for (ValueExpr a : ((FunctionCall) e).getArgs()) {
-				if (containsAggregate(a)) {
-					return true;
-				}
-			}
-			return false;
-		}
-		if (e instanceof And) {
-			return containsAggregate(((And) e).getLeftArg())
-					|| containsAggregate(((And) e).getRightArg());
-		}
-		if (e instanceof Or) {
-			return containsAggregate(((Or) e).getLeftArg())
-					|| containsAggregate(((Or) e).getRightArg());
-		}
-		if (e instanceof Compare) {
-			return containsAggregate(((Compare) e).getLeftArg())
-					|| containsAggregate(((Compare) e).getRightArg());
-		}
-		if (e instanceof SameTerm) {
-			return containsAggregate(((SameTerm) e).getLeftArg())
-					|| containsAggregate(((SameTerm) e).getRightArg());
-		}
-		if (e instanceof LangMatches) {
-			return containsAggregate(((LangMatches) e).getLeftArg())
-					|| containsAggregate(((LangMatches) e).getRightArg());
-		}
-		if (e instanceof Regex) {
-			Regex r = (Regex) e;
-			return containsAggregate(r.getArg()) || containsAggregate(r.getPatternArg())
-					|| (r.getFlagsArg() != null && containsAggregate(r.getFlagsArg()));
-		}
-		if (e instanceof ListMemberOperator) {
-			for (ValueExpr a : ((ListMemberOperator) e).getArguments()) {
-				if (containsAggregate(a)) {
-					return true;
-				}
-			}
-			return false;
-		}
-		if (e instanceof MathExpr) {
-			return containsAggregate(((MathExpr) e).getLeftArg())
-					|| containsAggregate(((MathExpr) e).getRightArg());
-		}
-		return false;
 	}
 
 	private static Set<String> freeVars(ValueExpr e) {
@@ -561,6 +417,8 @@ public class TupleExprIRRenderer {
 		return "{" + min + "," + max + "}";
 	}
 
+	// ---------------- Experimental textual IR API ----------------
+
 	private static long getMaxLengthSafe(final ArbitraryLengthPath p) {
 		try {
 			final Method m = ArbitraryLengthPath.class.getMethod("getMaxLength");
@@ -572,8 +430,6 @@ public class TupleExprIRRenderer {
 		}
 		return -1L;
 	}
-
-	// ---------------- Public entry points ----------------
 
 	private static Var getContextVarSafe(StatementPattern sp) {
 		try {
@@ -613,8 +469,6 @@ public class TupleExprIRRenderer {
 		}
 		return b.toString();
 	}
-
-	// ---------------- Core SELECT and subselect ----------------
 
 	private static String mathOp(final MathOp op) {
 		if (op == MathOp.PLUS) {
@@ -669,7 +523,7 @@ public class TupleExprIRRenderer {
 		}
 	}
 
-	// ---------------- Normalization shell ----------------
+	// ---------------- Public entry points ----------------
 
 	private static boolean sameVar(Var a, Var b) {
 		if (a == null || b == null) {
@@ -680,10 +534,6 @@ public class TupleExprIRRenderer {
 		}
 		return Objects.equals(a.getName(), b.getName());
 	}
-
-	/**
-	 * Flatten a ValueExpr that is a conjunction into its left-to-right terms.
-	 */
 
 	/** Flatten a Union tree preserving left-to-right order. */
 	private static void flattenUnion(TupleExpr e, List<TupleExpr> out) {
@@ -711,6 +561,8 @@ public class TupleExprIRRenderer {
 		}
 	}
 
+	// ---------------- Core SELECT and subselect ----------------
+
 	private static String freeVarName(Var v) {
 		if (v == null || v.hasValue()) {
 			return null;
@@ -718,10 +570,6 @@ public class TupleExprIRRenderer {
 		final String n = v.getName();
 		return (n == null || n.isEmpty()) ? null : n;
 	}
-
-	// ---------------- Aggregate hoisting & inference ----------------
-
-	// Removed invertNegatedPropertySet here; transforms use BaseTransform.invertNegatedPropertySet.
 
 	private static void collectFreeVars(final TupleExpr e, final Set<String> out) {
 		if (e == null) {
@@ -789,8 +637,6 @@ public class TupleExprIRRenderer {
 		});
 	}
 
-	// ---------------- Utilities: vars, aggregates, free vars ----------------
-
 	/**
 	 * Context compatibility: equal if both null; if both values -> same value; if both free vars -> same name; else
 	 * incompatible.
@@ -818,6 +664,8 @@ public class TupleExprIRRenderer {
 		}
 		return t;
 	}
+
+	// ---------------- Normalization shell ----------------
 
 	/**
 	 * Ensure a text snippet is valid as a SPARQL Constraint (used in FILTER/HAVING). If it already looks like a
@@ -869,8 +717,6 @@ public class TupleExprIRRenderer {
 		// Otherwise, bracket to form a valid Constraint
 		return "(" + t + ")";
 	}
-
-	// ---------------- Block/Node printer ----------------
 
 	/**
 	 * Decide if an expression should be wrapped in parentheses and return either the original expression or a
@@ -979,6 +825,10 @@ public class TupleExprIRRenderer {
 		return hasDigit;
 	}
 
+	// ---------------- Aggregate hoisting & inference ----------------
+
+	// Removed invertNegatedPropertySet here; transforms use BaseTransform.invertNegatedPropertySet.
+
 	private static Var getContextVarSafe(Object node) {
 		try {
 			Method m = node.getClass().getMethod("getContextVar");
@@ -988,6 +838,8 @@ public class TupleExprIRRenderer {
 			return null;
 		}
 	}
+
+	// ---------------- Utilities: vars, aggregates, free vars ----------------
 
 	// Merge adjacent identical GRAPH blocks to improve grouping when IR emits across passes
 	private static String mergeAdjacentGraphBlocks(final String s) {
@@ -1003,6 +855,38 @@ public class TupleExprIRRenderer {
 			guard++;
 		} while (!cur.equals(prev) && guard < 50);
 		return cur;
+	}
+
+	// Package-private accessors for the converter
+	Config getConfig() {
+		return cfg;
+	}
+
+	// ---------------- Block/Node printer ----------------
+
+	String renderExprPublic(final ValueExpr e) {
+		return renderExpr(e);
+	}
+
+	String renderVarOrValuePublic(final Var v) {
+		return renderVarOrValue(v);
+	}
+
+	String renderValuePublic(final Value v) {
+		return renderValue(v);
+	}
+
+	// Helper for converter: build textual path expression for an ArbitraryLengthPath using renderer internals
+	String buildPathExprForArbitraryLengthPath(final ArbitraryLengthPath p) {
+		final PathNode inner = parseAPathInner(p.getPathExpression(), p.getSubjectVar(), p.getObjectVar());
+		if (inner == null) {
+			throw new IllegalStateException(
+					"Failed to parse ArbitraryLengthPath inner expression: " + p.getPathExpression());
+		}
+		final long min = p.getMinLength();
+		final long max = getMaxLengthSafe(p);
+		final PathNode q = new PathQuant(inner, min, max);
+		return (q.prec() < PREC_SEQ ? "(" + q.render() + ")" : q.render());
 	}
 
 	public void addOverrides(Map<String, String> overrides) {
@@ -1161,10 +1045,6 @@ public class TupleExprIRRenderer {
 		return mergeAdjacentGraphBlocks(out.toString()).trim();
 	}
 
-	private String renderSubselect(final TupleExpr subtree) {
-		return renderSelectInternal(subtree, RenderMode.SUBSELECT, null);
-	}
-
 	private String renderSelectInternal(final TupleExpr tupleExpr,
 			final RenderMode mode,
 			final DatasetView dataset) {
@@ -1185,329 +1065,6 @@ public class TupleExprIRRenderer {
 		}
 		for (IRI iri : ngs) {
 			out.append("FROM NAMED ").append(renderIRI(iri)).append("\n");
-		}
-	}
-
-	/**
-	 * Normalize a parsed TupleExpr into a lightweight carrier that separates header/wrappers from the WHERE tree.
-	 *
-	 * Repeatedly peels structural wrappers (QueryRoot, Slice, Distinct/Reduced, Order, Projection, Extension, Group)
-	 * while collecting metadata. Filters are handled specially so that aggregate‑related conditions are lifted into
-	 * HAVING where appropriate. The remaining tree in {@code where} is the raw WHERE pattern to translate into IR.
-	 */
-	private Normalized normalize(final TupleExpr root) {
-		return normalize(root, false);
-	}
-
-	/**
-	 * Normalize a parsed TupleExpr into a lightweight carrier, with control over whether to peel wrappers that mark a
-	 * variable-scope change. When building a nested subselect (toIRSelectRaw), we want to peel those wrappers to
-	 * capture LIMIT/OFFSET/DISTINCT/ORDER inside the subselect. When normalizing the top-level query, we should stop at
-	 * such wrappers to avoid hoisting nested modifiers.
-	 */
-	private Normalized normalize(final TupleExpr root, final boolean peelScopedWrappers) {
-		final Normalized n = new Normalized();
-		TupleExpr cur = root;
-
-		boolean changed;
-		do {
-			changed = false;
-
-			if (cur instanceof QueryRoot) {
-				cur = ((QueryRoot) cur).getArg();
-				changed = true;
-				continue;
-			}
-
-			if (cur instanceof Slice) {
-				final Slice s = (Slice) cur;
-				// If this Slice starts a new variable scope, it denotes a nested subselect.
-				// Only peel it if explicitly requested (building a raw subselect IR), otherwise leave
-				// it in the WHERE tree so IRBuilder can render a subselect instead of hoisting LIMIT/OFFSET.
-				if (s.isVariableScopeChange() && !peelScopedWrappers) {
-					break;
-				}
-				n.limit = s.getLimit();
-				n.offset = s.getOffset();
-				cur = s.getArg();
-				changed = true;
-				continue;
-			}
-
-			if (cur instanceof Distinct) {
-				final Distinct d = (Distinct) cur;
-				// DISTINCT that changes scope belongs to a nested subselect; only peel in subselect mode.
-				if (d.isVariableScopeChange() && !peelScopedWrappers) {
-					break;
-				}
-				n.distinct = true;
-				cur = d.getArg();
-				changed = true;
-				continue;
-			}
-
-			if (cur instanceof Reduced) {
-				final Reduced r = (Reduced) cur;
-				if (r.isVariableScopeChange() && !peelScopedWrappers) {
-					break;
-				}
-				n.reduced = true;
-				cur = r.getArg();
-				changed = true;
-				continue;
-			}
-
-			if (cur instanceof Order) {
-				final Order o = (Order) cur;
-				// ORDER that starts a new scope indicates a subselect; only peel in subselect mode.
-				if (o.isVariableScopeChange() && !peelScopedWrappers) {
-					break;
-				}
-				n.orderBy.addAll(o.getElements());
-				cur = o.getArg();
-				changed = true;
-				continue;
-			}
-
-			// Handle Filter → HAVING
-			if (cur instanceof Filter) {
-				final Filter f = (Filter) cur;
-				final TupleExpr arg = f.getArg();
-
-				// Marker-based: any _anon_having_* var -> HAVING
-				{
-					Set<String> fv = freeVars(f.getCondition());
-					boolean hasHavingMarker = false;
-					for (String vn : fv) {
-						if (isAnonHavingName(vn)) {
-							hasHavingMarker = true;
-							break;
-						}
-					}
-					if (hasHavingMarker) {
-						n.havingConditions.add(f.getCondition());
-						cur = f.getArg();
-						changed = true;
-						continue;
-					}
-				}
-
-				// Group underneath
-				if (arg instanceof Group) {
-					final Group g = (Group) arg;
-					n.hadExplicitGroup = true;
-
-					n.groupByVarNames.clear();
-					n.groupByVarNames.addAll(new LinkedHashSet<>(g.getGroupBindingNames()));
-
-					TupleExpr afterGroup = g.getArg();
-					Map<String, ValueExpr> groupAliases = new LinkedHashMap<>();
-					while (afterGroup instanceof Extension) {
-						final Extension ext = (Extension) afterGroup;
-						for (ExtensionElem ee : ext.getElements()) {
-							if (n.groupByVarNames.contains(ee.getName())) {
-								groupAliases.put(ee.getName(), ee.getExpr());
-							}
-						}
-						afterGroup = ext.getArg();
-					}
-
-					n.groupByTerms.clear();
-					for (String nm : n.groupByVarNames) {
-						n.groupByTerms.add(new GroupByTerm(nm, groupAliases.getOrDefault(nm, null)));
-					}
-
-					for (GroupElem ge : g.getGroupElements()) {
-						n.selectAssignments.putIfAbsent(ge.getName(), ge.getOperator());
-						n.aggregateOutputNames.add(ge.getName());
-					}
-
-					ValueExpr cond = f.getCondition();
-					if (containsAggregate(cond) || isHavingCandidate(cond, n.groupByVarNames, n.aggregateOutputNames)) {
-						n.havingConditions.add(cond);
-						cur = afterGroup;
-						changed = true;
-						continue;
-					} else {
-						cur = new Filter(afterGroup, cond); // keep as WHERE filter
-						changed = true;
-						continue;
-					}
-				}
-
-				// Aggregate filter at top-level → HAVING
-				if (containsAggregate(f.getCondition())) {
-					n.havingConditions.add(f.getCondition());
-					cur = f.getArg();
-					changed = true;
-					continue;
-				}
-
-				// else: leave the Filter in place
-			}
-
-			// Projection (record it and peel)
-			if (cur instanceof Projection) {
-				n.projection = (Projection) cur;
-				cur = n.projection.getArg();
-				changed = true;
-				continue;
-			}
-
-			// SELECT-level assignments
-			if (cur instanceof Extension) {
-				final Extension ext = (Extension) cur;
-				for (final ExtensionElem ee : ext.getElements()) {
-					n.selectAssignments.put(ee.getName(), ee.getExpr());
-				}
-				cur = ext.getArg();
-				changed = true;
-				continue;
-			}
-
-			// GROUP outside Filter
-			if (cur instanceof Group) {
-				final Group g = (Group) cur;
-				n.hadExplicitGroup = true;
-
-				n.groupByVarNames.clear();
-				n.groupByVarNames.addAll(new LinkedHashSet<>(g.getGroupBindingNames()));
-
-				TupleExpr afterGroup = g.getArg();
-				Map<String, ValueExpr> groupAliases = new LinkedHashMap<>();
-				while (afterGroup instanceof Extension) {
-					final Extension ext = (Extension) afterGroup;
-					for (ExtensionElem ee : ext.getElements()) {
-						if (n.groupByVarNames.contains(ee.getName())) {
-							groupAliases.put(ee.getName(), ee.getExpr());
-						}
-					}
-					afterGroup = ext.getArg();
-				}
-
-				n.groupByTerms.clear();
-				for (String nm : n.groupByVarNames) {
-					n.groupByTerms.add(new GroupByTerm(nm, groupAliases.getOrDefault(nm, null)));
-				}
-
-				for (GroupElem ge : g.getGroupElements()) {
-					n.selectAssignments.putIfAbsent(ge.getName(), ge.getOperator());
-					n.aggregateOutputNames.add(ge.getName());
-				}
-
-				cur = afterGroup;
-				changed = true;
-			}
-
-		} while (changed);
-
-		n.where = cur;
-		return n;
-	}
-
-	private boolean isHavingCandidate(ValueExpr cond, Set<String> groupVars, Set<String> aggregateAliasVars) {
-		Set<String> free = freeVars(cond);
-		if (free.isEmpty()) {
-			return true; // constant condition → valid HAVING
-		}
-		Set<String> allowed = new HashSet<>(groupVars);
-		allowed.addAll(aggregateAliasVars);
-		return allowed.containsAll(free);
-	}
-
-	/**
-	 * Scan the WHERE tree for aggregates used via BIND and promote them into the SELECT header, and infer GROUP BY
-	 * terms when a query uses aggregates but does not specify grouping explicitly. This keeps the rendered projection
-	 * well‑formed without introducing extra structure into the WHERE IR.
-	 */
-	private void applyAggregateHoisting(final Normalized n) {
-		final AggregateScan scan = new AggregateScan();
-		n.where.visit(scan);
-
-		// Promote aggregates found as BINDs inside WHERE
-		if (!scan.hoisted.isEmpty()) {
-			for (Entry<String, ValueExpr> e : scan.hoisted.entrySet()) {
-				n.selectAssignments.putIfAbsent(e.getKey(), e.getValue());
-			}
-		}
-
-		boolean hasAggregates = !scan.hoisted.isEmpty();
-		for (Entry<String, ValueExpr> e : n.selectAssignments.entrySet()) {
-			if (e.getValue() instanceof AggregateOperator) {
-				hasAggregates = true;
-				scan.aggregateOutputNames.add(e.getKey());
-				collectVarNames(e.getValue(), scan.aggregateArgVars);
-			}
-		}
-
-		if (!hasAggregates) {
-			return;
-		}
-		if (n.hadExplicitGroup) {
-			return;
-		}
-
-		// Projection-driven grouping
-		if (n.groupByTerms.isEmpty() && n.projection != null && n.projection.getProjectionElemList() != null) {
-			final List<GroupByTerm> terms = new ArrayList<>();
-			for (ProjectionElem pe : n.projection.getProjectionElemList().getElements()) {
-				final String name = pe.getProjectionAlias().orElse(pe.getName());
-				if (name != null && !name.isEmpty() && !n.selectAssignments.containsKey(name)) {
-					terms.add(new GroupByTerm(name, null));
-				}
-			}
-			if (!terms.isEmpty()) {
-				n.groupByTerms.addAll(terms);
-				return;
-			}
-		}
-
-		// Usage-based inference
-		if (n.groupByTerms.isEmpty()) {
-			Set<String> candidates = new LinkedHashSet<>(scan.varCounts.keySet());
-			candidates.removeAll(scan.aggregateOutputNames);
-			candidates.removeAll(scan.aggregateArgVars);
-
-			List<String> multiUse = candidates.stream()
-					.filter(v -> scan.varCounts.getOrDefault(v, 0) > 1)
-					.collect(Collectors.toList());
-
-			List<String> chosen;
-			if (!multiUse.isEmpty()) {
-				chosen = multiUse;
-			} else {
-				chosen = new ArrayList<>(1);
-				if (!candidates.isEmpty()) {
-					candidates.stream().min((a, b) -> {
-						int as = scan.subjCounts.getOrDefault(a, 0);
-						int bs = scan.subjCounts.getOrDefault(b, 0);
-						if (as != bs) {
-							return Integer.compare(bs, as);
-						}
-						int ao = scan.objCounts.getOrDefault(a, 0);
-						int bo = scan.objCounts.getOrDefault(b, 0);
-						if (ao != bo) {
-							return Integer.compare(bo, ao);
-						}
-						int ap = scan.predCounts.getOrDefault(a, 0);
-						int bp = scan.predCounts.getOrDefault(b, 0);
-						if (ap != bp) {
-							return Integer.compare(bp, ap);
-						}
-						return a.compareTo(b);
-					}).ifPresent(chosen::add);
-				}
-			}
-
-			n.syntheticProjectVars.clear();
-			n.syntheticProjectVars.addAll(chosen);
-
-			if (n.projection == null || n.projection.getProjectionElemList().getElements().isEmpty()) {
-				n.groupByTerms.clear();
-				for (String v : n.syntheticProjectVars) {
-					n.groupByTerms.add(new GroupByTerm(v, null));
-				}
-			}
 		}
 	}
 
@@ -1912,8 +1469,6 @@ public class TupleExprIRRenderer {
 		return null;
 	}
 
-	// Removed: TupleExpr-time zero-or-one Projection detection. Zero-or-one normalization is handled by IR transforms.
-
 	private PathNode parseAPathInner(final TupleExpr innerExpr, final Var subj, final Var obj) {
 		if (innerExpr instanceof StatementPattern) {
 			PathNode n = parseAtomicFromStatement((StatementPattern) innerExpr, subj, obj);
@@ -1969,8 +1524,7 @@ public class TupleExprIRRenderer {
 		// connecting subj -> obj via _anon_path_* bridge variables (or directly to obj on the last step).
 		// This reuses buildPathSequenceFromChain which already enforces strict linearity and constant IRI steps.
 		{
-			PathNode seq = buildPathSequenceFromChain(innerExpr, subj, obj);
-			return seq;
+			return buildPathSequenceFromChain(innerExpr, subj, obj);
 		}
 	}
 
@@ -2002,11 +1556,9 @@ public class TupleExprIRRenderer {
 				if (sameVar(cur, ss) && (isAnonPathVar(oo) || (last && sameVar(oo, obj)))) {
 					steps.add(new PathAtom((IRI) pv.getValue(), false));
 					cur = oo;
-					continue;
 				} else if (sameVar(cur, oo) && (isAnonPathVar(ss) || (last && sameVar(ss, obj)))) {
 					steps.add(new PathAtom((IRI) pv.getValue(), true));
 					cur = ss;
-					continue;
 				} else {
 					return null;
 				}
@@ -2042,9 +1594,6 @@ public class TupleExprIRRenderer {
 						return null; // branches don't share the same mid var
 					}
 					alts.add(new PathAtom((IRI) pv.getValue(), inverseOk));
-				}
-				if (alts.isEmpty() || mid == null) {
-					return null;
 				}
 				steps.add(alts.size() == 1 ? alts.get(0) : new PathAlt(alts));
 				cur = mid;
@@ -2084,8 +1633,8 @@ public class TupleExprIRRenderer {
 			if (cmp.getOperator() != CompareOp.NE) {
 				return null;
 			}
-			Var pv = null;
-			IRI bad = null;
+			Var pv;
+			IRI bad;
 			if (cmp.getLeftArg() instanceof Var && cmp.getRightArg() instanceof ValueConstant
 					&& ((ValueConstant) cmp.getRightArg()).getValue() instanceof IRI) {
 				pv = (Var) cmp.getLeftArg();
@@ -2108,9 +1657,6 @@ public class TupleExprIRRenderer {
 				return null;
 			}
 			members.add(new PathAtom(bad, inverse));
-		}
-		if (members.isEmpty()) {
-			return null;
 		}
 		PathNode inner = (members.size() == 1) ? members.get(0) : new PathAlt(members);
 		return new PathNeg(inner);
@@ -2149,9 +1695,6 @@ public class TupleExprIRRenderer {
 			}
 			PathNode atom = new PathAtom((IRI) p.getValue(), inverse);
 			alts.add(atom);
-		}
-		if (alts.isEmpty() || mid == null) {
-			return null;
 		}
 		PathNode n = (alts.size() == 1) ? alts.get(0) : new PathAlt(alts);
 		return new FirstStepUnion(mid, n);
@@ -2323,71 +1866,6 @@ public class TupleExprIRRenderer {
 		}
 	}
 
-	// Removed tuple-level collection override printing; handled via IR.
-
-	// Render expressions for HAVING with substitution of _anon_having_* variables
-	private String renderExprForHaving(final ValueExpr e, final Normalized n) {
-		return renderExprWithSubstitution(e, n == null ? null : n.selectAssignments);
-	}
-
-	private String renderExprWithSubstitution(final ValueExpr e, final Map<String, ValueExpr> subs) {
-		if (e == null) {
-			return "()";
-		}
-
-		// Substitute only for _anon_having_* variables
-		if (e instanceof Var) {
-			final Var v = (Var) e;
-			if (!v.hasValue() && v.getName() != null && isAnonHavingName(v.getName()) && subs != null) {
-				ValueExpr repl = subs.get(v.getName());
-				if (repl != null) {
-					// render the aggregate/expression in place of the var
-					return renderExpr(repl);
-				}
-			}
-			// default
-			return v.hasValue() ? renderValue(v.getValue()) : "?" + v.getName();
-		}
-
-		// Minimal recursive coverage for common boolean structures in HAVING
-		if (e instanceof Not) {
-			String inner = stripRedundantOuterParens(renderExprWithSubstitution(((Not) e).getArg(), subs));
-			return "!" + parenthesizeIfNeeded(inner);
-		}
-		if (e instanceof And) {
-			And a = (And) e;
-			return "(" + renderExprWithSubstitution(a.getLeftArg(), subs) + " && " +
-					renderExprWithSubstitution(a.getRightArg(), subs) + ")";
-		}
-		if (e instanceof Or) {
-			Or o = (Or) e;
-			return "(" + renderExprWithSubstitution(o.getLeftArg(), subs) + " || " +
-					renderExprWithSubstitution(o.getRightArg(), subs) + ")";
-		}
-		if (e instanceof Compare) {
-			Compare c = (Compare) e;
-			return "(" + renderExprWithSubstitution(c.getLeftArg(), subs) + " " + op(c.getOperator()) + " " +
-					renderExprWithSubstitution(c.getRightArg(), subs) + ")";
-		}
-		if (e instanceof SameTerm) {
-			SameTerm st = (SameTerm) e;
-			return "sameTerm(" + renderExprWithSubstitution(st.getLeftArg(), subs) + ", " +
-					renderExprWithSubstitution(st.getRightArg(), subs) + ")";
-		}
-		if (e instanceof FunctionCall || e instanceof AggregateOperator ||
-				e instanceof Str || e instanceof Datatype || e instanceof Lang ||
-				e instanceof Bound || e instanceof IsURI || e instanceof IsLiteral || e instanceof IsBNode ||
-				e instanceof IsNumeric || e instanceof IRIFunction || e instanceof If || e instanceof Coalesce ||
-				e instanceof Regex || e instanceof ListMemberOperator || e instanceof MathExpr
-				|| e instanceof ValueConstant) {
-			// Fallback: normal rendering (no anon-having var inside or acceptable)
-			return renderExpr(e);
-		}
-
-		// Fallback
-		return renderExpr(e);
-	}
-
 	/** Rendering context: top-level query vs nested subselect. */
 	private enum RenderMode {
 		TOP_LEVEL_SELECT,
@@ -2443,95 +1921,7 @@ public class TupleExprIRRenderer {
 		public boolean valuesPreserveOrder = false; // keep VALUES column order as given by BSA iteration
 	}
 
-	private static final class GroupByTerm {
-		final String var; // ?var
-		final ValueExpr expr; // null => plain ?var; otherwise (expr AS ?var)
-
-		GroupByTerm(String var, ValueExpr expr) {
-			this.var = var;
-			this.expr = expr;
-		}
-	}
-
-	// ---------------- Prefix compaction index ----------------
-
-	private static final class Normalized {
-		final List<OrderElem> orderBy = new ArrayList<>();
-		final LinkedHashMap<String, ValueExpr> selectAssignments = new LinkedHashMap<>(); // alias -> expr
-		final List<GroupByTerm> groupByTerms = new ArrayList<>(); // explicit terms (var or (expr AS ?var))
-		final List<String> syntheticProjectVars = new ArrayList<>(); // synthesized bare SELECT vars
-		final List<ValueExpr> havingConditions = new ArrayList<>();
-		final Set<String> groupByVarNames = new LinkedHashSet<>();
-		final Set<String> aggregateOutputNames = new LinkedHashSet<>();
-		Projection projection; // SELECT vars/exprs
-		TupleExpr where; // WHERE pattern (group peeled)
-		boolean distinct = false;
-		boolean reduced = false;
-		long limit = -1, offset = -1;
-		boolean hadExplicitGroup = false; // true if a Group wrapper was present
-	}
-
-	private static final class AggregateScan extends AbstractQueryModelVisitor<RuntimeException> {
-		final LinkedHashMap<String, ValueExpr> hoisted = new LinkedHashMap<>();
-		final Map<String, Integer> varCounts = new HashMap<>();
-		final Map<String, Integer> subjCounts = new HashMap<>();
-		final Map<String, Integer> predCounts = new HashMap<>();
-		final Map<String, Integer> objCounts = new HashMap<>();
-		final Set<String> aggregateArgVars = new HashSet<>();
-		final Set<String> aggregateOutputNames = new HashSet<>();
-
-		@Override
-		public void meet(StatementPattern sp) {
-			count(sp.getSubjectVar(), subjCounts);
-			count(sp.getPredicateVar(), predCounts);
-			count(sp.getObjectVar(), objCounts);
-		}
-
-		@Override
-		public void meet(Projection subqueryProjection) {
-			// Do not descend into subselects when scanning for aggregates.
-		}
-
-		@Override
-		public void meet(Extension ext) {
-			ext.getArg().visit(this);
-			for (ExtensionElem ee : ext.getElements()) {
-				ValueExpr expr = ee.getExpr();
-				if (expr instanceof AggregateOperator) {
-					hoisted.putIfAbsent(ee.getName(), expr);
-					aggregateOutputNames.add(ee.getName());
-					collectVarNames(expr, aggregateArgVars);
-				}
-			}
-		}
-
-		private void count(Var v, Map<String, Integer> roleMap) {
-			if (v == null || v.hasValue()) {
-				return;
-			}
-			final String name = v.getName();
-			if (name == null || name.isEmpty()) {
-				return;
-			}
-			varCounts.merge(name, 1, Integer::sum);
-			roleMap.merge(name, 1, Integer::sum);
-		}
-	}
-
 	// ---------------- Property Path Mini-AST ----------------
-
-	/**
-	 * Lightweight recognizer for RDF4J's subselect expansion of a simple zero-or-one path.
-	 *
-	 * Matches the common "SELECT ?s ?o WHERE { { FILTER sameTerm(?s, ?o) } UNION { ?s
-	 * <p>
-	 * ?o . } }" shape (optionally wrapped in DISTINCT), and returns start/end vars and predicate. Unlike
-	 * {@link #parseZeroOrOneProjectionNode(TupleExpr)}, this variant does not require an anonymous _anon_path_* bridge
-	 * var because it is not intended for chain fusion, only for rendering a standalone "?s
-	 * <p>
-	 * ? ?o" triple.
-	 */
-	// Removed: ZeroOrOneDirect helper; zero-or-one recognition now lives in IR transforms.
 
 	/** Result holder for parsing a UNION of two single-step StatementPatterns that start at 'subj'. */
 	private static final class FirstStepUnion {
@@ -2689,12 +2079,11 @@ public class TupleExprIRRenderer {
 	 */
 	private final class IRTextPrinter implements IrPrinter {
 		private final StringBuilder out;
-		private final String indentUnit = cfg.indent;
 		private final Map<String, String> currentOverrides = TupleExprIRRenderer.this.irOverrides;
-		private int level = 0;
 		// Track anonymous bnode var usage and assign labels when a var is referenced more than once.
 		private final Map<String, Integer> bnodeCounts = new LinkedHashMap<>();
 		private final Map<String, String> bnodeLabels = new LinkedHashMap<>();
+		private int level = 0;
 
 		IRTextPrinter(StringBuilder out) {
 			this.out = out;
@@ -2713,19 +2102,23 @@ public class TupleExprIRRenderer {
 		}
 
 		private void bumpBnodeVar(Var v) {
-			if (v == null || v.hasValue())
+			if (v == null || v.hasValue()) {
 				return;
+			}
 			final String n = v.getName();
-			if (n == null)
+			if (n == null) {
 				return;
-			if (!isAnonBNodeVar(v))
+			}
+			if (!isAnonBNodeVar(v)) {
 				return;
+			}
 			bnodeCounts.merge(n, 1, Integer::sum);
 		}
 
 		private void collectBnodeCounts(IrBGP w) {
-			if (w == null)
+			if (w == null) {
 				return;
+			}
 			for (IrNode ln : w.getLines()) {
 				if (ln instanceof IrStatementPattern) {
 					IrStatementPattern sp = (IrStatementPattern) ln;
@@ -2785,7 +2178,7 @@ public class TupleExprIRRenderer {
 
 		private String applyOverridesToText(final String termText, final Map<String, String> overrides) {
 			if (termText == null) {
-				return termText;
+				return null;
 			}
 			if (overrides == null || overrides.isEmpty()) {
 				return termText;
@@ -2810,8 +2203,9 @@ public class TupleExprIRRenderer {
 						changed = true;
 					}
 				}
-				if (!changed)
+				if (!changed) {
 					break;
+				}
 			}
 			// Map any remaining anonymous bnode var tokens to either [] or a stable label using precomputed counts
 			if (!bnodeCounts.isEmpty()) {
@@ -2862,7 +2256,7 @@ public class TupleExprIRRenderer {
 		}
 
 		private void indent() {
-			out.append(indentUnit.repeat(Math.max(0, level)));
+			out.append(cfg.indent.repeat(Math.max(0, level)));
 		}
 
 		@Override
@@ -3222,7 +2616,6 @@ public class TupleExprIRRenderer {
 		// direction). The Projection is expected to have a Union of a ZeroLengthPath and one or
 		// more non-zero branches. Each non-zero branch is parsed into a PathNode sequence and
 		// then alternated; finally a zero-or-one quantifier is applied.
-		// Removed: tryParseZeroOrOneSequenceProjection — handled by IR transforms
 		// (NormalizeZeroOrOneSubselectTransform)
 
 		// Build a PathNode sequence from a JOIN chain that connects s -> o via _anon_path_* variables.
@@ -3284,8 +2677,6 @@ public class TupleExprIRRenderer {
 					+ node.getClass().getSimpleName()));
 		}
 	}
-
-	// Removed: legacy BlockPrinter. WHERE printing uses IR + IRTextPrinter now.
 
 	private final class PathAtom implements PathNode {
 		final IRI iri;
