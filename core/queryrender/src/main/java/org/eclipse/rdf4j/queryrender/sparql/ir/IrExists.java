@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import java.util.List;
 import java.util.function.UnaryOperator;
 
 /**
@@ -38,17 +39,40 @@ public class IrExists extends IrNode {
 		p.endLine();
 		p.pushIndent();
 		if (where != null) {
-			final boolean wrapInner = this.isNewScope() || where.isNewScope();
-			if (wrapInner) {
+			// Heuristic: if the EXISTS body mixes a triple-like line with a nested EXISTS or VALUES,
+			// wrap the body in an inner grouping block to preserve expected brace structure.
+			if (shouldGroupInner(where)) {
 				p.openBlock();
-			}
-			p.printLines(where.getLines());
-			if (wrapInner) {
+				p.printLines(where.getLines());
 				p.closeBlock();
+			} else {
+				p.printLines(where.getLines());
 			}
 		}
 		p.popIndent();
 		p.line("}");
+	}
+
+	private static boolean shouldGroupInner(IrBGP w) {
+		if (w == null)
+			return false;
+		final List<IrNode> ls = w.getLines();
+		if (ls.size() < 2)
+			return false;
+		boolean hasTripleLike = false;
+		boolean hasNestedExistsOrValues = false;
+		for (IrNode ln : ls) {
+			if (ln instanceof IrStatementPattern || ln instanceof IrPathTriple || ln instanceof IrPropertyList) {
+				hasTripleLike = true;
+			} else if (ln instanceof IrFilter) {
+				IrFilter f = (IrFilter) ln;
+				if (f.getBody() instanceof IrExists)
+					hasNestedExistsOrValues = true;
+			} else if (ln instanceof IrValues) {
+				hasNestedExistsOrValues = true;
+			}
+		}
+		return hasTripleLike && hasNestedExistsOrValues;
 	}
 
 	@Override
