@@ -37,7 +37,7 @@ public abstract class IrNode {
 
 	/** Default no-op printing; concrete nodes override. */
 	public void print(IrPrinter p) {
-		p.line("# unknown IR node: " + getClass().getSimpleName());
+		throw new UnsupportedOperationException("print() not implemented in " + _className);
 	}
 
 	/**

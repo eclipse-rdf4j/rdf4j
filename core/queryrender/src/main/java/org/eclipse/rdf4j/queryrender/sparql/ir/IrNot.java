@@ -31,6 +31,16 @@ public class IrNot extends IrNode {
 	}
 
 	@Override
+	public void print(IrPrinter p) {
+		p.append("NOT ");
+		if (inner != null) {
+			inner.print(p);
+		} else {
+			p.endLine();
+		}
+	}
+
+	@Override
 	public IrNode transformChildren(UnaryOperator<IrNode> op) {
 		IrNode n = this.inner;
 		if (n != null) {
