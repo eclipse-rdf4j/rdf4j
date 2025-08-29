@@ -48,7 +48,9 @@ public final class NormalizeFilterNotInTransform extends BaseTransform {
 				if (f.getBody() == null && f.getConditionText() != null) {
 					String rewritten = tryRewriteNotIn(f.getConditionText());
 					if (rewritten != null) {
-						m = new IrFilter(rewritten);
+						IrFilter nf = new IrFilter(rewritten);
+						nf.setNewScope(f.isNewScope());
+						m = nf;
 					}
 				}
 			}
