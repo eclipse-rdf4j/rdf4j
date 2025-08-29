@@ -73,7 +73,9 @@ public class IrFilter extends IrNode {
 			}
 			IrExists ex2 = new IrExists(inner, ex.isNewScope());
 			ex2.setNewScope(ex.isNewScope());
-			return new IrFilter(ex2);
+			IrFilter nf = new IrFilter(ex2);
+			nf.setNewScope(this.isNewScope());
+			return nf;
 		}
 		if (body instanceof IrNot) {
 			IrNot n = (IrNot) body;
@@ -90,10 +92,14 @@ public class IrFilter extends IrNode {
 				}
 				IrExists ex2 = new IrExists(inner, ex.isNewScope());
 				ex2.setNewScope(ex.isNewScope());
-				return new IrFilter(new IrNot(ex2));
+				IrFilter nf = new IrFilter(new IrNot(ex2));
+				nf.setNewScope(this.isNewScope());
+				return nf;
 			}
 			// Unknown NOT inner: keep as-is
-			return new IrFilter(new IrNot(innerNode));
+			IrFilter nf = new IrFilter(new IrNot(innerNode));
+			nf.setNewScope(this.isNewScope());
+			return nf;
 		}
 		return this;
 	}
