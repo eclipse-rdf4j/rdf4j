@@ -152,7 +152,7 @@ public class TupleExprToIrConverter {
 			}
 		}
 
-		final IRBuilder builder = new IRBuilder(r);
+		final IRBuilder builder = new TupleExprToIrConverter(r).new IRBuilder();
 		ir.setWhere(builder.build(n.where));
 
 		for (GroupByTerm t : n.groupByTerms) {
@@ -894,8 +894,22 @@ public class TupleExprToIrConverter {
 
 	// ---------------- Path recognition helpers ----------------
 
-	public static IRBuilder getIrBuilder() {
-		return new IRBuilder(new TupleExprIRRenderer(new Config()));
+	// Build textual path expression for an ArbitraryLengthPath using converter internals
+	private String buildPathExprForArbitraryLengthPath(final ArbitraryLengthPath p) {
+		final PathNode inner = parseAPathInner(p.getPathExpression(), p.getSubjectVar(), p.getObjectVar());
+		if (inner == null) {
+			throw new IllegalStateException(
+					"Failed to parse ArbitraryLengthPath inner expression: " + p.getPathExpression());
+		}
+		final long min = p.getMinLength();
+		final long max = getMaxLengthSafe(p);
+		final PathNode q = new PathQuant(inner, min, max);
+		return (q.prec() < PREC_SEQ ? "(" + q.render() + ")" : q.render());
+	}
+
+	/** Convenience for rendering inline groups: build an IrBGP for a TupleExpr pattern. */
+	public IrBGP buildWhere(final TupleExpr pattern) {
+		return new IRBuilder().build(pattern);
 	}
 
 	private static void collectFreeVars(final TupleExpr e, final Set<String> out) {
@@ -1003,7 +1017,7 @@ public class TupleExprToIrConverter {
 		}
 
 		// WHERE as textual-IR
-		final IRBuilder builder = new IRBuilder(r);
+		final IRBuilder builder = new IRBuilder();
 		ir.setWhere(builder.build(n.where));
 
 		if (cfg.debugIR) {
@@ -1310,25 +1324,45 @@ public class TupleExprToIrConverter {
 		flattenUnion(arg, branches);
 		Var s = null;
 		Var o = null;
+		// First pass: detect endpoints via ZeroLengthPath or Filter(sameTerm)
+		for (TupleExpr branch : branches) {
+			if (branch instanceof ZeroLengthPath) {
+				ZeroLengthPath z = (ZeroLengthPath) branch;
+				if (s == null && o == null) {
+					s = z.getSubjectVar();
+					o = z.getObjectVar();
+				} else if (!sameVar(s, z.getSubjectVar()) || !sameVar(o, z.getObjectVar())) {
+					return null;
+				}
+			} else if (branch instanceof Filter) {
+				Filter f = (Filter) branch;
+				if (f.getCondition() instanceof SameTerm) {
+					SameTerm st = (SameTerm) f.getCondition();
+					if (st.getLeftArg() instanceof Var && st.getRightArg() instanceof Var) {
+						Var ls = (Var) st.getLeftArg();
+						Var rs = (Var) st.getRightArg();
+						if (s == null && o == null) {
+							s = ls;
+							o = rs;
+						} else if (!sameVar(s, ls) || !sameVar(o, rs)) {
+							return null;
+						}
+					} else {
+						return null;
+					}
+				}
+			}
+		}
+		if (s == null || o == null) {
+			return null;
+		}
+		// Second pass: collect non-zero chains
 		List<PathNode> seqs = new ArrayList<>();
 		for (TupleExpr branch : branches) {
-			if (branch instanceof Filter) {
-				Filter f = (Filter) branch;
-				if (!(f.getCondition() instanceof SameTerm)) {
-					return null;
-				}
-				SameTerm st = (SameTerm) f.getCondition();
-				if (!(st.getLeftArg() instanceof Var) || !(st.getRightArg() instanceof Var)) {
-					return null;
-				}
-				Var ls = (Var) st.getLeftArg();
-				Var rs = (Var) st.getRightArg();
-				if (s == null && o == null) {
-					s = ls;
-					o = rs;
-				} else if (!sameVar(s, ls) || !sameVar(o, rs)) {
-					return null;
-				}
+			if (branch instanceof ZeroLengthPath) {
+				continue;
+			}
+			if (branch instanceof Filter && ((Filter) branch).getCondition() instanceof SameTerm) {
 				continue;
 			}
 			PathNode seq = buildPathSequenceFromChain(branch, s, o);
@@ -1336,9 +1370,6 @@ public class TupleExprToIrConverter {
 				return null;
 			}
 			seqs.add(seq);
-		}
-		if (s == null || o == null) {
-			return null;
 		}
 		PathNode inner = (seqs.size() == 1) ? seqs.get(0) : new PathAlt(seqs);
 		PathNode q = new PathQuant(inner, 0, 1);
@@ -1538,13 +1569,9 @@ public class TupleExprToIrConverter {
 		}
 	}
 
-	static final class IRBuilder extends AbstractQueryModelVisitor<RuntimeException> {
+	final class IRBuilder extends AbstractQueryModelVisitor<RuntimeException> {
 		private final IrBGP where = new IrBGP();
-		private final TupleExprIRRenderer r;
-
-		public IRBuilder(TupleExprIRRenderer r) {
-			this.r = r;
-		}
+		private final TupleExprIRRenderer r = TupleExprToIrConverter.this.r;
 
 		IrBGP build(final TupleExpr t) {
 			if (t == null) {
@@ -1561,7 +1588,7 @@ public class TupleExprToIrConverter {
 			// NOT EXISTS {...}
 			if (condExpr instanceof Not && ((Not) condExpr).getArg() instanceof Exists) {
 				final Exists ex = (Exists) ((Not) condExpr).getArg();
-				IRBuilder inner = new IRBuilder(r);
+				IRBuilder inner = new IRBuilder();
 				IrBGP bgp = inner.build(ex.getSubQuery());
 				return new IrFilter(new IrNot(new IrExists(bgp, ex.isVariableScopeChange())));
 			}
@@ -1569,7 +1596,7 @@ public class TupleExprToIrConverter {
 			if (condExpr instanceof Exists) {
 				final Exists ex = (Exists) condExpr;
 				final TupleExpr sub = ex.getSubQuery();
-				IRBuilder inner = new IRBuilder(r);
+				IRBuilder inner = new IRBuilder();
 				IrBGP bgp = inner.build(sub);
 				boolean newScope = false;
 				if (sub instanceof Filter) {
@@ -1616,9 +1643,9 @@ public class TupleExprToIrConverter {
 		@Override
 		public void meet(final Join join) {
 			if (join.isVariableScopeChange()) {
-				IRBuilder left = new IRBuilder(r);
+				IRBuilder left = new IRBuilder();
 				IrBGP wl = left.build(join.getLeftArg());
-				IRBuilder right = new IRBuilder(r);
+				IRBuilder right = new IRBuilder();
 				IrBGP wr = right.build(join.getRightArg());
 				IrBGP grp = new IrBGP();
 				for (IrNode ln : wl.getLines()) {
@@ -1638,7 +1665,7 @@ public class TupleExprToIrConverter {
 		@Override
 		public void meet(final LeftJoin lj) {
 			lj.getLeftArg().visit(this);
-			final IRBuilder rightBuilder = new IRBuilder(r);
+			final IRBuilder rightBuilder = new IRBuilder();
 			final IrBGP right = rightBuilder.build(lj.getRightArg());
 			if (lj.getCondition() != null) {
 				right.add(buildFilterFromCondition(lj.getCondition()));
@@ -1708,9 +1735,9 @@ public class TupleExprToIrConverter {
 			if (leftIsU && rightIsU) {
 				final IrUnion irU = new IrUnion();
 				irU.setNewScope(u.isVariableScopeChange());
-				IRBuilder left = new IRBuilder(r);
+				IRBuilder left = new IRBuilder();
 				irU.addBranch(left.build(u.getLeftArg()));
-				IRBuilder right = new IRBuilder(r);
+				IRBuilder right = new IRBuilder();
 				irU.addBranch(right.build(u.getRightArg()));
 				where.add(irU);
 				return;
@@ -1720,7 +1747,7 @@ public class TupleExprToIrConverter {
 			final IrUnion irU = new IrUnion();
 			irU.setNewScope(u.isVariableScopeChange());
 			for (TupleExpr b : branches) {
-				IRBuilder bld = new IRBuilder(r);
+				IRBuilder bld = new IRBuilder();
 				irU.addBranch(bld.build(b));
 			}
 			where.add(irU);
@@ -1728,7 +1755,7 @@ public class TupleExprToIrConverter {
 
 		@Override
 		public void meet(final Service svc) {
-			IRBuilder inner = new IRBuilder(r);
+			IRBuilder inner = new IRBuilder();
 			IrBGP w = inner.build(svc.getArg());
 			where.add(new IrService(r.renderVarOrValuePublic(svc.getServiceRef()), svc.isSilent(), w));
 		}
@@ -1793,7 +1820,7 @@ public class TupleExprToIrConverter {
 		@Override
 		public void meet(final Difference diff) {
 			diff.getLeftArg().visit(this);
-			IRBuilder right = new IRBuilder(r);
+			IRBuilder right = new IRBuilder();
 			IrBGP rightWhere = right.build(diff.getRightArg());
 			where.add(new IrMinus(rightWhere));
 		}
@@ -1802,7 +1829,7 @@ public class TupleExprToIrConverter {
 		public void meet(final ArbitraryLengthPath p) {
 			final Var subj = p.getSubjectVar();
 			final Var obj = p.getObjectVar();
-			final String expr = r.buildPathExprForArbitraryLengthPath(p);
+			final String expr = TupleExprToIrConverter.this.buildPathExprForArbitraryLengthPath(p);
 			final IrPathTriple pt = new IrPathTriple(subj, expr, obj);
 			final Var ctx = getContextVarSafe(p);
 			if (ctx != null && (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
