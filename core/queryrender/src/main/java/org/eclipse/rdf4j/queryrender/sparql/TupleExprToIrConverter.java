@@ -1783,6 +1783,45 @@ public class TupleExprToIrConverter {
 		public void meet(final Service svc) {
 			IRBuilder inner = new IRBuilder();
 			IrBGP w = inner.build(svc.getArg());
+			// Best-effort: fuse UNION of two bare NPS path-triple branches into a single NPS inside SERVICE
+			if (w != null && w.getLines().size() == 1
+					&& w.getLines().get(0) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion) {
+				org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion u = (org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion) w
+						.getLines()
+						.get(0);
+				if (u.getBranches().size() == 2) {
+					org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP b1 = u.getBranches().get(0);
+					org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP b2 = u.getBranches().get(1);
+					if (b1.getLines().size() == 1 && b2.getLines().size() == 1
+							&& b1.getLines().get(0) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple
+							&& b2.getLines().get(0) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) {
+						org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple p1 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) b1
+								.getLines()
+								.get(0);
+						org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple p2 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) b2
+								.getLines()
+								.get(0);
+						String m1 = normalizeCompactNps(p1.getPathText());
+						String m2 = normalizeCompactNps(p2.getPathText());
+						if (m1 != null && m2 != null && p1.getSubject() != null && p1.getObject() != null
+								&& p2.getSubject() != null && p2.getObject() != null) {
+							org.eclipse.rdf4j.query.algebra.Var s = p1.getSubject();
+							org.eclipse.rdf4j.query.algebra.Var o = p1.getObject();
+							if (org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.BaseTransform.sameVar(s,
+									p2.getObject())
+									&& org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.BaseTransform.sameVar(o,
+											p2.getSubject())) {
+								String merged = mergeNpsMembers(m1,
+										org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.BaseTransform
+												.invertNegatedPropertySet(m2));
+								IrBGP nw = new IrBGP();
+								nw.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple(s, merged, o));
+								w = nw;
+							}
+						}
+					}
+				}
+			}
 			IrService irSvc = new IrService(r.renderVarOrValuePublic(svc.getServiceRef()), svc.isSilent(), w);
 			boolean scope;
 			try {
@@ -1798,6 +1837,38 @@ public class TupleExprToIrConverter {
 			} else {
 				where.add(irSvc);
 			}
+		}
+
+		private String normalizeCompactNps(String path) {
+			if (path == null)
+				return null;
+			String t = path.trim();
+			if (t.isEmpty())
+				return null;
+			if (t.startsWith("!(") && t.endsWith(")"))
+				return t;
+			if (t.startsWith("!^")) {
+				return "!(" + t.substring(1) + ")";
+			}
+			if (t.startsWith("!") && (t.length() == 1 || t.charAt(1) != '(')) {
+				return "!(" + t.substring(1) + ")";
+			}
+			return null;
+		}
+
+		private String mergeNpsMembers(String a, String b) {
+			// a,b are of the form !(...) ; merge inner members with '|'
+			int a1 = a.indexOf('('), a2 = a.lastIndexOf(')');
+			int b1 = b.indexOf('('), b2 = b.lastIndexOf(')');
+			if (a1 < 0 || a2 < 0 || b1 < 0 || b2 < 0)
+				return a; // fallback
+			String ia = a.substring(a1 + 1, a2).trim();
+			String ib = b.substring(b1 + 1, b2).trim();
+			if (ia.isEmpty())
+				return b;
+			if (ib.isEmpty())
+				return a;
+			return "!(" + ia + "|" + ib + ")";
 		}
 
 		@Override
