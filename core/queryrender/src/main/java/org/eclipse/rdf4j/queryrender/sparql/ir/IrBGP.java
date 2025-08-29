@@ -44,7 +44,11 @@ public class IrBGP extends IrNode {
 	@Override
 	public void print(IrPrinter p) {
 		p.openBlock();
+		if (isNewScope())
+			p.openBlock();
 		p.printLines(lines);
+		if (isNewScope())
+			p.closeBlock();
 		p.closeBlock();
 	}
 
@@ -56,6 +60,7 @@ public class IrBGP extends IrNode {
 			t = t.transformChildren(op);
 			w.add(t == null ? ln : t);
 		}
+		w.setNewScope(this.isNewScope());
 		return w;
 	}
 

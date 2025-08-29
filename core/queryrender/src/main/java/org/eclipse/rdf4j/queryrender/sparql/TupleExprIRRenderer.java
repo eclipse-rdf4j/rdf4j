@@ -20,7 +20,6 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -3091,14 +3090,43 @@ public class TupleExprIRRenderer {
 				IRBuilder inner = new IRBuilder();
 				IrBGP bgp = inner.build(ex.getSubQuery());
 				return new IrFilter(new IrNot(
-						new IrExists(bgp)));
+						new IrExists(bgp, ex.isVariableScopeChange())));
 			}
 			// EXISTS {...}
 			if (condExpr instanceof Exists) {
 				final Exists ex = (Exists) condExpr;
+				final TupleExpr sub = ex.getSubQuery();
 				IRBuilder inner = new IRBuilder();
-				IrBGP bgp = inner.build(ex.getSubQuery());
-				return new IrFilter(new IrExists(bgp));
+				IrBGP bgp = inner.build(sub);
+				// Preserve explicit grouping inside EXISTS if the top-level of the subquery
+				// indicates a variable scope change due to user braces (e.g., a grouped
+				// FILTER or an explicitly grouped join). Do not propagate UNION new-scope,
+				// which should not add an extra brace layer around the EXISTS body.
+				boolean newScope = false;
+				if (sub instanceof Filter) {
+					newScope = ((Filter) sub).isVariableScopeChange();
+				} else if (sub instanceof Join) {
+					// Either the join itself is a new scope, or one of its top-level parts is
+					// a FILTER that forces a new scope (explicit braces around FILTER).
+					if (((Join) sub).isVariableScopeChange()) {
+						newScope = true;
+					} else {
+						List<TupleExpr> parts = new ArrayList<>();
+						flattenJoin(sub, parts);
+						for (TupleExpr te : parts) {
+							if (te instanceof Filter && ((Filter) te).isVariableScopeChange()) {
+								newScope = true;
+								break;
+							}
+						}
+					}
+				}
+				IrExists exNode = new IrExists(bgp, ex.isVariableScopeChange());
+				if (newScope) {
+					exNode.setNewScope(true);
+					bgp.setNewScope(true);
+				}
+				return new IrFilter(exNode);
 			}
 			// Fallback: plain textual condition
 			final String cond = stripRedundantOuterParens(renderExpr(condExpr));
@@ -3176,6 +3204,10 @@ public class TupleExprIRRenderer {
 			if (f.isVariableScopeChange() && f.getArg() instanceof SingletonSet) {
 				IrBGP group = new IrBGP();
 				group.add(buildFilterFromCondition(f.getCondition()));
+				// Mark that this IR block corresponds to an explicit new variable scope
+				// in the original algebra, so later transforms and printers can
+				// preserve grouping decisions.
+				group.setNewScope(true);
 				where.add(group);
 				return;
 			}

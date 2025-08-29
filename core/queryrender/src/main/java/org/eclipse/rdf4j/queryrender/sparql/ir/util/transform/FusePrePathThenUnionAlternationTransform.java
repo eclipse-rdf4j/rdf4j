@@ -140,6 +140,7 @@ public final class FusePrePathThenUnionAlternationTransform extends BaseTransfor
 		}
 		IrBGP res = new IrBGP();
 		out.forEach(res::add);
+		res.setNewScope(bgp.isNewScope());
 		return res;
 	}
 

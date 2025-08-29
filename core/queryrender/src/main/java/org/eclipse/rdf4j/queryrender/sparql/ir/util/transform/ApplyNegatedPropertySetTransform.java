@@ -70,7 +70,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 					IrBGP inner = ex.getWhere();
 					if (inner != null) {
 						inner = rewriteSimpleNpsOnly(inner, r);
-						out.add(new IrFilter(new IrExists(inner)));
+						out.add(new IrFilter(new IrExists(inner, ex.isNewScope())));
 						i += 0;
 						continue;
 					}
@@ -467,6 +467,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 
 		final IrBGP res = new IrBGP();
 		out.forEach(res::add);
+		res.setNewScope(bgp.isNewScope());
 		return res;
 	}
 
@@ -599,6 +600,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				res.add(n);
 			}
 		}
+		res.setNewScope(bgp.isNewScope());
 		return res;
 	}
 

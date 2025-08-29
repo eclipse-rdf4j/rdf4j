@@ -66,6 +66,7 @@ public final class ApplyNormalizeGraphInnerPathsTransform extends BaseTransform 
 		}
 		IrBGP res = new IrBGP();
 		out.forEach(res::add);
+		res.setNewScope(bgp.isNewScope());
 		return res;
 
 	}
@@ -139,6 +140,7 @@ public final class ApplyNormalizeGraphInnerPathsTransform extends BaseTransform 
 		}
 		IrBGP res = new IrBGP();
 		out.forEach(res::add);
+		res.setNewScope(bgp.isNewScope());
 		return res;
 	}
 

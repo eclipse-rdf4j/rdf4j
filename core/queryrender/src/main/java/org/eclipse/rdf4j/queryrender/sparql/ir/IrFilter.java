@@ -52,7 +52,7 @@ public class IrFilter extends IrNode {
 		// Structured bodies: EXISTS { ... } and NOT EXISTS { ... }
 		if (body instanceof IrExists) {
 			IrExists ex = (IrExists) body;
-			printExists(p, false, ex.getWhere());
+			printExists(p, false, ex.getWhere(), ex.isNewScope());
 			return;
 		}
 		if (body instanceof IrNot) {
@@ -60,7 +60,7 @@ public class IrFilter extends IrNode {
 			IrNode inner = n.getInner();
 			if (inner instanceof IrExists) {
 				IrExists ex = (IrExists) inner;
-				printExists(p, true, ex.getWhere());
+				printExists(p, true, ex.getWhere(), ex.isNewScope());
 				return;
 			}
 		}
@@ -74,13 +74,20 @@ public class IrFilter extends IrNode {
 		p.line("# unsupported FILTER body: " + body.getClass().getSimpleName());
 	}
 
-	private void printExists(IrPrinter p, boolean negated, IrBGP where) {
+	private void printExists(IrPrinter p, boolean negated, IrBGP where, boolean wrapByScope) {
 		// Match expected style: no extra parentheses around EXISTS/NOT EXISTS
 		String head = negated ? "FILTER NOT EXISTS {" : "FILTER EXISTS {";
 		p.line(head);
 		p.pushIndent();
 		if (where != null) {
+			final boolean wrapInner = wrapByScope || where.isNewScope();
+			if (wrapInner) {
+				p.openBlock();
+			}
 			p.printLines(where.getLines());
+			if (wrapInner) {
+				p.closeBlock();
+			}
 		}
 		p.popIndent();
 		p.line("}");
@@ -102,7 +109,9 @@ public class IrFilter extends IrNode {
 					inner = (IrBGP) t;
 				}
 			}
-			return new IrFilter(new IrExists(inner));
+			IrExists ex2 = new IrExists(inner, ex.isNewScope());
+			ex2.setNewScope(ex.isNewScope());
+			return new IrFilter(ex2);
 		}
 		if (body instanceof IrNot) {
 			IrNot n = (IrNot) body;
@@ -117,7 +126,9 @@ public class IrFilter extends IrNode {
 						inner = (IrBGP) t;
 					}
 				}
-				return new IrFilter(new IrNot(new IrExists(inner)));
+				IrExists ex2 = new IrExists(inner, ex.isNewScope());
+				ex2.setNewScope(ex.isNewScope());
+				return new IrFilter(new IrNot(ex2));
 			}
 			// Unknown NOT inner: keep as-is
 			return new IrFilter(new IrNot(innerNode));

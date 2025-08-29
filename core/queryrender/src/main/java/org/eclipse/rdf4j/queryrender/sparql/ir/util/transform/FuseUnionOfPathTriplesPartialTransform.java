@@ -68,6 +68,7 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 		}
 		IrBGP res = new IrBGP();
 		out.forEach(res::add);
+		res.setNewScope(bgp.isNewScope());
 		return res;
 	}
 

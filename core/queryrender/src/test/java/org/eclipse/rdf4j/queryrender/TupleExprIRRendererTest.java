@@ -1937,8 +1937,19 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s\n" +
 				"WHERE {\n" +
 				"  ?s ?p ?o .\n" +
-				"  FILTER (EXISTS { { ?s foaf:knows ?t . } UNION { ?t foaf:knows ?s . } FILTER (NOT EXISTS { ?t ex:blockedBy ?s . }) })\n"
-				+
+				"  FILTER EXISTS {\n" +
+				"    {\n" +
+				"      ?s foaf:knows ?t .\n" +
+				"    } \n" +
+				"      UNION\n" +
+				"    {\n" +
+				"      ?t foaf:knows ?s .\n" +
+				"    } \n" +
+				"\n" +
+				"    FILTER NOT EXISTS {\n" +
+				"      ?t ex:blockedBy ?s . \n" +
+				"    } \n" +
+				"  }\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
 	}

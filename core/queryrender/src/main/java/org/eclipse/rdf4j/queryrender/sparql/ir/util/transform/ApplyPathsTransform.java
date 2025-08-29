@@ -1317,6 +1317,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 		}
 		IrBGP res = new IrBGP();
 		out.forEach(res::add);
+		res.setNewScope(bgp.isNewScope());
 		// Prefer fusing PT-SP-PT into PT + ( ^p / PT ) before other linear fusions
 		res = fusePtSpPtSequence(res, r);
 		// Orient bare NPS for better chaining with following triples
@@ -1429,6 +1430,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 				res.add(n);
 			}
 		}
+		res.setNewScope(bgp.isNewScope());
 		return res;
 	}
 
