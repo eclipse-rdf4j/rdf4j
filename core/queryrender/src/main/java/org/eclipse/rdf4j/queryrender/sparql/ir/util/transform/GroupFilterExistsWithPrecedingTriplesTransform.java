@@ -63,7 +63,14 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 				if (allowHere && f.getBody() instanceof IrExists) {
 					IrExists ex = (IrExists) f.getBody();
 					IrBGP inner = ex.getWhere();
-					if (inner != null && inner.getLines().size() == 1 && inner.getLines().get(0) instanceof IrBGP) {
+					boolean innerExplicitGroup = inner != null && inner.getLines().size() == 1
+							&& inner.getLines().get(0) instanceof IrBGP;
+					// Top-level: when the FILTER introduces a new scope, always wrap to
+					// preserve explicit outer grouping from the original query.
+					// Inside EXISTS: only wrap when the body is explicitly grouped to avoid
+					// double-wrapping.
+					boolean doWrap = (!insideExists && f.isNewScope()) || (insideExists && innerExplicitGroup);
+					if (doWrap) {
 						IrBGP grp = new IrBGP();
 						grp.add(n);
 						grp.add(f);
