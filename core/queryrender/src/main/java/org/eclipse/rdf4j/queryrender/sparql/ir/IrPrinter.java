@@ -28,6 +28,15 @@ import org.eclipse.rdf4j.query.algebra.Var;
 public interface IrPrinter {
 
 	// Basic output controls
+	/** Start a new logical line and prepare for inline appends. Applies indentation once. */
+	void startLine();
+
+	/** Append text to the current line (starting a new, indented line if none is active). */
+	void append(String s);
+
+	/** End the current line (no-op if none is active). */
+	void endLine();
+
 	void line(String s);
 
 	void raw(String s);
