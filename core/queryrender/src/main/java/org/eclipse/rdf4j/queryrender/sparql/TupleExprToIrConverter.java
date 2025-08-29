@@ -11,10 +11,8 @@
 package org.eclipse.rdf4j.queryrender.sparql;
 
 import java.lang.reflect.Method;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -24,9 +22,7 @@ import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -44,7 +40,6 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
-import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.IRIFunction;
 import org.eclipse.rdf4j.query.algebra.If;
@@ -54,7 +49,6 @@ import org.eclipse.rdf4j.query.algebra.LangMatches;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
-import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
@@ -108,93 +102,25 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
  */
 public class TupleExprToIrConverter {
 
+	private static final int PREC_ALT = 1;
+	private static final int PREC_SEQ = 2;
+
+	// ---------------- Public entry points ----------------
+	private static final int PREC_ATOM = 3;
 	private final TupleExprIRRenderer r;
+
+	// ---------------- Normalization and helpers ----------------
 
 	public TupleExprToIrConverter(TupleExprIRRenderer renderer) {
 		this.r = renderer;
 	}
 
-	// ---------------- Public entry points ----------------
-
-	public IrSelect toIRSelect(final TupleExpr tupleExpr) {
-		final Normalized n = normalize(tupleExpr, false);
-		applyAggregateHoisting(n);
-
-		final IrSelect ir = new IrSelect();
-		Config cfg = r.getConfig();
-		ir.setDistinct(n.distinct);
-		ir.setReduced(n.reduced);
-		ir.setLimit(n.limit);
-		ir.setOffset(n.offset);
-
-		// Projection header
-		if (n.projection != null && n.projection.getProjectionElemList() != null
-				&& !n.projection.getProjectionElemList().getElements().isEmpty()) {
-			for (ProjectionElem pe : n.projection.getProjectionElemList().getElements()) {
-				final String alias = pe.getProjectionAlias().orElse(pe.getName());
-				final ValueExpr expr = n.selectAssignments.get(alias);
-				if (expr != null) {
-					ir.getProjection().add(new IrProjectionItem(r.renderExprPublic(expr), alias));
-				} else {
-					ir.getProjection().add(new IrProjectionItem(null, alias));
-				}
-			}
-		} else if (!n.selectAssignments.isEmpty()) {
-			if (!n.groupByTerms.isEmpty()) {
-				for (GroupByTerm t : n.groupByTerms) {
-					ir.getProjection().add(new IrProjectionItem(null, t.var));
-				}
-			} else {
-				for (String v : n.syntheticProjectVars) {
-					ir.getProjection().add(new IrProjectionItem(null, v));
-				}
-			}
-			for (Entry<String, ValueExpr> e : n.selectAssignments.entrySet()) {
-				ir.getProjection().add(new IrProjectionItem(r.renderExprPublic(e.getValue()), e.getKey()));
-			}
-		}
-
-		// WHERE as textual-IR
-		final IRBuilder builder = new IRBuilder();
-		ir.setWhere(builder.build(n.where));
-
-		if (cfg.debugIR) {
-			System.out.println("# IR (raw)\n" + IrDebug.dump(ir));
-		}
-
-		// Transformations
-		final IrSelect irTransformed = IrTransforms.transformUsingChildren(ir, r);
-		ir.setWhere(irTransformed.getWhere());
-
-		if (cfg.debugIR) {
-			System.out.println("# IR (transformed)\n" + IrDebug.dump(ir));
-		}
-
-		// GROUP BY
-		for (GroupByTerm t : n.groupByTerms) {
-			ir.getGroupBy().add(new IrGroupByElem(t.expr == null ? null : r.renderExprPublic(t.expr), t.var));
-		}
-
-		// HAVING
-		for (ValueExpr cond : n.havingConditions) {
-			ir.getHaving().add(TupleExprIRRenderer.stripRedundantOuterParens(renderExprForHaving(cond, n)));
-		}
-
-		// ORDER BY
-		for (OrderElem oe : n.orderBy) {
-			ir.getOrderBy().add(new IrOrderSpec(r.renderExprPublic(oe.getExpr()), oe.isAscending()));
-		}
-
-		return ir;
-	}
-
 	/** Build IrSelect without running IR transforms (used for nested subselects). */
-	public IrSelect toIRSelectRaw(final TupleExpr tupleExpr) {
+	public static IrSelect toIRSelectRaw(final TupleExpr tupleExpr, TupleExprIRRenderer r) {
 		final Normalized n = normalize(tupleExpr, true);
 		applyAggregateHoisting(n);
 
 		final IrSelect ir = new IrSelect();
-		Config cfg = r.getConfig();
 		ir.setDistinct(n.distinct);
 		ir.setReduced(n.reduced);
 		ir.setLimit(n.limit);
@@ -226,14 +152,14 @@ public class TupleExprToIrConverter {
 			}
 		}
 
-		final IRBuilder builder = new IRBuilder();
+		final IRBuilder builder = new IRBuilder(r);
 		ir.setWhere(builder.build(n.where));
 
 		for (GroupByTerm t : n.groupByTerms) {
 			ir.getGroupBy().add(new IrGroupByElem(t.expr == null ? null : r.renderExprPublic(t.expr), t.var));
 		}
 		for (ValueExpr cond : n.havingConditions) {
-			ir.getHaving().add(TupleExprIRRenderer.stripRedundantOuterParens(renderExprForHaving(cond, n)));
+			ir.getHaving().add(TupleExprIRRenderer.stripRedundantOuterParens(renderExprForHaving(cond, n, r)));
 		}
 		for (OrderElem oe : n.orderBy) {
 			ir.getOrderBy().add(new IrOrderSpec(r.renderExprPublic(oe.getExpr()), oe.isAscending()));
@@ -241,13 +167,7 @@ public class TupleExprToIrConverter {
 		return ir;
 	}
 
-	// ---------------- Normalization and helpers ----------------
-
-	private Normalized normalize(final TupleExpr root) {
-		return normalize(root, false);
-	}
-
-	private Normalized normalize(final TupleExpr root, final boolean peelScopedWrappers) {
+	private static Normalized normalize(final TupleExpr root, final boolean peelScopedWrappers) {
 		final Normalized n = new Normalized();
 		TupleExpr cur = root;
 
@@ -439,7 +359,7 @@ public class TupleExprToIrConverter {
 		return n;
 	}
 
-	private boolean isHavingCandidate(ValueExpr cond, Set<String> groupVars, Set<String> aggregateAliasVars) {
+	private static boolean isHavingCandidate(ValueExpr cond, Set<String> groupVars, Set<String> aggregateAliasVars) {
 		Set<String> free = freeVars(cond);
 		if (free.isEmpty()) {
 			return true; // constant condition → valid HAVING
@@ -453,7 +373,7 @@ public class TupleExprToIrConverter {
 		return true;
 	}
 
-	private void applyAggregateHoisting(final Normalized n) {
+	private static void applyAggregateHoisting(final Normalized n) {
 		final AggregateScan scan = new AggregateScan();
 		if (n.where != null) {
 			n.where.visit(scan);
@@ -516,16 +436,19 @@ public class TupleExprToIrConverter {
 					candidates.stream().min((a, b) -> {
 						int as = scan.subjCounts.getOrDefault(a, 0);
 						int bs = scan.subjCounts.getOrDefault(b, 0);
-						if (as != bs)
+						if (as != bs) {
 							return Integer.compare(bs, as);
+						}
 						int ao = scan.objCounts.getOrDefault(a, 0);
 						int bo = scan.objCounts.getOrDefault(b, 0);
-						if (ao != bo)
+						if (ao != bo) {
 							return Integer.compare(bo, ao);
+						}
 						int ap = scan.predCounts.getOrDefault(a, 0);
 						int bp = scan.predCounts.getOrDefault(b, 0);
-						if (ap != bp)
+						if (ap != bp) {
 							return Integer.compare(bp, ap);
+						}
 						return a.compareTo(b);
 					}).ifPresent(chosen::add);
 				}
@@ -544,64 +467,84 @@ public class TupleExprToIrConverter {
 	}
 
 	private static boolean containsAggregate(ValueExpr e) {
-		if (e == null)
+		if (e == null) {
 			return false;
-		if (e instanceof AggregateOperator)
+		}
+		if (e instanceof AggregateOperator) {
 			return true;
-		if (e instanceof Not)
+		}
+		if (e instanceof Not) {
 			return containsAggregate(((Not) e).getArg());
-		if (e instanceof Bound)
+		}
+		if (e instanceof Bound) {
 			return containsAggregate(((Bound) e).getArg());
-		if (e instanceof Str)
+		}
+		if (e instanceof Str) {
 			return containsAggregate(((Str) e).getArg());
-		if (e instanceof Datatype)
+		}
+		if (e instanceof Datatype) {
 			return containsAggregate(((Datatype) e).getArg());
-		if (e instanceof Lang)
+		}
+		if (e instanceof Lang) {
 			return containsAggregate(((Lang) e).getArg());
-		if (e instanceof IRIFunction)
+		}
+		if (e instanceof IRIFunction) {
 			return containsAggregate(((IRIFunction) e).getArg());
+		}
 		if (e instanceof If) {
 			If iff = (If) e;
 			return containsAggregate(iff.getCondition()) || containsAggregate(iff.getResult())
 					|| containsAggregate(iff.getAlternative());
 		}
 		if (e instanceof Coalesce) {
-			for (ValueExpr a : ((Coalesce) e).getArguments())
-				if (containsAggregate(a))
+			for (ValueExpr a : ((Coalesce) e).getArguments()) {
+				if (containsAggregate(a)) {
 					return true;
+				}
+			}
 			return false;
 		}
 		if (e instanceof FunctionCall) {
-			for (ValueExpr a : ((FunctionCall) e).getArgs())
-				if (containsAggregate(a))
+			for (ValueExpr a : ((FunctionCall) e).getArgs()) {
+				if (containsAggregate(a)) {
 					return true;
+				}
+			}
 			return false;
 		}
-		if (e instanceof And)
+		if (e instanceof And) {
 			return containsAggregate(((And) e).getLeftArg()) || containsAggregate(((And) e).getRightArg());
-		if (e instanceof org.eclipse.rdf4j.query.algebra.Or)
+		}
+		if (e instanceof org.eclipse.rdf4j.query.algebra.Or) {
 			return containsAggregate(((org.eclipse.rdf4j.query.algebra.Or) e).getLeftArg())
 					|| containsAggregate(((org.eclipse.rdf4j.query.algebra.Or) e).getRightArg());
-		if (e instanceof Compare)
+		}
+		if (e instanceof Compare) {
 			return containsAggregate(((Compare) e).getLeftArg()) || containsAggregate(((Compare) e).getRightArg());
-		if (e instanceof SameTerm)
+		}
+		if (e instanceof SameTerm) {
 			return containsAggregate(((SameTerm) e).getLeftArg()) || containsAggregate(((SameTerm) e).getRightArg());
-		if (e instanceof LangMatches)
+		}
+		if (e instanceof LangMatches) {
 			return containsAggregate(((LangMatches) e).getLeftArg())
 					|| containsAggregate(((LangMatches) e).getRightArg());
+		}
 		if (e instanceof Regex) {
 			Regex r = (Regex) e;
 			return containsAggregate(r.getArg()) || containsAggregate(r.getPatternArg())
 					|| (r.getFlagsArg() != null && containsAggregate(r.getFlagsArg()));
 		}
 		if (e instanceof ListMemberOperator) {
-			for (ValueExpr a : ((ListMemberOperator) e).getArguments())
-				if (containsAggregate(a))
+			for (ValueExpr a : ((ListMemberOperator) e).getArguments()) {
+				if (containsAggregate(a)) {
 					return true;
+				}
+			}
 			return false;
 		}
-		if (e instanceof MathExpr)
+		if (e instanceof MathExpr) {
 			return containsAggregate(((MathExpr) e).getLeftArg()) || containsAggregate(((MathExpr) e).getRightArg());
+		}
 		return false;
 	}
 
@@ -612,16 +555,19 @@ public class TupleExprToIrConverter {
 	}
 
 	private static void collectVarNames(ValueExpr e, Set<String> acc) {
-		if (e == null)
-			return;
-		if (e instanceof Var) {
-			Var v = (Var) e;
-			if (!v.hasValue() && v.getName() != null && !v.getName().isEmpty())
-				acc.add(v.getName());
+		if (e == null) {
 			return;
 		}
-		if (e instanceof ValueConstant)
+		if (e instanceof Var) {
+			Var v = (Var) e;
+			if (!v.hasValue() && v.getName() != null && !v.getName().isEmpty()) {
+				acc.add(v.getName());
+			}
 			return;
+		}
+		if (e instanceof ValueConstant) {
+			return;
+		}
 		if (e instanceof Not) {
 			collectVarNames(((Not) e).getArg(), acc);
 			return;
@@ -691,20 +637,24 @@ public class TupleExprToIrConverter {
 			Regex rx = (Regex) e;
 			collectVarNames(rx.getArg(), acc);
 			collectVarNames(rx.getPatternArg(), acc);
-			if (rx.getFlagsArg() != null)
+			if (rx.getFlagsArg() != null) {
 				collectVarNames(rx.getFlagsArg(), acc);
+			}
 			return;
 		}
 		if (e instanceof FunctionCall) {
-			for (ValueExpr a : ((FunctionCall) e).getArgs())
+			for (ValueExpr a : ((FunctionCall) e).getArgs()) {
 				collectVarNames(a, acc);
+			}
 			return;
 		}
 		if (e instanceof ListMemberOperator) {
 			List<ValueExpr> args = ((ListMemberOperator) e).getArguments();
-			if (args != null)
-				for (ValueExpr a : args)
+			if (args != null) {
+				for (ValueExpr a : args) {
 					collectVarNames(a, acc);
+				}
+			}
 		}
 		if (e instanceof MathExpr) {
 			collectVarNames(((MathExpr) e).getLeftArg(), acc);
@@ -717,8 +667,9 @@ public class TupleExprToIrConverter {
 			collectVarNames(iff.getAlternative(), acc);
 		}
 		if (e instanceof Coalesce) {
-			for (ValueExpr a : ((Coalesce) e).getArguments())
+			for (ValueExpr a : ((Coalesce) e).getArguments()) {
 				collectVarNames(a, acc);
+			}
 		}
 	}
 
@@ -756,29 +707,36 @@ public class TupleExprToIrConverter {
 	}
 
 	private static boolean sameVar(Var a, Var b) {
-		if (a == null || b == null)
+		if (a == null || b == null) {
 			return false;
-		if (a.hasValue() || b.hasValue())
+		}
+		if (a.hasValue() || b.hasValue()) {
 			return false;
+		}
 		return Objects.equals(a.getName(), b.getName());
 	}
 
 	private static String freeVarName(Var v) {
-		if (v == null || v.hasValue())
+		if (v == null || v.hasValue()) {
 			return null;
+		}
 		final String n = v.getName();
 		return (n == null || n.isEmpty()) ? null : n;
 	}
 
 	private static boolean contextsIncompatible(final Var a, final Var b) {
-		if (a == b)
+		if (a == b) {
 			return false;
-		if (a == null || b == null)
+		}
+		if (a == null || b == null) {
 			return true;
-		if (a.hasValue() && b.hasValue())
+		}
+		if (a.hasValue() && b.hasValue()) {
 			return !Objects.equals(a.getValue(), b.getValue());
-		if (!a.hasValue() && !b.hasValue())
+		}
+		if (!a.hasValue() && !b.hasValue()) {
 			return !Objects.equals(a.getName(), b.getName());
+		}
 		return true;
 	}
 
@@ -786,8 +744,9 @@ public class TupleExprToIrConverter {
 		try {
 			final Method m = ArbitraryLengthPath.class.getMethod("getMaxLength");
 			final Object v = m.invoke(p);
-			if (v instanceof Number)
+			if (v instanceof Number) {
 				return ((Number) v).longValue();
+			}
 		} catch (ReflectiveOperationException ignore) {
 		}
 		return -1L;
@@ -797,21 +756,24 @@ public class TupleExprToIrConverter {
 		try {
 			Method m = StatementPattern.class.getMethod("getContextVar");
 			Object ctx = m.invoke(sp);
-			if (ctx instanceof Var)
+			if (ctx instanceof Var) {
 				return (Var) ctx;
+			}
 		} catch (ReflectiveOperationException ignore) {
 		}
 		return null;
 	}
 
 	private static Var getContextVarSafe(Object node) {
-		if (node instanceof StatementPattern)
+		if (node instanceof StatementPattern) {
 			return getContextVarSafe((StatementPattern) node);
+		}
 		try {
 			Method m = node.getClass().getMethod("getContextVar");
 			Object ctx = m.invoke(node);
-			if (ctx instanceof Var)
+			if (ctx instanceof Var) {
 				return (Var) ctx;
+			}
 		} catch (ReflectiveOperationException ignore) {
 		}
 		return null;
@@ -819,16 +781,21 @@ public class TupleExprToIrConverter {
 
 	private static String quantifier(final long min, final long max) {
 		final boolean unbounded = max < 0 || max == Integer.MAX_VALUE;
-		if (min == 0 && unbounded)
+		if (min == 0 && unbounded) {
 			return "*";
-		if (min == 1 && unbounded)
+		}
+		if (min == 1 && unbounded) {
 			return "+";
-		if (min == 0 && max == 1)
+		}
+		if (min == 0 && max == 1) {
 			return "?";
-		if (unbounded)
+		}
+		if (unbounded) {
 			return "{" + min + ",}";
-		if (min == max)
+		}
+		if (min == max) {
 			return "{" + min + "}";
+		}
 		return "{" + min + "," + max + "}";
 	}
 
@@ -840,55 +807,52 @@ public class TupleExprToIrConverter {
 		return name != null && name.startsWith("_anon_having_");
 	}
 
-	private void handleUnsupported(String message) {
-		if (r.getConfig().strict) {
-			throw new TupleExprIRRenderer.SparqlRenderingException(message);
-		}
-	}
-
 	// Render expressions for HAVING with substitution of _anon_having_* variables
-	private String renderExprForHaving(final ValueExpr e, final Normalized n) {
-		return renderExprWithSubstitution(e, n == null ? null : n.selectAssignments);
+	private static String renderExprForHaving(final ValueExpr e, final Normalized n, TupleExprIRRenderer r) {
+		return renderExprWithSubstitution(e, n == null ? null : n.selectAssignments, r);
 	}
 
-	private String renderExprWithSubstitution(final ValueExpr e, final Map<String, ValueExpr> subs) {
-		if (e == null)
+	private static String renderExprWithSubstitution(final ValueExpr e, final Map<String, ValueExpr> subs,
+			TupleExprIRRenderer r) {
+		if (e == null) {
 			return "()";
+		}
 
 		if (e instanceof Var) {
 			final Var v = (Var) e;
 			if (!v.hasValue() && v.getName() != null && isAnonHavingName(v.getName()) && subs != null) {
 				ValueExpr repl = subs.get(v.getName());
-				if (repl != null)
+				if (repl != null) {
 					return r.renderExprPublic(repl);
+				}
 			}
 			return v.hasValue() ? r.renderValuePublic(v.getValue()) : "?" + v.getName();
 		}
 
 		if (e instanceof Not) {
 			String inner = TupleExprIRRenderer
-					.stripRedundantOuterParens(renderExprWithSubstitution(((Not) e).getArg(), subs));
+					.stripRedundantOuterParens(renderExprWithSubstitution(((Not) e).getArg(), subs, r));
 			return "!" + parenthesizeIfNeeded(inner);
 		}
 		if (e instanceof And) {
 			And a = (And) e;
-			return "(" + renderExprWithSubstitution(a.getLeftArg(), subs) + " && "
-					+ renderExprWithSubstitution(a.getRightArg(), subs) + ")";
+			return "(" + renderExprWithSubstitution(a.getLeftArg(), subs, r) + " && "
+					+ renderExprWithSubstitution(a.getRightArg(), subs, r) + ")";
 		}
 		if (e instanceof org.eclipse.rdf4j.query.algebra.Or) {
 			org.eclipse.rdf4j.query.algebra.Or o = (org.eclipse.rdf4j.query.algebra.Or) e;
-			return "(" + renderExprWithSubstitution(o.getLeftArg(), subs) + " || "
-					+ renderExprWithSubstitution(o.getRightArg(), subs) + ")";
+			return "(" + renderExprWithSubstitution(o.getLeftArg(), subs, r) + " || "
+					+ renderExprWithSubstitution(o.getRightArg(), subs, r) + ")";
 		}
 		if (e instanceof Compare) {
 			Compare c = (Compare) e;
-			return "(" + renderExprWithSubstitution(c.getLeftArg(), subs) + " " + op(c.getOperator()) + " "
-					+ renderExprWithSubstitution(c.getRightArg(), subs) + ")";
+			return "(" + renderExprWithSubstitution(c.getLeftArg(), subs, r) + " " + op(c.getOperator()) + " "
+					+ renderExprWithSubstitution(c.getRightArg(), subs, r) + ")";
 		}
 		if (e instanceof SameTerm) {
 			SameTerm st = (SameTerm) e;
-			return "sameTerm(" + renderExprWithSubstitution(st.getLeftArg(), subs) + ", "
-					+ renderExprWithSubstitution(st.getRightArg(), subs) + ")";
+			return "sameTerm(" + renderExprWithSubstitution(st.getLeftArg(), subs, r) + ", "
+					+ renderExprWithSubstitution(st.getRightArg(), subs, r) + ")";
 		}
 
 		// fallback to normal rendering
@@ -896,13 +860,16 @@ public class TupleExprToIrConverter {
 	}
 
 	private static String parenthesizeIfNeeded(String s) {
-		if (s == null)
+		if (s == null) {
 			return "()";
+		}
 		String t = s.trim();
-		if (t.isEmpty())
+		if (t.isEmpty()) {
 			return "()";
-		if (t.charAt(0) == '(')
+		}
+		if (t.charAt(0) == '(') {
 			return t; // assume already a grouped expression
+		}
 		return "(" + t + ")";
 	}
 
@@ -927,15 +894,538 @@ public class TupleExprToIrConverter {
 
 	// ---------------- Path recognition helpers ----------------
 
+	public static IRBuilder getIrBuilder() {
+		return new IRBuilder(new TupleExprIRRenderer(new Config()));
+	}
+
+	private static void collectFreeVars(final TupleExpr e, final Set<String> out) {
+		if (e == null) {
+			return;
+		}
+		e.visit(new AbstractQueryModelVisitor<>() {
+			private void add(Var v) {
+				final String n = freeVarName(v);
+				if (n != null) {
+					out.add(n);
+				}
+			}
+
+			@Override
+			public void meet(StatementPattern sp) {
+				add(sp.getSubjectVar());
+				add(sp.getPredicateVar());
+				add(sp.getObjectVar());
+				add(getContextVarSafe(sp));
+			}
+
+			@Override
+			public void meet(Filter f) {
+				if (f.getCondition() != null) {
+					collectVarNames(f.getCondition(), out);
+				}
+				f.getArg().visit(this);
+			}
+
+			@Override
+			public void meet(LeftJoin lj) {
+				lj.getLeftArg().visit(this);
+				lj.getRightArg().visit(this);
+				if (lj.getCondition() != null) {
+					collectVarNames(lj.getCondition(), out);
+				}
+			}
+
+			@Override
+			public void meet(Join j) {
+				j.getLeftArg().visit(this);
+				j.getRightArg().visit(this);
+			}
+
+			@Override
+			public void meet(Union u) {
+				u.getLeftArg().visit(this);
+				u.getRightArg().visit(this);
+			}
+
+			@Override
+			public void meet(Extension ext) {
+				for (ExtensionElem ee : ext.getElements()) {
+					collectVarNames(ee.getExpr(), out);
+				}
+				ext.getArg().visit(this);
+			}
+
+			@Override
+			public void meet(ArbitraryLengthPath p) {
+				add(p.getSubjectVar());
+				add(p.getObjectVar());
+				add(getContextVarSafe(p));
+			}
+		});
+	}
+
+	public IrSelect toIRSelect(final TupleExpr tupleExpr) {
+		final Normalized n = normalize(tupleExpr, false);
+		applyAggregateHoisting(n);
+
+		final IrSelect ir = new IrSelect();
+		Config cfg = r.getConfig();
+		ir.setDistinct(n.distinct);
+		ir.setReduced(n.reduced);
+		ir.setLimit(n.limit);
+		ir.setOffset(n.offset);
+
+		// Projection header
+		if (n.projection != null && n.projection.getProjectionElemList() != null
+				&& !n.projection.getProjectionElemList().getElements().isEmpty()) {
+			for (ProjectionElem pe : n.projection.getProjectionElemList().getElements()) {
+				final String alias = pe.getProjectionAlias().orElse(pe.getName());
+				final ValueExpr expr = n.selectAssignments.get(alias);
+				if (expr != null) {
+					ir.getProjection().add(new IrProjectionItem(r.renderExprPublic(expr), alias));
+				} else {
+					ir.getProjection().add(new IrProjectionItem(null, alias));
+				}
+			}
+		} else if (!n.selectAssignments.isEmpty()) {
+			if (!n.groupByTerms.isEmpty()) {
+				for (GroupByTerm t : n.groupByTerms) {
+					ir.getProjection().add(new IrProjectionItem(null, t.var));
+				}
+			} else {
+				for (String v : n.syntheticProjectVars) {
+					ir.getProjection().add(new IrProjectionItem(null, v));
+				}
+			}
+			for (Entry<String, ValueExpr> e : n.selectAssignments.entrySet()) {
+				ir.getProjection().add(new IrProjectionItem(r.renderExprPublic(e.getValue()), e.getKey()));
+			}
+		}
+
+		// WHERE as textual-IR
+		final IRBuilder builder = new IRBuilder(r);
+		ir.setWhere(builder.build(n.where));
+
+		if (cfg.debugIR) {
+			System.out.println("# IR (raw)\n" + IrDebug.dump(ir));
+		}
+
+		// Transformations
+		final IrSelect irTransformed = IrTransforms.transformUsingChildren(ir, r);
+		ir.setWhere(irTransformed.getWhere());
+
+		if (cfg.debugIR) {
+			System.out.println("# IR (transformed)\n" + IrDebug.dump(ir));
+		}
+
+		// GROUP BY
+		for (GroupByTerm t : n.groupByTerms) {
+			ir.getGroupBy().add(new IrGroupByElem(t.expr == null ? null : r.renderExprPublic(t.expr), t.var));
+		}
+
+		// HAVING
+		for (ValueExpr cond : n.havingConditions) {
+			ir.getHaving().add(TupleExprIRRenderer.stripRedundantOuterParens(renderExprForHaving(cond, n, r)));
+		}
+
+		// ORDER BY
+		for (OrderElem oe : n.orderBy) {
+			ir.getOrderBy().add(new IrOrderSpec(r.renderExprPublic(oe.getExpr()), oe.isAscending()));
+		}
+
+		return ir;
+	}
+
+	private Normalized normalize(final TupleExpr root) {
+		return normalize(root, false);
+	}
+
+	private void handleUnsupported(String message) {
+		if (r.getConfig().strict) {
+			throw new TupleExprIRRenderer.SparqlRenderingException(message);
+		}
+	}
+
+	private PathNode parseAPathInner(final TupleExpr innerExpr, final Var subj, final Var obj) {
+		if (innerExpr instanceof StatementPattern) {
+			PathNode n = parseAtomicFromStatement((StatementPattern) innerExpr, subj, obj);
+			if (n != null) {
+				return n;
+			}
+		}
+		if (innerExpr instanceof Union) {
+			PathNode nps = tryParseNegatedPropertySetFromUnion(innerExpr, subj, obj);
+			if (nps != null) {
+				return nps;
+			}
+			List<TupleExpr> branches = new ArrayList<>();
+			flattenUnion(innerExpr, branches);
+			List<PathNode> alts = new ArrayList<>(branches.size());
+			for (TupleExpr b : branches) {
+				if (!(b instanceof StatementPattern)) {
+					return null;
+				}
+				PathNode n = parseAtomicFromStatement((StatementPattern) b, subj, obj);
+				if (n == null) {
+					return null;
+				}
+				alts.add(n);
+			}
+			return new PathAlt(alts);
+		}
+		if (innerExpr instanceof Join) {
+			PathNode seq = tryParseJoinOfUnionAndZeroOrOne(innerExpr, subj);
+			if (seq != null) {
+				return seq;
+			}
+			seq = buildPathSequenceFromJoinAllowingUnions(innerExpr, subj, obj);
+			if (seq != null) {
+				return seq;
+			}
+		}
+		{
+			PathNode seq = buildPathSequenceFromChain(innerExpr, subj, obj);
+			return seq;
+		}
+	}
+
+	private PathNode buildPathSequenceFromJoinAllowingUnions(final TupleExpr expr, final Var subj, final Var obj) {
+		List<TupleExpr> parts = new ArrayList<>();
+		flattenJoin(expr, parts);
+		if (parts.isEmpty()) {
+			return null;
+		}
+		Var cur = subj;
+		List<PathNode> steps = new ArrayList<>();
+		for (int i = 0; i < parts.size(); i++) {
+			TupleExpr part = parts.get(i);
+			boolean last = (i == parts.size() - 1);
+			if (part instanceof StatementPattern) {
+				StatementPattern sp = (StatementPattern) part;
+				Var pv = sp.getPredicateVar();
+				if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+					return null;
+				}
+				Var ss = sp.getSubjectVar();
+				Var oo = sp.getObjectVar();
+				if (sameVar(cur, ss) && (isAnonPathVar(oo) || (last && sameVar(oo, obj)))) {
+					steps.add(new PathAtom((IRI) pv.getValue(), false));
+					cur = oo;
+				} else if (sameVar(cur, oo) && (isAnonPathVar(ss) || (last && sameVar(ss, obj)))) {
+					steps.add(new PathAtom((IRI) pv.getValue(), true));
+					cur = ss;
+				} else {
+					return null;
+				}
+			} else if (part instanceof Union) {
+				List<TupleExpr> unions = new ArrayList<>();
+				flattenUnion(part, unions);
+				Var next = null;
+				List<PathNode> alts = new ArrayList<>();
+				for (TupleExpr u : unions) {
+					if (!(u instanceof StatementPattern)) {
+						return null;
+					}
+					StatementPattern sp = (StatementPattern) u;
+					Var pv = sp.getPredicateVar();
+					if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+						return null;
+					}
+					Var ss = sp.getSubjectVar();
+					Var oo = sp.getObjectVar();
+					boolean inv;
+					Var mid;
+					if (sameVar(cur, ss) && isAnonPathVar(oo)) {
+						inv = false;
+						mid = oo;
+					} else if (sameVar(cur, oo) && isAnonPathVar(ss)) {
+						inv = true;
+						mid = ss;
+					} else if (last && sameVar(ss, obj) && sameVar(cur, oo)) {
+						inv = true;
+						mid = ss;
+					} else if (last && sameVar(oo, obj) && sameVar(cur, ss)) {
+						inv = false;
+						mid = oo;
+					} else {
+						return null;
+					}
+					if (next == null) {
+						next = mid;
+					} else if (!sameVar(next, mid)) {
+						return null;
+					}
+					alts.add(new PathAtom((IRI) pv.getValue(), inv));
+				}
+				if (next == null) {
+					return null;
+				}
+				cur = next;
+				steps.add(alts.size() == 1 ? alts.get(0) : new PathAlt(alts));
+			} else {
+				return null;
+			}
+		}
+		if (!sameVar(cur, obj) && !isAnonPathVar(cur)) {
+			return null;
+		}
+		return steps.size() == 1 ? steps.get(0) : new PathSeq(steps);
+	}
+
+	private PathNode tryParseNegatedPropertySetFromUnion(final TupleExpr expr, final Var subj, final Var obj) {
+		List<TupleExpr> leaves = new ArrayList<>();
+		flattenUnion(expr, leaves);
+		if (leaves.isEmpty()) {
+			return null;
+		}
+		List<PathNode> members = new ArrayList<>();
+		for (TupleExpr leaf : leaves) {
+			if (!(leaf instanceof Filter)) {
+				return null; // require Filter wrapping the single triple
+			}
+			Filter f = (Filter) leaf;
+			if (!(f.getArg() instanceof StatementPattern)) {
+				return null;
+			}
+			StatementPattern sp = (StatementPattern) f.getArg();
+			if (!(f.getCondition() instanceof Compare)) {
+				return null;
+			}
+			Compare cmp = (Compare) f.getCondition();
+			if (cmp.getOperator() != CompareOp.NE) {
+				return null;
+			}
+			Var pv = null;
+			IRI bad = null;
+			if (cmp.getLeftArg() instanceof Var && cmp.getRightArg() instanceof ValueConstant
+					&& ((ValueConstant) cmp.getRightArg()).getValue() instanceof IRI) {
+				pv = (Var) cmp.getLeftArg();
+				bad = (IRI) ((ValueConstant) cmp.getRightArg()).getValue();
+			} else if (cmp.getRightArg() instanceof Var && cmp.getLeftArg() instanceof ValueConstant
+					&& ((ValueConstant) cmp.getLeftArg()).getValue() instanceof IRI) {
+				pv = (Var) cmp.getRightArg();
+				bad = (IRI) ((ValueConstant) cmp.getLeftArg()).getValue();
+			} else {
+				return null;
+			}
+			if (!sameVar(sp.getPredicateVar(), pv)) {
+				return null;
+			}
+			boolean forward = sameVar(sp.getSubjectVar(), subj) && sameVar(sp.getObjectVar(), obj);
+			boolean inverse = sameVar(sp.getSubjectVar(), obj) && sameVar(sp.getObjectVar(), subj);
+			if (!forward && !inverse) {
+				return null;
+			}
+			members.add(new PathAtom(bad, inverse));
+		}
+		if (members.isEmpty()) {
+			return null;
+		}
+		PathNode inner = (members.size() == 1) ? members.get(0) : new PathAlt(members);
+		return new PathNeg(inner);
+	}
+
+	private PathNode tryParseJoinOfUnionAndZeroOrOne(final TupleExpr expr, final Var subj) {
+		List<TupleExpr> parts = new ArrayList<>();
+		flattenJoin(expr, parts);
+		if (parts.size() != 2 || !(parts.get(0) instanceof Union)) {
+			return null;
+		}
+		Union u = (Union) parts.get(0);
+		TupleExpr tailExpr = parts.get(1);
+		FirstStepUnion first = parseFirstStepUnion(u, subj);
+		if (first == null) {
+			return null;
+		}
+		ZeroOrOneNode tail = parseZeroOrOneProjectionNode(tailExpr);
+		if (tail == null) {
+			return null;
+		}
+		if (!sameVar(first.mid, tail.s)) {
+			return null;
+		}
+		List<PathNode> seqParts = new ArrayList<>();
+		seqParts.add(first.node);
+		seqParts.add(tail.node);
+		return new PathSeq(seqParts);
+	}
+
+	private FirstStepUnion parseFirstStepUnion(final TupleExpr expr, final Var subj) {
+		List<TupleExpr> branches = new ArrayList<>();
+		flattenUnion(expr, branches);
+		Var mid = null;
+		List<PathNode> alts = new ArrayList<>();
+		for (TupleExpr b : branches) {
+			if (!(b instanceof StatementPattern)) {
+				return null;
+			}
+			StatementPattern sp = (StatementPattern) b;
+			Var ss = sp.getSubjectVar();
+			Var oo = sp.getObjectVar();
+			Var pv = sp.getPredicateVar();
+			if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+				return null;
+			}
+			boolean inv;
+			Var m;
+			if (sameVar(subj, ss) && isAnonPathVar(oo)) {
+				inv = false;
+				m = oo;
+			} else if (sameVar(subj, oo) && isAnonPathVar(ss)) {
+				inv = true;
+				m = ss;
+			} else {
+				return null;
+			}
+			if (mid == null) {
+				mid = m;
+			} else if (!sameVar(mid, m)) {
+				return null;
+			}
+			alts.add(new PathAtom((IRI) pv.getValue(), inv));
+		}
+		if (mid == null) {
+			return null;
+		}
+		PathNode n = (alts.size() == 1) ? alts.get(0) : new PathAlt(alts);
+		return new FirstStepUnion(mid, n);
+	}
+
+	private ZeroOrOneNode parseZeroOrOneProjectionNode(final TupleExpr projOrDistinct) {
+		// Recognize the UNION of a ZeroLengthPath and one or more non-zero chains expanded into a Projection
+		// SELECT ?s ?o WHERE { { FILTER sameTerm(?s, ?o) } UNION { ...chain... } }
+		TupleExpr cur = projOrDistinct;
+		if (cur instanceof Distinct) {
+			cur = ((Distinct) cur).getArg();
+		}
+		if (!(cur instanceof Projection)) {
+			return null;
+		}
+		Projection proj = (Projection) cur;
+		TupleExpr arg = proj.getArg();
+		if (!(arg instanceof Union)) {
+			return null;
+		}
+		List<TupleExpr> branches = new ArrayList<>();
+		flattenUnion(arg, branches);
+		Var s = null;
+		Var o = null;
+		List<PathNode> seqs = new ArrayList<>();
+		for (TupleExpr branch : branches) {
+			if (branch instanceof Filter) {
+				Filter f = (Filter) branch;
+				if (!(f.getCondition() instanceof SameTerm)) {
+					return null;
+				}
+				SameTerm st = (SameTerm) f.getCondition();
+				if (!(st.getLeftArg() instanceof Var) || !(st.getRightArg() instanceof Var)) {
+					return null;
+				}
+				Var ls = (Var) st.getLeftArg();
+				Var rs = (Var) st.getRightArg();
+				if (s == null && o == null) {
+					s = ls;
+					o = rs;
+				} else if (!sameVar(s, ls) || !sameVar(o, rs)) {
+					return null;
+				}
+				continue;
+			}
+			PathNode seq = buildPathSequenceFromChain(branch, s, o);
+			if (seq == null) {
+				return null;
+			}
+			seqs.add(seq);
+		}
+		if (s == null || o == null) {
+			return null;
+		}
+		PathNode inner = (seqs.size() == 1) ? seqs.get(0) : new PathAlt(seqs);
+		PathNode q = new PathQuant(inner, 0, 1);
+		return new ZeroOrOneNode(s, o, q);
+	}
+
+	private PathNode parseAtomicFromStatement(final StatementPattern sp, final Var subj, final Var obj) {
+		final Var ss = sp.getSubjectVar();
+		final Var oo = sp.getObjectVar();
+		final Var pv = sp.getPredicateVar();
+		if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+			return null;
+		}
+		if (sameVar(subj, ss) && sameVar(oo, obj)) {
+			return new PathAtom((IRI) pv.getValue(), false);
+		}
+		if (sameVar(subj, oo) && sameVar(ss, obj)) {
+			return new PathAtom((IRI) pv.getValue(), true);
+		}
+		return null;
+	}
+
+	private PathNode buildPathSequenceFromChain(TupleExpr chain, Var s, Var o) {
+		List<TupleExpr> flat = new ArrayList<>();
+		TupleExprToIrConverter.flattenJoin(chain, flat);
+		List<StatementPattern> sps = new ArrayList<>();
+		for (TupleExpr t : flat) {
+			if (t instanceof StatementPattern) {
+				sps.add((StatementPattern) t);
+			} else {
+				return null; // only simple statement patterns supported here
+			}
+		}
+		if (sps.isEmpty()) {
+			return null;
+		}
+		List<PathAtom> steps = new ArrayList<>();
+		Var cur = s;
+		Set<StatementPattern> used = new LinkedHashSet<>();
+		int guard = 0;
+		while (!sameVar(cur, o)) {
+			if (++guard > 10000) {
+				return null;
+			}
+			boolean advanced = false;
+			for (StatementPattern sp : sps) {
+				if (used.contains(sp)) {
+					continue;
+				}
+				Var pv = sp.getPredicateVar();
+				if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+					continue;
+				}
+				Var ss = sp.getSubjectVar();
+				Var oo = sp.getObjectVar();
+				if (sameVar(cur, ss) && (isAnonPathVar(oo) || sameVar(oo, o))) {
+					steps.add(new PathAtom((IRI) pv.getValue(), false));
+					cur = oo;
+					used.add(sp);
+					advanced = true;
+					break;
+				} else if (sameVar(cur, oo) && (isAnonPathVar(ss) || sameVar(ss, o))) {
+					steps.add(new PathAtom((IRI) pv.getValue(), true));
+					cur = ss;
+					used.add(sp);
+					advanced = true;
+					break;
+				}
+			}
+			if (!advanced) {
+				return null;
+			}
+		}
+		if (used.size() != sps.size()) {
+			return null; // extra statements not part of the chain
+		}
+		if (steps.isEmpty()) {
+			return null;
+		}
+		return (steps.size() == 1) ? steps.get(0) : new PathSeq(new ArrayList<>(steps));
+	}
+
 	private interface PathNode {
 		String render();
 
 		int prec();
 	}
-
-	private static final int PREC_ALT = 1;
-	private static final int PREC_SEQ = 2;
-	private static final int PREC_ATOM = 3;
 
 	private static final class PathSeq implements PathNode {
 		final List<PathNode> parts;
@@ -1024,27 +1514,6 @@ public class TupleExprToIrConverter {
 		}
 	}
 
-	private final class PathAtom implements PathNode {
-		final IRI iri;
-		final boolean inverse;
-
-		PathAtom(IRI iri, boolean inverse) {
-			this.iri = iri;
-			this.inverse = inverse;
-		}
-
-		@Override
-		public String render() {
-			return (inverse ? "^" : "") + r.renderIRI(iri);
-		}
-
-		@Override
-		public int prec() {
-			return PREC_ATOM;
-		}
-
-	}
-
 	private static final class FirstStepUnion {
 		final Var mid;
 		final PathNode node;
@@ -1054,6 +1523,8 @@ public class TupleExprToIrConverter {
 			this.node = node;
 		}
 	}
+
+	// ---------------- IR Builder ----------------
 
 	private static final class ZeroOrOneNode {
 		final Var s;
@@ -1067,354 +1538,13 @@ public class TupleExprToIrConverter {
 		}
 	}
 
-	private PathNode parseAPathInner(final TupleExpr innerExpr, final Var subj, final Var obj) {
-		if (innerExpr instanceof StatementPattern) {
-			PathNode n = parseAtomicFromStatement((StatementPattern) innerExpr, subj, obj);
-			if (n != null)
-				return n;
-		}
-		if (innerExpr instanceof Union) {
-			PathNode nps = tryParseNegatedPropertySetFromUnion(innerExpr, subj, obj);
-			if (nps != null)
-				return nps;
-			List<TupleExpr> branches = new ArrayList<>();
-			flattenUnion(innerExpr, branches);
-			List<PathNode> alts = new ArrayList<>(branches.size());
-			for (TupleExpr b : branches) {
-				if (!(b instanceof StatementPattern))
-					return null;
-				PathNode n = parseAtomicFromStatement((StatementPattern) b, subj, obj);
-				if (n == null)
-					return null;
-				alts.add(n);
-			}
-			return new PathAlt(alts);
-		}
-		if (innerExpr instanceof Join) {
-			PathNode seq = tryParseJoinOfUnionAndZeroOrOne(innerExpr, subj);
-			if (seq != null)
-				return seq;
-			seq = buildPathSequenceFromJoinAllowingUnions(innerExpr, subj, obj);
-			if (seq != null)
-				return seq;
-		}
-		{
-			PathNode seq = buildPathSequenceFromChain(innerExpr, subj, obj);
-			return seq;
-		}
-	}
-
-	private PathNode buildPathSequenceFromJoinAllowingUnions(final TupleExpr expr, final Var subj, final Var obj) {
-		List<TupleExpr> parts = new ArrayList<>();
-		flattenJoin(expr, parts);
-		if (parts.isEmpty())
-			return null;
-		Var cur = subj;
-		List<PathNode> steps = new ArrayList<>();
-		for (int i = 0; i < parts.size(); i++) {
-			TupleExpr part = parts.get(i);
-			boolean last = (i == parts.size() - 1);
-			if (part instanceof StatementPattern) {
-				StatementPattern sp = (StatementPattern) part;
-				Var pv = sp.getPredicateVar();
-				if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI))
-					return null;
-				Var ss = sp.getSubjectVar();
-				Var oo = sp.getObjectVar();
-				if (sameVar(cur, ss) && (isAnonPathVar(oo) || (last && sameVar(oo, obj)))) {
-					steps.add(new PathAtom((IRI) pv.getValue(), false));
-					cur = oo;
-				} else if (sameVar(cur, oo) && (isAnonPathVar(ss) || (last && sameVar(ss, obj)))) {
-					steps.add(new PathAtom((IRI) pv.getValue(), true));
-					cur = ss;
-				} else {
-					return null;
-				}
-			} else if (part instanceof Union) {
-				List<TupleExpr> unions = new ArrayList<>();
-				flattenUnion(part, unions);
-				Var next = null;
-				List<PathNode> alts = new ArrayList<>();
-				for (TupleExpr u : unions) {
-					if (!(u instanceof StatementPattern))
-						return null;
-					StatementPattern sp = (StatementPattern) u;
-					Var pv = sp.getPredicateVar();
-					if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI))
-						return null;
-					Var ss = sp.getSubjectVar();
-					Var oo = sp.getObjectVar();
-					boolean inv;
-					Var mid;
-					if (sameVar(cur, ss) && isAnonPathVar(oo)) {
-						inv = false;
-						mid = oo;
-					} else if (sameVar(cur, oo) && isAnonPathVar(ss)) {
-						inv = true;
-						mid = ss;
-					} else if (last && sameVar(ss, obj) && sameVar(cur, oo)) {
-						inv = true;
-						mid = ss;
-					} else if (last && sameVar(oo, obj) && sameVar(cur, ss)) {
-						inv = false;
-						mid = oo;
-					} else
-						return null;
-					if (next == null)
-						next = mid;
-					else if (!sameVar(next, mid))
-						return null;
-					alts.add(new PathAtom((IRI) pv.getValue(), inv));
-				}
-				if (next == null)
-					return null;
-				cur = next;
-				steps.add(alts.size() == 1 ? alts.get(0) : new PathAlt(alts));
-			} else {
-				return null;
-			}
-		}
-		if (!sameVar(cur, obj) && !isAnonPathVar(cur))
-			return null;
-		return steps.size() == 1 ? steps.get(0) : new PathSeq(steps);
-	}
-
-	private PathNode tryParseNegatedPropertySetFromUnion(final TupleExpr expr, final Var subj, final Var obj) {
-		List<TupleExpr> leaves = new ArrayList<>();
-		flattenUnion(expr, leaves);
-		if (leaves.isEmpty()) {
-			return null;
-		}
-		List<PathNode> members = new ArrayList<>();
-		for (TupleExpr leaf : leaves) {
-			if (!(leaf instanceof Filter)) {
-				return null; // require Filter wrapping the single triple
-			}
-			Filter f = (Filter) leaf;
-			if (!(f.getArg() instanceof StatementPattern)) {
-				return null;
-			}
-			StatementPattern sp = (StatementPattern) f.getArg();
-			if (!(f.getCondition() instanceof Compare)) {
-				return null;
-			}
-			Compare cmp = (Compare) f.getCondition();
-			if (cmp.getOperator() != CompareOp.NE) {
-				return null;
-			}
-			Var pv = null;
-			IRI bad = null;
-			if (cmp.getLeftArg() instanceof Var && cmp.getRightArg() instanceof ValueConstant
-					&& ((ValueConstant) cmp.getRightArg()).getValue() instanceof IRI) {
-				pv = (Var) cmp.getLeftArg();
-				bad = (IRI) ((ValueConstant) cmp.getRightArg()).getValue();
-			} else if (cmp.getRightArg() instanceof Var && cmp.getLeftArg() instanceof ValueConstant
-					&& ((ValueConstant) cmp.getLeftArg()).getValue() instanceof IRI) {
-				pv = (Var) cmp.getRightArg();
-				bad = (IRI) ((ValueConstant) cmp.getLeftArg()).getValue();
-			} else {
-				return null;
-			}
-			if (!sameVar(sp.getPredicateVar(), pv)) {
-				return null;
-			}
-			boolean forward = sameVar(sp.getSubjectVar(), subj) && sameVar(sp.getObjectVar(), obj);
-			boolean inverse = sameVar(sp.getSubjectVar(), obj) && sameVar(sp.getObjectVar(), subj);
-			if (!forward && !inverse) {
-				return null;
-			}
-			members.add(new PathAtom(bad, inverse));
-		}
-		if (members.isEmpty()) {
-			return null;
-		}
-		PathNode inner = (members.size() == 1) ? members.get(0) : new PathAlt(members);
-		return new PathNeg(inner);
-	}
-
-	private PathNode tryParseJoinOfUnionAndZeroOrOne(final TupleExpr expr, final Var subj) {
-		List<TupleExpr> parts = new ArrayList<>();
-		flattenJoin(expr, parts);
-		if (parts.size() != 2 || !(parts.get(0) instanceof Union))
-			return null;
-		Union u = (Union) parts.get(0);
-		TupleExpr tailExpr = parts.get(1);
-		FirstStepUnion first = parseFirstStepUnion(u, subj);
-		if (first == null)
-			return null;
-		ZeroOrOneNode tail = parseZeroOrOneProjectionNode(tailExpr);
-		if (tail == null)
-			return null;
-		if (!sameVar(first.mid, tail.s))
-			return null;
-		List<PathNode> seqParts = new ArrayList<>();
-		seqParts.add(first.node);
-		seqParts.add(tail.node);
-		return new PathSeq(seqParts);
-	}
-
-	private FirstStepUnion parseFirstStepUnion(final TupleExpr expr, final Var subj) {
-		List<TupleExpr> branches = new ArrayList<>();
-		flattenUnion(expr, branches);
-		Var mid = null;
-		List<PathNode> alts = new ArrayList<>();
-		for (TupleExpr b : branches) {
-			if (!(b instanceof StatementPattern))
-				return null;
-			StatementPattern sp = (StatementPattern) b;
-			Var ss = sp.getSubjectVar();
-			Var oo = sp.getObjectVar();
-			Var pv = sp.getPredicateVar();
-			if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI))
-				return null;
-			boolean inv;
-			Var m;
-			if (sameVar(subj, ss) && isAnonPathVar(oo)) {
-				inv = false;
-				m = oo;
-			} else if (sameVar(subj, oo) && isAnonPathVar(ss)) {
-				inv = true;
-				m = ss;
-			} else
-				return null;
-			if (mid == null)
-				mid = m;
-			else if (!sameVar(mid, m))
-				return null;
-			alts.add(new PathAtom((IRI) pv.getValue(), inv));
-		}
-		if (mid == null)
-			return null;
-		PathNode n = (alts.size() == 1) ? alts.get(0) : new PathAlt(alts);
-		return new FirstStepUnion(mid, n);
-	}
-
-	private ZeroOrOneNode parseZeroOrOneProjectionNode(final TupleExpr projOrDistinct) {
-		// Recognize the UNION of a ZeroLengthPath and one or more non-zero chains expanded into a Projection
-		// SELECT ?s ?o WHERE { { FILTER sameTerm(?s, ?o) } UNION { ...chain... } }
-		TupleExpr cur = projOrDistinct;
-		if (cur instanceof Distinct) {
-			cur = ((Distinct) cur).getArg();
-		}
-		if (!(cur instanceof Projection))
-			return null;
-		Projection proj = (Projection) cur;
-		TupleExpr arg = proj.getArg();
-		if (!(arg instanceof Union))
-			return null;
-		List<TupleExpr> branches = new ArrayList<>();
-		flattenUnion(arg, branches);
-		Var s = null;
-		Var o = null;
-		List<PathNode> seqs = new ArrayList<>();
-		for (TupleExpr branch : branches) {
-			if (branch instanceof Filter) {
-				Filter f = (Filter) branch;
-				if (!(f.getCondition() instanceof SameTerm))
-					return null;
-				SameTerm st = (SameTerm) f.getCondition();
-				if (!(st.getLeftArg() instanceof Var) || !(st.getRightArg() instanceof Var))
-					return null;
-				Var ls = (Var) st.getLeftArg();
-				Var rs = (Var) st.getRightArg();
-				if (s == null && o == null) {
-					s = ls;
-					o = rs;
-				} else if (!sameVar(s, ls) || !sameVar(o, rs))
-					return null;
-				continue;
-			}
-			PathNode seq = buildPathSequenceFromChain(branch, s, o);
-			if (seq == null)
-				return null;
-			seqs.add(seq);
-		}
-		if (s == null || o == null)
-			return null;
-		PathNode inner = (seqs.size() == 1) ? seqs.get(0) : new PathAlt(seqs);
-		PathNode q = new PathQuant(inner, 0, 1);
-		return new ZeroOrOneNode(s, o, q);
-	}
-
-	private PathNode parseAtomicFromStatement(final StatementPattern sp, final Var subj, final Var obj) {
-		final Var ss = sp.getSubjectVar();
-		final Var oo = sp.getObjectVar();
-		final Var pv = sp.getPredicateVar();
-		if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI))
-			return null;
-		if (sameVar(subj, ss) && sameVar(oo, obj)) {
-			return new PathAtom((IRI) pv.getValue(), false);
-		}
-		if (sameVar(subj, oo) && sameVar(ss, obj)) {
-			return new PathAtom((IRI) pv.getValue(), true);
-		}
-		return null;
-	}
-
-	private PathNode buildPathSequenceFromChain(TupleExpr chain, Var s, Var o) {
-		List<TupleExpr> flat = new ArrayList<>();
-		TupleExprToIrConverter.flattenJoin(chain, flat);
-		List<StatementPattern> sps = new ArrayList<>();
-		for (TupleExpr t : flat) {
-			if (t instanceof StatementPattern) {
-				sps.add((StatementPattern) t);
-			} else {
-				return null; // only simple statement patterns supported here
-			}
-		}
-		if (sps.isEmpty()) {
-			return null;
-		}
-		List<PathAtom> steps = new ArrayList<>();
-		Var cur = s;
-		Set<StatementPattern> used = new LinkedHashSet<>();
-		int guard = 0;
-		while (!sameVar(cur, o)) {
-			if (++guard > 10000) {
-				return null;
-			}
-			boolean advanced = false;
-			for (StatementPattern sp : sps) {
-				if (used.contains(sp)) {
-					continue;
-				}
-				Var pv = sp.getPredicateVar();
-				if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
-					continue;
-				}
-				Var ss = sp.getSubjectVar();
-				Var oo = sp.getObjectVar();
-				if (sameVar(cur, ss) && (isAnonPathVar(oo) || sameVar(oo, o))) {
-					steps.add(new PathAtom((IRI) pv.getValue(), false));
-					cur = oo;
-					used.add(sp);
-					advanced = true;
-					break;
-				} else if (sameVar(cur, oo) && (isAnonPathVar(ss) || sameVar(ss, o))) {
-					steps.add(new PathAtom((IRI) pv.getValue(), true));
-					cur = ss;
-					used.add(sp);
-					advanced = true;
-					break;
-				}
-			}
-			if (!advanced) {
-				return null;
-			}
-		}
-		if (used.size() != sps.size()) {
-			return null; // extra statements not part of the chain
-		}
-		if (steps.isEmpty()) {
-			return null;
-		}
-		return (steps.size() == 1) ? steps.get(0) : new PathSeq(new ArrayList<>(steps));
-	}
-
-	// ---------------- IR Builder ----------------
-
-	private final class IRBuilder extends AbstractQueryModelVisitor<RuntimeException> {
+	static final class IRBuilder extends AbstractQueryModelVisitor<RuntimeException> {
 		private final IrBGP where = new IrBGP();
+		private final TupleExprIRRenderer r;
+
+		public IRBuilder(TupleExprIRRenderer r) {
+			this.r = r;
+		}
 
 		IrBGP build(final TupleExpr t) {
 			if (t == null) {
@@ -1431,7 +1561,7 @@ public class TupleExprToIrConverter {
 			// NOT EXISTS {...}
 			if (condExpr instanceof Not && ((Not) condExpr).getArg() instanceof Exists) {
 				final Exists ex = (Exists) ((Not) condExpr).getArg();
-				IRBuilder inner = new IRBuilder();
+				IRBuilder inner = new IRBuilder(r);
 				IrBGP bgp = inner.build(ex.getSubQuery());
 				return new IrFilter(new IrNot(new IrExists(bgp, ex.isVariableScopeChange())));
 			}
@@ -1439,7 +1569,7 @@ public class TupleExprToIrConverter {
 			if (condExpr instanceof Exists) {
 				final Exists ex = (Exists) condExpr;
 				final TupleExpr sub = ex.getSubQuery();
-				IRBuilder inner = new IRBuilder();
+				IRBuilder inner = new IRBuilder(r);
 				IrBGP bgp = inner.build(sub);
 				boolean newScope = false;
 				if (sub instanceof Filter) {
@@ -1486,15 +1616,17 @@ public class TupleExprToIrConverter {
 		@Override
 		public void meet(final Join join) {
 			if (join.isVariableScopeChange()) {
-				IRBuilder left = new IRBuilder();
+				IRBuilder left = new IRBuilder(r);
 				IrBGP wl = left.build(join.getLeftArg());
-				IRBuilder right = new IRBuilder();
+				IRBuilder right = new IRBuilder(r);
 				IrBGP wr = right.build(join.getRightArg());
 				IrBGP grp = new IrBGP();
-				for (IrNode ln : wl.getLines())
+				for (IrNode ln : wl.getLines()) {
 					grp.add(ln);
-				for (IrNode ln : wr.getLines())
+				}
+				for (IrNode ln : wr.getLines()) {
 					grp.add(ln);
+				}
 				grp.setNewScope(true);
 				where.add(grp);
 				return;
@@ -1506,7 +1638,7 @@ public class TupleExprToIrConverter {
 		@Override
 		public void meet(final LeftJoin lj) {
 			lj.getLeftArg().visit(this);
-			final IRBuilder rightBuilder = new IRBuilder();
+			final IRBuilder rightBuilder = new IRBuilder(r);
 			final IrBGP right = rightBuilder.build(lj.getRightArg());
 			if (lj.getCondition() != null) {
 				right.add(buildFilterFromCondition(lj.getCondition()));
@@ -1546,12 +1678,14 @@ public class TupleExprToIrConverter {
 
 			if (trailingProj != null) {
 				final Set<String> headVars = new LinkedHashSet<>();
-				for (TupleExpr n : head)
+				for (TupleExpr n : head) {
 					collectFreeVars(n, headVars);
+				}
 				final Set<String> condVars = freeVars(f.getCondition());
 				if (headVars.containsAll(condVars)) {
-					for (TupleExpr n : head)
+					for (TupleExpr n : head) {
 						n.visit(this);
+					}
 					where.add(buildFilterFromCondition(f.getCondition()));
 					trailingProj.visit(this);
 					return;
@@ -1574,9 +1708,9 @@ public class TupleExprToIrConverter {
 			if (leftIsU && rightIsU) {
 				final IrUnion irU = new IrUnion();
 				irU.setNewScope(u.isVariableScopeChange());
-				IRBuilder left = new IRBuilder();
+				IRBuilder left = new IRBuilder(r);
 				irU.addBranch(left.build(u.getLeftArg()));
-				IRBuilder right = new IRBuilder();
+				IRBuilder right = new IRBuilder(r);
 				irU.addBranch(right.build(u.getRightArg()));
 				where.add(irU);
 				return;
@@ -1586,7 +1720,7 @@ public class TupleExprToIrConverter {
 			final IrUnion irU = new IrUnion();
 			irU.setNewScope(u.isVariableScopeChange());
 			for (TupleExpr b : branches) {
-				IRBuilder bld = new IRBuilder();
+				IRBuilder bld = new IRBuilder(r);
 				irU.addBranch(bld.build(b));
 			}
 			where.add(irU);
@@ -1594,7 +1728,7 @@ public class TupleExprToIrConverter {
 
 		@Override
 		public void meet(final Service svc) {
-			IRBuilder inner = new IRBuilder();
+			IRBuilder inner = new IRBuilder(r);
 			IrBGP w = inner.build(svc.getArg());
 			where.add(new IrService(r.renderVarOrValuePublic(svc.getServiceRef()), svc.isSilent(), w));
 		}
@@ -1632,14 +1766,14 @@ public class TupleExprToIrConverter {
 
 		@Override
 		public void meet(final Projection p) {
-			IrSelect sub = toIRSelectRaw(p);
+			IrSelect sub = toIRSelectRaw(p, r);
 			where.add(new IrSubSelect(sub));
 		}
 
 		@Override
 		public void meet(final Slice s) {
 			if (s.isVariableScopeChange()) {
-				IrSelect sub = toIRSelectRaw(s);
+				IrSelect sub = toIRSelectRaw(s, r);
 				where.add(new IrSubSelect(sub));
 				return;
 			}
@@ -1649,7 +1783,7 @@ public class TupleExprToIrConverter {
 		@Override
 		public void meet(final Distinct d) {
 			if (d.isVariableScopeChange()) {
-				IrSelect sub = toIRSelectRaw(d);
+				IrSelect sub = toIRSelectRaw(d, r);
 				where.add(new IrSubSelect(sub));
 				return;
 			}
@@ -1659,7 +1793,7 @@ public class TupleExprToIrConverter {
 		@Override
 		public void meet(final Difference diff) {
 			diff.getLeftArg().visit(this);
-			IRBuilder right = new IRBuilder();
+			IRBuilder right = new IRBuilder(r);
 			IrBGP rightWhere = right.build(diff.getRightArg());
 			where.add(new IrMinus(rightWhere));
 		}
@@ -1695,69 +1829,6 @@ public class TupleExprToIrConverter {
 		}
 	}
 
-	private static void collectFreeVars(final TupleExpr e, final Set<String> out) {
-		if (e == null)
-			return;
-		e.visit(new AbstractQueryModelVisitor<>() {
-			private void add(Var v) {
-				final String n = freeVarName(v);
-				if (n != null)
-					out.add(n);
-			}
-
-			@Override
-			public void meet(StatementPattern sp) {
-				add(sp.getSubjectVar());
-				add(sp.getPredicateVar());
-				add(sp.getObjectVar());
-				add(getContextVarSafe(sp));
-			}
-
-			@Override
-			public void meet(Filter f) {
-				if (f.getCondition() != null)
-					collectVarNames(f.getCondition(), out);
-				f.getArg().visit(this);
-			}
-
-			@Override
-			public void meet(LeftJoin lj) {
-				lj.getLeftArg().visit(this);
-				lj.getRightArg().visit(this);
-				if (lj.getCondition() != null)
-					collectVarNames(lj.getCondition(), out);
-			}
-
-			@Override
-			public void meet(Join j) {
-				j.getLeftArg().visit(this);
-				j.getRightArg().visit(this);
-			}
-
-			@Override
-			public void meet(Union u) {
-				u.getLeftArg().visit(this);
-				u.getRightArg().visit(this);
-			}
-
-			@Override
-			public void meet(Extension ext) {
-				for (ExtensionElem ee : ext.getElements())
-					collectVarNames(ee.getExpr(), out);
-				ext.getArg().visit(this);
-			}
-
-			@Override
-			public void meet(ArbitraryLengthPath p) {
-				add(p.getSubjectVar());
-				add(p.getObjectVar());
-				add(getContextVarSafe(p));
-			}
-		});
-	}
-
-	// ---------------- Local carriers ----------------
-
 	private static final class GroupByTerm {
 		final String var; // ?var
 		final ValueExpr expr; // null => plain ?var; otherwise (expr AS ?var)
@@ -1767,6 +1838,8 @@ public class TupleExprToIrConverter {
 			this.expr = expr;
 		}
 	}
+
+	// ---------------- Local carriers ----------------
 
 	private static final class Normalized {
 		final List<OrderElem> orderBy = new ArrayList<>();
@@ -1819,13 +1892,36 @@ public class TupleExprToIrConverter {
 		}
 
 		private void count(Var v, Map<String, Integer> roleMap) {
-			if (v == null || v.hasValue())
+			if (v == null || v.hasValue()) {
 				return;
+			}
 			final String name = v.getName();
-			if (name == null || name.isEmpty())
+			if (name == null || name.isEmpty()) {
 				return;
+			}
 			varCounts.merge(name, 1, Integer::sum);
 			roleMap.merge(name, 1, Integer::sum);
 		}
+	}
+
+	private final class PathAtom implements PathNode {
+		final IRI iri;
+		final boolean inverse;
+
+		PathAtom(IRI iri, boolean inverse) {
+			this.iri = iri;
+			this.inverse = inverse;
+		}
+
+		@Override
+		public String render() {
+			return (inverse ? "^" : "") + r.renderIRI(iri);
+		}
+
+		@Override
+		public int prec() {
+			return PREC_ATOM;
+		}
+
 	}
 }
