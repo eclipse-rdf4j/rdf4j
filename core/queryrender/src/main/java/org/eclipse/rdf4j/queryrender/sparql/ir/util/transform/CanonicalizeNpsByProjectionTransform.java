@@ -112,11 +112,15 @@ public final class CanonicalizeNpsByProjectionTransform extends BaseTransform {
 				IrFilter f = (IrFilter) n;
 				if (f.getBody() instanceof IrExists) {
 					IrExists ex = (IrExists) f.getBody();
-					m = new IrFilter(new IrExists(apply(ex.getWhere(), select), ex.isNewScope()));
+					IrFilter nf = new IrFilter(new IrExists(apply(ex.getWhere(), select), ex.isNewScope()));
+					nf.setNewScope(f.isNewScope());
+					m = nf;
 				} else if (f.getBody() instanceof IrNot && ((IrNot) f.getBody()).getInner() instanceof IrExists) {
 					IrNot not = (IrNot) f.getBody();
 					IrExists ex = (IrExists) not.getInner();
-					m = new IrFilter(new IrNot(new IrExists(apply(ex.getWhere(), select), ex.isNewScope())));
+					IrFilter nf = new IrFilter(new IrNot(new IrExists(apply(ex.getWhere(), select), ex.isNewScope())));
+					nf.setNewScope(f.isNewScope());
+					m = nf;
 				} else {
 					m = n;
 				}

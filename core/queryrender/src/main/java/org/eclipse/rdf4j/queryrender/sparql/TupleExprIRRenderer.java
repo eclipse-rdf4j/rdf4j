@@ -590,7 +590,7 @@ public class TupleExprIRRenderer {
 		}
 
 		// WHERE block
-		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
+		out.append(cfg.canonicalWhitespace ? " WHERE " : " WHERE ");
 		new IRTextPrinter(out).printWhere(ir.getWhere());
 
 		// GROUP BY

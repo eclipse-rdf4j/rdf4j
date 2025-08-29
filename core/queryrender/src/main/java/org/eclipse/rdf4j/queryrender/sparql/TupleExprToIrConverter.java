@@ -1720,7 +1720,11 @@ public class TupleExprToIrConverter {
 			}
 
 			arg.visit(this);
-			where.add(buildFilterFromCondition(f.getCondition()));
+			IrFilter irF = buildFilterFromCondition(f.getCondition());
+			if (f.isVariableScopeChange()) {
+				irF.setNewScope(true);
+			}
+			where.add(irF);
 		}
 
 		@Override

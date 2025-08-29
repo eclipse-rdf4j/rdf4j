@@ -70,7 +70,9 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 					IrBGP inner = ex.getWhere();
 					if (inner != null) {
 						inner = rewriteSimpleNpsOnly(inner, r);
-						out.add(new IrFilter(new IrExists(inner, ex.isNewScope())));
+						IrFilter nf = new IrFilter(new IrExists(inner, ex.isNewScope()));
+						nf.setNewScope(fNode.isNewScope());
+						out.add(nf);
 						i += 0;
 						continue;
 					}

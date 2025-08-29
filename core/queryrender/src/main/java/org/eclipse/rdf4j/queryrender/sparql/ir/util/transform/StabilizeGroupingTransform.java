@@ -89,7 +89,9 @@ public final class StabilizeGroupingTransform extends BaseTransform {
 					if (qualifiesForExistsInnerGrouping(inner)) {
 						inner = wrap(inner);
 					}
-					out.add(new IrFilter(new IrExists(inner, ex.isNewScope())));
+					IrFilter nf = new IrFilter(new IrExists(inner, ex.isNewScope()));
+					nf.setNewScope(f.isNewScope());
+					out.add(nf);
 					continue;
 				}
 				// Otherwise, keep as-is

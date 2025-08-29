@@ -37,6 +37,14 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 	}
 
 	public static IrBGP apply(IrBGP bgp) {
+		return apply(bgp, false);
+	}
+
+	/**
+	 * Internal entry that carries a context flag indicating whether we are inside an EXISTS body. We only apply the
+	 * grouping at that level, and not at the top-level WHERE, to avoid introducing extra braces there.
+	 */
+	private static IrBGP apply(IrBGP bgp, boolean insideExists) {
 		if (bgp == null)
 			return null;
 		final List<IrNode> in = bgp.getLines();
@@ -48,9 +56,11 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 			// If BODY is explicitly grouped (i.e., IrBGP nested) OR if BODY consists of multiple
 			// lines and contains a nested FILTER EXISTS, wrap the SP and FILTER in an outer group
 			// to preserve the expected brace structure and textual stability.
-			if (i + 1 < in.size() && n instanceof IrStatementPattern && in.get(i + 1) instanceof IrFilter) {
+			if (i + 1 < in.size() && n instanceof IrStatementPattern
+					&& in.get(i + 1) instanceof IrFilter) {
 				IrFilter f = (IrFilter) in.get(i + 1);
-				if (f.getBody() instanceof IrExists) {
+				boolean allowHere = insideExists || f.isNewScope();
+				if (allowHere && f.getBody() instanceof IrExists) {
 					IrExists ex = (IrExists) f.getBody();
 					IrBGP inner = ex.getWhere();
 					if (inner != null && inner.getLines().size() == 1 && inner.getLines().get(0) instanceof IrBGP) {
@@ -67,22 +77,22 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 			// Recurse into containers
 			if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				out.add(new IrGraph(g.getGraph(), apply(g.getWhere())));
+				out.add(new IrGraph(g.getGraph(), apply(g.getWhere(), insideExists)));
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				out.add(new IrOptional(apply(o.getWhere())));
+				out.add(new IrOptional(apply(o.getWhere(), insideExists)));
 			} else if (n instanceof IrMinus) {
 				IrMinus mi = (IrMinus) n;
-				out.add(new IrMinus(apply(mi.getWhere())));
+				out.add(new IrMinus(apply(mi.getWhere(), insideExists)));
 			} else if (n instanceof IrService) {
 				IrService s = (IrService) n;
-				out.add(new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere())));
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), insideExists)));
 			} else if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
 				IrUnion u2 = new IrUnion();
 				u2.setNewScope(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
-					u2.addBranch(apply(b));
+					u2.addBranch(apply(b, insideExists));
 				}
 				out.add(u2);
 			} else if (n instanceof IrSubSelect) {
@@ -93,7 +103,9 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 				IrNode body = f2.getBody();
 				if (body instanceof IrExists) {
 					IrExists ex = (IrExists) body;
-					out.add(new IrFilter(new IrExists(apply(ex.getWhere()), ex.isNewScope())));
+					IrFilter nf = new IrFilter(new IrExists(apply(ex.getWhere(), true), ex.isNewScope()));
+					nf.setNewScope(f2.isNewScope());
+					out.add(nf);
 				} else {
 					out.add(n);
 				}
