@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 public class TupleExprIRRendererTest {
@@ -100,11 +99,11 @@ public class TupleExprIRRendererTest {
 		sparql = sparql.trim();
 
 		try {
-			System.out.println("Expected SPARQL:\n" + sparql + "\n");
+//			System.out.println("Expected SPARQL:\n" + sparql + "\n");
 			TupleExpr expected = parseAlgebra(SPARQL_PREFIX + sparql);
-			System.out.println("Expected TupleExpr:\n" + VarNameNormalizer.normalizeVars(expected.toString()) + "\n");
+//			System.out.println("Expected TupleExpr:\n" + VarNameNormalizer.normalizeVars(expected.toString()) + "\n");
 			String rendered = render(SPARQL_PREFIX + sparql, cfg);
-			System.out.println("Actual rendered SPARQL:\n" + rendered + "\n");
+//			System.out.println("Actual rendered SPARQL:\n" + rendered + "\n");
 			TupleExpr actual = parseAlgebra(rendered);
 			assertThat(VarNameNormalizer.normalizeVars(actual.toString()))
 					.as("Algebra after rendering must be identical to original")
@@ -2443,21 +2442,22 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
-	@Disabled
 	void testValuesPathUnionScope() {
 		String q = "SELECT ?s ?o WHERE {\n" +
-				"  { {\n" +
-				"    VALUES (?s) {\n" +
-				"      (ex:s1)\n" +
-				"      (ex:s2)\n" +
-				"    }\n" +
-				"    ?s !^foaf:knows ?o .\n" +
-				"  } }\n" +
+				"  { \n" +
+				"    {\n" +
+				"      VALUES (?s) {\n" +
+				"        (ex:s1)\n" +
+				"        (ex:s2)\n" +
+				"      }\n" +
+				"      ?s !^foaf:knows ?o .\n" +
+				"    } \n" +
+				"  }\n" +
 				"    UNION\n" +
 				"  {\n" +
 				"    ?u1 ex:pD ?v1 .\n" +
 				"  }\n" +
-				"}";
+				"}\n";
 
 		assertSameSparqlQuery(q, cfg());
 	}
@@ -2486,7 +2486,6 @@ public class TupleExprIRRendererTest {
 	// New tests to validate new-scope behavior and single-predicate inversion
 
 	@Test
-	@Disabled
 	void testValuesPrefersSubjectAndCaretForInverse() {
 		// VALUES binds ?s; inverse single predicate should render with caret keeping ?s as subject
 		String q = "SELECT ?s ?o WHERE {\n" +
@@ -2548,15 +2547,17 @@ public class TupleExprIRRendererTest {
 	@Test
 	void testFilterExistsNested2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
-				"{  ?s ex:pC ?u1 .\n" +
-				"  FILTER EXISTS {\n" +
-				"{\n" +
-				"      ?s ex:pC ?u0 .\n" +
-				"      FILTER EXISTS {\n" +
-				"        ?s !(ex:pA|^<http://example.org/p/I0>) ?o .\n" +
+				"  {\n" +
+				"    ?s ex:pC ?u1 .\n" +
+				"    FILTER EXISTS {\n" +
+				"      {\n" +
+				"        ?s ex:pC ?u0 .\n" +
+				"        FILTER EXISTS {\n" +
+				"          ?s !(ex:pA|^<http://example.org/p/I0>) ?o .\n" +
+				"        }\n" +
 				"      }\n" +
 				"    }\n" +
-				"  } }\n" +
+				"  }\n" +
 				"}";
 
 		assertSameSparqlQuery(q, cfg());
@@ -2608,6 +2609,25 @@ public class TupleExprIRRendererTest {
 				"      ?s !(ex:pA|^<http://example.org/p/I0>) ?o .\n" +
 				"    } }\n" +
 				"  } \n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testFilterExistsNested5() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"{\n" +
+				"  ?s ex:pC ?u1 .\n" +
+				"  FILTER EXISTS {\n" +
+				"    { \n" +
+				"      ?s ex:pC ?u0 .\n" +
+				"      {\n" +
+				"        FILTER(?s != ?u1) " +
+				"      }\n" +
+				"    }\n" +
+				"  } \n" +
+				"}\n" +
 				"}";
 
 		assertSameSparqlQuery(q, cfg());
