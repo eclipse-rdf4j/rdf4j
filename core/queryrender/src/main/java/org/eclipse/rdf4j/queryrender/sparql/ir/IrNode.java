@@ -23,6 +23,10 @@ import java.util.function.UnaryOperator;
  */
 public abstract class IrNode {
 
+	public final String _className = this.getClass().getName();
+
+	private boolean newScope = false;
+
 	/** Default no-op printing; concrete nodes override. */
 	public void print(IrPrinter p) {
 		p.line("# unknown IR node: " + getClass().getSimpleName());
@@ -37,6 +41,14 @@ public abstract class IrNode {
 	 */
 	public IrNode transformChildren(UnaryOperator<IrNode> op) {
 		return this;
+	}
+
+	public boolean isNewScope() {
+		return newScope;
+	}
+
+	public void setNewScope(boolean newScope) {
+		this.newScope = newScope;
 	}
 
 }

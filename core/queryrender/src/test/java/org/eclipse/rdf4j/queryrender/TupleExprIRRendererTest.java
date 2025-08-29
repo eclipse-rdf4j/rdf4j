@@ -2403,9 +2403,25 @@ public class TupleExprIRRendererTest {
 	void invertedPathInUnion() {
 		String q = "SELECT ?s ?o\n" +
 				"WHERE {\n" +
+				"  {\n" +
+				"    ?s !^<http://example.org/p/I01> ?o .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?o !^<http://example.org/p/I02> ?s .\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void invertedPathInUnion2() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
 				"  { ?s !^<http://example.org/p/I01> ?o . }\n" +
 				"  UNION\n" +
-				"  { ?o !^<http://example.org/p/I02> ?s . }\n" +
+				"  { ?s !<http://example.org/p/I02> ?o . }\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
 	}
@@ -2549,6 +2565,163 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"{ ?s ex:pC ?u1 . FILTER EXISTS { { GRAPH <http://graphs.example/g1> { ?s !(ex:pA|^ex:pD) ?o . } } } }\n"
 				+
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testValuesPathUnionScope() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  { {\n" +
+				"    VALUES (?s) {\n" +
+				"      (ex:s1)\n" +
+				"      (ex:s2)\n" +
+				"    }\n" +
+				"    ?s !^foaf:knows ?o .\n" +
+				"  } }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?u1 ex:pD ?v1 .\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testValuesPathUnionScope2() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  {\n" +
+				"{\n" +
+				"      VALUES (?s) {\n" +
+				"        (ex:s1)\n" +
+				"        (ex:s2)\n" +
+				"      }\n" +
+				"      ?o !(foaf:knows) ?s .\n" +
+				"    }\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?u1 ex:pD ?v1 .\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	// New tests to validate new-scope behavior and single-predicate inversion
+
+	@Test
+	void testValuesPrefersSubjectAndCaretForInverse() {
+		// VALUES binds ?s; inverse single predicate should render with caret keeping ?s as subject
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  { {\n" +
+				"    VALUES (?s) { (ex:s1) }\n" +
+				"    ?s !^foaf:knows ?o .\n" +
+				"  } }\n" +
+				"    UNION\n" +
+				"  { ?u1 ex:pD ?v1 . }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testValuesAllowsForwardSwappedVariant() {
+		// VALUES binds ?s; swapped forward form should be preserved when written that way
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  { {\n" +
+				"    VALUES (?s) { (ex:s1) }\n" +
+				"    ?o !(foaf:knows) ?s .\n" +
+				"  } }\n" +
+				"    UNION\n" +
+				"  { ?u1 ex:pD ?v1 . }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testFilterExistsPrecedingTripleIsGrouped() {
+		// Preceding triple + FILTER EXISTS with inner group must retain grouping braces
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  ?s ex:pC ?u1 .\n" +
+				"  FILTER EXISTS { { \n" +
+				"    ?s ex:pC ?u0 .\n" +
+				"    FILTER EXISTS { ?s !(ex:pA|^<http://example.org/p/I0>) ?o . }\n" +
+				"  } } \n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testFilterExistsNested() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  ?s ex:pC ?u1 .\n" +
+				"  FILTER EXISTS { { \n" +
+				"    ?s ex:pC ?u0 .\n" +
+				"    FILTER EXISTS {\n" +
+				"      ?s !(ex:pA|^<http://example.org/p/I0>) ?o .\n" +
+				"    }\n" +
+				"  } } \n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testFilterExistsNested2() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"{  ?s ex:pC ?u1 .\n" +
+				"  FILTER EXISTS {\n" +
+				"{\n" +
+				"      ?s ex:pC ?u0 .\n" +
+				"      FILTER EXISTS {\n" +
+				"        ?s !(ex:pA|^<http://example.org/p/I0>) ?o .\n" +
+				"      }\n" +
+				"    }\n" +
+				"  } }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testFilterExistsNested3() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  ?s ex:pC ?u1 .\n" +
+				"  FILTER EXISTS { { \n" +
+				"    ?s ex:pC ?u0 .\n" +
+				"    { FILTER EXISTS {\n" +
+				"      ?s !(ex:pA|^<http://example.org/p/I0>) ?o .\n" +
+				"    } }\n" +
+				"  } } \n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testFilterExistsNested4() {
+		String q = "SELECT ?s ?o\n" +
+				"WHERE {\n" +
+				"  ?s ex:pC ?u1 .\n" +
+				"  FILTER EXISTS { \n" +
+				"    ?s ex:pC ?u0 .\n" +
+				"    { FILTER EXISTS {\n" +
+				"      ?s !(ex:pA|^<http://example.org/p/I0>) ?o .\n" +
+				"    } }\n" +
+				"  } \n" +
 				"}";
 
 		assertSameSparqlQuery(q, cfg());

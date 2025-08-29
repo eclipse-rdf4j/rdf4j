@@ -3129,6 +3129,29 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(final Join join) {
+			// If this join represents a new variable scope in the original algebra, preserve an
+			// explicit grouped block so that downstream printing can render inner braces. This
+			// avoids losing textual grouping when later transforms (e.g., NPS fusion) simplify
+			// the content of the group.
+			if (join.isVariableScopeChange()) {
+				IRBuilder left = new IRBuilder();
+				IrBGP wl = left.build(join.getLeftArg());
+				IRBuilder right = new IRBuilder();
+				IrBGP wr = right.build(join.getRightArg());
+				IrBGP grp = new IrBGP();
+				for (IrNode ln : wl.getLines()) {
+					grp.add(ln);
+				}
+				for (IrNode ln : wr.getLines()) {
+					grp.add(ln);
+				}
+
+				grp.setNewScope(true);
+
+				where.add(grp);
+				return;
+			}
+			// Default: inline left then right into current block
 			join.getLeftArg().visit(this);
 			join.getRightArg().visit(this);
 		}
