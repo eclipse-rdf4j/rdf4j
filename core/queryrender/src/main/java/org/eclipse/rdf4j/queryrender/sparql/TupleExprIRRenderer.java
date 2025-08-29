@@ -1126,8 +1126,7 @@ public class TupleExprIRRenderer {
 
 	/** Render a TupleExpr group inline using IR + transforms (used by EXISTS). */
 	private String renderInlineGroup(final TupleExpr pattern) {
-		final TupleExprToIrConverter.IRBuilder ib = TupleExprToIrConverter.getIrBuilder();
-		IrBGP where = ib.build(pattern);
+		IrBGP where = new TupleExprToIrConverter(this).buildWhere(pattern);
 		// Apply standard transforms for consistent property path and grouping rewrites
 		IrSelect tmp = new IrSelect();
 		tmp.setWhere(where);
