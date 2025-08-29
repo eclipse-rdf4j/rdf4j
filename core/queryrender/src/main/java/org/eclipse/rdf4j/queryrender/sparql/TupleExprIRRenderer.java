@@ -575,23 +575,6 @@ public class TupleExprIRRenderer {
 
 	// ---------------- Public entry points ----------------
 
-	private static int getRows(BindingSetAssignment bsa) {
-		Iterable<BindingSet> bindingSets = bsa.getBindingSets();
-		if (bindingSets instanceof List) {
-			return ((List<BindingSet>) bindingSets).size();
-		}
-		if (bindingSets instanceof Set) {
-			return ((Set<BindingSet>) bindingSets).size();
-		}
-
-		int count = 0;
-		for (BindingSet ignored : bindingSets) {
-			count++;
-		}
-
-		return count;
-	}
-
 	private static Var getContextVarSafe(StatementPattern sp) {
 		try {
 			Method m = StatementPattern.class.getMethod("getContextVar");
@@ -701,25 +684,6 @@ public class TupleExprIRRenderer {
 	/**
 	 * Flatten a ValueExpr that is a conjunction into its left-to-right terms.
 	 */
-	private static List<ValueExpr> flattenAnd(ValueExpr e) {
-		List<ValueExpr> out = new ArrayList<>();
-		Deque<ValueExpr> stack = new ArrayDeque<>();
-		if (e == null) {
-			return out;
-		}
-		stack.push(e);
-		while (!stack.isEmpty()) {
-			ValueExpr cur = stack.pop();
-			if (cur instanceof And) {
-				And a = (And) cur;
-				stack.push(a.getRightArg());
-				stack.push(a.getLeftArg());
-			} else {
-				out.add(cur);
-			}
-		}
-		return out;
-	}
 
 	/** Flatten a Union tree preserving left-to-right order. */
 	private static void flattenUnion(TupleExpr e, List<TupleExpr> out) {
@@ -831,21 +795,6 @@ public class TupleExprIRRenderer {
 	 * Context compatibility: equal if both null; if both values -> same value; if both free vars -> same name; else
 	 * incompatible.
 	 */
-	private static boolean contextsIncompatible(final Var a, final Var b) {
-		if (a == b) {
-			return false;
-		}
-		if (a == null || b == null) {
-			return true;
-		}
-		if (a.hasValue() && b.hasValue()) {
-			return !Objects.equals(a.getValue(), b.getValue());
-		}
-		if (!a.hasValue() && !b.hasValue()) {
-			return !Objects.equals(a.getName(), b.getName());
-		}
-		return true;
-	}
 
 	public static String stripRedundantOuterParens(final String s) {
 		if (s == null) {
