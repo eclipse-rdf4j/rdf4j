@@ -45,8 +45,9 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 	}
 
 	public static IrBGP apply(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		final List<IrNode> out = new ArrayList<>();
 		for (IrNode n : bgp.getLines()) {
 			IrNode m = n;
@@ -62,7 +63,9 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				m = new IrMinus(apply(mi.getWhere(), r));
 			} else if (n instanceof IrService) {
 				IrService s = (IrService) n;
-				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), r));
+				IrBGP inner = apply(s.getWhere(), r);
+				inner = fuseUnionsInBGP(inner);
+				m = new IrService(s.getServiceRefText(), s.isSilent(), inner);
 			} else if (n instanceof IrSubSelect) {
 				// keep as-is
 			} else if (n instanceof IrFilter) {
@@ -82,6 +85,9 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 						return child;
 					});
 				}
+			} else if (n instanceof IrUnion && !n.isNewScope()) {
+				// Attempt fusing of UNION branches wherever they occur (Service/Graph/etc.)
+				m = tryFuseUnion((IrUnion) n);
 			} else {
 				// Recurse into nested BGPs inside other containers (e.g., FILTER EXISTS)
 				m = n.transformChildren(child -> {
@@ -98,9 +104,39 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 		return res;
 	}
 
+	private static IrBGP fuseUnionsInBGP(IrBGP bgp) {
+		if (bgp == null) {
+			return null;
+		}
+		final List<IrNode> out = new ArrayList<>();
+		for (IrNode ln : bgp.getLines()) {
+			if (ln instanceof IrUnion) {
+				out.add(tryFuseUnion((IrUnion) ln));
+			} else if (ln instanceof IrGraph) {
+				IrGraph g = (IrGraph) ln;
+				out.add(new IrGraph(g.getGraph(), fuseUnionsInBGP(g.getWhere())));
+			} else if (ln instanceof IrOptional) {
+				IrOptional o = (IrOptional) ln;
+				out.add(new IrOptional(fuseUnionsInBGP(o.getWhere())));
+			} else if (ln instanceof IrMinus) {
+				IrMinus mi = (IrMinus) ln;
+				out.add(new IrMinus(fuseUnionsInBGP(mi.getWhere())));
+			} else if (ln instanceof IrService) {
+				IrService s = (IrService) ln;
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(), fuseUnionsInBGP(s.getWhere())));
+			} else {
+				out.add(ln);
+			}
+		}
+		IrBGP res = new IrBGP();
+		out.forEach(res::add);
+		return res;
+	}
+
 	private static IrNode tryFuseUnion(IrUnion u) {
-		if (u == null || u.getBranches().size() < 2)
+		if (u == null || u.getBranches().size() < 2) {
 			return u;
+		}
 		// Preserve knowledge of original newScope to optionally reintroduce grouping braces for textual stability.
 		final boolean wasNewScope = u.isNewScope();
 
@@ -129,9 +165,11 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				return u; // non-candidate branch
 			}
 
-			if (pt == null)
+			if (pt == null) {
 				return u;
-			final String path = pt.getPathText() == null ? null : pt.getPathText().trim();
+			}
+			final String rawPath = pt.getPathText() == null ? null : pt.getPathText().trim();
+			final String path = normalizeCompactNps(rawPath);
 			if (path == null || !path.startsWith("!(") || !path.endsWith(")") || path.indexOf('/') >= 0
 					|| path.endsWith("?") || path.endsWith("+") || path.endsWith("*")) {
 				return u; // not a bare NPS
@@ -157,8 +195,9 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			// Align orientation: if this branch is reversed, invert its inner members
 			if (sameVar(sCanon, pt.getObject()) && sameVar(oCanon, pt.getSubject())) {
 				String inv = invertNegatedPropertySet(path);
-				if (inv == null)
+				if (inv == null) {
 					return u; // should not happen; be safe
+				}
 				toAdd = inv;
 			} else if (!(sameVar(sCanon, pt.getSubject()) && sameVar(oCanon, pt.getObject()))) {
 				return u; // endpoints mismatch
@@ -192,8 +231,9 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 
 	/** Apply union-of-NPS fusing only within EXISTS bodies. */
 	private static IrBGP applyInsideExists(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		final List<IrNode> out = new ArrayList<>();
 		for (IrNode n : bgp.getLines()) {
 			IrNode m = n;
@@ -234,8 +274,9 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 		// npsPath assumed to be '!(...)'
 		int start = npsPath.indexOf('(');
 		int end = npsPath.lastIndexOf(')');
-		if (start < 0 || end < 0 || end <= start)
+		if (start < 0 || end < 0 || end <= start) {
 			return;
+		}
 		String inner = npsPath.substring(start + 1, end);
 		for (String tok : inner.split("\\|")) {
 			String t = tok.trim();
@@ -243,5 +284,31 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				out.add(t);
 			}
 		}
+	}
+
+	/** Convert compact single-member forms like "!ex:p" or "!^ex:p" to parened NPS: "!(ex:p)" or "!(^ex:p)". */
+	private static String normalizeCompactNps(String path) {
+		if (path == null) {
+			return null;
+		}
+		String t = path.trim();
+		if (t.isEmpty()) {
+			return null;
+		}
+		if (t.startsWith("!(") && t.endsWith(")")) {
+			return t;
+		}
+		if (t.startsWith("!^")) {
+			String inner = t.substring(1); // "^ex:p"
+			return "!(" + inner + ")";
+		}
+		if (t.startsWith("!")) {
+			// Ensure it's not already the parened form
+			if (t.length() > 1 && t.charAt(1) != '(') {
+				String inner = t.substring(1);
+				return "!(" + inner + ")";
+			}
+		}
+		return t;
 	}
 }

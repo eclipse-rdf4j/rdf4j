@@ -71,6 +71,10 @@ public final class IrTransforms {
 
 					w = ApplyPathsFixedPointTransform.apply(w, r);
 
+					// Late fuse: inside SERVICE, convert UNION of two bare-NPS branches into a single NPS
+					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseServiceNpsUnionLateTransform
+							.apply(w);
+
 					// Normalize NPS member order for stable, expected text
 					w = NormalizeNpsMemberOrderTransform.apply(w);
 
