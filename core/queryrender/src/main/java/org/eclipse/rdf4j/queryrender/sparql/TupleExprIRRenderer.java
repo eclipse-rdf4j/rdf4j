@@ -17,7 +17,6 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -37,24 +36,19 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
-import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Avg;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
-import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Coalesce;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Datatype;
-import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
-import org.eclipse.rdf4j.query.algebra.Extension;
-import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
@@ -67,7 +61,6 @@ import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
-import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
@@ -75,15 +68,10 @@ import org.eclipse.rdf4j.query.algebra.Max;
 import org.eclipse.rdf4j.query.algebra.Min;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
-import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
-import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Sample;
-import org.eclipse.rdf4j.query.algebra.Service;
-import org.eclipse.rdf4j.query.algebra.SingletonSet;
-import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.Sum;
@@ -93,28 +81,14 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrBind;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrExists;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGroupByElem;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrNot;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrOrderSpec;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPrinter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrText;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
 
 /**
@@ -270,133 +244,6 @@ public class TupleExprIRRenderer {
 		return true;
 	}
 
-	private static Set<String> freeVars(ValueExpr e) {
-		Set<String> out = new HashSet<>();
-		collectVarNames(e, out);
-		return out;
-	}
-
-	private static void collectVarNames(ValueExpr e, Set<String> acc) {
-		if (e == null) {
-			return;
-		}
-		if (e instanceof Var) {
-			final Var v = (Var) e;
-			if (!v.hasValue() && v.getName() != null && !v.getName().isEmpty()) {
-				acc.add(v.getName());
-			}
-			return;
-		}
-		if (e instanceof ValueConstant) {
-			return;
-		}
-
-		if (e instanceof Not) {
-			collectVarNames(((Not) e).getArg(), acc);
-			return;
-		}
-		if (e instanceof Bound) {
-			collectVarNames(((Bound) e).getArg(), acc);
-			return;
-		}
-		if (e instanceof Str) {
-			collectVarNames(((Str) e).getArg(), acc);
-			return;
-		}
-		if (e instanceof Datatype) {
-			collectVarNames(((Datatype) e).getArg(), acc);
-			return;
-		}
-		if (e instanceof Lang) {
-			collectVarNames(((Lang) e).getArg(), acc);
-			return;
-		}
-		if (e instanceof IsURI) {
-			collectVarNames(((IsURI) e).getArg(), acc);
-			return;
-		}
-		if (e instanceof IsLiteral) {
-			collectVarNames(((IsLiteral) e).getArg(), acc);
-			return;
-		}
-		if (e instanceof IsBNode) {
-			collectVarNames(((IsBNode) e).getArg(), acc);
-			return;
-		}
-		if (e instanceof IsNumeric) {
-			collectVarNames(((IsNumeric) e).getArg(), acc);
-			return;
-		}
-		if (e instanceof IRIFunction) {
-			collectVarNames(((IRIFunction) e).getArg(), acc);
-			return;
-		}
-
-		if (e instanceof And) {
-			collectVarNames(((And) e).getLeftArg(), acc);
-			collectVarNames(((And) e).getRightArg(), acc);
-			return;
-		}
-		if (e instanceof Or) {
-			collectVarNames(((Or) e).getLeftArg(), acc);
-			collectVarNames(((Or) e).getRightArg(), acc);
-			return;
-		}
-		if (e instanceof Compare) {
-			collectVarNames(((Compare) e).getLeftArg(), acc);
-			collectVarNames(((Compare) e).getRightArg(), acc);
-			return;
-		}
-		if (e instanceof SameTerm) {
-			collectVarNames(((SameTerm) e).getLeftArg(), acc);
-			collectVarNames(((SameTerm) e).getRightArg(), acc);
-			return;
-		}
-		if (e instanceof LangMatches) {
-			collectVarNames(((LangMatches) e).getLeftArg(), acc);
-			collectVarNames(((LangMatches) e).getRightArg(), acc);
-			return;
-		}
-		if (e instanceof Regex) {
-			final Regex r = (Regex) e;
-			collectVarNames(r.getArg(), acc);
-			collectVarNames(r.getPatternArg(), acc);
-			if (r.getFlagsArg() != null) {
-				collectVarNames(r.getFlagsArg(), acc);
-			}
-			return;
-		}
-		if (e instanceof FunctionCall) {
-			for (ValueExpr a : ((FunctionCall) e).getArgs()) {
-				collectVarNames(a, acc);
-			}
-			return;
-		}
-		if (e instanceof ListMemberOperator) {
-			final List<ValueExpr> args = ((ListMemberOperator) e).getArguments();
-			if (args != null) {
-				for (ValueExpr a : args) {
-					collectVarNames(a, acc);
-				}
-			}
-		}
-		if (e instanceof MathExpr) {
-			collectVarNames(((MathExpr) e).getLeftArg(), acc);
-			collectVarNames(((MathExpr) e).getRightArg(), acc);
-		}
-		if (e instanceof If) {
-			final If iff = (If) e;
-			collectVarNames(iff.getCondition(), acc);
-			collectVarNames(iff.getResult(), acc);
-			collectVarNames(iff.getAlternative(), acc);
-		}
-		if (e instanceof Coalesce) {
-			for (ValueExpr a : ((Coalesce) e).getArguments()) {
-				collectVarNames(a, acc);
-			}
-		}
-	}
-
 	private static String quantifier(final long min, final long max) {
 		final boolean unbounded = max < 0 || max == Integer.MAX_VALUE;
 		if (min == 0 && unbounded) {
@@ -429,18 +276,6 @@ public class TupleExprIRRenderer {
 		} catch (ReflectiveOperationException ignore) {
 		}
 		return -1L;
-	}
-
-	private static Var getContextVarSafe(StatementPattern sp) {
-		try {
-			Method m = StatementPattern.class.getMethod("getContextVar");
-			Object ctx = m.invoke(sp);
-			if (ctx instanceof Var) {
-				return (Var) ctx;
-			}
-		} catch (ReflectiveOperationException ignore) {
-		}
-		return null;
 	}
 
 	private static String escapeLiteral(final String s) {
@@ -562,80 +397,6 @@ public class TupleExprIRRenderer {
 	}
 
 	// ---------------- Core SELECT and subselect ----------------
-
-	private static String freeVarName(Var v) {
-		if (v == null || v.hasValue()) {
-			return null;
-		}
-		final String n = v.getName();
-		return (n == null || n.isEmpty()) ? null : n;
-	}
-
-	private static void collectFreeVars(final TupleExpr e, final Set<String> out) {
-		if (e == null) {
-			return;
-		}
-		e.visit(new AbstractQueryModelVisitor<>() {
-			private void add(Var v) {
-				final String n = freeVarName(v);
-				if (n != null) {
-					out.add(n);
-				}
-			}
-
-			@Override
-			public void meet(StatementPattern sp) {
-				add(sp.getSubjectVar());
-				add(sp.getPredicateVar());
-				add(sp.getObjectVar());
-				add(getContextVarSafe(sp));
-			}
-
-			@Override
-			public void meet(Filter f) {
-				if (f.getCondition() != null) {
-					collectVarNames(f.getCondition(), out);
-				}
-				f.getArg().visit(this);
-			}
-
-			@Override
-			public void meet(LeftJoin lj) {
-				lj.getLeftArg().visit(this);
-				lj.getRightArg().visit(this);
-				if (lj.getCondition() != null) {
-					collectVarNames(lj.getCondition(), out);
-				}
-			}
-
-			@Override
-			public void meet(Join j) {
-				j.getLeftArg().visit(this);
-				j.getRightArg().visit(this);
-			}
-
-			@Override
-			public void meet(Union u) {
-				u.getLeftArg().visit(this);
-				u.getRightArg().visit(this);
-			}
-
-			@Override
-			public void meet(Extension ext) {
-				for (ExtensionElem ee : ext.getElements()) {
-					collectVarNames(ee.getExpr(), out);
-				}
-				ext.getArg().visit(this);
-			}
-
-			@Override
-			public void meet(ArbitraryLengthPath p) {
-				add(p.getSubjectVar());
-				add(p.getObjectVar());
-				add(getContextVarSafe(p));
-			}
-		});
-	}
 
 	/**
 	 * Context compatibility: equal if both null; if both values -> same value; if both free vars -> same name; else
@@ -829,16 +590,6 @@ public class TupleExprIRRenderer {
 
 	// Removed invertNegatedPropertySet here; transforms use BaseTransform.invertNegatedPropertySet.
 
-	private static Var getContextVarSafe(Object node) {
-		try {
-			Method m = node.getClass().getMethod("getContextVar");
-			Object v = m.invoke(node);
-			return (v instanceof Var) ? (Var) v : null;
-		} catch (ReflectiveOperationException ignore) {
-			return null;
-		}
-	}
-
 	// ---------------- Utilities: vars, aggregates, free vars ----------------
 
 	// Merge adjacent identical GRAPH blocks to improve grouping when IR emits across passes
@@ -915,11 +666,6 @@ public class TupleExprIRRenderer {
 	 */
 	public IrSelect toIRSelect(final TupleExpr tupleExpr) {
 		return new TupleExprToIrConverter(this).toIRSelect(tupleExpr);
-	}
-
-	/** Build IrSelect without running IR transforms (used for nested subselects where we keep raw structure). */
-	private IrSelect toIRSelectRaw(final TupleExpr tupleExpr) {
-		return new TupleExprToIrConverter(this).toIRSelectRaw(tupleExpr);
 	}
 
 	/** Render a textual SELECT query from an {@code IrSelect} model. */
@@ -1380,7 +1126,7 @@ public class TupleExprIRRenderer {
 
 	/** Render a TupleExpr group inline using IR + transforms (used by EXISTS). */
 	private String renderInlineGroup(final TupleExpr pattern) {
-		final IRBuilder ib = new IRBuilder();
+		final TupleExprToIrConverter.IRBuilder ib = TupleExprToIrConverter.getIrBuilder();
 		IrBGP where = ib.build(pattern);
 		// Apply standard transforms for consistent property path and grouping rewrites
 		IrSelect tmp = new IrSelect();
@@ -2311,370 +2057,6 @@ public class TupleExprIRRenderer {
 		@Override
 		public String renderSubselect(IrSelect select) {
 			return TupleExprIRRenderer.this.render(select, null, true);
-		}
-	}
-
-	/** Build a linear textual-IR for a TupleExpr WHERE tree (best effort). */
-	private final class IRBuilder extends AbstractQueryModelVisitor<RuntimeException> {
-		private final IrBGP where = new IrBGP();
-
-		private IrFilter buildFilterFromCondition(final ValueExpr condExpr) {
-			if (condExpr == null) {
-				return new IrFilter((String) null);
-			}
-			// NOT EXISTS {...}
-			if (condExpr instanceof Not && ((Not) condExpr).getArg() instanceof Exists) {
-				final Exists ex = (Exists) ((Not) condExpr).getArg();
-				IRBuilder inner = new IRBuilder();
-				IrBGP bgp = inner.build(ex.getSubQuery());
-				return new IrFilter(new IrNot(
-						new IrExists(bgp, ex.isVariableScopeChange())));
-			}
-			// EXISTS {...}
-			if (condExpr instanceof Exists) {
-				final Exists ex = (Exists) condExpr;
-				final TupleExpr sub = ex.getSubQuery();
-				IRBuilder inner = new IRBuilder();
-				IrBGP bgp = inner.build(sub);
-				// Preserve explicit grouping inside EXISTS if the top-level of the subquery
-				// indicates a variable scope change due to user braces (e.g., a grouped
-				// FILTER or an explicitly grouped join). Do not propagate UNION new-scope,
-				// which should not add an extra brace layer around the EXISTS body.
-				boolean newScope = false;
-				if (sub instanceof Filter) {
-					newScope = ((Filter) sub).isVariableScopeChange();
-				} else if (sub instanceof Join) {
-					// Either the join itself is a new scope, or one of its top-level parts is
-					// a FILTER that forces a new scope (explicit braces around FILTER).
-					if (((Join) sub).isVariableScopeChange()) {
-						newScope = true;
-					} else {
-						List<TupleExpr> parts = new ArrayList<>();
-						flattenJoin(sub, parts);
-						for (TupleExpr te : parts) {
-							if (te instanceof Filter && ((Filter) te).isVariableScopeChange()) {
-								newScope = true;
-								break;
-							}
-						}
-					}
-				}
-				IrExists exNode = new IrExists(bgp, ex.isVariableScopeChange());
-				if (newScope) {
-					exNode.setNewScope(true);
-					bgp.setNewScope(true);
-				}
-				return new IrFilter(exNode);
-			}
-			// Fallback: plain textual condition
-			final String cond = stripRedundantOuterParens(renderExpr(condExpr));
-			return new IrFilter(cond);
-		}
-
-		IrBGP build(final TupleExpr t) {
-			if (t != null) {
-				t.visit(this);
-			}
-			return where;
-		}
-
-		@Override
-		public void meet(final StatementPattern sp) {
-			final Var ctx = getContextVarSafe(sp);
-			final IrStatementPattern node = new IrStatementPattern(
-					sp.getSubjectVar(), sp.getPredicateVar(),
-					sp.getObjectVar());
-			if (ctx != null && (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
-				IrBGP inner = new IrBGP();
-				inner.add(node);
-				where.add(new IrGraph(ctx, inner));
-			} else {
-				where.add(node);
-			}
-		}
-
-		@Override
-		public void meet(final Join join) {
-			// If this join represents a new variable scope in the original algebra, preserve an
-			// explicit grouped block so that downstream printing can render inner braces. This
-			// avoids losing textual grouping when later transforms (e.g., NPS fusion) simplify
-			// the content of the group.
-			if (join.isVariableScopeChange()) {
-				IRBuilder left = new IRBuilder();
-				IrBGP wl = left.build(join.getLeftArg());
-				IRBuilder right = new IRBuilder();
-				IrBGP wr = right.build(join.getRightArg());
-				IrBGP grp = new IrBGP();
-				for (IrNode ln : wl.getLines()) {
-					grp.add(ln);
-				}
-				for (IrNode ln : wr.getLines()) {
-					grp.add(ln);
-				}
-
-				grp.setNewScope(true);
-
-				where.add(grp);
-				return;
-			}
-			// Default: inline left then right into current block
-			join.getLeftArg().visit(this);
-			join.getRightArg().visit(this);
-		}
-
-		@Override
-		public void meet(final LeftJoin lj) {
-			lj.getLeftArg().visit(this);
-			final IRBuilder rightBuilder = new IRBuilder();
-			final IrBGP right = rightBuilder.build(lj.getRightArg());
-			if (lj.getCondition() != null) {
-				right.add(buildFilterFromCondition(lj.getCondition()));
-			}
-			where.add(new IrOptional(right));
-		}
-
-		@Override
-		public void meet(final Filter f) {
-			// If this FILTER starts a new variable scope and its argument is a
-			// SingletonSet, it originates from an explicit grouped FILTER-only block
-			// in the original SPARQL (e.g., `{ FILTER EXISTS { ... } }`). In that
-			// case, wrap just the FILTER in its own group to reproduce the braces.
-			if (f.isVariableScopeChange() && f.getArg() instanceof SingletonSet) {
-				IrBGP group = new IrBGP();
-				group.add(buildFilterFromCondition(f.getCondition()));
-				// Mark that this IR block corresponds to an explicit new variable scope
-				// in the original algebra, so later transforms and printers can
-				// preserve grouping decisions.
-				group.setNewScope(true);
-				where.add(group);
-				return;
-			}
-
-			// Try to order FILTER before a trailing subselect when the condition only mentions
-			// variables already bound by the head of the join (to match expected formatting).
-			final TupleExpr arg = f.getArg();
-			Projection trailingProj = null;
-			List<TupleExpr> head = null;
-			if (arg instanceof Join) {
-				final List<TupleExpr> flat = new ArrayList<>();
-				TupleExprIRRenderer.flattenJoin(arg, flat);
-				if (!flat.isEmpty()) {
-					TupleExpr last = flat.get(flat.size() - 1);
-					// recognize Distinct->Projection or plain Projection
-					if (last instanceof Projection) {
-						trailingProj = (Projection) last;
-					} else if (last instanceof Distinct && ((Distinct) last).getArg() instanceof Projection) {
-						trailingProj = (Projection) ((Distinct) last).getArg();
-					}
-					if (trailingProj != null) {
-						head = new ArrayList<>(flat);
-						head.remove(head.size() - 1);
-					}
-				}
-			}
-
-			if (trailingProj != null) {
-				final Set<String> headVars = new LinkedHashSet<>();
-				for (TupleExpr n : head) {
-					collectFreeVars(n, headVars);
-				}
-				final Set<String> condVars = freeVars(f.getCondition());
-				if (headVars.containsAll(condVars)) {
-					// Emit head, then FILTER, then subselect
-					for (TupleExpr n : head) {
-						n.visit(this);
-					}
-					where.add(buildFilterFromCondition(f.getCondition()));
-					trailingProj.visit(this);
-					return;
-				}
-			}
-
-			// Default order: argument followed by the FILTER line
-			arg.visit(this);
-			where.add(buildFilterFromCondition(f.getCondition()));
-		}
-
-		@Override
-		public void meet(final SingletonSet s) {
-			// SingletonSet produces a single empty binding row; when encountered as the
-			// argument of a FILTER that forces a new scope, it should not emit any IR
-			// lines. Treat as a no-op in the textual IR.
-		}
-
-		@Override
-		public void meet(final Union u) {
-			// Heuristic: if both operands are UNIONs, preserve grouping as two top-level branches
-			// each of which may contain its own inner UNION. Otherwise, flatten the UNION chain
-			// into a single IrUnion with N simple branches.
-			final boolean leftIsU = u.getLeftArg() instanceof Union;
-			final boolean rightIsU = u.getRightArg() instanceof Union;
-			if (leftIsU && rightIsU) {
-				final IrUnion irU = new IrUnion();
-				irU.setNewScope(u.isVariableScopeChange());
-				IRBuilder left = new IRBuilder();
-				irU.addBranch(left.build(u.getLeftArg()));
-				IRBuilder right = new IRBuilder();
-				irU.addBranch(right.build(u.getRightArg()));
-				where.add(irU);
-				return;
-			}
-
-			final List<TupleExpr> branches = new ArrayList<>();
-			flattenUnion(u, branches);
-			final IrUnion irU = new IrUnion();
-			irU.setNewScope(u.isVariableScopeChange());
-			for (TupleExpr b : branches) {
-				IRBuilder bld = new IRBuilder();
-				irU.addBranch(bld.build(b));
-			}
-			where.add(irU);
-		}
-
-		@Override
-		public void meet(final Service svc) {
-			IRBuilder inner = new IRBuilder();
-			IrBGP w = inner.build(svc.getArg());
-			where.add(new IrService(renderVarOrValue(svc.getServiceRef()),
-					svc.isSilent(), w));
-		}
-
-		@Override
-		public void meet(final BindingSetAssignment bsa) {
-			IrValues v = new IrValues();
-			List<String> names = new ArrayList<>(bsa.getBindingNames());
-			if (!cfg.valuesPreserveOrder) {
-				Collections.sort(names);
-			}
-			v.getVarNames().addAll(names);
-			for (BindingSet bs : bsa.getBindingSets()) {
-				List<String> row = new ArrayList<>(names.size());
-				for (String nm : names) {
-					Value val = bs.getValue(nm);
-					row.add(val == null ? "UNDEF" : renderValue(val));
-				}
-				v.getRows().add(row);
-			}
-			where.add(v);
-		}
-
-		@Override
-		public void meet(final Extension ext) {
-			ext.getArg().visit(this);
-			for (ExtensionElem ee : ext.getElements()) {
-				final ValueExpr expr = ee.getExpr();
-				if (expr instanceof AggregateOperator) {
-					continue; // hoisted to SELECT
-				}
-				where.add(new IrBind(renderExpr(expr), ee.getName()));
-			}
-		}
-
-		@Override
-		public void meet(final Projection p) {
-			// Build a raw subselect; defer any zero-or-one/collection/path normalization to IR transforms.
-			IrSelect sub = toIRSelectRaw(p);
-			where.add(new IrSubSelect(sub));
-		}
-
-		@Override
-		public void meet(final Slice s) {
-			// A Slice that starts a new scope represents a nested subselect with LIMIT/OFFSET.
-			if (s.isVariableScopeChange()) {
-				IrSelect sub = toIRSelectRaw(s);
-				where.add(new IrSubSelect(sub));
-				return;
-			}
-			// Otherwise, descend normally
-			s.getArg().visit(this);
-		}
-
-		@Override
-		public void meet(final Distinct d) {
-			// DISTINCT that changes scope belongs to a nested subselect.
-			if (d.isVariableScopeChange()) {
-				IrSelect sub = toIRSelectRaw(d);
-				where.add(new IrSubSelect(sub));
-				return;
-			}
-			d.getArg().visit(this);
-		}
-
-		@Override
-		public void meet(final Order o) {
-			// ORDER that changes scope belongs to a nested subselect.
-			if (o.isVariableScopeChange()) {
-				IrSelect sub = toIRSelectRaw(o);
-				where.add(new IrSubSelect(sub));
-				return;
-			}
-			o.getArg().visit(this);
-		}
-
-		// Attempt to parse a complex zero-or-one over one or more non-zero branches (alternation),
-		// where each branch is a chain/sequence of constant IRI steps (possibly mixed with inverse
-		// direction). The Projection is expected to have a Union of a ZeroLengthPath and one or
-		// more non-zero branches. Each non-zero branch is parsed into a PathNode sequence and
-		// then alternated; finally a zero-or-one quantifier is applied.
-		// (NormalizeZeroOrOneSubselectTransform)
-
-		// Build a PathNode sequence from a JOIN chain that connects s -> o via _anon_path_* variables.
-		// Accepts forward or inverse steps; allows the last step to directly reach the endpoint 'o'.
-		// Note: this method was moved to the outer class to be reusable from multiple contexts.
-		// The inner logic remains unchanged.
-		// See: TupleExprIRRenderer#buildPathSequenceFromChain
-
-		@Override
-		public void meet(final Difference diff) {
-			// Print left side in sequence, then add a MINUS block for the right
-			diff.getLeftArg().visit(this);
-			IRBuilder right = new IRBuilder();
-			IrBGP rightWhere = right.build(diff.getRightArg());
-			where.add(new IrMinus(rightWhere));
-		}
-
-		@Override
-		public void meet(final ArbitraryLengthPath p) {
-			final Var subj = p.getSubjectVar();
-			final Var obj = p.getObjectVar();
-			final PathNode inner = parseAPathInner(p.getPathExpression(), p.getSubjectVar(), p.getObjectVar());
-			if (inner == null) {
-				throw new IllegalStateException(
-						"Failed to parse ArbitraryLengthPath inner expression: " + p.getPathExpression());
-			}
-			final long min = p.getMinLength();
-			final long max = getMaxLengthSafe(p);
-			final PathNode q = new PathQuant(inner, min, max);
-			String expr = (q.prec() < PREC_SEQ ? "(" + q.render() + ")" : q.render());
-
-			// Preserve original orientation for bare NPS expressions. Later IR transforms
-			// (e.g., CanonicalizeNpsByProjectionTransform) may deliberately flip orientation
-			// when appropriate, but we avoid doing so here to keep UNION branch structure
-			// and algebra closer to the parsed form.
-			final IrPathTriple pt = new IrPathTriple(subj, expr, obj);
-			final Var ctx = getContextVarSafe(p);
-			if (ctx != null && (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
-				IrBGP innerBgp = new IrBGP();
-				innerBgp.add(pt);
-				where.add(new IrGraph(ctx, innerBgp));
-			} else {
-				where.add(pt);
-			}
-		}
-
-		@Override
-		public void meet(final ZeroLengthPath p) {
-			where.add(new IrText(
-					"FILTER " + TupleExprIRRenderer.asConstraint(
-							"sameTerm(" + renderVarOrValue(p.getSubjectVar()) + ", "
-									+ renderVarOrValue(p.getObjectVar())
-									+ ")")));
-		}
-
-		@Override
-		public void meetOther(final QueryModelNode node) {
-			where.add(new IrText("# unsupported node: "
-					+ node.getClass().getSimpleName()));
 		}
 	}
 
