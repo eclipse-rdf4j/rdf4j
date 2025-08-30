@@ -16,6 +16,8 @@ import java.util.Spliterator;
 import java.util.Spliterators;
 import java.util.SplittableRandom;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -1108,7 +1110,7 @@ public class SparqlComprehensiveStreamingValidTest {
 				boolean hasNext = (k <= n);
 
 				@Override
-				public boolean tryAdvance(java.util.function.Consumer<? super List<T>> action) {
+				public boolean tryAdvance(Consumer<? super List<T>> action) {
 					if (!hasNext) {
 						return false;
 					}
@@ -1195,7 +1197,7 @@ public class SparqlComprehensiveStreamingValidTest {
 				int i = 0, j = 1;
 
 				@Override
-				public boolean tryAdvance(java.util.function.Consumer<? super int[]> action) {
+				public boolean tryAdvance(Consumer<? super int[]> action) {
 					while (i < n) {
 						if (j < n) {
 							action.accept(new int[] { i, j });
@@ -1268,7 +1270,7 @@ public class SparqlComprehensiveStreamingValidTest {
 		 * consumed once; `bs` is collected to a list and reused inside the flatMap.
 		 */
 		private static <A, B> Stream<String> cross(Stream<A> as, Stream<B> bs,
-				java.util.function.BiFunction<A, B, String> f) {
+				BiFunction<A, B, String> f) {
 			List<B> bl = bs.collect(Collectors.toList());
 			return as.flatMap(a -> bl.stream().map(b -> f.apply(a, b)));
 		}
@@ -1506,7 +1508,7 @@ public class SparqlComprehensiveStreamingValidTest {
 				int i = 0;
 
 				@Override
-				public boolean tryAdvance(java.util.function.Consumer<? super String> action) {
+				public boolean tryAdvance(Consumer<? super String> action) {
 					if (i >= count)
 						return false;
 

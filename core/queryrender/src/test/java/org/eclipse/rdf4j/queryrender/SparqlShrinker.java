@@ -2,6 +2,8 @@ package org.eclipse.rdf4j.queryrender;
 
 import java.util.*;
 import java.util.function.Predicate;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -685,7 +687,7 @@ public final class SparqlShrinker {
 	}
 
 	private static int indexOfRegex(String src, String regex) {
-		java.util.regex.Matcher m = java.util.regex.Pattern.compile(regex).matcher(src);
+		Matcher m = Pattern.compile(regex).matcher(src);
 		return m.find() ? m.start() : -1;
 	}
 
@@ -701,8 +703,8 @@ public final class SparqlShrinker {
 	}
 
 	private static int indexOfWord(String src, String word, int fromIdx) {
-		String re = "(?i)\\b" + java.util.regex.Pattern.quote(word) + "\\b";
-		java.util.regex.Matcher m = java.util.regex.Pattern.compile(re).matcher(src);
+		String re = "(?i)\\b" + Pattern.quote(word) + "\\b";
+		Matcher m = Pattern.compile(re).matcher(src);
 		return m.find(fromIdx) ? m.start() : -1;
 	}
 
@@ -1389,7 +1391,7 @@ public final class SparqlShrinker {
 
 	// Remove the last matching tail clause (e.g., LIMIT 10, OFFSET 20) from the query text.
 	private static String stripTailClause(String src, String regex) {
-		java.util.regex.Matcher m = java.util.regex.Pattern.compile(regex).matcher(src);
+		Matcher m = Pattern.compile(regex).matcher(src);
 		int lastStart = -1, lastEnd = -1;
 		while (m.find()) {
 			lastStart = m.start();

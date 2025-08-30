@@ -135,7 +135,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 				Var pv = sp.getPredicate();
 				IrFilter f = (IrFilter) in.get(i + 1);
 				String condText = f.getConditionText();
-				org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyNegatedPropertySetTransform.NsText ns = ApplyNegatedPropertySetTransform
+				ApplyNegatedPropertySetTransform.NsText ns = ApplyNegatedPropertySetTransform
 						.parseNegatedSetText(condText);
 				// Do not apply here if there is an immediate constant tail; defer to S1+tail rule below
 				boolean hasTail = (i + 2 < in.size() && in.get(i + 2) instanceof IrStatementPattern
@@ -167,7 +167,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 				if (pA != null && !pA.hasValue() && pA.getName() != null && isAnonPathVar(pA)) {
 					IrFilter flt = (IrFilter) in.get(i + 1);
 					String cond = flt.getConditionText();
-					org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyNegatedPropertySetTransform.NsText ns = ApplyNegatedPropertySetTransform
+					ApplyNegatedPropertySetTransform.NsText ns = ApplyNegatedPropertySetTransform
 							.parseNegatedSetText(cond);
 					IrStatementPattern spB = (IrStatementPattern) in.get(i + 2);
 					Var pB = spB.getPredicate();
