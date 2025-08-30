@@ -1681,7 +1681,10 @@ public class TupleExprToIrConverter {
 				for (IrNode ln : wl.getLines()) {
 					grp.add(ln);
 				}
-				grp.add(new IrOptional(wr));
+				// Wrap OPTIONAL body to preserve inner grouping when right-hand introduces scope
+				IrBGP optBody = new IrBGP();
+				optBody.add(wr);
+				grp.add(new IrOptional(optBody));
 				grp.setNewScope(true);
 				where.add(grp);
 				return;
