@@ -87,8 +87,9 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 						return child;
 					});
 				}
-			} else if (n instanceof IrUnion && !n.isNewScope()) {
-				// Attempt fusing of UNION branches wherever they occur (Service/Graph/etc.)
+			} else if (n instanceof IrUnion) {
+				// Attempt fusing of UNION branches wherever they occur (Service/Graph/etc.).
+				// Preserve explicit grouping braces for unions originally marked as new scope inside tryFuseUnion().
 				m = tryFuseUnion((IrUnion) n);
 			} else {
 				// Recurse into nested BGPs inside other containers (e.g., FILTER EXISTS)
@@ -128,6 +129,9 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			} else if (ln instanceof IrService) {
 				IrService s = (IrService) ln;
 				out.add(new IrService(s.getServiceRefText(), s.isSilent(), fuseUnionsInBGP(s.getWhere())));
+			} else if (ln instanceof IrBGP) {
+				// Recurse into nested groups
+				out.add(fuseUnionsInBGP((IrBGP) ln));
 			} else {
 				out.add(ln);
 			}
@@ -141,8 +145,11 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 		if (u == null || u.getBranches().size() < 2) {
 			return u;
 		}
-		// Preserve knowledge of original newScope to optionally reintroduce grouping braces for textual stability.
-		final boolean wasNewScope = u.isNewScope();
+		// If this UNION is explicit from the original query (new scope), do not fuse.
+		if (u.isNewScope()) {
+			return u;
+		}
+		final boolean wasNewScope = false;
 
 		// Gather candidate branches: (optional GRAPH g) { IrPathTriple with bare NPS }.
 		Var graphRef = null;
@@ -152,20 +159,33 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 		int fusedCount = 0;
 
 		for (IrBGP b : u.getBranches()) {
-			IrPathTriple pt = null;
+			// Unwrap common single-child wrappers to reach a path triple, and capture graph ref if present.
 			Var g = null;
-			if (b.getLines().size() == 1 && b.getLines().get(0) instanceof IrPathTriple) {
-				pt = (IrPathTriple) b.getLines().get(0);
-			} else if (b.getLines().size() == 1 && b.getLines().get(0) instanceof IrGraph) {
-				IrGraph gb = (IrGraph) b.getLines().get(0);
+			IrNode node = singleChild(b);
+			// unwrap nested single-child BGPs introduced for explicit grouping
+			while (node instanceof IrBGP) {
+				IrNode inner = singleChild((IrBGP) node);
+				if (inner == null)
+					break;
+				node = inner;
+			}
+			if (node instanceof IrGraph) {
+				IrGraph gb = (IrGraph) node;
 				g = gb.getGraph();
-				if (gb.getWhere() != null && gb.getWhere().getLines().size() == 1
-						&& gb.getWhere().getLines().get(0) instanceof IrPathTriple) {
-					pt = (IrPathTriple) gb.getWhere().getLines().get(0);
-				} else {
-					return u; // complex branch: bail out
+				node = singleChild(gb.getWhere());
+				while (node instanceof IrBGP) {
+					IrNode inner = singleChild((IrBGP) node);
+					if (inner == null)
+						break;
+					node = inner;
 				}
-			} else {
+			}
+			// allow one more level of single-child BGP (explicit grouping)
+			if (node instanceof IrBGP) {
+				node = singleChild((IrBGP) node);
+			}
+			IrPathTriple pt = (node instanceof IrPathTriple) ? (IrPathTriple) node : null;
+			if (pt == null) {
 				return u; // non-candidate branch
 			}
 
@@ -200,7 +220,7 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			if (sameVar(sCanon, pt.getObject()) && sameVar(oCanon, pt.getSubject())) {
 				String inv = invertNegatedPropertySet(path);
 				if (inv == null) {
-					return u; // should not happen; be safe
+					return u; // be safe
 				}
 				toAdd = inv;
 			} else if (!(sameVar(sCanon, pt.getSubject()) && sameVar(oCanon, pt.getObject()))) {
@@ -231,6 +251,15 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			return fused;
 		}
 		return u;
+	}
+
+	private static IrNode singleChild(IrBGP b) {
+		if (b == null)
+			return null;
+		List<IrNode> ls = b.getLines();
+		if (ls == null || ls.size() != 1)
+			return null;
+		return ls.get(0);
 	}
 
 	/** Apply union-of-NPS fusing only within EXISTS bodies. */
