@@ -1806,8 +1806,7 @@ public class TupleExprToIrConverter {
 		public void meet(final Service svc) {
 			IRBuilder inner = new IRBuilder();
 			IrBGP w = inner.build(svc.getArg());
-			// Fuse UNION of two bare NPS branches inside SERVICE at conversion time using shared helper
-			w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ServiceNpsUnionFuser.fuse(w);
+			// No conversion-time fusion; rely on pipeline transforms to normalize SERVICE bodies
 			IrService irSvc = new IrService(r.renderVarOrValuePublic(svc.getServiceRef()), svc.isSilent(), w);
 			boolean scope;
 			try {
