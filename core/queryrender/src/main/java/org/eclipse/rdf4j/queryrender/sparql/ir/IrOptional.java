@@ -34,14 +34,8 @@ public class IrOptional extends IrNode {
 	@Override
 	public void print(IrPrinter p) {
 		IrBGP ow = getWhere();
-		// always render with braces, even for single-line body
-		p.line("OPTIONAL {");
-		p.pushIndent();
-		if (ow != null) {
-			p.printLines(ow.getLines());
-		}
-		p.popIndent();
-		p.line("}");
+		p.line("OPTIONAL ");
+		ow.print(p);
 	}
 
 	@Override
