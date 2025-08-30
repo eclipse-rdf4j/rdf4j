@@ -1417,8 +1417,13 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void openBlock() {
+			if (!inlineActive) {
+				indent();
+			}
 			out.append('{').append('\n');
 			level++;
+			// Opening a block completes any inline header that preceded it (e.g., "OPTIONAL ")
+			inlineActive = false;
 		}
 
 		@Override

@@ -1683,10 +1683,12 @@ public class TupleExprToIrConverter {
 				for (IrNode ln : wl.getLines()) {
 					grp.add(ln);
 				}
-				// Attach OPTIONAL body. If the right-hand BGP is a single simple triple, preserve
-				// explicit inner grouping by wrapping it once so we render OPTIONAL { { triple } }.
+				// For scope-changing OPTIONAL, preserve explicit inner grouping for a simple
+				// triple/path right-hand side by wrapping once so we render OPTIONAL { { ... } }.
 				IrBGP optWhere = wr;
-				if (wr.getLines().size() == 1 && wr.getLines().get(0) instanceof IrStatementPattern) {
+				if (lj.getRightArg() instanceof StatementPattern
+						|| lj.getRightArg() instanceof ArbitraryLengthPath
+						|| lj.getRightArg() instanceof ZeroLengthPath) {
 					IrBGP wrap = new IrBGP();
 					wrap.add(wr);
 					optWhere = wrap;
@@ -2022,6 +2024,54 @@ public class TupleExprToIrConverter {
 			if (s.contains("new scope")) {
 				return true;
 			}
+		} catch (Throwable ignore) {
+		}
+		return false;
+	}
+
+	/** True if the algebra root is a container that prints its own structural block. */
+	private static boolean rightArgIsContainer(final TupleExpr e) {
+		if (e == null) {
+			return false;
+		}
+		return (e instanceof Service)
+				|| (e instanceof Union)
+				|| (e instanceof Projection)
+				|| (e instanceof Slice)
+				|| (e instanceof Distinct)
+				|| (e instanceof Group);
+	}
+
+	/**
+	 * True when the algebra root node encodes an explicit variable scope change that maps to an extra GroupGraphPattern
+	 * in the original query. Excludes container nodes that already introduce their own structural block in surface
+	 * syntax.
+	 */
+	private static boolean rootHasExplicitScope(final TupleExpr e) {
+		if (e == null) {
+			return false;
+		}
+		// Exclude containers: they already carry their own block syntax
+		if (e instanceof Service
+				|| e instanceof Union
+				|| e instanceof Projection
+				|| e instanceof Slice
+				|| e instanceof Distinct
+				|| e instanceof Group) {
+			return false;
+		}
+		try {
+			Method m = e.getClass().getMethod("isVariableScopeChange");
+			Object v = m.invoke(e);
+			if (v instanceof Boolean) {
+				return (Boolean) v;
+			}
+		} catch (ReflectiveOperationException ignore) {
+		}
+		// Fallback: use algebra's textual marker if present
+		try {
+			String s = String.valueOf(e);
+			return s.contains("(new scope)");
 		} catch (Throwable ignore) {
 		}
 		return false;

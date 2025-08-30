@@ -47,15 +47,12 @@ public class IrUnion extends IrNode {
 	@Override
 	public void print(IrPrinter p) {
 		for (int i = 0; i < branches.size(); i++) {
-			p.line("{");
-			p.pushIndent();
-			p.printLines(branches.get(i).getLines());
-			p.popIndent();
-			p.line("}");
+			IrBGP b = branches.get(i);
+			if (b != null) {
+				b.print(p); // IrBGP prints its own braces
+			}
 			if (i + 1 < branches.size()) {
-				p.pushIndent();
 				p.line("UNION");
-				p.popIndent();
 			}
 		}
 	}
