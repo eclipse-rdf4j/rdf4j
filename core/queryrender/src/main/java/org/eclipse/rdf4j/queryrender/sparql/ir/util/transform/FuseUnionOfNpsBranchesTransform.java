@@ -57,7 +57,9 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				m = new IrGraph(g.getGraph(), apply(g.getWhere(), r));
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				m = new IrOptional(apply(o.getWhere(), r));
+				IrOptional no = new IrOptional(apply(o.getWhere(), r));
+				no.setNewScope(o.isNewScope());
+				m = no;
 			} else if (n instanceof IrMinus) {
 				IrMinus mi = (IrMinus) n;
 				m = new IrMinus(apply(mi.getWhere(), r));
@@ -117,7 +119,9 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				out.add(new IrGraph(g.getGraph(), fuseUnionsInBGP(g.getWhere())));
 			} else if (ln instanceof IrOptional) {
 				IrOptional o = (IrOptional) ln;
-				out.add(new IrOptional(fuseUnionsInBGP(o.getWhere())));
+			IrOptional no = new IrOptional(fuseUnionsInBGP(o.getWhere()));
+			no.setNewScope(o.isNewScope());
+			out.add(no);
 			} else if (ln instanceof IrMinus) {
 				IrMinus mi = (IrMinus) ln;
 				out.add(new IrMinus(fuseUnionsInBGP(mi.getWhere())));
@@ -244,7 +248,9 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				m = new IrGraph(g.getGraph(), applyInsideExists(g.getWhere(), r));
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				m = new IrOptional(applyInsideExists(o.getWhere(), r));
+				IrOptional no2 = new IrOptional(applyInsideExists(o.getWhere(), r));
+				no2.setNewScope(o.isNewScope());
+				m = no2;
 			} else if (n instanceof IrMinus) {
 				IrMinus mi = (IrMinus) n;
 				m = new IrMinus(applyInsideExists(mi.getWhere(), r));
