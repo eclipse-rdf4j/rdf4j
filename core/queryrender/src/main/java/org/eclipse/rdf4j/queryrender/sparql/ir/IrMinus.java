@@ -36,7 +36,15 @@ public class IrMinus extends IrNode {
 		p.startLine();
 		p.append("MINUS ");
 		if (ow != null) {
-			ow.print(p); // IrBGP prints braces
+			IrBGP body = ow;
+			// Flatten a single nested IrBGP (no explicit new scope) to avoid redundant braces
+			if (body.getLines().size() == 1 && body.getLines().get(0) instanceof IrBGP) {
+				IrBGP inner = (IrBGP) body.getLines().get(0);
+				if (!inner.isNewScope()) {
+					body = inner;
+				}
+			}
+			body.print(p); // IrBGP prints braces
 		} else {
 			p.openBlock();
 			p.closeBlock();
