@@ -1667,37 +1667,36 @@ public class TupleExprToIrConverter {
 			join.getRightArg().visit(this);
 		}
 
-		@Override
-		public void meet(final LeftJoin lj) {
-			if (lj.isVariableScopeChange()) {
-				IRBuilder left = new IRBuilder();
-				IrBGP wl = left.build(lj.getLeftArg());
-				IRBuilder rightBuilder = new IRBuilder();
-				IrBGP wr = rightBuilder.build(lj.getRightArg());
-				if (lj.getCondition() != null) {
-					wr.add(buildFilterFromCondition(lj.getCondition()));
+			@Override
+			public void meet(final LeftJoin lj) {
+				if (lj.isVariableScopeChange()) {
+					IRBuilder left = new IRBuilder();
+					IrBGP wl = left.build(lj.getLeftArg());
+					IRBuilder rightBuilder = new IRBuilder();
+					IrBGP wr = rightBuilder.build(lj.getRightArg());
+					if (lj.getCondition() != null) {
+						wr.add(buildFilterFromCondition(lj.getCondition()));
+					}
+					// Build outer group with the left-hand side and the OPTIONAL.
+					IrBGP grp = new IrBGP();
+					for (IrNode ln : wl.getLines()) {
+						grp.add(ln);
+					}
+					// For scope-changing OPTIONAL, we need an extra pair of braces around the OPTIONAL body
+					// for simple right-hand sides (triple/path/service). Delegate this to IrOptional by
+					// marking it as a new scope; IrBGP will still print its own braces for the body.
+					final boolean simpleRhs = (lj.getRightArg() instanceof StatementPattern)
+							|| (lj.getRightArg() instanceof ArbitraryLengthPath)
+							|| (lj.getRightArg() instanceof ZeroLengthPath)
+							|| (lj.getRightArg() instanceof Service);
+					IrOptional opt = new IrOptional(wr);
+					if (simpleRhs) {
+						opt.setNewScope(true);
+					}
+					grp.add(opt);
+					where.add(grp);
+					return;
 				}
-				// Preserve explicit grouping on the right-hand side when the algebra marks
-				// any descendant as a variable-scope change (e.g., Optional { { ... } }).
-				IrBGP grp = new IrBGP();
-				for (IrNode ln : wl.getLines()) {
-					grp.add(ln);
-				}
-				// For scope-changing OPTIONAL, preserve explicit inner grouping for a simple
-				// triple/path right-hand side by wrapping once so we render OPTIONAL { { ... } }.
-				IrBGP optWhere = wr;
-				if (lj.getRightArg() instanceof StatementPattern
-						|| lj.getRightArg() instanceof ArbitraryLengthPath
-						|| lj.getRightArg() instanceof ZeroLengthPath) {
-					IrBGP wrap = new IrBGP();
-					wrap.add(wr);
-					optWhere = wrap;
-				}
-				grp.add(new IrOptional(optWhere));
-				grp.setNewScope(true);
-				where.add(grp);
-				return;
-			}
 			lj.getLeftArg().visit(this);
 			final IRBuilder rightBuilder = new IRBuilder();
 			final IrBGP right = rightBuilder.build(lj.getRightArg());
