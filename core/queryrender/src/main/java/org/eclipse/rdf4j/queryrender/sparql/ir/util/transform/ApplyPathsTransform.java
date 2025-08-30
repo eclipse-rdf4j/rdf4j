@@ -376,8 +376,10 @@ public final class ApplyPathsTransform extends BaseTransform {
 			if ((n instanceof IrGraph || n instanceof IrStatementPattern) && i + 1 < in.size()
 					&& in.get(i + 1) instanceof IrUnion) {
 				IrUnion u = (IrUnion) in.get(i + 1);
-				// Respect explicit UNION scopes: do not merge into path when UNION has new scope
-				if (u.isNewScope()) {
+				// Respect explicit UNION scopes, except when every branch clearly consists of parser
+				// anon-path bridge variables. In that case, fusing is safe and preserves user-visible
+				// bindings.
+				if (u.isNewScope() && !unionBranchesAllHaveAnonPathBridge(u)) {
 					out.add(n);
 					continue;
 				}
@@ -597,8 +599,13 @@ public final class ApplyPathsTransform extends BaseTransform {
 			// Rewrite UNION alternation of simple triples (and already-fused path triples) into a single
 			// IrPathTriple, preserving branch order and GRAPH context when present. This enables
 			// subsequent chaining with a following constant-predicate triple via pt + SP -> pt/IRI.
-			if (n instanceof IrUnion && !((IrUnion) n).isNewScope()) {
+			if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
+				boolean allow = !u.isNewScope() || unionBranchesAllHaveAnonPathBridge(u);
+				if (!allow) {
+					out.add(n);
+					continue;
+				}
 
 				Var subj = null, obj = null, graphRef = null;
 				final List<String> parts = new ArrayList<>();

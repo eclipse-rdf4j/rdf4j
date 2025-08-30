@@ -69,7 +69,9 @@ public final class FusePrePathThenUnionAlternationTransform extends BaseTransfor
 					continue;
 				}
 				IrUnion u = (IrUnion) in.get(i + 1);
-				if (u.isNewScope() || u.getBranches().size() != 2) {
+				// Allow fusing across a new-scope UNION only when both branches clearly use
+				// parser-generated anon-path bridge variables. Otherwise, preserve the scope.
+				if ((u.isNewScope() && !unionBranchesAllHaveAnonPathBridge(u)) || u.getBranches().size() != 2) {
 					out.add(n);
 					continue;
 				}

@@ -521,6 +521,70 @@ public class BaseTransform {
 	}
 
 	/**
+	 * True if the given branch contains at least one variable with the parser-generated _anon_path_ (or inverse
+	 * variant) prefix anywhere in its simple triple-like structures. Used as a safety valve to allow certain fusions
+	 * across UNION branches that were marked as introducing a new scope in the algebra: if every branch contains an
+	 * anonymous path bridge var, the fusion is considered safe and preserves user-visible bindings.
+	 */
+	public static boolean branchHasAnonPathBridge(IrBGP branch) {
+		if (branch == null) {
+			return false;
+		}
+		for (IrNode ln : branch.getLines()) {
+			if (ln instanceof IrStatementPattern) {
+				IrStatementPattern sp = (IrStatementPattern) ln;
+				Var s = sp.getSubject();
+				Var o = sp.getObject();
+				Var p = sp.getPredicate();
+				if (isAnonPathVar(s) || isAnonPathInverseVar(s) || isAnonPathVar(o) || isAnonPathInverseVar(o)
+						|| isAnonPathVar(p) || isAnonPathInverseVar(p)) {
+					return true;
+				}
+			} else if (ln instanceof IrPathTriple) {
+				IrPathTriple pt = (IrPathTriple) ln;
+				if (isAnonPathVar(pt.getSubject()) || isAnonPathInverseVar(pt.getSubject())
+						|| isAnonPathVar(pt.getObject())
+						|| isAnonPathInverseVar(pt.getObject())) {
+					return true;
+				}
+			} else if (ln instanceof IrGraph) {
+				IrGraph g = (IrGraph) ln;
+				if (branchHasAnonPathBridge(g.getWhere())) {
+					return true;
+				}
+			} else if (ln instanceof IrOptional) {
+				IrOptional o = (IrOptional) ln;
+				if (branchHasAnonPathBridge(o.getWhere())) {
+					return true;
+				}
+			} else if (ln instanceof IrMinus) {
+				IrMinus m = (IrMinus) ln;
+				if (branchHasAnonPathBridge(m.getWhere())) {
+					return true;
+				}
+			} else if (ln instanceof IrBGP) {
+				if (branchHasAnonPathBridge((IrBGP) ln)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/** True if all UNION branches contain at least one _anon_path_* variable (or inverse variant). */
+	public static boolean unionBranchesAllHaveAnonPathBridge(IrUnion u) {
+		if (u == null || u.getBranches().isEmpty()) {
+			return false;
+		}
+		for (IrBGP b : u.getBranches()) {
+			if (!branchHasAnonPathBridge(b)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
 	 * If the given path text is a negated property set of the form !(a|b|...), return a version where each member is
 	 * inverted by toggling the leading '^' (i.e., a -> ^a, ^a -> a). Returns null when the input is not a simple NPS.
 	 */
