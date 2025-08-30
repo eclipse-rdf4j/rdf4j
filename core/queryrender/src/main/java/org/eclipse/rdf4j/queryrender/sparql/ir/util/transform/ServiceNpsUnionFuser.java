@@ -11,13 +11,12 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
@@ -41,15 +40,11 @@ public final class ServiceNpsUnionFuser {
 		// Exact-body UNION case
 		if (bgp.getLines().size() == 1 && bgp.getLines().get(0) instanceof IrUnion) {
 			IrNode fused = tryFuseUnion((IrUnion) bgp.getLines().get(0));
-			if ((fused instanceof IrPathTriple || fused instanceof IrGraph)) {
-				IrBGP nw = new IrBGP(bgp.isNewScope());
+			if (fused instanceof IrPathTriple) {
+				IrBGP nw = new IrBGP();
 				nw.add(fused);
+				nw.setNewScope(bgp.isNewScope());
 				return nw;
-			}
-			if (fused instanceof IrBGP) {
-				// If the fuser already produced a BGP (should be rare after not preserving new-scope),
-				// use it directly to avoid introducing nested brace layers.
-				return (IrBGP) fused;
 			}
 		}
 
@@ -59,12 +54,7 @@ public final class ServiceNpsUnionFuser {
 		for (IrNode ln : bgp.getLines()) {
 			if (ln instanceof IrUnion) {
 				IrNode fused = tryFuseUnion((IrUnion) ln);
-				if ((fused instanceof IrPathTriple || fused instanceof IrGraph)) {
-					out.add(fused);
-					replaced = true;
-					continue;
-				}
-				if (fused instanceof IrBGP) {
+				if (fused instanceof IrPathTriple) {
 					out.add(fused);
 					replaced = true;
 					continue;
@@ -75,8 +65,9 @@ public final class ServiceNpsUnionFuser {
 		if (!replaced) {
 			return bgp;
 		}
-		IrBGP nw = new IrBGP(bgp.isNewScope());
+		IrBGP nw = new IrBGP();
 		out.forEach(nw::add);
+		nw.setNewScope(bgp.isNewScope());
 		return nw;
 	}
 
@@ -84,134 +75,95 @@ public final class ServiceNpsUnionFuser {
 		if (u == null || u.getBranches().size() != 2) {
 			return u;
 		}
-
-		// Respect explicit UNION new scopes: only fuse when both branches share an _anon_path_* variable
-		// under an allowed role mapping (s-s, s-o, o-s, o-p). Otherwise, preserve the UNION.
-		if (BaseTransform.unionIsExplicitAndAllBranchesScoped(u)) {
+		IrBGP b1 = u.getBranches().get(0);
+		IrBGP b2 = u.getBranches().get(1);
+		if (b1.getLines().size() != 1 || b2.getLines().size() != 1) {
 			return u;
 		}
-
-		// Robustly unwrap each branch: allow nested single-child BGP groups and an optional GRAPH wrapper.
-		// holder for extracted branch shape
-
-		Branch b1 = extractBranch(u.getBranches().get(0));
-		Branch b2 = extractBranch(u.getBranches().get(1));
-		if (b1 == null || b2 == null) {
+		if (!(b1.getLines().get(0) instanceof IrPathTriple) || !(b2.getLines().get(0) instanceof IrPathTriple)) {
 			return u;
 		}
+		IrPathTriple p1 = (IrPathTriple) b1.getLines().get(0);
+		IrPathTriple p2 = (IrPathTriple) b2.getLines().get(0);
+		Var s1 = p1.getSubject();
+		Var o1 = p1.getObject();
+		Var s2 = p2.getSubject();
+		Var o2 = p2.getObject();
 
-		IrPathTriple p1 = b1.pt;
-		IrPathTriple p2 = b2.pt;
-		Var graphRef = b1.graph;
-		// Graph refs must match (both null or equal)
-		if ((graphRef == null && b2.graph != null) || (graphRef != null && b2.graph == null)
-				|| (graphRef != null && !eqVarOrValue(graphRef, b2.graph))) {
-			return u;
-		}
-
-		Var sCanon = p1.getSubject();
-		Var oCanon = p1.getObject();
-
-		// Normalize compact NPS forms
-		String m1 = BaseTransform.normalizeCompactNps(p1.getPathText());
-		String m2 = BaseTransform.normalizeCompactNps(p2.getPathText());
-		if (m1 == null || m2 == null) {
-			return u;
-		}
-
-		// Align branch 2 orientation to branch 1
-		String add2 = m2;
-		if (eqVarOrValue(sCanon, p2.getObject()) && eqVarOrValue(oCanon, p2.getSubject())) {
-			String inv = BaseTransform.invertNegatedPropertySet(m2);
-			if (inv == null) {
-				return u;
-			}
-			add2 = inv;
-		} else if (!(eqVarOrValue(sCanon, p2.getSubject()) && eqVarOrValue(oCanon, p2.getObject()))) {
-			return u;
-		}
-
-		String merged = BaseTransform.mergeNpsMembers(m1, add2);
-		Set<Var> pv = new HashSet<>();
-		pv.addAll(p1.getPathVars());
-		pv.addAll(p2.getPathVars());
-		IrPathTriple fused = new IrPathTriple(sCanon, p1.getSubjectOverride(), merged, oCanon, p1.getObjectOverride(),
-				pv, u.isNewScope());
-		IrNode out = fused;
-		if (graphRef != null) {
-			IrBGP inner = new IrBGP(false);
-			inner.add(fused);
-			out = new IrGraph(graphRef, inner, false);
-		}
-		// Preserve explicit UNION new-scope grouping by wrapping the fused result in a grouped BGP.
-		if (u.isNewScope()) {
-			IrBGP grp = new IrBGP(false);
-			grp.add(out);
-			return grp;
-		}
-		return out;
-	}
-
-	/** extract a single IrPathTriple (possibly under a single GRAPH) from a branch consisting only of wrappers. */
-	private static Branch extractBranch(IrBGP b) {
-		Branch out = new Branch();
-		if (b == null || b.getLines() == null || b.getLines().isEmpty()) {
+		Function<String, String> normalize = (path) -> {
+			if (path == null)
+				return null;
+			String t = path.trim();
+			if (t.isEmpty())
+				return null;
+			if (t.startsWith("!(") && t.endsWith(")"))
+				return t;
+			if (t.startsWith("!^"))
+				return "!(" + t.substring(1) + ")";
+			if (t.startsWith("!") && (t.length() == 1 || t.charAt(1) != '('))
+				return "!(" + t.substring(1) + ")";
 			return null;
-		}
-		// unwrap chains of single-child BGPs
-		IrNode cur = singleChild(b);
-		while (cur instanceof IrBGP) {
-			IrNode inner = singleChild((IrBGP) cur);
-			if (inner == null) {
-				break;
-			}
-			cur = inner;
-		}
-		if (cur instanceof IrGraph) {
-			IrGraph g = (IrGraph) cur;
-			out.graph = g.getGraph();
-			cur = singleChild(g.getWhere());
-			while (cur instanceof IrBGP) {
-				IrNode inner = singleChild((IrBGP) cur);
-				if (inner == null) {
-					break;
+		};
+
+		String m1 = normalize.apply(p1.getPathText());
+		String m2 = normalize.apply(p2.getPathText());
+		if (m1 == null || m2 == null)
+			return u;
+
+		Function<String, String> invert = (s) -> {
+			if (s == null || !s.startsWith("!(") || !s.endsWith(")"))
+				return null;
+			String inner = s.substring(2, s.length() - 1);
+			if (inner.isEmpty())
+				return s;
+			String[] parts = inner.split("\\|");
+			List<String> rev = new ArrayList<>();
+			for (String tok : parts) {
+				String t = tok.trim();
+				if (!t.startsWith("^")) {
+					rev.add("^" + t);
+				} else {
+					rev.add(t);
 				}
-				cur = inner;
 			}
-		}
-		if (cur instanceof IrPathTriple) {
-			out.pt = (IrPathTriple) cur;
-			return out;
-		}
-		return null;
-	}
+			return "!(" + String.join("|", rev) + ")";
+		};
 
-	private static final class Branch {
-		Var graph;
-		IrPathTriple pt;
-	}
+		BiFunction<String, String, String> merge = (a, btxt) -> {
+			int a1 = a.indexOf('('), a2 = a.lastIndexOf(')');
+			int bb1 = btxt.indexOf('('), bb2 = btxt.lastIndexOf(')');
+			if (a1 < 0 || a2 < 0 || bb1 < 0 || bb2 < 0)
+				return a;
+			String ia = a.substring(a1 + 1, a2).trim();
+			String ib = btxt.substring(bb1 + 1, bb2).trim();
+			if (ia.isEmpty())
+				return btxt;
+			if (ib.isEmpty())
+				return a;
+			return "!(" + ia + "|" + ib + ")";
+		};
 
-	private static IrNode singleChild(IrBGP b) {
-		if (b == null) {
-			return null;
+		// reversed endpoints
+		if (eqVarOrValue(s1, o2) && eqVarOrValue(o1, s2)) {
+			String m2inv = invert.apply(m2);
+			if (m2inv == null)
+				return u;
+			return new IrPathTriple(s1, merge.apply(m1, m2inv), o1);
 		}
-		List<IrNode> ls = b.getLines();
-		if (ls == null || ls.size() != 1) {
-			return null;
+		// same orientation
+		if (eqVarOrValue(s1, s2) && eqVarOrValue(o1, o2)) {
+			return new IrPathTriple(s1, merge.apply(m1, m2), o1);
 		}
-		return ls.get(0);
+		return u;
 	}
 
 	private static boolean eqVarOrValue(Var a, Var b) {
-		if (a == b) {
+		if (a == b)
 			return true;
-		}
-		if (a == null || b == null) {
+		if (a == null || b == null)
 			return false;
-		}
-		if (a.hasValue() && b.hasValue()) {
+		if (a.hasValue() && b.hasValue())
 			return a.getValue().equals(b.getValue());
-		}
 		if (!a.hasValue() && !b.hasValue()) {
 			String an = a.getName();
 			String bn = b.getName();

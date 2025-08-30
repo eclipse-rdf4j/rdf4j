@@ -119,9 +119,9 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				out.add(new IrGraph(g.getGraph(), fuseUnionsInBGP(g.getWhere())));
 			} else if (ln instanceof IrOptional) {
 				IrOptional o = (IrOptional) ln;
-			IrOptional no = new IrOptional(fuseUnionsInBGP(o.getWhere()));
-			no.setNewScope(o.isNewScope());
-			out.add(no);
+				IrOptional no = new IrOptional(fuseUnionsInBGP(o.getWhere()));
+				no.setNewScope(o.isNewScope());
+				out.add(no);
 			} else if (ln instanceof IrMinus) {
 				IrMinus mi = (IrMinus) ln;
 				out.add(new IrMinus(fuseUnionsInBGP(mi.getWhere())));

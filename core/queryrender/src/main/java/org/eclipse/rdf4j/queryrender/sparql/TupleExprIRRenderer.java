@@ -71,13 +71,20 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGroupByElem;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrOrderSpec;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPrinter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrPropertyList;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
 
 /**
@@ -98,15 +105,15 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
  * <li>Normalize the TupleExpr (peel Order/Slice/Distinct/etc., detect HAVING) into a lightweight {@code Normalized}
  * carrier.</li>
  * <li>Build a textual Intermediate Representation (IR) that mirrors SPARQL’s shape: a header (projection), a list-like
- * WHERE block ({@link org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP}), and trailing modifiers. The IR tries to be a
+ * WHERE block ({@link IrBGP}), and trailing modifiers. The IR tries to be a
  * straightforward, low-logic mirror of the TupleExpr tree.</li>
  * <li>Run a small, ordered pipeline of IR transforms
- * ({@link org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms}) that are deliberately side‑effect‑free and
+ * ({@link IrTransforms}) that are deliberately side‑effect‑free and
  * compositional. Each transform is narrowly scoped (e.g., property path fusions, negated property sets, collections)
  * and uses simple heuristics like only fusing across parser‑generated bridge variables named with the
  * {@code _anon_path_} prefix.</li>
  * <li>Print the transformed IR using a tiny printer interface
- * ({@link org.eclipse.rdf4j.queryrender.sparql.ir.IrPrinter}) that centralizes indentation, IRI compaction, and child
+ * ({@link IrPrinter}) that centralizes indentation, IRI compaction, and child
  * printing.</li>
  * </ul>
  *
@@ -535,10 +542,10 @@ public class TupleExprIRRenderer {
 	 * Steps:
 	 * <ol>
 	 * <li>Normalize the TupleExpr (gather LIMIT/OFFSET/ORDER, peel wrappers, detect HAVING candidates).</li>
-	 * <li>Translate the remaining WHERE tree into an IR block ({@link org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP})
+	 * <li>Translate the remaining WHERE tree into an IR block ({@link IrBGP})
 	 * with simple, explicit nodes (statement patterns, path triples, filters, graphs, unions, etc.).</li>
 	 * <li>Apply the ordered IR transform pipeline
-	 * ({@link org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms#transformUsingChildren}) to perform
+	 * ({@link IrTransforms#transformUsingChildren}) to perform
 	 * purely-textual best‑effort fusions (paths, NPS, collections, property lists) while preserving user variable
 	 * bindings.</li>
 	 * <li>Populate IR header sections (projection, group by, having, order by) from normalized metadata.</li>
@@ -1243,29 +1250,29 @@ public class TupleExprIRRenderer {
 					IrStatementPattern sp = (IrStatementPattern) ln;
 					bumpBnodeVar(sp.getSubject());
 					bumpBnodeVar(sp.getObject());
-				} else if (ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPropertyList) {
-					org.eclipse.rdf4j.queryrender.sparql.ir.IrPropertyList pl = (org.eclipse.rdf4j.queryrender.sparql.ir.IrPropertyList) ln;
+				} else if (ln instanceof IrPropertyList) {
+					IrPropertyList pl = (IrPropertyList) ln;
 					bumpBnodeVar(pl.getSubject());
-					for (org.eclipse.rdf4j.queryrender.sparql.ir.IrPropertyList.Item it : pl.getItems()) {
+					for (IrPropertyList.Item it : pl.getItems()) {
 						for (Var ov : it.getObjects()) {
 							bumpBnodeVar(ov);
 						}
 					}
 				} else if (ln instanceof IrBGP) {
 					collectBnodeCounts((IrBGP) ln);
-				} else if (ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph) {
-					collectBnodeCounts(((org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph) ln).getWhere());
-				} else if (ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional) {
-					collectBnodeCounts(((org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional) ln).getWhere());
-				} else if (ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus) {
-					collectBnodeCounts(((org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus) ln).getWhere());
-				} else if (ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion) {
-					for (IrBGP b : ((org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion) ln).getBranches()) {
+				} else if (ln instanceof IrGraph) {
+					collectBnodeCounts(((IrGraph) ln).getWhere());
+				} else if (ln instanceof IrOptional) {
+					collectBnodeCounts(((IrOptional) ln).getWhere());
+				} else if (ln instanceof IrMinus) {
+					collectBnodeCounts(((IrMinus) ln).getWhere());
+				} else if (ln instanceof IrUnion) {
+					for (IrBGP b : ((IrUnion) ln).getBranches()) {
 						collectBnodeCounts(b);
 					}
-				} else if (ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrService) {
-					collectBnodeCounts(((org.eclipse.rdf4j.queryrender.sparql.ir.IrService) ln).getWhere());
-				} else if (ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect) {
+				} else if (ln instanceof IrService) {
+					collectBnodeCounts(((IrService) ln).getWhere());
+				} else if (ln instanceof IrSubSelect) {
 					// Do not descend into raw subselects for top-level bnode label decisions
 				}
 			}
