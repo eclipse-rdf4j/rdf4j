@@ -178,7 +178,9 @@ public final class FuseAltInverseTailBGPTransform extends BaseTransform {
 			}
 			if (n instanceof IrOptional) {
 				final IrOptional o = (IrOptional) n;
-				out.add(new IrOptional(fuseAltInverseTailBGP(o.getWhere(), r)));
+				IrOptional no = new IrOptional(fuseAltInverseTailBGP(o.getWhere(), r));
+				no.setNewScope(o.isNewScope());
+				out.add(no);
 				continue;
 			}
 			if (n instanceof IrMinus) {

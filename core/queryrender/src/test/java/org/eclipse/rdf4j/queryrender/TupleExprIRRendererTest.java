@@ -2741,6 +2741,23 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
+	void testOptionalServicePathScope3() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				" ?s ex:pQ ?ok . \n" +
+				"  {\n" +
+				"    ?s ex:pA ?o , ?f. \n" +
+				"    OPTIONAL {\n" +
+				"      SERVICE SILENT <http://services.example/sparql> {\n" +
+				"        ?s !(ex:pA|^<http://example.org/p/I0>) ?o . \n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
 	void testOptionalServicePathScope2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +

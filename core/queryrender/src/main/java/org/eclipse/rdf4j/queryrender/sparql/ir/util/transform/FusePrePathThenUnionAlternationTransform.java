@@ -109,7 +109,9 @@ public final class FusePrePathThenUnionAlternationTransform extends BaseTransfor
 			}
 			if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				out.add(new IrOptional(apply(o.getWhere(), r)));
+				IrOptional no = new IrOptional(apply(o.getWhere(), r));
+				no.setNewScope(o.isNewScope());
+				out.add(no);
 				continue;
 			}
 			if (n instanceof IrMinus) {

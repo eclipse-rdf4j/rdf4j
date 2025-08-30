@@ -45,7 +45,9 @@ public final class CanonicalizeBareNpsOrientationTransform extends BaseTransform
 			}
 			if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				out.add(new IrOptional(apply(o.getWhere())));
+				IrOptional no = new IrOptional(apply(o.getWhere()));
+				no.setNewScope(o.isNewScope());
+				out.add(no);
 				continue;
 			}
 			if (n instanceof IrMinus) {

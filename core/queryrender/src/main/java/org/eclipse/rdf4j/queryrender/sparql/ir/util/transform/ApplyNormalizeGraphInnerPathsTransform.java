@@ -108,7 +108,9 @@ public final class ApplyNormalizeGraphInnerPathsTransform extends BaseTransform 
 			}
 			if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				out.add(new IrOptional(fuseAdjacentPtThenSp(o.getWhere(), r)));
+				IrOptional no = new IrOptional(fuseAdjacentPtThenSp(o.getWhere(), r));
+				no.setNewScope(o.isNewScope());
+				out.add(no);
 				continue;
 			}
 			if (n instanceof IrMinus) {

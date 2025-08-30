@@ -60,6 +60,8 @@ public class IrOptional extends IrNode {
 				newWhere = (IrBGP) t;
 			}
 		}
-		return new IrOptional(newWhere);
+		IrOptional copy = new IrOptional(newWhere);
+		copy.setNewScope(this.isNewScope());
+		return copy;
 	}
 }

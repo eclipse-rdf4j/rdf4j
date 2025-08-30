@@ -300,7 +300,9 @@ public class BaseTransform {
 			}
 			if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				out.add(new IrOptional(orientBareNpsForNext(o.getWhere())));
+				IrOptional no = new IrOptional(orientBareNpsForNext(o.getWhere()));
+				no.setNewScope(o.isNewScope());
+				out.add(no);
 				continue;
 			}
 			if (n instanceof IrMinus) {
@@ -436,7 +438,9 @@ public class BaseTransform {
 			}
 			if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				out.add(new IrOptional(joinPathWithLaterSp(o.getWhere(), r)));
+				IrOptional no = new IrOptional(joinPathWithLaterSp(o.getWhere(), r));
+				no.setNewScope(o.isNewScope());
+				out.add(no);
 				continue;
 			}
 			if (n instanceof IrMinus) {
@@ -694,7 +698,9 @@ public class BaseTransform {
 			}
 			if (n instanceof IrOptional) {
 				final IrOptional o = (IrOptional) n;
-				out.add(new IrOptional(fuseAltInverseTailBGP(o.getWhere(), r)));
+				IrOptional no = new IrOptional(fuseAltInverseTailBGP(o.getWhere(), r));
+				no.setNewScope(o.isNewScope());
+				out.add(no);
 				continue;
 			}
 			if (n instanceof IrMinus) {

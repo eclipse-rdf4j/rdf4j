@@ -64,7 +64,9 @@ public final class InlineBNodeObjectsTransform extends BaseTransform {
 				pre.add(new IrGraph(g.getGraph(), apply(g.getWhere(), r)));
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				pre.add(new IrOptional(apply(o.getWhere(), r)));
+				IrOptional no = new IrOptional(apply(o.getWhere(), r));
+				no.setNewScope(o.isNewScope());
+				pre.add(no);
 			} else if (n instanceof IrMinus) {
 				IrMinus m = (IrMinus) n;
 				pre.add(new IrMinus(apply(m.getWhere(), r)));

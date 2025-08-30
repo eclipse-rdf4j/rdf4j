@@ -46,7 +46,9 @@ public final class CanonicalizeUnionBranchOrderTransform extends BaseTransform {
 				m = new IrGraph(g.getGraph(), apply(g.getWhere(), select));
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				m = new IrOptional(apply(o.getWhere(), select));
+				IrOptional no = new IrOptional(apply(o.getWhere(), select));
+				no.setNewScope(o.isNewScope());
+				m = no;
 			} else if (n instanceof IrMinus) {
 				IrMinus mi = (IrMinus) n;
 				m = new IrMinus(apply(mi.getWhere(), select));

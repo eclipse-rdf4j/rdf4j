@@ -68,7 +68,9 @@ public final class CoalesceAdjacentGraphsTransform extends BaseTransform {
 			// Recurse into containers
 			if (n instanceof IrOptional) {
 				final IrOptional o = (IrOptional) n;
-				out.add(new IrOptional(apply(o.getWhere())));
+				IrOptional no = new IrOptional(apply(o.getWhere()));
+				no.setNewScope(o.isNewScope());
+				out.add(no);
 				continue;
 			}
 			if (n instanceof IrMinus) {

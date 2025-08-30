@@ -113,7 +113,9 @@ public final class MergeOptionalIntoPrecedingGraphTransform extends BaseTransfor
 					for (IrNode gl : g.getWhere().getLines()) {
 						merged.add(gl);
 					}
-					merged.add(new IrOptional(simpleOw));
+					IrOptional no = new IrOptional(simpleOw);
+					no.setNewScope(opt.isNewScope());
+					merged.add(no);
 					// Debug marker (harmless): indicate we applied the merge
 					// System.out.println("# IrTransforms: merged OPTIONAL into preceding GRAPH");
 					out.add(new IrGraph(g.getGraph(), merged));

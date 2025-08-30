@@ -54,7 +54,9 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 				m = new IrGraph(g.getGraph(), apply(g.getWhere(), r));
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				m = new IrOptional(apply(o.getWhere(), r));
+				IrOptional no = new IrOptional(apply(o.getWhere(), r));
+				no.setNewScope(o.isNewScope());
+				m = no;
 			} else if (n instanceof IrMinus) {
 				IrMinus mi = (IrMinus) n;
 				m = new IrMinus(apply(mi.getWhere(), r));
