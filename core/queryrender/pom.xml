@@ -9,6 +9,18 @@
 	<artifactId>rdf4j-queryrender</artifactId>
 	<name>RDF4J: Query Rendering</name>
 	<description>Query Render and Builder tools</description>
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<!-- Stop executing tests after the first failure in this module -->
+					<skipAfterFailureCount>1</skipAfterFailureCount>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
@@ -40,6 +52,13 @@
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-queryparser-sparql</artifactId>
 			<version>${project.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<!-- Optional JSON logging for tests (enable via -Dlogback.configurationFile=...logback-test-logstash.xml) -->
+		<dependency>
+			<groupId>net.logstash.logback</groupId>
+			<artifactId>logstash-logback-encoder</artifactId>
+			<version>7.4</version>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
