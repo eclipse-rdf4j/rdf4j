@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+	<!--
+    Logstash-style JSON encoder for tests. To enable, run Maven with:
+      -Dlogback.configurationFile=core/queryrender/src/test/resources/logback-test-logstash.xml
+
+    Note: requires net.logstash.logback dependency, which is not added by default.
+  -->
+	<appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+		<encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+	</appender>
+	<logger name="org.eclipse.rdf4j" level="ERROR"/>
+	<logger name="org.apache.http" level="ERROR"/>
+	<logger name="org.eclipse.jetty" level="ERROR"/>
+	<root level="ERROR">
+		<appender-ref ref="JSON"/>
+	</root>
+</configuration>
