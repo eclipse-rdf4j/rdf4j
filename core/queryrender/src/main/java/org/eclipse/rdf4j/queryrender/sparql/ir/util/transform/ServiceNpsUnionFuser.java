@@ -17,6 +17,7 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
@@ -75,86 +76,117 @@ public final class ServiceNpsUnionFuser {
 		if (u == null || u.getBranches().size() != 2) {
 			return u;
 		}
-		IrBGP b1 = u.getBranches().get(0);
-		IrBGP b2 = u.getBranches().get(1);
-		if (b1.getLines().size() != 1 || b2.getLines().size() != 1) {
-			return u;
-		}
-		if (!(b1.getLines().get(0) instanceof IrPathTriple) || !(b2.getLines().get(0) instanceof IrPathTriple)) {
-			return u;
-		}
-		IrPathTriple p1 = (IrPathTriple) b1.getLines().get(0);
-		IrPathTriple p2 = (IrPathTriple) b2.getLines().get(0);
-		Var s1 = p1.getSubject();
-		Var o1 = p1.getObject();
-		Var s2 = p2.getSubject();
-		Var o2 = p2.getObject();
+		// Deeply unwrap each branch to find a bare NPS IrPathTriple, optionally under the same GRAPH
+		Var graphRef = null;
+		IrPathTriple p1 = null, p2 = null;
+		Var sCanon = null, oCanon = null;
 
-		Function<String, String> normalize = (path) -> {
-			if (path == null)
-				return null;
-			String t = path.trim();
-			if (t.isEmpty())
-				return null;
-			if (t.startsWith("!(") && t.endsWith(")"))
-				return t;
-			if (t.startsWith("!^"))
-				return "!(" + t.substring(1) + ")";
-			if (t.startsWith("!") && (t.length() == 1 || t.charAt(1) != '('))
-				return "!(" + t.substring(1) + ")";
-			return null;
-		};
+		for (int idx = 0; idx < 2; idx++) {
+			IrBGP b = u.getBranches().get(idx);
+			IrNode node = singleChild(b);
+			// unwrap nested single-child BGPs
+			while (node instanceof IrBGP) {
+				IrNode inner = singleChild((IrBGP) node);
+				if (inner == null)
+					break;
+				node = inner;
+			}
+			Var g = null;
+			if (node instanceof IrGraph) {
+				IrGraph gb = (IrGraph) node;
+				g = gb.getGraph();
+				node = singleChild(gb.getWhere());
+				while (node instanceof IrBGP) {
+					IrNode inner = singleChild((IrBGP) node);
+					if (inner == null)
+						break;
+					node = inner;
+				}
+			}
+			if (!(node instanceof IrPathTriple)) {
+				return u;
+			}
+			if (idx == 0) {
+				p1 = (IrPathTriple) node;
+				sCanon = p1.getSubject();
+				oCanon = p1.getObject();
+				graphRef = g;
+			} else {
+				p2 = (IrPathTriple) node;
+				// Graph refs must match (both null or equal)
+				if ((graphRef == null && g != null) || (graphRef != null && g == null)
+						|| (graphRef != null && !eqVarOrValue(graphRef, g))) {
+					return u;
+				}
+			}
+		}
 
-		String m1 = normalize.apply(p1.getPathText());
-		String m2 = normalize.apply(p2.getPathText());
+		if (p1 == null || p2 == null)
+			return u;
+
+		// Normalize compact NPS forms
+		String m1 = normalizeCompactNps(p1.getPathText());
+		String m2 = normalizeCompactNps(p2.getPathText());
 		if (m1 == null || m2 == null)
 			return u;
 
-		Function<String, String> invert = (s) -> {
-			if (s == null || !s.startsWith("!(") || !s.endsWith(")"))
-				return null;
-			String inner = s.substring(2, s.length() - 1);
-			if (inner.isEmpty())
-				return s;
-			String[] parts = inner.split("\\|");
-			List<String> rev = new ArrayList<>();
-			for (String tok : parts) {
-				String t = tok.trim();
-				if (!t.startsWith("^")) {
-					rev.add("^" + t);
-				} else {
-					rev.add(t);
-				}
-			}
-			return "!(" + String.join("|", rev) + ")";
-		};
-
-		BiFunction<String, String, String> merge = (a, btxt) -> {
-			int a1 = a.indexOf('('), a2 = a.lastIndexOf(')');
-			int bb1 = btxt.indexOf('('), bb2 = btxt.lastIndexOf(')');
-			if (a1 < 0 || a2 < 0 || bb1 < 0 || bb2 < 0)
-				return a;
-			String ia = a.substring(a1 + 1, a2).trim();
-			String ib = btxt.substring(bb1 + 1, bb2).trim();
-			if (ia.isEmpty())
-				return btxt;
-			if (ib.isEmpty())
-				return a;
-			return "!(" + ia + "|" + ib + ")";
-		};
-
-		// reversed endpoints
-		if (eqVarOrValue(s1, o2) && eqVarOrValue(o1, s2)) {
-			String m2inv = invert.apply(m2);
-			if (m2inv == null)
+		// Align branch 2 orientation to branch 1
+		String add2 = m2;
+		if (eqVarOrValue(sCanon, p2.getObject()) && eqVarOrValue(oCanon, p2.getSubject())) {
+			String inv = BaseTransform.invertNegatedPropertySet(m2);
+			if (inv == null)
 				return u;
-			return new IrPathTriple(s1, merge.apply(m1, m2inv), o1);
+			add2 = inv;
+		} else if (!(eqVarOrValue(sCanon, p2.getSubject()) && eqVarOrValue(oCanon, p2.getObject()))) {
+			return u;
 		}
-		// same orientation
-		if (eqVarOrValue(s1, s2) && eqVarOrValue(o1, o2)) {
-			return new IrPathTriple(s1, merge.apply(m1, m2), o1);
+
+		String merged = mergeMembers(m1, add2);
+		IrPathTriple fused = new IrPathTriple(sCanon, merged, oCanon);
+		if (graphRef != null) {
+			IrBGP inner = new IrBGP();
+			inner.add(fused);
+			return new IrGraph(graphRef, inner);
 		}
-		return u;
+		return fused;
+	}
+
+	private static IrNode singleChild(IrBGP b) {
+		if (b == null)
+			return null;
+		List<IrNode> ls = b.getLines();
+		if (ls == null || ls.size() != 1)
+			return null;
+		return ls.get(0);
+	}
+
+	private static String normalizeCompactNps(String path) {
+		if (path == null)
+			return null;
+		String t = path.trim();
+		if (t.isEmpty())
+			return null;
+		if (t.startsWith("!(") && t.endsWith(")"))
+			return t;
+		if (t.startsWith("!^"))
+			return "!(" + t.substring(1) + ")";
+		if (t.startsWith("!") && (t.length() == 1 || t.charAt(1) != '('))
+			return "!(" + t.substring(1) + ")";
+		return null;
+	}
+
+	private static String mergeMembers(String a, String b) {
+		int a1 = a.indexOf('('), a2 = a.lastIndexOf(')');
+		int b1 = b.indexOf('('), b2 = b.lastIndexOf(')');
+		if (a1 < 0 || a2 < 0 || b1 < 0 || b2 < 0)
+			return a;
+		String ia = a.substring(a1 + 1, a2).trim();
+		String ib = b.substring(b1 + 1, b2).trim();
+		if (ia.isEmpty())
+			return b;
+		if (ib.isEmpty())
+			return a;
+		return "!(" + ia + "|" + ib + ")";
 	}
 
 	private static boolean eqVarOrValue(Var a, Var b) {

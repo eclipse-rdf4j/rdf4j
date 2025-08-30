@@ -102,6 +102,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.BaseTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseServiceNpsUnionLateTransform;
 
 /**
  * Extracted converter that builds textual-IR from a TupleExpr.
@@ -1041,6 +1042,8 @@ public class TupleExprToIrConverter {
 		// Transformations
 		final IrSelect irTransformed = IrTransforms.transformUsingChildren(ir, r);
 		ir.setWhere(irTransformed.getWhere());
+		// Extra safeguard: ensure SERVICE union-of-NPS branches are fused after all passes
+		ir.setWhere(FuseServiceNpsUnionLateTransform.apply(ir.getWhere()));
 
 		if (cfg.debugIR) {
 			System.out.println("# IR (transformed)\n" + IrDebug.dump(ir));

@@ -88,9 +88,19 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 					});
 				}
 			} else if (n instanceof IrUnion) {
-				// Attempt fusing of UNION branches wherever they occur (Service/Graph/etc.).
-				// Preserve explicit grouping braces for unions originally marked as new scope inside tryFuseUnion().
-				m = tryFuseUnion((IrUnion) n);
+				IrUnion u = (IrUnion) n;
+				if (u.isNewScope()) {
+					// Preserve explicit top-level UNIONs: recurse into branches but do not fuse here
+					IrUnion u2 = new IrUnion();
+					u2.setNewScope(true);
+					for (IrBGP b : u.getBranches()) {
+						u2.addBranch(apply(b, r));
+					}
+					m = u2;
+				} else {
+					// Attempt fusing of UNION branches when not an explicit user UNION
+					m = tryFuseUnion(u);
+				}
 			} else {
 				// Recurse into nested BGPs inside other containers (e.g., FILTER EXISTS)
 				m = n.transformChildren(child -> {
@@ -114,7 +124,19 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 		final List<IrNode> out = new ArrayList<>();
 		for (IrNode ln : bgp.getLines()) {
 			if (ln instanceof IrUnion) {
-				out.add(tryFuseUnion((IrUnion) ln));
+				IrNode fused = tryFuseUnion((IrUnion) ln);
+				// Inside SERVICE bodies we do not want to preserve extra grouping braces
+				// that may have surrounded the UNION branches. If the fuser returned a
+				// grouped IrBGP solely to preserve braces, unwrap it when it contains a
+				// single child node.
+				if (fused instanceof IrBGP) {
+					IrBGP grp = (IrBGP) fused;
+					List<IrNode> ls = grp.getLines();
+					if (ls != null && ls.size() == 1) {
+						fused = ls.get(0);
+					}
+				}
+				out.add(fused);
 			} else if (ln instanceof IrGraph) {
 				IrGraph g = (IrGraph) ln;
 				out.add(new IrGraph(g.getGraph(), fuseUnionsInBGP(g.getWhere())));
@@ -145,11 +167,10 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 		if (u == null || u.getBranches().size() < 2) {
 			return u;
 		}
-		// If this UNION is explicit from the original query (new scope), do not fuse.
-		if (u.isNewScope()) {
-			return u;
-		}
-		final boolean wasNewScope = false;
+		// Track whether this UNION originated from an explicit user grouping that introduced
+		// a new scope. If we fuse such a UNION, we preserve the explicit braces by wrapping
+		// the fused result in a grouped IrBGP (see callers for context-specific unwrapping).
+		final boolean wasNewScope = u.isNewScope();
 
 		// Gather candidate branches: (optional GRAPH g) { IrPathTriple with bare NPS }.
 		Var graphRef = null;
@@ -217,13 +238,13 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 
 			String toAdd = path;
 			// Align orientation: if this branch is reversed, invert its inner members
-			if (sameVar(sCanon, pt.getObject()) && sameVar(oCanon, pt.getSubject())) {
+			if (sameVarOrValue(sCanon, pt.getObject()) && sameVarOrValue(oCanon, pt.getSubject())) {
 				String inv = invertNegatedPropertySet(path);
 				if (inv == null) {
 					return u; // be safe
 				}
 				toAdd = inv;
-			} else if (!(sameVar(sCanon, pt.getSubject()) && sameVar(oCanon, pt.getObject()))) {
+			} else if (!(sameVarOrValue(sCanon, pt.getSubject()) && sameVarOrValue(oCanon, pt.getObject()))) {
 				return u; // endpoints mismatch
 			}
 
@@ -246,6 +267,7 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				// Wrap in an extra group to preserve explicit braces that existed around the UNION branches
 				IrBGP grp = new IrBGP();
 				grp.add(fused);
+				grp.setNewScope(true);
 				return grp;
 			}
 			return fused;
