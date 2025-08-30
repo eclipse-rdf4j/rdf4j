@@ -2633,4 +2633,138 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg());
 	}
 
+	@Test
+	void testNestedSelect() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    SELECT ?s WHERE {\n" +
+				"      { \n" +
+				"        SELECT ?s WHERE {\n" +
+				"          ?s !^<http://example.org/p/I2> ?o . \n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testGraphOptionalPath() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    GRAPH <http://graphs.example/g1> {\n" +
+				"      { \n" +
+				"        ?s ex:pA ?o . \n" +
+				"        OPTIONAL {\n" +
+				"          ?s !(ex:pA|foaf:knows) ?o .\n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void scopeMinusTest() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    {\n" +
+				"      ?s ex:pB ?v0 .\n" +
+				"      MINUS {\n" +
+				"        ?s foaf:knows ?o . \n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testPathUnionAndServiceAndScope() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    SERVICE SILENT <http://federation.example/ep> {\n" +
+				"      {\n" +
+				"        ?s ^ex:pD ?o . \n" +
+				"      }\n" +
+				"        UNION\n" +
+				"      {\n" +
+				"        ?u0 ex:pD ?v0 .\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testPathUnionAndServiceAndScope2() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    SERVICE SILENT <http://federation.example/ep> {\n" +
+				"      {\n" +
+				"        {\n" +
+				"          ?s ^ex:pD ?o . \n" +
+				"        }\n" +
+				"          UNION\n" +
+				"        {\n" +
+				"          ?u0 ex:pD ?v0 .\n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testOptionalServicePathScope() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    ?s ex:pA ?o . \n" +
+				"    OPTIONAL {\n" +
+				"      SERVICE SILENT <http://services.example/sparql> {\n" +
+				"        ?s !(ex:pA|^<http://example.org/p/I0>) ?o . \n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testOptionalServicePathScope2() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    ?s ex:pA ?o . \n" +
+				"    OPTIONAL {\n" +
+				"      {\n" +
+				"        SERVICE SILENT <http://services.example/sparql> {\n" +
+				"          ?s !(ex:pA|^<http://example.org/p/I0>) ?o . \n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testOptionalPathScope2() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"{ ?s ex:pA ?o . OPTIONAL { { ?s ^<http://example.org/p/I1> ?o . } } }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
 }

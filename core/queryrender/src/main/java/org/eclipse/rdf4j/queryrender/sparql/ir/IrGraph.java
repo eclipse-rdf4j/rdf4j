@@ -47,11 +47,15 @@ public class IrGraph extends IrNode {
 
 	@Override
 	public void print(IrPrinter p) {
-		p.line("GRAPH " + p.renderVarOrValue(getGraph()) + " {");
-		p.pushIndent();
-		p.printLines(getWhere().getLines());
-		p.popIndent();
-		p.line("}");
+		p.startLine();
+		p.append("GRAPH " + p.renderVarOrValue(getGraph()) + " ");
+		IrBGP inner = getWhere();
+		if (inner != null) {
+			inner.print(p); // IrBGP prints braces
+		} else {
+			p.openBlock();
+			p.closeBlock();
+		}
 	}
 
 	@Override

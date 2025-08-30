@@ -33,19 +33,14 @@ public class IrMinus extends IrNode {
 	@Override
 	public void print(IrPrinter p) {
 		IrBGP ow = getWhere();
-		p.line("MINUS {");
-		p.pushIndent();
+		p.startLine();
+		p.append("MINUS ");
 		if (ow != null) {
-			// Flatten a single nested IrBGP in the MINUS body to avoid introducing
-			// an extra brace pair solely due to internal grouping/new-scope.
-			if (ow.getLines().size() == 1 && ow.getLines().get(0) instanceof IrBGP) {
-				p.printLines(((IrBGP) ow.getLines().get(0)).getLines());
-			} else {
-				p.printLines(ow.getLines());
-			}
+			ow.print(p); // IrBGP prints braces
+		} else {
+			p.openBlock();
+			p.closeBlock();
 		}
-		p.popIndent();
-		p.line("}");
 	}
 
 	@Override

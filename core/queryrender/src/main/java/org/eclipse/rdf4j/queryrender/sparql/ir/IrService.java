@@ -47,17 +47,20 @@ public class IrService extends IrNode {
 
 	@Override
 	public void print(IrPrinter p) {
-		StringBuilder sb = new StringBuilder();
-		sb.append("SERVICE ");
+		p.startLine();
+		p.append("SERVICE ");
 		if (silent) {
-			sb.append("SILENT ");
+			p.append("SILENT ");
 		}
-		sb.append(serviceRefText).append(" {");
-		p.line(sb.toString());
-		p.pushIndent();
-		p.printLines(bgp.getLines());
-		p.popIndent();
-		p.line("}");
+		p.append(serviceRefText);
+		p.append(" ");
+		IrBGP inner = bgp;
+		if (inner != null) {
+			inner.print(p); // IrBGP prints braces
+		} else {
+			p.openBlock();
+			p.closeBlock();
+		}
 	}
 
 	@Override

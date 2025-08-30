@@ -267,7 +267,7 @@ public class SparqlComprehensiveStreamingValidTest {
 
 	/** Run the assertion, and on failure automatically shrink and rethrow with minimized query. */
 	private static void runWithShrink(String q) {
-		System.out.println(q);
+
 		assertRoundTrip(q);
 //		ShrinkOnFailure.wrap(q, () -> assertRoundTrip(q), failureOracle());
 	}
@@ -1457,7 +1457,6 @@ public class SparqlComprehensiveStreamingValidTest {
 		return toDynamicTests("ConstructTplBNodes", queries);
 	}
 
-//	@Disabled
 	@TestFactory
 	Stream<DynamicTest> deep_nesting_torture_valid() {
 		// Sample a modest pool of property paths (list-backed, safe to reuse)
