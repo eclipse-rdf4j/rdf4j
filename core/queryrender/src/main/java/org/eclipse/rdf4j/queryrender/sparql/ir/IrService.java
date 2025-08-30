@@ -54,7 +54,15 @@ public class IrService extends IrNode {
 		}
 		p.append(serviceRefText);
 		p.append(" ");
-		IrBGP inner = bgp; // strictly pipeline-only fusion; no print-time normalization
+		IrBGP inner = bgp;
+		// Safety: fuse UNION-of-bare-NPS branches inside SERVICE at print time as a
+		// fallback in case earlier pipeline passes missed an opportunity due to
+		// intervening wrappers or ordering. This is a no-op when not applicable.
+		try {
+			inner = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ServiceNpsUnionFuser.fuse(inner);
+		} catch (Throwable ignore) {
+			// best-effort; keep original body if anything goes wrong
+		}
 		if (inner != null) {
 			inner.print(p); // IrBGP prints braces
 		} else {
