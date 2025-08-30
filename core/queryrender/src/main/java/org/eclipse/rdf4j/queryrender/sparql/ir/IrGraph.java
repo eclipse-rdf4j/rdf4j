@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 /**
  * Textual IR node representing a GRAPH block with an inner group.
  *
- * The graph reference is modelled as a {@link org.eclipse.rdf4j.query.algebra.Var} so it can be either a bound IRI
+ * The graph reference is modelled as a {@link Var} so it can be either a bound IRI
  * (rendered via {@code <...>} or prefix) or an unbound variable name. The body is a nested {@link IrBGP}.
  */
 public class IrGraph extends IrNode {

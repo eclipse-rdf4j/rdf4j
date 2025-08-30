@@ -16,6 +16,7 @@ import java.util.Set;
 import java.util.Spliterator;
 import java.util.Spliterators;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -686,7 +687,7 @@ public class SparqlPropertyPathStreamTest {
 				boolean hasNext = (k <= n);
 
 				@Override
-				public boolean tryAdvance(java.util.function.Consumer<? super List<T>> action) {
+				public boolean tryAdvance(Consumer<? super List<T>> action) {
 					if (!hasNext)
 						return false;
 					List<T> comb = new ArrayList<>(k);

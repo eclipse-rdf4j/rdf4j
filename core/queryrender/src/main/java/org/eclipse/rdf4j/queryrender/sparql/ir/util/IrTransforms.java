@@ -20,14 +20,21 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyPathsFixedPoi
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyPropertyListsTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CanonicalizeBareNpsOrientationTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CanonicalizeGroupedTailStepTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CanonicalizeNpsByProjectionTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CanonicalizeUnionBranchOrderTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CoalesceAdjacentGraphsTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FlattenSingletonUnionsTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseAltInverseTailBGPTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseServiceNpsUnionLateTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupFilterExistsWithPrecedingTriplesTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupValuesAndNpsInUnionBranchTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.InlineBNodeObjectsTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.MergeOptionalIntoPrecedingGraphTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeFilterNotInTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeNpsMemberOrderTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeZeroOrOneSubselectTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ReorderFiltersInOptionalBodiesTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.SimplifyPathParensTransform;
 
 /**
  * IR transformation pipeline (best‑effort).
@@ -72,7 +79,7 @@ public final class IrTransforms {
 					w = ApplyPathsFixedPointTransform.apply(w, r);
 
 					// Late fuse: inside SERVICE, convert UNION of two bare-NPS branches into a single NPS
-					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseServiceNpsUnionLateTransform
+					w = FuseServiceNpsUnionLateTransform
 							.apply(w);
 
 					// Normalize NPS member order for stable, expected text
@@ -90,10 +97,10 @@ public final class IrTransforms {
 					// heuristic)
 					w = ReorderFiltersInOptionalBodiesTransform.apply(w, r);
 					// Normalize chained inequalities in FILTERs to NOT IN when safe
-					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeFilterNotInTransform.apply(w,
+					w = NormalizeFilterNotInTransform.apply(w,
 							r);
 					// Inline simple _anon_bnode_* object nodes as bracket property lists before grouping
-					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.InlineBNodeObjectsTransform.apply(w, r);
+					w = InlineBNodeObjectsTransform.apply(w, r);
 					// Then group contiguous subject-equal triples into property lists
 					w = ApplyPropertyListsTransform.apply(w, r);
 
@@ -120,25 +127,30 @@ public final class IrTransforms {
 					// And normalize member order again for stability
 					w = NormalizeNpsMemberOrderTransform.apply(w);
 
+					// Re-run SERVICE NPS union fusion very late in case earlier passes
+					// introduced the union shape only at this point
+					w = FuseServiceNpsUnionLateTransform
+							.apply(w);
+
 					// Light string-level path parentheses simplification for readability/idempotence
-					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.SimplifyPathParensTransform.apply(w);
+					w = SimplifyPathParensTransform.apply(w);
 
 					// Late normalization of grouped tail steps: ensure a final tail like "/foaf:name"
 					// is rendered outside the right-hand grouping when safe
 					w = CanonicalizeGroupedTailStepTransform.apply(w, r);
 
 					// Final orientation tweak for bare NPS using SELECT projection order when available
-					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CanonicalizeNpsByProjectionTransform
+					w = CanonicalizeNpsByProjectionTransform
 							.apply(w, select);
 
 					// Canonicalize UNION branch order to prefer the branch whose subject matches the first
 					// projected variable (textual stability for streaming tests)
-					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CanonicalizeUnionBranchOrderTransform
+					w = CanonicalizeUnionBranchOrderTransform
 							.apply(w, select);
 
 					// Preserve explicit grouping for UNION branches that combine VALUES with a negated
 					// property path triple, to maintain textual stability expected by tests.
-					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupValuesAndNpsInUnionBranchTransform
+					w = GroupValuesAndNpsInUnionBranchTransform
 							.apply(w);
 
 					return w;

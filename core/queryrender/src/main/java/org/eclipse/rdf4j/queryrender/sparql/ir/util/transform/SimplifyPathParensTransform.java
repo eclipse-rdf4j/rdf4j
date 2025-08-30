@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -146,7 +147,7 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			String inner = s.substring(open + 1, close);
 			// Only dedupe when there are '|' and no nested parens inside the group (safety)
 			if (inner.indexOf('|') >= 0 && inner.indexOf('(') < 0 && inner.indexOf(')') < 0) {
-				java.util.LinkedHashSet<String> uniq = new java.util.LinkedHashSet<>();
+				LinkedHashSet<String> uniq = new LinkedHashSet<>();
 				for (String tok : inner.split("\\|")) {
 					String t = tok.trim();
 					if (!t.isEmpty())

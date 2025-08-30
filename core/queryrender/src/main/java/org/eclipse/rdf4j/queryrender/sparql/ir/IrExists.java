@@ -49,7 +49,7 @@ public class IrExists extends IrNode {
 		if (w == null)
 			return null;
 		// Preserve inner grouping when the body mixes a triple-like with nested EXISTS/VALUES
-		final java.util.List<IrNode> ls = w.getLines();
+		final List<IrNode> ls = w.getLines();
 		boolean hasTripleLike = false;
 		boolean hasNestedExistsOrValues = false;
 		for (IrNode ln : ls) {
