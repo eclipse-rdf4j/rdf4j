@@ -34,31 +34,22 @@ public class IrExists extends IrNode {
 
 	@Override
 	public void print(IrPrinter p) {
-		// Render inline-friendly header then body
-		p.append("EXISTS {");
-		p.endLine();
-		p.pushIndent();
+		// EXISTS keyword, then delegate braces to inner IrBGP
+		p.startLine();
+		p.append("EXISTS ");
 		if (where != null) {
-			// Heuristic: if the EXISTS body mixes a triple-like line with a nested EXISTS or VALUES,
-			// wrap the body in an inner grouping block to preserve expected brace structure.
-			if (shouldGroupInner(where)) {
-				p.openBlock();
-				p.printLines(where.getLines());
-				p.closeBlock();
-			} else {
-				p.printLines(where.getLines());
-			}
+			toPrint(where).print(p);
+		} else {
+			p.openBlock();
+			p.closeBlock();
 		}
-		p.popIndent();
-		p.line("}");
 	}
 
-	private static boolean shouldGroupInner(IrBGP w) {
+	private static IrBGP toPrint(IrBGP w) {
 		if (w == null)
-			return false;
-		final List<IrNode> ls = w.getLines();
-		if (ls.size() < 2)
-			return false;
+			return null;
+		// Preserve inner grouping when the body mixes a triple-like with nested EXISTS/VALUES
+		final java.util.List<IrNode> ls = w.getLines();
 		boolean hasTripleLike = false;
 		boolean hasNestedExistsOrValues = false;
 		for (IrNode ln : ls) {
@@ -72,7 +63,12 @@ public class IrExists extends IrNode {
 				hasNestedExistsOrValues = true;
 			}
 		}
-		return hasTripleLike && hasNestedExistsOrValues;
+		if (ls.size() >= 2 && hasTripleLike && hasNestedExistsOrValues) {
+			IrBGP wrap = new IrBGP();
+			wrap.add(w);
+			return wrap;
+		}
+		return w;
 	}
 
 	@Override
