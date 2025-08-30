@@ -72,46 +72,14 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 
 	private static IrNode fuseInService(IrService s) {
 		IrBGP where = s.getWhere();
-		if (where == null || where.getLines().size() != 1 || !(where.getLines().get(0) instanceof IrUnion)) {
+		if (where == null) {
 			return s;
 		}
-		IrUnion u = (IrUnion) where.getLines().get(0);
-		if (u.getBranches().size() != 2)
-			return s;
-
-		IrBGP b1 = u.getBranches().get(0);
-		IrBGP b2 = u.getBranches().get(1);
-		if (b1.getLines().size() != 1 || b2.getLines().size() != 1)
-			return s;
-		if (!(b1.getLines().get(0) instanceof IrPathTriple) || !(b2.getLines().get(0) instanceof IrPathTriple))
-			return s;
-
-		IrPathTriple p1 = (IrPathTriple) b1.getLines().get(0);
-		IrPathTriple p2 = (IrPathTriple) b2.getLines().get(0);
-
-		Var s1 = p1.getSubject();
-		Var o1 = p1.getObject();
-		Var s2 = p2.getSubject();
-		Var o2 = p2.getObject();
-
-		// Must be opposing orientation between the same endpoints
-		if (!(sameVar(s1, o2) && sameVar(o1, s2)))
-			return s;
-
-		String m1 = normalizeCompactNps(p1.getPathText());
-		String m2 = normalizeCompactNps(p2.getPathText());
-		if (m1 == null || m2 == null)
-			return s;
-
-		// Invert members of the reversed branch
-		String m2inv = invertNegatedPropertySet(m2);
-		if (m2inv == null)
-			return s;
-
-		String merged = mergeMembers(m1, m2inv);
-		IrBGP nw = new IrBGP();
-		nw.add(new IrPathTriple(s1, merged, o1));
-		return new IrService(s.getServiceRefText(), s.isSilent(), nw);
+		IrBGP nw = ServiceNpsUnionFuser.fuse(where);
+		if (nw != where) {
+			return new IrService(s.getServiceRefText(), s.isSilent(), nw);
+		}
+		return s;
 	}
 
 	private static String normalizeCompactNps(String path) {

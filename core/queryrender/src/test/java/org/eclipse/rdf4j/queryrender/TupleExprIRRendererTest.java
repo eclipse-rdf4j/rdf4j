@@ -2758,6 +2758,52 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
+	void testOptionalServicePathScope4() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				" ?s ex:pQ ?ok . \n" +
+				"    ?s ex:pA ?o , ?f. \n" +
+				"    OPTIONAL {\n" +
+				"      SERVICE SILENT <http://services.example/sparql> {\n" +
+				"        ?s !(ex:pA|^<http://example.org/p/I0>) ?o . \n" +
+				"      }\n" +
+				"    }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testOptionalServicePathScope5() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				" ?s ex:pQ ?ok . \n" +
+				"    ?s ex:pA ?o , ?f. \n" +
+				"    OPTIONAL { {\n" +
+				" ?o ex:pX ?vX . \n" +
+				"      SERVICE SILENT <http://services.example/sparql> {\n" +
+				"        ?s !(ex:pA|^<http://example.org/p/I0>) ?o . \n" +
+				"      }\n" +
+				"    } }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testOptionalServicePathScope6() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				" ?s ex:pQ ?ok . \n" +
+				"    ?s ex:pA ?o , ?f. \n" +
+				"    OPTIONAL { {\n" +
+				"      SERVICE SILENT <http://services.example/sparql> {\n" +
+				"        ?s !(ex:pA|^<http://example.org/p/I0>) ?o . \n" +
+				"      }\n" +
+				"    } }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
 	void testOptionalServicePathScope2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +

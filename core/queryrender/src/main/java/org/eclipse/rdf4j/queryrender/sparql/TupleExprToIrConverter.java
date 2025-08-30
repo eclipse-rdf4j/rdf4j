@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Coalesce;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -43,6 +45,10 @@ import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.IRIFunction;
 import org.eclipse.rdf4j.query.algebra.If;
+import org.eclipse.rdf4j.query.algebra.IsBNode;
+import org.eclipse.rdf4j.query.algebra.IsLiteral;
+import org.eclipse.rdf4j.query.algebra.IsNumeric;
+import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
@@ -50,12 +56,14 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -93,6 +101,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.BaseTransform;
 
 /**
  * Extracted converter that builds textual-IR from a TupleExpr.
@@ -204,8 +213,8 @@ public class TupleExprToIrConverter {
 				continue;
 			}
 
-			if (cur instanceof org.eclipse.rdf4j.query.algebra.Reduced) {
-				final org.eclipse.rdf4j.query.algebra.Reduced r = (org.eclipse.rdf4j.query.algebra.Reduced) cur;
+			if (cur instanceof Reduced) {
+				final Reduced r = (Reduced) cur;
 				if (r.isVariableScopeChange() && !peelScopedWrappers) {
 					break;
 				}
@@ -430,7 +439,7 @@ public class TupleExprToIrConverter {
 
 			List<String> multiUse = candidates.stream()
 					.filter(v -> scan.varCounts.getOrDefault(v, 0) > 1)
-					.collect(java.util.stream.Collectors.toList());
+					.collect(Collectors.toList());
 
 			List<String> chosen;
 			if (!multiUse.isEmpty()) {
@@ -520,9 +529,9 @@ public class TupleExprToIrConverter {
 		if (e instanceof And) {
 			return containsAggregate(((And) e).getLeftArg()) || containsAggregate(((And) e).getRightArg());
 		}
-		if (e instanceof org.eclipse.rdf4j.query.algebra.Or) {
-			return containsAggregate(((org.eclipse.rdf4j.query.algebra.Or) e).getLeftArg())
-					|| containsAggregate(((org.eclipse.rdf4j.query.algebra.Or) e).getRightArg());
+		if (e instanceof Or) {
+			return containsAggregate(((Or) e).getLeftArg())
+					|| containsAggregate(((Or) e).getRightArg());
 		}
 		if (e instanceof Compare) {
 			return containsAggregate(((Compare) e).getLeftArg()) || containsAggregate(((Compare) e).getRightArg());
@@ -593,20 +602,20 @@ public class TupleExprToIrConverter {
 			collectVarNames(((Lang) e).getArg(), acc);
 			return;
 		}
-		if (e instanceof org.eclipse.rdf4j.query.algebra.IsURI) {
-			collectVarNames(((org.eclipse.rdf4j.query.algebra.IsURI) e).getArg(), acc);
+		if (e instanceof IsURI) {
+			collectVarNames(((IsURI) e).getArg(), acc);
 			return;
 		}
-		if (e instanceof org.eclipse.rdf4j.query.algebra.IsLiteral) {
-			collectVarNames(((org.eclipse.rdf4j.query.algebra.IsLiteral) e).getArg(), acc);
+		if (e instanceof IsLiteral) {
+			collectVarNames(((IsLiteral) e).getArg(), acc);
 			return;
 		}
-		if (e instanceof org.eclipse.rdf4j.query.algebra.IsBNode) {
-			collectVarNames(((org.eclipse.rdf4j.query.algebra.IsBNode) e).getArg(), acc);
+		if (e instanceof IsBNode) {
+			collectVarNames(((IsBNode) e).getArg(), acc);
 			return;
 		}
-		if (e instanceof org.eclipse.rdf4j.query.algebra.IsNumeric) {
-			collectVarNames(((org.eclipse.rdf4j.query.algebra.IsNumeric) e).getArg(), acc);
+		if (e instanceof IsNumeric) {
+			collectVarNames(((IsNumeric) e).getArg(), acc);
 			return;
 		}
 		if (e instanceof IRIFunction) {
@@ -618,9 +627,9 @@ public class TupleExprToIrConverter {
 			collectVarNames(((And) e).getRightArg(), acc);
 			return;
 		}
-		if (e instanceof org.eclipse.rdf4j.query.algebra.Or) {
-			collectVarNames(((org.eclipse.rdf4j.query.algebra.Or) e).getLeftArg(), acc);
-			collectVarNames(((org.eclipse.rdf4j.query.algebra.Or) e).getRightArg(), acc);
+		if (e instanceof Or) {
+			collectVarNames(((Or) e).getLeftArg(), acc);
+			collectVarNames(((Or) e).getRightArg(), acc);
 			return;
 		}
 		if (e instanceof Compare) {
@@ -844,8 +853,8 @@ public class TupleExprToIrConverter {
 			return "(" + renderExprWithSubstitution(a.getLeftArg(), subs, r) + " && "
 					+ renderExprWithSubstitution(a.getRightArg(), subs, r) + ")";
 		}
-		if (e instanceof org.eclipse.rdf4j.query.algebra.Or) {
-			org.eclipse.rdf4j.query.algebra.Or o = (org.eclipse.rdf4j.query.algebra.Or) e;
+		if (e instanceof Or) {
+			Or o = (Or) e;
 			return "(" + renderExprWithSubstitution(o.getLeftArg(), subs, r) + " || "
 					+ renderExprWithSubstitution(o.getRightArg(), subs, r) + ")";
 		}
@@ -1667,36 +1676,39 @@ public class TupleExprToIrConverter {
 			join.getRightArg().visit(this);
 		}
 
-			@Override
-			public void meet(final LeftJoin lj) {
-				if (lj.isVariableScopeChange()) {
-					IRBuilder left = new IRBuilder();
-					IrBGP wl = left.build(lj.getLeftArg());
-					IRBuilder rightBuilder = new IRBuilder();
-					IrBGP wr = rightBuilder.build(lj.getRightArg());
-					if (lj.getCondition() != null) {
-						wr.add(buildFilterFromCondition(lj.getCondition()));
-					}
-					// Build outer group with the left-hand side and the OPTIONAL.
-					IrBGP grp = new IrBGP();
-					for (IrNode ln : wl.getLines()) {
-						grp.add(ln);
-					}
-					// For scope-changing OPTIONAL, we need an extra pair of braces around the OPTIONAL body
-					// for simple right-hand sides (triple/path/service). Delegate this to IrOptional by
-					// marking it as a new scope; IrBGP will still print its own braces for the body.
-					final boolean simpleRhs = (lj.getRightArg() instanceof StatementPattern)
-							|| (lj.getRightArg() instanceof ArbitraryLengthPath)
-							|| (lj.getRightArg() instanceof ZeroLengthPath)
-							|| (lj.getRightArg() instanceof Service);
-					IrOptional opt = new IrOptional(wr);
-					if (simpleRhs) {
-						opt.setNewScope(true);
-					}
-					grp.add(opt);
-					where.add(grp);
-					return;
+		@Override
+		public void meet(final LeftJoin lj) {
+			if (lj.isVariableScopeChange()) {
+				IRBuilder left = new IRBuilder();
+				IrBGP wl = left.build(lj.getLeftArg());
+				IRBuilder rightBuilder = new IRBuilder();
+				IrBGP wr = rightBuilder.build(lj.getRightArg());
+				if (lj.getCondition() != null) {
+					wr.add(buildFilterFromCondition(lj.getCondition()));
 				}
+				// Build outer group with the left-hand side and the OPTIONAL.
+				IrBGP grp = new IrBGP();
+				for (IrNode ln : wl.getLines()) {
+					grp.add(ln);
+				}
+				// For scope-changing OPTIONAL, we need an extra pair of braces around the OPTIONAL body
+				// for simple right-hand sides (triple/path/service). Delegate this to IrOptional by
+				// marking it as a new scope; IrBGP will still print its own braces for the body.
+				final boolean simpleRhs = (lj.getRightArg() instanceof StatementPattern)
+						|| (lj.getRightArg() instanceof ArbitraryLengthPath)
+						|| (lj.getRightArg() instanceof ZeroLengthPath);
+				IrOptional opt = new IrOptional(wr);
+				if (simpleRhs) {
+					opt.setNewScope(true);
+				}
+				grp.add(opt);
+				// The LeftJoin's scope change affects both left and right: mark the
+				// enclosing group as a new scope so the renderer prints braces that
+				// delimit the combined scope of the LeftJoin.
+				grp.setNewScope(true);
+				where.add(grp);
+				return;
+			}
 			lj.getLeftArg().visit(this);
 			final IRBuilder rightBuilder = new IRBuilder();
 			final IrBGP right = rightBuilder.build(lj.getRightArg());
@@ -1796,37 +1808,37 @@ public class TupleExprToIrConverter {
 			IrBGP w = inner.build(svc.getArg());
 			// Best-effort: fuse UNION of two bare NPS path-triple branches into a single NPS inside SERVICE
 			if (w != null && w.getLines().size() == 1
-					&& w.getLines().get(0) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion) {
-				org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion u = (org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion) w
+					&& w.getLines().get(0) instanceof IrUnion) {
+				IrUnion u = (IrUnion) w
 						.getLines()
 						.get(0);
 				if (u.getBranches().size() == 2) {
-					org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP b1 = u.getBranches().get(0);
-					org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP b2 = u.getBranches().get(1);
+					IrBGP b1 = u.getBranches().get(0);
+					IrBGP b2 = u.getBranches().get(1);
 					if (b1.getLines().size() == 1 && b2.getLines().size() == 1
-							&& b1.getLines().get(0) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple
-							&& b2.getLines().get(0) instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) {
-						org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple p1 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) b1
+							&& b1.getLines().get(0) instanceof IrPathTriple
+							&& b2.getLines().get(0) instanceof IrPathTriple) {
+						IrPathTriple p1 = (IrPathTriple) b1
 								.getLines()
 								.get(0);
-						org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple p2 = (org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) b2
+						IrPathTriple p2 = (IrPathTriple) b2
 								.getLines()
 								.get(0);
 						String m1 = normalizeCompactNps(p1.getPathText());
 						String m2 = normalizeCompactNps(p2.getPathText());
 						if (m1 != null && m2 != null && p1.getSubject() != null && p1.getObject() != null
 								&& p2.getSubject() != null && p2.getObject() != null) {
-							org.eclipse.rdf4j.query.algebra.Var s = p1.getSubject();
-							org.eclipse.rdf4j.query.algebra.Var o = p1.getObject();
-							if (org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.BaseTransform.sameVar(s,
+							Var s = p1.getSubject();
+							Var o = p1.getObject();
+							if (BaseTransform.sameVar(s,
 									p2.getObject())
-									&& org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.BaseTransform.sameVar(o,
+									&& BaseTransform.sameVar(o,
 											p2.getSubject())) {
 								String merged = mergeNpsMembers(m1,
-										org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.BaseTransform
+										BaseTransform
 												.invertNegatedPropertySet(m2));
 								IrBGP nw = new IrBGP();
-								nw.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple(s, merged, o));
+								nw.add(new IrPathTriple(s, merged, o));
 								w = nw;
 							}
 						}
@@ -1883,7 +1895,7 @@ public class TupleExprToIrConverter {
 		}
 
 		@Override
-		public void meet(final org.eclipse.rdf4j.query.algebra.BindingSetAssignment bsa) {
+		public void meet(final BindingSetAssignment bsa) {
 			IrValues v = new IrValues();
 			List<String> names = new ArrayList<>(bsa.getBindingNames());
 			if (!r.getConfig().valuesPreserveOrder) {
@@ -1950,13 +1962,13 @@ public class TupleExprToIrConverter {
 			if (diff.isVariableScopeChange()) {
 				IrBGP group = new IrBGP();
 				group.setNewScope(true);
-				for (org.eclipse.rdf4j.queryrender.sparql.ir.IrNode ln : leftWhere.getLines()) {
+				for (IrNode ln : leftWhere.getLines()) {
 					group.add(ln);
 				}
 				group.add(new IrMinus(rightWhere));
 				where.add(group);
 			} else {
-				for (org.eclipse.rdf4j.queryrender.sparql.ir.IrNode ln : leftWhere.getLines()) {
+				for (IrNode ln : leftWhere.getLines()) {
 					where.add(ln);
 				}
 				where.add(new IrMinus(rightWhere));

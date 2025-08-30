@@ -37,11 +37,11 @@ public class IrOptional extends IrNode {
 		p.startLine();
 		p.append("OPTIONAL ");
 		if (ow != null) {
-			if(isNewScope()) {
+			if (isNewScope()) {
 				p.openBlock();
 			}
 			ow.print(p); // IrBGP is responsible for braces
-			if(isNewScope()) {
+			if (isNewScope()) {
 				p.closeBlock();
 			}
 		} else {
