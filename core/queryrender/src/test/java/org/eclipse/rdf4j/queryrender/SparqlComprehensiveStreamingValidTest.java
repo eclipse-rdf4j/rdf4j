@@ -153,7 +153,8 @@ public class SparqlComprehensiveStreamingValidTest {
 
 	private static final String EX = "http://ex/";
 
-	private static final String SPARQL_PREFIX = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n" +
+	private static final String SPARQL_PREFIX = "BASE <http://ex/>\n" +
+			"PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n" +
 			"PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n" +
 			"PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n" +
 			"PREFIX ex: <http://ex/>\n" +
@@ -229,22 +230,19 @@ public class SparqlComprehensiveStreamingValidTest {
 			return;
 		}
 
+		String rendered = render(sparql, cfg);
+//		System.out.println(rendered + "\n\n\n");
+		TupleExpr actual = parseAlgebra(rendered);
+
 		try {
-			String rendered = render(sparql, cfg);
-//			System.out.println(rendered + "\n\n\n");
-			TupleExpr actual = parseAlgebra(rendered);
 			assertThat(VarNameNormalizer.normalizeVars(actual.toString()))
 					.as("Algebra after rendering must be identical to original")
 					.isEqualTo(VarNameNormalizer.normalizeVars(expected.toString()));
 //			assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + sparql);
-
 		} catch (Throwable t) {
-			String rendered;
-			expected = parseAlgebra(sparql);
 			System.out.println("\n\n\n");
 			System.out.println("# Original SPARQL query\n" + sparql + "\n");
 			System.out.println("# Original TupleExpr\n" + expected + "\n");
-
 			try {
 				cfg.debugIR = true;
 				System.out.println("\n# Re-rendering with IR debug enabled for this failing test\n");
@@ -253,16 +251,17 @@ public class SparqlComprehensiveStreamingValidTest {
 				System.out.println("\n# Rendered SPARQL query\n" + rendered + "\n");
 			} finally {
 				cfg.debugIR = false;
+				System.exit(-1);
 			}
 
-			TupleExpr actual = parseAlgebra(rendered);
+//			TupleExpr actual = parseAlgebra(rendered);
 
 //			assertThat(VarNameNormalizer.normalizeVars(actual.toString()))
 //					.as("Algebra after rendering must be identical to original")
 //					.isEqualTo(VarNameNormalizer.normalizeVars(expected.toString()));
 
 			// Fail (again) with the original comparison so the test result is correct
-			assertThat(rendered).isEqualToNormalizingNewlines(sparql);
+//			assertThat(rendered).isEqualToNormalizingNewlines(sparql);
 
 		}
 	}
@@ -524,10 +523,10 @@ public class SparqlComprehensiveStreamingValidTest {
 
 	@TestFactory
 	Stream<DynamicTest> datasets_graph_service_valid() {
+
 		Stream<String> datasetClauses = cartesian(DATASET_FROM.stream(), DATASET_NAMED.stream())
 				.limit(2)
-				.map(pair -> "FROM " + pair.getLeft() + "\nFROM NAMED " + pair.getRight() + "\n")
-				.map(ds -> SPARQL_PREFIX + ds);
+				.map(pair -> "FROM " + pair.getLeft() + "\nFROM NAMED " + pair.getRight() + "\n");
 
 		Stream<String> queries = Stream.concat(
 				datasetClauses.map(
