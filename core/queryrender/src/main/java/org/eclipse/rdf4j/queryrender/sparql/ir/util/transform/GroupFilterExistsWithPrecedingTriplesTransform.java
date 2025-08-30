@@ -84,7 +84,9 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 				out.add(new IrGraph(g.getGraph(), apply(g.getWhere(), insideExists)));
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				out.add(new IrOptional(apply(o.getWhere(), insideExists)));
+				IrOptional no = new IrOptional(apply(o.getWhere(), insideExists));
+				no.setNewScope(o.isNewScope());
+				out.add(no);
 			} else if (n instanceof IrMinus) {
 				IrMinus mi = (IrMinus) n;
 				out.add(new IrMinus(apply(mi.getWhere(), insideExists)));

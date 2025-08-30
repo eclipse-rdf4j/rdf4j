@@ -1403,7 +1403,9 @@ public final class ApplyPathsTransform extends BaseTransform {
 			}
 			if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				out.add(new IrOptional(fuseForwardThenInverseTail(o.getWhere(), r)));
+				IrOptional no = new IrOptional(fuseForwardThenInverseTail(o.getWhere(), r));
+				no.setNewScope(o.isNewScope());
+				out.add(no);
 				continue;
 			}
 			if (n instanceof IrMinus) {
