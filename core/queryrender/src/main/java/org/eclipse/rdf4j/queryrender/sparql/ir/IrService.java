@@ -54,7 +54,7 @@ public class IrService extends IrNode {
 		}
 		p.append(serviceRefText);
 		p.append(" ");
-		IrBGP inner = bgp;
+		IrBGP inner = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ServiceNpsUnionFuser.fuse(bgp);
 		if (inner != null) {
 			inner.print(p); // IrBGP prints braces
 		} else {
