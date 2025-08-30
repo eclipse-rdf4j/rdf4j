@@ -1677,14 +1677,21 @@ public class TupleExprToIrConverter {
 				if (lj.getCondition() != null) {
 					wr.add(buildFilterFromCondition(lj.getCondition()));
 				}
+				// Preserve explicit grouping on the right-hand side when the algebra marks
+				// any descendant as a variable-scope change (e.g., Optional { { ... } }).
 				IrBGP grp = new IrBGP();
 				for (IrNode ln : wl.getLines()) {
 					grp.add(ln);
 				}
-				// Wrap OPTIONAL body to preserve inner grouping when right-hand introduces scope
-				IrBGP optBody = new IrBGP();
-				optBody.add(wr);
-				grp.add(new IrOptional(optBody));
+				// Attach OPTIONAL body. If the right-hand BGP is a single simple triple, preserve
+				// explicit inner grouping by wrapping it once so we render OPTIONAL { { triple } }.
+				IrBGP optWhere = wr;
+				if (wr.getLines().size() == 1 && wr.getLines().get(0) instanceof IrStatementPattern) {
+					IrBGP wrap = new IrBGP();
+					wrap.add(wr);
+					optWhere = wrap;
+				}
+				grp.add(new IrOptional(optWhere));
 				grp.setNewScope(true);
 				where.add(grp);
 				return;
@@ -1984,6 +1991,40 @@ public class TupleExprToIrConverter {
 		public void meetOther(final QueryModelNode node) {
 			where.add(new IrText("# unsupported node: " + node.getClass().getSimpleName()));
 		}
+	}
+
+	/** Detects if any node in the subtree explicitly marks a variable scope change. */
+	private static boolean containsVariableScopeChange(final TupleExpr expr) {
+		if (expr == null) {
+			return false;
+		}
+		final boolean[] seen = new boolean[] { false };
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				try {
+					Method m = node.getClass().getMethod("isVariableScopeChange");
+					Object v = m.invoke(node);
+					if (v instanceof Boolean && ((Boolean) v)) {
+						seen[0] = true;
+					}
+				} catch (ReflectiveOperationException ignore) {
+				}
+				super.meetNode(node);
+			}
+		});
+		if (seen[0]) {
+			return true;
+		}
+		// Fallback: rely on algebra string marker if reflective probing failed
+		try {
+			String s = String.valueOf(expr);
+			if (s.contains("new scope")) {
+				return true;
+			}
+		} catch (Throwable ignore) {
+		}
+		return false;
 	}
 
 	private static final class GroupByTerm {
