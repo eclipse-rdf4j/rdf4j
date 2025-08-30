@@ -14,6 +14,7 @@ import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyCollectionsTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyNegatedPropertySetTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyPathsFixedPointTransform;
@@ -34,6 +35,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeFilterNot
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeNpsMemberOrderTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeZeroOrOneSubselectTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ReorderFiltersInOptionalBodiesTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ServiceNpsUnionFuser;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.SimplifyPathParensTransform;
 
 /**
@@ -153,13 +155,30 @@ public final class IrTransforms {
 					w = GroupValuesAndNpsInUnionBranchTransform
 							.apply(w);
 
+					// Final SERVICE NPS union fusion pass after all other cleanups
+					w = FuseServiceNpsUnionLateTransform
+							.apply(w);
+
 					return w;
 				}
 				return child;
 			});
 		}
 
-		return (IrSelect) irNode;
+		// Final sweeping pass: fuse SERVICE UNION-of-NPS into a single NPS inside SERVICE bodies,
+		// regardless of where they may occur after prior transforms.
+		IrNode post = irNode.transformChildren(child -> {
+			if (child instanceof IrService) {
+				IrService s = (IrService) child;
+				IrBGP fused = ServiceNpsUnionFuser
+						.fuse(s.getWhere());
+				return new IrService(s.getServiceRefText(), s.isSilent(),
+						fused);
+			}
+			return child;
+		});
+
+		return (IrSelect) post;
 	}
 
 }
