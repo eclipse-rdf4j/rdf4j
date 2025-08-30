@@ -105,16 +105,14 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
  * <li>Normalize the TupleExpr (peel Order/Slice/Distinct/etc., detect HAVING) into a lightweight {@code Normalized}
  * carrier.</li>
  * <li>Build a textual Intermediate Representation (IR) that mirrors SPARQL’s shape: a header (projection), a list-like
- * WHERE block ({@link IrBGP}), and trailing modifiers. The IR tries to be a
- * straightforward, low-logic mirror of the TupleExpr tree.</li>
- * <li>Run a small, ordered pipeline of IR transforms
- * ({@link IrTransforms}) that are deliberately side‑effect‑free and
+ * WHERE block ({@link IrBGP}), and trailing modifiers. The IR tries to be a straightforward, low-logic mirror of the
+ * TupleExpr tree.</li>
+ * <li>Run a small, ordered pipeline of IR transforms ({@link IrTransforms}) that are deliberately side‑effect‑free and
  * compositional. Each transform is narrowly scoped (e.g., property path fusions, negated property sets, collections)
  * and uses simple heuristics like only fusing across parser‑generated bridge variables named with the
  * {@code _anon_path_} prefix.</li>
- * <li>Print the transformed IR using a tiny printer interface
- * ({@link IrPrinter}) that centralizes indentation, IRI compaction, and child
- * printing.</li>
+ * <li>Print the transformed IR using a tiny printer interface ({@link IrPrinter}) that centralizes indentation, IRI
+ * compaction, and child printing.</li>
  * </ul>
  *
  * Policy/decisions:
@@ -542,10 +540,9 @@ public class TupleExprIRRenderer {
 	 * Steps:
 	 * <ol>
 	 * <li>Normalize the TupleExpr (gather LIMIT/OFFSET/ORDER, peel wrappers, detect HAVING candidates).</li>
-	 * <li>Translate the remaining WHERE tree into an IR block ({@link IrBGP})
-	 * with simple, explicit nodes (statement patterns, path triples, filters, graphs, unions, etc.).</li>
-	 * <li>Apply the ordered IR transform pipeline
-	 * ({@link IrTransforms#transformUsingChildren}) to perform
+	 * <li>Translate the remaining WHERE tree into an IR block ({@link IrBGP}) with simple, explicit nodes (statement
+	 * patterns, path triples, filters, graphs, unions, etc.).</li>
+	 * <li>Apply the ordered IR transform pipeline ({@link IrTransforms#transformUsingChildren}) to perform
 	 * purely-textual best‑effort fusions (paths, NPS, collections, property lists) while preserving user variable
 	 * bindings.</li>
 	 * <li>Populate IR header sections (projection, group by, having, order by) from normalized metadata.</li>
