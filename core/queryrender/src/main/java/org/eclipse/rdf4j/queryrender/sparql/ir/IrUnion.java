@@ -27,7 +27,11 @@ public class IrUnion extends IrNode {
 	// True when this UNION originates from an explicit SPARQL UNION that introduces a new variable scope
 
 	public IrUnion() {
-		super();
+		super(false);
+	}
+
+	public IrUnion(boolean newScope) {
+		super(newScope);
 	}
 
 	public List<IrBGP> getBranches() {
@@ -59,8 +63,7 @@ public class IrUnion extends IrNode {
 
 	@Override
 	public IrNode transformChildren(UnaryOperator<IrNode> op) {
-		IrUnion u = new IrUnion();
-		u.setNewScope(this.isNewScope());
+		IrUnion u = new IrUnion(this.isNewScope());
 		for (IrBGP b : this.branches) {
 			IrNode t = op.apply(b);
 			t = t.transformChildren(op);

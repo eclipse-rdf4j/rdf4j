@@ -31,6 +31,14 @@ public class IrSelect extends IrNode {
 	private long limit = -1;
 	private long offset = -1;
 
+	public IrSelect() {
+		super(false);
+	}
+
+	public IrSelect(boolean newScope) {
+		super(newScope);
+	}
+
 	public boolean isDistinct() {
 		return distinct;
 	}
@@ -96,7 +104,7 @@ public class IrSelect extends IrNode {
 				newWhere = (IrBGP) t;
 			}
 		}
-		IrSelect copy = new IrSelect();
+		IrSelect copy = new IrSelect(this.isNewScope());
 		copy.setDistinct(this.distinct);
 		copy.setReduced(this.reduced);
 		copy.getProjection().addAll(this.projection);

@@ -64,7 +64,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 			});
 			out.add(transformed);
 		}
-		IrBGP res = new IrBGP();
+		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 		res.setNewScope(bgp.isNewScope());
 		return res;
