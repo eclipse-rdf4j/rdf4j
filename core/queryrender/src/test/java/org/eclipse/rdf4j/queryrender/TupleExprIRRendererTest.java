@@ -3248,4 +3248,94 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg());
 	}
 
+	@Test
+	void nestedServiceGraphPath() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    SERVICE SILENT <http://federation.example/ep> {\n" +
+				"      ?s !(ex:pA|^<http://example.org/p/I1>) ?o .\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void nestedServiceGraphPath2() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    SERVICE SILENT <http://federation.example/ep> {\n" +
+				"      ?s !(ex:pA|^<http://example.org/p/I1>) ?o .\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testServiceValuesPathMinus() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    SERVICE SILENT <http://federation.example/ep> {\n" +
+				"      {\n" +
+				"        VALUES ?s {\n" +
+				"          ex:s1 ex:s2 \n" +
+				"        }\n" +
+				"        {\n" +
+				"          ?s ex:pB ?v0 . MINUS {\n" +
+				"            ?s !(ex:pA|^foaf:knows) ?o . \n" +
+				"          }\n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testServiceGraphGraphPath() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    SERVICE SILENT <http://federation.example/ep> {\n" +
+				"      {\n" +
+				"        GRAPH <http://graphs.example/g0> {\n" +
+				"          {\n" +
+				"            GRAPH ?g0 {\n" +
+				"              ?s !(ex:pA|^<http://example.org/p/I1>) ?o . \n" +
+				"            }\n" +
+				"          }\n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+
+	@Test
+	void testServiceGraphGraphPath2() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    SERVICE SILENT <http://federation.example/ep> {\n" +
+				"      {\n" +
+				"        GRAPH <http://graphs.example/g0> {\n" +
+				"          {\n" +
+				"            ?s !(ex:pA|^<http://example.org/p/I1>) ?o . \n" +
+				"          }\n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+
 }
