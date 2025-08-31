@@ -56,7 +56,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 			IrNode n = in.get(i);
 			// Try to normalize a zero-or-one subselect into a path triple early
 			if (n instanceof IrSubSelect) {
-				org.eclipse.rdf4j.queryrender.sparql.ir.IrNode repl = NormalizeZeroOrOneSubselectTransform
+				IrNode repl = NormalizeZeroOrOneSubselectTransform
 						.tryRewriteZeroOrOneNode((IrSubSelect) n, r);
 				if (repl != null) {
 					out.add(repl);
