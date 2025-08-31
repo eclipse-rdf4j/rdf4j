@@ -1659,24 +1659,75 @@ public class TupleExprToIrConverter {
 
 		@Override
 		public void meet(final Join join) {
+			// Build left/right in isolation so we can respect explicit variable-scope changes
+			// on either side by wrapping that side in its own GroupGraphPattern when needed.
+			IRBuilder left = new IRBuilder();
+			IrBGP wl = left.build(join.getLeftArg());
+			IRBuilder right = new IRBuilder();
+			IrBGP wr = right.build(join.getRightArg());
+
+			boolean wrapLeft = rootHasExplicitScope(join.getLeftArg());
+			boolean wrapRight = rootHasExplicitScope(join.getRightArg());
+
 			if (join.isVariableScopeChange()) {
-				IRBuilder left = new IRBuilder();
-				IrBGP wl = left.build(join.getLeftArg());
-				IRBuilder right = new IRBuilder();
-				IrBGP wr = right.build(join.getRightArg());
 				IrBGP grp = new IrBGP();
-				for (IrNode ln : wl.getLines()) {
-					grp.add(ln);
+				// Left side
+				if (wrapLeft && !wl.getLines().isEmpty()) {
+					IrBGP sub = new IrBGP();
+					sub.setNewScope(true);
+					for (IrNode ln : wl.getLines()) {
+						sub.add(ln);
+					}
+					grp.add(sub);
+				} else {
+					for (IrNode ln : wl.getLines()) {
+						grp.add(ln);
+					}
 				}
-				for (IrNode ln : wr.getLines()) {
-					grp.add(ln);
+				// Right side
+				if (wrapRight && !wr.getLines().isEmpty()) {
+					IrBGP sub = new IrBGP();
+					sub.setNewScope(true);
+					for (IrNode ln : wr.getLines()) {
+						sub.add(ln);
+					}
+					grp.add(sub);
+				} else {
+					for (IrNode ln : wr.getLines()) {
+						grp.add(ln);
+					}
 				}
 				grp.setNewScope(true);
 				where.add(grp);
 				return;
 			}
-			join.getLeftArg().visit(this);
-			join.getRightArg().visit(this);
+
+			// No join-level scope: append sides in order, wrapping each side if it encodes
+			// an explicit scope change at its root.
+			if (wrapLeft && !wl.getLines().isEmpty()) {
+				IrBGP sub = new IrBGP();
+				sub.setNewScope(true);
+				for (IrNode ln : wl.getLines()) {
+					sub.add(ln);
+				}
+				where.add(sub);
+			} else {
+				for (IrNode ln : wl.getLines()) {
+					where.add(ln);
+				}
+			}
+			if (wrapRight && !wr.getLines().isEmpty()) {
+				IrBGP sub = new IrBGP();
+				sub.setNewScope(true);
+				for (IrNode ln : wr.getLines()) {
+					sub.add(ln);
+				}
+				where.add(sub);
+			} else {
+				for (IrNode ln : wr.getLines()) {
+					where.add(ln);
+				}
+			}
 		}
 
 		@Override
