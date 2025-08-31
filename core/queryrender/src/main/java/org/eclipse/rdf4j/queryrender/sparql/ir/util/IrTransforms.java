@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseUnionOfNpsBran
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupFilterExistsWithPrecedingTriplesTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupValuesAndNpsInUnionBranchTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.InlineBNodeObjectsTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.MergeFilterExistsIntoPrecedingGraphTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.MergeOptionalIntoPrecedingGraphTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeFilterNotInTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeNpsMemberOrderTransform;
@@ -93,6 +94,10 @@ public final class IrTransforms {
 					w = MergeOptionalIntoPrecedingGraphTransform.apply(w);
 					w = FuseAltInverseTailBGPTransform.apply(w, r);
 					w = FlattenSingletonUnionsTransform.apply(w);
+					// If a FILTER EXISTS { GRAPH g { ... } } follows a GRAPH g { ... }, move the filter inside
+					// the preceding GRAPH and unwrap the inner GRAPH wrapper. Add grouping braces inside the
+					// GRAPH to preserve expected structure.
+					w = MergeFilterExistsIntoPrecedingGraphTransform.apply(w);
 					// Wrap preceding triple with FILTER EXISTS { { ... } } into a grouped block for stability
 					w = GroupFilterExistsWithPrecedingTriplesTransform.apply(w);
 					// After grouping, re-run a lightweight NPS rewrite inside nested groups to compact
