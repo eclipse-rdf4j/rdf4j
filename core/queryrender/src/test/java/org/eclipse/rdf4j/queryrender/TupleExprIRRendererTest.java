@@ -20,7 +20,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.sql.SQLOutput;
 
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -41,6 +40,7 @@ public class TupleExprIRRendererTest {
 			"PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n" +
 			"PREFIX ex: <http://ex/>\n" +
 			"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n";
+	private TestInfo testInfo;
 
 	// Shared renderer config with canonical whitespace and useful prefixes.
 	private static TupleExprIRRenderer.Config cfg() {
@@ -54,14 +54,26 @@ public class TupleExprIRRendererTest {
 		return style;
 	}
 
-	private TestInfo testInfo;
+	private static void writeReportFile(String base, String label, String content) {
+		Path dir = Paths.get("target", "surefire-reports");
+		try {
+			Files.createDirectories(dir);
+			Path file = dir.resolve(base + "_" + label + ".txt");
+			Files.writeString(file, content == null ? "" : content, StandardCharsets.UTF_8);
+			// Optional: surface where things went
+			System.out.println("[debug] wrote " + file.toAbsolutePath());
+		} catch (IOException ioe) {
+			// Don't mask the real assertion failure if file I/O borks
+			System.err.println("⚠️ Failed to write " + label + " to surefire-reports: " + ioe);
+		}
+	}
+
+	// ---------- Helpers ----------
 
 	@BeforeEach
 	void _captureTestInfo(TestInfo info) {
 		this.testInfo = info;
 	}
-
-	// ---------- Helpers ----------
 
 	private TupleExpr parseAlgebra(String sparql) {
 		try {
@@ -117,21 +129,8 @@ public class TupleExprIRRendererTest {
 		return cls + "#" + method;
 	}
 
-	private static void writeReportFile(String base, String label, String content) {
-		Path dir = Paths.get("target", "surefire-reports");
-		try {
-			Files.createDirectories(dir);
-			Path file = dir.resolve(base + "_" + label + ".txt");
-			Files.writeString(file, content == null ? "" : content, StandardCharsets.UTF_8);
-			// Optional: surface where things went
-			System.out.println("[debug] wrote " + file.toAbsolutePath());
-		} catch (IOException ioe) {
-			// Don't mask the real assertion failure if file I/O borks
-			System.err.println("⚠️ Failed to write " + label + " to surefire-reports: " + ioe);
-		}
-	}
-
 	/** Assert semantic equivalence by comparing result rows (order-insensitive). */
+
 	/** Assert semantic equivalence by comparing result rows (order-insensitive). */
 	private void assertSameSparqlQuery(String sparql, TupleExprIRRenderer.Config cfg) {
 		sparql = sparql.trim();
@@ -2969,6 +2968,72 @@ public class TupleExprIRRendererTest {
 				"    { \n" +
 				"      GRAPH <http://graphs.example/g0> {\n" +
 				"        ?s !foaf:knows ?o .\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testFilterExistsGraphScope4() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  ?s ex:pC ?u1 .\n" +
+				"  FILTER EXISTS {\n" +
+				"    { \n" +
+				"      GRAPH <http://graphs.example/g0> {\n" +
+				"        ?s !foaf:knows ?o .\n" +
+				"      }\n" +
+				"    }\n" +
+				"      GRAPH <http://graphs.example/g0> {\n" +
+				"        ?s !foaf:knows2 ?o .\n" +
+				"      }\n" +
+				"  }\n" +
+				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testNestedGraphScope1() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    GRAPH <http://graphs.example/g0> {\n" +
+				"      {\n" +
+				"        GRAPH ?g0 {\n" +
+				"          ?s !(ex:pA|^<http://example.org/p/I1>) ?o .\n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testNestedGraphScope2() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    GRAPH <http://graphs.example/g0> {\n" +
+				"      GRAPH ?g0 {\n" +
+				"        ?s !(ex:pA|^<http://example.org/p/I1>) ?o .\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testNestedGraphScope3() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  GRAPH <http://graphs.example/g0> {\n" +
+				"    {\n" +
+				"      GRAPH ?g0 {\n" +
+				"        ?s !(ex:pA|^<http://example.org/p/I1>) ?o .\n" +
 				"      }\n" +
 				"    }\n" +
 				"  }\n" +
