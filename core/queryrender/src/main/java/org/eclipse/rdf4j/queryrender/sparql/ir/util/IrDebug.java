@@ -80,7 +80,6 @@ public final class IrDebug {
 		@Override
 		public JsonElement serialize(Var src, Type typeOfSrc, JsonSerializationContext context) {
 			// Turn Var into a JSON string using its toString()
-			String string = src.toString();
 			return new JsonPrimitive(src.toString().replace("=", ": "));
 		}
 	}

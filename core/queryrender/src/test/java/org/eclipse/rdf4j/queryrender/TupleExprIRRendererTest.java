@@ -3164,4 +3164,86 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg());
 	}
 
+	@Test
+	void filterExistsNestedScopeTest() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  FILTER EXISTS {\n" +
+				"    {\n" +
+				"      ?s ex:p ?o .\n" +
+				"      FILTER EXISTS {\n" +
+				"        ?s ex:q ?o .\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void nestedSelectGraph() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    SELECT ?s WHERE {\n" +
+				"      {\n" +
+				"        GRAPH <http://graphs.example/g1> {\n" +
+				"          ?s ^ex:pB ?o . \n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+	@Test
+	void nestedSelectGraph2() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    GRAPH <http://graphs.example/g1> {\n" +
+				"      {\n" +
+				"        ?s ex:pC ?u0 . FILTER EXISTS {\n" +
+				"          ?s !(ex:pB|^ex:pA) ?o . \n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+	@Test
+	void nestedSelectGraph3() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    SELECT ?s WHERE {\n" +
+				"      {\n" +
+				"        GRAPH <http://graphs.example/g0> {\n" +
+				"          ?s <http://example.org/p/I0> ?o . \n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void scopeGraphFilterExistsPathTest() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    GRAPH <http://graphs.example/g0> {\n" +
+				"      {\n" +
+				"        ?s ex:pC ?u0 . FILTER EXISTS {\n" +
+				"          ?s ^ex:pC ?o . \n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
 }

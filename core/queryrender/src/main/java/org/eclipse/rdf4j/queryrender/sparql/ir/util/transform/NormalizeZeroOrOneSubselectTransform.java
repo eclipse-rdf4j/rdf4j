@@ -137,7 +137,6 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		// Collect simple single-step patterns from the non-filter branches
 		final List<String> steps = new ArrayList<>();
 		// Track if all step branches are GRAPH-wrapped and, if so, that they use the same graph ref
-		boolean allGraphWrapped = true;
 		Var commonGraph = null;
 		for (IrBGP b : stepBranches) {
 			if (b.getLines().size() != 1) {
@@ -147,7 +146,6 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 			IrStatementPattern sp;
 			if (ln instanceof IrStatementPattern) {
 				sp = (IrStatementPattern) ln;
-				allGraphWrapped = false; // not graph-wrapped
 			} else if (ln instanceof IrGraph && ((IrGraph) ln).getWhere() != null
 					&& ((IrGraph) ln).getWhere().getLines().size() == 1
 					&& ((IrGraph) ln).getWhere().getLines().get(0) instanceof IrStatementPattern) {
