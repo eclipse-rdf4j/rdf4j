@@ -24,10 +24,6 @@ public class IrValues extends IrNode {
 	private final List<String> varNames = new ArrayList<>();
 	private final List<List<String>> rows = new ArrayList<>();
 
-	public IrValues() {
-		super(false);
-	}
-
 	public IrValues(boolean newScope) {
 		super(newScope);
 	}

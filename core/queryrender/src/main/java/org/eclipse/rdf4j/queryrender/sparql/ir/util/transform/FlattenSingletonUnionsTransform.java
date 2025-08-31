@@ -63,7 +63,7 @@ public final class FlattenSingletonUnionsTransform extends BaseTransform {
 			}
 			out.add(n);
 		}
-		IrBGP res = new IrBGP();
+		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 		res.setNewScope(bgp.isNewScope());
 		return res;

@@ -25,10 +25,6 @@ public class IrService extends IrNode {
 	private final boolean silent;
 	private IrBGP bgp;
 
-	public IrService(String serviceRefText, boolean silent, IrBGP bgp) {
-		this(serviceRefText, silent, bgp, false);
-	}
-
 	public IrService(String serviceRefText, boolean silent, IrBGP bgp, boolean newScope) {
 		super(newScope);
 		this.serviceRefText = serviceRefText;

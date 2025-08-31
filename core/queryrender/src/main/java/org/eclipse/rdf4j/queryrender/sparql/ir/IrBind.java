@@ -17,10 +17,6 @@ public class IrBind extends IrNode {
 	private final String exprText;
 	private final String varName;
 
-	public IrBind(String exprText, String varName) {
-		this(exprText, varName, false);
-	}
-
 	public IrBind(String exprText, String varName, boolean newScope) {
 		super(newScope);
 		this.exprText = exprText;
