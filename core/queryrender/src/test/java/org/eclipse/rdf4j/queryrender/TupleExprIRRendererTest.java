@@ -3317,7 +3317,6 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg());
 	}
 
-
 	@Test
 	void testServiceGraphGraphPath2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
@@ -3337,5 +3336,107 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg());
 	}
 
+	@Test
+	void nestedSelectServiceUnionPathTest() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    SELECT ?s WHERE {\n" +
+				"      {\n" +
+				"        SERVICE SILENT <http://federation.example/ep> {\n" +
+				"          {\n" +
+				"            {\n" +
+				"              ?s ^ex:pD ?o . \n" +
+				"            }\n" +
+				"              UNION\n" +
+				"            {\n" +
+				"              ?u0 ex:pD ?v0 . \n" +
+				"            }\n" +
+				"          }\n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	// ---- Additional generalization tests to ensure robustness of SERVICE + UNION + SUBSELECT grouping ----
+
+	@Test
+	void nestedSelectServiceUnionSimpleTriples_bracedUnionInsideService() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    SELECT ?s WHERE {\n" +
+				"      {\n" +
+				"        SERVICE SILENT <http://federation.example/ep> {\n" +
+				"          {\n" +
+				"            { ?s ex:pA ?o . } UNION { ?u0 ex:pA ?v0 . }\n" +
+				"          }\n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void nestedSelectServiceUnionWithGraphBranches_bracedUnionInsideService() {
+		String q = "SELECT ?s WHERE {\n" +
+				"  { SELECT ?s WHERE {\n" +
+				"    { SERVICE SILENT <http://federation.example/ep> {\n" +
+				"      { GRAPH ?g { { ?s ex:pB ?t . } UNION { ?s ex:pC ?t . } } }\n" +
+				"    } }\n" +
+				"  } }\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void nestedSelectServiceSinglePath_noExtraUnionGroup() {
+		String q = "SELECT ?s WHERE {\n" +
+				"  { SELECT ?s WHERE {\n" +
+				"    SERVICE SILENT <http://federation.example/ep> {\n" +
+				"      { ?s ex:pZ ?o . }\n" +
+				"    }\n" +
+				"  } }\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void nestedSelectServiceUnionInversePath_bracedUnionInsideService() {
+		String q = "SELECT ?s WHERE {\n" +
+				"  { SELECT ?s WHERE {\n" +
+				"    { SERVICE SILENT <http://federation.example/ep> {\n" +
+				"      { { ?s ^ex:pD ?o . } UNION { ?u0 ex:pD ?v0 . } }\n" +
+				"    } }\n" +
+				"  } }\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void yetAnotherTest() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    GRAPH <http://graphs.example/g1> {\n" +
+				"      {\n" +
+				"        ?s ex:pC ?u1 . FILTER EXISTS {\n" +
+				"          {\n" +
+				"            ?s ex:pA ?o . OPTIONAL {\n" +
+				"              ?s !<http://example.org/p/I0> ?o . \n" +
+				"            }\n" +
+				"          }\n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
 
 }
