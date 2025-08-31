@@ -94,6 +94,10 @@ public final class IrTransforms {
 					w = FlattenSingletonUnionsTransform.apply(w);
 					// Wrap preceding triple with FILTER EXISTS { { ... } } into a grouped block for stability
 					w = GroupFilterExistsWithPrecedingTriplesTransform.apply(w);
+					// After grouping, re-run a lightweight NPS rewrite inside nested groups to compact
+					// simple var-predicate + inequality filters to !(...) path triples (including inside
+					// EXISTS bodies).
+					w = ApplyNegatedPropertySetTransform.rewriteSimpleNpsOnly(w, r);
 					// Grouping/stability is driven by explicit newScope flags in IR; avoid heuristics here.
 					// Reorder OPTIONAL-level filters before nested OPTIONALs when safe (variable-availability
 					// heuristic)
