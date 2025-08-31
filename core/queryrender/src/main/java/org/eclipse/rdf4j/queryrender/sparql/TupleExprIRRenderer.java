@@ -495,18 +495,12 @@ public class TupleExprIRRenderer {
 
 	// Merge adjacent identical GRAPH blocks to improve grouping when IR emits across passes
 	private static String mergeAdjacentGraphBlocks(final String s) {
-		String prev;
-		String cur = s;
-		final Pattern p = Pattern.compile(
-				"GRAPH\\s+([^\\s]+)\\s*\\{\\s*([\\s\\S]*?)\\s*}\\s*GRAPH\\s+\\1\\s*\\{\\s*([\\s\\S]*?)\\s*}",
-				Pattern.MULTILINE);
-		int guard = 0;
-		do {
-			prev = cur;
-			cur = p.matcher(prev).replaceFirst("GRAPH $1 {\n$2\n$3\n}");
-			guard++;
-		} while (!cur.equals(prev) && guard < 50);
-		return cur;
+		// Disabled for correctness: merging adjacent GRAPH blocks at the string level can
+		// accidentally elide required GRAPH keywords inside nested contexts (e.g., inside
+		// FILTER EXISTS bodies) where intervening constructs (like FILTER lines or grouping)
+		// make merges unsafe. IR transforms already coalesce adjacent graphs structurally.
+		// Keep the text as-is to preserve exact grouping expected by tests.
+		return s;
 	}
 
 	// Package-private accessors for the converter
