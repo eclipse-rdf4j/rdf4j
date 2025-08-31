@@ -1616,9 +1616,11 @@ public class TupleExprToIrConverter {
 				IRBuilder inner = new IRBuilder();
 				IrBGP bgp = inner.build(sub);
 				boolean newScope = false;
+				// Heuristic 1: direct FILTER at root
 				if (sub instanceof Filter) {
 					newScope = ((Filter) sub).isVariableScopeChange();
 				} else if (sub instanceof Join) {
+					// Heuristic 2: explicit Join-level scope or any Filter child marked as scope-changing
 					if (((Join) sub).isVariableScopeChange()) {
 						newScope = true;
 					} else {
@@ -1631,6 +1633,12 @@ public class TupleExprToIrConverter {
 							}
 						}
 					}
+				}
+				// Heuristic 3: any nested scope change in the subtree (e.g., Graph-within-EXISTS containing
+				// a FILTER that RDF4J flags as a variable-scope change). This preserves explicit grouping braces
+				// from the original query such as "EXISTS { { GRAPH ... { ... } } }".
+				if (!newScope && containsVariableScopeChange(sub)) {
+					newScope = true;
 				}
 				IrExists exNode = new IrExists(bgp, ex.isVariableScopeChange());
 				if (newScope) {
