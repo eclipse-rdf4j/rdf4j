@@ -518,7 +518,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 											break;
 										}
 									}
-									IrBGP reordered = new IrBGP();
+									IrBGP reordered = new IrBGP(bgp.isNewScope());
 									if (joinSp != null) {
 										String step = r.renderIRI((IRI) joinSp.getPredicate().getValue());
 										String ext = "/" + (joinInverse ? "^" : "") + step;
@@ -570,7 +570,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 								}
 								if (sameVar(mid, pt.getSubject())) {
 									String fused = first + "/" + pt.getPathText();
-									IrBGP newInner = new IrBGP();
+									IrBGP newInner = new IrBGP(inner.isNewScope());
 									newInner.add(new IrPathTriple(sideVar, fused, pt.getObject()));
 									// copy any leftover inner lines except sp0
 									copyAllExcept(inner, newInner, sp0);
@@ -586,7 +586,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 						IrPathTriple pt0 = (IrPathTriple) innerOnly;
 						if (sameVar(pt0.getObject(), pt.getSubject())) {
 							String fused = "(" + pt0.getPathText() + ")/(" + pt.getPathText() + ")";
-							IrBGP newInner = new IrBGP();
+							IrBGP newInner = new IrBGP(inner.isNewScope());
 							newInner.add(new IrPathTriple(pt0.getSubject(), fused, pt.getObject()));
 							out.add(new IrGraph(g.getGraph(), newInner));
 							i += 1; // consume the path triple
@@ -1076,9 +1076,8 @@ public final class ApplyPathsTransform extends BaseTransform {
 						final String alt = String.join("|", seqs);
 						final IrPathTriple fused = new IrPathTriple(startVarOut, alt, endVarOut);
 						// Rebuild union branches: fused + the non-merged ones (in original order)
-						final IrUnion u2 = new IrUnion();
-						u2.setNewScope(u.isNewScope());
-						IrBGP fusedBgp = new IrBGP();
+						final IrUnion u2 = new IrUnion(u.isNewScope());
+						IrBGP fusedBgp = new IrBGP(bgp.isNewScope());
 						fusedBgp.add(fused);
 						u2.addBranch(fusedBgp);
 						for (int bi = 0; bi < u.getBranches().size(); bi++) {
@@ -1135,7 +1134,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 						final String alt = String.join("|", basePaths);
 						final IrPathTriple fused = new IrPathTriple(sVarOut, alt, oVarOut);
 						final IrUnion u2 = new IrUnion();
-						IrBGP fusedBgp = new IrBGP();
+						IrBGP fusedBgp = new IrBGP(bgp.isNewScope());
 						fusedBgp.add(fused);
 						u2.addBranch(fusedBgp);
 						for (int bi = 0; bi < u.getBranches().size(); bi++) {

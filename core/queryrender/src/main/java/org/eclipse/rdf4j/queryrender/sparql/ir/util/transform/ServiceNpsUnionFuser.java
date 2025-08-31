@@ -42,9 +42,8 @@ public final class ServiceNpsUnionFuser {
 		if (bgp.getLines().size() == 1 && bgp.getLines().get(0) instanceof IrUnion) {
 			IrNode fused = tryFuseUnion((IrUnion) bgp.getLines().get(0));
 			if (fused instanceof IrPathTriple) {
-				IrBGP nw = new IrBGP();
+				IrBGP nw = new IrBGP(bgp.isNewScope());
 				nw.add(fused);
-				nw.setNewScope(bgp.isNewScope());
 				return nw;
 			}
 		}
@@ -66,9 +65,8 @@ public final class ServiceNpsUnionFuser {
 		if (!replaced) {
 			return bgp;
 		}
-		IrBGP nw = new IrBGP();
+		IrBGP nw = new IrBGP(bgp.isNewScope());
 		out.forEach(nw::add);
-		nw.setNewScope(bgp.isNewScope());
 		return nw;
 	}
 
