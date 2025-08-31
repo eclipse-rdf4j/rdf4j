@@ -3196,6 +3196,7 @@ public class TupleExprIRRendererTest {
 
 		assertSameSparqlQuery(q, cfg());
 	}
+
 	@Test
 	void nestedSelectGraph2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
@@ -3212,6 +3213,7 @@ public class TupleExprIRRendererTest {
 
 		assertSameSparqlQuery(q, cfg());
 	}
+
 	@Test
 	void nestedSelectGraph3() {
 		String q = "SELECT ?s ?o WHERE {\n" +
