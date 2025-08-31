@@ -55,8 +55,12 @@ public class IrService extends IrNode {
 		}
 		p.append(serviceRefText);
 		p.append(" ");
-		IrBGP inner = bgp; // rely strictly on pipeline transforms; no print‑time rewrites
-		// Special-case: fuse UNION of two bare-NPS path triples into a single NPS when printing a SERVICE body.
+		IrBGP inner = bgp;
+		// Rely solely on the transform pipeline for structural rewrites. Printing preserves
+		// whatever grouping/GRAPH context the IR carries at this point.
+		// Special-case: if the SERVICE body is exactly a UNION of two bare-NPS path triples,
+		// print a single fused NPS path triple. This keeps SERVICE bodies canonical even if
+		// upstream transforms did not fuse this exact shape.
 		if (inner != null && inner.getLines().size() == 1 && inner.getLines().get(0) instanceof IrUnion) {
 			IrUnion u = (IrUnion) inner.getLines().get(0);
 			if (u.getBranches().size() == 2) {
