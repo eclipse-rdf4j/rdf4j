@@ -17,13 +17,7 @@ import java.util.function.UnaryOperator;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
 /**
  * Normalize FILTER conditions by reconstructing simple NOT IN expressions from top-level conjunctions of inequalities
