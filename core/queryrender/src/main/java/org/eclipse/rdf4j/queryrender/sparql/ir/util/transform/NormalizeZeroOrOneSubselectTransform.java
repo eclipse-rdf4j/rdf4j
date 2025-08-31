@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
@@ -123,8 +124,8 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		IrNode fbLine = filterBranch.getLines().get(0);
 		if (fbLine instanceof IrText) {
 			so = parseSameTermVars(((IrText) fbLine).getText());
-		} else if (fbLine instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) {
-			String cond = ((org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) fbLine).getConditionText();
+		} else if (fbLine instanceof IrFilter) {
+			String cond = ((IrFilter) fbLine).getConditionText();
 			so = parseSameTermVarsFromCondition(cond);
 		} else {
 			so = null;
@@ -237,7 +238,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 	 * same graph ref, this returns an IrGraph containing the fused IrPathTriple, so that graph context is preserved and
 	 * downstream coalescing can merge adjacent GRAPH blocks.
 	 */
-	public static org.eclipse.rdf4j.queryrender.sparql.ir.IrNode tryRewriteZeroOrOneNode(IrSubSelect ss,
+	public static IrNode tryRewriteZeroOrOneNode(IrSubSelect ss,
 			TupleExprIRRenderer r) {
 		Z01Analysis a = analyzeZeroOrOne(ss, r);
 		if (a != null) {
@@ -290,8 +291,8 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		IrNode fbLine = filterBranch.getLines().get(0);
 		if (fbLine instanceof IrText) {
 			so = parseSameTermVars(((IrText) fbLine).getText());
-		} else if (fbLine instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) {
-			String cond = ((org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) fbLine).getConditionText();
+		} else if (fbLine instanceof IrFilter) {
+			String cond = ((IrFilter) fbLine).getConditionText();
 			so = parseSameTermVarsFromCondition(cond);
 		} else {
 			so = null;
@@ -505,8 +506,8 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		IrNode fbLine = filterBranch.getLines().get(0);
 		if (fbLine instanceof IrText) {
 			so = parseSameTermVars(((IrText) fbLine).getText());
-		} else if (fbLine instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) {
-			String cond = ((org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) fbLine).getConditionText();
+		} else if (fbLine instanceof IrFilter) {
+			String cond = ((IrFilter) fbLine).getConditionText();
 			so = parseSameTermVarsFromCondition(cond);
 		} else {
 			so = null;
@@ -635,8 +636,8 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		if (ln instanceof IrText) {
 			return parseSameTermVars(((IrText) ln).getText()) != null;
 		}
-		if (ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) {
-			String cond = ((org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) ln).getConditionText();
+		if (ln instanceof IrFilter) {
+			String cond = ((IrFilter) ln).getConditionText();
 			return parseSameTermVarsFromCondition(cond) != null;
 		}
 		return false;
