@@ -256,32 +256,5 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 		return false;
 	}
 
-	private static String normalizeCompactNps(String path) {
-		if (path == null)
-			return null;
-		String t = path.trim();
-		if (t.isEmpty())
-			return null;
-		if (t.startsWith("!(") && t.endsWith(")"))
-			return t;
-		if (t.startsWith("!^"))
-			return "!(" + t.substring(1) + ")";
-		if (t.startsWith("!") && (t.length() == 1 || t.charAt(1) != '('))
-			return "!(" + t.substring(1) + ")";
-		return null;
-	}
-
-	private static String mergeMembers(String a, String b) {
-		int a1 = a.indexOf('('), a2 = a.lastIndexOf(')');
-		int b1 = b.indexOf('('), b2 = b.lastIndexOf(')');
-		if (a1 < 0 || a2 < 0 || b1 < 0 || b2 < 0)
-			return a;
-		String ia = a.substring(a1 + 1, a2).trim();
-		String ib = b.substring(b1 + 1, b2).trim();
-		if (ia.isEmpty())
-			return b;
-		if (ib.isEmpty())
-			return a;
-		return "!(" + ia + "|" + ib + ")";
-	}
+	// normalize/merge helpers centralized or using *Local variants above
 }
