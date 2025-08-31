@@ -90,14 +90,13 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 									boolean inv = BaseTransform.isAnonPathInverseVar(pVar);
 									String nps = inv ? "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")"
 											: "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
-									IrBGP inner = new IrBGP();
-									inner.setNewScope(true);
+									IrBGP inner = new IrBGP(true);
 									inner.add(vals);
 									inner.add(inv
-											? new IrPathTriple(sp.getObject(), nps, sp.getSubject())
-											: new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
+											? new IrPathTriple(sp.getObject(), nps, sp.getSubject(), false)
+											: new IrPathTriple(sp.getSubject(), nps, sp.getObject(), false));
 									out.remove(out.size() - 1);
-									out.add(new IrGraph(g.getGraph(), inner));
+									out.add(new IrGraph(g.getGraph(), inner, g.isNewScope()));
 									// Skip adding this FILTER
 									continue;
 								}
@@ -119,16 +118,16 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 								boolean inv = BaseTransform.isAnonPathInverseVar(pVar);
 								String nps = inv ? "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")"
 										: "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
-								IrBGP inner = new IrBGP();
+								IrBGP inner = new IrBGP(!bgp.isNewScope());
 								// Heuristic for braces inside GRAPH to match expected shape
 								inner.setNewScope(!bgp.isNewScope());
 								inner.add(vals);
-								inner.add(inv ? new IrPathTriple(sp.getObject(), nps, sp.getSubject())
-										: new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
+								inner.add(inv ? new IrPathTriple(sp.getObject(), nps, sp.getSubject(), false)
+										: new IrPathTriple(sp.getSubject(), nps, sp.getObject(), false));
 								// Replace last two with the new GRAPH
 								out.remove(out.size() - 1);
 								out.remove(out.size() - 1);
-								out.add(new IrGraph(g.getGraph(), inner));
+								out.add(new IrGraph(g.getGraph(), inner, g.isNewScope()));
 								// Skip adding this FILTER
 								continue;
 							}
@@ -155,17 +154,17 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						final String nps = inv
 								? "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")"
 								: "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
-						final IrBGP newInner = new IrBGP();
+						final IrBGP newInner = new IrBGP(true);
 						// If we are not already inside a new-scope group, preserve braces inside GRAPH
 						newInner.setNewScope(!bgp.isNewScope());
 						newInner.setNewScope(true);
 						newInner.add(vals);
 						if (inv) {
-							newInner.add(new IrPathTriple(sp.getObject(), nps, sp.getSubject()));
+							newInner.add(new IrPathTriple(sp.getObject(), nps, sp.getSubject(), false));
 						} else {
-							newInner.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
+							newInner.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject(), false));
 						}
-						out.add(new IrGraph(g.getGraph(), newInner));
+						out.add(new IrGraph(g.getGraph(), newInner, g.isNewScope()));
 						i += 2; // consume graph + filter
 						continue;
 					}
@@ -194,15 +193,15 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 							final String nps2 = inv2
 									? "!(^" + joinIrisWithPreferredOrder(ns2.items, r) + ")"
 									: "!(" + joinIrisWithPreferredOrder(ns2.items, r) + ")";
-							final IrBGP newInner2 = new IrBGP();
+							final IrBGP newInner2 = new IrBGP(true);
 							newInner2.setNewScope(true);
 							newInner2.add(vals2);
 							if (inv2) {
-								newInner2.add(new IrPathTriple(sp2.getObject(), nps2, sp2.getSubject()));
+								newInner2.add(new IrPathTriple(sp2.getObject(), nps2, sp2.getSubject(), false));
 							} else {
-								newInner2.add(new IrPathTriple(sp2.getSubject(), nps2, sp2.getObject()));
+								newInner2.add(new IrPathTriple(sp2.getSubject(), nps2, sp2.getObject(), false));
 							}
-							out.add(new IrGraph(g2.getGraph(), newInner2));
+							out.add(new IrGraph(g2.getGraph(), newInner2, g2.isNewScope()));
 							i += 1; // consume grouped block
 							continue;
 						}
@@ -229,16 +228,16 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						final String nps = inv
 								? "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")"
 								: "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
-						final IrBGP newInner = new IrBGP();
+						final IrBGP newInner = new IrBGP(false);
 						// Keep VALUES first inside the GRAPH block
 						newInner.add(vals);
 						if (inv) {
-							newInner.add(new IrPathTriple(sp.getObject(), nps, sp.getSubject()));
+							newInner.add(new IrPathTriple(sp.getObject(), nps, sp.getSubject(), false));
 						} else {
-							newInner.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
+							newInner.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject(), false));
 						}
 
-						out.add(new IrGraph(g.getGraph(), newInner));
+						out.add(new IrGraph(g.getGraph(), newInner, g.isNewScope()));
 						i += 2; // consume values + graph
 						continue;
 					}
@@ -258,8 +257,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						// If the original EXISTS body contained a UNION without explicit new scope and each
 						// branch had an anon-path bridge var, fuse it into a single NPS in the rewritten body.
 						inner = fuseEligibleUnionInsideExists(inner, orig);
-						IrFilter nf = new IrFilter(new IrExists(inner, ex.isNewScope()));
-						nf.setNewScope(fNode.isNewScope());
+						IrFilter nf = new IrFilter(new IrExists(inner, ex.isNewScope()), fNode.isNewScope());
 						out.add(nf);
 						i += 0;
 						continue;
@@ -281,12 +279,12 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				if (ns0 != null && ns0.varName != null && !ns0.items.isEmpty()) {
 					final MatchTriple mt0 = findTripleWithPredicateVar(g1.getWhere(), ns0.varName);
 					if (mt0 != null) {
-						final IrBGP inner = new IrBGP();
+						final IrBGP inner = new IrBGP(false);
 						// original inner lines first
 						copyAllExcept(g1.getWhere(), inner, null);
 						// then the filter moved inside
 						inner.add(f);
-						out.add(new IrGraph(g1.getGraph(), inner));
+						out.add(new IrGraph(g1.getGraph(), inner, g1.isNewScope()));
 						// System.out.println("# DBG NPS: moved NOT IN filter into preceding GRAPH");
 						i += 1; // consume moved filter
 						continue;
@@ -357,7 +355,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 					}
 
 					// Build new GRAPH with fused path triple + any leftover lines from original inner graphs
-					final IrBGP newInner = new IrBGP();
+					final IrBGP newInner = new IrBGP(false);
 					final Var subj = mt1.subject;
 					final Var obj = mt1.object;
 					final String npsTxt = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
@@ -368,12 +366,12 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 							final String step = r.renderIRI((IRI) mt2.predicate.getValue());
 							final String path = npsTxt + "/" + (inverse ? "^" : "") + step;
 							final Var end = forward ? mt2.object : mt2.subject;
-							newInner.add(new IrPathTriple(subj, path, end));
+							newInner.add(new IrPathTriple(subj, path, end, false));
 						} else {
-							newInner.add(new IrPathTriple(subj, npsTxt, obj));
+							newInner.add(new IrPathTriple(subj, npsTxt, obj, false));
 						}
 					} else {
-						newInner.add(new IrPathTriple(subj, npsTxt, obj));
+						newInner.add(new IrPathTriple(subj, npsTxt, obj, false));
 					}
 					copyAllExcept(g1.getWhere(), newInner, mt1.node);
 					if (consumedG2) {
@@ -382,7 +380,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 					}
 
 					// Emit the rewritten GRAPH at the position of the first GRAPH
-					out.add(new IrGraph(g1.getGraph(), newInner));
+					out.add(new IrGraph(g1.getGraph(), newInner, g1.isNewScope()));
 					// Also preserve any intervening non-NPS FILTER lines between i and j
 					for (int t = i + 1; t < j; t++) {
 						out.add(in.get(t));
@@ -427,7 +425,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 					continue;
 				}
 
-				final IrBGP newInner = new IrBGP();
+				final IrBGP newInner = new IrBGP(false);
 				final Var subj = mt1.subject;
 				final Var obj = mt1.object;
 				final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
@@ -438,9 +436,9 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 					final String step = r.renderIRI((IRI) mt2.predicate.getValue());
 					final String path = nps + "/" + (inverse ? "^" : "") + step;
 					final Var end = forward ? mt2.object : mt2.subject;
-					newInner.add(new IrPathTriple(subj, path, end));
+					newInner.add(new IrPathTriple(subj, path, end, false));
 				} else {
-					newInner.add(new IrPathTriple(subj, nps, obj));
+					newInner.add(new IrPathTriple(subj, nps, obj, false));
 				}
 
 				copyAllExcept(g1.getWhere(), newInner, mt1.node);
@@ -448,7 +446,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 					copyAllExcept(g2.getWhere(), newInner, mt2.node);
 				}
 
-				out.add(new IrGraph(g1.getGraph(), newInner));
+				out.add(new IrGraph(g1.getGraph(), newInner, g1.isNewScope()));
 				i += 2; // consume g1, g2, filter
 				continue;
 			}
@@ -459,7 +457,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				final IrUnion u = (IrUnion) n;
 				final boolean shareCommonAnon = unionBranchesShareCommonAnonPathVarName(u);
 				final boolean allHaveAnon = unionBranchesAllHaveAnonPathBridge(u);
-				final IrUnion u2 = new IrUnion();
+				final IrUnion u2 = new IrUnion(u.isNewScope());
 				u2.setNewScope(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(rewriteSimpleNpsOnly(b, r));
@@ -491,7 +489,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						final String nps = inv
 								? "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")"
 								: "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
-						final IrBGP newInner = new IrBGP();
+						final IrBGP newInner = new IrBGP(false);
 						// If the immediately preceding line outside the GRAPH was a VALUES clause, move it into the
 						// GRAPH
 						if (!out.isEmpty() && out.get(out.size() - 1) instanceof IrValues) {
@@ -500,11 +498,11 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						}
 						// Subject/object orientation: inverse anon var means we flip s/o for the NPS path
 						if (inv) {
-							newInner.add(new IrPathTriple(sp.getObject(), nps, sp.getSubject()));
+							newInner.add(new IrPathTriple(sp.getObject(), nps, sp.getSubject(), false));
 						} else {
-							newInner.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
+							newInner.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject(), false));
 						}
-						out.add(new IrGraph(g.getGraph(), newInner));
+						out.add(new IrGraph(g.getGraph(), newInner, g.isNewScope()));
 						i += 1; // consume filter
 						continue;
 					}
@@ -528,12 +526,12 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						&& pVar.getName().equals(ns.varName) && !ns.items.isEmpty()) {
 					if (isAnonPathInverseVar(pVar)) {
 						final String nps = "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")";
-						out.add(new IrPathTriple(sp.getObject(), nps, sp.getSubject()));
+						out.add(new IrPathTriple(sp.getObject(), nps, sp.getSubject(), false));
 						i += 1; // consume filter
 						continue;
 					} else {
 						final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
-						out.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
+						out.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject(), false));
 						i += 1; // consume filter
 						continue;
 					}
@@ -562,7 +560,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						final String inv = invertNegatedPropertySet(base);
 						final String step = r.renderIRI((IRI) tp.getValue());
 						final String path = inv + "/" + step;
-						out.add(new IrPathTriple(sp.getObject(), path, tail.getObject()));
+						out.add(new IrPathTriple(sp.getObject(), path, tail.getObject(), false));
 						i += 2; // consume filter and tail
 						continue;
 					}
@@ -644,7 +642,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						final String nps = "!(" + String.join("|", rev) + ")";
 						final String path = (k1Inverse ? "^" + k1Step : k1Step) + "/" + nps + "/"
 								+ (k2Inverse ? "^" + k2Step : k2Step);
-						out.add(new IrPathTriple(startVar, "(" + path + ")", endVar));
+						out.add(new IrPathTriple(startVar, "(" + path + ")", endVar, false));
 						// Remove any earlier-emitted k1 (if it appeared before this position)
 						for (int rm = out.size() - 1; rm >= 0; rm--) {
 							if (out.get(rm) == k1) {
@@ -682,9 +680,8 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 			out.add(n);
 		}
 
-		final IrBGP res = new IrBGP();
+		final IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
-		res.setNewScope(bgp.isNewScope());
 		return res;
 	}
 
@@ -723,17 +720,17 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 		addMembers(toAddB, mem);
 		LinkedHashSet<String> uniq = new LinkedHashSet<>(mem);
 		String merged = "!(" + String.join("|", uniq) + ")";
-		IrPathTriple mergedPt = new IrPathTriple(a.pt.getSubject(), merged, a.pt.getObject());
+		IrPathTriple mergedPt = new IrPathTriple(a.pt.getSubject(), merged, a.pt.getObject(), false);
 		IrNode fused;
 		if (a.g != null) {
-			IrBGP inner = new IrBGP();
+			IrBGP inner = new IrBGP(false);
 			inner.add(mergedPt);
-			fused = new IrGraph(a.g, inner);
+			fused = new IrGraph(a.g, inner, false);
 		} else {
 			fused = mergedPt;
 		}
 		if (u.isNewScope()) {
-			IrBGP grp = new IrBGP();
+			IrBGP grp = new IrBGP(true);
 			grp.setNewScope(true);
 			grp.add(fused);
 			return grp;
@@ -808,7 +805,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 		if (!fusedOnce) {
 			return rewritten;
 		}
-		IrBGP res = new IrBGP();
+		IrBGP res = new IrBGP(rewritten.isNewScope());
 		out.forEach(res::add);
 		res.setNewScope(rewritten.isNewScope());
 		return res;
@@ -926,7 +923,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 					}
 					final Var sVar = inv ? sp.getObject() : sp.getSubject();
 					final Var oVar = inv ? sp.getSubject() : sp.getObject();
-					out.add(new IrPathTriple(sVar, nps, oVar));
+					out.add(new IrPathTriple(sVar, nps, oVar, false));
 					consumed.add(sp);
 					consumed.add(in.get(i + 1));
 					i += 1;
@@ -954,11 +951,11 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 								nps = maybe;
 							}
 						}
-						final IrBGP newInner = new IrBGP();
+						final IrBGP newInner = new IrBGP(false);
 						final Var sVar = inv ? sp.getObject() : sp.getSubject();
 						final Var oVar = inv ? sp.getSubject() : sp.getObject();
-						newInner.add(new IrPathTriple(sVar, nps, oVar));
-						out.add(new IrGraph(g.getGraph(), newInner));
+						newInner.add(new IrPathTriple(sVar, nps, oVar, false));
+						out.add(new IrGraph(g.getGraph(), newInner, g.isNewScope()));
 						consumed.add(g);
 						consumed.add(in.get(i + 1));
 						i += 1;
@@ -975,7 +972,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 			});
 			out.add(n);
 		}
-		final IrBGP res = new IrBGP();
+		final IrBGP res = new IrBGP(bgp.isNewScope());
 		for (IrNode n : out) {
 			if (!consumed.contains(n)) {
 				res.add(n);

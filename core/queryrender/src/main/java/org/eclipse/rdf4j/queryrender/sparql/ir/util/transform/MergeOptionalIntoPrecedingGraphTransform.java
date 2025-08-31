@@ -96,7 +96,7 @@ public final class MergeOptionalIntoPrecedingGraphTransform extends BaseTransfor
 						break;
 					}
 					if (ok && innerGraph != null && isSimpleOptionalBody(innerGraph.getWhere())) {
-						IrBGP body = new IrBGP();
+						IrBGP body = new IrBGP(bgp.isNewScope());
 						// simple triples/paths first, then original FILTER lines
 						for (IrNode gln : innerGraph.getWhere().getLines()) {
 							body.add(gln);
@@ -109,16 +109,16 @@ public final class MergeOptionalIntoPrecedingGraphTransform extends BaseTransfor
 				}
 				if (simpleOw != null) {
 					// Build merged graph body
-					IrBGP merged = new IrBGP();
+					IrBGP merged = new IrBGP(bgp.isNewScope());
 					for (IrNode gl : g.getWhere().getLines()) {
 						merged.add(gl);
 					}
-					IrOptional no = new IrOptional(simpleOw);
+					IrOptional no = new IrOptional(simpleOw, opt.isNewScope());
 					no.setNewScope(opt.isNewScope());
 					merged.add(no);
 					// Debug marker (harmless): indicate we applied the merge
 					// System.out.println("# IrTransforms: merged OPTIONAL into preceding GRAPH");
-					out.add(new IrGraph(g.getGraph(), merged));
+					out.add(new IrGraph(g.getGraph(), merged, g.isNewScope()));
 					i += 1;
 					continue;
 				}
@@ -135,7 +135,7 @@ public final class MergeOptionalIntoPrecedingGraphTransform extends BaseTransfor
 			}
 			out.add(n);
 		}
-		IrBGP res = new IrBGP();
+		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 		res.setNewScope(bgp.isNewScope());
 		return res;

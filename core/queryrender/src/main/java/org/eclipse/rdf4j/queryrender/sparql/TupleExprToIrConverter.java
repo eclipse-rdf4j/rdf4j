@@ -131,7 +131,7 @@ public class TupleExprToIrConverter {
 		final Normalized n = normalize(tupleExpr, true);
 		applyAggregateHoisting(n);
 
-		final IrSelect ir = new IrSelect();
+		final IrSelect ir = new IrSelect(false);
 		ir.setDistinct(n.distinct);
 		ir.setReduced(n.reduced);
 		ir.setLimit(n.limit);
@@ -165,6 +165,13 @@ public class TupleExprToIrConverter {
 
 		final IRBuilder builder = new TupleExprToIrConverter(r).new IRBuilder();
 		ir.setWhere(builder.build(n.where));
+
+		// Apply the standard IR transform pipeline to the subselect's WHERE to ensure
+		// consistent path/NPS/property-list rewrites also occur inside nested queries.
+		// This mirrors how the top-level SELECT is handled and aligns nested subselect
+		// output with expected canonical shapes in tests.
+		IrSelect transformed = IrTransforms.transformUsingChildren(ir, r);
+		ir.setWhere(transformed.getWhere());
 
 		// Preserve explicit grouping braces around a single‑triple WHERE when the original algebra
 		// indicated a variable scope change at the root of the subselect. This mirrors the logic in
@@ -1010,7 +1017,7 @@ public class TupleExprToIrConverter {
 		final Normalized n = normalize(tupleExpr, false);
 		applyAggregateHoisting(n);
 
-		final IrSelect ir = new IrSelect();
+		final IrSelect ir = new IrSelect(false);
 		Config cfg = r.getConfig();
 		ir.setDistinct(n.distinct);
 		ir.setReduced(n.reduced);
@@ -1616,7 +1623,7 @@ public class TupleExprToIrConverter {
 	}
 
 	final class IRBuilder extends AbstractQueryModelVisitor<RuntimeException> {
-		private final IrBGP where = new IrBGP();
+		private final IrBGP where = new IrBGP(false);
 		private final TupleExprIRRenderer r = TupleExprToIrConverter.this.r;
 
 		IrBGP build(final TupleExpr t) {
@@ -1629,14 +1636,14 @@ public class TupleExprToIrConverter {
 
 		private IrFilter buildFilterFromCondition(final ValueExpr condExpr) {
 			if (condExpr == null) {
-				return new IrFilter((String) null);
+				return new IrFilter((String) null, false);
 			}
 			// NOT EXISTS {...}
 			if (condExpr instanceof Not && ((Not) condExpr).getArg() instanceof Exists) {
 				final Exists ex = (Exists) ((Not) condExpr).getArg();
 				IRBuilder inner = new IRBuilder();
 				IrBGP bgp = inner.build(ex.getSubQuery());
-				return new IrFilter(new IrNot(new IrExists(bgp, ex.isVariableScopeChange())));
+				return new IrFilter(new IrNot(new IrExists(bgp, ex.isVariableScopeChange()), false), false);
 			}
 			// EXISTS {...}
 			if (condExpr instanceof Exists) {
@@ -1669,26 +1676,27 @@ public class TupleExprToIrConverter {
 				if (!newScope && containsVariableScopeChange(sub)) {
 					newScope = true;
 				}
-				IrExists exNode = new IrExists(bgp, ex.isVariableScopeChange());
-				if (newScope) {
-					exNode.setNewScope(true);
-					bgp.setNewScope(true);
-				}
-				return new IrFilter(exNode);
+				// Preserve scope intent on the EXISTS node itself, but do not also mark the
+				// inner BGP as a new scope: IrBGP prints an extra brace layer when newScope is
+				// true, which leads to redundant grouping (triple braces) in cases where the
+				// subselect already introduces its own grouping. IrExists#print will handle
+				// special single-GRAPH bodies when explicit grouping must be preserved.
+				IrExists exNode = new IrExists(bgp, ex.isVariableScopeChange() || newScope);
+				return new IrFilter(exNode, false);
 			}
 			final String cond = TupleExprIRRenderer.stripRedundantOuterParens(r.renderExprPublic(condExpr));
-			return new IrFilter(cond);
+			return new IrFilter(cond, false);
 		}
 
 		@Override
 		public void meet(final StatementPattern sp) {
 			final Var ctx = getContextVarSafe(sp);
 			final IrStatementPattern node = new IrStatementPattern(sp.getSubjectVar(), sp.getPredicateVar(),
-					sp.getObjectVar());
+					sp.getObjectVar(), false);
 			if (ctx != null && (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
-				IrBGP inner = new IrBGP();
+				IrBGP inner = new IrBGP(false);
 				inner.add(node);
-				where.add(new IrGraph(ctx, inner));
+				where.add(new IrGraph(ctx, inner, false));
 			} else {
 				where.add(node);
 			}
@@ -1707,11 +1715,10 @@ public class TupleExprToIrConverter {
 			boolean wrapRight = rootHasExplicitScope(join.getRightArg());
 
 			if (join.isVariableScopeChange()) {
-				IrBGP grp = new IrBGP();
+				IrBGP grp = new IrBGP(true);
 				// Left side
 				if (wrapLeft && !wl.getLines().isEmpty()) {
-					IrBGP sub = new IrBGP();
-					sub.setNewScope(true);
+					IrBGP sub = new IrBGP(true);
 					for (IrNode ln : wl.getLines()) {
 						sub.add(ln);
 					}
@@ -1723,8 +1730,7 @@ public class TupleExprToIrConverter {
 				}
 				// Right side
 				if (wrapRight && !wr.getLines().isEmpty()) {
-					IrBGP sub = new IrBGP();
-					sub.setNewScope(true);
+					IrBGP sub = new IrBGP(true);
 					for (IrNode ln : wr.getLines()) {
 						sub.add(ln);
 					}
@@ -1742,8 +1748,7 @@ public class TupleExprToIrConverter {
 			// No join-level scope: append sides in order, wrapping each side if it encodes
 			// an explicit scope change at its root.
 			if (wrapLeft && !wl.getLines().isEmpty()) {
-				IrBGP sub = new IrBGP();
-				sub.setNewScope(true);
+				IrBGP sub = new IrBGP(true);
 				for (IrNode ln : wl.getLines()) {
 					sub.add(ln);
 				}
@@ -1754,8 +1759,7 @@ public class TupleExprToIrConverter {
 				}
 			}
 			if (wrapRight && !wr.getLines().isEmpty()) {
-				IrBGP sub = new IrBGP();
-				sub.setNewScope(true);
+				IrBGP sub = new IrBGP(true);
 				for (IrNode ln : wr.getLines()) {
 					sub.add(ln);
 				}
@@ -1778,7 +1782,7 @@ public class TupleExprToIrConverter {
 					wr.add(buildFilterFromCondition(lj.getCondition()));
 				}
 				// Build outer group with the left-hand side and the OPTIONAL.
-				IrBGP grp = new IrBGP();
+				IrBGP grp = new IrBGP(false);
 				for (IrNode ln : wl.getLines()) {
 					grp.add(ln);
 				}
@@ -1800,7 +1804,7 @@ public class TupleExprToIrConverter {
 			if (lj.getCondition() != null) {
 				right.add(buildFilterFromCondition(lj.getCondition()));
 			}
-			where.add(new IrOptional(right));
+			where.add(new IrOptional(right, false));
 		}
 
 		@Override
@@ -1866,7 +1870,7 @@ public class TupleExprToIrConverter {
 			final boolean leftIsU = u.getLeftArg() instanceof Union;
 			final boolean rightIsU = u.getRightArg() instanceof Union;
 			if (leftIsU && rightIsU) {
-				final IrUnion irU = new IrUnion();
+				final IrUnion irU = new IrUnion(u.isVariableScopeChange());
 				irU.setNewScope(u.isVariableScopeChange());
 				IRBuilder left = new IRBuilder();
 				irU.addBranch(left.build(u.getLeftArg()));
@@ -1877,7 +1881,7 @@ public class TupleExprToIrConverter {
 			}
 			final List<TupleExpr> branches = new ArrayList<>();
 			flattenUnion(u, branches);
-			final IrUnion irU = new IrUnion();
+			final IrUnion irU = new IrUnion(u.isVariableScopeChange());
 			irU.setNewScope(u.isVariableScopeChange());
 			for (TupleExpr b : branches) {
 				IRBuilder bld = new IRBuilder();
@@ -1891,7 +1895,7 @@ public class TupleExprToIrConverter {
 			IRBuilder inner = new IRBuilder();
 			IrBGP w = inner.build(svc.getArg());
 			// No conversion-time fusion; rely on pipeline transforms to normalize SERVICE bodies
-			IrService irSvc = new IrService(r.renderVarOrValuePublic(svc.getServiceRef()), svc.isSilent(), w);
+			IrService irSvc = new IrService(r.renderVarOrValuePublic(svc.getServiceRef()), svc.isSilent(), w, false);
 			boolean scope;
 			try {
 				// Prefer explicit scope change from the algebra node when available
@@ -1900,7 +1904,7 @@ public class TupleExprToIrConverter {
 				scope = false;
 			}
 			if (scope) {
-				IrBGP grp = new IrBGP();
+				IrBGP grp = new IrBGP(false);
 				grp.add(irSvc);
 				where.add(grp);
 			} else {
@@ -1942,7 +1946,7 @@ public class TupleExprToIrConverter {
 
 		@Override
 		public void meet(final BindingSetAssignment bsa) {
-			IrValues v = new IrValues();
+			IrValues v = new IrValues(false);
 			List<String> names = new ArrayList<>(bsa.getBindingNames());
 			if (!r.getConfig().valuesPreserveOrder) {
 				Collections.sort(names);
@@ -1967,18 +1971,15 @@ public class TupleExprToIrConverter {
 				if (expr instanceof AggregateOperator) {
 					continue; // hoisted to SELECT
 				}
-				where.add(new IrBind(r.renderExprPublic(expr), ee.getName()));
+				where.add(new IrBind(r.renderExprPublic(expr), ee.getName(), false));
 			}
 		}
 
 		@Override
 		public void meet(final Projection p) {
 			IrSelect sub = toIRSelectRaw(p, r);
-			IrSubSelect node = new IrSubSelect(sub);
 			boolean wrap = false;
-			// Wrap if there are preceding lines in this group (to keep grouping stable)
 			wrap |= !where.getLines().isEmpty();
-			// Wrap if the Projection node itself signals a variable scope change
 			try {
 				Method m = Projection.class.getMethod("isVariableScopeChange");
 				Object v = m.invoke(p);
@@ -1987,9 +1988,7 @@ public class TupleExprToIrConverter {
 				}
 			} catch (ReflectiveOperationException ignore) {
 			}
-			if (wrap) {
-				node.setNewScope(true);
-			}
+			IrSubSelect node = new IrSubSelect(sub, wrap);
 			where.add(node);
 		}
 
@@ -1997,9 +1996,7 @@ public class TupleExprToIrConverter {
 		public void meet(final Slice s) {
 			if (s.isVariableScopeChange()) {
 				IrSelect sub = toIRSelectRaw(s, r);
-				IrSubSelect node = new IrSubSelect(sub);
-				// Wrap on explicit scope change or when preceding lines exist
-				node.setNewScope(true);
+				IrSubSelect node = new IrSubSelect(sub, true);
 				where.add(node);
 				return;
 			}
@@ -2010,9 +2007,7 @@ public class TupleExprToIrConverter {
 		public void meet(final Distinct d) {
 			if (d.isVariableScopeChange()) {
 				IrSelect sub = toIRSelectRaw(d, r);
-				IrSubSelect node = new IrSubSelect(sub);
-				// Wrap on explicit scope change or when preceding lines exist
-				node.setNewScope(true);
+				IrSubSelect node = new IrSubSelect(sub, true);
 				where.add(node);
 				return;
 			}
@@ -2028,18 +2023,17 @@ public class TupleExprToIrConverter {
 			IRBuilder right = new IRBuilder();
 			IrBGP rightWhere = right.build(diff.getRightArg());
 			if (diff.isVariableScopeChange()) {
-				IrBGP group = new IrBGP();
-				group.setNewScope(true);
+				IrBGP group = new IrBGP(true);
 				for (IrNode ln : leftWhere.getLines()) {
 					group.add(ln);
 				}
-				group.add(new IrMinus(rightWhere));
+				group.add(new IrMinus(rightWhere, false));
 				where.add(group);
 			} else {
 				for (IrNode ln : leftWhere.getLines()) {
 					where.add(ln);
 				}
-				where.add(new IrMinus(rightWhere));
+				where.add(new IrMinus(rightWhere, false));
 			}
 		}
 
@@ -2048,12 +2042,12 @@ public class TupleExprToIrConverter {
 			final Var subj = p.getSubjectVar();
 			final Var obj = p.getObjectVar();
 			final String expr = TupleExprToIrConverter.this.buildPathExprForArbitraryLengthPath(p);
-			final IrPathTriple pt = new IrPathTriple(subj, expr, obj);
+			final IrPathTriple pt = new IrPathTriple(subj, expr, obj, false);
 			final Var ctx = getContextVarSafe(p);
 			if (ctx != null && (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
-				IrBGP innerBgp = new IrBGP();
+				IrBGP innerBgp = new IrBGP(false);
 				innerBgp.add(pt);
-				where.add(new IrGraph(ctx, innerBgp));
+				where.add(new IrGraph(ctx, innerBgp, false));
 			} else {
 				where.add(pt);
 			}
@@ -2061,16 +2055,16 @@ public class TupleExprToIrConverter {
 
 		@Override
 		public void meet(final ZeroLengthPath p) {
-			where.add(new IrText(
-					"FILTER " + TupleExprIRRenderer.asConstraint(
+			where.add(new IrText("FILTER "
+					+ TupleExprIRRenderer.asConstraint(
 							"sameTerm(" + r.renderVarOrValuePublic(p.getSubjectVar()) + ", "
-									+ r.renderVarOrValuePublic(p.getObjectVar())
-									+ ")")));
+									+ r.renderVarOrValuePublic(p.getObjectVar()) + ")"),
+					false));
 		}
 
 		@Override
 		public void meetOther(final QueryModelNode node) {
-			where.add(new IrText("# unsupported node: " + node.getClass().getSimpleName()));
+			where.add(new IrText("# unsupported node: " + node.getClass().getSimpleName(), false));
 		}
 	}
 

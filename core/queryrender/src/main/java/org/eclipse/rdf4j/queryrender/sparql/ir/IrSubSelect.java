@@ -18,10 +18,6 @@ import java.util.function.UnaryOperator;
 public class IrSubSelect extends IrNode {
 	private IrSelect select;
 
-	public IrSubSelect(IrSelect select) {
-		this(select, false);
-	}
-
 	public IrSubSelect(IrSelect select, boolean newScope) {
 		super(newScope);
 		this.select = select;
@@ -59,9 +55,6 @@ public class IrSubSelect extends IrNode {
 
 	@Override
 	public IrNode transformChildren(UnaryOperator<IrNode> op) {
-		// Keep subselects intact during transformChildren: pipeline transforms operate on BGP-like
-		// containers only. Specific transforms that want to rewrite subselects can do so by
-		// matching IrSubSelect in their own logic via op.apply(n) without descending here.
 		return this;
 	}
 }
