@@ -58,43 +58,6 @@ public class IrService extends IrNode {
 		IrBGP inner = bgp;
 		// Rely solely on the transform pipeline for structural rewrites. Printing preserves
 		// whatever grouping/GRAPH context the IR carries at this point.
-		// Special-case: if the SERVICE body is exactly a UNION of two bare-NPS path triples,
-		// print a single fused NPS path triple. This keeps SERVICE bodies canonical even if
-		// upstream transforms did not fuse this exact shape.
-		if (inner != null && inner.getLines().size() == 1 && inner.getLines().get(0) instanceof IrUnion) {
-			IrUnion u = (IrUnion) inner.getLines().get(0);
-			if (u.getBranches().size() == 2) {
-				IrPathTriple p1 = unwrapToPathTriple(u.getBranches().get(0));
-				IrPathTriple p2 = unwrapToPathTriple(u.getBranches().get(1));
-				if (p1 != null && p2 != null) {
-					String m1 = normalizeCompactNpsLocal(p1.getPathText());
-					String m2 = normalizeCompactNpsLocal(p2.getPathText());
-					if (m1 != null && m2 != null) {
-						Var sCanon = p1.getSubject();
-						Var oCanon = p1.getObject();
-						String add2 = m2;
-						if (eqVarOrValue(sCanon, p2.getObject()) && eqVarOrValue(oCanon, p2.getSubject())) {
-							String inv = invertNegatedPropertySetLocal(m2);
-							if (inv != null) {
-								add2 = inv;
-							}
-						} else if (!(eqVarOrValue(sCanon, p2.getSubject()) && eqVarOrValue(oCanon, p2.getObject()))) {
-							add2 = null; // cannot align
-						}
-						if (add2 != null) {
-							String merged = mergeMembersLocal(m1, add2);
-							p.openBlock();
-							String sTxt = p.renderTermWithOverrides(sCanon);
-							String oTxt = p.renderTermWithOverrides(oCanon);
-							String pathTxt = p.applyOverridesToText(merged);
-							p.line(sTxt + " " + pathTxt + " " + oTxt + " .");
-							p.closeBlock();
-							return;
-						}
-					}
-				}
-			}
-		}
 		if (inner != null) {
 			inner.print(p); // IrBGP prints braces
 		} else {
