@@ -174,10 +174,10 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 					return null;
 				}
 				if (sameVar(varNamed(sName), pt.getSubject()) && sameVar(varNamed(oName), pt.getObject())) {
-					steps.add(normalizeCompactNpsText(pt.getPathText()));
+					steps.add(BaseTransform.normalizeCompactNps(pt.getPathText()));
 					continue;
 				} else if (sameVar(varNamed(sName), pt.getObject()) && sameVar(varNamed(oName), pt.getSubject())) {
-					final String inv = invertNpsIfPossible(normalizeCompactNpsText(pt.getPathText()));
+					final String inv = invertNpsIfPossible(BaseTransform.normalizeCompactNps(pt.getPathText()));
 					if (inv == null) {
 						return null;
 					}
@@ -345,10 +345,10 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 						return null;
 					}
 					if (sameVar(varNamed(sName), pt.getSubject()) && sameVar(varNamed(oName), pt.getObject())) {
-						steps.add(normalizeCompactNpsText(pt.getPathText()));
+						steps.add(BaseTransform.normalizeCompactNps(pt.getPathText()));
 					} else if (sameVar(varNamed(sName), pt.getObject())
 							&& sameVar(varNamed(oName), pt.getSubject())) {
-						final String inv = invertNpsIfPossible(normalizeCompactNpsText(pt.getPathText()));
+						final String inv = invertNpsIfPossible(BaseTransform.normalizeCompactNps(pt.getPathText()));
 						if (inv == null) {
 							return null;
 						}
@@ -363,9 +363,9 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 				allGraphWrapped = false;
 				IrPathTriple pt = (IrPathTriple) ln;
 				if (sameVar(varNamed(sName), pt.getSubject()) && sameVar(varNamed(oName), pt.getObject())) {
-					steps.add(normalizeCompactNpsText(pt.getPathText()));
+					steps.add(BaseTransform.normalizeCompactNps(pt.getPathText()));
 				} else if (sameVar(varNamed(sName), pt.getObject()) && sameVar(varNamed(oName), pt.getSubject())) {
-					final String inv = invertNpsIfPossible(normalizeCompactNpsText(pt.getPathText()));
+					final String inv = invertNpsIfPossible(BaseTransform.normalizeCompactNps(pt.getPathText()));
 					if (inv == null) {
 						return null;
 					}
@@ -416,7 +416,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		if (nps == null) {
 			return null;
 		}
-		final String s = normalizeCompactNpsText(nps);
+		final String s = BaseTransform.normalizeCompactNps(nps);
 		if (!s.startsWith("!(") || !s.endsWith(")")) {
 			return null;
 		}
@@ -440,26 +440,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		return "!(" + String.join("|", out) + ")";
 	}
 
-	/** Normalize compact NPS forms: "!ex:p" -> "!(ex:p)", "!^ex:p" -> "!(^ex:p)". Leaves other text unchanged. */
-	private static String normalizeCompactNpsText(String path) {
-		if (path == null) {
-			return null;
-		}
-		String t = path.trim();
-		if (t.isEmpty()) {
-			return t;
-		}
-		if (t.startsWith("!(") && t.endsWith(")")) {
-			return t;
-		}
-		if (t.startsWith("!^")) {
-			return "!(" + t.substring(1) + ")"; // !^ex:p -> !(^ex:p)
-		}
-		if (t.startsWith("!") && (t.length() == 1 || t.charAt(1) != '(')) {
-			return "!(" + t.substring(1) + ")"; // !ex:p -> !(ex:p)
-		}
-		return t;
-	}
+	// compact NPS normalization is centralized in BaseTransform
 
 	public static String[] parseSameTermVars(String text) {
 		if (text == null) {

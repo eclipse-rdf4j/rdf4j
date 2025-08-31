@@ -230,7 +230,7 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				return u;
 			}
 			final String rawPath = pt.getPathText() == null ? null : pt.getPathText().trim();
-			final String path = normalizeCompactNps(rawPath);
+			final String path = BaseTransform.normalizeCompactNps(rawPath);
 			if (path == null || !path.startsWith("!(") || !path.endsWith(")") || path.indexOf('/') >= 0
 					|| path.endsWith("?") || path.endsWith("+") || path.endsWith("*")) {
 				return u; // not a bare NPS
@@ -375,29 +375,5 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 		}
 	}
 
-	/** Convert compact single-member forms like "!ex:p" or "!^ex:p" to parened NPS: "!(ex:p)" or "!(^ex:p)". */
-	private static String normalizeCompactNps(String path) {
-		if (path == null) {
-			return null;
-		}
-		String t = path.trim();
-		if (t.isEmpty()) {
-			return null;
-		}
-		if (t.startsWith("!(") && t.endsWith(")")) {
-			return t;
-		}
-		if (t.startsWith("!^")) {
-			String inner = t.substring(1); // "^ex:p"
-			return "!(" + inner + ")";
-		}
-		if (t.startsWith("!")) {
-			// Ensure it's not already the parened form
-			if (t.length() > 1 && t.charAt(1) != '(') {
-				String inner = t.substring(1);
-				return "!(" + inner + ")";
-			}
-		}
-		return t;
-	}
+	// compact NPS normalization centralized in BaseTransform
 }

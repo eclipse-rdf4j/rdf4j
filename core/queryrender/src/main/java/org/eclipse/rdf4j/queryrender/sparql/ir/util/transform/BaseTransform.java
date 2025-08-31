@@ -78,6 +78,30 @@ public class BaseTransform {
 
 	// --------------- Path text helpers: add parens only when needed ---------------
 
+	/**
+	 * Normalize compact negated-property-set forms into the canonical parenthesized variant. Examples: "!ex:p" ->
+	 * "!(ex:p)", "!^ex:p" -> "!(^ex:p)". Leaves already-canonical and non-NPS text unchanged.
+	 */
+	public static String normalizeCompactNps(String path) {
+		if (path == null) {
+			return null;
+		}
+		String t = path.trim();
+		if (t.isEmpty()) {
+			return t;
+		}
+		if (t.startsWith("!(") && t.endsWith(")")) {
+			return t;
+		}
+		if (t.startsWith("!^")) {
+			return "!(" + t.substring(1) + ")"; // !^ex:p -> !(^ex:p)
+		}
+		if (t.startsWith("!") && (t.length() == 1 || t.charAt(1) != '(')) {
+			return "!(" + t.substring(1) + ")"; // !ex:p -> !(ex:p)
+		}
+		return t;
+	}
+
 	/** Return true if the string has the given character at top level (not inside parentheses). */
 	public static boolean hasTopLevel(final String s, final char ch) {
 		if (s == null)
