@@ -225,10 +225,6 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			if (pt == null) {
 				return u; // non-candidate branch
 			}
-
-			if (pt == null) {
-				return u;
-			}
 			final String rawPath = pt.getPathText() == null ? null : pt.getPathText().trim();
 			final String path = BaseTransform.normalizeCompactNps(rawPath);
 			if (path == null || !path.startsWith("!(") || !path.endsWith(")") || path.indexOf('/') >= 0

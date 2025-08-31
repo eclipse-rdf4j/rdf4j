@@ -10,13 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
@@ -31,6 +24,13 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
 /**
  * Within a UNION, merge a subset of branches that are single IrPathTriple (or GRAPH with single IrPathTriple), share
  * identical endpoints and graph ref, and do not themselves contain alternation or quantifiers. Produces a single merged
@@ -42,8 +42,9 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 	}
 
 	public static IrBGP apply(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		List<IrNode> out = new ArrayList<>();
 		for (IrNode n : bgp.getLines()) {
 			IrNode m = n;
@@ -75,8 +76,9 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 	}
 
 	private static IrNode fuseUnion(IrUnion u, TupleExprIRRenderer r) {
-		if (u == null || u.getBranches().size() < 2)
+		if (u == null || u.getBranches().size() < 2) {
 			return u;
+		}
 		// Preserve explicit UNION (new variable scope) as-is; do not fuse branches inside it.
 		if (u.isNewScope()) {
 			return u;
@@ -95,10 +97,12 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 
 			@Override
 			public boolean equals(Object o) {
-				if (this == o)
+				if (this == o) {
 					return true;
-				if (o == null || getClass() != o.getClass())
+				}
+				if (o == null || getClass() != o.getClass()) {
 					return false;
+				}
 				Key key = (Key) o;
 				return Objects.equals(gName, key.gName)
 						&& Objects.equals(sName, key.sName)
