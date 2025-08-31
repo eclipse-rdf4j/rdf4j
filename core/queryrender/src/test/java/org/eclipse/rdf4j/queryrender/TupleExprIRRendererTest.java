@@ -728,10 +728,7 @@ public class TupleExprIRRendererTest {
 	@Test
 	void testMoreGraph1() {
 		String q = "SELECT REDUCED ?g ?y (?cnt AS ?count) (COALESCE(?avgAge, -1) AS ?ageOrMinus1) WHERE {\n" +
-				"  VALUES (?g) {\n" +
-				"    (ex:g1)\n" +
-				"    (ex:g2)\n" +
-				"  }\n" +
+				"  VALUES ?g { ex:g1 ex:g2 }\n" +
 				"  GRAPH ?g {\n" +
 				"    ?x (foaf:knows|ex:knows)/^foaf:knows ?y .\n" +
 				"    ?y foaf:name ?name .\n" +
@@ -745,7 +742,10 @@ public class TupleExprIRRendererTest {
 				"  MINUS {\n" +
 				"    ?y a ex:Robot .\n" +
 				"  }\n" +
-				"  FILTER (NOT EXISTS { ?y foaf:nick ?nick . FILTER (STRLEN(?nick) > 0) })\n" +
+				"  FILTER NOT EXISTS {\n" +
+				"    ?y foaf:nick ?nick .\n" +
+				"    FILTER (STRLEN(?nick) > 0)\n" +
+				"  }\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg());
 	}
