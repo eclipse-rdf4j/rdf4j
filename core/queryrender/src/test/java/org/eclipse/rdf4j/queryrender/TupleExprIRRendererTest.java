@@ -2897,4 +2897,84 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg());
 	}
 
+	@Test
+	void testValuesGraph1() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  VALUES ?s { ex:s1 ex:s2 }\n" +
+				"  {\n" +
+				"    GRAPH ?g0 {\n" +
+				"      ?s a ?o .\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testValuesGraph2() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    VALUES ?s { ex:s1 ex:s2 }\n" +
+				"    {\n" +
+				"      GRAPH ?g0 {\n" +
+				"        ?s a ?o .\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testFilterExistsGraphScope() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    ?s ex:pC ?u1 .\n" +
+				"    FILTER EXISTS {\n" +
+				"      { \n" +
+				"        GRAPH <http://graphs.example/g0> {\n" +
+				"          ?s !foaf:knows ?o .\n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testFilterExistsGraphScope2() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    ?s ex:pC ?u1 .\n" +
+				"    FILTER EXISTS {\n" +
+				"      GRAPH <http://graphs.example/g0> {\n" +
+				"        ?s !foaf:knows ?o .\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testFilterExistsGraphScope3() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  ?s ex:pC ?u1 .\n" +
+				"  FILTER EXISTS {\n" +
+				"    { \n" +
+				"      GRAPH <http://graphs.example/g0> {\n" +
+				"        ?s !foaf:knows ?o .\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
 }
