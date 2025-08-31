@@ -152,7 +152,13 @@ public final class SparqlFormatter {
 
 	public static void main(String[] args) {
 		String test = "SELECT ?s ?o WHERE {\n" +
-				"  ?s a ?o .  \n" +
+				"  {\n" +
+				"    SELECT ?s WHERE {\n" +
+//				"      {\n" +
+				"        ?s ^<http://example.org/p/I2> ?o . \n" +
+//				"      }\n" +
+				"    }\n" +
+				"  }\n" +
 				"}";
 		System.out.println(formatBraces(test));
 	}

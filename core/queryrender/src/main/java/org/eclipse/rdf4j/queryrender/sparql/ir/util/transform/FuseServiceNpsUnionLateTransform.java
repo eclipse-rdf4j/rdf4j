@@ -43,15 +43,15 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 				m = fuseInService((IrService) n);
 			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				m = new IrGraph(g.getGraph(), apply(g.getWhere()));
+				m = new IrGraph(g.getGraph(), apply(g.getWhere()), g.isNewScope());
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere()));
+				IrOptional no = new IrOptional(apply(o.getWhere()), o.isNewScope());
 				no.setNewScope(o.isNewScope());
 				m = no;
 			} else if (n instanceof IrMinus) {
 				IrMinus mi = (IrMinus) n;
-				m = new IrMinus(apply(mi.getWhere()));
+				m = new IrMinus(apply(mi.getWhere()), mi.isNewScope());
 			} else if (n instanceof IrSubSelect) {
 				// keep
 			} else {
@@ -64,7 +64,7 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 			}
 			out.add(m);
 		}
-		IrBGP res = new IrBGP();
+		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 		res.setNewScope(bgp.isNewScope());
 		return res;
@@ -80,7 +80,7 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 		// Then, recursively fuse any nested UNION-of-NPS inside the SERVICE body
 		IrBGP fusedDeep = fuseUnionsInBGP(fusedTop);
 		if (fusedDeep != where) {
-			return new IrService(s.getServiceRefText(), s.isSilent(), fusedDeep);
+			return new IrService(s.getServiceRefText(), s.isSilent(), fusedDeep, s.isNewScope());
 		}
 		return s;
 	}
@@ -97,21 +97,21 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 				m = fused;
 			} else if (ln instanceof IrGraph) {
 				IrGraph g = (IrGraph) ln;
-				m = new IrGraph(g.getGraph(), fuseUnionsInBGP(g.getWhere()));
+				m = new IrGraph(g.getGraph(), fuseUnionsInBGP(g.getWhere()), g.isNewScope());
 			} else if (ln instanceof IrOptional) {
 				IrOptional o = (IrOptional) ln;
-				IrOptional no = new IrOptional(fuseUnionsInBGP(o.getWhere()));
+				IrOptional no = new IrOptional(fuseUnionsInBGP(o.getWhere()), o.isNewScope());
 				no.setNewScope(o.isNewScope());
 				m = no;
 			} else if (ln instanceof IrMinus) {
 				IrMinus mi = (IrMinus) ln;
-				m = new IrMinus(fuseUnionsInBGP(mi.getWhere()));
+				m = new IrMinus(fuseUnionsInBGP(mi.getWhere()), mi.isNewScope());
 			} else if (ln instanceof IrBGP) {
 				m = fuseUnionsInBGP((IrBGP) ln);
 			}
 			out.add(m);
 		}
-		IrBGP res = new IrBGP();
+		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 		res.setNewScope(bgp.isNewScope());
 		return res;
@@ -122,6 +122,8 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 			return u;
 		}
 		Var graphRef = null;
+		boolean graphRefNewScope = false;
+		boolean innerBgpNewScope = false;
 		IrPathTriple p1 = null, p2 = null;
 		Var sCanon = null, oCanon = null;
 		for (int idx = 0; idx < 2; idx++) {
@@ -133,10 +135,14 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 					break;
 				node = inner;
 			}
-			Var g = null;
+			Var graphVar = null;
+			boolean graphVarNewScope = false;
+			boolean whereNewScope = false;
 			if (node instanceof IrGraph) {
 				IrGraph gb = (IrGraph) node;
-				g = gb.getGraph();
+				graphVar = gb.getGraph();
+				graphVarNewScope = gb.isNewScope();
+				whereNewScope = gb.getWhere() != null && gb.getWhere().isNewScope();
 				node = singleChild(gb.getWhere());
 				while (node instanceof IrBGP) {
 					IrNode inner = singleChild((IrBGP) node);
@@ -152,12 +158,23 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 				p1 = (IrPathTriple) node;
 				sCanon = p1.getSubject();
 				oCanon = p1.getObject();
-				graphRef = g;
+				graphRef = graphVar;
+				graphRefNewScope = graphVarNewScope;
+				innerBgpNewScope = whereNewScope;
 			} else {
 				p2 = (IrPathTriple) node;
-				if ((graphRef == null && g != null) || (graphRef != null && g == null)
-						|| (graphRef != null && !eqVarOrValue(graphRef, g))) {
+				if ((graphRef == null && graphVar != null) || (graphRef != null && graphVar == null)
+						|| (graphRef != null && !eqVarOrValue(graphRef, graphVar))) {
 					return u;
+				}
+				// Prefer graph scope/newScope and inner BGP newScope from the first branch; require the second to match
+				if (graphRef != null) {
+					if (graphRefNewScope != graphVarNewScope) {
+						return u;
+					}
+					if (innerBgpNewScope != whereNewScope) {
+						return u;
+					}
 				}
 			}
 		}
@@ -177,11 +194,11 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 			return u;
 		}
 		String merged = mergeMembersLocal(m1, add2);
-		IrPathTriple fused = new IrPathTriple(sCanon, merged, oCanon);
+		IrPathTriple fused = new IrPathTriple(sCanon, merged, oCanon, false);
 		if (graphRef != null) {
-			IrBGP inner = new IrBGP();
+			IrBGP inner = new IrBGP(innerBgpNewScope);
 			inner.add(fused);
-			return new IrGraph(graphRef, inner);
+			return new IrGraph(graphRef, inner, graphRefNewScope);
 		}
 		return fused;
 	}

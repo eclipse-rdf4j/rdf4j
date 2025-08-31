@@ -16,10 +16,6 @@ package org.eclipse.rdf4j.queryrender.sparql.ir;
 public class IrText extends IrNode {
 	private final String text;
 
-	public IrText(String text) {
-		this(text, false);
-	}
-
 	public IrText(String text, boolean newScope) {
 		super(newScope);
 		this.text = text;

@@ -1009,7 +1009,7 @@ public class TupleExprIRRenderer {
 	private String renderInlineGroup(final TupleExpr pattern) {
 		IrBGP where = new TupleExprToIrConverter(this).buildWhere(pattern);
 		// Apply standard transforms for consistent property path and grouping rewrites
-		IrSelect tmp = new IrSelect();
+		IrSelect tmp = new IrSelect(false);
 		tmp.setWhere(where);
 		final IrSelect transformed = IrTransforms.transformUsingChildren(tmp, this);
 		where = transformed.getWhere();

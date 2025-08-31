@@ -53,30 +53,29 @@ public final class CanonicalizeGroupedTailStepTransform extends BaseTransform {
 				// Second: normalize split-middle grouping like ((L)/(M))/((R)) -> ((L)/(M/(R)))
 				String rew = rewriteFuseSplitMiddle(afterTail);
 				if (!rew.equals(ptxt)) {
-					m = new IrPathTriple(pt.getSubject(), rew, pt.getObject());
+					m = new IrPathTriple(pt.getSubject(), rew, pt.getObject(), pt.isNewScope());
 				}
 			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				m = new IrGraph(g.getGraph(), apply(g.getWhere(), r));
+				m = new IrGraph(g.getGraph(), apply(g.getWhere(), r), g.isNewScope());
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere(), r));
+				IrOptional no = new IrOptional(apply(o.getWhere(), r), o.isNewScope());
 				no.setNewScope(o.isNewScope());
 				m = no;
 			} else if (n instanceof IrMinus) {
 				IrMinus mi = (IrMinus) n;
-				m = new IrMinus(apply(mi.getWhere(), r));
+				m = new IrMinus(apply(mi.getWhere(), r), mi.isNewScope());
 			} else if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
-				IrUnion u2 = new IrUnion();
-				u2.setNewScope(u.isNewScope());
+				IrUnion u2 = new IrUnion(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(apply(b, r));
 				}
 				m = u2;
 			} else if (n instanceof IrService) {
 				IrService s = (IrService) n;
-				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), r));
+				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), r), s.isNewScope());
 			} else if (n instanceof IrSubSelect) {
 				// keep as-is
 			}

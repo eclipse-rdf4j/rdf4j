@@ -19,10 +19,6 @@ import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
  */
 public abstract class IrTripleLike extends IrNode {
 
-	public IrTripleLike() {
-		super(false);
-	}
-
 	public IrTripleLike(boolean newScope) {
 		super(newScope);
 	}

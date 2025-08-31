@@ -25,10 +25,6 @@ public class IrPathTriple extends IrTripleLike {
 	private final String pathText;
 	private final Var object;
 
-	public IrPathTriple(Var subject, String pathText, Var object) {
-		this(subject, pathText, object, false);
-	}
-
 	public IrPathTriple(Var subject, String pathText, Var object, boolean newScope) {
 		super(newScope);
 		this.subject = subject;

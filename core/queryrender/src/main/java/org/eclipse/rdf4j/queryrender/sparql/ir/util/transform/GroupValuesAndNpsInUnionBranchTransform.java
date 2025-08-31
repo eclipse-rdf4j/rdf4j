@@ -57,15 +57,13 @@ public final class GroupValuesAndNpsInUnionBranchTransform extends BaseTransform
 			}
 		}
 
-		IrBGP res = new IrBGP();
+		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
-		res.setNewScope(bgp.isNewScope());
 		return res;
 	}
 
 	private static IrUnion groupUnionBranches(IrUnion u) {
-		IrUnion u2 = new IrUnion();
-		u2.setNewScope(u.isNewScope());
+		IrUnion u2 = new IrUnion(u.isNewScope());
 		for (IrBGP b : u.getBranches()) {
 			IrBGP toAdd = maybeWrapBranch(b, u.isNewScope());
 			u2.addBranch(toAdd);
@@ -119,13 +117,12 @@ public final class GroupValuesAndNpsInUnionBranchTransform extends BaseTransform
 		// Only wrap for explicit UNION branches to mirror user grouping; avoid altering synthesized unions.
 		// Guard for exact simple pattern: exactly two top-level lines: one VALUES and one NPS path (or GRAPH{NPS})
 		if (unionNewScope && hasTopValues && hasTopNegPath && topCount == 2 && valuesCount == 1 && negPathCount == 1) {
-			IrBGP inner = new IrBGP();
+			IrBGP inner = new IrBGP(false);
 			for (IrNode ln : branch.getLines()) {
 				inner.add(ln);
 			}
-			IrBGP wrapped = new IrBGP();
+			IrBGP wrapped = new IrBGP(inner.isNewScope());
 			wrapped.add(inner);
-			wrapped.setNewScope(inner.isNewScope());
 			return wrapped;
 		}
 		return branch;

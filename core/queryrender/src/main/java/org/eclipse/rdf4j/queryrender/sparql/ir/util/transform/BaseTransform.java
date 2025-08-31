@@ -192,12 +192,12 @@ public class BaseTransform {
 				if (sameVar(bridge, b.getSubject()) && isAnonPathVar(bridge)) {
 					// Merge a and b: s -(a.path/b.path)-> o. Keep explicit grouping to enable later canonicalization.
 					String fusedPath = "(" + a.getPathText() + ")/(" + b.getPathText() + ")";
-					out.add(new IrPathTriple(a.getSubject(), fusedPath, b.getObject()));
+					out.add(new IrPathTriple(a.getSubject(), fusedPath, b.getObject(), false));
 					i += 1; // consume b
 				} else if (sameVar(bridge, b.getObject()) && isAnonPathVar(bridge)) {
 					// Merge a and b with inverse join on b. Keep explicit grouping.
 					String fusedPath = "(" + a.getPathText() + ")/^(" + b.getPathText() + ")";
-					out.add(new IrPathTriple(a.getSubject(), fusedPath, b.getSubject()));
+					out.add(new IrPathTriple(a.getSubject(), fusedPath, b.getSubject(), false));
 					i += 1; // consume b
 				} else {
 					// Additional cases: the bridge variable occurs as the subject of the first path triple.
@@ -219,7 +219,7 @@ public class BaseTransform {
 								left = wrapForInverse(aPath);
 							}
 							String fusedPath = left + "/" + wrapForSequence(b.getPathText());
-							out.add(new IrPathTriple(a.getObject(), fusedPath, b.getObject()));
+							out.add(new IrPathTriple(a.getObject(), fusedPath, b.getObject(), false));
 							i += 1; // consume b
 							continue;
 						}
@@ -232,7 +232,7 @@ public class BaseTransform {
 							}
 							String right = wrapForInverse(b.getPathText());
 							String fusedPath = left + "/" + right;
-							out.add(new IrPathTriple(a.getObject(), fusedPath, b.getSubject()));
+							out.add(new IrPathTriple(a.getObject(), fusedPath, b.getSubject(), false));
 							i += 1; // consume b
 							continue;
 						}
@@ -243,7 +243,7 @@ public class BaseTransform {
 				out.add(n);
 			}
 		}
-		IrBGP res = new IrBGP();
+		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 		res.setNewScope(bgp.isNewScope());
 		return res;
@@ -274,7 +274,7 @@ public class BaseTransform {
 							&& sameVar(spB.getSubject(), ptC.getSubject()) && isAnonPathVar(spB.getSubject())
 							&& isAnonPathVar(spB.getObject())) {
 						String fusedPath = "^" + r.renderIRI((IRI) bPred.getValue()) + "/" + ptC.getPathText();
-						IrPathTriple d = new IrPathTriple(spB.getObject(), fusedPath, ptC.getObject());
+						IrPathTriple d = new IrPathTriple(spB.getObject(), fusedPath, ptC.getObject(), false);
 						// Keep A; then D replaces B and C
 						out.add(ptA);
 						out.add(d);
@@ -285,7 +285,7 @@ public class BaseTransform {
 			}
 			out.add(a);
 		}
-		IrBGP res = new IrBGP();
+		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 		res.setNewScope(bgp.isNewScope());
 		return res;
@@ -321,25 +321,24 @@ public class BaseTransform {
 			// Recurse
 			if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				out.add(new IrGraph(g.getGraph(), orientBareNpsForNext(g.getWhere())));
+				out.add(new IrGraph(g.getGraph(), orientBareNpsForNext(g.getWhere()), g.isNewScope()));
 				continue;
 			}
 			if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(orientBareNpsForNext(o.getWhere()));
+				IrOptional no = new IrOptional(orientBareNpsForNext(o.getWhere()), o.isNewScope());
 				no.setNewScope(o.isNewScope());
 				out.add(no);
 				continue;
 			}
 			if (n instanceof IrMinus) {
 				IrMinus m = (IrMinus) n;
-				out.add(new IrMinus(orientBareNpsForNext(m.getWhere())));
+				out.add(new IrMinus(orientBareNpsForNext(m.getWhere()), m.isNewScope()));
 				continue;
 			}
 			if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
-				IrUnion u2 = new IrUnion();
-				u2.setNewScope(u.isNewScope());
+				IrUnion u2 = new IrUnion(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(orientBareNpsForNext(b));
 				}
@@ -348,12 +347,13 @@ public class BaseTransform {
 			}
 			if (n instanceof IrService) {
 				IrService s = (IrService) n;
-				out.add(new IrService(s.getServiceRefText(), s.isSilent(), orientBareNpsForNext(s.getWhere())));
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(), orientBareNpsForNext(s.getWhere()),
+						s.isNewScope()));
 				continue;
 			}
 			out.add(n);
 		}
-		IrBGP res = new IrBGP();
+		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 		res.setNewScope(bgp.isNewScope());
 		return res;
@@ -374,12 +374,12 @@ public class BaseTransform {
 					IrPathTriple pt = (IrPathTriple) in.get(i + 1);
 					if (sameVar(sp.getObject(), pt.getSubject()) && isAnonPathVar(pt.getSubject())) {
 						String fused = r.renderIRI((IRI) p.getValue()) + "/" + pt.getPathText();
-						out.add(new IrPathTriple(sp.getSubject(), fused, pt.getObject()));
+						out.add(new IrPathTriple(sp.getSubject(), fused, pt.getObject(), false));
 						i += 1;
 						continue;
 					} else if (sameVar(sp.getSubject(), pt.getObject()) && isAnonPathVar(pt.getObject())) {
 						String fused = pt.getPathText() + "/^" + r.renderIRI((IRI) p.getValue());
-						out.add(new IrPathTriple(pt.getSubject(), fused, sp.getObject()));
+						out.add(new IrPathTriple(pt.getSubject(), fused, sp.getObject(), false));
 						i += 1;
 						continue;
 					}
@@ -387,7 +387,7 @@ public class BaseTransform {
 			}
 			out.add(n);
 		}
-		IrBGP res = new IrBGP();
+		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 		res.setNewScope(bgp.isNewScope());
 		return res;
@@ -446,7 +446,7 @@ public class BaseTransform {
 						String step = r.renderIRI((IRI) join.getPredicate().getValue());
 						String newPath = pt.getPathText() + "/" + (inverse ? "^" : "") + step;
 						Var newEnd = inverse ? join.getSubject() : join.getObject();
-						pt = new IrPathTriple(pt.getSubject(), newPath, newEnd);
+						pt = new IrPathTriple(pt.getSubject(), newPath, newEnd, pt.isNewScope());
 						removed.add(join);
 					}
 				}
@@ -816,7 +816,7 @@ public class BaseTransform {
 						final String ptxt = r.renderIRI((IRI) head.getPredicate().getValue());
 						final String prefix = (headInverse ? "^" : "") + ptxt + "/";
 						final Var newStart = headInverse ? head.getObject() : head.getSubject();
-						pt = new IrPathTriple(newStart, prefix + pt.getPathText(), pt.getObject());
+						pt = new IrPathTriple(newStart, prefix + pt.getPathText(), pt.getObject(), pt.isNewScope());
 						removed.add(head);
 					}
 				}
@@ -857,7 +857,7 @@ public class BaseTransform {
 						final String step = r.renderIRI((IRI) join.getPredicate().getValue());
 						final String newPath = pt.getPathText() + "/" + (inverse ? "^" : "") + step;
 						final Var newEnd = inverse ? join.getSubject() : join.getObject();
-						pt = new IrPathTriple(pt.getSubject(), newPath, newEnd);
+						pt = new IrPathTriple(pt.getSubject(), newPath, newEnd, pt.isNewScope());
 						removed.add(join);
 					}
 				}
@@ -868,25 +868,24 @@ public class BaseTransform {
 			// Recurse into containers
 			if (n instanceof IrGraph) {
 				final IrGraph g = (IrGraph) n;
-				out.add(new IrGraph(g.getGraph(), fuseAltInverseTailBGP(g.getWhere(), r)));
+				out.add(new IrGraph(g.getGraph(), fuseAltInverseTailBGP(g.getWhere(), r), g.isNewScope()));
 				continue;
 			}
 			if (n instanceof IrOptional) {
 				final IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(fuseAltInverseTailBGP(o.getWhere(), r));
+				IrOptional no = new IrOptional(fuseAltInverseTailBGP(o.getWhere(), r), o.isNewScope());
 				no.setNewScope(o.isNewScope());
 				out.add(no);
 				continue;
 			}
 			if (n instanceof IrMinus) {
 				final IrMinus m = (IrMinus) n;
-				out.add(new IrMinus(fuseAltInverseTailBGP(m.getWhere(), r)));
+				out.add(new IrMinus(fuseAltInverseTailBGP(m.getWhere(), r), m.isNewScope()));
 				continue;
 			}
 			if (n instanceof IrUnion) {
 				final IrUnion u = (IrUnion) n;
-				final IrUnion u2 = new IrUnion();
-				u2.setNewScope(u.isNewScope());
+				final IrUnion u2 = new IrUnion(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(fuseAltInverseTailBGP(b, r));
 				}
@@ -895,14 +894,15 @@ public class BaseTransform {
 			}
 			if (n instanceof IrService) {
 				final IrService s = (IrService) n;
-				out.add(new IrService(s.getServiceRefText(), s.isSilent(), fuseAltInverseTailBGP(s.getWhere(), r)));
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(), fuseAltInverseTailBGP(s.getWhere(), r),
+						s.isNewScope()));
 				continue;
 			}
 			// Subselects: keep as-is
 			out.add(n);
 		}
 
-		final IrBGP res = new IrBGP();
+		final IrBGP res = new IrBGP(bgp.isNewScope());
 		for (IrNode n2 : out) {
 			if (!removed.contains(n2)) {
 				res.add(n2);

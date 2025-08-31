@@ -31,10 +31,6 @@ public class IrSelect extends IrNode {
 	private long limit = -1;
 	private long offset = -1;
 
-	public IrSelect() {
-		super(false);
-	}
-
 	public IrSelect(boolean newScope) {
 		super(newScope);
 	}

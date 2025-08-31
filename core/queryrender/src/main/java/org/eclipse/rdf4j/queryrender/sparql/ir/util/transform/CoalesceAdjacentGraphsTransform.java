@@ -44,7 +44,7 @@ public final class CoalesceAdjacentGraphsTransform extends BaseTransform {
 			IrNode n = in.get(i);
 			if (n instanceof IrGraph) {
 				final IrGraph g1 = (IrGraph) n;
-				final IrBGP merged = new IrBGP();
+				final IrBGP merged = new IrBGP(false);
 				// start with g1 inner lines
 				if (g1.getWhere() != null) {
 					g1.getWhere().getLines().forEach(merged::add);
@@ -60,7 +60,7 @@ public final class CoalesceAdjacentGraphsTransform extends BaseTransform {
 					}
 					j++;
 				}
-				out.add(new IrGraph(g1.getGraph(), merged));
+				out.add(new IrGraph(g1.getGraph(), merged, g1.isNewScope()));
 				i = j - 1;
 				continue;
 			}
@@ -68,20 +68,18 @@ public final class CoalesceAdjacentGraphsTransform extends BaseTransform {
 			// Recurse into containers
 			if (n instanceof IrOptional) {
 				final IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere()));
-				no.setNewScope(o.isNewScope());
+				IrOptional no = new IrOptional(apply(o.getWhere()), o.isNewScope());
 				out.add(no);
 				continue;
 			}
 			if (n instanceof IrMinus) {
 				final IrMinus m = (IrMinus) n;
-				out.add(new IrMinus(apply(m.getWhere())));
+				out.add(new IrMinus(apply(m.getWhere()), m.isNewScope()));
 				continue;
 			}
 			if (n instanceof IrUnion) {
 				final IrUnion u = (IrUnion) n;
-				final IrUnion u2 = new IrUnion();
-				u2.setNewScope(u.isNewScope());
+				final IrUnion u2 = new IrUnion(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(apply(b));
 				}
@@ -90,14 +88,13 @@ public final class CoalesceAdjacentGraphsTransform extends BaseTransform {
 			}
 			if (n instanceof IrService) {
 				final IrService s = (IrService) n;
-				out.add(new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere())));
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere()), s.isNewScope()));
 				continue;
 			}
 			out.add(n);
 		}
-		final IrBGP res = new IrBGP();
+		final IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
-		res.setNewScope(bgp.isNewScope());
 		return res;
 	}
 }

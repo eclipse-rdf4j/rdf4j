@@ -50,7 +50,7 @@ public final class ApplyNormalizeGraphInnerPathsTransform extends BaseTransform 
 				inner = fuseAdjacentPtThenPt(inner);
 				inner = joinPathWithLaterSp(inner, r);
 				inner = fuseAltInverseTailBGP(inner, r);
-				out.add(new IrGraph(g.getGraph(), inner));
+				out.add(new IrGraph(g.getGraph(), inner, g.isNewScope()));
 			} else if (n instanceof IrBGP || n instanceof IrOptional || n instanceof IrMinus || n instanceof IrUnion
 					|| n instanceof IrService) {
 				n = n.transformChildren(child -> {
@@ -88,12 +88,12 @@ public final class ApplyNormalizeGraphInnerPathsTransform extends BaseTransform 
 					if (isAnonPathVar(bridge)) {
 						if (sameVar(bridge, sp.getSubject())) {
 							String fused = pt.getPathText() + "/" + r.renderIRI((IRI) pv.getValue());
-							out.add(new IrPathTriple(pt.getSubject(), fused, sp.getObject()));
+							out.add(new IrPathTriple(pt.getSubject(), fused, sp.getObject(), false));
 							i += 1;
 							continue;
 						} else if (sameVar(bridge, sp.getObject())) {
 							String fused = pt.getPathText() + "/^" + r.renderIRI((IRI) pv.getValue());
-							out.add(new IrPathTriple(pt.getSubject(), fused, sp.getSubject()));
+							out.add(new IrPathTriple(pt.getSubject(), fused, sp.getSubject(), false));
 							i += 1;
 							continue;
 						}
@@ -103,25 +103,24 @@ public final class ApplyNormalizeGraphInnerPathsTransform extends BaseTransform 
 			// Recurse into containers
 			if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				out.add(new IrGraph(g.getGraph(), fuseAdjacentPtThenSp(g.getWhere(), r)));
+				out.add(new IrGraph(g.getGraph(), fuseAdjacentPtThenSp(g.getWhere(), r), g.isNewScope()));
 				continue;
 			}
 			if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(fuseAdjacentPtThenSp(o.getWhere(), r));
+				IrOptional no = new IrOptional(fuseAdjacentPtThenSp(o.getWhere(), r), o.isNewScope());
 				no.setNewScope(o.isNewScope());
 				out.add(no);
 				continue;
 			}
 			if (n instanceof IrMinus) {
 				IrMinus m = (IrMinus) n;
-				out.add(new IrMinus(fuseAdjacentPtThenSp(m.getWhere(), r)));
+				out.add(new IrMinus(fuseAdjacentPtThenSp(m.getWhere(), r), m.isNewScope()));
 				continue;
 			}
 			if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
-				IrUnion u2 = new IrUnion();
-				u2.setNewScope(u.isNewScope());
+				IrUnion u2 = new IrUnion(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
 					IrBGP nb = fuseAdjacentPtThenSp(b, r);
 					nb = fuseAdjacentSpThenPt(nb, r);
@@ -135,7 +134,8 @@ public final class ApplyNormalizeGraphInnerPathsTransform extends BaseTransform 
 			}
 			if (n instanceof IrService) {
 				IrService s = (IrService) n;
-				out.add(new IrService(s.getServiceRefText(), s.isSilent(), fuseAdjacentPtThenSp(s.getWhere(), r)));
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(), fuseAdjacentPtThenSp(s.getWhere(), r),
+						s.isNewScope()));
 				continue;
 			}
 			out.add(n);

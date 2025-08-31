@@ -76,10 +76,21 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 			return null;
 		}
 		List<IrNode> inner = sel.getWhere().getLines();
-		if (inner.size() != 1 || !(inner.get(0) instanceof IrUnion)) {
+		if (inner.isEmpty()) {
 			return null;
 		}
-		IrUnion u = (IrUnion) inner.get(0);
+		IrUnion u = null;
+		if (inner.size() == 1 && inner.get(0) instanceof IrUnion) {
+			u = (IrUnion) inner.get(0);
+		} else if (inner.size() == 1 && inner.get(0) instanceof IrBGP) {
+			IrBGP w0 = (IrBGP) inner.get(0);
+			if (w0.getLines().size() == 1 && w0.getLines().get(0) instanceof IrUnion) {
+				u = (IrUnion) w0.getLines().get(0);
+			}
+		}
+		if (u == null) {
+			return null;
+		}
 		// Accept unions with >=2 branches: exactly one sameTerm filter branch, remaining branches must be
 		// single-step statement patterns that connect ?s and ?o in forward or inverse direction.
 		IrBGP filterBranch = null;
@@ -97,7 +108,16 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		if (filterBranch == null || stepBranches.isEmpty()) {
 			return null;
 		}
-		String[] so = parseSameTermVars(((IrText) filterBranch.getLines().get(0)).getText());
+		String[] so;
+		IrNode fbLine = filterBranch.getLines().get(0);
+		if (fbLine instanceof IrText) {
+			so = parseSameTermVars(((IrText) fbLine).getText());
+		} else if (fbLine instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) {
+			String cond = ((org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) fbLine).getConditionText();
+			so = parseSameTermVarsFromCondition(cond);
+		} else {
+			so = null;
+		}
 		if (so == null) {
 			return null;
 		}
@@ -183,7 +203,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 			exprInner = (steps.size() == 1) ? steps.get(0) : ("(" + String.join("|", steps) + ")");
 		}
 		final String expr = BaseTransform.applyQuantifier(exprInner, '?');
-		return new IrPathTriple(varNamed(sName), expr, varNamed(oName));
+		return new IrPathTriple(varNamed(sName), expr, varNamed(oName), false);
 	}
 
 	/** Invert a negated property set: !(a|^b|c) -> !(^a|b|^c). Return null if not a simple NPS. */
@@ -230,8 +250,18 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 	}
 
 	public static boolean isSameTermFilterBranch(IrBGP b) {
-		return b != null && b.getLines().size() == 1 && b.getLines().get(0) instanceof IrText
-				&& parseSameTermVars(((IrText) b.getLines().get(0)).getText()) != null;
+		if (b == null || b.getLines().size() != 1) {
+			return false;
+		}
+		IrNode ln = b.getLines().get(0);
+		if (ln instanceof IrText) {
+			return parseSameTermVars(((IrText) ln).getText()) != null;
+		}
+		if (ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) {
+			String cond = ((org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) ln).getConditionText();
+			return parseSameTermVarsFromCondition(cond) != null;
+		}
+		return false;
 	}
 
 	public static Var varNamed(String name) {
@@ -239,6 +269,21 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 			return null;
 		}
 		return new Var(name);
+	}
+
+	/** Parse sameTerm(?s,?o) from a plain FILTER condition text (no leading "FILTER"). */
+	private static String[] parseSameTermVarsFromCondition(String cond) {
+		if (cond == null) {
+			return null;
+		}
+		Matcher m = Pattern
+				.compile(
+						"(?i)\\s*sameTerm\\s*\\(\\s*\\?(?<s>[A-Za-z_][\\w]*)\\s*,\\s*\\?(?<o>[A-Za-z_][\\w]*)\\s*\\)\\s*")
+				.matcher(cond);
+		if (!m.matches()) {
+			return null;
+		}
+		return new String[] { m.group("s"), m.group("o") };
 	}
 
 }

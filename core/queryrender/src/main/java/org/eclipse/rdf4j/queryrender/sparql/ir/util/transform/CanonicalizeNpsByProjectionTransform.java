@@ -89,7 +89,7 @@ public final class CanonicalizeNpsByProjectionTransform extends BaseTransform {
 							if (flip) {
 								String inv = invertNegatedPropertySet(t);
 								if (inv != null) {
-									m = new IrPathTriple(o, inv, s);
+									m = new IrPathTriple(o, inv, s, false);
 								}
 							}
 						}
@@ -97,15 +97,15 @@ public final class CanonicalizeNpsByProjectionTransform extends BaseTransform {
 				}
 			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				m = new IrGraph(g.getGraph(), apply(g.getWhere(), select));
+				m = new IrGraph(g.getGraph(), apply(g.getWhere(), select), g.isNewScope());
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere(), select));
+				IrOptional no = new IrOptional(apply(o.getWhere(), select), o.isNewScope());
 				no.setNewScope(o.isNewScope());
 				m = no;
 			} else if (n instanceof IrMinus) {
 				IrMinus mi = (IrMinus) n;
-				m = new IrMinus(apply(mi.getWhere(), select));
+				m = new IrMinus(apply(mi.getWhere(), select), mi.isNewScope());
 			} else if (n instanceof IrUnion) {
 				// Do not alter orientation inside UNION branches; preserve branch subjects/objects.
 				m = n;
@@ -114,21 +114,22 @@ public final class CanonicalizeNpsByProjectionTransform extends BaseTransform {
 				IrFilter f = (IrFilter) n;
 				if (f.getBody() instanceof IrExists) {
 					IrExists ex = (IrExists) f.getBody();
-					IrFilter nf = new IrFilter(new IrExists(apply(ex.getWhere(), select), ex.isNewScope()));
-					nf.setNewScope(f.isNewScope());
+					IrFilter nf = new IrFilter(new IrExists(apply(ex.getWhere(), select), ex.isNewScope()),
+							f.isNewScope());
 					m = nf;
 				} else if (f.getBody() instanceof IrNot && ((IrNot) f.getBody()).getInner() instanceof IrExists) {
 					IrNot not = (IrNot) f.getBody();
 					IrExists ex = (IrExists) not.getInner();
-					IrFilter nf = new IrFilter(new IrNot(new IrExists(apply(ex.getWhere(), select), ex.isNewScope())));
-					nf.setNewScope(f.isNewScope());
+					IrFilter nf = new IrFilter(
+							new IrNot(new IrExists(apply(ex.getWhere(), select), ex.isNewScope()), false),
+							f.isNewScope());
 					m = nf;
 				} else {
 					m = n;
 				}
 			} else if (n instanceof IrService) {
 				IrService s = (IrService) n;
-				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), select));
+				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), select), s.isNewScope());
 			} else if (n instanceof IrSubSelect) {
 				// keep as-is
 			}

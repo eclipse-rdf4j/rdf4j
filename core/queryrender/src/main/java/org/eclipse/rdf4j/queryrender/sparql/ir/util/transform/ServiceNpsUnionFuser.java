@@ -140,11 +140,11 @@ public final class ServiceNpsUnionFuser {
 		}
 
 		String merged = mergeMembers(m1, add2);
-		IrPathTriple fused = new IrPathTriple(sCanon, merged, oCanon);
+		IrPathTriple fused = new IrPathTriple(sCanon, merged, oCanon, false);
 		if (graphRef != null) {
-			IrBGP inner = new IrBGP();
+			IrBGP inner = new IrBGP(false);
 			inner.add(fused);
-			return new IrGraph(graphRef, inner);
+			return new IrGraph(graphRef, inner, false);
 		}
 		return fused;
 	}

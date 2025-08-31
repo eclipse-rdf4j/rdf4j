@@ -18,10 +18,6 @@ import java.util.function.UnaryOperator;
 public class IrNot extends IrNode {
 	private IrNode inner;
 
-	public IrNot(IrNode inner) {
-		this(inner, false);
-	}
-
 	public IrNot(IrNode inner, boolean newScope) {
 		super(newScope);
 		this.inner = inner;

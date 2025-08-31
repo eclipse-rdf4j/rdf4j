@@ -24,10 +24,6 @@ public class IrGraph extends IrNode {
 	private Var graph;
 	private IrBGP bgp;
 
-	public IrGraph(Var graph, IrBGP bgp) {
-		this(graph, bgp, false);
-	}
-
 	public IrGraph(Var graph, IrBGP bgp, boolean newScope) {
 		super(newScope);
 		this.graph = graph;

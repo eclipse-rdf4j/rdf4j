@@ -77,7 +77,7 @@ public final class ApplyPropertyListsTransform extends BaseTransform {
 				boolean hasComma = !multiPred && !map.isEmpty()
 						&& map.values().iterator().next().getObjects().size() > 1;
 				if (multiPred || hasComma) {
-					IrPropertyList pl = new IrPropertyList(subj);
+					IrPropertyList pl = new IrPropertyList(subj, false);
 					for (IrPropertyList.Item it : map.values()) {
 						pl.addItem(it);
 					}

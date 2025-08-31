@@ -181,7 +181,7 @@ public final class IrTransforms {
 				IrBGP fused = ServiceNpsUnionFuser
 						.fuse(s.getWhere());
 				return new IrService(s.getServiceRefText(), s.isSilent(),
-						fused);
+						fused, s.isNewScope());
 			}
 			return child;
 		});

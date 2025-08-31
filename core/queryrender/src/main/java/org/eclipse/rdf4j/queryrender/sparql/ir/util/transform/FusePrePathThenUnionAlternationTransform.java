@@ -92,12 +92,12 @@ public final class FusePrePathThenUnionAlternationTransform extends BaseTransfor
 							// Append tail step directly
 							fused = fused + "/" + r.renderIRI(FOAF.NAME);
 							endVar = tail.getObject();
-							out.add(new IrPathTriple(pre.getSubject(), fused, endVar));
+							out.add(new IrPathTriple(pre.getSubject(), fused, endVar, false));
 							i += 2; // consume union and tail
 							continue;
 						}
 					}
-					out.add(new IrPathTriple(pre.getSubject(), fused, endVar));
+					out.add(new IrPathTriple(pre.getSubject(), fused, endVar, false));
 					i += 1; // consume union
 					continue;
 				}
@@ -106,25 +106,24 @@ public final class FusePrePathThenUnionAlternationTransform extends BaseTransfor
 			// Recurse into containers not already handled
 			if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				out.add(new IrGraph(g.getGraph(), apply(g.getWhere(), r)));
+				out.add(new IrGraph(g.getGraph(), apply(g.getWhere(), r), g.isNewScope()));
 				continue;
 			}
 			if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere(), r));
+				IrOptional no = new IrOptional(apply(o.getWhere(), r), o.isNewScope());
 				no.setNewScope(o.isNewScope());
 				out.add(no);
 				continue;
 			}
 			if (n instanceof IrMinus) {
 				IrMinus m = (IrMinus) n;
-				out.add(new IrMinus(apply(m.getWhere(), r)));
+				out.add(new IrMinus(apply(m.getWhere(), r), m.isNewScope()));
 				continue;
 			}
 			if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
-				IrUnion u2 = new IrUnion();
-				u2.setNewScope(u.isNewScope());
+				IrUnion u2 = new IrUnion(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(apply(b, r));
 				}
@@ -133,7 +132,7 @@ public final class FusePrePathThenUnionAlternationTransform extends BaseTransfor
 			}
 			if (n instanceof IrService) {
 				IrService s = (IrService) n;
-				out.add(new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), r)));
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), r), s.isNewScope()));
 				continue;
 			}
 			if (n instanceof IrSubSelect) {

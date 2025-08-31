@@ -61,26 +61,25 @@ public final class InlineBNodeObjectsTransform extends BaseTransform {
 				pre.add(apply((IrBGP) n, r));
 			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				pre.add(new IrGraph(g.getGraph(), apply(g.getWhere(), r)));
+				pre.add(new IrGraph(g.getGraph(), apply(g.getWhere(), r), g.isNewScope()));
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere(), r));
+				IrOptional no = new IrOptional(apply(o.getWhere(), r), o.isNewScope());
 				no.setNewScope(o.isNewScope());
 				pre.add(no);
 			} else if (n instanceof IrMinus) {
 				IrMinus m = (IrMinus) n;
-				pre.add(new IrMinus(apply(m.getWhere(), r)));
+				pre.add(new IrMinus(apply(m.getWhere(), r), m.isNewScope()));
 			} else if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
-				IrUnion u2 = new IrUnion();
-				u2.setNewScope(u.isNewScope());
+				IrUnion u2 = new IrUnion(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(apply(b, r));
 				}
 				pre.add(u2);
 			} else if (n instanceof IrService) {
 				IrService s = (IrService) n;
-				pre.add(new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), r)));
+				pre.add(new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), r), s.isNewScope()));
 			} else if (n instanceof IrSubSelect) {
 				pre.add(n); // keep raw subselects unchanged
 			} else {
@@ -227,7 +226,7 @@ public final class InlineBNodeObjectsTransform extends BaseTransform {
 					}
 				}
 				if (repl != null) {
-					out.add(new IrStatementPattern(sp.getSubject(), sp.getPredicate(), repl));
+					out.add(new IrStatementPattern(sp.getSubject(), sp.getPredicate(), repl, sp.isNewScope()));
 					continue;
 				}
 			}

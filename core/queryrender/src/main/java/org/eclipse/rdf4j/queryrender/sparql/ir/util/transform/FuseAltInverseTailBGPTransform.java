@@ -122,7 +122,7 @@ public final class FuseAltInverseTailBGPTransform extends BaseTransform {
 						final String step = r.renderIRI((IRI) headJoin.getPredicate().getValue());
 						final String prefix = (headInverse ? "^" : "") + step + "/";
 						final Var newStart = headInverse ? headJoin.getObject() : headJoin.getSubject();
-						pt = new IrPathTriple(newStart, prefix + pt.getPathText(), pt.getObject());
+						pt = new IrPathTriple(newStart, prefix + pt.getPathText(), pt.getObject(), pt.isNewScope());
 						removed.add(headJoin);
 					}
 				}
@@ -160,7 +160,7 @@ public final class FuseAltInverseTailBGPTransform extends BaseTransform {
 							final String step = r.renderIRI((IRI) join.getPredicate().getValue());
 							final String newPath = pt.getPathText() + "/" + (inverse ? "^" : "") + step;
 							final Var newEnd = inverse ? join.getSubject() : join.getObject();
-							pt = new IrPathTriple(pt.getSubject(), newPath, newEnd);
+							pt = new IrPathTriple(pt.getSubject(), newPath, newEnd, pt.isNewScope());
 							removed.add(join);
 						}
 					}
@@ -173,25 +173,24 @@ public final class FuseAltInverseTailBGPTransform extends BaseTransform {
 			// Recurse into containers
 			if (n instanceof IrGraph) {
 				final IrGraph g = (IrGraph) n;
-				out.add(new IrGraph(g.getGraph(), fuseAltInverseTailBGP(g.getWhere(), r)));
+				out.add(new IrGraph(g.getGraph(), fuseAltInverseTailBGP(g.getWhere(), r), g.isNewScope()));
 				continue;
 			}
 			if (n instanceof IrOptional) {
 				final IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(fuseAltInverseTailBGP(o.getWhere(), r));
+				IrOptional no = new IrOptional(fuseAltInverseTailBGP(o.getWhere(), r), o.isNewScope());
 				no.setNewScope(o.isNewScope());
 				out.add(no);
 				continue;
 			}
 			if (n instanceof IrMinus) {
 				final IrMinus m = (IrMinus) n;
-				out.add(new IrMinus(fuseAltInverseTailBGP(m.getWhere(), r)));
+				out.add(new IrMinus(fuseAltInverseTailBGP(m.getWhere(), r), m.isNewScope()));
 				continue;
 			}
 			if (n instanceof IrUnion) {
 				final IrUnion u = (IrUnion) n;
-				final IrUnion u2 = new IrUnion();
-				u2.setNewScope(u.isNewScope());
+				final IrUnion u2 = new IrUnion(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(fuseAltInverseTailBGP(b, r));
 				}
@@ -200,14 +199,15 @@ public final class FuseAltInverseTailBGPTransform extends BaseTransform {
 			}
 			if (n instanceof IrService) {
 				final IrService s = (IrService) n;
-				out.add(new IrService(s.getServiceRefText(), s.isSilent(), fuseAltInverseTailBGP(s.getWhere(), r)));
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(), fuseAltInverseTailBGP(s.getWhere(), r),
+						s.isNewScope()));
 				continue;
 			}
 			// Subselects: keep as-is
 			out.add(n);
 		}
 
-		final IrBGP res = new IrBGP();
+		final IrBGP res = new IrBGP(bgp.isNewScope());
 		for (IrNode n2 : out) {
 			if (!removed.contains(n2)) {
 				res.add(n2);

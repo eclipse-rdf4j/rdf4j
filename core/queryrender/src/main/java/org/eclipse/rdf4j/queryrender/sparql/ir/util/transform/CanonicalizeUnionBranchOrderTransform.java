@@ -43,18 +43,18 @@ public final class CanonicalizeUnionBranchOrderTransform extends BaseTransform {
 				m = reorderUnion((IrUnion) n, select);
 			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				m = new IrGraph(g.getGraph(), apply(g.getWhere(), select));
+				m = new IrGraph(g.getGraph(), apply(g.getWhere(), select), g.isNewScope());
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere(), select));
+				IrOptional no = new IrOptional(apply(o.getWhere(), select), o.isNewScope());
 				no.setNewScope(o.isNewScope());
 				m = no;
 			} else if (n instanceof IrMinus) {
 				IrMinus mi = (IrMinus) n;
-				m = new IrMinus(apply(mi.getWhere(), select));
+				m = new IrMinus(apply(mi.getWhere(), select), mi.isNewScope());
 			} else if (n instanceof IrService) {
 				IrService s = (IrService) n;
-				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), select));
+				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), select), s.isNewScope());
 			} else if (n instanceof IrSubSelect) {
 				// keep as-is
 			}
@@ -68,8 +68,7 @@ public final class CanonicalizeUnionBranchOrderTransform extends BaseTransform {
 
 	private static IrNode reorderUnion(IrUnion u, IrSelect select) {
 		// Recurse first into branches
-		IrUnion u2 = new IrUnion();
-		u2.setNewScope(u.isNewScope());
+		IrUnion u2 = new IrUnion(u.isNewScope());
 		for (IrBGP b : u.getBranches()) {
 			u2.addBranch(apply(b, select));
 		}

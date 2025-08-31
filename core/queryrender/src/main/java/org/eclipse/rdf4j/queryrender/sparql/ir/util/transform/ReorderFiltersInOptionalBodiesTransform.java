@@ -51,14 +51,14 @@ public final class ReorderFiltersInOptionalBodiesTransform extends BaseTransform
 				final IrOptional opt = (IrOptional) n;
 				IrBGP inner = apply(opt.getWhere(), r);
 				inner = reorderFiltersWithin(inner, r);
-				IrOptional no = new IrOptional(inner);
+				IrOptional no = new IrOptional(inner, opt.isNewScope());
 				no.setNewScope(opt.isNewScope());
 				out.add(no);
 				continue;
 			}
 			if (n instanceof IrGraph) {
 				final IrGraph g = (IrGraph) n;
-				out.add(new IrGraph(g.getGraph(), apply(g.getWhere(), r)));
+				out.add(new IrGraph(g.getGraph(), apply(g.getWhere(), r), g.isNewScope()));
 				continue;
 			}
 			// Recurse into other containers conservatively

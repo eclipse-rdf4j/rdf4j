@@ -68,7 +68,7 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 					// preserve expected brace grouping in nested EXISTS tests.
 					boolean doWrap = f.isNewScope() || insideExists;
 					if (doWrap) {
-						IrBGP grp = new IrBGP();
+						IrBGP grp = new IrBGP(true);
 						// Preserve original local order: preceding triple(s) before the FILTER EXISTS
 						grp.add(n);
 						grp.add(f);
@@ -84,22 +84,22 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 				out.add(apply((IrBGP) n, insideExists));
 			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				out.add(new IrGraph(g.getGraph(), apply(g.getWhere(), insideExists)));
+				out.add(new IrGraph(g.getGraph(), apply(g.getWhere(), insideExists), g.isNewScope()));
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere(), insideExists));
+				IrOptional no = new IrOptional(apply(o.getWhere(), insideExists), o.isNewScope());
 				no.setNewScope(o.isNewScope());
 				out.add(no);
 			} else if (n instanceof IrMinus) {
 				IrMinus mi = (IrMinus) n;
-				out.add(new IrMinus(apply(mi.getWhere(), insideExists)));
+				out.add(new IrMinus(apply(mi.getWhere(), insideExists), mi.isNewScope()));
 			} else if (n instanceof IrService) {
 				IrService s = (IrService) n;
-				out.add(new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), insideExists)));
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), insideExists),
+						s.isNewScope()));
 			} else if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
-				IrUnion u2 = new IrUnion();
-				u2.setNewScope(u.isNewScope());
+				IrUnion u2 = new IrUnion(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(apply(b, insideExists));
 				}
@@ -112,8 +112,8 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 				IrNode body = f2.getBody();
 				if (body instanceof IrExists) {
 					IrExists ex = (IrExists) body;
-					IrFilter nf = new IrFilter(new IrExists(apply(ex.getWhere(), true), ex.isNewScope()));
-					nf.setNewScope(f2.isNewScope());
+					IrFilter nf = new IrFilter(new IrExists(apply(ex.getWhere(), true), ex.isNewScope()),
+							f2.isNewScope());
 					out.add(nf);
 				} else {
 					out.add(n);
@@ -123,7 +123,7 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 			}
 			i++;
 		}
-		IrBGP res = new IrBGP();
+		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 		res.setNewScope(bgp.isNewScope());
 		return res;

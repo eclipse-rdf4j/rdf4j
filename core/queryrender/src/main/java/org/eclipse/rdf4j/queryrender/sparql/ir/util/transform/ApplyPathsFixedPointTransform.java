@@ -80,7 +80,7 @@ public final class ApplyPathsFixedPointTransform extends BaseTransform {
 
 	/** Build a stable text fingerprint of a WHERE block for fixed-point detection. */
 	public static String fingerprintWhere(IrBGP where, TupleExprIRRenderer r) {
-		final IrSelect tmp = new IrSelect();
+		final IrSelect tmp = new IrSelect(false);
 		tmp.setWhere(where);
 		// Render as a subselect to avoid prologue/dataset noise; header is constant (SELECT *)
 		return r.render(tmp, null, true);
