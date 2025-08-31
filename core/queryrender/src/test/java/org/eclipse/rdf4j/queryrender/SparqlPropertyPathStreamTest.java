@@ -258,7 +258,7 @@ public class SparqlPropertyPathStreamTest {
 	// =========================
 
 	private static String skelBasic(String path) {
-		return "SELECT ?s ?o\nWHERE {\n  ?s " + path + " ?o .\n}";
+		return "SELECT ?s ?o WHERE{\n  ?s " + path + " ?o .\n}";
 	}
 
 	private static String skelWrapBasic(String path) {
@@ -266,19 +266,19 @@ public class SparqlPropertyPathStreamTest {
 	}
 
 	private static String skelChainName(String path) {
-		return "SELECT ?s ?n\nWHERE {\n  ?s " + path + "/foaf:name ?n .\n}";
+		return "SELECT ?s ?n WHERE{\n  ?s " + path + "/foaf:name ?n .\n}";
 	}
 
 	private static String skelOptional(String path) {
-		return "SELECT ?s ?o\nWHERE {\n  OPTIONAL { ?s " + path + " ?o . }\n}";
+		return "SELECT ?s ?o WHERE{\n  OPTIONAL { ?s " + path + " ?o . }\n}";
 	}
 
 	private static String skelUnionTwoTriples(String path) {
-		return "SELECT ?s ?o\nWHERE {\n  { ?s " + path + " ?o . }\n  UNION\n  { ?o " + path + " ?s . }\n}";
+		return "SELECT ?s ?o WHERE{\n  { ?s " + path + " ?o . }\n  UNION\n  { ?o " + path + " ?s . }\n}";
 	}
 
 	private static String skelFilterExists(String path) {
-		return "SELECT ?s ?o\nWHERE {\n" +
+		return "SELECT ?s ?o WHERE{\n" +
 				"  ?s foaf:knows ?o .\n" +
 				"  FILTER EXISTS {\n" +
 				"    ?s " + path + " ?o . \n" +
@@ -287,7 +287,7 @@ public class SparqlPropertyPathStreamTest {
 	}
 
 	private static String skelValuesSubjects(String path) {
-		return "SELECT ?s ?o\nWHERE {\n" +
+		return "SELECT ?s ?o WHERE{\n" +
 				"    VALUES (?s) {\n" +
 				"    (ex:s1)\n" +
 				"    (ex:s2)\n" +
