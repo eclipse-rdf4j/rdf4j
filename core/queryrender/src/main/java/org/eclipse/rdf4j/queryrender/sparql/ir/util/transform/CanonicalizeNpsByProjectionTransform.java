@@ -134,7 +134,7 @@ public final class CanonicalizeNpsByProjectionTransform extends BaseTransform {
 			}
 			out.add(m);
 		}
-		IrBGP res = new IrBGP();
+		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 		res.setNewScope(bgp.isNewScope());
 		return res;

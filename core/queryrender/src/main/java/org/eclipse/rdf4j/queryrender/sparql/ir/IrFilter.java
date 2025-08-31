@@ -25,11 +25,21 @@ public class IrFilter extends IrNode {
 	private final IrNode body;
 
 	public IrFilter(String conditionText) {
+		this(conditionText, false);
+	}
+
+	public IrFilter(String conditionText, boolean newScope) {
+		super(newScope);
 		this.conditionText = conditionText;
 		this.body = null;
 	}
 
 	public IrFilter(IrNode body) {
+		this(body, false);
+	}
+
+	public IrFilter(IrNode body, boolean newScope) {
+		super(newScope);
 		this.conditionText = null;
 		this.body = body;
 	}
@@ -72,9 +82,7 @@ public class IrFilter extends IrNode {
 				}
 			}
 			IrExists ex2 = new IrExists(inner, ex.isNewScope());
-			ex2.setNewScope(ex.isNewScope());
-			IrFilter nf = new IrFilter(ex2);
-			nf.setNewScope(this.isNewScope());
+			IrFilter nf = new IrFilter(ex2, this.isNewScope());
 			return nf;
 		}
 		if (body instanceof IrNot) {
@@ -91,14 +99,11 @@ public class IrFilter extends IrNode {
 					}
 				}
 				IrExists ex2 = new IrExists(inner, ex.isNewScope());
-				ex2.setNewScope(ex.isNewScope());
-				IrFilter nf = new IrFilter(new IrNot(ex2));
-				nf.setNewScope(this.isNewScope());
+				IrFilter nf = new IrFilter(new IrNot(ex2), this.isNewScope());
 				return nf;
 			}
 			// Unknown NOT inner: keep as-is
-			IrFilter nf = new IrFilter(new IrNot(innerNode));
-			nf.setNewScope(this.isNewScope());
+			IrFilter nf = new IrFilter(new IrNot(innerNode), this.isNewScope());
 			return nf;
 		}
 		return this;

@@ -23,6 +23,11 @@ public class IrStatementPattern extends IrTripleLike {
 	private final Var object;
 
 	public IrStatementPattern(Var subject, Var predicate, Var object) {
+		this(subject, predicate, object, false);
+	}
+
+	public IrStatementPattern(Var subject, Var predicate, Var object, boolean newScope) {
+		super(newScope);
 		this.subject = subject;
 		this.predicate = predicate;
 		this.object = object;
