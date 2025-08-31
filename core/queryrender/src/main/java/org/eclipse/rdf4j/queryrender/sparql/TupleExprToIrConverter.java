@@ -1694,21 +1694,18 @@ public class TupleExprToIrConverter {
 				for (IrNode ln : wl.getLines()) {
 					grp.add(ln);
 				}
-				// For scope-changing OPTIONAL, we need an extra pair of braces around the OPTIONAL body
-				// for simple right-hand sides (triple/path/service). Delegate this to IrOptional by
-				// marking it as a new scope; IrBGP will still print its own braces for the body.
-				final boolean simpleRhs = (lj.getRightArg() instanceof StatementPattern)
-						|| (lj.getRightArg() instanceof ArbitraryLengthPath)
-						|| (lj.getRightArg() instanceof ZeroLengthPath);
+				// Add the OPTIONAL with its body. Only add an extra grouping scope around the OPTIONAL body
+				// when the ROOT of the right argument explicitly encoded a scope change in the original algebra.
+				// This avoids introducing redundant braces for containers like SERVICE while preserving cases
+				// such as OPTIONAL { { ... } } present in the source query.
 				IrOptional opt = new IrOptional(wr);
-				if (simpleRhs) {
+				if (rootHasExplicitScope(lj.getRightArg())) {
 					opt.setNewScope(true);
 				}
 				grp.add(opt);
-				// The LeftJoin's scope change affects both left and right: mark the
-				// enclosing group as a new scope so the renderer prints braces that
-				// delimit the combined scope of the LeftJoin.
-				grp.setNewScope(true);
+				// Do not mark the IrBGP itself as a new scope: IrBGP already prints a single pair of braces.
+				// Setting newScope(true) here would cause an extra, redundant brace layer ({ { ... } }) that
+				// does not appear in the original query text.
 				where.add(grp);
 				return;
 			}

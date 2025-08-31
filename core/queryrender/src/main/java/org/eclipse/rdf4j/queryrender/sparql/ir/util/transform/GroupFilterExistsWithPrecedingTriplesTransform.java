@@ -69,8 +69,18 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 					boolean doWrap = f.isNewScope() || insideExists;
 					if (doWrap) {
 						IrBGP grp = new IrBGP();
-						grp.add(n);
-						grp.add(f);
+						// For top-level FILTERs that introduce a new scope, prefer the order
+						// FILTER, then the preceding triple. This mirrors the algebra shape
+						// observed from the original parser (Join(new scope) with Filter before
+						// the trailing triple), and prevents the filter from being hoisted
+						// outside the join on reparse.
+						if (f.isNewScope() && !insideExists) {
+							grp.add(f);
+							grp.add(n);
+						} else {
+							grp.add(n);
+							grp.add(f);
+						}
 						out.add(grp);
 						i += 2;
 						continue;
@@ -79,7 +89,9 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 			}
 
 			// Recurse into containers
-			if (n instanceof IrGraph) {
+			if (n instanceof IrBGP) {
+				out.add(apply((IrBGP) n, insideExists));
+			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
 				out.add(new IrGraph(g.getGraph(), apply(g.getWhere(), insideExists)));
 			} else if (n instanceof IrOptional) {

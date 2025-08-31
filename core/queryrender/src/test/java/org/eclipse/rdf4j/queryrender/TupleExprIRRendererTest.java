@@ -15,6 +15,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.sql.SQLOutput;
 
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -23,7 +28,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 
 public class TupleExprIRRendererTest {
 
@@ -45,6 +52,13 @@ public class TupleExprIRRendererTest {
 		style.prefixes.put("xsd", "http://www.w3.org/2001/XMLSchema#");
 		style.valuesPreserveOrder = true;
 		return style;
+	}
+
+	private TestInfo testInfo;
+
+	@BeforeEach
+	void _captureTestInfo(TestInfo info) {
+		this.testInfo = info;
 	}
 
 	// ---------- Helpers ----------
@@ -93,52 +107,104 @@ public class TupleExprIRRendererTest {
 		return r2;
 	}
 
+	private String currentTestBaseName() {
+		String cls = testInfo != null && testInfo.getTestClass().isPresent()
+				? testInfo.getTestClass().get().getName()
+				: "UnknownClass";
+		String method = testInfo != null && testInfo.getTestMethod().isPresent()
+				? testInfo.getTestMethod().get().getName()
+				: "UnknownMethod";
+		return cls + "#" + method;
+	}
+
+	private static void writeReportFile(String base, String label, String content) {
+		Path dir = Paths.get("target", "surefire-reports");
+		try {
+			Files.createDirectories(dir);
+			Path file = dir.resolve(base + "_" + label + ".txt");
+			Files.writeString(file, content == null ? "" : content, StandardCharsets.UTF_8);
+			// Optional: surface where things went
+			System.out.println("[debug] wrote " + file.toAbsolutePath());
+		} catch (IOException ioe) {
+			// Don't mask the real assertion failure if file I/O borks
+			System.err.println("⚠️ Failed to write " + label + " to surefire-reports: " + ioe);
+		}
+	}
+
+	/** Assert semantic equivalence by comparing result rows (order-insensitive). */
 	/** Assert semantic equivalence by comparing result rows (order-insensitive). */
 	private void assertSameSparqlQuery(String sparql, TupleExprIRRenderer.Config cfg) {
-//		String rendered = assertFixedPoint(original, cfg);
 		sparql = sparql.trim();
 
 		try {
-//			System.out.println("Expected SPARQL:\n" + sparql + "\n");
 			TupleExpr expected = parseAlgebra(SPARQL_PREFIX + sparql);
-//			System.out.println("Expected TupleExpr:\n" + VarNameNormalizer.normalizeVars(expected.toString()) + "\n");
 			String rendered = render(SPARQL_PREFIX + sparql, cfg);
-//			System.out.println("Actual rendered SPARQL:\n" + rendered + "\n");
 			TupleExpr actual = parseAlgebra(rendered);
+
 			assertThat(VarNameNormalizer.normalizeVars(actual.toString()))
 					.as("Algebra after rendering must be identical to original")
 					.isEqualTo(VarNameNormalizer.normalizeVars(expected.toString()));
-//			assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + sparql);
+
+			// If you also want to assert the textual SPARQL match, keep this:
+			// assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + sparql);
 
 		} catch (Throwable t) {
-			String rendered;
-			TupleExpr expected = parseAlgebra(SPARQL_PREFIX + sparql);
+			// Gather as much as we can without throwing during diagnostics
+			String base = currentTestBaseName();
+
+			String expectedSparql = SPARQL_PREFIX + sparql;
+			TupleExpr expectedTe = null;
+			try {
+				expectedTe = parseAlgebra(expectedSparql);
+			} catch (Throwable parseExpectedFail) {
+				// Extremely unlikely, but don't let this hide the original failure
+			}
+
+			String rendered = null;
+			TupleExpr actualTe = null;
+
 			System.out.println("\n\n\n");
 			System.out.println("# Original SPARQL query\n" + sparql + "\n");
-			System.out.println("# Original TupleExpr\n" + expected + "\n");
+			if (expectedTe != null) {
+				System.out.println("# Original TupleExpr\n" + expectedTe + "\n");
+			}
 
 			try {
 				cfg.debugIR = true;
 				System.out.println("\n# Re-rendering with IR debug enabled for this failing test\n");
-				// Trigger debug prints from the renderer
-				rendered = render(SPARQL_PREFIX + sparql, cfg);
+				rendered = render(expectedSparql, cfg);
 				System.out.println("\n# Rendered SPARQL query\n" + rendered + "\n");
+			} catch (Throwable renderFail) {
+				rendered = "<render failed: " + renderFail + ">";
 			} finally {
 				cfg.debugIR = false;
 			}
 
-			TupleExpr actual = parseAlgebra(rendered);
+			try {
+				if (rendered != null && !rendered.startsWith("<render failed")) {
+					actualTe = parseAlgebra(rendered);
+				}
+			} catch (Throwable parseActualFail) {
+				// Keep actualTe as null; we'll record a placeholder
+			}
 
-//			assertThat(VarNameNormalizer.normalizeVars(actual.toString()))
-//					.as("Algebra after rendering must be identical to original")
-//					.isEqualTo(VarNameNormalizer.normalizeVars(expected.toString()));
+			// --- Write the four artifacts ---
+			writeReportFile(base, "SPARQL_expected", expectedSparql);
+			writeReportFile(base, "SPARQL_actual", rendered);
+
+			writeReportFile(base, "TupleExpr_expected",
+					expectedTe != null ? VarNameNormalizer.normalizeVars(expectedTe.toString())
+							: "<expected TupleExpr unavailable: parse failed>");
+
+			writeReportFile(base, "TupleExpr_actual",
+					actualTe != null ? VarNameNormalizer.normalizeVars(actualTe.toString())
+							: "<actual TupleExpr unavailable: " +
+									(rendered != null ? "parse failed" : "render failed") + ">");
 
 			// Fail (again) with the original comparison so the test result is correct
 			assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + sparql);
-
 		}
 	}
-
 	// ---------- Tests: fixed point + semantic equivalence where applicable ----------
 
 	@Test
@@ -2743,9 +2809,10 @@ public class TupleExprIRRendererTest {
 	@Test
 	void testOptionalServicePathScope3() {
 		String q = "SELECT ?s ?o WHERE {\n" +
-				" ?s ex:pQ ?ok . \n" +
+				"  ?s ex:pQ ?ok .\n" +
 				"  {\n" +
-				"    ?s ex:pA ?o , ?f. \n" +
+				"    ?s ex:pA ?o .\n" +
+				"    ?s ex:pA ?f .\n" +
 				"    OPTIONAL {\n" +
 				"      SERVICE SILENT <http://services.example/sparql> {\n" +
 				"        ?s !(ex:pA|^<http://example.org/p/I0>) ?o . \n" +
