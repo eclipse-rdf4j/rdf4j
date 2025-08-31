@@ -256,5 +256,4 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 		return false;
 	}
 
-	// normalize/merge helpers centralized or using *Local variants above
 }
