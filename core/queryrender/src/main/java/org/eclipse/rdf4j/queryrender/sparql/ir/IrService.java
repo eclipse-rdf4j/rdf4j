@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -123,7 +125,7 @@ public class IrService extends IrNode {
 	private static IrNode singleChild(IrBGP b) {
 		if (b == null)
 			return null;
-		java.util.List<IrNode> ls = b.getLines();
+		List<IrNode> ls = b.getLines();
 		if (ls == null || ls.size() != 1)
 			return null;
 		return ls.get(0);
@@ -169,7 +171,7 @@ public class IrService extends IrNode {
 		if (inner.isEmpty())
 			return s;
 		String[] toks = inner.split("\\|");
-		java.util.List<String> out = new java.util.ArrayList<>(toks.length);
+		List<String> out = new ArrayList<>(toks.length);
 		for (String tok : toks) {
 			String t = tok.trim();
 			if (t.isEmpty())
