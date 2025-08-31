@@ -19,17 +19,36 @@ Keep these in your context.
 Nice to know:
  - Variables generated during SPARQL parsing typically have a prefix that tells you why they were generated. Such as the prefixes "_anon_path_" or "_anon_collection_" or "_anon_having_".
  - Test results are typically found in the `target/surefire-reports` folder of the module. For instance: [org.eclipse.rdf4j.queryrender.TupleExprIRRendererTest.txt](core/queryrender/target/surefire-reports/org.eclipse.rdf4j.queryrender.TupleExprIRRendererTest.txt)
+ - When a test fails cfg.debugIR is automatically enabled, which prints the IR before and after transformation. This is very useful for understanding what is going on.
 
 Important: Regularly run the tests in `core/queryrender` to ensure nothing breaks as you make changes.
 
 Finally, re-read this entire plan regularly and keep it up to date as you make changes.
 
+# Diffing the expected and actual from a failing test
+
+Use the following example to diff the expected and actual algebra from a failing test. This is very useful to understand what is going on.
+
+```bash
+delta --keep-plus-minus-markers --paging=never -n core/queryrender/target/surefire-reports/org.eclipse.rdf4j.queryrender.TupleExprIRRendererTest#testOptionalServicePathScope_SPARQL_expected.txt core/queryrender/target/surefire-reports/org.eclipse.rdf4j.queryrender.TupleExprIRRendererTest#testOptionalServicePathScope_SPARQL_actual.txt
+```
+To diff the TupleExpr algebra from the expeted and actual query, use the following command:
+```bash
+delta --keep-plus-minus-markers --paging=never -n core/queryrender/target/surefire-reports/org.eclipse.rdf4j.queryrender.TupleExprIRRendererTest#testOptionalServicePathScope_TupleExpr_expected.txt core/queryrender/target/surefire-reports/org.eclipse.rdf4j.queryrender.TupleExprIRRendererTest#testOptionalServicePathScope_TupleExpr_actual.txt
+```
+
+It is also useful to look at the regular failsafe report:
+```bash
+tail 1000 core/queryrender/target/surefire-reports/org.eclipse.rdf4j.queryrender.TupleExprIRRendererTest.txt
+```
+
 # Current task
-I want you to run the tests and see what's failing. Start with the first failure and work on that first.
 
-While fixing the issues, keep in mind that I want you to simplify and unify the code. Paths can usually be contain other paths, so it feels like it's a sort of problem that should be solved by recursion to some degree.
+Before you start fixing the test, fill in the plan below. Focus on discovering if there are any issues in the TupleExpr to IR conversion or if the issue is in a transformer or if it's during printing.
 
-Finding a better approach to handling paths is key!
+Run the tests in org.eclipse.rdf4j.queryrender.TupleExprIRRendererTest
+
+Use the diff command above to diff the expected and actual SPARQL and algebra from a failing test. This will help you understand what is going on.
 
 DO NOT CHANGE ANYTHING ABOVE THIS LINE.
 -----------------------------------------------------------
