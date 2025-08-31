@@ -92,6 +92,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrOrderSpec;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrPropertyList;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
@@ -1044,6 +1045,17 @@ public class TupleExprToIrConverter {
 		ir.setWhere(irTransformed.getWhere());
 		// Extra safeguard: ensure SERVICE union-of-NPS branches are fused after all passes
 		ir.setWhere(FuseServiceNpsUnionLateTransform.apply(ir.getWhere()));
+
+		// Preserve explicit grouping braces around a single-triple WHERE when the original algebra
+		// indicated a variable scope change at the root (e.g., user wrote an extra { ... } group).
+		if (ir.getWhere() != null && ir.getWhere().getLines() != null && ir.getWhere().getLines().size() == 1
+				&& containsVariableScopeChange(n.where)) {
+			final org.eclipse.rdf4j.queryrender.sparql.ir.IrNode only = ir.getWhere().getLines().get(0);
+			if (only instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern
+					|| only instanceof IrPathTriple || only instanceof IrPropertyList) {
+				ir.getWhere().setNewScope(true);
+			}
+		}
 
 		if (cfg.debugIR) {
 			System.out.println("# IR (transformed)\n" + IrDebug.dump(ir));

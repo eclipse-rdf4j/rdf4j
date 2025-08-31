@@ -11,16 +11,6 @@
 
 package org.eclipse.rdf4j.queryrender;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -30,6 +20,16 @@ import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TupleExprIRRendererTest {
 
@@ -198,7 +198,7 @@ public class TupleExprIRRendererTest {
 			writeReportFile(base, "TupleExpr_actual",
 					actualTe != null ? VarNameNormalizer.normalizeVars(actualTe.toString())
 							: "<actual TupleExpr unavailable: " +
-									(rendered != null ? "parse failed" : "render failed") + ">");
+							(rendered != null ? "parse failed" : "render failed") + ">");
 
 			// Fail (again) with the original comparison so the test result is correct
 			assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + sparql);
@@ -3107,6 +3107,45 @@ public class TupleExprIRRendererTest {
 	void bgpScope2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s a ?o .  \n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void nestedSelectScope() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    SELECT ?s WHERE {\n" +
+				"      {\n" +
+				"        ?s ^<http://example.org/p/I2> ?o . \n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void nestedSelectScope2() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  SELECT ?s WHERE {\n" +
+				"    {\n" +
+				"      ?s ^<http://example.org/p/I2> ?o . \n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void nestedSelectScope3() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  SELECT ?s WHERE {\n" +
+				"    ?s ^<http://example.org/p/I2> ?o . \n" +
+				"  }\n" +
 				"}";
 
 		assertSameSparqlQuery(q, cfg());
