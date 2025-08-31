@@ -27,10 +27,6 @@ import java.util.function.UnaryOperator;
 public class IrBGP extends IrNode {
 	private List<IrNode> lines = new ArrayList<>();
 
-	public IrBGP() {
-		super(false);
-	}
-
 	public IrBGP(boolean newScope) {
 		super(newScope);
 	}
@@ -62,7 +58,7 @@ public class IrBGP extends IrNode {
 
 	@Override
 	public IrNode transformChildren(UnaryOperator<IrNode> op) {
-		IrBGP w = new IrBGP();
+		IrBGP w = new IrBGP(this.isNewScope());
 		for (IrNode ln : this.lines) {
 			IrNode t = op.apply(ln);
 			t = t.transformChildren(op);

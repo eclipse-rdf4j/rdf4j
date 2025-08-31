@@ -54,8 +54,7 @@ public final class FuseUnionOfSimpleTriplesTransform extends BaseTransform {
 				IrUnion u = (IrUnion) n;
 				// Preserve explicit UNION (new variable scope) as-is; do not fuse into a single path alternation.
 				if (u.isNewScope()) {
-					IrUnion u2 = new IrUnion();
-					u2.setNewScope(u.isNewScope());
+					IrUnion u2 = new IrUnion(u.isNewScope());
 					for (IrBGP b : u.getBranches()) {
 						u2.addBranch(apply(b, r));
 					}
@@ -70,16 +69,15 @@ public final class FuseUnionOfSimpleTriplesTransform extends BaseTransform {
 							alt = "(" + alt + ")";
 						}
 						if (f.graph != null) {
-							IrBGP inner = new IrBGP();
-							inner.add(new IrPathTriple(f.s, alt, f.o));
-							m = new IrGraph(f.graph, inner);
+							IrBGP inner = new IrBGP(false);
+							inner.add(new IrPathTriple(f.s, alt, f.o, false));
+							m = new IrGraph(f.graph, inner, false);
 						} else {
-							m = new IrPathTriple(f.s, alt, f.o);
+							m = new IrPathTriple(f.s, alt, f.o, false);
 						}
 					} else {
 						// Recurse into branches
-						IrUnion u2 = new IrUnion();
-						u2.setNewScope(u.isNewScope());
+						IrUnion u2 = new IrUnion(u.isNewScope());
 						for (IrBGP b : u.getBranches()) {
 							u2.addBranch(apply(b, r));
 						}
@@ -88,24 +86,24 @@ public final class FuseUnionOfSimpleTriplesTransform extends BaseTransform {
 				}
 			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				m = new IrGraph(g.getGraph(), apply(g.getWhere(), r));
+				m = new IrGraph(g.getGraph(), apply(g.getWhere(), r), g.isNewScope());
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere(), r));
+				IrOptional no = new IrOptional(apply(o.getWhere(), r), o.isNewScope());
 				no.setNewScope(o.isNewScope());
 				m = no;
 			} else if (n instanceof IrMinus) {
 				IrMinus mi = (IrMinus) n;
-				m = new IrMinus(apply(mi.getWhere(), r));
+				m = new IrMinus(apply(mi.getWhere(), r), mi.isNewScope());
 			} else if (n instanceof IrService) {
 				IrService s = (IrService) n;
-				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), r));
+				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), r), s.isNewScope());
 			} else if (n instanceof IrSubSelect) {
 				// keep as-is
 			}
 			out.add(m);
 		}
-		IrBGP res = new IrBGP();
+		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 		res.setNewScope(bgp.isNewScope());
 		return res;
