@@ -123,8 +123,8 @@ public final class ServiceNpsUnionFuser {
 			return u;
 
 		// Normalize compact NPS forms
-		String m1 = normalizeCompactNps(p1.getPathText());
-		String m2 = normalizeCompactNps(p2.getPathText());
+		String m1 = BaseTransform.normalizeCompactNps(p1.getPathText());
+		String m2 = BaseTransform.normalizeCompactNps(p2.getPathText());
 		if (m1 == null || m2 == null)
 			return u;
 
@@ -139,7 +139,7 @@ public final class ServiceNpsUnionFuser {
 			return u;
 		}
 
-		String merged = mergeMembers(m1, add2);
+		String merged = BaseTransform.mergeNpsMembers(m1, add2);
 		IrPathTriple fused = new IrPathTriple(sCanon, merged, oCanon, false);
 		if (graphRef != null) {
 			IrBGP inner = new IrBGP(false);
@@ -156,35 +156,6 @@ public final class ServiceNpsUnionFuser {
 		if (ls == null || ls.size() != 1)
 			return null;
 		return ls.get(0);
-	}
-
-	private static String normalizeCompactNps(String path) {
-		if (path == null)
-			return null;
-		String t = path.trim();
-		if (t.isEmpty())
-			return null;
-		if (t.startsWith("!(") && t.endsWith(")"))
-			return t;
-		if (t.startsWith("!^"))
-			return "!(" + t.substring(1) + ")";
-		if (t.startsWith("!") && (t.length() == 1 || t.charAt(1) != '('))
-			return "!(" + t.substring(1) + ")";
-		return null;
-	}
-
-	private static String mergeMembers(String a, String b) {
-		int a1 = a.indexOf('('), a2 = a.lastIndexOf(')');
-		int b1 = b.indexOf('('), b2 = b.lastIndexOf(')');
-		if (a1 < 0 || a2 < 0 || b1 < 0 || b2 < 0)
-			return a;
-		String ia = a.substring(a1 + 1, a2).trim();
-		String ib = b.substring(b1 + 1, b2).trim();
-		if (ia.isEmpty())
-			return b;
-		if (ib.isEmpty())
-			return a;
-		return "!(" + ia + "|" + ib + ")";
 	}
 
 	private static boolean eqVarOrValue(Var a, Var b) {
