@@ -459,25 +459,23 @@ public class BaseTransform {
 				IrBGP inner = g.getWhere();
 				inner = joinPathWithLaterSp(inner, r);
 				inner = fuseAltInverseTailBGP(inner, r);
-				out.add(new IrGraph(g.getGraph(), inner));
+				out.add(new IrGraph(g.getGraph(), inner, g.isNewScope()));
 				continue;
 			}
 			if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(joinPathWithLaterSp(o.getWhere(), r));
-				no.setNewScope(o.isNewScope());
+				IrOptional no = new IrOptional(joinPathWithLaterSp(o.getWhere(), r), o.isNewScope());
 				out.add(no);
 				continue;
 			}
 			if (n instanceof IrMinus) {
 				IrMinus m = (IrMinus) n;
-				out.add(new IrMinus(joinPathWithLaterSp(m.getWhere(), r)));
+				out.add(new IrMinus(joinPathWithLaterSp(m.getWhere(), r), m.isNewScope()));
 				continue;
 			}
 			if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
-				IrUnion u2 = new IrUnion();
-				u2.setNewScope(u.isNewScope());
+				IrUnion u2 = new IrUnion(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(joinPathWithLaterSp(b, r));
 				}
@@ -486,7 +484,8 @@ public class BaseTransform {
 			}
 			if (n instanceof IrService) {
 				IrService s = (IrService) n;
-				out.add(new IrService(s.getServiceRefText(), s.isSilent(), joinPathWithLaterSp(s.getWhere(), r)));
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(), joinPathWithLaterSp(s.getWhere(), r),
+						s.isNewScope()));
 				continue;
 			}
 			if (n instanceof IrSubSelect) {
@@ -495,7 +494,7 @@ public class BaseTransform {
 			}
 			out.add(n);
 		}
-		IrBGP res = new IrBGP();
+		IrBGP res = new IrBGP(bgp.isNewScope());
 		for (IrNode n2 : out) {
 			if (!removed.contains(n2)) {
 				res.add(n2);

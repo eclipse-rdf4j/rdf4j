@@ -19,6 +19,11 @@ public class IrNot extends IrNode {
 	private IrNode inner;
 
 	public IrNot(IrNode inner) {
+		this(inner, false);
+	}
+
+	public IrNot(IrNode inner, boolean newScope) {
+		super(newScope);
 		this.inner = inner;
 	}
 
@@ -48,6 +53,6 @@ public class IrNot extends IrNode {
 			t = t.transformChildren(op);
 			n = t;
 		}
-		return new IrNot(n);
+		return new IrNot(n, this.isNewScope());
 	}
 }

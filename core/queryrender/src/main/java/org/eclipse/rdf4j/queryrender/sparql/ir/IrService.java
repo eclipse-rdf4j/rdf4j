@@ -26,6 +26,11 @@ public class IrService extends IrNode {
 	private IrBGP bgp;
 
 	public IrService(String serviceRefText, boolean silent, IrBGP bgp) {
+		this(serviceRefText, silent, bgp, false);
+	}
+
+	public IrService(String serviceRefText, boolean silent, IrBGP bgp, boolean newScope) {
+		super(newScope);
 		this.serviceRefText = serviceRefText;
 		this.silent = silent;
 		this.bgp = bgp;
@@ -213,6 +218,6 @@ public class IrService extends IrNode {
 				newWhere = (IrBGP) t;
 			}
 		}
-		return new IrService(this.serviceRefText, this.silent, newWhere);
+		return new IrService(this.serviceRefText, this.silent, newWhere, this.isNewScope());
 	}
 }

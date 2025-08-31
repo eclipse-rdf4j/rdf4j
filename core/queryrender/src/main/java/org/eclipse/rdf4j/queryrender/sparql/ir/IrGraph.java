@@ -25,6 +25,11 @@ public class IrGraph extends IrNode {
 	private IrBGP bgp;
 
 	public IrGraph(Var graph, IrBGP bgp) {
+		this(graph, bgp, false);
+	}
+
+	public IrGraph(Var graph, IrBGP bgp, boolean newScope) {
+		super(newScope);
 		this.graph = graph;
 		this.bgp = bgp;
 	}
@@ -68,6 +73,6 @@ public class IrGraph extends IrNode {
 				newWhere = (IrBGP) t;
 			}
 		}
-		return new IrGraph(this.graph, newWhere);
+		return new IrGraph(this.graph, newWhere, this.isNewScope());
 	}
 }

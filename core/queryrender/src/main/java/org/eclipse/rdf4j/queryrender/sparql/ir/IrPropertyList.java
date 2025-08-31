@@ -29,6 +29,11 @@ public class IrPropertyList extends IrNode {
 	private final List<Item> items = new ArrayList<>();
 
 	public IrPropertyList(Var subject) {
+		this(subject, false);
+	}
+
+	public IrPropertyList(Var subject, boolean newScope) {
+		super(newScope);
 		this.subject = subject;
 	}
 

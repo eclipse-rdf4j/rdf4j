@@ -20,6 +20,11 @@ public class IrOptional extends IrNode {
 	private IrBGP bgp;
 
 	public IrOptional(IrBGP bgp) {
+		this(bgp, false);
+	}
+
+	public IrOptional(IrBGP bgp, boolean newScope) {
+		super(newScope);
 		this.bgp = bgp;
 	}
 
@@ -60,8 +65,6 @@ public class IrOptional extends IrNode {
 				newWhere = (IrBGP) t;
 			}
 		}
-		IrOptional copy = new IrOptional(newWhere);
-		copy.setNewScope(this.isNewScope());
-		return copy;
+		return new IrOptional(newWhere, this.isNewScope());
 	}
 }

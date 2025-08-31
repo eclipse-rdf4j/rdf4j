@@ -27,6 +27,14 @@ import java.util.function.UnaryOperator;
 public class IrBGP extends IrNode {
 	private List<IrNode> lines = new ArrayList<>();
 
+	public IrBGP() {
+		super(false);
+	}
+
+	public IrBGP(boolean newScope) {
+		super(newScope);
+	}
+
 	public List<IrNode> getLines() {
 		return lines;
 	}

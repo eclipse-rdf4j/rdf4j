@@ -234,7 +234,7 @@ public final class InlineBNodeObjectsTransform extends BaseTransform {
 			out.add(n);
 		}
 
-		final IrBGP res = new IrBGP();
+		final IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 		res.setNewScope(bgp.isNewScope());
 		return res;

@@ -70,7 +70,7 @@ public final class ReorderFiltersInOptionalBodiesTransform extends BaseTransform
 			});
 			out.add(n);
 		}
-		IrBGP res = new IrBGP();
+		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 		res.setNewScope(bgp.isNewScope());
 		return res;
@@ -136,7 +136,7 @@ public final class ReorderFiltersInOptionalBodiesTransform extends BaseTransform
 				unsafeFilters.add(f);
 			}
 		}
-		final IrBGP res = new IrBGP();
+		final IrBGP res = new IrBGP(inner.isNewScope());
 		// head non-filters, then safe filters, then tail, then any unsafe filters at the end
 		newHead.forEach(res::add);
 		safeFilters.forEach(res::add);

@@ -46,9 +46,8 @@ public final class GroupGraphAfterValuesTransform extends BaseTransform {
 			// Pattern: VALUES, GRAPH -> insert a grouped block around GRAPH to mirror original braces
 			if (n instanceof IrValues && i + 1 < in.size() && in.get(i + 1) instanceof IrGraph) {
 				out.add(n);
-				IrBGP wrapped = new IrBGP();
+				IrBGP wrapped = new IrBGP(true);
 				wrapped.add(in.get(i + 1));
-				wrapped.setNewScope(true);
 				out.add(wrapped);
 				i += 2;
 				continue;
@@ -59,22 +58,20 @@ public final class GroupGraphAfterValuesTransform extends BaseTransform {
 				out.add(apply((IrBGP) n));
 			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				out.add(new IrGraph(g.getGraph(), apply(g.getWhere())));
+				out.add(new IrGraph(g.getGraph(), apply(g.getWhere()), g.isNewScope()));
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere()));
-				no.setNewScope(o.isNewScope());
+				IrOptional no = new IrOptional(apply(o.getWhere()), o.isNewScope());
 				out.add(no);
 			} else if (n instanceof IrMinus) {
 				IrMinus m = (IrMinus) n;
-				out.add(new IrMinus(apply(m.getWhere())));
+				out.add(new IrMinus(apply(m.getWhere()), m.isNewScope()));
 			} else if (n instanceof IrService) {
 				IrService s = (IrService) n;
-				out.add(new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere())));
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere()), s.isNewScope()));
 			} else if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
-				IrUnion u2 = new IrUnion();
-				u2.setNewScope(u.isNewScope());
+				IrUnion u2 = new IrUnion(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(apply(b));
 				}
@@ -85,9 +82,8 @@ public final class GroupGraphAfterValuesTransform extends BaseTransform {
 			i++;
 		}
 
-		IrBGP res = new IrBGP();
+		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
-		res.setNewScope(bgp.isNewScope());
 		return res;
 	}
 }

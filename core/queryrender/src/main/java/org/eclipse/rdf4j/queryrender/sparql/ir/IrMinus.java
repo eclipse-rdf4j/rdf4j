@@ -19,6 +19,11 @@ public class IrMinus extends IrNode {
 	private IrBGP bgp;
 
 	public IrMinus(IrBGP bgp) {
+		this(bgp, false);
+	}
+
+	public IrMinus(IrBGP bgp, boolean newScope) {
+		super(newScope);
 		this.bgp = bgp;
 	}
 
@@ -61,6 +66,6 @@ public class IrMinus extends IrNode {
 				newWhere = (IrBGP) t;
 			}
 		}
-		return new IrMinus(newWhere);
+		return new IrMinus(newWhere, this.isNewScope());
 	}
 }

@@ -65,34 +65,32 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 				}
 			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				m = new IrGraph(g.getGraph(), apply(g.getWhere()));
+				m = new IrGraph(g.getGraph(), apply(g.getWhere()), g.isNewScope());
 			} else if (n instanceof IrBGP) {
 				m = apply((IrBGP) n);
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere()));
-				no.setNewScope(o.isNewScope());
+				IrOptional no = new IrOptional(apply(o.getWhere()), o.isNewScope());
 				m = no;
 			} else if (n instanceof IrMinus) {
 				IrMinus mi = (IrMinus) n;
-				m = new IrMinus(apply(mi.getWhere()));
+				m = new IrMinus(apply(mi.getWhere()), mi.isNewScope());
 			} else if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
-				IrUnion u2 = new IrUnion();
-				u2.setNewScope(u.isNewScope());
+				IrUnion u2 = new IrUnion(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(apply(b));
 				}
 				m = u2;
 			} else if (n instanceof IrService) {
 				IrService s = (IrService) n;
-				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere()));
+				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere()), s.isNewScope());
 			} else if (n instanceof IrSubSelect) {
 				// keep as-is
 			}
 			out.add(m);
 		}
-		IrBGP res = new IrBGP();
+		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 		res.setNewScope(bgp.isNewScope());
 		return res;

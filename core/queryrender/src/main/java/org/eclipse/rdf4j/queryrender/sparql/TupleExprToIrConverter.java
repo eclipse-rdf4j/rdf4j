@@ -1786,10 +1786,7 @@ public class TupleExprToIrConverter {
 				// when the ROOT of the right argument explicitly encoded a scope change in the original algebra.
 				// This avoids introducing redundant braces for containers like SERVICE while preserving cases
 				// such as OPTIONAL { { ... } } present in the source query.
-				IrOptional opt = new IrOptional(wr);
-				if (rootHasExplicitScope(lj.getRightArg())) {
-					opt.setNewScope(true);
-				}
+				IrOptional opt = new IrOptional(wr, rootHasExplicitScope(lj.getRightArg()));
 				grp.add(opt);
 				// Do not mark the IrBGP itself as a new scope: IrBGP already prints a single pair of braces.
 				// Setting newScope(true) here would cause an extra, redundant brace layer ({ { ... } }) that
@@ -1809,9 +1806,8 @@ public class TupleExprToIrConverter {
 		@Override
 		public void meet(final Filter f) {
 			if (f.isVariableScopeChange() && f.getArg() instanceof SingletonSet) {
-				IrBGP group = new IrBGP();
+				IrBGP group = new IrBGP(true);
 				group.add(buildFilterFromCondition(f.getCondition()));
-				group.setNewScope(true);
 				where.add(group);
 				return;
 			}

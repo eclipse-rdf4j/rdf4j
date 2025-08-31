@@ -19,6 +19,11 @@ public class IrSubSelect extends IrNode {
 	private IrSelect select;
 
 	public IrSubSelect(IrSelect select) {
+		this(select, false);
+	}
+
+	public IrSubSelect(IrSelect select, boolean newScope) {
+		super(newScope);
 		this.select = select;
 	}
 
@@ -54,31 +59,9 @@ public class IrSubSelect extends IrNode {
 
 	@Override
 	public IrNode transformChildren(UnaryOperator<IrNode> op) {
-		IrSelect newSel = this.select;
-		if (newSel != null) {
-			IrNode t = op.apply(newSel);
-			t = t.transformChildren(op);
-			if (t instanceof IrSelect) {
-				newSel = (IrSelect) t;
-			} else if (newSel.getWhere() != null) {
-				IrNode tw = op.apply(newSel.getWhere());
-				if (tw instanceof IrBGP) {
-					IrSelect copy = new IrSelect();
-					copy.setDistinct(newSel.isDistinct());
-					copy.setReduced(newSel.isReduced());
-					copy.setWhere((IrBGP) tw);
-					copy.getProjection().addAll(newSel.getProjection());
-					copy.getGroupBy().addAll(newSel.getGroupBy());
-					copy.getHaving().addAll(newSel.getHaving());
-					copy.getOrderBy().addAll(newSel.getOrderBy());
-					copy.setLimit(newSel.getLimit());
-					copy.setOffset(newSel.getOffset());
-					newSel = copy;
-				}
-			}
-		}
-		IrSubSelect out = new IrSubSelect(newSel);
-		out.setNewScope(this.isNewScope());
-		return out;
+		// Keep subselects intact during transformChildren: pipeline transforms operate on BGP-like
+		// containers only. Specific transforms that want to rewrite subselects can do so by
+		// matching IrSubSelect in their own logic via op.apply(n) without descending here.
+		return this;
 	}
 }
