@@ -102,6 +102,23 @@ public class BaseTransform {
 		return t;
 	}
 
+	/** Merge NPS members of two canonical strings '!(...)', returning '!(a|b)'. Falls back to 'a' when malformed. */
+	public static String mergeNpsMembers(String a, String b) {
+		if (a == null || b == null)
+			return a;
+		int a1 = a.indexOf('('), a2 = a.lastIndexOf(')');
+		int b1 = b.indexOf('('), b2 = b.lastIndexOf(')');
+		if (a1 < 0 || a2 < 0 || b1 < 0 || b2 < 0)
+			return a;
+		String ia = a.substring(a1 + 1, a2).trim();
+		String ib = b.substring(b1 + 1, b2).trim();
+		if (ia.isEmpty())
+			return b;
+		if (ib.isEmpty())
+			return a;
+		return "!(" + ia + "|" + ib + ")";
+	}
+
 	/** Return true if the string has the given character at top level (not inside parentheses). */
 	public static boolean hasTopLevel(final String s, final char ch) {
 		if (s == null)
