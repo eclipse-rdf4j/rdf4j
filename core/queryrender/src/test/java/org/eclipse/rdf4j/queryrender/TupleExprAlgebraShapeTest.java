@@ -1,4 +1,4 @@
-/*******************************************************************************
+/*
  * Copyright (c) 2025 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
@@ -7,8 +7,7 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
- ******************************************************************************/
-
+ */
 package org.eclipse.rdf4j.queryrender;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,9 +25,9 @@ import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
-import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -79,7 +78,7 @@ public class TupleExprAlgebraShapeTest {
 		final List<T> out = new ArrayList<>();
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
-			protected void meetNode(QueryModelNode node) {
+			protected void meetNode(org.eclipse.rdf4j.query.algebra.QueryModelNode node) {
 				if (type.isInstance(node)) {
 					out.add(type.cast(node));
 				}
@@ -91,16 +90,15 @@ public class TupleExprAlgebraShapeTest {
 
 	private static List<Object> collect(TupleExpr root, Predicate<Object> pred) {
 		List<Object> res = new ArrayList<>();
-		Deque<QueryModelNode> dq = new ArrayDeque<>();
+		Deque<org.eclipse.rdf4j.query.algebra.QueryModelNode> dq = new ArrayDeque<>();
 		dq.add(root);
 		while (!dq.isEmpty()) {
-			QueryModelNode n = dq.removeFirst();
-			if (pred.test(n)) {
+			org.eclipse.rdf4j.query.algebra.QueryModelNode n = dq.removeFirst();
+			if (pred.test(n))
 				res.add(n);
-			}
 			n.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
 				@Override
-				protected void meetNode(QueryModelNode node) {
+				protected void meetNode(org.eclipse.rdf4j.query.algebra.QueryModelNode node) {
 					dq.add(node);
 				}
 			});

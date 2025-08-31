@@ -1,4 +1,4 @@
-/*******************************************************************************
+/*
  * Copyright (c) 2025 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
@@ -7,8 +7,7 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
- ******************************************************************************/
-
+ */
 package org.eclipse.rdf4j.queryrender;
 
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -52,6 +51,7 @@ public class AlgebraExplorationTest {
 		style.prefixes.put("ex", "http://ex/");
 		style.prefixes.put("xsd", "http://www.w3.org/2001/XMLSchema#");
 		style.valuesPreserveOrder = true;
+		style.debugIR = true;
 		return style;
 	}
 
@@ -75,10 +75,10 @@ public class AlgebraExplorationTest {
 				"}\n";
 
 		TupleExpr te = parseAlgebra(q);
-//		System.out.println("\n# EXPLORE: SERVICE + nested GRAPH (1)\n\n# SPARQL\n" + q);
-//		System.out.println("\n# Algebra\n" + te + "\n");
+		System.out.println("\n# EXPLORE: SERVICE + nested GRAPH (1)\n\n# SPARQL\n" + q);
+		System.out.println("\n# Algebra\n" + te + "\n");
 		String rendered = new TupleExprIRRenderer(cfg()).render(te, null).trim();
-//		System.out.println("# Rendered\n" + rendered + "\n");
+		System.out.println("# Rendered\n" + rendered + "\n");
 	}
 
 	@Test
@@ -101,10 +101,10 @@ public class AlgebraExplorationTest {
 				"}\n";
 
 		TupleExpr te = parseAlgebra(q);
-//		System.out.println("\n# EXPLORE: SERVICE + nested GRAPH (2)\n\n# SPARQL\n" + q);
-//		System.out.println("\n# Algebra\n" + te + "\n");
+		System.out.println("\n# EXPLORE: SERVICE + nested GRAPH (2)\n\n# SPARQL\n" + q);
+		System.out.println("\n# Algebra\n" + te + "\n");
 		String rendered = new TupleExprIRRenderer(cfg()).render(te, null).trim();
-//		System.out.println("# Rendered\n" + rendered + "\n");
+		System.out.println("# Rendered\n" + rendered + "\n");
 	}
 
 	@Test
@@ -122,9 +122,9 @@ public class AlgebraExplorationTest {
 				"}\n";
 
 		TupleExpr te = parseAlgebra(q);
-//		System.out.println("\n# EXPLORE: SERVICE + VALUES + MINUS (NPS union)\n\n# SPARQL\n" + q);
-//		System.out.println("\n# Algebra\n" + te + "\n");
+		System.out.println("\n# EXPLORE: SERVICE + VALUES + MINUS (NPS union)\n\n# SPARQL\n" + q);
+		System.out.println("\n# Algebra\n" + te + "\n");
 		String rendered = new TupleExprIRRenderer(cfg()).render(te, null).trim();
-//		System.out.println("# Rendered\n" + rendered + "\n");
+		System.out.println("# Rendered\n" + rendered + "\n");
 	}
 }
