@@ -44,6 +44,23 @@ public class IrValues extends IrNode {
 			p.line("}");
 			return;
 		}
+		if (varNames.size() == 1) {
+			// Compact single-column form: VALUES ?v { a b c }
+			String var = varNames.get(0);
+			StringBuilder sb = new StringBuilder();
+			sb.append("VALUES ?").append(var).append(" { ");
+			for (int r = 0; r < rows.size(); r++) {
+				if (r > 0)
+					sb.append(' ');
+				List<String> row = rows.get(r);
+				sb.append(row.isEmpty() ? "UNDEF" : row.get(0));
+			}
+			sb.append(" }");
+			p.line(sb.toString());
+			return;
+		}
+
+		// Multi-column form
 		StringBuilder head = new StringBuilder();
 		head.append("VALUES (");
 		for (int i = 0; i < varNames.size(); i++) {
