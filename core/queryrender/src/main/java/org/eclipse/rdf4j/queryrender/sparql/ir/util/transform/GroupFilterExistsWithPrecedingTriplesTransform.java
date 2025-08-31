@@ -61,7 +61,6 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 				IrFilter f = (IrFilter) in.get(i + 1);
 				boolean allowHere = insideExists || f.isNewScope();
 				if (allowHere && f.getBody() instanceof IrExists) {
-					IrExists ex = (IrExists) f.getBody();
 					// Top-level: when the FILTER introduces a new scope, always wrap to
 					// preserve explicit outer grouping from the original query.
 					// Inside EXISTS: always wrap a preceding triple with the FILTER EXISTS to
