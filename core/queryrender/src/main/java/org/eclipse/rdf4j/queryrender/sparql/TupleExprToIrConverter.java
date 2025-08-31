@@ -1660,7 +1660,6 @@ public class TupleExprToIrConverter {
 			return new IrFilter(cond, false);
 		}
 
-		@Override
 		public void meet(final StatementPattern sp) {
 			final Var ctx = getContextVarSafe(sp);
 			final IrStatementPattern node = new IrStatementPattern(sp.getSubjectVar(), sp.getPredicateVar(),
