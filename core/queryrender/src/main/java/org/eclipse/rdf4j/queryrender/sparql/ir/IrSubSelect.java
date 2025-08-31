@@ -33,12 +33,23 @@ public class IrSubSelect extends IrNode {
 	@Override
 	public void print(IrPrinter p) {
 		final String text = p.renderSubselect(select);
-		// Use structured block printing to ensure braces are closed before subsequent lines
-		p.openBlock();
-		for (String ln : text.split("\\R", -1)) {
-			p.line(ln);
+		// Decide if we need an extra brace layer around the subselect text.
+		final boolean hasTrailing = select != null && (!select.getGroupBy().isEmpty()
+				|| !select.getHaving().isEmpty() || !select.getOrderBy().isEmpty() || select.getLimit() >= 0
+				|| select.getOffset() >= 0);
+		final boolean wrap = isNewScope() || hasTrailing;
+		if (wrap) {
+			p.openBlock();
+			for (String ln : text.split("\\R", -1)) {
+				p.line(ln);
+			}
+			p.closeBlock();
+		} else {
+			// Print the subselect inline without adding an extra brace layer around it.
+			for (String ln : text.split("\\R", -1)) {
+				p.line(ln);
+			}
 		}
-		p.closeBlock();
 	}
 
 	@Override
@@ -66,6 +77,8 @@ public class IrSubSelect extends IrNode {
 				}
 			}
 		}
-		return new IrSubSelect(newSel);
+		IrSubSelect out = new IrSubSelect(newSel);
+		out.setNewScope(this.isNewScope());
+		return out;
 	}
 }

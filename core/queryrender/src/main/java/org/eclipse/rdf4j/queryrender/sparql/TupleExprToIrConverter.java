@@ -166,6 +166,18 @@ public class TupleExprToIrConverter {
 		final IRBuilder builder = new TupleExprToIrConverter(r).new IRBuilder();
 		ir.setWhere(builder.build(n.where));
 
+		// Preserve explicit grouping braces around a single‑triple WHERE when the original algebra
+		// indicated a variable scope change at the root of the subselect. This mirrors the logic in
+		// toIRSelect() for top‑level queries and ensures nested queries retain user grouping.
+		if (ir.getWhere() != null && ir.getWhere().getLines() != null && ir.getWhere().getLines().size() == 1
+				&& rootHasExplicitScope(n.where)) {
+			final org.eclipse.rdf4j.queryrender.sparql.ir.IrNode only = ir.getWhere().getLines().get(0);
+			if (only instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern
+					|| only instanceof IrPathTriple || only instanceof IrPropertyList) {
+				ir.getWhere().setNewScope(true);
+			}
+		}
+
 		for (GroupByTerm t : n.groupByTerms) {
 			ir.getGroupBy().add(new IrGroupByElem(t.expr == null ? null : r.renderExprPublic(t.expr), t.var));
 		}
@@ -1046,13 +1058,18 @@ public class TupleExprToIrConverter {
 		// Extra safeguard: ensure SERVICE union-of-NPS branches are fused after all passes
 		ir.setWhere(FuseServiceNpsUnionLateTransform.apply(ir.getWhere()));
 
-		// Preserve explicit grouping braces around a single-triple WHERE when the original algebra
+		// Preserve explicit grouping braces around a single-element WHERE when the original algebra
 		// indicated a variable scope change at the root (e.g., user wrote an extra { ... } group).
-		if (ir.getWhere() != null && ir.getWhere().getLines() != null && ir.getWhere().getLines().size() == 1
-				&& containsVariableScopeChange(n.where)) {
+		if (ir.getWhere() != null && ir.getWhere().getLines() != null && ir.getWhere().getLines().size() == 1) {
 			final org.eclipse.rdf4j.queryrender.sparql.ir.IrNode only = ir.getWhere().getLines().get(0);
-			if (only instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern
-					|| only instanceof IrPathTriple || only instanceof IrPropertyList) {
+			if ((only instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern
+					|| only instanceof IrPathTriple || only instanceof IrPropertyList)
+					&& containsVariableScopeChange(n.where)) {
+				ir.getWhere().setNewScope(true);
+			} else if (only instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect
+					&& rootHasExplicitScope(n.where)) {
+				// If the root of the algebra had an explicit scope change and the only WHERE
+				// element is a subselect, reflect the extra grouping using an outer brace layer.
 				ir.getWhere().setNewScope(true);
 			}
 		}
@@ -1961,14 +1978,33 @@ public class TupleExprToIrConverter {
 		@Override
 		public void meet(final Projection p) {
 			IrSelect sub = toIRSelectRaw(p, r);
-			where.add(new IrSubSelect(sub));
+			IrSubSelect node = new IrSubSelect(sub);
+			boolean wrap = false;
+			// Wrap if there are preceding lines in this group (to keep grouping stable)
+			wrap |= !where.getLines().isEmpty();
+			// Wrap if the Projection node itself signals a variable scope change
+			try {
+				Method m = Projection.class.getMethod("isVariableScopeChange");
+				Object v = m.invoke(p);
+				if (v instanceof Boolean && (Boolean) v) {
+					wrap = true;
+				}
+			} catch (ReflectiveOperationException ignore) {
+			}
+			if (wrap) {
+				node.setNewScope(true);
+			}
+			where.add(node);
 		}
 
 		@Override
 		public void meet(final Slice s) {
 			if (s.isVariableScopeChange()) {
 				IrSelect sub = toIRSelectRaw(s, r);
-				where.add(new IrSubSelect(sub));
+				IrSubSelect node = new IrSubSelect(sub);
+				// Wrap on explicit scope change or when preceding lines exist
+				node.setNewScope(true);
+				where.add(node);
 				return;
 			}
 			s.getArg().visit(this);
@@ -1978,7 +2014,10 @@ public class TupleExprToIrConverter {
 		public void meet(final Distinct d) {
 			if (d.isVariableScopeChange()) {
 				IrSelect sub = toIRSelectRaw(d, r);
-				where.add(new IrSubSelect(sub));
+				IrSubSelect node = new IrSubSelect(sub);
+				// Wrap on explicit scope change or when preceding lines exist
+				node.setNewScope(true);
+				where.add(node);
 				return;
 			}
 			d.getArg().visit(this);
