@@ -54,37 +54,37 @@ public class SparqlComprehensiveStreamingValidTest {
 	// =========================
 
 	// Per-category caps (tune for CI/runtime)
-	private static final int MAX_SELECT_PATH_CASES = 800;
-	private static final int MAX_TRIPLE_SYNTAX_CASES = 500;
-	private static final int MAX_GROUP_ALGEBRA_CASES = 500;
-	private static final int MAX_FILTER_BIND_VALUES_CASES = 600;
-	private static final int MAX_AGGREGATE_CASES = 400;
-	private static final int MAX_SUBQUERY_CASES = 300;
-	private static final int MAX_DATASET_GRAPH_SERVICE = 300;
-	private static final int MAX_CONSTRUCT_CASES = 300;
-	private static final int MAX_ASK_DESCRIBE_CASES = 200;
+	private static final int MAX_SELECT_PATH_CASES = 900;
+	private static final int MAX_TRIPLE_SYNTAX_CASES = 600;
+	private static final int MAX_GROUP_ALGEBRA_CASES = 600;
+	private static final int MAX_FILTER_BIND_VALUES_CASES = 700;
+	private static final int MAX_AGGREGATE_CASES = 500;
+	private static final int MAX_SUBQUERY_CASES = 400;
+	private static final int MAX_DATASET_GRAPH_SERVICE = 400;
+	private static final int MAX_CONSTRUCT_CASES = 400;
+	private static final int MAX_ASK_DESCRIBE_CASES = 300;
 
 	// Extra extensions
-	private static final int MAX_ORDER_BY_CASES = 500;
-	private static final int MAX_DESCRIBE_CASES = 200;
-	private static final int MAX_SERVICE_VALUES_CASES = 400;
+	private static final int MAX_ORDER_BY_CASES = 600;
+	private static final int MAX_DESCRIBE_CASES = 300;
+	private static final int MAX_SERVICE_VALUES_CASES = 500;
 
 	// Extra categories to widen coverage
-	private static final int MAX_BUILTINS_CASES = 400;
-	private static final int MAX_PROLOGUE_LEXICAL_CASES = 200;
-	private static final int MAX_GRAPH_NEST_CASES = 300;
-	private static final int MAX_GROUPING2_CASES = 300;
-	private static final int MAX_SUBSELECT2_CASES = 300;
-	private static final int MAX_CONSTRUCT_TPL_CASES = 200;
+	private static final int MAX_BUILTINS_CASES = 500;
+	private static final int MAX_PROLOGUE_LEXICAL_CASES = 300;
+	private static final int MAX_GRAPH_NEST_CASES = 400;
+	private static final int MAX_GROUPING2_CASES = 400;
+	private static final int MAX_SUBSELECT2_CASES = 400;
+	private static final int MAX_CONSTRUCT_TPL_CASES = 300;
 
 	// Deep nesting torture tests
-	private static final int MAX_DEEP_NEST_CASES = 80; // how many deep-nest queries to emit
-	private static final int MAX_DEEP_NEST_DEPTH = 2; // requested depth
+	private static final int MAX_DEEP_NEST_CASES = 500; // how many deep-nest queries to emit
+	private static final int MAX_DEEP_NEST_DEPTH = 3; // requested depth
 	private static final int NEST_PATH_POOL_SIZE = 64; // sample of property paths to pick from
 	private static final long NEST_SEED = 0xC0DEC0DEBEEFL; // deterministic
 
 	/** Max property-path AST depth (atoms at depth 0). */
-	private static final int MAX_PATH_DEPTH = 3;
+	private static final int MAX_PATH_DEPTH = 4;
 
 	/** Optional spacing variants to shake lexer (all remain valid). */
 	private static final boolean GENERATE_WHITESPACE_VARIANTS = false;
