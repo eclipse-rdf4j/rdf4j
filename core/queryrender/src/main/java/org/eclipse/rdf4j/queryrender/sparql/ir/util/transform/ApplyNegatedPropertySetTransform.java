@@ -120,7 +120,6 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 										: "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
 								IrBGP inner = new IrBGP(!bgp.isNewScope());
 								// Heuristic for braces inside GRAPH to match expected shape
-								inner.setNewScope(!bgp.isNewScope());
 								inner.add(vals);
 								inner.add(inv ? new IrPathTriple(sp.getObject(), nps, sp.getSubject(), false)
 										: new IrPathTriple(sp.getSubject(), nps, sp.getObject(), false));
@@ -155,8 +154,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 								? "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")"
 								: "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
 						final IrBGP newInner = new IrBGP(true);
-						// If we are not already inside a new-scope group, preserve braces inside GRAPH
-						newInner.setNewScope(!bgp.isNewScope());
+						// Ensure braces inside GRAPH for the rewritten block
 						newInner.setNewScope(true);
 						newInner.add(vals);
 						if (inv) {
