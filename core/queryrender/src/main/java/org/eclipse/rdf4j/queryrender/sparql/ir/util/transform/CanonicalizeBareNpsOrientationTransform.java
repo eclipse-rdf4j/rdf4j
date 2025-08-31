@@ -40,19 +40,19 @@ public final class CanonicalizeBareNpsOrientationTransform extends BaseTransform
 			// Recurse into containers
 			if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				out.add(new IrGraph(g.getGraph(), apply(g.getWhere())));
+				out.add(new IrGraph(g.getGraph(), apply(g.getWhere()), g.isNewScope()));
 				continue;
 			}
 			if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere()));
+				IrOptional no = new IrOptional(apply(o.getWhere()), o.isNewScope());
 				no.setNewScope(o.isNewScope());
 				out.add(no);
 				continue;
 			}
 			if (n instanceof IrMinus) {
 				IrMinus m = (IrMinus) n;
-				out.add(new IrMinus(apply(m.getWhere())));
+				out.add(new IrMinus(apply(m.getWhere()), m.isNewScope()));
 				continue;
 			}
 			if (n instanceof IrUnion) {
@@ -63,7 +63,7 @@ public final class CanonicalizeBareNpsOrientationTransform extends BaseTransform
 			if (n instanceof IrService) {
 				IrService s = (IrService) n;
 				out.add(new IrService(s.getServiceRefText(), s.isSilent(),
-						apply(s.getWhere())));
+						apply(s.getWhere()), s.isNewScope()));
 				continue;
 			}
 			out.add(n);

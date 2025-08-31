@@ -24,11 +24,6 @@ import java.util.function.UnaryOperator;
  */
 public class IrUnion extends IrNode {
 	private List<IrBGP> branches = new ArrayList<>();
-	// True when this UNION originates from an explicit SPARQL UNION that introduces a new variable scope
-
-	public IrUnion() {
-		super(false);
-	}
 
 	public IrUnion(boolean newScope) {
 		super(newScope);

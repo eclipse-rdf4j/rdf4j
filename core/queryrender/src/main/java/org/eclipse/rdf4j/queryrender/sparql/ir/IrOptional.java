@@ -19,10 +19,6 @@ import java.util.function.UnaryOperator;
 public class IrOptional extends IrNode {
 	private IrBGP bgp;
 
-	public IrOptional(IrBGP bgp) {
-		this(bgp, false);
-	}
-
 	public IrOptional(IrBGP bgp, boolean newScope) {
 		super(newScope);
 		this.bgp = bgp;

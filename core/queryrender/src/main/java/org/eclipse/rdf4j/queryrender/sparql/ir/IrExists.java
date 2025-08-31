@@ -49,8 +49,7 @@ public class IrExists extends IrNode {
 				// and avoids over-grouping more complex bodies (which can change algebraic scope markers).
 				boolean singleGraph = content.getLines().size() == 1 && content.getLines().get(0) instanceof IrGraph;
 				if (singleGraph) {
-					IrBGP wrap = new IrBGP();
-					wrap.setNewScope(true);
+					IrBGP wrap = new IrBGP(true);
 					wrap.add(content);
 					content = wrap;
 				}
@@ -81,7 +80,7 @@ public class IrExists extends IrNode {
 			}
 		}
 		if (ls.size() >= 2 && hasTripleLike && hasNestedExistsOrValues) {
-			IrBGP wrap = new IrBGP();
+			IrBGP wrap = new IrBGP(false);
 			wrap.add(w);
 			return wrap;
 		}

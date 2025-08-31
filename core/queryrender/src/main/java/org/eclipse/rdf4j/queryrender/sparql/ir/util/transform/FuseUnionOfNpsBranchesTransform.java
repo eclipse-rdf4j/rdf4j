@@ -59,20 +59,20 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			// Do not fuse UNIONs at top-level; only fuse within EXISTS bodies (handled below)
 			if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				m = new IrGraph(g.getGraph(), apply(g.getWhere(), r));
+				m = new IrGraph(g.getGraph(), apply(g.getWhere(), r), g.isNewScope());
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere(), r));
+				IrOptional no = new IrOptional(apply(o.getWhere(), r), o.isNewScope());
 				no.setNewScope(o.isNewScope());
 				m = no;
 			} else if (n instanceof IrMinus) {
 				IrMinus mi = (IrMinus) n;
-				m = new IrMinus(apply(mi.getWhere(), r));
+				m = new IrMinus(apply(mi.getWhere(), r), mi.isNewScope());
 			} else if (n instanceof IrService) {
 				IrService s = (IrService) n;
 				IrBGP inner = apply(s.getWhere(), r);
 				inner = fuseUnionsInBGP(inner);
-				m = new IrService(s.getServiceRefText(), s.isSilent(), inner);
+				m = new IrService(s.getServiceRefText(), s.isSilent(), inner, s.isNewScope());
 			} else if (n instanceof IrSubSelect) {
 				// keep as-is
 			} else if (n instanceof IrFilter) {
@@ -81,8 +81,8 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				IrNode body = f.getBody();
 				if (body instanceof IrExists) {
 					IrExists ex = (IrExists) body;
-					IrFilter nf = new IrFilter(new IrExists(applyInsideExists(ex.getWhere(), r), ex.isNewScope()));
-					nf.setNewScope(f.isNewScope());
+					IrFilter nf = new IrFilter(new IrExists(applyInsideExists(ex.getWhere(), r), ex.isNewScope()),
+							f.isNewScope());
 					m = nf;
 				} else {
 					m = n.transformChildren(child -> {
@@ -101,8 +101,7 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 					m = fused;
 				} else {
 					// No fuse possible: preserve structure and recurse
-					IrUnion u2 = new IrUnion();
-					u2.setNewScope(u.isNewScope());
+					IrUnion u2 = new IrUnion(u.isNewScope());
 					for (IrBGP b : u.getBranches()) {
 						u2.addBranch(apply(b, r));
 					}
@@ -119,7 +118,7 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			}
 			out.add(m);
 		}
-		final IrBGP res = new IrBGP();
+		final IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 		return res;
 	}
@@ -146,18 +145,19 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				out.add(fused);
 			} else if (ln instanceof IrGraph) {
 				IrGraph g = (IrGraph) ln;
-				out.add(new IrGraph(g.getGraph(), fuseUnionsInBGP(g.getWhere())));
+				out.add(new IrGraph(g.getGraph(), fuseUnionsInBGP(g.getWhere()), g.isNewScope()));
 			} else if (ln instanceof IrOptional) {
 				IrOptional o = (IrOptional) ln;
-				IrOptional no = new IrOptional(fuseUnionsInBGP(o.getWhere()));
+				IrOptional no = new IrOptional(fuseUnionsInBGP(o.getWhere()), o.isNewScope());
 				no.setNewScope(o.isNewScope());
 				out.add(no);
 			} else if (ln instanceof IrMinus) {
 				IrMinus mi = (IrMinus) ln;
-				out.add(new IrMinus(fuseUnionsInBGP(mi.getWhere())));
+				out.add(new IrMinus(fuseUnionsInBGP(mi.getWhere()), mi.isNewScope()));
 			} else if (ln instanceof IrService) {
 				IrService s = (IrService) ln;
-				out.add(new IrService(s.getServiceRefText(), s.isSilent(), fuseUnionsInBGP(s.getWhere())));
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(), fuseUnionsInBGP(s.getWhere()),
+						s.isNewScope()));
 			} else if (ln instanceof IrBGP) {
 				// Recurse into nested groups
 				out.add(fuseUnionsInBGP((IrBGP) ln));
@@ -165,7 +165,7 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				out.add(ln);
 			}
 		}
-		IrBGP res = new IrBGP();
+		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 		return res;
 	}
@@ -184,6 +184,8 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 
 		// Gather candidate branches: (optional GRAPH g) { IrPathTriple with bare NPS }.
 		Var graphRef = null;
+		boolean graphRefNewScope = false;
+		boolean innerBgpNewScope = false;
 		Var sCanon = null;
 		Var oCanon = null;
 		final Set<String> members = new LinkedHashSet<>();
@@ -192,6 +194,8 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 		for (IrBGP b : u.getBranches()) {
 			// Unwrap common single-child wrappers to reach a path triple, and capture graph ref if present.
 			Var g = null;
+			boolean gNewScope = false;
+			boolean whereNewScope = false;
 			IrNode node = singleChild(b);
 			// unwrap nested single-child BGPs introduced for explicit grouping
 			while (node instanceof IrBGP) {
@@ -203,6 +207,8 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			if (node instanceof IrGraph) {
 				IrGraph gb = (IrGraph) node;
 				g = gb.getGraph();
+				gNewScope = gb.isNewScope();
+				whereNewScope = gb.getWhere() != null && gb.getWhere().isNewScope();
 				node = singleChild(gb.getWhere());
 				while (node instanceof IrBGP) {
 					IrNode inner = singleChild((IrBGP) node);
@@ -235,6 +241,8 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				sCanon = pt.getSubject();
 				oCanon = pt.getObject();
 				graphRef = g;
+				graphRefNewScope = gNewScope;
+				innerBgpNewScope = whereNewScope;
 				addMembers(path, members);
 				fusedCount++;
 				continue;
@@ -277,18 +285,18 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				}
 			}
 			final String merged = "!(" + String.join("|", members) + ")";
-			IrPathTriple mergedPt = new IrPathTriple(sCanon, merged, oCanon);
+			IrPathTriple mergedPt = new IrPathTriple(sCanon, merged, oCanon, false);
 			IrNode fused;
 			if (graphRef != null) {
-				IrBGP inner = new IrBGP();
+				IrBGP inner = new IrBGP(innerBgpNewScope);
 				inner.add(mergedPt);
-				fused = new IrGraph(graphRef, inner);
+				fused = new IrGraph(graphRef, inner, graphRefNewScope);
 			} else {
 				fused = mergedPt;
 			}
 			if (wasNewScope) {
 				// Wrap in an extra group to preserve explicit braces that existed around the UNION branches
-				IrBGP grp = new IrBGP();
+				IrBGP grp = new IrBGP(true);
 				grp.add(fused);
 				grp.setNewScope(true);
 				return grp;
@@ -319,18 +327,19 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				m = tryFuseUnion((IrUnion) n);
 			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				m = new IrGraph(g.getGraph(), applyInsideExists(g.getWhere(), r));
+				m = new IrGraph(g.getGraph(), applyInsideExists(g.getWhere(), r), g.isNewScope());
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				IrOptional no2 = new IrOptional(applyInsideExists(o.getWhere(), r));
+				IrOptional no2 = new IrOptional(applyInsideExists(o.getWhere(), r), o.isNewScope());
 				no2.setNewScope(o.isNewScope());
 				m = no2;
 			} else if (n instanceof IrMinus) {
 				IrMinus mi = (IrMinus) n;
-				m = new IrMinus(applyInsideExists(mi.getWhere(), r));
+				m = new IrMinus(applyInsideExists(mi.getWhere(), r), mi.isNewScope());
 			} else if (n instanceof IrService) {
 				IrService s = (IrService) n;
-				m = new IrService(s.getServiceRefText(), s.isSilent(), applyInsideExists(s.getWhere(), r));
+				m = new IrService(s.getServiceRefText(), s.isSilent(), applyInsideExists(s.getWhere(), r),
+						s.isNewScope());
 			} else if (n instanceof IrSubSelect) {
 				// keep
 			} else if (n instanceof IrFilter) {
@@ -338,14 +347,14 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				IrNode body = f.getBody();
 				if (body instanceof IrExists) {
 					IrExists ex = (IrExists) body;
-					IrFilter nf = new IrFilter(new IrExists(applyInsideExists(ex.getWhere(), r), ex.isNewScope()));
-					nf.setNewScope(f.isNewScope());
+					IrFilter nf = new IrFilter(new IrExists(applyInsideExists(ex.getWhere(), r), ex.isNewScope()),
+							f.isNewScope());
 					m = nf;
 				}
 			}
 			out.add(m);
 		}
-		IrBGP res = new IrBGP();
+		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 		return res;
 	}
