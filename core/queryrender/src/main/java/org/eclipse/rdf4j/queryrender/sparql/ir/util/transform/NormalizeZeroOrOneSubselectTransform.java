@@ -77,6 +77,11 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 	}
 
 	public static IrPathTriple tryRewriteZeroOrOne(IrSubSelect ss, TupleExprIRRenderer r) {
+		Z01Analysis a = analyzeZeroOrOne(ss, r);
+		if (a != null) {
+			final String expr = BaseTransform.applyQuantifier(a.exprInner, '?');
+			return new IrPathTriple(varNamed(a.sName), expr, varNamed(a.oName), false);
+		}
 		IrSelect sel = ss.getSelect();
 		if (sel == null || sel.getWhere() == null) {
 			return null;
@@ -236,6 +241,17 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 	 */
 	public static org.eclipse.rdf4j.queryrender.sparql.ir.IrNode tryRewriteZeroOrOneNode(IrSubSelect ss,
 			TupleExprIRRenderer r) {
+		Z01Analysis a = analyzeZeroOrOne(ss, r);
+		if (a != null) {
+			final String expr = BaseTransform.applyQuantifier(a.exprInner, '?');
+			final IrPathTriple pt = new IrPathTriple(varNamed(a.sName), expr, varNamed(a.oName), false);
+			if (a.allGraphWrapped && a.commonGraph != null) {
+				IrBGP innerBgp = new IrBGP(false);
+				innerBgp.add(pt);
+				return new IrGraph(a.commonGraph, innerBgp, false);
+			}
+			return pt;
+		}
 		IrSelect sel = ss.getSelect();
 		if (sel == null || sel.getWhere() == null) {
 			return null;
@@ -438,6 +454,163 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 			}
 		}
 		return "!(" + String.join("|", out) + ")";
+	}
+
+	private static final class Z01Analysis {
+		final String sName;
+		final String oName;
+		final String exprInner;
+		final boolean allGraphWrapped;
+		final Var commonGraph;
+
+		Z01Analysis(String sName, String oName, String exprInner, boolean allGraphWrapped, Var commonGraph) {
+			this.sName = sName;
+			this.oName = oName;
+			this.exprInner = exprInner;
+			this.allGraphWrapped = allGraphWrapped;
+			this.commonGraph = commonGraph;
+		}
+	}
+
+	private static Z01Analysis analyzeZeroOrOne(IrSubSelect ss, TupleExprIRRenderer r) {
+		IrSelect sel = ss.getSelect();
+		if (sel == null || sel.getWhere() == null)
+			return null;
+		List<IrNode> inner = sel.getWhere().getLines();
+		if (inner.isEmpty())
+			return null;
+		IrUnion u = null;
+		if (inner.size() == 1 && inner.get(0) instanceof IrUnion) {
+			u = (IrUnion) inner.get(0);
+		} else if (inner.size() == 1 && inner.get(0) instanceof IrBGP) {
+			IrBGP w0 = (IrBGP) inner.get(0);
+			if (w0.getLines().size() == 1 && w0.getLines().get(0) instanceof IrUnion) {
+				u = (IrUnion) w0.getLines().get(0);
+			}
+		}
+		if (u == null)
+			return null;
+		IrBGP filterBranch = null;
+		List<IrBGP> stepBranches = new ArrayList<>();
+		for (IrBGP b : u.getBranches()) {
+			if (isSameTermFilterBranch(b)) {
+				if (filterBranch != null)
+					return null;
+				filterBranch = b;
+			} else {
+				stepBranches.add(b);
+			}
+		}
+		if (filterBranch == null || stepBranches.isEmpty())
+			return null;
+		String[] so;
+		IrNode fbLine = filterBranch.getLines().get(0);
+		if (fbLine instanceof IrText) {
+			so = parseSameTermVars(((IrText) fbLine).getText());
+		} else if (fbLine instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) {
+			String cond = ((org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) fbLine).getConditionText();
+			so = parseSameTermVarsFromCondition(cond);
+		} else {
+			so = null;
+		}
+		if (so == null)
+			return null;
+		final String sName = so[0], oName = so[1];
+		final List<String> steps = new ArrayList<>();
+		boolean allGraphWrapped = true;
+		Var commonGraph = null;
+		for (IrBGP b : stepBranches) {
+			if (b.getLines().size() != 1)
+				return null;
+			IrNode ln = b.getLines().get(0);
+			if (ln instanceof IrStatementPattern) {
+				allGraphWrapped = false;
+				IrStatementPattern sp = (IrStatementPattern) ln;
+				Var p = sp.getPredicate();
+				if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI))
+					return null;
+				String step = r.renderIRI((IRI) p.getValue());
+				if (sameVar(varNamed(sName), sp.getSubject()) && sameVar(varNamed(oName), sp.getObject())) {
+					steps.add(step);
+				} else if (sameVar(varNamed(sName), sp.getObject()) && sameVar(varNamed(oName), sp.getSubject())) {
+					steps.add("^" + step);
+				} else
+					return null;
+			} else if (ln instanceof IrGraph) {
+				IrGraph g = (IrGraph) ln;
+				if (g.getWhere() == null || g.getWhere().getLines().size() != 1)
+					return null;
+				IrNode innerLn = g.getWhere().getLines().get(0);
+				if (innerLn instanceof IrStatementPattern) {
+					IrStatementPattern sp = (IrStatementPattern) innerLn;
+					Var p = sp.getPredicate();
+					if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI))
+						return null;
+					if (commonGraph == null)
+						commonGraph = g.getGraph();
+					else if (!sameVar(commonGraph, g.getGraph()))
+						return null;
+					String step = r.renderIRI((IRI) p.getValue());
+					if (sameVar(varNamed(sName), sp.getSubject()) && sameVar(varNamed(oName), sp.getObject())) {
+						steps.add(step);
+					} else if (sameVar(varNamed(sName), sp.getObject()) && sameVar(varNamed(oName), sp.getSubject())) {
+						steps.add("^" + step);
+					} else
+						return null;
+				} else if (innerLn instanceof IrPathTriple) {
+					IrPathTriple pt = (IrPathTriple) innerLn;
+					if (commonGraph == null)
+						commonGraph = g.getGraph();
+					else if (!sameVar(commonGraph, g.getGraph()))
+						return null;
+					String txt = BaseTransform.normalizeCompactNps(pt.getPathText());
+					if (sameVar(varNamed(sName), pt.getSubject()) && sameVar(varNamed(oName), pt.getObject())) {
+						steps.add(txt);
+					} else if (sameVar(varNamed(sName), pt.getObject()) && sameVar(varNamed(oName), pt.getSubject())) {
+						final String inv = invertNpsIfPossible(txt);
+						if (inv == null)
+							return null;
+						steps.add(inv);
+					} else
+						return null;
+				} else
+					return null;
+			} else if (ln instanceof IrPathTriple) {
+				allGraphWrapped = false;
+				IrPathTriple pt = (IrPathTriple) ln;
+				String txt = BaseTransform.normalizeCompactNps(pt.getPathText());
+				if (sameVar(varNamed(sName), pt.getSubject()) && sameVar(varNamed(oName), pt.getObject())) {
+					steps.add(txt);
+				} else if (sameVar(varNamed(sName), pt.getObject()) && sameVar(varNamed(oName), pt.getSubject())) {
+					final String inv = invertNpsIfPossible(txt);
+					if (inv == null)
+						return null;
+					steps.add(inv);
+				} else
+					return null;
+			} else
+				return null;
+		}
+		if (steps.isEmpty())
+			return null;
+		boolean allNps = true;
+		List<String> npsMembers = new ArrayList<>();
+		for (String st : steps) {
+			String t = st == null ? null : st.trim();
+			if (t == null || !t.startsWith("!(") || !t.endsWith(")")) {
+				allNps = false;
+				break;
+			}
+			String innerMembers = t.substring(2, t.length() - 1).trim();
+			if (!innerMembers.isEmpty())
+				npsMembers.add(innerMembers);
+		}
+		String exprInner;
+		if (allNps && !npsMembers.isEmpty())
+			exprInner = "!(" + String.join("|", npsMembers) + ")";
+		else
+			exprInner = (steps.size() == 1) ? steps.get(0) : ("(" + String.join("|", steps) + ")");
+		return new Z01Analysis(sName, oName, exprInner, allGraphWrapped, commonGraph);
 	}
 
 	// compact NPS normalization is centralized in BaseTransform
