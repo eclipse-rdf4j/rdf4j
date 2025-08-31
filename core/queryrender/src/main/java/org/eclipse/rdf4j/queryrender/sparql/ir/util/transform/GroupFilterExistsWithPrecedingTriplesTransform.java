@@ -50,6 +50,29 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 		final List<IrNode> in = bgp.getLines();
 		final List<IrNode> out = new ArrayList<>();
 		int i = 0;
+		// When inside an EXISTS body that already mixes a triple-like with a nested EXISTS/VALUES,
+		// IrExists#print will synthesize an extra outer grouping to preserve intent. Avoid adding yet
+		// another inner grouping here to prevent double braces.
+		boolean avoidWrapInsideExists = false;
+		if (insideExists) {
+			boolean hasTripleLike = false;
+			boolean hasNestedExistsOrValues = false;
+			for (IrNode ln : in) {
+				if (ln instanceof IrStatementPattern
+						|| ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple
+						|| ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPropertyList) {
+					hasTripleLike = true;
+				} else if (ln instanceof IrFilter) {
+					IrFilter fx = (IrFilter) ln;
+					if (fx.getBody() instanceof IrExists) {
+						hasNestedExistsOrValues = true;
+					}
+				} else if (ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrValues) {
+					hasNestedExistsOrValues = true;
+				}
+			}
+			avoidWrapInsideExists = in.size() >= 2 && hasTripleLike && hasNestedExistsOrValues;
+		}
 		while (i < in.size()) {
 			IrNode n = in.get(i);
 			// Pattern: SP, FILTER(EXISTS { BODY })
@@ -65,7 +88,7 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 					// preserve explicit outer grouping from the original query.
 					// Inside EXISTS: always wrap a preceding triple with the FILTER EXISTS to
 					// preserve expected brace grouping in nested EXISTS tests.
-					boolean doWrap = f.isNewScope() || insideExists;
+					boolean doWrap = (f.isNewScope() || insideExists) && !(insideExists && avoidWrapInsideExists);
 					if (doWrap) {
 						IrBGP grp = new IrBGP(true);
 						// Preserve original local order: preceding triple(s) before the FILTER EXISTS
