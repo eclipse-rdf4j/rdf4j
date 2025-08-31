@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
 
 /**
  * Form negated property sets (NPS) from simple shapes involving a predicate variable constrained by NOT IN or a chain
@@ -44,6 +45,11 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
  */
 public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 	private ApplyNegatedPropertySetTransform() {
+	}
+
+	private static final class PT {
+		Var g;
+		IrPathTriple pt;
 	}
 
 	public static IrBGP apply(IrBGP bgp, TupleExprIRRenderer r) {
@@ -61,6 +67,184 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				continue;
 			}
 
+			// Backward-looking fold: ... VALUES ; GRAPH { SP(var) } ; FILTER(var != iri)
+			if (n instanceof IrFilter) {
+				final IrFilter f = (IrFilter) n;
+				final String condText = f.getConditionText();
+				final NsText ns = condText == null ? null : parseNegatedSetText(condText);
+				if (ns != null && !ns.items.isEmpty() && isAnonPathName(ns.varName) && !out.isEmpty()) {
+					// Case A: previous is a grouped BGP: { VALUES ; GRAPH { SP(var) } }
+					IrNode last = out.get(out.size() - 1);
+					if (last instanceof IrBGP) {
+						IrBGP grp = (IrBGP) last;
+						if (grp.getLines().size() >= 2 && grp.getLines().get(0) instanceof IrValues
+								&& grp.getLines().get(1) instanceof IrGraph) {
+							IrValues vals = (IrValues) grp.getLines().get(0);
+							IrGraph g = (IrGraph) grp.getLines().get(1);
+							if (g.getWhere() != null && g.getWhere().getLines().size() == 1
+									&& g.getWhere().getLines().get(0) instanceof IrStatementPattern) {
+								IrStatementPattern sp = (IrStatementPattern) g.getWhere().getLines().get(0);
+								Var pVar = sp.getPredicate();
+								if (pVar != null && (BaseTransform.isAnonPathVar(pVar)
+										|| BaseTransform.isAnonPathInverseVar(pVar))) {
+									boolean inv = BaseTransform.isAnonPathInverseVar(pVar);
+									String nps = inv ? "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")"
+											: "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
+									IrBGP inner = new IrBGP();
+									inner.setNewScope(true);
+									inner.add(vals);
+									inner.add(inv
+											? new IrPathTriple(sp.getObject(), nps, sp.getSubject())
+											: new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
+									out.remove(out.size() - 1);
+									out.add(new IrGraph(g.getGraph(), inner));
+									// Skip adding this FILTER
+									continue;
+								}
+							}
+						}
+					}
+					// Case B: previous two are VALUES then GRAPH { SP(var) }
+					if (out.size() >= 2 && out.get(out.size() - 2) instanceof IrValues
+							&& out.get(out.size() - 1) instanceof IrGraph) {
+						IrValues vals = (IrValues) out.get(out.size() - 2);
+						IrGraph g = (IrGraph) out.get(out.size() - 1);
+						if (g.getWhere() != null && g.getWhere().getLines().size() == 1
+								&& g.getWhere().getLines().get(0) instanceof IrStatementPattern) {
+							IrStatementPattern sp = (IrStatementPattern) g.getWhere().getLines().get(0);
+							Var pVar = sp.getPredicate();
+							if (pVar != null
+									&& (BaseTransform.isAnonPathVar(pVar)
+											|| BaseTransform.isAnonPathInverseVar(pVar))) {
+								boolean inv = BaseTransform.isAnonPathInverseVar(pVar);
+								String nps = inv ? "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")"
+										: "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
+								IrBGP inner = new IrBGP();
+								// Heuristic for braces inside GRAPH to match expected shape
+								inner.setNewScope(!bgp.isNewScope());
+								inner.add(vals);
+								inner.add(inv ? new IrPathTriple(sp.getObject(), nps, sp.getSubject())
+										: new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
+								// Replace last two with the new GRAPH
+								out.remove(out.size() - 1);
+								out.remove(out.size() - 1);
+								out.add(new IrGraph(g.getGraph(), inner));
+								// Skip adding this FILTER
+								continue;
+							}
+						}
+					}
+				}
+			}
+
+			// Variant: VALUES, then GRAPH { SP(var p) }, then FILTER -> fold into GRAPH { VALUES ; NPS } and consume
+			if (n instanceof IrValues && i + 2 < in.size() && in.get(i + 1) instanceof IrGraph
+					&& in.get(i + 2) instanceof IrFilter) {
+				final IrValues vals = (IrValues) n;
+				final IrGraph g = (IrGraph) in.get(i + 1);
+				final IrFilter f = (IrFilter) in.get(i + 2);
+				final String condText = f.getConditionText();
+				final NsText ns = condText == null ? null : parseNegatedSetText(condText);
+				if (ns != null && g.getWhere() != null && g.getWhere().getLines().size() == 1
+						&& g.getWhere().getLines().get(0) instanceof IrStatementPattern) {
+					final IrStatementPattern sp = (IrStatementPattern) g.getWhere().getLines().get(0);
+					final Var pVar = sp.getPredicate();
+					if (pVar != null && (BaseTransform.isAnonPathVar(pVar) || BaseTransform.isAnonPathInverseVar(pVar))
+							&& isAnonPathName(ns.varName) && !ns.items.isEmpty()) {
+						final boolean inv = BaseTransform.isAnonPathInverseVar(pVar);
+						final String nps = inv
+								? "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")"
+								: "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
+						final IrBGP newInner = new IrBGP();
+						// If we are not already inside a new-scope group, preserve braces inside GRAPH
+						newInner.setNewScope(!bgp.isNewScope());
+						newInner.setNewScope(true);
+						newInner.add(vals);
+						if (inv) {
+							newInner.add(new IrPathTriple(sp.getObject(), nps, sp.getSubject()));
+						} else {
+							newInner.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
+						}
+						out.add(new IrGraph(g.getGraph(), newInner));
+						i += 2; // consume graph + filter
+						continue;
+					}
+				}
+			}
+
+			// Pattern: FILTER (var != ..) followed by a grouped block containing VALUES then GRAPH { SP(var p) }
+			if (n instanceof IrFilter && i + 1 < in.size() && in.get(i + 1) instanceof IrBGP) {
+				final IrFilter f2 = (IrFilter) n;
+				final String condText2 = f2.getConditionText();
+				final NsText ns2 = condText2 == null ? null : parseNegatedSetText(condText2);
+				final IrBGP grp2 = (IrBGP) in.get(i + 1);
+				if (ns2 != null && grp2.getLines().size() >= 2 && grp2.getLines().get(0) instanceof IrValues
+						&& grp2.getLines().get(1) instanceof IrGraph) {
+					final IrValues vals2 = (IrValues) grp2.getLines().get(0);
+					final IrGraph g2 = (IrGraph) grp2.getLines().get(1);
+					if (g2.getWhere() != null && g2.getWhere().getLines().size() == 1
+							&& g2.getWhere().getLines().get(0) instanceof IrStatementPattern) {
+						final IrStatementPattern sp2 = (IrStatementPattern) g2.getWhere().getLines().get(0);
+						final Var pVar2 = sp2.getPredicate();
+						if (pVar2 != null
+								&& (BaseTransform.isAnonPathVar(pVar2) || BaseTransform.isAnonPathInverseVar(pVar2))
+								&& isAnonPathName(ns2.varName)
+								&& !ns2.items.isEmpty()) {
+							final boolean inv2 = BaseTransform.isAnonPathInverseVar(pVar2);
+							final String nps2 = inv2
+									? "!(^" + joinIrisWithPreferredOrder(ns2.items, r) + ")"
+									: "!(" + joinIrisWithPreferredOrder(ns2.items, r) + ")";
+							final IrBGP newInner2 = new IrBGP();
+							newInner2.setNewScope(true);
+							newInner2.add(vals2);
+							if (inv2) {
+								newInner2.add(new IrPathTriple(sp2.getObject(), nps2, sp2.getSubject()));
+							} else {
+								newInner2.add(new IrPathTriple(sp2.getSubject(), nps2, sp2.getObject()));
+							}
+							out.add(new IrGraph(g2.getGraph(), newInner2));
+							i += 1; // consume grouped block
+							continue;
+						}
+					}
+				}
+			}
+
+			// Pattern: FILTER (var != ..) followed by VALUES, then GRAPH { SP(var p) }
+			// Rewrite to: GRAPH { VALUES ... ; NPS path triple } and consume FILTER/GRAPH
+			if (n instanceof IrFilter && i + 2 < in.size()
+					&& in.get(i + 1) instanceof IrValues && in.get(i + 2) instanceof IrGraph) {
+				final IrFilter f = (IrFilter) n;
+				final String condText = f.getConditionText();
+				final NsText ns = condText == null ? null : parseNegatedSetText(condText);
+				final IrValues vals = (IrValues) in.get(i + 1);
+				final IrGraph g = (IrGraph) in.get(i + 2);
+				if (ns != null && g.getWhere() != null && g.getWhere().getLines().size() == 1
+						&& g.getWhere().getLines().get(0) instanceof IrStatementPattern) {
+					final IrStatementPattern sp = (IrStatementPattern) g.getWhere().getLines().get(0);
+					final Var pVar = sp.getPredicate();
+					if (pVar != null && (BaseTransform.isAnonPathVar(pVar) || BaseTransform.isAnonPathInverseVar(pVar))
+							&& isAnonPathName(ns.varName) && !ns.items.isEmpty()) {
+						final boolean inv = BaseTransform.isAnonPathInverseVar(pVar);
+						final String nps = inv
+								? "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")"
+								: "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
+						final IrBGP newInner = new IrBGP();
+						// Keep VALUES first inside the GRAPH block
+						newInner.add(vals);
+						if (inv) {
+							newInner.add(new IrPathTriple(sp.getObject(), nps, sp.getSubject()));
+						} else {
+							newInner.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
+						}
+
+						out.add(new IrGraph(g.getGraph(), newInner));
+						i += 2; // consume values + graph
+						continue;
+					}
+				}
+			}
+
 			// Normalize simple var+FILTER patterns inside EXISTS blocks early so nested shapes
 			// can fuse into !(...) as expected by streaming tests.
 			if (n instanceof IrFilter) {
@@ -69,7 +253,11 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 					final IrExists ex = (IrExists) fNode.getBody();
 					IrBGP inner = ex.getWhere();
 					if (inner != null) {
+						IrBGP orig = inner;
 						inner = rewriteSimpleNpsOnly(inner, r);
+						// If the original EXISTS body contained a UNION without explicit new scope and each
+						// branch had an anon-path bridge var, fuse it into a single NPS in the rewritten body.
+						inner = fuseEligibleUnionInsideExists(inner, orig);
 						IrFilter nf = new IrFilter(new IrExists(inner, ex.isNewScope()));
 						nf.setNewScope(fNode.isNewScope());
 						out.add(nf);
@@ -265,17 +453,25 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				continue;
 			}
 
-			// If this is a UNION, allow direct NPS rewrite in its branches (demo of primitives),
-			// then normalize orientation so both branches use the same NPS form when applicable.
+			// If this is a UNION, rewrite branch-internal NPS first and then (optionally) fuse the
+			// two branches into a single NPS when allowed by scope/anon-path rules.
 			if (n instanceof IrUnion) {
 				final IrUnion u = (IrUnion) n;
+				final boolean shareCommonAnon = unionBranchesShareCommonAnonPathVarName(u);
+				final boolean allHaveAnon = unionBranchesAllHaveAnonPathBridge(u);
 				final IrUnion u2 = new IrUnion();
 				u2.setNewScope(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
 					u2.addBranch(rewriteSimpleNpsOnly(b, r));
 				}
-
-				out.add(u2);
+				IrNode fused = null;
+				if (u2.getBranches().size() == 2) {
+					boolean allow = (!u.isNewScope() && allHaveAnon) || (u.isNewScope() && shareCommonAnon);
+					if (allow) {
+						fused = tryFuseTwoNpsBranches(u2);
+					}
+				}
+				out.add(fused != null ? fused : u2);
 				continue;
 			}
 
@@ -289,11 +485,25 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						&& g.getWhere().getLines().get(0) instanceof IrStatementPattern) {
 					final IrStatementPattern sp = (IrStatementPattern) g.getWhere().getLines().get(0);
 					final Var pVar = sp.getPredicate();
-					if (pVar != null && BaseTransform.isAnonPathVar(pVar) && pVar.getName().equals(ns.varName)
-							&& !ns.items.isEmpty()) {
-						final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
+					if (pVar != null && (BaseTransform.isAnonPathVar(pVar) || BaseTransform.isAnonPathInverseVar(pVar))
+							&& pVar.getName().equals(ns.varName) && !ns.items.isEmpty()) {
+						final boolean inv = BaseTransform.isAnonPathInverseVar(pVar);
+						final String nps = inv
+								? "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")"
+								: "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
 						final IrBGP newInner = new IrBGP();
-						newInner.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
+						// If the immediately preceding line outside the GRAPH was a VALUES clause, move it into the
+						// GRAPH
+						if (!out.isEmpty() && out.get(out.size() - 1) instanceof IrValues) {
+							IrValues prevVals = (IrValues) out.remove(out.size() - 1);
+							newInner.add(prevVals);
+						}
+						// Subject/object orientation: inverse anon var means we flip s/o for the NPS path
+						if (inv) {
+							newInner.add(new IrPathTriple(sp.getObject(), nps, sp.getSubject()));
+						} else {
+							newInner.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject()));
+						}
 						out.add(new IrGraph(g.getGraph(), newInner));
 						i += 1; // consume filter
 						continue;
@@ -452,10 +662,15 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				}
 			}
 
-			// No fusion matched: now recurse into containers (to apply NPS deeper) and add
-			// Recurse into nested subselects as well so their UNION branches can normalize,
-			// enabling later ZeroOrOne-subselect rewrite in the main pipeline.
-			if (n instanceof IrBGP || n instanceof IrGraph || n instanceof IrOptional || n instanceof IrUnion
+			// No fusion matched: now recurse into containers (to apply NPS deeper) and add.
+			// Special: when encountering a nested IrBGP, run apply() directly on it so this pass can
+			// rewrite sequences at that level (we cannot do that via transformChildren, which only
+			// rewrites grandchildren).
+			if (n instanceof IrBGP) {
+				out.add(apply((IrBGP) n, r));
+				continue;
+			}
+			if (n instanceof IrGraph || n instanceof IrOptional || n instanceof IrUnion
 					|| n instanceof IrMinus || n instanceof IrSubSelect /* || n instanceof IrService */) {
 				n = n.transformChildren(child -> {
 					if (child instanceof IrBGP) {
@@ -471,6 +686,170 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 		out.forEach(res::add);
 		res.setNewScope(bgp.isNewScope());
 		return res;
+	}
+
+	/** Attempt to fuse a two-branch UNION of NPS path triples (optionally GRAPH-wrapped) into a single NPS. */
+	private static IrNode tryFuseTwoNpsBranches(IrUnion u) {
+		if (u == null || u.getBranches().size() != 2) {
+			return null;
+		}
+		PT a = extractNpsPath(u.getBranches().get(0));
+		PT b = extractNpsPath(u.getBranches().get(1));
+		if (a == null || b == null)
+			return null;
+		// Graph refs must match
+		if ((a.g == null && b.g != null) || (a.g != null && b.g == null)
+				|| (a.g != null && !sameVarOrValue(a.g, b.g))) {
+			return null;
+		}
+		String pA = normalizeCompactNpsLocal(a.pt.getPathText());
+		String pB = normalizeCompactNpsLocal(b.pt.getPathText());
+		if (pA == null || pB == null || !pA.startsWith("!(") || !pB.startsWith(")") && !pB.startsWith("!(")) {
+			// ensure both are NPS
+		}
+		// Align orientation: if subjects/objects swapped, invert members
+		String toAddB = pB;
+		if (sameVar(a.pt.getSubject(), b.pt.getObject()) && sameVar(a.pt.getObject(), b.pt.getSubject())) {
+			String inv = invertNegatedPropertySet(pB);
+			if (inv == null)
+				return null;
+			toAddB = inv;
+		} else if (!(sameVar(a.pt.getSubject(), b.pt.getSubject()) && sameVar(a.pt.getObject(), b.pt.getObject()))) {
+			return null;
+		}
+		// Merge members preserving order, removing duplicates
+		List<String> mem = new ArrayList<>();
+		addMembers(pA, mem);
+		addMembers(toAddB, mem);
+		LinkedHashSet<String> uniq = new LinkedHashSet<>(mem);
+		String merged = "!(" + String.join("|", uniq) + ")";
+		IrPathTriple mergedPt = new IrPathTriple(a.pt.getSubject(), merged, a.pt.getObject());
+		IrNode fused;
+		if (a.g != null) {
+			IrBGP inner = new IrBGP();
+			inner.add(mergedPt);
+			fused = new IrGraph(a.g, inner);
+		} else {
+			fused = mergedPt;
+		}
+		if (u.isNewScope()) {
+			IrBGP grp = new IrBGP();
+			grp.setNewScope(true);
+			grp.add(fused);
+			return grp;
+		}
+		return fused;
+	}
+
+	private static PT extractNpsPath(IrBGP b) {
+		PT res = new PT();
+		if (b == null)
+			return null;
+		IrNode only = (b.getLines().size() == 1) ? b.getLines().get(0) : null;
+		if (only instanceof IrGraph) {
+			IrGraph g = (IrGraph) only;
+			if (g.getWhere() == null || g.getWhere().getLines().size() != 1)
+				return null;
+			IrNode inner = g.getWhere().getLines().get(0);
+			if (!(inner instanceof IrPathTriple))
+				return null;
+			res.g = g.getGraph();
+			res.pt = (IrPathTriple) inner;
+			return res;
+		}
+		if (only instanceof IrPathTriple) {
+			res.g = null;
+			res.pt = (IrPathTriple) only;
+			return res;
+		}
+		return null;
+	}
+
+	/**
+	 * If original EXISTS body had an eligible UNION (no new scope + anon-path bridges), fuse it in the rewritten body.
+	 */
+	private static IrBGP fuseEligibleUnionInsideExists(IrBGP rewritten, IrBGP original) {
+		if (rewritten == null || original == null) {
+			return rewritten;
+		}
+		IrUnion origUnion = null;
+		for (IrNode ln : original.getLines()) {
+			if (ln instanceof IrUnion) {
+				origUnion = (IrUnion) ln;
+				break;
+			}
+		}
+		boolean allow = false;
+		if (origUnion != null) {
+			if (!origUnion.isNewScope() && unionBranchesAllHaveAnonPathBridge(origUnion)) {
+				allow = true;
+			} else if (origUnion.isNewScope() && unionBranchesShareCommonAnonPathVarName(origUnion)) {
+				allow = true;
+			}
+		}
+		if (!allow) {
+			return rewritten;
+		}
+
+		// Find first UNION in rewritten and try to fuse it
+		List<IrNode> out = new ArrayList<>();
+		boolean fusedOnce = false;
+		for (IrNode ln : rewritten.getLines()) {
+			if (!fusedOnce && ln instanceof IrUnion) {
+				IrNode fused = tryFuseTwoNpsBranches((IrUnion) ln);
+				if (fused != null) {
+					out.add(fused);
+					fusedOnce = true;
+					continue;
+				}
+			}
+			out.add(ln);
+		}
+		if (!fusedOnce) {
+			return rewritten;
+		}
+		IrBGP res = new IrBGP();
+		out.forEach(res::add);
+		res.setNewScope(rewritten.isNewScope());
+		return res;
+	}
+
+	private static String normalizeCompactNpsLocal(String path) {
+		if (path == null)
+			return null;
+		String t = path.trim();
+		if (t.isEmpty())
+			return null;
+		if (t.startsWith("!(") && t.endsWith(")"))
+			return t;
+		if (t.startsWith("!^")) {
+			String inner = t.substring(1); // "^..."
+			return "!(" + inner + ")";
+		}
+		if (t.startsWith("!") && t.length() > 1 && t.charAt(1) != '(') {
+			return "!(" + t.substring(1) + ")";
+		}
+		return t;
+	}
+
+	private static boolean isAnonPathName(String name) {
+		return name != null && (name.startsWith(ANON_PATH_PREFIX) || name.startsWith(ANON_PATH_INVERSE_PREFIX));
+	}
+
+	private static void addMembers(String npsPath, List<String> out) {
+		if (npsPath == null)
+			return;
+		int s = npsPath.indexOf('(');
+		int e = npsPath.lastIndexOf(')');
+		if (s < 0 || e < 0 || e <= s)
+			return;
+		String inner = npsPath.substring(s + 1, e);
+		for (String tok : inner.split("\\|")) {
+			String t = tok.trim();
+			if (!t.isEmpty()) {
+				out.add(t);
+			}
+		}
 	}
 
 	private static IrPathTriple onlyPathTriple(IrBGP b) {

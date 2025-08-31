@@ -3042,4 +3042,74 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg());
 	}
 
+	@Test
+	void testGraphValuesPathScope1() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    GRAPH ?g1 {\n" +
+				"      {\n" +
+				"        VALUES ?s {\n" +
+				"          ex:s1 ex:s2 \n" +
+				"        }\n" +
+				"        ?s !^<http://example.org/p/I0> ?o . \n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testGraphValuesPathScope2() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  GRAPH ?g1 {\n" +
+				"    {\n" +
+				"      VALUES ?s {\n" +
+				"        ex:s1 ex:s2 \n" +
+				"      }\n" +
+				"      ?s !^<http://example.org/p/I0> ?o . \n" +
+				"    }\n" +
+				"  }\n" +
+				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testGraphValuesPathScope3() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    GRAPH ?g1  {\n" +
+				"      VALUES ?s {\n" +
+				"        ex:s1 ex:s2 \n" +
+				"      }\n" +
+				"      ?s !^<http://example.org/p/I0> ?o . \n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void bgpScope1() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    ?s a ?o .  \n" +
+				"  }\n" +
+				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void bgpScope2() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  ?s a ?o .  \n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
 }

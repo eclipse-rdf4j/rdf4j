@@ -44,6 +44,32 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
  * {@code transformChildren} to keep transform code small and predictable.
  */
 public class BaseTransform {
+	/*
+	 * =============================== ===== Union Merge Policy ====== ===============================
+	 *
+	 * Several transforms can merge a UNION of two branches into a single path expression (an alternation) or a single
+	 * negated property set (NPS). This is valuable for readability and streaming-friendly output, but it must be done
+	 * conservatively to never change query semantics nor collapse user-visible variables.
+	 *
+	 * Parser-provided hints: the RDF4J parser introduces anonymous bridge variables when decoding property paths. These
+	 * variables use a reserved prefix: - _anon_path_* (forward-oriented bridge) - _anon_path_inverse_*
+	 * (inverse-oriented bridge)
+	 *
+	 * We use these names as a safety signal that fusing across the bridge does not remove a user variable.
+	 *
+	 * High-level rules applied by union-fusing transforms: 1) No new scope (i.e., the UNION node is not marked as
+	 * introducing a new scope): - The UNION may be merged only if EACH branch contains at least one anonymous path
+	 * bridge variable (either prefix). See unionBranchesAllHaveAnonPathBridge().
+	 *
+	 * 2) New scope (i.e., the UNION node carries explicit variable-scope change): - By default, do NOT merge such a
+	 * UNION. - Special exception: if both branches share at least one COMMON variable name that starts with the
+	 * _anon_path_ prefix (either orientation), the UNION may still be merged. This indicates the new-scope originated
+	 * from path decoding and is safe to compact. See unionBranchesShareCommonAnonPathVarName().
+	 *
+	 * Additional per-transform constraints remain in place (e.g., fusing only bare NPS, or simple single-step triples,
+	 * identical endpoints, identical GRAPH reference), and transforms preserve explicit grouping braces when the input
+	 * UNION marked a new scope (by wrapping the fused result in a grouped IrBGP as needed).
+	 */
 
 	// Local copy of parser's _anon_path_ naming hint for safe path fusions
 	public static final String ANON_PATH_PREFIX = "_anon_path_";
@@ -572,6 +598,12 @@ public class BaseTransform {
 	}
 
 	/** True if all UNION branches contain at least one _anon_path_* variable (or inverse variant). */
+	/**
+	 * True if all UNION branches contain at least one _anon_path_* variable (or inverse variant).
+	 *
+	 * Rationale: when there is no explicit UNION scope, this safety gate ensures branch bodies are derived from
+	 * path-decoding internals rather than user variables, so fusing to an alternation/NPS preserves semantics.
+	 */
 	public static boolean unionBranchesAllHaveAnonPathBridge(IrUnion u) {
 		if (u == null || u.getBranches().isEmpty()) {
 			return false;
@@ -582,6 +614,86 @@ public class BaseTransform {
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * True if all UNION branches share at least one common variable name that starts with the _anon_path_ prefix. The
+	 * check descends into simple triple-like structures and container blocks.
+	 */
+	/**
+	 * True if all UNION branches share at least one common variable name that starts with the _anon_path_ prefix. The
+	 * check descends into simple triple-like structures and container blocks.
+	 *
+	 * Rationale: used for the special-case where a UNION is marked as a new variable scope but still eligible for
+	 * merging — only when we can prove the scope originates from a shared parser-generated bridge variable rather than
+	 * a user variable. This keeps merges conservative and avoids collapsing distinct user bindings.
+	 */
+	public static boolean unionBranchesShareCommonAnonPathVarName(IrUnion u) {
+		if (u == null || u.getBranches().isEmpty()) {
+			return false;
+		}
+		Set<String> common = null;
+		for (IrBGP b : u.getBranches()) {
+			Set<String> names = new HashSet<>();
+			collectAnonPathVarNames(b, names);
+			if (names.isEmpty()) {
+				return false; // a branch without anon-path vars cannot share a common one
+			}
+			if (common == null) {
+				common = new HashSet<>(names);
+			} else {
+				common.retainAll(names);
+				if (common.isEmpty()) {
+					return false;
+				}
+			}
+		}
+		return common != null && !common.isEmpty();
+	}
+
+	private static void collectAnonPathVarNames(IrBGP b, Set<String> out) {
+		if (b == null) {
+			return;
+		}
+		for (IrNode ln : b.getLines()) {
+			if (ln instanceof IrStatementPattern) {
+				IrStatementPattern sp = (IrStatementPattern) ln;
+				Var s = sp.getSubject();
+				Var o = sp.getObject();
+				Var p = sp.getPredicate();
+				if (isAnonPathVar(s) || isAnonPathInverseVar(s)) {
+					out.add(s.getName());
+				}
+				if (isAnonPathVar(o) || isAnonPathInverseVar(o)) {
+					out.add(o.getName());
+				}
+				if (isAnonPathVar(p) || isAnonPathInverseVar(p)) {
+					out.add(p.getName());
+				}
+			} else if (ln instanceof IrPathTriple) {
+				IrPathTriple pt = (IrPathTriple) ln;
+				Var s = pt.getSubject();
+				Var o = pt.getObject();
+				if (isAnonPathVar(s) || isAnonPathInverseVar(s)) {
+					out.add(s.getName());
+				}
+				if (isAnonPathVar(o) || isAnonPathInverseVar(o)) {
+					out.add(o.getName());
+				}
+			} else if (ln instanceof IrGraph) {
+				collectAnonPathVarNames(((IrGraph) ln).getWhere(), out);
+			} else if (ln instanceof IrOptional) {
+				collectAnonPathVarNames(((IrOptional) ln).getWhere(), out);
+			} else if (ln instanceof IrMinus) {
+				collectAnonPathVarNames(((IrMinus) ln).getWhere(), out);
+			} else if (ln instanceof IrUnion) {
+				for (IrBGP br : ((IrUnion) ln).getBranches()) {
+					collectAnonPathVarNames(br, out);
+				}
+			} else if (ln instanceof IrBGP) {
+				collectAnonPathVarNames((IrBGP) ln, out);
+			}
+		}
 	}
 
 	/**

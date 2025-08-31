@@ -32,6 +32,12 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
  * Fuse a UNION whose branches are each a single simple triple (optionally inside the same GRAPH) into a single path
  * alternation: ?s (p1|^p2|...) ?o . If branches are GRAPH-wrapped with identical graph var/IRI, the alternation is
  * produced inside that GRAPH block.
+ *
+ * Scope/safety: - This transform only merges UNIONs that are NOT marked as introducing a new scope. We do not apply the
+ * new-scope special case here because these are not NPS branches, and there is no guarantee that the scope originates
+ * from parser-generated path bridges; being conservative avoids collapsing user-visible variables. - Each branch must
+ * be a single IrStatementPattern (or GRAPH with a single IrStatementPattern), endpoints must align (forward or
+ * inverse), and graph refs must match.
  */
 public final class FuseUnionOfSimpleTriplesTransform extends BaseTransform {
 
