@@ -1,4 +1,4 @@
-/*******************************************************************************
+/**
  * Copyright (c) 2025 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
@@ -7,8 +7,7 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
- ******************************************************************************/
-
+ */
 package org.eclipse.rdf4j.queryrender;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -54,6 +53,8 @@ public class TupleExprIRRendererExplorationTest {
 		style.prefixes.put("ex", "http://ex/");
 		style.prefixes.put("xsd", "http://www.w3.org/2001/XMLSchema#");
 		style.valuesPreserveOrder = true;
+		// Enable IR debug prints to stdout for additional context during runs
+		style.debugIR = true;
 		return style;
 	}
 
@@ -74,6 +75,7 @@ public class TupleExprIRRendererExplorationTest {
 			Files.createDirectories(dir);
 			Path file = dir.resolve(base + "_" + label + ".txt");
 			Files.writeString(file, content == null ? "" : content, StandardCharsets.UTF_8);
+			System.out.println("[explore] wrote " + file.toAbsolutePath());
 		} catch (IOException ioe) {
 			System.err.println("[explore] Failed to write " + label + ": " + ioe);
 		}
@@ -121,8 +123,13 @@ public class TupleExprIRRendererExplorationTest {
 		return VarNameNormalizer.normalizeVars(te.toString());
 	}
 
-	// Optional helper left in place for local checks; not used in exploratory tests
 	private static void assertSemanticRoundTrip(String body) {
+		String input = SPARQL_PREFIX + body;
+		String rendered = render(body, cfg());
+		String algIn = algebra(input);
+		String algOut = algebra(rendered);
+		org.junit.jupiter.api.Assertions.assertEquals(algIn, algOut,
+				"Rendered query must be semantically equivalent (normalized algebra)");
 	}
 
 	@Test
@@ -136,7 +143,11 @@ public class TupleExprIRRendererExplorationTest {
 				"  }\n" +
 				"}";
 		dump("Exploration_serviceUnionBareNps", q, cfg());
-		// Exploratory: artifacts only; no strict assertions
+		// Semantic equivalence and structural sanity: expect fused NPS, not UNION
+		assertSemanticRoundTrip(q);
+		String rendered = render(q, cfg());
+		org.assertj.core.api.Assertions.assertThat(rendered).contains("!(");
+		org.assertj.core.api.Assertions.assertThat(rendered).doesNotContain("UNION");
 	}
 
 	@Test
@@ -151,7 +162,11 @@ public class TupleExprIRRendererExplorationTest {
 				"  }\n" +
 				"}";
 		dump("Exploration_serviceGraphUnionBareNps", q, cfg());
-		// Exploratory: artifacts only; no strict assertions
+		assertSemanticRoundTrip(q);
+		String rendered = render(q, cfg());
+		org.assertj.core.api.Assertions.assertThat(rendered).contains("GRAPH <http://graphs.example/g0>");
+		org.assertj.core.api.Assertions.assertThat(rendered).contains("!(");
+		org.assertj.core.api.Assertions.assertThat(rendered).doesNotContain("UNION");
 	}
 
 	@Test
@@ -166,7 +181,11 @@ public class TupleExprIRRendererExplorationTest {
 				"  }\n" +
 				"}";
 		dump("Exploration_serviceValuesMinusUnionBareNps", q, cfg());
-		// Exploratory: artifacts only; no strict assertions
+		assertSemanticRoundTrip(q);
+		String rendered = render(q, cfg());
+		org.assertj.core.api.Assertions.assertThat(rendered).contains("MINUS {");
+		org.assertj.core.api.Assertions.assertThat(rendered).contains("!(");
+		org.assertj.core.api.Assertions.assertThat(rendered).doesNotContain("UNION");
 	}
 
 	@Test
