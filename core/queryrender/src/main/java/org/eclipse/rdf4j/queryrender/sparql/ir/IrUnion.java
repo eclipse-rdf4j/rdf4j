@@ -33,10 +33,6 @@ public class IrUnion extends IrNode {
 		return branches;
 	}
 
-	public void setBranches(List<IrBGP> newBranches) {
-		this.branches = (newBranches == null) ? new ArrayList<>() : new ArrayList<>(newBranches);
-	}
-
 	public void addBranch(IrBGP w) {
 		if (w != null) {
 			branches.add(w);

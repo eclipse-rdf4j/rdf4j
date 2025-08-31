@@ -121,18 +121,9 @@ public final class NormalizeNpsMemberOrderTransform extends BaseTransform {
 	static String reorderMembers(String inner) {
 		class Tok {
 			final String text; // original token (may start with '^')
-			final String base; // without leading '^'
-			final boolean inverse;
 
 			Tok(String t) {
 				this.text = t;
-				if (t.startsWith("^")) {
-					this.inverse = true;
-					this.base = t.substring(1);
-				} else {
-					this.inverse = false;
-					this.base = t;
-				}
 			}
 		}
 
@@ -145,19 +136,4 @@ public final class NormalizeNpsMemberOrderTransform extends BaseTransform {
 		return toks.stream().map(t -> t.text).collect(Collectors.joining("|"));
 	}
 
-	static String invertMembers(String inner) {
-		String[] toks = Arrays.stream(inner.split("\\|"))
-				.map(String::trim)
-				.filter(t -> !t.isEmpty())
-				.toArray(String[]::new);
-		for (int i = 0; i < toks.length; i++) {
-			String t = toks[i];
-			if (t.startsWith("^")) {
-				toks[i] = t.substring(1);
-			} else {
-				toks[i] = "^" + t;
-			}
-		}
-		return String.join("|", toks);
-	}
 }

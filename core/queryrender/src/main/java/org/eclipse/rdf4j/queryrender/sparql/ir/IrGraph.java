@@ -34,16 +34,8 @@ public class IrGraph extends IrNode {
 		return graph;
 	}
 
-	public void setGraph(Var graph) {
-		this.graph = graph;
-	}
-
 	public IrBGP getWhere() {
 		return bgp;
-	}
-
-	public void setWhere(IrBGP bgp) {
-		this.bgp = bgp;
 	}
 
 	@Override

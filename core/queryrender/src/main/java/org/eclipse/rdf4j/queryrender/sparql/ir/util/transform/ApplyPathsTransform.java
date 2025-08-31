@@ -418,7 +418,6 @@ public final class ApplyPathsTransform extends BaseTransform {
 						}
 						if (mid != null) {
 							// Examine union branches: must all resolve from mid to the same end variable
-							Var startVarOut = null;
 							Var endVarOut = null;
 							List<String> alts = new ArrayList<>();
 							Var unionGraphRef = null; // if branches are GRAPHed, ensure same ref

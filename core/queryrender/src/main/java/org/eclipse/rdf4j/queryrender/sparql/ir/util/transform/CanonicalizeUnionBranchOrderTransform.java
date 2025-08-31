@@ -78,25 +78,4 @@ public final class CanonicalizeUnionBranchOrderTransform extends BaseTransform {
 		return u2;
 	}
 
-	private static IrTripleLike onlyTripleLike(IrBGP b) {
-		if (b == null || b.getLines().size() != 1) {
-			return null;
-		}
-		IrNode only = b.getLines().get(0);
-		if (only instanceof IrGraph) {
-			IrGraph g = (IrGraph) only;
-			if (g.getWhere() == null || g.getWhere().getLines().size() != 1) {
-				return null;
-			}
-			IrNode inner = g.getWhere().getLines().get(0);
-			if (inner instanceof IrTripleLike) {
-				return (IrTripleLike) inner;
-			}
-			return null;
-		}
-		if (only instanceof IrTripleLike) {
-			return (IrTripleLike) only;
-		}
-		return null;
-	}
 }

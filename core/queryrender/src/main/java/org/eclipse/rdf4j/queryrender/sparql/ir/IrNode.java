@@ -31,10 +31,6 @@ public abstract class IrNode {
 		this.newScope = newScope;
 	}
 
-	public IrNode() {
-		this(false);
-	}
-
 	/** Default no-op printing; concrete nodes override. */
 	public void print(IrPrinter p) {
 		throw new UnsupportedOperationException("print() not implemented in " + _className);

@@ -39,8 +39,6 @@ public interface IrPrinter {
 
 	void line(String s);
 
-	void raw(String s);
-
 	void openBlock();
 
 	void closeBlock();
@@ -51,8 +49,6 @@ public interface IrPrinter {
 
 	// Child printing helpers
 	void printLines(List<IrNode> lines);
-
-	void printWhere(IrBGP bgp);
 
 	// Rendering helpers
 	String renderVarOrValue(Var v);

@@ -847,49 +847,6 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 		}
 	}
 
-	private static IrPathTriple onlyPathTriple(IrBGP b) {
-		if (b == null || b.getLines().size() != 1) {
-			return null;
-		}
-		IrNode n = b.getLines().get(0);
-		if (n instanceof IrPathTriple) {
-			return (IrPathTriple) n;
-		}
-		if (n instanceof IrGraph) {
-			IrGraph g = (IrGraph) n;
-			if (g.getWhere() != null && g.getWhere().getLines().size() == 1
-					&& g.getWhere().getLines().get(0) instanceof IrPathTriple) {
-				return (IrPathTriple) g.getWhere().getLines().get(0);
-			}
-		}
-		return null;
-	}
-
-	private static boolean isBareNps(String path) {
-		if (path == null) {
-			return false;
-		}
-		String s = path.trim();
-		return s.startsWith("!(") && s.endsWith(")") && s.indexOf('/') < 0 && s.indexOf('|') >= 0
-				|| s.startsWith("!(") && s.endsWith(")");
-	}
-
-	private static boolean innerHasCaret(String path) {
-		String inner = innerOf(path);
-		return inner != null && inner.indexOf('^') >= 0;
-	}
-
-	private static String innerOf(String path) {
-		if (path == null) {
-			return null;
-		}
-		String s = path.trim();
-		if (!s.startsWith("!(") || !s.endsWith(")")) {
-			return null;
-		}
-		return s.substring(2, s.length() - 1);
-	}
-
 	// Within a union branch, compact a simple var-predicate + NOT IN filter to a negated property set path triple.
 	public static IrBGP rewriteSimpleNpsOnly(IrBGP bgp, TupleExprIRRenderer r) {
 		if (bgp == null) {

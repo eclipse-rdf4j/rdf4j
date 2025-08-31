@@ -44,10 +44,6 @@ public class IrService extends IrNode {
 		return bgp;
 	}
 
-	public void setWhere(IrBGP bgp) {
-		this.bgp = bgp;
-	}
-
 	@Override
 	public void print(IrPrinter p) {
 		p.startLine();

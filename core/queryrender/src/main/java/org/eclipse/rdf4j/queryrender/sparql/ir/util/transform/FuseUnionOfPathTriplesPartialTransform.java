@@ -115,14 +115,12 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 			}
 		}
 		class Group {
-			final Key key;
 			final Var g;
 			final Var s;
 			final Var o;
 			final List<Integer> idxs = new ArrayList<>();
 
-			Group(Key key, Var g, Var s, Var o) {
-				this.key = key;
+			Group(Var g, Var s, Var o) {
 				this.g = g;
 				this.s = s;
 				this.o = o;
@@ -189,7 +187,7 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 			Key k = new Key(gName, sName, oName);
 			Group grp = groups.get(k);
 			if (grp == null) {
-				grp = new Group(k, g, sVar, oVar);
+				grp = new Group(g, sVar, oVar);
 				groups.put(k, grp);
 			}
 			grp.idxs.add(i + 1); // store 1-based idx

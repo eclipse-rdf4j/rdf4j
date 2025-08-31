@@ -27,10 +27,6 @@ public class IrMinus extends IrNode {
 		return bgp;
 	}
 
-	public void setWhere(IrBGP bgp) {
-		this.bgp = bgp;
-	}
-
 	@Override
 	public void print(IrPrinter p) {
 		IrBGP ow = getWhere();

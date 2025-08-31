@@ -1206,7 +1206,7 @@ public class TupleExprIRRenderer {
 			this.out = out;
 		}
 
-		public void printWhere(final IrBGP w) {
+		private void printWhere(final IrBGP w) {
 			if (w == null) {
 				openBlock();
 				closeBlock();
@@ -1429,11 +1429,6 @@ public class TupleExprIRRenderer {
 			level--;
 			indent();
 			out.append('}').append('\n');
-		}
-
-		@Override
-		public void raw(final String s) {
-			out.append(s);
 		}
 
 		@Override

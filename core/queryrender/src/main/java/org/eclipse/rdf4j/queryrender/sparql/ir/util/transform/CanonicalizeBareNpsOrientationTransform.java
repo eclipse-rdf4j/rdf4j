@@ -74,11 +74,4 @@ public final class CanonicalizeBareNpsOrientationTransform extends BaseTransform
 		return res;
 	}
 
-	public static String safeVarName(Var v) {
-		if (v == null || v.hasValue()) {
-			return null;
-		}
-		final String n = v.getName();
-		return (n == null || n.isEmpty()) ? null : n;
-	}
 }

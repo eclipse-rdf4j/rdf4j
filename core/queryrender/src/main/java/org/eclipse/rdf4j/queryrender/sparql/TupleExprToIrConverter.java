@@ -102,7 +102,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.BaseTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseServiceNpsUnionLateTransform;
 
 /**
@@ -759,21 +758,6 @@ public class TupleExprToIrConverter {
 		return (n == null || n.isEmpty()) ? null : n;
 	}
 
-	private static boolean contextsIncompatible(final Var a, final Var b) {
-		if (a == b) {
-			return false;
-		}
-		if (a == null || b == null) {
-			return true;
-		}
-		if (a.hasValue() && b.hasValue()) {
-			return !Objects.equals(a.getValue(), b.getValue());
-		}
-		if (!a.hasValue() && !b.hasValue()) {
-			return !Objects.equals(a.getName(), b.getName());
-		}
-		return true;
-	}
 
 	private static long getMaxLengthSafe(final ArbitraryLengthPath p) {
 		try {
@@ -1103,16 +1087,6 @@ public class TupleExprToIrConverter {
 		return ir;
 	}
 
-	private Normalized normalize(final TupleExpr root) {
-		return normalize(root, false);
-	}
-
-	private void handleUnsupported(String message) {
-		if (r.getConfig().strict) {
-			throw new TupleExprIRRenderer.SparqlRenderingException(message);
-		}
-	}
-
 	private PathNode parseAPathInner(final TupleExpr innerExpr, final Var subj, final Var obj) {
 		if (innerExpr instanceof StatementPattern) {
 			PathNode n = parseAtomicFromStatement((StatementPattern) innerExpr, subj, obj);
@@ -1426,7 +1400,7 @@ public class TupleExprToIrConverter {
 		}
 		PathNode inner = (seqs.size() == 1) ? seqs.get(0) : new PathAlt(seqs);
 		PathNode q = new PathQuant(inner, 0, 1);
-		return new ZeroOrOneNode(s, o, q);
+		return new ZeroOrOneNode(s, q);
 	}
 
 	private PathNode parseAtomicFromStatement(final StatementPattern sp, final Var subj, final Var obj) {
@@ -1612,12 +1586,10 @@ public class TupleExprToIrConverter {
 
 	private static final class ZeroOrOneNode {
 		final Var s;
-		final Var o;
 		final PathNode node;
 
-		ZeroOrOneNode(Var s, Var o, PathNode node) {
+		ZeroOrOneNode(Var s, PathNode node) {
 			this.s = s;
-			this.o = o;
 			this.node = node;
 		}
 	}
@@ -1912,25 +1884,6 @@ public class TupleExprToIrConverter {
 			}
 		}
 
-		private String normalizeCompactNps(String path) {
-			return org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.BaseTransform.normalizeCompactNps(path);
-		}
-
-		private String mergeNpsMembers(String a, String b) {
-			// a,b are of the form !(...) ; merge inner members with '|'
-			int a1 = a.indexOf('('), a2 = a.lastIndexOf(')');
-			int b1 = b.indexOf('('), b2 = b.lastIndexOf(')');
-			if (a1 < 0 || a2 < 0 || b1 < 0 || b2 < 0)
-				return a; // fallback
-			String ia = a.substring(a1 + 1, a2).trim();
-			String ib = b.substring(b1 + 1, b2).trim();
-			if (ia.isEmpty())
-				return b;
-			if (ib.isEmpty())
-				return a;
-			return "!(" + ia + "|" + ib + ")";
-		}
-
 		@Override
 		public void meet(final BindingSetAssignment bsa) {
 			IrValues v = new IrValues(false);
@@ -2087,19 +2040,6 @@ public class TupleExprToIrConverter {
 		} catch (Throwable ignore) {
 		}
 		return false;
-	}
-
-	/** True if the algebra root is a container that prints its own structural block. */
-	private static boolean rightArgIsContainer(final TupleExpr e) {
-		if (e == null) {
-			return false;
-		}
-		return (e instanceof Service)
-				|| (e instanceof Union)
-				|| (e instanceof Projection)
-				|| (e instanceof Slice)
-				|| (e instanceof Distinct)
-				|| (e instanceof Group);
 	}
 
 	/**
