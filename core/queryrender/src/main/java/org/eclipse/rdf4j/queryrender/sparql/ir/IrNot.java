@@ -27,10 +27,6 @@ public class IrNot extends IrNode {
 		return inner;
 	}
 
-	public void setInner(IrNode inner) {
-		this.inner = inner;
-	}
-
 	@Override
 	public void print(IrPrinter p) {
 		p.append("NOT ");

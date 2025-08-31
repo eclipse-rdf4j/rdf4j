@@ -27,10 +27,6 @@ public class IrSubSelect extends IrNode {
 		return select;
 	}
 
-	public void setSelect(IrSelect select) {
-		this.select = select;
-	}
-
 	@Override
 	public void print(IrPrinter p) {
 		final String text = p.renderSubselect(select);
