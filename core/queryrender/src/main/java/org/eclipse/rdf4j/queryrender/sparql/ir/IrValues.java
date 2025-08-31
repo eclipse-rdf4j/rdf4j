@@ -79,11 +79,15 @@ public class IrValues extends IrNode {
 		for (List<String> row : rows) {
 			StringBuilder sb = new StringBuilder();
 			sb.append('(');
-			for (int i = 0; i < row.size(); i++) {
-				if (i > 0) {
-					sb.append(' ');
+			if (row.isEmpty()) {
+				sb.append("UNDEF");
+			} else {
+				for (int i = 0; i < row.size(); i++) {
+					if (i > 0) {
+						sb.append(' ');
+					}
+					sb.append(row.get(i));
 				}
-				sb.append(row.get(i));
 			}
 			sb.append(')');
 			p.line(sb.toString());
