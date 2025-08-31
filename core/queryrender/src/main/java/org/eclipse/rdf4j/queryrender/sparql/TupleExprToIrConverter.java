@@ -1913,20 +1913,7 @@ public class TupleExprToIrConverter {
 		}
 
 		private String normalizeCompactNps(String path) {
-			if (path == null)
-				return null;
-			String t = path.trim();
-			if (t.isEmpty())
-				return null;
-			if (t.startsWith("!(") && t.endsWith(")"))
-				return t;
-			if (t.startsWith("!^")) {
-				return "!(" + t.substring(1) + ")";
-			}
-			if (t.startsWith("!") && (t.length() == 1 || t.charAt(1) != '(')) {
-				return "!(" + t.substring(1) + ")";
-			}
-			return null;
+			return org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.BaseTransform.normalizeCompactNps(path);
 		}
 
 		private String mergeNpsMembers(String a, String b) {
