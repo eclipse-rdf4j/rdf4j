@@ -47,10 +47,12 @@ public final class MergeFilterExistsIntoPrecedingGraphTransform extends BaseTran
 		for (int i = 0; i < in.size(); i++) {
 			IrNode n = in.get(i);
 			// Pattern: IrGraph(g1), IrFilter( EXISTS { IrBGP( IrGraph(g2, inner) ) } )
-			if (n instanceof IrGraph && i + 1 < in.size() && in.get(i + 1) instanceof IrFilter) {
+			// Apply this fold only when the entire block consists of exactly these two lines
+			if (in.size() == 2 && i == 0 && n instanceof IrGraph && in.get(i + 1) instanceof IrFilter) {
 				final IrGraph g1 = (IrGraph) n;
 				final IrFilter f = (IrFilter) in.get(i + 1);
-				if (f.getBody() instanceof IrExists) {
+				// Only move FILTER inside GRAPH when the FILTER explicitly introduces a new scope.
+				if (f.isNewScope() && f.getBody() instanceof IrExists) {
 					final IrExists ex = (IrExists) f.getBody();
 					final IrBGP exWhere = ex.getWhere();
 					if (exWhere != null && exWhere.getLines().size() == 1
