@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FlattenSingletonUn
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseAltInverseTailBGPTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseServiceNpsUnionLateTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseUnionOfNpsBranchesTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseUnionOfNpsInMinusTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupFilterExistsWithPrecedingTriplesTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupValuesAndNpsInUnionBranchTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.InlineBNodeObjectsTransform;
@@ -104,6 +105,9 @@ public final class IrTransforms {
 					// simple var-predicate + inequality filters to !(...) path triples (including inside
 					// EXISTS bodies).
 					w = ApplyNegatedPropertySetTransform.rewriteSimpleNpsOnly(w, r);
+					// Fuse UNION-of-NPS specifically under MINUS early, once branches have been rewritten to path
+					// triples
+					w = FuseUnionOfNpsInMinusTransform.apply(w);
 					// Grouping/stability is driven by explicit newScope flags in IR; avoid heuristics here.
 					// Reorder OPTIONAL-level filters before nested OPTIONALs when safe (variable-availability
 					// heuristic)
@@ -146,6 +150,8 @@ public final class IrTransforms {
 
 					// One more UNION-of-NPS fuser after broader path refactors to catch newly-formed shapes
 					w = FuseUnionOfNpsBranchesTransform.apply(w, r);
+					// Fuse UNION-of-NPS specifically under MINUS blocks as well (semantics-preserving)
+					w = FuseUnionOfNpsInMinusTransform.apply(w);
 
 					// Light string-level path parentheses simplification for readability/idempotence
 					w = SimplifyPathParensTransform.apply(w);
