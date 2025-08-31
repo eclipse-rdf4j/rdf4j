@@ -222,6 +222,7 @@ public class SparqlComprehensiveStreamingValidTest {
 	private static void assertSameSparqlQuery(String sparql, TupleExprIRRenderer.Config cfg) {
 //		String rendered = assertFixedPoint(original, cfg);
 		sparql = sparql.trim();
+		sparql = SparqlFormatter.formatBraces(sparql);
 		TupleExpr expected;
 		try {
 			expected = parseAlgebra(sparql);
@@ -251,17 +252,14 @@ public class SparqlComprehensiveStreamingValidTest {
 				System.out.println("\n# Rendered SPARQL query\n" + rendered + "\n");
 			} finally {
 				cfg.debugIR = false;
-				System.exit(-1);
 			}
-
-//			TupleExpr actual = parseAlgebra(rendered);
 
 //			assertThat(VarNameNormalizer.normalizeVars(actual.toString()))
 //					.as("Algebra after rendering must be identical to original")
 //					.isEqualTo(VarNameNormalizer.normalizeVars(expected.toString()));
 
 			// Fail (again) with the original comparison so the test result is correct
-//			assertThat(rendered).isEqualToNormalizingNewlines(sparql);
+			assertThat(rendered).isEqualToNormalizingNewlines(sparql);
 
 		}
 	}

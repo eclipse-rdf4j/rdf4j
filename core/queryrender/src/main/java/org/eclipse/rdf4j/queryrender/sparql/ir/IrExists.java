@@ -28,10 +28,6 @@ public class IrExists extends IrNode {
 		return where;
 	}
 
-	public void setWhere(IrBGP where) {
-		this.where = where;
-	}
-
 	@Override
 	public void print(IrPrinter p) {
 		// EXISTS keyword, then delegate braces to inner IrBGP
