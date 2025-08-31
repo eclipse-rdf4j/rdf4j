@@ -34,10 +34,15 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
  * NPS triple that combines members, preserving forward orientation and inverting members from inverse-oriented branches
  * (using '^') when needed.
  *
- * Scope/safety: - Only merges UNIONs that are not marked as new scope (explicit UNIONs). - Only accepts branches that
- * are a single IrPathTriple, optionally wrapped in a GRAPH with identical graph ref. - Only fuses when each branch path
- * is a bare NPS of the form '!(...)' with no '/' or quantifiers. - Preserves branch encounter order for member tokens;
- * duplicates are removed while keeping first occurrence.
+ * Scope/safety rules: - No new scope (u.isNewScope() == false): merge only when each branch contains an _anon_path_*
+ * bridge var (see BaseTransform.unionBranchesAllHaveAnonPathBridge). This ensures we do not collapse user-visible
+ * variables. - New scope (u.isNewScope() == true): by default do not merge. Special exception: merge when the branches
+ * share a common _anon_path_* variable name (see BaseTransform.unionBranchesShareCommonAnonPathVarName). In that case
+ * we preserve explicit grouping by wrapping the fused result in a grouped IrBGP.
+ *
+ * Additional constraints: - Each branch must be a single IrPathTriple, optionally GRAPH-wrapped with an identical graph
+ * ref. - Each path must be a bare NPS '!(...)' (no '/', no quantifiers). Orientation is aligned by inverting members
+ * when the branch is reversed. - Member order is kept stable; duplicates are removed while preserving first occurrence.
  */
 public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 
@@ -89,17 +94,19 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				}
 			} else if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
-				if (u.isNewScope()) {
-					// Preserve explicit top-level UNIONs: recurse into branches but do not fuse here
+				// Always attempt a safe fuse; tryFuseUnion preserves explicit UNION scope by wrapping the
+				// fused result in a grouped IrBGP when needed.
+				IrNode fused = tryFuseUnion(u);
+				if (fused != u) {
+					m = fused;
+				} else {
+					// No fuse possible: preserve structure and recurse
 					IrUnion u2 = new IrUnion();
-					u2.setNewScope(true);
+					u2.setNewScope(u.isNewScope());
 					for (IrBGP b : u.getBranches()) {
 						u2.addBranch(apply(b, r));
 					}
 					m = u2;
-				} else {
-					// Attempt fusing of UNION branches when not an explicit user UNION
-					m = tryFuseUnion(u);
 				}
 			} else {
 				// Recurse into nested BGPs inside other containers (e.g., FILTER EXISTS)
@@ -163,6 +170,9 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 		return res;
 	}
 
+	/**
+	 * Try to fuse a UNION of bare-NPS path triples according to the scope/safety rules described above.
+	 */
 	private static IrNode tryFuseUnion(IrUnion u) {
 		if (u == null || u.getBranches().size() < 2) {
 			return u;
@@ -253,6 +263,19 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 		}
 
 		if (fusedCount >= 2 && !members.isEmpty()) {
+			// Safety gate: allow merge when there is no explicit scope, or allow a special-case
+			// merge across new-scope UNIONs only when both branches share a common _anon_path_* var name.
+			if (wasNewScope) {
+				// Restrict to the two-branch case for clarity/safety
+				if (u.getBranches().size() != 2 || !unionBranchesShareCommonAnonPathVarName(u)) {
+					return u;
+				}
+			} else {
+				// If no scope, prefer fusing only when each branch contains an anon-path bridge var
+				if (!unionBranchesAllHaveAnonPathBridge(u)) {
+					return u;
+				}
+			}
 			final String merged = "!(" + String.join("|", members) + ")";
 			IrPathTriple mergedPt = new IrPathTriple(sCanon, merged, oCanon);
 			IrNode fused;

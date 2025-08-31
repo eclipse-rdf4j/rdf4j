@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CoalesceAdjacentGr
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FlattenSingletonUnionsTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseAltInverseTailBGPTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseServiceNpsUnionLateTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseUnionOfNpsBranchesTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupFilterExistsWithPrecedingTriplesTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupValuesAndNpsInUnionBranchTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.InlineBNodeObjectsTransform;
@@ -137,6 +138,9 @@ public final class IrTransforms {
 					// introduced the union shape only at this point
 					w = FuseServiceNpsUnionLateTransform
 							.apply(w);
+
+					// One more UNION-of-NPS fuser after broader path refactors to catch newly-formed shapes
+					w = FuseUnionOfNpsBranchesTransform.apply(w, r);
 
 					// Light string-level path parentheses simplification for readability/idempotence
 					w = SimplifyPathParensTransform.apply(w);
