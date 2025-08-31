@@ -50,9 +50,15 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		for (IrNode n : bgp.getLines()) {
 			IrNode transformed = n;
 			if (n instanceof IrSubSelect) {
-				IrPathTriple pt = tryRewriteZeroOrOne((IrSubSelect) n, r);
-				if (pt != null) {
-					transformed = pt;
+				// Prefer node-aware rewrite to preserve GRAPH context when possible
+				IrNode repl = tryRewriteZeroOrOneNode((IrSubSelect) n, r);
+				if (repl != null) {
+					transformed = repl;
+				} else {
+					IrPathTriple pt = tryRewriteZeroOrOne((IrSubSelect) n, r);
+					if (pt != null) {
+						transformed = pt;
+					}
 				}
 			}
 			// Recurse into containers using transformChildren
@@ -125,6 +131,9 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 
 		// Collect simple single-step patterns from the non-filter branches
 		final List<String> steps = new ArrayList<>();
+		// Track if all step branches are GRAPH-wrapped and, if so, that they use the same graph ref
+		boolean allGraphWrapped = true;
+		Var commonGraph = null;
 		for (IrBGP b : stepBranches) {
 			if (b.getLines().size() != 1) {
 				return null;
@@ -133,10 +142,18 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 			IrStatementPattern sp;
 			if (ln instanceof IrStatementPattern) {
 				sp = (IrStatementPattern) ln;
+				allGraphWrapped = false; // not graph-wrapped
 			} else if (ln instanceof IrGraph && ((IrGraph) ln).getWhere() != null
 					&& ((IrGraph) ln).getWhere().getLines().size() == 1
 					&& ((IrGraph) ln).getWhere().getLines().get(0) instanceof IrStatementPattern) {
-				sp = (IrStatementPattern) ((IrGraph) ln).getWhere().getLines().get(0);
+				IrGraph g = (IrGraph) ln;
+				sp = (IrStatementPattern) g.getWhere().getLines().get(0);
+				if (commonGraph == null) {
+					commonGraph = g.getGraph();
+				} else if (!sameVar(commonGraph, g.getGraph())) {
+					// Mixed different GRAPH refs; bail out
+					return null;
+				}
 			} else if (ln instanceof IrPathTriple) {
 				// already fused; accept as-is
 				IrPathTriple pt = (IrPathTriple) ln;
@@ -149,12 +166,18 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 					&& ((IrGraph) ln).getWhere().getLines().size() == 1
 					&& ((IrGraph) ln).getWhere().getLines().get(0) instanceof IrPathTriple) {
 				// GRAPH wrapper around a single fused path step (e.g., an NPS) — handle orientation
-				final IrPathTriple pt = (IrPathTriple) ((IrGraph) ln).getWhere().getLines().get(0);
+				final IrGraph g = (IrGraph) ln;
+				final IrPathTriple pt = (IrPathTriple) g.getWhere().getLines().get(0);
+				if (commonGraph == null) {
+					commonGraph = g.getGraph();
+				} else if (!sameVar(commonGraph, g.getGraph())) {
+					return null;
+				}
 				if (sameVar(varNamed(sName), pt.getSubject()) && sameVar(varNamed(oName), pt.getObject())) {
-					steps.add(pt.getPathText());
+					steps.add(normalizeCompactNpsText(pt.getPathText()));
 					continue;
 				} else if (sameVar(varNamed(sName), pt.getObject()) && sameVar(varNamed(oName), pt.getSubject())) {
-					final String inv = invertNpsIfPossible(pt.getPathText());
+					final String inv = invertNpsIfPossible(normalizeCompactNpsText(pt.getPathText()));
 					if (inv == null) {
 						return null;
 					}
@@ -206,12 +229,194 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		return new IrPathTriple(varNamed(sName), expr, varNamed(oName), false);
 	}
 
+	/**
+	 * Variant of tryRewriteZeroOrOne that returns a generic IrNode. When all step branches are GRAPH-wrapped with the
+	 * same graph ref, this returns an IrGraph containing the fused IrPathTriple, so that graph context is preserved and
+	 * downstream coalescing can merge adjacent GRAPH blocks.
+	 */
+	public static org.eclipse.rdf4j.queryrender.sparql.ir.IrNode tryRewriteZeroOrOneNode(IrSubSelect ss,
+			TupleExprIRRenderer r) {
+		IrSelect sel = ss.getSelect();
+		if (sel == null || sel.getWhere() == null) {
+			return null;
+		}
+		List<IrNode> inner = sel.getWhere().getLines();
+		if (inner.isEmpty()) {
+			return null;
+		}
+		IrUnion u = null;
+		if (inner.size() == 1 && inner.get(0) instanceof IrUnion) {
+			u = (IrUnion) inner.get(0);
+		} else if (inner.size() == 1 && inner.get(0) instanceof IrBGP) {
+			IrBGP w0 = (IrBGP) inner.get(0);
+			if (w0.getLines().size() == 1 && w0.getLines().get(0) instanceof IrUnion) {
+				u = (IrUnion) w0.getLines().get(0);
+			}
+		}
+		if (u == null) {
+			return null;
+		}
+
+		IrBGP filterBranch = null;
+		List<IrBGP> stepBranches = new ArrayList<>();
+		for (IrBGP b : u.getBranches()) {
+			if (isSameTermFilterBranch(b)) {
+				if (filterBranch != null) {
+					return null;
+				}
+				filterBranch = b;
+			} else {
+				stepBranches.add(b);
+			}
+		}
+		if (filterBranch == null || stepBranches.isEmpty()) {
+			return null;
+		}
+		String[] so;
+		IrNode fbLine = filterBranch.getLines().get(0);
+		if (fbLine instanceof IrText) {
+			so = parseSameTermVars(((IrText) fbLine).getText());
+		} else if (fbLine instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) {
+			String cond = ((org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter) fbLine).getConditionText();
+			so = parseSameTermVarsFromCondition(cond);
+		} else {
+			so = null;
+		}
+		if (so == null) {
+			return null;
+		}
+		final String sName = so[0], oName = so[1];
+
+		// Gather steps and graph context
+		final List<String> steps = new ArrayList<>();
+		boolean allGraphWrapped = true;
+		Var commonGraph = null;
+		for (IrBGP b : stepBranches) {
+			if (b.getLines().size() != 1) {
+				return null;
+			}
+			IrNode ln = b.getLines().get(0);
+			if (ln instanceof IrStatementPattern) {
+				allGraphWrapped = false;
+				IrStatementPattern sp = (IrStatementPattern) ln;
+				Var p = sp.getPredicate();
+				if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
+					return null;
+				}
+				String step = r.renderIRI((IRI) p.getValue());
+				if (sameVar(varNamed(sName), sp.getSubject()) && sameVar(varNamed(oName), sp.getObject())) {
+					steps.add(step);
+				} else if (sameVar(varNamed(sName), sp.getObject()) && sameVar(varNamed(oName), sp.getSubject())) {
+					steps.add("^" + step);
+				} else {
+					return null;
+				}
+			} else if (ln instanceof IrGraph) {
+				IrGraph g = (IrGraph) ln;
+				if (g.getWhere() == null || g.getWhere().getLines().size() != 1) {
+					return null;
+				}
+				IrNode innerLn = g.getWhere().getLines().get(0);
+				if (innerLn instanceof IrStatementPattern) {
+					IrStatementPattern sp = (IrStatementPattern) innerLn;
+					Var p = sp.getPredicate();
+					if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
+						return null;
+					}
+					if (commonGraph == null) {
+						commonGraph = g.getGraph();
+					} else if (!sameVar(commonGraph, g.getGraph())) {
+						return null;
+					}
+					String step = r.renderIRI((IRI) p.getValue());
+					if (sameVar(varNamed(sName), sp.getSubject()) && sameVar(varNamed(oName), sp.getObject())) {
+						steps.add(step);
+					} else if (sameVar(varNamed(sName), sp.getObject())
+							&& sameVar(varNamed(oName), sp.getSubject())) {
+						steps.add("^" + step);
+					} else {
+						return null;
+					}
+				} else if (innerLn instanceof IrPathTriple) {
+					IrPathTriple pt = (IrPathTriple) innerLn;
+					if (commonGraph == null) {
+						commonGraph = g.getGraph();
+					} else if (!sameVar(commonGraph, g.getGraph())) {
+						return null;
+					}
+					if (sameVar(varNamed(sName), pt.getSubject()) && sameVar(varNamed(oName), pt.getObject())) {
+						steps.add(normalizeCompactNpsText(pt.getPathText()));
+					} else if (sameVar(varNamed(sName), pt.getObject())
+							&& sameVar(varNamed(oName), pt.getSubject())) {
+						final String inv = invertNpsIfPossible(normalizeCompactNpsText(pt.getPathText()));
+						if (inv == null) {
+							return null;
+						}
+						steps.add(inv);
+					} else {
+						return null;
+					}
+				} else {
+					return null;
+				}
+			} else if (ln instanceof IrPathTriple) {
+				allGraphWrapped = false;
+				IrPathTriple pt = (IrPathTriple) ln;
+				if (sameVar(varNamed(sName), pt.getSubject()) && sameVar(varNamed(oName), pt.getObject())) {
+					steps.add(normalizeCompactNpsText(pt.getPathText()));
+				} else if (sameVar(varNamed(sName), pt.getObject()) && sameVar(varNamed(oName), pt.getSubject())) {
+					final String inv = invertNpsIfPossible(normalizeCompactNpsText(pt.getPathText()));
+					if (inv == null) {
+						return null;
+					}
+					steps.add(inv);
+				} else {
+					return null;
+				}
+			} else {
+				return null;
+			}
+		}
+		if (steps.isEmpty()) {
+			return null;
+		}
+		// Merge NPS members if applicable
+		boolean allNps = true;
+		List<String> npsMembers = new ArrayList<>();
+		for (String st : steps) {
+			String t = st == null ? null : st.trim();
+			if (t == null || !t.startsWith("!(") || !t.endsWith(")")) {
+				allNps = false;
+				break;
+			}
+			String innerMembers = t.substring(2, t.length() - 1).trim();
+			if (!innerMembers.isEmpty()) {
+				npsMembers.add(innerMembers);
+			}
+		}
+		String exprInner;
+		if (allNps && !npsMembers.isEmpty()) {
+			exprInner = "!(" + String.join("|", npsMembers) + ")";
+		} else {
+			exprInner = (steps.size() == 1) ? steps.get(0) : ("(" + String.join("|", steps) + ")");
+		}
+
+		final String expr = BaseTransform.applyQuantifier(exprInner, '?');
+		final IrPathTriple pt = new IrPathTriple(varNamed(sName), expr, varNamed(oName), false);
+		if (allGraphWrapped && commonGraph != null) {
+			IrBGP innerBgp = new IrBGP(false);
+			innerBgp.add(pt);
+			return new IrGraph(commonGraph, innerBgp, false);
+		}
+		return pt;
+	}
+
 	/** Invert a negated property set: !(a|^b|c) -> !(^a|b|^c). Return null if not a simple NPS. */
 	private static String invertNpsIfPossible(String nps) {
 		if (nps == null) {
 			return null;
 		}
-		final String s = nps.trim();
+		final String s = normalizeCompactNpsText(nps);
 		if (!s.startsWith("!(") || !s.endsWith(")")) {
 			return null;
 		}
@@ -233,6 +438,27 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 			}
 		}
 		return "!(" + String.join("|", out) + ")";
+	}
+
+	/** Normalize compact NPS forms: "!ex:p" -> "!(ex:p)", "!^ex:p" -> "!(^ex:p)". Leaves other text unchanged. */
+	private static String normalizeCompactNpsText(String path) {
+		if (path == null) {
+			return null;
+		}
+		String t = path.trim();
+		if (t.isEmpty()) {
+			return t;
+		}
+		if (t.startsWith("!(") && t.endsWith(")")) {
+			return t;
+		}
+		if (t.startsWith("!^")) {
+			return "!(" + t.substring(1) + ")"; // !^ex:p -> !(^ex:p)
+		}
+		if (t.startsWith("!") && (t.length() == 1 || t.charAt(1) != '(')) {
+			return "!(" + t.substring(1) + ")"; // !ex:p -> !(ex:p)
+		}
+		return t;
 	}
 
 	public static String[] parseSameTermVars(String text) {
