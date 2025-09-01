@@ -54,12 +54,9 @@ public class IrService extends IrNode {
 		IrBGP inner = bgp;
 		// Rely solely on the transform pipeline for structural rewrites. Printing preserves
 		// whatever grouping/GRAPH context the IR carries at this point.
-		if (inner != null) {
-			inner.print(p); // IrBGP prints braces
-		} else {
-			p.openBlock();
-			p.closeBlock();
-		}
+		// Seriously, leave this alone! Let the inner section print itself.
+		inner.print(p); // IrBGP prints braces
+
 	}
 
 	@Override
