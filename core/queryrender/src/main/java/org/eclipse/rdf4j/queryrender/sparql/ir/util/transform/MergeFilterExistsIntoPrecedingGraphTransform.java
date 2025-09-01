@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrExists;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
@@ -46,30 +47,33 @@ public final class MergeFilterExistsIntoPrecedingGraphTransform extends BaseTran
 
 		for (int i = 0; i < in.size(); i++) {
 			IrNode n = in.get(i);
-			// Pattern: IrGraph(g1), IrFilter( EXISTS { IrBGP( IrGraph(g2, inner) ) } )
-			// Apply this fold only when the entire block consists of exactly these two lines
-			if (in.size() == 2 && i == 0 && n instanceof IrGraph && in.get(i + 1) instanceof IrFilter) {
+			// Pattern: IrGraph(g1) immediately followed by IrFilter(EXISTS { ... }) where the EXISTS
+			// body wraps its content in GRAPH blocks with the same graph ref. Move the FILTER inside
+			// the GRAPH and unwrap the inner GRAPH(s), grouping with braces.
+			if (i + 1 < in.size() && n instanceof IrGraph && in.get(i + 1) instanceof IrFilter) {
 				final IrGraph g1 = (IrGraph) n;
 				final IrFilter f = (IrFilter) in.get(i + 1);
-				// Only move FILTER inside GRAPH when the FILTER explicitly introduces a new scope.
-				if (f.isNewScope() && f.getBody() instanceof IrExists) {
+				// Move a following FILTER EXISTS inside the preceding GRAPH when safe, even if the
+				// original FILTER did not explicitly introduce a new scope. We will add an explicit
+				// grouped scope inside the GRAPH to preserve the intended grouping.
+				if (f.getBody() instanceof IrExists) {
 					final IrExists ex = (IrExists) f.getBody();
 					final IrBGP exWhere = ex.getWhere();
-					if (exWhere != null && exWhere.getLines().size() == 1
-							&& exWhere.getLines().get(0) instanceof IrGraph) {
-						final IrGraph innerGraph = (IrGraph) exWhere.getLines().get(0);
-						if (sameVarOrValue(g1.getGraph(), innerGraph.getGraph())) {
-							// Build new GRAPH body: original inner lines + FILTER EXISTS with unwrapped body
-							IrBGP newInner = new IrBGP(true); // enforce grouped braces inside GRAPH
+					if (exWhere != null) {
+						IrBGP unwrapped = new IrBGP(false);
+						boolean canUnwrap = unwrapInto(exWhere, g1.getGraph(), unwrapped);
+						if (canUnwrap && !unwrapped.getLines().isEmpty()) {
+							// Build new GRAPH body: a single BGP containing the triple and FILTER
+							IrBGP inner = new IrBGP(true);
 							if (g1.getWhere() != null) {
 								for (IrNode ln : g1.getWhere().getLines()) {
-									newInner.add(ln);
+									inner.add(ln);
 								}
 							}
-							IrExists newExists = new IrExists(innerGraph.getWhere(), ex.isNewScope());
-							IrFilter newFilter = new IrFilter(newExists, f.isNewScope());
-							newInner.add(newFilter);
-							out.add(new IrGraph(g1.getGraph(), newInner, g1.isNewScope()));
+							IrExists newExists = new IrExists(unwrapped, ex.isNewScope());
+							IrFilter newFilter = new IrFilter(newExists, false);
+							inner.add(newFilter);
+							out.add(new IrGraph(g1.getGraph(), inner, g1.isNewScope()));
 							i += 1; // consume the FILTER node
 							continue;
 						}
@@ -130,5 +134,63 @@ public final class MergeFilterExistsIntoPrecedingGraphTransform extends BaseTran
 		out.forEach(res::add);
 		res.setNewScope(bgp.isNewScope());
 		return res;
+	}
+
+	// Recursively unwrap nodes inside an EXISTS body into 'out', provided all GRAPH refs match 'graphRef'.
+	// Returns false if a node cannot be safely unwrapped.
+	private static boolean unwrapInto(IrNode node, Var graphRef, IrBGP out) {
+		if (node == null)
+			return false;
+		if (node instanceof IrBGP) {
+			IrBGP w = (IrBGP) node;
+			for (IrNode ln : w.getLines()) {
+				if (!unwrapInto(ln, graphRef, out)) {
+					return false;
+				}
+			}
+			return true;
+		}
+		if (node instanceof IrGraph) {
+			IrGraph ig = (IrGraph) node;
+			if (!sameVarOrValue(graphRef, ig.getGraph())) {
+				return false;
+			}
+			if (ig.getWhere() != null) {
+				for (IrNode ln : ig.getWhere().getLines()) {
+					out.add(ln);
+				}
+			}
+			return true;
+		}
+		if (node instanceof IrOptional) {
+			IrOptional o = (IrOptional) node;
+			IrBGP ow = o.getWhere();
+			if (ow != null && ow.getLines().size() == 1 && ow.getLines().get(0) instanceof IrGraph) {
+				IrGraph ig = (IrGraph) ow.getLines().get(0);
+				if (!sameVarOrValue(graphRef, ig.getGraph())) {
+					return false;
+				}
+				IrOptional no = new IrOptional(ig.getWhere(), o.isNewScope());
+				no.setNewScope(o.isNewScope());
+				out.add(no);
+				return true;
+			}
+			// Allow nested optional with a grouped BGP that contains only a single IrGraph line
+			if (ow != null && ow.getLines().size() == 1 && ow.getLines().get(0) instanceof IrBGP) {
+				IrBGP inner = (IrBGP) ow.getLines().get(0);
+				if (inner.getLines().size() == 1 && inner.getLines().get(0) instanceof IrGraph) {
+					IrGraph ig = (IrGraph) inner.getLines().get(0);
+					if (!sameVarOrValue(graphRef, ig.getGraph())) {
+						return false;
+					}
+					IrOptional no = new IrOptional(ig.getWhere(), o.isNewScope());
+					no.setNewScope(o.isNewScope());
+					out.add(no);
+					return true;
+				}
+			}
+			return false;
+		}
+		return false;
 	}
 }

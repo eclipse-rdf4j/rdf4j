@@ -94,19 +94,13 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				}
 			} else if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
-				// Always attempt a safe fuse; tryFuseUnion preserves explicit UNION scope by wrapping the
-				// fused result in a grouped IrBGP when needed.
-				IrNode fused = tryFuseUnion(u);
-				if (fused != u) {
-					m = fused;
-				} else {
-					// No fuse possible: preserve structure and recurse
-					IrUnion u2 = new IrUnion(u.isNewScope());
-					for (IrBGP b : u.getBranches()) {
-						u2.addBranch(apply(b, r));
-					}
-					m = u2;
+				// Do not fuse UNIONs at the top-level here; limit fusion to EXISTS/SERVICE contexts
+				// handled by dedicated passes to avoid altering expected top-level UNION shapes.
+				IrUnion u2 = new IrUnion(u.isNewScope());
+				for (IrBGP b : u.getBranches()) {
+					u2.addBranch(apply(b, r));
 				}
+				m = u2;
 			} else {
 				// Recurse into nested BGPs inside other containers (e.g., FILTER EXISTS)
 				m = n.transformChildren(child -> {
@@ -270,8 +264,9 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			// Safety gate: allow merge when there is no explicit scope, or allow a special-case
 			// merge across new-scope UNIONs only when both branches share a common _anon_path_* var name.
 			if (wasNewScope) {
-				// Restrict to the two-branch case for clarity/safety
-				if (u.getBranches().size() != 2 || !unionBranchesShareCommonAnonPathVarName(u)) {
+				// Restrict to the two-branch case for clarity/safety and require allowed role mapping
+				if (u.getBranches().size() != 2
+						|| !unionBranchesShareAnonPathVarWithAllowedRoleMapping(u)) {
 					return u;
 				}
 			} else {
