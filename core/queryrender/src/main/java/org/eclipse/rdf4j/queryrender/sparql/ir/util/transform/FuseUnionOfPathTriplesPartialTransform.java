@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -199,7 +198,7 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 			List<Integer> idxs = grp.idxs;
 			if (idxs.size() >= 2) {
 				// Merge these branches into one alternation path
-				LinkedHashSet<String> alts = new LinkedHashSet<>();
+				ArrayList<String> alts = new ArrayList<>();
 				for (int idx : idxs) {
 					String t = pathTexts.get(idx);
 					if (t != null) {

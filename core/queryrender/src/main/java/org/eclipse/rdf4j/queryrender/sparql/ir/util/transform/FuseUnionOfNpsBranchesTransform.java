@@ -11,9 +11,7 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
@@ -182,7 +180,7 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 		boolean innerBgpNewScope = false;
 		Var sCanon = null;
 		Var oCanon = null;
-		final Set<String> members = new LinkedHashSet<>();
+		final List<String> members = new ArrayList<>();
 		int fusedCount = 0;
 
 		for (IrBGP b : u.getBranches()) {
@@ -194,8 +192,9 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			// unwrap nested single-child BGPs introduced for explicit grouping
 			while (node instanceof IrBGP) {
 				IrNode inner = singleChild((IrBGP) node);
-				if (inner == null)
+				if (inner == null) {
 					break;
+				}
 				node = inner;
 			}
 			if (node instanceof IrGraph) {
@@ -206,8 +205,9 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				node = singleChild(gb.getWhere());
 				while (node instanceof IrBGP) {
 					IrNode inner = singleChild((IrBGP) node);
-					if (inner == null)
+					if (inner == null) {
 						break;
+					}
 					node = inner;
 				}
 			}
@@ -298,11 +298,13 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 	}
 
 	private static IrNode singleChild(IrBGP b) {
-		if (b == null)
+		if (b == null) {
 			return null;
+		}
 		List<IrNode> ls = b.getLines();
-		if (ls == null || ls.size() != 1)
+		if (ls == null || ls.size() != 1) {
 			return null;
+		}
 		return ls.get(0);
 	}
 
@@ -350,7 +352,7 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 		return res;
 	}
 
-	private static void addMembers(String npsPath, Set<String> out) {
+	private static void addMembers(String npsPath, List<String> out) {
 		// npsPath assumed to be '!(...)'
 		int start = npsPath.indexOf('(');
 		int end = npsPath.lastIndexOf(')');

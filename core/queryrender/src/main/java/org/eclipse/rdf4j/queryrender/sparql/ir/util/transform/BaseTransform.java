@@ -104,25 +104,30 @@ public class BaseTransform {
 
 	/** Merge NPS members of two canonical strings '!(...)', returning '!(a|b)'. Falls back to 'a' when malformed. */
 	public static String mergeNpsMembers(String a, String b) {
-		if (a == null || b == null)
+		if (a == null || b == null) {
 			return a;
+		}
 		int a1 = a.indexOf('('), a2 = a.lastIndexOf(')');
 		int b1 = b.indexOf('('), b2 = b.lastIndexOf(')');
-		if (a1 < 0 || a2 < 0 || b1 < 0 || b2 < 0)
+		if (a1 < 0 || a2 < 0 || b1 < 0 || b2 < 0) {
 			return a;
+		}
 		String ia = a.substring(a1 + 1, a2).trim();
 		String ib = b.substring(b1 + 1, b2).trim();
-		if (ia.isEmpty())
+		if (ia.isEmpty()) {
 			return b;
-		if (ib.isEmpty())
+		}
+		if (ib.isEmpty()) {
 			return a;
+		}
 		return "!(" + ia + "|" + ib + ")";
 	}
 
 	/** Return true if the string has the given character at top level (not inside parentheses). */
 	public static boolean hasTopLevel(final String s, final char ch) {
-		if (s == null)
+		if (s == null) {
 			return false;
+		}
 		final String t = s.trim();
 		int depth = 0;
 		for (int i = 0; i < t.length(); i++) {
@@ -140,35 +145,43 @@ public class BaseTransform {
 
 	/** True if the text is wrapped by a single pair of outer parentheses. */
 	public static boolean isWrapped(final String s) {
-		if (s == null)
+		if (s == null) {
 			return false;
+		}
 		final String t = s.trim();
-		if (t.length() < 2 || t.charAt(0) != '(' || t.charAt(t.length() - 1) != ')')
+		if (t.length() < 2 || t.charAt(0) != '(' || t.charAt(t.length() - 1) != ')') {
 			return false;
+		}
 		int depth = 0;
 		for (int i = 0; i < t.length(); i++) {
 			char c = t.charAt(i);
-			if (c == '(')
+			if (c == '(') {
 				depth++;
-			else if (c == ')')
+			} else if (c == ')') {
 				depth--;
-			if (depth == 0 && i < t.length() - 1)
+			}
+			if (depth == 0 && i < t.length() - 1) {
 				return false; // closes too early
+			}
 		}
 		return true;
 	}
 
 	/** Rough atomic check for a property path text: no top-level '|' or '/', NPS, or already wrapped. */
 	public static boolean isAtomicPathText(final String s) {
-		if (s == null)
+		if (s == null) {
 			return true;
+		}
 		final String t = s.trim();
-		if (t.isEmpty())
+		if (t.isEmpty()) {
 			return true;
-		if (isWrapped(t))
+		}
+		if (isWrapped(t)) {
 			return true;
-		if (t.startsWith("!("))
+		}
+		if (t.startsWith("!(")) {
 			return true; // negated property set is atomic
+		}
 		if (t.startsWith("^")) {
 			final String rest = t.substring(1).trim();
 			// ^IRI or ^( ... )
@@ -181,26 +194,30 @@ public class BaseTransform {
 	 * When using a part inside a sequence with '/', only wrap it if it contains a top-level alternation '|'.
 	 */
 	public static String wrapForSequence(final String part) {
-		if (part == null)
+		if (part == null) {
 			return null;
+		}
 		final String t = part.trim();
-		if (isWrapped(t) || !hasTopLevel(t, '|'))
+		if (isWrapped(t) || !hasTopLevel(t, '|')) {
 			return t;
+		}
 		return "(" + t + ")";
 	}
 
 	/** Prefix with '^', wrapping if the inner is not atomic. */
 	public static String wrapForInverse(final String inner) {
-		if (inner == null)
+		if (inner == null) {
 			return "^()";
+		}
 		final String t = inner.trim();
 		return "^" + (isAtomicPathText(t) ? t : ("(" + t + ")"));
 	}
 
 	/** Apply a quantifier to a path, wrapping only when the inner is not atomic. */
 	public static String applyQuantifier(final String inner, final char quant) {
-		if (inner == null)
+		if (inner == null) {
 			return "()" + quant;
+		}
 		final String t = inner.trim();
 		return (isAtomicPathText(t) ? t : ("(" + t + ")")) + quant;
 	}
@@ -707,29 +724,36 @@ public class BaseTransform {
 		}
 		// Allowed mappings:
 		// s-s
-		if (intersects(a.s, b.s))
+		if (intersects(a.s, b.s)) {
 			return true;
+		}
 		// s-o
-		if (intersects(a.s, b.o))
+		if (intersects(a.s, b.o)) {
 			return true;
+		}
 		// o-s
-		if (intersects(a.o, b.s))
+		if (intersects(a.o, b.s)) {
 			return true;
+		}
 		// o-p (object in one equals predicate in the other)
-		if (intersects(a.o, b.p))
+		if (intersects(a.o, b.p)) {
 			return true;
+		}
 		// And the reverse for o-p to keep branches symmetric
-		if (intersects(b.o, a.p))
+		if (intersects(b.o, a.p)) {
 			return true;
+		}
 		return false;
 	}
 
 	private static boolean intersects(Set<String> a, Set<String> b) {
-		if (a == null || b == null)
+		if (a == null || b == null) {
 			return false;
+		}
 		for (String x : a) {
-			if (b.contains(x))
+			if (b.contains(x)) {
 				return true;
+			}
 		}
 		return false;
 	}
@@ -741,39 +765,47 @@ public class BaseTransform {
 	}
 
 	private static BranchRoles collectBranchRoles(IrBGP b) {
-		if (b == null)
+		if (b == null) {
 			return null;
+		}
 		BranchRoles out = new BranchRoles();
 		collectRolesRecursive(b, out);
 		// If nothing collected, return null to signal ineligibility
-		if (out.s.isEmpty() && out.o.isEmpty() && out.p.isEmpty())
+		if (out.s.isEmpty() && out.o.isEmpty() && out.p.isEmpty()) {
 			return null;
+		}
 		return out;
 	}
 
 	private static void collectRolesRecursive(IrBGP w, BranchRoles out) {
-		if (w == null)
+		if (w == null) {
 			return;
+		}
 		for (IrNode ln : w.getLines()) {
 			if (ln instanceof IrStatementPattern) {
 				IrStatementPattern sp = (IrStatementPattern) ln;
 				Var s = sp.getSubject();
 				Var o = sp.getObject();
 				Var p = sp.getPredicate();
-				if (isAnonPathVar(s) || isAnonPathInverseVar(s))
+				if (isAnonPathVar(s) || isAnonPathInverseVar(s)) {
 					out.s.add(s.getName());
-				if (isAnonPathVar(o) || isAnonPathInverseVar(o))
+				}
+				if (isAnonPathVar(o) || isAnonPathInverseVar(o)) {
 					out.o.add(o.getName());
-				if (p != null && !p.hasValue() && (isAnonPathVar(p) || isAnonPathInverseVar(p)))
+				}
+				if (p != null && !p.hasValue() && (isAnonPathVar(p) || isAnonPathInverseVar(p))) {
 					out.p.add(p.getName());
+				}
 			} else if (ln instanceof IrPathTriple) {
 				IrPathTriple pt = (IrPathTriple) ln;
 				Var s = pt.getSubject();
 				Var o = pt.getObject();
-				if (isAnonPathVar(s) || isAnonPathInverseVar(s))
+				if (isAnonPathVar(s) || isAnonPathInverseVar(s)) {
 					out.s.add(s.getName());
-				if (isAnonPathVar(o) || isAnonPathInverseVar(o))
+				}
+				if (isAnonPathVar(o) || isAnonPathInverseVar(o)) {
 					out.o.add(o.getName());
+				}
 			} else if (ln instanceof IrGraph) {
 				collectRolesRecursive(((IrGraph) ln).getWhere(), out);
 			} else if (ln instanceof IrBGP) {

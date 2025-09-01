@@ -40,8 +40,9 @@ public final class MergeFilterExistsIntoPrecedingGraphTransform extends BaseTran
 	}
 
 	public static IrBGP apply(IrBGP bgp) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		final List<IrNode> in = bgp.getLines();
 		final List<IrNode> out = new ArrayList<>();
 
@@ -139,8 +140,9 @@ public final class MergeFilterExistsIntoPrecedingGraphTransform extends BaseTran
 	// Recursively unwrap nodes inside an EXISTS body into 'out', provided all GRAPH refs match 'graphRef'.
 	// Returns false if a node cannot be safely unwrapped.
 	private static boolean unwrapInto(IrNode node, Var graphRef, IrBGP out) {
-		if (node == null)
+		if (node == null) {
 			return false;
+		}
 		if (node instanceof IrBGP) {
 			IrBGP w = (IrBGP) node;
 			for (IrNode ln : w.getLines()) {

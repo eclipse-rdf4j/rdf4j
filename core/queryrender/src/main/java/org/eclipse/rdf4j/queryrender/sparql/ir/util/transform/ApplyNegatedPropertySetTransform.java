@@ -691,8 +691,9 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 		}
 		PT a = extractNpsPath(u.getBranches().get(0));
 		PT b = extractNpsPath(u.getBranches().get(1));
-		if (a == null || b == null)
+		if (a == null || b == null) {
 			return null;
+		}
 		// Graph refs must match
 		if ((a.g == null && b.g != null) || (a.g != null && b.g == null)
 				|| (a.g != null && !sameVarOrValue(a.g, b.g))) {
@@ -707,8 +708,9 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 		String toAddB = pB;
 		if (sameVar(a.pt.getSubject(), b.pt.getObject()) && sameVar(a.pt.getObject(), b.pt.getSubject())) {
 			String inv = invertNegatedPropertySet(pB);
-			if (inv == null)
+			if (inv == null) {
 				return null;
+			}
 			toAddB = inv;
 		} else if (!(sameVar(a.pt.getSubject(), b.pt.getSubject()) && sameVar(a.pt.getObject(), b.pt.getObject()))) {
 			return null;
@@ -717,8 +719,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 		List<String> mem = new ArrayList<>();
 		addMembers(pA, mem);
 		addMembers(toAddB, mem);
-		LinkedHashSet<String> uniq = new LinkedHashSet<>(mem);
-		String merged = "!(" + String.join("|", uniq) + ")";
+		String merged = "!(" + String.join("|", mem) + ")";
 		IrPathTriple mergedPt = new IrPathTriple(a.pt.getSubject(), merged, a.pt.getObject(), false);
 		IrNode fused;
 		if (a.g != null) {
@@ -739,16 +740,19 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 
 	private static PT extractNpsPath(IrBGP b) {
 		PT res = new PT();
-		if (b == null)
+		if (b == null) {
 			return null;
+		}
 		IrNode only = (b.getLines().size() == 1) ? b.getLines().get(0) : null;
 		if (only instanceof IrGraph) {
 			IrGraph g = (IrGraph) only;
-			if (g.getWhere() == null || g.getWhere().getLines().size() != 1)
+			if (g.getWhere() == null || g.getWhere().getLines().size() != 1) {
 				return null;
+			}
 			IrNode inner = g.getWhere().getLines().get(0);
-			if (!(inner instanceof IrPathTriple))
+			if (!(inner instanceof IrPathTriple)) {
 				return null;
+			}
 			res.g = g.getGraph();
 			res.pt = (IrPathTriple) inner;
 			return res;
@@ -797,13 +801,16 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 	}
 
 	private static String normalizeCompactNpsLocal(String path) {
-		if (path == null)
+		if (path == null) {
 			return null;
+		}
 		String t = path.trim();
-		if (t.isEmpty())
+		if (t.isEmpty()) {
 			return null;
-		if (t.startsWith("!(") && t.endsWith(")"))
+		}
+		if (t.startsWith("!(") && t.endsWith(")")) {
 			return t;
+		}
 		if (t.startsWith("!^")) {
 			String inner = t.substring(1); // "^..."
 			return "!(" + inner + ")";
@@ -819,12 +826,14 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 	}
 
 	private static void addMembers(String npsPath, List<String> out) {
-		if (npsPath == null)
+		if (npsPath == null) {
 			return;
+		}
 		int s = npsPath.indexOf('(');
 		int e = npsPath.lastIndexOf(')');
-		if (s < 0 || e < 0 || e <= s)
+		if (s < 0 || e < 0 || e <= s) {
 			return;
+		}
 		String inner = npsPath.substring(s + 1, e);
 		for (String tok : inner.split("\\|")) {
 			String t = tok.trim();
