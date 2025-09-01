@@ -3522,6 +3522,23 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
+	void yetAnotherTest2() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  GRAPH <http://graphs.example/g1> {\n" +
+				"    ?s ex:pC ?u1 . FILTER EXISTS {\n" +
+				"      {\n" +
+				"        ?s ex:pA ?o . OPTIONAL {\n" +
+				"          ?s !<http://example.org/p/I0> ?o .\n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
 	void pathUnionTest1() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
