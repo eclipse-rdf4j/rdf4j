@@ -44,11 +44,13 @@ public class IrBGP extends IrNode {
 	@Override
 	public void print(IrPrinter p) {
 		p.openBlock();
-		if (isNewScope())
+		if (isNewScope()) {
 			p.openBlock();
+		}
 		p.printLines(lines);
-		if (isNewScope())
+		if (isNewScope()) {
 			p.closeBlock();
+		}
 		p.closeBlock();
 	}
 

@@ -48,8 +48,9 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 	 * grouping at that level, and not at the top-level WHERE, to avoid introducing extra braces there.
 	 */
 	private static IrBGP apply(IrBGP bgp, boolean insideExists) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		final List<IrNode> in = bgp.getLines();
 		final List<IrNode> out = new ArrayList<>();
 		int i = 0;

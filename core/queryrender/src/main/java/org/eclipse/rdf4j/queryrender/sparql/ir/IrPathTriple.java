@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
-import java.util.LinkedHashSet;
-
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.SimplifyPathParensTransform;
