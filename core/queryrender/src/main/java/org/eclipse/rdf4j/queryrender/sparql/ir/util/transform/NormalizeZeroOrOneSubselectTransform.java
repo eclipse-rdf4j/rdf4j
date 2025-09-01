@@ -197,7 +197,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 			if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
 				return null;
 			}
-			String step = r.renderIRI((IRI) p.getValue());
+			String step = r.convertIRIToString((IRI) p.getValue());
 			if (sameVar(varNamed(sName), sp.getSubject()) && sameVar(varNamed(oName), sp.getObject())) {
 				steps.add(step);
 			} else if (sameVar(varNamed(sName), sp.getObject()) && sameVar(varNamed(oName), sp.getSubject())) {
@@ -318,7 +318,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 				if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
 					return null;
 				}
-				String step = r.renderIRI((IRI) p.getValue());
+				String step = r.convertIRIToString((IRI) p.getValue());
 				if (sameVar(varNamed(sName), sp.getSubject()) && sameVar(varNamed(oName), sp.getObject())) {
 					steps.add(step);
 				} else if (sameVar(varNamed(sName), sp.getObject()) && sameVar(varNamed(oName), sp.getSubject())) {
@@ -343,7 +343,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 					} else if (!sameVar(commonGraph, g.getGraph())) {
 						return null;
 					}
-					String step = r.renderIRI((IRI) p.getValue());
+					String step = r.convertIRIToString((IRI) p.getValue());
 					if (sameVar(varNamed(sName), sp.getSubject()) && sameVar(varNamed(oName), sp.getObject())) {
 						steps.add(step);
 					} else if (sameVar(varNamed(sName), sp.getObject())
@@ -583,7 +583,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 				if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
 					return null;
 				}
-				String step = r.renderIRI((IRI) p.getValue());
+				String step = r.convertIRIToString((IRI) p.getValue());
 				if (sameVar(varNamed(sName), sp.getSubject()) && sameVar(varNamed(oName), sp.getObject())) {
 					steps.add(step);
 				} else if (sameVar(varNamed(sName), sp.getObject()) && sameVar(varNamed(oName), sp.getSubject())) {
@@ -608,7 +608,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 					} else if (!sameVar(commonGraph, g.getGraph())) {
 						return null;
 					}
-					String step = r.renderIRI((IRI) p.getValue());
+					String step = r.convertIRIToString((IRI) p.getValue());
 					if (sameVar(varNamed(sName), sp.getSubject()) && sameVar(varNamed(oName), sp.getObject())) {
 						steps.add(step);
 					} else if (sameVar(varNamed(sName), sp.getObject()) && sameVar(varNamed(oName), sp.getSubject())) {

@@ -154,7 +154,7 @@ public final class FuseUnionOfSimpleTriplesTransform extends BaseTransform {
 					|| !(sp.getPredicate().getValue() instanceof IRI)) {
 				return null;
 			}
-			String step = r.renderIRI((IRI) sp.getPredicate().getValue());
+			String step = r.convertIRIToString((IRI) sp.getPredicate().getValue());
 
 			Var sVar;
 			Var oVar;
