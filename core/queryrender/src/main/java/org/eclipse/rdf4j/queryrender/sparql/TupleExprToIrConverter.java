@@ -1240,9 +1240,6 @@ public class TupleExprToIrConverter {
 			}
 			members.add(new PathAtom(bad, inverse));
 		}
-		if (members.isEmpty()) {
-			return null;
-		}
 		PathNode inner = (members.size() == 1) ? members.get(0) : new PathAlt(members);
 		return new PathNeg(inner);
 	}
@@ -1962,7 +1959,7 @@ public class TupleExprToIrConverter {
 			final Var subj = p.getSubjectVar();
 			final Var obj = p.getObjectVar();
 			final String expr = TupleExprToIrConverter.this.buildPathExprForArbitraryLengthPath(p);
-			final IrPathTriple pt = new IrPathTriple(subj, expr, obj, false);
+			final IrPathTriple pt = new IrPathTriple(subj, null, expr, obj, null, false);
 			final Var ctx = getContextVarSafe(p);
 			if (ctx != null && (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
 				IrBGP innerBgp = new IrBGP(false);
@@ -1994,7 +1991,7 @@ public class TupleExprToIrConverter {
 			return false;
 		}
 		final boolean[] seen = new boolean[] { false };
-		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+		expr.visit(new AbstractQueryModelVisitor<>() {
 			@Override
 			protected void meetNode(QueryModelNode node) {
 				try {

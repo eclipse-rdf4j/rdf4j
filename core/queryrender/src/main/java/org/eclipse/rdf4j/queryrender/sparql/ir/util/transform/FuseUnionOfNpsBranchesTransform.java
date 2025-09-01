@@ -180,6 +180,7 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 		boolean innerBgpNewScope = false;
 		Var sCanon = null;
 		Var oCanon = null;
+		IrPathTriple firstPt = null;
 		final List<String> members = new ArrayList<>();
 		int fusedCount = 0;
 
@@ -230,6 +231,7 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			if (sCanon == null && oCanon == null) {
 				sCanon = pt.getSubject();
 				oCanon = pt.getObject();
+				firstPt = pt;
 				graphRef = g;
 				graphRefNewScope = gNewScope;
 				innerBgpNewScope = whereNewScope;
@@ -276,7 +278,9 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				}
 			}
 			final String merged = "!(" + String.join("|", members) + ")";
-			IrPathTriple mergedPt = new IrPathTriple(sCanon, merged, oCanon, false);
+			IrPathTriple mergedPt = new IrPathTriple(sCanon,
+					firstPt == null ? null : firstPt.getSubjectOverride(), merged, oCanon,
+					firstPt == null ? null : firstPt.getObjectOverride(), false);
 			IrNode fused;
 			if (graphRef != null) {
 				IrBGP inner = new IrBGP(innerBgpNewScope);

@@ -30,6 +30,14 @@ public abstract class IrTripleLike extends IrNode {
 		this.object = object;
 	}
 
+	public IrTripleLike(Var subject, IrNode subjectOverride, Var object, IrNode objectOverride, boolean newScope) {
+		super(newScope);
+		this.subjectOverride = subjectOverride;
+		this.subject = subject;
+		this.object = object;
+		this.objectOverride = objectOverride;
+	}
+
 	public Var getSubject() {
 		return subject;
 	}

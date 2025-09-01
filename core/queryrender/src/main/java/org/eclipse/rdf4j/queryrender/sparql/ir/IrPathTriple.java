@@ -25,7 +25,12 @@ public class IrPathTriple extends IrTripleLike {
 	private final String pathText;
 
 	public IrPathTriple(Var subject, String pathText, Var object, boolean newScope) {
-		super(subject, object, newScope);
+		this(subject, null, pathText, object, null, newScope);
+	}
+
+	public IrPathTriple(Var subject, IrNode subjectOverride, String pathText, Var object, IrNode objectOverride,
+			boolean newScope) {
+		super(subject, subjectOverride, object, objectOverride, newScope);
 		this.pathText = pathText;
 	}
 

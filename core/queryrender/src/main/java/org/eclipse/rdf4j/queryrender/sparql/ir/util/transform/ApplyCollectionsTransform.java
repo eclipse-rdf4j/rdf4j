@@ -80,7 +80,7 @@ public final class ApplyCollectionsTransform extends BaseTransform {
 			String cur = head;
 			int guard = 0;
 			boolean ok = true;
-			while (ok) {
+			while (true) {
 				if (++guard > 10000) {
 					ok = false;
 					break;
@@ -122,8 +122,8 @@ public final class ApplyCollectionsTransform extends BaseTransform {
 				collections.put(head, col);
 			}
 		}
-		// Rewrite lines: replace SP(s,p,head) where head is a collection head with an IrCollectionTriple; remove list
-		// triples
+		// Rewrite lines: replace occurrences of the collection head variable with an IrCollection node when used as
+		// subject or object in triple/path triples; remove consumed list triples
 		List<IrNode> out = new ArrayList<>();
 		for (IrNode n : bgp.getLines()) {
 			if (consumed.contains(n)) {
@@ -131,12 +131,36 @@ public final class ApplyCollectionsTransform extends BaseTransform {
 			}
 			if (n instanceof IrStatementPattern) {
 				IrStatementPattern sp = (IrStatementPattern) n;
+				// Subject replacement if the subject is a collection head
+				Var subj = sp.getSubject();
+				if (subj != null && !subj.hasValue() && subj.getName() != null
+						&& collections.containsKey(subj.getName())) {
+					IrCollection col = collections.get(subj.getName());
+					sp.setSubjectOverride(col);
+				}
+
+				// Object replacement if the object is a collection head
 				Var obj = sp.getObject();
 				if (obj != null && !obj.hasValue() && obj.getName() != null && collections.containsKey(obj.getName())) {
 					IrCollection col = collections.get(obj.getName());
 					sp.setObjectOverride(col);
 					out.add(sp);
 					continue;
+				}
+			} else if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) {
+				org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple pt = (org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) n;
+				// Subject replacement for path triple
+				Var subj = pt.getSubject();
+				if (subj != null && !subj.hasValue() && subj.getName() != null
+						&& collections.containsKey(subj.getName())) {
+					IrCollection col = collections.get(subj.getName());
+					pt.setSubjectOverride(col);
+				}
+				// Object replacement for path triple
+				Var obj = pt.getObject();
+				if (obj != null && !obj.hasValue() && obj.getName() != null && collections.containsKey(obj.getName())) {
+					IrCollection col = collections.get(obj.getName());
+					pt.setObjectOverride(col);
 				}
 			} else if (n instanceof IrBGP || n instanceof IrGraph || n instanceof IrOptional || n instanceof IrUnion
 					|| n instanceof IrMinus || n instanceof IrService || n instanceof IrSubSelect) {
