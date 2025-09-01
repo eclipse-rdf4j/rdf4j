@@ -92,7 +92,7 @@ public final class FusePrePathThenUnionAlternationTransform extends BaseTransfor
 								&& FOAF.NAME.equals(tail.getPredicate().getValue())
 								&& sameVar(endVar, tail.getSubject())) {
 							// Append tail step directly
-							fused = fused + "/" + r.renderIRI(FOAF.NAME);
+							fused = fused + "/" + r.convertIRIToString(FOAF.NAME);
 							endVar = tail.getObject();
 							out.add(new IrPathTriple(pre.getSubject(), fused, endVar, false));
 							i += 2; // consume union and tail
@@ -167,7 +167,7 @@ public final class FusePrePathThenUnionAlternationTransform extends BaseTransfor
 				IrStatementPattern sp = (IrStatementPattern) only;
 				if (sp.getPredicate() != null && sp.getPredicate().hasValue()
 						&& sp.getPredicate().getValue() instanceof IRI) {
-					String step = r.renderIRI((IRI) sp.getPredicate().getValue());
+					String step = r.convertIRIToString((IRI) sp.getPredicate().getValue());
 					if (sameVar(mid, sp.getSubject())) {
 						return new Tail(sp.getObject(), step);
 					}
@@ -191,14 +191,14 @@ public final class FusePrePathThenUnionAlternationTransform extends BaseTransfor
 			}
 			if (sameVar(mid, a.getSubject()) && sameVar(a.getObject(), c.getSubject())) {
 				// forward-forward
-				String step1 = r.renderIRI((IRI) a.getPredicate().getValue());
-				String step2 = r.renderIRI((IRI) c.getPredicate().getValue());
+				String step1 = r.convertIRIToString((IRI) a.getPredicate().getValue());
+				String step2 = r.convertIRIToString((IRI) c.getPredicate().getValue());
 				return new Tail(c.getObject(), step1 + "/" + step2);
 			}
 			if (sameVar(mid, a.getObject()) && sameVar(a.getSubject(), c.getObject())) {
 				// inverse-inverse
-				String step1 = "^" + r.renderIRI((IRI) a.getPredicate().getValue());
-				String step2 = "^" + r.renderIRI((IRI) c.getPredicate().getValue());
+				String step1 = "^" + r.convertIRIToString((IRI) a.getPredicate().getValue());
+				String step2 = "^" + r.convertIRIToString((IRI) c.getPredicate().getValue());
 				return new Tail(c.getSubject(), step1 + "/" + step2);
 			}
 		}

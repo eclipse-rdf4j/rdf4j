@@ -331,7 +331,7 @@ public class BaseTransform {
 					if (sameVar(ptA.getObject(), spB.getObject()) && isAnonPathVar(ptA.getObject())
 							&& sameVar(spB.getSubject(), ptC.getSubject()) && isAnonPathVar(spB.getSubject())
 							&& isAnonPathVar(spB.getObject())) {
-						String fusedPath = "^" + r.renderIRI((IRI) bPred.getValue()) + "/" + ptC.getPathText();
+						String fusedPath = "^" + r.convertIRIToString((IRI) bPred.getValue()) + "/" + ptC.getPathText();
 						IrPathTriple d = new IrPathTriple(spB.getObject(), fusedPath, ptC.getObject(), false);
 						// Keep A; then D replaces B and C
 						out.add(ptA);
@@ -431,12 +431,12 @@ public class BaseTransform {
 				if (p != null && p.hasValue() && p.getValue() instanceof IRI) {
 					IrPathTriple pt = (IrPathTriple) in.get(i + 1);
 					if (sameVar(sp.getObject(), pt.getSubject()) && isAnonPathVar(pt.getSubject())) {
-						String fused = r.renderIRI((IRI) p.getValue()) + "/" + pt.getPathText();
+						String fused = r.convertIRIToString((IRI) p.getValue()) + "/" + pt.getPathText();
 						out.add(new IrPathTriple(sp.getSubject(), fused, pt.getObject(), false));
 						i += 1;
 						continue;
 					} else if (sameVar(sp.getSubject(), pt.getObject()) && isAnonPathVar(pt.getObject())) {
-						String fused = pt.getPathText() + "/^" + r.renderIRI((IRI) p.getValue());
+						String fused = pt.getPathText() + "/^" + r.convertIRIToString((IRI) p.getValue());
 						out.add(new IrPathTriple(pt.getSubject(), fused, sp.getObject(), false));
 						i += 1;
 						continue;
@@ -501,7 +501,7 @@ public class BaseTransform {
 						}
 					}
 					if (join != null) {
-						String step = r.renderIRI((IRI) join.getPredicate().getValue());
+						String step = r.convertIRIToString((IRI) join.getPredicate().getValue());
 						String newPath = pt.getPathText() + "/" + (inverse ? "^" : "") + step;
 						Var newEnd = inverse ? join.getSubject() : join.getObject();
 						pt = new IrPathTriple(pt.getSubject(), newPath, newEnd, pt.isNewScope());
@@ -977,7 +977,7 @@ public class BaseTransform {
 						}
 					}
 					if (head != null) {
-						final String ptxt = r.renderIRI((IRI) head.getPredicate().getValue());
+						final String ptxt = r.convertIRIToString((IRI) head.getPredicate().getValue());
 						final String prefix = (headInverse ? "^" : "") + ptxt + "/";
 						final Var newStart = headInverse ? head.getObject() : head.getSubject();
 						pt = new IrPathTriple(newStart, prefix + pt.getPathText(), pt.getObject(), pt.isNewScope());
@@ -1018,7 +1018,7 @@ public class BaseTransform {
 						}
 					}
 					if (join != null) {
-						final String step = r.renderIRI((IRI) join.getPredicate().getValue());
+						final String step = r.convertIRIToString((IRI) join.getPredicate().getValue());
 						final String newPath = pt.getPathText() + "/" + (inverse ? "^" : "") + step;
 						final Var newEnd = inverse ? join.getSubject() : join.getObject();
 						pt = new IrPathTriple(pt.getSubject(), newPath, newEnd, pt.isNewScope());
@@ -1081,7 +1081,7 @@ public class BaseTransform {
 			return "?_";
 		}
 		if (v.hasValue()) {
-			return r.renderValue(v.getValue());
+			return r.convertValueToString(v.getValue());
 		}
 		return "?" + v.getName();
 	}

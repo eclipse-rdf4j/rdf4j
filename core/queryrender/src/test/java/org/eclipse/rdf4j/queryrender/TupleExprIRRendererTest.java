@@ -54,6 +54,12 @@ public class TupleExprIRRendererTest {
 		return style;
 	}
 
+	@BeforeEach
+	void _captureTestInfo(TestInfo info) {
+		this.testInfo = info;
+		purgeReportFilesForCurrentTest();
+	}
+
 	private static void writeReportFile(String base, String label, String content) {
 		Path dir = Paths.get("target", "surefire-reports");
 		try {
@@ -70,9 +76,37 @@ public class TupleExprIRRendererTest {
 
 	// ---------- Helpers ----------
 
-	@BeforeEach
-	void _captureTestInfo(TestInfo info) {
-		this.testInfo = info;
+	// --- compute full-class-name#test-method-name (same as your writer uses) ---
+	private String currentTestBaseName() {
+		String cls = testInfo != null && testInfo.getTestClass().isPresent()
+				? testInfo.getTestClass().get().getName()
+				: "UnknownClass";
+		String method = testInfo != null && testInfo.getTestMethod().isPresent()
+				? testInfo.getTestMethod().get().getName()
+				: "UnknownMethod";
+		return cls + "#" + method;
+	}
+
+	// --- delete the four files if they exist ---
+	private static final Path SUREFIRE_DIR = Paths.get("target", "surefire-reports");
+	private static final String[] REPORT_LABELS = new String[] {
+			"SPARQL_expected",
+			"SPARQL_actual",
+			"TupleExpr_expected",
+			"TupleExpr_actual"
+	};
+
+	private void purgeReportFilesForCurrentTest() {
+		String base = currentTestBaseName();
+		for (String label : REPORT_LABELS) {
+			Path file = SUREFIRE_DIR.resolve(base + "_" + label + ".txt");
+			try {
+				Files.deleteIfExists(file);
+			} catch (IOException e) {
+				// Don’t block the test on cleanup trouble; just log
+				System.err.println("⚠️ Unable to delete old report file: " + file.toAbsolutePath() + " :: " + e);
+			}
+		}
 	}
 
 	private TupleExpr parseAlgebra(String sparql) {
@@ -119,15 +153,15 @@ public class TupleExprIRRendererTest {
 		return r2;
 	}
 
-	private String currentTestBaseName() {
-		String cls = testInfo != null && testInfo.getTestClass().isPresent()
-				? testInfo.getTestClass().get().getName()
-				: "UnknownClass";
-		String method = testInfo != null && testInfo.getTestMethod().isPresent()
-				? testInfo.getTestMethod().get().getName()
-				: "UnknownMethod";
-		return cls + "#" + method;
-	}
+//	private String currentTestBaseName() {
+//		String cls = testInfo != null && testInfo.getTestClass().isPresent()
+//				? testInfo.getTestClass().get().getName()
+//				: "UnknownClass";
+//		String method = testInfo != null && testInfo.getTestMethod().isPresent()
+//				? testInfo.getTestMethod().get().getName()
+//				: "UnknownMethod";
+//		return cls + "#" + method;
+//	}
 
 	/** Assert semantic equivalence by comparing result rows (order-insensitive). */
 
@@ -880,28 +914,28 @@ public class TupleExprIRRendererTest {
 				"    ?s a foaf:Person .\n" +
 				"    OPTIONAL {\n" +
 				"      ?s rdfs:label ?label .\n" +
-				"      FILTER (LANGMATCHES(LANG(?label), \"en\"))\n" +
+				"      FILTER ( LANGMATCHES(LANG(?label), \"en\") )\n" +
 				"    }\n" +
 				"  }\n" +
 				"    UNION\n" +
 				"  {\n" +
-				"    ?_anon_1 foaf:name ?label .\n" +
-				"    BIND(\"B\" AS ?src)\n" +
-				"    BIND(BNODE() AS ?s)\n" +
+				"    ?anon1 foaf:name ?label .\n" +
+				"    BIND( \"B\" AS ?src )\n" +
+				"    BIND( BNODE() AS ?s )\n" +
 				"  }\n" +
 				"  {\n" +
-				"    SELECT ?s (COUNT(?o) AS ?innerC)\n" +
+				"    SELECT ?s ( COUNT(?o) AS ?innerC )\n" +
 				"    WHERE {\n" +
 				"      ?s ?p ?o .\n" +
-				"      FILTER (?p != rdf:type)\n" +
+				"      FILTER ( ?p != rdf:type )\n" +
 				"    }\n" +
 				"    GROUP BY ?s\n" +
-				"    HAVING (COUNT(?o) >= 0)\n" +
+				"    HAVING ( COUNT(?o) >= 0 )\n" +
 				"  }\n" +
 				"}\n" +
 				"GROUP BY ?s ?label ?src\n" +
-				"HAVING (SUM(?innerC) >= 1)\n" +
-				"ORDER BY DESC(?c) STRLEN(COALESCE(?label, \"\"))\n" +
+				"HAVING ( SUM(?innerC) >= 1 )\n" +
+				"ORDER BY DESC( ?c ) STRLEN( COALESCE(?label, \"\") )\n" +
 				"LIMIT 20";
 		assertSameSparqlQuery(q, cfg());
 	}
@@ -1954,8 +1988,8 @@ public class TupleExprIRRendererTest {
 				"    ?a (^foaf:knows/!(ex:helps|ex:knows|rdf:subject|rdf:type)/foaf:name) ?n .\n" +
 				"    FILTER ((LANG(?n) = \"\") || LANGMATCHES(LANG(?n), \"en\"))\n" +
 				"    OPTIONAL {\n" +
-				"      ?a foaf:knows+ ?_anon_1 .\n" +
-				"      FILTER (BOUND(?_anon_1))\n" +
+				"      ?a foaf:knows+ ?anon1 .\n" +
+				"      FILTER (BOUND(?anon1))\n" +
 				"    }\n" +
 				"  }\n" +
 				"}";
@@ -2422,7 +2456,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?x WHERE {\n" +
 				"  [] ex:pA ?s ;\n" +
 				"     ex:pB [ ex:pC ?x ] .\n" +
-				"  ?s ex:pD ( ex:Person ex:Thing ) .\n" +
+				"  ?s ex:pD (ex:Person ex:Thing) .\n" +
 				"}";
 
 		assertSameSparqlQuery(q, cfg());
@@ -2444,9 +2478,12 @@ public class TupleExprIRRendererTest {
 	void testBnodes3() {
 		String q = "SELECT ?s ?x WHERE {\n" +
 				"  _:bnode1 ex:pA ?s ;\n" +
-				"     ex:pB [ ex:pC ?x; ex:pB [ex:pF _:bnode1] ] .\n" +
+				"           ex:pB [\n" +
+				"                   ex:pC ?x;\n" +
+				"                   ex:pB [ ex:pF _:bnode1 ] \n" +
+				"                 ] .\n" +
 				"  ?s ex:pD ( ex:Person ex:Thing ) .\n" +
-				" [] ex:pE _:bnode1 .\n" +
+				"  [] !(ex:pE |^ex:pE) _:bnode1 .\n" +
 				"}";
 
 		assertSameSparqlQuery(q, cfg());
@@ -2599,12 +2636,14 @@ public class TupleExprIRRendererTest {
 	void testFilterExistsNested() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ex:pC ?u1 .\n" +
-				"  FILTER EXISTS { { \n" +
-				"    ?s ex:pC ?u0 .\n" +
-				"    FILTER EXISTS {\n" +
-				"      ?s !(ex:pA|^<http://example.org/p/I0>) ?o .\n" +
+				"  FILTER EXISTS {\n" +
+				"    {\n" +
+				"      ?s ex:pC ?u0 .\n" +
+				"      FILTER EXISTS {\n" +
+				"        ?s !( ex:pA|^<http://example.org/p/I0> ) ?o .\n" +
+				"      }\n" +
 				"    }\n" +
-				"  } } \n" +
+				"  }\n" +
 				"}";
 
 		assertSameSparqlQuery(q, cfg());

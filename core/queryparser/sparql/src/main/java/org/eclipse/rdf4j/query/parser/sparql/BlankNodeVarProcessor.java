@@ -63,6 +63,14 @@ public class BlankNodeVarProcessor extends AbstractASTVisitor {
 			return "_anon_bnode_" + anonVarNo++;
 		}
 
+		private String createAnonUserVarName() {
+			return "_anon_user_bnode_" + anonVarNo++;
+		}
+
+		private String createAnonCollectionVarName() {
+			return "_anon_collection_" + anonVarNo++;
+		}
+
 		public Set<String> getUsedBNodeIDs() {
 			usedBNodeIDs.addAll(conversionMap.keySet());
 			return Collections.unmodifiableSet(usedBNodeIDs);
@@ -85,7 +93,13 @@ public class BlankNodeVarProcessor extends AbstractASTVisitor {
 			String varName = findVarName(bnodeID);
 
 			if (varName == null) {
-				varName = createAnonVarName();
+				if (bnodeID == null) {
+					varName = createAnonVarName();
+
+				} else {
+					varName = createAnonUserVarName();
+
+				}
 
 				if (bnodeID != null) {
 					conversionMap.put(bnodeID, varName);
@@ -120,7 +134,7 @@ public class BlankNodeVarProcessor extends AbstractASTVisitor {
 
 		@Override
 		public Object visit(ASTCollection node, Object data) throws VisitorException {
-			node.setVarName(createAnonVarName());
+			node.setVarName(createAnonCollectionVarName());
 			return super.visit(node, data);
 		}
 	}

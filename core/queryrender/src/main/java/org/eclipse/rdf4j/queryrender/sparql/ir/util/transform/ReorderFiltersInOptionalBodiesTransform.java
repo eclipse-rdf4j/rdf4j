@@ -26,7 +26,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrPropertyList;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 
 /**
@@ -162,16 +161,6 @@ public final class ReorderFiltersInOptionalBodiesTransform extends BaseTransform
 				IrPathTriple pt = (IrPathTriple) ln;
 				addVarName(out, pt.getSubject());
 				addVarName(out, pt.getObject());
-				continue;
-			}
-			if (ln instanceof IrPropertyList) {
-				IrPropertyList pl = (IrPropertyList) ln;
-				addVarName(out, pl.getSubject());
-				for (IrPropertyList.Item it : pl.getItems()) {
-					for (Var v : it.getObjects()) {
-						addVarName(out, v);
-					}
-				}
 				continue;
 			}
 			if (ln instanceof IrGraph) {

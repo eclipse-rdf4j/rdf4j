@@ -151,7 +151,7 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 						sVar = sp.getSubject();
 						oVar = sp.getObject();
 						ptxt = sp.getPredicate() != null && sp.getPredicate().hasValue()
-								? r.renderIRI((IRI) sp.getPredicate().getValue())
+								? r.convertIRIToString((IRI) sp.getPredicate().getValue())
 								: null;
 					}
 				}
@@ -165,7 +165,7 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 				sVar = sp.getSubject();
 				oVar = sp.getObject();
 				ptxt = sp.getPredicate() != null && sp.getPredicate().hasValue()
-						? r.renderIRI((IRI) sp.getPredicate().getValue())
+						? r.convertIRIToString((IRI) sp.getPredicate().getValue())
 						: null;
 			}
 

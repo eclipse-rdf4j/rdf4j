@@ -41,7 +41,7 @@ public class IrGraph extends IrNode {
 	@Override
 	public void print(IrPrinter p) {
 		p.startLine();
-		p.append("GRAPH " + p.renderVarOrValue(getGraph()) + " ");
+		p.append("GRAPH " + p.convertVarToString(getGraph()) + " ");
 		IrBGP inner = getWhere();
 		if (inner != null) {
 			inner.print(p); // IrBGP prints braces
