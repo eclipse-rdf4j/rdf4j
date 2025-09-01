@@ -1031,13 +1031,16 @@ public class TupleExprToIrConverter {
 		// Extra safeguard: ensure SERVICE union-of-NPS branches are fused after all passes
 		ir.setWhere(FuseServiceNpsUnionLateTransform.apply(ir.getWhere()));
 
-		// Preserve explicit grouping braces around a single-element WHERE when the original algebra
-		// indicated a variable scope change at the root (e.g., user wrote an extra { ... } group).
+		// Preserve explicit grouping braces around a single-element WHERE only when the original
+		// algebra indicated an explicit variable scope change at the root (i.e., an extra
+		// GroupGraphPattern in the source). Do NOT trigger merely because a deeper subtree contains
+		// a scope change (e.g., a LeftJoin inside a FILTER EXISTS), which would add spurious outer
+		// braces like `{ GRAPH { ... } }` around the single GRAPH pattern.
 		if (ir.getWhere() != null && ir.getWhere().getLines() != null && ir.getWhere().getLines().size() == 1) {
 			final IrNode only = ir.getWhere().getLines().get(0);
 			if ((only instanceof IrStatementPattern
 					|| only instanceof IrPathTriple || only instanceof IrGraph)
-					&& containsVariableScopeChange(n.where)) {
+					&& rootHasExplicitScope(n.where)) {
 				ir.getWhere().setNewScope(true);
 			} else if (only instanceof IrSubSelect
 					&& rootHasExplicitScope(n.where)) {
