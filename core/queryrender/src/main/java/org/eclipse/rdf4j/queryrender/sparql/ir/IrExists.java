@@ -65,6 +65,7 @@ public class IrExists extends IrNode {
 		final List<IrNode> ls = w.getLines();
 		boolean hasTripleLike = false;
 		boolean hasNestedExistsOrValues = false;
+		boolean hasOptional = false;
 		for (IrNode ln : ls) {
 			if (ln instanceof IrTripleLike) {
 				hasTripleLike = true;
@@ -75,9 +76,11 @@ public class IrExists extends IrNode {
 				}
 			} else if (ln instanceof IrValues) {
 				hasNestedExistsOrValues = true;
+			} else if (ln instanceof IrOptional) {
+				hasOptional = true;
 			}
 		}
-		if (ls.size() >= 2 && hasTripleLike && hasNestedExistsOrValues) {
+		if (ls.size() >= 2 && hasTripleLike && (hasNestedExistsOrValues || hasOptional)) {
 			IrBGP wrap = new IrBGP(false);
 			wrap.add(w);
 			return wrap;

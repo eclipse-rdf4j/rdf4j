@@ -186,6 +186,38 @@ public class BracesEffectTest {
 	}
 
 	@Test
+	@DisplayName("FILTER EXISTS with GRAPH + OPTIONAL NPS: brace vs no-brace body")
+	void bracesInsideExists_graphOptionalNps_compare() {
+		// With extra curly brackets inside FILTER EXISTS
+		String q1 = "SELECT ?s ?o WHERE {\n" +
+				"  GRAPH <http://graphs.example/g1> {\n" +
+				"    ?s ex:pC ?u1 . \n" +
+				"    FILTER EXISTS {\n" +
+				"      {\n" +
+				"        ?s ex:pA ?o . OPTIONAL {\n" +
+				"          ?s !<http://example.org/p/I0> ?o .\n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		// Without those extra curly brackets (same content, no inner grouping)
+		String q2 = "SELECT ?s ?o WHERE {\n" +
+				"  GRAPH <http://graphs.example/g1> {\n" +
+				"    ?s ex:pC ?u1 . \n" +
+				"    FILTER EXISTS {\n" +
+				"        ?s ex:pA ?o . OPTIONAL {\n" +
+				"          ?s !<http://example.org/p/I0> ?o .\n" +
+				"        }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		compareAndDump("Braces_EXISTS_GraphOptionalNPS", q1, q2);
+	}
+
+	@Test
 	@DisplayName("Braces around VALUES group")
 	void bracesAroundValues_noEffect() {
 		String q1 = "SELECT ?s WHERE { VALUES ?s { ex:s1 ex:s2 } ?s ex:pA ex:o . }";

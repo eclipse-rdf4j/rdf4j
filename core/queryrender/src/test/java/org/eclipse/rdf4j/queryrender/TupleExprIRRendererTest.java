@@ -2875,8 +2875,9 @@ public class TupleExprIRRendererTest {
 	@Test
 	void testOptionalServicePathScope4() {
 		String q = "SELECT ?s ?o WHERE {\n" +
-				" ?s ex:pQ ?ok . \n" +
-				"    ?s ex:pA ?o , ?f. \n" +
+				"  ?s ex:pQ ?ok .\n" +
+				"  ?s ex:pA ?o .\n" +
+				"  ?s ex:pA ?f .\n" +
 				"    OPTIONAL {\n" +
 				"      SERVICE SILENT <http://services.example/sparql> {\n" +
 				"        ?s !(ex:pA|^<http://example.org/p/I0>) ?o . \n" +
@@ -2890,8 +2891,9 @@ public class TupleExprIRRendererTest {
 	@Test
 	void testOptionalServicePathScope5() {
 		String q = "SELECT ?s ?o WHERE {\n" +
-				"  ?s ex:pQ ?ok ; \n" +
-				"    ex:pA ?o , ?f. \n" +
+				"  ?s ex:pQ ?ok .\n" +
+				"  ?s ex:pA ?o .\n" +
+				"  ?s ex:pA ?f .\n" +
 				"  OPTIONAL { {\n" +
 				"      ?o ex:pX ?vX . \n" +
 				"      SERVICE SILENT <http://services.example/sparql> {\n" +
@@ -2907,8 +2909,9 @@ public class TupleExprIRRendererTest {
 	void testOptionalServicePathScope6() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				" ?s ex:pQ ?ok . \n" +
-				"    ?s ex:pA ?o , ?f. \n" +
-				"    OPTIONAL { {\n" +
+				"  ?s ex:pA ?o . \n" +
+				"  ?s ex:pA  ?f. \n" +
+				"  OPTIONAL { {\n" +
 				"      SERVICE SILENT <http://services.example/sparql> {\n" +
 				"        ?s !(ex:pA|^<http://example.org/p/I0>) ?o . \n" +
 				"      }\n" +
@@ -3597,6 +3600,27 @@ public class TupleExprIRRendererTest {
 				"  UNION\n" +
 				"  {\n" +
 				"    ?s !(ex:P1|ex:pA|ex:pA) ?o .\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+
+	@Test
+	void testGraphFilterValuesPathAndScoping() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    GRAPH ?g2 {\n" +
+				"      {\n" +
+				"        ?s ex:pC ?u1 . FILTER EXISTS {\n" +
+				"          {\n" +
+				"            VALUES ?s { ex:s1 ex:s2 }\n" +
+				"            ?s !( ex:pA|^ex:pC ) ?o .\n" +
+				"          }\n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
 				"  }\n" +
 				"}";
 
