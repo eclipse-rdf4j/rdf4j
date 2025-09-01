@@ -52,15 +52,8 @@ public interface IrPrinter {
 	void printLines(List<IrNode> lines);
 
 	// Rendering helpers
-	String renderVarOrValue(Var v);
+	String convertVarToString(Var v);
 
-	String renderPredicateForTriple(Var p);
-
-	String renderIRI(IRI iri);
-
-	// Overrides (e.g., for collections)
-	String applyOverridesToText(String text);
-
-	String renderTermWithOverrides(Var v);
+	String convertIRIToString(IRI iri);
 
 }

@@ -19,15 +19,40 @@ import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
  */
 public abstract class IrTripleLike extends IrNode {
 
-	public IrTripleLike(boolean newScope) {
+	final Var subject;
+	IrNode subjectOverride;
+	final Var object;
+	IrNode objectOverride;
+
+	public IrTripleLike(Var subject, Var object, boolean newScope) {
 		super(newScope);
+		this.subject = subject;
+		this.object = object;
 	}
 
-	/** Subject variable (may be a Var with or without value). */
-	public abstract Var getSubject();
+	public Var getSubject() {
+		return subject;
+	}
 
-	/** Object variable (may be a Var with or without value). */
-	public abstract Var getObject();
+	public Var getObject() {
+		return object;
+	}
+
+	public IrNode getSubjectOverride() {
+		return subjectOverride;
+	}
+
+	public void setSubjectOverride(IrNode subjectOverride) {
+		this.subjectOverride = subjectOverride;
+	}
+
+	public IrNode getObjectOverride() {
+		return objectOverride;
+	}
+
+	public void setObjectOverride(IrNode objectOverride) {
+		this.objectOverride = objectOverride;
+	}
 
 	/**
 	 * Render the predicate or path as compact textual IR suitable for inclusion in a property path.

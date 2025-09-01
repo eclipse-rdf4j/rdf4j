@@ -11,7 +11,6 @@
 
 package org.eclipse.rdf4j.queryrender.sparql;
 
-import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -31,7 +30,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -71,25 +69,10 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrExists;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrGroupByElem;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrOrderSpec;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPrinter;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrPropertyList;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.SimplifyPathParensTransform;
 
 /**
  * TupleExprIRRenderer: render RDF4J algebra back into SPARQL text (via a compact internal normalization/IR step), with:
@@ -147,7 +130,6 @@ public class TupleExprIRRenderer {
 
 	// ---------------- Configuration ----------------
 	/** Anonymous blank node variables (originating from [] in the original query). */
-	private static final String ANON_BNODE_PREFIX = "_anon_bnode_";
 	// Pattern used for conservative Turtle PN_LOCAL acceptance per segment; overall check also prohibits trailing dots.
 	private static final Pattern PN_LOCAL_CHUNK = Pattern.compile("(?:%[0-9A-Fa-f]{2}|[-\\p{L}\\p{N}_\\u00B7]|:)+");
 
@@ -200,9 +182,6 @@ public class TupleExprIRRenderer {
 
 	private final Config cfg;
 	private final PrefixIndex prefixIndex;
-	// Overrides collected during IR transforms (e.g., collections) to affect term rendering in IR printer
-	private final Map<String, String> irOverrides = new HashMap<>();
-	// Legacy suppression tracking removed; IR transforms rewrite structures directly in-place.
 
 	public TupleExprIRRenderer() {
 		this(new Config());
@@ -211,28 +190,6 @@ public class TupleExprIRRenderer {
 	public TupleExprIRRenderer(final Config cfg) {
 		this.cfg = cfg == null ? new Config() : cfg;
 		this.prefixIndex = new PrefixIndex(this.cfg.prefixes);
-	}
-
-	/** Identify anonymous blank-node placeholder variables (to render as "[]"). */
-	private static boolean isAnonBNodeVar(Var v) {
-		if (v == null || v.hasValue()) {
-			return false;
-		}
-		final String name = v.getName();
-		boolean nameLooksAnon = false;
-		if (name != null) {
-			nameLooksAnon = name.startsWith(ANON_BNODE_PREFIX) || name.startsWith("_anon_");
-		}
-		// Prefer Var#isAnonymous() when present; fall back to prefix heuristic
-		try {
-			Method m = Var.class.getMethod("isAnonymous");
-			Object r = m.invoke(v);
-			if (r instanceof Boolean) {
-				return (Boolean) r || nameLooksAnon;
-			}
-		} catch (ReflectiveOperationException ignore) {
-		}
-		return nameLooksAnon;
 	}
 
 	// ---------------- Experimental textual IR API ----------------
@@ -283,7 +240,7 @@ public class TupleExprIRRenderer {
 		return "?";
 	}
 
-	private static String op(final CompareOp op) {
+	public static String op(final CompareOp op) {
 		switch (op) {
 		case EQ:
 			return "=";
@@ -301,13 +258,6 @@ public class TupleExprIRRenderer {
 			return "/*?*/";
 		}
 	}
-
-	// ---------------- Core SELECT and subselect ----------------
-
-	/**
-	 * Context compatibility: equal if both null; if both values -> same value; if both free vars -> same name; else
-	 * incompatible.
-	 */
 
 	public static String stripRedundantOuterParens(final String s) {
 		if (s == null) {
@@ -492,10 +442,6 @@ public class TupleExprIRRenderer {
 		return hasDigit;
 	}
 
-	// ---------------- Aggregate hoisting & inference ----------------
-
-	// Removed invertNegatedPropertySet here; transforms use BaseTransform.invertNegatedPropertySet.
-
 	// ---------------- Utilities: vars, aggregates, free vars ----------------
 
 	// Merge adjacent identical GRAPH blocks to improve grouping when IR emits across passes
@@ -520,17 +466,11 @@ public class TupleExprIRRenderer {
 	}
 
 	String renderVarOrValuePublic(final Var v) {
-		return renderVarOrValue(v);
+		return convertVarToString(v);
 	}
 
 	String renderValuePublic(final Value v) {
-		return renderValue(v);
-	}
-
-	public void addOverrides(Map<String, String> overrides) {
-		if (overrides != null && !overrides.isEmpty()) {
-			this.irOverrides.putAll(overrides);
-		}
+		return convertValueToString(v);
 	}
 
 	/**
@@ -557,7 +497,6 @@ public class TupleExprIRRenderer {
 	/** Render a textual SELECT query from an {@code IrSelect} model. */
 
 	// ---------------- Rendering helpers (prefix-aware) ----------------
-
 	public String render(final IrSelect ir,
 			final DatasetView dataset, final boolean subselect) {
 		final StringBuilder out = new StringBuilder(256);
@@ -609,39 +548,30 @@ public class TupleExprIRRenderer {
 		final List<IRI> dgs = dataset != null ? dataset.defaultGraphs : cfg.defaultGraphs;
 		final List<IRI> ngs = dataset != null ? dataset.namedGraphs : cfg.namedGraphs;
 		for (IRI iri : dgs) {
-			out.append("FROM ").append(renderIRI(iri)).append("\n");
+			out.append("FROM ").append(convertIRIToString(iri)).append("\n");
 		}
 		for (IRI iri : ngs) {
-			out.append("FROM NAMED ").append(renderIRI(iri)).append("\n");
+			out.append("FROM NAMED ").append(convertIRIToString(iri)).append("\n");
 		}
 	}
 
-// Removed legacy suppression checks; transforms rewrite or remove structures directly.
-
-	private String renderVarOrValue(final Var v) {
+	private String convertVarToString(final Var v) {
 		if (v == null) {
 			return "?_";
 		}
 		if (v.hasValue()) {
-			return renderValue(v.getValue());
+			return convertValueToString(v.getValue());
 		}
 		// Anonymous blank-node placeholder variables are rendered as "[]"
-		if (isAnonBNodeVar(v)) {
-			return "[]";
+		if (v.isAnonymous() && !v.isConstant()) {
+			return "_:" + v.getName();
 		}
 		return "?" + v.getName();
 	}
 
-	private String renderPredicateForTriple(final Var p) {
-		if (p != null && p.hasValue() && p.getValue() instanceof IRI && RDF.TYPE.equals(p.getValue())) {
-			return "a";
-		}
-		return renderVarOrValue(p);
-	}
-
-	public String renderValue(final Value val) {
+	public String convertValueToString(final Value val) {
 		if (val instanceof IRI) {
-			return renderIRI((IRI) val);
+			return convertIRIToString((IRI) val);
 		} else if (val instanceof Literal) {
 			final Literal lit = (Literal) val;
 
@@ -672,7 +602,7 @@ public class TupleExprIRRenderer {
 
 			// Other datatypes
 			if (dt != null && !XSD.STRING.equals(dt)) {
-				return "\"" + escapeLiteral(label) + "\"^^" + renderIRI(dt);
+				return "\"" + escapeLiteral(label) + "\"^^" + convertIRIToString(dt);
 			}
 
 			// Plain string
@@ -685,7 +615,7 @@ public class TupleExprIRRenderer {
 
 	// ---- Aggregates ----
 
-	public String renderIRI(final IRI iri) {
+	public String convertIRIToString(final IRI iri) {
 		final String s = iri.stringValue();
 		if (cfg.usePrefixCompaction) {
 			final PrefixHit hit = prefixIndex.longestMatch(s);
@@ -759,10 +689,10 @@ public class TupleExprIRRenderer {
 		// Vars and constants
 		if (e instanceof Var) {
 			final Var v = (Var) e;
-			return v.hasValue() ? renderValue(v.getValue()) : "?" + v.getName();
+			return v.hasValue() ? convertValueToString(v.getValue()) : "?" + v.getName();
 		}
 		if (e instanceof ValueConstant) {
-			return renderValue(((ValueConstant) e).getValue());
+			return convertValueToString(((ValueConstant) e).getValue());
 		}
 
 		// Functional forms
@@ -884,7 +814,7 @@ public class TupleExprIRRenderer {
 				try {
 					IRI iri = SimpleValueFactory.getInstance()
 							.createIRI(uri);
-					return renderIRI(iri) + "(" + args + ")";
+					return convertValueToString(iri) + "(" + args + ")";
 				} catch (IllegalArgumentException ignore) {
 					// keep angle-bracketed IRI if parsing fails
 					return "<" + uri + ">(" + args + ")";
@@ -1073,8 +1003,6 @@ public class TupleExprIRRenderer {
 		public boolean valuesPreserveOrder = false; // keep VALUES column order as given by BSA iteration
 	}
 
-	// Former CollectionResult/collection overrides are no longer needed; collection handling moved to IR transforms.
-
 	private static final class PrefixHit {
 		final String prefix;
 		final String namespace;
@@ -1116,10 +1044,6 @@ public class TupleExprIRRenderer {
 	 */
 	private final class IRTextPrinter implements IrPrinter {
 		private final StringBuilder out;
-		private final Map<String, String> currentOverrides = TupleExprIRRenderer.this.irOverrides;
-		// Track anonymous bnode var usage and assign labels when a var is referenced more than once.
-		private final Map<String, Integer> bnodeCounts = new LinkedHashMap<>();
-		private final Map<String, String> bnodeLabels = new LinkedHashMap<>();
 		private int level = 0;
 		private boolean inlineActive = false;
 
@@ -1134,232 +1058,16 @@ public class TupleExprIRRenderer {
 				return;
 			}
 			// Pre-scan to count anonymous bnode variables to decide when to print labels
-			collectBnodeCounts(w);
-			assignBnodeLabels();
 			w.print(this);
-		}
-
-		private void bumpBnodeVar(Var v) {
-			if (v == null || v.hasValue()) {
-				return;
-			}
-			final String n = v.getName();
-			if (n == null) {
-				return;
-			}
-			if (!isAnonBNodeVar(v)) {
-				return;
-			}
-			bnodeCounts.merge(n, 1, Integer::sum);
-		}
-
-		private void collectBnodeCounts(IrBGP w) {
-			if (w == null) {
-				return;
-			}
-			for (IrNode ln : w.getLines()) {
-				if (ln instanceof IrStatementPattern) {
-					IrStatementPattern sp = (IrStatementPattern) ln;
-					bumpBnodeVar(sp.getSubject());
-					bumpBnodeVar(sp.getObject());
-				} else if (ln instanceof IrPropertyList) {
-					IrPropertyList pl = (IrPropertyList) ln;
-					bumpBnodeVar(pl.getSubject());
-					for (IrPropertyList.Item it : pl.getItems()) {
-						for (Var ov : it.getObjects()) {
-							bumpBnodeVar(ov);
-						}
-					}
-				} else if (ln instanceof IrBGP) {
-					collectBnodeCounts((IrBGP) ln);
-				} else if (ln instanceof IrGraph) {
-					collectBnodeCounts(((IrGraph) ln).getWhere());
-				} else if (ln instanceof IrOptional) {
-					collectBnodeCounts(((IrOptional) ln).getWhere());
-				} else if (ln instanceof IrMinus) {
-					collectBnodeCounts(((IrMinus) ln).getWhere());
-				} else if (ln instanceof IrUnion) {
-					for (IrBGP b : ((IrUnion) ln).getBranches()) {
-						collectBnodeCounts(b);
-					}
-				} else if (ln instanceof IrService) {
-					collectBnodeCounts(((IrService) ln).getWhere());
-				} else if (ln instanceof IrSubSelect) {
-					// Do not descend into raw subselects for top-level bnode label decisions
-				}
-			}
-			// Also account for overrides that introduce references to anonymous bnode variables (e.g., link overrides)
-			if (currentOverrides != null && !currentOverrides.isEmpty()) {
-				for (String v : currentOverrides.values()) {
-					if (v == null)
-						continue;
-					int i = 0;
-					while (i < v.length()) {
-						int q = v.indexOf('?', i);
-						if (q < 0)
-							break;
-						int j = q + 1;
-						StringBuilder name = new StringBuilder();
-						while (j < v.length()) {
-							char c = v.charAt(j);
-							if (Character.isLetterOrDigit(c) || c == '_') {
-								name.append(c);
-								j++;
-							} else
-								break;
-						}
-						if (name.length() > 0 && isAnonBnodeName(name.toString())) {
-							bnodeCounts.merge(name.toString(), 1, Integer::sum);
-						}
-						i = j;
-					}
-				}
-			}
-		}
-
-		private boolean isAnonBnodeName(String name) {
-			return name != null && (name.startsWith(ANON_BNODE_PREFIX) || name.startsWith("_anon_"));
-		}
-
-		private void assignBnodeLabels() {
-			int idx = 1;
-			for (Map.Entry<String, Integer> e : bnodeCounts.entrySet()) {
-				if (e.getValue() != null && e.getValue() > 1) {
-					bnodeLabels.put(e.getKey(), "bnode" + (idx++));
-				}
-			}
 		}
 
 		public void printLines(final List<IrNode> lines) {
 			if (lines == null) {
 				return;
 			}
-			for (int i = 0; i < lines.size(); i++) {
-				IrNode n = lines.get(i);
-				// Special-case: render "triple . FILTER EXISTS {" on a single line for readability
-				if (i + 1 < lines.size()
-						&& lines.get(i + 1) instanceof IrFilter) {
-					IrFilter f = (IrFilter) lines
-							.get(i + 1);
-					if (f.getBody() instanceof IrExists
-							&& (n instanceof IrStatementPattern
-									|| n instanceof IrPathTriple)) {
-
-						String tripleTxt = null;
-						if (n instanceof IrStatementPattern) {
-							IrStatementPattern sp = (IrStatementPattern) n;
-							tripleTxt = renderTermWithOverrides(sp.getSubject()) + " "
-									+ renderPredicateForTriple(sp.getPredicate()) + " "
-									+ renderTermWithOverrides(sp.getObject()) + " .";
-						} else if (n instanceof IrPathTriple) {
-							IrPathTriple pt = (IrPathTriple) n;
-							String sTxt = renderTermWithOverrides(pt.getSubject());
-							String oTxt = renderTermWithOverrides(pt.getObject());
-							String path = applyOverridesToText(pt.getPathText());
-							String simplified = SimplifyPathParensTransform
-									.simplify(path);
-							String t = TupleExprIRRenderer.stripRedundantOuterParens(simplified);
-							tripleTxt = sTxt + " " + t + " " + oTxt + " .";
-						}
-
-						if (tripleTxt != null) {
-							startLine();
-							append(tripleTxt + " FILTER ");
-							// Print EXISTS body inline (IrExists.print appends "EXISTS " and the inner block)
-							f.getBody().print(this);
-							i += 1; // consume filter
-							continue;
-						}
-					}
-				}
-
-				printNodeViaIr(n);
+			for (IrNode line : lines) {
+				line.print(this);
 			}
-		}
-
-		private void printNodeViaIr(final IrNode n) {
-			n.print(this);
-		}
-
-		// Path/collection rewrites are handled by IR transforms; IRTextPrinter only prints IR.
-
-		private String applyOverridesToText(final String termText, final Map<String, String> overrides) {
-			if (termText == null) {
-				return null;
-			}
-			if (overrides == null || overrides.isEmpty()) {
-				return termText;
-			}
-			String out = termText;
-			// First, whole-token replacement (exact match "?name")
-			if (out.startsWith("?")) {
-				final String name = out.substring(1);
-				final String repl = overrides.get(name);
-				if (repl != null) {
-					out = repl;
-				}
-			}
-			// Then, replace any embedded override tokens "?name" within the text.
-			// Iterate to allow nested placeholders to expand in a few steps.
-			for (int iter = 0; iter < 4; iter++) {
-				boolean changed = false;
-				for (Map.Entry<String, String> e : overrides.entrySet()) {
-					final String needle = "?" + e.getKey();
-					if (out.contains(needle)) {
-						out = out.replace(needle, e.getValue());
-						changed = true;
-					}
-				}
-				if (!changed) {
-					break;
-				}
-			}
-			// Map any remaining anonymous bnode var tokens to either [] or a stable label using precomputed counts
-			if (!bnodeCounts.isEmpty()) {
-				for (Map.Entry<String, Integer> e : bnodeCounts.entrySet()) {
-					final String needle = "?" + e.getKey();
-					if (out.contains(needle)) {
-						final String lbl = bnodeLabels.get(e.getKey());
-						final String rep = (lbl != null) ? ("_:" + lbl) : "[]";
-						out = out.replace(needle, rep);
-					}
-				}
-			}
-			return out;
-		}
-
-		@Override
-		public String applyOverridesToText(final String termText) {
-			return applyOverridesToText(termText, this.currentOverrides);
-		}
-
-		private String renderTermWithOverrides(final Var v, final Map<String, String> overrides) {
-			if (v == null) {
-				return "?_";
-			}
-			if (!v.hasValue() && v.getName() != null && overrides != null) {
-				final String repl = overrides.get(v.getName());
-				if (repl != null) {
-					// Apply nested overrides inside the replacement text (e.g., collections inside brackets)
-					return applyOverridesToText(repl, overrides);
-				}
-			}
-			// Decide bnode rendering: if this is an anonymous bnode var referenced more than once, print a
-			// stable blank node label to preserve linking; otherwise render as []
-			if (isAnonBNodeVar(v)) {
-				final String name = v.getName();
-				final String lbl = bnodeLabels.get(name);
-				if (lbl != null) {
-					return "_:" + lbl;
-				}
-				return "[]";
-			}
-			return renderVarOrValue(v);
-		}
-
-		@Override
-		public String renderTermWithOverrides(final Var v) {
-			return renderTermWithOverrides(v, this.currentOverrides);
 		}
 
 		private void indent() {
@@ -1432,18 +1140,13 @@ public class TupleExprIRRenderer {
 		}
 
 		@Override
-		public String renderVarOrValue(Var v) {
-			return TupleExprIRRenderer.this.renderVarOrValue(v);
+		public String convertVarToString(Var v) {
+			return TupleExprIRRenderer.this.convertVarToString(v);
 		}
 
 		@Override
-		public String renderPredicateForTriple(Var p) {
-			return TupleExprIRRenderer.this.renderPredicateForTriple(p);
-		}
-
-		@Override
-		public String renderIRI(IRI iri) {
-			return TupleExprIRRenderer.this.renderIRI(iri);
+		public String convertIRIToString(IRI iri) {
+			return TupleExprIRRenderer.this.convertIRIToString(iri);
 		}
 
 	}

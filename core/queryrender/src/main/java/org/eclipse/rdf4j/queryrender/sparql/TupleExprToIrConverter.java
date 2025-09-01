@@ -92,7 +92,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrOrderSpec;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrPropertyList;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
@@ -179,7 +178,7 @@ public class TupleExprToIrConverter {
 				&& rootHasExplicitScope(n.where)) {
 			final IrNode only = ir.getWhere().getLines().get(0);
 			if (only instanceof IrStatementPattern
-					|| only instanceof IrPathTriple || only instanceof IrPropertyList
+					|| only instanceof IrPathTriple
 					|| only instanceof IrGraph) {
 				ir.getWhere().setNewScope(true);
 			}
@@ -865,7 +864,8 @@ public class TupleExprToIrConverter {
 		}
 		if (e instanceof Compare) {
 			Compare c = (Compare) e;
-			return "(" + renderExprWithSubstitution(c.getLeftArg(), subs, r) + " " + op(c.getOperator()) + " "
+			return "(" + renderExprWithSubstitution(c.getLeftArg(), subs, r) + " "
+					+ TupleExprIRRenderer.op(c.getOperator()) + " "
 					+ renderExprWithSubstitution(c.getRightArg(), subs, r) + ")";
 		}
 		if (e instanceof SameTerm) {
@@ -890,25 +890,6 @@ public class TupleExprToIrConverter {
 			return t; // assume already a grouped expression
 		}
 		return "(" + t + ")";
-	}
-
-	private static String op(final CompareOp op) {
-		switch (op) {
-		case EQ:
-			return "=";
-		case NE:
-			return "!=";
-		case LT:
-			return "<";
-		case LE:
-			return "<=";
-		case GT:
-			return ">";
-		case GE:
-			return ">=";
-		default:
-			return "/*?*/";
-		}
 	}
 
 	// ---------------- Path recognition helpers ----------------
@@ -1054,7 +1035,7 @@ public class TupleExprToIrConverter {
 		if (ir.getWhere() != null && ir.getWhere().getLines() != null && ir.getWhere().getLines().size() == 1) {
 			final IrNode only = ir.getWhere().getLines().get(0);
 			if ((only instanceof IrStatementPattern
-					|| only instanceof IrPathTriple || only instanceof IrPropertyList || only instanceof IrGraph)
+					|| only instanceof IrPathTriple || only instanceof IrGraph)
 					&& containsVariableScopeChange(n.where)) {
 				ir.getWhere().setNewScope(true);
 			} else if (only instanceof IrSubSelect
@@ -2162,7 +2143,7 @@ public class TupleExprToIrConverter {
 
 		@Override
 		public String render() {
-			return (inverse ? "^" : "") + r.renderIRI(iri);
+			return (inverse ? "^" : "") + r.convertIRIToString(iri);
 		}
 
 		@Override

@@ -222,7 +222,7 @@ public class SparqlComprehensiveStreamingValidTest {
 	private static void assertSameSparqlQuery(String sparql, TupleExprIRRenderer.Config cfg) {
 //		String rendered = assertFixedPoint(original, cfg);
 		sparql = sparql.trim();
-		sparql = SparqlFormatter.formatBraces(sparql);
+		sparql = SparqlFormatter.format(sparql);
 		TupleExpr expected;
 		try {
 			expected = parseAlgebra(sparql);
