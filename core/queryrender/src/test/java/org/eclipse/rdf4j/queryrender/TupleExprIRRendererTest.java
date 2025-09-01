@@ -945,8 +945,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?u ?g (COUNT(DISTINCT ?p) AS ?pc) WHERE {\n" +
 				"  SERVICE <http://example.org/sparql> {\n" +
 				"    {\n" +
-				"      SELECT ?u ?p\n" +
-				"      WHERE {\n" +
+				"      SELECT ?u ?p WHERE {\n" +
 				"        ?u ?p ?o .\n" +
 				"        FILTER (?p != rdf:type)\n" +
 				"      }\n" +

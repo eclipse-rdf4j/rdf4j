@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.queryrender.sparql.ir;
 
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.SimplifyPathParensTransform;
 
 /**
  * Textual IR node for a property path triple: subject, path expression, object.
@@ -51,7 +52,9 @@ public class IrPathTriple extends IrTripleLike {
 		} else {
 			p.append(p.convertVarToString(getSubject()));
 		}
-		p.append(" " + pathText + " ");
+		// Apply lightweight string-level path simplification at print time for stability/readability
+		String simplified = SimplifyPathParensTransform.simplify(pathText);
+		p.append(" " + simplified + " ");
 
 		if (getObjectOverride() != null) {
 			getObjectOverride().print(p);
