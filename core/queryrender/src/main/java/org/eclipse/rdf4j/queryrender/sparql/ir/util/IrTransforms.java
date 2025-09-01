@@ -34,7 +34,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeFilterNot
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeNpsMemberOrderTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeZeroOrOneSubselectTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ReorderFiltersInOptionalBodiesTransform;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.SimplifyPathParensTransform;
 
 /**
  * IR transformation pipeline (best‑effort).
@@ -72,8 +71,9 @@ public final class IrTransforms {
 					IrBGP w = (IrBGP) child;
 					w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
 					w = CoalesceAdjacentGraphsTransform.apply(w);
-					// Early merge of FILTER EXISTS into preceding GRAPH when safe, so subsequent transforms
-					// see the grouped shape and do not separate them again.
+					// Merge FILTER EXISTS into preceding GRAPH only when the EXISTS body is marked with
+					// explicit grouping (ex.isNewScope/f.isNewScope). This preserves outside-FILTER cases
+					// while still grouping triples + EXISTS inside GRAPH when original query had braces.
 					w = MergeFilterExistsIntoPrecedingGraphTransform.apply(w);
 					w = ApplyCollectionsTransform.apply(w);
 					w = ApplyNegatedPropertySetTransform.apply(w, r);
@@ -93,9 +93,8 @@ public final class IrTransforms {
 					w = MergeOptionalIntoPrecedingGraphTransform.apply(w);
 					w = FuseAltInverseTailBGPTransform.apply(w, r);
 					w = FlattenSingletonUnionsTransform.apply(w);
-					// If a FILTER EXISTS { GRAPH g { ... } } follows a GRAPH g { ... }, move the filter inside
-					// the preceding GRAPH and unwrap the inner GRAPH wrapper. Add grouping braces inside the
-					// GRAPH to preserve expected structure.
+					// Re-apply guarded merge in case earlier passes reshaped the grouping to satisfy the
+					// precondition (EXISTS newScope). This remains a no-op when no explicit grouping exists.
 					w = MergeFilterExistsIntoPrecedingGraphTransform.apply(w);
 					// Wrap preceding triple with FILTER EXISTS { { ... } } into a grouped block for stability
 					w = GroupFilterExistsWithPrecedingTriplesTransform.apply(w);
@@ -144,9 +143,6 @@ public final class IrTransforms {
 					// One more UNION-of-NPS fuser after broader path refactors to catch newly-formed shapes
 					w = FuseUnionOfNpsBranchesTransform.apply(w, r);
 
-					// Light string-level path parentheses simplification for readability/idempotence
-					w = SimplifyPathParensTransform.apply(w);
-
 					// Late normalization of grouped tail steps: ensure a final tail like "/foaf:name"
 					// is rendered outside the right-hand grouping when safe
 					w = CanonicalizeGroupedTailStepTransform.apply(w, r);
@@ -164,9 +160,8 @@ public final class IrTransforms {
 					// property path triple, to maintain textual stability expected by tests.
 					w = GroupValuesAndNpsInUnionBranchTransform.apply(w);
 
-					// Merge a following FILTER EXISTS into a preceding GRAPH with the same graph ref and
-					// group them together, unwrapping inner GRAPHs inside the EXISTS body. This produces
-					// the expected grouped shape "{ GRAPH g { { triple . FILTER EXISTS { ... } } } }".
+					// Final guarded merge in case later normalization introduced explicit grouping that
+					// should be associated with the GRAPH body.
 					w = MergeFilterExistsIntoPrecedingGraphTransform.apply(w);
 
 					// Final SERVICE NPS union fusion pass after all other cleanups
@@ -185,8 +180,6 @@ public final class IrTransforms {
 		IrSelect outSel = (IrSelect) irNode;
 		IrBGP where = outSel.getWhere();
 		where = FuseServiceNpsUnionLateTransform.apply(where);
-		// Final path text normalization for readability/idempotence
-		where = SimplifyPathParensTransform.apply(where);
 		outSel.setWhere(where);
 		return outSel;
 	}
