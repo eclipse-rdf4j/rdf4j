@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -1845,13 +1846,7 @@ public class TupleExprToIrConverter {
 			IrBGP w = inner.build(svc.getArg());
 			// No conversion-time fusion; rely on pipeline transforms to normalize SERVICE bodies
 			IrService irSvc = new IrService(r.renderVarOrValuePublic(svc.getServiceRef()), svc.isSilent(), w, false);
-			boolean scope;
-			try {
-				// Prefer explicit scope change from the algebra node when available
-				scope = (boolean) Service.class.getMethod("isVariableScopeChange").invoke(svc);
-			} catch (ReflectiveOperationException e) {
-				scope = false;
-			}
+			boolean scope = svc.isVariableScopeChange();
 			if (scope) {
 				IrBGP grp = new IrBGP(false);
 				grp.add(irSvc);
@@ -1897,13 +1892,8 @@ public class TupleExprToIrConverter {
 			IrSelect sub = toIRSelectRaw(p, r);
 			boolean wrap = false;
 			wrap |= !where.getLines().isEmpty();
-			try {
-				Method m = Projection.class.getMethod("isVariableScopeChange");
-				Object v = m.invoke(p);
-				if (v instanceof Boolean && (Boolean) v) {
-					wrap = true;
-				}
-			} catch (ReflectiveOperationException ignore) {
+			if (p.isVariableScopeChange()) {
+				wrap = true;
 			}
 			IrSubSelect node = new IrSubSelect(sub, wrap);
 			where.add(node);
@@ -1994,13 +1984,8 @@ public class TupleExprToIrConverter {
 		expr.visit(new AbstractQueryModelVisitor<>() {
 			@Override
 			protected void meetNode(QueryModelNode node) {
-				try {
-					Method m = node.getClass().getMethod("isVariableScopeChange");
-					Object v = m.invoke(node);
-					if (v instanceof Boolean && ((Boolean) v)) {
-						seen[0] = true;
-					}
-				} catch (ReflectiveOperationException ignore) {
+				if (node instanceof AbstractQueryModelNode) {
+					seen[0] = ((AbstractQueryModelNode) node).isVariableScopeChange();
 				}
 				super.meetNode(node);
 			}
@@ -2037,6 +2022,11 @@ public class TupleExprToIrConverter {
 				|| e instanceof Group) {
 			return false;
 		}
+
+		if (e instanceof AbstractQueryModelNode) {
+			return ((AbstractQueryModelNode) e).isVariableScopeChange();
+		}
+
 		try {
 			Method m = e.getClass().getMethod("isVariableScopeChange");
 			Object v = m.invoke(e);
