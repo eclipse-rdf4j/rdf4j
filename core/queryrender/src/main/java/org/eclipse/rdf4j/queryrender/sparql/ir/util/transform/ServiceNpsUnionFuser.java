@@ -122,7 +122,8 @@ public final class ServiceNpsUnionFuser {
 		}
 
 		String merged = BaseTransform.mergeNpsMembers(m1, add2);
-		IrPathTriple fused = new IrPathTriple(sCanon, merged, oCanon, false);
+		IrPathTriple fused = new IrPathTriple(sCanon, p1.getSubjectOverride(), merged, oCanon, p1.getObjectOverride(),
+				false);
 		IrNode out = fused;
 		if (graphRef != null) {
 			IrBGP inner = new IrBGP(false);

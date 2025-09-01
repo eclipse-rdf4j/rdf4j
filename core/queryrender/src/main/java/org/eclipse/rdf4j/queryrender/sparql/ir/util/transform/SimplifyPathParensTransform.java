@@ -69,7 +69,8 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 				String ptxt = pt.getPathText();
 				String rew = simplify(ptxt);
 				if (!rew.equals(ptxt)) {
-					m = new IrPathTriple(pt.getSubject(), rew, pt.getObject(), pt.isNewScope());
+					m = new IrPathTriple(pt.getSubject(), pt.getSubjectOverride(), rew, pt.getObject(),
+							pt.getObjectOverride(), pt.isNewScope());
 				}
 			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
