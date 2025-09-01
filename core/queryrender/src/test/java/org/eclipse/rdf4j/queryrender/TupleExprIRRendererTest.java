@@ -3699,4 +3699,55 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg());
 	}
 
+	@Test
+	void testFilterUnionUnionScope1() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  ?s ex:pC ?u2 .\n" +
+				"  FILTER EXISTS {\n" +
+				"    {\n" +
+				"      {\n" +
+				"        ?s ^ex:pC ?o .\n" +
+				"      }\n" +
+				"        UNION\n" +
+				"      {\n" +
+				"        ?u0 ex:pD ?v0 .\n" +
+				"      }\n" +
+				"    }\n" +
+				"      UNION\n" +
+				"    {\n" +
+				"      ?u1 ex:pD ?v1 .\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+//	@Test
+//	void testFilterUnionUnionScope2() {
+//		String q = "SELECT ?s ?o WHERE {\n" +
+//				"  {\n" +
+//				"    ?s ex:pC ?u2 . FILTER EXISTS {\n" +
+//				"      {\n" +
+//				"        {\n" +
+//				"          {\n" +
+//				"            ?s ^ex:pC ?o .\n" +
+//				"          }\n" +
+//				"            UNION\n" +
+//				"          {\n" +
+//				"            ?u0 ex:pD ?v0 .\n" +
+//				"          }\n" +
+//				"        }\n" +
+//				"          UNION\n" +
+//				"        {\n" +
+//				"          ?u1 ex:pD ?v1 .\n" +
+//				"        }\n" +
+//				"      }\n" +
+//				"    }\n" +
+//				"  }\n" +
+//				"}";
+//
+//		assertSameSparqlQuery(q, cfg());
+//	}
+
 }
