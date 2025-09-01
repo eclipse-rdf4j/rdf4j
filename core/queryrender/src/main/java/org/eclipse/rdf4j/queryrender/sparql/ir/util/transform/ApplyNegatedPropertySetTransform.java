@@ -94,8 +94,10 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 									IrBGP inner = new IrBGP(true);
 									inner.add(vals);
 									inner.add(inv
-											? new IrPathTriple(sp.getObject(), nps, sp.getSubject(), false)
-											: new IrPathTriple(sp.getSubject(), nps, sp.getObject(), false));
+											? new IrPathTriple(sp.getObject(), sp.getObjectOverride(), nps,
+													sp.getSubject(), sp.getSubjectOverride(), false)
+											: new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), nps,
+													sp.getObject(), sp.getObjectOverride(), false));
 									out.remove(out.size() - 1);
 									out.add(new IrGraph(g.getGraph(), inner, g.isNewScope()));
 									// Skip adding this FILTER
@@ -122,8 +124,11 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 								IrBGP inner = new IrBGP(!bgp.isNewScope());
 								// Heuristic for braces inside GRAPH to match expected shape
 								inner.add(vals);
-								inner.add(inv ? new IrPathTriple(sp.getObject(), nps, sp.getSubject(), false)
-										: new IrPathTriple(sp.getSubject(), nps, sp.getObject(), false));
+								inner.add(inv
+										? new IrPathTriple(sp.getObject(), sp.getObjectOverride(), nps, sp.getSubject(),
+												sp.getSubjectOverride(), false)
+										: new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), nps,
+												sp.getObject(), sp.getObjectOverride(), false));
 								// Replace last two with the new GRAPH
 								out.remove(out.size() - 1);
 								out.remove(out.size() - 1);
@@ -159,9 +164,11 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						newInner.setNewScope(true);
 						newInner.add(vals);
 						if (inv) {
-							newInner.add(new IrPathTriple(sp.getObject(), nps, sp.getSubject(), false));
+							newInner.add(new IrPathTriple(sp.getObject(), sp.getObjectOverride(), nps, sp.getSubject(),
+									sp.getSubjectOverride(), false));
 						} else {
-							newInner.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject(), false));
+							newInner.add(new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), nps, sp.getObject(),
+									sp.getObjectOverride(), false));
 						}
 						out.add(new IrGraph(g.getGraph(), newInner, g.isNewScope()));
 						i += 2; // consume graph + filter
@@ -231,9 +238,11 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						// Keep VALUES first inside the GRAPH block
 						newInner.add(vals);
 						if (inv) {
-							newInner.add(new IrPathTriple(sp.getObject(), nps, sp.getSubject(), false));
+							newInner.add(new IrPathTriple(sp.getObject(), sp.getObjectOverride(), nps, sp.getSubject(),
+									sp.getSubjectOverride(), false));
 						} else {
-							newInner.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject(), false));
+							newInner.add(new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), nps, sp.getObject(),
+									sp.getObjectOverride(), false));
 						}
 
 						out.add(new IrGraph(g.getGraph(), newInner, g.isNewScope()));
@@ -497,9 +506,11 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						}
 						// Subject/object orientation: inverse anon var means we flip s/o for the NPS path
 						if (inv) {
-							newInner.add(new IrPathTriple(sp.getObject(), nps, sp.getSubject(), false));
+							newInner.add(new IrPathTriple(sp.getObject(), sp.getObjectOverride(), nps, sp.getSubject(),
+									sp.getSubjectOverride(), false));
 						} else {
-							newInner.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject(), false));
+							newInner.add(new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), nps, sp.getObject(),
+									sp.getObjectOverride(), false));
 						}
 						out.add(new IrGraph(g.getGraph(), newInner, g.isNewScope()));
 						i += 1; // consume filter
@@ -525,12 +536,14 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						&& pVar.getName().equals(ns.varName) && !ns.items.isEmpty()) {
 					if (isAnonPathInverseVar(pVar)) {
 						final String nps = "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")";
-						out.add(new IrPathTriple(sp.getObject(), nps, sp.getSubject(), false));
+						out.add(new IrPathTriple(sp.getObject(), sp.getObjectOverride(), nps, sp.getSubject(),
+								sp.getSubjectOverride(), false));
 						i += 1; // consume filter
 						continue;
 					} else {
 						final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
-						out.add(new IrPathTriple(sp.getSubject(), nps, sp.getObject(), false));
+						out.add(new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), nps, sp.getObject(),
+								sp.getObjectOverride(), false));
 						i += 1; // consume filter
 						continue;
 					}
@@ -559,7 +572,8 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						final String inv = invertNegatedPropertySet(base);
 						final String step = r.convertIRIToString((IRI) tp.getValue());
 						final String path = inv + "/" + step;
-						out.add(new IrPathTriple(sp.getObject(), path, tail.getObject(), false));
+						out.add(new IrPathTriple(sp.getObject(), sp.getObjectOverride(), path, tail.getObject(),
+								tail.getObjectOverride(), false));
 						i += 2; // consume filter and tail
 						continue;
 					}
@@ -905,7 +919,11 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						final IrBGP newInner = new IrBGP(false);
 						final Var sVar = inv ? sp.getObject() : sp.getSubject();
 						final Var oVar = inv ? sp.getSubject() : sp.getObject();
-						newInner.add(new IrPathTriple(sVar, nps, oVar, false));
+
+						final IrNode sOverride = inv ? sp.getObjectOverride() : sp.getSubjectOverride();
+						final IrNode oOverride = inv ? sp.getSubjectOverride() : sp.getObjectOverride();
+
+						newInner.add(new IrPathTriple(sVar, sOverride, nps, oVar, oOverride, false));
 						out.add(new IrGraph(g.getGraph(), newInner, g.isNewScope()));
 						consumed.add(g);
 						consumed.add(in.get(i + 1));
