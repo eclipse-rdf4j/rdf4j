@@ -3606,7 +3606,6 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg());
 	}
 
-
 	@Test
 	void testGraphFilterValuesPathAndScoping() {
 		String q = "SELECT ?s ?o WHERE {\n" +
@@ -3621,6 +3620,29 @@ public class TupleExprIRRendererTest {
 				"        }\n" +
 				"      }\n" +
 				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testScopeGraphUnionUnion() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    GRAPH <http://graphs.example/g1> {\n" +
+				"      {\n" +
+				"        ?s !ex:pC ?o .\n" +
+				"      }\n" +
+				"        UNION\n" +
+				"      {\n" +
+				"        ?u0 ex:pD ?v0 .\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?u2 ex:pD ?v2 .\n" +
 				"  }\n" +
 				"}";
 
