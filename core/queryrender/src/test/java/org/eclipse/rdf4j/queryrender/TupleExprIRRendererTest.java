@@ -3649,4 +3649,54 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg());
 	}
 
+	@Test
+	void testMinusGraphUnion1() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    ?s ex:pB ?v2 .\n" +
+				"    MINUS {\n" +
+//				"      {\n" +
+				"        {\n" +
+//				"          {\n" +
+				"            GRAPH <http://graphs.example/g1> {\n" +
+				"              ?s !( ex:pA|foaf:name ) ?o .\n" +
+				"            }\n" +
+//				"          }\n" +
+				"        }\n" +
+				"          UNION\n" +
+				"        {\n" +
+				"          ?u1 ex:pD ?v1 .\n" +
+				"        }\n" +
+				"      }\n" +
+//				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testMinusGraphUnionScope() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    ?s ex:pB ?v2 .\n" +
+				"    MINUS {\n" +
+				"      {\n" +
+				"        {\n" +
+				"          GRAPH <http://graphs.example/g1> {\n" +
+				"            ?s !( ex:pA|foaf:name ) ?o .\n" +
+				"          }\n" +
+				"        }\n" +
+				"      }\n" +
+				"        UNION\n" +
+				"      {\n" +
+				"        ?u1 ex:pD ?v1 .\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
 }

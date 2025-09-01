@@ -63,7 +63,7 @@ public final class GroupUnionOfSameGraphBranchesTransform extends BaseTransform 
 	}
 
 	private static IrUnion rewriteUnion(IrUnion u) {
-		if(!u.isNewScope()){
+		if (!u.isNewScope()) {
 			return u;
 		}
 

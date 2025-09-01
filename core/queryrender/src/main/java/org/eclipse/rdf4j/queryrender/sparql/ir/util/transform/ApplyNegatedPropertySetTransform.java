@@ -61,6 +61,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 		final List<IrNode> in = bgp.getLines();
 		final List<IrNode> out = new ArrayList<>();
 		final Set<IrNode> consumed = new LinkedHashSet<>();
+		boolean propagateScopeFromConsumedFilter = false;
 
 		for (int i = 0; i < in.size(); i++) {
 			IrNode n = in.get(i);
@@ -208,6 +209,9 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 								newInner2.add(new IrPathTriple(sp2.getSubject(), nps2, sp2.getObject(), false));
 							}
 							out.add(new IrGraph(g2.getGraph(), newInner2, g2.isNewScope()));
+							if (f2.isNewScope()) {
+								propagateScopeFromConsumedFilter = true;
+							}
 							i += 1; // consume grouped block
 							continue;
 						}
@@ -538,12 +542,18 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						final String nps = "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")";
 						out.add(new IrPathTriple(sp.getObject(), sp.getObjectOverride(), nps, sp.getSubject(),
 								sp.getSubjectOverride(), false));
+						if (f.isNewScope()) {
+							propagateScopeFromConsumedFilter = true;
+						}
 						i += 1; // consume filter
 						continue;
 					} else {
 						final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
 						out.add(new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), nps, sp.getObject(),
 								sp.getObjectOverride(), false));
+						if (f.isNewScope()) {
+							propagateScopeFromConsumedFilter = true;
+						}
 						i += 1; // consume filter
 						continue;
 					}
@@ -695,6 +705,9 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 
 		final IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
+		if (propagateScopeFromConsumedFilter) {
+			res.setNewScope(true);
+		}
 		return res;
 	}
 
@@ -865,6 +878,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 		final List<IrNode> in = bgp.getLines();
 		final List<IrNode> out = new ArrayList<>();
 		final Set<IrNode> consumed = new HashSet<>();
+		boolean propagateScopeFromConsumedFilter = false;
 		for (int i = 0; i < in.size(); i++) {
 			IrNode n = in.get(i);
 			if (consumed.contains(n)) {
@@ -927,6 +941,9 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						out.add(new IrGraph(g.getGraph(), newInner, g.isNewScope()));
 						consumed.add(g);
 						consumed.add(in.get(i + 1));
+						if (f.isNewScope()) {
+							propagateScopeFromConsumedFilter = true;
+						}
 						i += 1;
 						continue;
 					}
@@ -947,7 +964,11 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				res.add(n);
 			}
 		}
-		res.setNewScope(bgp.isNewScope());
+		if (propagateScopeFromConsumedFilter) {
+			res.setNewScope(true);
+		} else {
+			res.setNewScope(bgp.isNewScope());
+		}
 		return res;
 	}
 
