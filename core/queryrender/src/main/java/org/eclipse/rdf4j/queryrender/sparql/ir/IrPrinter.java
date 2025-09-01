@@ -62,6 +62,4 @@ public interface IrPrinter {
 
 	String renderTermWithOverrides(Var v);
 
-	// Render a nested subselect as text
-	String renderSubselect(IrSelect select);
 }

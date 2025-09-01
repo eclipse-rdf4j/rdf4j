@@ -71,12 +71,15 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrExists;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGroupByElem;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrOrderSpec;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPrinter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPropertyList;
@@ -86,6 +89,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.SimplifyPathParensTransform;
 
 /**
  * TupleExprIRRenderer: render RDF4J algebra back into SPARQL text (via a compact internal normalization/IR step), with:
@@ -215,19 +219,20 @@ public class TupleExprIRRenderer {
 			return false;
 		}
 		final String name = v.getName();
-		if (name == null || !name.startsWith(ANON_BNODE_PREFIX)) {
-			return false;
+		boolean nameLooksAnon = false;
+		if (name != null) {
+			nameLooksAnon = name.startsWith(ANON_BNODE_PREFIX) || name.startsWith("_anon_");
 		}
 		// Prefer Var#isAnonymous() when present; fall back to prefix heuristic
 		try {
 			Method m = Var.class.getMethod("isAnonymous");
 			Object r = m.invoke(v);
 			if (r instanceof Boolean) {
-				return (Boolean) r;
+				return (Boolean) r || nameLooksAnon;
 			}
 		} catch (ReflectiveOperationException ignore) {
 		}
-		return true;
+		return nameLooksAnon;
 	}
 
 	// ---------------- Experimental textual IR API ----------------
@@ -551,11 +556,6 @@ public class TupleExprIRRenderer {
 
 	/** Render a textual SELECT query from an {@code IrSelect} model. */
 
-	public String render(final IrSelect ir,
-			final DatasetView dataset) {
-		return render(ir, dataset, false);
-	}
-
 	// ---------------- Rendering helpers (prefix-aware) ----------------
 
 	public String render(final IrSelect ir,
@@ -564,87 +564,8 @@ public class TupleExprIRRenderer {
 		if (!subselect) {
 			printPrologueAndDataset(out, dataset);
 		}
-		// SELECT header
-		out.append("SELECT ");
-		if (ir.isDistinct()) {
-			out.append("DISTINCT ");
-		} else if (ir.isReduced()) {
-			out.append("REDUCED ");
-		}
-		if (ir.getProjection().isEmpty()) {
-			out.append("*");
-		} else {
-			for (int i = 0; i < ir.getProjection().size(); i++) {
-				final IrProjectionItem it = ir.getProjection().get(i);
-				if (it.getExprText() == null) {
-					out.append('?').append(it.getVarName());
-				} else {
-					out.append('(').append(it.getExprText()).append(" AS ?").append(it.getVarName()).append(')');
-				}
-				if (i + 1 < ir.getProjection().size()) {
-					out.append(' ');
-				}
-			}
-		}
-
-		// WHERE block
-		out.append(cfg.canonicalWhitespace ? " WHERE " : " WHERE ");
-		new IRTextPrinter(out).printWhere(ir.getWhere());
-
-		// GROUP BY
-		if (!ir.getGroupBy().isEmpty()) {
-			if (out.length() == 0 || out.charAt(out.length() - 1) != '\n') {
-				out.append('\n');
-			}
-			out.append("GROUP BY");
-			for (IrGroupByElem g : ir.getGroupBy()) {
-				if (g.getExprText() == null) {
-					out.append(' ').append('?').append(g.getVarName());
-				} else {
-					out.append(" (").append(g.getExprText()).append(" AS ?").append(g.getVarName()).append(")");
-				}
-			}
-		}
-
-		// HAVING
-		if (!ir.getHaving().isEmpty()) {
-			if (out.length() == 0 || out.charAt(out.length() - 1) != '\n') {
-				out.append('\n');
-			}
-			out.append("HAVING");
-			for (String cond : ir.getHaving()) {
-				out.append(' ').append(asConstraint(cond));
-			}
-		}
-
-		// ORDER BY
-		if (!ir.getOrderBy().isEmpty()) {
-			if (out.length() == 0 || out.charAt(out.length() - 1) != '\n') {
-				out.append('\n');
-			}
-			out.append("ORDER BY");
-			for (IrOrderSpec o : ir.getOrderBy()) {
-				if (o.isAscending()) {
-					out.append(' ').append(o.getExprText());
-				} else {
-					out.append(" DESC(").append(o.getExprText()).append(')');
-				}
-			}
-		}
-
-		if (ir.getLimit() >= 0) {
-			if (out.length() == 0 || out.charAt(out.length() - 1) != '\n') {
-				out.append('\n');
-			}
-			out.append("LIMIT ").append(ir.getLimit());
-		}
-		if (ir.getOffset() >= 0) {
-			if (out.length() == 0 || out.charAt(out.length() - 1) != '\n') {
-				out.append('\n');
-			}
-			out.append("OFFSET ").append(ir.getOffset());
-		}
-
+		IRTextPrinter printer = new IRTextPrinter(out);
+		ir.print(printer);
 		return mergeAdjacentGraphBlocks(out.toString()).trim();
 	}
 
@@ -1267,13 +1188,44 @@ public class TupleExprIRRenderer {
 					// Do not descend into raw subselects for top-level bnode label decisions
 				}
 			}
+			// Also account for overrides that introduce references to anonymous bnode variables (e.g., link overrides)
+			if (currentOverrides != null && !currentOverrides.isEmpty()) {
+				for (String v : currentOverrides.values()) {
+					if (v == null)
+						continue;
+					int i = 0;
+					while (i < v.length()) {
+						int q = v.indexOf('?', i);
+						if (q < 0)
+							break;
+						int j = q + 1;
+						StringBuilder name = new StringBuilder();
+						while (j < v.length()) {
+							char c = v.charAt(j);
+							if (Character.isLetterOrDigit(c) || c == '_') {
+								name.append(c);
+								j++;
+							} else
+								break;
+						}
+						if (name.length() > 0 && isAnonBnodeName(name.toString())) {
+							bnodeCounts.merge(name.toString(), 1, Integer::sum);
+						}
+						i = j;
+					}
+				}
+			}
+		}
+
+		private boolean isAnonBnodeName(String name) {
+			return name != null && (name.startsWith(ANON_BNODE_PREFIX) || name.startsWith("_anon_"));
 		}
 
 		private void assignBnodeLabels() {
 			int idx = 1;
 			for (Map.Entry<String, Integer> e : bnodeCounts.entrySet()) {
 				if (e.getValue() != null && e.getValue() > 1) {
-					bnodeLabels.put(e.getKey(), "b" + (idx++));
+					bnodeLabels.put(e.getKey(), "bnode" + (idx++));
 				}
 			}
 		}
@@ -1282,7 +1234,45 @@ public class TupleExprIRRenderer {
 			if (lines == null) {
 				return;
 			}
-			for (IrNode n : lines) {
+			for (int i = 0; i < lines.size(); i++) {
+				IrNode n = lines.get(i);
+				// Special-case: render "triple . FILTER EXISTS {" on a single line for readability
+				if (i + 1 < lines.size()
+						&& lines.get(i + 1) instanceof IrFilter) {
+					IrFilter f = (IrFilter) lines
+							.get(i + 1);
+					if (f.getBody() instanceof IrExists
+							&& (n instanceof IrStatementPattern
+									|| n instanceof IrPathTriple)) {
+
+						String tripleTxt = null;
+						if (n instanceof IrStatementPattern) {
+							IrStatementPattern sp = (IrStatementPattern) n;
+							tripleTxt = renderTermWithOverrides(sp.getSubject()) + " "
+									+ renderPredicateForTriple(sp.getPredicate()) + " "
+									+ renderTermWithOverrides(sp.getObject()) + " .";
+						} else if (n instanceof IrPathTriple) {
+							IrPathTriple pt = (IrPathTriple) n;
+							String sTxt = renderTermWithOverrides(pt.getSubject());
+							String oTxt = renderTermWithOverrides(pt.getObject());
+							String path = applyOverridesToText(pt.getPathText());
+							String simplified = SimplifyPathParensTransform
+									.simplify(path);
+							String t = TupleExprIRRenderer.stripRedundantOuterParens(simplified);
+							tripleTxt = sTxt + " " + t + " " + oTxt + " .";
+						}
+
+						if (tripleTxt != null) {
+							startLine();
+							append(tripleTxt + " FILTER ");
+							// Print EXISTS body inline (IrExists.print appends "EXISTS " and the inner block)
+							f.getBody().print(this);
+							i += 1; // consume filter
+							continue;
+						}
+					}
+				}
+
 				printNodeViaIr(n);
 			}
 		}
@@ -1456,10 +1446,6 @@ public class TupleExprIRRenderer {
 			return TupleExprIRRenderer.this.renderIRI(iri);
 		}
 
-		@Override
-		public String renderSubselect(IrSelect select) {
-			return TupleExprIRRenderer.this.render(select, null, true);
-		}
 	}
 
 }
