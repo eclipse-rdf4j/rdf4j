@@ -57,6 +57,10 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 	private static final Pattern COMPACT_PARENED_NEGATED_TOKEN = Pattern
 			.compile("\\((!\\s*(?:<[^>]+>|[^()|/\\s]+))\\)");
 
+	// Ensure a single space just inside NPS parentheses for consistent style: !(a|^b) -> !( a|^b )
+	private static final Pattern NPS_PARENS_SPACING = Pattern
+			.compile("!\\(\\s*([^()]+?)\\s*\\)");
+
 	public static IrBGP apply(IrBGP bgp) {
 		if (bgp == null) {
 			return null;
@@ -134,6 +138,8 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			cur = normalizeParenBangAlternationGroups(cur);
 			// Insert spaces around top-level alternations for readability
 			cur = spaceTopLevelAlternations(cur);
+			// Style: add a space just inside NPS parentheses
+			cur = NPS_PARENS_SPACING.matcher(cur).replaceAll("!($1)");
 		} while (!cur.equals(prev) && ++guard < 5);
 		return cur;
 	}
