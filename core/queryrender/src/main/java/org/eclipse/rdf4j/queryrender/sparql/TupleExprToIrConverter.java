@@ -722,12 +722,22 @@ public class TupleExprToIrConverter {
 		if (e instanceof Union) {
 			Union u = (Union) e;
 			if (u.isVariableScopeChange()) {
-				if (u.getLeftArg() instanceof Union && !((Union) u.getLeftArg()).isVariableScopeChange()) {
+				// Preserve nested UNIONs whenever either child is itself a UNION with an
+				// explicit variable-scope change: keep that UNION as a branch rather than
+				// flattening into this level. This retains the original grouping braces
+				// expected by scope-sensitive tests.
+				if (u.getLeftArg() instanceof Union && ((Union) u.getLeftArg()).isVariableScopeChange()) {
+					out.add(u.getLeftArg());
+				} else if (u.getLeftArg() instanceof Union && !((Union) u.getLeftArg()).isVariableScopeChange()) {
+					// Child UNION without scope-change: keep as a single branch (do not inline),
+					// matching how RDF4J marks grouping in pretty-printed algebra.
 					out.add(u.getLeftArg());
 				} else {
 					flattenUnion(u.getLeftArg(), out);
 				}
-				if (u.getRightArg() instanceof Union && !((Union) u.getRightArg()).isVariableScopeChange()) {
+				if (u.getRightArg() instanceof Union && ((Union) u.getRightArg()).isVariableScopeChange()) {
+					out.add(u.getRightArg());
+				} else if (u.getRightArg() instanceof Union && !((Union) u.getRightArg()).isVariableScopeChange()) {
 					out.add(u.getRightArg());
 				} else {
 					flattenUnion(u.getRightArg(), out);
