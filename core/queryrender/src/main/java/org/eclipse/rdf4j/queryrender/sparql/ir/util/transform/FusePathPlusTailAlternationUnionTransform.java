@@ -120,11 +120,11 @@ public class FusePathPlusTailAlternationUnionTransform extends BaseTransform {
 		Var oVar = bt.sp.getObject();
 		if (sameVar(midVar, sVar)) {
 			// forward: mid p ?end
-			return new TripleJoin(r.renderIRI((IRI) pv.getValue()), oVar, false);
+			return new TripleJoin(r.convertIRIToString((IRI) pv.getValue()), oVar, false);
 		}
 		if (sameVar(midVar, oVar)) {
 			// inverse: ?end p mid
-			return new TripleJoin(r.renderIRI((IRI) pv.getValue()), sVar, true);
+			return new TripleJoin(r.convertIRIToString((IRI) pv.getValue()), sVar, true);
 		}
 		return null;
 	}

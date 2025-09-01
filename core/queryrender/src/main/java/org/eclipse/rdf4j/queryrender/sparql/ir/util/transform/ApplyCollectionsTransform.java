@@ -20,8 +20,8 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrCollection;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
@@ -43,7 +43,7 @@ public final class ApplyCollectionsTransform extends BaseTransform {
 	private ApplyCollectionsTransform() {
 	}
 
-	public static IrBGP apply(IrBGP bgp, TupleExprIRRenderer r) {
+	public static IrBGP apply(IrBGP bgp) {
 		if (bgp == null) {
 			return null;
 		}
@@ -67,15 +67,15 @@ public final class ApplyCollectionsTransform extends BaseTransform {
 				restByS.put(s.getName(), sp);
 			}
 		}
-
-		final Map<String, String> collText = new LinkedHashMap<>();
+		// Build structural collections and record consumed list triples
+		final Map<String, IrCollection> collections = new LinkedHashMap<>();
 		final Set<IrNode> consumed = new LinkedHashSet<>();
 
 		for (String head : firstByS.keySet()) {
 			if (head == null || (!head.startsWith("_anon_collection_") && !restByS.containsKey(head))) {
 				continue;
 			}
-			List<String> items = new ArrayList<>();
+			List<Var> items = new ArrayList<>();
 			Set<String> spine = new LinkedHashSet<>();
 			String cur = head;
 			int guard = 0;
@@ -93,10 +93,8 @@ public final class ApplyCollectionsTransform extends BaseTransform {
 				}
 				spine.add(cur);
 				Var o = f.getObject();
-				if (o != null && o.hasValue()) {
-					items.add(r.renderValue(o.getValue()));
-				} else if (o != null && o.getName() != null) {
-					items.add("?" + o.getName());
+				if (o != null) {
+					items.add(o);
 				}
 				consumed.add(f);
 				consumed.add(rSp);
@@ -118,24 +116,33 @@ public final class ApplyCollectionsTransform extends BaseTransform {
 				}
 			}
 			if (ok && !items.isEmpty()) {
-				collText.put(head, "(" + String.join(" ", items) + ")");
+				IrCollection col = new IrCollection(false);
+				for (Var v : items)
+					col.addItem(v);
+				collections.put(head, col);
 			}
 		}
-
-		// Make overrides available to the renderer so that variables heading collections render as "(item1 item2 ...)"
-		r.addOverrides(collText);
-
-		// Rewrite lines: remove consumed
+		// Rewrite lines: replace SP(s,p,head) where head is a collection head with an IrCollectionTriple; remove list
+		// triples
 		List<IrNode> out = new ArrayList<>();
 		for (IrNode n : bgp.getLines()) {
 			if (consumed.contains(n)) {
 				continue;
 			}
-			if (n instanceof IrBGP || n instanceof IrGraph || n instanceof IrOptional || n instanceof IrUnion
+			if (n instanceof IrStatementPattern) {
+				IrStatementPattern sp = (IrStatementPattern) n;
+				Var obj = sp.getObject();
+				if (obj != null && !obj.hasValue() && obj.getName() != null && collections.containsKey(obj.getName())) {
+					IrCollection col = collections.get(obj.getName());
+					sp.setObjectOverride(col);
+					out.add(sp);
+					continue;
+				}
+			} else if (n instanceof IrBGP || n instanceof IrGraph || n instanceof IrOptional || n instanceof IrUnion
 					|| n instanceof IrMinus || n instanceof IrService || n instanceof IrSubSelect) {
 				n = n.transformChildren(child -> {
 					if (child instanceof IrBGP) {
-						return apply((IrBGP) child, r);
+						return apply((IrBGP) child);
 					}
 					return child;
 				});

@@ -1869,7 +1869,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			if (i == childCount - 1) {
 				nextListVar = TupleExprs.createConstVar(RDF.NIL);
 			} else {
-				nextListVar = createAnonVar();
+				nextListVar = createAnonCollectionVar();
 			}
 
 			graphPattern.addRequiredSP(listVar.clone(), TupleExprs.createConstVar(RDF.REST), nextListVar);
