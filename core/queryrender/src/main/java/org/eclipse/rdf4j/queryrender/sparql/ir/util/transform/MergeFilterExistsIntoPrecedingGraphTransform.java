@@ -59,6 +59,14 @@ public final class MergeFilterExistsIntoPrecedingGraphTransform extends BaseTran
 				// grouped scope inside the GRAPH to preserve the intended grouping.
 				if (f.getBody() instanceof IrExists) {
 					final IrExists ex = (IrExists) f.getBody();
+					// Only perform this merge when the EXISTS node indicates the original query
+					// had explicit grouping/scope around its body. This preserves the algebra/text
+					// of queries where the FILTER EXISTS intentionally sits outside the GRAPH.
+					if (!(ex.isNewScope() || f.isNewScope())) {
+						// Keep as-is
+						out.add(n);
+						continue;
+					}
 					final IrBGP exWhere = ex.getWhere();
 					if (exWhere != null) {
 						IrBGP unwrapped = new IrBGP(false);
