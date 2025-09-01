@@ -512,9 +512,51 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		} else {
 			so = null;
 		}
-		if (so == null)
-			return null;
-		final String sName = so[0], oName = so[1];
+		String sName;
+		String oName;
+		if (so != null) {
+			sName = so[0];
+			oName = so[1];
+		} else {
+			// Fallback: derive s/o from the first step branch when sameTerm uses a non-var (e.g., [])
+			// Require at least one branch and a simple triple/path with variable endpoints
+			IrBGP first = stepBranches.get(0);
+			if (first.getLines().size() != 1)
+				return null;
+			IrNode ln = first.getLines().get(0);
+			Var sVar = null, oVar = null;
+			if (ln instanceof IrStatementPattern) {
+				IrStatementPattern sp = (IrStatementPattern) ln;
+				sVar = sp.getSubject();
+				oVar = sp.getObject();
+			} else if (ln instanceof IrGraph) {
+				IrGraph g = (IrGraph) ln;
+				if (g.getWhere() == null || g.getWhere().getLines().size() != 1)
+					return null;
+				IrNode gln = g.getWhere().getLines().get(0);
+				if (gln instanceof IrStatementPattern) {
+					IrStatementPattern sp = (IrStatementPattern) gln;
+					sVar = sp.getSubject();
+					oVar = sp.getObject();
+				} else if (gln instanceof IrPathTriple) {
+					IrPathTriple pt = (IrPathTriple) gln;
+					sVar = pt.getSubject();
+					oVar = pt.getObject();
+				} else
+					return null;
+			} else if (ln instanceof IrPathTriple) {
+				IrPathTriple pt = (IrPathTriple) ln;
+				sVar = pt.getSubject();
+				oVar = pt.getObject();
+			} else
+				return null;
+			if (sVar == null || sVar.hasValue() || sVar.getName() == null)
+				return null;
+			if (oVar == null || oVar.hasValue() || oVar.getName() == null)
+				return null;
+			sName = sVar.getName();
+			oName = oVar.getName();
+		}
 		final List<String> steps = new ArrayList<>();
 		boolean allGraphWrapped = true;
 		Var commonGraph = null;
@@ -634,11 +676,19 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		}
 		IrNode ln = b.getLines().get(0);
 		if (ln instanceof IrText) {
-			return parseSameTermVars(((IrText) ln).getText()) != null;
+			String t = ((IrText) ln).getText();
+			if (t == null)
+				return false;
+			if (parseSameTermVars(t) != null)
+				return true;
+			// Accept generic sameTerm() even when not both args are variables (e.g., sameTerm([], ?x))
+			return t.contains("sameTerm(");
 		}
 		if (ln instanceof IrFilter) {
 			String cond = ((IrFilter) ln).getConditionText();
-			return parseSameTermVarsFromCondition(cond) != null;
+			if (parseSameTermVarsFromCondition(cond) != null)
+				return true;
+			return cond != null && cond.contains("sameTerm(");
 		}
 		return false;
 	}
