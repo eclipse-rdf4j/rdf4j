@@ -56,11 +56,14 @@ public final class GroupUnionOfSameGraphBranchesTransform extends BaseTransform 
 			});
 			out.add(m);
 		}
-		return BaseTransform.bgpWithLines(bgp, out);
+		IrBGP res = new IrBGP(bgp.isNewScope());
+		out.forEach(res::add);
+		res.setNewScope(bgp.isNewScope());
+		return res;
 	}
 
-	private static IrNode rewriteUnion(IrUnion u) {
-		if (!u.isNewScope()) {
+	private static IrUnion rewriteUnion(IrUnion u) {
+		if(!u.isNewScope()){
 			return u;
 		}
 
@@ -108,15 +111,8 @@ public final class GroupUnionOfSameGraphBranchesTransform extends BaseTransform 
 					IrUnion inner = new IrUnion(u.isNewScope());
 					for (int idx : group) {
 						consumed.add(idx);
-						IrBGP irBGP = u.getBranches().get(idx);
-						IrBGP body = ((IrGraph) irBGP.getLines().get(0)).getWhere();
-						if (irBGP.isNewScope()) {
-							// Preserve the branch's explicit new scope by wrapping the inner body with a
-							// new-scoped IrBGP. This ensures downstream union fusers recognize the union as
-							// explicit and avoid fusing it into a single path.
-							body = new IrBGP(body, true);
-						}
-						// Recurse inside the body before grouping and preserve explicit grouping
+						IrBGP body = ((IrGraph) u.getBranches().get(idx).getLines().get(0)).getWhere();
+						// Recurse inside the body before grouping
 						inner.addBranch(apply(body));
 					}
 					// Wrap union inside the GRAPH as a single-line BGP
@@ -133,19 +129,6 @@ public final class GroupUnionOfSameGraphBranchesTransform extends BaseTransform 
 			u2.addBranch(apply(branch));
 		}
 		u2.setNewScope(u.isNewScope());
-
-		// If the rewrite collapsed the UNION to a single branch (e.g., both branches
-		// were GRAPH blocks with the same graph ref), drop the outer UNION entirely
-		// and return the single branch BGP. This avoids leaving behind a degenerate
-		// UNION wrapper that would introduce extra grouping braces at print time.
-		if (u2.getBranches().size() == 1) {
-			IrBGP only = u2.getBranches().get(0);
-			if (only.getLines().size() == 1) {
-				return only.getLines().get(0); // return the single GRAPH directly (no extra braces)
-			}
-			return only;
-		}
-
 		return u2;
 	}
 
@@ -156,6 +139,6 @@ public final class GroupUnionOfSameGraphBranchesTransform extends BaseTransform 
 		if (v.hasValue() && v.getValue() != null) {
 			return "val:" + v.getValue().stringValue();
 		}
-		return "var:" + v.getName();
+		return "var:" + String.valueOf(v.getName());
 	}
 }

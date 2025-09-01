@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseAltInverseTail
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseServiceNpsUnionLateTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseUnionOfNpsBranchesTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupFilterExistsWithPrecedingTriplesTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupUnionOfSameGraphBranchesTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupValuesAndNpsInUnionBranchTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.MergeFilterExistsIntoPrecedingGraphTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.MergeOptionalIntoPrecedingGraphTransform;
@@ -71,6 +72,10 @@ public final class IrTransforms {
 					IrBGP w = (IrBGP) child;
 					w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
 					w = CoalesceAdjacentGraphsTransform.apply(w);
+					// Preserve structure: prefer GRAPH { {A} UNION {B} } over
+					// { GRAPH { A } } UNION { GRAPH { B } } when both UNION branches
+					// are GRAPHs with the same graph ref.
+					w = GroupUnionOfSameGraphBranchesTransform.apply(w);
 					// Merge FILTER EXISTS into preceding GRAPH only when the EXISTS body is marked with
 					// explicit grouping (ex.isNewScope/f.isNewScope). This preserves outside-FILTER cases
 					// while still grouping triples + EXISTS inside GRAPH when original query had braces.
@@ -156,6 +161,10 @@ public final class IrTransforms {
 					// projected variable (textual stability for streaming tests)
 					w = CanonicalizeUnionBranchOrderTransform
 							.apply(w, select);
+
+					// Re-group UNION branches that target the same GRAPH back under a single GRAPH
+					// with an inner UNION, to preserve expected scoping braces in tests.
+					w = GroupUnionOfSameGraphBranchesTransform.apply(w);
 
 					// Preserve explicit grouping for UNION branches that combine VALUES with a negated
 					// property path triple, to maintain textual stability expected by tests.
