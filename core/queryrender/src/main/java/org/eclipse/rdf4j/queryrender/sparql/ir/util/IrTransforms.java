@@ -98,6 +98,7 @@ public final class IrTransforms {
 					w = MergeFilterExistsIntoPrecedingGraphTransform.apply(w);
 					// Wrap preceding triple with FILTER EXISTS { { ... } } into a grouped block for stability
 					w = GroupFilterExistsWithPrecedingTriplesTransform.apply(w);
+
 					// After grouping, re-run a lightweight NPS rewrite inside nested groups to compact
 					// simple var-predicate + inequality filters to !(...) path triples (including inside
 					// EXISTS bodies).
