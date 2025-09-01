@@ -578,58 +578,6 @@ public final class ApplyPathsTransform extends BaseTransform {
 				}
 			}
 
-			// ---- GRAPH/SP followed by PathTriple over the bridge → fuse inside GRAPH ----
-			if (n instanceof IrGraph && i + 1 < in.size() && in.get(i + 1) instanceof IrPathTriple) {
-				IrGraph g = (IrGraph) n;
-				IrBGP inner = g.getWhere();
-				if (inner != null && inner.getLines().size() == 1) {
-					IrNode innerOnly = inner.getLines().get(0);
-					IrPathTriple pt = (IrPathTriple) in.get(i + 1);
-					// Case A: inner is a simple SP; reuse existing logic
-					if (innerOnly instanceof IrStatementPattern) {
-						IrStatementPattern sp0 = (IrStatementPattern) innerOnly;
-						Var p0 = sp0.getPredicate();
-						if (p0 != null && p0.hasValue() && p0.getValue() instanceof IRI) {
-							Var mid = isAnonPathVar(sp0.getObject()) ? sp0.getObject()
-									: (isAnonPathVar(sp0.getSubject()) ? sp0.getSubject() : null);
-							if (mid != null) {
-								boolean forward = mid == sp0.getObject();
-								Var sideVar = forward ? sp0.getSubject() : sp0.getObject();
-								String first = r.convertIRIToString((IRI) p0.getValue());
-								if (!forward) {
-									first = "^" + first;
-								}
-								if (sameVar(mid, pt.getSubject())) {
-									String fused = first + "/" + pt.getPathText();
-									IrBGP newInner = new IrBGP(inner.isNewScope());
-									IrNode sideOv = forward ? sp0.getSubjectOverride() : sp0.getObjectOverride();
-									newInner.add(new IrPathTriple(sideVar, sideOv, fused, pt.getObject(),
-											pt.getObjectOverride(), false));
-									// copy any leftover inner lines except sp0
-									copyAllExcept(inner, newInner, sp0);
-									out.add(new IrGraph(g.getGraph(), newInner, g.isNewScope()));
-									i += 1; // consume the path triple
-									continue;
-								}
-							}
-						}
-					}
-					// Case B: inner is already a path triple -> fuse with outer PT when they bridge
-					if (innerOnly instanceof IrPathTriple) {
-						IrPathTriple pt0 = (IrPathTriple) innerOnly;
-						if (sameVar(pt0.getObject(), pt.getSubject())) {
-							String fused = "(" + pt0.getPathText() + ")/(" + pt.getPathText() + ")";
-							IrBGP newInner = new IrBGP(inner.isNewScope());
-							newInner.add(new IrPathTriple(pt0.getSubject(), pt0.getSubjectOverride(), fused,
-									pt.getObject(), pt.getObjectOverride(), false));
-							out.add(new IrGraph(g.getGraph(), newInner, g.isNewScope()));
-							i += 1; // consume the path triple
-							continue;
-						}
-					}
-				}
-			}
-
 			// Rewrite UNION alternation of simple triples (and already-fused path triples) into a single
 			// IrPathTriple, preserving branch order and GRAPH context when present. This enables
 			// subsequent chaining with a following constant-predicate triple via pt + SP -> pt/IRI.
@@ -722,190 +670,6 @@ public final class ApplyPathsTransform extends BaseTransform {
 						}
 					}
 					parts.add(piece);
-				}
-
-				// Second form: UNION of 2-step sequences that share the same endpoints via an _anon_path_* bridge var
-				// in
-				// each branch. Each branch must be exactly two SPs connected by a mid var named like _anon_path_*; the
-				// two
-				// constants across the SPs form a sequence, with direction (^) added when the mid var occurs in object
-				// pos.
-				if (!ok) {
-					// Try 2-step sequence alternation
-					ok = true;
-					Var startVarOut = null, endVarOut = null;
-					final List<String> seqs = new ArrayList<>();
-					for (IrBGP b : u.getBranches()) {
-						if (!ok) {
-							break;
-						}
-						if (b.getLines().size() != 2 || !(b.getLines().get(0) instanceof IrStatementPattern)
-								|| !(b.getLines().get(1) instanceof IrStatementPattern)) {
-							ok = false;
-							break;
-						}
-						final IrStatementPattern a = (IrStatementPattern) b.getLines().get(0);
-						final IrStatementPattern c = (IrStatementPattern) b.getLines().get(1);
-						final Var ap = a.getPredicate(), cp = c.getPredicate();
-						if (ap == null || !ap.hasValue() || !(ap.getValue() instanceof IRI) || cp == null
-								|| !cp.hasValue() || !(cp.getValue() instanceof IRI)) {
-							ok = false;
-							break;
-						}
-						// Identify mid var linking the two triples
-						Var mid = null, startVar = null, endVar = null;
-						boolean firstForward = false, secondForward = false;
-						if (isAnonPathVar(a.getObject()) && sameVar(a.getObject(), c.getSubject())) {
-							mid = a.getObject();
-							startVar = a.getSubject();
-							endVar = c.getObject();
-							firstForward = true;
-							secondForward = true;
-						} else if (isAnonPathVar(a.getSubject()) && sameVar(a.getSubject(), c.getObject())) {
-							mid = a.getSubject();
-							startVar = a.getObject();
-							endVar = c.getSubject();
-							firstForward = false;
-							secondForward = false;
-						} else if (isAnonPathVar(a.getObject()) && sameVar(a.getObject(), c.getObject())) {
-							mid = a.getObject();
-							startVar = a.getSubject();
-							endVar = c.getSubject();
-							firstForward = true;
-							secondForward = false;
-						} else if (isAnonPathVar(a.getSubject()) && sameVar(a.getSubject(), c.getSubject())) {
-							mid = a.getSubject();
-							startVar = a.getObject();
-							endVar = c.getObject();
-							firstForward = false;
-							secondForward = true;
-						}
-						if (mid == null) {
-							ok = false;
-							break;
-						}
-						final Var sVar = startVar;
-						final Var eVar = endVar;
-						final String step1 = (firstForward ? "" : "^") + r.convertIRIToString((IRI) ap.getValue());
-						final String step2 = (secondForward ? "" : "^") + r.convertIRIToString((IRI) cp.getValue());
-						final String seq = step1 + "/" + step2;
-						if (startVarOut == null && endVarOut == null) {
-							startVarOut = sVar;
-							endVarOut = eVar;
-						} else if (!(sameVar(startVarOut, sVar) && sameVar(endVarOut, eVar))) {
-							ok = false;
-							break;
-						}
-						seqs.add(seq);
-					}
-					if (ok && startVarOut != null && endVarOut != null && !seqs.isEmpty()) {
-						final String alt = (seqs.size() == 1) ? seqs.get(0) : String.join("|", seqs);
-						out.add(new IrPathTriple(startVarOut, alt, endVarOut, false));
-						continue;
-					}
-				}
-
-				// 2a-mixed: UNION with one branch a single SP and another branch a 2-step sequence via
-				// _anon_path_* bridge, sharing identical endpoints. Fuse into a single alternation path where
-				// one side is a 1-step atom and the other a 2-step sequence (e.g., "^foaf:knows|ex:knows/^foaf:knows").
-				if (u.getBranches().size() == 2) {
-					IrBGP b0 = u.getBranches().get(0);
-					IrBGP b1 = u.getBranches().get(1);
-					// Helper to parse a 2-step branch; returns {startVar, endVar, seqPath} or null
-					class TwoStep {
-						final Var s;
-						final Var o;
-						final String path;
-
-						TwoStep(Var s, Var o, String path) {
-							this.s = s;
-							this.o = o;
-							this.path = path;
-						}
-					}
-					Function<IrBGP, TwoStep> parseTwo = (bg) -> {
-						if (bg == null || bg.getLines().size() != 2) {
-							return null;
-						}
-						if (!(bg.getLines().get(0) instanceof IrStatementPattern)
-								|| !(bg.getLines().get(1) instanceof IrStatementPattern)) {
-							return null;
-						}
-						final IrStatementPattern a = (IrStatementPattern) bg.getLines().get(0);
-						final IrStatementPattern c = (IrStatementPattern) bg.getLines().get(1);
-						final Var ap = a.getPredicate(), cp = c.getPredicate();
-						if (ap == null || !ap.hasValue() || !(ap.getValue() instanceof IRI) || cp == null
-								|| !cp.hasValue() || !(cp.getValue() instanceof IRI)) {
-							return null;
-						}
-						Var mid = null, startVar = null, endVar = null;
-						boolean firstForward = false, secondForward = false;
-						if (isAnonPathVar(a.getObject()) && sameVar(a.getObject(), c.getSubject())) {
-							mid = a.getObject();
-							startVar = a.getSubject();
-							endVar = c.getObject();
-							firstForward = true;
-							secondForward = true;
-						} else if (isAnonPathVar(a.getSubject()) && sameVar(a.getSubject(), c.getObject())) {
-							mid = a.getSubject();
-							startVar = a.getObject();
-							endVar = c.getSubject();
-							firstForward = false;
-							secondForward = false;
-						} else if (isAnonPathVar(a.getObject()) && sameVar(a.getObject(), c.getObject())) {
-							mid = a.getObject();
-							startVar = a.getSubject();
-							endVar = c.getSubject();
-							firstForward = true;
-							secondForward = false;
-						} else if (isAnonPathVar(a.getSubject()) && sameVar(a.getSubject(), c.getSubject())) {
-							mid = a.getSubject();
-							startVar = a.getObject();
-							endVar = c.getObject();
-							firstForward = false;
-							secondForward = true;
-						}
-						if (mid == null) {
-							return null;
-						}
-						final String step1 = (firstForward ? "" : "^") + r.convertIRIToString((IRI) ap.getValue());
-						final String step2 = (secondForward ? "" : "^") + r.convertIRIToString((IRI) cp.getValue());
-						return new TwoStep(startVar, endVar, step1 + "/" + step2);
-					};
-
-					TwoStep ts0 = parseTwo.apply(b0);
-					TwoStep ts1 = parseTwo.apply(b1);
-					IrStatementPattern spSingle = null;
-					TwoStep two = null;
-					int singleIdx = -1;
-					if (ts0 != null && b1.getLines().size() == 1
-							&& b1.getLines().get(0) instanceof IrStatementPattern) {
-						two = ts0;
-						singleIdx = 1;
-						spSingle = (IrStatementPattern) b1.getLines().get(0);
-					} else if (ts1 != null && b0.getLines().size() == 1
-							&& b0.getLines().get(0) instanceof IrStatementPattern) {
-						two = ts1;
-						singleIdx = 0;
-						spSingle = (IrStatementPattern) b0.getLines().get(0);
-					}
-					if (two != null && spSingle != null) {
-						// Ensure single branch uses a constant predicate and matches endpoints
-						Var pv = spSingle.getPredicate();
-						if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
-							String atom = null;
-							if (sameVar(two.s, spSingle.getSubject()) && sameVar(two.o, spSingle.getObject())) {
-								atom = r.convertIRIToString((IRI) pv.getValue());
-							} else if (sameVar(two.s, spSingle.getObject()) && sameVar(two.o, spSingle.getSubject())) {
-								atom = "^" + r.convertIRIToString((IRI) pv.getValue());
-							}
-							if (atom != null) {
-								final String alt = (singleIdx == 0) ? (atom + "|" + two.path) : (two.path + "|" + atom);
-								out.add(new IrPathTriple(two.s, alt, two.o, false));
-								continue;
-							}
-						}
-					}
 				}
 
 				// 2a-mixed-two: one branch is a simple IrPathTriple representing exactly two constant steps
@@ -1045,89 +809,6 @@ public final class ApplyPathsTransform extends BaseTransform {
 					}
 				}
 
-				// 2b: Partial 2-step subset merge. If some (>=2) branches are exactly two-SP chains with
-				// identical endpoints, merge those into one IrPathTriple and keep the remaining branches
-				// as-is. This preserves grouping like "{ {A|B} UNION {C} }" when the union has A, B, and C
-				// but only A and B are plain two-step sequences.
-				{
-					final List<Integer> idx = new ArrayList<>();
-					Var startVarOut = null, endVarOut = null;
-					final List<String> seqs = new ArrayList<>();
-					for (int bi = 0; bi < u.getBranches().size(); bi++) {
-						IrBGP b = u.getBranches().get(bi);
-						if (b.getLines().size() != 2 || !(b.getLines().get(0) instanceof IrStatementPattern)
-								|| !(b.getLines().get(1) instanceof IrStatementPattern)) {
-							continue;
-						}
-						final IrStatementPattern a = (IrStatementPattern) b.getLines().get(0);
-						final IrStatementPattern c = (IrStatementPattern) b.getLines().get(1);
-						final Var ap = a.getPredicate(), cp = c.getPredicate();
-						if (ap == null || !ap.hasValue() || !(ap.getValue() instanceof IRI) || cp == null
-								|| !cp.hasValue() || !(cp.getValue() instanceof IRI)) {
-							continue;
-						}
-						Var mid = null, startVar = null, endVar = null;
-						boolean firstForward = false, secondForward = false;
-						if (isAnonPathVar(a.getObject()) && sameVar(a.getObject(), c.getSubject())) {
-							mid = a.getObject();
-							startVar = a.getSubject();
-							endVar = c.getObject();
-							firstForward = true;
-							secondForward = true;
-						} else if (isAnonPathVar(a.getSubject()) && sameVar(a.getSubject(), c.getObject())) {
-							mid = a.getSubject();
-							startVar = a.getObject();
-							endVar = c.getSubject();
-							firstForward = false;
-							secondForward = false;
-						} else if (isAnonPathVar(a.getObject()) && sameVar(a.getObject(), c.getObject())) {
-							mid = a.getObject();
-							startVar = a.getSubject();
-							endVar = c.getSubject();
-							firstForward = true;
-							secondForward = false;
-						} else if (isAnonPathVar(a.getSubject()) && sameVar(a.getSubject(), c.getSubject())) {
-							mid = a.getSubject();
-							startVar = a.getObject();
-							endVar = c.getObject();
-							firstForward = false;
-							secondForward = true;
-						}
-						if (mid == null) {
-							continue;
-						}
-						final Var sVar = startVar;
-						final Var eVar = endVar;
-						final String step1 = (firstForward ? "" : "^") + r.convertIRIToString((IRI) ap.getValue());
-						final String step2 = (secondForward ? "" : "^") + r.convertIRIToString((IRI) cp.getValue());
-						final String seq = step1 + "/" + step2;
-						if (startVarOut == null && endVarOut == null) {
-							startVarOut = sVar;
-							endVarOut = eVar;
-						} else if (!(sameVar(startVarOut, sVar) && sameVar(endVarOut, eVar))) {
-							continue;
-						}
-						idx.add(bi);
-						seqs.add(seq);
-					}
-					if (idx.size() >= 2) {
-						final String alt = String.join("|", seqs);
-						final IrPathTriple fused = new IrPathTriple(startVarOut, alt, endVarOut, false);
-						// Rebuild union branches: fused + the non-merged ones (in original order)
-						final IrUnion u2 = new IrUnion(u.isNewScope());
-						IrBGP fusedBgp = new IrBGP(bgp.isNewScope());
-						fusedBgp.add(fused);
-						u2.addBranch(fusedBgp);
-						for (int bi = 0; bi < u.getBranches().size(); bi++) {
-							if (!idx.contains(bi)) {
-								u2.addBranch(u.getBranches().get(bi));
-							}
-						}
-						out.add(u2);
-						continue;
-					}
-				}
-
 				// 2c: Partial merge of IrPathTriple branches (no inner alternation). If there are >=2 branches where
 				// each
 				// is a simple IrPathTriple without inner alternation or quantifiers and they share identical endpoints,
@@ -1167,115 +848,6 @@ public final class ApplyPathsTransform extends BaseTransform {
 						}
 						idx.add(bi);
 						basePaths.add(ptxt);
-					}
-					if (idx.size() >= 2) {
-						// Prefer a proper NPS !(a|b) when each branch is a simple negated token of the
-						// form !p or !(p). Otherwise, join as-is.
-						List<String> members = new ArrayList<>();
-						boolean allNpsTokens = true;
-						for (String ptxt : basePaths) {
-							List<String> ms = parseNpsMembers(ptxt);
-							if (ms == null || ms.isEmpty()) {
-								allNpsTokens = false;
-								break;
-							}
-							members.addAll(ms);
-						}
-						final IrPathTriple fused;
-						if (allNpsTokens) {
-							final String alt = "!(" + String.join("|", members) + ")";
-							fused = new IrPathTriple(sVarOut, alt, oVarOut, false);
-						} else {
-							final String alt = String.join("|", basePaths);
-							fused = new IrPathTriple(sVarOut, alt, oVarOut, false);
-						}
-						final IrUnion u2 = new IrUnion(bgp.isNewScope());
-						IrBGP fusedBgp = new IrBGP(bgp.isNewScope());
-						fusedBgp.add(fused);
-						u2.addBranch(fusedBgp);
-						for (int bi = 0; bi < u.getBranches().size(); bi++) {
-							if (!idx.contains(bi)) {
-								u2.addBranch(u.getBranches().get(bi));
-							}
-						}
-						out.add(u2);
-						continue;
-					}
-				}
-
-				// Third form: UNION where each branch reduces to a single IrPathTriple with identical endpoints ->
-				// combine into a single IrPathTriple with an alternation of the full path expressions.
-				{
-					Var sVarOut3 = null, oVarOut3 = null;
-					final List<String> paths = new ArrayList<>();
-					boolean allPt = true;
-					for (IrBGP b : u.getBranches()) {
-						if (!allPt) {
-							break;
-						}
-						IrNode only = (b.getLines().size() == 1) ? b.getLines().get(0) : null;
-						IrPathTriple pt;
-						if (only instanceof IrPathTriple) {
-							pt = (IrPathTriple) only;
-						} else if (only instanceof IrGraph) {
-							IrGraph g = (IrGraph) only;
-							if (g.getWhere() != null && g.getWhere().getLines().size() == 1
-									&& g.getWhere().getLines().get(0) instanceof IrPathTriple) {
-								pt = (IrPathTriple) g.getWhere().getLines().get(0);
-							} else {
-								allPt = false;
-								break;
-							}
-						} else {
-							allPt = false;
-							break;
-						}
-						if (sVarOut3 == null && oVarOut3 == null) {
-							sVarOut3 = pt.getSubject();
-							oVarOut3 = pt.getObject();
-						} else if (!(sameVar(sVarOut3, pt.getSubject()) && sameVar(oVarOut3, pt.getObject()))) {
-							allPt = false;
-							break;
-						}
-						paths.add(pt.getPathText());
-					}
-					boolean hasQuantifier = false;
-					boolean hasInnerAlternation = false;
-					for (String ptxt : paths) {
-						if (ptxt.contains("?") || ptxt.contains("*") || ptxt.contains("+")) {
-							hasQuantifier = true;
-							break;
-						}
-						if (ptxt.contains("|")) {
-							hasInnerAlternation = true;
-						}
-					}
-					// Only merge when there are no quantifiers and no inner alternation groups inside each path
-					if (allPt && sVarOut3 != null && oVarOut3 != null && !paths.isEmpty() && !hasQuantifier
-							&& !hasInnerAlternation) {
-						boolean allBang = true;
-						for (String ptxt : paths) {
-							String t = ptxt == null ? null : ptxt.trim();
-							if (t == null || !t.startsWith("!") || t.indexOf('(') >= 0) {
-								allBang = false;
-								break;
-							}
-						}
-						final String alt;
-						if (allBang && paths.size() >= 2) {
-							List<String> members = new ArrayList<>();
-							for (String ptxt : paths) {
-								String inner = ptxt.trim().substring(1).trim();
-								if (!inner.isEmpty()) {
-									members.add(inner);
-								}
-							}
-							alt = "!(" + String.join("|", members) + ")";
-						} else {
-							alt = (paths.size() == 1) ? paths.get(0) : String.join("|", paths);
-						}
-						out.add(new IrPathTriple(sVarOut3, alt, oVarOut3, false));
-						continue;
 					}
 				}
 
@@ -1338,7 +910,16 @@ public final class ApplyPathsTransform extends BaseTransform {
 					boolean allNps = true;
 					for (String ptxt : parts) {
 						String sPart = ptxt == null ? null : ptxt.trim();
-						if (sPart == null || !sPart.startsWith("!(") || !sPart.endsWith(")")) {
+						if (sPart == null) {
+							allNps = false;
+							break;
+						}
+						// Tolerate a single pair of wrapping parentheses around the token, e.g. "(!(ex:p))"
+						if (sPart.length() >= 2 && sPart.charAt(0) == '(' && sPart.charAt(sPart.length() - 1) == ')') {
+							sPart = sPart.substring(1, sPart.length() - 1).trim();
+						}
+						String norm = BaseTransform.normalizeCompactNps(sPart);
+						if (norm == null || !norm.startsWith("!(") || !norm.endsWith(")")) {
 							allNps = false;
 							break;
 						}
@@ -1349,7 +930,13 @@ public final class ApplyPathsTransform extends BaseTransform {
 						if (parts.size() == 2) {
 							List<String> members = new ArrayList<>();
 							for (String ptxt : parts) {
-								String inner = ptxt.substring(2, ptxt.length() - 1);
+								String sPart = ptxt == null ? "" : ptxt.trim();
+								if (sPart.length() >= 2 && sPart.charAt(0) == '('
+										&& sPart.charAt(sPart.length() - 1) == ')') {
+									sPart = sPart.substring(1, sPart.length() - 1).trim();
+								}
+								String norm = BaseTransform.normalizeCompactNps(sPart);
+								String inner = norm.substring(2, norm.length() - 1);
 								if (inner.isEmpty()) {
 									continue;
 								}
@@ -1392,21 +979,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 					// For NPS we may want to orient the merged path so that it can chain with an immediate
 					// following triple (e.g., NPS/next). If the next line uses one of our endpoints, flip to
 					// ensure pt.object equals next.subject when safe.
-					Var subjOut = subj, objOut = obj;
-					IrNode next = (i + 1 < in.size()) ? in.get(i + 1) : null;
-					if (next instanceof IrPathTriple && pathTxt.startsWith("!(")) {
-						IrPathTriple nextPt = (IrPathTriple) next;
-						Var nSubj = nextPt.getSubject();
-						String nextTxt = nextPt.getPathText();
-						boolean nextIsNps = nextTxt != null && nextTxt.trim().startsWith("!(");
-						// Only orient NPS to chain with a non-NPS following path
-						if (!nextIsNps && nSubj != null && sameVar(subjOut, nSubj) && !sameVar(objOut, nSubj)) {
-							Var tmp = subjOut;
-							subjOut = objOut;
-							objOut = tmp;
-						}
-					}
-					IrPathTriple pt = new IrPathTriple(subjOut, pathTxt, objOut, false);
+					IrPathTriple pt = new IrPathTriple(subj, pathTxt, obj, false);
 					if (graphRef != null) {
 						IrBGP inner = new IrBGP(false);
 						inner.add(pt);
@@ -1417,20 +990,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 					continue;
 				}
 			}
-			// linear fusion: IrPathTriple + rdf:first triple on its object → fused path
-			if (n instanceof IrPathTriple && i + 1 < in.size() && in.get(i + 1) instanceof IrStatementPattern) {
-				IrPathTriple pt = (IrPathTriple) n;
-				IrStatementPattern sp = (IrStatementPattern) in.get(i + 1);
-				Var pv = sp.getPredicate();
-				if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI && RDF.FIRST.equals(pv.getValue())) {
-					if (sameVar(pt.getObject(), sp.getSubject())) {
-						String fused = pt.getPathText() + "/" + r.convertIRIToString(RDF.FIRST);
-						out.add(new IrPathTriple(pt.getSubject(), fused, sp.getObject(), false));
-						i++; // consume next
-						continue;
-					}
-				}
-			}
+
 			out.add(n);
 		}
 		IrBGP res = new IrBGP(bgp.isNewScope());
@@ -1552,40 +1112,6 @@ public final class ApplyPathsTransform extends BaseTransform {
 		}
 		res.setNewScope(bgp.isNewScope());
 		return res;
-	}
-
-	/**
-	 * Parse an NPS token and return its members when it is either of the form "!(a|b|...)" or a compact single-token
-	 * negation "!a". Returns null when the input is not a simple NPS.
-	 */
-	private static List<String> parseNpsMembers(String ptxt) {
-		if (ptxt == null) {
-			return null;
-		}
-		String t = ptxt.trim();
-		if (t.isEmpty()) {
-			return null;
-		}
-		if (t.startsWith("!(") && t.endsWith(")")) {
-			String inner = t.substring(2, t.length() - 1);
-			List<String> out = new ArrayList<>();
-			for (String tok : inner.split("\\|")) {
-				String m = tok.trim();
-				if (!m.isEmpty()) {
-					out.add(m);
-				}
-			}
-			return out;
-		}
-		if (t.startsWith("!") && t.indexOf('(') < 0) {
-			String m = t.substring(1).trim();
-			if (!m.isEmpty()) {
-				List<String> out = new ArrayList<>(1);
-				out.add(m);
-				return out;
-			}
-		}
-		return null;
 	}
 
 }
