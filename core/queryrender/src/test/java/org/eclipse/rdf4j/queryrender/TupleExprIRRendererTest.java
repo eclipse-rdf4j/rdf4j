@@ -2650,6 +2650,16 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
+	void testComplexPath1() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  ?s ex:pC ?u1 .\n" +
+				"  ?s !( ex:pA|^<http://example.org/p/I0> ) ?o .\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
 	void testFilterExistsNested2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
