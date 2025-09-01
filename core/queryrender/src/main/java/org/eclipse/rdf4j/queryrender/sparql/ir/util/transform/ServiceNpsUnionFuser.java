@@ -39,11 +39,15 @@ public final class ServiceNpsUnionFuser {
 		// Exact-body UNION case
 		if (bgp.getLines().size() == 1 && bgp.getLines().get(0) instanceof IrUnion) {
 			IrNode fused = tryFuseUnion((IrUnion) bgp.getLines().get(0));
-			if (fused != null
-					&& (fused instanceof IrPathTriple || fused instanceof IrGraph || fused instanceof IrBGP)) {
+			if (fused != null && (fused instanceof IrPathTriple || fused instanceof IrGraph)) {
 				IrBGP nw = new IrBGP(bgp.isNewScope());
 				nw.add(fused);
 				return nw;
+			}
+			if (fused instanceof IrBGP) {
+				// If the fuser already produced a BGP (should be rare after not preserving new-scope),
+				// use it directly to avoid introducing nested brace layers.
+				return (IrBGP) fused;
 			}
 		}
 
@@ -53,8 +57,12 @@ public final class ServiceNpsUnionFuser {
 		for (IrNode ln : bgp.getLines()) {
 			if (ln instanceof IrUnion) {
 				IrNode fused = tryFuseUnion((IrUnion) ln);
-				if (fused != null
-						&& (fused instanceof IrPathTriple || fused instanceof IrGraph || fused instanceof IrBGP)) {
+				if (fused != null && (fused instanceof IrPathTriple || fused instanceof IrGraph)) {
+					out.add(fused);
+					replaced = true;
+					continue;
+				}
+				if (fused instanceof IrBGP) {
 					out.add(fused);
 					replaced = true;
 					continue;
@@ -130,13 +138,8 @@ public final class ServiceNpsUnionFuser {
 			inner.add(fused);
 			out = new IrGraph(graphRef, inner, false);
 		}
-		// Preserve explicit UNION grouping braces by wrapping the fused result when the UNION carried new scope.
-		if (u.isNewScope()) {
-			IrBGP grp = new IrBGP(true);
-			grp.add(out);
-			grp.setNewScope(true);
-			return grp;
-		}
+		// Inside SERVICE we do not preserve UNION new-scope grouping when fusing to a single
+		// negated property set path triple; returning the fused node avoids redundant braces.
 		return out;
 	}
 
