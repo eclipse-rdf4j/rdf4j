@@ -151,9 +151,15 @@ public final class SparqlFormatter {
 	}
 
 	public static void main(String[] args) {
-		String test = "SELECT ?s ?o WHERE {\n" +
-				"{ SELECT ?s WHERE { { GRAPH <http://graphs.example/g1> { ?s ^ex:pB ?o . } } } }\n" +
-				"}";
+		String test = "SELECT ?s ?o WHERE{\n" +
+				"  { ?s !(<http://example.org/p/I0>|ex:pA|^ex:pA) ?o . }\n" +
+				"  UNION\n" +
+				"  { ?o !(<http://example.org/p/I0>|ex:pA|^ex:pA) ?s . }\n" +
+				"}\n";
+
+//		System.out.println("Original:\n" + test);
+//		System.out.println("Formatted:");
+
 		System.out.println(formatBraces(test));
 	}
 

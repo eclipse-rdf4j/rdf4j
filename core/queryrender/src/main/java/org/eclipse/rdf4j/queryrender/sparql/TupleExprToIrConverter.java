@@ -1054,7 +1054,7 @@ public class TupleExprToIrConverter {
 		if (ir.getWhere() != null && ir.getWhere().getLines() != null && ir.getWhere().getLines().size() == 1) {
 			final IrNode only = ir.getWhere().getLines().get(0);
 			if ((only instanceof IrStatementPattern
-					|| only instanceof IrPathTriple || only instanceof IrPropertyList)
+					|| only instanceof IrPathTriple || only instanceof IrPropertyList || only instanceof IrGraph)
 					&& containsVariableScopeChange(n.where)) {
 				ir.getWhere().setNewScope(true);
 			} else if (only instanceof IrSubSelect

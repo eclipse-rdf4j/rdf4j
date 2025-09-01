@@ -23,6 +23,7 @@ import java.util.function.UnaryOperator;
  */
 public abstract class IrNode {
 
+	@SuppressWarnings("unused")
 	public final String _className = this.getClass().getName();
 
 	private boolean newScope = false;
@@ -32,9 +33,7 @@ public abstract class IrNode {
 	}
 
 	/** Default no-op printing; concrete nodes override. */
-	public void print(IrPrinter p) {
-		throw new UnsupportedOperationException("print() not implemented in " + _className);
-	}
+	abstract public void print(IrPrinter p);
 
 	/**
 	 * Function-style child transformation hook used by the transform pipeline to descend into nested structures.

@@ -29,7 +29,6 @@ public class IrSubSelect extends IrNode {
 
 	@Override
 	public void print(IrPrinter p) {
-		final String text = p.renderSubselect(select);
 		// Decide if we need an extra brace layer around the subselect text.
 		final boolean hasTrailing = select != null && (!select.getGroupBy().isEmpty()
 				|| !select.getHaving().isEmpty() || !select.getOrderBy().isEmpty() || select.getLimit() >= 0
@@ -37,14 +36,14 @@ public class IrSubSelect extends IrNode {
 		final boolean wrap = isNewScope() || hasTrailing;
 		if (wrap) {
 			p.openBlock();
-			for (String ln : text.split("\\R", -1)) {
-				p.line(ln);
+			if (select != null) {
+				select.print(p);
 			}
 			p.closeBlock();
 		} else {
 			// Print the subselect inline without adding an extra brace layer around it.
-			for (String ln : text.split("\\R", -1)) {
-				p.line(ln);
+			if (select != null) {
+				select.print(p);
 			}
 		}
 	}

@@ -10,8 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import java.util.LinkedHashSet;
+
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.SimplifyPathParensTransform;
 
 /**
  * Textual IR node for a property path triple: subject, path expression, object.
@@ -54,7 +57,33 @@ public class IrPathTriple extends IrTripleLike {
 		final String sTxt = p.renderTermWithOverrides(subject);
 		final String oTxt = p.renderTermWithOverrides(object);
 		final String path = p.applyOverridesToText(pathText);
-		final String trimmed = TupleExprIRRenderer.stripRedundantOuterParens(path);
+		String normalized = SimplifyPathParensTransform.simplify(path);
+		// Final local normalization: convert !a|!^b into !(a|^b) for readability
+		if (normalized != null) {
+			String t = normalized.trim();
+			if (t.indexOf('|') >= 0 && t.indexOf('(') < 0 && t.indexOf(')') < 0) {
+				String[] segs = t.split("\\|");
+				boolean allNeg = segs.length > 1;
+				java.util.ArrayList<String> members = new java.util.ArrayList<>();
+				for (String seg : segs) {
+					String u = seg.trim();
+					if (!u.startsWith("!")) {
+						allNeg = false;
+						break;
+					}
+					u = u.substring(1).trim();
+					if (u.isEmpty()) {
+						allNeg = false;
+						break;
+					}
+					members.add(u);
+				}
+				if (allNeg) {
+					normalized = "!(" + String.join("|", members) + ")";
+				}
+			}
+		}
+		final String trimmed = TupleExprIRRenderer.stripRedundantOuterParens(normalized);
 		p.line(sTxt + " " + trimmed + " " + oTxt + " .");
 	}
 }

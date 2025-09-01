@@ -33,6 +33,13 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 	private FuseServiceNpsUnionLateTransform() {
 	}
 
+	private static final class Branch {
+		Var graph;
+		boolean graphNewScope;
+		boolean whereNewScope;
+		IrPathTriple pt;
+	}
+
 	public static IrBGP apply(IrBGP bgp) {
 		if (bgp == null)
 			return null;
@@ -121,65 +128,29 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 		if (u == null || u.getBranches().size() != 2) {
 			return u;
 		}
-		Var graphRef = null;
-		boolean graphRefNewScope = false;
-		boolean innerBgpNewScope = false;
-		IrPathTriple p1 = null, p2 = null;
-		Var sCanon = null, oCanon = null;
-		for (int idx = 0; idx < 2; idx++) {
-			IrBGP b = u.getBranches().get(idx);
-			IrNode node = singleChild(b);
-			while (node instanceof IrBGP) {
-				IrNode inner = singleChild((IrBGP) node);
-				if (inner == null)
-					break;
-				node = inner;
-			}
-			Var graphVar = null;
-			boolean graphVarNewScope = false;
-			boolean whereNewScope = false;
-			if (node instanceof IrGraph) {
-				IrGraph gb = (IrGraph) node;
-				graphVar = gb.getGraph();
-				graphVarNewScope = gb.isNewScope();
-				whereNewScope = gb.getWhere() != null && gb.getWhere().isNewScope();
-				node = singleChild(gb.getWhere());
-				while (node instanceof IrBGP) {
-					IrNode inner = singleChild((IrBGP) node);
-					if (inner == null)
-						break;
-					node = inner;
-				}
-			}
-			if (!(node instanceof IrPathTriple)) {
-				return u;
-			}
-			if (idx == 0) {
-				p1 = (IrPathTriple) node;
-				sCanon = p1.getSubject();
-				oCanon = p1.getObject();
-				graphRef = graphVar;
-				graphRefNewScope = graphVarNewScope;
-				innerBgpNewScope = whereNewScope;
-			} else {
-				p2 = (IrPathTriple) node;
-				if ((graphRef == null && graphVar != null) || (graphRef != null && graphVar == null)
-						|| (graphRef != null && !eqVarOrValue(graphRef, graphVar))) {
-					return u;
-				}
-				// Prefer graph scope/newScope and inner BGP newScope from the first branch; require the second to match
-				if (graphRef != null) {
-					if (graphRefNewScope != graphVarNewScope) {
-						return u;
-					}
-					if (innerBgpNewScope != whereNewScope) {
-						return u;
-					}
-				}
-			}
-		}
-		if (p1 == null || p2 == null)
+
+		Branch b1 = extractBranch(u.getBranches().get(0));
+		Branch b2 = extractBranch(u.getBranches().get(1));
+		if (b1 == null || b2 == null)
 			return u;
+
+		IrPathTriple p1 = b1.pt;
+		IrPathTriple p2 = b2.pt;
+		Var sCanon = p1.getSubject();
+		Var oCanon = p1.getObject();
+		Var graphRef = b1.graph;
+		boolean graphRefNewScope = b1.graphNewScope;
+		boolean innerBgpNewScope = b1.whereNewScope;
+		if ((graphRef == null && b2.graph != null) || (graphRef != null && b2.graph == null)
+				|| (graphRef != null && !eqVarOrValue(graphRef, b2.graph))) {
+			return u;
+		}
+		if (graphRef != null) {
+			if (graphRefNewScope != b2.graphNewScope)
+				return u;
+			if (innerBgpNewScope != b2.whereNewScope)
+				return u;
+		}
 		String m1 = normalizeCompactNpsLocal(p1.getPathText());
 		String m2 = normalizeCompactNpsLocal(p2.getPathText());
 		if (m1 == null || m2 == null)
@@ -195,12 +166,53 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 		}
 		String merged = mergeMembersLocal(m1, add2);
 		IrPathTriple fused = new IrPathTriple(sCanon, merged, oCanon, false);
+		IrNode out = fused;
 		if (graphRef != null) {
 			IrBGP inner = new IrBGP(innerBgpNewScope);
 			inner.add(fused);
-			return new IrGraph(graphRef, inner, graphRefNewScope);
+			out = new IrGraph(graphRef, inner, graphRefNewScope);
 		}
-		return fused;
+		// Preserve explicit UNION grouping braces by wrapping the fused result when the UNION carried new scope.
+		if (u.isNewScope()) {
+			IrBGP grp = new IrBGP(true);
+			grp.add(out);
+			grp.setNewScope(true);
+			return grp;
+		}
+		return out;
+	}
+
+	private static Branch extractBranch(IrBGP b) {
+		if (b == null)
+			return null;
+		Branch out = new Branch();
+		IrNode cur = singleChild(b);
+		while (cur instanceof IrBGP) {
+			IrNode inner = singleChild((IrBGP) cur);
+			if (inner == null)
+				break;
+			cur = inner;
+		}
+
+		if (cur instanceof IrGraph) {
+			IrGraph g = (IrGraph) cur;
+			out.graph = g.getGraph();
+			out.graphNewScope = g.isNewScope();
+			out.whereNewScope = g.getWhere() != null && g.getWhere().isNewScope();
+			cur = singleChild(g.getWhere());
+			while (cur instanceof IrBGP) {
+				IrNode inner = singleChild((IrBGP) cur);
+				if (inner == null)
+					break;
+				cur = inner;
+			}
+
+		}
+		if (cur instanceof IrPathTriple) {
+			out.pt = (IrPathTriple) cur;
+			return out;
+		}
+		return null;
 	}
 
 	private static IrNode singleChild(IrBGP b) {

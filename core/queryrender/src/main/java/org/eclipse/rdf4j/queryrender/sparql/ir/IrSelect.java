@@ -112,4 +112,91 @@ public class IrSelect extends IrNode {
 		copy.setOffset(this.offset);
 		return copy;
 	}
+
+	@Override
+	public void print(IrPrinter p) {
+		// SELECT header (keep WHERE on the same line for canonical formatting)
+		StringBuilder hdr = new StringBuilder(64);
+		hdr.append("SELECT ");
+		if (distinct) {
+			hdr.append("DISTINCT ");
+		} else if (reduced) {
+			hdr.append("REDUCED ");
+		}
+		if (projection.isEmpty()) {
+			hdr.append("*");
+		} else {
+			for (int i = 0; i < projection.size(); i++) {
+				IrProjectionItem it = projection.get(i);
+				if (it.getExprText() == null) {
+					hdr.append('?').append(it.getVarName());
+				} else {
+					hdr.append('(').append(it.getExprText()).append(" AS ?").append(it.getVarName()).append(')');
+				}
+				if (i + 1 < projection.size()) {
+					hdr.append(' ');
+				}
+			}
+		}
+		p.startLine();
+		p.append(hdr.toString());
+		p.append(" WHERE ");
+
+		// WHERE
+		if (where != null) {
+			where.print(p);
+		} else {
+			p.openBlock();
+			p.closeBlock();
+		}
+
+		// GROUP BY
+		if (!groupBy.isEmpty()) {
+			StringBuilder gb = new StringBuilder("GROUP BY");
+			for (IrGroupByElem g : groupBy) {
+				if (g.getExprText() == null) {
+					gb.append(' ').append('?').append(g.getVarName());
+				} else {
+					gb.append(" (").append(g.getExprText()).append(" AS ?").append(g.getVarName()).append(")");
+				}
+			}
+			p.line(gb.toString());
+		}
+
+		// HAVING
+		if (!having.isEmpty()) {
+			StringBuilder hv = new StringBuilder("HAVING");
+			for (String cond : having) {
+				String t = cond == null ? "" : cond.trim();
+				// Add parentheses when not already a single wrapped expression
+				if (!t.isEmpty() && !(t.startsWith("(") && t.endsWith(")"))) {
+					t = "(" + t + ")";
+				}
+				hv.append(' ').append(t);
+			}
+			p.line(hv.toString());
+		}
+
+		// ORDER BY
+		if (!orderBy.isEmpty()) {
+			StringBuilder ob = new StringBuilder("ORDER BY");
+			for (IrOrderSpec o : orderBy) {
+				if (o.isAscending()) {
+					ob.append(' ').append(o.getExprText());
+				} else {
+					ob.append(" DESC(").append(o.getExprText()).append(')');
+				}
+			}
+			p.line(ob.toString());
+		}
+
+		// LIMIT / OFFSET
+		if (limit >= 0) {
+			p.line("LIMIT " + limit);
+		}
+		if (offset >= 0) {
+			p.line("OFFSET " + offset);
+		}
+	}
+
 }

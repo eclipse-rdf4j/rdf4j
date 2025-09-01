@@ -152,7 +152,6 @@ public final class InlineBNodeObjectsTransform extends BaseTransform {
 		final Map<String, String> overrides = new LinkedHashMap<>();
 		final Set<IrNode> consumed = new LinkedHashSet<>();
 		final Map<IrStatementPattern, Var> parentReplacements = new LinkedHashMap<>();
-		final Map<String, Var> replacementByObjVarName = new LinkedHashMap<>();
 		final Set<IrStatementPattern> replacedParents = new LinkedHashSet<>();
 		for (Map.Entry<String, List<IrStatementPattern>> e : propsFor.entrySet()) {
 			final String vName = e.getKey();
@@ -199,15 +198,29 @@ public final class InlineBNodeObjectsTransform extends BaseTransform {
 			if (!replacedParents.contains(parent)) {
 				parentReplacements.put(parent, placeholder);
 				replacedParents.add(parent);
-				if (parent.getObject() != null && !parent.getObject().hasValue()
-						&& parent.getObject().getName() != null) {
-					replacementByObjVarName.put(parent.getObject().getName(), placeholder);
-				}
 			}
 		}
 
 		if (!overrides.isEmpty()) {
 			r.addOverrides(overrides);
+		}
+
+		// Phase 2b: unify references to anonymous bnode variables with the single property-list head (if present).
+		// This preserves identity across triples (e.g., [] ex:pE _:head) without altering semantics.
+		if (propsFor.size() == 1) {
+			final String head = propsFor.keySet().iterator().next();
+			for (int i = 0; i < pre.size(); i++) {
+				IrNode n = pre.get(i);
+				if (!(n instanceof IrStatementPattern))
+					continue;
+				IrStatementPattern sp = (IrStatementPattern) n;
+				Var obj = sp.getObject();
+				if (obj != null && !head.equals(obj.getName()) && isAnonBNodeVar(obj)) {
+					// Relink this object-only anon bnode to the property-list head var
+					pre.set(i,
+							new IrStatementPattern(sp.getSubject(), sp.getPredicate(), new Var(head), sp.isNewScope()));
+				}
+			}
 		}
 
 		// Emit all lines except those consumed as bracket contents; replace parent triples
@@ -217,14 +230,8 @@ public final class InlineBNodeObjectsTransform extends BaseTransform {
 			}
 			if (n instanceof IrStatementPattern) {
 				IrStatementPattern sp = (IrStatementPattern) n;
-				// Prefer identity match first
+				// Replace only the designated parent triple; do not rewrite other occurrences
 				Var repl = parentReplacements.get(sp);
-				if (repl == null) {
-					Var obj = sp.getObject();
-					if (obj != null && !obj.hasValue() && obj.getName() != null) {
-						repl = replacementByObjVarName.get(obj.getName());
-					}
-				}
 				if (repl != null) {
 					out.add(new IrStatementPattern(sp.getSubject(), sp.getPredicate(), repl, sp.isNewScope()));
 					continue;
@@ -241,5 +248,25 @@ public final class InlineBNodeObjectsTransform extends BaseTransform {
 
 	private static boolean isAnonBNodeName(final String name) {
 		return name != null && name.startsWith("_anon_bnode_");
+	}
+
+	private static boolean isAnonBNodeVar(final Var v) {
+		if (v == null || v.hasValue()) {
+			return false;
+		}
+		final String name = v.getName();
+		boolean nameLooksAnon = false;
+		if (name != null) {
+			nameLooksAnon = name.startsWith("_anon_bnode_") || name.startsWith("_anon_");
+		}
+		try {
+			java.lang.reflect.Method m = Var.class.getMethod("isAnonymous");
+			Object r = m.invoke(v);
+			if (r instanceof Boolean) {
+				return (Boolean) r || nameLooksAnon;
+			}
+		} catch (ReflectiveOperationException ignore) {
+		}
+		return nameLooksAnon;
 	}
 }

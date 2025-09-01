@@ -30,8 +30,8 @@ public class IrExists extends IrNode {
 
 	@Override
 	public void print(IrPrinter p) {
-		// EXISTS keyword, then delegate braces to inner IrBGP
-		p.startLine();
+		// EXISTS keyword, then delegate braces to inner IrBGP. Do not start a new line here so
+		// that callers (e.g., IrFilter) can render "... . FILTER EXISTS {" on a single line.
 		p.append("EXISTS ");
 		if (where != null) {
 			IrBGP content = where;

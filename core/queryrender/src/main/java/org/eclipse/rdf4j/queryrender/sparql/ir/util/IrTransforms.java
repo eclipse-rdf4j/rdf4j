@@ -76,6 +76,9 @@ public final class IrTransforms {
 					IrBGP w = (IrBGP) child;
 					w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
 					w = CoalesceAdjacentGraphsTransform.apply(w);
+					// Early merge of FILTER EXISTS into preceding GRAPH when safe, so subsequent transforms
+					// see the grouped shape and do not separate them again.
+					w = MergeFilterExistsIntoPrecedingGraphTransform.apply(w);
 					w = ApplyCollectionsTransform.apply(w, r);
 					w = ApplyNegatedPropertySetTransform.apply(w, r);
 					w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
@@ -167,8 +170,12 @@ public final class IrTransforms {
 
 					// Preserve explicit grouping for UNION branches that combine VALUES with a negated
 					// property path triple, to maintain textual stability expected by tests.
-					w = GroupValuesAndNpsInUnionBranchTransform
-							.apply(w);
+					w = GroupValuesAndNpsInUnionBranchTransform.apply(w);
+
+					// Merge a following FILTER EXISTS into a preceding GRAPH with the same graph ref and
+					// group them together, unwrapping inner GRAPHs inside the EXISTS body. This produces
+					// the expected grouped shape "{ GRAPH g { { triple . FILTER EXISTS { ... } } } }".
+					w = MergeFilterExistsIntoPrecedingGraphTransform.apply(w);
 
 					// Final SERVICE NPS union fusion pass after all other cleanups
 					w = FuseServiceNpsUnionLateTransform
@@ -180,20 +187,16 @@ public final class IrTransforms {
 			});
 		}
 
-		// Final sweeping pass: fuse SERVICE UNION-of-NPS into a single NPS inside SERVICE bodies,
-		// regardless of where they may occur after prior transforms.
-		IrNode post = irNode.transformChildren(child -> {
-			if (child instanceof IrService) {
-				IrService s = (IrService) child;
-				IrBGP fused = ServiceNpsUnionFuser
-						.fuse(s.getWhere());
-				return new IrService(s.getServiceRefText(), s.isSilent(),
-						fused, s.isNewScope());
-			}
-			return child;
-		});
-
-		return (IrSelect) post;
+		// Final sweeping pass: fuse UNION-of-NPS strictly inside SERVICE bodies (handled by
+		// FuseServiceNpsUnionLateTransform). Do not apply the service fuser to the whole WHERE,
+		// to avoid collapsing top-level UNIONs that tests expect to remain explicit.
+		IrSelect outSel = (IrSelect) irNode;
+		IrBGP where = outSel.getWhere();
+		where = FuseServiceNpsUnionLateTransform.apply(where);
+		// Final path text normalization for readability/idempotence
+		where = SimplifyPathParensTransform.apply(where);
+		outSel.setWhere(where);
+		return outSel;
 	}
 
 }

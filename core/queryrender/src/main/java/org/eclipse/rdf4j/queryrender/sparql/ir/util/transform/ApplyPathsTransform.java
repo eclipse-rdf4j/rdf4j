@@ -50,6 +50,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 		if (bgp == null) {
 			return null;
 		}
+
 		List<IrNode> out = new ArrayList<>();
 		List<IrNode> in = bgp.getLines();
 		for (int i = 0; i < in.size(); i++) {
@@ -377,10 +378,10 @@ public final class ApplyPathsTransform extends BaseTransform {
 			if ((n instanceof IrGraph || n instanceof IrStatementPattern) && i + 1 < in.size()
 					&& in.get(i + 1) instanceof IrUnion) {
 				IrUnion u = (IrUnion) in.get(i + 1);
-				// Respect explicit UNION scopes, except when every branch clearly consists of parser
-				// anon-path bridge variables. In that case, fusing is safe and preserves user-visible
-				// bindings.
-				if (u.isNewScope() && !unionBranchesAllHaveAnonPathBridge(u)) {
+				// Respect explicit UNION scopes, except when the branches share a common _anon_path_*
+				// variable under an allowed role mapping (s-s, s-o, o-s, o-p). This ensures the new
+				// scope originates from property path decoding rather than user-visible bindings.
+				if (u.isNewScope() && !unionBranchesShareAnonPathVarWithAllowedRoleMapping(u)) {
 					out.add(n);
 					continue;
 				}
@@ -602,7 +603,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 			// subsequent chaining with a following constant-predicate triple via pt + SP -> pt/IRI.
 			if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
-				boolean allow = !u.isNewScope() || unionBranchesAllHaveAnonPathBridge(u);
+				boolean allow = !u.isNewScope() || unionBranchesShareAnonPathVarWithAllowedRoleMapping(u);
 				if (!allow) {
 					out.add(n);
 					continue;
@@ -1132,8 +1133,26 @@ public final class ApplyPathsTransform extends BaseTransform {
 						basePaths.add(ptxt);
 					}
 					if (idx.size() >= 2) {
-						final String alt = String.join("|", basePaths);
-						final IrPathTriple fused = new IrPathTriple(sVarOut, alt, oVarOut, false);
+						// Prefer a proper NPS !(a|b) when each branch is a simple negated token of the
+						// form !p or !(p). Otherwise, join as-is.
+						Set<String> members = new LinkedHashSet<>();
+						boolean allNpsTokens = true;
+						for (String ptxt : basePaths) {
+							List<String> ms = parseNpsMembers(ptxt);
+							if (ms == null || ms.isEmpty()) {
+								allNpsTokens = false;
+								break;
+							}
+							members.addAll(ms);
+						}
+						final IrPathTriple fused;
+						if (allNpsTokens) {
+							final String alt = "!(" + String.join("|", members) + ")";
+							fused = new IrPathTriple(sVarOut, alt, oVarOut, false);
+						} else {
+							final String alt = String.join("|", basePaths);
+							fused = new IrPathTriple(sVarOut, alt, oVarOut, false);
+						}
 						final IrUnion u2 = new IrUnion(bgp.isNewScope());
 						IrBGP fusedBgp = new IrBGP(bgp.isNewScope());
 						fusedBgp.add(fused);
@@ -1198,7 +1217,26 @@ public final class ApplyPathsTransform extends BaseTransform {
 					// Only merge when there are no quantifiers and no inner alternation groups inside each path
 					if (allPt && sVarOut3 != null && oVarOut3 != null && !paths.isEmpty() && !hasQuantifier
 							&& !hasInnerAlternation) {
-						final String alt = (paths.size() == 1) ? paths.get(0) : String.join("|", paths);
+						boolean allBang = true;
+						for (String ptxt : paths) {
+							String t = ptxt == null ? null : ptxt.trim();
+							if (t == null || !t.startsWith("!") || t.indexOf('(') >= 0) {
+								allBang = false;
+								break;
+							}
+						}
+						final String alt;
+						if (allBang && paths.size() >= 2) {
+							Set<String> members = new LinkedHashSet<>();
+							for (String ptxt : paths) {
+								String inner = ptxt.trim().substring(1).trim();
+								if (!inner.isEmpty())
+									members.add(inner);
+							}
+							alt = "!(" + String.join("|", members) + ")";
+						} else {
+							alt = (paths.size() == 1) ? paths.get(0) : String.join("|", paths);
+						}
 						out.add(new IrPathTriple(sVarOut3, alt, oVarOut3, false));
 						continue;
 					}
@@ -1269,19 +1307,45 @@ public final class ApplyPathsTransform extends BaseTransform {
 						}
 					}
 					if (allNps) {
-						// Merge into a single NPS by unioning inner members
-						Set<String> members = new LinkedHashSet<>();
-						for (String ptxt : parts) {
-							String inner = ptxt.substring(2, ptxt.length() - 1);
-							if (inner.isEmpty()) {
-								continue;
-							}
-							for (String tok : inner.split("\\|")) {
-								String t = tok.trim();
-								if (!t.isEmpty()) {
-									members.add(t);
+						// Merge only the simple two-branch NPS case into a single NPS; for larger unions
+						// keep the union structure intact.
+						if (parts.size() == 2) {
+							Set<String> members = new LinkedHashSet<>();
+							for (String ptxt : parts) {
+								String inner = ptxt.substring(2, ptxt.length() - 1);
+								if (inner.isEmpty()) {
+									continue;
+								}
+								for (String tok : inner.split("\\|")) {
+									String t = tok.trim();
+									if (!t.isEmpty()) {
+										members.add(t);
+									}
 								}
 							}
+							pathTxt = "!(" + String.join("|", members) + ")";
+						} else {
+							out.add(n);
+							continue;
+						}
+					}
+					// If both parts are simple compact-NPS tokens like !ex:p and !^ex:q, convert to
+					// a proper negated property set !(ex:p|^ex:q) for correctness/readability.
+					boolean bothBang = parts.size() > 1;
+					for (String ptxt : parts) {
+						String sPart = ptxt == null ? null : ptxt.trim();
+						if (sPart == null || !sPart.startsWith("!") || sPart.contains("(")) {
+							bothBang = false;
+							break;
+						}
+					}
+					if (bothBang) {
+						Set<String> members = new LinkedHashSet<>();
+						for (String ptxt : parts) {
+							String sPart = ptxt.trim();
+							String inner = sPart.substring(1).trim(); // drop leading '!'
+							if (!inner.isEmpty())
+								members.add(inner);
 						}
 						pathTxt = "!(" + String.join("|", members) + ")";
 					} else {
@@ -1449,6 +1513,37 @@ public final class ApplyPathsTransform extends BaseTransform {
 		}
 		res.setNewScope(bgp.isNewScope());
 		return res;
+	}
+
+	/**
+	 * Parse an NPS token and return its members when it is either of the form "!(a|b|...)" or a compact single-token
+	 * negation "!a". Returns null when the input is not a simple NPS.
+	 */
+	private static List<String> parseNpsMembers(String ptxt) {
+		if (ptxt == null)
+			return null;
+		String t = ptxt.trim();
+		if (t.isEmpty())
+			return null;
+		if (t.startsWith("!(") && t.endsWith(")")) {
+			String inner = t.substring(2, t.length() - 1);
+			List<String> out = new ArrayList<>();
+			for (String tok : inner.split("\\|")) {
+				String m = tok.trim();
+				if (!m.isEmpty())
+					out.add(m);
+			}
+			return out;
+		}
+		if (t.startsWith("!") && t.indexOf('(') < 0) {
+			String m = t.substring(1).trim();
+			if (!m.isEmpty()) {
+				List<String> out = new ArrayList<>(1);
+				out.add(m);
+				return out;
+			}
+		}
+		return null;
 	}
 
 }

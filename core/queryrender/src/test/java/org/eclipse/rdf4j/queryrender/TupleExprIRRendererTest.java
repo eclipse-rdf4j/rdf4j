@@ -182,8 +182,10 @@ public class TupleExprIRRendererTest {
 			try {
 				if (rendered != null && !rendered.startsWith("<render failed")) {
 					actualTe = parseAlgebra(rendered);
+					System.out.println("# Actual TupleExpr\n" + actualTe + "\n");
 				}
 			} catch (Throwable parseActualFail) {
+				System.out.println("# Actual TupleExpr\n<parse failed: " + parseActualFail + ">\n");
 				// Keep actualTe as null; we'll record a placeholder
 			}
 
@@ -199,6 +201,8 @@ public class TupleExprIRRendererTest {
 					actualTe != null ? VarNameNormalizer.normalizeVars(actualTe.toString())
 							: "<actual TupleExpr unavailable: " +
 									(rendered != null ? "parse failed" : "render failed") + ">");
+
+			rendered = render(expectedSparql, cfg);
 
 			// Fail (again) with the original comparison so the test result is correct
 			assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + sparql);
@@ -871,10 +875,7 @@ public class TupleExprIRRendererTest {
 	@Test
 	void complex_deep_union_optional_with_grouping() {
 		String q = "SELECT ?s ?label ?src (SUM(?innerC) AS ?c) WHERE {\n" +
-				"  VALUES (?src) {\n" +
-				"    (\"A\")\n" +
-				"    (\"B\")\n" +
-				"  }\n" +
+				"  VALUES ?src { \"A\" \"B\" }\n" +
 				"  {\n" +
 				"    ?s a foaf:Person .\n" +
 				"    OPTIONAL {\n" +
@@ -3385,11 +3386,26 @@ public class TupleExprIRRendererTest {
 	@Test
 	void nestedSelectServiceUnionWithGraphBranches_bracedUnionInsideService() {
 		String q = "SELECT ?s WHERE {\n" +
-				"  { SELECT ?s WHERE {\n" +
-				"    { SERVICE SILENT <http://federation.example/ep> {\n" +
-				"      { GRAPH ?g { { ?s ex:pB ?t . } UNION { ?s ex:pC ?t . } } }\n" +
-				"    } }\n" +
-				"  } }\n";
+				"  {\n" +
+				"    SELECT ?s WHERE {\n" +
+				"      {\n" +
+				"        SERVICE SILENT <http://federation.example/ep> {\n" +
+				"          {\n" +
+				"            GRAPH ?g {\n" +
+				"              {\n" +
+				"                ?s ex:pB ?t . \n" +
+				"              }\n" +
+				"                UNION\n" +
+				"              {\n" +
+				"                ?s ex:pC ?t . \n" +
+				"              }\n" +
+				"            }\n" +
+				"          }\n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
 
 		assertSameSparqlQuery(q, cfg());
 	}
@@ -3397,11 +3413,16 @@ public class TupleExprIRRendererTest {
 	@Test
 	void nestedSelectServiceSinglePath_noExtraUnionGroup() {
 		String q = "SELECT ?s WHERE {\n" +
-				"  { SELECT ?s WHERE {\n" +
-				"    SERVICE SILENT <http://federation.example/ep> {\n" +
-				"      { ?s ex:pZ ?o . }\n" +
+				"  {\n" +
+				"    SELECT ?s WHERE {\n" +
+				"      SERVICE SILENT <http://federation.example/ep> {\n" +
+				"        {\n" +
+				"          ?s ex:pZ ?o . \n" +
+				"        }\n" +
+				"      }\n" +
 				"    }\n" +
-				"  } }\n";
+				"  }\n" +
+				"}";
 
 		assertSameSparqlQuery(q, cfg());
 	}
@@ -3409,11 +3430,24 @@ public class TupleExprIRRendererTest {
 	@Test
 	void nestedSelectServiceUnionInversePath_bracedUnionInsideService() {
 		String q = "SELECT ?s WHERE {\n" +
-				"  { SELECT ?s WHERE {\n" +
-				"    { SERVICE SILENT <http://federation.example/ep> {\n" +
-				"      { { ?s ^ex:pD ?o . } UNION { ?u0 ex:pD ?v0 . } }\n" +
-				"    } }\n" +
-				"  } }\n";
+				"  {\n" +
+				"    SELECT ?s WHERE {\n" +
+				"      {\n" +
+				"        SERVICE SILENT <http://federation.example/ep> {\n" +
+				"          {\n" +
+				"            {\n" +
+				"              ?s ^ex:pD ?o . \n" +
+				"            }\n" +
+				"              UNION\n" +
+				"            {\n" +
+				"              ?u0 ex:pD ?v0 . \n" +
+				"            }\n" +
+				"          }\n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
 
 		assertSameSparqlQuery(q, cfg());
 	}
@@ -3435,6 +3469,71 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void pathUnionTest1() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    ?s !(ex:pA|ex:pB|^ex:pA) ?o . \n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?o !(ex:pA|ex:pB|^ex:pA) ?s . \n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void pathUnionTest2() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    ?s !(<http://example.org/p/I0>|ex:pA|^ex:pA) ?o . \n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?o !(<http://example.org/p/I0>|ex:pA|^ex:pA) ?s . \n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void pathUnionTest3() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    ?s !(<http://example.org/p/I0>|ex:pA|^ex:pA|ex:Pb|^ex:Pb|ex:Pc|^ex:Pc|ex:Pd|^ex:Pd|ex:Pe|^ex:Pe|ex:Pf|^ex:Pf) ?o . \n"
+				+
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?s !(<http://example.org/p/I0>|ex:pA|ex:Pb|ex:Pc|ex:Pd|ex:Pe|ex:Pf) ?o . \n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?s !(<http://example.org/p/I0>|ex:pA1|ex:Pb2|ex:Pc3|ex:Pd4|ex:Pe5|ex:Pf6) ?o . \n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void pathUnionTest4() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    ?s !(ex:P1|ex:pA) ?o .\n" +
+				"  }\n" +
+				"  UNION\n" +
+				"  {\n" +
+				"    ?s !(ex:P1|ex:pA|ex:pA) ?o .\n" +
+				"  }\n" +
+				"}";
 
 		assertSameSparqlQuery(q, cfg());
 	}

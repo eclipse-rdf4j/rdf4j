@@ -691,6 +691,97 @@ public class BaseTransform {
 		return common != null && !common.isEmpty();
 	}
 
+	/**
+	 * New-scope UNION safety: true iff the two UNION branches share at least one _anon_path_* variable name that
+	 * appears in one of the allowed role mappings: s-s, s-o, o-s, or o-p. The roles are evaluated over simple
+	 * triple-like nodes (IrStatementPattern and IrPathTriple), unwrapping single-child BGP/GRAPH wrappers when present.
+	 */
+	public static boolean unionBranchesShareAnonPathVarWithAllowedRoleMapping(IrUnion u) {
+		if (u == null || u.getBranches().size() != 2) {
+			return false;
+		}
+		BranchRoles a = collectBranchRoles(u.getBranches().get(0));
+		BranchRoles b = collectBranchRoles(u.getBranches().get(1));
+		if (a == null || b == null) {
+			return false;
+		}
+		// Allowed mappings:
+		// s-s
+		if (intersects(a.s, b.s))
+			return true;
+		// s-o
+		if (intersects(a.s, b.o))
+			return true;
+		// o-s
+		if (intersects(a.o, b.s))
+			return true;
+		// o-p (object in one equals predicate in the other)
+		if (intersects(a.o, b.p))
+			return true;
+		// And the reverse for o-p to keep branches symmetric
+		if (intersects(b.o, a.p))
+			return true;
+		return false;
+	}
+
+	private static boolean intersects(Set<String> a, Set<String> b) {
+		if (a == null || b == null)
+			return false;
+		for (String x : a) {
+			if (b.contains(x))
+				return true;
+		}
+		return false;
+	}
+
+	private static final class BranchRoles {
+		final Set<String> s = new HashSet<>();
+		final Set<String> o = new HashSet<>();
+		final Set<String> p = new HashSet<>();
+	}
+
+	private static BranchRoles collectBranchRoles(IrBGP b) {
+		if (b == null)
+			return null;
+		BranchRoles out = new BranchRoles();
+		collectRolesRecursive(b, out);
+		// If nothing collected, return null to signal ineligibility
+		if (out.s.isEmpty() && out.o.isEmpty() && out.p.isEmpty())
+			return null;
+		return out;
+	}
+
+	private static void collectRolesRecursive(IrBGP w, BranchRoles out) {
+		if (w == null)
+			return;
+		for (IrNode ln : w.getLines()) {
+			if (ln instanceof IrStatementPattern) {
+				IrStatementPattern sp = (IrStatementPattern) ln;
+				Var s = sp.getSubject();
+				Var o = sp.getObject();
+				Var p = sp.getPredicate();
+				if (isAnonPathVar(s) || isAnonPathInverseVar(s))
+					out.s.add(s.getName());
+				if (isAnonPathVar(o) || isAnonPathInverseVar(o))
+					out.o.add(o.getName());
+				if (p != null && !p.hasValue() && (isAnonPathVar(p) || isAnonPathInverseVar(p)))
+					out.p.add(p.getName());
+			} else if (ln instanceof IrPathTriple) {
+				IrPathTriple pt = (IrPathTriple) ln;
+				Var s = pt.getSubject();
+				Var o = pt.getObject();
+				if (isAnonPathVar(s) || isAnonPathInverseVar(s))
+					out.s.add(s.getName());
+				if (isAnonPathVar(o) || isAnonPathInverseVar(o))
+					out.o.add(o.getName());
+			} else if (ln instanceof IrGraph) {
+				collectRolesRecursive(((IrGraph) ln).getWhere(), out);
+			} else if (ln instanceof IrBGP) {
+				collectRolesRecursive((IrBGP) ln, out);
+			}
+		}
+	}
+
 	private static void collectAnonPathVarNames(IrBGP b, Set<String> out) {
 		if (b == null) {
 			return;

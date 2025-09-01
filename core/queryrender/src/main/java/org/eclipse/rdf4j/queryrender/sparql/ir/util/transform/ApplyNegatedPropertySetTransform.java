@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
@@ -667,7 +668,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				continue;
 			}
 			if (n instanceof IrGraph || n instanceof IrOptional || n instanceof IrUnion
-					|| n instanceof IrMinus || n instanceof IrSubSelect /* || n instanceof IrService */) {
+					|| n instanceof IrMinus || n instanceof IrSubSelect || n instanceof IrService) {
 				n = n.transformChildren(child -> {
 					if (child instanceof IrBGP) {
 						return apply((IrBGP) child, r);
@@ -767,26 +768,12 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 		if (rewritten == null || original == null) {
 			return rewritten;
 		}
-		IrUnion origUnion = null;
-		for (IrNode ln : original.getLines()) {
-			if (ln instanceof IrUnion) {
-				origUnion = (IrUnion) ln;
-				break;
-			}
-		}
-		boolean allow = false;
-		if (origUnion != null) {
-			if (!origUnion.isNewScope() && unionBranchesAllHaveAnonPathBridge(origUnion)) {
-				allow = true;
-			} else if (origUnion.isNewScope() && unionBranchesShareCommonAnonPathVarName(origUnion)) {
-				allow = true;
-			}
-		}
-		if (!allow) {
-			return rewritten;
-		}
 
-		// Find first UNION in rewritten and try to fuse it
+		// Find first UNION in rewritten and try to fuse it when safe. Inside EXISTS bodies we
+		// allow fusing a UNION of bare-NPS path triples even when there is no shared anon-path
+		// bridge var, as long as the branches are strict NPS path triples with matching endpoints
+		// (tryFuseTwoNpsBranches enforces this and preserves grouping for new-scope unions).
+
 		List<IrNode> out = new ArrayList<>();
 		boolean fusedOnce = false;
 		for (IrNode ln : rewritten.getLines()) {
