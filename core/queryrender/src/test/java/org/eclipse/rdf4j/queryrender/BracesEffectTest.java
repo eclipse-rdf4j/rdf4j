@@ -82,6 +82,30 @@ public class BracesEffectTest {
 		write(base, "IR", IrDebug.dump(ir));
 	}
 
+	private static String render(String body) {
+		TupleExprIRRenderer r = new TupleExprIRRenderer(cfg());
+		TupleExpr te = parse(SPARQL_PREFIX + body);
+		return r.render(te, null).trim();
+	}
+
+	private static String stripScopeMarkers(String algebraDump) {
+		if (algebraDump == null)
+			return null;
+		// Remove RDF4J pretty-printer markers indicating explicit variable-scope changes
+		return algebraDump.replace(" (new scope)", "");
+	}
+
+	private static void assertSemanticRoundTrip(String base, String body) {
+		String input = SPARQL_PREFIX + body;
+		String aIn = stripScopeMarkers(algebra(input));
+		String rendered = render(body);
+		String aOut = stripScopeMarkers(algebra(rendered));
+		write(base, "Rendered", rendered);
+		write(base, "TupleExpr_input", aIn);
+		write(base, "TupleExpr_rendered", aOut);
+		assertEquals(aIn, aOut, "Renderer must preserve semantics (algebra equal)");
+	}
+
 	private static void compareAndDump(String baseName, String q1, String q2) {
 		String a1 = algebra(SPARQL_PREFIX + q1);
 		String a2 = algebra(SPARQL_PREFIX + q2);
@@ -92,8 +116,9 @@ public class BracesEffectTest {
 		// Also dump IR for both variants to inspect newScope/grouping differences if any
 		dumpIr(baseName + "_1", q1);
 		dumpIr(baseName + "_2", q2);
-		// Parsing succeeds for both; that's our test contract here
-		assertEquals(true, true);
+		// Additionally, assert renderer round-trip preserves semantics for both variants
+		assertSemanticRoundTrip(baseName + "_rt1", q1);
+		assertSemanticRoundTrip(baseName + "_rt2", q2);
 	}
 
 	@Test

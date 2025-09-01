@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -78,7 +79,7 @@ public class TupleExprAlgebraShapeTest {
 		final List<T> out = new ArrayList<>();
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
-			protected void meetNode(org.eclipse.rdf4j.query.algebra.QueryModelNode node) {
+			protected void meetNode(QueryModelNode node) {
 				if (type.isInstance(node)) {
 					out.add(type.cast(node));
 				}
@@ -90,15 +91,15 @@ public class TupleExprAlgebraShapeTest {
 
 	private static List<Object> collect(TupleExpr root, Predicate<Object> pred) {
 		List<Object> res = new ArrayList<>();
-		Deque<org.eclipse.rdf4j.query.algebra.QueryModelNode> dq = new ArrayDeque<>();
+		Deque<QueryModelNode> dq = new ArrayDeque<>();
 		dq.add(root);
 		while (!dq.isEmpty()) {
-			org.eclipse.rdf4j.query.algebra.QueryModelNode n = dq.removeFirst();
+			QueryModelNode n = dq.removeFirst();
 			if (pred.test(n))
 				res.add(n);
 			n.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
 				@Override
-				protected void meetNode(org.eclipse.rdf4j.query.algebra.QueryModelNode node) {
+				protected void meetNode(QueryModelNode node) {
 					dq.add(node);
 				}
 			});
