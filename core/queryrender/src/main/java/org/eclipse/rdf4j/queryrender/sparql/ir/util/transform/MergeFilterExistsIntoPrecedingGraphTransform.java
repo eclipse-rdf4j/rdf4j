@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
 
 /**
  * If a GRAPH block is immediately followed by a FILTER with an EXISTS body that itself wraps its content in a GRAPH of
@@ -200,6 +201,12 @@ public final class MergeFilterExistsIntoPrecedingGraphTransform extends BaseTran
 				}
 			}
 			return false;
+		}
+		// Pass through VALUES blocks unchanged: they are not tied to a specific GRAPH and
+		// can be safely retained when the FILTER EXISTS is merged into the enclosing GRAPH.
+		if (node instanceof IrValues) {
+			out.add(node);
+			return true;
 		}
 		return false;
 	}
