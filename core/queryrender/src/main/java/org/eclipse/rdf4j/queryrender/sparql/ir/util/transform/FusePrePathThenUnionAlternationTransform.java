@@ -48,16 +48,18 @@ public final class FusePrePathThenUnionAlternationTransform extends BaseTransfor
 	}
 
 	public static IrBGP apply(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		final List<IrNode> in = bgp.getLines();
 		final List<IrNode> out = new ArrayList<>();
 		for (int i = 0; i < in.size(); i++) {
 			IrNode n = in.get(i);
 			// Recurse early
 			n = n.transformChildren(child -> {
-				if (child instanceof IrBGP)
+				if (child instanceof IrBGP) {
 					return apply((IrBGP) child, r);
+				}
 				return child;
 			});
 
@@ -148,8 +150,9 @@ public final class FusePrePathThenUnionAlternationTransform extends BaseTransfor
 	}
 
 	private static Tail parseTail(IrBGP b, Var mid, TupleExprIRRenderer r) {
-		if (b == null)
+		if (b == null) {
 			return null;
+		}
 		if (b.getLines().size() == 1) {
 			IrNode only = b.getLines().get(0);
 			if (only instanceof IrPathTriple) {
@@ -179,11 +182,13 @@ public final class FusePrePathThenUnionAlternationTransform extends BaseTransfor
 			IrStatementPattern a = (IrStatementPattern) b.getLines().get(0);
 			IrStatementPattern c = (IrStatementPattern) b.getLines().get(1);
 			if (a.getPredicate() == null || !a.getPredicate().hasValue()
-					|| !(a.getPredicate().getValue() instanceof IRI))
+					|| !(a.getPredicate().getValue() instanceof IRI)) {
 				return null;
+			}
 			if (c.getPredicate() == null || !c.getPredicate().hasValue()
-					|| !(c.getPredicate().getValue() instanceof IRI))
+					|| !(c.getPredicate().getValue() instanceof IRI)) {
 				return null;
+			}
 			if (sameVar(mid, a.getSubject()) && sameVar(a.getObject(), c.getSubject())) {
 				// forward-forward
 				String step1 = r.renderIRI((IRI) a.getPredicate().getValue());
@@ -202,8 +207,9 @@ public final class FusePrePathThenUnionAlternationTransform extends BaseTransfor
 
 	// Normalize a common pre-path shape: ((!(A)))/(((B))?) → (!(A)/(B)?)
 	static String normalizePrePrefix(String s) {
-		if (s == null)
+		if (s == null) {
 			return null;
+		}
 		String t = s.trim();
 		if (!t.startsWith("((")) {
 			return t;

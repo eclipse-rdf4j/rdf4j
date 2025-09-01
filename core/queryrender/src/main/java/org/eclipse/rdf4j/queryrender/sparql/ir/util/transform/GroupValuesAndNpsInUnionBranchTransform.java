@@ -38,8 +38,9 @@ public final class GroupValuesAndNpsInUnionBranchTransform extends BaseTransform
 	}
 
 	public static IrBGP apply(IrBGP bgp) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 
 		final List<IrNode> out = new ArrayList<>();
 		for (IrNode n : bgp.getLines()) {
@@ -73,8 +74,9 @@ public final class GroupValuesAndNpsInUnionBranchTransform extends BaseTransform
 
 	// Only consider top-level lines in the branch for grouping to ensure idempotence.
 	private static IrBGP maybeWrapBranch(IrBGP branch, boolean unionNewScope) {
-		if (branch == null)
+		if (branch == null) {
 			return branch;
+		}
 
 		boolean hasTopValues = false;
 		boolean hasTopNegPath = false;

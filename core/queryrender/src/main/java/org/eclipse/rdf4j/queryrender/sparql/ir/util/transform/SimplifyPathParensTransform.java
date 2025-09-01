@@ -58,8 +58,9 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			.compile("\\((!\\s*(?:<[^>]+>|[^()|/\\s]+))\\)");
 
 	public static IrBGP apply(IrBGP bgp) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		final List<IrNode> out = new ArrayList<>();
 		for (IrNode n : bgp.getLines()) {
 			IrNode m = n;
@@ -104,8 +105,9 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 	}
 
 	public static String simplify(String s) {
-		if (s == null)
+		if (s == null) {
 			return null;
+		}
 		String prev;
 		String cur = s;
 		int guard = 0;
@@ -150,10 +152,11 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			int depth = 1;
 			while (j < s.length() && depth > 0) {
 				char c = s.charAt(j++);
-				if (c == '(')
+				if (c == '(') {
 					depth++;
-				else if (c == ')')
+				} else if (c == ')') {
 					depth--;
+				}
 			}
 			if (depth != 0) {
 				// Unbalanced; append rest
@@ -176,8 +179,9 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 					if (uw.indexOf('(') < 0 && uw.indexOf(')') < 0 && uw.indexOf('|') >= 0) {
 						for (String tok : uw.split("\\|")) {
 							String t = tok.trim();
-							if (!t.isEmpty())
+							if (!t.isEmpty()) {
 								members.add(t);
+							}
 						}
 						changed = true;
 					} else {
@@ -198,17 +202,20 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 	}
 
 	private static String normalizeBangAlternationToNps(String s) {
-		if (s == null)
+		if (s == null) {
 			return null;
+		}
 		String t = s.trim();
-		if (t.isEmpty())
+		if (t.isEmpty()) {
 			return s;
+		}
 		// Trim a single layer of wrapping parentheses if they enclose the full expression
 		String tw = trimSingleOuterParens(t);
 		// Split by top-level '|' to detect an alternation ignoring nested parentheses
 		List<String> parts = splitTopLevel(tw, '|');
-		if (parts.size() < 2)
+		if (parts.size() < 2) {
 			return s;
+		}
 		ArrayList<String> members = new ArrayList<>();
 		for (String seg : parts) {
 			String u = seg.trim();
@@ -232,10 +239,11 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			int depth = 0;
 			for (int i = 0; i < t.length(); i++) {
 				char c = t.charAt(i);
-				if (c == '(')
+				if (c == '(') {
 					depth++;
-				else if (c == ')')
+				} else if (c == ')') {
 					depth--;
+				}
 				if (depth == 0 && i < t.length() - 1) {
 					return in; // closes before the end -> not a single outer pair
 				}
@@ -252,11 +260,11 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 		int last = 0;
 		for (int i = 0; i < in.length(); i++) {
 			char c = in.charAt(i);
-			if (c == '(')
+			if (c == '(') {
 				depth++;
-			else if (c == ')')
+			} else if (c == ')') {
 				depth--;
-			else if (c == sep && depth == 0) {
+			} else if (c == sep && depth == 0) {
 				out.add(in.substring(last, i));
 				last = i + 1;
 			}
@@ -282,10 +290,11 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			int depth = 1;
 			while (j < s.length() && depth > 0) {
 				char c = s.charAt(j++);
-				if (c == '(')
+				if (c == '(') {
 					depth++;
-				else if (c == ')')
+				} else if (c == ')') {
 					depth--;
+				}
 			}
 			if (depth != 0) {
 				// unmatched; append rest and break
@@ -315,10 +324,11 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			int depth = 1;
 			while (j < s.length() && depth > 0) {
 				char c = s.charAt(j++);
-				if (c == '(')
+				if (c == '(') {
 					depth++;
-				else if (c == ')')
+				} else if (c == ')') {
 					depth--;
+				}
 			}
 			if (depth != 0) {
 				// unmatched; append rest and break
@@ -383,8 +393,9 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			}
 			if (c == '|' && depth == 0) {
 				// ensure single spaces around
-				if (out.length() > 0 && out.charAt(out.length() - 1) != ' ')
+				if (out.length() > 0 && out.charAt(out.length() - 1) != ' ') {
 					out.append(' ');
+				}
 				out.append('|');
 				int j = i + 1;
 				if (j < s.length() && s.charAt(j) != ' ') {

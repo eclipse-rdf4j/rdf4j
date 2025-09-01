@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -45,8 +44,9 @@ public final class FuseUnionOfSimpleTriplesTransform extends BaseTransform {
 	}
 
 	public static IrBGP apply(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		final List<IrNode> out = new ArrayList<>();
 		for (IrNode n : bgp.getLines()) {
 			IrNode m = n;
@@ -63,7 +63,7 @@ public final class FuseUnionOfSimpleTriplesTransform extends BaseTransform {
 					Fused f = tryFuseUnion(u, r);
 					if (f != null) {
 						// Deduplicate and parenthesize alternation when multiple members
-						LinkedHashSet<String> alts = new LinkedHashSet<>(f.steps);
+						ArrayList<String> alts = new ArrayList<>(f.steps);
 						String alt = String.join("|", alts);
 						if (alts.size() > 1) {
 							alt = "(" + alt + ")";
@@ -123,8 +123,9 @@ public final class FuseUnionOfSimpleTriplesTransform extends BaseTransform {
 	}
 
 	private static Fused tryFuseUnion(IrUnion u, TupleExprIRRenderer r) {
-		if (u == null || u.getBranches().size() < 2)
+		if (u == null || u.getBranches().size() < 2) {
 			return null;
+		}
 		Var graphRef = null;
 		Var sCommon = null;
 		Var oCommon = null;

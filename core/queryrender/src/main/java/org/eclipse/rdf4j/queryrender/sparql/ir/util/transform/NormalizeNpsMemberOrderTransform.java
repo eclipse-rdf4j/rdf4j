@@ -82,8 +82,9 @@ public final class NormalizeNpsMemberOrderTransform extends BaseTransform {
 	}
 
 	static String reorderAllNps(String path) {
-		if (path == null || path.indexOf('!') < 0)
+		if (path == null || path.indexOf('!') < 0) {
 			return path;
+		}
 		String s = path;
 		StringBuilder out = new StringBuilder(s.length());
 		int i = 0;
@@ -99,10 +100,11 @@ public final class NormalizeNpsMemberOrderTransform extends BaseTransform {
 			int depth = 1;
 			while (j < s.length() && depth > 0) {
 				char c = s.charAt(j++);
-				if (c == '(')
+				if (c == '(') {
 					depth++;
-				else if (c == ')')
+				} else if (c == ')') {
 					depth--;
+				}
 			}
 			if (depth != 0) {
 				// unmatched, bail out

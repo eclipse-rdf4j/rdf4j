@@ -58,8 +58,9 @@ public class IrExists extends IrNode {
 	}
 
 	private static IrBGP toPrint(IrBGP w) {
-		if (w == null)
+		if (w == null) {
 			return null;
+		}
 		// Preserve inner grouping when the body mixes a triple-like with nested EXISTS/VALUES
 		final List<IrNode> ls = w.getLines();
 		boolean hasTripleLike = false;
@@ -69,8 +70,9 @@ public class IrExists extends IrNode {
 				hasTripleLike = true;
 			} else if (ln instanceof IrFilter) {
 				IrFilter f = (IrFilter) ln;
-				if (f.getBody() instanceof IrExists)
+				if (f.getBody() instanceof IrExists) {
 					hasNestedExistsOrValues = true;
+				}
 			} else if (ln instanceof IrValues) {
 				hasNestedExistsOrValues = true;
 			}

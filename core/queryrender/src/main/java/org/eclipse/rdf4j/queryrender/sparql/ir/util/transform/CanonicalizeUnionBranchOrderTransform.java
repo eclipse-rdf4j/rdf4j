@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrTripleLike;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
 /**

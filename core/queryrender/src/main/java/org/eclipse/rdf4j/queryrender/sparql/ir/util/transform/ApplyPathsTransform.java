@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
@@ -892,8 +891,9 @@ public final class ApplyPathsTransform extends BaseTransform {
 						}
 					}
 					Function<IrBGP, TwoLike> parseTwoLike = (bg) -> {
-						if (bg == null || bg.getLines().isEmpty())
+						if (bg == null || bg.getLines().isEmpty()) {
 							return null;
+						}
 						IrNode only = (bg.getLines().size() == 1) ? bg.getLines().get(0) : null;
 						if (only instanceof IrPathTriple) {
 							IrPathTriple pt = (IrPathTriple) only;
@@ -903,12 +903,14 @@ public final class ApplyPathsTransform extends BaseTransform {
 								return null;
 							}
 							int slash = ptxt.indexOf('/');
-							if (slash < 0)
+							if (slash < 0) {
 								return null; // not a two-step path
+							}
 							String left = ptxt.substring(0, slash).trim();
 							String right = ptxt.substring(slash + 1).trim();
-							if (left.isEmpty() || right.isEmpty())
+							if (left.isEmpty() || right.isEmpty()) {
 								return null;
+							}
 							return new TwoLike(pt.getSubject(), pt.getObject(), left + "/" + right);
 						}
 						if (bg.getLines().size() == 2 && bg.getLines().get(0) instanceof IrStatementPattern
@@ -947,8 +949,9 @@ public final class ApplyPathsTransform extends BaseTransform {
 								firstForward = false;
 								secondForward = true;
 							}
-							if (mid == null)
+							if (mid == null) {
 								return null;
+							}
 							String step1 = (firstForward ? "" : "^") + r.renderIRI((IRI) ap.getValue());
 							String step2 = (secondForward ? "" : "^") + r.renderIRI((IRI) cp.getValue());
 							return new TwoLike(sVar, oVar, step1 + "/" + step2);
@@ -1135,7 +1138,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 					if (idx.size() >= 2) {
 						// Prefer a proper NPS !(a|b) when each branch is a simple negated token of the
 						// form !p or !(p). Otherwise, join as-is.
-						Set<String> members = new LinkedHashSet<>();
+						List<String> members = new ArrayList<>();
 						boolean allNpsTokens = true;
 						for (String ptxt : basePaths) {
 							List<String> ms = parseNpsMembers(ptxt);
@@ -1227,11 +1230,12 @@ public final class ApplyPathsTransform extends BaseTransform {
 						}
 						final String alt;
 						if (allBang && paths.size() >= 2) {
-							Set<String> members = new LinkedHashSet<>();
+							List<String> members = new ArrayList<>();
 							for (String ptxt : paths) {
 								String inner = ptxt.trim().substring(1).trim();
-								if (!inner.isEmpty())
+								if (!inner.isEmpty()) {
 									members.add(inner);
+								}
 							}
 							alt = "!(" + String.join("|", members) + ")";
 						} else {
@@ -1310,7 +1314,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 						// Merge only the simple two-branch NPS case into a single NPS; for larger unions
 						// keep the union structure intact.
 						if (parts.size() == 2) {
-							Set<String> members = new LinkedHashSet<>();
+							List<String> members = new ArrayList<>();
 							for (String ptxt : parts) {
 								String inner = ptxt.substring(2, ptxt.length() - 1);
 								if (inner.isEmpty()) {
@@ -1340,12 +1344,13 @@ public final class ApplyPathsTransform extends BaseTransform {
 						}
 					}
 					if (bothBang) {
-						Set<String> members = new LinkedHashSet<>();
+						List<String> members = new ArrayList<>();
 						for (String ptxt : parts) {
 							String sPart = ptxt.trim();
 							String inner = sPart.substring(1).trim(); // drop leading '!'
-							if (!inner.isEmpty())
+							if (!inner.isEmpty()) {
 								members.add(inner);
+							}
 						}
 						pathTxt = "!(" + String.join("|", members) + ")";
 					} else {
@@ -1520,18 +1525,21 @@ public final class ApplyPathsTransform extends BaseTransform {
 	 * negation "!a". Returns null when the input is not a simple NPS.
 	 */
 	private static List<String> parseNpsMembers(String ptxt) {
-		if (ptxt == null)
+		if (ptxt == null) {
 			return null;
+		}
 		String t = ptxt.trim();
-		if (t.isEmpty())
+		if (t.isEmpty()) {
 			return null;
+		}
 		if (t.startsWith("!(") && t.endsWith(")")) {
 			String inner = t.substring(2, t.length() - 1);
 			List<String> out = new ArrayList<>();
 			for (String tok : inner.split("\\|")) {
 				String m = tok.trim();
-				if (!m.isEmpty())
+				if (!m.isEmpty()) {
 					out.add(m);
+				}
 			}
 			return out;
 		}

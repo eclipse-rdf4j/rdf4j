@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;

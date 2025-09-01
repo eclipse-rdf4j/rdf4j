@@ -220,17 +220,19 @@ public final class NormalizeFilterNotInTransform extends BaseTransform {
 			boolean ok = true;
 			for (int i = 0; i < t.length(); i++) {
 				char c = t.charAt(i);
-				if (c == '(')
+				if (c == '(') {
 					depth++;
-				else if (c == ')')
+				} else if (c == ')') {
 					depth--;
+				}
 				if (depth == 0 && i < t.length() - 1) {
 					ok = false;
 					break;
 				}
 			}
-			if (!ok)
+			if (!ok) {
 				break;
+			}
 			t = t.substring(1, t.length() - 1).trim();
 		}
 		return t;
@@ -258,11 +260,11 @@ public final class NormalizeFilterNotInTransform extends BaseTransform {
 				inStr = true;
 				continue;
 			}
-			if (c == '(')
+			if (c == '(') {
 				depth++;
-			else if (c == ')')
+			} else if (c == ')') {
 				depth--;
-			else if (c == '&' && depth == 0) {
+			} else if (c == '&' && depth == 0) {
 				// lookahead for '&&'
 				if (i + 1 < s.length() && s.charAt(i + 1) == '&') {
 					parts.add(s.substring(last, i).trim());

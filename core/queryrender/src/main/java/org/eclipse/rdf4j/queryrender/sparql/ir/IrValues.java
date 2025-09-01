@@ -54,8 +54,9 @@ public class IrValues extends IrNode {
 			StringBuilder sb = new StringBuilder();
 			sb.append("VALUES ?").append(var).append(" { ");
 			for (int r = 0; r < rows.size(); r++) {
-				if (r > 0)
+				if (r > 0) {
 					sb.append(' ');
+				}
 				List<String> row = rows.get(r);
 				sb.append(row.isEmpty() ? "UNDEF" : row.get(0));
 			}
