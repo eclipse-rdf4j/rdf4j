@@ -362,7 +362,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						final boolean forward = sameVar(mt1.object, mt2.subject);
 						final boolean inverse = !forward && sameVar(mt1.object, mt2.object);
 						if (forward || inverse) {
-							final String step = r.renderIRI((IRI) mt2.predicate.getValue());
+							final String step = r.convertIRIToString((IRI) mt2.predicate.getValue());
 							final String path = npsTxt + "/" + (inverse ? "^" : "") + step;
 							final Var end = forward ? mt2.object : mt2.subject;
 							newInner.add(new IrPathTriple(subj, path, end, false));
@@ -432,7 +432,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				if (mt2 != null) {
 					final boolean forward = sameVar(mt1.object, mt2.subject);
 					final boolean inverse = !forward && sameVar(mt1.object, mt2.object);
-					final String step = r.renderIRI((IRI) mt2.predicate.getValue());
+					final String step = r.convertIRIToString((IRI) mt2.predicate.getValue());
 					final String path = nps + "/" + (inverse ? "^" : "") + step;
 					final Var end = forward ? mt2.object : mt2.subject;
 					newInner.add(new IrPathTriple(subj, path, end, false));
@@ -557,7 +557,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						// Build !(items) and invert members to !(^items)
 						final String base = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
 						final String inv = invertNegatedPropertySet(base);
-						final String step = r.renderIRI((IRI) tp.getValue());
+						final String step = r.convertIRIToString((IRI) tp.getValue());
 						final String path = inv + "/" + step;
 						out.add(new IrPathTriple(sp.getObject(), path, tail.getObject(), false));
 						i += 2; // consume filter and tail
@@ -635,8 +635,8 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 					}
 
 					if (k1 != null && k2 != null && startVar != null && endVar != null) {
-						final String k1Step = r.renderIRI((IRI) k1.getPredicate().getValue());
-						final String k2Step = r.renderIRI((IRI) k2.getPredicate().getValue());
+						final String k1Step = r.convertIRIToString((IRI) k1.getPredicate().getValue());
+						final String k2Step = r.convertIRIToString((IRI) k2.getPredicate().getValue());
 						final List<String> rev = new ArrayList<>(ns2.items);
 						final String nps = "!(" + String.join("|", rev) + ")";
 						final String path = (k1Inverse ? "^" + k1Step : k1Step) + "/" + nps + "/"
@@ -1062,7 +1062,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				try {
 					IRI iri = SimpleValueFactory.getInstance()
 							.createIRI(iriTxt);
-					rendered.add(r.renderIRI(iri));
+					rendered.add(r.convertIRIToString(iri));
 				} catch (IllegalArgumentException e) {
 					// fallback: keep original token on parse failure
 					rendered.add(tok);

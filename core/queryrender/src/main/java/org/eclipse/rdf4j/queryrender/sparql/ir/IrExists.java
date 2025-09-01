@@ -66,7 +66,7 @@ public class IrExists extends IrNode {
 		boolean hasTripleLike = false;
 		boolean hasNestedExistsOrValues = false;
 		for (IrNode ln : ls) {
-			if (ln instanceof IrStatementPattern || ln instanceof IrPathTriple || ln instanceof IrPropertyList) {
+			if (ln instanceof IrTripleLike) {
 				hasTripleLike = true;
 			} else if (ln instanceof IrFilter) {
 				IrFilter f = (IrFilter) ln;

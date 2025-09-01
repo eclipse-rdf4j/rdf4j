@@ -26,6 +26,10 @@ public class IrCollection extends IrNode {
 		super(newScope);
 	}
 
+	public List<Var> getItems() {
+		return items;
+	}
+
 	public void addItem(Var v) {
 		if (v != null) {
 			items.add(v);
@@ -37,9 +41,8 @@ public class IrCollection extends IrNode {
 		StringBuilder sb = new StringBuilder();
 		sb.append("(");
 		for (int i = 0; i < items.size(); i++) {
-			if (i > 0) {
+			if (i > 0)
 				sb.append(' ');
-			}
 			sb.append(p.convertVarToString(items.get(i)));
 		}
 		sb.append(")");

@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyCollectionsTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyNegatedPropertySetTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyPathsFixedPointTransform;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyPropertyListsTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CanonicalizeBareNpsOrientationTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CanonicalizeGroupedTailStepTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CanonicalizeNpsByProjectionTransform;
@@ -29,7 +28,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseServiceNpsUnio
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseUnionOfNpsBranchesTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupFilterExistsWithPrecedingTriplesTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupValuesAndNpsInUnionBranchTransform;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.InlineBNodeObjectsTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.MergeFilterExistsIntoPrecedingGraphTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.MergeOptionalIntoPrecedingGraphTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeFilterNotInTransform;
@@ -77,7 +75,7 @@ public final class IrTransforms {
 					// Early merge of FILTER EXISTS into preceding GRAPH when safe, so subsequent transforms
 					// see the grouped shape and do not separate them again.
 					w = MergeFilterExistsIntoPrecedingGraphTransform.apply(w);
-					w = ApplyCollectionsTransform.apply(w, r);
+					w = ApplyCollectionsTransform.apply(w);
 					w = ApplyNegatedPropertySetTransform.apply(w, r);
 					w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
 
@@ -114,10 +112,6 @@ public final class IrTransforms {
 					// Normalize chained inequalities in FILTERs to NOT IN when safe
 					w = NormalizeFilterNotInTransform.apply(w,
 							r);
-					// Inline simple _anon_bnode_* object nodes as bracket property lists before grouping
-					w = InlineBNodeObjectsTransform.apply(w, r);
-					// Then group contiguous subject-equal triples into property lists
-					w = ApplyPropertyListsTransform.apply(w, r);
 
 					// Preserve original orientation of bare NPS triples to match expected algebra
 					w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
