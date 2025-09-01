@@ -48,8 +48,9 @@ public final class InlineBNodeObjectsTransform extends BaseTransform {
 	}
 
 	public static IrBGP apply(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 
 		final List<IrNode> in = bgp.getLines();
 		final List<IrNode> out = new ArrayList<>();
@@ -95,8 +96,9 @@ public final class InlineBNodeObjectsTransform extends BaseTransform {
 		final Map<String, IrStatementPattern> parentByObject = new LinkedHashMap<>();
 
 		for (IrNode n : pre) {
-			if (!(n instanceof IrStatementPattern))
+			if (!(n instanceof IrStatementPattern)) {
 				continue;
+			}
 			final IrStatementPattern sp = (IrStatementPattern) n;
 			final Var s = sp.getSubject();
 			final Var p = sp.getPredicate();
@@ -120,17 +122,21 @@ public final class InlineBNodeObjectsTransform extends BaseTransform {
 		final Map<String, List<IrStatementPattern>> propsFor = new LinkedHashMap<>();
 		for (Map.Entry<String, List<IrStatementPattern>> e : bySubject.entrySet()) {
 			final String vName = e.getKey();
-			if (!isAnonBNodeName(vName))
+			if (!isAnonBNodeName(vName)) {
 				continue;
+			}
 			final int oCount = objCount.getOrDefault(vName, 0);
 			final int sCount = subjCount.getOrDefault(vName, 0);
-			if (oCount != 1 || sCount < 1)
+			if (oCount != 1 || sCount < 1) {
 				continue;
-			if (predNames.contains(vName))
+			}
+			if (predNames.contains(vName)) {
 				continue;
+			}
 			final IrStatementPattern parent = parentByObject.get(vName);
-			if (parent == null)
+			if (parent == null) {
 				continue;
+			}
 			// Conservative guard as above
 			boolean parentHasSibling = false;
 			for (IrNode n2 : pre) {
@@ -142,8 +148,9 @@ public final class InlineBNodeObjectsTransform extends BaseTransform {
 					}
 				}
 			}
-			if (!parentHasSibling)
+			if (!parentHasSibling) {
 				continue;
+			}
 			parentFor.put(vName, parent);
 			propsFor.put(vName, e.getValue());
 		}
@@ -157,8 +164,9 @@ public final class InlineBNodeObjectsTransform extends BaseTransform {
 			final String vName = e.getKey();
 			final IrStatementPattern parent = parentFor.get(vName);
 			final List<IrStatementPattern> props = e.getValue();
-			if (props == null || props.isEmpty())
+			if (props == null || props.isEmpty()) {
 				continue;
+			}
 
 			// Build predicate -> list(objects) with nested placeholders for known candidates
 			final LinkedHashMap<String, List<String>> objsByPredText = new LinkedHashMap<>();
@@ -180,8 +188,9 @@ public final class InlineBNodeObjectsTransform extends BaseTransform {
 				objsByPredText.computeIfAbsent(predText, k -> new ArrayList<>()).add(objText);
 				consumed.add(sp);
 			}
-			if (objsByPredText.isEmpty())
+			if (objsByPredText.isEmpty()) {
 				continue;
+			}
 			final List<String> parts = new ArrayList<>(objsByPredText.size());
 			for (Map.Entry<String, List<String>> it : objsByPredText.entrySet()) {
 				final String pred = it.getKey();
@@ -211,8 +220,9 @@ public final class InlineBNodeObjectsTransform extends BaseTransform {
 			final String head = propsFor.keySet().iterator().next();
 			for (int i = 0; i < pre.size(); i++) {
 				IrNode n = pre.get(i);
-				if (!(n instanceof IrStatementPattern))
+				if (!(n instanceof IrStatementPattern)) {
 					continue;
+				}
 				IrStatementPattern sp = (IrStatementPattern) n;
 				Var obj = sp.getObject();
 				if (obj != null && !head.equals(obj.getName()) && isAnonBNodeVar(obj)) {

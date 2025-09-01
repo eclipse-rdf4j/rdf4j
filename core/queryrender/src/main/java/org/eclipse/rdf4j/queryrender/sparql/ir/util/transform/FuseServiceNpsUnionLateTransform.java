@@ -41,8 +41,9 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 	}
 
 	public static IrBGP apply(IrBGP bgp) {
-		if (bgp == null)
+		if (bgp == null) {
 			return null;
+		}
 		final List<IrNode> out = new ArrayList<>();
 		for (IrNode n : bgp.getLines()) {
 			IrNode m = n;
@@ -64,8 +65,9 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 			} else {
 				// recurse to children BGPs via transformChildren
 				m = n.transformChildren(child -> {
-					if (child instanceof IrBGP)
+					if (child instanceof IrBGP) {
 						return apply((IrBGP) child);
+					}
 					return child;
 				});
 			}
@@ -131,8 +133,9 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 
 		Branch b1 = extractBranch(u.getBranches().get(0));
 		Branch b2 = extractBranch(u.getBranches().get(1));
-		if (b1 == null || b2 == null)
+		if (b1 == null || b2 == null) {
 			return u;
+		}
 
 		IrPathTriple p1 = b1.pt;
 		IrPathTriple p2 = b2.pt;
@@ -146,20 +149,24 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 			return u;
 		}
 		if (graphRef != null) {
-			if (graphRefNewScope != b2.graphNewScope)
+			if (graphRefNewScope != b2.graphNewScope) {
 				return u;
-			if (innerBgpNewScope != b2.whereNewScope)
+			}
+			if (innerBgpNewScope != b2.whereNewScope) {
 				return u;
+			}
 		}
 		String m1 = normalizeCompactNpsLocal(p1.getPathText());
 		String m2 = normalizeCompactNpsLocal(p2.getPathText());
-		if (m1 == null || m2 == null)
+		if (m1 == null || m2 == null) {
 			return u;
+		}
 		String add2 = m2;
 		if (eqVarOrValue(sCanon, p2.getObject()) && eqVarOrValue(oCanon, p2.getSubject())) {
 			String inv = BaseTransform.invertNegatedPropertySet(m2);
-			if (inv == null)
+			if (inv == null) {
 				return u;
+			}
 			add2 = inv;
 		} else if (!(eqVarOrValue(sCanon, p2.getSubject()) && eqVarOrValue(oCanon, p2.getObject()))) {
 			return u;
@@ -183,14 +190,16 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 	}
 
 	private static Branch extractBranch(IrBGP b) {
-		if (b == null)
+		if (b == null) {
 			return null;
+		}
 		Branch out = new Branch();
 		IrNode cur = singleChild(b);
 		while (cur instanceof IrBGP) {
 			IrNode inner = singleChild((IrBGP) cur);
-			if (inner == null)
+			if (inner == null) {
 				break;
+			}
 			cur = inner;
 		}
 
@@ -202,8 +211,9 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 			cur = singleChild(g.getWhere());
 			while (cur instanceof IrBGP) {
 				IrNode inner = singleChild((IrBGP) cur);
-				if (inner == null)
+				if (inner == null) {
 					break;
+				}
 				cur = inner;
 			}
 
@@ -216,50 +226,63 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 	}
 
 	private static IrNode singleChild(IrBGP b) {
-		if (b == null)
+		if (b == null) {
 			return null;
+		}
 		List<IrNode> ls = b.getLines();
-		if (ls == null || ls.size() != 1)
+		if (ls == null || ls.size() != 1) {
 			return null;
+		}
 		return ls.get(0);
 	}
 
 	private static String normalizeCompactNpsLocal(String path) {
-		if (path == null)
+		if (path == null) {
 			return null;
+		}
 		String t = path.trim();
-		if (t.isEmpty())
+		if (t.isEmpty()) {
 			return null;
-		if (t.startsWith("!(") && t.endsWith(")"))
+		}
+		if (t.startsWith("!(") && t.endsWith(")")) {
 			return t;
-		if (t.startsWith("!^"))
+		}
+		if (t.startsWith("!^")) {
 			return "!(" + t.substring(1) + ")";
-		if (t.startsWith("!") && (t.length() == 1 || t.charAt(1) != '('))
+		}
+		if (t.startsWith("!") && (t.length() == 1 || t.charAt(1) != '(')) {
 			return "!(" + t.substring(1) + ")";
+		}
 		return null;
 	}
 
 	private static String mergeMembersLocal(String a, String b) {
 		int a1 = a.indexOf('('), a2 = a.lastIndexOf(')');
 		int b1 = b.indexOf('('), b2 = b.lastIndexOf(')');
-		if (a1 < 0 || a2 < 0 || b1 < 0 || b2 < 0)
+		if (a1 < 0 || a2 < 0 || b1 < 0 || b2 < 0) {
 			return a;
+		}
 		String ia = a.substring(a1 + 1, a2).trim();
 		String ib = b.substring(b1 + 1, b2).trim();
-		if (ia.isEmpty())
+		if (ia.isEmpty()) {
 			return b;
-		if (ib.isEmpty())
+		}
+		if (ib.isEmpty()) {
 			return a;
+		}
 		return "!(" + ia + "|" + ib + ")";
 	}
 
 	private static boolean eqVarOrValue(Var a, Var b) {
-		if (a == b)
+		if (a == b) {
 			return true;
-		if (a == null || b == null)
+		}
+		if (a == null || b == null) {
 			return false;
-		if (a.hasValue() && b.hasValue())
+		}
+		if (a.hasValue() && b.hasValue()) {
 			return a.getValue().equals(b.getValue());
+		}
 		if (!a.hasValue() && !b.hasValue()) {
 			String an = a.getName();
 			String bn = b.getName();
