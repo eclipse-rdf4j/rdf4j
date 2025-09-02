@@ -31,6 +31,11 @@ public class IrBGP extends IrNode {
 		super(newScope);
 	}
 
+	public IrBGP(IrBGP where, boolean b) {
+		super(b);
+		add(where);
+	}
+
 	public List<IrNode> getLines() {
 		return lines;
 	}
