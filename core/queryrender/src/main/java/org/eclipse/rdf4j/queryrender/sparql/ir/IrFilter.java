@@ -55,6 +55,7 @@ public class IrFilter extends IrNode {
 		p.startLine();
 		p.append("FILTER ");
 		body.print(p);
+
 	}
 
 	@Override
