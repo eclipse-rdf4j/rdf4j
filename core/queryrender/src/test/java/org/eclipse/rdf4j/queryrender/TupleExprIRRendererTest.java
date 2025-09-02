@@ -167,13 +167,18 @@ public class TupleExprIRRendererTest {
 
 	/** Assert semantic equivalence by comparing result rows (order-insensitive). */
 	private void assertSameSparqlQuery(String sparql, TupleExprIRRenderer.Config cfg) {
+		cfg.debugIR = true;
+
 		sparql = sparql.trim();
 
-		try {
-			TupleExpr expected = parseAlgebra(SPARQL_PREFIX + sparql);
-			String rendered = render(SPARQL_PREFIX + sparql, cfg);
-			TupleExpr actual = parseAlgebra(rendered);
+		TupleExpr expected = parseAlgebra(SPARQL_PREFIX + sparql);
+		System.out.println("# Original SPARQL query\n" + SparqlFormatter.format(sparql) + "\n");
+		System.out.println("# Original TupleExpr\n" + expected + "\n");
+		String rendered = render(SPARQL_PREFIX + sparql, cfg);
+		System.out.println("# Actual SPARQL query\n" + SparqlFormatter.format(rendered) + "\n");
+		TupleExpr actual = parseAlgebra(rendered);
 
+		try {
 			assertThat(VarNameNormalizer.normalizeVars(actual.toString()))
 					.as("Algebra after rendering must be identical to original")
 					.isEqualTo(VarNameNormalizer.normalizeVars(expected.toString()));
@@ -182,6 +187,11 @@ public class TupleExprIRRendererTest {
 			// assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + sparql);
 
 		} catch (Throwable t) {
+
+//			assertThat(VarNameNormalizer.normalizeVars(actual.toString()))
+//					.as("Algebra after rendering must be identical to original")
+//					.isEqualTo(VarNameNormalizer.normalizeVars(expected.toString()));
+
 			// Gather as much as we can without throwing during diagnostics
 			String base = currentTestBaseName();
 
@@ -193,7 +203,6 @@ public class TupleExprIRRendererTest {
 				// Extremely unlikely, but don't let this hide the original failure
 			}
 
-			String rendered = null;
 			TupleExpr actualTe = null;
 
 			System.out.println("\n\n\n");
@@ -3757,12 +3766,13 @@ public class TupleExprIRRendererTest {
 				"  FILTER EXISTS {\n" +
 				"    {\n" +
 				"      {\n" +
-				"        ?s ex:pC ?u0 . FILTER EXISTS {\n" +
-				"          ?s !( ex:pB|foaf:name ) ?o .\n" +
+				"        ?s ex:pC ?u0 .\n" +
+				"        FILTER EXISTS {\n" +
+				"          ?s !(ex:pB|foaf:name) ?o .\n" +
 				"        }\n" +
 				"      }\n" +
 				"    }\n" +
-				"      UNION\n" +
+				"    UNION\n" +
 				"    {\n" +
 				"      ?u1 ex:pD ?v1 .\n" +
 				"    }\n" +
@@ -3780,7 +3790,8 @@ public class TupleExprIRRendererTest {
 				"    FILTER EXISTS {\n" +
 				"      {\n" +
 				"        {\n" +
-				"          ?s ex:pC ?u0 . FILTER EXISTS {\n" +
+				"          ?s ex:pC ?u0 .\n" +
+				"          FILTER EXISTS {\n" +
 				"            ?s !(ex:pB|foaf:name) ?o .\n" +
 				"          }\n" +
 				"        }\n" +
@@ -3792,6 +3803,260 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testFilterUnionScope3() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    ?s ex:pC ?u2 .\n" +
+				"    FILTER EXISTS {\n" +
+//				"      {\n" +
+				"        {\n" +
+				"          ?s ex:pC ?u0 .\n" +
+				"          FILTER EXISTS {\n" +
+				"            ?s !(ex:pB|foaf:name) ?o .\n" +
+				"          }\n" +
+//				"        }\n" +
+				"      }\n" +
+				"        UNION\n" +
+				"      {\n" +
+				"        ?u1 ex:pD ?v1 .\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testFilterUnionScope4() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    ?s ex:pC ?u2 .\n" +
+				"    FILTER EXISTS {\n" +
+				"      {\n" +
+				"        ?s ex:pC ?u0 .\n" +
+				"        FILTER EXISTS {\n" +
+				"          {\n" +
+				"            ?s !( ex:pB|foaf:name ) ?o .\n" +
+				"          }\n" +
+				"        }\n" +
+				"      }\n" +
+				"        UNION\n" +
+				"      {\n" +
+				"        ?u1 ex:pD ?v1 .\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testFilterUnionScope5() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    {\n" +
+				"      ?s ex:pC ?u2 .\n" +
+				"      FILTER EXISTS {\n" +
+				"        {\n" +
+				"          ?s ex:pC ?u0 .\n" +
+				"          FILTER EXISTS {\n" +
+				"            ?s !(ex:pB|foaf:name) ?o .\n" +
+				"          }\n" +
+				"        }\n" +
+				"        UNION\n" +
+				"        {\n" +
+				"          ?u1 ex:pD ?v1 .\n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testNestedGraphScopeUnion() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  GRAPH <http://graphs.example/g1> {\n" +
+				"    {\n" +
+				"      {\n" +
+				"        GRAPH ?g0 {\n" +
+				"          ?s ^foaf:name ?o .\n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"      UNION\n" +
+				"    {\n" +
+				"      ?u1 ex:pD ?v1 .\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testNestedGraphScopeUnion2() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  GRAPH <http://graphs.example/g1> {\n" +
+				"    {\n" +
+//				"      {\n" +
+				"        GRAPH ?g0 {\n" +
+				"          ?s ^foaf:name ?o .\n" +
+				"        }\n" +
+//				"      }\n" +
+				"    }\n" +
+				"      UNION\n" +
+				"    {\n" +
+				"      ?u1 ex:pD ?v1 .\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testNestedGraphScopeUnion3() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    {\n" +
+				"      GRAPH ?g0 {\n" +
+				"        ?o foaf:name ?s .\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    GRAPH <http://graphs.example/g1> {\n" +
+				"      ?u1 ex:pD ?v1 .\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testValuesGraphUnion() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    VALUES ?s {\n" +
+				"      ex:s1 ex:s2\n" +
+				"    }\n" +
+				"    {\n" +
+				"      GRAPH ?g0 {\n" +
+				"        ?s !( ex:pA|^foaf:name ) ?o .\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?u2 ex:pD ?v2 .\n" +
+				"  }\n" +
+				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testValuesGraphUnion2() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    VALUES ?s {\n" +
+				"      ex:s1 ex:s2\n" +
+				"    }\n" +
+				"    {\n" +
+				"      GRAPH ?g0 {\n" +
+				"        {\n" +
+				"          ?s !ex:pA ?o .\n" +
+				"        }\n" +
+				"          UNION\n" +
+				"        {\n" +
+				"          ?o !foaf:name ?s .\n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?u2 ex:pD ?v2 .\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testValuesGraphUnion3() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    VALUES ?s {\n" +
+				"      ex:s1 ex:s2\n" +
+				"    }\n" +
+				"    {\n" +
+				"      GRAPH ?g0 {\n" +
+				"        ?s  ex:pA|^foaf:name  ?o .\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?u2 ex:pD ?v2 .\n" +
+				"  }\n" +
+				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testValuesGraphUnion4() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    VALUES ?s {\n" +
+				"      ex:s1 ex:s2\n" +
+				"    }\n" +
+				"    {\n" +
+				"      GRAPH ?g0 {\n" +
+				"        ?s !( ex:pA|^foaf:name|ex:pB ) ?o .\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?u2 ex:pD ?v2 .\n" +
+				"  }\n" +
+				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testValuesGraphUnion5() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    VALUES ?s {\n" +
+				"      ex:s1 ex:s2\n" +
+				"    }\n" +
+				"    {\n" +
+				"      GRAPH ?g0 {\n" +
+				"        ?s ( ex:pA|!(foaf:knows|^foaf:name)|ex:pB ) ?o .\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    ?u2 ex:pD ?v2 .\n" +
+				"  }\n" +
+				"}\n";
 
 		assertSameSparqlQuery(q, cfg());
 	}
