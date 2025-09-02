@@ -175,8 +175,7 @@ public final class IrTransforms {
 					w = MergeFilterExistsIntoPrecedingGraphTransform.apply(w);
 
 					// Final SERVICE NPS union fusion pass after all other cleanups
-					w = FuseServiceNpsUnionLateTransform
-							.apply(w);
+					w = FuseServiceNpsUnionLateTransform.apply(w);
 
 					return w;
 				}
