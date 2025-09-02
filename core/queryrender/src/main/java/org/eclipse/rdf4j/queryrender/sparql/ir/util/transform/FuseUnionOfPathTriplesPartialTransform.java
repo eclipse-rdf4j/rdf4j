@@ -173,9 +173,12 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 				pathTexts.add(null);
 				continue;
 			}
-			// Exclude complex path patterns: allow only a single atomic step (optionally starting with ^)
+			// Exclude complex path patterns: allow only a single atomic step (optionally starting with ^),
+			// but treat a negated property set !(...) as a single atomic step even if its inner text contains '|'.
 			String trimmed = ptxt.trim();
-			if (trimmed.contains("|") || trimmed.endsWith("?") || trimmed.endsWith("*") || trimmed.endsWith("+")) {
+			boolean isNps = trimmed.startsWith("!(");
+			if (!isNps && (trimmed.contains("|") || trimmed.endsWith("?") || trimmed.endsWith("*")
+					|| trimmed.endsWith("+"))) {
 				pathTexts.add(null);
 				continue; // skip complex paths
 			}
