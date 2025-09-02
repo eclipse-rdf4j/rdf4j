@@ -1815,11 +1815,23 @@ public class TupleExprToIrConverter {
 				}
 			}
 
+			// If this FILTER node signals a variable-scope change, wrap the FILTER together with
+			// its argument patterns in a new IrBGP to preserve the explicit grouping encoded in
+			// the algebra. This ensures shapes like "FILTER EXISTS { { ... } }" are rendered
+			// with the inner braces as expected when a nested filter introduces a new scope.
+			if (f.isVariableScopeChange()) {
+				IRBuilder inner = new IRBuilder();
+				IrBGP innerWhere = inner.build(arg);
+				innerWhere.setNewScope(true);
+				IrFilter irF = buildFilterFromCondition(f.getCondition());
+				innerWhere.add(irF);
+				where.add(innerWhere);
+				return;
+			}
+
+			// Default: render the argument first, then append the FILTER line
 			arg.visit(this);
 			IrFilter irF = buildFilterFromCondition(f.getCondition());
-			if (f.isVariableScopeChange()) {
-				irF.setNewScope(true);
-			}
 			where.add(irF);
 		}
 
@@ -1836,9 +1848,27 @@ public class TupleExprToIrConverter {
 				final IrUnion irU = new IrUnion(u.isVariableScopeChange());
 				irU.setNewScope(u.isVariableScopeChange());
 				IRBuilder left = new IRBuilder();
-				irU.addBranch(left.build(u.getLeftArg()));
+				IrBGP wl = left.build(u.getLeftArg());
+				if (rootHasExplicitScope(u.getLeftArg()) && !wl.getLines().isEmpty()) {
+					IrBGP sub = new IrBGP(true);
+					for (IrNode ln : wl.getLines()) {
+						sub.add(ln);
+					}
+					irU.addBranch(sub);
+				} else {
+					irU.addBranch(wl);
+				}
 				IRBuilder right = new IRBuilder();
-				irU.addBranch(right.build(u.getRightArg()));
+				IrBGP wr = right.build(u.getRightArg());
+				if (rootHasExplicitScope(u.getRightArg()) && !wr.getLines().isEmpty()) {
+					IrBGP sub = new IrBGP(true);
+					for (IrNode ln : wr.getLines()) {
+						sub.add(ln);
+					}
+					irU.addBranch(sub);
+				} else {
+					irU.addBranch(wr);
+				}
 				where.add(irU);
 				return;
 			}
@@ -1848,7 +1878,16 @@ public class TupleExprToIrConverter {
 			irU.setNewScope(u.isVariableScopeChange());
 			for (TupleExpr b : branches) {
 				IRBuilder bld = new IRBuilder();
-				irU.addBranch(bld.build(b));
+				IrBGP wb = bld.build(b);
+				if (rootHasExplicitScope(b) && !wb.getLines().isEmpty()) {
+					IrBGP sub = new IrBGP(true);
+					for (IrNode ln : wb.getLines()) {
+						sub.add(ln);
+					}
+					irU.addBranch(sub);
+				} else {
+					irU.addBranch(wb);
+				}
 			}
 			where.add(irU);
 		}
